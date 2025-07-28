@@ -34,29 +34,28 @@ const PORT = process.env.PORT || 5000;
 
 
 const allowedOrigins = [
+  'https://fono-inova-combr.vercel.app',
   'https://fono-inova-com-8qx8n8po3-kadu-arts-projects.vercel.app',
-  'https://fono-inova-com.vercel.app',
   'http://localhost:3000',
   'http://167.234.249.6:3000'
 ];
 
-app.use(cors({
-  origin: function (origin, callback) {
-    // Permitir requests sem origem (como mobile apps ou curl requests)
-    if (!origin) return callback(null, true);
+// Middleware CORS melhorado
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'A política de CORS para este site não permite acesso a partir da origem especificada.';
-      return callback(new Error(msg), false);
+    if (req.method === 'OPTIONS') {
+      return res.status(204).end();
     }
-    return callback(null, true);
-  },
-  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  credentials: true,
-  preflightContinue: false,
-  optionsSuccessStatus: 204
-}));
+  }
+  next();
+});
+
 app.use(express.json());
 app.use(cookieParser());
 app.options('*', cors());
@@ -88,8 +87,8 @@ app.use('/api/specialties', specialtyRouter);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.header('Access-Control-Allow-Credentials', 'true');
+  //res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  // res.header('Access-Control-Allow-Credentials', 'true');
   res.status(500).json({ error: 'Something broke!' });
 });
 
@@ -97,6 +96,9 @@ if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "../frontend/build")));
 
   app.get("*", (req, res) => {
+    // Headers CORS para produção
+    res.header('Access-Control-Allow-Origin', 'https://fono-inova-combr.vercel.app');
+    res.header('Access-Control-Allow-Credentials', 'true');
     res.sendFile(path.join(__dirname, "../frontend/build/index.html"));
   });
 }
