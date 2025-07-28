@@ -32,14 +32,33 @@ dotenv.config({ path: path.resolve(__dirname, './.env') });
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+const allowedOrigins = [
+  'https://fono-inova-com-8qx8n8po3-kadu-arts-projects.vercel.app',
+  'https://fono-inova-com.vercel.app',
+  'http://localhost:3000',
+  'http://167.234.249.6:3000'
+];
+
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://167.234.249.6:3000'],
-  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  origin: function (origin, callback) {
+    // Permitir requests sem origem (como mobile apps ou curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'A política de CORS para este site não permite acesso a partir da origem especificada.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
 app.use(express.json());
 app.use(cookieParser());
+app.options('*', cors()); 
 /* 
 descomentar qdo ativar o websocket do sicob
 const server = http.createServer(app);
@@ -68,7 +87,9 @@ app.use('/api/specialties', specialtyRouter);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).send('Something broke!');
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.status(500).json({ error: 'Something broke!' });
 });
 
 if (process.env.NODE_ENV === "production") {
