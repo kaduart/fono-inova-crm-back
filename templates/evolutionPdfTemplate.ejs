@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>Evolução do Paciente</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            padding: 20px;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        .section {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Evolução do Paciente</h1>
+
+    <div class="section">
+        <strong>Paciente:</strong>
+        <%= evolution.patientId.fullName %><br>
+            <strong>Data de Nascimento:</strong>
+            <%= evolution.patientId.dateOfBirth %><br>
+                <strong>Profissional:</strong>
+                <%= evolution.doctorId.fullName %> (<%= evolution.doctorId.specialty %>)<br>
+                        <strong>Data:</strong>
+                        <%= new Date(evolution.date).toLocaleDateString() %>
+    </div>
+
+    <div class="section">
+        <strong>Descrição:</strong>
+        <p>
+            <%= evolution.description %>
+        </p>
+    </div>
+
+    <% if (evolution.metrics && evolution.metrics.length) { %>
+        <div class="section">
+            <strong>Métricas Avaliadas:</strong>
+            <ul>
+                <% evolution.metrics.forEach(metric=> { %>
+                    <li>
+                        <%= metric.name %>: <%= metric.value %>
+                    </li>
+                    <% }) %>
+            </ul>
+        </div>
+        <% } %>
+</body>
+
+</html>
