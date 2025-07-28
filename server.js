@@ -34,7 +34,7 @@ const PORT = process.env.PORT || 5000;
 
 
 const allowedOrigins = [
-  'https://fono-inova-combr.vercel.app',
+  'https://app.clinicafonoinova.com.br',
   'https://fono-inova-com-8qx8n8po3-kadu-arts-projects.vercel.app',
   'http://localhost:3000',
   'http://167.234.249.6:3000'
