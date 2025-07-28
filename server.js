@@ -32,6 +32,7 @@ dotenv.config({ path: path.resolve(__dirname, './.env') });
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+
 const allowedOrigins = [
   'https://fono-inova-com-8qx8n8po3-kadu-arts-projects.vercel.app',
   'https://fono-inova-com.vercel.app',
@@ -43,7 +44,7 @@ app.use(cors({
   origin: function (origin, callback) {
     // Permitir requests sem origem (como mobile apps ou curl requests)
     if (!origin) return callback(null, true);
-    
+
     if (allowedOrigins.indexOf(origin) === -1) {
       const msg = 'A política de CORS para este site não permite acesso a partir da origem especificada.';
       return callback(new Error(msg), false);
@@ -58,7 +59,7 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(cookieParser());
-app.options('*', cors()); 
+app.options('*', cors());
 /* 
 descomentar qdo ativar o websocket do sicob
 const server = http.createServer(app);
