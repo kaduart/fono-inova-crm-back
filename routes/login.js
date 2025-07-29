@@ -2,10 +2,10 @@ import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import { auth } from '../middleware/auth.js';
 import Admin from '../models/Admin.js';
 import Doctor from '../models/Doctor.js';
 import User from '../models/User.js';
-import { auth } from '../middleware/auth.js';
 
 dotenv.config();
 
@@ -13,7 +13,11 @@ const router = express.Router();
 
 router.post('/', async (req, res) => {
   const { email, password, role } = req.body;
+  console.log('Recebido:', req.body); // Verifique se os dados chegam
 
+  // Headers CORS essenciais
+  res.header('Access-Control-Allow-Origin', req.headers.origin);
+  res.header('Access-Control-Allow-Credentials', 'true');
 
   try {
     let user;
