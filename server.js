@@ -1,4 +1,3 @@
-import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
@@ -25,6 +24,7 @@ import signupRoutes from './routes/signup.js';
 import specialtyRouter from './routes/specialty.js';
 import UserRoutes from './routes/user.js';
 //import { initializeSocket } from './socket';
+import { errorHandler } from './utils/errorHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,32 +33,42 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 
-const allowedOrigins = [
-  'https://app.clinicafonoinova.com.br',
-  'https://fono-inova-com-8qx8n8po3-kadu-arts-projects.vercel.app',
-  'http://localhost:3000',
-  'http://167.234.249.6:3000'
-];
+const dynamicCors = {
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      'https://app.clinicafonoinova.com.br',
+      'https://fono-inova-com-8qx8n8po3-kadu-arts-projects.vercel.app',
+      'http://localhost:5173',
+      'http://167.234.249.6:3000'
+    ];
 
-// Middleware CORS melhorado
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-
-    if (req.method === 'OPTIONS') {
-      return res.status(204).end();
+    // Permitir requisições sem origin (mobile apps, Postman)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`[CORS Blocked] Origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
     }
-  }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Authorization', 'X-Token-Expired']
+};
+app.use((req, res, next) => {
+  console.log('Recebida requisição de:', req.headers.origin);
+  console.log('Método:', req.method);
+  console.log('Cabeçalhos:', req.headers);
   next();
 });
+app.use(cors(dynamicCors));
+app.options('*', cors(dynamicCors));
 
-app.use(express.json());
-app.use(cookieParser());
-app.options('*', cors());
+// Middleware para log de requisições
+app.use((req, res, next) => {
+  console.log(`[${req.method}] ${req.path} - Origin: ${req.headers.origin}`);
+  next();
+});
 /* 
 descomentar qdo ativar o websocket do sicob
 const server = http.createServer(app);
@@ -85,12 +95,7 @@ app.use('/api/users', UserRoutes);
 
 app.use('/api/specialties', specialtyRouter);
 
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  //res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  // res.header('Access-Control-Allow-Credentials', 'true');
-  res.status(500).json({ error: 'Something broke!' });
-});
+app.use(errorHandler);
 
 if (process.env.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "../frontend/build")));
