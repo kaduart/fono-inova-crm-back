@@ -27,7 +27,17 @@ db.sessions.deleteMany({
 
 //consulta sessao por id
 db.sessions.find({
-  _id: ObjectId("68819ebcb271704721db64df"),
+  _id: ObjectId("685c29afaec14c716358622a"),
+});
+
+//consulta sessao por id patient
+db.payments.find({
+  patient: ObjectId("685c29afaec14c716358622a"),
+});
+
+//consulta agendamento por id patient
+db.appointments.find({
+  patient: ObjectId("685c29afaec14c716358622a"),
 });
 
 
@@ -68,3 +78,7 @@ const stillWithoutTime = await Session.countDocuments({
 });
 
 //buscar pacote 
+
+db.packages.deleteMany({
+  status: "recovered",
+});

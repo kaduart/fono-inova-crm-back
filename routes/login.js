@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import Admin from '../models/Admin.js';
 import Doctor from '../models/Doctor.js';
 import User from '../models/User.js';
+import { auth } from '../middleware/auth.js';
 
 dotenv.config();
 
@@ -53,5 +54,25 @@ router.post('/', async (req, res) => {
     res.status(500).send({ error: 'Server error', message: error.message });
   }
 });
+
+
+router.post('/renew-token', auth, (req, res) => {
+  try {
+    // Remove a propriedade 'iat' e 'exp' do usuário antes de gerar novo token
+    const { iat, exp, ...userData } = req.user;
+
+    const newToken = jwt.sign(
+      userData,
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' } // Ajuste o tempo conforme necessário
+    );
+
+    res.json({ newToken });
+  } catch (error) {
+    console.error('Error renewing token:', error);
+    res.status(500).json({ error: 'Failed to renew token' });
+  }
+});
+
 
 export default router;
