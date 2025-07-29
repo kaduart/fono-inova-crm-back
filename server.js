@@ -37,12 +37,10 @@ const dynamicCors = {
   origin: (origin, callback) => {
     const allowedOrigins = [
       'https://app.clinicafonoinova.com.br',
-      'https://fono-inova-com-8qx8n8po3-kadu-arts-projects.vercel.app',
       'http://localhost:5173',
-      'http://167.234.249.6:3000'
+      // Adicione outras origens necessárias
     ];
 
-    // Permitir requisições sem origin (mobile apps, Postman)
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -52,21 +50,17 @@ const dynamicCors = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Authorization', 'X-Token-Expired']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Authorization']
 };
-app.use((req, res, next) => {
-  console.log('Recebida requisição de:', req.headers.origin);
-  console.log('Método:', req.method);
-  console.log('Cabeçalhos:', req.headers);
-  next();
-});
-app.use(cors(dynamicCors));
-app.options('*', cors(dynamicCors));
 
-// Middleware para log de requisições
+app.use(express.json()); // Para parsear JSON
+app.use(cors(dynamicCors)); // CORS deve vir antes das rotas
+app.options('*', cors(dynamicCors)); // Pré-flight
+
+// Middleware de logs (simplificado)
 app.use((req, res, next) => {
-  console.log(`[${req.method}] ${req.path} - Origin: ${req.headers.origin}`);
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
   next();
 });
 /* 
