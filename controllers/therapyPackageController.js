@@ -266,6 +266,7 @@ export const packageOperations = {
 
     get: {
         all: async (req, res) => {
+            console.log('bateuuuuuuuuuu ', req.body)
             try {
                 const { patientId } = req.query;
 
@@ -508,13 +509,10 @@ export const packageOperations = {
 
                 if (!sessionDoc) throw new Error("Sessão não encontrada");
 
-                // Guarda o status anterior para verificar mudanças
                 const previousStatus = sessionDoc.status;
 
-                // Extrair a parte da data (yyyy-MM-dd)
-                const dateOnly = date.split('T')[0]; // "2025-07-07"
+                const dateOnly = date.split('T')[0];
 
-                // Montar um Date com fuso -03:00 (São Paulo)
                 const sessionDate = new Date(`${dateOnly}T${time}:00-03:00`);
 
                 sessionDoc.date = sessionDate;
