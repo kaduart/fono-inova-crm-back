@@ -472,11 +472,11 @@ export const packageOperations = {
                 const { sessionId } = req.params;
                 const {
                     date,
+                    time,
                     notes,
                     doctorId,
                     patientId,
                     status,
-                    time,
                     confirmedAbsence,
                     payment = {},
                     sessionType,

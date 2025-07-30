@@ -102,8 +102,8 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
             paymentAmount: req.body.paymentAmount,
             paymentMethod: req.body.paymentMethod,
         };
-
-
+        console.log('req.body:', req.body);
+        console.log('appointmentData:', appointmentData);
         const appointment = new Appointment(appointmentData);
         await appointment.save({ session: mongoSession });
 
@@ -221,10 +221,14 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
 // Busca agendamentos com filtros
 router.get('/', auth, async (req, res) => {
 
+
     try {
         const { patientId, doctorId, status, specialty, startDate, endDate } = req.query;
         const filter = {};
-
+        console.log('Dados recebidos para agendamento', {
+            body: req.body,
+            patientId: req.body.patientId
+        });
         // Construir filtros
         if (patientId && patientId !== 'all' && mongoose.Types.ObjectId.isValid(patientId)) {
             filter.patient = new mongoose.Types.ObjectId(patientId);
@@ -510,7 +514,7 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
 
     try {
         await dbSession.startTransaction();
-        
+
         // 1. Validação básica
         const { reason, confirmedAbsence = false } = req.body;
         if (!reason) {
@@ -522,9 +526,9 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
         const appointment = await Appointment.findOneAndUpdate(
             { _id: req.params.id },
             { $set: {} },
-            { 
-                new: true, 
-                session: dbSession 
+            {
+                new: true,
+                session: dbSession
             }
         ).populate('session'); // Popula a sessão relacionada
 
@@ -591,7 +595,7 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
             try {
                 // Sincronizar agendamento
                 await syncEvent(updatedAppointment, 'appointment');
-                
+
                 // Se for sessão de pacote, sincronizar tudo
                 if (updatedAppointment.serviceType === 'package_session') {
                     // Sincronizar sessão
@@ -599,7 +603,7 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
                         const updatedSession = await Session.findById(appointment.session._id);
                         await syncEvent(updatedSession, 'session');
                     }
-                    
+
                     // Sincronizar pacote
                     if (appointment.package) {
                         await syncPackageUpdate({
