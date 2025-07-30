@@ -4,6 +4,8 @@ import express from 'express';
 import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+// Models
 import './models/Doctor.js';
 import './models/Package.js';
 import './models/Patient.js';
@@ -11,6 +13,8 @@ import './models/Payment.js';
 import './models/Session.js';
 import './models/Specialty.js';
 import './models/User.js';
+
+// Rotas
 import adminRoutes from './routes/admin.js';
 import appointmentRoutes from './routes/appointment.js';
 import doctorRoutes from './routes/doctor.js';
@@ -23,60 +27,57 @@ import PaymentRoutes from './routes/Payment.js';
 import signupRoutes from './routes/signup.js';
 import specialtyRouter from './routes/specialty.js';
 import UserRoutes from './routes/user.js';
-//import { initializeSocket } from './socket';
+
+// Error Handler
 import { errorHandler } from './utils/errorHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
 dotenv.config({ path: path.resolve(__dirname, './.env') });
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// ---------- CORS CONFIG GLOBAL ----------
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://app.clinicafonoinova.com.br'
+];
 
-const dynamicCors = {
-  origin: (origin, callback) => {
-    const allowedOrigins = [
-      'https://app.clinicafonoinova.com.br',
-      'http://localhost:5173',
-      // Adicione outras origens necessárias
-    ];
-
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.warn(`[CORS Blocked] Origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+app.use(cors({
+  origin: allowedOrigins,
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  exposedHeaders: ['Authorization']
-};
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+  allowedHeaders: 'Content-Type, Authorization, Accept, Origin, Referer, X-Requested-With'
+}));
 
-app.use(express.json()); // Para parsear JSON
-app.use(cors(dynamicCors)); // CORS deve vir antes das rotas
-app.options('*', cors(dynamicCors)); // Pré-flight
+// Pré-flight para todas as rotas
+app.options('*', cors({
+  origin: allowedOrigins,
+  credentials: true,
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+  allowedHeaders: 'Content-Type, Authorization, Accept, Origin, Referer, X-Requested-With'
+}));
+
+// ----------------------------------------
+
+app.use(express.json());
 
 // Middleware de logs (simplificado)
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
   next();
 });
-/* 
-descomentar qdo ativar o websocket do sicob
-const server = http.createServer(app);
- initializeSocket(server); */
 
+// MongoDB
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('Connected to MongoDB'))
   .catch((err) => console.error('Could not connect to MongoDB', err));
 
-
-// Routes
+// Rotas
 app.use('/api/signup', signupRoutes);
 app.use('/api/login', loginRoutes);
-
 app.use('/api/admin', adminRoutes);
 app.use('/api/doctor', doctorRoutes);
 app.use('/api/patients', patientRoutes);
@@ -86,19 +87,18 @@ app.use('/api/leads', leadsRouter);
 app.use('/api/packages', PackageRoutes);
 app.use('/api/payments', PaymentRoutes);
 app.use('/api/users', UserRoutes);
-
 app.use('/api/specialties', specialtyRouter);
 
 app.use(errorHandler);
 
-if (process.env.NODE_ENV === "production") {
-  app.use(express.static(path.join(__dirname, "../frontend/build")));
+// Produção
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../frontend/build')));
 
-  app.get("*", (req, res) => {
-    // Headers CORS para produção
+  app.get('*', (req, res) => {
     res.header('Access-Control-Allow-Origin', 'https://fono-inova-combr.vercel.app');
     res.header('Access-Control-Allow-Credentials', 'true');
-    res.sendFile(path.join(__dirname, "../frontend/build/index.html"));
+    res.sendFile(path.join(__dirname, '../frontend/build/index.html'));
   });
 }
 

@@ -30,6 +30,7 @@ const router = express.Router();
 // Verifica horários disponíveis
 router.get('/available-slots', auth, getAvailableTimeSlots);
 
+
 // Cria um novo agendamento
 router.post('/', auth, checkPackageAvailability, validateIndividualPayment, checkAppointmentConflicts, async (req, res) => {
     const mongoSession = await mongoose.startSession();
