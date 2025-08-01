@@ -66,10 +66,10 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
 
         // Verifica se já existe agendamento
         const existingAppointment = await Appointment.findOne({
-            patient,
-            doctor,
-            date: new Date(date),
-            time
+            patient: patient._id,
+            doctor: doctorId,
+            date: new Date(req.body.date),
+            time: req.body.time
         });
 
         if (existingAppointment) {
