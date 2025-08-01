@@ -5,9 +5,10 @@ export const auth = async (req, res, next) => {
     try {
         // Verificar token no cookie ou header
         const token = req.cookies?.token || req.headers.authorization?.split(' ')[1];
-        
+        console.log('[AUTH] Headers recebidos:', req.headers);
+    console.log('[AUTH] Cookies recebidos:', req.cookies);
         if (!token) {
-            return res.status(401).json({ 
+            return res.status(401).json({
                 code: 'TOKEN_REQUIRED',
                 message: 'Token não fornecido',
                 redirect: true
@@ -15,7 +16,7 @@ export const auth = async (req, res, next) => {
         }
 
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secreta');
-        
+
         // Validação reforçada do payload
         if (!decoded.id || !mongoose.Types.ObjectId.isValid(decoded.id)) {
             return res.status(401).json({
@@ -25,14 +26,14 @@ export const auth = async (req, res, next) => {
         }
 
         // Verificação otimizada de usuário
-        const userModel = mongoose.model(decoded.role === 'admin' ? 'Admin' : 
-                         decoded.role === 'secretary' ? 'Secretary' : 'Doctor');
-        
+        const userModel = mongoose.model(decoded.role === 'admin' ? 'Admin' :
+            decoded.role === 'secretary' ? 'Secretary' : 'Doctor');
+
         const userExists = await userModel.exists({ _id: decoded.id });
-        
+
         if (!userExists) {
             return res.status(401).json({
-                code: 'USER_NOT_FOUND', 
+                code: 'USER_NOT_FOUND',
                 message: 'Usuário não encontrado'
             });
         }
@@ -45,7 +46,7 @@ export const auth = async (req, res, next) => {
         next();
     } catch (err) {
         console.error(`[Auth Error] ${err.name}: ${err.message}`);
-        
+
         // Respostas padronizadas
         const errorResponse = {
             'TokenExpiredError': {

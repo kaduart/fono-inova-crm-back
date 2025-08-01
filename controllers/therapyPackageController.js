@@ -289,11 +289,9 @@ export const packageOperations = {
                     })
                     .lean();
 
-                // Função para ajustar o fuso horário
                 const adjustTimezone = (utcDate) => {
                     if (!utcDate) return null;
-                    const date = new Date(utcDate);
-                    return new Date(date.getTime() - (3 * 60 * 60 * 1000)); // GMT-3
+                    return new Date(utcDate);
                 };
 
                 // Função para formatar data/horário
@@ -484,6 +482,7 @@ export const packageOperations = {
                     specialty
                 } = req.body;
 
+                console.log('timeeeeee', time)
                 // Validações básicas
                 if (!date || isNaN(new Date(date).getTime())) {
                     throw new Error("Data inválida ou não fornecida");
@@ -516,6 +515,7 @@ export const packageOperations = {
                 const sessionDate = new Date(`${dateOnly}T${time}:00-03:00`);
 
                 sessionDoc.date = sessionDate;
+                sessionDoc.time = time;
                 sessionDoc.notes = notes || sessionDoc.notes;
 
                 if (doctorId) {
@@ -702,17 +702,14 @@ export const packageOperations = {
 
                 // SINCRONIZAÇÃO COM O MODELO UNIFICADO - PONTO CRÍTICO!
                 // 1. Recarregar a sessão com dados populados
-                const refreshedSession = await Session.findById(sessionId)
-                    .populate('package')
-                    .populate('appointmentId')
-                    .session(mongoSession);
+                const syncedSession = await Session.findById(sessionId).lean();
 
                 // 2. Sincronizar a sessão
-                await syncEvent(refreshedSession, 'session');
+                await syncEvent(syncedSession, 'session');
 
                 // 3. Se houver appointment associado, sincronizá-lo também
-                if (refreshedSession.appointmentId) {
-                    const appointment = await Appointment.findById(refreshedSession.appointmentId._id)
+                if (syncedSession.appointmentId) {
+                    const appointment = await Appointment.findById(syncedSession.appointmentId._id)
                         .session(mongoSession);
                     await syncEvent(appointment, 'appointment');
                 }
