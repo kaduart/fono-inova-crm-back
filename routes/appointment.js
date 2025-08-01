@@ -64,6 +64,22 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
             await patient.save({ session: mongoSession });
         }
 
+        // Verifica se já existe agendamento
+        const existingAppointment = await Appointment.findOne({
+            patient,
+            doctor,
+            date: new Date(date),
+            time
+        });
+
+        if (existingAppointment) {
+            return res.status(409).json({
+                code: 'DUPLICATE_APPOINTMENT',
+                message: 'Já existe um agendamento para este paciente/médico na data e hora selecionadas',
+                existingAppointment
+            });
+        }
+
         let selectedPackage = null;
         // Verificar pacote APENAS se for serviço do tipo pacote
         if (req.body.serviceType === 'package') {
@@ -381,9 +397,9 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                 console.log('session 122:', session);
 
                 if (session) {
-                    if (req.body.date) session.date = req.body.date;
-                    if (req.body.time) session.time = req.body.time;
-                    if (req.body.status) session.status = req.body.status;
+                    if (updateData.date) session.date = new Date(updateData.date);
+                    if (updateData.time) session.time = updateData.time;
+                    if (updateData.status) session.status = updateData.status;
                     await session.save({ session: mongoSession });
                 }
             }
