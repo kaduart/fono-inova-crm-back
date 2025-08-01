@@ -2,6 +2,18 @@
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 
+const DailyScheduleSchema = new mongoose.Schema({
+  day: {
+    type: String,
+    enum: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+    required: true,
+  },
+  times: {
+    type: [String], // Array de strings no formato 'HH:mm'
+    default: [],
+  },
+}, { _id: false });
+
 const doctorSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
   email: { type: String, required: true, unique: true },
@@ -13,8 +25,14 @@ const doctorSchema = new mongoose.Schema({
   licenseNumber: { type: String, required: true, unique: true },
   phoneNumber: { type: String, required: true },
   active: { type: String, required: true },
-  role: { type: String, default: 'doctor' }
-});
+  role: { type: String, default: 'doctor' },
+  weeklyAvailability: {
+    type: [DailyScheduleSchema], // Array de DailyScheduleSchema
+    default: [],
+  },
+}, { timestamps: true });
+
+
 
 doctorSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
