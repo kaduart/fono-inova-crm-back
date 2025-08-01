@@ -1,6 +1,5 @@
 import { SESSION_DURATION_MS } from '../config/constants.js';
 import Appointment from '../models/Appointment.js';
-import Doctor from '../models/Doctor.js';
 
 export const checkAppointmentConflicts = async (req, res, next) => {
     try {
@@ -11,25 +10,32 @@ export const checkAppointmentConflicts = async (req, res, next) => {
             return res.status(400).json({ error: "Campos obrigatórios faltando" });
         }
 
-        // Converter a data e hora recebidas (BRT) para UTC para consistência
-        const requestStartUTC = parseBRTToUTCDate(date, time);
-        const requestEndUTC = new Date(requestStartUTC.getTime() + SESSION_DURATION_MS);
+        const startTime = new Date(date);
+        if (isNaN(startTime.getTime())) {
+            return res.status(400).json({ error: "Data inválida" });
+        }
 
-        // Definir início e fim do dia em UTC para a query no MongoDB
-        const startOfDayUTC = parseBRTToUTCDate(date, '00:00');
-        const endOfDayUTC = parseBRTToUTCDate(date, '23:59');
+        const SESSION_DURATION = SESSION_DURATION_MS;
+        const endTime = new Date(startTime.getTime() + SESSION_DURATION);
 
-        const existingDoctorAppointments = await Appointment.find({
-            doctor: doctorId,
-            date: { $gte: startOfDayUTC, $lt: endOfDayUTC },
-            operationalStatus: { $ne: 'cancelado' },
-            ...(appointmentId && { _id: { $ne: appointmentId } })
-        }).lean();
+        const startOfDay = new Date(startTime);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(startTime);
+        endOfDay.setHours(23, 59, 59, 999);
 
-        const hasDoctorConflict = existingDoctorAppointments.some(app => {
-            const appStartUTC = new Date(app.date).getTime();
-            const appEndUTC = appStartUTC + SESSION_DURATION_MS;
-            return requestStartUTC.getTime() < appEndUTC && requestEndUTC.getTime() > appStartUTC;
+        // Modificação 1: Ignorar agendamentos cancelados para médico
+        const existingAppointments = await Appointment.find({
+            doctorId,
+            date: { $gte: startOfDay, $lt: endOfDay },
+            status: { $ne: 'cancelado' }, // Ignora cancelados
+            ...(appointmentId && { _id: { $ne: appointmentId } }) // Exclui o próprio agendamento
+        });
+
+        // Modificação 2: Verificação de conflito considerando apenas agendamentos ativos
+        const hasDoctorConflict = existingAppointments.some(app => {
+            const appStart = new Date(app.date);
+            const appEnd = new Date(appStart.getTime() + SESSION_DURATION);
+            return startTime < appEnd && endTime > appStart;
         });
 
         if (hasDoctorConflict) {
@@ -39,11 +45,12 @@ export const checkAppointmentConflicts = async (req, res, next) => {
             });
         }
 
+        // Adicionar verificação de sessões de pacote
         if (req.packageData) {
             const packageAppointments = await Appointment.find({
                 package: req.packageData._id,
-                operationalStatus: { $ne: 'cancelado' }
-            }).lean();
+                status: { $ne: 'cancelado' }
+            });
 
             if (packageAppointments.length >= req.packageData.totalSessions) {
                 return res.status(409).json({
@@ -52,18 +59,19 @@ export const checkAppointmentConflicts = async (req, res, next) => {
                 });
             }
         }
+        // Modificação 3: Ignorar agendamentos cancelados para paciente
+        const patientAppointments = await Appointment.find({
+            patientId,
+            date: { $gte: startOfDay, $lt: endOfDay },
+            status: { $ne: 'cancelado' }, // Ignora cancelados
+            ...(appointmentId && { _id: { $ne: appointmentId } }) // Exclui o próprio agendamento
+        });
 
-        const existingPatientAppointments = await Appointment.find({
-            patient: patientId,
-            date: { $gte: startOfDayUTC, $lt: endOfDayUTC },
-            operationalStatus: { $ne: 'cancelado' },
-            ...(appointmentId && { _id: { $ne: appointmentId } })
-        }).lean();
-
-        const hasPatientConflict = existingPatientAppointments.some(app => {
-            const appStartUTC = new Date(app.date).getTime();
-            const appEndUTC = appStartUTC + SESSION_DURATION_MS;
-            return requestStartUTC.getTime() < appEndUTC && requestEndUTC.getTime() > appStartUTC;
+        // Modificação 4: Verificação de conflito para paciente
+        const hasPatientConflict = patientAppointments.some(app => {
+            const appStart = new Date(app.date);
+            const appEnd = new Date(appStart.getTime() + SESSION_DURATION);
+            return startTime < appEnd && endTime > appStart;
         });
 
         if (hasPatientConflict) {
@@ -80,13 +88,32 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     }
 };
 
+function parseBRTToUTCDate(dateStr, timeStr) {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const [hour, minute] = timeStr.split(':').map(Number);
+
+    // Convertendo horário de Brasília para UTC
+    return new Date(Date.UTC(year, month - 1, day, hour, minute));
+}
+
+// Remova este import se checkAppointmentConflicts não for mais usado aqui
+// import { checkAppointmentConflicts } from '../middleware/conflictDetection.js'; 
+
 export const getAvailableTimeSlots = async (req, res) => {
     try {
         const { doctorId, date } = req.query; // date é 'YYYY-MM-DD'
 
-        if (!doctorId || !date) {
-            return res.status(400).json({ error: 'Médico e data são obrigatórios' });
+        if (!date || typeof date !== 'string') {
+            return res.status(400).json({ message: 'O parâmetro "date" é obrigatório e deve ser uma string.' });
         }
+
+        const parsedDate = new Date(date);
+        if (isNaN(parsedDate.getTime())) { // Verifica se a data é inválida
+            return res.status(400).json({ message: 'Formato de data inválido. Use YYYY-MM-DD.' });
+        }
+
+        // >>>>>>>>>>> REMOVA ESTA LINHA <<<<<<<<<<<
+        // const availableSlots = await checkAppointmentConflicts(doctorId, date);
 
         // 1. Buscar o médico para obter a disponibilidade semanal
         const doctor = await Doctor.findById(doctorId).lean();
@@ -127,7 +154,8 @@ export const getAvailableTimeSlots = async (req, res) => {
 
         const existingAppointments = await Appointment.find({
             doctor: doctorId,
-            date: { $gte: startOfDayUTC, $lte: endOfDayUTC }
+            date: { $gte: startOfDayUTC, $lte: endOfDayUTC },
+            operationalStatus: { $ne: 'cancelado' } // Garante que agendamentos cancelados não bloqueiem
         }).lean();
 
         // 4. Filtra slots disponíveis (lógica de conflito)
@@ -136,9 +164,6 @@ export const getAvailableTimeSlots = async (req, res) => {
             const slotEndTimeUTC = slotStartTimeUTC + SESSION_DURATION_MS;
 
             const hasConflict = existingAppointments.some(app => {
-                // Ignora agendamentos cancelados, pois eles não bloqueiam o horário
-                if (app.operationalStatus === 'cancelado') return false;
-
                 const appStartTimeUTC = new Date(app.date).getTime();
                 const appEndTimeUTC = appStartTimeUTC + SESSION_DURATION_MS;
 
@@ -162,14 +187,6 @@ export const getAvailableTimeSlots = async (req, res) => {
         return res.status(500).json({ error: error.message });
     }
 };
-
-function parseBRTToUTCDate(dateStr, timeStr) {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const [hour, minute] = timeStr.split(':').map(Number);
-
-    // Convertendo horário de Brasília para UTC
-    return new Date(Date.UTC(year, month - 1, day, hour, minute));
-}
 
 
 
