@@ -17,7 +17,7 @@ const DailyScheduleSchema = new mongoose.Schema({
 const doctorSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
   email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
+  password: { type: String, required: false },
   specialty: {
     type: String,
     required: true,
