@@ -1,5 +1,6 @@
 import { SESSION_DURATION_MS } from '../config/constants.js';
 import Appointment from '../models/Appointment.js';
+import Doctor from '../models/Doctor.js';
 
 export const checkAppointmentConflicts = async (req, res, next) => {
     try {
