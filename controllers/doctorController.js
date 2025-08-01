@@ -27,6 +27,7 @@ export const doctorOperations = {
         specialty,
         licenseNumber,
         phoneNumber,
+        weeklyAvailability,
         active
       } = req.body;
 
@@ -68,6 +69,8 @@ export const doctorOperations = {
         specialty,
         licenseNumber,
         phoneNumber,
+        active: active !== undefined ? active : true,
+        weeklyAvailability: weeklyAvailability || [],
         active: active !== undefined ? active : true
       });
 
@@ -84,7 +87,8 @@ export const doctorOperations = {
           licenseNumber: savedDoctor.licenseNumber,
           phoneNumber: savedDoctor.phoneNumber,
           active: savedDoctor.active,
-          role: savedDoctor.role
+          role: savedDoctor.role,
+          weeklyAvailability: savedDoctor.weeklyAvailability,
         }
       });
     } catch (error) {
@@ -134,8 +138,13 @@ export const doctorOperations = {
 
   update: async (req, res) => {
     try {
-      const doctor = await Doctor.findByIdAndUpdate(req.params.id, req.body, { new: true });
+      const doctor = await Doctor.findByIdAndUpdate(req.params.id, req.body, {
+        new: true, 
+        runValidators: true
+      });
+
       if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
+
       res.json(doctor);
     } catch (error) {
       if (error.name === 'ValidationError') {

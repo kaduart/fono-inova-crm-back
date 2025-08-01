@@ -1,5 +1,6 @@
 import { SESSION_DURATION_MS } from '../config/constants.js';
 import Appointment from '../models/Appointment.js';
+import Doctor from '../models/Doctor.js';
 
 export const checkAppointmentConflicts = async (req, res, next) => {
     try {
@@ -10,32 +11,25 @@ export const checkAppointmentConflicts = async (req, res, next) => {
             return res.status(400).json({ error: "Campos obrigatórios faltando" });
         }
 
-        const startTime = new Date(date);
-        if (isNaN(startTime.getTime())) {
-            return res.status(400).json({ error: "Data inválida" });
-        }
+        // Converter a data e hora recebidas (BRT) para UTC para consistência
+        const requestStartUTC = parseBRTToUTCDate(date, time);
+        const requestEndUTC = new Date(requestStartUTC.getTime() + SESSION_DURATION_MS);
 
-        const SESSION_DURATION = SESSION_DURATION_MS;
-        const endTime = new Date(startTime.getTime() + SESSION_DURATION);
+        // Definir início e fim do dia em UTC para a query no MongoDB
+        const startOfDayUTC = parseBRTToUTCDate(date, '00:00');
+        const endOfDayUTC = parseBRTToUTCDate(date, '23:59');
 
-        const startOfDay = new Date(startTime);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(startTime);
-        endOfDay.setHours(23, 59, 59, 999);
+        const existingDoctorAppointments = await Appointment.find({
+            doctor: doctorId,
+            date: { $gte: startOfDayUTC, $lt: endOfDayUTC },
+            operationalStatus: { $ne: 'cancelado' },
+            ...(appointmentId && { _id: { $ne: appointmentId } })
+        }).lean();
 
-        // Modificação 1: Ignorar agendamentos cancelados para médico
-        const existingAppointments = await Appointment.find({
-            doctorId,
-            date: { $gte: startOfDay, $lt: endOfDay },
-            status: { $ne: 'cancelado' }, // Ignora cancelados
-            ...(appointmentId && { _id: { $ne: appointmentId } }) // Exclui o próprio agendamento
-        });
-
-        // Modificação 2: Verificação de conflito considerando apenas agendamentos ativos
-        const hasDoctorConflict = existingAppointments.some(app => {
-            const appStart = new Date(app.date);
-            const appEnd = new Date(appStart.getTime() + SESSION_DURATION);
-            return startTime < appEnd && endTime > appStart;
+        const hasDoctorConflict = existingDoctorAppointments.some(app => {
+            const appStartUTC = new Date(app.date).getTime();
+            const appEndUTC = appStartUTC + SESSION_DURATION_MS;
+            return requestStartUTC.getTime() < appEndUTC && requestEndUTC.getTime() > appStartUTC;
         });
 
         if (hasDoctorConflict) {
@@ -45,12 +39,11 @@ export const checkAppointmentConflicts = async (req, res, next) => {
             });
         }
 
-        // Adicionar verificação de sessões de pacote
         if (req.packageData) {
             const packageAppointments = await Appointment.find({
                 package: req.packageData._id,
-                status: { $ne: 'cancelado' }
-            });
+                operationalStatus: { $ne: 'cancelado' }
+            }).lean();
 
             if (packageAppointments.length >= req.packageData.totalSessions) {
                 return res.status(409).json({
@@ -59,19 +52,18 @@ export const checkAppointmentConflicts = async (req, res, next) => {
                 });
             }
         }
-        // Modificação 3: Ignorar agendamentos cancelados para paciente
-        const patientAppointments = await Appointment.find({
-            patientId,
-            date: { $gte: startOfDay, $lt: endOfDay },
-            status: { $ne: 'cancelado' }, // Ignora cancelados
-            ...(appointmentId && { _id: { $ne: appointmentId } }) // Exclui o próprio agendamento
-        });
 
-        // Modificação 4: Verificação de conflito para paciente
-        const hasPatientConflict = patientAppointments.some(app => {
-            const appStart = new Date(app.date);
-            const appEnd = new Date(appStart.getTime() + SESSION_DURATION);
-            return startTime < appEnd && endTime > appStart;
+        const existingPatientAppointments = await Appointment.find({
+            patient: patientId,
+            date: { $gte: startOfDayUTC, $lt: endOfDayUTC },
+            operationalStatus: { $ne: 'cancelado' },
+            ...(appointmentId && { _id: { $ne: appointmentId } })
+        }).lean();
+
+        const hasPatientConflict = existingPatientAppointments.some(app => {
+            const appStartUTC = new Date(app.date).getTime();
+            const appEndUTC = appStartUTC + SESSION_DURATION_MS;
+            return requestStartUTC.getTime() < appEndUTC && requestEndUTC.getTime() > appStartUTC;
         });
 
         if (hasPatientConflict) {
@@ -88,110 +80,96 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     }
 };
 
-function toUTCFromBrasilia(dateStr, timeStr) {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const [hour, minute] = timeStr.split(':').map(Number);
-
-    // Convertendo horário de Brasília para UTC
-    return new Date(Date.UTC(year, month - 1, day, hour + 3, minute));
-}
-
-
 export const getAvailableTimeSlots = async (req, res) => {
     try {
-        const { doctorId, date } = req.query;
+        const { doctorId, date } = req.query; // date é 'YYYY-MM-DD'
 
         if (!doctorId || !date) {
             return res.status(400).json({ error: 'Médico e data são obrigatórios' });
         }
 
-        const SESSION_DURATION_MINUTES = 40;
-        const BLOCKED_DOCTOR_ID = '684072213830f473da1b0b0b';
-        const EXTENDED_DOCTOR_ID = '684072213830f473da1b0b0b'; // ID do médico que terá horário estendido
-
-        // Função para criar datas no fuso UTC-3
-        const toUtc3 = (h, m) => {
-            const [year, month, day] = date.split('-').map(Number);
-            return new Date(Date.UTC(year, month - 1, day, h + 3, m));
-        };
-
-        // Determinar dia da semana (0 = Domingo, 1 = Segunda, ..., 6 = Sábado)
-        const dateObj = new Date(date);
-        const dayOfWeek = dateObj.getDay(); // 2 = Terça-feira
-
-        // Definir horário final baseado no dia da semana e médico
-        let endHour = 18;
-        let endMinute = 0;
-
-        // Extender horário para 18:40 nas terças-feiras para o médico específico
-        if (doctorId === EXTENDED_DOCTOR_ID && dayOfWeek === 1) {
-            endHour = 18;
-            endMinute = 40;
+        // 1. Buscar o médico para obter a disponibilidade semanal
+        const doctor = await Doctor.findById(doctorId).lean();
+        if (!doctor) {
+            return res.status(404).json({ error: 'Médico não encontrado' });
         }
 
-        const start = toUtc3(8, 0); // 08:00
-        const end = toUtc3(endHour, endMinute); // 18:00 ou 18:40
+        const dateObjForDayOfWeek = new Date(date + 'T12:00:00Z'); // 'Z' para UTC puro, garantindo o dia correto
+        const dayOfWeekIndex = dateObjForDayOfWeek.getDay(); // 0 = Domingo, 1 = Segunda, ..., 6 = Sábado
 
-        // Busca TODOS os agendamentos do dia
-        const existingAppointments = await Appointment.find({
-            doctor: doctorId,
-            date: { $gte: start, $lte: end }
+        const dayMap = {
+            0: 'sunday',
+            1: 'monday',
+            2: 'tuesday',
+            3: 'wednesday',
+            4: 'thursday',
+            5: 'friday',
+            6: 'saturday',
+        };
+        const dayKey = dayMap[dayOfWeekIndex];
+
+        // Encontrar a disponibilidade para o dia específico
+        const dailyAvailability = doctor.weeklyAvailability.find(d => d.day === dayKey);
+
+        if (!dailyAvailability || dailyAvailability.times.length === 0) {
+            return res.json([]); // Não há slots disponíveis se a disponibilidade não estiver configurada
+        }
+
+        // 2. Gerar slots potenciais em UTC (com base nos horários BRT do médico)
+        const potentialSlotsUTC = dailyAvailability.times.map(timeStr => {
+            return parseBRTToUTCDate(date, timeStr);
         });
 
-        // Gera todos os slots possíveis
-        const slots = [];
-        let current = new Date(start);
+        potentialSlotsUTC.sort((a, b) => a.getTime() - b.getTime()); // Garante a ordem cronológica
 
-        while (current.getTime() <= end.getTime()) {
-            // Verificar se o slot cabe dentro do horário final
-            const slotEndTime = current.getTime() + SESSION_DURATION_MINUTES * 60000;
-            if (slotEndTime <= end.getTime()) {
-                slots.push(new Date(current));
-            }
-            current = new Date(current.getTime() + SESSION_DURATION_MINUTES * 60000);
-        }
+        const startOfDayUTC = parseBRTToUTCDate(date, '00:00');
+        const endOfDayUTC = parseBRTToUTCDate(date, '23:59');
 
-        // Filtra slots disponíveis
-        const availableSlots = slots.filter(slot => {
-            const slotStartTime = slot.getTime();
-            const slotEndTime = slotStartTime + SESSION_DURATION_MINUTES * 60000;
-            const hour = slot.getUTCHours() - 3;
+        const existingAppointments = await Appointment.find({
+            doctor: doctorId,
+            date: { $gte: startOfDayUTC, $lte: endOfDayUTC }
+        }).lean();
 
-            // Bloquear horário de almoço para médico específico
-            if (doctorId === BLOCKED_DOCTOR_ID && hour >= 12 && hour < 14) {
-                return false;
-            }
+        // 4. Filtra slots disponíveis (lógica de conflito)
+        const availableSlotsFilteredUTC = potentialSlotsUTC.filter(potentialSlotUTC => {
+            const slotStartTimeUTC = potentialSlotUTC.getTime();
+            const slotEndTimeUTC = slotStartTimeUTC + SESSION_DURATION_MS;
 
-            // Verifica conflito apenas com agendamentos ATIVOS
             const hasConflict = existingAppointments.some(app => {
-                // Ignora agendamentos cancelados
+                // Ignora agendamentos cancelados, pois eles não bloqueiam o horário
                 if (app.operationalStatus === 'cancelado') return false;
 
-                const appStartTime = new Date(app.date).getTime();
-                const appEndTime = appStartTime + SESSION_DURATION_MINUTES * 60000;
+                const appStartTimeUTC = new Date(app.date).getTime();
+                const appEndTimeUTC = appStartTimeUTC + SESSION_DURATION_MS;
 
-                // Verifica sobreposição de horários
-                return slotStartTime < appEndTime && slotEndTime > appStartTime;
+                // Verifica sobreposição: (Start1 < End2 AND End1 > Start2)
+                return slotStartTimeUTC < appEndTimeUTC && slotEndTimeUTC > appStartTimeUTC;
             });
 
             return !hasConflict;
         });
 
-        // Formata os horários
-        const formatted = availableSlots.map(slot => {
-            const hours = slot.getUTCHours() - 3;
-            const localHours = (hours + 24) % 24;
-            const minutes = slot.getUTCMinutes();
-            return `${String(localHours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+        // 5. Formata os horários de volta para "HH:MM" (que já estão em formato BRT no objeto Date UTC)
+        const formattedSlotsBRT = availableSlotsFilteredUTC.map(slotUTC => {
+            const hours = slotUTC.getUTCHours();
+            const minutes = slotUTC.getUTCMinutes();
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
         });
 
-        return res.json(formatted);
+        return res.json(formattedSlotsBRT);
     } catch (error) {
         console.error('Erro ao obter horários disponíveis:', error);
         return res.status(500).json({ error: error.message });
     }
 };
 
+function parseBRTToUTCDate(dateStr, timeStr) {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const [hour, minute] = timeStr.split(':').map(Number);
+
+    // Convertendo horário de Brasília para UTC
+    return new Date(Date.UTC(year, month - 1, day, hour, minute));
+}
 
 
 
