@@ -64,9 +64,13 @@ app.options('*', cors({
 
 app.use(express.json());
 
-// Middleware de logs (simplificado)
+
+
+// Middleware de logging para Render
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  console.log('Headers:', req.headers);
+  console.log('Body:', req.body);
   next();
 });
 
@@ -102,6 +106,11 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Database: ${process.env.MONGO_URI ? 'Connected' : 'Disconnected'}`);
+}).on('error', (err) => {
+  console.error('Server failed to start:', err);
 });
