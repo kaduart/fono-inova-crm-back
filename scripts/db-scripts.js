@@ -32,13 +32,31 @@ db.sessions.find({
 
 //consulta sessao por id patient
 db.payments.find({
-  patient: ObjectId("685c29afaec14c716358622a"),
+  doutor: ObjectId("685c29afaec14c716358622a"),
 });
 
 //consulta agendamento por id patient
 db.appointments.find({
-  patient: ObjectId("685c29afaec14c716358622a"),
+  patient: ObjectId("684072213830f473da1b0b0b"),
 });
+
+//consulta pod dia doutor
+db.appointments.find({
+  doutor: ObjectId("684072213830f473da1b0b0b"),
+  date: {
+    $gte: ISODate("2025-08-04T00:00:00.000Z"),
+    $lt:  ISODate("2025-08-04T00:00:00.000Z")
+  }
+});
+// consulta do dia or doutor
+db.appointments.find({
+  doctor: ObjectId("684072213830f473da1b0b0b"),
+  date: {
+    $gte: ISODate("2025-08-04T00:00:00.000-03:00"),
+    $lte: ISODate("2025-08-04T23:59:59.999-03:00")
+  },
+  operationalStatus: { $ne: "cancelado" }
+})
 
 
 //consulta agendamento por id

@@ -1,7 +1,6 @@
 import { SESSION_DURATION_MS } from '../config/constants.js';
 import Appointment from '../models/Appointment.js';
 import Doctor from '../models/Doctor.js';
-import { DateTime } from 'luxon';
 
 export const checkAppointmentConflicts = async (req, res, next) => {
     try {
@@ -99,66 +98,59 @@ function parseBRTToUTCDate(dateStr, timeStr) {
 
 export const getAvailableTimeSlots = async (req, res) => {
     try {
-      const { doctorId, date } = req.query;
+        const { doctorId, date } = req.query;
 
-    if (!date || typeof date !== 'string') {
-      return res.status(400).json({ message: 'O parâmetro "date" é obrigatório e deve ser uma string.' });
-    }
+        if (!date || typeof date !== 'string') {
+            return res.status(400).json({ message: 'O parâmetro "date" é obrigatório e deve ser uma string.' });
+        }
 
-    const doctor = await Doctor.findById(doctorId).lean();
-    if (!doctor) {
-      return res.status(404).json({ error: 'Médico não encontrado' });
-    }
+        const parsedDate = new Date(date);
+        if (isNaN(parsedDate.getTime())) {
+            return res.status(400).json({ message: 'Formato de data inválido. Use YYYY-MM-DD.' });
+        }
 
-    const dayOfWeekIndex = DateTime.fromISO(date).weekday; // 1 = Monday ... 7 = Sunday
-    const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-    const dayKey = dayMap[dayOfWeekIndex % 7]; // Luxon: segunda = 1
+        // Buscar médico e disponibilidade
+        const doctor = await Doctor.findById(doctorId).lean();
+        if (!doctor) {
+            return res.status(404).json({ error: 'Médico não encontrado' });
+        }
 
-    const dailyAvailability = doctor.weeklyAvailability.find(d => d.day === dayKey);
+        const dayOfWeekIndex = new Date(date + 'T12:00:00Z').getDay();
+        const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const dayKey = dayMap[dayOfWeekIndex];
 
-    if (!dailyAvailability || dailyAvailability.times.length === 0) {
-      return res.json([]);
-    }
+        const dailyAvailability = doctor.weeklyAvailability.find(d => d.day === dayKey);
+        if (!dailyAvailability || dailyAvailability.times.length === 0) {
+            return res.json([]);
+        }
 
-    // 👉 Gera slots em BRT
-    const potentialSlots = dailyAvailability.times.map(timeStr => {
-      return DateTime.fromISO(`${date}T${timeStr}`, {
-        zone: 'America/Sao_Paulo'
-      }).toJSDate();
-    });
+        // Definir intervalo do dia em UTC
+        const startOfDayUTC = new Date(date + 'T00:00:00Z');
+        const endOfDayUTC = new Date(date + 'T23:59:59Z');
 
-    potentialSlots.sort((a, b) => a.getTime() - b.getTime());
+        // Buscar agendamentos existentes
+        const existingAppointments = await Appointment.find({
+            doctor: doctorId,
+            date: { $gte: startOfDayUTC, $lte: endOfDayUTC },
+            operationalStatus: { $ne: 'cancelado' }
+        }).lean();
 
-    // Busca agendamentos no mesmo dia
-    const startOfDay = DateTime.fromISO(date, { zone: 'America/Sao_Paulo' }).startOf('day').toJSDate();
-    const endOfDay = DateTime.fromISO(date, { zone: 'America/Sao_Paulo' }).endOf('day').toJSDate();
+        // Filtrar slots disponíveis
+        const availableSlots = dailyAvailability.times.filter(timeStr => {
+            // Converter slot BRT para UTC
+            const slotBRT = new Date(`${date}T${timeStr}:00-03:00`);
+            const slotUTC = new Date(slotBRT.toISOString());
+            const slotEndUTC = new Date(slotUTC.getTime() + SESSION_DURATION_MS);
 
-    const existingAppointments = await Appointment.find({
-      doctor: doctorId,
-      date: { $gte: startOfDay, $lte: endOfDay },
-      operationalStatus: { $ne: 'cancelado' }
-    }).lean();
+            // Verificar conflitos
+            return !existingAppointments.some(app => {
+                const appStartUTC = new Date(app.date);
+                const appEndUTC = new Date(appStartUTC.getTime() + SESSION_DURATION_MS);
+                return slotUTC < appEndUTC && slotEndUTC > appStartUTC;
+            });
+        });
 
-    const availableSlots = potentialSlots.filter(slot => {
-      const slotStart = slot.getTime();
-      const slotEnd = slotStart + SESSION_DURATION_MS;
-
-      const hasConflict = existingAppointments.some(app => {
-        const appStart = new Date(app.date).getTime();
-        const appEnd = appStart + SESSION_DURATION_MS;
-
-        return slotStart < appEnd && slotEnd > appStart;
-      });
-
-      return !hasConflict;
-    });
-
-    const formattedSlots = availableSlots.map(slot => {
-      const time = DateTime.fromJSDate(slot, { zone: 'America/Sao_Paulo' }).toFormat('HH:mm');
-      return time;
-    });
-
-    return res.json(formattedSlots);
+        return res.json(availableSlots);
     } catch (error) {
         console.error('Erro ao obter horários disponíveis:', error);
         return res.status(500).json({ error: error.message });
