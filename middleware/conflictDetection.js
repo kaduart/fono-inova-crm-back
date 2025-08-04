@@ -1,6 +1,7 @@
 import { SESSION_DURATION_MS } from '../config/constants.js';
 import Appointment from '../models/Appointment.js';
 import Doctor from '../models/Doctor.js';
+import { DateTime } from 'luxon';
 
 export const checkAppointmentConflicts = async (req, res, next) => {
     try {
@@ -93,96 +94,71 @@ function parseBRTToUTCDate(dateStr, timeStr) {
     const [year, month, day] = dateStr.split('-').map(Number);
     const [hour, minute] = timeStr.split(':').map(Number);
 
-    // Convertendo horário de Brasília para UTC
     return new Date(Date.UTC(year, month - 1, day, hour, minute));
 }
 
-// Remova este import se checkAppointmentConflicts não for mais usado aqui
-// import { checkAppointmentConflicts } from '../middleware/conflictDetection.js'; 
-
 export const getAvailableTimeSlots = async (req, res) => {
     try {
-        const { doctorId, date } = req.query; // date é 'YYYY-MM-DD'
+      const { doctorId, date } = req.query;
 
-        if (!date || typeof date !== 'string') {
-            return res.status(400).json({ message: 'O parâmetro "date" é obrigatório e deve ser uma string.' });
-        }
+    if (!date || typeof date !== 'string') {
+      return res.status(400).json({ message: 'O parâmetro "date" é obrigatório e deve ser uma string.' });
+    }
 
-        const parsedDate = new Date(date);
-        if (isNaN(parsedDate.getTime())) { // Verifica se a data é inválida
-            return res.status(400).json({ message: 'Formato de data inválido. Use YYYY-MM-DD.' });
-        }
+    const doctor = await Doctor.findById(doctorId).lean();
+    if (!doctor) {
+      return res.status(404).json({ error: 'Médico não encontrado' });
+    }
 
-        // >>>>>>>>>>> REMOVA ESTA LINHA <<<<<<<<<<<
-        // const availableSlots = await checkAppointmentConflicts(doctorId, date);
+    const dayOfWeekIndex = DateTime.fromISO(date).weekday; // 1 = Monday ... 7 = Sunday
+    const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const dayKey = dayMap[dayOfWeekIndex % 7]; // Luxon: segunda = 1
 
-        // 1. Buscar o médico para obter a disponibilidade semanal
-        const doctor = await Doctor.findById(doctorId).lean();
-        if (!doctor) {
-            return res.status(404).json({ error: 'Médico não encontrado' });
-        }
+    const dailyAvailability = doctor.weeklyAvailability.find(d => d.day === dayKey);
 
-        const dateObjForDayOfWeek = new Date(date + 'T12:00:00Z'); // 'Z' para UTC puro, garantindo o dia correto
-        const dayOfWeekIndex = dateObjForDayOfWeek.getDay(); // 0 = Domingo, 1 = Segunda, ..., 6 = Sábado
+    if (!dailyAvailability || dailyAvailability.times.length === 0) {
+      return res.json([]);
+    }
 
-        const dayMap = {
-            0: 'sunday',
-            1: 'monday',
-            2: 'tuesday',
-            3: 'wednesday',
-            4: 'thursday',
-            5: 'friday',
-            6: 'saturday',
-        };
-        const dayKey = dayMap[dayOfWeekIndex];
+    // 👉 Gera slots em BRT
+    const potentialSlots = dailyAvailability.times.map(timeStr => {
+      return DateTime.fromISO(`${date}T${timeStr}`, {
+        zone: 'America/Sao_Paulo'
+      }).toJSDate();
+    });
 
-        // Encontrar a disponibilidade para o dia específico
-        const dailyAvailability = doctor.weeklyAvailability.find(d => d.day === dayKey);
+    potentialSlots.sort((a, b) => a.getTime() - b.getTime());
 
-        if (!dailyAvailability || dailyAvailability.times.length === 0) {
-            return res.json([]); // Não há slots disponíveis se a disponibilidade não estiver configurada
-        }
+    // Busca agendamentos no mesmo dia
+    const startOfDay = DateTime.fromISO(date, { zone: 'America/Sao_Paulo' }).startOf('day').toJSDate();
+    const endOfDay = DateTime.fromISO(date, { zone: 'America/Sao_Paulo' }).endOf('day').toJSDate();
 
-        // 2. Gerar slots potenciais em UTC (com base nos horários BRT do médico)
-        const potentialSlotsUTC = dailyAvailability.times.map(timeStr => {
-            return parseBRTToUTCDate(date, timeStr);
-        });
+    const existingAppointments = await Appointment.find({
+      doctor: doctorId,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      operationalStatus: { $ne: 'cancelado' }
+    }).lean();
 
-        potentialSlotsUTC.sort((a, b) => a.getTime() - b.getTime()); // Garante a ordem cronológica
+    const availableSlots = potentialSlots.filter(slot => {
+      const slotStart = slot.getTime();
+      const slotEnd = slotStart + SESSION_DURATION_MS;
 
-        const startOfDayUTC = parseBRTToUTCDate(date, '00:00');
-        const endOfDayUTC = parseBRTToUTCDate(date, '23:59');
+      const hasConflict = existingAppointments.some(app => {
+        const appStart = new Date(app.date).getTime();
+        const appEnd = appStart + SESSION_DURATION_MS;
 
-        const existingAppointments = await Appointment.find({
-            doctor: doctorId,
-            date: { $gte: startOfDayUTC, $lte: endOfDayUTC },
-            operationalStatus: { $ne: 'cancelado' } // Garante que agendamentos cancelados não bloqueiem
-        }).lean();
+        return slotStart < appEnd && slotEnd > appStart;
+      });
 
-        // 4. Filtra slots disponíveis (lógica de conflito)
-        const availableSlotsFilteredUTC = potentialSlotsUTC.filter(potentialSlotUTC => {
-            const slotStartTimeUTC = potentialSlotUTC.getTime();
-            const slotEndTimeUTC = slotStartTimeUTC + SESSION_DURATION_MS;
+      return !hasConflict;
+    });
 
-            const hasConflict = existingAppointments.some(app => {
-                const appStartTimeUTC = new Date(app.date).getTime();
-                const appEndTimeUTC = appStartTimeUTC + SESSION_DURATION_MS;
+    const formattedSlots = availableSlots.map(slot => {
+      const time = DateTime.fromJSDate(slot, { zone: 'America/Sao_Paulo' }).toFormat('HH:mm');
+      return time;
+    });
 
-                // Verifica sobreposição: (Start1 < End2 AND End1 > Start2)
-                return slotStartTimeUTC < appEndTimeUTC && slotEndTimeUTC > appStartTimeUTC;
-            });
-
-            return !hasConflict;
-        });
-
-        // 5. Formata os horários de volta para "HH:MM" (que já estão em formato BRT no objeto Date UTC)
-        const formattedSlotsBRT = availableSlotsFilteredUTC.map(slotUTC => {
-            const hours = slotUTC.getUTCHours();
-            const minutes = slotUTC.getUTCMinutes();
-            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-        });
-
-        return res.json(formattedSlotsBRT);
+    return res.json(formattedSlots);
     } catch (error) {
         console.error('Erro ao obter horários disponíveis:', error);
         return res.status(500).json({ error: error.message });

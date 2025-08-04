@@ -4,6 +4,7 @@ import Appointment from '../models/Appointment.js';
 import Doctor from '../models/Doctor.js';
 import Patient from '../models/Patient.js';
 import TherapySession from '../models/TherapySession.js';
+
 const ObjectId = mongoose.Types.ObjectId;
 
 const toObjectId = (id) => {
@@ -138,6 +139,16 @@ export const doctorOperations = {
 
   update: async (req, res) => {
     console.log('req.body:', req.body);
+
+    const { date, time } = req.body;
+
+    if (date && time) {
+      const brasilDateTime = DateTime.fromISO(`${date}T${time}`, {
+        zone: 'America/Sao_Paulo'
+      });
+
+      req.body.date = brasilDateTime.toJSDate(); // Salva exatamente como 08:00 BRT
+    }
 
     try {
       const doctor = await Doctor.findByIdAndUpdate(req.params.id, req.body, {
