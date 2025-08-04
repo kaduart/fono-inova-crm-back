@@ -119,8 +119,6 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
             paymentAmount: req.body.paymentAmount,
             paymentMethod: req.body.paymentMethod,
         };
-        console.log('req.body:', req.body);
-        console.log('appointmentData:', appointmentData);
         const appointment = new Appointment(appointmentData);
         await appointment.save({ session: mongoSession });
 

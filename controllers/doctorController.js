@@ -137,9 +137,11 @@ export const doctorOperations = {
   },
 
   update: async (req, res) => {
+    console.log('req.body:', req.body);
+
     try {
       const doctor = await Doctor.findByIdAndUpdate(req.params.id, req.body, {
-        new: true, 
+        new: true,
         runValidators: true
       });
 
