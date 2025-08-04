@@ -42,6 +42,7 @@ const PORT = process.env.PORT || 5000;
 // ---------- CORS CONFIG GLOBAL ----------
 const allowedOrigins = [
   'http://localhost:5173',
+  'http://127.0.0.1:5173',
   'https://app.clinicafonoinova.com.br'
 ];
 
@@ -68,9 +69,6 @@ app.use(express.json());
 
 // Middleware de logging para Render
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-  console.log('Headers:', req.headers);
-  console.log('Body:', req.body);
   next();
 });
 
@@ -108,8 +106,6 @@ if (process.env.NODE_ENV === 'production') {
 
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Database: ${process.env.MONGO_URI ? 'Connected' : 'Disconnected'}`);
 }).on('error', (err) => {
   console.error('Server failed to start:', err);

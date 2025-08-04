@@ -5,8 +5,6 @@ export const auth = async (req, res, next) => {
     try {
         // Verificar token no cookie ou header
         const token = req.cookies?.token || req.headers.authorization?.split(' ')[1];
-        console.log('[AUTH] Headers recebidos:', req.headers);
-    console.log('[AUTH] Cookies recebidos:', req.cookies);
         if (!token) {
             return res.status(401).json({
                 code: 'TOKEN_REQUIRED',
