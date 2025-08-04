@@ -99,61 +99,59 @@ function parseBRTToUTCDate(dateStr, timeStr) {
 export const getAvailableTimeSlots = async (req, res) => {
     try {
         const { doctorId, date } = req.query;
+        console.log(`\n[Buscando horários para médico ${doctorId} em ${date}]`);
 
-        if (!date || typeof date !== 'string') {
-            return res.status(400).json({ message: 'O parâmetro "date" é obrigatório e deve ser uma string.' });
+        // 1. Validar a data de entrada
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+            return res.status(400).json({ error: 'Formato de data inválido. Use YYYY-MM-DD' });
         }
 
-        const parsedDate = new Date(date);
-        if (isNaN(parsedDate.getTime())) {
-            return res.status(400).json({ message: 'Formato de data inválido. Use YYYY-MM-DD.' });
-        }
-
-        // Buscar médico e disponibilidade
+        // 2. Buscar médico e disponibilidade
         const doctor = await Doctor.findById(doctorId).lean();
         if (!doctor) {
             return res.status(404).json({ error: 'Médico não encontrado' });
         }
 
-        const dayOfWeekIndex = new Date(date + 'T12:00:00Z').getDay();
-        const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-        const dayKey = dayMap[dayOfWeekIndex];
+        // 3. Obter disponibilidade do dia
+        const dayOfWeek = new Date(`${date}T12:00:00Z`).getDay();
+        const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const dailyAvailability = doctor.weeklyAvailability.find(d => d.day === days[dayOfWeek]);
 
-        const dailyAvailability = doctor.weeklyAvailability.find(d => d.day === dayKey);
-        if (!dailyAvailability || dailyAvailability.times.length === 0) {
+        if (!dailyAvailability?.times?.length) {
             return res.json([]);
         }
 
-        // Definir intervalo do dia em UTC
-        const startOfDayUTC = new Date(date + 'T00:00:00Z');
-        const endOfDayUTC = new Date(date + 'T23:59:59Z');
+        // 4. Criar intervalo de datas CORRETAMENTE
+        const startOfDay = new Date(`${date}T00:00:00-03:00`); // 00:00 BRT
+        const endOfDay = new Date(`${date}T23:59:59-03:00`);   // 23:59 BRT
 
-        // Buscar agendamentos existentes
-        const existingAppointments = await Appointment.find({
+        // 5. Buscar agendamentos existentes
+        const appointments = await Appointment.find({
             doctor: doctorId,
-            date: { $gte: startOfDayUTC, $lte: endOfDayUTC },
+            date: {
+                $gte: startOfDay,
+                $lte: endOfDay
+            },
             operationalStatus: { $ne: 'cancelado' }
-        }).lean();
-
-        // Filtrar slots disponíveis
-        const availableSlots = dailyAvailability.times.filter(timeStr => {
-            // Converter slot BRT para UTC
-            const slotBRT = new Date(`${date}T${timeStr}:00-03:00`);
-            const slotUTC = new Date(slotBRT.toISOString());
-            const slotEndUTC = new Date(slotUTC.getTime() + SESSION_DURATION_MS);
-
-            // Verificar conflitos
-            return !existingAppointments.some(app => {
-                const appStartUTC = new Date(app.date);
-                const appEndUTC = new Date(appStartUTC.getTime() + SESSION_DURATION_MS);
-                return slotUTC < appEndUTC && slotEndUTC > appStartUTC;
-            });
         });
 
+        // 6. Extrair horários ocupados (já estão em BRT no campo 'time')
+        const bookedTimes = appointments.map(app => app.time);
+
+        // 7. Filtrar horários disponíveis
+        const availableSlots = dailyAvailability.times.filter(time =>
+            !bookedTimes.includes(time)
+        );
+
         return res.json(availableSlots);
+
     } catch (error) {
-        console.error('Erro ao obter horários disponíveis:', error);
-        return res.status(500).json({ error: error.message });
+        console.error('Erro detalhado:', {
+            message: error.message,
+            stack: error.stack,
+            query: req.query
+        });
+        return res.status(500).json({ error: 'Erro ao buscar horários disponíveis' });
     }
 };
 
