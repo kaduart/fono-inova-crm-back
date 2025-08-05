@@ -914,12 +914,23 @@ router.get('/daily-closing', async (req, res) => {
                     value: 0
                 },
                 payments: {
-                    count: 0,
-                    value: 0,
+                    total: 0,
                     methods: {
                         dinheiro: 0,
                         pix: 0,
                         cartão: 0
+                    },
+                    agendados: {
+                        dinheiro: 0,
+                        pix: 0,
+                        cartão: 0,
+                        total: 0
+                    },
+                    realizados: {
+                        dinheiro: 0,
+                        pix: 0,
+                        cartão: 0,
+                        total: 0
                     }
                 },
                 absences: {
@@ -942,6 +953,12 @@ router.get('/daily-closing', async (req, res) => {
                 totalRecebido: 0,
                 totalAReceber: 0,
                 totalCancelado: 0
+            },
+            metrics: {
+                attendanceRate: '0%',
+                averagePerSession: 'R$ 0,00',
+                canceledSessions: 0,
+                patientsAttended: 0
             }
         };
 
@@ -968,112 +985,122 @@ router.get('/daily-closing', async (req, res) => {
                     doctorId,
                     doctorName: appt.doctor?.fullName || 'Não informado',
                     specialty: appt.doctor?.specialty || 'Não informada',
-                    scheduled: 0,
-                    scheduledValue: 0,
-                    completed: 0,
-                    completedValue: 0,
-                    absences: 0,
+                    scheduled: {
+                        count: 0,
+                        value: 0
+                    },
+                    completed: {
+                        count: 0,
+                        value: 0
+                    },
+                    absences: {
+                        count: 0,
+                        estimatedLoss: 0
+                    },
                     payments: {
                         total: 0,
                         methods: {
                             dinheiro: 0,
                             pix: 0,
                             cartão: 0
+                        },
+                        agendados: {
+                            dinheiro: 0,
+                            pix: 0,
+                            cartão: 0,
+                            total: 0
+                        },
+                        realizados: {
+                            dinheiro: 0,
+                            pix: 0,
+                            cartão: 0,
+                            total: 0
                         }
                     }
                 });
             }
 
             const professional = professionalsMap.get(doctorId);
+            
+            // Normalizar método de pagamento
+            const normalizedMethod = paymentMethod.includes('pix') ? 'pix' :
+                (paymentMethod.includes('cartão') || paymentMethod.includes('cartao')) ? 'cartão' : 'dinheiro';
 
             // Atualizar totais gerais
             report.totals.scheduled.count++;
             report.totals.scheduled.value += value;
-            professional.scheduled++;
-            professional.scheduledValue += value;
+            professional.scheduled.count++;
+            professional.scheduled.value += value;
+
+            // Registrar pagamentos agendados (todos os status)
+            report.totals.payments.agendados[normalizedMethod] += value;
+            report.totals.payments.agendados.total += value;
+            professional.payments.agendados[normalizedMethod] += value;
+            professional.payments.agendados.total += value;
 
             // Classificar por status
-            switch (status) {
-                case 'concluído':
-                case 'concluido':
-                case 'completed':
-                case 'atendido':
-                    report.totals.completed.count++;
-                    report.totals.completed.value += value;
-                    report.totals.payments.count++;
-                    report.totals.payments.value += value;
-                    report.financialSummary.totalRecebido += value;
-                    professional.completed++;
-                    professional.completedValue += value;
-                    professional.payments.total += value;
+            const completedStatuses = ['concluído', 'concluido', 'completed', 'confirmado'];
+            const canceledStatuses = ['cancelado', 'canceled'];
+            const confirmedStatuses = ['confirmado', 'confirmed'];
 
-                    if (paymentMethod.includes('pix')) {
-                        report.totals.payments.methods.pix += value;
-                        professional.payments.methods.pix += value;
-                    } else if (paymentMethod.includes('cartão') || paymentMethod.includes('cartao')) {
-                        report.totals.payments.methods.cartão += value;
-                        professional.payments.methods.cartão += value;
-                    } else {
-                        report.totals.payments.methods.dinheiro += value;
-                        professional.payments.methods.dinheiro += value;
-                    }
-                    break;
+            if (completedStatuses.includes(status)) {
+                // Sessões concluídas
+                report.totals.completed.count++;
+                report.totals.completed.value += value;
+                report.totals.payments.total += value;
+                report.financialSummary.totalRecebido += value;
+                report.metrics.patientsAttended++;
 
-                case 'cancelado':
-                case 'canceled':
-                    report.totals.canceled.count++;
-                    report.totals.canceled.value += value;
-                    report.totals.absences.count++;
-                    report.totals.absences.estimatedLoss += value;
-                    report.financialSummary.totalCancelado += value;
-                    professional.absences++;
-                    break;
+                professional.completed.count++;
+                professional.completed.value += value;
+                professional.payments.total += value;
 
-                case 'confirmado':
-                case 'confirmed':
-                    report.totals.confirmed.count++;
-                    report.totals.confirmed.value += value;
-                    report.financialSummary.totalAReceber += value;
-                    break;
+                // Registrar pagamentos realizados
+                report.totals.payments.realizados[normalizedMethod] += value;
+                report.totals.payments.realizados.total += value;
+                professional.payments.realizados[normalizedMethod] += value;
+                professional.payments.realizados.total += value;
 
-                case 'agendado':
-                    // Status agendado não incrementa outros contadores
-                    break;
+                // Registrar no método específico
+                report.totals.payments.methods[normalizedMethod] += value;
+                professional.payments.methods[normalizedMethod] += value;
 
-                default:
-                    console.warn(`Status desconhecido: ${status}`);
+            } else if (canceledStatuses.includes(status)) {
+                // Sessões canceladas
+                report.totals.canceled.count++;
+                report.totals.canceled.value += value;
+                report.totals.absences.count++;
+                report.totals.absences.estimatedLoss += value;
+                report.financialSummary.totalCancelado += value;
+                report.metrics.canceledSessions++;
+
+                professional.absences.count++;
+                professional.absences.estimatedLoss += value;
+
+            } else if (confirmedStatuses.includes(status)) {
+                // Sessões confirmadas
+                report.totals.confirmed.count++;
+                report.totals.confirmed.value += value;
+                report.financialSummary.totalAReceber += value;
             }
-
-            // Adicionar detalhes do agendamento
-            report.appointments.push({
-                id: appt._id.toString(),
-                patient: {
-                    id: patientId,
-                    name: appt.patient?.fullName,
-                    document: appt.patient?.cpf || appt.patient?.rg || null
-                },
-                doctor: {
-                    id: doctorId,
-                    name: appt.doctor?.fullName,
-                    specialty: appt.doctor?.specialty
-                },
-                status: appt.operationalStatus,
-                value: value,
-                paymentMethod: paymentMethod.includes('pix') ? 'pix' :
-                    paymentMethod.includes('cartão') || paymentMethod.includes('cartao') ? 'cartão' : 'dinheiro',
-                package: appt.package ? {
-                    sessions: appt.package.totalSessions
-                } : null
-            });
         }
 
-        // 6. Atualizar contagem de pacientes únicos
+        // 6. Calcular métricas adicionais
+        report.metrics.attendanceRate = report.totals.scheduled.count > 0
+            ? `${Math.round((report.totals.completed.count / report.totals.scheduled.count) * 100)}%`
+            : '0%';
+
+        report.metrics.averagePerSession = report.totals.completed.count > 0
+            ? `R$ ${(report.totals.completed.value / report.totals.completed.count).toFixed(2).replace('.', ',')}`
+            : 'R$ 0,00';
+
+        // 7. Atualizar contagem de pacientes únicos
         report.totals.uniquePatients = uniquePatients.size;
 
-        // 7. Converter o map de profissionais para array
+        // 8. Converter o map de profissionais para array
         report.byProfessional = Array.from(professionalsMap.values());
 
-        // 8. Retornar o relatório completo
+        // 9. Retornar o relatório completo
         res.json({
             success: true,
             data: report,
@@ -1095,7 +1122,6 @@ router.get('/daily-closing', async (req, res) => {
         });
     }
 });
-
 // Detalhamento de sessões agendadas
 router.get('/daily-scheduled-details', async (req, res) => {
     try {
