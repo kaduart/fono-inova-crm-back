@@ -36,6 +36,8 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
     const mongoSession = await mongoose.startSession();
     await mongoSession.startTransaction();
 
+    console.log('req.body -------->>>', req.body)
+
     try {
         const doctorId = req.body.doctorId || req.user.id;
 
@@ -109,6 +111,7 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
             date: req.body.date,
             time: req.body.time,
             sessionType: req.body.sessionType,
+            sessionValue: req.body.paymentAmount,
             notes: req.body.notes,
             specialty: specialtyValue,
             doctor: doctorId,

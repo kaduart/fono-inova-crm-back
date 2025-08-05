@@ -42,13 +42,13 @@ db.appointments.find({
 
 //consulta pod dia 
 db.appointments.find({
-  date: "2025-08-06"
+  date: "2025-08-04"
 })
 
 // consulta do dia or doutor
 db.appointments.find({
   doctor: ObjectId("684072213830f473da1b0b0b"),
-  date: "2025-08-06",
+  date: "2025-08-05",
   operationalStatus: { $ne: "cancelado" }
 })
 
