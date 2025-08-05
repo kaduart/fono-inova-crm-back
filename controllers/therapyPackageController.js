@@ -12,7 +12,7 @@ import { extractTimeFromDateTime } from '../utils/horaFormat.js';
 
 const APPOINTMENTS_API_BASE_URL = 'http://167.234.249.6:5000/api';
 const validateInputs = {
-    sessionType: (type) => ['fonoaudiologia', 'terapeuta ocupacional', 'psicologia', 'fisioterapia'].includes(type),
+    sessionType: (type) => ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia'].includes(type),
     paymentMethod: (method) => ['dinheiro', 'pix', 'cartão'].includes(method),
     paymentType: (type) => ['full', 'per-session', 'partial'].includes(type)
 };

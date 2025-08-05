@@ -138,6 +138,8 @@ export const doctorOperations = {
 
   update: async (req, res) => {
     try {
+
+      console.log('reqauisicaooooo', req.body)
       const doctor = await Doctor.findByIdAndUpdate(req.params.id, req.body, {
         new: true,
         runValidators: true

@@ -8,7 +8,7 @@ import Session from '../models/Session.js'; // Adicione esta importação
 const DEFAULT_SPECIALTY_VALUES = {
     fonoaudiologia: 200,
     psicologia: 200,
-    'terapeuta ocupacional': 200,
+    'terapia_ocupacional': 200,
     fisioterapia: 200,
     pediatria: 220,
     neuroped: 250,
