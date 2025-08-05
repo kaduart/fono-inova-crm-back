@@ -40,9 +40,11 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // *************** CORS CONFIGURAÇÃO AVANÇADA ***************
-const allowedOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-  : ['http://localhost:5173'];
+const allowedOrigins = [
+  'https://app.clinicafonoinova.com.br',
+  'https://fono-inova-combr.vercel.app',
+  'http://localhost:5173'
+];
 
 const corsOptions = {
   origin: function (origin, callback) {
