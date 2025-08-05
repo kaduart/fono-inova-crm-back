@@ -84,7 +84,6 @@ const appointmentSchema = new mongoose.Schema({
   sessionValue: {
     type: Number,
     min: 0,
-    default: 200 // Valor padrão
   },
   paymentMethod: {
     type: String,
