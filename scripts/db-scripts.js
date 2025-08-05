@@ -1,28 +1,28 @@
 db.payments.deleteMany({
-    patient: ObjectId("6855c921c033e150e1dc6066")
+  patient: ObjectId("6855c921c033e150e1dc6066")
 });
 
 db.appointments.deleteMany({
-    patient: ObjectId("6855c921c033e150e1dc6066")
+  patient: ObjectId("6855c921c033e150e1dc6066")
 });
 db.sessions.deleteMany({
-    patient: ObjectId("6855c921c033e150e1dc6066")
+  patient: ObjectId("6855c921c033e150e1dc6066")
 });
 
 
 db.appointments.deleteMany({
-    patient: ObjectId("685c5617aec14c71635865ec"),
-    operationalStatus: "cancelado"
+  patient: ObjectId("685c5617aec14c71635865ec"),
+  operationalStatus: "cancelado"
 });
 
 db.payments.deleteMany({
-    patient: ObjectId("685c5617aec14c71635865ec"),
-    status: "canceled"
+  patient: ObjectId("685c5617aec14c71635865ec"),
+  status: "canceled"
 });
 
 // deltar sessaos doctor
 db.sessions.deleteMany({
-    doctor: ObjectId("686024fb74dcf94b84ade15a"),
+  doctor: ObjectId("686024fb74dcf94b84ade15a"),
 });
 
 //consulta sessao por id
@@ -42,18 +42,13 @@ db.appointments.find({
 
 //consulta pod dia 
 db.appointments.find({
-  date: {
-    $gte: ISODate("2025-08-04T00:00:00.000Z"),
-    $lt:  ISODate("2025-08-04T00:00:00.000Z")
-  }
-});
+  date: "2025-08-06"
+})
+
 // consulta do dia or doutor
 db.appointments.find({
   doctor: ObjectId("684072213830f473da1b0b0b"),
-  date: {
-    $gte: ISODate("2025-08-04T00:00:00.000-03:00"),
-    $lte: ISODate("2025-08-04T23:59:59.999-03:00")
-  },
+  date: "2025-08-06",
   operationalStatus: { $ne: "cancelado" }
 })
 
