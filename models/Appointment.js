@@ -15,7 +15,7 @@ const appointmentSchema = new mongoose.Schema({
     required: [true, 'Profissional é obrigatório']
   },
   date: {
-    type: Date,
+    type: String,
     required: [true, 'Data é obrigatória']
   },
   time: {

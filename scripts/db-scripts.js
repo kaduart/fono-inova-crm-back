@@ -40,9 +40,8 @@ db.appointments.find({
   patient: ObjectId("684072213830f473da1b0b0b"),
 });
 
-//consulta pod dia doutor
+//consulta pod dia 
 db.appointments.find({
-  doutor: ObjectId("684072213830f473da1b0b0b"),
   date: {
     $gte: ISODate("2025-08-04T00:00:00.000Z"),
     $lt:  ISODate("2025-08-04T00:00:00.000Z")
