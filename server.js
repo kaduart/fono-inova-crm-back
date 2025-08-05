@@ -14,7 +14,7 @@ import './models/Session.js';
 import './models/Specialty.js';
 import './models/User.js';
 
-// Rotas
+// Routes
 import adminRoutes from './routes/admin.js';
 import appointmentRoutes from './routes/appointment.js';
 import doctorRoutes from './routes/doctor.js';
@@ -39,44 +39,68 @@ dotenv.config({ path: path.resolve(__dirname, './.env') });
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ---------- CORS CONFIG GLOBAL ----------
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'https://app.clinicafonoinova.com.br',
-  'https://fono-inova-combr.vercel.app'
-];
+// *************** CORS CONFIGURAÇÃO AVANÇADA ***************
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+  : ['http://localhost:5173'];
 
-app.use(cors({
-  origin: allowedOrigins,
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Permite requisições sem origin (mobile apps, curl, etc)
+    if (!origin) return callback(null, true);
+
+    // Normaliza URLs para comparar (remove barra final)
+    const normalizeUrl = url => url.endsWith('/') ? url.slice(0, -1) : url;
+    const normalizedOrigin = normalizeUrl(origin);
+
+    const isAllowed = allowedOrigins.some(allowed =>
+      normalizedOrigin === normalizeUrl(allowed)
+    );
+
+    if (isAllowed) {
+      console.log(`✅ CORS permitido para: ${origin}`);
+      callback(null, true);
+    } else {
+      console.error(`❌ CORS bloqueado: ${origin} | Permitidos: ${allowedOrigins}`);
+      callback(new Error('Acesso não permitido por CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
   credentials: true,
-  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-  allowedHeaders: 'Content-Type, Authorization, Accept, Origin, Referer, X-Requested-With'
-}));
+  optionsSuccessStatus: 204
+};
 
-// Pré-flight para todas as rotas
-app.options('*', cors({
-  origin: allowedOrigins,
-  credentials: true,
-  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-  allowedHeaders: 'Content-Type, Authorization, Accept, Origin, Referer, X-Requested-With'
-}));
+// Middleware CORS principal (DEVE vir primeiro)
+app.use(cors(corsOptions));
 
-// ----------------------------------------
-
-app.use(express.json());
-
-
-
-// Middleware de logging para Render
+// Middleware de headers manuais
 app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.some(o => o.includes(origin.replace(/\/$/, '')))) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Vary', 'Origin');
+
+  // Responde imediatamente para OPTIONS
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
   next();
 });
 
-// MongoDB
+// Rota específica para pré-flight
+app.options('*', cors(corsOptions));
+// *********************************************************
+
+app.use(express.json());
+
+// Conexão com MongoDB
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch((err) => console.error('Could not connect to MongoDB', err));
+  .then(() => console.log('✅ Connected to MongoDB'))
+  .catch(err => console.error('❌ MongoDB connection error:', err));
 
 // Rotas
 app.use('/api/signup', signupRoutes);
@@ -92,22 +116,22 @@ app.use('/api/payments', PaymentRoutes);
 app.use('/api/users', UserRoutes);
 app.use('/api/specialties', specialtyRouter);
 
+// Middleware de erro (DEVE vir depois das rotas)
 app.use(errorHandler);
 
-// Produção
+// Configuração para produção
 if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../frontend/build')));
+  app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
   app.get('*', (req, res) => {
-    res.header('Access-Control-Allow-Origin', 'https://fono-inova-combr.vercel.app');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.sendFile(path.join(__dirname, '../frontend/build/index.html'));
+    res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
   });
 }
 
-
+// Inicia o servidor
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Database: ${process.env.MONGO_URI ? 'Connected' : 'Disconnected'}`);
-}).on('error', (err) => {
-  console.error('Server failed to start:', err);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🔒 CORS allowed for: ${allowedOrigins.join(', ')}`);
+}).on('error', err => {
+  console.error('💥 Server failed to start:', err);
 });
