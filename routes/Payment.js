@@ -888,31 +888,55 @@ router.get('/totals', async (req, res) => {
 router.get('/daily-closing', async (req, res) => {
     try {
         const { date } = req.query;
-        const targetDate = date || new Date().toISOString().split('T')[0].replace(/-/g, '/');
+        const targetDate = date || new Date().toISOString().split('T')[0];
 
         // 1. Buscar todos os agendamentos do dia
-        const allAppointments = await Appointment.find({
+        const appointments = await Appointment.find({
             date: targetDate
         })
-            .populate('doctor patient package payment')
+            .populate('doctor patient package')
             .lean();
 
-        // 2. Calcular totais e agrupamentos
+        // 2. Inicializar a estrutura de retorno
         const report = {
             date: targetDate,
-            totals: {
-                scheduled: allAppointments.length,
-                completed: 0,
-                canceled: 0,
-                confirmed: 0,
-                totalValue: 0,
-                paymentMethods: {
-                    dinheiro: 0,
-                    pix: 0,
-                    cartão: 0,
-                    outros: 0
-                }
+            period: {
+                start: targetDate,
+                end: targetDate
             },
+            totals: {
+                scheduled: {
+                    count: 0,
+                    value: 0
+                },
+                completed: {
+                    count: 0,
+                    value: 0
+                },
+                payments: {
+                    count: 0,
+                    value: 0,
+                    methods: {
+                        dinheiro: 0,
+                        pix: 0,
+                        cartão: 0
+                    }
+                },
+                absences: {
+                    count: 0,
+                    estimatedLoss: 0
+                },
+                canceled: {
+                    count: 0,
+                    value: 0
+                },
+                confirmed: {
+                    count: 0,
+                    value: 0
+                },
+                uniquePatients: 0
+            },
+            byProfessional: [],
             appointments: [],
             financialSummary: {
                 totalRecebido: 0,
@@ -921,71 +945,143 @@ router.get('/daily-closing', async (req, res) => {
             }
         };
 
-        // 3. Processar cada agendamento
-        allAppointments.forEach(appointment => {
-            const status = (appointment.operationalStatus || '').toLowerCase();
-            const value = appointment.sessionValue || appointment.package?.sessionValue || 0;
-            const paymentMethod = (appointment.paymentMethod || 'dinheiro').toLowerCase();
+        // 3. Contar pacientes únicos
+        const uniquePatients = new Set();
 
-            // Atualizar contadores de status
-            if (['concluído', 'concluido', 'completed', 'atendido'].includes(status)) {
-                report.totals.completed++;
-                report.financialSummary.totalRecebido += value;
+        // 4. Agrupar por profissional
+        const professionalsMap = new Map();
 
-                // Contabilizar forma de pagamento
-                if (paymentMethod.includes('pix')) {
-                    report.totals.paymentMethods.pix += value;
-                } else if (paymentMethod.includes('cartão') || paymentMethod.includes('cartao')) {
-                    report.totals.paymentMethods.cartão += value;
-                } else if (paymentMethod.includes('dinheiro')) {
-                    report.totals.paymentMethods.dinheiro += value;
-                } else {
-                    report.totals.paymentMethods.outros += value;
-                }
-            }
-            else if (['cancelado', 'canceled'].includes(status)) {
-                report.totals.canceled++;
-                report.financialSummary.totalCancelado += value;
-            }
-            else if (['confirmado', 'confirmed'].includes(status)) {
-                report.totals.confirmed++;
-                report.financialSummary.totalAReceber += value;
+        // 5. Processar cada agendamento
+        for (const appt of appointments) {
+            const status = (appt.operationalStatus || '').toLowerCase();
+            const value = appt.sessionValue || 0;
+            const paymentMethod = (appt.paymentMethod || 'dinheiro').toLowerCase();
+            const doctorId = appt.doctor?._id.toString();
+            const patientId = appt.patient?._id.toString();
+
+            // Contar pacientes únicos
+            if (patientId) uniquePatients.add(patientId);
+
+            // Inicializar profissional se não existir
+            if (!professionalsMap.has(doctorId)) {
+                professionalsMap.set(doctorId, {
+                    doctorId,
+                    doctorName: appt.doctor?.fullName || 'Não informado',
+                    specialty: appt.doctor?.specialty || 'Não informada',
+                    scheduled: 0,
+                    scheduledValue: 0,
+                    completed: 0,
+                    completedValue: 0,
+                    absences: 0,
+                    payments: {
+                        total: 0,
+                        methods: {
+                            dinheiro: 0,
+                            pix: 0,
+                            cartão: 0
+                        }
+                    }
+                });
             }
 
-            report.totals.totalValue += value;
+            const professional = professionalsMap.get(doctorId);
+
+            // Atualizar totais gerais
+            report.totals.scheduled.count++;
+            report.totals.scheduled.value += value;
+            professional.scheduled++;
+            professional.scheduledValue += value;
+
+            // Classificar por status
+            switch (status) {
+                case 'concluído':
+                case 'concluido':
+                case 'completed':
+                case 'atendido':
+                    report.totals.completed.count++;
+                    report.totals.completed.value += value;
+                    report.totals.payments.count++;
+                    report.totals.payments.value += value;
+                    report.financialSummary.totalRecebido += value;
+                    professional.completed++;
+                    professional.completedValue += value;
+                    professional.payments.total += value;
+
+                    if (paymentMethod.includes('pix')) {
+                        report.totals.payments.methods.pix += value;
+                        professional.payments.methods.pix += value;
+                    } else if (paymentMethod.includes('cartão') || paymentMethod.includes('cartao')) {
+                        report.totals.payments.methods.cartão += value;
+                        professional.payments.methods.cartão += value;
+                    } else {
+                        report.totals.payments.methods.dinheiro += value;
+                        professional.payments.methods.dinheiro += value;
+                    }
+                    break;
+
+                case 'cancelado':
+                case 'canceled':
+                    report.totals.canceled.count++;
+                    report.totals.canceled.value += value;
+                    report.totals.absences.count++;
+                    report.totals.absences.estimatedLoss += value;
+                    report.financialSummary.totalCancelado += value;
+                    professional.absences++;
+                    break;
+
+                case 'confirmado':
+                case 'confirmed':
+                    report.totals.confirmed.count++;
+                    report.totals.confirmed.value += value;
+                    report.financialSummary.totalAReceber += value;
+                    break;
+
+                case 'agendado':
+                    // Status agendado não incrementa outros contadores
+                    break;
+
+                default:
+                    console.warn(`Status desconhecido: ${status}`);
+            }
 
             // Adicionar detalhes do agendamento
             report.appointments.push({
-                id: appointment._id,
+                id: appt._id.toString(),
                 patient: {
-                    id: appointment.patient?._id,
-                    name: appointment.patient?.fullName,
-                    document: appointment.patient?.cpf || appointment.patient?.rg
+                    id: patientId,
+                    name: appt.patient?.fullName,
+                    document: appt.patient?.cpf || appt.patient?.rg || null
                 },
                 doctor: {
-                    id: appointment.doctor?._id,
-                    name: appointment.doctor?.fullName,
-                    specialty: appointment.doctor?.specialty
+                    id: doctorId,
+                    name: appt.doctor?.fullName,
+                    specialty: appt.doctor?.specialty
                 },
-                time: appointment.timeSlot || appointment.startTime,
-                status: appointment.operationalStatus,
+                status: appt.operationalStatus,
                 value: value,
-                paymentMethod: paymentMethod,
-                package: appointment.package ? {
-                    name: appointment.package.name,
-                    sessions: appointment.package.totalSessions
+                paymentMethod: paymentMethod.includes('pix') ? 'pix' :
+                    paymentMethod.includes('cartão') || paymentMethod.includes('cartao') ? 'cartão' : 'dinheiro',
+                package: appt.package ? {
+                    sessions: appt.package.totalSessions
                 } : null
             });
-        });
+        }
 
-        // 4. Retornar o relatório completo
+        // 6. Atualizar contagem de pacientes únicos
+        report.totals.uniquePatients = uniquePatients.size;
+
+        // 7. Converter o map de profissionais para array
+        report.byProfessional = Array.from(professionalsMap.values());
+
+        // 8. Retornar o relatório completo
         res.json({
             success: true,
             data: report,
             meta: {
                 generatedAt: new Date().toISOString(),
                 recordCount: {
-                    appointments: allAppointments.length
+                    appointments: appointments.length,
+                    professionals: professionalsMap.size
                 }
             }
         });
@@ -999,8 +1095,6 @@ router.get('/daily-closing', async (req, res) => {
         });
     }
 });
-
-
 
 // Detalhamento de sessões agendadas
 router.get('/daily-scheduled-details', async (req, res) => {
