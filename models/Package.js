@@ -43,7 +43,7 @@ const packageSchema = new mongoose.Schema({
     },
     sessionType: {
         type: String,
-        enum: ['fonoaudiologia', 'terapeuta ocupacional', 'psicologia', 'fisioterapia'],
+        enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia'],
         required: true
     },
     sessionValue: {
@@ -91,7 +91,7 @@ const packageSchema = new mongoose.Schema({
     specialty: {
         type: String,
         required: true,
-        enum: ['fonoaudiologia', 'terapeuta ocupacional', 'psicologia', 'fisioterapia', 'pediatria', 'neuroped'],
+        enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'pediatria', 'neuroped'],
 
     },
 });
