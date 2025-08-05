@@ -27,7 +27,7 @@ export const checkAppointmentConflicts = async (req, res, next) => {
         // Modificação 1: Ignorar agendamentos cancelados para médico
         const existingAppointments = await Appointment.find({
             doctorId,
-            date: { $gte: startOfDay, $lt: endOfDay },
+            date,
             status: { $ne: 'cancelado' }, // Ignora cancelados
             ...(appointmentId && { _id: { $ne: appointmentId } }) // Exclui o próprio agendamento
         });
@@ -63,7 +63,7 @@ export const checkAppointmentConflicts = async (req, res, next) => {
         // Modificação 3: Ignorar agendamentos cancelados para paciente
         const patientAppointments = await Appointment.find({
             patientId,
-            date: { $gte: startOfDay, $lt: endOfDay },
+            date,
             status: { $ne: 'cancelado' }, // Ignora cancelados
             ...(appointmentId && { _id: { $ne: appointmentId } }) // Exclui o próprio agendamento
         });
@@ -121,24 +121,17 @@ export const getAvailableTimeSlots = async (req, res) => {
             return res.json([]);
         }
 
-        // 4. Criar intervalo de datas CORRETAMENTE
-        const startOfDay = new Date(`${date}T00:00:00-03:00`); // 00:00 BRT
-        const endOfDay = new Date(`${date}T23:59:59-03:00`);   // 23:59 BRT
-
-        // 5. Buscar agendamentos existentes
+        // 4. Buscar agendamentos do dia (sem conversão de fuso)
         const appointments = await Appointment.find({
             doctor: doctorId,
-            date: {
-                $gte: startOfDay,
-                $lte: endOfDay
-            },
+            date: date, // comparação direta string
             operationalStatus: { $ne: 'cancelado' }
         });
 
-        // 6. Extrair horários ocupados (já estão em BRT no campo 'time')
+        // 5. Extrair horários ocupados
         const bookedTimes = appointments.map(app => app.time);
 
-        // 7. Filtrar horários disponíveis
+        // 6. Filtrar horários disponíveis
         const availableSlots = dailyAvailability.times.filter(time =>
             !bookedTimes.includes(time)
         );
@@ -154,6 +147,7 @@ export const getAvailableTimeSlots = async (req, res) => {
         return res.status(500).json({ error: 'Erro ao buscar horários disponíveis' });
     }
 };
+
 
 
 
