@@ -60,10 +60,8 @@ const corsOptions = {
     );
 
     if (isAllowed) {
-      console.log(`✅ CORS permitido para: ${origin}`);
       callback(null, true);
     } else {
-      console.error(`❌ CORS bloqueado: ${origin} | Permitidos: ${allowedOrigins}`);
       callback(new Error('Acesso não permitido por CORS'));
     }
   },
