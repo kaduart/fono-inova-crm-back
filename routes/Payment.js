@@ -889,13 +889,26 @@ router.get('/daily-closing', async (req, res) => {
     try {
         const { date } = req.query;
         const targetDate = date || new Date().toISOString().split('T')[0];
+        const startOfDay = new Date(targetDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(targetDate);
+        endOfDay.setHours(23, 59, 59, 999);
 
-        // 1. Buscar todos os agendamentos do dia
         const appointments = await Appointment.find({
             date: targetDate
         })
             .populate('doctor patient package')
             .lean();
+
+
+        // 2. [NOVO] Buscar TODOS os pagamentos do dia (incluindo não agendados)
+        const allPayments = await Payment.find({
+            createdAt: { $gte: startOfDay, $lte: endOfDay },
+            status: 'paid'
+        })
+            .populate('patient doctor package serviceType appointment')
+            .lean();
+
 
         // 2. Inicializar a estrutura de retorno
         const report = {
@@ -962,6 +975,19 @@ router.get('/daily-closing', async (req, res) => {
             }
         };
 
+        const nonAppointmentPayments = allPayments.filter(p => !p.appointment);
+
+        report.financialSummary.otherPayments = {
+            total: 0,
+            byType: {},
+            byMethod: {
+                dinheiro: 0,
+                pix: 0,
+                cartão: 0
+            },
+            details: []
+        };
+
         // 3. Contar pacientes únicos
         const uniquePatients = new Set();
 
@@ -1021,7 +1047,7 @@ router.get('/daily-closing', async (req, res) => {
             }
 
             const professional = professionalsMap.get(doctorId);
-            
+
             // Normalizar método de pagamento
             const normalizedMethod = paymentMethod.includes('pix') ? 'pix' :
                 (paymentMethod.includes('cartão') || paymentMethod.includes('cartao')) ? 'cartão' : 'dinheiro';
@@ -1100,6 +1126,37 @@ router.get('/daily-closing', async (req, res) => {
         // 8. Converter o map de profissionais para array
         report.byProfessional = Array.from(professionalsMap.values());
 
+        nonAppointmentPayments.forEach(payment => {
+            const amount = payment.amount || 0;
+
+            // Atualizar totais
+            report.financialSummary.otherPayments.total += amount;
+            report.financialSummary.totalRecebido += amount; // Adiciona ao total geral
+
+            // Classificar por tipo de serviço
+            const paymentType = payment.serviceType || 'outro';
+            report.financialSummary.otherPayments.byType[paymentType] =
+                (report.financialSummary.otherPayments.byType[paymentType] || 0) + amount;
+
+            // Classificar por método
+            const method = payment.paymentMethod.toLowerCase();
+            if (report.financialSummary.otherPayments.byMethod[method] !== undefined) {
+                report.financialSummary.otherPayments.byMethod[method] += amount;
+            }
+
+            // Adicionar detalhes
+            report.financialSummary.otherPayments.details.push({
+                id: payment._id,
+                type: paymentType,
+                amount: amount,
+                method: payment.paymentMethod,
+                patient: payment.patient?.fullName || 'Avulso',
+                service: payment.serviceType,
+                createdAt: payment.createdAt
+            });
+        });
+
+
         // 9. Retornar o relatório completo
         res.json({
             success: true,
@@ -1108,6 +1165,7 @@ router.get('/daily-closing', async (req, res) => {
                 generatedAt: new Date().toISOString(),
                 recordCount: {
                     appointments: appointments.length,
+                    otherPayments: nonAppointmentPayments.length,
                     professionals: professionalsMap.size
                 }
             }
