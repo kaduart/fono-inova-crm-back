@@ -5,7 +5,7 @@ import MedicalEvent from './MedicalEvent.js';
 
 const sessionSchema = new mongoose.Schema({
     date: {
-        type: Date,
+        type: String,
         /*  validate: {
              validator: function (date) {
                  if (!date) return true; // Permite null
