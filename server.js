@@ -59,6 +59,7 @@ const corsOptions = {
       normalizedOrigin === normalizeUrl(allowed)
     );
 
+
     if (isAllowed) {
       callback(null, true);
     } else {
