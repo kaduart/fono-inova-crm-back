@@ -126,17 +126,18 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
         await appointment.save({ session: mongoSession });
 
         let payment = null;
+        let session = null;
         const allAppointments = [appointment._id];
 
         // Criar pagamento APENAS para sessões individuais
-        if (req.body.serviceType === 'individual_session') {
+        if (req.body.serviceType === 'individual_session' || req.body.serviceType === 'evaluation') {
             payment = new Payment({
                 amount: req.body.paymentAmount,
                 method: req.body.paymentMethod,
                 status: 'pending',
                 patient: patient._id,
                 doctor: doctorId,
-                serviceType: 'individual_session',
+                serviceType: req.body.serviceType,
                 appointment: appointment._id,
                 paymentMethod: req.body.paymentMethod,
             });
@@ -147,8 +148,8 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
             appointment.paymentStatus = 'pending';
             await appointment.save({ session: mongoSession });
 
-            const session = await Session.create([{
-                serviceType: 'individual_session',
+            const newSession = await Session.create([{
+                serviceType: req.body.serviceType,
                 patient: patient._id,
                 doctor: doctorId,
                 appointment: appointment._id,
@@ -160,9 +161,14 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
                 status: 'scheduled',
                 isPaid: true,
                 paymentMethod: req.body.paymentMethod,
+                sessionValue: req.body.paymentAmount
             }], { session: mongoSession });
 
-            payment.session = session[0]._id;
+            payment.session = newSession[0]._id;
+            appointment.payment = payment._id;
+            appointment.session = newSession[0]._id;
+            appointment.paymentStatus = req.body.paymentMethod === 'pending' ? 'pending' : 'paid';
+
             await payment.save({ session: mongoSession });
         }
 
@@ -191,14 +197,12 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
         await patient.save({ session: mongoSession });
         await mongoSession.commitTransaction();
 
-        await updatePatientAppointments(patient._id);
-
 
         try {
             await updatePatientAppointments(patient._id);
-
             await syncEvent(appointment, 'appointment');
             if (payment) await syncEvent(payment, 'payment');
+            if (session) await syncEvent(session, 'session');
         } catch (syncError) {
             console.error('Erro em operações pós-transação:', syncError);
         }
@@ -207,6 +211,7 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
         res.status(201).json({
             appointment,
             paymentId: payment?._id,
+            sessionId: session?._id,
             packageRemainingSessions: selectedPackage?.remainingSessions
         });
 

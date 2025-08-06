@@ -3,32 +3,51 @@ import Patient from "../models/Patient.js";
 
 export async function updatePatientAppointments(patientId) {
   try {
-    // 1. Buscar todos appointments do paciente
-    const appointments = await Appointment.find({ patient: patientId })
-      .sort({ date: 1 })
-      .lean();
-
-    // 2. Calcular último e próximo appointment
     const now = new Date();
-    let lastAppointment = null;
-    let nextAppointment = null;
 
-    for (const app of appointments) {
-      if (new Date(app.date) < now) {
-        lastAppointment = app;
-      } else {
-        nextAppointment = app;
-        break;
+    // Busca em uma única query usando aggregation
+    const result = await Appointment.aggregate([
+      { $match: { patient: patientId } },
+      { $sort: { date: 1 } },
+      {
+        $group: {
+          _id: null,
+          all: { $push: "$$ROOT" },
+          past: {
+            $push: {
+              $cond: [{ $lt: ["$date", now] }, "$$ROOT", null]
+            }
+          },
+          future: {
+            $push: {
+              $cond: [{ $gte: ["$date", now] }, "$$ROOT", null]
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          lastAppointment: { $arrayElemAt: ["$past", -1] },
+          nextAppointment: { $arrayElemAt: ["$future", 0] }
+        }
+      }
+    ]);
+
+    const updateData = {};
+
+    if (result.length > 0) {
+      if (result[0].lastAppointment) {
+        updateData.lastAppointment = result[0].lastAppointment._id;
+      }
+      if (result[0].nextAppointment) {
+        updateData.nextAppointment = result[0].nextAppointment._id;
       }
     }
 
-    // 3. Atualizar paciente
-    await Patient.findByIdAndUpdate(patientId, {
-      lastAppointment: lastAppointment?._id,
-      nextAppointment: nextAppointment?._id
-    });
+    await Patient.findByIdAndUpdate(patientId, updateData);
 
   } catch (error) {
     console.error(`Erro ao atualizar agendamentos do paciente ${patientId}:`, error);
+    // Pode adicionar retry ou notificação aqui se necessário
   }
 }
