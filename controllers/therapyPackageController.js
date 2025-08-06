@@ -468,10 +468,11 @@ export const packageOperations = {
                     confirmedAbsence,
                     payment = {},
                     sessionType,
+                    serviceType,
                     specialty
                 } = req.body;
 
-                console.log('timeeeeee', date)
+                console.log('timeeeeee', req.body)
                 // Validações básicas
                 if (!date || isNaN(isValidDateString(date))) {
                     throw new Error("Data inválida ou não fornecida");
@@ -650,7 +651,7 @@ export const packageOperations = {
                     // Atualização de agendamento existente
                     const appointment = await Appointment.findById(sessionDoc.appointmentId._id)
                         .session(mongoSession);
-
+                    console.log('ecotreado agendamento', appointment)
                     if (appointment) {
                         appointment.patient = patientId || sessionDoc.patient;
                         appointment.doctor = doctorId || sessionDoc.doctor;
@@ -663,8 +664,9 @@ export const packageOperations = {
                         appointment.session = sessionDoc._id;
                         appointment.sessionType = sessionType || sessionDoc.sessionType;
                         appointment.time = time;
+                        appointment.serviceType = serviceType,
 
-                        await appointment.save({ session: mongoSession });
+                            appointment.save({ session: mongoSession });
                     }
                 } else {
                     // Criação de novo agendamento
