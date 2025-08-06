@@ -33,25 +33,30 @@ export const packageOperations = {
             sessionType,
             sessionValue,
             amountPaid,
-            dateTime,
+            date,
             time
         } = req.body;
 
+        console.log('requisicaooooooo', req.body)
+
         try {
             await mongoSession.startTransaction();
-            const effectiveDateTime = dateTime || { date: new Date().toISOString().split('T')[0], time };
+            const startDate = new Date(`${date}T${time}:00`);
 
-            // Substitua parseDateTime por esta implementação direta:
-            const startDate = new Date(`${effectiveDateTime.date}T${effectiveDateTime.time}:00-03:00`); // GMT-3 (Brasília)
-
-            // Extrai horas e minutos do time fornecido
-            const [hours, minutes] = time.split(':').map(Number);
-
-            const requiredFields = ['patientId', 'doctorId', 'sessionType', 'dateTime', 'time', 'paymentType', 'specialty'];
+            const requiredFields = ['patientId', 'doctorId', 'sessionType', 'date', 'time', 'paymentType', 'specialty'];
             const missingFields = requiredFields.filter(field => !req.body[field]);
 
             if (missingFields.length > 0) {
                 throw new Error(`Campos obrigatórios faltando: ${missingFields.join(', ')}`);
+            }
+            // Valida formato da data (YYYY-MM-DD)
+            if (!date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                throw new Error("Formato de data inválido. Use YYYY-MM-DD");
+            }
+
+            // Valida formato do tempo (HH:mm)
+            if (!time.match(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/)) {
+                throw new Error("Formato de horário inválido. Use HH:mm");
             }
 
             // Validação de horário
@@ -84,8 +89,12 @@ export const packageOperations = {
                 throw new Error("Sessões por semana inválidas (1-5)");
             }
 
+
+            if (isNaN(new Date(date).getTime())) {
+                throw new Error("Data inválida");
+            }
             // Validação de data inicial
-            if (isWeekend(startDate)) {
+            if (isWeekend(date)) {
                 throw new Error("A data inicial não pode ser no fim de semana");
             }
 
@@ -101,7 +110,8 @@ export const packageOperations = {
                 durationMonths: parseInt(durationMonths, 10),
                 sessionsPerWeek: parseInt(sessionsPerWeek, 10),
                 totalSessions,
-                date: startDate,
+                date: date,
+                time: time,
                 totalPaid: totalPackageValue,
                 balance: 0
             });
@@ -111,27 +121,41 @@ export const packageOperations = {
 
             // ===== CÁLCULO DE DATAS DAS SESSÕES =====
             const sessionDates = calculateSessionDates(
-                new Date(startDate),
+                date,
+                time,
                 totalSessions,
                 sessionsPerWeek
             );
 
+            console.log('Session dates:', sessionDates);
+            if (!sessionDates || !sessionDates.every(s => s.date && s.time)) {
+                throw new Error('Formato inválido para as datas das sessões');
+            }
+
+
             // ===== PREPARAÇÃO DAS SESSÕES =====
-            const sessionsToCreate = sessionDates.map((date, index) => ({
-                date: date,
-                time: time,
-                specialty,
-                session: `Sessão ${index + 1}`,
-                sessionType,
-                value: sessionValue,
-                package: newPackage._id,
-                status: 'scheduled',
-                doctor: doctorId,
-                patient: patientId,
-                isPaid: true,
-                paymentMethod: paymentMethod,
-                confirmedAbsence: null
-            }));
+            const sessionsToCreate = sessionDates.map((session, index) => {
+                if (!session.date || !session.time) {
+                    throw new Error(`Sessão ${index + 1} está com data ou horário inválido`);
+                }
+
+                return {
+                    date: session.date, // Já é string "YYYY-MM-DD"
+                    time: session.time,
+                    specialty,
+                    session: `Sessão ${index + 1}`,
+                    sessionType,
+                    value: sessionValue,
+                    package: newPackage._id,
+                    status: 'scheduled',
+                    doctor: doctorId,
+                    patient: patientId,
+                    isPaid: true,
+                    paymentMethod: paymentMethod,
+                    confirmedAbsence: null
+                }
+            });
+
             // ===== CRIAÇÃO EM MASSA DAS SESSÕES =====
             const createdSessions = await Session.insertMany(sessionsToCreate, { session: mongoSession });
 
@@ -141,18 +165,18 @@ export const packageOperations = {
 
             // ===== CRIAÇÃO DOS AGENDAMENTOS =====
             const appointmentCreationPromises = createdSessions.map(async (session) => {
-                // Verificação de conflito
-                const sessionDateStart = new Date(session.date);
-                sessionDateStart.setHours(0, 0, 0, 0);
-
-                const sessionDateEnd = new Date(session.date);
-                sessionDateEnd.setHours(23, 59, 59, 999);
+                console.log('Dados da sessão:', {
+                    date: session.date,
+                    time: session.time,
+                    patientId,
+                    doctorId
+                });
 
                 const existingAppointment = await Appointment.findOne({
                     patient: patientId,
                     doctor: doctorId,
-                    date: { $gte: sessionDateStart, $lt: sessionDateEnd },
-                    time: time,
+                    date: session.date,
+                    time: session.time,
                     operationalStatus: { $ne: 'cancelado' }
                 }).session(mongoSession);
 
@@ -169,6 +193,7 @@ export const packageOperations = {
                     patient: patientId,
                     doctor: doctorId,
                     date: session.date,
+                    time: session.time,
                     duration: 40,
                     specialty: sessionType,
                     operationalStatus: 'agendado',
@@ -177,12 +202,12 @@ export const packageOperations = {
                     package: newPackage._id, // Vínculo direto ao pacote
                     serviceType: 'package_session',
                     sessionType: sessionType,
-                    time: time,
                 });
+
+                console.log('paylod agendamentpo', appointment)
 
                 const savedAppointment = await appointment.save({ session: mongoSession });
 
-                // Atualiza sessão com ID do agendamento
                 session.appointmentId = savedAppointment._id;
                 return session.save({ session: mongoSession });
             });
@@ -289,54 +314,19 @@ export const packageOperations = {
                     })
                     .lean();
 
-                const adjustTimezone = (utcDate) => {
-                    if (!utcDate) return null;
-                    return new Date(utcDate);
-                };
-
-                // Função para formatar data/horário
-                const formatDateTime = (date) => {
-                    if (!date) return null;
-                    return {
-                        date: date.toISOString().split('T')[0],
-                        time: date.toLocaleTimeString('pt-BR', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            timeZone: 'America/Sao_Paulo'
-                        }),
-                        full: date.toLocaleString('pt-BR', {
-                            timeZone: 'America/Sao_Paulo'
-                        })
-                    };
-                };
-
-
                 const enhancedPackages = packages.map(pkg => {
-                    // Ajusta o fuso horário da data principal
-                    const localPackageDate = adjustTimezone(pkg.date);
-                    const formattedPackageDate = formatDateTime(localPackageDate);
-
-                    // Ajusta o fuso horário das sessões
-                    const adjustedSessions = pkg.sessions?.map(session => {
-                        const localSessionDate = adjustTimezone(session.date);
-                        const formattedSession = formatDateTime(localSessionDate);
-
-                        return {
-                            ...session,
-                            date: localSessionDate,
-                            formattedDate: formattedSession,
-                            originalDate: session.date // Mantém a data original UTC
-                        };
-                    }) || [];
-
                     return {
                         ...pkg,
-                        date: localPackageDate,
-                        formattedDate: formattedPackageDate,
-                        sessions: adjustedSessions,
+                        date: pkg.date,
+                        time: pkg.time,
+                        sessions: pkg.sessions?.map(session => ({
+                            ...session,
+                            // Mantém as datas originais das sessões
+                            date: session.date, // "YYYY-MM-DD"
+                            time: session.time, // "HH:mm"
+                        })) || [],
                         remaining: pkg.totalSessions - pkg.sessionsDone,
                         totalValue: pkg.sessionValue * pkg.totalSessions,
-                        originalTime: pkg.time // Mantém o horário original
                     };
                 });
 
