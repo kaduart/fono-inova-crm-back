@@ -8,7 +8,6 @@ import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import { calculateSessionDates, isWeekend } from '../services/packageService.js';
 import { syncEvent } from '../services/syncService.js';
-import { extractTimeFromDateTime } from '../utils/horaFormat.js';
 
 const APPOINTMENTS_API_BASE_URL = 'http://167.234.249.6:5000/api';
 const validateInputs = {
@@ -472,12 +471,15 @@ export const packageOperations = {
                     specialty
                 } = req.body;
 
-                console.log('timeeeeee', time)
+                console.log('timeeeeee', date)
                 // Validações básicas
-                if (!date || isNaN(new Date(date).getTime())) {
+                if (!date || isNaN(isValidDateString(date))) {
                     throw new Error("Data inválida ou não fornecida");
                 }
 
+                if (!time || !isValidTimeString(time)) {
+                    throw new Error("Hora inválida ou não fornecida");
+                }
                 if (status && !['pending', 'completed', 'canceled', 'scheduled'].includes(status)) {
                     throw new Error("Status inválido. Valores permitidos: pending, completed, canceled, scheduled");
                 }
@@ -500,11 +502,8 @@ export const packageOperations = {
 
                 const previousStatus = sessionDoc.status;
 
-                const dateOnly = date.split('T')[0];
 
-                const sessionDate = new Date(`${dateOnly}T${time}:00-03:00`);
-
-                sessionDoc.date = sessionDate;
+                sessionDoc.date = date;
                 sessionDoc.time = time;
                 sessionDoc.notes = notes || sessionDoc.notes;
 
@@ -632,7 +631,6 @@ export const packageOperations = {
                 }
 
                 // Preparar dados para agendamento
-                const formattedTime = extractTimeFromDateTime(date);
                 const getOperationalStatus = () => {
                     if (status === 'completed') return 'confirmado';
                     if (status === 'canceled') return 'cancelado';
@@ -656,7 +654,7 @@ export const packageOperations = {
                     if (appointment) {
                         appointment.patient = patientId || sessionDoc.patient;
                         appointment.doctor = doctorId || sessionDoc.doctor;
-                        appointment.date = sessionDate;
+                        appointment.date = date;
                         appointment.time = time;
                         appointment.duration = 40;
                         appointment.specialty = sessionType || sessionDoc.sessionType;
@@ -664,7 +662,7 @@ export const packageOperations = {
                         appointment.clinicalStatus = getClinicalStatus();
                         appointment.session = sessionDoc._id;
                         appointment.sessionType = sessionType || sessionDoc.sessionType;
-                        appointment.time = formattedTime;
+                        appointment.time = time;
 
                         await appointment.save({ session: mongoSession });
                     }
@@ -673,14 +671,14 @@ export const packageOperations = {
                     const appointment = new Appointment({
                         patient: patientId || sessionDoc.patient,
                         doctor: doctorId || sessionDoc.doctor,
-                        date: sessionDate,
+                        date: date,
                         duration: 40,
                         specialty: sessionType || sessionDoc.sessionType,
                         operationalStatus: getOperationalStatus(),
                         clinicalStatus: getClinicalStatus(),
                         session: sessionDoc._id,
                         sessionType: sessionType || sessionDoc.sessionType,
-                        time: formattedTime
+                        time: time
                     });
 
                     await appointment.save({ session: mongoSession });
@@ -1229,3 +1227,17 @@ export const getPackageVersionHistory = async (req, res) => {
         res.status(500).json({ error: 'Erro ao buscar histórico' });
     }
 };
+
+// Funções de validação
+function isValidDateString(dateString) {
+    const regex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!regex.test(dateString)) return false;
+
+    const date = new Date(dateString);
+    return !isNaN(date.getTime());
+}
+
+function isValidTimeString(timeString) {
+    const regex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+    return regex.test(timeString);
+}
