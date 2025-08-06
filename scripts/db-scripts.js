@@ -27,7 +27,7 @@ db.sessions.deleteMany({
 
 //consulta sessao por id
 db.sessions.find({
-  _id: ObjectId("685c29afaec14c716358622a"),
+  patient: ObjectId("685c29afaec14c716358622a"),
 });
 
 //consulta sessao por id patient
