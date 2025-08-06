@@ -374,7 +374,6 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                 { new: true, session: mongoSession }
             );
 
-            console.log('Agendamento antes de atualizar:', appointment);
             if (!appointment) {
                 await mongoSession.abortTransaction();
                 return res.status(404).json({ error: 'Agendamento não encontrado' });
@@ -387,25 +386,31 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
             }
 
             // 3. Aplicar atualizações manualmente
-            const updateData = { ...req.body };
+            const updateData = {
+                ...req.body,
+                doctor: req.body.doctorId
+            };
+
             console.log('Agendamento 1:', updateData);
 
             // Atualizar 
             const previousData = appointment.toObject();
-            Object.assign(appointment, req.body);
+            Object.assign(appointment, updateData);
 
             // 4. Validar antes de salvar
             await appointment.validate();
             const updated = await appointment.save({ session: mongoSession });
 
+            console.log('salvouuu', appointment);
+            console.log('salvouuu', updated);
             if (appointment.session) {
                 const session = await Session.findById(appointment.session).session(mongoSession);
-                console.log('session 122:', session);
 
                 if (session) {
                     if (updateData.date) session.date = new Date(updateData.date);
                     if (updateData.time) session.time = updateData.time;
                     if (updateData.status) session.status = updateData.status;
+                    if (updateData.doctor) session.doctor = updateData.doctorId;
                     await session.save({ session: mongoSession });
                 }
             }
