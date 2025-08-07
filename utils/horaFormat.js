@@ -63,3 +63,19 @@ export function convertToLocalTime(data) {
     return data;
 }
 
+
+
+function getDateRangeInUTC(dateString, timezoneOffsetHours = -3) {
+  // Exemplo: dateString = '2025-08-07', timezoneOffsetHours = -3 (Brasília)
+  
+  // Criar data local "start of day"
+  const localStart = new Date(`${dateString}T00:00:00`);
+  // Ajustar para UTC subtraindo o offset (porque JS cria como local)
+  const utcStart = new Date(localStart.getTime() - timezoneOffsetHours * 60 * 60 * 1000);
+  
+  // Mesmo para o fim do dia local
+  const localEnd = new Date(`${dateString}T23:59:59.999`);
+  const utcEnd = new Date(localEnd.getTime() - timezoneOffsetHours * 60 * 60 * 1000);
+  
+  return { utcStart, utcEnd };
+}

@@ -38,15 +38,15 @@ db.payments.find({
 
 //consulta agendamento por id patient
 db.appointments.find({
-  patient: ObjectId("685edfa3e00257e3e549a985"),
+  _id: ObjectId("6893c50f4b4ab2f2fe938218"),
 });
 
 // consultar pagamentos do dia
 db.payments.find({
   createdAt: {
-    $gte: ISODate("2025-08-06T00:00:00.000Z"),
-    $lt: ISODate("2025-08-06T23:59:00.000Z")
-  }
+  $gte: ISODate("2025-08-06T00:00:00.000Z"),
+  $lt: ISODate("2025-08-07T00:00:00.000Z")  
+}
 })
 
 // consultar sessios do dia

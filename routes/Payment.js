@@ -889,16 +889,26 @@ router.get('/daily-closing', async (req, res) => {
     try {
         const { date } = req.query;
         const targetDate = date || new Date().toISOString().split('T')[0];
-        const startOfDay = new Date(targetDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(targetDate);
-        endOfDay.setHours(23, 59, 59, 999);
+        const [year, month, day] = targetDate.split('-').map(Number);
+
+        // Opção 1: Usar UTC (recomendado para evitar problemas de timezone)
+        const startOfDay = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+        const endOfDay = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
 
         const appointments = await Appointment.find({
-            date: { $gte: startOfDay, $lte: endOfDay }
+            date: date
         })
             .populate('doctor patient package')
             .lean();
+
+
+        console.log('Datas ajustadas:', {
+            startOfDay: startOfDay.toISOString(),
+            endOfDay: endOfDay.toISOString(),
+            startLocal: startOfDay.toString(),
+            endLocal: endOfDay.toString(),
+            appointments: appointments
+        });
 
         // 2. [NOVO] Buscar TODOS os pagamentos do dia (incluindo não agendados)
         const allPayments = await Payment.find({
@@ -907,12 +917,6 @@ router.get('/daily-closing', async (req, res) => {
         })
             .populate('patient doctor package serviceType appointment')
             .lean();
-
-        const categorized = {
-            scheduled: { dinheiro: 0, pix: 0, cartão: 0 },
-            unscheduled: { dinheiro: 0, pix: 0, cartão: 0 }
-        };
-
 
         // 2. Inicializar a estrutura de retorno
         const report = {
@@ -979,7 +983,7 @@ router.get('/daily-closing', async (req, res) => {
             }
         };
 
-        const nonAppointmentPayments = allPayments.filter(p => !p.appointment);
+        const nonAppointmentPayments = allPayments.filter(p => p);
 
         report.financialSummary.otherPayments = {
             total: 0,
@@ -997,7 +1001,6 @@ router.get('/daily-closing', async (req, res) => {
 
         // 4. Agrupar por profissional
         const professionalsMap = new Map();
-
         // 5. Processar cada agendamento
         for (const appt of appointments) {
             const status = (appt.operationalStatus || '').toLowerCase();
@@ -1132,7 +1135,6 @@ router.get('/daily-closing', async (req, res) => {
 
         nonAppointmentPayments.forEach(payment => {
             const amount = payment.amount || 0;
-            console.log('pagamenrrtooo unicooooo', payment)
             // Atualizar totais
             report.financialSummary.otherPayments.total += amount;
             report.financialSummary.totalRecebido += amount; // Adiciona ao total geral
@@ -1156,8 +1158,10 @@ router.get('/daily-closing', async (req, res) => {
                 method: payment.paymentMethod,
                 patient: payment.patient?.fullName || 'Avulso',
                 service: payment.serviceType,
-                date: payment.date,
-                time: payment.time,
+                doctor: {
+                    fullName: payment.doctor.fullName,
+                    specialty: payment.doctor.specialty,
+                },
                 createdAt: payment.createdAt,
 
             });
