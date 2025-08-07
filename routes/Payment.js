@@ -895,11 +895,10 @@ router.get('/daily-closing', async (req, res) => {
         endOfDay.setHours(23, 59, 59, 999);
 
         const appointments = await Appointment.find({
-            date: targetDate
+            date: { $gte: startOfDay, $lte: endOfDay }
         })
             .populate('doctor patient package')
             .lean();
-
 
         // 2. [NOVO] Buscar TODOS os pagamentos do dia (incluindo não agendados)
         const allPayments = await Payment.find({
@@ -908,6 +907,11 @@ router.get('/daily-closing', async (req, res) => {
         })
             .populate('patient doctor package serviceType appointment')
             .lean();
+
+        const categorized = {
+            scheduled: { dinheiro: 0, pix: 0, cartão: 0 },
+            unscheduled: { dinheiro: 0, pix: 0, cartão: 0 }
+        };
 
 
         // 2. Inicializar a estrutura de retorno
@@ -1128,7 +1132,7 @@ router.get('/daily-closing', async (req, res) => {
 
         nonAppointmentPayments.forEach(payment => {
             const amount = payment.amount || 0;
-
+            console.log('pagamenrrtooo unicooooo', payment)
             // Atualizar totais
             report.financialSummary.otherPayments.total += amount;
             report.financialSummary.totalRecebido += amount; // Adiciona ao total geral
@@ -1152,7 +1156,10 @@ router.get('/daily-closing', async (req, res) => {
                 method: payment.paymentMethod,
                 patient: payment.patient?.fullName || 'Avulso',
                 service: payment.serviceType,
-                createdAt: payment.createdAt
+                date: payment.date,
+                time: payment.time,
+                createdAt: payment.createdAt,
+
             });
         });
 
