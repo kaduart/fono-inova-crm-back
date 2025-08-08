@@ -481,27 +481,30 @@ router.patch('/:id', auth, async (req, res) => {
 
             // 4. Lógica existente para sessão individual com tratamento especial
             if (payment.session) {
-                Session.findByIdAndUpdate.bind(Session),
-                    mongoSession,
-                    Session,
-                    { _id: payment.session },
-                {
-                    $set: {
-                        isPaid: status === 'paid',
-                        status: status === 'paid' ? 'completed' : 'pending'
-                    }
-                }
+                await Session.findByIdAndUpdate(
+                    payment.session,
+                    {
+                        $set: {
+                            isPaid: status === 'paid',
+                            status: status === 'paid' ? 'completed' : 'pending'
+                        }
+                    },
+                    { session: mongoSession }
+                );
             }
 
             // 5. Atualizar status em agendamentos vinculados com tratamento especial
             const appointmentIds = [
+                payment.appointment,
                 ...(payment.advanceSessions?.map(a => a.appointment) || []),
                 ...(advanceSessions.map(s => s.appointmentId) || [])
             ].filter(id => id);
 
             if (appointmentIds.length > 0) {
                 await executeCriticalOperation(
-                    Appointment.updateMany.bind(Appointment),
+                    async (entity, filter, update, opts) => {
+                        return await entity.updateMany(filter, update, opts);
+                    },
                     mongoSession,
                     Appointment,
                     { _id: { $in: appointmentIds } },
@@ -512,6 +515,7 @@ router.patch('/:id', auth, async (req, res) => {
                         }
                     }
                 );
+
             }
 
             await mongoSession.commitTransaction();
