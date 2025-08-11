@@ -706,8 +706,10 @@ router.patch('/:id/complete', auth, async (req, res) => {
         // FLUXO DE PAGAMENTO AUTOMÁTICO
         let paymentRecord = null;
 
+        console.log('preparando atualziacao', appointment)
         // 1. Sessão avulsa (individual)
-        if (!appointment.package && !appointment.session) {
+        if (appointment.serviceType == 'individual_session') {
+            console.log('çaiu aqui', appointment)
             // Obter valor da sessão com fallbacks seguros
             const sessionValue = appointment.sessionValue ||
                 (appointment.package?.sessionValue) ||
@@ -716,13 +718,14 @@ router.patch('/:id/complete', auth, async (req, res) => {
             paymentRecord = new Payment({
                 patient: appointment.patient._id,
                 doctor: appointment.doctor._id,
-                serviceType: 'individual_session',
+                serviceType: appointment.serviceType,
                 amount: sessionValue,
                 paymentMethod: appointment.paymentMethod || 'dinheiro', // Usar método do agendamento se existir
                 status: 'paid',
                 appointment: appointment._id,
                 notes: 'Pagamento automático por conclusão de sessão avulsa'
             });
+            console.log('Salvou p[agamento com ->', paymentRecord)
             await paymentRecord.save();
         }
 
