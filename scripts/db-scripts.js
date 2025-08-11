@@ -31,7 +31,7 @@ db.sessions.find({
   patient: ObjectId("685c29afaec14c716358622a"),
 });
 
-//consulta sessao por id patient
+//consulta pagamento por id patient
 db.payments.find({
   doutor: ObjectId("688c053930c7cc9720a2ee64"),
 });
@@ -44,22 +44,27 @@ db.appointments.find({
 // consultar pagamentos do dia
 db.payments.find({
   createdAt: {
-  $gte: ISODate("2025-08-06T00:00:00.000Z"),
-  $lt: ISODate("2025-08-07T00:00:00.000Z")  
+  $gte: ISODate("2025-08-14T00:00:00.000Z"),
+  $lt: ISODate("2025-08-15T00:00:00.000Z")  
 }
 })
 
 // consultar sessios do dia
 db.sessions.find({
   createdAt: {
-    $gte: ISODate("2025-08-06T00:00:00.000Z"),
-    $lt: ISODate("2025-08-06T23:59:00.000Z")
+    $gte: ISODate("2025-08-14T00:00:00.000Z"),
+    $lt: ISODate("2025-08-14T23:59:00.000Z")
   }
 })
 
-//consulta pod dia 
+//consulta do dia futuro
 db.appointments.find({
-  date: "2025-08-06",
+  date: "2025-08-14"
+})
+
+//consulta do dia futuro
+db.payments.find({
+  date: "2025-08-14"
 })
 
 // consulta do dia or doutor

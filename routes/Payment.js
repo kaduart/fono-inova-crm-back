@@ -892,287 +892,264 @@ router.get('/totals', async (req, res) => {
 router.get('/daily-closing', async (req, res) => {
     try {
         const { date } = req.query;
-        const targetDate = date || new Date().toISOString().split('T')[0];
-        const [year, month, day] = targetDate.split('-').map(Number);
+        const targetDate = date ? new Date(date).toISOString().split('T')[0] : 
+            new Date().toISOString().split('T')[0];
 
-        // Opção 1: Usar UTC (recomendado para evitar problemas de timezone)
-        const startOfDay = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
-        const endOfDay = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
-
-        const appointments = await Appointment.find({
-            date: date
-        })
+        // 1. Buscar agendamentos do dia
+        const appointments = await Appointment.find({ date: targetDate })
             .populate('doctor patient package')
             .lean();
 
+        // 2. Buscar pagamentos do dia
+        const [year, month, day] = targetDate.split('-').map(Number);
+        const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
+        const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
 
-        console.log('Datas ajustadas:', {
-            startOfDay: startOfDay.toISOString(),
-            endOfDay: endOfDay.toISOString(),
-            startLocal: startOfDay.toString(),
-            endLocal: endOfDay.toString(),
-            appointments: appointments
-        });
-
-        // 2. [NOVO] Buscar TODOS os pagamentos do dia (incluindo não agendados)
-        const allPayments = await Payment.find({
+        const payments = await Payment.find({
             createdAt: { $gte: startOfDay, $lte: endOfDay },
-            status: 'paid'
+            status: { $in: ['paid', 'pending', 'canceled'] }
         })
-            .populate('patient doctor package serviceType appointment')
+            .populate('patient doctor package appointment')
             .lean();
 
-        // 2. Inicializar a estrutura de retorno
+        // 3. Estrutura do relatório
         const report = {
             date: targetDate,
             period: {
                 start: targetDate,
                 end: targetDate
             },
-            totals: {
+            summary: {
                 scheduled: {
                     count: 0,
-                    value: 0
+                    value: 0,
+                    details: []
                 },
-                completed: {
+                attended: {
                     count: 0,
-                    value: 0
-                },
-                payments: {
-                    total: 0,
-                    methods: {
-                        dinheiro: 0,
-                        pix: 0,
-                        cartão: 0
-                    },
-                    agendados: {
-                        dinheiro: 0,
-                        pix: 0,
-                        cartão: 0,
-                        total: 0
-                    },
-                    realizados: {
-                        dinheiro: 0,
-                        pix: 0,
-                        cartão: 0,
-                        total: 0
-                    }
-                },
-                absences: {
-                    count: 0,
-                    estimatedLoss: 0
+                    value: 0,
+                    details: []
                 },
                 canceled: {
                     count: 0,
-                    value: 0
+                    value: 0,
+                    details: []
                 },
-                confirmed: {
+                pending: {
                     count: 0,
-                    value: 0
+                    value: 0,
+                    details: []
+                }
+            },
+            financial: {
+                totalReceived: 0,
+                totalExpected: 0,
+                paymentMethods: {
+                    dinheiro: { amount: 0, details: [] },
+                    pix: { amount: 0, details: [] },
+                    cartão: { amount: 0, details: [] }
                 },
-                uniquePatients: 0
+                packages: {
+                    total: 0,
+                    details: []
+                }
             },
-            byProfessional: [],
-            appointments: [],
-            financialSummary: {
-                totalRecebido: 0,
-                totalAReceber: 0,
-                totalCancelado: 0
-            },
-            metrics: {
-                attendanceRate: '0%',
-                averagePerSession: 'R$ 0,00',
-                canceledSessions: 0,
-                patientsAttended: 0
-            }
+            byProfessional: {},
+            patients: new Set()
         };
 
-        const nonAppointmentPayments = allPayments.filter(p => p);
-
-        report.financialSummary.otherPayments = {
-            total: 0,
-            byType: {},
-            byMethod: {
-                dinheiro: 0,
-                pix: 0,
-                cartão: 0
-            },
-            details: []
+        // Funções auxiliares para classificação
+        const isConfirmedStatus = (status) => {
+            return status?.toLowerCase() === 'confirmado';
         };
 
-        // 3. Contar pacientes únicos
-        const uniquePatients = new Set();
+        const isCanceledStatus = (status) => {
+            return ['cancelado', 'cancelada'].includes(status?.toLowerCase());
+        };
 
-        // 4. Agrupar por profissional
-        const professionalsMap = new Map();
-        // 5. Processar cada agendamento
-        for (const appt of appointments) {
-            const status = (appt.operationalStatus || '').toLowerCase();
+        const normalizePaymentMethod = (method) => {
+            if (!method) return 'dinheiro';
+            method = method.toLowerCase().trim();
+            if (method.includes('pix')) return 'pix';
+            if (method.includes('cartão') || method.includes('card') || method.includes('credito') || method.includes('débito')) 
+                return 'cartão';
+            return 'dinheiro';
+        };
+
+        // 4. Processar agendamentos
+        appointments.forEach(appt => {
+            const status = (appt.operationalStatus || appt.status || '').toLowerCase();
             const value = appt.sessionValue || 0;
-            const paymentMethod = (appt.paymentMethod || 'dinheiro').toLowerCase();
+            const method = normalizePaymentMethod(appt.paymentMethod);
             const doctorId = appt.doctor?._id.toString();
             const patientId = appt.patient?._id.toString();
 
-            // Contar pacientes únicos
-            if (patientId) uniquePatients.add(patientId);
+            // Adicionar paciente
+            if (patientId) report.patients.add(patientId);
 
             // Inicializar profissional se não existir
-            if (!professionalsMap.has(doctorId)) {
-                professionalsMap.set(doctorId, {
-                    doctorId,
-                    doctorName: appt.doctor?.fullName || 'Não informado',
+            if (!report.byProfessional[doctorId]) {
+                report.byProfessional[doctorId] = {
+                    id: doctorId,
+                    name: appt.doctor?.fullName || 'Não informado',
                     specialty: appt.doctor?.specialty || 'Não informada',
-                    scheduled: {
-                        count: 0,
-                        value: 0
+                    metrics: {
+                        attendanceRate: '0%',
+                        averageTicket: 'R$ 0,00'
                     },
-                    completed: {
-                        count: 0,
-                        value: 0
-                    },
-                    absences: {
-                        count: 0,
-                        estimatedLoss: 0
-                    },
-                    payments: {
-                        total: 0,
+                    financial: {
+                        received: 0,
+                        expected: 0,
                         methods: {
-                            dinheiro: 0,
-                            pix: 0,
-                            cartão: 0
-                        },
-                        agendados: {
-                            dinheiro: 0,
-                            pix: 0,
-                            cartão: 0,
-                            total: 0
-                        },
-                        realizados: {
-                            dinheiro: 0,
-                            pix: 0,
-                            cartão: 0,
-                            total: 0
+                            dinheiro: { amount: 0, details: [] },
+                            pix: { amount: 0, details: [] },
+                            cartão: { amount: 0, details: [] }
                         }
-                    }
-                });
+                    },
+                    appointments: []
+                };
             }
 
-            const professional = professionalsMap.get(doctorId);
+            const professional = report.byProfessional[doctorId];
 
-            // Normalizar método de pagamento
-            const normalizedMethod = paymentMethod.includes('pix') ? 'pix' :
-                (paymentMethod.includes('cartão') || paymentMethod.includes('cartao')) ? 'cartão' : 'dinheiro';
+            // Detalhe do agendamento
+            const appointmentDetail = {
+                id: appt._id,
+                patient: appt.patient?.fullName || 'Não informado',
+                service: appt.serviceType || 'Não informado',
+                value: value,
+                status: status,
+                method: method,
+                paymentStatus: appt.paymentStatus || 'pending',
+                date: appt.date,
+                time: appt.time
+            };
 
-            // Atualizar totais gerais
-            report.totals.scheduled.count++;
-            report.totals.scheduled.value += value;
-            professional.scheduled.count++;
-            professional.scheduled.value += value;
+            // Adicionar aos agendamentos do profissional
+            professional.appointments.push(appointmentDetail);
 
-            // Registrar pagamentos agendados (todos os status)
-            report.totals.payments.agendados[normalizedMethod] += value;
-            report.totals.payments.agendados.total += value;
-            professional.payments.agendados[normalizedMethod] += value;
-            professional.payments.agendados.total += value;
+            // Atualizar totais agendados
+            report.summary.scheduled.count++;
+            report.summary.scheduled.value += value;
+            report.summary.scheduled.details.push(appointmentDetail);
 
             // Classificar por status
-            const completedStatuses = ['concluído', 'concluido', 'completed', 'confirmado'];
-            const canceledStatuses = ['cancelado', 'canceled'];
-            const confirmedStatuses = ['confirmado', 'confirmed'];
-
-            if (completedStatuses.includes(status)) {
-                // Sessões concluídas
-                report.totals.completed.count++;
-                report.totals.completed.value += value;
-                report.totals.payments.total += value;
-                report.financialSummary.totalRecebido += value;
-                report.metrics.patientsAttended++;
-
-                professional.completed.count++;
-                professional.completed.value += value;
-                professional.payments.total += value;
-
-                // Registrar pagamentos realizados
-                report.totals.payments.realizados[normalizedMethod] += value;
-                report.totals.payments.realizados.total += value;
-                professional.payments.realizados[normalizedMethod] += value;
-                professional.payments.realizados.total += value;
-
-                // Registrar no método específico
-                report.totals.payments.methods[normalizedMethod] += value;
-                professional.payments.methods[normalizedMethod] += value;
-
-            } else if (canceledStatuses.includes(status)) {
-                // Sessões canceladas
-                report.totals.canceled.count++;
-                report.totals.canceled.value += value;
-                report.totals.absences.count++;
-                report.totals.absences.estimatedLoss += value;
-                report.financialSummary.totalCancelado += value;
-                report.metrics.canceledSessions++;
-
-                professional.absences.count++;
-                professional.absences.estimatedLoss += value;
-
-            } else if (confirmedStatuses.includes(status)) {
-                // Sessões confirmadas
-                report.totals.confirmed.count++;
-                report.totals.confirmed.value += value;
-                report.financialSummary.totalAReceber += value;
+            if (isCanceledStatus(status)) {
+                report.summary.canceled.count++;
+                report.summary.canceled.value += value;
+                report.summary.canceled.details.push(appointmentDetail);
+            } 
+            else if (isConfirmedStatus(status)) {
+                report.summary.attended.count++;
+                report.summary.attended.value += value;
+                report.summary.attended.details.push(appointmentDetail);
+                
+                // Só adiciona ao recebido se o pagamento estiver confirmado
+                if (appt.paymentStatus === 'paid') {
+                    report.financial.totalReceived += value;
+                    professional.financial.received += value;
+                    
+                    report.financial.paymentMethods[method].amount += value;
+                    report.financial.paymentMethods[method].details.push(appointmentDetail);
+                    
+                    professional.financial.methods[method].amount += value;
+                    professional.financial.methods[method].details.push(appointmentDetail);
+                }
             }
-        }
-
-        // 6. Calcular métricas adicionais
-        report.metrics.attendanceRate = report.totals.scheduled.count > 0
-            ? `${Math.round((report.totals.completed.count / report.totals.scheduled.count) * 100)}%`
-            : '0%';
-
-        report.metrics.averagePerSession = report.totals.completed.count > 0
-            ? `R$ ${(report.totals.completed.value / report.totals.completed.count).toFixed(2).replace('.', ',')}`
-            : 'R$ 0,00';
-
-        // 7. Atualizar contagem de pacientes únicos
-        report.totals.uniquePatients = uniquePatients.size;
-
-        // 8. Converter o map de profissionais para array
-        report.byProfessional = Array.from(professionalsMap.values());
-
-        nonAppointmentPayments.forEach(payment => {
-            const amount = payment.amount || 0;
-            // Atualizar totais
-            report.financialSummary.otherPayments.total += amount;
-            report.financialSummary.totalRecebido += amount; // Adiciona ao total geral
-
-            // Classificar por tipo de serviço
-            const paymentType = payment.serviceType || 'outro';
-            report.financialSummary.otherPayments.byType[paymentType] =
-                (report.financialSummary.otherPayments.byType[paymentType] || 0) + amount;
-
-            // Classificar por método
-            const method = payment.paymentMethod.toLowerCase();
-            if (report.financialSummary.otherPayments.byMethod[method] !== undefined) {
-                report.financialSummary.otherPayments.byMethod[method] += amount;
+            else {
+                report.summary.pending.count++;
+                report.summary.pending.value += value;
+                report.summary.pending.details.push(appointmentDetail);
             }
 
-            // Adicionar detalhes
-            report.financialSummary.otherPayments.details.push({
-                id: payment._id,
-                type: paymentType,
-                amount: amount,
-                method: payment.paymentMethod,
-                patient: payment.patient?.fullName || 'Avulso',
-                service: payment.serviceType,
-                doctor: {
-                    fullName: payment.doctor.fullName,
-                    specialty: payment.doctor.specialty,
-                },
-                createdAt: payment.createdAt,
-
-            });
+            // Valor esperado (todos exceto cancelados)
+            if (!isCanceledStatus(status)) {
+                report.financial.totalExpected += value;
+                professional.financial.expected += value;
+            }
         });
 
+        // 5. Processar pagamentos avulsos (pacotes, etc)
+        payments.forEach(payment => {
+            if (!payment.appointment) {
+                const amount = payment.amount || 0;
+                const method = normalizePaymentMethod(payment.paymentMethod);
+                const type = payment.serviceType;
+                const doctorId = payment.doctor?._id.toString();
+                const patientId = payment.patient?._id.toString();
 
-        // 9. Retornar o relatório completo
+                // Detalhe do pagamento
+                const paymentDetail = {
+                    id: payment._id,
+                    type: type,
+                    patient: payment.patient?.fullName || 'Avulso',
+                    value: amount,
+                    method: method,
+                    createdAt: payment.createdAt,
+                    doctor: payment.doctor?.fullName || 'Não vinculado'
+                };
+
+                // Adicionar paciente se houver
+                if (patientId) report.patients.add(patientId);
+
+                // Se for pacote, adicionar à seção específica
+                if (type === 'package_session' && amount > 0) {
+                    report.financial.packages.total += amount;
+                    report.financial.packages.details.push({
+                        ...paymentDetail,
+                        sessions: payment.package?.totalSessions || 0
+                    });
+                }
+
+                // Só adiciona ao total se o pagamento estiver pago
+                if (payment.status === 'paid') {
+                    report.financial.totalReceived += amount;
+                    report.financial.paymentMethods[method].amount += amount;
+                    report.financial.paymentMethods[method].details.push(paymentDetail);
+
+                    // Atualizar por profissional se houver
+                    if (doctorId && report.byProfessional[doctorId]) {
+                        const prof = report.byProfessional[doctorId];
+                        prof.financial.received += amount;
+                        prof.financial.methods[method].amount += amount;
+                        prof.financial.methods[method].details.push(paymentDetail);
+                    }
+                }
+            }
+        });
+
+        // 6. Limpar valores zerados
+        Object.keys(report.financial.paymentMethods).forEach(method => {
+            if (report.financial.paymentMethods[method].amount === 0) {
+                report.financial.paymentMethods[method].details = [];
+            }
+        });
+
+        // 7. Calcular métricas
+        report.summary.patientsCount = report.patients.size;
+        report.patients = Array.from(report.patients);
+
+        // Calcular métricas por profissional
+        Object.values(report.byProfessional).forEach(prof => {
+            const totalScheduled = prof.appointments.length;
+            const totalAttended = prof.appointments.filter(a => 
+                isConfirmedStatus(a.status)).length;
+            const totalCanceled = prof.appointments.filter(a => 
+                isCanceledStatus(a.status)).length;
+
+            prof.metrics.attendanceRate = (totalScheduled - totalCanceled) > 0
+                ? `${Math.round((totalAttended / (totalScheduled - totalCanceled)) * 100)}%`
+                : '0%';
+
+            prof.metrics.averageTicket = totalAttended > 0
+                ? `R$ ${(prof.financial.received / totalAttended).toFixed(2)}`
+                : 'R$ 0,00';
+        });
+
+        // 8. Converter byProfessional para array
+        report.byProfessional = Object.values(report.byProfessional);
+
+        // 9. Retornar resposta
         res.json({
             success: true,
             data: report,
@@ -1180,8 +1157,9 @@ router.get('/daily-closing', async (req, res) => {
                 generatedAt: new Date().toISOString(),
                 recordCount: {
                     appointments: appointments.length,
-                    otherPayments: nonAppointmentPayments.length,
-                    professionals: professionalsMap.size
+                    payments: payments.length,
+                    professionals: report.byProfessional.length,
+                    patients: report.patients.length
                 }
             }
         });
@@ -1195,6 +1173,31 @@ router.get('/daily-closing', async (req, res) => {
         });
     }
 });
+
+// Funções auxiliares (manter as mesmas do exemplo anterior)
+// Funções auxiliares
+function normalizePaymentMethod(method) {
+    if (!method) return 'dinheiro';
+    const m = method.toLowerCase();
+    return m.includes('pix') ? 'pix' :
+        (m.includes('cartão') || m.includes('cartao')) ? 'cartão' : 'dinheiro';
+}
+
+function isCompletedStatus(status) {
+    return ['concluído', 'concluido', 'completed', 'realizado'].includes(status);
+}
+
+// Funções de verificação de status (ajustadas)
+function isConfirmedStatus(status) {
+    if (!status) return false;
+    return status.toLowerCase() === 'confirmado';
+}
+
+function isCanceledStatus(status) {
+    if (!status) return false;
+    return ['cancelado', 'cancelada'].includes(status.toLowerCase());
+}
+
 // Detalhamento de sessões agendadas
 router.get('/daily-scheduled-details', async (req, res) => {
     try {

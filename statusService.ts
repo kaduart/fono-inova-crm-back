@@ -1,12 +1,5 @@
 
 // src/services/appointmentService.ts
-import {
-    AppointmentStatus,
-    IAppointmentResponse,
-    IPaginatedAppointmentResponse,
-    TherapyType
-} from '../utils/types/types';
-import API from './api';
 
 export interface StatusConfig {
     [key: string]: {
@@ -24,7 +17,7 @@ export const OPERATIONAL_STATUS_CONFIG: StatusConfig = {
     confirmado: {
         backgroundColor: '#2196F3', // Azul
         textColor: '#FFFFFF',
-        label: 'Confirmado'
+        label: 'Concluído'
     },
     cancelado: {
         backgroundColor: '#F44336', // Vermelho

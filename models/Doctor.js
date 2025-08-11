@@ -1,5 +1,6 @@
 // models/doctorModel.js
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import mongoose from 'mongoose';
 
 const DailyScheduleSchema = new mongoose.Schema({
@@ -39,7 +40,28 @@ const doctorSchema = new mongoose.Schema({
     type: [DailyScheduleSchema], // Array de DailyScheduleSchema
     default: [],
   },
+  password: { type: String, select: false },
+  passwordResetToken: String,
+  passwordResetExpires: Date
 }, { timestamps: true });
+
+// Método para comparar senhas (único método necessário no model)
+doctorSchema.methods.comparePassword = async function (password) {
+  return await bcrypt.compare(password, this.password);
+};
+
+// Método para gerar token de reset (armazena no model)
+doctorSchema.methods.createPasswordResetToken = function () {
+  const resetToken = crypto.randomBytes(32).toString('hex');
+
+  this.passwordResetToken = crypto.createHash('sha256')
+    .update(resetToken)
+    .digest('hex');
+
+  this.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10min
+
+  return resetToken;
+};
 
 doctorSchema.pre('save', async function (next) {
   if (this.isModified('password') && this.password) { // Garante que há uma senha para hash e que ela foi modificada

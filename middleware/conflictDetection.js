@@ -1,100 +1,97 @@
-import { SESSION_DURATION_MS } from '../config/constants.js';
+import mongoose from 'mongoose';
 import Appointment from '../models/Appointment.js';
 import Doctor from '../models/Doctor.js';
 
 export const checkAppointmentConflicts = async (req, res, next) => {
-    try {
-        const { doctorId, patientId, date, time } = req.body;
-        const appointmentId = req.body.metadata?.appointmentId || null;
+    const { doctorId, patientId, date, time } = req.body;
+    const appointmentId = req.params.id;
 
-        if (!doctorId || !patientId || !date || !time) {
-            return res.status(400).json({ error: "Campos obrigatórios faltando" });
-        }
-
-        const startTime = new Date(date);
-        if (isNaN(startTime.getTime())) {
-            return res.status(400).json({ error: "Data inválida" });
-        }
-
-        const SESSION_DURATION = SESSION_DURATION_MS;
-        const endTime = new Date(startTime.getTime() + SESSION_DURATION);
-
-        const startOfDay = new Date(startTime);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(startTime);
-        endOfDay.setHours(23, 59, 59, 999);
-
-        // Modificação 1: Ignorar agendamentos cancelados para médico
-        const existingAppointments = await Appointment.find({
-            doctorId,
-            date,
-            status: { $ne: 'cancelado' }, // Ignora cancelados
-            ...(appointmentId && { _id: { $ne: appointmentId } }) // Exclui o próprio agendamento
-        });
-
-        // Modificação 2: Verificação de conflito considerando apenas agendamentos ativos
-        const hasDoctorConflict = existingAppointments.some(app => {
-            const appStart = new Date(app.date);
-            const appEnd = new Date(appStart.getTime() + SESSION_DURATION);
-            return startTime < appEnd && endTime > appStart;
-        });
-
-        if (hasDoctorConflict) {
-            return res.status(409).json({
-                error: 'Conflito de horário',
-                message: 'Médico já possui agendamento ativo neste horário'
-            });
-        }
-
-        // Adicionar verificação de sessões de pacote
-        if (req.packageData) {
-            const packageAppointments = await Appointment.find({
-                package: req.packageData._id,
-                status: { $ne: 'cancelado' }
-            });
-
-            if (packageAppointments.length >= req.packageData.totalSessions) {
-                return res.status(409).json({
-                    error: 'Limite de sessões excedido',
-                    message: 'Este pacote já foi totalmente utilizado'
-                });
+    // Verificação mais robusta de campos obrigatórios
+    if (!doctorId || !patientId || !date || !time) {
+        return res.status(400).json({
+            error: "Dados incompletos para verificação de conflitos",
+            requiredFields: {
+                doctorId: !doctorId ? "Campo obrigatório" : "OK",
+                patientId: !patientId ? "Campo obrigatório" : "OK",
+                date: !date ? "Campo obrigatório" : "OK",
+                time: !time ? "Campo obrigatório" : "OK"
             }
-        }
-        // Modificação 3: Ignorar agendamentos cancelados para paciente
-        const patientAppointments = await Appointment.find({
-            patientId,
+        });
+    }
+
+    try {
+        // Verificação de conflitos para o médico - versão mais segura
+        const doctorConflict = await Appointment.findOne({
+            doctor: new mongoose.Types.ObjectId(doctorId),
             date,
-            status: { $ne: 'cancelado' }, // Ignora cancelados
-            ...(appointmentId && { _id: { $ne: appointmentId } }) // Exclui o próprio agendamento
-        });
+            time,
+            operationalStatus: { $ne: 'cancelado' },
+            _id: { $ne: appointmentId }
+        }).lean();
 
-        // Modificação 4: Verificação de conflito para paciente
-        const hasPatientConflict = patientAppointments.some(app => {
-            const appStart = new Date(app.date);
-            const appEnd = new Date(appStart.getTime() + SESSION_DURATION);
-            return startTime < appEnd && endTime > appStart;
-        });
+        if (doctorConflict) {
+            const conflictInfo = {
+                appointmentId: doctorConflict._id,
+                // Acesso seguro a fullName com fallback
+                patientName: doctorConflict.patient?.fullName
+                    || doctorConflict.patientId?.fullName
+                    || 'Nome não disponível',
+                existingAppointment: doctorConflict
+            };
 
-        if (hasPatientConflict) {
             return res.status(409).json({
-                error: 'Conflito de horário',
-                message: 'Paciente já possui agendamento ativo neste horário'
+                error: 'Conflito de agenda médica',
+                message: 'O médico já possui um compromisso neste horário',
+                conflict: conflictInfo,
+                suggestion: 'Por favor, escolha outro horário ou médico'
+            });
+        }
+
+        // Verificação de conflitos para o paciente - versão mais segura
+        const patientConflict = await Appointment.findOne({
+            patient: new mongoose.Types.ObjectId(patientId),
+            date,
+            time,
+            operationalStatus: { $ne: 'cancelado' },
+            _id: { $ne: appointmentId }
+        }).lean();
+
+        if (patientConflict) {
+            const conflictInfo = {
+                appointmentId: patientConflict._id,
+                // Acesso seguro a fullName com fallback
+                doctorName: patientConflict.doctor?.fullName
+                    || patientConflict.doctorId?.fullName
+                    || 'Nome não disponível',
+                existingAppointment: patientConflict
+            };
+
+            return res.status(409).json({
+                error: 'Conflito de agenda do paciente',
+                message: 'O paciente já possui um compromisso neste horário',
+                conflict: conflictInfo,
+                suggestion: 'Por favor, escolha outro horário ou paciente'
             });
         }
 
         next();
     } catch (error) {
-        console.error('Erro em checkAppointmentConflicts:', error);
-        res.status(500).json({ error: 'Erro interno ao verificar conflitos' });
+        console.error('Erro detalhado na verificação de conflitos:', {
+            error: error.message,
+            stack: error.stack,
+            requestBody: req.body,
+            params: req.params
+        });
+
+        res.status(500).json({
+            error: 'Erro interno na verificação de conflitos',
+            details: process.env.NODE_ENV === 'development' ? {
+                message: error.message,
+                stack: error.stack
+            } : undefined
+        });
     }
 };
-
-function parseBRTToUTCDate(dateStr, timeStr) {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    const [hour, minute] = timeStr.split(':').map(Number);
-
-    return new Date(Date.UTC(year, month - 1, day, hour, minute));
-}
 
 export const getAvailableTimeSlots = async (req, res) => {
     try {
