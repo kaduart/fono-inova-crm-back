@@ -68,6 +68,7 @@ export const authController = {
             </div>
           </div>
         `,
+        
         text: `Para redefinir sua senha, acesse: ${resetUrl}\n\nLink válido por 10 minutos.`
       };
 
