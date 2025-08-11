@@ -17,6 +17,7 @@ import './models/User.js';
 // Routes
 import adminRoutes from './routes/admin.js';
 import appointmentRoutes from './routes/appointment.js';
+import authRoutes from './routes/auth.js';
 import doctorRoutes from './routes/doctor.js';
 import evolutionRoutes from './routes/evolution.js';
 import leadsRouter from './routes/Leads.js';
@@ -104,10 +105,11 @@ mongoose.connect(process.env.MONGO_URI)
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
 // Rotas
+app.use('/api/auth', authRoutes);
 app.use('/api/signup', signupRoutes);
 app.use('/api/login', loginRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/doctor', doctorRoutes);
+app.use('/api/doctors', doctorRoutes);
 app.use('/api/patients', patientRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/evolutions', evolutionRoutes);

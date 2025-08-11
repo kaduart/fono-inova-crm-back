@@ -67,7 +67,7 @@ router.post('/add', auth, async (req, res) => {
     res.status(201).json({ message: 'Patient added successfully!' });
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({ error: 'Email, CPF or RG already exist!' });
+      return res.status(400).json({ error: 'Email, CPF já RG existe!' });
     }
     res.status(400).json({ error: error.message });
   }

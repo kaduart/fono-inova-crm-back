@@ -1,20 +1,20 @@
 import { v4 as uuidv4 } from 'uuid';
 import { sicoobApi } from '../config/sicoobConfig';
-import { getSicoobAccessToken } from './authService';
 import Appointment from '../models/Appointment';
+import { getSicoobAccessToken } from './authService';
 
 export const createPixCharge = async (appointmentId: string): Promise<any> => {
   try {
     const appointment = await Appointment.findById(appointmentId)
       .populate('patient doctor')
       .exec();
-    
+
     if (!appointment) throw new Error('Agendamento não encontrado');
     if (!appointment.paymentAmount) throw new Error('Valor não definido');
 
     const accessToken = await getSicoobAccessToken();
     const txid = uuidv4().replace(/-/g, '').substring(0, 35);
-    
+
     const payload = {
       calendario: {
         expiracao: 86400 // 24 horas
@@ -44,7 +44,7 @@ export const createPixCharge = async (appointmentId: string): Promise<any> => {
       createdAt: new Date(),
       status: 'pending'
     };
-    
+
     await appointment.save();
 
     return {

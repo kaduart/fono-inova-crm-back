@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 export const auth = async (req, res, next) => {
     try {
         // Verificar token no cookie ou header
-        const token = req.cookies?.token || req.headers.authorization?.split(' ')[1];
+      const token = req.cookies?.token || req.headers.authorization?.split(' ')[1];
         if (!token) {
             return res.status(401).json({
                 code: 'TOKEN_REQUIRED',
