@@ -43,10 +43,11 @@ const evolutionSchema = new mongoose.Schema({
         enum: ['language', 'motor', 'cognitive', 'behavior', 'social'],
         required: false // <- ajustado para não ser obrigatório
     }],
-    metrics: {
-        type: Map,
-        of: Number
-    },
+    metrics: [{
+        name: String,
+        value: Number
+    }],
+
     specialty: { type: String, required: true },
     content: { type: mongoose.Schema.Types.Mixed },
     observations: String,

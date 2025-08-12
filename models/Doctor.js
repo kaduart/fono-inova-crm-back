@@ -1,7 +1,7 @@
 // models/doctorModel.js
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import mongoose from 'mongoose';
+import mongoose, { Schema } from 'mongoose';
 
 const DailyScheduleSchema = new mongoose.Schema({
   day: {
@@ -31,6 +31,10 @@ const doctorSchema = new mongoose.Schema({
       'neuroped'
     ],
   },
+  specialties: [{
+    type: Schema.Types.ObjectId,
+    ref: 'Specialty' // Ou o modelo correto
+  }],
   // ======================================================================
   licenseNumber: { type: String, required: true, unique: true },
   phoneNumber: { type: String, required: true },
@@ -40,7 +44,7 @@ const doctorSchema = new mongoose.Schema({
     type: [DailyScheduleSchema], // Array de DailyScheduleSchema
     default: [],
   },
-  password: { type: String, select: false },
+  password: { type: String },
   passwordResetToken: String,
   passwordResetExpires: Date
 }, { timestamps: true });
@@ -70,6 +74,9 @@ doctorSchema.pre('save', async function (next) {
   }
   next();
 });
+
+doctorSchema.path('password').required(true, 'Senha é obrigatória');
+doctorSchema.path('password').minlength(6, 'Senha deve ter no mínimo 6 caracteres');
 
 const Doctor = mongoose.model('Doctor', doctorSchema);
 export default Doctor;
