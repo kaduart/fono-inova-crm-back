@@ -22,22 +22,29 @@ router.post('/', async (req, res) => {
   try {
     let user;
     if (role === 'doctor') {
-      user = await Doctor.findOne({ email });
+      user = await Doctor.findOne({ email }).select('+password');
     } else if (role === 'admin') {
-      user = await Admin.findOne({ email });
+      user = await Admin.findOne({ email }).select('+password');
     } else {
-      user = await User.findOne({ email, role });
+      user = await User.findOne({ email, role }).select('+password');
     }
+
+    console.log('userrrrrrrr', user)
     if (!user) {
       return res.status(400).send({ error: 'Invalid email or role' });
     }
-
     if (!user.password) {
       return res.status(400).send({ error: 'Usuário não possui senha registrada' });
     }
-    const isMatch = await bcrypt.compare(password, user.password);
+
+    const isMatch = await bcrypt.compare(password.trim(), user.password);
     if (!isMatch) {
-      return res.status(400).send({ error: 'Invalid password' });
+      console.log('FALHA NA COMPARAÇÃO:', {
+        senhaRecebida: password,
+        hashNoBanco: user.password,
+        hashType: user.password.substring(0, 3)
+      });
+      return res.status(400).send({ error: 'Senha inválida' });
     }
 
     const tokenPayload = {
@@ -49,9 +56,14 @@ router.post('/', async (req, res) => {
 
     res.send({
       token,
-      role: user.role,
-      name: user.fullName
+      user: {
+        id: user._id.toString(),
+        name: user.fullName,
+        email: user.email,
+        role: user.role
+      }
     });
+
 
   } catch (error) {
     console.error('Erro ao fazer login:', error); // <-- Adiciona este log

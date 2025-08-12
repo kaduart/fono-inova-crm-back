@@ -1,23 +1,25 @@
 import mongoose from 'mongoose';
 
 const metricSchema = new mongoose.Schema({
-  name: { 
-    type: String, 
-    required: true 
+  name: {
+    type: String,
+    required: true
   },
   description: String,
-  type: { 
-    type: String, 
-    enum: ['language', 'motor', 'cognitive', 'behavior', 'social'],
-    required: true 
+  // No modelo Metric (backend), adicione:
+  type: {
+    type: String,
+    enum: ['range', 'boolean', 'scale'],
+    default: 'range'
   },
-  minValue: { 
-    type: Number, 
-    default: 0 
+  options: { type: Array },
+  minValue: {
+    type: Number,
+    default: 0
   },
-  maxValue: { 
-    type: Number, 
-    default: 10 
+  maxValue: {
+    type: Number,
+    default: 10
   },
   unit: String
 });

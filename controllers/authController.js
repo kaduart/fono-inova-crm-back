@@ -1,6 +1,8 @@
 import sgMail from '@sendgrid/mail';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
+import jwt from 'jsonwebtoken';
+import Admin from '../models/Admin.js';
 import Doctor from '../models/Doctor.js';
 
 dotenv.config();
@@ -9,40 +11,57 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 export const authController = {
   async forgotPassword(req, res) {
     try {
-      const { email } = req.body;
+      const { email, role } = req.body;
 
-      // 1. Validação básica
-      if (!email) {
+      console.log('🔗 Link \requisiciaoooo:', {
+        email,
+        role
+      });
+      if (!email || !role) {
         return res.status(400).json({
           success: false,
-          message: 'Email é obrigatório'
+          message: 'Email e tipo de usuário são obrigatórios'
+        });
+      }
+      console.log('úsuario', role)
+      let user;
+      if (role === 'doctor') {
+        user = await Doctor.findOne({ email });
+      } else if (role === 'admin') {
+        user = await Admin.findOne({ email });
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Tipo de usuário inválido'
         });
       }
 
-      // 2. Busca o médico
-      const doctor = await Doctor.findOne({ email });
-      if (!doctor) {
+      if (!user) {
         console.warn(`Tentativa de recuperação para email não cadastrado: ${email}`);
-        // Não revelar que o email não existe por segurança
         return res.status(200).json({
           success: true,
           message: 'Se o email existir, você receberá instruções'
         });
       }
 
+
       // 3. Gera token seguro
       const resetToken = crypto.randomBytes(32).toString('hex');
       const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-      const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+      const resetUrl = `${process.env.NODE_ENV === 'production'
+        ? process.env.FRONTEND_URL_PRD
+        : process.env.FRONTEND_URL_DEV
+        }/reset-password/${resetToken}?role=${role}`;
+
 
       // 4. Atualiza o médico
-      doctor.passwordResetToken = hashedToken;
-      doctor.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutos
-      await doctor.save({ validateBeforeSave: false });
+      user.passwordResetToken = hashedToken;
+      user.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutos
+      await user.save({ validateBeforeSave: false });
 
       // 5. Envia email com template profissional
       const msg = {
-        to: doctor.email,
+        to: user.email,
         from: {
           email: process.env.EMAIL_FROM,
           name: "Clinica FonoInova"
@@ -68,12 +87,12 @@ export const authController = {
             </div>
           </div>
         `,
-        
+
         text: `Para redefinir sua senha, acesse: ${resetUrl}\n\nLink válido por 10 minutos.`
       };
 
       await sgMail.send(msg);
-      console.log(`Email de recuperação enviado para: ${doctor.email}`);
+      console.log(`Email de recuperação enviado para: ${user.email}`);
 
       return res.status(200).json({
         success: true,
@@ -98,23 +117,92 @@ export const authController = {
   async resetPassword(req, res) {
     try {
       const { token } = req.params;
-      const { password } = req.body;
+      const { password, role } = req.body;
 
-      // 1. Validação
+      // Validações
+      if (!role || !['doctor', 'admin'].includes(role)) {
+        return res.status(400).json({ error: 'Tipo de usuário inválido' });
+      }
+
       if (!password || password.length < 6) {
+        return res.status(400).json({ error: 'Senha deve ter no mínimo 6 caracteres' });
+      }
+
+      // Hash do token
+      const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+      // Busca o usuário
+      let user;
+      if (role === 'doctor') {
+        user = await Doctor.findOne({
+          passwordResetToken: hashedToken,
+          passwordResetExpires: { $gt: Date.now() }
+        }).select('+password');
+      } else if (role === 'admin') {
+        user = await Admin.findOne({
+          passwordResetToken: hashedToken,
+          passwordResetExpires: { $gt: Date.now() }
+        }).select('+password');
+      }
+
+      if (!user) {
         return res.status(400).json({
-          success: false,
-          message: 'Senha deve ter no mínimo 6 caracteres'
+          error: 'Token inválido ou expirado',
+          solution: 'Solicite um novo link de redefinição'
         });
       }
 
-      // 2. Hash do token para comparação
+      console.log('hash salvo no banco:', user.password);
+      console.log('senha recebida:', password);
+
+      // Atualiza a senha (com hash)
+      user.password = password;
+      user.passwordResetToken = undefined;
+      user.passwordResetExpires = undefined;
+
+      // Salva garantindo que os hooks são executados
+      await user.save({ validateBeforeSave: true });
+
+      // Gera novo token JWT válido
+      const authToken = jwt.sign(
+        {
+          id: user._id.toString(),
+          role
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+
+      return res.json({
+        success: true,
+        message: 'Senha atualizada com sucesso!',
+        token: authToken, // Envia o novo token
+        user: {
+          id: user._id,
+          email: user.email,
+          role
+        }
+      });
+
+    } catch (error) {
+      console.error('Erro no resetPassword:', error);
+      return res.status(500).json({
+        error: 'Erro ao atualizar senha',
+        details: error.message
+      });
+    }
+  },
+
+  // Adicione este método no seu authController para verificar tokens
+  async verifyResetToken(req, res) {
+    try {
+      const { token } = req.params;
+
       const hashedToken = crypto
         .createHash('sha256')
         .update(token)
         .digest('hex');
 
-      // 3. Busca médico com token válido
       const doctor = await Doctor.findOne({
         passwordResetToken: hashedToken,
         passwordResetExpires: { $gt: Date.now() }
@@ -123,34 +211,22 @@ export const authController = {
       if (!doctor) {
         return res.status(400).json({
           success: false,
+          valid: false,
           message: 'Token inválido ou expirado'
         });
       }
 
-      // 4. Atualiza a senha
-      doctor.password = password;
-      doctor.passwordResetToken = undefined;
-      doctor.passwordResetExpires = undefined;
-      await doctor.save();
-
-      // 5. Opcional: Envia email de confirmação
-      await sgMail.send({
-        to: doctor.email,
-        from: process.env.EMAIL_FROM,
-        subject: 'Senha alterada com sucesso',
-        text: 'Sua senha foi alterada com sucesso.'
-      });
-
       return res.status(200).json({
         success: true,
-        message: 'Senha atualizada com sucesso!'
+        valid: true,
+        message: 'Token válido'
       });
 
     } catch (error) {
-      console.error('Erro ao resetar senha:', error);
+      console.error('Erro ao verificar token:', error);
       return res.status(500).json({
         success: false,
-        message: 'Erro ao atualizar senha'
+        message: 'Erro ao verificar token'
       });
     }
   }

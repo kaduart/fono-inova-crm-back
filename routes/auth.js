@@ -3,10 +3,10 @@ import { authController } from '../controllers/authController.js';
 
 const router = express.Router();
 
-// Rota pública - solicitar reset
-router.post('/forgot-password', authController.forgotPassword);
 
-// Rota pública - definir nova senha
+router.post('/forgot-password', authController.forgotPassword);
+router.get('/verify-reset-token/:token', authController.verifyResetToken);
 router.patch('/reset-password/:token', authController.resetPassword);
+
 
 export default router;

@@ -139,7 +139,6 @@ export const doctorOperations = {
   update: async (req, res) => {
     try {
 
-      console.log('reqauisicaooooo', req.body)
       const doctor = await Doctor.findByIdAndUpdate(req.params.id, req.body, {
         new: true,
         runValidators: true
@@ -213,25 +212,69 @@ export const getDoctorById = async (req, res) => {
   }
 };
 
-// controllers/doctorController.js
-// backend/controllers/doctorController.js
 export const getDoctorPatients = async (req, res) => {
+
   try {
-    const doctor = new ObjectId(req.user.id);
+    const doctorId = req.user.id;
 
-    const patients = await Patient.find({ doctor: doctor });
-    const collectionPatients = await mongoose.connection.db.collection('patients').find({
-      doctor: doctor
-    }).toArray();
+    // Verificação detalhada do ID
+    if (!doctorId) {
+      return res.status(400).json({
+        code: 'MISSING_ID',
+        message: 'ID do médico não fornecido'
+      });
+    }
 
-    const allPatients = await Patient.find();
-    const otherDoctorId = new ObjectId(); // ID de outro médico
-    const otherDoctorPatients = await Patient.find({ doctor: otherDoctorId });
+    const isValid = mongoose.isValidObjectId(doctorId);
+
+    if (!isValid) {
+      return res.status(400).json({
+        code: 'INVALID_ID_FORMAT',
+        message: 'Formato de ID inválido',
+        receivedId: doctorId,
+        expectedFormat: 'ObjectId hexadecimal de 24 caracteres'
+      });
+    }
+
+    // Tentar consulta de duas formas diferentes
+    const patientsAsString = await Patient.find({ doctor: doctorId });
+    const patientsAsObjectId = await Patient.find({
+      doctor: new mongoose.Types.ObjectId(doctorId)
+    });
+
+    // Verificar qual formato funciona
+    const patients = patientsAsObjectId.length > 0
+      ? patientsAsObjectId
+      : patientsAsString;
+
+    if (patients.length === 0) {
+      return res.status(404).json({
+        code: 'NO_PATIENTS_FOUND',
+        message: 'Nenhum paciente encontrado para este médico',
+        doctorId
+      });
+    }
 
     res.json(patients);
+
   } catch (error) {
-    console.error('Erro ao buscar pacientes:', error);
-    res.status(500).json({ error: 'Erro interno no servidor' });
+
+    // Tratamento específico para erros de cast
+    if (error.name === 'CastError') {
+      console.error('Detalhes do CastError:', error.message);
+      return res.status(400).json({
+        code: 'CAST_ERROR',
+        message: 'Erro de conversão de tipo',
+        path: error.path,
+        value: error.value
+      });
+    }
+
+    res.status(500).json({
+      code: 'SERVER_ERROR',
+      message: 'Erro interno no servidor',
+      error: error.message
+    });
   }
 };
 

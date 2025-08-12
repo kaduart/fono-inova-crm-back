@@ -1,12 +1,15 @@
 db.payments.deleteMany({
-  patient: ObjectId("68407283928a20e92ab137d0")
+  patient: ObjectId("6897dc360683ca3788ae815d")
+});
+db.payments.deleteMany({
+  _id: ObjectId("6899df06c1f2dc889a764bb7")
 });
 
 db.appointments.deleteMany({
-  patient: ObjectId("68407283928a20e92ab137d0")
+  patient: ObjectId("6897dc360683ca3788ae815d")
 });
 db.sessions.deleteMany({
-  patient: ObjectId("68407283928a20e92ab137d0")
+  patient: ObjectId("6897dc360683ca3788ae815d")
 });
 
 
@@ -33,7 +36,7 @@ db.sessions.find({
 
 //consulta pagamento por id patient
 db.payments.find({
-  doutor: ObjectId("688c053930c7cc9720a2ee64"),
+  patient: ObjectId("685c5617aec14c71635865ec"),
 });
 
 
@@ -60,7 +63,7 @@ db.sessions.find({
 
 //consulta do dia futuro
 db.appointments.find({
-  date: "2025-08-14"
+  date: "2025-08-11"
 })
 
 //consulta do dia futuro
