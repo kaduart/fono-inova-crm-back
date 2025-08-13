@@ -75,8 +75,6 @@ doctorSchema.pre('save', async function (next) {
   next();
 });
 
-doctorSchema.path('password').required(true, 'Senha é obrigatória');
-doctorSchema.path('password').minlength(6, 'Senha deve ter no mínimo 6 caracteres');
 
 const Doctor = mongoose.model('Doctor', doctorSchema);
 export default Doctor;
