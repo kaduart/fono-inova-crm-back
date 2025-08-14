@@ -182,8 +182,19 @@ export const packageOperations = {
                 if (existingAppointment) {
                     const patient = await Patient.findById(patientId).select('fullName').lean();
                     const doctor = await Doctor.findById(doctorId).select('fullName').lean();
+
+                    // Garante que a data seja formatada corretamente
+                    const formatDate = (date) => {
+                        try {
+                            const d = new Date(date);
+                            return isNaN(d) ? date.toString() : d.toLocaleDateString('pt-BR');
+                        } catch {
+                            return date?.toString() || 'data desconhecida';
+                        }
+                    };
+
                     throw new Error(
-                        `Conflito de agendamento: ${patient.name} já tem sessão com ${doctor.name} em ${session.date.toLocaleDateString()} às ${time}`
+                        `Conflito de agendamento: ${patient?.fullName || 'Paciente'} já tem sessão com ${doctor?.fullName || 'Médico'} em ${formatDate(session.date)} às ${time}`
                     );
                 }
 
