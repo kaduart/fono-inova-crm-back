@@ -173,8 +173,6 @@ export const syncEvent = async (originalDoc, type, session = null) => {
                 }
             }
 
-            console.log(`[SYNC] Sincronizando evento: `, updateData);
-
             // Operação atômica de upsert
             await MedicalEvent.findOneAndUpdate(
                 { originalId: originalDoc._id, type },
@@ -187,7 +185,6 @@ export const syncEvent = async (originalDoc, type, session = null) => {
                 }
             );
 
-            console.log(`[SYNC] Evento sincronizado: ${originalDoc._id} (${type})`);
             return true;
         }, originalDoc, type);
 

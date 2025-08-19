@@ -1,15 +1,16 @@
 db.payments.deleteMany({
   patient: ObjectId("6897dc360683ca3788ae815d")
 });
-db.payments.deleteMany({
-  _id: ObjectId("6899df06c1f2dc889a764bb7")
-});
-
 db.appointments.deleteMany({
   patient: ObjectId("6897dc360683ca3788ae815d")
 });
 db.sessions.deleteMany({
   patient: ObjectId("6897dc360683ca3788ae815d")
+});
+
+
+db.payments.deleteMany({
+  _id: ObjectId("6899df06c1f2dc889a764bb7")
 });
 
 
@@ -31,7 +32,7 @@ db.sessions.deleteMany({
 });
 //consulta sessao por id
 db.sessions.find({
-  patient: ObjectId("685c29afaec14c716358622a"),
+  patient: ObjectId("6897dc360683ca3788ae815d"),
 });
 
 //consulta pagamento por id patient
@@ -40,9 +41,9 @@ db.payments.find({
 });
 
 
-//consulta agendamento por id patient
+//consulta agendamento por  patient
 db.appointments.find({
-  _id: ObjectId("6893c50f4b4ab2f2fe938218"),
+  patient: ObjectId("6897dc360683ca3788ae815d"),
 });
 
 // consultar pagamentos do dia

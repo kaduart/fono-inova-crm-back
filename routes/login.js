@@ -13,60 +13,57 @@ const router = express.Router();
 
 router.post('/', async (req, res) => {
   const { email, password, role } = req.body;
-  console.log('Recebido:', req.body); // Verifique se os dados chegam
-
-  // Headers CORS essenciais
-  res.header('Access-Control-Allow-Origin', req.headers.origin);
-  res.header('Access-Control-Allow-Credentials', 'true');
 
   try {
     let user;
     if (role === 'doctor') {
-      user = await Doctor.findOne({ email }).select('+password');
+      // Busca o médico e popula a especialidade
+      user = await Doctor.findOne({ email })
+        .select('+password')
+        .populate('specialty', 'name');
     } else if (role === 'admin') {
       user = await Admin.findOne({ email }).select('+password');
     } else {
       user = await User.findOne({ email, role }).select('+password');
     }
 
-    console.log('userrrrrrrr', user)
     if (!user) {
       return res.status(400).send({ error: 'Invalid email or role' });
-    }
-    if (!user.password) {
-      return res.status(400).send({ error: 'Usuário não possui senha registrada' });
     }
 
     const isMatch = await bcrypt.compare(password.trim(), user.password);
     if (!isMatch) {
-      console.log('FALHA NA COMPARAÇÃO:', {
-        senhaRecebida: password,
-        hashNoBanco: user.password,
-        hashType: user.password.substring(0, 3)
-      });
       return res.status(400).send({ error: 'Senha inválida' });
     }
 
-    const tokenPayload = {
+    // Prepara os dados do usuário
+    const userData = {
       id: user._id.toString(),
-      role: user.role,
-      name: user.fullName
+      name: user.fullName,
+      email: user.email,
+      role: user.role
     };
-    const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '24h' });
+    console.log('sss', user)
+    // Adiciona specialty se for médico
+    if (role === 'doctor' && user.specialty) {
+      userData.specialty = user.specialty;
+    }
 
-    res.send({
-      token,
-      user: {
+    const token = jwt.sign(
+      {
         id: user._id.toString(),
+        role: user.role,
         name: user.fullName,
-        email: user.email,
-        role: user.role
-      }
-    });
+        specialty: role === 'doctor' ? user.specialty?.name : undefined
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
 
+    res.send({ token, user: userData });
 
   } catch (error) {
-    console.error('Erro ao fazer login:', error); // <-- Adiciona este log
+    console.error('Erro ao fazer login:', error);
     res.status(500).send({ error: 'Server error', message: error.message });
   }
 });

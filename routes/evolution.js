@@ -24,10 +24,8 @@ router.put('/:id', validateId, authorize(["admin", "doctor"]), updateEvaluation)
 
 // Métricas
 router.get('/metrics', async (req, res) => {
-    console.log('bateu nometrics', req.body)
     try {
         const metrics = await Metric.find();
-        console.log('bateu nometrics', metrics)
         res.json(metrics);
     } catch (error) {
         res.status(500).json({ error: error.message });

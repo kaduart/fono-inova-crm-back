@@ -48,73 +48,58 @@ export const nextBusinessDay = (date) => {
  * @param {string} startTimeStr - Horário inicial no formato HH:mm
  * @param {number} totalSessions - Número total de sessões
  * @param {number} sessionsPerWeek - Sessões por semana
+ * @param {boolean} [skipFirst=false] - Se true, pula a primeira sessão
  * @returns {Array} Array de objetos com {date: string, time: string}
  */
-export const calculateSessionDates = (startDateStr, startTimeStr, totalSessions, sessionsPerWeek) => {
-    // Validação dos parâmetros
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDateStr)) {
-        throw new Error('Formato de data inicial inválido. Use YYYY-MM-DD');
-    }
-
-    if (!/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(startTimeStr)) {
-        throw new Error('Formato de horário inválido. Use HH:mm');
-    }
+export const calculateSessionDates = (startDateStr, startTimeStr, count, sessionsPerWeek, skipFirst = false) => {
+    if (count < 1) return [];
 
     const sessionDates = [];
     const [year, month, day] = startDateStr.split('-').map(Number);
     let currentDate = new Date(year, month - 1, day);
 
-    // Valida data inicial
+    // Validação da data
     if (isNaN(currentDate.getTime())) {
         throw new Error('Data inicial inválida');
     }
 
-    // Ajusta se for fim de semana
-    if (isWeekend(currentDate)) {
-        currentDate = nextBusinessDay(currentDate);
+    // Se não for para pular a primeira, adiciona a data inicial
+    if (!skipFirst) {
+        sessionDates.push({
+            date: startDateStr, // Mantém como string original
+            time: startTimeStr
+        });
     }
 
-    // Adiciona a primeira sessão
-    sessionDates.push({
-        date: formatDate(currentDate),
-        time: startTimeStr
-    });
+    // Calcula quantas sessões adicionais precisam ser criadas
+    const additionalSessions = skipFirst ? count : count - 1;
 
-    // Calcula o intervalo entre sessões na mesma semana
-    const daysBetweenSessions = Math.floor(5 / sessionsPerWeek);
-    let sessionCount = 1;
+    // Calcula o intervalo entre sessões em dias
+    const daysBetween = Math.floor(7 / sessionsPerWeek);
 
-    while (sessionDates.length < totalSessions) {
-        const newDate = new Date(currentDate);
-
-        // Avança semanas completas para sessões adicionais
-        const weekOffset = Math.floor(sessionCount / sessionsPerWeek);
-
-        // Calcula o dia dentro da semana
-        const dayInWeek = sessionCount % sessionsPerWeek;
-
-        // Calcula o deslocamento de dias
-        const daysToAdd = weekOffset * 7 + dayInWeek * daysBetweenSessions;
-        newDate.setDate(newDate.getDate() + daysToAdd);
+    for (let i = 0; i < additionalSessions; i++) {
+        // Avança a data
+        currentDate.setDate(currentDate.getDate() + daysBetween);
 
         // Ajusta se for fim de semana
-        if (isWeekend(newDate)) {
-            const nextDate = nextBusinessDay(newDate);
-            sessionDates.push({
-                date: formatDate(nextDate),
-                time: startTimeStr
-            });
-        } else {
-            sessionDates.push({
-                date: formatDate(newDate),
-                time: startTimeStr
-            });
+        while (isWeekend(currentDate)) {
+            currentDate.setDate(currentDate.getDate() + 1);
         }
 
-        sessionCount++;
+        // Formata para "YYYY-MM-DD"
+        const formattedDate = [
+            currentDate.getFullYear(),
+            String(currentDate.getMonth() + 1).padStart(2, '0'),
+            String(currentDate.getDate()).padStart(2, '0')
+        ].join('-');
+
+        sessionDates.push({
+            date: formattedDate, // Garante formato string
+            time: startTimeStr
+        });
     }
 
-    return sessionDates.slice(0, totalSessions);
+    return sessionDates;
 };
 
 /**

@@ -6,15 +6,6 @@ import MedicalEvent from './MedicalEvent.js';
 const sessionSchema = new mongoose.Schema({
     date: {
         type: String,
-        /*  validate: {
-             validator: function (date) {
-                 if (!date) return true; // Permite null
- 
-                 const now = new Date();
-                 return date >= new Date(now.setHours(0, 0, 0, 0));
-             },
-             message: "A data e hora do agendamento devem ser posteriores ao momento atual."
-         } */
     },
     time: String,
     sessionType: {

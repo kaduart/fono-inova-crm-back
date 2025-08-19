@@ -13,7 +13,7 @@ const paymentSchema = new mongoose.Schema({
     },
     serviceType: {
         type: String,
-        enum: ['evaluation', 'session', 'package_session', 'individual_session'],
+        enum: ['evaluation', 'session', 'package_session', 'individual_session', 'meet', 'alignment'],
         required: true,
         default: 'session'
     },
@@ -58,10 +58,6 @@ const paymentSchema = new mongoose.Schema({
     appointment: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Appointment',
-        required: function () {
-            // Só obrigatório para pagamentos individuais
-            return this.serviceType !== 'package_session';
-        }
     },
     sessionType: {
         type: String,

@@ -78,7 +78,8 @@ const appointmentSchema = new mongoose.Schema({
   },
   serviceType: {
     type: String,
-    enum: ['individual_session', 'package_session', 'evaluation'],
+    enum: ['evaluation', 'session', 'package_session', 'individual_session', 'meet', 'alignment'],
+
     required: true
   },
   sessionValue: {
@@ -156,6 +157,8 @@ appointmentSchema.post('findOneAndDelete', async function (doc) {
   }
   next();
 }); */
+
+
 
 const Appointment = mongoose.model('Appointment', appointmentSchema);
 
