@@ -3,7 +3,6 @@ import Metric from "../models/Metric.js";
 
 // Criar avaliação
 export const createEvaluation = async (req, res) => {
-  console.log("Dados recebidos:", req.body);
 
   try {
 

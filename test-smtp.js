@@ -1,5 +1,5 @@
-import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
 
 // Carrega variáveis do .env explicitamente
 dotenv.config({ path: '.env' });
@@ -19,10 +19,6 @@ const emailConfig = {
 // Verificação das credenciais ANTES de usar
 if (!emailConfig.auth.user || !emailConfig.auth.pass) {
   console.error('❌ Credenciais faltando! Verifique seu .env');
-  console.log('Variáveis carregadas:', {
-    EMAIL_USER: process.env.EMAIL_USER,
-    EMAIL_PASSWORD: process.env.EMAIL_PASSWORD ? '***' : undefined
-  });
   process.exit(1);
 }
 
@@ -36,15 +32,14 @@ async function testSMTP() {
 
     const transporter = nodemailer.createTransport(emailConfig);
     await transporter.verify();
-    console.log('✅ SMTP autenticado com sucesso!');
-    
+
     const info = await transporter.sendMail({
       from: `"Teste" <${emailConfig.auth.user}>`,
       to: 'email-de-teste@example.com',
       subject: 'Teste SMTP',
       text: 'Funcionou!'
     });
-    
+
     console.log('📨 Email enviado! ID:', info.messageId);
   } catch (error) {
     console.error('❌ Falha crítica:', {

@@ -13,17 +13,12 @@ export const authController = {
     try {
       const { email, role } = req.body;
 
-      console.log('🔗 Link \requisiciaoooo:', {
-        email,
-        role
-      });
       if (!email || !role) {
         return res.status(400).json({
           success: false,
           message: 'Email e tipo de usuário são obrigatórios'
         });
       }
-      console.log('úsuario', role)
       let user;
       if (role === 'doctor') {
         user = await Doctor.findOne({ email });
@@ -92,7 +87,6 @@ export const authController = {
       };
 
       await sgMail.send(msg);
-      console.log(`Email de recuperação enviado para: ${user.email}`);
 
       return res.status(200).json({
         success: true,
@@ -151,9 +145,6 @@ export const authController = {
           solution: 'Solicite um novo link de redefinição'
         });
       }
-
-      console.log('hash salvo no banco:', user.password);
-      console.log('senha recebida:', password);
 
       // Atualiza a senha (com hash)
       user.password = password;

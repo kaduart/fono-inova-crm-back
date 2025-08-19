@@ -134,7 +134,6 @@ if (process.env.NODE_ENV === 'production') {
 // Inicia o servidor
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔒 CORS allowed for: ${allowedOrigins.join(', ')}`);
 }).on('error', err => {
   console.error('💥 Server failed to start:', err);
 });

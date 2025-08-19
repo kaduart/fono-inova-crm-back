@@ -36,8 +36,6 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
     const mongoSession = await mongoose.startSession();
     await mongoSession.startTransaction();
 
-    console.log('req.body -------->>>', req.body)
-
     try {
         const doctorId = req.body.doctorId || req.user.id;
 
@@ -243,20 +241,14 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
 });
 // Busca agendamentos com filtros
 router.get('/', auth, async (req, res) => {
-
-
     try {
         const { patientId, doctorId, status, specialty, startDate, endDate } = req.query;
         const filter = {};
-        console.log('Dados recebidos para agendamento', {
-            body: req.body,
-            patientId: req.body.patientId
-        });
-        // Construir filtros
+
+        // Filtros por paciente e médico
         if (patientId && patientId !== 'all' && mongoose.Types.ObjectId.isValid(patientId)) {
             filter.patient = new mongoose.Types.ObjectId(patientId);
         }
-
         if (doctorId && doctorId !== 'all' && mongoose.Types.ObjectId.isValid(doctorId)) {
             filter.doctor = new mongoose.Types.ObjectId(doctorId);
         }
@@ -264,7 +256,7 @@ router.get('/', auth, async (req, res) => {
         if (status && status !== 'all') filter.status = status;
         if (specialty && specialty !== 'all') filter.specialty = specialty;
 
-        // Adicionar filtro por período (novo)
+        // Filtro por período
         if (startDate && endDate) {
             filter.date = {
                 $gte: new Date(startDate),
@@ -272,58 +264,53 @@ router.get('/', auth, async (req, res) => {
             };
         }
 
+        // Buscar agendamentos
         const appointments = await Appointment.find(filter)
             .populate({ path: 'doctor', select: 'fullName specialty' })
-            .populate({
-                path: 'patient',
-                select: 'fullName dateOfBirth gender phone email address'
-            })
-            .sort({ date: 1 }) // Ordenar por data
+            .populate({ path: 'patient', select: 'fullName dateOfBirth gender phone email address cpf rg' })
+            .sort({ date: 1 })
             .lean();
 
-        const calendarEvents = appointments.map(appt => {
-            if (!appt.patient) return null;
+        // Mapear para FullCalendar
+        const calendarEvents = appointments
+            .filter(appt => appt.patient) // ignorar agendamentos sem paciente
+            .map(appt => {
+                const [hours, minutes] = appt.time.split(':').map(Number);
+                const start = new Date(appt.date);
+                start.setHours(hours, minutes);
+                const end = new Date(start.getTime() + (appt.duration || 40) * 60000);
 
-            // Calcular datas de início/fim
-            const [hours, minutes] = appt.time.split(':').map(Number);
-            const startDate = new Date(appt.date);
-            startDate.setHours(hours, minutes);
-            const endDate = new Date(startDate.getTime() + (appt.duration || 40) * 60000);
-
-            return {
-                id: appt._id.toString(),
-                title: `${appt.reason || 'Consulta'} - ${appt.doctor?.fullName || 'Profissional'}`,
-                start: startDate.toISOString(),
-                end: endDate.toISOString(),
-                date: appt.date,
-                time: appt.time,
-                status: appt.status,
-                specialty: appt.specialty,
-                description: appt.reason,
-                patient: appt.patient ? {
-                    id: appt.patient._id.toString(),
-                    fullName: appt.patient.fullName,
-                    dateOfBirth: appt.patient.dateOfBirth,
-                    gender: appt.patient.gender,
-                    phone: appt.patient.phone,
-                    email: appt.patient.email,
-                    cpf: appt.patient.cpf,
-                    rg: appt.patient.rg,
-                    address: appt.patient.address,
-                    appointments: appt.patient.appointments || [],
-                    lastAppointment: appt.patient.lastAppointment,
-                    nextAppointment: appt.patient.nextAppointment,
-                } : {},
-                doctor: appt.doctor ? {
-                    id: appt.doctor._id.toString(),
-                    fullName: appt.doctor.fullName,
-                    specialty: appt.doctor.specialty
-                } : {},
-                operationalStatus: appt.operationalStatus,
-                clinicalStatus: appt.clinicalStatus,
-                reason: appt.reason
-            };
-        }).filter(event => event !== null);
+                return {
+                    id: appt._id.toString(),
+                    title: `${appt.reason || 'Consulta'} - ${appt.doctor?.fullName || 'Profissional'}`,
+                    start: start.toISOString(),
+                    end: end.toISOString(),
+                    date: appt.date,
+                    time: appt.time,
+                    status: appt.status,
+                    specialty: appt.specialty,
+                    description: appt.reason,
+                    patient: {
+                        id: appt.patient._id.toString(),
+                        fullName: appt.patient.fullName,
+                        dateOfBirth: appt.patient.dateOfBirth,
+                        gender: appt.patient.gender,
+                        phone: appt.patient.phone,
+                        email: appt.patient.email,
+                        cpf: appt.patient.cpf,
+                        rg: appt.patient.rg,
+                        address: appt.patient.address,
+                    },
+                    doctor: {
+                        id: appt.doctor?._id.toString(),
+                        fullName: appt.doctor?.fullName,
+                        specialty: appt.doctor?.specialty
+                    },
+                    operationalStatus: appt.operationalStatus,
+                    clinicalStatus: appt.clinicalStatus,
+                    reason: appt.reason
+                };
+            });
 
         res.json(calendarEvents);
     } catch (error) {
@@ -342,6 +329,7 @@ router.get('/', auth, async (req, res) => {
         });
     }
 });
+
 
 // Busca agendamentos por especialidade
 router.get('/by-specialty/:specialty', auth, async (req, res) => {
@@ -391,8 +379,6 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                 doctor: req.body.doctorId
             };
 
-            console.log('Agendamento 1:', updateData);
-
             // Atualizar 
             const previousData = appointment.toObject();
             Object.assign(appointment, updateData);
@@ -401,8 +387,6 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
             await appointment.validate();
             const updated = await appointment.save({ session: mongoSession });
 
-            console.log('salvouuu', appointment);
-            console.log('salvouuu', updated);
             if (appointment.session) {
                 const session = await Session.findById(appointment.session).session(mongoSession);
 

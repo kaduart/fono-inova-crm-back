@@ -21,7 +21,6 @@ export const pixWebhook = async (req, res) => {
 
     // 2. Verificar tipo de evento
     if (payload.evento !== 'pix_recebido') {
-      console.log(`Evento não tratado: ${payload.evento}`);
       return res.status(200).send('Evento não tratado');
     }
 
@@ -30,8 +29,6 @@ export const pixWebhook = async (req, res) => {
       const txid = pix.txid;
       const valor = parseFloat(pix.valor);
       const horario = new Date(pix.horario);
-
-      console.log(`Processando pagamento para txid: ${txid}, Valor: ${valor}`);
 
       // Atualizar agendamento
       const appointment = await Appointment.findOneAndUpdate(
@@ -49,8 +46,6 @@ export const pixWebhook = async (req, res) => {
         console.warn(`Agendamento não encontrado para txid: ${txid}`);
         continue;
       }
-
-      console.log(`Pagamento confirmado para txid: ${txid}, Agendamento: ${appointment._id}`);
 
       // 4. Enviar notificação em tempo real
       try {
@@ -77,7 +72,6 @@ export const pixWebhook = async (req, res) => {
           });
         }
 
-        console.log(`Notificações enviadas para agendamento: ${appointment._id}`);
       } catch (notifyError) {
         console.error('Erro ao enviar notificações:', notifyError);
       }

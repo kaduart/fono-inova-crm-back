@@ -8,7 +8,6 @@ export const strictDomain = (req, res, next) => {
     const origin = req.headers.origin || req.headers.referer;
 
     if (!origin || !allowedDomains.some(domain => origin.includes(domain))) {
-        console.log(`Bloqueado acesso de: ${origin}`);
         return res.status(403).json({
             error: 'Acesso não autorizado',
             requiredUrl: `https://app.clinicafonoinova.com.br${req.originalUrl}`
