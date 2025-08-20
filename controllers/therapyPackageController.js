@@ -21,6 +21,7 @@ export const packageOperations = {
         try {
             await mongoSession.startTransaction();
 
+
             const {
                 date,
                 time,
@@ -28,13 +29,13 @@ export const packageOperations = {
                 doctorId,
                 specialty,
                 paymentMethod,
-                paymentType = 'full',
-                durationMonths = 1,
-                sessionsPerWeek = 1,
+                paymentType,
+                durationMonths,
+                sessionsPerWeek,
                 sessionType,
                 appointmentId, // ID do appointment existente que será convertido
                 sessionValue,
-                amountPaid = sessionValue
+                amountPaid
             } = req.body;
 
             // 1. VALIDAÇÕES BÁSICAS
@@ -52,6 +53,9 @@ export const packageOperations = {
                 if (!existingAppointment) {
                     throw new Error('Agendamento a ser convertido não encontrado');
                 }
+
+                // 🔴 CORREÇÃO: DELETAR O PAYMENT VINCULADO AO APPOINTMENT
+                await Payment.deleteOne({ appointment: appointmentId }).session(mongoSession);
 
                 // 3. REMOVER O APPOINTMENT/SESSION EXISTENTE
                 await Appointment.deleteOne({ _id: appointmentId }).session(mongoSession);
@@ -109,9 +113,10 @@ export const packageOperations = {
                     sessionType,
                     specialty,
                     status: 'scheduled',
-                    isPaid: paymentType === 'full',
+                    isPaid: true,
                     paymentMethod,
-                    sessionNumber: i + 1
+                    sessionNumber: i + 1,
+                    confirmedAbsence: null
                 });
 
                 await newSession.save({ session: mongoSession });
@@ -149,19 +154,21 @@ export const packageOperations = {
 
             // 7. CRIAR PAGAMENTO (opcional)
             if (amountPaid > 0) {
-                const newPayment = new Payment({
+                const purchasePayment = new Payment({
                     package: newPackage._id,
                     amount: amountPaid,
                     patient: patientId,
                     doctor: doctorId,
                     paymentMethod,
-                    status: paymentType === 'full' ? 'paid' : 'partial'
+                    status: 'paid',
+                    serviceType: 'package_session', // ✅ APENAS para compra
+                    sessionType: sessionType
                 });
 
-                await newPayment.save({ session: mongoSession });
+                await purchasePayment.save({ session: mongoSession });
                 await Package.findByIdAndUpdate(
                     newPackage._id,
-                    { $push: { payments: newPayment._id } },
+                    { $push: { payments: purchasePayment._id } },
                     { session: mongoSession }
                 );
             }
@@ -193,8 +200,7 @@ export const packageOperations = {
         } finally {
             await mongoSession.endSession();
         }
-    }
-    ,
+    },
 
     get: {
         all: async (req, res) => {
@@ -455,7 +461,7 @@ export const packageOperations = {
                             const paymentDoc = new Payment({
                                 patient: sessionDoc.patient,
                                 doctor: sessionDoc.doctor,
-                                serviceType: 'session',
+                                serviceType: 'package_session',
                                 amount: sessionDoc.value,
                                 paymentMethod: sessionDoc.paymentMethod,
                                 session: sessionDoc._id,
