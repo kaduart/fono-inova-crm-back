@@ -691,7 +691,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
         let paymentRecord = null;
 
         // 1. Sessão avulsa (individual)
-        if (appointment.serviceType == 'individual_session') {
+        if (appointment.serviceType === 'individual_session' || appointment.serviceType === 'evaluation') {
             // Obter valor da sessão com fallbacks seguros
             const sessionValue = appointment.sessionValue ||
                 (appointment.package?.sessionValue) ||
@@ -708,6 +708,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
                     paymentRecord.paymentMethod = appointment.paymentMethod || paymentRecord.paymentMethod || 'dinheiro';
                     paymentRecord.status = 'paid';
                     paymentRecord.appointment = appointment._id;
+                    paymentRecord.serviceDate = appointment.date;
                     paymentRecord.notes = 'Pagamento automático por conclusão de sessão avulsa';
                     await paymentRecord.save();
                 }

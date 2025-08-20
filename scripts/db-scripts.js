@@ -49,27 +49,27 @@ db.appointments.find({
 // consultar pagamentos do dia
 db.payments.find({
   createdAt: {
-    $gte: ISODate("2025-08-11T00:00:00.000Z"),
-    $lt: ISODate("2025-08-12T00:00:00.000Z")
+    $gte: ISODate("2025-08-18T00:00:00.000Z"),
+    $lt: ISODate("2025-08-19T00:00:00.000Z")
   }
 })
 
 // consultar sessios do dia
 db.sessions.find({
   createdAt: {
-    $gte: ISODate("2025-08-14T00:00:00.000Z"),
-    $lt: ISODate("2025-08-14T23:59:00.000Z")
+    $gte: ISODate("2025-08-18T00:00:00.000Z"),
+    $lt: ISODate("2025-08-18T23:59:00.000Z")
   }
 })
 
 //consulta do dia futuro
 db.appointments.find({
-  date: "2025-08-11"
+  date: "2025-08-18"
 })
 
 //consulta do dia futuro
 db.payments.find({
-  date: "2025-08-14"
+  date: "2025-08-18"
 })
 
 // consulta do dia or doutor
