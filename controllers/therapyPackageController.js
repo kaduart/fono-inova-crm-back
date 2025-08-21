@@ -158,6 +158,7 @@ export const packageOperations = {
                     package: newPackage._id,
                     amount: amountPaid,
                     patient: patientId,
+                    serviceDate: date,
                     doctor: doctorId,
                     paymentMethod,
                     status: 'paid',
@@ -466,6 +467,7 @@ export const packageOperations = {
                                 paymentMethod: sessionDoc.paymentMethod,
                                 session: sessionDoc._id,
                                 package: pkgId,
+                                serviceDate: sessionDoc.date,
                                 status: 'paid'
                             });
                             await paymentDoc.save({ session: mongoSession });
