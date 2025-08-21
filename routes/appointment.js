@@ -135,6 +135,7 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
                 status: 'pending',
                 patient: patient._id,
                 doctor: doctorId,
+                serviceDate : appointment.date,
                 serviceType: req.body.serviceType,
                 appointment: appointment._id,
                 paymentMethod: req.body.paymentMethod,
