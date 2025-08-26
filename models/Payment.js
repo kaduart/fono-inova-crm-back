@@ -61,8 +61,7 @@ const paymentSchema = new mongoose.Schema({
     },
     sessionType: {
         type: String,
-        enum: ['current', 'current_plus_future'],
-        default: 'current'
+        enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia'],
     },
     sessions: [{
         session: {
