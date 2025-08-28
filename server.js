@@ -28,6 +28,8 @@ import PaymentRoutes from './routes/Payment.js';
 import signupRoutes from './routes/signup.js';
 import specialtyRouter from './routes/specialty.js';
 import UserRoutes from './routes/user.js';
+import googleAdsRoutes from './routes/google-ads.js';
+import analitycsRoutes from './routes/analytics.js';
 
 // Error Handler
 import { errorHandler } from './utils/errorHandler.js';
@@ -118,6 +120,8 @@ app.use('/api/packages', PackageRoutes);
 app.use('/api/payments', PaymentRoutes);
 app.use('/api/users', UserRoutes);
 app.use('/api/specialties', specialtyRouter);
+app.use('/api/google-ads', googleAdsRoutes);
+app.use('/api/analitycs', analitycsRoutes);
 
 // Middleware de erro (DEVE vir depois das rotas)
 app.use(errorHandler);
