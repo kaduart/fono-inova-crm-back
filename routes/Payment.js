@@ -903,10 +903,18 @@ router.get('/daily-closing', async (req, res) => {
         // Pegar os IDs dos appointments
         const appointmentIds = appointments.map(a => a._id);
 
-        // 2. Buscar pagamentos VINCULADOS aos appointments do dia ✅
+        // 2. Buscar pagamentos do dia (com ou sem appointment)
+        const startOfDay = new Date(targetDate + 'T00:00:00.000Z');
+        const endOfDay = new Date(targetDate + 'T23:59:59.999Z');
+
         const payments = await Payment.find({
-            appointment: { $in: appointmentIds }, // ✅ Vínculo com appointments do dia
-            status: { $in: ['paid', 'pending', 'canceled'] }
+            $or: [
+                { appointment: { $in: appointmentIds } },
+                {
+                    createdAt: { $gte: startOfDay, $lt: endOfDay },
+                    status: { $in: ['paid', 'pending', 'canceled'] }
+                }
+            ]
         })
             .populate('patient doctor package appointment')
             .lean();
@@ -1121,7 +1129,7 @@ router.get('/daily-closing', async (req, res) => {
             }
         });
 
-        // 5. Processar pagamentos - CORRIGIDO ✅
+        // 5. Processar pagamentos - INCLUINDO PACOTES SEM APPOINTMENT
         payments.forEach(payment => {
             // ✅ VERIFICAR SE O PAGAMENTO ESTÁ VINCULADO A UM AGENDAMENTO CANCELADO
             if (payment.appointment) {
@@ -1157,14 +1165,82 @@ router.get('/daily-closing', async (req, res) => {
             // Adicionar paciente se houver
             if (patientId) report.patients.add(patientId);
 
-            // ✅ COMPRAS DE PACOTE
-            if (isPackagePurchase && amount > 0) {
+            // ✅ COMPRAS DE PACOTE (sem appointment)
+            if (isPackagePurchase && amount > 0 && payment.status === 'paid') {
+                // Criar um detalhe para o summary
+                const packageDetail = {
+                    id: payment._id,
+                    patient: payment.patient?.fullName || 'Não informado',
+                    service: 'package_session',
+                    value: amount,
+                    effectiveValue: amount,
+                    status: 'confirmado',
+                    method: method,
+                    paymentStatus: 'paid',
+                    date: new Date(payment.createdAt).toISOString().split('T')[0],
+                    time: new Date(payment.createdAt).toTimeString().split(' ')[0].substring(0, 5),
+                    isPackage: true,
+                    isPackageContractedToday: true,
+                    packageId: payment.package?._id || null
+                };
+
+                // Adicionar ao summary
+                report.summary.scheduled.count++;
+                report.summary.scheduled.value += amount;
+                report.summary.scheduled.details.push(packageDetail);
+
+                report.summary.attended.count++;
+                report.summary.attended.value += amount;
+                report.summary.attended.details.push(packageDetail);
+
+                // Adicionar ao financial totalReceived e paymentMethods
+                report.financial.totalReceived += amount;
+                report.financial.paymentMethods[method].amount += amount;
+                report.financial.paymentMethods[method].details.push({
+                    ...paymentDetail,
+                    sessions: payment.package?.totalSessions || 0,
+                    sessionValue: payment.package?.sessionValue || 0
+                });
+
+                // Adicionar à seção de pacotes
                 report.financial.packages.total += amount;
                 report.financial.packages.details.push({
                     ...paymentDetail,
                     sessions: payment.package?.totalSessions || 0,
                     sessionValue: payment.package?.sessionValue || 0
                 });
+
+                // Adicionar ao profissional
+                if (doctorId) {
+                    if (!report.byProfessional[doctorId]) {
+                        report.byProfessional[doctorId] = {
+                            id: doctorId,
+                            name: payment.doctor?.fullName || 'Não informado',
+                            specialty: payment.doctor?.specialty || 'Não informada',
+                            metrics: { attendanceRate: '0%', averageTicket: 'R$ 0,00' },
+                            financial: {
+                                received: 0,
+                                expected: 0,
+                                methods: {
+                                    dinheiro: { amount: 0, details: [] },
+                                    pix: { amount: 0, details: [] },
+                                    cartão: { amount: 0, details: [] }
+                                }
+                            },
+                            appointments: []
+                        };
+                    }
+
+                    const prof = report.byProfessional[doctorId];
+                    prof.financial.received += amount;
+                    prof.financial.methods[method].amount += amount;
+                    prof.financial.methods[method].details.push(paymentDetail);
+
+                    // Adicionar ao array de appointments do profissional
+                    prof.appointments.push(packageDetail);
+                }
+
+                return; // Pular o processamento adicional para este pagamento
             }
 
             // 🔴 SESSÕES DE PACOTE - IGNORAR (já processadas acima)
