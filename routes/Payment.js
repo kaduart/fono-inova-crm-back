@@ -999,7 +999,8 @@ router.get('/daily-closing', async (req, res) => {
         appointments.forEach(appt => {
             const status = (appt.operationalStatus || appt.status || '').toLowerCase();
             const isPackage = appt.serviceType === 'package_session';
-            const isIndividual = !isPackage;
+            const isIndividualSession = appt.serviceType === 'individual_session';
+            const isEvaluation = appt.serviceType === 'evaluation';
             const value = appt.sessionValue || 0;
             const doctorId = appt.doctor?._id.toString();
             const patientId = appt.patient?._id.toString();
@@ -1009,8 +1010,15 @@ router.get('/daily-closing', async (req, res) => {
                 new Date(appt.package.date).toISOString().split('T')[0] === targetDate;
 
             // Valor a considerar: se for pacote contratado hoje, usar totalPaid, senão usar sessionValue
-            const effectiveValue = isPackageContractedToday ?
-                (appt.package.totalPaid || 0) : value;
+            let effectiveValue = value;
+            if (isPackage) {
+                effectiveValue = isPackageContractedToday ?
+                    (appt.package.totalPaid || 0) : 0;
+            }
+
+
+            // Valor de referência da sessão (apenas para informação)
+            const sessionValueReference = value;
 
             // Adicionar paciente
             if (patientId) report.patients.add(patientId);
@@ -1044,6 +1052,7 @@ router.get('/daily-closing', async (req, res) => {
                 service: appt.serviceType || 'Não informado',
                 value: effectiveValue,
                 effectiveValue: effectiveValue,
+                sessionValue: sessionValueReference,
                 status: status,
                 method: getPaymentMethod(appt),
                 paymentStatus: appt.paymentStatus || 'pending',

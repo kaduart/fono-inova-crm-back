@@ -29,6 +29,7 @@
     "fono-inova-web": "file:..",
     "format": "^0.2.2",
     "google-ads-api": "^21.0.1",
+    "googleapis": "^159.0.0",
     "jsonwebtoken": "^9.0.2",
     "luxon": "^3.7.1",
     "mongodb": "^6.8.0",

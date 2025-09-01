@@ -1,8 +1,13 @@
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, './.env') });
+
+
 import express from 'express';
 import mongoose from 'mongoose';
-import path from 'path';
 import { fileURLToPath } from 'url';
 
 // Models
@@ -16,10 +21,13 @@ import './models/User.js';
 
 // Routes
 import adminRoutes from './routes/admin.js';
+import analitycsRoutes from './routes/analytics.js';
 import appointmentRoutes from './routes/appointment.js';
 import authRoutes from './routes/auth.js';
 import doctorRoutes from './routes/doctor.js';
 import evolutionRoutes from './routes/evolution.js';
+import googleAdsRoutes from './routes/google-ads.js';
+import googleAdsAuthRoutes from './routes/google-auth.js';
 import leadsRouter from './routes/Leads.js';
 import loginRoutes from './routes/login.js';
 import PackageRoutes from './routes/Package.js';
@@ -28,85 +36,64 @@ import PaymentRoutes from './routes/Payment.js';
 import signupRoutes from './routes/signup.js';
 import specialtyRouter from './routes/specialty.js';
 import UserRoutes from './routes/user.js';
-import googleAdsRoutes from './routes/google-ads.js';
-import analitycsRoutes from './routes/analytics.js';
 
 // Error Handler
 import { errorHandler } from './utils/errorHandler.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-dotenv.config({ path: path.resolve(__dirname, './.env') });
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// *************** CORS CONFIGURAÇÃO AVANÇADA ***************
-const allowedOrigins = [
-  'https://app.clinicafonoinova.com.br',
-  'https://fono-inova-combr.vercel.app',
-  'http://localhost:5173'
-];
-
+// *************** CORS CONFIGURAÇÃO SIMPLIFICADA ***************
 const corsOptions = {
   origin: function (origin, callback) {
-    // Permite requisições sem origin (mobile apps, curl, etc)
-    if (!origin) return callback(null, true);
+    // Permitir requisições sem origin (ex: Postman) ou localhost
+    if (!origin || origin.includes('localhost')) {
+      return callback(null, true);
+    }
 
-    // Normaliza URLs para comparar (remove barra final)
-    const normalizeUrl = url => url.endsWith('/') ? url.slice(0, -1) : url;
-    const normalizedOrigin = normalizeUrl(origin);
+    const allowedOrigins = [
+      'https://app.clinicafonoinova.com.br',
+      'https://fono-inova-combr.vercel.app',
+    ];
 
-    const isAllowed = allowedOrigins.some(allowed =>
-      normalizedOrigin === normalizeUrl(allowed)
-    );
-
-
-    if (isAllowed) {
+    if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Acesso não permitido por CORS'));
+      callback(new Error('Not allowed by CORS'));
     }
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'Accept',
+    'X-Requested-With',
+    'X-Goog-API-Client',
+    'X-Goog-User-Project'
+  ],
   optionsSuccessStatus: 204
 };
 
-// Middleware CORS principal (DEVE vir primeiro)
+
+// Aplicar CORS para todas as rotas
 app.use(cors(corsOptions));
 
-// Middleware de headers manuais
+// Middleware para logging
 app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin && allowedOrigins.some(o => o.includes(origin.replace(/\/$/, '')))) {
-    res.header('Access-Control-Allow-Origin', origin);
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
+  if (req.body && Object.keys(req.body).length > 0) {
+    const logBody = { ...req.body };
+    if (logBody.password) logBody.password = '***';
+    console.log('Body:', logBody);
   }
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Vary', 'Origin');
-
-  // Responde imediatamente para OPTIONS
-  if (req.method === 'OPTIONS') return res.status(204).end();
-
   next();
 });
 
-// Rota específica para pré-flight
-app.options('*', cors(corsOptions));
-// *********************************************************
-
+// Middleware JSON
 app.use(express.json());
 
-// Conexão com MongoDB
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('✅ Connected to MongoDB'))
-  .catch(err => console.error('❌ MongoDB connection error:', err));
-
-// Rotas
+// *************** ROTAS DA API - DEVEM VIR ANTES DO FRONTEND ***************
 app.use('/api/auth', authRoutes);
 app.use('/api/signup', signupRoutes);
 app.use('/api/login', loginRoutes);
@@ -120,24 +107,36 @@ app.use('/api/packages', PackageRoutes);
 app.use('/api/payments', PaymentRoutes);
 app.use('/api/users', UserRoutes);
 app.use('/api/specialties', specialtyRouter);
-app.use('/api/google-ads', googleAdsRoutes);
 app.use('/api/analitycs', analitycsRoutes);
+app.use('/api/google-ads', googleAdsRoutes);
+app.use('/api/google-ads/auth', googleAdsAuthRoutes); // Esta linha foi movida para cá
 
-// Middleware de erro (DEVE vir depois das rotas)
-app.use(errorHandler);
-
-// Configuração para produção
+// *************** SERVIR FRONTEND (PRODUÇÃO) - DEVE VIR DEPOIS DAS APIs ***************
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../frontend/dist')));
 
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+  // Apenas para rotas não-API
+  app.get('*', (req, res, next) => {
+    if (!req.path.startsWith('/api/')) {
+      res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+    } else {
+      next(); // Passa para o próximo middleware (errorHandler)
+    }
   });
 }
 
-// Inicia o servidor
+// *************** ERROR HANDLER ***************
+app.use(errorHandler);
+
+// *************** CONEXÃO COM MONGO ***************
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('✅ Connected to MongoDB'))
+  .catch(err => console.error('❌ MongoDB connection error:', err));
+
+// *************** INICIAR SERVIDOR ***************
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
 }).on('error', err => {
   console.error('💥 Server failed to start:', err);
 });
