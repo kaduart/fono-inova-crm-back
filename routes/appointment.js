@@ -135,7 +135,7 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
                 status: 'pending',
                 patient: patient._id,
                 doctor: doctorId,
-                serviceDate : appointment.date,
+                serviceDate: appointment.date,
                 serviceType: req.body.serviceType,
                 appointment: appointment._id,
                 paymentMethod: req.body.paymentMethod,
@@ -359,9 +359,9 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
             // 1. Buscar e validar agendamento com lock
             const appointment = await Appointment.findOneAndUpdate(
                 { _id: req.params.id },
-                { $set: {} }, // Operação vazia apenas para travar o documento
+                { $set: {} },
                 { new: true, session: mongoSession }
-            );
+            ).populate('payment session package');
 
             if (!appointment) {
                 await mongoSession.abortTransaction();
@@ -377,42 +377,105 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
             // 3. Aplicar atualizações manualmente
             const updateData = {
                 ...req.body,
-                doctor: req.body.doctorId
+                doctor: req.body.doctorId || appointment.doctor
             };
 
-            // Atualizar 
-            const previousData = appointment.toObject();
+            // Salvar dados anteriores para comparação
+            const previousData = {
+                doctor: appointment.doctor.toString(),
+                date: appointment.date,
+                time: appointment.time,
+                paymentAmount: appointment.paymentAmount,
+                paymentMethod: appointment.paymentMethod,
+                sessionType: appointment.sessionType,
+                serviceType: appointment.serviceType
+            };
+
+            // Atualizar appointment
             Object.assign(appointment, updateData);
-
-            // 4. Validar antes de salvar
             await appointment.validate();
-            const updated = await appointment.save({ session: mongoSession });
+            const updatedAppointment = await appointment.save({ session: mongoSession });
 
+            // 4. Atualizar documentos relacionados
+            const updatePromises = [];
+
+            // Atualizar Sessão se existir
             if (appointment.session) {
-                const session = await Session.findById(appointment.session).session(mongoSession);
-
-                if (session) {
-                    if (updateData.date) session.date = new Date(updateData.date);
-                    if (updateData.time) session.time = updateData.time;
-                    if (updateData.status) session.status = updateData.status;
-                    if (updateData.doctor) session.doctor = updateData.doctorId;
-                    await session.save({ session: mongoSession });
-                }
+                const sessionUpdate = Session.findByIdAndUpdate(
+                    appointment.session,
+                    {
+                        $set: {
+                            date: updateData.date || appointment.date,
+                            time: updateData.time || appointment.time,
+                            doctor: updateData.doctor || appointment.doctor,
+                            sessionType: updateData.sessionType || appointment.sessionType,
+                            sessionValue: updateData.paymentAmount || appointment.paymentAmount,
+                            notes: updateData.notes || appointment.notes,
+                            status: updateData.status || appointment.operationalStatus
+                        }
+                    },
+                    { session: mongoSession, new: true }
+                );
+                updatePromises.push(sessionUpdate);
             }
+
+            // Atualizar Pagamento se existir
+            if (appointment.payment) {
+                const paymentUpdate = Payment.findByIdAndUpdate(
+                    appointment.payment,
+                    {
+                        $set: {
+                            doctor: updateData.doctor || appointment.doctor,
+                            amount: updateData.paymentAmount || appointment.paymentAmount,
+                            method: updateData.paymentMethod || appointment.paymentMethod,
+                            serviceDate: updateData.date || appointment.date,
+                            serviceType: updateData.serviceType || appointment.serviceType
+                        }
+                    },
+                    { session: mongoSession, new: true }
+                );
+                updatePromises.push(paymentUpdate);
+            }
+
+            // Atualizar Pacote se for sessão de pacote
+            if (appointment.package && appointment.serviceType === 'package_session') {
+                const packageUpdate = Package.findByIdAndUpdate(
+                    appointment.package,
+                    {
+                        $set: {
+                            doctor: updateData.doctor || appointment.doctor,
+                            sessionValue: updateData.paymentAmount || appointment.paymentAmount
+                        }
+                    },
+                    { session: mongoSession, new: true }
+                );
+                updatePromises.push(packageUpdate);
+            }
+
+            // Atualizar Paciente se o médico foi alterado
+            if (req.body.doctorId && previousData.doctor !== req.body.doctorId) {
+                const patientUpdate = Patient.findByIdAndUpdate(
+                    appointment.patient,
+                    { $set: { doctor: req.body.doctorId } },
+                    { session: mongoSession, new: true }
+                );
+                updatePromises.push(patientUpdate);
+            }
+
+            // Executar todas as atualizações em paralelo
+            await Promise.all(updatePromises);
 
             await mongoSession.commitTransaction();
 
+            // 5. Sincronização pós-transação
             setTimeout(async () => {
                 try {
-                    // Sincronização básica do agendamento
-                    await syncEvent(updated, 'appointment');
+                    await syncEvent(updatedAppointment, 'appointment');
 
-                    // Se for sessão de pacote, tratar no syncService
-                    if (updated.serviceType === 'package_session') {
+                    if (appointment.serviceType === 'package_session') {
                         const action = determineActionType(req.body, previousData);
-
                         await handlePackageSessionUpdate(
-                            updated,
+                            updatedAppointment,
                             action,
                             req.user,
                             {
@@ -426,16 +489,15 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                 }
             }, 100);
 
-            res.json(updated);
+            res.json(updatedAppointment);
+
         } catch (error) {
             console.error('Erro ao atualizar agendamento:', error);
 
-            // Abortar transação se ainda estiver ativa
             if (mongoSession.inTransaction()) {
                 await mongoSession.abortTransaction();
             }
 
-            // Tratamento de erros
             if (error.name === 'ValidationError') {
                 const errors = Object.values(error.errors).reduce((acc, err) => {
                     acc[err.path] = err.message;

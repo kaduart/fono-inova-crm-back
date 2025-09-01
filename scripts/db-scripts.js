@@ -61,15 +61,27 @@ db.sessions.find({
     $lt: ISODate("2025-08-18T23:59:00.000Z")
   }
 })
+//consutla por ceratedat
+db.payments.find({
+  createdAt: {
+    $gte: ISODate("2025-08-29T00:00:00.000Z"),
+    $lt: ISODate("2025-08-29T23:59:00.000Z")
+  }
+})
+
+db.admins.findOne({
+  email: "clinicafonoinova@gmail.com",
+  role: "admin"
+})
 
 //consulta do dia futuro
 db.appointments.find({
-  date: "2025-08-18"
+  serviceDate: "2025-08-29"
 })
 
 //consulta do dia futuro
 db.payments.find({
-  date: "2025-08-18"
+  date: "2025-08-29"
 })
 
 // consulta do dia or doutor
