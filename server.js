@@ -107,7 +107,7 @@ app.use('/api/packages', PackageRoutes);
 app.use('/api/payments', PaymentRoutes);
 app.use('/api/users', UserRoutes);
 app.use('/api/specialties', specialtyRouter);
-app.use('/api/analitycs', analitycsRoutes);
+app.use('/api/analytics', analitycsRoutes);
 app.use('/api/google-ads', googleAdsRoutes);
 app.use('/api/google-ads/auth', googleAdsAuthRoutes); // Esta linha foi movida para cá
 

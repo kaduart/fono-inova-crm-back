@@ -1,29 +1,49 @@
 import { BetaAnalyticsDataClient } from '@google-analytics/data';
+import key from '../config/ga4-key.json' assert { type: 'json' };
 
 const client = new BetaAnalyticsDataClient({
-    credentials: {
-        client_email: process.env.GA4_CLIENT_EMAIL,
-        private_key: process.env.GA4_PRIVATE_KEY.replace(/\\n/g, '\n'),
-    },
+    credentials: key,
 });
 
 const propertyId = process.env.GA4_PROPERTY_ID;
 
-export const getGA4Events = async () => {
+// Eventos detalhados
+export const getGA4Events = async (startDate = '30daysAgo', endDate = 'today') => {
     const [response] = await client.runReport({
         property: `properties/${propertyId}`,
-        dimensions: [{ name: 'eventName' }, { name: 'eventLabel' }],
+        dimensions: [{ name: 'eventName' }],
         metrics: [{ name: 'eventCount' }],
-        dateRanges: [{ startDate: '30daysAgo', endDate: 'today' }],
+        dateRanges: [{ startDate, endDate }],
     });
 
-    // transformar pro formato esperado
-    const events = response.rows.map(row => ({
+    return response.rows.map(row => ({
         action: row.dimensionValues[0]?.value || '',
-        label: row.dimensionValues[1]?.value || '',
-        value: row.metricValues[0]?.value || 0,
-        timestamp: new Date(), // GA4 não retorna timestamp exato nesse endpoint
+        value: parseInt(row.metricValues[0]?.value || 0),
+        timestamp: new Date(),
     }));
+};
 
-    return events;
+// Métricas gerais
+export const getGA4Metrics = async (startDate = '30daysAgo', endDate = 'today') => {
+    const [response] = await client.runReport({
+        property: `properties/${propertyId}`,
+        metrics: [
+            { name: 'totalUsers' },
+            { name: 'activeUsers' },
+            { name: 'sessions' },
+            { name: 'engagedSessions' },
+            { name: 'averageSessionDuration' },
+        ],
+        dateRanges: [{ startDate, endDate }],
+    });
+
+    const values = response.rows[0]?.metricValues || [];
+
+    return {
+        totalUsers: parseInt(values[0]?.value || 0),
+        activeUsers: parseInt(values[1]?.value || 0),
+        sessions: parseInt(values[2]?.value || 0),
+        engagedSessions: parseInt(values[3]?.value || 0),
+        avgSessionDuration: parseFloat(values[4]?.value || 0),
+    };
 };
