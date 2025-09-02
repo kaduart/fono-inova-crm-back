@@ -1,5 +1,10 @@
 import { BetaAnalyticsDataClient } from '@google-analytics/data';
-import key from '../config/ga4-key.json' assert { type: 'json' };
+import fs from 'fs';
+import path from 'path';
+
+// Caminho absoluto para a chave JSON
+const keyPath = path.resolve('./config/ga4-key.json');
+const key = JSON.parse(fs.readFileSync(keyPath, 'utf-8'));
 
 const client = new BetaAnalyticsDataClient({
     credentials: key,
