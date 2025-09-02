@@ -15,6 +15,7 @@ router.get('/events', async (req, res) => {
     }
 });
 
+
 // Métricas gerais
 router.get('/metrics', async (req, res) => {
     try {
