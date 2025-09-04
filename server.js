@@ -20,8 +20,9 @@ import './models/Specialty.js';
 import './models/User.js';
 
 // Routes
+import { initializeSocket } from "./config/socket.js";
 import adminRoutes from './routes/admin.js';
-import analitycsRoutes from './routes/analytics.js';
+//import analitycsRoutes from './routes/analytics.js';
 import appointmentRoutes from './routes/appointment.js';
 import authRoutes from './routes/auth.js';
 import doctorRoutes from './routes/doctor.js';
@@ -36,11 +37,27 @@ import PaymentRoutes from './routes/Payment.js';
 import signupRoutes from './routes/signup.js';
 import specialtyRouter from './routes/specialty.js';
 import UserRoutes from './routes/user.js';
-
-// Error Handler
+import pixRoutes from './routes/webHookPix.js';
 import { errorHandler } from './utils/errorHandler.js';
 
+import http from 'http';
+
+
+
 const app = express();
+const server = http.createServer(app);
+
+const io = initializeSocket(server);
+
+io.on('connection', (socket) => {
+  console.log('⚡ Frontend conectado:', socket.id);
+
+  // Teste manual
+  socket.emit('pix-received', { id: 'TESTE', amount: 100, date: new Date(), payer: 'Fulano' });
+});
+
+
+
 const PORT = process.env.PORT || 5000;
 
 // *************** CORS CONFIGURAÇÃO SIMPLIFICADA ***************
@@ -81,11 +98,9 @@ app.use(cors(corsOptions));
 
 // Middleware para logging
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
   if (req.body && Object.keys(req.body).length > 0) {
     const logBody = { ...req.body };
     if (logBody.password) logBody.password = '***';
-    console.log('Body:', logBody);
   }
   next();
 });
@@ -107,9 +122,29 @@ app.use('/api/packages', PackageRoutes);
 app.use('/api/payments', PaymentRoutes);
 app.use('/api/users', UserRoutes);
 app.use('/api/specialties', specialtyRouter);
-app.use('/api/analytics', analitycsRoutes);
+//app.use('/api/analytics', analitycsRoutes);
 app.use('/api/google-ads', googleAdsRoutes);
 app.use('/api/google-ads/auth', googleAdsAuthRoutes); // Esta linha foi movida para cá
+app.use('/api/pix', pixRoutes);
+
+app.get('/api/test', (req, res) => {
+  res.send({ status: 'ok', timestamp: new Date() });
+});
+
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../frontend/dist')));
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api/')) {
+      res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+    }
+  });
+}
+
+app.post('/api/pix/webhook', (req, res) => {
+  const io = getIo();
+  io.emit('pix-received', req.body);
+  res.status(200).send('OK');
+});
 
 // *************** SERVIR FRONTEND (PRODUÇÃO) - DEVE VIR DEPOIS DAS APIs ***************
 if (process.env.NODE_ENV === 'production') {
@@ -133,8 +168,9 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('✅ Connected to MongoDB'))
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
+
 // *************** INICIAR SERVIDOR ***************
-app.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
 }).on('error', err => {
