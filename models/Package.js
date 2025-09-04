@@ -38,12 +38,21 @@ packageSchema.virtual('remainingSessions').get(function () {
 });
 
 packageSchema.set('toJSON', { virtuals: true });
-packageSchema.set('toObject', { virtuals: true });
+packageSchema.set('toObject', { virtuals: true })
 
 packageSchema.pre('save', function (next) {
-    this.totalSessions = this.durationMonths * 4 * this.sessionsPerWeek;
-    this.balance = (this.totalSessions * this.sessionValue) - this.totalPaid;
-    next();
+  const expectedTotal = this.totalSessions * this.sessionValue;
+
+  if (this.totalPaid !== expectedTotal) {
+    return next(
+      new Error(
+        `O valor pago (${this.totalPaid}) não confere com o valor total do pacote (${expectedTotal}).`
+      )
+    );
+  }
+
+  this.balance = expectedTotal - this.totalPaid; // vai ser sempre 0
+  next();
 });
 
 
