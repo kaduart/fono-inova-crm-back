@@ -43,7 +43,6 @@ router.post('/', async (req, res) => {
       email: user.email,
       role: user.role
     };
-    console.log('sss', user)
     // Adiciona specialty se for médico
     if (role === 'doctor' && user.specialty) {
       userData.specialty = user.specialty;

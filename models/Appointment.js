@@ -127,38 +127,6 @@ appointmentSchema.post('findOneAndDelete', async function (doc) {
   }
 });
 
-/* appointmentSchema.pre('save', function (next) {
-  // Sincroniza status legado com novo modelo
-  if (this.isModified('operationalStatus') || this.isModified('clinicalStatus')) {
-    if (this.clinicalStatus === 'concluído') {
-      this.status = 'concluído';
-    } else if (this.operationalStatus === 'cancelado') {
-      this.status = 'cancelado';
-    } else if (this.operationalStatus === 'confirmado') {
-      this.status = 'confirmado';
-    } else {
-      this.status = 'agendado';
-    }
-  }
-
-  // Sincroniza novo modelo com status legado
-  if (this.isModified('status')) {
-    if (this.status === 'concluído') {
-      this.clinicalStatus = 'concluído';
-      this.operationalStatus = 'pago';
-    } else if (this.status === 'cancelado') {
-      this.operationalStatus = 'cancelado';
-    } else if (this.status === 'confirmado') {
-      this.operationalStatus = 'confirmado';
-    } else {
-      this.operationalStatus = 'agendado';
-      this.clinicalStatus = 'pendente';
-    }
-  }
-  next();
-}); */
-
-
 
 const Appointment = mongoose.model('Appointment', appointmentSchema);
 

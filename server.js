@@ -22,7 +22,7 @@ import './models/User.js';
 // Routes
 import { initializeSocket } from "./config/socket.js";
 import adminRoutes from './routes/admin.js';
-//import analitycsRoutes from './routes/analytics.js';
+import analitycsRoutes from './routes/analytics.js';
 import appointmentRoutes from './routes/appointment.js';
 import authRoutes from './routes/auth.js';
 import doctorRoutes from './routes/doctor.js';
@@ -122,7 +122,7 @@ app.use('/api/packages', PackageRoutes);
 app.use('/api/payments', PaymentRoutes);
 app.use('/api/users', UserRoutes);
 app.use('/api/specialties', specialtyRouter);
-//app.use('/api/analytics', analitycsRoutes);
+app.use('/api/analytics', analitycsRoutes);
 app.use('/api/google-ads', googleAdsRoutes);
 app.use('/api/google-ads/auth', googleAdsAuthRoutes); // Esta linha foi movida para cá
 app.use('/api/pix', pixRoutes);

@@ -1,83 +1,54 @@
-import { createHash } from 'crypto';
-import Appointment from '../models/Appointment';
-import { sendPushNotification } from '../services/notificationService';
-import { getIo } from '../socket'; // Importe sua instância do Socket.io
-import { formatCurrency } from '../utils/format';
+import {
+  configureWebhook,
+  createPixCharge,
+  getPixChargeStatus,
+  getReceivedPixes
+} from '../services/pixService.js';
+import { handlePixWebhook } from '../services/webhookService.js';
+
+export const generatePixCharge = async (req, res) => {
+  try {
+    const { appointmentId } = req.body;
+    const result = await createPixCharge(appointmentId);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const checkPixStatus = async (req, res) => {
+  try {
+    const { txid } = req.params;
+    const result = await getPixChargeStatus(txid);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const configureSicoobWebhook = async (req, res) => {
+  try {
+    const { webhookUrl } = req.body;
+    const result = await configureWebhook(webhookUrl);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getPixReceived = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const result = await getReceivedPixes(startDate, endDate);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
 
 export const pixWebhook = async (req, res) => {
   try {
-    const signature = req.headers['x-signature'];
-    const payload = req.body;
-
-    // 1. Validar assinatura
-    const hash = createHash('sha256')
-      .update(JSON.stringify(payload))
-      .digest('hex');
-
-    if (hash !== signature) {
-      console.warn('Tentativa de webhook com assinatura inválida:', signature);
-      return res.status(401).send('Assinatura inválida');
-    }
-
-    // 2. Verificar tipo de evento
-    if (payload.evento !== 'pix_recebido') {
-      return res.status(200).send('Evento não tratado');
-    }
-
-    // 3. Processar cada Pix recebido
-    for (const pix of payload.pix) {
-      const txid = pix.txid;
-      const valor = parseFloat(pix.valor);
-      const horario = new Date(pix.horario);
-
-      // Atualizar agendamento
-      const appointment = await Appointment.findOneAndUpdate(
-        { 'pixTransaction.txid': txid },
-        {
-          paymentStatus: 'paid',
-          paymentDate: horario,
-          paymentMethod: 'pix',
-          'pixTransaction.status': 'completed'
-        },
-        { new: true } // Retorna o documento atualizado
-      ).populate('patient doctor');
-
-      if (!appointment) {
-        console.warn(`Agendamento não encontrado para txid: ${txid}`);
-        continue;
-      }
-
-      // 4. Enviar notificação em tempo real
-      try {
-        // Enviar via Socket.io para todos os clientes conectados
-        const io = getIo();
-        io.emit('payment-confirmed', {
-          appointmentId: appointment._id,
-          amount: valor,
-          date: horario,
-          patientName: appointment.patient.fullName,
-          doctorName: appointment.doctor.fullName
-        });
-
-        // Enviar notificação push para o paciente específico
-        if (appointment.patient.notificationToken) {
-          await sendPushNotification({
-            token: appointment.patient.notificationToken,
-            title: 'Pagamento Confirmado!',
-            body: `Seu pagamento de ${formatCurrency(valor)} foi recebido`,
-            data: {
-              type: 'payment-confirmed',
-              appointmentId: appointment._id.toString()
-            }
-          });
-        }
-
-      } catch (notifyError) {
-        console.error('Erro ao enviar notificações:', notifyError);
-      }
-    }
-
-    res.status(200).send('OK');
+    await handlePixWebhook(req, res);
   } catch (error) {
     console.error('Erro no webhook Pix:', error);
     res.status(500).send('Erro interno no servidor');

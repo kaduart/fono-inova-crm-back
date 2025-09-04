@@ -1,19 +1,27 @@
 import { Router } from 'express';
 import {
-    checkPixStatus,
-    generatePixCharge,
-    pixWebhook
-} from '../controllers/pixController';
+  checkPixStatus,
+  generatePixCharge,
+  pixWebhook,
+  configureSicoobWebhook,
+  getPixReceived
+} from '../controllers/pixController.js';
 
 const router = Router();
 
 // Gerar cobrança Pix
-router.post('/pix/generate', generatePixCharge);
+router.post('/generate', generatePixCharge);
+
+// Configurar webhook no Sicoob
+router.put('/webhook/configure', configureSicoobWebhook);
 
 // Webhook para notificações do Sicoob
-router.post('/pix/webhook/sicoob', pixWebhook);
+router.post('/webhook', pixWebhook);
 
 // Consultar status de uma cobrança
-router.get('/pix/status/:txid', checkPixStatus);
+router.get('/status/:txid', checkPixStatus);
+
+// Consultar PIX recebidos
+router.get('/received', getPixReceived);
 
 export default router;
