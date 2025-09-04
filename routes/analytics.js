@@ -1,4 +1,4 @@
-/* import dotenv from 'dotenv';
+import dotenv from 'dotenv';
 import express from 'express';
 import { getGA4Events, getGA4Metrics } from '../services/analytics.js';
 dotenv.config();
@@ -47,4 +47,3 @@ router.get('/metrics', async (req, res) => {
 });
 
 export default router;
- */
