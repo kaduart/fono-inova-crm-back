@@ -21,7 +21,6 @@ export const packageOperations = {
         try {
             await mongoSession.startTransaction();
 
-
             const {
                 date,
                 time,
@@ -33,10 +32,18 @@ export const packageOperations = {
                 durationMonths,
                 sessionsPerWeek,
                 sessionType,
-                appointmentId, // ID do appointment existente que será convertido
+                appointmentId,
                 sessionValue,
-                amountPaid
+                amountPaid,
+                calculationMode, // Novo campo
+                totalSessions // Novo campo
             } = req.body;
+
+            // DEBUG: Log dos valores recebidos
+            console.log('calculationMode:', calculationMode);
+            console.log('totalSessions from payload:', totalSessions);
+            console.log('durationMonths from payload:', durationMonths);
+            console.log('sessionsPerWeek from payload:', sessionsPerWeek);
 
             // 1. VALIDAÇÕES BÁSICAS
             if (!date || !time || !patientId || !doctorId || !sessionType || !specialty || !sessionValue) {
@@ -54,54 +61,71 @@ export const packageOperations = {
                     throw new Error('Agendamento a ser convertido não encontrado');
                 }
 
-                // 🔴 CORREÇÃO: DELETAR O PAYMENT VINCULADO AO APPOINTMENT
                 await Payment.deleteOne({ appointment: appointmentId }).session(mongoSession);
-
-                // 3. REMOVER O APPOINTMENT/SESSION EXISTENTE
                 await Appointment.deleteOne({ _id: appointmentId }).session(mongoSession);
                 if (existingAppointment.session) {
                     await Session.deleteOne({ _id: existingAppointment.session._id }).session(mongoSession);
                 }
             }
 
-            // 4. CRIAR PACOTE (usando o mesmo horário do appointment original)
-            const totalSessions = durationMonths * 4 * sessionsPerWeek;
-            const totalValue = sessionValue * totalSessions;
+            // 3. DETERMINAR O NÚMERO DE SESSÕES - CORREÇÃO AQUI
+            let finalTotalSessions;
+            let finalDurationMonths;
+            console.log('calculationMode:', calculationMode)
+            // Verificar se calculationMode existe e é 'sessions'
+            if (calculationMode && calculationMode === 'sessions') {
+                // Modo sessions: usa totalSessions do payload
+                finalTotalSessions = parseInt(totalSessions) || 0;
+                // Calcula durationMonths baseado no número real de sessões
+                finalDurationMonths = Math.ceil(finalTotalSessions / (sessionsPerWeek * 4));
+                console.log('Using sessions mode. finalTotalSessions:', finalTotalSessions);
+            } else {
+                // Modo duration: mantém cálculo original
+                finalTotalSessions = parseInt(durationMonths) * 4 * parseInt(sessionsPerWeek);
+                finalDurationMonths = parseInt(durationMonths);
+                console.log('Using duration mode. finalTotalSessions:', finalTotalSessions);
+            }
 
+            // Validação adicional
+            if (finalTotalSessions <= 0) {
+                throw new Error('Número de sessões deve ser maior que zero');
+            }
+
+            console.log('sessionValue 1', sessionValue)
+            console.log('finalTotalSessions 2', finalTotalSessions)
+            const totalValue = sessionValue * finalTotalSessions;
+            console.log('totalValue 3', totalValue)
+
+            // 4. CRIAR PACOTE
             const newPackage = new Package({
                 patient: patientId,
                 doctor: doctorId,
                 date: date,
-                time: time, // Mantém o mesmo horário original
+                time: time,
                 sessionType,
                 specialty,
                 sessionValue,
-                totalSessions,
+                totalSessions: finalTotalSessions,
                 sessionsPerWeek,
-                durationMonths,
+                durationMonths: finalDurationMonths,
                 paymentMethod,
                 paymentType,
                 totalValue,
                 totalPaid: amountPaid,
                 balance: amountPaid - totalValue,
-                status: 'active'
+                status: 'active',
+                calculationMode
             });
 
             await newPackage.save({ session: mongoSession });
 
-            // 5. CRIAR SESSÕES (a primeira no mesmo horário do appointment original)
+            // 5. CRIAR SESSÕES (exatamente o número especificado)
             const createdSessions = [];
-            const sessionDates = [];
             let currentDate = new Date(date);
 
-            for (let i = 0; i < totalSessions; i++) {
-                sessionDates.push(new Date(currentDate));
-                currentDate.setDate(currentDate.getDate() + Math.floor(7 / sessionsPerWeek));
-            }
-
-            for (let i = 0; i < totalSessions; i++) {
-                const sessionDate = sessionDates[i].toISOString().split('T')[0];
-                const sessionTime = i === 0 ? time : existingAppointment?.time || time; // Mantém o horário original na primeira sessão
+            for (let i = 0; i < finalTotalSessions; i++) {
+                const sessionDate = currentDate.toISOString().split('T')[0];
+                const sessionTime = i === 0 ? time : existingAppointment?.time || time;
 
                 const newSession = new Session({
                     date: sessionDate,
@@ -143,6 +167,9 @@ export const packageOperations = {
                 );
 
                 createdSessions.push(newSession._id);
+
+                // Avança para a próxima data (7 dias entre sessões para 1 sessão por semana)
+                currentDate.setDate(currentDate.getDate() + 7);
             }
 
             // 6. ATUALIZAR PACOTE COM SESSÕES
@@ -162,7 +189,7 @@ export const packageOperations = {
                     doctor: doctorId,
                     paymentMethod,
                     status: 'paid',
-                    serviceType: 'package_session', // ✅ APENAS para compra
+                    serviceType: 'package_session',
                     sessionType: sessionType
                 });
 
