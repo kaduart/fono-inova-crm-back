@@ -1,4 +1,4 @@
-import { BetaAnalyticsDataClient } from '@google-analytics/data';
+/* import { BetaAnalyticsDataClient } from '@google-analytics/data';
 import fs from 'fs';
 import path from 'path';
 
@@ -90,3 +90,4 @@ export const getGA4Metrics = async (startDate, endDate, timeout = 120000) => {
         throw err;
     }
 };
+ */
