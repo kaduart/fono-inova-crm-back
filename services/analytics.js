@@ -1,4 +1,4 @@
-/* import { BetaAnalyticsDataClient } from '@google-analytics/data';
+import { BetaAnalyticsDataClient } from '@google-analytics/data';
 import fs from 'fs';
 import path from 'path';
 
@@ -6,6 +6,7 @@ import path from 'path';
 const keyPath = path.resolve(process.env.GA4_KEY_PATH || './config/ga4-key.json');
 console.log('GA4_KEY_PATH usado:', keyPath);
 
+// --- Pegando a chave direto da env ---
 let key;
 try {
     if (process.env.GA4_KEY_JSON) {
@@ -90,4 +91,3 @@ export const getGA4Metrics = async (startDate, endDate, timeout = 120000) => {
         throw err;
     }
 };
- */
