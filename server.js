@@ -37,7 +37,7 @@ import PaymentRoutes from './routes/Payment.js';
 import signupRoutes from './routes/signup.js';
 import specialtyRouter from './routes/specialty.js';
 import UserRoutes from './routes/user.js';
-import pixRoutes from './routes/webHookPix.js';
+import pixRoutes from './routes/pix.js';
 import { errorHandler } from './utils/errorHandler.js';
 
 import http from 'http';
@@ -51,9 +51,6 @@ const io = initializeSocket(server);
 
 io.on('connection', (socket) => {
   console.log('⚡ Frontend conectado:', socket.id);
-
-  // Teste manual
-  socket.emit('pix-received', { id: 'TESTE', amount: 100, date: new Date(), payer: 'Fulano' });
 });
 
 
