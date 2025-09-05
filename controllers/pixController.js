@@ -1,56 +1,47 @@
-import {
-  configureWebhook,
-  createPixCharge,
-  getPixChargeStatus,
-  getReceivedPixes
-} from '../services/pixService.js';
-import { handlePixWebhook } from '../services/webhookService.js';
+import { getIo } from '../config/socket.js';
+import { createPixCharge, getReceivedPixes } from '../services/pixService.js';
 
-export const generatePixCharge = async (req, res) => {
-  try {
-    const { appointmentId } = req.body;
-    const result = await createPixCharge(appointmentId);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+// Criar cobrança Pix
+export const createCharge = async (req, res) => {
+    try {
+        const { appointmentId } = req.body;
+        const pixData = await createPixCharge(appointmentId);
+        res.json(pixData);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: error.message });
+    }
 };
 
-export const checkPixStatus = async (req, res) => {
-  try {
-    const { txid } = req.params;
-    const result = await getPixChargeStatus(txid);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-export const configureSicoobWebhook = async (req, res) => {
-  try {
-    const { webhookUrl } = req.body;
-    const result = await configureWebhook(webhookUrl);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-export const getPixReceived = async (req, res) => {
-  try {
-    const { startDate, endDate } = req.query;
-    const result = await getReceivedPixes(startDate, endDate);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
+// Webhook Pix (chamado pelo Sicoob)
 export const pixWebhook = async (req, res) => {
-  try {
-    await handlePixWebhook(req, res);
-  } catch (error) {
-    console.error('Erro no webhook Pix:', error);
-    res.status(500).send('Erro interno no servidor');
-  }
+    const payload = req.body;
+    res.status(200).send('OK'); // responder rápido
+
+    if (!payload?.pix || !Array.isArray(payload.pix)) return;
+
+    const io = getIo();
+    payload.pix.forEach(pix => {
+        const formattedPix = {
+            id: pix.txid,
+            amount: parseFloat(pix.valor),
+            date: new Date(pix.horario),
+            payer: pix.pagador || 'Não informado',
+            appointmentId: pix.txid
+        };
+        console.log('💸 Pix recebido:', formattedPix);
+        io.emit('pix-received', formattedPix);
+    });
+};
+
+// Consultar Pix recebidos
+export const getReceived = async (req, res) => {
+    try {
+        const { startDate, endDate } = req.query;
+        const data = await getReceivedPixes({ startDate, endDate });
+        res.json(data);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
 };
