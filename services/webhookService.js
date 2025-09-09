@@ -1,37 +1,32 @@
-// webhookService.js
-import { getIo } from "../config/socket.js";
-
+// webhookService.js - função atualizada
 export const handlePixWebhook = async (req, res) => {
-    const payload = req.body;
-
-    if (!payload?.pix || !Array.isArray(payload.pix)) {
-        return res.status(200).send("Webhook recebido mas sem pix");
-    }
-
-    console.log("Webhook Pix recebido:", payload);
-
-    // Responde rápido ao Sicoob
-    res.status(200).send("OK");
-
     try {
-        // ⚠️ Não usar 'const io = ...' se já houver outra declaração
-        const ioInstance = getIo(); // apenas variável nova
-        ioInstance.emit('pix-received', { id: 'TESTE', amount: 100, date: new Date(), payer: 'João' });
+        const payload = req.body;
+        console.log('🔔 Notificação recebida:', payload);
 
-        for (const pix of payload.pix) {
+        // Resposta imediata para Sicoob
+        res.status(200).send('OK');
+
+        // Verificar se é uma notificação de PIX
+        if (payload.txid && payload.valor) {
             const formattedPix = {
-                id: pix.txid,
-                amount: parseFloat(pix.valor),
-                date: new Date(pix.horario),
-                appointmentId: pix.txid,
-                payer: pix.pagador || "Não informado",
+                id: payload.txid,
+                amount: parseFloat(payload.valor),
+                date: new Date(payload.horario || Date.now()),
+                payer: payload.pagador || 'Não informado',
+                status: payload.status || 'recebido'
             };
 
-            console.log("💸 Pix recebido:", formattedPix);
+            console.log('💸 Pix processado:', formattedPix);
 
-            ioInstance.emit("pix-received", formattedPix);
+            // Emitir via Socket.io
+            const io = getIo();
+            io.emit('pix-received', formattedPix);
+
+            // Aqui você pode atualizar seu banco de dados
+            // await updateAppointmentPaymentStatus(formattedPix);
         }
     } catch (error) {
-        console.error("Erro ao processar Pix:", error);
+        console.error('Erro ao processar webhook:', error);
     }
 };

@@ -1,11 +1,11 @@
 import { Router } from 'express';
-import { getPixReceived, pixWebhook } from '../controllers/sicoobController.js';
+import { getPixReceived } from '../controllers/sicoobController.js';
 import { createPixCharge } from '../services/sicoobService.js';
+import { handlePixWebhook } from '../services/webhookService.js';
 
 const router = Router();
 
 // Criar cobrança Pix
-// Rota do seu backend
 router.post('/create/:appointmentId', async (req, res) => {
     try {
         const result = await createPixCharge(req.params.appointmentId);
@@ -15,9 +15,8 @@ router.post('/create/:appointmentId', async (req, res) => {
     }
 });
 
-
 // Webhook para notificações do Sicoob
-router.post('/webhook', pixWebhook);
+router.post('/webhook', handlePixWebhook);
 
 // Consultar Pix recebidos
 router.get('/received', getPixReceived);
