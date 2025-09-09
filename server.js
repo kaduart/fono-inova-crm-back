@@ -116,54 +116,6 @@ app.get('/api/test', (req, res) => {
   res.send({ status: 'ok', timestamp: new Date() });
 });
 
-// Webhook endpoint para receber notificações do Sicoob
-app.post('/api/pix/webhook', (req, res) => {
-  try {
-    console.log('📩 Webhook recebido do Sicoob:', JSON.stringify(req.body, null, 2));
-
-    // Resposta imediata para o Sicoob
-    res.status(200).json({
-      mensagem: "Notificação recebida com sucesso"
-    });
-
-    // Processar a notificação em segundo plano
-    processSicoobWebhook(req.body);
-
-  } catch (error) {
-    console.error('❌ Erro no webhook:', error);
-    res.status(200).json({
-      mensagem: "Notificação recebida"
-    });
-  }
-});
-
-// Função para processar notificações do Sicoob
-const processSicoobWebhook = (payload) => {
-  try {
-    const io = getIo();
-
-    // Verificar se é uma notificação de movimento com pix
-    if (payload && payload.pix && Array.isArray(payload.pix)) {
-      payload.pix.forEach((pix) => {
-        const formattedPix = {
-          id: pix.txid || Date.now().toString(),
-          amount: parseFloat(pix.valor) || 0,
-          date: new Date(pix.horario || Date.now()),
-          payer: pix.pagador || 'Não informado',
-          status: 'recebido'
-        };
-
-        console.log('💸 Pix processado:', formattedPix);
-        io.emit('pix-received', formattedPix);
-      });
-    } else {
-      console.log('ℹ️ Webhook recebido com formato não esperado:', payload);
-    }
-  } catch (error) {
-    console.error('❌ Erro ao processar notificação do Sicoob:', error);
-  }
-};
-
 // Rota para testar registro de webhook
 app.post('/api/test-webhook', async (req, res) => {
   try {
@@ -195,95 +147,6 @@ if (process.env.NODE_ENV === 'production') {
 // Error handler
 app.use(errorHandler);
 
-// Adicione esta função no seu servidor principal
-const checkSicoobConnectivity = async () => {
-  try {
-    console.log('🔍 Testando conectividade com a API Sicoob...');
-
-    // Tentativa simples de obter token
-    const accessToken = await getSicoobAccessToken();
-
-    if (accessToken) {
-      console.log('✅ Conectividade com Sicoob: OK');
-      return true;
-    } else {
-      console.log('❌ Falha na conectividade com Sicoob');
-      return false;
-    }
-  } catch (error) {
-    console.error('❌ Erro de conectividade com Sicoob:');
-    console.error(error.message);
-
-    // Verificar se é problema de certificado
-    if (error.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
-      error.code === 'CERT_HAS_EXPIRED' ||
-      error.message.includes('certificate')) {
-      console.error('⚠️  Problema possivelmente relacionado a certificados SSL');
-      console.error('Verifique os caminhos dos certificados e senhas no .env');
-    }
-
-    return false;
-  }
-};
-
-// Rota para testar conexão com Sicoob
-app.get('/api/test-sicoob-connection', async (req, res) => {
-  try {
-    console.log('🔍 Testando conectividade com a API Sicoob...');
-
-    // Tentativa simples de obter token
-    const accessToken = await getSicoobAccessToken();
-
-    if (accessToken) {
-      res.json({
-        success: true,
-        message: 'Conectividade com Sicoob: OK',
-        token: accessToken.substring(0, 50) + '...' // Mostrar apenas parte do token
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: 'Falha na conectividade com Sicoob'
-      });
-    }
-  } catch (error) {
-    console.error('❌ Erro de conectividade com Sicoob:', error.message);
-    res.status(500).json({
-      success: false,
-      message: error.message,
-      details: error.response?.data
-    });
-  }
-});
-
-// Registrar webhook Sicoob automaticamente
-const registerSicoobWebhook = async () => {
-  try {
-    let webhookUrl;
-
-    if (process.env.NODE_ENV === 'production') {
-      webhookUrl = `${process.env.FRONTEND_URL_PRD}/api/pix/webhook`;
-    } else {
-      webhookUrl = `https://e056240c5e87.ngrok-free.app/api/pix/webhook`;
-    }
-
-    console.log('📝 Tentando registrar webhook Sicoob Sandbox:', webhookUrl);
-
-    const result = await registerWebhook(webhookUrl);
-
-    if (result.success) {
-      console.log('✅ Webhook Sicoob registrado com sucesso no sandbox:', result);
-    } else {
-      console.log('ℹ️  ', result.message);
-      console.log('ℹ️  URL para registro manual:', webhookUrl);
-      console.log('ℹ️  Tipo de movimento: 7 (Pagamento/Baixa operacional)');
-      console.log('ℹ️  Período: 1 (Movimento atual D0)');
-    }
-
-  } catch (error) {
-    console.error('❌ Erro ao registrar webhook Sicoob:', error.message);
-  }
-};
 // Rota para obter informações de configuração do webhook
 app.get('/api/webhook-info', (req, res) => {
   const webhookUrl = process.env.NODE_ENV === 'production'
@@ -301,41 +164,32 @@ app.get('/api/webhook-info', (req, res) => {
   });
 });
 
-
-// Rota para testar conexão com Sicoob produção
-app.get('/api/test-producao', async (req, res) => {
+// Registrar webhook Sicoob automaticamente
+const registerSicoobWebhook = async () => {
   try {
-    console.log('🔍 Testando conexão com Sicoob produção...');
-    
-    const accessToken = await getSicoobAccessToken();
-    const clientId = process.env.SICOOB_CLIENT_ID;
-    
-    // Testar endpoint de cobrança
-    const response = await axios.get(
-      `${process.env.SICOOB_API_BASE_URL}/cob/TESTE123`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Client-Id': clientId
-        },
-        httpsAgent: await createHttpsAgent() // Função que cria o agente HTTPS
-      }
-    );
-    
-    res.json({ 
-      success: true, 
-      message: 'Conexão com Sicoob produção: OK',
-      status: response.status 
-    });
+    let webhookUrl;
+
+    if (process.env.NODE_ENV === 'production') {
+      webhookUrl = `${process.env.FRONTEND_URL_PRD}/api/pix/webhook`;
+    } else {
+      webhookUrl = `https://e056240c5e87.ngrok-free.app/api/pix/webhook`;
+    }
+
+    console.log('📝 Tentando registrar webhook Sicoob:', webhookUrl);
+
+    const result = await registerWebhook(webhookUrl);
+
+    if (result && result.success) {
+      console.log('✅ Webhook Sicoob registrado com sucesso');
+    } else {
+      console.log('ℹ️ Registro automático não suportado. Registre manualmente.');
+      console.log('ℹ️ URL para registro manual:', webhookUrl);
+    }
+
   } catch (error) {
-    console.error('❌ Erro ao conectar com Sicoob produção:', error.message);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message,
-      details: 'Verifique certificados e credenciais de produção'
-    });
+    console.error('❌ Erro ao registrar webhook Sicoob:', error.message);
   }
-});
+};
 
 // Conectar ao MongoDB e registrar webhook
 mongoose.connect(process.env.MONGO_URI)

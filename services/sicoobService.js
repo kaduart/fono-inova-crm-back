@@ -1,5 +1,7 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import https from 'https';
 import { sicoobConfig } from '../config/sicoobConfig.js';
 import Appointment from '../models/Appointment.js';
 
@@ -12,62 +14,53 @@ let axiosConfig = {
 
 // Apenas em produção usamos certificados
 if (process.env.SICOOB_ENVIRONMENT === 'production') {
-  import('https').then(https => {
-    const fs = require('fs');
-    axiosConfig.httpsAgent = new https.Agent({
-      pfx: process.env.SICOOB_PFX_PATH ? fs.readFileSync(process.env.SICOOB_PFX_PATH) : undefined,
-      passphrase: process.env.SICOOB_PFX_PASSWORD,
-      rejectUnauthorized: false
-    });
+  const httpsAgent = new https.Agent({
+    pfx: fs.readFileSync(process.env.SICOOB_PFX_PATH),
+    passphrase: process.env.SICOOB_PFX_PASSWORD,
+    rejectUnauthorized: false
   });
+  axiosConfig.httpsAgent = httpsAgent;
 }
 
 const sicoobApi = axios.create(axiosConfig);
 
 export const getSicoobAccessToken = async () => {
-  // Em produção, sempre obtemos token da API real
-  if (process.env.NODE_ENV === 'production' || process.env.USE_SANDBOX === 'false') {
-    try {
-      const scopes = [
-        'cob.write', 'cob.read', 'pix.write', 'pix.read',
-        'webhook.write', 'webhook.read'
-      ].join(' ');
-
-      const params = new URLSearchParams();
-      params.append('grant_type', 'client_credentials');
-      params.append('client_id', process.env.SICOOB_CLIENT_ID);
-      params.append('scope', scopes);
-
-      console.log('🔑 Obtendo token de acesso do Sicoob Produção...');
-
-      const https = await import('https');
-      const httpsAgent = new https.Agent({
-        pfx: fs.readFileSync(process.env.SICOOB_PFX_PATH),
-        passphrase: process.env.SICOOB_PFX_PASSWORD,
-        rejectUnauthorized: true
-      });
-
-      const resp = await axios.post(
-        process.env.SICOOB_AUTH_URL,
-        params.toString(),
-        {
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          httpsAgent
-        }
-      );
-
-      console.log('✅ Token de acesso obtido com sucesso');
-      return resp.data.access_token;
-    } catch (err) {
-      console.error('❌ Erro ao obter token Sicoob produção:', err.message);
-      throw new Error('Falha na autenticação com o Sicoob produção');
-    }
+  // No sandbox, usamos o token fixo
+  if (process.env.SICOOB_ENVIRONMENT === 'sandbox') {
+    console.log('🔑 Usando token fixo do sandbox');
+    return process.env.SICOOB_ACCESS_TOKEN;
   }
 
-  // Sandbox (apenas desenvolvimento)
-  console.log('🔑 Usando token fixo do sandbox');
-  return process.env.SICOOB_ACCESS_TOKEN;
+  // Em produção, obtemos token normalmente
+  try {
+    const scopes = [
+      'cob.write', 'cob.read', 'pix.write', 'pix.read',
+      'webhook.write', 'webhook.read'
+    ].join(' ');
+
+    const params = new URLSearchParams();
+    params.append('grant_type', 'client_credentials');
+    params.append('client_id', process.env.SICOOB_CLIENT_ID);
+    params.append('scope', scopes);
+
+    console.log('🔑 Obtendo token de acesso do Sicoob...');
+    const resp = await axios.post(
+      process.env.SICOOB_AUTH_URL,
+      params.toString(),
+      {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        httpsAgent: axiosConfig.httpsAgent
+      }
+    );
+
+    console.log('✅ Token de acesso obtido com sucesso');
+    return resp.data.access_token;
+  } catch (err) {
+    console.error('❌ Erro ao obter token Sicoob:', err.message);
+    throw new Error('Falha na autenticação com o Sicoob');
+  }
 };
+
 export const registerWebhook = async (webhookUrl) => {
   try {
     const accessToken = await getSicoobAccessToken();
@@ -79,9 +72,7 @@ export const registerWebhook = async (webhookUrl) => {
       email: process.env.ADMIN_EMAIL || 'admin@clinicafonoinova.com.br'
     };
 
-    console.log('📤 Registrando webhook no Sicoob Sandbox...');
-    console.log('URL:', `${process.env.SICOOB_API_BASE_URL}/webhooks`);
-    console.log('Payload:', webhookPayload);
+    console.log('📤 Registrando webhook no Sicoob...');
 
     const response = await axios.post(
       `${process.env.SICOOB_API_BASE_URL}/webhooks`,
@@ -92,38 +83,25 @@ export const registerWebhook = async (webhookUrl) => {
           'Content-Type': 'application/json',
           'Client-Id': process.env.SICOOB_CLIENT_ID
         },
-        // Adicionar validação de resposta
-        validateStatus: function (status) {
-          return status < 500; // Aceitar apenas status menores que 500
-        }
+        httpsAgent: axiosConfig.httpsAgent
       }
     );
 
-    // Verificar se a resposta é HTML (indicando erro)
-    if (typeof response.data === 'string' && response.data.includes('<html>')) {
-      console.log('⚠️  O sandbox pode não suportar registro automático de webhooks');
-      console.log('⚠️  Registre manualmente em: https://developers.sicoob.com.br');
-      return {
-        success: false,
-        message: 'Registro automático não suportado no sandbox. Registre manualmente.',
-        manualRegistrationUrl: 'https://developers.sicoob.com.br'
-      };
-    }
-
-    console.log('✅ Webhook registrado com sucesso no sandbox');
+    console.log('✅ Webhook registrado com sucesso');
     return response.data;
   } catch (error) {
     console.error('❌ Erro ao registrar webhook:', error.message);
-    if (error.response) {
-      console.error('Status:', error.response.status);
-      console.error('Data:', error.response.data);
+
+    // Verificar se é um erro de sandbox não suportado
+    if (error.response && typeof error.response.data === 'string' &&
+      error.response.data.includes('<html>')) {
+      return {
+        success: false,
+        message: 'Registro automático não suportado no sandbox'
+      };
     }
 
-    return {
-      success: false,
-      error: error.message,
-      message: 'Erro ao registrar webhook. Registre manualmente no portal Developers Sicoob.'
-    };
+    throw error;
   }
 };
 
@@ -164,8 +142,8 @@ export const createPixCharge = async (appointmentId) => {
       ]
     };
 
-    console.log('💳 Criando cobrança PIX no sandbox...');
-    const response = await axios.put(
+    console.log('💳 Criando cobrança PIX...');
+    const response = await sicoobApi.put(
       `${process.env.SICOOB_API_BASE_URL}/cob/${txid}`,
       payload,
       {
@@ -207,7 +185,7 @@ export const createPixCharge = async (appointmentId) => {
 export const getReceivedPixes = async (filters = {}) => {
   try {
     const accessToken = await getSicoobAccessToken();
-    const response = await axios.get(
+    const response = await sicoobApi.get(
       `${process.env.SICOOB_API_BASE_URL}/pix`,
       {
         headers: {
