@@ -895,25 +895,18 @@ router.get('/daily-closing', async (req, res) => {
         const targetDate = date ? new Date(date).toISOString().split('T')[0] :
             new Date().toISOString().split('T')[0];
 
+        const startOfDay = new Date(targetDate + 'T00:00:00.000Z');
+        const endOfDay = new Date(targetDate + 'T23:59:59.999Z');
+
         // 1. Buscar agendamentos do dia
         const appointments = await Appointment.find({ date: targetDate })
             .populate('doctor patient package')
             .lean();
 
-        // 2. Buscar TODOS os pagamentos relacionados aos agendamentos do dia
-        const appointmentIds = appointments.map(a => a._id);
-
+        // 2. Buscar TODOS os pagamentos do dia (baseado no createdAt)
         const payments = await Payment.find({
-            $or: [
-                { appointment: { $in: appointmentIds } },
-                {
-                    createdAt: {
-                        $gte: new Date(targetDate + 'T00:00:00.000Z'),
-                        $lt: new Date(targetDate + 'T23:59:59.999Z')
-                    },
-                    status: 'paid'
-                }
-            ]
+            createdAt: { $gte: startOfDay, $lt: endOfDay },
+            status: 'paid'
         }).populate('patient doctor package appointment').lean();
 
         // 3. Estrutura do relatório
@@ -953,17 +946,32 @@ router.get('/daily-closing', async (req, res) => {
             return 'dinheiro';
         };
 
+        // Função segura para converter datas
+        const safeDateToISOString = (dateValue) => {
+            try {
+                if (!dateValue) return null;
+                const date = new Date(dateValue);
+                return isNaN(date.getTime()) ? null : date.toISOString().split('T')[0];
+            } catch (error) {
+                console.error('Erro ao converter data:', dateValue, error);
+                return null;
+            }
+        };
+
         // 4. Processar agendamentos
         appointments.forEach(appt => {
             const status = (appt.operationalStatus || appt.status || '').toLowerCase();
             const isPackage = appt.serviceType === 'package_session';
             const value = appt.sessionValue || 0;
-            const doctorId = appt.doctor?._id.toString();
-            const patientId = appt.patient?._id.toString();
+            const doctorId = appt.doctor?._id?.toString();
+            const patientId = appt.patient?._id?.toString();
 
-            // Verificar se é um pacote contratado hoje
-            const isPackageContractedToday = isPackage && appt.package &&
-                new Date(appt.package.date).toISOString().split('T')[0] === targetDate;
+            // Verificar se é um pacote contratado hoje (com tratamento de erro)
+            let isPackageContractedToday = false;
+            if (isPackage && appt.package && appt.package.createdAt) {
+                const packageDate = safeDateToISOString(appt.package.createdAt);
+                isPackageContractedToday = packageDate === targetDate;
+            }
 
             // Valor a considerar: se for pacote, usar 0 (já foi pago anteriormente)
             const effectiveValue = isPackage ? 0 : value;
@@ -1038,19 +1046,13 @@ router.get('/daily-closing', async (req, res) => {
             }
         });
 
-        // 5. Processar pagamentos - CORREÇÃO CRÍTICA
+        // 5. Processar pagamentos
         payments.forEach(payment => {
             const amount = payment.amount || 0;
             const method = normalizePaymentMethod(payment.paymentMethod);
             const type = payment.serviceType;
-            const doctorId = payment.doctor?._id.toString();
-            const patientId = payment.patient?._id.toString();
-            const paymentDate = new Date(payment.createdAt).toISOString().split('T')[0];
-
-            // ✅ CORREÇÃO: Ignorar apenas pacotes de outros dias, mas permitir avaliações/sessões
-            if (type === 'package_purchase' && paymentDate !== targetDate) {
-                return;
-            }
+            const doctorId = payment.doctor?._id?.toString();
+            const patientId = payment.patient?._id?.toString();
 
             // Adicionar paciente
             if (patientId) report.patients.add(patientId);
@@ -1071,7 +1073,7 @@ router.get('/daily-closing', async (req, res) => {
                 report.financial.paymentMethods[method].amount += amount;
                 report.financial.paymentMethods[method].details.push(paymentDetail);
 
-                if (type === 'package_purchase') {
+                if (type === 'package_session') {
                     report.financial.packages.total += amount;
                     report.financial.packages.details.push({
                         id: payment._id,
