@@ -1,32 +1,32 @@
-// webhookService.js - função atualizada
+import { getIo } from '../config/socket.js';
+
 export const handlePixWebhook = async (req, res) => {
     try {
         const payload = req.body;
-        console.log('🔔 Notificação recebida:', payload);
+        console.log('🔔 Notificação recebida:', JSON.stringify(payload, null, 2));
 
         // Resposta imediata para Sicoob
-        res.status(200).send('OK');
+        res.status(200).json({ mensagem: "Notificação recebida com sucesso" });
 
         // Verificar se é uma notificação de PIX
-        if (payload.txid && payload.valor) {
-            const formattedPix = {
-                id: payload.txid,
-                amount: parseFloat(payload.valor),
-                date: new Date(payload.horario || Date.now()),
-                payer: payload.pagador || 'Não informado',
-                status: payload.status || 'recebido'
-            };
-
-            console.log('💸 Pix processado:', formattedPix);
-
-            // Emitir via Socket.io
+        if (payload.pix && Array.isArray(payload.pix)) {
             const io = getIo();
-            io.emit('pix-received', formattedPix);
 
-            // Aqui você pode atualizar seu banco de dados
-            // await updateAppointmentPaymentStatus(formattedPix);
+            payload.pix.forEach(pix => {
+                const formattedPix = {
+                    id: pix.txid,
+                    amount: parseFloat(pix.valor),
+                    date: new Date(pix.horario || Date.now()),
+                    payer: pix.pagador || 'Não informado',
+                    status: 'recebido'
+                };
+
+                console.log('💸 Pix processado:', formattedPix);
+                io.emit('pix-received', formattedPix);
+            });
         }
     } catch (error) {
         console.error('Erro ao processar webhook:', error);
+        res.status(200).json({ mensagem: "Notificação recebida" });
     }
 };
