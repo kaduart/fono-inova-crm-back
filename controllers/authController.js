@@ -58,13 +58,13 @@ export const authController = {
       user.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutos
       await user.save({ validateBeforeSave: false });
 
+      const fromEmail = process.env.EMAIL_FROM || 'clinicafonoinova@gmail.com';
+      const fromName = process.env.EMAIL_FROM_NAME || 'Clinica FonoInova';
+
       // 5. Envia email com template profissional
       const msg = {
         to: user.email,
-        from: {
-          email: process.env.EMAIL_FROM,
-          name: "Clinica FonoInova"
-        },
+        from: `${fromName} <${fromEmail}>`,
         subject: 'Redefinição de Senha',
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -99,10 +99,14 @@ export const authController = {
 
     } catch (error) {
       console.error('Erro no processo de recuperação:', {
-        error: error.message,
+        message: error.message,
         stack: error.stack,
         requestBody: req.body,
-        sendGridError: error.response?.body?.errors
+        sendGridResponse: error.response ? {
+          status: error.response.status,
+          headers: error.response.headers,
+          body: error.response.body
+        } : null
       });
 
       return res.status(500).json({
