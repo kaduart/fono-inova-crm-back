@@ -51,24 +51,27 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 5000;
 
+const allowedOrigins = [
+  'https://app.clinicafonoinova.com.br',
+  'https://fono-inova-combr.vercel.app',
+  'http://localhost:3000'
+];
+
 // CORS
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || origin.includes('localhost')) return callback(null, true);
-    const allowedOrigins = [
-      'https://app.clinicafonoinova.com.br',
-      'https://fono-inova-combr.vercel.app',
-    ];
-    if (allowedOrigins.includes(origin)) callback(null, true);
-    else callback(new Error('Not allowed by CORS'));
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn('CORS blocked for origin:', origin);
+      callback(null, false); // não dispara erro, mas bloqueia
+    }
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  methods: ['GET','POST','PUT','DELETE','OPTIONS','PATCH'],
   allowedHeaders: [
-    'Content-Type', 'Authorization', 'Accept', 'X-Requested-With',
-    'X-Goog-API-Client', 'X-Goog-User-Project'
-  ],
-  optionsSuccessStatus: 204
+    'Content-Type', 'Authorization', 'Accept', 'X-Requested-With'
+  ]
 };
 app.use(cors(corsOptions));
 app.use(express.json());
