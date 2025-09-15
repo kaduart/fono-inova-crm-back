@@ -98,7 +98,12 @@ export const authController = {
       });
 
     } catch (error) {
-      console.error('Erro no processo de recuperação:', error);
+      console.error('Erro no processo de recuperação:', {
+        error: error.message,
+        stack: error.stack,
+        requestBody: req.body,
+        sendGridError: error.response?.body?.errors
+      });
 
       return res.status(500).json({
         success: false,
