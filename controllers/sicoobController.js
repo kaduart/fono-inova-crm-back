@@ -1,48 +1,48 @@
 import { getIo } from '../config/socket.js';
-import { createPixCharge, getReceivedPixes } from '../services/sicoobService.js';
+import { getReceivedPixes } from '../services/sicoobService.js';
 
-// Criar cobrança
-export const createCharge = async (req, res) => {
+/* export const createPix = async (req, res) => {
   try {
     const { appointmentId } = req.params;
     const result = await createPixCharge(appointmentId);
     res.json(result);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message || err });
+  }
+}; */
+
+export const getReceived = async (req, res) => {
+  try {
+    const data = await getReceivedPixes(req.query);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || err });
   }
 };
 
-// Webhook do Sicoob
-export const pixWebhook = (req, res) => {
-  const payload = req.body;
-  res.status(200).send('OK');
-
-  if (!payload?.pix || !Array.isArray(payload.pix)) return;
-
+export const handlePixWebhook = (req, res) => {
   try {
-    const io = getIo();
-    payload.pix.forEach((pix) => {
-      const formatted = {
-        id: pix.txid,
-        amount: parseFloat(pix.valor),
-        date: new Date(pix.horario),
-        payer: pix.pagador || 'Não informado'
-      };
-      console.log('💸 Pix recebido:', formatted);
-      io.emit('pix-received', formatted);
-    });
-  } catch (err) {
-    console.error('Erro ao processar webhook Pix:', err);
-  }
-};
+    const payload = req.body;
+    console.log('🔔 Notificação PIX recebida:', JSON.stringify(payload, null, 2));
 
-// Consultar Pix recebidos
-export const getPixReceived = async (req, res) => {
-  try {
-    const { startDate, endDate } = req.query;
-    const result = await getReceivedPixes({ startDate, endDate });
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(200).json({ mensagem: "Notificação recebida com sucesso" });
+
+    if (payload?.pix && Array.isArray(payload.pix)) {
+      const io = getIo();
+      payload.pix.forEach(pix => {
+        const formattedPix = {
+          id: pix.txid,
+          amount: parseFloat(pix.valor),
+          date: new Date(pix.horario || Date.now()),
+          payer: pix.pagador || 'Não informado',
+          status: 'recebido'
+        };
+        console.log('💸 Pix processado:', formattedPix);
+        io.emit('pix-received', formattedPix);
+      });
+    }
+  } catch (error) {
+    console.error('❌ Erro ao processar webhook:', error);
+    res.status(500).json({ mensagem: "Erro ao processar notificação" });
   }
 };
