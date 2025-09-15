@@ -54,7 +54,8 @@ const PORT = process.env.PORT || 5000;
 const allowedOrigins = [
   'https://app.clinicafonoinova.com.br',
   'https://fono-inova-combr.vercel.app',
-  'http://localhost:3000'
+  'http://localhost:5000',
+  'http://localhost:5173'
 ];
 
 // CORS
@@ -74,6 +75,9 @@ const corsOptions = {
   ]
 };
 app.use(cors(corsOptions));
+// Permite preflight OPTIONS para todas as rotas
+app.options('*', cors(corsOptions));
+
 app.use(express.json());
 
 // Logging middleware
