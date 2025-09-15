@@ -43,7 +43,6 @@ dotenv.config({ path: path.resolve(__dirname, './.env') });
 
 const app = express();
 const server = http.createServer(app);
-
 const io = initializeSocket(server);
 
 io.on('connection', (socket) => {
@@ -52,37 +51,25 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 5000;
 
-// CORS Configuration
+// CORS
 const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin || origin.includes('localhost')) {
-      return callback(null, true);
-    }
-
+  origin: (origin, callback) => {
+    if (!origin || origin.includes('localhost')) return callback(null, true);
     const allowedOrigins = [
       'https://app.clinicafonoinova.com.br',
       'https://fono-inova-combr.vercel.app',
     ];
-
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
+    if (allowedOrigins.includes(origin)) callback(null, true);
+    else callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'Accept',
-    'X-Requested-With',
-    'X-Goog-API-Client',
-    'X-Goog-User-Project'
+    'Content-Type', 'Authorization', 'Accept', 'X-Requested-With',
+    'X-Goog-API-Client', 'X-Goog-User-Project'
   ],
   optionsSuccessStatus: 204
 };
-
 app.use(cors(corsOptions));
 app.use(express.json());
 
@@ -92,7 +79,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// API Routes
+// Rotas
 app.use('/api/auth', authRoutes);
 app.use('/api/signup', signupRoutes);
 app.use('/api/login', loginRoutes);
@@ -112,49 +99,55 @@ app.use('/api/google-ads/auth', googleAdsAuthRoutes);
 app.use('/api/pix', pixRoutes);
 
 // Health check
-app.get('/api/test', (req, res) => {
-  res.send({ status: 'ok', timestamp: new Date() });
-});
+app.get('/api/test', (req, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
-// Rota para testar registro de webhook
-app.post('/api/test-webhook', async (req, res) => {
+// ---------------- PIX WEBHOOK ----------------
+app.post('/api/pix/webhook', (req, res) => {
   try {
-    const webhookUrl = `https://e056240c5e87.ngrok-free.app/api/pix/webhook`;
-    const result = await registerWebhook(webhookUrl);
-    res.json({ success: true, result });
+    const payload = req.body;
+    console.log('📩 Webhook recebido do Sicoob:', JSON.stringify(payload, null, 2));
+    // Resposta imediata
+    res.status(200).json({ mensagem: "Notificação recebida com sucesso" });
+
+    if (payload?.pix && Array.isArray(payload.pix)) {
+      const io = getIo();
+      payload.pix.forEach(pix => {
+        const formattedPix = {
+          id: pix.txid || Date.now().toString(),
+          amount: parseFloat(pix.valor) || 0,
+          date: new Date(pix.horario || Date.now()),
+          payer: pix.pagador || 'Não informado',
+          status: 'recebido'
+        };
+        console.log('💸 Pix processado:', formattedPix);
+        io.emit('pix-received', formattedPix);
+      });
+    }
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      details: error.response?.data
-    });
+    console.error('❌ Erro ao processar webhook Pix:', error);
   }
 });
 
-// Servir frontend em produção
-if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../frontend/dist')));
+// Teste de registro de webhook
+app.post('/api/test-webhook', async (req, res) => {
+  try {
+    const webhookUrl = process.env.NODE_ENV === 'production'
+      ? `${process.env.BACKEND_URL_PRD}/api/pix/webhook`
+      : `https://e056240c5e87.ngrok-free.app/api/pix/webhook`;
+    const result = await registerWebhook(webhookUrl);
+    res.json({ success: true, result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message, details: error.response?.data });
+  }
+});
 
-  app.get('*', (req, res, next) => {
-    if (!req.path.startsWith('/api/')) {
-      res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
-    } else {
-      next();
-    }
-  });
-}
-
-// Error handler
-app.use(errorHandler);
-
-// Rota para obter informações de configuração do webhook
+// Info webhook
 app.get('/api/webhook-info', (req, res) => {
   const webhookUrl = process.env.NODE_ENV === 'production'
-    ? `${process.env.FRONTEND_URL_PRD}/api/pix/webhook`
+    ? `${process.env.BACKEND_URL_PRD}/api/pix/webhook`
     : `https://e056240c5e87.ngrok-free.app/api/pix/webhook`;
-
   res.json({
-    webhookUrl: webhookUrl,
+    webhookUrl,
     codigoTipoMovimento: 7,
     descricaoTipoMovimento: 'Pagamento (Baixa operacional)',
     codigoPeriodoMovimento: 1,
@@ -164,45 +157,47 @@ app.get('/api/webhook-info', (req, res) => {
   });
 });
 
-// Registrar webhook Sicoob automaticamente
-const registerSicoobWebhook = async () => {
-  try {
-    let webhookUrl;
-
-    if (process.env.NODE_ENV === 'production') {
-      webhookUrl = `${process.env.FRONTEND_URL_PRD}/api/pix/webhook`;
-    } else {
-      webhookUrl = `https://e056240c5e87.ngrok-free.app/api/pix/webhook`;
-    }
-
-    console.log('📝 Tentando registrar webhook Sicoob:', webhookUrl);
-
-    const result = await registerWebhook(webhookUrl);
-
-    if (result && result.success) {
-      console.log('✅ Webhook Sicoob registrado com sucesso');
-    } else {
-      console.log('ℹ️ Registro automático não suportado. Registre manualmente.');
-      console.log('ℹ️ URL para registro manual:', webhookUrl);
-    }
-
-  } catch (error) {
-    console.error('❌ Erro ao registrar webhook Sicoob:', error.message);
-  }
-};
-
-// Conectar ao MongoDB e registrar webhook
+// Conectar MongoDB + registrar webhook
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('✅ Connected to MongoDB');
-    registerSicoobWebhook();
+    registerWebhook(
+      process.env.NODE_ENV === 'production'
+        ? `${process.env.BACKEND_URL_PRD}/api/pix/webhook`
+        : `https://e056240c5e87.ngrok-free.app/api/pix/webhook`
+    );
   })
   .catch(err => console.error('❌ MongoDB connection error:', err));
+
+// Servir frontend produção
+/* if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../frontend/dist')));
+  app.get('*', (req, res, next) => {
+    if (!req.path.startsWith('/api/')) res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
+    else next();
+  });
+} */
+
+// Error handler
+app.use(errorHandler);
+
+// Teste conexão Sicoob
+app.get('/api/test-sicoob-connection', async (req, res) => {
+  try {
+    const token = await getSicoobAccessToken();
+    if (token) {
+      res.json({ success: true, message: 'Conectividade com Sicoob OK', token: token.substring(0, 50) + '...' });
+    } else {
+      res.status(500).json({ success: false, message: 'Falha na conectividade com Sicoob' });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message, details: err.response?.data });
+  }
+});
 
 // Iniciar servidor
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-}).on('error', err => {
-  console.error('💥 Server failed to start:', err);
-});
+}).on('error', err => console.error('💥 Server failed to start:', err));
