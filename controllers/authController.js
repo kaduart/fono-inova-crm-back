@@ -23,70 +23,71 @@ export const authController = {
           message: 'Email e tipo de usuário são obrigatórios'
         });
       }
+
       let user;
-      if (role === 'doctor') {
-        user = await Doctor.findOne({ email });
-      } else if (role === 'admin') {
-        user = await Admin.findOne({ email });
-      } else {
-        return res.status(400).json({
-          success: false,
-          message: 'Tipo de usuário inválido'
-        });
+      const Model = role === 'doctor' ? Doctor : role === 'admin' ? Admin : null;
+
+      if (!Model) {
+        return res.status(400).json({ success: false, message: 'Tipo de usuário inválido' });
       }
 
+      user = await Model.findOne({ email });
+
       if (!user) {
-        console.warn(`Tentativa de recuperação para email não cadastrado: ${email}`);
+        // Resposta genérica para não expor se o email existe
         return res.status(200).json({
           success: true,
           message: 'Se o email existir, você receberá instruções'
         });
       }
 
-
-      // 3. Gera token seguro
+      // 1. Gera token seguro
       const resetToken = crypto.randomBytes(32).toString('hex');
       const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+      // 2. Atualiza apenas o token e validade no banco
+      await Model.updateOne(
+        { _id: user._id },
+        {
+          passwordResetToken: hashedToken,
+          passwordResetExpires: Date.now() + 10 * 60 * 1000 // 10 minutos
+        }
+      );
+
+      // 3. Monta URL do frontend
       const resetUrl = `${process.env.NODE_ENV === 'production'
         ? process.env.FRONTEND_URL_PRD
         : process.env.FRONTEND_URL_DEV
         }/reset-password/${resetToken}?role=${role}`;
 
-      console.log('ssssssssssúrl', resetUrl)
-      // 4. Atualiza o médico
-      user.passwordResetToken = hashedToken;
-      user.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutos
-      await user.save({ validateBeforeSave: false });
-
+      // 4. Envia email
       const fromEmail = process.env.EMAIL_FROM || 'clinicafonoinova@gmail.com';
       const fromName = process.env.EMAIL_FROM_NAME || 'Clinica FonoInova';
 
-      // 5. Envia email com template profissional
       const msg = {
         to: user.email,
         from: `${fromName} <${fromEmail}>`,
         subject: 'Redefinição de Senha',
         html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <div style="background: #f3f4f6; padding: 20px; text-align: center;">
-              <img src="${process.env.LOGO_URL || 'https://via.placeholder.com/150'}" alt="Logo" style="height: 50px;">
-            </div>
-            <div style="padding: 30px;">
-              <h2 style="color: #2563eb;">Redefina sua senha</h2>
-              <p>Clique no botão abaixo para redefinir sua senha:</p>
-              <a href="${resetUrl}" 
-                 style="display: inline-block; background: #2563eb; color: white; 
-                        padding: 12px 24px; text-decoration: none; border-radius: 4px;
-                        margin: 15px 0;">
-                 Redefinir Senha
-              </a>
-              <p style="color: #6b7280; font-size: 14px;">
-                Este link expira em 10 minutos. Se não foi você quem solicitou, ignore este email.
-              </p>
-            </div>
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: #f3f4f6; padding: 20px; text-align: center;">
+            <img src="${process.env.LOGO_URL || 'https://via.placeholder.com/150'}" alt="Logo" style="height: 50px;">
           </div>
-        `,
-
+          <div style="padding: 30px;">
+            <h2 style="color: #2563eb;">Redefina sua senha</h2>
+            <p>Clique no botão abaixo para redefinir sua senha:</p>
+            <a href="${resetUrl}" 
+               style="display: inline-block; background: #2563eb; color: white; 
+                      padding: 12px 24px; text-decoration: none; border-radius: 4px;
+                      margin: 15px 0;">
+               Redefinir Senha
+            </a>
+            <p style="color: #6b7280; font-size: 14px;">
+              Este link expira em 10 minutos. Se não foi você quem solicitou, ignore este email.
+            </p>
+          </div>
+        </div>
+      `,
         text: `Para redefinir sua senha, acesse: ${resetUrl}\n\nLink válido por 10 minutos.`
       };
 
@@ -98,17 +99,7 @@ export const authController = {
       });
 
     } catch (error) {
-      console.error('Erro no processo de recuperação:', {
-        message: error.message,
-        stack: error.stack,
-        requestBody: req.body,
-        sendGridResponse: error.response ? {
-          status: error.response.status,
-          headers: error.response.headers,
-          body: error.response.body
-        } : null
-      });
-
+      console.error('Erro no processo de recuperação:', error);
       return res.status(500).json({
         success: false,
         message: 'Erro ao processar solicitação'
