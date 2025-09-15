@@ -7,35 +7,35 @@ import Appointment from '../models/Appointment.js';
 
 dotenv.config();
 
-// Configuração para sandbox - não precisa de certificados
-let axiosConfig = {
-  timeout: 30000
-};
+// Configuração base do Axios
+let axiosConfig = { timeout: 30000 };
 
-// Apenas em produção usamos certificados
+// Se estivermos em produção, configuramos o httpsAgent com PFX
 if (process.env.SICOOB_ENVIRONMENT === 'production') {
-  const httpsAgent = new https.Agent({
-    pfx: fs.readFileSync(process.env.SICOOB_PFX_PATH),
+  axiosConfig.httpsAgent = new https.Agent({
+    pfx: process.env.SICOOB_PFX_PATH ? fs.readFileSync(process.env.SICOOB_PFX_PATH) : undefined,
     passphrase: process.env.SICOOB_PFX_PASSWORD,
-    rejectUnauthorized: false
+    rejectUnauthorized: false // necessário se certificado estiver autoassinado
   });
-  axiosConfig.httpsAgent = httpsAgent;
 }
 
 const sicoobApi = axios.create(axiosConfig);
 
+// Obter token de acesso
 export const getSicoobAccessToken = async () => {
-  // No sandbox, usamos o token fixo
   if (process.env.SICOOB_ENVIRONMENT === 'sandbox') {
     console.log('🔑 Usando token fixo do sandbox');
     return process.env.SICOOB_ACCESS_TOKEN;
   }
 
-  // Em produção, obtemos token normalmente
   try {
     const scopes = [
-      'cob.write', 'cob.read', 'pix.write', 'pix.read',
-      'webhook.write', 'webhook.read'
+      'cob.write',
+      'cob.read',
+      'pix.write',
+      'pix.read',
+      'webhook.write',
+      'webhook.read'
     ].join(' ');
 
     const params = new URLSearchParams();
@@ -44,23 +44,21 @@ export const getSicoobAccessToken = async () => {
     params.append('scope', scopes);
 
     console.log('🔑 Obtendo token de acesso do Sicoob...');
-    const resp = await axios.post(
-      process.env.SICOOB_AUTH_URL,
-      params.toString(),
-      {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        httpsAgent: axiosConfig.httpsAgent
-      }
-    );
+    const resp = await axios.post(process.env.SICOOB_AUTH_URL, params.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      httpsAgent: axiosConfig.httpsAgent
+    });
 
     console.log('✅ Token de acesso obtido com sucesso');
     return resp.data.access_token;
+
   } catch (err) {
     console.error('❌ Erro ao obter token Sicoob:', err.message);
     throw new Error('Falha na autenticação com o Sicoob');
   }
 };
 
+// Registrar webhook
 export const registerWebhook = async (webhookUrl) => {
   try {
     const accessToken = await getSicoobAccessToken();
@@ -73,62 +71,46 @@ export const registerWebhook = async (webhookUrl) => {
     };
 
     console.log('📤 Registrando webhook no Sicoob...');
+    const response = await axios.post(`${process.env.SICOOB_API_BASE_URL}/webhooks`, webhookPayload, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'Client-Id': process.env.SICOOB_CLIENT_ID
+      },
+      validateStatus: status => status < 500
+    });
 
-    const response = await axios.post(
-      `${process.env.SICOOB_API_BASE_URL}/webhooks`,
-      webhookPayload,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          'Client-Id': process.env.SICOOB_CLIENT_ID
-        },
-        httpsAgent: axiosConfig.httpsAgent
-      }
-    );
-
-    console.log('✅ Webhook registrado com sucesso');
-    return response.data;
-  } catch (error) {
-    console.error('❌ Erro ao registrar webhook:', error.message);
-
-    // Verificar se é um erro de sandbox não suportado
-    if (error.response && typeof error.response.data === 'string' &&
-      error.response.data.includes('<html>')) {
-      return {
-        success: false,
-        message: 'Registro automático não suportado no sandbox'
-      };
+    if (typeof response.data === 'string' && response.data.includes('<html>')) {
+      console.warn('⚠️ Registro automático não suportado no sandbox.');
+      return { success: false, message: 'Registro automático não suportado. Registrar manualmente.', manualRegistrationUrl: 'https://developers.sicoob.com.br' };
     }
 
-    throw error;
+    return response.data;
+
+  } catch (error) {
+    console.error('❌ Erro ao registrar webhook:', error.message);
+    if (error.response) {
+      console.error('Status:', error.response.status, 'Data:', error.response.data);
+    }
+    return { success: false, error: error.message, message: 'Registrar manualmente no portal Sicoob.' };
   }
 };
 
 // Criar cobrança Pix
-export const createPixCharge = async (appointmentId) => {
+/* export const createPixCharge = async (appointmentId) => {
   try {
-    const appointment = await Appointment.findById(appointmentId)
-      .populate('patient doctor')
-      .exec();
-
+    const appointment = await Appointment.findById(appointmentId).populate('patient doctor').exec();
     if (!appointment) throw new Error('Agendamento não encontrado');
     if (!appointment.sessionValue) throw new Error('Valor não definido');
 
     const accessToken = await getSicoobAccessToken();
 
-    // Gerar txid único (máx 35 caracteres)
     const txid = `APPT-${appointment._id.toString().slice(-20)}`;
-
-    // Montar devedor
-    let devedor = {};
-    if (appointment.patient?.cpf?.length === 11) {
-      devedor = { cpf: appointment.patient.cpf, nome: appointment.patient.fullName.substring(0, 25) };
-    } else if (appointment.patient?.cnpj?.length === 14) {
-      devedor = { cnpj: appointment.patient.cnpj, nome: appointment.patient.fullName.substring(0, 25) };
-    } else {
-      devedor = { nome: appointment.patient?.fullName?.substring(0, 25) || `Paciente ${appointment._id}` };
-    }
+    const devedor = appointment.patient?.cpf?.length === 11
+      ? { cpf: appointment.patient.cpf, nome: appointment.patient.fullName.substring(0, 25) }
+      : appointment.patient?.cnpj?.length === 14
+        ? { cnpj: appointment.patient.cnpj, nome: appointment.patient.fullName.substring(0, 25) }
+        : { nome: appointment.patient?.fullName?.substring(0, 25) || `Paciente ${appointment._id}` };
 
     const payload = {
       calendario: { expiracao: 3600 },
@@ -143,21 +125,17 @@ export const createPixCharge = async (appointmentId) => {
     };
 
     console.log('💳 Criando cobrança PIX...');
-    const response = await sicoobApi.put(
-      `${process.env.SICOOB_API_BASE_URL}/cob/${txid}`,
-      payload,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          'Client-Id': process.env.SICOOB_CLIENT_ID
-        }
-      }
-    );
+    const response = await axios.put(`${process.env.SICOOB_API_BASE_URL}/cob/${txid}`, payload, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'Client-Id': process.env.SICOOB_CLIENT_ID
+      },
+      httpsAgent: axiosConfig.httpsAgent
+    });
 
     const qrCode = response.data.location || response.data.loc?.location;
 
-    // Atualizar agendamento
     appointment.pixTransaction = {
       txid,
       qrCode,
@@ -167,37 +145,37 @@ export const createPixCharge = async (appointmentId) => {
     };
     await appointment.save();
 
-    return {
-      success: true,
-      txid,
-      qrCode,
-      qrCodeImage: response.data.qrcode || null,
-      expiration: response.data.calendario.expiracao
-    };
+    return { success: true, txid, qrCode, qrCodeImage: response.data.qrcode || null, expiration: response.data.calendario.expiracao };
+
   } catch (error) {
     console.error('❌ Erro ao criar cobrança Pix:', error.message);
     if (error.response) return { success: false, error: error.response.data };
     return { success: false, error: error.message };
   }
 };
-
+ */
 // Consultar Pix recebidos
 export const getReceivedPixes = async (filters = {}) => {
   try {
     const accessToken = await getSicoobAccessToken();
-    const response = await sicoobApi.get(
-      `${process.env.SICOOB_API_BASE_URL}/pix`,
-      {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Client-Id': process.env.SICOOB_CLIENT_ID
-        },
-        params: filters
-      }
-    );
+    const response = await axios.get(`${process.env.SICOOB_API_BASE_URL}/pix`, {
+      headers: { Authorization: `Bearer ${accessToken}`, 'Client-Id': process.env.SICOOB_CLIENT_ID },
+      params: filters,
+      httpsAgent: axiosConfig.httpsAgent
+    });
     return response.data;
   } catch (error) {
     console.error('❌ Erro ao consultar PIX recebidos:', error.message);
     throw error;
   }
+};
+
+export const processPixWebhook = (payload) => {
+  if (!payload?.pix || !Array.isArray(payload.pix)) return [];
+  return payload.pix.map(pix => ({
+    id: pix.txid,
+    amount: parseFloat(pix.valor),
+    date: new Date(pix.horario),
+    payer: pix.pagador || 'Não informado'
+  }));
 };
