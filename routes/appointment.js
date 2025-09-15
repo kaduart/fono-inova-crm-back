@@ -30,7 +30,6 @@ const router = express.Router();
 // Verifica horários disponíveis
 router.get('/available-slots', auth, getAvailableTimeSlots);
 
-
 // Cria um novo agendamento
 router.post('/', auth, checkPackageAvailability, validateIndividualPayment, checkAppointmentConflicts, async (req, res) => {
     const mongoSession = await mongoose.startSession();
@@ -331,7 +330,6 @@ router.get('/', auth, async (req, res) => {
     }
 });
 
-
 // Busca agendamentos por especialidade
 router.get('/by-specialty/:specialty', auth, async (req, res) => {
     try {
@@ -528,7 +526,7 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
         } finally {
             await mongoSession.endSession();
         }
-    });
+});
 
 function determineActionType(updateData) {
     if (updateData.status === 'canceled') return 'cancel';
@@ -1106,7 +1104,7 @@ router.get('/stats', auth, async (req, res) => {
     }
 });
 
-// backend/controllers/appointmentController.js
+
 router.patch('/:id/clinical-status', validateId, auth, async (req, res) => {
     try {
         const { status } = req.body;
