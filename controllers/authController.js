@@ -8,6 +8,10 @@ import Doctor from '../models/Doctor.js';
 dotenv.config();
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
+console.log('SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? 'OK' : 'undefined');
+console.log('EMAIL_FROM:', process.env.EMAIL_FROM ? 'OK' : 'undefined');
+console.log('FRONTEND_URL_PRD:', process.env.FRONTEND_URL_PRD ? 'OK' : 'undefined');
+
 export const authController = {
   async forgotPassword(req, res) {
     try {
@@ -186,7 +190,7 @@ export const authController = {
 
   // Adicione este método no seu authController para verificar tokens
   async verifyResetToken(req, res) {
-    
+
     try {
       const { token } = req.params;
       const { role } = req.query; // 👈 vem da URL: ?role=admin|doctor
