@@ -189,6 +189,99 @@ export const doctorOperations = {
   }
 };
 
+// controllers/doctorController.js
+export const getCalendarAppointments = async (req, res) => {
+  try {
+    const doctorId = req.user.id;
+    console.log('Doctor ID from token:', doctorId);
+
+    // Validar se o ID do médico é válido
+    if (!mongoose.Types.ObjectId.isValid(doctorId)) {
+      return res.status(400).json({
+        error: 'ID inválido',
+        message: 'O ID do médico fornecido é inválido'
+      });
+    }
+
+    const { start, end } = req.query;
+    const filter = { 
+      doctor: new mongoose.Types.ObjectId(doctorId),
+      status: { $ne: 'cancelado' } // Excluir agendamentos cancelados
+    };
+
+    // Adicionar filtro de período se fornecido
+    if (start && end) {
+      filter.date = {
+        $gte: new Date(start).toISOString().split('T')[0], // Converter para formato YYYY-MM-DD
+        $lte: new Date(end).toISOString().split('T')[0]
+      };
+    } else {
+      // Buscar agendamentos futuros
+      const today = new Date().toISOString().split('T')[0];
+      filter.date = { $gte: today };
+    }
+
+    console.log('Filter being applied:', JSON.stringify(filter, null, 2));
+
+    // Buscar agendamentos
+    const appointments = await Appointment.find(filter)
+      .populate('patient', 'fullName phone email dateOfBirth gender')
+      .populate('doctor', 'fullName specialty')
+      .sort({ date: 1, time: 1 })
+      .lean();
+
+    console.log(`Found ${appointments.length} appointments`);
+
+    // Formatar para o FullCalendar - CORREÇÃO CRÍTICA AQUI
+    const events = appointments.map(appt => {
+      try {
+        // Combinar data (string YYYY-MM-DD) e hora (string HH:MM)
+        const dateTimeString = `${appt.date}T${appt.time}`;
+        const startDateTime = new Date(dateTimeString);
+        
+        // Verificar se a data é válida
+        if (isNaN(startDateTime.getTime())) {
+          console.warn('Invalid date/time:', dateTimeString, 'for appointment:', appt._id);
+          return null;
+        }
+        
+        const endDateTime = new Date(startDateTime);
+        endDateTime.setMinutes(endDateTime.getMinutes() + (appt.duration || 40));
+
+        return {
+          id: appt._id.toString(),
+          title: `${appt.patient?.fullName || 'Paciente'} - ${appt.specialty || 'Consulta'}`,
+          start: startDateTime.toISOString(),
+          end: endDateTime.toISOString(),
+          extendedProps: {
+            status: appt.operationalStatus,
+            clinicalStatus: appt.clinicalStatus,
+            operationalStatus: appt.operationalStatus,
+            specialty: appt.specialty,
+            reason: appt.notes || 'Consulta',
+            patient: appt.patient || null,
+            doctor: appt.doctor || null,
+            time: appt.time,
+            date: appt.date
+          }
+        };
+      } catch (error) {
+        console.error('Error processing appointment:', appt._id, error);
+        return null;
+      }
+    }).filter(event => event !== null);
+
+    console.log(`Generated ${events.length} calendar events`);
+    res.json(events);
+  } catch (error) {
+    console.error('Erro ao buscar agendamentos para calendário:', error);
+    res.status(500).json({
+      error: 'Erro interno',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 export const getDoctorById = async (req, res) => {
   try {
     const doctor = await Doctor.findById(req.params.id);
