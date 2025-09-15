@@ -48,7 +48,7 @@ export const authController = {
         : process.env.FRONTEND_URL_DEV
         }/reset-password/${resetToken}?role=${role}`;
 
-
+      console.log('ssssssssssúrl', resetUrl)
       // 4. Atualiza o médico
       user.passwordResetToken = hashedToken;
       user.passwordResetExpires = Date.now() + 10 * 60 * 1000; // 10 minutos
@@ -186,20 +186,39 @@ export const authController = {
 
   // Adicione este método no seu authController para verificar tokens
   async verifyResetToken(req, res) {
+    
     try {
       const { token } = req.params;
+      const { role } = req.query; // 👈 vem da URL: ?role=admin|doctor
+      console.log('verifyResetToken', token, role);
+
+      if (!role || !['doctor', 'admin'].includes(role)) {
+        return res.status(400).json({
+          success: false,
+          valid: false,
+          message: 'Tipo de usuário inválido'
+        });
+      }
 
       const hashedToken = crypto
         .createHash('sha256')
         .update(token)
         .digest('hex');
 
-      const doctor = await Doctor.findOne({
-        passwordResetToken: hashedToken,
-        passwordResetExpires: { $gt: Date.now() }
-      });
+      let user;
+      if (role === 'doctor') {
+        user = await Doctor.findOne({
+          passwordResetToken: hashedToken,
+          passwordResetExpires: { $gt: Date.now() }
+        });
+      } else {
+        user = await Admin.findOne({
+          passwordResetToken: hashedToken,
+          passwordResetExpires: { $gt: Date.now() }
+        });
+      }
 
-      if (!doctor) {
+      if (!user) {
         return res.status(400).json({
           success: false,
           valid: false,
@@ -221,4 +240,5 @@ export const authController = {
       });
     }
   }
+
 };
