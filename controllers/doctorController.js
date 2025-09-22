@@ -204,9 +204,8 @@ export const getCalendarAppointments = async (req, res) => {
     }
 
     const { start, end } = req.query;
-    const filter = { 
-      doctor: new mongoose.Types.ObjectId(doctorId),
-      status: { $ne: 'cancelado' } // Excluir agendamentos cancelados
+    const filter = {
+      doctor: new mongoose.Types.ObjectId(doctorId)
     };
 
     // Adicionar filtro de período se fornecido
@@ -215,10 +214,6 @@ export const getCalendarAppointments = async (req, res) => {
         $gte: new Date(start).toISOString().split('T')[0], // Converter para formato YYYY-MM-DD
         $lte: new Date(end).toISOString().split('T')[0]
       };
-    } else {
-      // Buscar agendamentos futuros
-      const today = new Date().toISOString().split('T')[0];
-      filter.date = { $gte: today };
     }
 
     console.log('Filter being applied:', JSON.stringify(filter, null, 2));
@@ -229,6 +224,7 @@ export const getCalendarAppointments = async (req, res) => {
       .populate('doctor', 'fullName specialty')
       .sort({ date: 1, time: 1 })
       .lean();
+    console.log('appointments:', appointments);
 
     console.log(`Found ${appointments.length} appointments`);
 
@@ -238,13 +234,13 @@ export const getCalendarAppointments = async (req, res) => {
         // Combinar data (string YYYY-MM-DD) e hora (string HH:MM)
         const dateTimeString = `${appt.date}T${appt.time}`;
         const startDateTime = new Date(dateTimeString);
-        
+
         // Verificar se a data é válida
         if (isNaN(startDateTime.getTime())) {
           console.warn('Invalid date/time:', dateTimeString, 'for appointment:', appt._id);
           return null;
         }
-        
+
         const endDateTime = new Date(startDateTime);
         endDateTime.setMinutes(endDateTime.getMinutes() + (appt.duration || 40));
 
@@ -341,11 +337,7 @@ export const getDoctorPatients = async (req, res) => {
       : patientsAsString;
 
     if (patients.length === 0) {
-      return res.status(404).json({
-        code: 'NO_PATIENTS_FOUND',
-        message: 'Nenhum paciente encontrado para este médico',
-        doctorId
-      });
+      return res.json([]);
     }
 
     res.json(patients);
