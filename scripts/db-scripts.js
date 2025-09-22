@@ -8,9 +8,15 @@ db.sessions.deleteMany({
   patient: ObjectId("6897dc360683ca3788ae815d")
 });
 
-
+// deletar por id
 db.payments.deleteMany({
-  _id: ObjectId("6899df06c1f2dc889a764bb7")
+  _id: ObjectId("68cc0b115cac66e0313cb3ca")
+});
+db.sessions.deleteMany({
+  _id: ObjectId("68cc0b125cac66e0313cb3cd")
+});
+db.appointments.deleteMany({
+  _id: ObjectId("68cc0b115cac66e0313cb3c8")
 });
 
 
@@ -24,26 +30,24 @@ db.payments.deleteMany({
   status: "canceled"
 });
 
-
-
 // deltar sessaos doctor
 db.sessions.deleteMany({
   doctor: ObjectId("686024fb74dcf94b84ade15a"),
 });
 //consulta sessao por id
 db.sessions.find({
-  patient: ObjectId("6897dc360683ca3788ae815d"),
+  patient: ObjectId("68c029cecbdf4c1481b15592"),
 });
 
 //consulta pagamento por id patient
 db.payments.find({
-  patient: ObjectId("685c5617aec14c71635865ec"),
+  patient: ObjectId("68c029cecbdf4c1481b15592"),
 });
 
 
 //consulta agendamento por  patient
 db.appointments.find({
-  patient: ObjectId("685aec6baec14c7163585b09"),
+  patient: ObjectId("68c029cecbdf4c1481b15592"),
 });
 // conbsultar agednamenmto por id 
 db.appointments.find({
