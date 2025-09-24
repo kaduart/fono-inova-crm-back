@@ -87,6 +87,10 @@ app.use((req, res, next) => {
 });
 
 // Rotas
+// Endpoint de health check
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 app.use('/api/auth', authRoutes);
 app.use('/api/signup', signupRoutes);
 app.use('/api/login', loginRoutes);
