@@ -32,6 +32,8 @@ router.post('/', async (req, res) => {
             return handleAdvancePayment(req, res);
         }
 
+        const currentDate = new Date();
+
         // Cria sessão individual se necessário
         let individualSessionId = null;
         if (serviceType === 'individual_session') {
@@ -40,7 +42,10 @@ router.post('/', async (req, res) => {
                 patient: patientId,
                 doctor: doctorId,
                 notes,
-                package: null
+                package: null,
+                sessionType,
+                createdAt: currentDate, 
+                updatedAt: currentDa
             });
             individualSessionId = newSession._id;
         }
@@ -96,7 +101,9 @@ router.post('/', async (req, res) => {
                     status: 'scheduled',
                     isPaid: true,
                     paymentMethod: paymentMethod,
-                    isAdvance: true
+                    isAdvance: true,
+                    createdAt: currentDate,
+                    updatedAt: currentDate,
                 });
                 advanceSessionsIds.push(newSession._id);
             }
@@ -111,6 +118,8 @@ router.post('/', async (req, res) => {
             paymentMethod,
             notes,
             status: status || 'paid',
+            createdAt: currentDate,
+            updatedAt: currentDate,
             coveredSessions: advanceSessionsIds.map(id => ({
                 sessionId: id,
                 used: false,
@@ -135,13 +144,20 @@ router.post('/', async (req, res) => {
             const sessionToUpdate = serviceType === 'individual_session' ? individualSessionId : sessionId;
             await Session.findByIdAndUpdate(
                 sessionToUpdate,
-                { status: status }
+                {
+                    status: status,
+                    updatedAt: currentDate
+                }
             );
         }
 
         return res.status(201).json({
             success: true,
-            data: payment
+            data: populatedPayment,
+            message: advanceSessions.length > 0
+                ? `Pagamento registrado com ${advanceSessions.length} sessões futuras`
+                : 'Pagamento registrado com sucesso',
+            timestamp: currentDate // 🔥 TIMESTAMP NA RESPOSTA
         });
 
     } catch (error) {
@@ -390,6 +406,8 @@ router.patch('/:id', auth, async (req, res) => {
 
             console.log(`🔄 Tentativa ${retryCount + 1} de ${MAX_RETRIES} para atualizar pagamento ${id}`);
 
+            const currentDate = new Date();
+
             // 1. Buscar pagamento existente
             let payment = await Payment.findById(id)
                 .session(mongoSession)
@@ -398,9 +416,9 @@ router.patch('/:id', auth, async (req, res) => {
 
             if (!payment) {
                 await mongoSession.abortTransaction();
-                return res.status(404).json({ 
+                return res.status(404).json({
                     success: false,
-                    error: 'Pagamento não encontrado' 
+                    error: 'Pagamento não encontrado'
                 });
             }
 
@@ -410,7 +428,8 @@ router.patch('/:id', auth, async (req, res) => {
             const updateData = {
                 ...(amount !== undefined && { amount }),
                 ...(paymentMethod !== undefined && { paymentMethod }),
-                ...(status !== undefined && { status })
+                ...(status !== undefined && { status }),
+                updatedAt: currentDate
             };
 
             await Payment.updateOne({ _id: id }, { $set: updateData }, { session: mongoSession });
@@ -428,7 +447,8 @@ router.patch('/:id', auth, async (req, res) => {
                     {
                         $set: {
                             isPaid: status === 'paid',
-                            status: status === 'paid' ? 'completed' : 'pending'
+                            status: status === 'paid' ? 'completed' : 'pending',
+                            updatedAt: currentDate
                         }
                     }
                 );
@@ -443,7 +463,8 @@ router.patch('/:id', auth, async (req, res) => {
                     {
                         $set: {
                             isPaid: status === 'paid',
-                            status: status === 'paid' ? 'completed' : 'pending'
+                            status: status === 'paid' ? 'completed' : 'pending',
+                            updatedAt: currentDate
                         }
                     },
                     { session: mongoSession }
@@ -468,7 +489,8 @@ router.patch('/:id', auth, async (req, res) => {
                     {
                         $set: {
                             paymentStatus: status === 'paid' ? 'paid' : 'pending',
-                            operationalStatus: status === 'paid' ? 'confirmado' : 'pendente'
+                            operationalStatus: status === 'paid' ? 'confirmado' : 'pendente',
+                            updatedAt: currentDate
                         }
                     }
                 );
@@ -480,7 +502,7 @@ router.patch('/:id', auth, async (req, res) => {
 
                 for (const [index, sessionData] of advanceServices.entries()) {
                     console.log(`💰 Criando pagamento ${index + 1}/${advanceServices.length}`);
-                    
+
                     // 🔥 CRIAR NOVO PAGAMENTO INDEPENDENTE
                     const newPayment = new Payment({
                         patient: payment.patient,
@@ -493,6 +515,8 @@ router.patch('/:id', auth, async (req, res) => {
                         sessionType: sessionData.sessionType,
                         isAdvance: true,
                         serviceDate: sessionData.date,
+                        createdAt: currentDate, // DATA DA CRIAÇÃO DO PAGAMENTO
+                        updatedAt: currentDate,
                         notes: `Pagamento adiantado - ${sessionData.date} ${sessionData.time}`
                     });
                     await newPayment.save({ session: mongoSession });
@@ -511,7 +535,9 @@ router.patch('/:id', auth, async (req, res) => {
                         paymentStatus: status === 'paid' ? 'paid' : 'pending',
                         paymentMethod: paymentMethod || payment.paymentMethod,
                         sessionValue: sessionData.amount,
-                        payment: newPayment._id // Vincula ao NOVO pagamento
+                        payment: newPayment._id, // Vincula ao NOVO pagamento
+                        createdAt: currentDate, // DATA DA CRIAÇÃO DO PAGAMENTO
+                        updatedAt: currentDate,
                     });
                     await newAppointment.save({ session: mongoSession });
                     console.log('✅ Novo appointment criado:', newAppointment._id);
@@ -529,7 +555,9 @@ router.patch('/:id', auth, async (req, res) => {
                         paymentMethod: paymentMethod || payment.paymentMethod,
                         isAdvance: true,
                         appointment: newAppointment._id,
-                        payment: newPayment._id // Vincula ao NOVO pagamento
+                        payment: newPayment._id, // Vincula ao NOVO pagamento
+                        createdAt: currentDate, // DATA DA CRIAÇÃO DO PAGAMENTO
+                        updatedAt: currentDate,
                     });
                     await newSession.save({ session: mongoSession });
                     console.log('✅ Nova session criada:', newSession._id);
@@ -544,11 +572,11 @@ router.patch('/:id', auth, async (req, res) => {
                     // Vincular pagamento com appointment e session
                     await Payment.updateOne(
                         { _id: newPayment._id },
-                        { 
-                            $set: { 
+                        {
+                            $set: {
                                 appointment: newAppointment._id,
                                 session: newSession._id
-                            } 
+                            }
                         },
                         { session: mongoSession }
                     );
@@ -566,20 +594,20 @@ router.patch('/:id', auth, async (req, res) => {
             // 5. POPULAÇÃO DO PAGAMENTO PRINCIPAL
             try {
                 result = await safePopulatePayment(id);
-                
+
                 return res.json({
                     success: true,
                     data: result,
-                    message: advanceServices.length > 0 
-                        ? `Pagamento atualizado e ${advanceServices.length} sessões futuras criadas` 
+                    message: advanceServices.length > 0
+                        ? `Pagamento atualizado e ${advanceServices.length} sessões futuras criadas`
                         : 'Pagamento atualizado com sucesso'
                 });
 
             } catch (populateError) {
                 console.error('❌ Erro na população:', populateError);
-                
+
                 result = await Payment.findById(id).populate('patient doctor session');
-                
+
                 return res.json({
                     success: true,
                     data: result,

@@ -37,6 +37,7 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
 
     try {
         const doctorId = req.body.doctorId || req.user.id;
+        const currentDate = new Date();
 
         // Verificação de permissões
         if (req.user.role === 'patient') {
@@ -118,6 +119,8 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
             serviceType: req.body.serviceType,
             paymentAmount: req.body.paymentAmount,
             paymentMethod: req.body.paymentMethod,
+            createdAt: currentDate,
+            updatedAt: currentDate
         };
         const appointment = new Appointment(appointmentData);
         await appointment.save({ session: mongoSession });
@@ -138,6 +141,8 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
                 serviceType: req.body.serviceType,
                 appointment: appointment._id,
                 paymentMethod: req.body.paymentMethod,
+                createdAt: currentDate,
+                updatedAt: currentDate
             });
 
             await payment.save({ session: mongoSession });
@@ -159,7 +164,9 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
                 status: 'scheduled',
                 isPaid: true,
                 paymentMethod: req.body.paymentMethod,
-                sessionValue: req.body.paymentAmount
+                sessionValue: req.body.paymentAmount,
+                createdAt: currentDate,
+                updatedAt: currentDate
             }], { session: mongoSession });
 
             payment.session = newSession[0]._id;
@@ -210,7 +217,9 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
             appointment,
             paymentId: payment?._id,
             sessionId: session?._id,
-            packageRemainingSessions: selectedPackage?.remainingSessions
+            packageRemainingSessions: selectedPackage?.remainingSessions,
+            createdAt: currentDate,
+            updatedAt: currentDate
         });
 
     } catch (error) {
@@ -353,6 +362,7 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
 
         try {
             await mongoSession.startTransaction();
+            const currentDate = new Date();
 
             // 1. Buscar e validar agendamento com lock
             const appointment = await Appointment.findOneAndUpdate(
@@ -375,7 +385,9 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
             // 3. Aplicar atualizações manualmente
             const updateData = {
                 ...req.body,
-                doctor: req.body.doctorId || appointment.doctor
+                doctor: req.body.doctorId || appointment.doctor,
+                createdAt: currentDate,
+                updatedAt: currentDate
             };
 
             // Salvar dados anteriores para comparação
@@ -386,7 +398,9 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                 paymentAmount: appointment.paymentAmount,
                 paymentMethod: appointment.paymentMethod,
                 sessionType: appointment.sessionType,
-                serviceType: appointment.serviceType
+                serviceType: appointment.serviceType,
+                createdAt: currentDate,
+                updatedAt: currentDate
             };
 
             // Atualizar appointment
@@ -409,7 +423,8 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                             sessionType: updateData.sessionType || appointment.sessionType,
                             sessionValue: updateData.paymentAmount || appointment.paymentAmount,
                             notes: updateData.notes || appointment.notes,
-                            status: updateData.status || appointment.operationalStatus
+                            status: updateData.status || appointment.operationalStatus,
+                            updatedAt: currentDate
                         }
                     },
                     { session: mongoSession, new: true }
@@ -427,7 +442,8 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                             amount: updateData.paymentAmount || appointment.paymentAmount,
                             method: updateData.paymentMethod || appointment.paymentMethod,
                             serviceDate: updateData.date || appointment.date,
-                            serviceType: updateData.serviceType || appointment.serviceType
+                            serviceType: updateData.serviceType || appointment.serviceType,
+                            updatedAt: currentDate
                         }
                     },
                     { session: mongoSession, new: true }
@@ -442,7 +458,8 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                     {
                         $set: {
                             doctor: updateData.doctor || appointment.doctor,
-                            sessionValue: updateData.paymentAmount || appointment.paymentAmount
+                            sessionValue: updateData.paymentAmount || appointment.paymentAmount,
+                            updatedAt: currentDate
                         }
                     },
                     { session: mongoSession, new: true }
@@ -454,7 +471,12 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
             if (req.body.doctorId && previousData.doctor !== req.body.doctorId) {
                 const patientUpdate = Patient.findByIdAndUpdate(
                     appointment.patient,
-                    { $set: { doctor: req.body.doctorId } },
+                    {
+                        $set: {
+                            doctor: req.body.doctorId,
+                            updatedAt: currentDate
+                        }
+                    },
                     { session: mongoSession, new: true }
                 );
                 updatePromises.push(patientUpdate);
@@ -526,7 +548,7 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
         } finally {
             await mongoSession.endSession();
         }
-});
+    });
 
 function determineActionType(updateData) {
     if (updateData.status === 'canceled') return 'cancel';
