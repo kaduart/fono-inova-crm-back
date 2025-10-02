@@ -193,7 +193,6 @@ export const doctorOperations = {
 export const getCalendarAppointments = async (req, res) => {
   try {
     const doctorId = req.user.id;
-    console.log('Doctor ID from token:', doctorId);
 
     // Validar se o ID do médico é válido
     if (!mongoose.Types.ObjectId.isValid(doctorId)) {
@@ -216,17 +215,12 @@ export const getCalendarAppointments = async (req, res) => {
       };
     }
 
-    console.log('Filter being applied:', JSON.stringify(filter, null, 2));
-
     // Buscar agendamentos
     const appointments = await Appointment.find(filter)
       .populate('patient', 'fullName phone email dateOfBirth gender')
       .populate('doctor', 'fullName specialty')
       .sort({ date: 1, time: 1 })
       .lean();
-    console.log('appointments:', appointments);
-
-    console.log(`Found ${appointments.length} appointments`);
 
     // Formatar para o FullCalendar - CORREÇÃO CRÍTICA AQUI
     const events = appointments.map(appt => {
@@ -267,7 +261,6 @@ export const getCalendarAppointments = async (req, res) => {
       }
     }).filter(event => event !== null);
 
-    console.log(`Generated ${events.length} calendar events`);
     res.json(events);
   } catch (error) {
     console.error('Erro ao buscar agendamentos para calendário:', error);
@@ -302,21 +295,13 @@ export const getDoctorById = async (req, res) => {
 };
 
 export const getDoctorPatients = async (req, res) => {
-
   try {
-    const doctorId = req.user.id;
+    const doctorId = req.user?.id;
 
-    // Verificação detalhada do ID
     if (!doctorId) {
-      return res.status(400).json({
-        code: 'MISSING_ID',
-        message: 'ID do médico não fornecido'
-      });
+      return res.status(400).json({ code: 'MISSING_ID', message: 'ID do médico não fornecido' });
     }
-
-    const isValid = mongoose.isValidObjectId(doctorId);
-
-    if (!isValid) {
+    if (!mongoose.isValidObjectId(doctorId)) {
       return res.status(400).json({
         code: 'INVALID_ID_FORMAT',
         message: 'Formato de ID inválido',
@@ -325,37 +310,49 @@ export const getDoctorPatients = async (req, res) => {
       });
     }
 
-    // Tentar consulta de duas formas diferentes
-    const patientsAsString = await Patient.find({ doctor: doctorId });
-    const patientsAsObjectId = await Patient.find({
-      doctor: new mongoose.Types.ObjectId(doctorId)
-    });
+    const doctorObjectId = new mongoose.Types.ObjectId(doctorId);
 
-    // Verificar qual formato funciona
-    const patients = patientsAsObjectId.length > 0
-      ? patientsAsObjectId
-      : patientsAsString;
+    // Passo 1: buscar os appointments do médico (ignora cancelados)
+    const appointments = await Appointment.find({
+      doctor: doctorObjectId,
+      operationalStatus: { $ne: 'cancelado' }
+    }).select('patient date time operationalStatus').lean();
 
-    if (patients.length === 0) {
+    if (!appointments.length) {
       return res.json([]);
     }
 
-    res.json(patients);
+    // Passo 2: pegar IDs únicos dos pacientes
+    const patientIds = [...new Set(appointments.map(a => a.patient.toString()))];
+
+    // Passo 3: buscar os pacientes
+    const patients = await Patient.find({ _id: { $in: patientIds } })
+      .select('fullName phone email imageAuthorization')
+      .lean();
+
+    // Passo 4: enriquecer pacientes com last/next appointment
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+
+    const enriched = patients.map(p => {
+      const apptsThisPatient = appointments.filter(a => a.patient.toString() === p._id.toString());
+
+      const future = apptsThisPatient.filter(a => new Date(a.date) >= today)
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+      const past = apptsThisPatient.filter(a => new Date(a.date) < today)
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      return {
+        ...p,
+        nextAppointment: future[0] || null,
+        lastAppointment: past[0] || null
+      };
+    });
+
+    return res.json(enriched);
 
   } catch (error) {
-
-    // Tratamento específico para erros de cast
-    if (error.name === 'CastError') {
-      console.error('Detalhes do CastError:', error.message);
-      return res.status(400).json({
-        code: 'CAST_ERROR',
-        message: 'Erro de conversão de tipo',
-        path: error.path,
-        value: error.value
-      });
-    }
-
-    res.status(500).json({
+    console.error('Erro no getDoctorPatients:', error);
+    return res.status(500).json({
       code: 'SERVER_ERROR',
       message: 'Erro interno no servidor',
       error: error.message
