@@ -1222,8 +1222,19 @@ router.get('/daily-closing', async (req, res) => {
             };
 
             if (payment.status === 'paid') {
-                if (!isAdvancePayment || paymentDate === targetDate) {
-                    report.financial.totalReceived += amount;
+                if (payment.status === 'paid') {
+                    // 🧠 Soma apenas se o pagamento realmente foi feito hoje
+                    //    ou se for um pacote pago hoje.
+                    const isPaidToday = paymentDate === targetDate;
+                    const isPackageToday = type === 'package_session' && paymentDate === targetDate;
+
+                    if ((isPaidToday && !isAdvancePayment) || isPackageToday) {
+                        report.financial.totalReceived += amount;
+                    }
+
+                    // (mantém o resto igual)
+                    report.financial.paymentMethods[method].amount += amount;
+                    report.financial.paymentMethods[method].details.push(paymentDetail);
                 }
 
                 report.financial.paymentMethods[method].amount += amount;
@@ -1263,8 +1274,14 @@ router.get('/daily-closing', async (req, res) => {
                     }
 
                     const prof = report.byProfessional[doctorId];
-                    prof.financial.received += amount;
-                    prof.financial.methods[method].amount += amount;
+
+                    // 🧩 Ajuste crucial
+                    if (!isAdvancePayment && paymentDate === targetDate) {
+                        prof.financial.received += amount;
+                        prof.financial.methods[method].amount += amount;
+                    }
+
+                    // sempre adiciona nos detalhes (para transparência)
                     prof.financial.methods[method].details.push(paymentDetail);
                 }
             }
