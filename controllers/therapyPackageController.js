@@ -37,13 +37,12 @@ export const packageOperations = {
                 amountPaid,
                 calculationMode, // Novo campo
                 totalSessions // Novo campo
+
             } = req.body;
 
-            // DEBUG: Log dos valores recebidos
-            console.log('calculationMode:', calculationMode);
-            console.log('totalSessions from payload:', totalSessions);
-            console.log('durationMonths from payload:', durationMonths);
-            console.log('sessionsPerWeek from payload:', sessionsPerWeek);
+            const paymentDate = req.body.paymentDate
+                ? req.body.paymentDate
+                : new Date().toISOString().split('T')[0];
 
             // 1. VALIDAÇÕES BÁSICAS
             if (!date || !time || !patientId || !doctorId || !sessionType || !specialty || !sessionValue) {
@@ -91,10 +90,7 @@ export const packageOperations = {
                 throw new Error('Número de sessões deve ser maior que zero');
             }
 
-            console.log('sessionValue 1', sessionValue)
-            console.log('finalTotalSessions 2', finalTotalSessions)
             const totalValue = sessionValue * finalTotalSessions;
-            console.log('totalValue 3', totalValue)
 
             // 4. CRIAR PACOTE
             const newPackage = new Package({
@@ -190,7 +186,8 @@ export const packageOperations = {
                     paymentMethod,
                     status: 'paid',
                     serviceType: 'package_session',
-                    sessionType: sessionType
+                    sessionType: sessionType,
+                    paymentDate: paymentDate,
                 });
 
                 await purchasePayment.save({ session: mongoSession });
@@ -199,8 +196,8 @@ export const packageOperations = {
                     { $push: { payments: purchasePayment._id } },
                     { session: mongoSession }
                 );
+                console.log('Before commit', purchasePayment);
             }
-
             await mongoSession.commitTransaction();
             transactionCommitted = true;
 

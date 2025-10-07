@@ -85,8 +85,13 @@ const paymentSchema = new mongoose.Schema({
         required: function () {
             return this.appointment; // Obrigatório se tiver appointment
         }
-    },  // coveredSessions e isAdvance para sessoes avulsas pagas adiantadaamete apra uso posterior
+    },
     isAdvance: Boolean,
+    paymentDate: {
+        type: String,
+        required: true,
+        default: () => new Date().toISOString().split('T')[0], // 🔹 string no formato yyyy-mm-dd
+    },
     advanceSessions: [{
         session: { type: mongoose.Schema.Types.ObjectId, ref: 'Session' },
         appointment: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' },
