@@ -27,14 +27,12 @@ const patientSchema = new mongoose.Schema({
     zipCode: { type: String, trim: true },
   },
   phone: { type: String, trim: true },
-  email: { type: String, trim: true, unique: true, lowercase: true },
+  email: { type: String, trim: true, lowercase: true },
   cpf: {
-    type: String, trim: true, index: false, // Isso previne a criação automática de índice
-    default: undefined
+    type: String, trim: true
   },
   rg: {
-    type: String, trim: true, index: false, // Isso previne a criação automática de índice
-    default: undefined
+    type: String, trim: true
   },
   mainComplaint: { type: String, trim: true },
   clinicalHistory: { type: String, trim: true },
