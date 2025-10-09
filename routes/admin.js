@@ -6,6 +6,7 @@ import Admin from '../models/Admin.js';
 import Appointment from '../models/Appointment.js';
 import Doctor from '../models/Doctor.js';
 import User from '../models/User.js';
+import Patient from '../models/Patient.js';
 dotenv.config();
 
 const router = express.Router();
@@ -159,11 +160,20 @@ router.get('/total-doctors', auth, async (req, res) => {
 
 router.get('/total-patients', auth, async (req, res) => {
   try {
-    const totalPatients = await User.countDocuments({ role: 'patient' });
-    res.json({ totalPatients });
+    // Conta todos os pacientes existentes
+    const totalPatients = await Patient.countDocuments({});
+
+    res.status(200).json({
+      success: true,
+      totalPatients,
+    });
   } catch (error) {
-    console.error('Error fetching total patients:', error);
-    res.status(500).send({ error: 'Server error' });
+    console.error('Erro ao contar pacientes:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro interno ao buscar total de pacientes',
+      error: error.message,
+    });
   }
 });
 
