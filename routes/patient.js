@@ -10,7 +10,7 @@ const router = express.Router();
 
 router.post('/add', auth, async (req, res) => {
   if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Not authorized to add patients' });
+    return res.status(403).json({ error: 'Voce não estar autorizado adicionar paciente!' });
   }
 
   const {
@@ -37,6 +37,26 @@ router.post('/add', auth, async (req, res) => {
     emergencyContact,
     imageAuthorization,
   } = req.body;
+
+  // 🔒 Verificações de duplicidade — só se valor existir
+  const existing = await Patient.findOne({
+    $or: [
+      ...(email ? [{ email }] : []),
+      ...(cpf ? [{ cpf }] : []),
+      ...(rg ? [{ rg }] : []),
+    ],
+  });
+
+  if (existing) {
+    const duplicatedFields = [];
+    if (email && existing.email === email) duplicatedFields.push('email');
+    if (cpf && existing.cpf === cpf) duplicatedFields.push('cpf');
+    if (rg && existing.rg === rg) duplicatedFields.push('rg');
+
+    return res.status(400).json({
+      error: `Já existe um paciente cadastrado com o mesmo ${duplicatedFields.join(' e ')}.`,
+    });
+  }
 
   try {
     const patient = new Patient({
@@ -67,8 +87,12 @@ router.post('/add', auth, async (req, res) => {
     res.status(201).json({ message: 'Patient added successfully!' });
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({ error: 'Email, CPF já RG existe!' });
+      const duplicatedField = Object.keys(error.keyValue || {})[0];
+      return res.status(400).json({
+        error: `Valor duplicado encontrado${duplicatedField ? ` no campo ${duplicatedField}` : ''}.`
+      });
     }
+
     res.status(400).json({ error: error.message });
   }
 });
