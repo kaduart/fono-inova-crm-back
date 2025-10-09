@@ -9,56 +9,95 @@ import Patient from '../models/Patient.js';
 const router = express.Router();
 
 router.post('/add', auth, async (req, res) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Voce não estar autorizado adicionar paciente!' });
-  }
-
-  const {
-    fullName,
-    dateOfBirth,
-    birthCertificate,
-    gender,
-    maritalStatus,
-    profession,
-    placeOfBirth,
-    address,
-    phone,
-    email,
-    cpf,
-    rg,
-    specialties,
-    mainComplaint,
-    clinicalHistory,
-    medications,
-    allergies,
-    familyHistory,
-    healthPlan,
-    legalGuardian,
-    emergencyContact,
-    imageAuthorization,
-  } = req.body;
-
-  // 🔒 Verificações de duplicidade — só se valor existir
-  const existing = await Patient.findOne({
-    $or: [
-      ...(email ? [{ email }] : []),
-      ...(cpf ? [{ cpf }] : []),
-      ...(rg ? [{ rg }] : []),
-    ],
-  });
-
-  if (existing) {
-    const duplicatedFields = [];
-    if (email && existing.email === email) duplicatedFields.push('email');
-    if (cpf && existing.cpf === cpf) duplicatedFields.push('cpf');
-    if (rg && existing.rg === rg) duplicatedFields.push('rg');
-
-    return res.status(400).json({
-      error: `Já existe um paciente cadastrado com o mesmo ${duplicatedFields.join(' e ')}.`,
-    });
-  }
-
   try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Você não está autorizado a adicionar paciente!'
+      });
+    }
+
+    const {
+      fullName,
+      dateOfBirth,
+      birthCertificate,
+      gender,
+      maritalStatus,
+      profession,
+      placeOfBirth,
+      address,
+      phone,
+      email,
+      cpf,
+      rg,
+      specialties,
+      mainComplaint,
+      clinicalHistory,
+      medications,
+      allergies,
+      familyHistory,
+      healthPlan,
+      legalGuardian,
+      emergencyContact,
+      imageAuthorization,
+    } = req.body;
+
+    // 🔹 Campos obrigatórios para o pré-cadastro
+    if (!fullName || !dateOfBirth) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nome completo e data de nascimento são obrigatórios para o cadastro inicial.'
+      });
+    }
+
+    // 🔹 Normaliza strings (remove espaços extras e ajusta caixa)
+    const normalizedName = fullName.trim().toLowerCase();
+    const normalizedDate = new Date(dateOfBirth).toISOString().split('T')[0]; // só yyyy-mm-dd
+
+    // 🔹 Monta array de filtros únicos
+    const query = [];
+    if (email && email.trim() !== '') query.push({ email });
+    if (cpf && cpf.trim() !== '') query.push({ cpf });
+    if (rg && rg.trim() !== '') query.push({ rg });
+
+    // 🔹 Busca duplicado por CPF/RG/email (campos únicos)
+    let existing = null;
+    if (query.length > 0) {
+      existing = await Patient.findOne({ $or: query });
+    }
+
+    // 🔹 Se não achou por documento, tenta achar por nome + data
+    let sameNameAndBirth = null;
+    if (!existing) {
+      sameNameAndBirth = await Patient.findOne({
+        fullName: { $regex: new RegExp(`^${normalizedName}$`, 'i') },
+        dateOfBirth: new Date(normalizedDate),
+      });
+    }
+
+    // 🔹 Se achou duplicado
+    if (existing || sameNameAndBirth) {
+      const duplicated = existing || sameNameAndBirth;
+
+      let duplicatedBy = 'dados semelhantes';
+      if (existing) {
+        if (cpf && duplicated.cpf === cpf) duplicatedBy = 'CPF';
+        else if (rg && duplicated.rg === rg) duplicatedBy = 'RG';
+        else if (email && duplicated.email === email) duplicatedBy = 'Email';
+      } else {
+        duplicatedBy = 'Nome e Data de Nascimento';
+      }
+
+      return res.status(409).json({
+        success: false,
+        message: `Já existe um paciente cadastrado com o mesmo ${duplicatedBy}.`,
+        existingId: duplicated._id,
+        existingName: duplicated.fullName,
+        existingDateOfBirth: duplicated.dateOfBirth,
+      });
+    }
+
+    // 🔹 Cria novo paciente
     const patient = new Patient({
       fullName,
       dateOfBirth,
@@ -83,17 +122,30 @@ router.post('/add', auth, async (req, res) => {
       emergencyContact,
       imageAuthorization,
     });
+
     await patient.save();
-    res.status(201).json({ message: 'Patient added successfully!' });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Paciente adicionado com sucesso!',
+      data: patient,
+    });
   } catch (error) {
+    console.error('Erro ao adicionar paciente:', error);
+
     if (error.code === 11000) {
       const duplicatedField = Object.keys(error.keyValue || {})[0];
       return res.status(400).json({
-        error: `Valor duplicado encontrado${duplicatedField ? ` no campo ${duplicatedField}` : ''}.`
+        success: false,
+        message: `Valor duplicado encontrado${duplicatedField ? ` no campo ${duplicatedField}` : ''}.`
       });
     }
 
-    res.status(400).json({ error: error.message });
+    return res.status(500).json({
+      success: false,
+      message: 'Erro interno ao adicionar paciente.',
+      error: error.message,
+    });
   }
 });
 
