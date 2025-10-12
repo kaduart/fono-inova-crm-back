@@ -1,6 +1,7 @@
 import axios from "axios";
 import dotenv from "dotenv";
 import { getIo } from "../config/socket.js";
+import Payment from "../models/Payment.js";
 import { getSicoobAccessToken } from "../services/sicoobAuth.js";
 dotenv.config();
 
@@ -126,7 +127,6 @@ export const getCobrancaHandler = async (req, res) => {
 export const webhookPixHandler = async (req, res) => {
   try {
     const { pix } = req.body;
-
     console.log("📩 Notificação PIX recebida:", JSON.stringify(pix, null, 2));
     res.status(200).json({ success: true });
 
@@ -139,10 +139,31 @@ export const webhookPixHandler = async (req, res) => {
     if (Array.isArray(pix)) {
       console.log("🔍 Sockets conectados:", Object.keys(io.sockets.sockets));
 
-      pix.forEach((p) => {
+      for (const p of pix) {
+        const txid = p?.txid || String(Date.now());
+        const valor = Number(p?.valor) || 0;
+
+        // 🔎 tenta achar pagamento pendente que corresponda ao PIX
+        const payment = await Payment.findOne({
+          status: "pending",
+          paymentMethod: "pix",
+          amount: { $gte: valor - 1, $lte: valor + 1 }, // tolerância de 1 real
+        }).sort({ createdAt: -1 });
+
+        if (payment) {
+          payment.status = "paid";
+          payment.notes = `PIX recebido via webhook TXID ${txid}`;
+          await payment.save();
+
+          console.log(`💰 Pagamento ${payment._id} atualizado como 'paid'`);
+        } else {
+          console.log("⚠️ Nenhum pagamento pendente encontrado para este PIX");
+        }
+
+        // 💬 envia evento em tempo real
         const payload = {
-          id: p?.txid || String(Date.now()),
-          amount: Number(p?.valor) || 0,
+          id: txid,
+          amount: valor,
           payer: p?.infoPagador || "Desconhecido",
           date: p?.horario || new Date().toISOString(),
           key: p?.chave,
@@ -151,7 +172,7 @@ export const webhookPixHandler = async (req, res) => {
 
         console.log("⚡ Emitindo evento 'pix-received':", payload);
         io.emit("pix-received", payload);
-      });
+      }
     }
   } catch (error) {
     console.error("❌ Erro ao processar webhook PIX:", error.message);
@@ -159,5 +180,6 @@ export const webhookPixHandler = async (req, res) => {
       res.status(500).json({ success: false, message: "Erro interno" });
   }
 };
+
 
 
