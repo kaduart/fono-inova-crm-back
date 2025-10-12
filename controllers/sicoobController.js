@@ -1,48 +1,139 @@
-import { getIo } from '../config/socket.js';
-import { getReceivedPixes } from '../services/sicoobService.js';
+import axios from "axios";
+import dotenv from "dotenv";
+import { getSicoobAccessToken } from "../services/sicoobAuth.js";
+dotenv.config();
 
-/* export const createPix = async (req, res) => {
+/**
+ * ============================================================
+ * 📦 1️⃣ REGISTRA O WEBHOOK PIX NO SICOOB
+ * ============================================================
+ */
+export const registerWebhookHandler = async (req, res) => {
   try {
-    const { appointmentId } = req.params;
-    const result = await createPixCharge(appointmentId);
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message || err });
-  }
-}; */
+    const token = await getSicoobAccessToken();
+    const chavePix = process.env.SICOOB_PIX_KEY;
+    const webhookUrl = process.env.SICOOB_WEBHOOK_URL;
 
-export const getReceived = async (req, res) => {
-  try {
-    const data = await getReceivedPixes(req.query);
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message || err });
+    const url = `${process.env.SICOOB_API_BASE_URL}/webhook/${chavePix}`;
+
+    const response = await axios.put(
+      url,
+      { webhookUrl },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          client_id: process.env.SICOOB_CLIENT_ID,
+        },
+      }
+    );
+
+    console.log("✅ Webhook registrado com sucesso:", response.data);
+
+    res.status(200).json({
+      success: true,
+      message: "Webhook registrado com sucesso",
+      data: response.data,
+    });
+  } catch (error) {
+    console.error("❌ Erro ao registrar webhook:", error.response?.data || error.message);
+
+    res.status(500).json({
+      success: false,
+      message: "Falha ao registrar webhook",
+      error: error.response?.data || error.message,
+    });
   }
 };
 
-export const handlePixWebhook = (req, res) => {
+/**
+ * ============================================================
+ * 💸 2️⃣ LISTA PIX RECEBIDOS (para testes manuais)
+ * ============================================================
+ */
+export const listPixHandler = async (req, res) => {
   try {
-    const payload = req.body;
-    console.log('🔔 Notificação PIX recebida:', JSON.stringify(payload, null, 2));
+    const token = await getSicoobAccessToken();
 
-    res.status(200).json({ mensagem: "Notificação recebida com sucesso" });
+    const url = `${process.env.SICOOB_API_BASE_URL}/pix`;
 
-    if (payload?.pix && Array.isArray(payload.pix)) {
-      const io = getIo();
-      payload.pix.forEach(pix => {
-        const formattedPix = {
-          id: pix.txid,
-          amount: parseFloat(pix.valor),
-          date: new Date(pix.horario || Date.now()),
-          payer: pix.pagador || 'Não informado',
-          status: 'recebido'
-        };
-        console.log('💸 Pix processado:', formattedPix);
-        io.emit('pix-received', formattedPix);
-      });
-    }
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        client_id: process.env.SICOOB_CLIENT_ID,
+      },
+    });
+
+    console.log("📦 PIX recebidos:", response.data);
+
+    res.status(200).json({
+      success: true,
+      data: response.data,
+    });
   } catch (error) {
-    console.error('❌ Erro ao processar webhook:', error);
-    res.status(500).json({ mensagem: "Erro ao processar notificação" });
+    console.error("❌ Erro ao listar PIX:", error.response?.data || error.message);
+
+    res.status(500).json({
+      success: false,
+      message: "Erro ao listar PIX",
+      error: error.response?.data || error.message,
+    });
+  }
+};
+
+/**
+ * ============================================================
+ * 🧾 3️⃣ CONSULTA COBRANÇA ESPECÍFICA POR TXID
+ * ============================================================
+ */
+export const getCobrancaHandler = async (req, res) => {
+  try {
+    const { txid } = req.params;
+    const token = await getSicoobAccessToken();
+
+    const url = `${process.env.SICOOB_API_BASE_URL}/cob/${txid}`;
+
+    const response = await axios.get(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        client_id: process.env.SICOOB_CLIENT_ID,
+      },
+    });
+
+    console.log("📄 Detalhes da cobrança:", response.data);
+
+    res.status(200).json({
+      success: true,
+      data: response.data,
+    });
+  } catch (error) {
+    console.error("❌ Erro ao consultar cobrança:", error.response?.data || error.message);
+
+    res.status(500).json({
+      success: false,
+      message: "Erro ao consultar cobrança",
+      error: error.response?.data || error.message,
+    });
+  }
+};
+
+/**
+ * ============================================================
+ * ⚡ 4️⃣ RECEBE NOTIFICAÇÕES PIX (WEBHOOK)
+ * ============================================================
+ */
+export const webhookPixHandler = async (req, res) => {
+  try {
+    console.log("📩 Notificação PIX recebida:", req.body);
+
+    // Aqui você pode tratar a notificação (ex: atualizar pagamento no sistema)
+    // Exemplo:
+    // const pix = req.body.pix[0];
+    // await Payment.updateOne({ e2eid: pix.endToEndId }, { status: "paid" });
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("❌ Erro ao processar webhook PIX:", error.message);
+    res.status(500).json({ success: false, message: "Erro interno" });
   }
 };

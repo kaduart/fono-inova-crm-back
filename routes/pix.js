@@ -1,11 +1,24 @@
-import { Router } from 'express';
-import { getReceived, handlePixWebhook } from '../controllers/sicoobController.js';
+// routes/pixRoutes.js
+import express from "express";
+import {
+  getCobrancaHandler,
+  listPixHandler,
+  registerWebhookHandler,
+  webhookPixHandler, // ✅ Corrigido: antes estava "webhookPi fxHandler"
+} from "../controllers/sicoobController.js";
 
-const router = Router();
-/* 
-router.post('/create/:appointmentId', createPix);
- */
-router.post('/webhook', handlePixWebhook);
-router.get('/received', getReceived);
+const router = express.Router();
+
+// 📌 Rota para registrar o webhook PIX (chave e URL)
+router.post("/register-webhook", registerWebhookHandler);
+
+// 📊 Rota para listar PIX recebidos (GET)
+router.get("/received", listPixHandler);
+
+// 📥 Endpoint que o Sicoob chamará quando cair um PIX (notificação real)
+router.post("/webhook", webhookPixHandler);
+
+// 💰 Consultar uma cobrança específica (pelo TXID)
+router.get("/cobranca/:txid", getCobrancaHandler);
 
 export default router;
