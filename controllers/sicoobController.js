@@ -1,5 +1,6 @@
 import axios from "axios";
 import dotenv from "dotenv";
+import { getIo } from "../config/socket.js";
 import { getSicoobAccessToken } from "../services/sicoobAuth.js";
 dotenv.config();
 
@@ -127,11 +128,8 @@ export const webhookPixHandler = async (req, res) => {
     const { pix } = req.body;
 
     console.log("📩 Notificação PIX recebida:", JSON.stringify(pix, null, 2));
-
-    // responde rapidamente ao Sicoob
     res.status(200).json({ success: true });
 
-    // emite via Socket.IO para o frontend
     const io = getIo();
     if (!io) {
       console.error("❌ getIo() retornou undefined no webhook PIX");
@@ -161,4 +159,5 @@ export const webhookPixHandler = async (req, res) => {
       res.status(500).json({ success: false, message: "Erro interno" });
   }
 };
+
 
