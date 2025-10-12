@@ -92,23 +92,28 @@ app.post('/api/pix/webhook', (req, res) => {
   try {
     const payload = req.body;
     console.log('📩 Webhook recebido do Sicoob:', JSON.stringify(payload, null, 2));
+
     res.status(200).json({ mensagem: "Notificação recebida com sucesso" });
 
     if (payload?.pix && Array.isArray(payload.pix)) {
       const io = getIo();
+
       payload.pix.forEach(pix => {
         const formattedPix = {
           id: pix.txid || Date.now().toString(),
-          amount: parseFloat(pix.valor) || 0,
-          date: new Date(pix.horario || Date.now()),
-          payer: pix.pagador || 'Não informado',
-          status: 'recebido'
+          valor: Number(pix.valor),
+          horario: pix.horario,
+          infoPagador: pix.infoPagador || "Sem descrição",
+          chave: pix.chave,
+          status: "recebido"
         };
-        io.emit('pix-received', formattedPix);
+
+        console.log("📡 Emitindo evento pix-received:", formattedPix);
+        io.emit("pix-received", formattedPix);
       });
     }
   } catch (error) {
-    console.error('❌ Erro webhook PIX:', error);
+    console.error("❌ Erro webhook PIX:", error);
   }
 });
 

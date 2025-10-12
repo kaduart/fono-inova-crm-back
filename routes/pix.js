@@ -1,4 +1,3 @@
-// routes/pixRoutes.js
 import express from "express";
 import {
   getCobrancaHandler,
