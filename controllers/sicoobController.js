@@ -124,16 +124,41 @@ export const getCobrancaHandler = async (req, res) => {
  */
 export const webhookPixHandler = async (req, res) => {
   try {
-    console.log("📩 Notificação PIX recebida:", req.body);
+    const { pix } = req.body;
 
-    // Aqui você pode tratar a notificação (ex: atualizar pagamento no sistema)
-    // Exemplo:
-    // const pix = req.body.pix[0];
-    // await Payment.updateOne({ e2eid: pix.endToEndId }, { status: "paid" });
+    console.log("📩 Notificação PIX recebida:", JSON.stringify(pix, null, 2));
 
+    // responde rapidamente ao Sicoob
     res.status(200).json({ success: true });
+
+    // emite via Socket.IO para o frontend
+    const io = getIo();
+    if (!io) {
+      console.error("❌ getIo() retornou undefined no webhook PIX");
+      return;
+    }
+
+    if (Array.isArray(pix)) {
+      console.log("🔍 Sockets conectados:", Object.keys(io.sockets.sockets));
+
+      pix.forEach((p) => {
+        const payload = {
+          id: p?.txid || String(Date.now()),
+          amount: Number(p?.valor) || 0,
+          payer: p?.infoPagador || "Desconhecido",
+          date: p?.horario || new Date().toISOString(),
+          key: p?.chave,
+          status: "received",
+        };
+
+        console.log("⚡ Emitindo evento 'pix-received':", payload);
+        io.emit("pix-received", payload);
+      });
+    }
   } catch (error) {
     console.error("❌ Erro ao processar webhook PIX:", error.message);
-    res.status(500).json({ success: false, message: "Erro interno" });
+    if (!res.headersSent)
+      res.status(500).json({ success: false, message: "Erro interno" });
   }
 };
+
