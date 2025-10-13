@@ -227,3 +227,5 @@ try {
 } catch (err) {
   console.error("⚠️ Falha ao inicializar Bull Board:", err.message);
 }
+
+.
