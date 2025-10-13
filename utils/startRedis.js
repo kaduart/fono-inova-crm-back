@@ -1,8 +1,14 @@
-// utils/startRedis.js
 import { execSync } from "child_process";
 import net from "net";
 
 export const ensureRedisRunning = async () => {
+  // 🚀 Ignora completamente o start local se for ambiente de produção
+  if (process.env.NODE_ENV === "production") {
+    console.log("🟢 Ambiente de produção detectado — ignorando start local do Redis");
+    console.log("🔗 Use REDIS_URL para conectar a um Redis externo (Render Add-on ou Upstash)");
+    return true;
+  }
+
   return new Promise((resolve, reject) => {
     const checkRedis = () => {
       const client = net.createConnection({ port: 6379, host: "127.0.0.1" });
@@ -21,7 +27,7 @@ export const ensureRedisRunning = async () => {
           setTimeout(() => {
             console.log("✅ Redis pronto para uso!");
             resolve(true);
-          }, 2000); // 🔥 espera 2 segundos antes de prosseguir
+          }, 2000);
         } catch (err) {
           console.error("❌ Falha ao iniciar o Redis:", err.message);
           reject(err);
