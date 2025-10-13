@@ -228,4 +228,28 @@ try {
   console.error("⚠️ Falha ao inicializar Bull Board:", err.message);
 }
 
-.
+// ======================================================
+// 🩺 Diagnóstico de rotas e fallback
+// ======================================================
+
+// Listar todas as rotas registradas no Express
+setTimeout(() => {
+  console.log("📋 ROTAS REGISTRADAS NO EXPRESS:");
+  app._router.stack.forEach((r) => {
+    if (r.route && r.route.path) {
+      console.log(`🧭 ${r.route.stack[0].method.toUpperCase()} ${r.route.path}`);
+    } else if (r.name === "router" && r.handle.stack) {
+      r.handle.stack.forEach((layer) => {
+        if (layer.route && layer.route.path) {
+          console.log(`🧭 ${layer.route.stack[0].method.toUpperCase()} ${layer.route.path}`);
+        }
+      });
+    }
+  });
+}, 4000);
+
+// Fallback temporário — se a rota do PIX não for encontrada
+app.post("/api/pix/webhook-fallback", (req, res) => {
+  console.log("🚨 Fallback /api/pix/webhook-fallback foi chamado!");
+  res.status(200).json({ ok: true });
+});
