@@ -12,9 +12,9 @@ import { startRedis } from "./services/redisClient.js";
 import { registerWebhook } from "./services/sicoobService.js"; // ✅ import certo
 
 // 🧩 Novo: Bull Board
-import { ExpressAdapter } from "@bull-board/express";
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
+import { ExpressAdapter } from "@bull-board/express";
 import { Queue } from "bullmq";
 
 // Rotas
@@ -48,19 +48,47 @@ const io = initializeSocket(server);
 const PORT = process.env.PORT || 5000;
 
 // Inicializa o Redis com teste de saúde
-try {
-  console.log("🔄 Iniciando conexão Redis...");
-  await startRedis();
-  console.log("🧩 Redis inicializado com sucesso!");
-} catch (err) {
-  console.error("❌ Falha crítica ao inicializar o Redis:", err.message);
-  if (process.env.NODE_ENV === "production") {
-    console.error("🚫 Abortando inicialização — Redis é obrigatório em produção.");
-    process.exit(1);
-  } else {
-    console.warn("⚠️ Continuando sem Redis (modo desenvolvimento).");
+(async () => {
+  try {
+    console.log("🔄 Iniciando conexão Redis...");
+    await startRedis();
+    console.log("🧩 Redis inicializado com sucesso!");
+  } catch (err) {
+    console.error("❌ Falha crítica ao inicializar o Redis:", err.message);
+    if (process.env.NODE_ENV === "production") {
+      console.error("🚫 Abortando inicialização — Redis é obrigatório em produção.");
+      process.exit(1);
+    } else {
+      console.warn("⚠️ Continuando sem Redis (modo desenvolvimento).");
+    }
   }
-}
+
+  // 🔗 Conexão MongoDB
+  mongoose
+    .connect(process.env.MONGO_URI)
+    .then(async () => {
+      console.log("✅ Connected to MongoDB");
+
+      try {
+        await registerWebhook();
+        console.log("🔗 Webhook PIX registrado com sucesso");
+      } catch {
+        console.warn("⚠️ Falha ao registrar webhook PIX (sem travar o servidor)");
+      }
+
+      initFollowupWatcher();
+
+      server.listen(PORT, "0.0.0.0", () => {
+        console.log(`🚀 Server running on port ${PORT}`);
+        console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
+      });
+    })
+    .catch((err) => {
+      console.error("❌ MongoDB connection error:", err);
+      process.exit(1);
+    });
+})();
+
 
 // 🔒 Middlewares globais
 app.use(helmet());
@@ -142,23 +170,6 @@ try {
   console.error("⚠️ Falha ao inicializar Bull Board:", err.message);
 }
 
-// 🔗 Conexão MongoDB
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(async () => {
-    console.log("✅ Connected to MongoDB");
-
-    // Registrar webhook PIX automaticamente
-    try {
-      await registerWebhook();
-      console.log("🔗 Webhook PIX registrado com sucesso");
-    } catch {
-      console.warn("⚠️ Falha ao registrar webhook PIX (sem travar o servidor)");
-    }
-
-    initFollowupWatcher();
-  })
-  .catch((err) => console.error("❌ MongoDB connection error:", err));
 
 // 🧩 Watcher MongoDB → emite eventos em tempo real
 function initFollowupWatcher() {
@@ -186,9 +197,3 @@ function initFollowupWatcher() {
 }
 
 import "./jobs/followup.analytics.cron.js";
-import "./jobs/followup.analytics.cron.js";
-
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
-});
