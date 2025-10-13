@@ -9,9 +9,9 @@ import { fileURLToPath } from "url";
 import { initializeSocket } from "./config/socket.js";
 import Followup from "./models/Followup.js";
 import { startRedis } from "./services/redisClient.js";
-import { registerWebhook } from "./services/sicoobService.js";
+import { registerWebhook } from "./services/sicoobService.js"; // ✅ import certo
 
-// 🧩 Bull Board
+// 🧩 Painel Bull Board
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
@@ -45,9 +45,50 @@ dotenv.config({ path: path.resolve(__dirname, "./.env") });
 const app = express();
 const server = http.createServer(app);
 const io = initializeSocket(server);
+const PORT = process.env.PORT || 5000;
 
-// ⚡ O Render define dinamicamente a porta — sem fallback!
-const PORT = process.env.PORT;
+// ✅ Inicializa o Redis com teste de saúde
+(async () => {
+  try {
+    console.log("🔄 Iniciando conexão Redis...");
+    await startRedis();
+    console.log("🧩 Redis inicializado com sucesso!");
+  } catch (err) {
+    console.error("❌ Falha crítica ao inicializar o Redis:", err.message);
+    if (process.env.NODE_ENV === "production") {
+      console.error("🚫 Abortando inicialização — Redis é obrigatório em produção.");
+      process.exit(1);
+    } else {
+      console.warn("⚠️ Continuando sem Redis (modo desenvolvimento).");
+    }
+  }
+
+  // 🔗 Conexão MongoDB
+  mongoose
+    .connect(process.env.MONGO_URI)
+    .then(async () => {
+      console.log("✅ Connected to MongoDB");
+
+      try {
+        await registerWebhook();
+        console.log("🔗 Webhook PIX registrado com sucesso");
+      } catch {
+        console.warn("⚠️ Falha ao registrar webhook PIX (sem travar o servidor)");
+      }
+
+      initFollowupWatcher();
+
+      // 🚀 Inicia o servidor só depois que tudo essencial estiver pronto
+      server.listen(PORT, () => {
+        console.log(`🚀 Server running on port ${PORT}`);
+        console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
+      });
+    })
+    .catch((err) => {
+      console.error("❌ MongoDB connection error:", err);
+      process.exit(1);
+    });
+})();
 
 // 🔒 Middlewares globais
 app.use(helmet());
@@ -57,8 +98,8 @@ app.use(express.json({ limit: "2mb" }));
 const allowedOrigins = [
   "https://app.clinicafonoinova.com.br",
   "https://fono-inova-crm-front.vercel.app",
-  "http://localhost:5173",
   "http://localhost:5000",
+  "http://localhost:5173",
 ];
 app.use(
   cors({
@@ -103,7 +144,7 @@ app.get("/health", (req, res) =>
   res.status(200).json({ status: "ok", timestamp: new Date() })
 );
 
-// 🧩 Painel Bull Board
+// 🧩 Painel Bull Board (Visualizador de Filas)
 try {
   const followupQueue = new Queue("followupQueue", {
     connection: {
@@ -152,35 +193,5 @@ function initFollowupWatcher() {
     console.error("⚠️ Erro ao iniciar watcher Followup:", err);
   }
 }
-
-// 🧩 Inicialização não bloqueante — Render detecta startup
-(async () => {
-  console.log("🌐 Iniciando backend da Clínica Fono Inova...");
-  console.log(`🔧 Ambiente: ${process.env.NODE_ENV || "development"}`);
-
-  // Inicia servidor primeiro (Render precisa detectar o bind!)
-  server.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-  });
-
-  // Redis e Mongo rodam em paralelo
-  startRedis()
-    .then(() => console.log("✅ Redis inicializado com sucesso"))
-    .catch((err) => console.error("⚠️ Falha ao iniciar Redis:", err.message));
-
-  mongoose
-    .connect(process.env.MONGO_URI)
-    .then(async () => {
-      console.log("✅ Connected to MongoDB");
-      try {
-        await registerWebhook();
-        console.log("🔗 Webhook PIX registrado com sucesso");
-      } catch {
-        console.warn("⚠️ Falha ao registrar webhook PIX (sem travar o servidor)");
-      }
-      initFollowupWatcher();
-    })
-    .catch((err) => console.error("❌ MongoDB connection error:", err));
-})();
 
 import "./jobs/followup.analytics.cron.js";
