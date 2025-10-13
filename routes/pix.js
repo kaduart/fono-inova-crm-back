@@ -1,4 +1,6 @@
 import express from "express";
+console.log("📦 Arquivo routes/pix.js realmente executou ✅");
+
 import {
   getCobrancaHandler,
   listPixHandler,

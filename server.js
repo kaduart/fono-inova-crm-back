@@ -46,7 +46,9 @@ import loginRoutes from "./routes/login.js";
 import PackageRoutes from "./routes/Package.js";
 import patientRoutes from "./routes/patient.js";
 import PaymentRoutes from "./routes/Payment.js";
-import pixRoutes from "./routes/pix.js"; // ✅ garante o endpoint /api/pix/webhook
+import pixRoutes from "./routes/pix.js"; 
+console.log("🧠 PIX ROUTES carregado com sucesso ✅");
+
 import signupRoutes from "./routes/signup.js";
 import specialtyRouter from "./routes/specialty.js";
 import UserRoutes from "./routes/user.js";
@@ -248,8 +250,9 @@ setTimeout(() => {
   });
 }, 4000);
 
-// Fallback temporário — se a rota do PIX não for encontrada
-app.post("/api/pix/webhook-fallback", (req, res) => {
-  console.log("🚨 Fallback /api/pix/webhook-fallback foi chamado!");
+// Alias provisório para webhook real
+app.post("/api/pix/webhook", (req, res) => {
+  console.log("🚨 ROTA PROVISÓRIA /api/pix/webhook chamada!");
+  console.log("📩 Conteúdo recebido:", req.body);
   res.status(200).json({ ok: true });
 });
