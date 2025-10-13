@@ -6,9 +6,10 @@ import http from "http";
 import mongoose from "mongoose";
 import path from "path";
 import { fileURLToPath } from "url";
-import { getIo, initializeSocket } from "./config/socket.js";
+import { initializeSocket } from "./config/socket.js";
 import Followup from "./models/Followup.js";
 import { registerWebhook } from "./services/sicoobService.js"; // ✅ import certo
+import { ensureRedisRunning } from './utils/startRedis.js';
 
 // Rotas
 import adminRoutes from "./routes/admin.js";
@@ -39,6 +40,8 @@ const app = express();
 const server = http.createServer(app);
 const io = initializeSocket(server);
 const PORT = process.env.PORT || 5000;
+
+await ensureRedisRunning();
 
 // 🔒 Middlewares globais
 app.use(helmet());
