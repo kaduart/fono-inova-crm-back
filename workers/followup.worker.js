@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import mongoose from "mongoose";
 import Followup from "../models/Followup.js";
 import { sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
+import { redisConnection } from "./config/redisConnection.js";
 
 dotenv.config();
 mongoose.connect(process.env.MONGO_URI);
@@ -101,23 +102,7 @@ const worker = new Worker(
         console.log(`❌ Follow-up ${followup._id} marcado como "failed" após 3 tentativas.`);
       }
     }
-  },
-  {
-    connection: process.env.REDIS_URL
-      ? {
-        url: process.env.REDIS_URL,
-        tls: {}, // obrigatório no Upstash
-        maxRetriesPerRequest: null,
-        enableReadyCheck: false,
-      }
-      : {
-        host: process.env.REDIS_HOST || "localhost",
-        port: process.env.REDIS_PORT || 6379,
-        maxRetriesPerRequest: null,
-        enableReadyCheck: false,
-      },
-  }
-);
+  }, { connection: redisConnection });
 
 // Logs de eventos (útil em Render)
 worker.on("completed", (job) =>

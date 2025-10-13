@@ -10,6 +10,7 @@ import { initializeSocket } from "./config/socket.js";
 import Followup from "./models/Followup.js";
 import { startRedis } from "./services/redisClient.js";
 import { registerWebhook } from "./services/sicoobService.js"; // ✅ import certo
+import { redisConnection } from "./config/redisConnection.js";
 
 // 🧩 Painel Bull Board
 import { createBullBoard } from "@bull-board/api";
@@ -147,21 +148,7 @@ app.get("/health", (req, res) =>
 
 // 🧩 Painel Bull Board (Visualizador de Filas)
 try {
-const followupQueue = new Queue("followupQueue", {
-  connection: process.env.REDIS_URL
-    ? {
-        url: process.env.REDIS_URL,
-        tls: { rejectUnauthorized: false }, // Upstash exige TLS
-        maxRetriesPerRequest: null,
-        enableReadyCheck: false,
-      }
-    : {
-        host: process.env.REDIS_HOST || "127.0.0.1",
-        port: process.env.REDIS_PORT || 6379,
-        maxRetriesPerRequest: null,
-        enableReadyCheck: false,
-      },
-});
+  const followupQueue = new Queue("followupQueue", { connection: redisConnection });
 
   const serverAdapter = new ExpressAdapter();
   serverAdapter.setBasePath("/admin/queues");
