@@ -101,6 +101,42 @@ export const getFollowupHistory = async (req, res) => {
     }
 };
 
+// 🔹 Função auxiliar pura (sem res.json)
+export const computeFollowupStats = async () => {
+  try {
+    const since = new Date();
+    since.setDate(since.getDate() - 30);
+
+    const pipeline = [
+      { $match: { createdAt: { $gte: since } } },
+      { $group: { _id: "$status", total: { $sum: 1 } } },
+    ];
+
+    const data = await Followup.aggregate(pipeline);
+
+    const total = data.reduce((acc, d) => acc + d.total, 0);
+    const sent = data.find(d => d._id === "sent")?.total || 0;
+    const failed = data.find(d => d._id === "failed")?.total || 0;
+    const scheduled = data.find(d => d._id === "scheduled")?.total || 0;
+    const processing = data.find(d => d._id === "processing")?.total || 0;
+
+    return {
+      total,
+      sent,
+      failed,
+      scheduled,
+      processing,
+      successRate: total ? ((sent / total) * 100).toFixed(1) : 0,
+    };
+  } catch (err) {
+    console.error("❌ Erro computeFollowupStats:", err);
+    return {
+      total: 0, sent: 0, failed: 0, scheduled: 0, processing: 0, successRate: 0,
+    };
+  }
+};
+
+
 /**
  * 📊 Estatísticas de follow-ups
  */
