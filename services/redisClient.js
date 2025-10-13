@@ -1,3 +1,4 @@
+// src/services/redisClient.js
 import { createClient } from "redis";
 
 const isProduction = process.env.NODE_ENV === "production";
@@ -7,6 +8,9 @@ let redisClient;
 // 🔌 Configuração do Redis Client
 // ===============================
 if (isProduction) {
+    console.log("🌍 Ambiente de produção detectado");
+    console.log("🔗 REDIS_URL:", process.env.REDIS_URL ? "✅ configurada" : "❌ ausente");
+
     // 🟢 PRODUÇÃO → Upstash Redis (Render)
     redisClient = createClient({
         url: process.env.REDIS_URL, // rediss://default:senha@host:port
@@ -14,14 +18,16 @@ if (isProduction) {
             tls: true, // obrigatório no Upstash
             rejectUnauthorized: false, // evita falha de certificado TLS
             keepAlive: 10000, // mantém conexão viva
+            connectTimeout: 15000, // aumenta tolerância para Render
+            lazyConnect: true, // 👈 impede crash no startup (conecta sob demanda)
             reconnectStrategy: (retries) => {
                 console.log(`🔁 Tentando reconectar ao Redis (tentativa ${retries})...`);
-                return Math.min(retries * 500, 10000); // tenta reconectar exponencialmente
+                return Math.min(retries * 1000, 15000); // tenta até 15s entre reconexões
             },
         },
     });
 } else {
-    // 🧑‍💻 DESENVOLVIMENTO LOCAL
+    console.log("🧑‍💻 Ambiente de desenvolvimento detectado");
     redisClient = createClient({
         socket: {
             host: process.env.REDIS_HOST || "127.0.0.1",
@@ -34,7 +40,6 @@ if (isProduction) {
 export function getRedis() {
     return redisClient;
 }
-
 
 // ===============================
 // 🚦 Eventos de Conexão
@@ -50,7 +55,7 @@ redisClient.on("ready", () => {
 });
 
 redisClient.on("error", (err) => {
-    if (err.code === "ECONNRESET" || err.code === "EPIPE") {
+    if (err.code === "ECONNRESET" || err.code === "EPIPE" || err.code === "ETIMEDOUT") {
         console.warn("⚠️ Conexão Redis perdida (será retomada automaticamente).");
     } else {
         console.error("❌ Erro Redis:", err.message);
@@ -62,11 +67,12 @@ redisClient.on("end", () => {
 });
 
 // ===============================
-// 🚦 Função de inicialização + teste de saúde
+// 🚀 Inicialização + teste de saúde
 // ===============================
 export async function startRedis() {
     try {
-        await redisClient.connect();
+        console.log("🌐 Iniciando conexão Redis...");
+        await redisClient.connect(); // conecta sob demanda
         console.log("🚀 Redis conectado e pronto para uso!");
 
         // 🩺 Teste de saúde
