@@ -3,21 +3,21 @@ import {
   getCobrancaHandler,
   listPixHandler,
   registerWebhookHandler,
-  webhookPixHandler, // ✅ Corrigido: antes estava "webhookPi fxHandler"
+  webhookPixHandler,
 } from "../controllers/sicoobController.js";
 
 const router = express.Router();
 
-// 📌 Rota para registrar o webhook PIX (chave e URL)
+// 📌 Registra o webhook PIX no Sicoob
 router.post("/register-webhook", registerWebhookHandler);
 
-// 📊 Rota para listar PIX recebidos (GET)
+// 📊 Lista PIX recebidos
 router.get("/received", listPixHandler);
 
-// 📥 Endpoint que o Sicoob chamará quando cair um PIX (notificação real)
+// 📥 Endpoint que o Sicoob chama quando cai um PIX (notificação real)
 router.post("/webhook", webhookPixHandler);
 
-// 💰 Consultar uma cobrança específica (pelo TXID)
+// 💰 Consulta cobrança específica por TXID
 router.get("/cobranca/:txid", getCobrancaHandler);
 
 export default router;
