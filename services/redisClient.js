@@ -8,7 +8,7 @@ console.log(`🔗 Upstash URL detectada: ${hasUpstash ? "✅ Sim" : "❌ Não"}`
 
 let redisClient;
 
-// 🔄 Escolhe conexão com base no que realmente existe
+
 if (hasUpstash) {
   console.log("🚀 Conectando ao Redis (Upstash - Produção)...");
   redisClient = createClient({
