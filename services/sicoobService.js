@@ -23,7 +23,11 @@ const httpsAgent = new https.Agent({
 export const registerWebhook = async () => {
   const token = await getSicoobAccessToken();
   const url = `${API_BASE}/webhook/${PIX_KEY}`;
-  const body = { webhookUrl: process.env.SICOOB_WEBHOOK_URL };
+  const webhookUrl =
+    process.env.SICOOB_WEBHOOK_URL ||
+    "https://fono-inova-crm-back.onrender.com/api/pix/webhook";
+
+  const body = { webhookUrl };
 
   try {
     const response = await axios.put(url, body, {
