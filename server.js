@@ -81,6 +81,8 @@ import signupRoutes from "./routes/signup.js";
 import specialtyRouter from "./routes/specialty.js";
 import UserRoutes from "./routes/user.js";
 import whatsappRoutes from "./routes/whatsapp.js";
+import marketingRoutes from "./routes/marketing.js";
+
 
 // ======================================================
 // 🧭 Inicialização base
@@ -186,6 +188,7 @@ app.use("/api/google-ads/auth", googleAdsAuthRoutes);
 app.use("/api/pix", pixRoutes);
 app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/followups", followupRoutes);
+app.use("/api/marketing", marketingRoutes);
 
 // ======================================================
 // 💚 Health check
