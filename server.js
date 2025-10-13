@@ -8,8 +8,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { initializeSocket } from "./config/socket.js";
 import Followup from "./models/Followup.js";
+import { startRedis } from "./services/redisClient.js";
 import { registerWebhook } from "./services/sicoobService.js"; // ✅ import certo
-import { ensureRedisRunning } from './utils/startRedis.js';
 
 // Rotas
 import adminRoutes from "./routes/admin.js";
@@ -41,7 +41,20 @@ const server = http.createServer(app);
 const io = initializeSocket(server);
 const PORT = process.env.PORT || 5000;
 
-await ensureRedisRunning();
+// Inicializa o Redis com teste de saúde
+try {
+  console.log("🔄 Iniciando conexão Redis...");
+  await startRedis();
+  console.log("🧩 Redis inicializado com sucesso!");
+} catch (err) {
+  console.error("❌ Falha crítica ao inicializar o Redis:", err.message);
+  if (process.env.NODE_ENV === "production") {
+    console.error("🚫 Abortando inicialização — Redis é obrigatório em produção.");
+    process.exit(1);
+  } else {
+    console.warn("⚠️ Continuando sem Redis (modo desenvolvimento).");
+  }
+}
 
 // 🔒 Middlewares globais
 app.use(helmet());
@@ -141,8 +154,7 @@ function initFollowupWatcher() {
 }
 
 import "./jobs/followup.analytics.cron.js";
-
-// 🚀 Start
+import "./jobs/followup.analytics.cron.js";
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
