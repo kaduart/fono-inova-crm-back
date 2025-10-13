@@ -46,9 +46,8 @@ import loginRoutes from "./routes/login.js";
 import PackageRoutes from "./routes/Package.js";
 import patientRoutes from "./routes/patient.js";
 import PaymentRoutes from "./routes/Payment.js";
-import pixRoutes from "./routes/pix.js"; 
+import pixRoutes from "./routes/pix.js";
 console.log("🧠 PIX ROUTES carregado com sucesso ✅");
-
 import signupRoutes from "./routes/signup.js";
 import specialtyRouter from "./routes/specialty.js";
 import UserRoutes from "./routes/user.js";
@@ -66,6 +65,33 @@ const app = express();
 const server = http.createServer(app);
 const io = initializeSocket(server);
 const PORT = process.env.PORT || 5000;
+
+// ======================================================
+// 🔇 Intercepta ruído do driver ioredis (evita 127.0.0.1)
+// ======================================================
+const originalEmit = IORedis.prototype.emit;
+IORedis.prototype.emit = function (event, ...args) {
+  try {
+    if (event === "error" && args[0]?.message?.includes("127.0.0.1:6379")) {
+      return; // ignora fallback local silenciosamente
+    }
+    return originalEmit.call(this, event, ...args);
+  } catch (err) {
+    console.error("⚠️ Erro interceptado no emit Redis:", err.message);
+  }
+};
+
+// ======================================================
+// 🔍 Captura global de erros não tratados
+// ======================================================
+process.on("unhandledRejection", (err) => {
+  if (String(err).includes("127.0.0.1:6379")) return;
+  console.error("💥 UnhandledRejection:", err);
+});
+process.on("error", (err) => {
+  if (String(err).includes("127.0.0.1:6379")) return;
+  console.error("💥 Redis/BullMQ error:", err);
+});
 
 // ======================================================
 // 🔒 Middlewares globais
@@ -89,7 +115,6 @@ app.use(
     credentials: true,
   })
 );
-
 app.options("*", cors());
 
 // Logger simples
@@ -99,7 +124,7 @@ app.use((req, res, next) => {
 });
 
 // ======================================================
-// 🌐 Rotas principais
+// 🌐 Rotas principais (ordem importa!)
 // ======================================================
 app.use("/api/auth", authRoutes);
 app.use("/api/signup", signupRoutes);
@@ -117,7 +142,10 @@ app.use("/api/specialties", specialtyRouter);
 app.use("/api/analytics", analitycsRoutes);
 app.use("/api/google-ads", googleAdsRoutes);
 app.use("/api/google-ads/auth", googleAdsAuthRoutes);
-app.use("/api/pix", pixRoutes); // ✅ PIX webhook agora ativo
+
+// ✅ PIX webhook agora ativo, sem fallback duplicado
+app.use("/api/pix", pixRoutes);
+
 app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/followups", followupRoutes);
 app.use("/api/marketing", marketingRoutes);
@@ -229,30 +257,3 @@ try {
 } catch (err) {
   console.error("⚠️ Falha ao inicializar Bull Board:", err.message);
 }
-
-// ======================================================
-// 🩺 Diagnóstico de rotas e fallback
-// ======================================================
-
-// Listar todas as rotas registradas no Express
-setTimeout(() => {
-  console.log("📋 ROTAS REGISTRADAS NO EXPRESS:");
-  app._router.stack.forEach((r) => {
-    if (r.route && r.route.path) {
-      console.log(`🧭 ${r.route.stack[0].method.toUpperCase()} ${r.route.path}`);
-    } else if (r.name === "router" && r.handle.stack) {
-      r.handle.stack.forEach((layer) => {
-        if (layer.route && layer.route.path) {
-          console.log(`🧭 ${layer.route.stack[0].method.toUpperCase()} ${layer.route.path}`);
-        }
-      });
-    }
-  });
-}, 4000);
-
-// Alias provisório para webhook real
-app.post("/api/pix/webhook", (req, res) => {
-  console.log("🚨 ROTA PROVISÓRIA /api/pix/webhook chamada!");
-  console.log("📩 Conteúdo recebido:", req.body);
-  res.status(200).json({ ok: true });
-});
