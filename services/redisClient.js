@@ -9,14 +9,19 @@ let redisClient;
 if (isProduction) {
     // 🟢 PRODUÇÃO → Upstash Redis (Render)
     redisClient = createClient({
-        url: process.env.REDIS_URL, // rediss://default:senha@host:6379
+        url: process.env.REDIS_URL, // rediss://default:senha@host:port
         socket: {
-            tls: true,
-            rejectUnauthorized: false, // evita erro de certificado self-signed
+            tls: true, // obrigatório no Upstash
+            rejectUnauthorized: false, // evita falha de certificado TLS
+            keepAlive: 10000, // mantém conexão viva
+            reconnectStrategy: (retries) => {
+                console.log(`🔁 Tentando reconectar ao Redis (tentativa ${retries})...`);
+                return Math.min(retries * 500, 10000); // tenta reconectar exponencialmente
+            },
         },
     });
 } else {
-    // 🧑‍💻 DESENVOLVIMENTO LOCAL → Redis rodando em localhost:6379
+    // 🧑‍💻 DESENVOLVIMENTO LOCAL
     redisClient = createClient({
         socket: {
             host: process.env.REDIS_HOST || "127.0.0.1",
@@ -25,15 +30,35 @@ if (isProduction) {
     });
 }
 
+// ✅ Helper para reaproveitar a instância do Redis em outros módulos
+export function getRedis() {
+    return redisClient;
+}
+
+
 // ===============================
-// 🚀 Eventos de Conexão
+// 🚦 Eventos de Conexão
 // ===============================
 redisClient.on("connect", () => {
-    console.log(`✅ Redis conectado (${isProduction ? "Upstash (produção)" : "Local (desenvolvimento)"})`);
+    console.log(
+        `✅ Redis conectado (${isProduction ? "Upstash (produção)" : "Local (desenvolvimento)"})`
+    );
+});
+
+redisClient.on("ready", () => {
+    console.log("🧠 Redis pronto para uso!");
 });
 
 redisClient.on("error", (err) => {
-    console.error("❌ Erro Redis:", err);
+    if (err.code === "ECONNRESET" || err.code === "EPIPE") {
+        console.warn("⚠️ Conexão Redis perdida (será retomada automaticamente).");
+    } else {
+        console.error("❌ Erro Redis:", err.message);
+    }
+});
+
+redisClient.on("end", () => {
+    console.warn("⚠️ Conexão Redis encerrada (aguardando reconexão).");
 });
 
 // ===============================

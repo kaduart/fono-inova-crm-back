@@ -6,9 +6,10 @@ import { sendTemplateMessage, sendTextMessage } from "../services/whatsappServic
 
 dotenv.config();
 mongoose.connect(process.env.MONGO_URI);
+
 console.log("👀 Iniciando watcher de Follow-ups automáticos...");
 
-// ✅ Worker com configuração estável de Redis
+// ✅ Worker BullMQ compatível com Upstash
 const worker = new Worker(
   "followupQueue",
   async (job) => {
@@ -43,6 +44,7 @@ const worker = new Worker(
         });
       } else {
         let personalizedMessage = followup.message;
+
         if (lead.name)
           personalizedMessage = personalizedMessage.replace(
             "{{nome}}",
@@ -101,11 +103,29 @@ const worker = new Worker(
     }
   },
   {
-    connection: {
-      host: process.env.REDIS_HOST || "localhost",
-      port: process.env.REDIS_PORT || 6379,
-      maxRetriesPerRequest: null, // 👈 evita o erro do ioredis
-      enableReadyCheck: false,    // 👈 acelera inicialização em ambientes cloud
-    },
+    connection: process.env.REDIS_URL
+      ? {
+        url: process.env.REDIS_URL,
+        tls: {}, // obrigatório no Upstash
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
+      }
+      : {
+        host: process.env.REDIS_HOST || "localhost",
+        port: process.env.REDIS_PORT || 6379,
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
+      },
   }
+);
+
+// Logs de eventos (útil em Render)
+worker.on("completed", (job) =>
+  console.log(`🎯 Job ${job.id} concluído com sucesso`)
+);
+worker.on("failed", (job, err) =>
+  console.error(`💥 Job ${job.id} falhou:`, err.message)
+);
+worker.on("error", (err) =>
+  console.error("❌ Erro crítico no Worker:", err.message)
 );
