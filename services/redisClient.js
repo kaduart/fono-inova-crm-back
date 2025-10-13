@@ -4,6 +4,10 @@ import { createClient } from "redis";
 const isProduction = process.env.NODE_ENV === "production";
 let redisClient;
 
+console.log("🌍 Ambiente atual:", process.env.NODE_ENV);
+console.log("🔗 REDIS_URL:", process.env.REDIS_URL ? "✅ configurada" : "❌ ausente");
+
+
 // ===============================
 // 🔌 Configuração do Redis Client
 // ===============================
