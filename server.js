@@ -11,6 +11,12 @@ import Followup from "./models/Followup.js";
 import { startRedis } from "./services/redisClient.js";
 import { registerWebhook } from "./services/sicoobService.js"; // ✅ import certo
 
+// 🧩 Novo: Bull Board
+import { ExpressAdapter } from "@bull-board/express";
+import { createBullBoard } from "@bull-board/api";
+import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
+import { Queue } from "bullmq";
+
 // Rotas
 import adminRoutes from "./routes/admin.js";
 import analitycsRoutes from "./routes/analytics.js";
@@ -110,6 +116,32 @@ app.get("/health", (req, res) =>
   res.status(200).json({ status: "ok", timestamp: new Date() })
 );
 
+// 🧩 Novo: Painel Bull Board (Visualizador de Filas)
+try {
+  const followupQueue = new Queue("followupQueue", {
+    connection: {
+      host: process.env.REDIS_HOST || "localhost",
+      port: process.env.REDIS_PORT || 6379,
+      maxRetriesPerRequest: null,
+      enableReadyCheck: false,
+    },
+  });
+
+  const serverAdapter = new ExpressAdapter();
+  serverAdapter.setBasePath("/admin/queues");
+
+  createBullBoard({
+    queues: [new BullMQAdapter(followupQueue)],
+    serverAdapter,
+  });
+
+  app.use("/admin/queues", serverAdapter.getRouter());
+
+  console.log("🖥️ Bull Board disponível em: http://localhost:5000/admin/queues");
+} catch (err) {
+  console.error("⚠️ Falha ao inicializar Bull Board:", err.message);
+}
+
 // 🔗 Conexão MongoDB
 mongoose
   .connect(process.env.MONGO_URI)
@@ -155,6 +187,7 @@ function initFollowupWatcher() {
 
 import "./jobs/followup.analytics.cron.js";
 import "./jobs/followup.analytics.cron.js";
+
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);

@@ -4,7 +4,11 @@ const followupSchema = new mongoose.Schema({
     lead: { type: mongoose.Schema.Types.ObjectId, ref: 'Leads', required: true },
     message: { type: String, required: true },
     scheduledAt: { type: Date, required: true },
-    status: { type: String, enum: ['scheduled', 'sent', 'failed', 'canceled'], default: 'scheduled' },
+    status: {
+        type: String,
+        enum: ['scheduled', 'processing', 'sent', 'failed'],
+        default: 'scheduled',
+    },
     playbook: { type: String, enum: ['welcome', 'no_show', 'pacote_fim', 'reengajamento'], default: 'reengajamento' },
     channel: { type: String, enum: ["whatsapp", "instagram", "meta_ads", "google_ads", "indicação"], default: "whatsapp" },
     responded: { type: Boolean, default: false },
