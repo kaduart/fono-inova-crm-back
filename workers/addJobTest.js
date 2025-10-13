@@ -1,12 +1,29 @@
-import { Queue } from 'bullmq';
+// workers/addJobTest.js
+import dotenv from "dotenv";
+dotenv.config();
 
-const queue = new Queue('followupQueue', {
-    connection: { host: 'localhost', port: 6379 }
-});
+import { Queue } from "bullmq";
+import { redisConnection } from "../config/redisConnection.js";
 
-// ⚠️ Use um ID qualquer só pra teste.
-// (Depois substituímos por um real do Mongo)
-await queue.add('test', { followupId: '66f1b23ea1c48bb5cecb9999' });
+console.log(`🔎 REDIS_URL em runtime: ${process.env.REDIS_URL || "N/D"}`);
+console.log(`🔎 NODE_ENV: ${process.env.NODE_ENV || "development"}`);
 
-console.log('✅ Job de teste adicionado à fila!');
-process.exit(0);
+const queue = new Queue("followupQueue", { connection: redisConnection });
+
+(async () => {
+  try {
+    console.log("🚀 Teste de enfileiramento de follow-up iniciado...");
+
+    // Cria job de teste
+    const job = await queue.add("followup", {
+      followupId: "66f1b23ea1c48bb5cecb9999", // substitua por um follow-up real existente
+    });
+
+    console.log(`📤 Job criado com ID: ${job.id}`);
+  } catch (err) {
+    console.error("❌ Erro ao criar job:", err.message);
+  } finally {
+    await queue.close();
+    process.exit(0);
+  }
+})();
