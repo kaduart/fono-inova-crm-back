@@ -147,14 +147,21 @@ app.get("/health", (req, res) =>
 
 // 🧩 Painel Bull Board (Visualizador de Filas)
 try {
-  const followupQueue = new Queue("followupQueue", {
-    connection: {
-      host: process.env.REDIS_HOST || "localhost",
-      port: process.env.REDIS_PORT || 6379,
-      maxRetriesPerRequest: null,
-      enableReadyCheck: false,
-    },
-  });
+const followupQueue = new Queue("followupQueue", {
+  connection: process.env.REDIS_URL
+    ? {
+        url: process.env.REDIS_URL,
+        tls: { rejectUnauthorized: false }, // Upstash exige TLS
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
+      }
+    : {
+        host: process.env.REDIS_HOST || "127.0.0.1",
+        port: process.env.REDIS_PORT || 6379,
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
+      },
+});
 
   const serverAdapter = new ExpressAdapter();
   serverAdapter.setBasePath("/admin/queues");
