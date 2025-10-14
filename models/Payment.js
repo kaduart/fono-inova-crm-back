@@ -13,7 +13,14 @@ const paymentSchema = new mongoose.Schema({
     },
     serviceType: {
         type: String,
-        enum: ['evaluation', 'session', 'package_session', 'individual_session', 'meet', 'alignment'],
+        enum: [
+            'evaluation',
+            'session',
+            'package_session',
+            'individual_session',
+            'meet',
+            'alignment'
+        ],
         required: true,
         default: 'session'
     },
@@ -33,10 +40,26 @@ const paymentSchema = new mongoose.Schema({
     session: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Session',
-        /*   required: function () {
-              return this.serviceType === 'session' || this.serviceType === 'individual_session;
-          } */
     },
+    appointment: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Appointment',
+    },
+
+    // 🔹 NOVOS CAMPOS
+    kind: {
+        type: String,
+        enum: ['package_receipt', 'session_payment', 'manual', 'auto'],
+        default: 'manual',
+        description: 'Tipo de pagamento para rastreabilidade (ex: recibo do pacote ou pagamento unitário)'
+    },
+    parentPayment: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Payment',
+        default: null,
+        description: 'Se este pagamento foi gerado automaticamente a partir de outro'
+    },
+
     paymentMethod: {
         type: String,
         enum: ['dinheiro', 'pix', 'cartão'],
@@ -50,28 +73,26 @@ const paymentSchema = new mongoose.Schema({
     notes: {
         type: String,
     },
-    createdAt: {
-        type: Date,
-        default: Date.now,
-        index: true
-    },
-    appointment: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Appointment',
-    },
     sessionType: {
         type: String,
         enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia'],
     },
+    serviceDate: {
+        type: String,
+        required: function () {
+            return this.appointment;
+        }
+    },
+    paymentDate: {
+        type: String,
+        required: true,
+        default: () => new Date().toISOString().split('T')[0],
+    },
+    isAdvance: Boolean,
+
     sessions: [{
-        session: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Session'
-        },
-        appointment: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Appointment'
-        },
+        session: { type: mongoose.Schema.Types.ObjectId, ref: 'Session' },
+        appointment: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' },
         status: {
             type: String,
             enum: ['scheduled', 'completed', 'canceled'],
@@ -80,102 +101,31 @@ const paymentSchema = new mongoose.Schema({
         sessionDate: Date,
         usedAt: Date
     }],
-    serviceDate: { // ✅ DATA DA CONSULTA/ SERVIÇO
-        type: String,
-        required: function () {
-            return this.appointment; // Obrigatório se tiver appointment
-        }
-    },
-    isAdvance: Boolean,
-    paymentDate: {
-        type: String,
-        required: true,
-        default: () => new Date().toISOString().split('T')[0], // 🔹 string no formato yyyy-mm-dd
-    },
     advanceSessions: [{
         session: { type: mongoose.Schema.Types.ObjectId, ref: 'Session' },
         appointment: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' },
         used: Boolean,
         usedAt: Date,
         scheduledDate: Date
-    }]
+    }],
+
+    createdAt: { type: Date, default: Date.now, index: true },
 }, {
     timestamps: true,
     toObject: { virtuals: true },
     toJSON: { virtuals: true }
 });
 
-// Middleware para pagamentos de pacote
-paymentSchema.post('save', async function (doc) {
-    try {
-        // Atualizar appointment associado apenas se o pagamento for marcado como pago
-        if (doc.status === 'paid' && doc.appointment) {
-            await mongoose.model('Appointment').findByIdAndUpdate(
-                doc.appointment,
-                { paymentStatus: 'paid' }
-            );
-        }
-
-        // Lógica específica para pacotes
-        if (doc.serviceType === 'package_session' && doc.package && doc.status === 'paid') {
-            const Package = mongoose.model('Package');
-            const pkg = await Package.findById(doc.package);
-
-            if (pkg) {
-                // Atualizar o pacote com o valor pago
-                const updatedPkg = await Package.findByIdAndUpdate(
-                    doc.package,
-                    {
-                        $inc: { totalPaid: doc.amount },
-                        $push: { payments: doc._id }
-                    },
-                    { new: true }
-                );
-
-                // Cálculo de sessões que podem ser marcadas como pagas
-                const sessionsPaidCount = Math.floor(updatedPkg.totalPaid / updatedPkg.sessionValue);
-                const previouslyPaidCount = updatedPkg.payments.length - 1;
-                const newSessionsToPay = sessionsPaidCount - previouslyPaidCount;
-
-                if (newSessionsToPay > 0) {
-                    const Session = mongoose.model('Session');
-                    const sessionsToAutoPay = await Session.find({
-                        package: pkg._id,
-                        status: { $ne: 'paid' }
-                    })
-                        .sort({ createdAt: 1 })
-                        .limit(newSessionsToPay)
-                        .select('_id');
-
-                    if (sessionsToAutoPay.length > 0) {
-                        await Session.updateMany(
-                            { _id: { $in: sessionsToAutoPay.map(s => s._id) } },
-                            {
-                                isPaid: true,
-                                paymentMethod: doc.paymentMethod,
-                                status: 'paid'
-                            }
-                        );
-                    }
-                }
-            }
-        }
-    } catch (error) {
-        console.error('Erro no pós-save do pagamento:', error);
-        // Implementar lógica de retentativa ou log de erro aqui
-    }
-});
 
 paymentSchema.pre('save', async function (next) {
-    // Pular associação automática para pacotes e pagamentos adiantados
-    if (this.serviceType === 'package_session' || this.isAdvancePayment) {
+    // 🚫 Ignora pagamentos do novo fluxo de pacotes
+    if (['package_receipt', 'session_payment'].includes(this.kind)) {
         return next();
     }
 
-    // Só processar se não tiver appointment associado
-    if (!this.appointment) {
+    // 🔹 Continua o comportamento antigo para sessões avulsas
+    if (!this.appointment && !this.package) {
         try {
-            // Buscar appointment correspondente
             const filter = {
                 patient: this.patient,
                 doctor: this.doctor,
@@ -183,44 +133,101 @@ paymentSchema.pre('save', async function (next) {
                     $gte: new Date(this.createdAt.getTime() - 3 * 24 * 60 * 60 * 1000),
                     $lte: new Date(this.createdAt.getTime() + 3 * 24 * 60 * 60 * 1000)
                 },
-                payment: { $exists: false } // Só appointments sem pagamento
+                payment: { $exists: false }
             };
-
-            // Critérios adicionais por tipo de serviço
-            if (this.serviceType === 'evaluation') {
-                filter.specialty = { $exists: true };
-                filter.operationalStatus = 'confirmado';
-            } else if (this.serviceType === 'session') {
-                filter.clinicalStatus = { $in: ['pendente', 'concluído'] };
-            }
-
             const appointment = await mongoose.model('Appointment').findOne(filter);
-
             if (appointment) {
                 this.appointment = appointment._id;
-
-                // Atualização segura do appointment
-                await mongoose.model('Appointment').findOneAndUpdate(
-                    { _id: appointment._id },
-                    {
-                        $set: {
-                            payment: this._id,
-                            // Atualiza status apenas para sessões avulsas
-                            ...(this.serviceType === 'session' && { operationalStatus: 'pago' })
-                        }
-                    }
-                );
+                await mongoose.model('Appointment').findByIdAndUpdate(appointment._id, {
+                    $set: { payment: this._id, operationalStatus: 'pago' }
+                });
             }
         } catch (error) {
-            // Logar erro sem interromper o fluxo
-            console.error('Erro na associação automática:', {
-                paymentId: this._id,
-                error: error.message
-            });
+            console.error('Erro no pre-save Payment:', error.message);
         }
     }
+
     next();
 });
+
+paymentSchema.post('save', async function (doc) {
+    try {
+        const Appointment = mongoose.model('Appointment');
+        const Session = mongoose.model('Session');
+        const Package = mongoose.model('Package');
+
+        // 🩵 Caso 1: Pagamento de sessão ou avaliação (avulso)
+        if (doc.appointment) {
+            const appointment = await Appointment.findById(doc.appointment);
+            if (appointment) {
+                if (appointment.operationalStatus === 'cancelado') {
+                    // 🚫 Não marcar como pago se o agendamento foi cancelado
+                    await Appointment.findByIdAndUpdate(appointment._id, {
+                        paymentStatus: 'canceled'
+                    });
+                    return;
+                }
+
+                const statusMap = { paid: 'paid', pending: 'pending', canceled: 'canceled' };
+                await Appointment.findByIdAndUpdate(
+                    doc.appointment,
+                    { paymentStatus: statusMap[doc.status] || 'pending' },
+                    { new: true }
+                );
+            }
+        }
+
+        // 💰 Caso 2: Pagamento distribuído via pacote (novo fluxo)
+        if (['package_receipt', 'session_payment'].includes(doc.kind)) {
+            if (doc.session) {
+                const session = await Session.findById(doc.session);
+                if (session) {
+                    // 🔹 Sessões canceladas não podem ficar pagas
+                    if (session.status === 'canceled' || session.operationalStatus === 'cancelado') {
+                        session.isPaid = false;
+                        session.paymentStatus = 'canceled';
+                        session.visualFlag = 'blocked';
+                        await session.save();
+                        return;
+                    }
+
+                    // 🔹 Atualiza sessão normalmente
+                    session.paymentStatus = doc.status === 'paid' ? 'paid' : 'partial';
+                    session.isPaid = doc.status === 'paid';
+                    await session.save();
+
+                    // 🔹 Atualiza o agendamento vinculado, se houver
+                    if (session.appointmentId) {
+                        await Appointment.findByIdAndUpdate(
+                            session.appointmentId,
+                            { paymentStatus: session.paymentStatus },
+                            { new: true }
+                        );
+                    }
+                }
+            }
+
+            // 🔹 Atualiza o pacote como um todo
+            if (doc.package) {
+                const pkg = await Package.findById(doc.package);
+                if (pkg) {
+                    const expectedTotal = pkg.totalSessions * pkg.sessionValue;
+                    pkg.financialStatus =
+                        pkg.totalPaid >= expectedTotal
+                            ? 'paid'
+                            : pkg.totalPaid > 0
+                                ? 'partially_paid'
+                                : 'unpaid';
+                    await pkg.save();
+                }
+            }
+        }
+    } catch (error) {
+        console.error('❌ Erro no post-save Payment:', error.message);
+    }
+});
+
+
 
 const Payment = mongoose.model('Payment', paymentSchema);
 export default Payment;

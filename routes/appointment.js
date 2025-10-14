@@ -119,6 +119,7 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
             serviceType: req.body.serviceType,
             paymentAmount: req.body.paymentAmount,
             paymentMethod: req.body.paymentMethod,
+            paymentStatus: 'pending',
             createdAt: currentDate,
             updatedAt: currentDate
         };
@@ -172,26 +173,26 @@ router.post('/', auth, checkPackageAvailability, validateIndividualPayment, chec
             payment.session = newSession[0]._id;
             appointment.payment = payment._id;
             appointment.session = newSession[0]._id;
-            appointment.paymentStatus = req.body.paymentMethod === 'pending' ? 'pending' : 'paid';
+            appointment.paymentStatus = 'pending';
 
             await payment.save({ session: mongoSession });
         }
 
         // Atualizar pacote se for serviço de pacote
         else if (req.body.serviceType === 'package_session') {
-            if (appointment.package && appointment.package.remainingSessions > 0) {
+            if (selectedPackage && selectedPackage.remainingSessions > 0) {
                 selectedPackage.remainingSessions -= 1;
                 selectedPackage.sessions.push(appointment._id);
                 await selectedPackage.save({ session: mongoSession });
                 appointment.package = selectedPackage._id;
                 appointment.paymentStatus = 'package_paid';
+            } else {
+                appointment.paymentStatus = 'pending';
             }
-
         }
 
-        await appointment.save({ session: mongoSession });
-
-
+        // Salva com o status de pagamento atualizado (garante persistência)
+        await appointment.save({ session: mongoSession, validateBeforeSave: false });
 
         // ATUALIZAÇÃO DO PACIENTE DE FORMA SEGURA
         await Patient.findByIdAndUpdate(
@@ -254,7 +255,7 @@ router.get('/', auth, async (req, res) => {
         const { patientId, doctorId, status, specialty, startDate, endDate } = req.query;
         const filter = {};
 
-        // Filtros por paciente e médico
+        // 🔹 Filtros por paciente e médico
         if (patientId && patientId !== 'all' && mongoose.Types.ObjectId.isValid(patientId)) {
             filter.patient = new mongoose.Types.ObjectId(patientId);
         }
@@ -265,7 +266,7 @@ router.get('/', auth, async (req, res) => {
         if (status && status !== 'all') filter.status = status;
         if (specialty && specialty !== 'all') filter.specialty = specialty;
 
-        // Filtro por período
+        // 🔹 Filtro por período
         if (startDate && endDate) {
             filter.date = {
                 $gte: new Date(startDate),
@@ -273,21 +274,29 @@ router.get('/', auth, async (req, res) => {
             };
         }
 
-        // Buscar agendamentos
+        // 🔹 Buscar agendamentos com relacionamentos importantes
         const appointments = await Appointment.find(filter)
             .populate({ path: 'doctor', select: 'fullName specialty' })
             .populate({ path: 'patient', select: 'fullName dateOfBirth gender phone email address cpf rg' })
+            .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance' })
+            .populate({ path: 'session', select: 'isPaid paymentStatus partialAmount' })
             .sort({ date: 1 })
             .lean();
 
-        // Mapear para FullCalendar
+        // 🔹 Mapear para FullCalendar
         const calendarEvents = appointments
-            .filter(appt => appt.patient) // ignorar agendamentos sem paciente
+            .filter(appt => appt.patient) // ignora registros corrompidos
             .map(appt => {
                 const [hours, minutes] = appt.time.split(':').map(Number);
                 const start = new Date(appt.date);
                 start.setHours(hours, minutes);
                 const end = new Date(start.getTime() + (appt.duration || 40) * 60000);
+
+                // ✅ Consolidar o status financeiro
+                const paymentStatus =
+                    appt.paymentStatus ||
+                    appt.session?.paymentStatus ||
+                    (appt.package?.financialStatus === 'paid' ? 'paid' : 'pending');
 
                 return {
                     id: appt._id.toString(),
@@ -299,6 +308,11 @@ router.get('/', auth, async (req, res) => {
                     status: appt.status,
                     specialty: appt.specialty,
                     description: appt.reason,
+                    operationalStatus: appt.operationalStatus,
+                    clinicalStatus: appt.clinicalStatus,
+                    paymentStatus, // 👈 novo campo
+                    package: appt.package || null,
+                    session: appt.session || null,
                     patient: {
                         id: appt.patient._id.toString(),
                         fullName: appt.patient.fullName,
@@ -311,13 +325,10 @@ router.get('/', auth, async (req, res) => {
                         address: appt.patient.address,
                     },
                     doctor: {
-                        id: appt.doctor?._id.toString(),
+                        id: appt.doctor?._id?.toString(),
                         fullName: appt.doctor?.fullName,
                         specialty: appt.doctor?.specialty
-                    },
-                    operationalStatus: appt.operationalStatus,
-                    clinicalStatus: appt.clinicalStatus,
-                    reason: appt.reason
+                    }
                 };
             });
 
@@ -661,6 +672,24 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
             { new: true, session: dbSession }
         );
 
+        // Atualiza status financeiro
+        if (updatedAppointment.payment) {
+            await Payment.findByIdAndUpdate(
+                updatedAppointment.payment,
+                { status: 'canceled' },
+                { session: dbSession }
+            );
+        }
+
+        // Atualiza flag de pagamento no agendamento
+        await Appointment.findByIdAndUpdate(
+            updatedAppointment._id,
+            { paymentStatus: 'canceled' },
+            { session: dbSession }
+        );
+
+
+
         // 6. Atualizar sessão relacionada se existir
         if (appointment.session) {
             await Session.findByIdAndUpdate(
@@ -830,10 +859,14 @@ router.patch('/:id/complete', auth, async (req, res) => {
             }
         };
 
-        // Vincular pagamento se existir
+        // Atualizar status de pagamento conforme tipo de sessão
         if (paymentRecord) {
             updateData.payment = paymentRecord._id;
             updateData.paymentStatus = 'paid';
+        } else if (appointment.package) {
+            updateData.paymentStatus = 'package_paid';
+        } else {
+            updateData.paymentStatus = 'pending';
         }
 
         const updatedAppointment = await Appointment.findByIdAndUpdate(
@@ -915,7 +948,11 @@ router.get('/patient/:id', validateId, auth, async (req, res) => {
 
             return {
                 ...appt,
-                paymentStatus: appt.package ? 'paid' : appt.paymentStatus,
+                paymentStatus:
+                    appt.package
+                        ? (appt.paymentStatus || 'package_paid')
+                        : (appt.paymentStatus === 'paid' ? 'paid' : appt.paymentStatus || 'pending'),
+
                 source: appt.package ? 'package' : 'individual'
             };
         });
@@ -1154,6 +1191,7 @@ router.patch('/:id/clinical-status', validateId, auth, async (req, res) => {
 
         if (status === 'concluído') {
             appointment.operationalStatus = 'pago';
+            appointment.paymentStatus = appointment.package ? 'package_paid' : 'paid';
         }
 
         // Salva sem validar campos problemáticos

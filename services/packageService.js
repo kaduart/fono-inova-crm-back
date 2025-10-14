@@ -1,46 +1,4 @@
-/**
- * Verifica se uma data é fim de semana
- * @param {string|Date} date - Data no formato YYYY-MM-DD ou objeto Date
- * @returns {boolean} True se for fim de semana
- */
-export const isWeekend = (date) => {
-    // Converte string no formato YYYY-MM-DD para Date
-    if (typeof date === 'string') {
-        const [year, month, day] = date.split('-').map(Number);
-        date = new Date(year, month - 1, day);
-    }
-
-    if (!(date instanceof Date) || isNaN(date.getTime())) {
-        throw new Error('Data inválida');
-    }
-
-    const day = date.getDay();
-    return day === 0 || day === 6; // 0 = Domingo, 6 = Sábado
-};
-
-/**
- * Retorna o próximo dia útil após a data fornecida
- * @param {string|Date} date - Data no formato YYYY-MM-DD ou objeto Date
- * @returns {Date} Objeto Date com o próximo dia útil
- */
-export const nextBusinessDay = (date) => {
-    // Converte string para Date se necessário
-    if (typeof date === 'string') {
-        const [year, month, day] = date.split('-').map(Number);
-        date = new Date(year, month - 1, day);
-    }
-
-    if (!(date instanceof Date) || isNaN(date.getTime())) {
-        throw new Error('Data inválida');
-    }
-
-    const newDate = new Date(date);
-    do {
-        newDate.setDate(newDate.getDate() + 1);
-    } while (isWeekend(newDate));
-
-    return newDate;
-};
+import { isWeekend } from "../utils/horaFormat";
 
 /**
  * Calcula as datas das sessões baseadas nos parâmetros fornecidos

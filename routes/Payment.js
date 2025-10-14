@@ -6,7 +6,7 @@ import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
-
+import { distributePayments } from '../services/distributePayments.js';
 
 const router = express.Router();
 
@@ -1554,6 +1554,117 @@ router.get('/daily-absences-details', async (req, res) => {
     } catch (error) {
         console.error('Erro ao obter detalhes de faltas:', error);
         res.status(500).json({ error: 'Erro interno' });
+    }
+});
+
+/**
+ * Registra um novo pagamento (manual, Pix, etc.) para um pacote existente.
+ * Atualiza automaticamente os saldos e status das sessões.
+ */
+/**
+ * Registra um novo pagamento (manual, Pix, etc.) para um pacote existente.
+ * Atualiza automaticamente os saldos e status das sessões.
+ */
+router.post('/add', async (req, res) => {
+    const mongoSession = await mongoose.startSession();
+    let transactionCommitted = false;
+
+    try {
+        await mongoSession.startTransaction();
+
+        const {
+            packageId,
+            amount,
+            paymentMethod = 'dinheiro',
+            paymentDate,
+            note,
+        } = req.body;
+
+        if (!packageId || !amount || amount <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Informe um packageId válido e um valor maior que zero.'
+            });
+        }
+
+        // 🔹 1. Buscar o pacote
+        const pkg = await Package.findById(packageId)
+            .populate('sessions')
+            .session(mongoSession);
+
+        if (!pkg) {
+            return res.status(404).json({
+                success: false,
+                message: 'Pacote não encontrado'
+            });
+        }
+
+        // 🔹 2. Criar pagamento principal
+        const parentPayment = new Payment({
+            package: pkg._id,
+            patient: pkg.patient,
+            doctor: pkg.doctor,
+            amount,
+            paymentMethod,
+            paymentDate: paymentDate || new Date().toISOString().split('T')[0],
+            serviceType: 'package_session',
+            sessionType: pkg.sessionType,
+            kind: 'package_receipt',
+            status: 'paid',
+            note: note || null,
+        });
+
+        await parentPayment.save({ session: mongoSession });
+
+        // 🔹 3. Distribuir o pagamento entre as sessões
+        const updatedPackage = await distributePayments(
+            pkg._id,
+            amount,
+            mongoSession,
+            parentPayment._id
+        );
+
+        // 🔹 4. Atualizar o pacote com referência ao pagamento
+        await Package.findByIdAndUpdate(
+            pkg._id,
+            {
+                $push: { payments: parentPayment._id },
+                $set: {
+                    totalPaid: updatedPackage.totalPaid,
+                    balance: updatedPackage.balance,
+                    financialStatus: updatedPackage.financialStatus,
+                },
+            },
+            { session: mongoSession }
+        );
+
+        await mongoSession.commitTransaction();
+        transactionCommitted = true;
+
+        // 🔹 5. Buscar pacote atualizado
+        const finalResult = await Package.findById(pkg._id)
+            .populate('sessions payments')
+            .lean();
+
+        return res.status(201).json({
+            success: true,
+            message: 'Pagamento registrado e distribuído com sucesso.',
+            data: finalResult,
+        });
+    } catch (error) {
+        if (mongoSession.inTransaction() && !transactionCommitted) {
+            await mongoSession.abortTransaction();
+        }
+
+        console.error('❌ Erro ao registrar pagamento:', error);
+
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Erro ao registrar pagamento.',
+            errorCode: 'ADD_PAYMENT_ERROR',
+        });
+    } finally {
+        await mongoSession.endSession();
     }
 });
 

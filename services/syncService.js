@@ -16,6 +16,7 @@ const DEFAULT_SPECIALTY_VALUES = {
     unknown: 200
 };
 
+
 // Configuração de retry
 const MAX_SYNC_RETRIES = 5;
 const RETRY_BASE_DELAY = 100; // ms
@@ -128,6 +129,12 @@ const getClinicalStatus = (status, confirmedAbsence) => {
 
 // Função principal de sincronização refatorada
 export const syncEvent = async (originalDoc, type, session = null) => {
+
+    // Ignorar sincronização de eventos puramente financeiros
+    if (['payment', 'financial'].includes(type)) {
+        return true; // Nenhuma ação necessária
+    }
+
     try {
         // Usar função de retry dedicada
         return await withSyncRetry(async () => {
@@ -203,7 +210,7 @@ export const syncEvent = async (originalDoc, type, session = null) => {
 
 export const handlePackageSessionUpdate = async (appointment, action, user, details = {}) => {
     const session = await mongoose.startSession();
-    
+
     try {
         await session.startTransaction();
 
@@ -229,7 +236,7 @@ export const handlePackageSessionUpdate = async (appointment, action, user, deta
             case 'cancel':
                 sessionDoc.status = 'canceled';
                 sessionDoc.confirmedAbsence = details.changes?.confirmedAbsence || false;
-                
+
                 // Adiciona entrada específica de cancelamento
                 sessionDoc.history.push({
                     ...historyEntry,
@@ -239,7 +246,7 @@ export const handlePackageSessionUpdate = async (appointment, action, user, deta
                         confirmedAbsence: details.changes?.confirmedAbsence
                     }
                 });
-                
+
                 if (appointment.package) {
                     await adjustPackageSession(
                         appointment.package,
@@ -283,7 +290,7 @@ export const handlePackageSessionUpdate = async (appointment, action, user, deta
         await sessionDoc.save({ session });
         await syncEvent(sessionDoc, 'session');
         await session.commitTransaction();
-        
+
     } catch (error) {
         await session.abortTransaction();
         console.error('Erro no handlePackageSessionUpdate:', {

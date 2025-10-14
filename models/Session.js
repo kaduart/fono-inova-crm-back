@@ -58,6 +58,26 @@ const sessionSchema = new mongoose.Schema({
         }
     },
     notes: { type: String },
+    paymentStatus: {
+        type: String,
+        enum: ['paid', 'partial', 'pending'],
+        default: 'pending',
+        description: 'Situação financeira específica desta sessão'
+    },
+
+    partialAmount: {
+        type: Number,
+        default: 0,
+        description: 'Valor pago parcialmente nesta sessão (se aplicável)'
+    },
+
+    visualFlag: {
+        type: String,
+        enum: ['ok', 'pending', 'blocked'],
+        default: 'pending',
+        description: 'Indica o estado visual da sessão para exibição no calendário'
+    }
+
 }, {
     timestamps: true,
     toJSON: { virtuals: true },
@@ -82,69 +102,11 @@ sessionSchema.post('findOneAndDelete', async function (doc) {
     }
 });
 
-// models/Session.js
-/* sessionSchema.post('save', async function (doc, next) {
-    try {
-        const Package = mongoose.model('Package');
-        const Appointment = mongoose.model('Appointment');
-
-        // 1. Atualizar pacote se necessário
-        if (doc.status === 'completed' && doc.package) {
-            await Package.findByIdAndUpdate(
-                doc.package,
-                { $inc: { sessionsDone: 1 } }
-            );
-        }
-
-        // 2. Sincronizar com Appointment APENAS se houver appointmentId
-        if (doc.appointmentId) {
-            const appointmentUpdate = {
-                date: doc.date,
-                doctor: doc.doctor,
-                notes: doc.notes,
-                sessionType: doc.sessionType
-            };
-
-            // Mapear status
-            if (doc.status === 'completed') {
-                appointmentUpdate.operationalStatus = 'pago';
-                appointmentUpdate.clinicalStatus = 'concluído';
-            } else if (doc.status === 'canceled') {
-                appointmentUpdate.operationalStatus = 'cancelado';
-                appointmentUpdate.clinicalStatus = 'faltou';
-            } else {
-                appointmentUpdate.operationalStatus = 'agendado';
-                appointmentUpdate.clinicalStatus = 'pendente';
-            }
-
-            // Atualizar pagamento se aplicável
-            if (doc.paymentMethod) {
-                appointmentUpdate.paymentMethod = doc.paymentMethod;
-            }
-
-            // Atualizar sem disparar hooks para evitar loop
-            await Appointment.findByIdAndUpdate(
-                doc.appointmentId,
-                appointmentUpdate,
-                { runValidators: false, context: 'query' }
-            );
-        }
-
-        next();
-    } catch (error) {
-        console.error('Erro no hook post-save da Session:', error);
-        next(error);
-    }
-}); */
-
-
-/* sessionSchema.pre('save', function (next) {
-    if (this.status === 'completed' && !this.isPaid) {
-        return res.status(400).json({ error: 'Sessão não pode ser marcada como concluída sem pagamento.' });
-    }
-
-    next();
-}); */
+sessionSchema.post('save', async function (doc) {
+    // 🚫 Evita sincronização redundante durante fluxos financeiros
+    if (doc._inFinancialTransaction) return;
+    await syncEvent(doc, 'session');
+});
 
 
 const Session = mongoose.model('Session', sessionSchema);

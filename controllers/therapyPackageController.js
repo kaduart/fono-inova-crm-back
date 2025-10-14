@@ -4,6 +4,7 @@ import MedicalEvent from '../models/MedicalEvent.js';
 import Package from '../models/Package.js';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
+import { distributePayments } from '../services/distributePayments.js';
 
 const APPOINTMENTS_API_BASE_URL = 'http://167.234.249.6:5000/api';
 const validateInputs = {
@@ -34,22 +35,21 @@ export const packageOperations = {
                 sessionType,
                 appointmentId,
                 sessionValue,
-                amountPaid,
-                calculationMode, // Novo campo
-                totalSessions // Novo campo
-
+                amountPaid = 0,
+                calculationMode,
+                totalSessions
             } = req.body;
 
             const paymentDate = req.body.paymentDate
                 ? req.body.paymentDate
                 : new Date().toISOString().split('T')[0];
 
-            // 1. VALIDAÇÕES BÁSICAS
+            // 1) validações
             if (!date || !time || !patientId || !doctorId || !sessionType || !specialty || !sessionValue) {
                 throw new Error('Campos obrigatórios não fornecidos');
             }
 
-            // 2. BUSCAR O APPOINTMENT EXISTENTE (se fornecido)
+            // 2) se veio um appointment para converter em pacote, removemos o rastro antigo
             let existingAppointment = null;
             if (appointmentId) {
                 existingAppointment = await Appointment.findById(appointmentId)
@@ -67,37 +67,30 @@ export const packageOperations = {
                 }
             }
 
-            // 3. DETERMINAR O NÚMERO DE SESSÕES - CORREÇÃO AQUI
+            // 3) cálculo de quantidade de sessões
             let finalTotalSessions;
             let finalDurationMonths;
-            console.log('calculationMode:', calculationMode)
-            // Verificar se calculationMode existe e é 'sessions'
-            if (calculationMode && calculationMode === 'sessions') {
-                // Modo sessions: usa totalSessions do payload
+
+            if (calculationMode === 'sessions') {
                 finalTotalSessions = parseInt(totalSessions) || 0;
-                // Calcula durationMonths baseado no número real de sessões
                 finalDurationMonths = Math.ceil(finalTotalSessions / (sessionsPerWeek * 4));
-                console.log('Using sessions mode. finalTotalSessions:', finalTotalSessions);
             } else {
-                // Modo duration: mantém cálculo original
                 finalTotalSessions = parseInt(durationMonths) * 4 * parseInt(sessionsPerWeek);
                 finalDurationMonths = parseInt(durationMonths);
-                console.log('Using duration mode. finalTotalSessions:', finalTotalSessions);
             }
 
-            // Validação adicional
             if (finalTotalSessions <= 0) {
                 throw new Error('Número de sessões deve ser maior que zero');
             }
 
             const totalValue = sessionValue * finalTotalSessions;
 
-            // 4. CRIAR PACOTE
+            // 4) criar pacote (iniciar totalPaid/balance neutros; a distribuição consolida)
             const newPackage = new Package({
                 patient: patientId,
                 doctor: doctorId,
-                date: date,
-                time: time,
+                date,
+                time,
                 sessionType,
                 specialty,
                 sessionValue,
@@ -107,15 +100,16 @@ export const packageOperations = {
                 paymentMethod,
                 paymentType,
                 totalValue,
-                totalPaid: amountPaid,
-                balance: amountPaid - totalValue,
+                // ✅ inicia neutro; será recalculado pelo distributePayments
+                totalPaid: 0,
+                balance: totalValue,
                 status: 'active',
                 calculationMode
             });
 
             await newPackage.save({ session: mongoSession });
 
-            // 5. CRIAR SESSÕES (exatamente o número especificado)
+            // 5) criar sessões (sempre nascendo como NÃO pagas)
             const createdSessions = [];
             let currentDate = new Date(date);
 
@@ -133,12 +127,17 @@ export const packageOperations = {
                     sessionType,
                     specialty,
                     status: 'scheduled',
-                    isPaid: true,
+                    // ✅ nasce não paga
+                    isPaid: false,
+                    paymentStatus: 'pending',
+                    partialAmount: 0,
+                    visualFlag: 'pending',
                     paymentMethod,
                     sessionNumber: i + 1,
                     confirmedAbsence: null
                 });
 
+                newSession._inFinancialTransaction = true;
                 await newSession.save({ session: mongoSession });
 
                 const newAppointment = new Appointment({
@@ -151,7 +150,9 @@ export const packageOperations = {
                     session: newSession._id,
                     package: newPackage._id,
                     serviceType: 'package_session',
-                    operationalStatus: 'agendado'
+                    operationalStatus: 'agendado',
+                    // ✅ começa como pendente (vai ser ajustado via Payment.post('save') se for o caso)
+                    paymentStatus: 'pending'
                 });
 
                 await newAppointment.save({ session: mongoSession });
@@ -163,19 +164,17 @@ export const packageOperations = {
                 );
 
                 createdSessions.push(newSession._id);
-
-                // Avança para a próxima data (7 dias entre sessões para 1 sessão por semana)
-                currentDate.setDate(currentDate.getDate() + 7);
+                currentDate.setDate(currentDate.getDate() + 7); // weekly
             }
 
-            // 6. ATUALIZAR PACOTE COM SESSÕES
+            // 6) atrelar as sessions ao pacote
             await Package.findByIdAndUpdate(
                 newPackage._id,
                 { $set: { sessions: createdSessions } },
                 { session: mongoSession }
             );
 
-            // 7. CRIAR PAGAMENTO (opcional)
+            // 7) se pagou algo, cria o pagamento PAI e distribui
             if (amountPaid > 0) {
                 const purchasePayment = new Payment({
                     package: newPackage._id,
@@ -186,22 +185,28 @@ export const packageOperations = {
                     paymentMethod,
                     status: 'paid',
                     serviceType: 'package_session',
-                    sessionType: sessionType,
-                    paymentDate: paymentDate,
+                    sessionType,
+                    paymentDate,
+                    // ✅ audita claramente que é o recibo do pacote
+                    kind: 'package_receipt'
                 });
 
                 await purchasePayment.save({ session: mongoSession });
+
+                // distribui nas sessões (gera session_payment + atualiza sessions/appointments + recalcula pkg)
+                await distributePayments(newPackage._id, amountPaid, mongoSession, purchasePayment._id);
+
                 await Package.findByIdAndUpdate(
                     newPackage._id,
                     { $push: { payments: purchasePayment._id } },
                     { session: mongoSession }
                 );
-                console.log('Before commit', purchasePayment);
             }
+
             await mongoSession.commitTransaction();
             transactionCommitted = true;
 
-            // 8. RETORNO
+            // 8) retorno populado
             const result = await Package.findById(newPackage._id)
                 .populate('sessions appointments payments')
                 .lean();
@@ -216,7 +221,6 @@ export const packageOperations = {
             if (mongoSession.inTransaction() && !transactionCommitted) {
                 await mongoSession.abortTransaction();
             }
-
             res.status(500).json({
                 success: false,
                 message: error.message,
@@ -226,6 +230,7 @@ export const packageOperations = {
             await mongoSession.endSession();
         }
     },
+
 
     get: {
         all: async (req, res) => {
@@ -930,90 +935,84 @@ export const packageOperations = {
 
     registerPayment: async (req, res) => {
         const mongoSession = await mongoose.startSession();
-        const packageId = req.params.id;
         try {
-            mongoSession.startTransaction();
-            const {
-                amount,
-                paymentMethod,
-                // coveredSessions, // Se você ainda usa isso, precisará de lógica adicional
-                notes,
-                // Adicione patient e doctor se forem necessários no Payment e não derivados do pacote
-                // patient, 
-                // doctor 
-            } = req.body;
+            await mongoSession.startTransaction();
+
+            const { amount, paymentMethod, notes } = req.body;
+            const packageId = req.params.id;
 
             if (!amount || !paymentMethod) {
                 throw new Error("Valor e método de pagamento são obrigatórios.");
             }
 
-            const pkg = await Package.findById(packageId).session(mongoSession);
-            if (!pkg) {
-                throw new Error("Pacote não encontrado");
-            }
+            // 🔹 Buscar pacote existente
+            const pkg = await Package.findById(packageId)
+                .populate("sessions")
+                .session(mongoSession);
 
-            // Lógica para coveredSessions removida para simplificar, 
-            // pois o pagamento agora é um documento próprio e pode ou não estar ligado a sessões específicas.
-            // Se precisar vincular a sessões, o modelo Payment precisaria de um array de sessionIds.
+            if (!pkg) throw new Error("Pacote não encontrado.");
 
-            const paymentData = {
+            // 🔹 Criar pagamento principal (recibo do pacote)
+            const paymentDoc = new Payment({
                 package: pkg._id,
+                patient: pkg.patient,
+                doctor: pkg.doctor,
                 amount: parseFloat(amount),
-                paymentMethod: paymentMethod,
-                patient: patient || pkg.patient,
-                doctor: doctor || pkg.doctor,
-                notes: notes || 'Pagamento avulso para o pacote.'
-            };
+                paymentMethod,
+                notes: notes || "Pagamento adicional registrado manualmente.",
+                status: "paid",
+                kind: "package_receipt",
+                serviceType: "package_session",
+                paymentDate: new Date(),
+            });
 
-            const newPaymentDoc = new Payment(paymentData);
-            await newPaymentDoc.save({ session: mongoSession });
+            await paymentDoc.save({ session: mongoSession });
 
-            pkg.payments.push(newPaymentDoc._id);
+            // 🔹 Distribuir valor entre sessões pendentes
+            const updatedPackage = await distributePayments(
+                packageId,
+                parseFloat(amount),
+                mongoSession,
+                paymentDoc._id // passa o recibo como parentPayment
+            );
+
+            // 🔹 Atualizar vínculos no pacote
+            pkg.payments.push(paymentDoc._id);
             pkg.totalPaid = (pkg.totalPaid || 0) + parseFloat(amount);
+            pkg.balance =
+                pkg.totalSessions * pkg.sessionValue - pkg.totalPaid;
+            pkg.financialStatus =
+                pkg.balance <= 0
+                    ? "paid"
+                    : pkg.totalPaid > 0
+                        ? "partially_paid"
+                        : "unpaid";
+            pkg.lastPaymentAt = new Date();
+
             await pkg.save({ session: mongoSession });
 
+            // 🔹 Finalizar transação
             await mongoSession.commitTransaction();
 
-            const updatedPackage = await Package.findById(packageId)
-                .populate('patient', 'fullName')
-                .populate('doctor', 'fullName')
-                .populate('payments');
-
-            res.json(updatedPackage);
-
+            res.json({
+                success: true,
+                message: "Pagamento registrado e distribuído com sucesso.",
+                payment: paymentDoc,
+                updatedPackage,
+            });
         } catch (error) {
-            if (mongoSession.inTransaction()) {
-                await mongoSession.abortTransaction();
-            }
-            if (error.name === 'ValidationError') {
-                // 💡 Extrai erros campo a campo
-                const errors = Object.keys(error.errors).reduce((acc, key) => {
-                    acc[key] = error.errors[key].message;
-                    return acc;
-                }, {});
-
-                return res.status(400).json({
-                    message: 'Falha na validação dos dados',
-                    errors
-                });
-            }
-
-            return res.status(500).json({ error: 'Erro interno' });
+            await mongoSession.abortTransaction();
+            console.error("❌ Erro em registerPayment:", error);
+            res.status(500).json({
+                success: false,
+                message: error.message || "Erro interno ao registrar pagamento.",
+            });
         } finally {
             await mongoSession.endSession();
         }
     },
+
 };
-
-// Função auxiliar para calcular o próximo horário (se necessário)
-function calculateNextTime(baseTime, durationMonths, sessionIndex) {
-    // Implementação personalizada conforme sua lógica de negócio
-    return baseTime; // Por padrão, mantém o mesmo horário
-}
-
-function capitalizeFirstLetter(string) {
-    return string.charAt(0).toUpperCase() + string.slice(1);
-}
 
 // Operação de Atualização de Status
 export const updateStatus = async (req, res) => {
