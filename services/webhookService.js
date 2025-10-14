@@ -1,29 +1,146 @@
-import { getIo } from '../config/socket.js';
+import mongoose from "mongoose";
+import { getIo } from "../config/socket.js";
+import Package from "../models/Package.js";
+import Payment from "../models/Payment.js";
+import { distributePayments } from "../services/distributePayments.js";
 
+/**
+ * 🔔 Webhook principal para notificações PIX do Sicoob
+ * - Responde imediatamente (200 OK)
+ * - Processa cada transação em background
+ * - Cria pagamento principal e distribui valor entre sessões do pacote
+ */
 export const handlePixWebhook = async (req, res) => {
     try {
         const payload = req.body;
-        console.log('🔔 Notificação PIX recebida:', JSON.stringify(payload, null, 2));
+        console.log("🔔 Notificação PIX recebida:", JSON.stringify(payload, null, 2));
 
-        // Resposta imediata para Sicoob
+        // ✅ 1. Resposta imediata para o Sicoob
         res.status(200).json({ mensagem: "Notificação recebida com sucesso" });
 
+        // 🔹 2. Processa pagamentos em background
         if (payload.pix && Array.isArray(payload.pix)) {
             const io = getIo();
-            payload.pix.forEach(pix => {
+
+            for (const pix of payload.pix) {
                 const formattedPix = {
-                    id: pix.txid,
+                    txid: pix.txid,
                     amount: parseFloat(pix.valor),
                     date: new Date(pix.horario || Date.now()),
-                    payer: pix.pagador || 'Não informado',
-                    status: 'recebido'
+                    payer: pix.infoPagador || pix.pagador || "Não informado",
+                    status: "recebido",
                 };
-                console.log('💸 Pix processado:', formattedPix);
-                io.emit('pix-received', formattedPix);
-            });
+
+                console.log("💸 Pix recebido:", formattedPix);
+                io.emit("pix-received", formattedPix);
+
+                // 🔧 Processa de forma assíncrona (não bloqueia resposta)
+                processPixTransaction(formattedPix, io);
+            }
         }
     } catch (err) {
-        console.error('❌ Erro ao processar webhook:', err);
+        console.error("❌ Erro ao processar webhook:", err);
         res.status(500).json({ mensagem: "Erro ao processar notificação" });
     }
 };
+
+/**
+ * 💰 Processa e aplica um Pix recebido a um pacote e suas sessões.
+ * - Cria Payment principal
+ * - Chama distributePayments() para atualizar sessões e appointments
+ */
+async function processPixTransaction(formattedPix, io) {
+    const mongoSession = await mongoose.startSession();
+
+    try {
+        await mongoSession.startTransaction();
+
+        const { txid, amount, payer } = formattedPix;
+
+        // ⚠️ Evita duplicidade (idempotência)
+        const existingPayment = await Payment.findOne({ txid, status: "paid" }).session(mongoSession);
+        if (existingPayment) {
+            console.warn(`⚠️ Pagamento PIX ${txid} já processado anteriormente.`);
+            await mongoSession.abortTransaction();
+            return;
+        }
+
+        // 🔹 Localiza o pacote associado (via txid)
+        let pkg = await Package.findOne({ txid }).populate("sessions").session(mongoSession);
+        if (!pkg) {
+            const approxDate = new Date();
+            const pkgFallback = await Package.findOne({
+                totalValue: { $gte: amount - 1, $lte: amount + 1 },
+                createdAt: { $gte: new Date(approxDate.getTime() - 3 * 60 * 60 * 1000) }, // 3h antes
+            }).populate("sessions").session(mongoSession);
+
+            if (pkgFallback) {
+                console.warn(`⚠️ Pacote localizado por valor aproximado (fallback): ${pkgFallback._id}`);
+                pkg = pkgFallback;
+            }
+        }
+
+
+        // 🔹 Cria registro principal de pagamento
+        const paymentDoc = new Payment({
+            package: pkg._id,
+            patient: pkg.patient,
+            doctor: pkg.doctor,
+            txid,
+            amount,
+            paymentMethod: "pix",
+            status: "paid",
+            serviceType: "package_session",
+            kind: "package_receipt",
+            notes: `Pagamento via PIX - ${payer}`,
+            paymentDate: new Date(),
+        });
+        await paymentDoc.save({ session: mongoSession });
+
+        // 🔹 Distribui valor entre sessões do pacote
+        const updatedPackage = await distributePayments(
+            pkg._id,
+            amount,
+            mongoSession,
+            paymentDoc._id
+        );
+
+        // 🔹 Atualiza dados financeiros do pacote
+        pkg.payments.push(paymentDoc._id);
+        pkg.totalPaid = (pkg.totalPaid || 0) + amount;
+        pkg.balance = pkg.totalSessions * pkg.sessionValue - pkg.totalPaid;
+        pkg.financialStatus =
+            pkg.balance <= 0
+                ? "paid"
+                : pkg.totalPaid > 0
+                    ? "partially_paid"
+                    : "unpaid";
+        pkg.lastPaymentAt = new Date();
+
+        await pkg.save({ session: mongoSession });
+        await mongoSession.commitTransaction();
+
+        console.log(`✅ PIX ${txid} aplicado com sucesso ao pacote ${pkg._id}`);
+
+        // 🔔 Emite evento de atualização em tempo real
+        io.emit("paymentUpdate", {
+            type: "pix",
+            txid,
+            packageId: pkg._id,
+            patient: pkg.patient,
+            doctor: pkg.doctor,
+            amount,
+            method: "pix",
+            totalPaid: pkg.totalPaid,
+            balance: pkg.balance,
+            financialStatus: pkg.financialStatus,
+            timestamp: new Date(),
+        });
+
+    } catch (err) {
+        await mongoSession.abortTransaction();
+        console.error(`❌ Erro ao aplicar PIX ${formattedPix.txid}:`, err);
+    } finally {
+        await mongoSession.endSession();
+    }
+}
