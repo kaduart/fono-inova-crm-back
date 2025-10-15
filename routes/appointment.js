@@ -12,7 +12,7 @@ import Patient from '../models/Patient.js';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import { handlePackageSessionUpdate, syncEvent } from '../services/syncService.js';
-import { updatePatientAppointments } from '../utils/appointmentUpdater.js';
+import { updateAppointmentFromSession, updatePatientAppointments } from '../utils/appointmentUpdater.js';
 import { handleAdvancePayment } from '../helpers/handleAdvancePayment.js';
 
 const ObjectId = mongoose.Types.ObjectId;

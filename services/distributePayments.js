@@ -1,6 +1,7 @@
 import Package from '../models/Package.js';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
+import { updateAppointmentFromSession } from '../utils/appointmentUpdater.js';
 
 /**
  * Distribui o valor pago de um pacote entre as sessões correspondentes,
