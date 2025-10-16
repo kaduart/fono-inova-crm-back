@@ -3,6 +3,7 @@
 // ======================================================
 import express from "express";
 import dotenv from "dotenv";
+process.env.TZ = 'America/Sao_Paulo';
 import helmet from "helmet";
 import http from "http";
 import cors from "cors";
