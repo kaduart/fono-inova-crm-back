@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import express from 'express';
 import mongoose from 'mongoose';
+import { handleAdvancePayment } from '../helpers/handleAdvancePayment.js';
 import { auth } from '../middleware/auth.js';
 import { checkPackageAvailability } from '../middleware/checkPackageAvailability.js';
 import { checkAppointmentConflicts, getAvailableTimeSlots } from '../middleware/conflictDetection.js';
@@ -13,7 +14,6 @@ import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import { handlePackageSessionUpdate, syncEvent } from '../services/syncService.js';
 import { updateAppointmentFromSession, updatePatientAppointments } from '../utils/appointmentUpdater.js';
-import { handleAdvancePayment } from '../helpers/handleAdvancePayment.js';
 
 const ObjectId = mongoose.Types.ObjectId;
 
@@ -33,191 +33,193 @@ router.get('/available-slots', auth, getAvailableTimeSlots);
 
 // Cria um novo agendamento
 router.post('/', async (req, res) => {
-  const {
-    patientId,
-    doctorId,
-    serviceType,
-    amount,
-    paymentMethod,
-    status = 'paid',
-    notes,
-    packageId,
-    sessionId,
-    sessionType,
-    isAdvancePayment = false,
-    advanceSessions = []
-  } = req.body;
+    const {
+        patientId,
+        doctorId,
+        serviceType,
+        paymentMethod,
+        status = 'paid',
+        notes,
+        packageId,
+        sessionId,
+        sessionType,
+        isAdvancePayment = false,
+        advanceSessions = []
+    } = req.body;
+    const amount = parseFloat(req.body.paymentAmount) || 0;
+    const currentDate = new Date();
 
-  const currentDate = new Date();
-
-  try {
-    // 🔹 Validação básica
-    if (!patientId || !doctorId || !serviceType || !paymentMethod) {
-      return res.status(400).json({
-        success: false,
-        message: 'Campos obrigatórios faltando'
-      });
-    }
-
-    // 🔹 Caso 1: Pagamento adiantado (com sessões futuras)
-    if (isAdvancePayment || (advanceSessions && advanceSessions.length > 0)) {
-      return await handleAdvancePayment(req, res);
-    }
-
-    // 🔹 Caso 2: Pagamento de pacote
-    if (serviceType === 'package_session') {
-      if (!packageId) {
-        return res.status(400).json({
-          success: false,
-          message: 'ID do pacote é obrigatório para pagamentos de pacote'
-        });
-      }
-
-      const mongoSession = await mongoose.startSession();
-      mongoSession.startTransaction();
-
-      try {
-        const pkgExists = await Package.exists({ _id: packageId });
-        if (!pkgExists) {
-          await mongoSession.abortTransaction();
-          return res.status(404).json({ success: false, message: 'Pacote não encontrado' });
+    try {
+        // 🔹 Validação básica
+        if (!patientId || !doctorId || !serviceType || !paymentMethod) {
+            return res.status(400).json({
+                success: false,
+                message: 'Campos obrigatórios faltando'
+            });
         }
 
-        const parentPayment = await Payment.create(
-          [
-            {
-              patient: patientId,
-              doctor: doctorId,
-              serviceType,
-              amount,
-              paymentMethod,
-              notes,
-              status: 'paid',
-              package: packageId,
-              createdAt: currentDate,
+        // 🔹 Caso 1: Pagamento adiantado (com sessões futuras)
+        if (isAdvancePayment || (advanceSessions && advanceSessions.length > 0)) {
+            return await handleAdvancePayment(req, res);
+        }
+
+        // 🔹 Caso 2: Pagamento de pacote
+        if (serviceType === 'package_session') {
+            if (!packageId) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'ID do pacote é obrigatório para pagamentos de pacote'
+                });
             }
-          ],
-          { session: mongoSession }
-        );
 
-        // 🔹 Distribui entre as sessões do pacote
-        await distributePayments(packageId, amount, mongoSession, parentPayment[0]._id);
+            const mongoSession = await mongoose.startSession();
+            mongoSession.startTransaction();
 
-        await mongoSession.commitTransaction();
+            try {
+                const pkgExists = await Package.exists({ _id: packageId });
+                if (!pkgExists) {
+                    await mongoSession.abortTransaction();
+                    return res.status(404).json({ success: false, message: 'Pacote não encontrado' });
+                }
 
-        const populatedPayment = await Payment.findById(parentPayment[0]._id)
-          .populate('patient doctor package')
-          .session(mongoSession);
+                const parentPayment = await Payment.create(
+                    [
+                        {
+                            patient: patientId,
+                            doctor: doctorId,
+                            serviceType,
+                            amount,
+                            paymentMethod,
+                            notes,
+                            status: 'paid',
+                            package: packageId,
+                            createdAt: currentDate,
+                        }
+                    ],
+                    { session: mongoSession }
+                );
+
+                // 🔹 Distribui entre as sessões do pacote
+                await distributePayments(packageId, amount, mongoSession, parentPayment[0]._id);
+
+                await mongoSession.commitTransaction();
+
+                const populatedPayment = await Payment.findById(parentPayment[0]._id)
+                    .populate('patient doctor package')
+                    .session(mongoSession);
+
+                return res.status(201).json({
+                    success: true,
+                    message: 'Pagamento de pacote registrado com sucesso',
+                    data: populatedPayment,
+                });
+            } catch (err) {
+                await mongoSession.abortTransaction();
+                throw err;
+            } finally {
+                mongoSession.endSession();
+            }
+        }
+
+        // 🔹 Caso 3: Sessão individual
+        let individualSessionId = null;
+
+        if (serviceType === 'individual_session') {
+            const newSession = await Session.create({
+                serviceType,
+                sessionType,
+                patient: patientId,
+                doctor: doctorId,
+                notes,
+                status: 'scheduled',
+                isPaid: true,
+                paymentStatus: 'paid',
+                visualFlag: 'ok',
+                createdAt: currentDate,
+                updatedAt: currentDate,
+            });
+            individualSessionId = newSession._id;
+
+            // Cria agendamento correspondente
+            const appointment = await Appointment.create({
+                patient: patientId,
+                doctor: doctorId,
+                session: newSession._id,
+                date: currentDate.toISOString().split('T')[0],
+                time: currentDate.toISOString().split('T')[1].slice(0, 5),
+                status: 'confirmado',
+                paymentStatus: 'paid',
+                visualFlag: 'ok',
+                serviceType: serviceType,          // ✅ agora presente
+                specialty: sessionType || 'fonoaudiologia', // ✅ fallback seguro
+
+            });
+
+            await updateAppointmentFromSession(newSession);
+            await updatePatientAppointments(patientId);
+        }
+
+        // 🔹 Caso 4: Pagamento vinculado a sessão existente
+        if (serviceType === 'session') {
+            if (!sessionId) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'ID da sessão é obrigatório para serviço do tipo "session"',
+                });
+            }
+
+            const sessionDoc = await Session.findById(sessionId);
+            if (!sessionDoc) {
+                return res.status(404).json({ success: false, message: 'Sessão não encontrada' });
+            }
+
+            await Session.findByIdAndUpdate(sessionId, {
+                status: 'confirmado',
+                isPaid: true,
+                paymentStatus: 'paid',
+                visualFlag: 'ok',
+                updatedAt: currentDate,
+            });
+
+            await updateAppointmentFromSession(sessionDoc);
+        }
+
+        // 🔹 Cria o registro do pagamento principal
+        const paymentData = {
+            patient: patientId,
+            doctor: doctorId,
+            serviceType,
+            amount,
+            paymentMethod,
+            notes,
+            status,
+            createdAt: currentDate,
+            updatedAt: currentDate,
+        };
+
+        if (serviceType === 'session') paymentData.session = sessionId;
+        if (serviceType === 'individual_session') paymentData.session = individualSessionId;
+        if (serviceType === 'package_session') paymentData.package = packageId;
+
+        const payment = await Payment.create(paymentData);
+
+        const populatedPayment = await Payment.findById(payment._id)
+            .populate('patient doctor session package');
 
         return res.status(201).json({
-          success: true,
-          message: 'Pagamento de pacote registrado com sucesso',
-          data: populatedPayment,
+            success: true,
+            message: 'Pagamento registrado com sucesso',
+            data: populatedPayment,
         });
-      } catch (err) {
-        await mongoSession.abortTransaction();
-        throw err;
-      } finally {
-        mongoSession.endSession();
-      }
-    }
 
-    // 🔹 Caso 3: Sessão individual
-    let individualSessionId = null;
-
-    if (serviceType === 'individual_session') {
-      const newSession = await Session.create({
-        serviceType,
-        sessionType,
-        patient: patientId,
-        doctor: doctorId,
-        notes,
-        status: 'confirmado',
-        isPaid: true,
-        paymentStatus: 'paid',
-        visualFlag: 'ok',
-        createdAt: currentDate,
-        updatedAt: currentDate,
-      });
-      individualSessionId = newSession._id;
-
-      // Cria agendamento correspondente
-      const appointment = await Appointment.create({
-        patient: patientId,
-        doctor: doctorId,
-        session: newSession._id,
-        date: currentDate.toISOString().split('T')[0],
-        time: currentDate.toISOString().split('T')[1].slice(0, 5),
-        status: 'confirmado',
-        paymentStatus: 'paid',
-        visualFlag: 'ok',
-      });
-
-      await updateAppointmentFromSession(newSession);
-      await updatePatientAppointments(patientId);
-    }
-
-    // 🔹 Caso 4: Pagamento vinculado a sessão existente
-    if (serviceType === 'session') {
-      if (!sessionId) {
-        return res.status(400).json({
-          success: false,
-          message: 'ID da sessão é obrigatório para serviço do tipo "session"',
+    } catch (error) {
+        console.error('❌ Erro ao registrar pagamento:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Erro ao registrar pagamento',
+            error: error.message,
         });
-      }
-
-      const sessionDoc = await Session.findById(sessionId);
-      if (!sessionDoc) {
-        return res.status(404).json({ success: false, message: 'Sessão não encontrada' });
-      }
-
-      await Session.findByIdAndUpdate(sessionId, {
-        status: 'confirmado',
-        isPaid: true,
-        paymentStatus: 'paid',
-        visualFlag: 'ok',
-        updatedAt: currentDate,
-      });
-
-      await updateAppointmentFromSession(sessionDoc);
     }
-
-    // 🔹 Cria o registro do pagamento principal
-    const paymentData = {
-      patient: patientId,
-      doctor: doctorId,
-      serviceType,
-      amount,
-      paymentMethod,
-      notes,
-      status,
-      createdAt: currentDate,
-      updatedAt: currentDate,
-    };
-
-    if (serviceType === 'session') paymentData.session = sessionId;
-    if (serviceType === 'individual_session') paymentData.session = individualSessionId;
-    if (serviceType === 'package_session') paymentData.package = packageId;
-
-    const payment = await Payment.create(paymentData);
-
-    const populatedPayment = await Payment.findById(payment._id)
-      .populate('patient doctor session package');
-
-    return res.status(201).json({
-      success: true,
-      message: 'Pagamento registrado com sucesso',
-      data: populatedPayment,
-    });
-
-  } catch (error) {
-    console.error('❌ Erro ao registrar pagamento:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Erro ao registrar pagamento',
-      error: error.message,
-    });
-  }
 });
 
 // Busca agendamentos com filtros

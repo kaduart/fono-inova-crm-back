@@ -1578,16 +1578,22 @@ router.post('/add', async (req, res) => {
             paymentMethod = 'dinheiro',
             paymentDate,
             note,
+            patientId,
+            doctorId,
+            serviceType,
         } = req.body;
 
-        if (!packageId || !amount || amount <= 0) {
+        const currentDate = new Date();
+
+        // 🔹 1. Validação básica
+        if (!packageId || !amount || amount <= 0 || !patientId || !doctorId || !serviceType) {
             return res.status(400).json({
                 success: false,
-                message: 'Informe um packageId válido e um valor maior que zero.'
+                message: 'Campos obrigatórios faltando ou inválidos.',
             });
         }
 
-        // 🔹 1. Buscar o pacote
+        // 🔹 2. Buscar o pacote
         const pkg = await Package.findById(packageId)
             .populate('sessions')
             .session(mongoSession);
@@ -1595,40 +1601,61 @@ router.post('/add', async (req, res) => {
         if (!pkg) {
             return res.status(404).json({
                 success: false,
-                message: 'Pacote não encontrado'
+                message: 'Pacote não encontrado',
             });
         }
 
-        // 🔹 2. Criar pagamento principal
-        const parentPayment = new Payment({
-            package: pkg._id,
-            patient: pkg.patient,
-            doctor: pkg.doctor,
-            amount,
-            paymentMethod,
-            paymentDate: paymentDate || new Date().toISOString().split('T')[0],
-            serviceType: 'package_session',
-            sessionType: pkg.sessionType,
-            kind: 'package_receipt',
-            status: 'paid',
-            note: note || null,
-        });
+        // 🔹 3. Criar pagamento principal (inicia como pending)
+        const parentPayment = await Payment.create(
+            [
+                {
+                    patient: patientId,
+                    doctor: doctorId,
+                    serviceType,
+                    amount,
+                    paymentMethod,
+                    notes: note || '',
+                    status: 'pending', // status inicial
+                    package: packageId,
+                    createdAt: currentDate,
+                },
+            ],
+            { session: mongoSession }
+        );
 
-        await parentPayment.save({ session: mongoSession });
-
-        // 🔹 3. Distribuir o pagamento entre as sessões
+        // 🔹 4. Distribuir o pagamento entre as sessões
         const updatedPackage = await distributePayments(
             pkg._id,
             amount,
             mongoSession,
-            parentPayment._id
+            parentPayment[0]._id
         );
 
-        // 🔹 4. Atualizar o pacote com referência ao pagamento
+        // 🔹 5. Calcular o status real após a distribuição
+        const remainingBalance = updatedPackage.balance ?? 0;
+        const totalValue = updatedPackage.totalValue ?? 0;
+
+        let paymentStatus = 'paid';
+        if (remainingBalance > 0 && remainingBalance < totalValue) {
+            paymentStatus = 'partial';
+        } else if (remainingBalance === totalValue) {
+            paymentStatus = 'pending';
+        }
+
+        console.log(`📊 Pagamento distribuído — Status: ${paymentStatus} | Saldo: ${remainingBalance} | Total: ${totalValue}`);
+
+        // 🔹 6. Atualizar o pagamento com o status correto
+        await Payment.findByIdAndUpdate(
+            parentPayment[0]._id,
+            { status: paymentStatus },
+            { session: mongoSession }
+        );
+
+        // 🔹 7. Atualizar o pacote com informações financeiras
         await Package.findByIdAndUpdate(
             pkg._id,
             {
-                $push: { payments: parentPayment._id },
+                $push: { payments: parentPayment[0]._id },
                 $set: {
                     totalPaid: updatedPackage.totalPaid,
                     balance: updatedPackage.balance,
@@ -1641,14 +1668,17 @@ router.post('/add', async (req, res) => {
         await mongoSession.commitTransaction();
         transactionCommitted = true;
 
-        // 🔹 5. Buscar pacote atualizado
+        // 🔹 8. Buscar pacote atualizado
         const finalResult = await Package.findById(pkg._id)
             .populate('sessions payments')
             .lean();
 
         return res.status(201).json({
             success: true,
-            message: 'Pagamento registrado e distribuído com sucesso.',
+            message:
+                paymentStatus === 'partial'
+                    ? 'Pagamento parcial registrado com sucesso.'
+                    : 'Pagamento registrado e distribuído com sucesso.',
             data: finalResult,
         });
     } catch (error) {
@@ -1667,6 +1697,7 @@ router.post('/add', async (req, res) => {
         await mongoSession.endSession();
     }
 });
+
 
 export default router;
 

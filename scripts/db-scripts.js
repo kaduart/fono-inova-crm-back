@@ -62,8 +62,8 @@ db.appointments.find({
 // consultar pagamentos do dia
 db.payments.find({
   createdAt: {
-    $gte: ISODate("2025-08-18T00:00:00.000Z"),
-    $lt: ISODate("2025-08-19T00:00:00.000Z")
+    $gte: ISODate("2025-10-16T00:00:00.000Z"),
+    $lt: ISODate("2025-10-17T00:00:00.000Z")
   }
 })
 
