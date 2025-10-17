@@ -1,4 +1,5 @@
 import express from 'express';
+import moment from 'moment-timezone';
 import mongoose from 'mongoose';
 import PDFDocument from 'pdfkit';
 import { auth, authorize } from '../middleware/auth.js';
@@ -7,6 +8,7 @@ import Package from '../models/Package.js';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import { distributePayments } from '../services/distributePayments.js';
+import { updateAppointmentFromSession } from '../utils/appointmentUpdater.js';
 
 const router = express.Router();
 
@@ -15,6 +17,7 @@ router.post('/', async (req, res) => {
         doctorId, serviceType,
         amount, paymentMethod,
         status, notes, packageId,
+        paymentDate,
         sessionId, isAdvancePayment = false,
         advanceSessions = []
     } = req.body;
@@ -530,8 +533,8 @@ router.patch('/:id', auth, async (req, res) => {
                         doctor: payment.doctor,
                         specialty: sessionData.sessionType,
                         serviceType: sessionData.serviceType || 'individual_session',
-                        operationalStatus: 'agendado',
-                        clinicalStatus: 'pendente',
+                        operationalStatus: 'scheduled',
+                        clinicalStatus: 'pending',
                         paymentStatus: status === 'paid' ? 'paid' : 'pending',
                         paymentMethod: paymentMethod || payment.paymentMethod,
                         sessionValue: sessionData.amount,
@@ -784,8 +787,8 @@ router.post('/:paymentId/add-session', auth, async (req, res) => {
             doctor: payment.doctor,
             paymentStatus: 'advanced',
             sourcePayment: payment._id,
-            operationalStatus: 'agendado',
-            clinicalStatus: 'pendente'
+            operationalStatus: 'scheduled',
+            clinicalStatus: 'pending'
         });
 
         // Criar nova sessão
@@ -991,323 +994,206 @@ router.get('/totals', async (req, res) => {
     }
 });
 
-router.get('/daily-closing', async (req, res) => {
+/**
+ * 🔹 NOVO ENDPOINT: /daily-closing
+ *   Retorna uma visão clara e segmentada:
+ *   - Sessões (agendamentos do dia)
+ *   - Pagamentos (entradas do dia)
+ *   - Resumos e métricas consolidados
+ */
+router.get("/daily-closing", async (req, res) => {
     try {
         const { date } = req.query;
         const targetDate = date
-            ? new Date(date).toISOString().split('T')[0]
-            : new Date().toISOString().split('T')[0];
+            ? moment.tz(date, "America/Sao_Paulo").format("YYYY-MM-DD")
+            : moment.tz(new Date(), "America/Sao_Paulo").format("YYYY-MM-DD");
 
-        // 1️⃣ Buscar agendamentos do dia
+        const startOfDay = moment
+            .tz(`${targetDate}T00:00:00`, "America/Sao_Paulo")
+            .toDate();
+        const endOfDay = moment
+            .tz(`${targetDate}T23:59:59`, "America/Sao_Paulo")
+            .toDate();
+
+        const sessions = await Session.find({ date: targetDate })
+            .populate("package patient doctor appointmentId");
+
+        for (const s of sessions) {
+            await updateAppointmentFromSession(s);
+
+            if (s.appointmentId) {
+                await Appointment.findByIdAndUpdate(
+                    s.appointmentId,
+                    {
+                        sessionValue: s.sessionValue,
+                        paymentStatus: s.paymentStatus,
+                        operationalStatus: mapStatusToOperational(s.status),
+                        clinicalStatus: mapStatusToClinical(s.status), // <-- novo
+                    },
+                    { new: true, runValidators: false } // evita erro de enum
+                );
+
+            }
+        }
+
         const appointments = await Appointment.find({ date: targetDate })
-            .populate('doctor patient package')
+            .populate("doctor patient package")
             .lean();
 
-        const appointmentIds = appointments.map(a => a._id);
+        const patientIdsOfDay = appointments
+            .map((a) => a.patient?._id?.toString())
+            .filter(Boolean);
 
-        // 2️⃣ Buscar pagamentos efetivados (compatível com paymentDate string + antigos)
         const payments = await Payment.find({
+            status: "paid",
             $or: [
-                // ✅ Novos pagamentos com paymentDate (string)
-                { paymentDate: targetDate, status: 'paid' },
-
-                // ✅ Antigos (sem paymentDate) - busca por createdAt
-                {
-                    $and: [
-                        { paymentDate: { $exists: false } },
-                        {
-                            createdAt: {
-                                $gte: new Date(`${targetDate}T00:00:00.000Z`),
-                                $lt: new Date(`${targetDate}T23:59:59.999Z`)
-                            }
-                        },
-                        { status: 'paid' }
-                    ]
-                },
-
-                // ✅ Pagamentos ligados a agendamentos do dia
-                { appointment: { $in: appointmentIds }, status: 'paid' }
-            ]
+                { paymentDate: targetDate },
+                { createdAt: { $gte: startOfDay, $lte: endOfDay } },
+            ],
         })
-            .populate('patient doctor package appointment')
+            .populate("patient doctor package appointment")
             .lean();
 
-        console.log('📊 [Fechamento Diário] Pagamentos encontrados:', payments.length);
-        payments.forEach(p => {
-            console.log(`🧾 ${p._id} | ${p.serviceType} | ${p.paymentDate} | ${p.createdAt}`);
-        });
+        const filteredPayments = payments.filter((p) =>
+            patientIdsOfDay.includes(p.patient?._id?.toString())
+        );
 
-        // 3️⃣ Estrutura inicial do relatório
+        const normalizePaymentMethod = (method) => {
+            if (!method) return "dinheiro";
+            method = method.toLowerCase().trim();
+            if (method.includes("pix")) return "pix";
+            if (
+                method.includes("cartão") ||
+                method.includes("card") ||
+                method.includes("credito") ||
+                method.includes("débito")
+            )
+                return "cartão";
+            return "dinheiro";
+        };
+
+        const isAttended = (appt) =>
+            (appt.operationalStatus || "").toLowerCase() === "confirmed" ||
+            (appt.clinicalStatus || "").toLowerCase() === "completed";
+
+        const isCanceled = (status) =>
+            (status || "").toLowerCase() === "canceled";
+
+        // ✅ Tradução para exibição legível (frontend ainda em PT)
+        const translateStatus = (status) => {
+            const map = {
+                scheduled: "agendado",
+                confirmed: "confirmado",
+                canceled: "cancelado",
+                paid: "pago",
+                missed: "faltou",
+            };
+            return map[status] || status;
+        };
+
         const report = {
             date: targetDate,
-            period: { start: targetDate, end: targetDate },
             summary: {
-                scheduled: { count: 0, value: 0, details: [] },
-                attended: { count: 0, value: 0, details: [] },
-                canceled: { count: 0, value: 0, details: [] },
-                pending: { count: 0, value: 0, details: [] },
-                patientsCount: 0
-            },
-            financial: {
-                totalReceived: 0,
-                totalExpected: 0,
-                paymentMethods: {
-                    dinheiro: { amount: 0, details: [] },
-                    pix: { amount: 0, details: [] },
-                    cartão: { amount: 0, details: [] }
+                appointments: {
+                    total: 0,
+                    attended: 0,
+                    canceled: 0,
+                    pending: 0,
+                    expectedValue: 0,
                 },
-                packages: { total: 0, details: [] }
+                payments: {
+                    totalReceived: 0,
+                    byMethod: { dinheiro: 0, pix: 0, cartão: 0 },
+                },
             },
-            byProfessional: {},
-            patients: new Set()
+            timelines: { appointments: [], payments: [] },
         };
 
-        // 🔹 Funções auxiliares
-        const isConfirmedStatus = s => s?.toLowerCase() === 'confirmado';
-        const isCanceledStatus = s =>
-            ['cancelado', 'cancelada'].includes(s?.toLowerCase());
-        const normalizePaymentMethod = method => {
-            if (!method) return 'dinheiro';
-            method = method.toLowerCase().trim();
-            if (method.includes('pix')) return 'pix';
-            if (
-                method.includes('cartão') ||
-                method.includes('card') ||
-                method.includes('credito') ||
-                method.includes('débito')
-            )
-                return 'cartão';
-            return 'dinheiro';
-        };
+        for (const appt of appointments) {
+            const status = (appt.operationalStatus || "").toLowerCase();
+            const doctorName = appt.doctor?.fullName || "Não informado";
+            const patientName = appt.patient?.fullName || "Não informado";
+            const method = appt.package?.paymentMethod || appt.paymentMethod || "—";
+            const isPackage = appt.serviceType === "package_session";
 
-        // 4️⃣ Processar agendamentos
-        appointments.forEach(appt => {
-            const status = (appt.operationalStatus || appt.status || '').toLowerCase();
-            const isPackage = appt.serviceType === 'package_session';
-            const value = appt.sessionValue || 0;
-            const doctorId = appt.doctor?._id?.toString();
-            const patientId = appt.patient?._id?.toString();
-
-            // 🔹 Localizar pagamento relacionado (mesmo sem link direto)
-            const relatedPayment = payments.find(p =>
-                p.patient?._id?.toString() === patientId &&
-                (p.appointment?._id?.toString() === appt._id?.toString() ||
-                    p.referenceDate === appt.date)
+            const relatedPayment = payments.find(
+                (p) =>
+                    p.patient?._id?.toString() === appt.patient?._id?.toString() &&
+                    (p.appointment?._id?.toString() === appt._id?.toString() ||
+                        p.package?._id?.toString() === appt.package?._id?.toString())
             );
 
-            // 🔹 Extrair informações de pagamento (se houver)
             const paymentDate = relatedPayment
-                ? (
-                    typeof relatedPayment.paymentDate === 'string' &&
-                        /^\d{4}-\d{2}-\d{2}$/.test(relatedPayment.paymentDate)
-                        ? relatedPayment.paymentDate
-                        : new Date(relatedPayment.createdAt).toISOString().split('T')[0]
-                )
+                ? typeof relatedPayment.paymentDate === "string"
+                    ? relatedPayment.paymentDate
+                    : moment(relatedPayment.createdAt)
+                        .tz("America/Sao_Paulo")
+                        .format("YYYY-MM-DD")
                 : null;
 
-            const appointmentDate = appt.date;
-            const isAdvancePayment =
-                paymentDate &&
-                /^\d{4}-\d{2}-\d{2}$/.test(paymentDate) &&
-                paymentDate < appointmentDate;
+            const paidStatus = relatedPayment
+                ? paymentDate === targetDate
+                    ? "Pago no dia"
+                    : "Pago antes"
+                : "Pendente";
 
-            const isPackageContractedToday =
-                isPackage &&
-                appt.package &&
-                new Date(appt.package.date).toISOString().split('T')[0] === targetDate;
+            const sessionValue = appt.sessionValue || 0;
 
-            const effectiveValue = isPackage ? 0 : value;
-            if (patientId) report.patients.add(patientId);
+            report.summary.appointments.total++;
+            report.summary.appointments.expectedValue += sessionValue;
 
-            if (doctorId && !report.byProfessional[doctorId]) {
-                report.byProfessional[doctorId] = {
-                    id: doctorId,
-                    name: appt.doctor?.fullName || 'Não informado',
-                    specialty: appt.doctor?.specialty || 'Não informada',
-                    metrics: { attendanceRate: '0%', averageTicket: 'R$ 0,00' },
-                    financial: {
-                        received: 0,
-                        expected: 0,
-                        methods: {
-                            dinheiro: { amount: 0, details: [] },
-                            pix: { amount: 0, details: [] },
-                            cartão: { amount: 0, details: [] }
-                        }
-                    },
-                    appointments: []
-                };
-            }
+            if (isAttended(appt)) report.summary.appointments.attended++;
+            else if (isCanceled(status)) report.summary.appointments.canceled++;
+            else report.summary.appointments.pending++;
 
-            const professional = report.byProfessional[doctorId];
-
-            const appointmentDetail = {
+            report.timelines.appointments.push({
                 id: appt._id,
-                patient: appt.patient?.fullName || 'Não informado',
-                service: appt.serviceType || 'Não informado',
-                value: isPackage ? appt.package?.totalPaid || 0 : value,
-                effectiveValue,
-                sessionValue: appt.sessionValue || 0,
-                status,
-                method: isPackage
-                    ? appt.package?.paymentMethod || 'não informado'
-                    : appt.paymentMethod || 'não informado',
-                paymentStatus: appt.paymentStatus || 'pending',
+                patient: patientName,
+                service: appt.serviceType,
+                doctor: doctorName,
+                sessionValue,
+                method,
+                paidStatus,
+                status: translateStatus(status), // 👈 mostra em PT no front
                 date: appt.date,
                 time: appt.time,
                 isPackage,
-                isPackageContractedToday,
-                packageId: isPackage ? appt.package?._id : null,
+            });
+        }
 
-                // 🟢 Adicionados:
-                paymentDate,
-                isAdvancePayment
-            };
-
-            if (professional) professional.appointments.push(appointmentDetail);
-
-            report.summary.scheduled.count++;
-            report.summary.scheduled.value += effectiveValue;
-            report.summary.scheduled.details.push(appointmentDetail);
-
-            if (isCanceledStatus(status)) {
-                report.summary.canceled.count++;
-                report.summary.canceled.value += effectiveValue;
-                report.summary.canceled.details.push(appointmentDetail);
-            } else if (isConfirmedStatus(status)) {
-                report.summary.attended.count++;
-                report.summary.attended.value += effectiveValue;
-                report.summary.attended.details.push(appointmentDetail);
-            } else {
-                report.summary.pending.count++;
-                report.summary.pending.value += effectiveValue;
-                report.summary.pending.details.push(appointmentDetail);
-            }
-
-            if (!isCanceledStatus(status)) {
-                report.financial.totalExpected += effectiveValue;
-                if (professional) professional.financial.expected += effectiveValue;
-            }
-        });
-
-        // 5️⃣ Processar pagamentos
-        payments.forEach(payment => {
-            const amount = payment.amount || 0;
-            const method = normalizePaymentMethod(payment.paymentMethod);
-            const type = payment.serviceType;
-            const doctorId = payment.doctor?._id?.toString();
-            const patientId = payment.patient?._id?.toString();
-
+        for (const pay of filteredPayments) {
             const paymentDate =
-                payment.paymentDate || new Date(payment.createdAt).toISOString().split('T')[0];
-            const appointmentDate = payment.appointment?.date;
-            const isAdvancePayment = appointmentDate && paymentDate < appointmentDate;
+                typeof pay.paymentDate === "string"
+                    ? pay.paymentDate
+                    : moment(pay.createdAt)
+                        .tz("America/Sao_Paulo")
+                        .format("YYYY-MM-DD");
 
-            // ✅ Ignorar pacotes de outros dias (mas manter os do dia)
-            if (type === 'package_session' && paymentDate !== targetDate) return;
+            if (paymentDate !== targetDate && pay.paymentDate) continue;
 
-            if (patientId) report.patients.add(patientId);
+            const amount = pay.amount || 0;
+            const method = normalizePaymentMethod(pay.paymentMethod);
+            const type = pay.serviceType || "outro";
+            const patient = pay.patient?.fullName || "Avulso";
+            const doctor = pay.doctor?.fullName || "Não vinculado";
 
-            const paymentDetail = {
-                id: payment._id,
+            report.summary.payments.totalReceived += amount;
+            report.summary.payments.byMethod[method] += amount;
+
+            report.timelines.payments.push({
+                id: pay._id,
+                patient,
                 type,
-                patient: payment.patient?.fullName || 'Avulso',
-                value: amount,
                 method,
-                createdAt: payment.createdAt,
-                doctor: payment.doctor?.fullName || 'Não vinculado',
-                status: payment.status,
+                value: amount,
                 paymentDate,
-                referenceDate: appointmentDate || null,
-                isAdvancePayment
-            };
+                doctor,
+            });
+        }
 
-            if (payment.status === 'paid') {
-                if (payment.status === 'paid') {
-                    // 🧠 Soma apenas se o pagamento realmente foi feito hoje
-                    //    ou se for um pacote pago hoje.
-                    const isPaidToday = paymentDate === targetDate;
-                    const isPackageToday = type === 'package_session' && paymentDate === targetDate;
-
-                    if ((isPaidToday && !isAdvancePayment) || isPackageToday) {
-                        report.financial.totalReceived += amount;
-                    }
-
-                    // (mantém o resto igual)
-                    report.financial.paymentMethods[method].amount += amount;
-                    report.financial.paymentMethods[method].details.push(paymentDetail);
-                }
-
-                report.financial.paymentMethods[method].amount += amount;
-                report.financial.paymentMethods[method].details.push(paymentDetail);
-
-                if (type === 'package_session') {
-                    report.financial.packages.total += amount;
-                    report.financial.packages.details.push({
-                        id: payment._id,
-                        patient: payment.patient?.fullName || 'Não informado',
-                        value: amount,
-                        method,
-                        sessions: payment.package?.totalSessions || 0,
-                        sessionValue: payment.package?.sessionValue || 0,
-                        date: paymentDate
-                    });
-                }
-
-                if (doctorId) {
-                    if (!report.byProfessional[doctorId]) {
-                        report.byProfessional[doctorId] = {
-                            id: doctorId,
-                            name: payment.doctor?.fullName || 'Não informado',
-                            specialty: payment.doctor?.specialty || 'Não informada',
-                            metrics: { attendanceRate: '0%', averageTicket: 'R$ 0,00' },
-                            financial: {
-                                received: 0,
-                                expected: 0,
-                                methods: {
-                                    dinheiro: { amount: 0, details: [] },
-                                    pix: { amount: 0, details: [] },
-                                    cartão: { amount: 0, details: [] }
-                                }
-                            },
-                            appointments: []
-                        };
-                    }
-
-                    const prof = report.byProfessional[doctorId];
-
-                    // 🧩 Ajuste crucial
-                    if (!isAdvancePayment && paymentDate === targetDate) {
-                        prof.financial.received += amount;
-                        prof.financial.methods[method].amount += amount;
-                    }
-
-                    // sempre adiciona nos detalhes (para transparência)
-                    prof.financial.methods[method].details.push(paymentDetail);
-                }
-            }
-        });
-
-        // 6️⃣ Calcular métricas
-        report.summary.patientsCount = report.patients.size;
-        report.patients = Array.from(report.patients);
-
-        Object.values(report.byProfessional).forEach(prof => {
-            const totalScheduled = prof.appointments.length;
-            const totalAttended = prof.appointments.filter(a => isConfirmedStatus(a.status)).length;
-            const totalCanceled = prof.appointments.filter(a => isCanceledStatus(a.status)).length;
-
-            prof.metrics.attendanceRate =
-                totalScheduled - totalCanceled > 0
-                    ? `${Math.round((totalAttended / (totalScheduled - totalCanceled)) * 100)}%`
-                    : '0%';
-
-            prof.metrics.averageTicket =
-                totalAttended > 0
-                    ? `R$ ${(prof.financial.received / totalAttended).toFixed(2)}`
-                    : 'R$ 0,00';
-        });
-
-        report.byProfessional = Object.values(report.byProfessional);
+        report.summary.appointments.canceled = appointments.filter((a) =>
+            isCanceled(a.operationalStatus)
+        ).length;
 
         res.json({
             success: true,
@@ -1316,22 +1202,60 @@ router.get('/daily-closing', async (req, res) => {
                 generatedAt: new Date().toISOString(),
                 recordCount: {
                     appointments: appointments.length,
-                    payments: payments.length,
-                    professionals: report.byProfessional.length,
-                    patients: report.patients.length
-                }
-            }
+                    payments: filteredPayments.length,
+                },
+            },
         });
     } catch (error) {
-        console.error('❌ Erro no fechamento diário:', error);
+        console.error("❌ Erro no fechamento diário:", error);
         res.status(500).json({
             success: false,
-            error: 'Erro ao gerar relatório diário',
+            error: "Erro ao gerar relatório diário",
             details:
-                process.env.NODE_ENV === 'development' ? error.message : undefined
+                process.env.NODE_ENV === "development" ? error.message : undefined,
         });
     }
 });
+
+
+const mapStatusToOperational = (status) => {
+    switch ((status || "").toLowerCase()) {
+        case "scheduled":
+            return "scheduled";
+        case "confirmed":
+            return "confirmed";
+        case "paid":
+            return "paid";
+        case "canceled":
+        case "cancelado":
+            return "canceled";
+        case "missed":
+        case "faltou":
+            return "missed";
+        default:
+            return "scheduled";
+    }
+};
+
+const mapStatusToClinical = (status) => {
+    switch ((status || "").toLowerCase()) {
+        case "pending":
+        case "pendente":
+            return "pending";
+        case "in_progress":
+        case "em_andamento":
+            return "in_progress";
+        case "completed":
+        case "concluído":
+            return "completed";
+        case "missed":
+        case "faltou":
+            return "missed";
+        default:
+            return "pending"; // nunca canceled
+    }
+};
+
 
 // Detalhamento de sessões agendadas
 router.get('/daily-scheduled-details', async (req, res) => {
@@ -1461,24 +1385,21 @@ router.get('/daily-payments-details', async (req, res) => {
         endOfDay.setHours(endOfDay.getHours() + 3);
 
         const payments = await Payment.find({
-            createdAt: { $gte: startOfDay, $lte: endOfDay },
-            status: 'confirmed'
+            status: "paid",
+            $or: [
+                // ✅ Pagamentos com paymentDate explícito
+                { paymentDate: targetDate },
+
+                // ✅ Pagamentos antigos sem paymentDate — usa createdAt como fallback
+                {
+                    paymentDate: { $exists: false },
+                    createdAt: { $gte: startOfDay, $lte: endOfDay },
+                },
+            ],
         })
-            .populate({
-                path: 'patient',
-                select: 'fullName'
-            })
-            .populate({
-                path: 'doctor',
-                select: 'fullName specialty'
-            })
-            .populate({
-                path: 'package',
-                select: 'sessionType'
-            })
-            .select('amount paymentMethod notes createdAt')
-            .sort({ createdAt: -1 }) // Mais recentes primeiro
+            .populate("patient doctor package appointment")
             .lean();
+
 
         // Formatar dados para resposta
         const formattedPayments = payments.map(payment => ({

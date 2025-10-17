@@ -674,7 +674,7 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
         const updatedAppointment = await Appointment.findByIdAndUpdate(
             req.params.id,
             {
-                operationalStatus: 'cancelado',
+                operationalStatus: 'canceled',
                 status: 'canceled',
                 canceledReason: reason,
                 confirmedAbsence,
@@ -806,7 +806,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
             return res.status(404).json({ error: 'Agendamento não encontrado' });
         }
 
-        if (appointment.operationalStatus === 'confirmado') {
+        if (appointment.operationalStatus === 'confirmed') {
             return res.status(400).json({ error: 'Este agendamento já está concluído' });
         }
 
@@ -857,12 +857,12 @@ router.patch('/:id/complete', auth, async (req, res) => {
 
         // Atualizar agendamento
         const updateData = {
-            operationalStatus: 'confirmado',
-            clinicalStatus: 'concluído',
+            operationalStatus: 'confirmed',
+            clinicalStatus: 'completed',
             $push: {
                 history: {
-                    action: 'confirmado',
-                    newStatus: 'confirmado',
+                    action: 'confirmed',
+                    newStatus: 'confirmed',
                     changedBy: req.user._id,
                     timestamp: new Date(),
                     context: 'operacional',

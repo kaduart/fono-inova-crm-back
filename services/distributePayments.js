@@ -34,7 +34,7 @@ export const distributePayments = async (packageId, amount, mongoSession, parent
     // Ignora canceladas ou já totalmente pagas
     if (
       sessionDoc.status === 'canceled' ||
-      sessionDoc.operationalStatus === 'cancelado' ||
+      sessionDoc.operationalStatus === 'canceled' ||
       sessionDoc.paymentStatus === 'paid'
     )
       continue;

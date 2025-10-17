@@ -150,7 +150,7 @@ export const packageOperations = {
                     session: newSession._id,
                     package: newPackage._id,
                     serviceType: 'package_session',
-                    operationalStatus: 'agendado',
+                    operationalStatus: 'scheduled',
                     // ✅ começa como pendente (vai ser ajustado via Payment.post('save') se for o caso)
                     paymentStatus: 'pending'
                 });

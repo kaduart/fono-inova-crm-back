@@ -1,17 +1,17 @@
-// workers/followup.cron.js
-import pkg from "bullmq"; // ✅ CommonJS compat
+import { Queue } from "bullmq";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
-const { Queue } = pkg;
-
-import { redisConnection } from "../config/redisConnection.js";
 import Followup from "../models/Followup.js";
+import { getRedis, startRedis } from "../services/redisClient.js";
 
 dotenv.config();
 await mongoose.connect(process.env.MONGO_URI);
-console.log("🕒 Follow-up Cron (BullMQ + Upstash) - modo interval");
+await startRedis();
 
-const followupQueue = new Queue("followupQueue", { connection: redisConnection });
+const connection = getRedis();
+console.log(`🕒 Follow-up Cron (BullMQ + ${process.env.REDIS_URL ? "Upstash" : "Local"}) iniciado`);
+
+const followupQueue = new Queue("followupQueue", { connection });
 
 const checkAndQueueFollowups = async () => {
   try {
@@ -39,6 +39,8 @@ const checkAndQueueFollowups = async () => {
   }
 };
 
-// roda a cada 60s
-setInterval(checkAndQueueFollowups, 60 * 1000);
-console.log("⏱️ Varredura de follow-ups a cada 60s iniciada");
+// 🕐 Executa a cada 5 minutos em vez de 1 minuto
+setInterval(checkAndQueueFollowups, 5 * 60 * 1000);
+console.log("⏱️ Varredura de follow-ups a cada 5 minutos iniciada");
+
+checkAndQueueFollowups(); // roda 1x na inicialização

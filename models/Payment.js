@@ -139,7 +139,7 @@ paymentSchema.pre('save', async function (next) {
             if (appointment) {
                 this.appointment = appointment._id;
                 await mongoose.model('Appointment').findByIdAndUpdate(appointment._id, {
-                    $set: { payment: this._id, operationalStatus: 'pago' }
+                    $set: { payment: this._id, operationalStatus: 'paid' }
                 });
             }
         } catch (error) {
@@ -160,7 +160,7 @@ paymentSchema.post('save', async function (doc) {
         if (doc.appointment) {
             const appointment = await Appointment.findById(doc.appointment);
             if (appointment) {
-                if (appointment.operationalStatus === 'cancelado') {
+                if (appointment.operationalStatus === 'canceled') {
                     // 🚫 Não marcar como pago se o agendamento foi cancelado
                     await Appointment.findByIdAndUpdate(appointment._id, {
                         paymentStatus: 'canceled'
@@ -183,7 +183,7 @@ paymentSchema.post('save', async function (doc) {
                 const session = await Session.findById(doc.session);
                 if (session) {
                     // 🔹 Sessões canceladas não podem ficar pagas
-                    if (session.status === 'canceled' || session.operationalStatus === 'cancelado') {
+                    if (session.status === 'canceled' || session.operationalStatus === 'canceled') {
                         session.isPaid = false;
                         session.paymentStatus = 'canceled';
                         session.visualFlag = 'blocked';

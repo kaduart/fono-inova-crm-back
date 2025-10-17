@@ -315,7 +315,7 @@ export const getDoctorPatients = async (req, res) => {
     // Passo 1: buscar os appointments do médico (ignora cancelados)
     const appointments = await Appointment.find({
       doctor: doctorObjectId,
-      operationalStatus: { $ne: 'cancelado' }
+      operationalStatus: { $ne: 'canceled' }
     }).select('patient date time operationalStatus').lean();
 
     if (!appointments.length) {
@@ -474,21 +474,23 @@ export const getDoctorStats = async (req, res) => {
     };
 
     // Formatar para frontend
+    // 🔹 Formatar para frontend (versão atualizada com status em inglês)
     const formattedResult = {
       today: result.total,
       clinical: {
-        pending: result.clinicalStatus.pendente || 0,
-        inProgress: result.clinicalStatus.em_andamento || 0,
-        completed: result.clinicalStatus.concluído || 0,
-        noShow: result.clinicalStatus.faltou || 0
+        pending: result.clinicalStatus.pending || 0,
+        inProgress: result.clinicalStatus.in_progress || 0,
+        completed: result.clinicalStatus.completed || 0,
+        noShow: result.clinicalStatus.missed || 0
       },
       operational: {
-        scheduled: result.operationalStatus.agendado || 0,
-        confirmed: result.operationalStatus.confirmado || 0,
-        cancelled: result.operationalStatus.cancelado || 0,
-        paid: result.operationalStatus.pago || 0
+        scheduled: result.operationalStatus.scheduled || 0,
+        confirmed: result.operationalStatus.confirmed || 0,
+        canceled: result.operationalStatus.canceled || 0,
+        paid: result.operationalStatus.paid || 0
       }
     };
+
 
     res.status(200).json(formattedResult);
   } catch (error) {
