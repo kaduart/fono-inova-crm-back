@@ -458,16 +458,17 @@ export const packageOperations = {
 
                 // Funções auxiliares para status do agendamento
                 const getOperationalStatus = (s) => {
-                    if (s === 'completed') return 'confirmado';
-                    if (s === 'canceled') return 'cancelado';
-                    return 'agendado';
+                    if (s === 'completed') return 'confirmed'; // ✅ inglês
+                    if (s === 'canceled') return 'canceled';
+                    return 'scheduled';
                 };
 
                 const getClinicalStatus = (s, confirmed) => {
-                    if (s === 'completed') return 'concluído';
-                    if (s === 'canceled') return confirmed ? 'faltou' : 'cancelado';
-                    return 'pendente';
+                    if (s === 'completed') return 'completed'; // ✅ inglês
+                    if (s === 'canceled') return confirmed ? 'missed' : 'canceled';
+                    return 'pending';
                 };
+
 
                 // 1. Ajuste de pacote
                 if (sessionDoc.package) {

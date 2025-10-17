@@ -10,10 +10,10 @@ db.sessions.deleteMany({
 
 // deletar por id
 db.payments.deleteMany({
-  _id: ObjectId("68cc0b115cac66e0313cb3ca")
+  _id: ObjectId("68f24da5dbd680a8e1f108f1")
 });
 db.sessions.deleteMany({
-  _id: ObjectId("68cc0b125cac66e0313cb3cd")
+  _id: ObjectId("68f24da3dbd680a8e1f108e7")
 });
 db.appointments.deleteMany({
   _id: ObjectId("68cc0b115cac66e0313cb3c8")
@@ -62,23 +62,23 @@ db.appointments.find({
 // consultar pagamentos do dia
 db.payments.find({
   createdAt: {
-    $gte: ISODate("2025-10-16T00:00:00.000Z"),
-    $lt: ISODate("2025-10-17T00:00:00.000Z")
+    $gte: ISODate("2025-10-17T00:00:00.000Z"),
+    $lt: ISODate("2025-10-18T00:00:00.000Z")
   }
 })
 
 // consultar sessios do dia
 db.sessions.find({
   createdAt: {
-    $gte: ISODate("2025-08-18T00:00:00.000Z"),
-    $lt: ISODate("2025-08-18T23:59:00.000Z")
+    $gte: ISODate("2025-10-17T00:00:00.000Z"),
+    $lt: ISODate("2025-10-18T00:00:00.000Z")
   }
 })
 //consutla por ceratedat
-db.payments.find({
+db.appointments.find({
   createdAt: {
-    $gte: ISODate("2025-08-29T00:00:00.000Z"),
-    $lt: ISODate("2025-08-29T23:59:00.000Z")
+     $gte: ISODate("2025-10-17T00:00:00.000Z"),
+    $lt: ISODate("2025-10-18T00:00:00.000Z")
   }
 })
 
