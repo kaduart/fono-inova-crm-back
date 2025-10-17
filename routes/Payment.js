@@ -1001,6 +1001,7 @@ router.get('/totals', async (req, res) => {
  *   - Pagamentos (entradas do dia)
  *   - Resumos e métricas consolidados
  */
+// routes/dailyClosing.js
 router.get("/daily-closing", async (req, res) => {
     try {
         const { date } = req.query;
@@ -1015,12 +1016,13 @@ router.get("/daily-closing", async (req, res) => {
             .tz(`${targetDate}T23:59:59`, "America/Sao_Paulo")
             .toDate();
 
+        // 🔹 BUSCAR DADOS COMPLETOS
         const sessions = await Session.find({ date: targetDate })
             .populate("package patient doctor appointmentId");
 
+        // 🔹 Atualizar appointments a partir das sessions
         for (const s of sessions) {
             await updateAppointmentFromSession(s);
-
             if (s.appointmentId) {
                 await Appointment.findByIdAndUpdate(
                     s.appointmentId,
@@ -1028,11 +1030,10 @@ router.get("/daily-closing", async (req, res) => {
                         sessionValue: s.sessionValue,
                         paymentStatus: s.paymentStatus,
                         operationalStatus: mapStatusToOperational(s.status),
-                        clinicalStatus: mapStatusToClinical(s.status), // <-- novo
+                        clinicalStatus: mapStatusToClinical(s.status),
                     },
-                    { new: true, runValidators: false } // evita erro de enum
+                    { new: true, runValidators: false }
                 );
-
             }
         }
 
@@ -1044,6 +1045,7 @@ router.get("/daily-closing", async (req, res) => {
             .map((a) => a.patient?._id?.toString())
             .filter(Boolean);
 
+        // 🔹 BUSCAR PAGAMENTOS COM MAIS DETALHES
         const payments = await Payment.find({
             status: "paid",
             $or: [
@@ -1058,6 +1060,7 @@ router.get("/daily-closing", async (req, res) => {
             patientIdsOfDay.includes(p.patient?._id?.toString())
         );
 
+        // 🔹 FUNÇÕES AUXILIARES
         const normalizePaymentMethod = (method) => {
             if (!method) return "dinheiro";
             method = method.toLowerCase().trim();
@@ -1077,20 +1080,15 @@ router.get("/daily-closing", async (req, res) => {
             (appt.clinicalStatus || "").toLowerCase() === "completed";
 
         const isCanceled = (status) =>
-            (status || "").toLowerCase() === "canceled";
+            ["canceled", "cancelado"].includes((status || "").toLowerCase());
 
-        // ✅ Tradução para exibição legível (frontend ainda em PT)
-        const translateStatus = (status) => {
-            const map = {
-                scheduled: "agendado",
-                confirmed: "confirmado",
-                canceled: "cancelado",
-                paid: "pago",
-                missed: "faltou",
-            };
-            return map[status] || status;
-        };
+        const isConfirmed = (status) =>
+            ["confirmed", "confirmado"].includes((status || "").toLowerCase());
 
+        const isScheduled = (status) =>
+            ["scheduled", "agendado", "pending"].includes((status || "").toLowerCase());
+
+        // 🔹 ESTRUTURA COMPLETA DO RELATÓRIO
         const report = {
             date: targetDate,
             summary: {
@@ -1100,22 +1098,42 @@ router.get("/daily-closing", async (req, res) => {
                     canceled: 0,
                     pending: 0,
                     expectedValue: 0,
+                    pendingValue: 0,
+                    pendingCount: 0,
                 },
                 payments: {
                     totalReceived: 0,
                     byMethod: { dinheiro: 0, pix: 0, cartão: 0 },
                 },
             },
-            timelines: { appointments: [], payments: [] },
+            financial: {
+                totalReceived: 0,
+                totalExpected: 0,
+                paymentMethods: {
+                    dinheiro: { amount: 0, details: [] },
+                    pix: { amount: 0, details: [] },
+                    cartão: { amount: 0, details: [] },
+                },
+                packages: { total: 0, details: [] },
+            },
+            timelines: {
+                appointments: [],
+                payments: [],
+            },
+            professionals: [],
+            timeSlots: [],
         };
 
+        // 🔹 PROCESSAR APPOINTMENTS
         for (const appt of appointments) {
-            const status = (appt.operationalStatus || "").toLowerCase();
+            const operationalStatus = (appt.operationalStatus || "").toLowerCase();
+            const clinicalStatus = (appt.clinicalStatus || "").toLowerCase();
             const doctorName = appt.doctor?.fullName || "Não informado";
             const patientName = appt.patient?.fullName || "Não informado";
             const method = appt.package?.paymentMethod || appt.paymentMethod || "—";
             const isPackage = appt.serviceType === "package_session";
 
+            // Buscar pagamento relacionado
             const relatedPayment = payments.find(
                 (p) =>
                     p.patient?._id?.toString() === appt.patient?._id?.toString() &&
@@ -1139,28 +1157,36 @@ router.get("/daily-closing", async (req, res) => {
 
             const sessionValue = appt.sessionValue || 0;
 
+            // Atualizar summary
             report.summary.appointments.total++;
             report.summary.appointments.expectedValue += sessionValue;
 
             if (isAttended(appt)) report.summary.appointments.attended++;
-            else if (isCanceled(status)) report.summary.appointments.canceled++;
+            else if (isCanceled(operationalStatus))
+                report.summary.appointments.canceled++;
             else report.summary.appointments.pending++;
 
+            // Timeline appointments
             report.timelines.appointments.push({
-                id: appt._id,
+                id: appt._id.toString(),
                 patient: patientName,
                 service: appt.serviceType,
                 doctor: doctorName,
                 sessionValue,
                 method,
                 paidStatus,
-                status: translateStatus(status), // 👈 mostra em PT no front
+                operationalStatus,
+                clinicalStatus,
+                displayStatus: paidStatus,
                 date: appt.date,
                 time: appt.time,
                 isPackage,
+                paymentMethod: method,
+                packageId: appt.package?._id?.toString() || null,
             });
         }
 
+        // 🔹 PROCESSAR PAGAMENTOS
         for (const pay of filteredPayments) {
             const paymentDate =
                 typeof pay.paymentDate === "string"
@@ -1177,24 +1203,170 @@ router.get("/daily-closing", async (req, res) => {
             const patient = pay.patient?.fullName || "Avulso";
             const doctor = pay.doctor?.fullName || "Não vinculado";
 
+            // Atualizar resumo e financeiro
             report.summary.payments.totalReceived += amount;
             report.summary.payments.byMethod[method] += amount;
+            report.financial.totalReceived += amount;
+            report.financial.paymentMethods[method].amount += amount;
+            report.financial.paymentMethods[method].details.push({
+                id: pay._id.toString(),
+                type,
+                patient,
+                value: amount,
+                method,
+                createdAt: pay.createdAt,
+                doctor,
+                status: pay.status,
+                paymentDate,
+                referenceDate: pay.appointment?.date || null,
+                isAdvancePayment: pay.isAdvance || false,
+                appointmentId: pay.appointment?._id?.toString() || null,
+            });
 
+            if (type === "package_session" && pay.package) {
+                report.financial.packages.total += amount;
+                report.financial.packages.details.push({
+                    id: pay._id.toString(),
+                    patient,
+                    value: amount,
+                    method,
+                    sessions: pay.package?.totalSessions || 0,
+                    sessionValue: pay.package?.sessionValue || 0,
+                    date: paymentDate,
+                    packageId: pay.package._id.toString(),
+                });
+            }
+
+            // Timeline payments
             report.timelines.payments.push({
-                id: pay._id,
+                id: pay._id.toString(),
                 patient,
                 type,
                 method,
                 value: amount,
                 paymentDate,
                 doctor,
+                serviceType: pay.serviceType || null,
             });
         }
 
-        report.summary.appointments.canceled = appointments.filter((a) =>
-            isCanceled(a.operationalStatus)
+        // 🧮 RECALCULAR MÉTRICAS FINAIS APÓS OS LOOPS
+        const expected = report.summary.appointments.expectedValue || 0;
+        const received = report.summary.payments.totalReceived || 0;
+        report.summary.appointments.pendingValue = Math.max(expected - received, 0);
+        report.summary.appointments.pendingCount = report.timelines.appointments.filter(
+            (a) => a.paidStatus === "Pendente" && !isCanceled(a.operationalStatus)
         ).length;
 
+        // Corrigir totalExpected no financeiro
+        report.financial.totalExpected = expected;
+
+        // 🔹 PROCESSAR PROFISSIONAIS
+        const professionalsMap = {};
+        report.timelines.appointments.forEach((appt) => {
+            const doctor = appt.doctor;
+            if (!professionalsMap[doctor]) {
+                professionalsMap[doctor] = {
+                    name: doctor,
+                    appointments: [],
+                    confirmed: 0,
+                    canceled: 0,
+                    scheduled: 0,
+                    totalValue: 0,
+                };
+            }
+
+            professionalsMap[doctor].appointments.push(appt);
+
+            if (isConfirmed(appt.operationalStatus)) {
+                professionalsMap[doctor].confirmed++;
+                professionalsMap[doctor].totalValue += appt.sessionValue || 0;
+            } else if (isCanceled(appt.operationalStatus)) {
+                professionalsMap[doctor].canceled++;
+            } else {
+                professionalsMap[doctor].scheduled++;
+            }
+        });
+
+        report.professionals = Object.values(professionalsMap).map((prof) => {
+            const totalValue = prof.appointments.reduce(
+                (sum, a) => sum + (a.sessionValue || 0),
+                0
+            );
+            return {
+                ...prof,
+                totalValue,
+                sessionCount: prof.appointments.length,
+                efficiency:
+                    prof.appointments.length > 0
+                        ? (prof.confirmed / prof.appointments.length) * 100
+                        : 0,
+            };
+        });
+
+        // 🔹 PROCESSAR TIME SLOTS
+        const timeSlotsMap = {};
+        report.timelines.appointments.forEach((appt) => {
+            const time = appt.time.substring(0, 5);
+            if (!timeSlotsMap[time]) {
+                timeSlotsMap[time] = {
+                    time,
+                    appointments: [],
+                    count: 0,
+                    stats: {
+                        confirmed: 0,
+                        canceled: 0,
+                        scheduled: 0,
+                        revenue: 0,
+                        professionals: [],
+                    },
+                };
+            }
+
+            timeSlotsMap[time].appointments.push(appt);
+            timeSlotsMap[time].count++;
+
+            if (isConfirmed(appt.operationalStatus)) {
+                timeSlotsMap[time].stats.confirmed++;
+                timeSlotsMap[time].stats.revenue += appt.sessionValue || 0;
+            } else if (isCanceled(appt.operationalStatus)) {
+                timeSlotsMap[time].stats.canceled++;
+            } else {
+                timeSlotsMap[time].stats.scheduled++;
+            }
+
+            if (!timeSlotsMap[time].stats.professionals.includes(appt.doctor)) {
+                timeSlotsMap[time].stats.professionals.push(appt.doctor);
+            }
+        });
+
+        report.timeSlots = Object.values(timeSlotsMap)
+            .map((slot) => {
+                const total = slot.stats.confirmed + slot.stats.scheduled;
+                const confirmationRate =
+                    total > 0 ? (slot.stats.confirmed / total) * 100 : 0;
+
+                return {
+                    ...slot,
+                    totalSessions: slot.count,
+                    stats: {
+                        ...slot.stats,
+                        confirmationRate,
+                        occupancy: (slot.count / 10) * 100, // Dia de 10h úteis
+                    },
+                    alerts: {
+                        conflicts: slot.stats.professionals.length > 2 ? 1 : 0,
+                        highValue: slot.stats.revenue > 500,
+                        attentionNeeded: slot.stats.scheduled,
+                        lowConfirmation: confirmationRate < 60,
+                        professionalOverload:
+                            slot.stats.professionals.length === 1 && slot.count > 3,
+                    },
+                };
+            })
+            .sort((a, b) => a.time.localeCompare(b.time));
+
+        // 🔹 RETORNO FINAL
         res.json({
             success: true,
             data: report,
@@ -1203,6 +1375,8 @@ router.get("/daily-closing", async (req, res) => {
                 recordCount: {
                     appointments: appointments.length,
                     payments: filteredPayments.length,
+                    professionals: report.professionals.length,
+                    timeSlots: report.timeSlots.length,
                 },
             },
         });
@@ -1216,7 +1390,6 @@ router.get("/daily-closing", async (req, res) => {
         });
     }
 });
-
 
 const mapStatusToOperational = (status) => {
     switch ((status || "").toLowerCase()) {
