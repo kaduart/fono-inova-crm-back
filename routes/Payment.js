@@ -1185,6 +1185,11 @@ router.get("/daily-closing", async (req, res) => {
                 packageId: appt.package?._id?.toString() || null,
             });
         }
+console.log("💬 Pagamentos encontrados:", payments.map(p => ({
+  id: p._id.toString(),
+  doctor: p.doctor?.fullName || p.doctor?.name || null,
+  doctorModel: p.doctor?.__t || p.doctor?.constructor?.modelName || "—"
+})));
 
         // 🔹 PROCESSAR PAGAMENTOS
         for (const pay of filteredPayments) {

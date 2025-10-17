@@ -1,0 +1,8 @@
+import "./Doctor.js";
+import "./Patient.js";
+import "./Appointment.js";
+import "./Session.js";
+import "./Package.js";
+import "./Payment.js";
+import "./User.js";
+import "./Followup.js";

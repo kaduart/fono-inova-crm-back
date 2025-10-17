@@ -10,7 +10,7 @@ db.sessions.deleteMany({
 
 // deletar por id
 db.payments.deleteMany({
-  _id: ObjectId("68f24da5dbd680a8e1f108f1")
+  _id: ObjectId("68f26a8ec5bd0b3e3273e1e3")
 });
 db.sessions.deleteMany({
   _id: ObjectId("68f24da3dbd680a8e1f108e7")
