@@ -30,6 +30,7 @@ import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
 const { Queue, QueueEvents } = BullMQ;
 
+import "./models/index.js";
 // ======================================================
 // 📦 Rotas
 // ======================================================
