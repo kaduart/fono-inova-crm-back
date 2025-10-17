@@ -1261,10 +1261,17 @@ router.get("/daily-closing", async (req, res) => {
         // Corrigir totalExpected no financeiro
         report.financial.totalExpected = expected;
 
-        // 🔹 PROCESSAR PROFISSIONAIS
+        // 🔹 MAPAS INICIAIS
         const professionalsMap = {};
+        const timeSlotsMap = {};
+
+        // 🔹 PROCESSAR PROFISSIONAIS E TIME SLOTS
         report.timelines.appointments.forEach((appt) => {
-            const doctor = appt.doctor;
+            const doctor = appt.doctor || "Não informado";
+            const time = (appt.time || "").substring(0, 5);
+            const value = appt.sessionValue || 0;
+
+            // === PROFISSIONAL ===
             if (!professionalsMap[doctor]) {
                 professionalsMap[doctor] = {
                     name: doctor,
@@ -1275,39 +1282,15 @@ router.get("/daily-closing", async (req, res) => {
                     totalValue: 0,
                 };
             }
-
             professionalsMap[doctor].appointments.push(appt);
 
-            if (isConfirmed(appt.operationalStatus)) {
-                professionalsMap[doctor].confirmed++;
-                professionalsMap[doctor].totalValue += appt.sessionValue || 0;
-            } else if (isCanceled(appt.operationalStatus)) {
-                professionalsMap[doctor].canceled++;
-            } else {
-                professionalsMap[doctor].scheduled++;
-            }
-        });
+            if (isConfirmed(appt.operationalStatus)) professionalsMap[doctor].confirmed++;
+            else if (isCanceled(appt.operationalStatus)) professionalsMap[doctor].canceled++;
+            else professionalsMap[doctor].scheduled++;
 
-        report.professionals = Object.values(professionalsMap).map((prof) => {
-            const totalValue = prof.appointments.reduce(
-                (sum, a) => sum + (a.sessionValue || 0),
-                0
-            );
-            return {
-                ...prof,
-                totalValue,
-                sessionCount: prof.appointments.length,
-                efficiency:
-                    prof.appointments.length > 0
-                        ? (prof.confirmed / prof.appointments.length) * 100
-                        : 0,
-            };
-        });
+            professionalsMap[doctor].totalValue += value;
 
-        // 🔹 PROCESSAR TIME SLOTS
-        const timeSlotsMap = {};
-        report.timelines.appointments.forEach((appt) => {
-            const time = appt.time.substring(0, 5);
+            // === TIME SLOT ===
             if (!timeSlotsMap[time]) {
                 timeSlotsMap[time] = {
                     time,
@@ -1317,29 +1300,45 @@ router.get("/daily-closing", async (req, res) => {
                         confirmed: 0,
                         canceled: 0,
                         scheduled: 0,
-                        revenue: 0,
+                        revenueReceived: 0, // 💰 Só o que foi pago hoje
                         professionals: [],
                     },
                 };
             }
 
-            timeSlotsMap[time].appointments.push(appt);
-            timeSlotsMap[time].count++;
+            const slot = timeSlotsMap[time];
+            slot.appointments.push(appt);
+            slot.count++;
 
-            if (isConfirmed(appt.operationalStatus)) {
-                timeSlotsMap[time].stats.confirmed++;
-                timeSlotsMap[time].stats.revenue += appt.sessionValue || 0;
-            } else if (isCanceled(appt.operationalStatus)) {
-                timeSlotsMap[time].stats.canceled++;
-            } else {
-                timeSlotsMap[time].stats.scheduled++;
+            // Estatísticas de status
+            if (isConfirmed(appt.operationalStatus)) slot.stats.confirmed++;
+            else if (isCanceled(appt.operationalStatus)) slot.stats.canceled++;
+            else slot.stats.scheduled++;
+
+            // 💰 Receita do dia = apenas valores realmente pagos hoje
+            if (appt.paidStatus === "Pago no dia") {
+                slot.stats.revenueReceived += value;
             }
 
-            if (!timeSlotsMap[time].stats.professionals.includes(appt.doctor)) {
-                timeSlotsMap[time].stats.professionals.push(appt.doctor);
+            if (!slot.stats.professionals.includes(doctor)) {
+                slot.stats.professionals.push(doctor);
             }
         });
 
+        // 🔹 CONVERTER PROFISSIONAIS
+        report.professionals = Object.values(professionalsMap).map((prof) => {
+            const totalSessions = prof.appointments.length;
+            const efficiency =
+                totalSessions > 0 ? (prof.confirmed / totalSessions) * 100 : 0;
+
+            return {
+                ...prof,
+                sessionCount: totalSessions,
+                efficiency,
+            };
+        });
+
+        // 🔹 CONVERTER TIME SLOTS
         report.timeSlots = Object.values(timeSlotsMap)
             .map((slot) => {
                 const total = slot.stats.confirmed + slot.stats.scheduled;
@@ -1352,11 +1351,11 @@ router.get("/daily-closing", async (req, res) => {
                     stats: {
                         ...slot.stats,
                         confirmationRate,
-                        occupancy: (slot.count / 10) * 100, // Dia de 10h úteis
+                        occupancy: (slot.count / 10) * 100, // 10 blocos úteis por dia
                     },
                     alerts: {
                         conflicts: slot.stats.professionals.length > 2 ? 1 : 0,
-                        highValue: slot.stats.revenue > 500,
+                        highValue: slot.stats.revenueReceived > 500,
                         attentionNeeded: slot.stats.scheduled,
                         lowConfirmation: confirmationRate < 60,
                         professionalOverload:
@@ -1365,6 +1364,7 @@ router.get("/daily-closing", async (req, res) => {
                 };
             })
             .sort((a, b) => a.time.localeCompare(b.time));
+
 
         // 🔹 RETORNO FINAL
         res.json({
