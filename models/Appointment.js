@@ -29,13 +29,13 @@ const appointmentSchema = new mongoose.Schema({
   },
   operationalStatus: {
     type: String,
-    enum: ['agendado', 'confirmado', 'cancelado', 'pago', 'faltou'],
-    default: 'agendado'
+    enum: ['scheduled', 'confirmed','pending', 'canceled', 'paid', 'missed'],
+    default: 'scheduled',
   },
   clinicalStatus: {
     type: String,
-    enum: ['pendente', 'em_andamento', 'concluído', 'faltou'],
-    default: 'pendente'
+    enum: ['pending', 'in_progress', 'completed', 'missed'],
+    default: 'pending',
   },
   history: [{
     action: String,

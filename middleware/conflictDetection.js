@@ -25,7 +25,7 @@ export const checkAppointmentConflicts = async (req, res, next) => {
             doctor: new mongoose.Types.ObjectId(doctorId),
             date,
             time,
-            operationalStatus: { $ne: 'cancelado' },
+            operationalStatus: { $ne: 'canceled' },
             _id: { $ne: appointmentId }
         }).lean();
 
@@ -52,7 +52,7 @@ export const checkAppointmentConflicts = async (req, res, next) => {
             patient: new mongoose.Types.ObjectId(patientId),
             date,
             time,
-            operationalStatus: { $ne: 'cancelado' },
+            operationalStatus: { $ne: 'canceled' },
             _id: { $ne: appointmentId }
         }).lean();
 
@@ -122,7 +122,7 @@ export const getAvailableTimeSlots = async (req, res) => {
         const appointments = await Appointment.find({
             doctor: doctorId,
             date: date, // comparação direta string
-            operationalStatus: { $ne: 'cancelado' }
+            operationalStatus: { $ne: 'canceled' }
         });
 
         // 5. Extrair horários ocupados

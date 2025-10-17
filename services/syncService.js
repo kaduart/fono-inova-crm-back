@@ -106,24 +106,47 @@ const calculateValue = (doc, specialty) => {
     return DEFAULT_SPECIALTY_VALUES[specialty] || DEFAULT_SPECIALTY_VALUES.unknown;
 };
 
+// 🧭 Normaliza status operacional
 const getOperationalStatus = (status) => {
+    if (!status) return 'agendado';
+
+    const normalized = status.toLowerCase();
     const statusMap = {
-        'completed': 'confirmado',
-        'canceled': 'cancelado',
-        'agendado': 'agendado',
-        'confirmado': 'confirmado',
-        'concluído': 'concluído',
-        'faltou': 'faltou',
-        'pago': 'pago'
+        // inglês → português
+        completed: 'confirmado',
+        canceled: 'cancelado',
+        scheduled: 'agendado',
+        confirmed: 'confirmado',
+        paid: 'pago',
+
+        // português → português (mantém compatibilidade)
+        agendado: 'agendado',
+        confirmado: 'confirmado',
+        cancelado: 'cancelado',
+        concluído: 'concluído',
+        faltou: 'faltou',
+        pago: 'pago',
     };
-    return statusMap[status] || 'agendado';
+
+    return statusMap[normalized] || 'agendado';
 };
 
-const getClinicalStatus = (status, confirmedAbsence) => {
-    if (status === 'completed' || status === 'concluído') return 'concluído';
-    if (status === 'canceled' || status === 'cancelado') {
+// 🧠 Normaliza status clínico (considera ausências confirmadas)
+const getClinicalStatus = (status, confirmedAbsence = false) => {
+    if (!status) return 'pendente';
+
+    const normalized = status.toLowerCase();
+
+    if (['completed', 'concluído'].includes(normalized)) return 'concluído';
+    if (['in_progress', 'em_andamento'].includes(normalized)) return 'em_andamento';
+    if (['pending', 'pendente'].includes(normalized)) return 'pendente';
+    if (['missed', 'faltou'].includes(normalized)) return 'faltou';
+
+    if (['canceled', 'cancelado'].includes(normalized)) {
+        // Se a ausência foi confirmada, vira "faltou"
         return confirmedAbsence ? 'faltou' : 'cancelado';
     }
+
     return 'pendente';
 };
 

@@ -52,7 +52,7 @@ db.payments.find({
 
 //consulta agendamento por  patient
 db.appointments.find({
-  patient: ObjectId("68c029cecbdf4c1481b15592"),
+  patient: ObjectId("68f0ecb22de6dcb26c88a8e8"),
 });
 // conbsultar agednamenmto por id 
 db.appointments.find({
@@ -118,8 +118,8 @@ db.appointments.insertOne({
   doctor: ObjectId('684072213830f473da1b0b0b'),
   date: ISODate('2025-07-22T18:00:00.000Z'),
   time: '02:40',
-  operationalStatus: 'agendado',
-  clinicalStatus: 'pendente',
+  operationalStatus: 'scheduled',
+  clinicalStatus: 'pending',
   duration: 40,
   specialty: 'fonoaudiologia',
   history: [],

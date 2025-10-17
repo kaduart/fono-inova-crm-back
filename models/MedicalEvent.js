@@ -55,12 +55,12 @@ const medicalEventSchema = new mongoose.Schema({
     // Status
     operationalStatus: {
         type: String,
-        enum: ['agendado', 'confirmado', 'cancelado', 'pago', 'faltou'],
+        enum: ['scheduled' | 'confirmed' | 'pending' | 'canceled' | 'paid' | 'missed'],
         default: 'agendado'
     },
     clinicalStatus: {
         type: String,
-        enum: ['pendente', 'em_andamento', 'concluído', 'faltou'],
+        enum: ['pending' | 'in_progress' | 'completed' | 'missed'],
         default: 'pendente'
     },
     version: {
