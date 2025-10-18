@@ -16,7 +16,7 @@ db.sessions.deleteMany({
   _id: ObjectId("68f24da3dbd680a8e1f108e7")
 });
 db.appointments.deleteMany({
-  _id: ObjectId("68cc0b115cac66e0313cb3c8")
+  _id: ObjectId("68ed08d59a37fc7155f8aeb7")
 });
 
 // atualiza dados do pagamento
