@@ -5,6 +5,7 @@ import Package from '../models/Package.js';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import { distributePayments } from '../services/distributePayments.js';
+import Patient from '../models/Patient.js';
 
 const APPOINTMENTS_API_BASE_URL = 'http://167.234.249.6:5000/api';
 const validateInputs = {
@@ -120,6 +121,13 @@ export const packageOperations = {
 
             await newPackage.save({ session: mongoSession });
 
+            // 🔹 Vincular pacote ao paciente (dentro da transação)
+            await Patient.findByIdAndUpdate(
+                patientId,
+                { $addToSet: { packages: newPackage._id } }, // evita duplicatas
+                { session: mongoSession }
+            );
+
             // ==========================================================
             // 5️⃣ CRIAR TODAS AS SESSÕES BASEADAS NO PACOTE
             // ==========================================================
@@ -228,19 +236,22 @@ export const packageOperations = {
             // ==========================================================
             // 7️⃣ DISTRIBUIÇÃO FINAL (mantém compatibilidade com antigos fluxos)
             // ==========================================================
-            if (amountPaid > 0) {
+            // ==========================================================
+            // 7️⃣ DISTRIBUIÇÃO FINAL (APENAS SE NÃO HOUVER PAGAMENTOS ESPECÍFICOS)
+            // ==========================================================
+            if (amountPaid > 0 && payments.length === 0) {
                 const summaryPayment = new Payment({
                     package: newPackage._id,
                     amount: amountPaid,
                     patient: patientId,
                     serviceDate: date,
                     doctor: doctorId,
-                    paymentMethod: paymentMethod || payments[0]?.method,
+                    paymentMethod: paymentMethod,
                     status: 'paid',
                     serviceType: 'package_session',
                     sessionType,
                     paymentDate,
-                    kind: 'package_receipt'
+                    kind: 'package_receipt',
                 });
 
                 await summaryPayment.save({ session: mongoSession });
@@ -268,15 +279,36 @@ export const packageOperations = {
             });
 
         } catch (error) {
-            if (mongoSession.inTransaction() && !transactionCommitted) {
+            if (mongoSession?.inTransaction() && !transactionCommitted) {
                 await mongoSession.abortTransaction();
             }
-            res.status(500).json({
+
+            if (error.code === 11000 && error.message.includes('unique_appointment')) {
+                const dateMatch = error.message.match(/date:\s+"([^"]+)"/);
+                const timeMatch = error.message.match(/time:\s+"([^"]+)"/);
+
+                const date = dateMatch ? dateMatch[1] : 'data desconhecida';
+                const time = timeMatch ? timeMatch[1] : 'horário desconhecido';
+
+                // 👉 Envia HTML direto
+                const detailedMessage = `Já existe um agendamento para este paciente no dia ${date} às ${time}.`;
+
+                return res.status(400).json({
+                    success: false,
+                    message: detailedMessage,
+                    errorCode: 'DUPLICATE_APPOINTMENT'
+                });
+            }
+
+            console.error('❌ Erro ao criar agendamento/pacote:', error);
+
+            return res.status(500).json({
                 success: false,
-                message: error.message,
+                message: 'Erro ao criar agendamento ou pacote. Tente novamente.',
                 errorCode: 'PACKAGE_CREATION_ERROR'
             });
-        } finally {
+        }
+        finally {
             await mongoSession.endSession();
         }
     },
@@ -688,6 +720,14 @@ export const packageOperations = {
 
                 // d. Deletar o pacote principal
                 await Package.deleteOne({ _id: packageId }).session(session);
+
+                // 🔹 Remover referência do pacote do paciente
+                await Patient.findByIdAndUpdate(
+                    packageDoc.patient,
+                    { $pull: { packages: packageId } },
+                    { session }
+                );
+
 
                 // 5. Deletar eventos médicos relacionados
                 await MedicalEvent.deleteMany({

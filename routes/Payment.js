@@ -9,6 +9,7 @@ import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import { distributePayments } from '../services/distributePayments.js';
 import { updateAppointmentFromSession } from '../utils/appointmentUpdater.js';
+import { createNextPackageFromPrevious } from '../utils/createNextPackageFromPrevious.js';
 
 const router = express.Router();
 
@@ -280,9 +281,22 @@ router.get('/', async (req, res) => {
             })
             .populate({
                 path: 'package',
-                select: 'name totalSessions',
                 model: 'Package',
+                select: '_id name totalSessions totalPaid balance financialStatus sessionType patient doctor',
+                populate: [
+                    {
+                        path: 'patient',
+                        select: '_id fullName phoneNumber',
+                        model: 'Patient',
+                    },
+                    {
+                        path: 'doctor',
+                        select: '_id fullName specialty',
+                        model: 'Doctor',
+                    },
+                ],
             })
+
             .populate({
                 path: 'session',
                 select: 'date status',
@@ -924,75 +938,194 @@ router.get('/export/csv', authorize(['admin', 'secretary']), async (req, res) =>
 });
 
 // routes/paymentRoutes.js
-router.get('/totals', async (req, res) => {
+/**
+ * @route   GET /api/payments/totals
+ * @desc    Retorna totais financeiros com filtros dinâmicos
+ * @query   ?period=day|week|month|year|custom
+ *          ?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD (se custom)
+ *          ?doctorId=... 
+ *          ?paymentMethod=pix|dinheiro|cartão|boleto|transferência
+ *          ?serviceType=package|individual_session|evaluation
+ *          ?status=paid|pending|partial
+ */
+router.get("/totals", async (req, res) => {
     try {
-        const { doctorId, startDate, endDate } = req.query;
+        const {
+            period = "month",
+            startDate,
+            endDate,
+            doctorId,
+            paymentMethod,
+            serviceType,
+            status,
+        } = req.query;
 
-        const matchStage = {};
-        if (doctorId) matchStage.doctor = mongoose.Types.ObjectId(doctorId);
-        if (startDate && endDate) {
-            matchStage.createdAt = {
-                $gte: new Date(startDate),
-                $lte: new Date(endDate)
-            };
+        // ======================================================
+        // 🗓️ 1. Definir intervalo de datas
+        // ======================================================
+        const now = new Date();
+        let rangeStart, rangeEnd;
+
+        switch (period) {
+            case "day":
+                rangeStart = new Date(now.setHours(0, 0, 0, 0));
+                rangeEnd = new Date(now.setHours(23, 59, 59, 999));
+                break;
+            case "week": {
+                const day = now.getDay();
+                const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+                rangeStart = new Date(now.setDate(diff));
+                rangeStart.setHours(0, 0, 0, 0);
+                rangeEnd = new Date(rangeStart);
+                rangeEnd.setDate(rangeStart.getDate() + 6);
+                rangeEnd.setHours(23, 59, 59, 999);
+                break;
+            }
+            case "month":
+                rangeStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                rangeEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+                break;
+            case "year":
+                rangeStart = new Date(now.getFullYear(), 0, 1);
+                rangeEnd = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+                break;
+            case "custom":
+                rangeStart = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
+                rangeEnd = endDate ? new Date(endDate) : new Date();
+                break;
+            default:
+                rangeStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                rangeEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
         }
 
+        // ======================================================
+        // 🎛️ 2. Filtros dinâmicos
+        // ======================================================
+        const matchStage = {
+            createdAt: { $gte: rangeStart, $lte: rangeEnd },
+        };
+
+        // 🔹 Caso o período seja "all", remove o filtro de data
+        if (period === "all") {
+            delete matchStage.createdAt;
+        }
+
+        if (doctorId) matchStage.doctor = new mongoose.Types.ObjectId(doctorId);
+        if (paymentMethod) matchStage.paymentMethod = paymentMethod;
+        if (serviceType) matchStage.serviceType = serviceType;
+        if (status) matchStage.status = status;
+
+        // ======================================================
+        // 💰 3. Agregação principal
+        // ======================================================
         const aggregation = [
             { $match: matchStage },
             {
                 $group: {
                     _id: null,
-                    totalReceived: {
-                        $sum: {
-                            $cond: [{ $eq: ["$status", "paid"] }, "$amount", 0]
-                        }
-                    },
-                    totalPending: {
-                        $sum: {
-                            $cond: [{ $eq: ["$status", "pending"] }, "$amount", 0]
-                        }
-                    },
-                    countReceived: {
-                        $sum: {
-                            $cond: [{ $eq: ["$status", "paid"] }, 1, 0]
-                        }
-                    },
-                    countPending: {
-                        $sum: {
-                            $cond: [{ $eq: ["$status", "pending"] }, 1, 0]
-                        }
-                    }
-                }
-            }
+                    totalReceived: { $sum: { $cond: [{ $eq: ["$status", "paid"] }, "$amount", 0] } },
+                    totalPending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, "$amount", 0] } },
+                    totalPartial: { $sum: { $cond: [{ $eq: ["$status", "partial"] }, "$amount", 0] } },
+                    countReceived: { $sum: { $cond: [{ $eq: ["$status", "paid"] }, 1, 0] } },
+                    countPending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } },
+                    countPartial: { $sum: { $cond: [{ $eq: ["$status", "partial"] }, 1, 0] } },
+                },
+            },
         ];
 
         const result = await Payment.aggregate(aggregation);
-
         const totals = result[0] || {
             totalReceived: 0,
             totalPending: 0,
+            totalPartial: 0,
             countReceived: 0,
-            countPending: 0
+            countPending: 0,
+            countPartial: 0,
         };
 
+        // ======================================================
+        // 📊 4. Agrupamento temporal (para gráficos)
+        // ======================================================
+        const breakdown = await Payment.aggregate([
+            { $match: matchStage },
+            {
+                $group: {
+                    _id: {
+                        year: { $year: "$createdAt" },
+                        month: { $month: "$createdAt" },
+                        day: { $dayOfMonth: "$createdAt" },
+                    },
+                    totalPaid: { $sum: { $cond: [{ $eq: ["$status", "paid"] }, "$amount", 0] } },
+                    totalPending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, "$amount", 0] } },
+                    totalPartial: { $sum: { $cond: [{ $eq: ["$status", "partial"] }, "$amount", 0] } },
+                },
+            },
+            { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 } },
+        ]);
+
+        // ======================================================
+        // 🧾 5. Agrupamento por método de pagamento
+        // ======================================================
+        const byMethod = await Payment.aggregate([
+            { $match: matchStage },
+            {
+                $group: {
+                    _id: "$paymentMethod",
+                    total: { $sum: "$amount" },
+                    count: { $sum: 1 },
+                },
+            },
+            { $sort: { total: -1 } },
+        ]);
+
+        // ======================================================
+        // 🎯 6. Agrupamento por tipo de serviço
+        // ======================================================
+        const byServiceType = await Payment.aggregate([
+            { $match: matchStage },
+            {
+                $group: {
+                    _id: "$serviceType",
+                    total: { $sum: "$amount" },
+                    count: { $sum: 1 },
+                },
+            },
+            { $sort: { total: -1 } },
+        ]);
+
+        // ======================================================
+        // ✅ 7. Retorno final
+        // ======================================================
         res.status(200).json({
             success: true,
+            filters: {
+                period,
+                doctorId,
+                paymentMethod,
+                serviceType,
+                status,
+                dateRange: {
+                    start: rangeStart.toISOString(),
+                    end: rangeEnd.toISOString(),
+                },
+            },
             data: {
-                totalReceived: totals.totalReceived,
-                totalPending: totals.totalPending,
-                countReceived: totals.countReceived,
-                countPending: totals.countPending
-            }
+                totals,
+                byMethod,
+                byServiceType,
+                breakdown,
+            },
         });
-
     } catch (err) {
-        console.error('Erro ao calcular totais:', err);
+        console.error("❌ Erro ao calcular totais financeiros:", err);
         res.status(500).json({
             success: false,
-            message: 'Erro ao calcular totais'
+            message: "Erro ao calcular totais financeiros",
+            error: err.message,
         });
     }
 });
+
 
 /**
  * 🔹 NOVO ENDPOINT: /daily-closing
@@ -1002,9 +1135,13 @@ router.get('/totals', async (req, res) => {
  *   - Resumos e métricas consolidados
  */
 // routes/dailyClosing.js
+// ======================================================
+// 📅 ROTA: FECHAMENTO DIÁRIO
+// ======================================================
 router.get("/daily-closing", async (req, res) => {
     try {
         const { date } = req.query;
+
         const targetDate = date
             ? moment.tz(date, "America/Sao_Paulo").format("YYYY-MM-DD")
             : moment.tz(new Date(), "America/Sao_Paulo").format("YYYY-MM-DD");
@@ -1016,11 +1153,12 @@ router.get("/daily-closing", async (req, res) => {
             .tz(`${targetDate}T23:59:59`, "America/Sao_Paulo")
             .toDate();
 
-        // 🔹 BUSCAR DADOS COMPLETOS
+        // ======================================================
+        // 🔹 Atualizar agendamentos com base nas sessões
+        // ======================================================
         const sessions = await Session.find({ date: targetDate })
             .populate("package patient doctor appointmentId");
 
-        // 🔹 Atualizar appointments a partir das sessions
         for (const s of sessions) {
             await updateAppointmentFromSession(s);
             if (s.appointmentId) {
@@ -1037,6 +1175,9 @@ router.get("/daily-closing", async (req, res) => {
             }
         }
 
+        // ======================================================
+        // 🔹 Buscar agendamentos e pagamentos
+        // ======================================================
         const appointments = await Appointment.find({ date: targetDate })
             .populate("doctor patient package")
             .lean();
@@ -1045,7 +1186,6 @@ router.get("/daily-closing", async (req, res) => {
             .map((a) => a.patient?._id?.toString())
             .filter(Boolean);
 
-        // 🔹 BUSCAR PAGAMENTOS COM MAIS DETALHES
         const payments = await Payment.find({
             status: "paid",
             $or: [
@@ -1060,7 +1200,9 @@ router.get("/daily-closing", async (req, res) => {
             patientIdsOfDay.includes(p.patient?._id?.toString())
         );
 
-        // 🔹 FUNÇÕES AUXILIARES
+        // ======================================================
+        // 🔹 Helpers
+        // ======================================================
         const normalizePaymentMethod = (method) => {
             if (!method) return "dinheiro";
             method = method.toLowerCase().trim();
@@ -1075,20 +1217,18 @@ router.get("/daily-closing", async (req, res) => {
             return "dinheiro";
         };
 
-        const isAttended = (appt) =>
-            (appt.operationalStatus || "").toLowerCase() === "confirmed" ||
-            (appt.clinicalStatus || "").toLowerCase() === "completed";
-
         const isCanceled = (status) =>
             ["canceled", "cancelado"].includes((status || "").toLowerCase());
-
         const isConfirmed = (status) =>
             ["confirmed", "confirmado"].includes((status || "").toLowerCase());
+        const isCompleted = (status) =>
+            ["completed", "completado", "realizado"].includes(
+                (status || "").toLowerCase()
+            );
 
-        const isScheduled = (status) =>
-            ["scheduled", "agendado", "pending"].includes((status || "").toLowerCase());
-
-        // 🔹 ESTRUTURA COMPLETA DO RELATÓRIO
+        // ======================================================
+        // 🔹 Estrutura inicial
+        // ======================================================
         const report = {
             date: targetDate,
             summary: {
@@ -1109,6 +1249,7 @@ router.get("/daily-closing", async (req, res) => {
             financial: {
                 totalReceived: 0,
                 totalExpected: 0,
+                totalRevenue: 0,
                 paymentMethods: {
                     dinheiro: { amount: 0, details: [] },
                     pix: { amount: 0, details: [] },
@@ -1124,16 +1265,17 @@ router.get("/daily-closing", async (req, res) => {
             timeSlots: [],
         };
 
-        // 🔹 PROCESSAR APPOINTMENTS
+        // ======================================================
+        // 🔹 Processar agendamentos
+        // ======================================================
         for (const appt of appointments) {
-            const operationalStatus = (appt.operationalStatus || "").toLowerCase();
+            const opStatus = (appt.operationalStatus || "").toLowerCase();
             const clinicalStatus = (appt.clinicalStatus || "").toLowerCase();
             const doctorName = appt.doctor?.fullName || "Não informado";
             const patientName = appt.patient?.fullName || "Não informado";
             const method = appt.package?.paymentMethod || appt.paymentMethod || "—";
             const isPackage = appt.serviceType === "package_session";
 
-            // Buscar pagamento relacionado
             const relatedPayment = payments.find(
                 (p) =>
                     p.patient?._id?.toString() === appt.patient?._id?.toString() &&
@@ -1155,18 +1297,18 @@ router.get("/daily-closing", async (req, res) => {
                     : "Pago antes"
                 : "Pendente";
 
-            const sessionValue = appt.sessionValue || 0;
+            const sessionValue = Number(appt.sessionValue || 0);
 
-            // Atualizar summary
+            // Atualizar contadores
             report.summary.appointments.total++;
-            report.summary.appointments.expectedValue += sessionValue;
-
-            if (isAttended(appt)) report.summary.appointments.attended++;
-            else if (isCanceled(operationalStatus))
-                report.summary.appointments.canceled++;
+            if (isCanceled(opStatus)) report.summary.appointments.canceled++;
+            else if (isConfirmed(opStatus) || isCompleted(clinicalStatus))
+                report.summary.appointments.attended++;
             else report.summary.appointments.pending++;
 
-            // Timeline appointments
+            report.summary.appointments.expectedValue += sessionValue;
+
+            // Timeline
             report.timelines.appointments.push({
                 id: appt._id.toString(),
                 patient: patientName,
@@ -1175,7 +1317,7 @@ router.get("/daily-closing", async (req, res) => {
                 sessionValue,
                 method,
                 paidStatus,
-                operationalStatus,
+                operationalStatus: opStatus,
                 clinicalStatus,
                 displayStatus: paidStatus,
                 date: appt.date,
@@ -1185,30 +1327,25 @@ router.get("/daily-closing", async (req, res) => {
                 packageId: appt.package?._id?.toString() || null,
             });
         }
-console.log("💬 Pagamentos encontrados:", payments.map(p => ({
-  id: p._id.toString(),
-  doctor: p.doctor?.fullName || p.doctor?.name || null,
-  doctorModel: p.doctor?.__t || p.doctor?.constructor?.modelName || "—"
-})));
 
-        // 🔹 PROCESSAR PAGAMENTOS
+        // ======================================================
+        // 🔹 Processar pagamentos
+        // ======================================================
         for (const pay of filteredPayments) {
             const paymentDate =
                 typeof pay.paymentDate === "string"
                     ? pay.paymentDate
-                    : moment(pay.createdAt)
-                        .tz("America/Sao_Paulo")
-                        .format("YYYY-MM-DD");
+                    : moment(pay.createdAt).tz("America/Sao_Paulo").format("YYYY-MM-DD");
 
             if (paymentDate !== targetDate && pay.paymentDate) continue;
 
-            const amount = pay.amount || 0;
+            const amount = Number(pay.amount || 0);
             const method = normalizePaymentMethod(pay.paymentMethod);
             const type = pay.serviceType || "outro";
             const patient = pay.patient?.fullName || "Avulso";
             const doctor = pay.doctor?.fullName || "Não vinculado";
 
-            // Atualizar resumo e financeiro
+            // Totais
             report.summary.payments.totalReceived += amount;
             report.summary.payments.byMethod[method] += amount;
             report.financial.totalReceived += amount;
@@ -1242,7 +1379,6 @@ console.log("💬 Pagamentos encontrados:", payments.map(p => ({
                 });
             }
 
-            // Timeline payments
             report.timelines.payments.push({
                 id: pay._id.toString(),
                 patient,
@@ -1255,28 +1391,52 @@ console.log("💬 Pagamentos encontrados:", payments.map(p => ({
             });
         }
 
-        // 🧮 RECALCULAR MÉTRICAS FINAIS APÓS OS LOOPS
-        const expected = report.summary.appointments.expectedValue || 0;
+        // ======================================================
+        // 🧮 Cálculos Fono Inova
+        // ======================================================
         const received = report.summary.payments.totalReceived || 0;
-        report.summary.appointments.pendingValue = Math.max(expected - received, 0);
-        report.summary.appointments.pendingCount = report.timelines.appointments.filter(
-            (a) => a.paidStatus === "Pendente" && !isCanceled(a.operationalStatus)
+        const validAppointments = report.timelines.appointments.filter(
+            (a) => !isCanceled(a.operationalStatus)
+        );
+
+        // 💼 Total previsto (não cancelados)
+        report.financial.totalExpected = validAppointments.reduce(
+            (sum, a) => sum + (a.sessionValue || 0),
+            0
+        );
+
+        // 💰 Recebido no dia
+        report.financial.totalReceived = received;
+
+        // ⏳ A receber (não pagos e não cancelados)
+        report.financial.totalRevenue = validAppointments
+            .filter((a) => a.paidStatus === "Pendente")
+            .reduce((sum, a) => sum + (a.sessionValue || 0), 0);
+
+        report.summary.appointments.pendingCount = validAppointments.filter(
+            (a) => a.paidStatus === "Pendente"
         ).length;
 
-        // Corrigir totalExpected no financeiro
-        report.financial.totalExpected = expected;
+        // ======================================================
+        // 🔹 Logs
+        // ======================================================
+        console.log("📊 FECHAMENTO FINAL", targetDate);
+        console.log("✅ Agendamentos válidos:", validAppointments.length);
+        console.log("💰 Recebido:", report.financial.totalReceived);
+        console.log("📅 Previsto:", report.financial.totalExpected);
+        console.log("⏳ A receber:", report.financial.totalRevenue);
 
-        // 🔹 MAPAS INICIAIS
+        // ======================================================
+        // 🔹 Montar relatórios por profissional e horários
+        // ======================================================
         const professionalsMap = {};
         const timeSlotsMap = {};
 
-        // 🔹 PROCESSAR PROFISSIONAIS E TIME SLOTS
         report.timelines.appointments.forEach((appt) => {
             const doctor = appt.doctor || "Não informado";
             const time = (appt.time || "").substring(0, 5);
             const value = appt.sessionValue || 0;
 
-            // === PROFISSIONAL ===
             if (!professionalsMap[doctor]) {
                 professionalsMap[doctor] = {
                     name: doctor,
@@ -1287,15 +1447,15 @@ console.log("💬 Pagamentos encontrados:", payments.map(p => ({
                     totalValue: 0,
                 };
             }
+
             professionalsMap[doctor].appointments.push(appt);
-
-            if (isConfirmed(appt.operationalStatus)) professionalsMap[doctor].confirmed++;
-            else if (isCanceled(appt.operationalStatus)) professionalsMap[doctor].canceled++;
+            if (isConfirmed(appt.operationalStatus))
+                professionalsMap[doctor].confirmed++;
+            else if (isCanceled(appt.operationalStatus))
+                professionalsMap[doctor].canceled++;
             else professionalsMap[doctor].scheduled++;
-
             professionalsMap[doctor].totalValue += value;
 
-            // === TIME SLOT ===
             if (!timeSlotsMap[time]) {
                 timeSlotsMap[time] = {
                     time,
@@ -1305,7 +1465,7 @@ console.log("💬 Pagamentos encontrados:", payments.map(p => ({
                         confirmed: 0,
                         canceled: 0,
                         scheduled: 0,
-                        revenueReceived: 0, // 💰 Só o que foi pago hoje
+                        revenueReceived: 0,
                         professionals: [],
                     },
                 };
@@ -1314,64 +1474,41 @@ console.log("💬 Pagamentos encontrados:", payments.map(p => ({
             const slot = timeSlotsMap[time];
             slot.appointments.push(appt);
             slot.count++;
-
-            // Estatísticas de status
             if (isConfirmed(appt.operationalStatus)) slot.stats.confirmed++;
             else if (isCanceled(appt.operationalStatus)) slot.stats.canceled++;
             else slot.stats.scheduled++;
-
-            // 💰 Receita do dia = apenas valores realmente pagos hoje
-            if (appt.paidStatus === "Pago no dia") {
+            if (appt.paidStatus === "Pago no dia")
                 slot.stats.revenueReceived += value;
-            }
-
-            if (!slot.stats.professionals.includes(doctor)) {
+            if (!slot.stats.professionals.includes(doctor))
                 slot.stats.professionals.push(doctor);
-            }
         });
 
-        // 🔹 CONVERTER PROFISSIONAIS
         report.professionals = Object.values(professionalsMap).map((prof) => {
             const totalSessions = prof.appointments.length;
             const efficiency =
                 totalSessions > 0 ? (prof.confirmed / totalSessions) * 100 : 0;
-
-            return {
-                ...prof,
-                sessionCount: totalSessions,
-                efficiency,
-            };
+            return { ...prof, sessionCount: totalSessions, efficiency };
         });
 
-        // 🔹 CONVERTER TIME SLOTS
         report.timeSlots = Object.values(timeSlotsMap)
             .map((slot) => {
                 const total = slot.stats.confirmed + slot.stats.scheduled;
-                const confirmationRate =
-                    total > 0 ? (slot.stats.confirmed / total) * 100 : 0;
-
+                const confirmationRate = total > 0 ? (slot.stats.confirmed / total) * 100 : 0;
                 return {
                     ...slot,
                     totalSessions: slot.count,
                     stats: {
                         ...slot.stats,
                         confirmationRate,
-                        occupancy: (slot.count / 10) * 100, // 10 blocos úteis por dia
-                    },
-                    alerts: {
-                        conflicts: slot.stats.professionals.length > 2 ? 1 : 0,
-                        highValue: slot.stats.revenueReceived > 500,
-                        attentionNeeded: slot.stats.scheduled,
-                        lowConfirmation: confirmationRate < 60,
-                        professionalOverload:
-                            slot.stats.professionals.length === 1 && slot.count > 3,
+                        occupancy: (slot.count / 10) * 100,
                     },
                 };
             })
             .sort((a, b) => a.time.localeCompare(b.time));
 
-
-        // 🔹 RETORNO FINAL
+        // ======================================================
+        // 🔹 Retorno final
+        // ======================================================
         res.json({
             success: true,
             data: report,
@@ -1390,11 +1527,11 @@ console.log("💬 Pagamentos encontrados:", payments.map(p => ({
         res.status(500).json({
             success: false,
             error: "Erro ao gerar relatório diário",
-            details:
-                process.env.NODE_ENV === "development" ? error.message : undefined,
+            details: process.env.NODE_ENV === "development" ? error.message : undefined,
         });
     }
 });
+
 
 const mapStatusToOperational = (status) => {
     switch ((status || "").toLowerCase()) {
@@ -1575,7 +1712,7 @@ router.get('/daily-payments-details', async (req, res) => {
                 },
             ],
         })
-            .populate("patient doctor package appointment")
+            .populate("patient doctor package appointment advancedSessions")
             .lean();
 
 
@@ -1682,9 +1819,9 @@ router.post('/add', async (req, res) => {
             serviceType,
         } = req.body;
 
-        const currentDate = new Date();
+        console.log('💰 Iniciando registro de pagamento:', req.body);
 
-        // 🔹 1. Validação básica
+        // 1️⃣ Validação
         if (!packageId || !amount || amount <= 0 || !patientId || !doctorId || !serviceType) {
             return res.status(400).json({
                 success: false,
@@ -1692,65 +1829,54 @@ router.post('/add', async (req, res) => {
             });
         }
 
-        // 🔹 2. Buscar o pacote
+        // 2️⃣ Buscar pacote e sessões
         const pkg = await Package.findById(packageId)
             .populate('sessions')
             .session(mongoSession);
 
         if (!pkg) {
-            return res.status(404).json({
-                success: false,
-                message: 'Pacote não encontrado',
-            });
+            return res.status(404).json({ success: false, message: 'Pacote não encontrado.' });
         }
 
-        // 🔹 3. Criar pagamento principal (inicia como pending)
+        const totalValue = pkg.totalValue ?? pkg.totalSessions * pkg.sessionValue;
+        const balance = pkg.balance ?? Math.max(totalValue - pkg.totalPaid, 0);
+
+        console.log(`📦 Pacote atual: total R$${totalValue} | saldo R$${balance}`);
+
+        let remaining = amount;
+
+        // 3️⃣ Aplicar pagamento no pacote atual
+        const applied = Math.min(remaining, balance);
+        const newTotalPaid = pkg.totalPaid + applied;
+        const newBalance = Math.max(totalValue - newTotalPaid, 0);
+        const status = newBalance === 0 ? 'paid' : 'partial';
+
+        // 4️⃣ Registrar pagamento principal
         const parentPayment = await Payment.create(
-            [
-                {
-                    patient: patientId,
-                    doctor: doctorId,
-                    serviceType,
-                    amount,
-                    paymentMethod,
-                    notes: note || '',
-                    status: 'pending', // status inicial
-                    package: packageId,
-                    createdAt: currentDate,
-                },
-            ],
+            [{
+                patient: patientId,
+                doctor: doctorId,
+                serviceType,
+                amount: applied,
+                paymentMethod,
+                notes: note || '',
+                status,
+                package: packageId,
+                createdAt: new Date(),
+                paymentDate: paymentDate || new Date(),
+            }],
             { session: mongoSession }
         );
 
-        // 🔹 4. Distribuir o pagamento entre as sessões
+        // 5️⃣ Distribuir valor nas sessões (se aplicável)
         const updatedPackage = await distributePayments(
             pkg._id,
-            amount,
+            applied,
             mongoSession,
             parentPayment[0]._id
         );
 
-        // 🔹 5. Calcular o status real após a distribuição
-        const remainingBalance = updatedPackage.balance ?? 0;
-        const totalValue = updatedPackage.totalValue ?? 0;
-
-        let paymentStatus = 'paid';
-        if (remainingBalance > 0 && remainingBalance < totalValue) {
-            paymentStatus = 'partial';
-        } else if (remainingBalance === totalValue) {
-            paymentStatus = 'pending';
-        }
-
-        console.log(`📊 Pagamento distribuído — Status: ${paymentStatus} | Saldo: ${remainingBalance} | Total: ${totalValue}`);
-
-        // 🔹 6. Atualizar o pagamento com o status correto
-        await Payment.findByIdAndUpdate(
-            parentPayment[0]._id,
-            { status: paymentStatus },
-            { session: mongoSession }
-        );
-
-        // 🔹 7. Atualizar o pacote com informações financeiras
+        // 6️⃣ Atualizar pacote
         await Package.findByIdAndUpdate(
             pkg._id,
             {
@@ -1764,29 +1890,68 @@ router.post('/add', async (req, res) => {
             { session: mongoSession }
         );
 
+        remaining -= applied;
+        let newPackage = null;
+
+        // 8️⃣ Caso haja excedente → criar novo pacote automático (cenário C)
+        if (remaining > 0) {
+            console.log(`💡 Valor excedente detectado: R$${remaining}`);
+
+            const result = await createNextPackageFromPrevious(pkg, remaining, {
+                session: mongoSession,
+                paymentMethod,
+                serviceType,
+                paymentDate,
+                notes: 'Pagamento adiantado após quitação do pacote anterior',
+            });
+
+            newPackage = result.newPackage;
+
+            console.log(
+                `✅ Novo pacote criado automaticamente: ${newPackage._id} | Início: ${newPackage.startDate}`
+            );
+        }
+
+        // 9️⃣ Commit
         await mongoSession.commitTransaction();
         transactionCommitted = true;
 
-        // 🔹 8. Buscar pacote atualizado
-        const finalResult = await Package.findById(pkg._id)
+        const finalPackage = await Package.findById(pkg._id)
             .populate('sessions payments')
             .lean();
+
+        console.log(`
+💳 Pagamento registrado:
+📦 Pacote: ${packageId}
+🧍 Paciente: ${patientId}
+👩‍⚕️ Doutor: ${doctorId}
+💰 Valor: R$${amount}
+💳 Método: ${paymentMethod}
+📅 Data: ${paymentDate}
+`);
 
         return res.status(201).json({
             success: true,
             message:
-                paymentStatus === 'partial'
-                    ? 'Pagamento parcial registrado com sucesso.'
-                    : 'Pagamento registrado e distribuído com sucesso.',
-            data: finalResult,
+                remaining > 0
+                    ? 'Pagamento quitado e novo pacote criado automaticamente 💚'
+                    : 'Pagamento registrado e distribuído com sucesso 💚',
+            data: {
+                currentPackage: {
+                    id: pkg._id,
+                    status: newBalance === 0 ? 'paid' : 'partial',
+                    balance: newBalance,
+                    totalPaid: newTotalPaid,
+                },
+                updatedPackage: finalPackage,
+                ...(newPackage && { newPackage }),
+            },
         });
     } catch (error) {
         if (mongoSession.inTransaction() && !transactionCommitted) {
             await mongoSession.abortTransaction();
         }
-
         console.error('❌ Erro ao registrar pagamento:', error);
-
         return res.status(500).json({
             success: false,
             message: error.message || 'Erro ao registrar pagamento.',
@@ -1796,6 +1961,7 @@ router.post('/add', async (req, res) => {
         await mongoSession.endSession();
     }
 });
+
 
 
 export default router;

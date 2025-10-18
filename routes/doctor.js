@@ -1,5 +1,5 @@
 import express from 'express';
-import { doctorOperations, getCalendarAppointments, getDoctorById, getDoctorPatients, getDoctorStats, getDoctorTherapySessions, getFutureAppointments, getTodaysAppointments } from '../controllers/doctorController.js';
+import { doctorOperations, getAtendencePatient, getCalendarAppointments, getDoctorById, getDoctorPatients, getDoctorStats, getDoctorTherapySessions, getFutureAppointments, getTodaysAppointments } from '../controllers/doctorController.js';
 import { auth } from '../middleware/auth.js';
 import validateId from '../middleware/validateId.js';
 
@@ -12,6 +12,7 @@ router.get('/therapy-sessions', auth, getDoctorTherapySessions);
 router.get('/appointments/stats', auth, getDoctorStats);
 router.get('/appointments/future', auth, getFutureAppointments);
 router.get('/appointments/calendar/:id', auth, getCalendarAppointments);
+router.get('/:id/attendance-summary', auth, getAtendencePatient);
 
 // Rotas principais
 router.post('/', auth, doctorOperations.create);

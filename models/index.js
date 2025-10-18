@@ -1,3 +1,4 @@
+import './Specialty.js';
 import "./Doctor.js";
 import "./Patient.js";
 import "./Appointment.js";

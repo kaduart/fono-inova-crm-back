@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import Appointment from '../models/Appointment.js';
 import Doctor from '../models/Doctor.js';
 import Patient from '../models/Patient.js';
+import Session from '../models/Session.js';
 import TherapySession from '../models/TherapySession.js';
 const ObjectId = mongoose.Types.ObjectId;
 
@@ -582,3 +583,81 @@ export const getFutureAppointments = async (req, res) => {
     });
   }
 };
+
+// GET /api/doctors/:id/attendance-summary
+export const getAtendencePatient = async (req, res) => {
+  try {
+    const doctorId = req.params.id;
+
+    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const endOfMonth = new Date();
+
+    // Busca todas as sessões do doutor com paciente populado
+    const sessions = await Session.find({
+      doctor: doctorId,
+      createdAt: { $gte: startOfMonth, $lte: endOfMonth }
+    })
+      .populate('patient', 'fullName')
+      .sort({ date: -1 });
+
+
+    const summary = {};
+
+    for (const s of sessions) {
+      const pid = s.patient?._id?.toString();
+      if (!pid) continue;
+
+      if (!summary[pid]) {
+        summary[pid] = {
+          patient: s.patient,
+          total: 0,
+          attended: 0,   // compareceu
+          missed: 0,     // faltou
+          canceled: 0,   // cancelou sem falta
+          pending: 0,    // pendente/agendado
+          lastSession: s.date,
+        };
+      }
+
+      summary[pid].total++;
+
+      switch (s.status) {
+        case 'completed':
+          summary[pid].attended++;
+          break;
+
+        case 'canceled':
+          if (s.confirmedAbsence === true) {
+            summary[pid].missed++;
+          } else {
+            summary[pid].canceled++;
+          }
+          break;
+
+        case 'pending':
+        case 'scheduled':
+          summary[pid].pending++;
+          break;
+      }
+
+      if (new Date(s.date) > new Date(summary[pid].lastSession)) {
+        summary[pid].lastSession = s.date;
+      }
+    }
+
+    // Calcula frequência por paciente
+    const result = Object.values(summary).map((s) => ({
+      ...s,
+      frequency: s.total > 0 ? Math.round((s.attended / s.total) * 100) : 0,
+    }));
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    console.error('❌ Erro ao gerar resumo de frequência:', err);
+    res
+      .status(500)
+      .json({ success: false, message: 'Erro ao gerar resumo de frequência.' });
+  }
+};
+
+
