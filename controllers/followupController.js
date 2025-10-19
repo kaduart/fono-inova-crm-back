@@ -1,14 +1,9 @@
-import { Queue } from 'bullmq';
 import Followup from '../models/Followup.js';
 import Lead from '../models/Leads.js';
 import { generateFollowupMessage } from "../services/amandaService.js";
 
-const followupQueue = new Queue('followupQueue', {
-    connection: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: process.env.REDIS_PORT || 6379,
-    },
-});
+import { followupQueue } from "../config/bullConfig.js";
+
 
 /**
  * 🧩 Agendar novo follow-up
@@ -103,37 +98,37 @@ export const getFollowupHistory = async (req, res) => {
 
 // 🔹 Função auxiliar pura (sem res.json)
 export const computeFollowupStats = async () => {
-  try {
-    const since = new Date();
-    since.setDate(since.getDate() - 30);
+    try {
+        const since = new Date();
+        since.setDate(since.getDate() - 30);
 
-    const pipeline = [
-      { $match: { createdAt: { $gte: since } } },
-      { $group: { _id: "$status", total: { $sum: 1 } } },
-    ];
+        const pipeline = [
+            { $match: { createdAt: { $gte: since } } },
+            { $group: { _id: "$status", total: { $sum: 1 } } },
+        ];
 
-    const data = await Followup.aggregate(pipeline);
+        const data = await Followup.aggregate(pipeline);
 
-    const total = data.reduce((acc, d) => acc + d.total, 0);
-    const sent = data.find(d => d._id === "sent")?.total || 0;
-    const failed = data.find(d => d._id === "failed")?.total || 0;
-    const scheduled = data.find(d => d._id === "scheduled")?.total || 0;
-    const processing = data.find(d => d._id === "processing")?.total || 0;
+        const total = data.reduce((acc, d) => acc + d.total, 0);
+        const sent = data.find(d => d._id === "sent")?.total || 0;
+        const failed = data.find(d => d._id === "failed")?.total || 0;
+        const scheduled = data.find(d => d._id === "scheduled")?.total || 0;
+        const processing = data.find(d => d._id === "processing")?.total || 0;
 
-    return {
-      total,
-      sent,
-      failed,
-      scheduled,
-      processing,
-      successRate: total ? ((sent / total) * 100).toFixed(1) : 0,
-    };
-  } catch (err) {
-    console.error("❌ Erro computeFollowupStats:", err);
-    return {
-      total: 0, sent: 0, failed: 0, scheduled: 0, processing: 0, successRate: 0,
-    };
-  }
+        return {
+            total,
+            sent,
+            failed,
+            scheduled,
+            processing,
+            successRate: total ? ((sent / total) * 100).toFixed(1) : 0,
+        };
+    } catch (err) {
+        console.error("❌ Erro computeFollowupStats:", err);
+        return {
+            total: 0, sent: 0, failed: 0, scheduled: 0, processing: 0, successRate: 0,
+        };
+    }
 };
 
 
@@ -141,53 +136,53 @@ export const computeFollowupStats = async () => {
  * 📊 Estatísticas de follow-ups
  */
 export const getFollowupStats = async (req, res) => {
-  try {
-    const total = await Followup.countDocuments();
-    const sent = await Followup.countDocuments({ status: "sent" });
-    const failed = await Followup.countDocuments({ status: "failed" });
-    const scheduled = await Followup.countDocuments({ status: "scheduled" });
-    const processing = await Followup.countDocuments({ status: "processing" });
-    const responded = await Followup.countDocuments({ responded: true });
+    try {
+        const total = await Followup.countDocuments();
+        const sent = await Followup.countDocuments({ status: "sent" });
+        const failed = await Followup.countDocuments({ status: "failed" });
+        const scheduled = await Followup.countDocuments({ status: "scheduled" });
+        const processing = await Followup.countDocuments({ status: "processing" });
+        const responded = await Followup.countDocuments({ responded: true });
 
-    const conversionRate = total ? ((responded / total) * 100).toFixed(1) : 0;
+        const conversionRate = total ? ((responded / total) * 100).toFixed(1) : 0;
 
-    // 🔍 dados complementares para Insights
-    const bestHours = await Followup.aggregate([
-      { $project: { hour: { $hour: { date: "$scheduledAt", timezone: "America/Sao_Paulo" } } } },
-      { $group: { _id: "$hour", total: { $sum: 1 } } },
-      { $sort: { total: -1 } },
-      { $limit: 1 },
-    ]);
+        // 🔍 dados complementares para Insights
+        const bestHours = await Followup.aggregate([
+            { $project: { hour: { $hour: { date: "$scheduledAt", timezone: "America/Sao_Paulo" } } } },
+            { $group: { _id: "$hour", total: { $sum: 1 } } },
+            { $sort: { total: -1 } },
+            { $limit: 1 },
+        ]);
 
-    const bestDays = await Followup.aggregate([
-      { $project: { weekday: { $dayOfWeek: { date: "$scheduledAt", timezone: "America/Sao_Paulo" } } } },
-      { $group: { _id: "$weekday", total: { $sum: 1 } } },
-      { $sort: { total: -1 } },
-      { $limit: 1 },
-    ]);
+        const bestDays = await Followup.aggregate([
+            { $project: { weekday: { $dayOfWeek: { date: "$scheduledAt", timezone: "America/Sao_Paulo" } } } },
+            { $group: { _id: "$weekday", total: { $sum: 1 } } },
+            { $sort: { total: -1 } },
+            { $limit: 1 },
+        ]);
 
-    const weekdayNames = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
-    const bestHour = bestHours[0]?._id ?? "-";
-    const bestDay = weekdayNames[(bestDays[0]?._id ?? 1) - 1];
+        const weekdayNames = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+        const bestHour = bestHours[0]?._id ?? "-";
+        const bestDay = weekdayNames[(bestDays[0]?._id ?? 1) - 1];
 
-    res.json({
-      success: true,
-      data: {
-        total,
-        sent,
-        failed,
-        scheduled,
-        processing,
-        responded,
-        conversionRate,
-        bestHour: bestHour !== "-" ? `${bestHour}h` : "-",
-        bestDay,
-      },
-    });
-  } catch (err) {
-    console.error("Erro ao gerar estatísticas:", err);
-    res.status(500).json({ error: "Erro ao gerar estatísticas de follow-ups" });
-  }
+        res.json({
+            success: true,
+            data: {
+                total,
+                sent,
+                failed,
+                scheduled,
+                processing,
+                responded,
+                conversionRate,
+                bestHour: bestHour !== "-" ? `${bestHour}h` : "-",
+                bestDay,
+            },
+        });
+    } catch (err) {
+        console.error("Erro ao gerar estatísticas:", err);
+        res.status(500).json({ error: "Erro ao gerar estatísticas de follow-ups" });
+    }
 };
 
 
@@ -403,30 +398,30 @@ export const getAvgResponseTime = async (req, res) => {
 };
 
 export const createFollowup = async (req, res) => {
-  try {
-    const lead = await Lead.findById(req.body.lead);
-    if (!lead) return res.status(404).json({ success: false, message: "Lead não encontrado" });
+    try {
+        const lead = await Lead.findById(req.body.lead);
+        if (!lead) return res.status(404).json({ success: false, message: "Lead não encontrado" });
 
-    let message = req.body.message;
+        let message = req.body.message;
 
-    // ✨ Se a mensagem estiver vazia, Amanda cria automaticamente
-    if (!message || message.trim() === "") {
-      message = await generateFollowupMessage(lead);
+        // ✨ Se a mensagem estiver vazia, Amanda cria automaticamente
+        if (!message || message.trim() === "") {
+            message = await generateFollowupMessage(lead);
+        }
+
+        const followup = await Followup.create({
+            lead: lead._id,
+            message,
+            scheduledAt: req.body.scheduledAt || new Date(),
+            status: "scheduled",
+            playbook: req.body.playbook || null,
+            note: req.body.note || "",
+        });
+
+        res.json({ success: true, data: followup });
+    } catch (err) {
+        console.error("❌ Erro ao criar follow-up:", err);
+        res.status(500).json({ success: false, error: err.message });
     }
-
-    const followup = await Followup.create({
-      lead: lead._id,
-      message,
-      scheduledAt: req.body.scheduledAt || new Date(),
-      status: "scheduled",
-      playbook: req.body.playbook || null,
-      note: req.body.note || "",
-    });
-
-    res.json({ success: true, data: followup });
-  } catch (err) {
-    console.error("❌ Erro ao criar follow-up:", err);
-    res.status(500).json({ success: false, error: err.message });
-  }
 };
 
