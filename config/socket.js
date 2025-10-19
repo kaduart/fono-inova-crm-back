@@ -1,3 +1,4 @@
+// config/socket.js
 import { Server } from "socket.io";
 
 let io;
@@ -8,19 +9,30 @@ export const initializeSocket = (server) => {
       origin: [
         "http://localhost:5173",
         "https://app.clinicafonoinova.com.br",
-        "https://fono-inova-crm-front.vercel.app", // ✅ corrigido
+        "https://fono-inova-crm-front.vercel.app",
       ],
       methods: ["GET", "POST"],
       credentials: true,
-      transports: ["websocket", "polling"],
     },
+    transports: ["polling", "websocket"], // 👈 polling primeiro
+    allowEIO3: true, // 👈 compatibilidade handshake
+    pingTimeout: 60000,
+    pingInterval: 25000,
+  });
+
+  io.engine.on("connection_error", (err) => {
+    console.error("❌ Engine.IO error:", {
+      code: err.code,
+      message: err.message,
+      context: err.context,
+    });
   });
 
   io.on("connection", (socket) => {
-    console.log("⚡ Cliente conectado ao Socket.IO:", socket.id);
+    console.log("⚡ Novo cliente conectado:", socket.id);
 
-    socket.on("disconnect", () => {
-      console.log("⚡ Cliente desconectado:", socket.id);
+    socket.on("disconnect", (reason) => {
+      console.log(`⚠️ Cliente desconectado (${reason})`);
     });
   });
 

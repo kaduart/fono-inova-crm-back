@@ -1,21 +1,20 @@
 // ======================================================
 // 🧱 Importações principais
 // ======================================================
-import express from "express";
+import cors from "cors";
 import dotenv from "dotenv";
-process.env.TZ = 'America/Sao_Paulo';
+import express from "express";
 import helmet from "helmet";
 import http from "http";
-import cors from "cors";
 import mongoose from "mongoose";
 import path from "path";
 import { fileURLToPath } from "url";
-import IORedis from "ioredis";
+import { followupEvents, followupQueue } from "./config/bullConfig.js";
+process.env.TZ = 'America/Sao_Paulo';
 
 // ======================================================
 // 🔧 Configurações internas e serviços
 // ======================================================
-import { redisConnection } from "./config/redisConnection.js";
 import { initializeSocket } from "./config/socket.js";
 import Followup from "./models/Followup.js";
 import { getRedis, startRedis } from "./services/redisClient.js";
@@ -24,10 +23,10 @@ import { registerWebhook } from "./services/sicoobService.js";
 // ======================================================
 // 🧩 BullMQ e Painel Bull Board
 // ======================================================
-import * as BullMQ from "bullmq";
 import { createBullBoard } from "@bull-board/api";
 import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 import { ExpressAdapter } from "@bull-board/express";
+import * as BullMQ from "bullmq";
 const { Queue, QueueEvents } = BullMQ;
 
 import "./models/index.js";
@@ -35,6 +34,7 @@ import "./models/index.js";
 // 📦 Rotas
 // ======================================================
 import adminRoutes from "./routes/admin.js";
+import amandaRoutes from "./routes/amanda.js";
 import analitycsRoutes from "./routes/analytics.js";
 import appointmentRoutes from "./routes/appointment.js";
 import authRoutes from "./routes/auth.js";
@@ -45,16 +45,16 @@ import googleAdsRoutes from "./routes/google-ads.js";
 import googleAdsAuthRoutes from "./routes/google-auth.js";
 import leadsRouter from "./routes/Leads.js";
 import loginRoutes from "./routes/login.js";
+import marketingRoutes from "./routes/marketing.js";
 import PackageRoutes from "./routes/Package.js";
 import patientRoutes from "./routes/patient.js";
 import PaymentRoutes from "./routes/Payment.js";
 import pixRoutes from "./routes/pix.js";
-console.log("🧠 PIX ROUTES carregado com sucesso ✅");
 import signupRoutes from "./routes/signup.js";
 import specialtyRouter from "./routes/specialty.js";
 import UserRoutes from "./routes/user.js";
 import whatsappRoutes from "./routes/whatsapp.js";
-import marketingRoutes from "./routes/marketing.js";
+console.log("🧠 PIX ROUTES carregado com sucesso ✅");
 
 // ======================================================
 // 🧭 Inicialização base
@@ -67,21 +67,6 @@ const app = express();
 const server = http.createServer(app);
 const io = initializeSocket(server);
 const PORT = process.env.PORT || 5000;
-
-// ======================================================
-// 🔇 Intercepta ruído do driver ioredis (evita 127.0.0.1)
-// ======================================================
-const originalEmit = IORedis.prototype.emit;
-IORedis.prototype.emit = function (event, ...args) {
-  try {
-    if (event === "error" && args[0]?.message?.includes("127.0.0.1:6379")) {
-      return; // ignora fallback local silenciosamente
-    }
-    return originalEmit.call(this, event, ...args);
-  } catch (err) {
-    console.error("⚠️ Erro interceptado no emit Redis:", err.message);
-  }
-};
 
 // ======================================================
 // 🔍 Captura global de erros não tratados
@@ -98,7 +83,14 @@ process.on("error", (err) => {
 // ======================================================
 // 🔒 Middlewares globais
 // ======================================================
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: false, // 👈 permite Upgrade
+  })
+);
+
 app.use(express.json({ limit: "2mb" }));
 
 const allowedOrigins = [
@@ -144,6 +136,7 @@ app.use("/api/specialties", specialtyRouter);
 app.use("/api/analytics", analitycsRoutes);
 app.use("/api/google-ads", googleAdsRoutes);
 app.use("/api/google-ads/auth", googleAdsAuthRoutes);
+app.use("/api/amanda", amandaRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);
@@ -232,13 +225,7 @@ function initFollowupWatcher() {
 // 🎛️ Painel Bull Board (BullMQ v5)
 // ======================================================
 try {
-  const followupQueue = new Queue("followupQueue", {
-    connection: redisConnection,
-  });
-  const followupEvents = new QueueEvents("followupQueue", {
-    connection: redisConnection,
-  });
-
+  // 🔹 Eventos globais da fila
   followupEvents.on("completed", ({ jobId }) =>
     console.log(`🎯 Job ${jobId} concluído com sucesso`)
   );
@@ -246,6 +233,7 @@ try {
     console.error(`💥 Job ${jobId} falhou: ${failedReason}`)
   );
 
+  // 🔹 Painel Bull Board
   const serverAdapter = new ExpressAdapter();
   serverAdapter.setBasePath("/admin/queues");
 
