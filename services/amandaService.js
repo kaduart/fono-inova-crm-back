@@ -1,4 +1,3 @@
-// services/amandaService.js
 import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -41,23 +40,38 @@ Regras:
 `;
 
     try {
-        const resp = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            temperature: 0.8,
-            max_tokens: 140,
-            messages: [
-                { role: "system", content: system },
-                { role: "user", content: intro + user }
-            ],
-        });
+        let resp;
+        try {
+            // 🧠 Tenta usar o modelo mais novo
+            resp = await openai.chat.completions.create({
+                model: "gpt-5-mini",
+                temperature: 0.8,
+                max_tokens: 140,
+                messages: [
+                    { role: "system", content: system },
+                    { role: "user", content: intro + user }
+                ],
+            });
+        } catch (err) {
+            console.warn("⚠️ GPT-5-mini indisponível, usando fallback gpt-4o-mini:", err.message);
+            // 🔁 Fallback automático
+            resp = await openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                temperature: 0.8,
+                max_tokens: 140,
+                messages: [
+                    { role: "system", content: system },
+                    { role: "user", content: intro + user }
+                ],
+            });
+        }
 
         const text = resp.choices?.[0]?.message?.content?.trim();
         if (!text) throw new Error("Resposta vazia da IA");
 
-        // Garantia do 💚 (caso o modelo “esqueça”)
         return text.includes("💚") ? text : `${text} 💚`;
     } catch (err) {
-        // Fallback seguro e brand-safe
+        console.error("❌ Erro no fallback IA Amanda:", err.message);
         return `Oi ${name}, tudo bem? Passando para saber se posso te ajudar com ${reason}. Temos horários flexíveis nesta semana. Posso te ajudar a agendar agora? 💚`;
     }
 }
