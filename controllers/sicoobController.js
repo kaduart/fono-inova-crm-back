@@ -233,3 +233,128 @@ async function processPixTransaction({ txid, amount, payer, date }, io) {
     await mongoSession.endSession();
   }
 }
+
+
+/**
+ * ============================================================
+ * 🆕 GERAR COBRANÇA PIX SEM VALOR (QR GENÉRICO)
+ * ============================================================
+ * Cliente bipou o QR fixo -> backend cria cobrança dinâmica
+ * Paciente define o valor no app bancário.
+ */
+export const createGenericPixHandler = async (req, res) => {
+  try {
+    const token = await getSicoobAccessToken();
+    const baseUrl = process.env.SICOOB_API_BASE_URL;
+    const chavePix = process.env.SICOOB_PIX_KEY;
+
+    // 🔹 Gera TXID único
+    const txid = `fono-${Date.now()}`;
+
+    // 🔹 Corpo da cobrança (sem campo "valor")
+    const body = {
+      calendario: { expiracao: 3600 }, // 1h de validade
+      chave: chavePix,
+      solicitacaoPagador: "Pagamento Fono Inova 💚 (valor definido no app do banco)",
+      txid,
+    };
+
+    console.log("🧾 Criando cobrança PIX genérica:", txid);
+
+    const { data } = await axios.post(`${baseUrl}/cob`, body, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    console.log("✅ Cobrança PIX genérica criada:", data.txid);
+
+    return res.status(200).json({
+      success: true,
+      txid,
+      qrcode: data.imagemQrcode,
+      location: data.loc?.location,
+      expiracao: data.calendario?.expiracao,
+    });
+  } catch (error) {
+    console.error(
+      "❌ Erro ao criar cobrança PIX genérica:",
+      error.response?.data || error.message
+    );
+    return res.status(500).json({
+      success: false,
+      message: "Erro ao criar cobrança PIX genérica",
+      error: error.response?.data || error.message,
+    });
+  }
+};
+
+/**
+ * ============================================================
+ * 3️⃣ CRIA COBRANÇA PIX DINÂMICA (GERA QR CODE E TXID)
+ * ============================================================
+ */
+export const createDynamicPixHandler = async (req, res) => {
+  try {
+    const token = await getSicoobAccessToken();
+
+    const {
+      valor,
+      txid,
+      descricao = "Pagamento Clínica Fono Inova 💚",
+      chave = process.env.SICOOB_PIX_KEY,
+      solicitacaoPagador = "Informe o nome do paciente",
+    } = req.body;
+
+    if (!valor || isNaN(valor)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valor inválido para cobrança PIX.",
+      });
+    }
+
+    const payload = {
+      calendario: { expiracao: 3600 }, // 1h
+      devedor: {
+        nome: "Paciente Fono Inova",
+        cpf: "00000000000",
+      },
+      valor: {
+        original: parseFloat(valor).toFixed(2),
+      },
+      chave,
+      solicitacaoPagador,
+      infoAdicionais: [
+        { nome: "Descrição", valor: descricao },
+        { nome: "Sistema", valor: "Fono Inova CRM 💚" },
+      ],
+    };
+
+    const url = `${process.env.SICOOB_API_BASE_URL}/cob/${txid}`;
+    const response = await axios.put(url, payload, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    console.log("✅ PIX dinâmico criado com sucesso:", response.data);
+
+    res.status(200).json({
+      success: true,
+      message: "Cobrança PIX gerada com sucesso.",
+      data: response.data,
+    });
+  } catch (error) {
+    console.error(
+      "❌ Erro ao criar cobrança PIX:",
+      error.response?.data || error.message
+    );
+    res.status(500).json({
+      success: false,
+      message: "Erro ao gerar cobrança PIX.",
+      error: error.response?.data || error.message,
+    });
+  }
+};
