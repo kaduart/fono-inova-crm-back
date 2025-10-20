@@ -1,86 +1,99 @@
 import Package from '../models/Package.js';
-import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import { updateAppointmentFromSession } from '../utils/appointmentUpdater.js';
 
 /**
  * Distribui o valor pago de um pacote entre as sessões correspondentes,
- * atualizando os status financeiros e visuais, sem criar pagamentos duplicados.
+ * atualizando os status financeiros e visuais sem duplicar pagamentos.
+ *
+ * - Mantém compatibilidade total com a versão anterior (que funcionava)
+ * - Ordena as sessões por data para distribuir corretamente
+ * - Atualiza pacote, sessões e appointments com base no valor pago
  *
  * @param {String} packageId - ID do pacote
  * @param {Number} amount - Valor recebido
- * @param {mongoose.ClientSession} mongoSession - Sessão do mongoose
+ * @param {mongoose.ClientSession|null} mongoSession - Sessão opcional
  * @param {String|null} parentPaymentId - ID do pagamento principal (recibo)
  * @returns {Promise<{ totalPaid: number, balance: number, totalValue: number, financialStatus: string }>}
  */
-export const distributePayments = async (packageId, amount, mongoSession, parentPaymentId = null) => {
-  const pkg = await Package.findById(packageId)
-    .populate('sessions')
-    .session(mongoSession);
-
+export const distributePayments = async (packageId, amount, mongoSession = null, parentPaymentId = null) => {
+  const pkg = await Package.findById(packageId).session(mongoSession);
   if (!pkg) throw new Error('Pacote não encontrado.');
 
   const paymentMethod = pkg.paymentMethod || 'pix';
   const sessionValue = pkg.sessionValue;
   let remainingAmount = amount;
 
-  // 🔹 Distribui o valor entre as sessões ativas e não pagas
-  for (const s of pkg.sessions) {
+  // ======================================================
+  // 1️⃣ Buscar todas as sessões do pacote em ordem cronológica
+  // ======================================================
+  const sessions = await Session.find({ package: packageId })
+    .sort({ date: 1 })
+    .session(mongoSession);
+
+  if (!sessions.length) {
+    console.warn(`⚠️ Nenhuma sessão encontrada para o pacote ${packageId}`);
+    return;
+  }
+
+  // ======================================================
+  // 2️⃣ Distribuir o pagamento entre as sessões
+  // ======================================================
+  for (const s of sessions) {
     if (remainingAmount <= 0) break;
 
-    const sessionDoc = await Session.findById(s._id).session(mongoSession);
-    if (!sessionDoc) continue;
-
-    // Ignora canceladas ou já totalmente pagas
+    // Ignora sessões canceladas ou já pagas
     if (
-      sessionDoc.status === 'canceled' ||
-      sessionDoc.operationalStatus === 'canceled' ||
-      sessionDoc.paymentStatus === 'paid'
-    )
-      continue;
+      s.status === 'canceled' ||
+      s.operationalStatus === 'canceled' ||
+      s.paymentStatus === 'paid'
+    ) continue;
 
-    const due = sessionValue - (sessionDoc.partialAmount || 0);
+    const due = sessionValue - (s.partialAmount || 0);
     const payNow = Math.min(remainingAmount, due);
 
     if (payNow > 0) {
-      sessionDoc.partialAmount = (sessionDoc.partialAmount || 0) + payNow;
+      s.partialAmount = (s.partialAmount || 0) + payNow;
 
-      // 🔹 Atualiza status financeiro da sessão
-      if (sessionDoc.partialAmount >= sessionValue) {
-        sessionDoc.isPaid = true;
-        sessionDoc.paymentStatus = 'paid';
-        sessionDoc.visualFlag = 'ok';
-      } else if (sessionDoc.partialAmount > 0) {
-        sessionDoc.isPaid = false;
-        sessionDoc.paymentStatus = 'partial';
-        sessionDoc.visualFlag = 'pending';
+      // Define status conforme o novo saldo
+      if (s.partialAmount >= sessionValue) {
+        s.isPaid = true;
+        s.paymentStatus = 'paid';
+        s.visualFlag = 'ok';
+      } else if (s.partialAmount > 0) {
+        s.isPaid = false;
+        s.paymentStatus = 'partial';
+        s.visualFlag = 'pending';
       } else {
-        sessionDoc.isPaid = false;
-        sessionDoc.paymentStatus = 'pending';
-        sessionDoc.visualFlag = 'blocked';
+        s.isPaid = false;
+        s.paymentStatus = 'pending';
+        s.visualFlag = 'blocked';
       }
 
-      // Vincula ao pagamento principal (para histórico, não novo pagamento)
-      sessionDoc.parentPayment = parentPaymentId || null;
-      await sessionDoc.save({ session: mongoSession });
-      await updateAppointmentFromSession(sessionDoc, mongoSession);
+      s.parentPayment = parentPaymentId || null;
+      s.paymentMethod = paymentMethod;
+      await s.save({ session: mongoSession });
+
+      // 🔄 Mantém sincronizado com Appointment
+      await updateAppointmentFromSession(s, mongoSession);
 
       remainingAmount -= payNow;
     }
   }
 
-  // 🔹 Recalcula o resumo financeiro do pacote com base nas sessões
-  const sessionDocs = await Session.find({ _id: { $in: pkg.sessions } }).session(mongoSession);
+  // ======================================================
+  // 3️⃣ Recalcular resumo financeiro do pacote
+  // ======================================================
+  const allSessions = await Session.find({ package: packageId }).session(mongoSession);
 
-  const totalPaid = sessionDocs.reduce((sum, s) => sum + (s.partialAmount || 0), 0);
+  const totalPaid = allSessions.reduce((sum, s) => sum + (s.partialAmount || 0), 0);
   const expectedTotal = pkg.totalSessions * sessionValue;
   const balance = Math.max(expectedTotal - totalPaid, 0);
 
   pkg.totalPaid = totalPaid;
   pkg.balance = balance;
-  pkg.paidSessions = sessionDocs.filter(s => s.paymentStatus === 'paid').length;
+  pkg.paidSessions = allSessions.filter(s => s.paymentStatus === 'paid').length;
 
-  // 🔹 Define o status financeiro conforme o progresso real
   if (balance <= 0) pkg.financialStatus = 'paid';
   else if (totalPaid > 0 && totalPaid < expectedTotal) pkg.financialStatus = 'partially_paid';
   else pkg.financialStatus = 'unpaid';
@@ -88,15 +101,19 @@ export const distributePayments = async (packageId, amount, mongoSession, parent
   pkg.lastPaymentAt = new Date();
   await pkg.save({ session: mongoSession });
 
-  // 🔹 Atualiza visualFlags das sessões
-  for (const s of sessionDocs) {
-    if (s.isPaid) s.visualFlag = 'ok';
-    else if (s.paymentStatus === 'partial') s.visualFlag = 'pending';
-    else s.visualFlag = 'blocked';
-    await s.save({ session: mongoSession });
+  // ======================================================
+  // 4️⃣ Atualizar visualFlags finais (garantia de consistência)
+  // ======================================================
+  for (const s of allSessions) {
+    let visualFlag = 'blocked';
+    if (s.paymentStatus === 'paid') visualFlag = 'ok';
+    else if (s.paymentStatus === 'partial') visualFlag = 'pending';
+    await Session.updateOne({ _id: s._id }, { $set: { visualFlag } }, { session: mongoSession });
   }
 
-  // 🔹 Retorna resumo financeiro coerente
+  // ======================================================
+  // 5️⃣ Retornar resumo coerente
+  // ======================================================
   return {
     totalPaid,
     balance,

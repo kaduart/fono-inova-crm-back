@@ -32,7 +32,7 @@ const router = express.Router();
 router.get('/available-slots', auth, getAvailableTimeSlots);
 
 // Cria um novo agendamento
-router.post('/', async (req, res) => {
+router.post('/', checkAppointmentConflicts, async (req, res) => {
     const {
         patientId,
         doctorId,
@@ -124,7 +124,7 @@ router.post('/', async (req, res) => {
         // 🔹 Caso 3: Sessão individual
         let individualSessionId = null;
 
-        if (serviceType === 'individual_session') {
+        if (serviceType === 'individual_session' || 'evaluation') {
             const newSession = await Session.create({
                 serviceType,
                 sessionType,
@@ -256,6 +256,9 @@ router.get('/', auth, async (req, res) => {
             .sort({ date: 1 })
             .lean();
 
+
+        console.log('📦 Total appointments encontrados:', appointments.length);
+
         // 🔧 Função para resolver visualFlag com base no estado real
         const resolveVisualFlag = (appt) => {
             if (appt.visualFlag) return appt.visualFlag; // já vem gravado? usa direto
@@ -290,7 +293,7 @@ router.get('/', auth, async (req, res) => {
 
         // 🔹 Mapear para o formato do FullCalendar
         const calendarEvents = appointments
-            .filter(appt => appt.patient)
+            .filter(appt => appt.patient || appt.package)
             .map(appt => {
                 const [hours, minutes] = appt.time?.split(':').map(Number) || [0, 0];
                 const start = new Date(appt.date);
