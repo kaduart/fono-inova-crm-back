@@ -4,6 +4,8 @@ import { Server } from "socket.io";
 let io;
 
 export const initializeSocket = (server) => {
+  const isDev = process.env.NODE_ENV === "development";
+
   io = new Server(server, {
     cors: {
       origin: [
@@ -14,23 +16,14 @@ export const initializeSocket = (server) => {
       methods: ["GET", "POST"],
       credentials: true,
     },
-    transports: ["polling", "websocket"], // 👈 polling primeiro
-    allowEIO3: true, // 👈 compatibilidade handshake
+    transports: isDev ? ["polling", "websocket"] : ["websocket"], // 👈 chave da correção
+    allowEIO3: true,
     pingTimeout: 60000,
     pingInterval: 25000,
   });
 
-  io.engine.on("connection_error", (err) => {
-    console.error("❌ Engine.IO error:", {
-      code: err.code,
-      message: err.message,
-      context: err.context,
-    });
-  });
-
   io.on("connection", (socket) => {
     console.log("⚡ Novo cliente conectado:", socket.id);
-
     socket.on("disconnect", (reason) => {
       console.log(`⚠️ Cliente desconectado (${reason})`);
     });

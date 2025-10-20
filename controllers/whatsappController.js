@@ -136,8 +136,77 @@ export const whatsappController = {
             console.error('❌ Erro no webhook WhatsApp:', err);
             res.status(500).json({ error: err.message });
         }
-    },
+    },/** 📩 Webhook (mensagens recebidas / status) */
+async webhook(req, res) {
+  try {
+    const entry = req.body.entry?.[0]?.changes?.[0]?.value;
+    const msg = entry?.messages?.[0];
+    const io = getIo();
 
+    // ⚡ Sempre responde rápido ao Meta
+    res.sendStatus(200);
+
+    if (!msg) {
+      console.warn("⚠️ Nenhuma mensagem válida recebida:", JSON.stringify(req.body, null, 2));
+      return;
+    }
+
+    const from = msg.from;
+    const timestamp = new Date(msg.timestamp * 1000);
+    const type = msg.type;
+    let content = "";
+
+    // 🔹 Detecta mídias
+    const mediaTypes = ["image", "video", "audio", "document", "sticker"];
+    if (mediaTypes.includes(type)) {
+      const media = msg[type] || {};
+      const caption = msg.caption || media.caption || "";
+      content = caption || `[${type.toUpperCase()} RECEBIDO]`;
+
+      console.log(`📎 Mídia recebida: ${type} (${media.mime_type}) de ${from}`);
+
+      // ✅ Notifica frontend
+      io.emit("whatsapp:new_media", {
+        from,
+        type,
+        mime: media.mime_type,
+        id: media.id,
+        caption: content,
+        timestamp,
+      });
+    } 
+    // 🔹 Texto comum
+    else if (type === "text") {
+      content = msg.text?.body || "";
+      console.log(`💬 Mensagem recebida de ${from}: ${content}`);
+
+      // ✅ Notifica frontend
+      io.emit("whatsapp:new_message", {
+        from,
+        text: content,
+        timestamp,
+      });
+    }
+
+    // 🔹 Salva no banco
+    await Message.create({
+      from,
+      to: process.env.PHONE_NUMBER_ID,
+      direction: "inbound",
+      type,
+      content,
+      status: "received",
+      timestamp,
+    });
+
+    // 🔹 Dispara automações / IA / follow-up
+    await handleWebhookEvent(req.body);
+
+  } catch (err) {
+    console.error("❌ Erro no webhook WhatsApp:", err);
+    res.status(500).json({ error: err.message });
+  }
+},
     /** 🧾 Retorna histórico de chat */
     async getChat(req, res) {
         try {
