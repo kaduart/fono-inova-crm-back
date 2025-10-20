@@ -38,14 +38,15 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
         doctorId,
         serviceType,
         paymentMethod,
-        status = 'paid',
+        status = 'scheduled', // ✅ nasce como agendado, nunca pago
         notes,
         packageId,
         sessionId,
         sessionType,
         isAdvancePayment = false,
-        advanceSessions = []
+        advanceSessions = [],
     } = req.body;
+
     const amount = parseFloat(req.body.paymentAmount) || 0;
     const currentDate = new Date();
 
@@ -54,11 +55,11 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
         if (!patientId || !doctorId || !serviceType || !paymentMethod) {
             return res.status(400).json({
                 success: false,
-                message: 'Campos obrigatórios faltando'
+                message: 'Campos obrigatórios faltando',
             });
         }
 
-        // 🔹 Caso 1: Pagamento adiantado (com sessões futuras)
+        // 🔹 Caso 1: Pagamento adiantado (mantido)
         if (isAdvancePayment || (advanceSessions && advanceSessions.length > 0)) {
             return await handleAdvancePayment(req, res);
         }
@@ -68,7 +69,7 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
             if (!packageId) {
                 return res.status(400).json({
                     success: false,
-                    message: 'ID do pacote é obrigatório para pagamentos de pacote'
+                    message: 'ID do pacote é obrigatório para pagamentos de pacote',
                 });
             }
 
@@ -79,7 +80,10 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
                 const pkgExists = await Package.exists({ _id: packageId });
                 if (!pkgExists) {
                     await mongoSession.abortTransaction();
-                    return res.status(404).json({ success: false, message: 'Pacote não encontrado' });
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Pacote não encontrado',
+                    });
                 }
 
                 const parentPayment = await Payment.create(
@@ -91,15 +95,14 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
                             amount,
                             paymentMethod,
                             notes,
-                            status: 'paid',
+                            status: 'pending', // ✅ pagamento pendente
                             package: packageId,
                             createdAt: currentDate,
-                        }
+                        },
                     ],
                     { session: mongoSession }
                 );
 
-                // 🔹 Distribui entre as sessões do pacote
                 await distributePayments(packageId, amount, mongoSession, parentPayment[0]._id);
 
                 await mongoSession.commitTransaction();
@@ -110,7 +113,7 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
 
                 return res.status(201).json({
                     success: true,
-                    message: 'Pagamento de pacote registrado com sucesso',
+                    message: 'Pagamento de pacote registrado (pendente)',
                     data: populatedPayment,
                 });
             } catch (err) {
@@ -121,38 +124,40 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
             }
         }
 
-        // 🔹 Caso 3: Sessão individual
+        // 🔹 Caso 3: Sessão individual ou avaliação
         let individualSessionId = null;
 
-        if (serviceType === 'individual_session' || 'evaluation') {
+        if (serviceType === 'individual_session' || serviceType === 'evaluation') {
             const newSession = await Session.create({
                 serviceType,
                 sessionType,
                 patient: patientId,
                 doctor: doctorId,
                 notes,
-                status: 'scheduled',
-                isPaid: true,
-                paymentStatus: 'paid',
-                visualFlag: 'ok',
+                status: 'scheduled',          // ✅ apenas agendada
+                isPaid: false,                // ✅ ainda não pago
+                paymentStatus: 'pending',     // ✅ pendente
+                visualFlag: 'pending',
                 createdAt: currentDate,
                 updatedAt: currentDate,
             });
             individualSessionId = newSession._id;
 
-            // Cria agendamento correspondente
+            // Cria o agendamento vinculado
             const appointment = await Appointment.create({
                 patient: patientId,
                 doctor: doctorId,
                 session: newSession._id,
-                date: req.body.date,   // ex: "2025-10-17"
-                time: req.body.time,   // ex: "10:00"
-                status: 'confirmado',
-                paymentStatus: 'paid',
-                visualFlag: 'ok',
-                serviceType: serviceType,          // ✅ agora presente
-                specialty: sessionType || 'fonoaudiologia', // ✅ fallback seguro
-
+                date: req.body.date,
+                time: req.body.time,
+                status: 'scheduled',
+                paymentStatus: 'pending',
+                clinicalStatus: 'pending',
+                operationalStatus: 'scheduled',
+                visualFlag: 'pending',
+                serviceType,
+                specialty: sessionType || 'fonoaudiologia',
+                notes,
             });
 
             await updateAppointmentFromSession(newSession);
@@ -170,21 +175,24 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
 
             const sessionDoc = await Session.findById(sessionId);
             if (!sessionDoc) {
-                return res.status(404).json({ success: false, message: 'Sessão não encontrada' });
+                return res.status(404).json({
+                    success: false,
+                    message: 'Sessão não encontrada',
+                });
             }
 
             await Session.findByIdAndUpdate(sessionId, {
-                status: 'confirmado',
-                isPaid: true,
-                paymentStatus: 'paid',
-                visualFlag: 'ok',
+                status: 'scheduled',           // ainda não confirmada
+                isPaid: false,
+                paymentStatus: 'pending',
+                visualFlag: 'pending',
                 updatedAt: currentDate,
             });
 
             await updateAppointmentFromSession(sessionDoc);
         }
 
-        // 🔹 Cria o registro do pagamento principal
+        // 🔹 Cria registro de pagamento (pendente)
         const paymentData = {
             patient: patientId,
             doctor: doctorId,
@@ -192,7 +200,7 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
             amount,
             paymentMethod,
             notes,
-            status,
+            status: 'pending', // ✅ nunca nasce "paid"
             createdAt: currentDate,
             updatedAt: currentDate,
         };
@@ -208,15 +216,14 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
 
         return res.status(201).json({
             success: true,
-            message: 'Pagamento registrado com sucesso',
+            message: 'Agendamento criado (pagamento pendente)',
             data: populatedPayment,
         });
-
     } catch (error) {
-        console.error('❌ Erro ao registrar pagamento:', error);
+        console.error('❌ Erro ao registrar agendamento:', error);
         return res.status(500).json({
             success: false,
-            message: 'Erro ao registrar pagamento',
+            message: 'Erro ao registrar agendamento',
             error: error.message,
         });
     }
