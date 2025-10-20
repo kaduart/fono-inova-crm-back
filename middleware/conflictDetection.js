@@ -93,55 +93,45 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     }
 };
 
+
 export const getAvailableTimeSlots = async (req, res) => {
     try {
         const { doctorId, date } = req.query;
-        console.log(`\n[Buscando horários para médico ${doctorId} em ${date}]`);
 
-        // 1. Validar a data de entrada
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-            return res.status(400).json({ error: 'Formato de data inválido. Use YYYY-MM-DD' });
-        }
+        if (!doctorId || !date)
+            return res.status(400).json({ error: 'doctorId e date são obrigatórios' });
 
-        // 2. Buscar médico e disponibilidade
         const doctor = await Doctor.findById(doctorId).lean();
-        if (!doctor) {
-            return res.status(404).json({ error: 'Médico não encontrado' });
-        }
+        if (!doctor) return res.status(404).json({ error: 'Médico não encontrado' });
 
-        // 3. Obter disponibilidade do dia
+        // 🗓️ Dia da semana (0 = domingo)
         const dayOfWeek = new Date(`${date}T12:00:00Z`).getDay();
         const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
         const dailyAvailability = doctor.weeklyAvailability.find(d => d.day === days[dayOfWeek]);
 
-        if (!dailyAvailability?.times?.length) {
-            return res.json([]);
-        }
+        if (!dailyAvailability?.times?.length) return res.json([]);
 
-        // 4. Buscar agendamentos do dia (sem conversão de fuso)
+        // 🧩 Buscar agendamentos válidos (todos os tipos, exceto cancelados)
         const appointments = await Appointment.find({
             doctor: doctorId,
-            date: date, // comparação direta string
-            operationalStatus: { $ne: 'canceled' }
-        });
+            date,
+            serviceType: { $in: ['individual_session', 'package_session', 'evaluation'] },
+            $nor: [
+                { status: { $in: ['canceled', 'cancelado', 'cancelada'] } },
+                { operationalStatus: { $in: ['canceled', 'cancelado', 'cancelada'] } },
+                { clinicalStatus: { $in: ['canceled', 'cancelado', 'cancelada'] } },
+            ],
+        }).select('time serviceType status operationalStatus clinicalStatus');
 
-        // 5. Extrair horários ocupados
-        const bookedTimes = appointments.map(app => app.time);
+        const bookedTimes = appointments.map(a => a.time);
 
-        // 6. Filtrar horários disponíveis
-        const availableSlots = dailyAvailability.times.filter(time =>
-            !bookedTimes.includes(time)
-        );
+        // 🔹 Remove os horários ocupados
+        const availableSlots = dailyAvailability.times.filter(t => !bookedTimes.includes(t));
 
         return res.json(availableSlots);
-
-    } catch (error) {
-        console.error('Erro detalhado:', {
-            message: error.message,
-            stack: error.stack,
-            query: req.query
-        });
-        return res.status(500).json({ error: 'Erro ao buscar horários disponíveis' });
+    } catch (err) {
+        console.error('❌ Erro getAvailableTimeSlots:', err);
+        res.status(500).json({ error: err.message });
     }
 };
 

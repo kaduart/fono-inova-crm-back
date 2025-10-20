@@ -52,7 +52,7 @@ db.payments.find({
 
 //consulta agendamento por  patient
 db.appointments.find({
-  patient: ObjectId("68f0ecb22de6dcb26c88a8e8"),
+  patient: ObjectId("68e7ed7b08b71f599ddc37e6"),
 });
 // conbsultar agednamenmto por id 
 db.appointments.find({
@@ -77,10 +77,17 @@ db.sessions.find({
 //consutla por ceratedat
 db.appointments.find({
   createdAt: {
-     $gte: ISODate("2025-10-17T00:00:00.000Z"),
-    $lt: ISODate("2025-10-18T00:00:00.000Z")
+    $gte: ISODate("2025-10-20T00:00:00.000Z"),
+    $lt: ISODate("2025-10-21T00:00:00.000Z")
   }
 })
+
+//agendamentos do dia 
+db.appointments.find(
+  { date: "2025-10-20" },
+  { doctor: 1, time: 1, operationalStatus: 1, clinicalStatus: 1 }
+)
+
 
 db.admins.findOne({
   email: "clinicafonoinova@gmail.com",
@@ -146,3 +153,20 @@ const stillWithoutTime = await Session.countDocuments({
 db.packages.deleteMany({
   status: "recovered",
 });
+
+//pacote por paciente 
+db.packages.find({ patient: ObjectId("6897dc360683ca3788ae815d") }).pretty()
+
+//mostra os detalhes do pacote
+db.packages.find({ _id: ObjectId("68f682092286c73db5d29d38") }).pretty();
+// deve retonrar qtd de sessoes do pacote
+db.sessions.find({ package: ObjectId("68f682092286c73db5d29d38") }).count();
+
+db.appointments.find({ package: ObjectId("68f6956de0e5b4debcb227e5") }).count();
+
+db.appointments.find({ package: ObjectId("68f6956de0e5b4debcb227e5") }, { date: 1, paymentStatus: 1, operationalStatus: 1 }).pretty()
+
+db.appointments.find(
+  { package: ObjectId("68f6956de0e5b4debcb227e5") },
+  { date: 1, status: 1, time: 1, operationalStatus: 1 }
+).pretty();
