@@ -9,6 +9,7 @@ router.post('/send-text', whatsappController.sendText);
 
 // 📩 Webhook
 router.post('/webhook', whatsappController.webhook);
+router.get('/webhook', whatsappController.getWebhook);
 
 // 💬 Histórico de chat
 router.get('/chat/:phone', whatsappController.getChat);

@@ -154,6 +154,7 @@ export async function handleWebhookEvent(payload) {
     const entry = payload.entry?.[0]?.changes?.[0]?.value;
     const msg = entry?.messages?.[0];
     const status = entry?.statuses?.[0];
+    console.log(`💬 Mensagem recebida de ${msg.from}: ${msg.text?.body}`);
 
     if (msg) {
         const from = msg.from;
