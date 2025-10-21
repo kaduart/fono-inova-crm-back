@@ -5,6 +5,7 @@ import {
     sendTemplateMessage,
     sendTextMessage
 } from '../services/whatsappService.js';
+import axios from 'axios'; 
 
 export const whatsappController = {
     /** ✉️ Envia template (mensagem com variáveis dinâmicas) */
@@ -278,4 +279,49 @@ export const whatsappController = {
             res.status(500).json({ error: err.message });
         }
     },
+
+    // 🔧 Adicione esta função no whatsappController.js
+    async proxyMedia(req, res) {
+        try {
+            console.log('🔍 DEBUG proxyMedia - Iniciando função'); // 👈 ADICIONE ESTE LOG
+
+            const { url } = req.query;
+            if (!url) {
+                console.log('❌ DEBUG - URL não fornecida'); // 👈 ADICIONE ESTE LOG
+                return res.status(400).json({
+                    success: false,
+                    error: 'Parâmetro "url" é obrigatório',
+                });
+            }
+
+            console.log('🔗 WhatsApp Media Proxy requisitado:', url);
+
+            const response = await axios({
+                method: 'GET',
+                url,
+                responseType: 'arraybuffer',
+                timeout: 20000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                    'Accept': '*/*',
+                },
+            });
+
+            const contentType = response.headers['content-type'] || 'application/octet-stream';
+            console.log(`✅ Proxy OK: ${contentType}`);
+
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+            res.send(response.data);
+        } catch (error) {
+            console.error('❌ Erro no proxyMedia:', error.message);
+            res.status(500).json({
+                success: false,
+                error: 'Falha ao carregar mídia',
+                details: error.message,
+            });
+        }
+    },
+
 };
+

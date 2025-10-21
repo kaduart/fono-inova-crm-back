@@ -53,6 +53,7 @@ import pixRoutes from "./routes/pix.js";
 import signupRoutes from "./routes/signup.js";
 import specialtyRouter from "./routes/specialty.js";
 import UserRoutes from "./routes/user.js";
+import proxyRoutes from "./routes/proxy.js";
 import whatsappRoutes from "./routes/whatsapp.js";
 console.log("🧠 PIX ROUTES carregado com sucesso ✅");
 
@@ -137,6 +138,7 @@ app.use("/api/analytics", analitycsRoutes);
 app.use("/api/google-ads", googleAdsRoutes);
 app.use("/api/google-ads/auth", googleAdsAuthRoutes);
 app.use("/api/amanda", amandaRoutes);
+app.use('/api', proxyRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);
