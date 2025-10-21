@@ -88,125 +88,84 @@ export const whatsappController = {
     /** 📩 Webhook (mensagens recebidas / status) */
     async webhook(req, res) {
         try {
+            const io = getIo();
             const entry = req.body.entry?.[0]?.changes?.[0]?.value;
             const msg = entry?.messages?.[0];
-            const io = getIo();
 
-            res.sendStatus(200); // resposta imediata obrigatória
+            // ⚡ Meta exige resposta imediata
+            res.sendStatus(200);
+
+            // --- [1] LOGA se chegou do WhatsApp
+            console.log("\n====================== 🌐 WEBHOOK RECEBIDO ======================");
+            console.log("🕐 Hora:", new Date().toLocaleString("pt-BR"));
+            console.log("📩 Body bruto:", JSON.stringify(req.body, null, 2));
 
             if (!msg) {
-                console.warn("⚠️ Nenhuma mensagem válida recebida:", JSON.stringify(req.body, null, 2));
-                return res.sendStatus(200);
-            }
-
-            // 🔹 Detecta mídias
-            const mediaTypes = ['image', 'video', 'audio', 'document', 'sticker'];
-            if (mediaTypes.includes(msg.type)) {
-                const media = msg[msg.type] || {};
-                const caption = msg.caption || media.caption || "";
-
-                console.log(`📎 Mídia recebida: ${msg.type} (${media.mime_type}) de ${msg.from}`);
-
-                io.emit('media-received', {
-                    from: msg.from,
-                    type: msg.type,
-                    mime: media.mime_type,
-                    id: media.id,
-                    caption,
-                    timestamp: msg.timestamp * 1000,
-                });
-
-                await Message.create({
-                    from: msg.from,
-                    to: process.env.PHONE_NUMBER_ID,
-                    direction: 'inbound',
-                    type: msg.type,
-                    content: caption || '[MÍDIA RECEBIDA]',
-                    status: 'received',
-                    timestamp: new Date(msg.timestamp * 1000),
-                });
-
-                console.log('🧭 Mídia encaminhada para análise manual.');
+                console.warn("⚠️ Nenhuma mensagem válida recebida.");
                 return;
             }
 
-            // 🔹 Texto normal → IA / follow-up
-            await handleWebhookEvent(req.body);
+            const from = msg.from;
+            const type = msg.type;
+            const timestamp = new Date(msg.timestamp * 1000);
+            let content = "";
+
+            console.log(`📥 Mensagem detectada de ${from} (${type})`);
+
+            // --- [2] Detecta mídia ou texto
+            if (type === "text") {
+                content = msg.text?.body || "";
+                console.log("💬 Conteúdo recebido:", content);
+
+                // --- [3] Emite evento para front
+                console.log("📡 Emitindo evento 'whatsapp:new_message' via Socket.IO...");
+                io.emit("whatsapp:new_message", { from, text: content, timestamp });
+                console.log("✅ Evento emitido para", io.engine.clientsCount, "clientes conectados");
+            }
+
+            const mediaTypes = ["image", "video", "audio", "document", "sticker"];
+            if (mediaTypes.includes(type)) {
+                const media = msg[type] || {};
+                const caption = msg.caption || media.caption || "";
+                content = caption || `[${type.toUpperCase()} RECEBIDO]`;
+
+                console.log(`📎 Mídia recebida: ${type} (${media.mime_type})`);
+                console.log("📡 Emitindo evento 'whatsapp:new_media' via Socket.IO...");
+                io.emit("whatsapp:new_media", {
+                    from,
+                    type,
+                    mime: media.mime_type,
+                    id: media.id,
+                    caption: content,
+                    timestamp,
+                });
+                console.log("✅ Evento emitido para", io.engine.clientsCount, "clientes conectados");
+            }
+
+            // --- [4] Confirma persistência no banco
+            await Message.create({
+                from,
+                to: process.env.PHONE_NUMBER_ID,
+                direction: "inbound",
+                type,
+                content,
+                status: "received",
+                timestamp,
+            });
+            console.log("💾 Mensagem salva no banco com sucesso");
+
+            // --- [5] Dispara IA / follow-up (sem await travando)
+            handleWebhookEvent(req.body)
+                .then(() => console.log("🤖 handleWebhookEvent executado com sucesso"))
+                .catch((err) => console.error("❌ Erro no handleWebhookEvent:", err));
+
+            console.log("=================================================================\n");
         } catch (err) {
-            console.error('❌ Erro no webhook WhatsApp:', err);
-            res.status(500).json({ error: err.message });
+            console.error("❌ Erro no webhook WhatsApp:", err);
+            res.sendStatus(500);
         }
-    },/** 📩 Webhook (mensagens recebidas / status) */
-async webhook(req, res) {
-  try {
-    const entry = req.body.entry?.[0]?.changes?.[0]?.value;
-    const msg = entry?.messages?.[0];
-    const io = getIo();
+    },
 
-    // ⚡ Sempre responde rápido ao Meta
-    res.sendStatus(200);
-
-    if (!msg) {
-      console.warn("⚠️ Nenhuma mensagem válida recebida:", JSON.stringify(req.body, null, 2));
-      return;
-    }
-
-    const from = msg.from;
-    const timestamp = new Date(msg.timestamp * 1000);
-    const type = msg.type;
-    let content = "";
-
-    // 🔹 Detecta mídias
-    const mediaTypes = ["image", "video", "audio", "document", "sticker"];
-    if (mediaTypes.includes(type)) {
-      const media = msg[type] || {};
-      const caption = msg.caption || media.caption || "";
-      content = caption || `[${type.toUpperCase()} RECEBIDO]`;
-
-      console.log(`📎 Mídia recebida: ${type} (${media.mime_type}) de ${from}`);
-
-      // ✅ Notifica frontend
-      io.emit("whatsapp:new_media", {
-        from,
-        type,
-        mime: media.mime_type,
-        id: media.id,
-        caption: content,
-        timestamp,
-      });
-    } 
-    // 🔹 Texto comum
-    else if (type === "text") {
-      content = msg.text?.body || "";
-      console.log(`💬 Mensagem recebida de ${from}: ${content}`);
-
-      // ✅ Notifica frontend
-      io.emit("whatsapp:new_message", {
-        from,
-        text: content,
-        timestamp,
-      });
-    }
-
-    // 🔹 Salva no banco
-    await Message.create({
-      from,
-      to: process.env.PHONE_NUMBER_ID,
-      direction: "inbound",
-      type,
-      content,
-      status: "received",
-      timestamp,
-    });
-
-    // 🔹 Dispara automações / IA / follow-up
-    await handleWebhookEvent(req.body);
-
-  } catch (err) {
-    console.error("❌ Erro no webhook WhatsApp:", err);
-    res.status(500).json({ error: err.message });
-  }
-},
     /** 🧾 Retorna histórico de chat */
     async getChat(req, res) {
         try {
