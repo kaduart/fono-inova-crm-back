@@ -140,7 +140,7 @@ export const packageOperations = {
                     for (const slot of selectedSlots) {
                         if (sessionsCreated >= finalTotalSessions) break;
 
-                        const dayIndex = {
+                        let dayIndex = {
                             monday: 1, tuesday: 2, wednesday: 3,
                             thursday: 4, friday: 5, saturday: 6, sunday: 7
                         }[slot.day?.toLowerCase()];
@@ -156,7 +156,16 @@ export const packageOperations = {
                         // ✅ Primeira sessão sempre respeita a data base informada
                         if (week === 0) {
                             next = moment(startDate);
+
+                            // 🧠 só força startDate se o dia do slot for igual ao dia da data base
+                            if (next.isoWeekday() !== dayIndex) {
+                                next = moment(startDate).isoWeekday(dayIndex);
+                                if (next.isBefore(startDate, 'day')) {
+                                    next.add(1, 'week');
+                                }
+                            }
                         }
+
 
                         // ✅ Se cair antes da data base, empurra pra próxima semana
                         if (next.isBefore(startDate, 'day')) {
@@ -206,7 +215,16 @@ export const packageOperations = {
                         // ✅ Primeira sessão sempre respeita a data base informada
                         if (week === 0) {
                             next = moment(startDate);
+
+                            // 🧠 só força startDate se o dia do slot for igual ao dia da data base
+                            if (next.isoWeekday() !== dayIndex) {
+                                next = moment(startDate).isoWeekday(dayIndex);
+                                if (next.isBefore(startDate, 'day')) {
+                                    next.add(1, 'week');
+                                }
+                            }
                         }
+
 
                         // ✅ Se cair antes da data base, empurra pra próxima semana
                         if (next.isBefore(startDate, 'day')) {
@@ -255,14 +273,54 @@ export const packageOperations = {
                 });
             }
 
-            const insertedAppointments = await Appointment.insertMany(appointmentsToCreate, { session: mongoSession });
+            const seen = new Set();
+            const uniqueAppointments = [];
+
+            for (const a of appointmentsToCreate) {
+                const key = `${a.date}-${a.time}-${a.patient}-${a.doctor}`;
+
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    uniqueAppointments.push(a);
+                } else {
+                    console.warn(`⛔ Sessão duplicada ignorada: ${key}`);
+                }
+            }
+
+            if (appointmentsToCreate.length !== uniqueAppointments.length) {
+                console.warn(`⚠️ Detectadas ${appointmentsToCreate.length - uniqueAppointments.length} duplicatas internas antes do insert.`);
+            }
+
+            const insertedAppointments = await Appointment.insertMany(uniqueAppointments, { session: mongoSession });
+
+
+            // 🔗 Vincula sessions e appointments com base em data/hora (não pelo índice)
+            const appointmentMap = new Map(
+                insertedAppointments.map(a => [`${a.date}-${a.time}-${a.patient}-${a.doctor}`, a._id])
+            );
+            console.log('Sessions:', insertedSessions.length, 'Appointments:', insertedAppointments.length);
+
 
             await Session.bulkWrite(
-                insertedSessions.map((s, i) => ({
-                    updateOne: { filter: { _id: s._id }, update: { $set: { appointmentId: insertedAppointments[i]._id } } }
-                })),
+                insertedSessions.map(s => {
+                    const key = `${s.date}-${s.time}-${s.patient}-${s.doctor}`;
+                    const appId = appointmentMap.get(key);
+
+                    if (!appId) {
+                        console.warn(`⚠️ Sessão sem appointment correspondente (${key}) — será ignorada no link.`);
+                        return { updateOne: { filter: { _id: s._id }, update: {} } }; // noop
+                    }
+
+                    return {
+                        updateOne: {
+                            filter: { _id: s._id },
+                            update: { $set: { appointmentId: appId } }
+                        }
+                    };
+                }),
                 { session: mongoSession }
             );
+
 
             // ==========================================================
             // 6️⃣ PAGAMENTOS

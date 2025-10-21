@@ -86,82 +86,93 @@ export const whatsappController = {
     },
 
     /** 📩 Webhook (mensagens recebidas / status) */
+    /** 📩 Webhook (mensagens recebidas / status) */
     async webhook(req, res) {
         try {
             const io = getIo();
             const entry = req.body.entry?.[0]?.changes?.[0]?.value;
             const msg = entry?.messages?.[0];
 
-            // ⚡ Meta exige resposta imediata
+            // ⚡ Responde imediatamente ao Meta
             res.sendStatus(200);
-
-            // --- [1] LOGA se chegou do WhatsApp
-            console.log("\n====================== 🌐 WEBHOOK RECEBIDO ======================");
-            console.log("🕐 Hora:", new Date().toLocaleString("pt-BR"));
-            console.log("📩 Body bruto:", JSON.stringify(req.body, null, 2));
 
             if (!msg) {
                 console.warn("⚠️ Nenhuma mensagem válida recebida.");
                 return;
             }
 
-            const from = msg.from;
+            const from = (msg.from || '').replace(/\D/g, '');
+            const to = (entry?.metadata?.display_phone_number || '').replace(/\D/g, '');
             const type = msg.type;
-            const timestamp = new Date(msg.timestamp * 1000);
-            let content = "";
+            const timestamp = new Date((msg.timestamp || Date.now()) * 1000);
 
-            console.log(`📥 Mensagem detectada de ${from} (${type})`);
+            let content = '';
+            let mediaUrl = null;
 
-            // --- [2] Detecta mídia ou texto
-            if (type === "text") {
-                content = msg.text?.body || "";
-                console.log("💬 Conteúdo recebido:", content);
+            console.log(`📩 Mensagem recebida de ${from} (${type})`);
 
-                // --- [3] Emite evento para front
-                console.log("📡 Emitindo evento 'whatsapp:new_message' via Socket.IO...");
-                io.emit("whatsapp:new_message", { from, text: content, timestamp });
-                console.log("✅ Evento emitido para", io.engine.clientsCount, "clientes conectados");
+            // 🔹 Texto normal
+            if (type === 'text') {
+                content = msg.text?.body || '';
             }
 
-            const mediaTypes = ["image", "video", "audio", "document", "sticker"];
+            // 🔹 Mídia (imagem, vídeo, áudio, documento)
+            const mediaTypes = ['image', 'video', 'audio', 'document', 'sticker'];
+            // dentro do webhook:
             if (mediaTypes.includes(type)) {
                 const media = msg[type] || {};
                 const caption = msg.caption || media.caption || "";
-                content = caption || `[${type.toUpperCase()} RECEBIDO]`;
 
+                // 🔹 Pega URL da mídia
+                const mediaUrl = media.url || null;
                 console.log(`📎 Mídia recebida: ${type} (${media.mime_type})`);
-                console.log("📡 Emitindo evento 'whatsapp:new_media' via Socket.IO...");
+
                 io.emit("whatsapp:new_media", {
                     from,
                     type,
                     mime: media.mime_type,
-                    id: media.id,
-                    caption: content,
+                    caption,
+                    url: mediaUrl,
                     timestamp,
                 });
-                console.log("✅ Evento emitido para", io.engine.clientsCount, "clientes conectados");
+
+                await Message.create({
+                    from,
+                    direction: "inbound",
+                    type,
+                    content: caption || `[${type.toUpperCase()}]`,
+                    mediaUrl,
+                    status: "received",
+                    timestamp,
+                });
             }
 
-            // --- [4] Confirma persistência no banco
-            await Message.create({
-                from,
-                to: process.env.PHONE_NUMBER_ID,
-                direction: "inbound",
-                type,
-                content,
-                status: "received",
-                timestamp,
-            });
-            console.log("💾 Mensagem salva no banco com sucesso");
+            console.log('💾 Mensagem salva no banco com sucesso');
 
-            // --- [5] Dispara IA / follow-up (sem await travando)
+            // 🔹 Emitir para o front via socket.io
+            if (type === 'text') {
+                io.emit('whatsapp:new_message', {
+                    from,
+                    text: content,
+                    timestamp,
+                });
+            } else if (mediaUrl) {
+                io.emit('whatsapp:new_media', {
+                    from,
+                    type,
+                    caption: content,
+                    url: mediaUrl,
+                    timestamp,
+                });
+            }
+
+            // 🔹 Disparar IA/follow-up assíncrono
             handleWebhookEvent(req.body)
-                .then(() => console.log("🤖 handleWebhookEvent executado com sucesso"))
-                .catch((err) => console.error("❌ Erro no handleWebhookEvent:", err));
+                .then(() => console.log('🤖 handleWebhookEvent executado com sucesso'))
+                .catch(err => console.error('❌ Erro no handleWebhookEvent:', err));
 
-            console.log("=================================================================\n");
         } catch (err) {
-            console.error("❌ Erro no webhook WhatsApp:", err);
+            console.error('❌ Erro no webhook WhatsApp:', err);
             res.sendStatus(500);
         }
     },
@@ -170,12 +181,20 @@ export const whatsappController = {
     async getChat(req, res) {
         try {
             const { phone } = req.params;
+
             if (!phone) {
                 return res.status(400).json({ error: 'Número de telefone é obrigatório' });
             }
 
+            // Normaliza para pegar qualquer formato possível do número
+            const cleanPhone = phone.replace(/\D/g, '');
+            const regex = new RegExp(cleanPhone, 'i');
+
             const msgs = await Message.find({
-                $or: [{ to: phone }, { from: phone }],
+                $or: [
+                    { from: { $regex: regex } },
+                    { to: { $regex: regex } },
+                ],
             }).sort({ timestamp: 1 });
 
             res.json({ success: true, data: msgs });

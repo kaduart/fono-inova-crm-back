@@ -62,7 +62,7 @@ const paymentSchema = new mongoose.Schema({
 
     paymentMethod: {
         type: String,
-        enum: ['dinheiro', 'pix', 'cartão'],
+        enum: ['dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'transferencia_bancaria', 'outro'],
         required: true
     },
     status: {
