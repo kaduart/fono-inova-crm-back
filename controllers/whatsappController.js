@@ -2,9 +2,8 @@ import { getIo } from '../config/socket.js';
 import Contact from '../models/Contact.js'; // 👈 novo
 import Message from '../models/Message.js';
 import {
-    handleWebhookEvent,
     sendTemplateMessage,
-    sendTextMessage,
+    sendTextMessage
 } from '../services/whatsappService.js';
 
 export const whatsappController = {
@@ -61,6 +60,13 @@ export const whatsappController = {
 
     /** ✅ Verificação do webhook (GET) */
     async getWebhook(req, res) {
+        console.log('🔐 [DEBUG] WEBHOOK VERIFICATION - FULL DETAILS:', {
+            query: req.query,
+            verifyToken: process.env.WHATSAPP_VERIFY_TOKEN,
+            hasToken: !!process.env.WHATSAPP_VERIFY_TOKEN,
+            tokenLength: process.env.WHATSAPP_VERIFY_TOKEN?.length
+        });
+
         try {
             const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
             const mode = req.query["hub.mode"];
@@ -86,8 +92,12 @@ export const whatsappController = {
     },
 
     /** 📩 Webhook (mensagens recebidas / status) */
-    /** 📩 Webhook (mensagens recebidas / status) */
     async webhook(req, res) {
+        console.log('🔔 [DEBUG] WEBHOOK POST RECEIVED - FIRST LINE');
+        console.log('📦 [DEBUG] Full body:', JSON.stringify(req.body, null, 2));
+
+        console.log('🔔 WEBHOOK INICIADO - Headers:', req.headers);
+        console.log('📦 WEBHOOK BODY:', JSON.stringify(req.body, null, 2));
         try {
             const io = getIo();
             const entry = req.body.entry?.[0]?.changes?.[0]?.value;
@@ -97,83 +107,93 @@ export const whatsappController = {
             res.sendStatus(200);
 
             if (!msg) {
-                console.warn("⚠️ Nenhuma mensagem válida recebida.");
+                console.warn("⚠️ Nenhuma mensagem válida recebida. Body completo:", JSON.stringify(req.body, null, 2));
                 return;
             }
 
-            const from = (msg.from || '').replace(/\D/g, '');
-            const to = (entry?.metadata?.display_phone_number || '').replace(/\D/g, '');
+            // 🔧 NORMALIZAÇÃO CORRIGIDA (igual ao frontend)
+            const normalizePhone = (phone) => {
+                let cleaned = phone.replace(/\D/g, '');
+                if (cleaned.startsWith('55')) {
+                    cleaned = cleaned.substring(2);
+                }
+                if (cleaned.length === 10) {
+                    cleaned = cleaned.substring(0, 2) + '9' + cleaned.substring(2);
+                }
+                return cleaned;
+            };
+
+            const from = normalizePhone(msg.from || '');
             const type = msg.type;
-            const timestamp = new Date((msg.timestamp || Date.now()) * 1000);
+            const timestamp = new Date(parseInt(msg.timestamp) * 1000 || Date.now());
+
+            console.log(`📩 Mensagem recebida de ${from} (${type})`, {
+                originalFrom: msg.from,
+                normalizedFrom: from,
+                timestamp: timestamp.toISOString(),
+                body: req.body
+            });
 
             let content = '';
             let mediaUrl = null;
 
-            console.log(`📩 Mensagem recebida de ${from} (${type})`);
-
             // 🔹 Texto normal
             if (type === 'text') {
                 content = msg.text?.body || '';
+                console.log(`📝 Conteúdo da mensagem: "${content}"`);
             }
 
-            // 🔹 Mídia (imagem, vídeo, áudio, documento)
+            // 🔹 Mídia
             const mediaTypes = ['image', 'video', 'audio', 'document', 'sticker'];
-            // dentro do webhook:
             if (mediaTypes.includes(type)) {
                 const media = msg[type] || {};
-                const caption = msg.caption || media.caption || "";
-
-                // 🔹 Pega URL da mídia
-                const mediaUrl = media.url || null;
-                console.log(`📎 Mídia recebida: ${type} (${media.mime_type})`);
-
-                io.emit("whatsapp:new_media", {
-                    from,
-                    type,
-                    mime: media.mime_type,
-                    caption,
-                    url: mediaUrl,
-                    timestamp,
-                });
-
-                await Message.create({
-                    from,
-                    direction: "inbound",
-                    type,
-                    content: caption || `[${type.toUpperCase()}]`,
-                    mediaUrl,
-                    status: "received",
-                    timestamp,
-                });
+                content = msg.caption || media.caption || `[${type.toUpperCase()}]`;
+                mediaUrl = media.url || null;
+                console.log(`📎 Mídia recebida: ${type}`, { caption: content, url: mediaUrl });
             }
 
-            console.log('💾 Mensagem salva no banco com sucesso');
+            // ✅ SALVAR NO BANCO PRIMEIRO
+            const savedMessage = await Message.create({
+                from: from, // ✅ JÁ NORMALIZADO
+                direction: "inbound",
+                type,
+                content: content,
+                mediaUrl: mediaUrl,
+                status: "received",
+                timestamp,
+            });
+
+            console.log('💾 Mensagem salva no banco:', {
+                id: savedMessage._id,
+                from: savedMessage.from,
+                content: savedMessage.content,
+                timestamp: savedMessage.timestamp
+            });
 
             // 🔹 Emitir para o front via socket.io
             if (type === 'text') {
+                console.log(`📤 Emitindo socket: whatsapp:new_message para ${from}`);
                 io.emit('whatsapp:new_message', {
-                    from,
+                    from: from, // ✅ JÁ NORMALIZADO
                     text: content,
-                    timestamp,
+                    timestamp: timestamp,
+                    id: savedMessage._id
                 });
             } else if (mediaUrl) {
+                console.log(`📤 Emitindo socket: whatsapp:new_media para ${from}`);
                 io.emit('whatsapp:new_media', {
-                    from,
+                    from: from, // ✅ JÁ NORMALIZADO
                     type,
                     caption: content,
                     url: mediaUrl,
-                    timestamp,
+                    timestamp: timestamp,
+                    id: savedMessage._id
                 });
             }
 
-            // 🔹 Disparar IA/follow-up assíncrono
-            handleWebhookEvent(req.body)
-                .then(() => console.log('🤖 handleWebhookEvent executado com sucesso'))
-                .catch(err => console.error('❌ Erro no handleWebhookEvent:', err));
-
         } catch (err) {
             console.error('❌ Erro no webhook WhatsApp:', err);
-            res.sendStatus(500);
+            console.error('🔧 Stack trace:', err.stack);
         }
     },
 
