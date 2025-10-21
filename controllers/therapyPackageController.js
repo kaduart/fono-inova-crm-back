@@ -129,129 +129,49 @@ export const packageOperations = {
             // ==========================================================
             const sessionsToCreate = [];
             const appointmentsToCreate = [];
-            const startDate = moment(date, 'YYYY-MM-DD'); // ✅ define base sem timezone
 
-            if (calculationMode === 'sessions') {
-                // 🔹 Modo: número fixo de sessões
-                let sessionsCreated = 0;
-                let week = 0;
+            for (const slot of selectedSlots) {
+                if (!slot.date || !slot.time) continue;
 
-                while (sessionsCreated < finalTotalSessions) {
-                    for (const slot of selectedSlots) {
-                        if (sessionsCreated >= finalTotalSessions) break;
-
-                        let dayIndex = {
-                            monday: 1, tuesday: 2, wednesday: 3,
-                            thursday: 4, friday: 5, saturday: 6, sunday: 7
-                        }[slot.day?.toLowerCase()];
-
-                        // 🟡 Se vier sábado (6), domingo (7) ou dia inválido, ajusta automaticamente pra segunda-feira
-                        if (dayIndex === 6 || dayIndex === 7 || !dayIndex) {
-                            console.warn(`⚠️ Slot inválido (${slot.day}) ajustado para segunda-feira (dayIndex=1).`);
-                            dayIndex = 1;
-                        }
-
-                        let next = moment(startDate).add(week, 'weeks').isoWeekday(dayIndex);
-
-                        // ✅ Primeira sessão sempre respeita a data base informada
-                        if (week === 0) {
-                            next = moment(startDate);
-
-                            // 🧠 só força startDate se o dia do slot for igual ao dia da data base
-                            if (next.isoWeekday() !== dayIndex) {
-                                next = moment(startDate).isoWeekday(dayIndex);
-                                if (next.isBefore(startDate, 'day')) {
-                                    next.add(1, 'week');
-                                }
-                            }
-                        }
-
-
-                        // ✅ Se cair antes da data base, empurra pra próxima semana
-                        if (next.isBefore(startDate, 'day')) {
-                            next.add(1, 'week');
-                        }
-
-                        if (!next.isValid()) continue;
-
-                        sessionsToCreate.push({
-                            date: next.format('YYYY-MM-DD'),
-                            time: slot.time,
-                            patient: patientId,
-                            doctor: doctorId,
-                            package: newPackage._id,
-                            sessionValue: numericSessionValue,
-                            sessionType,
-                            specialty,
-                            status: 'scheduled',
-                            isPaid: false,
-                            paymentStatus: 'pending',
-                            visualFlag: 'pending',
-                            paymentMethod
-                        });
-
-                        sessionsCreated++;
-                    }
-                    week++;
-                }
-            } else {
-                // 🔹 Modo: duração mensal
-                for (let week = 0; week < finalDurationMonths * 4; week++) {
-                    for (const slot of selectedSlots) {
-
-                        let dayIndex = {
-                            monday: 1, tuesday: 2, wednesday: 3,
-                            thursday: 4, friday: 5, saturday: 6, sunday: 7
-                        }[slot.day?.toLowerCase()];
-
-                        // 🟡 Se vier sábado (6) ou domingo (7), ajusta automaticamente pra segunda-feira
-                        if (dayIndex === 6 || dayIndex === 7 || !dayIndex) {
-                            console.warn(`⚠️ Slot inválido (${slot.day}) ajustado para segunda-feira (dayIndex=1).`);
-                            dayIndex = 1;
-                        }
-
-                        let next = moment(startDate).add(week, 'weeks').isoWeekday(dayIndex);
-
-                        // ✅ Primeira sessão sempre respeita a data base informada
-                        if (week === 0) {
-                            next = moment(startDate);
-
-                            // 🧠 só força startDate se o dia do slot for igual ao dia da data base
-                            if (next.isoWeekday() !== dayIndex) {
-                                next = moment(startDate).isoWeekday(dayIndex);
-                                if (next.isBefore(startDate, 'day')) {
-                                    next.add(1, 'week');
-                                }
-                            }
-                        }
-
-
-                        // ✅ Se cair antes da data base, empurra pra próxima semana
-                        if (next.isBefore(startDate, 'day')) {
-                            next.add(1, 'week');
-                        }
-
-                        if (!next.isValid()) continue;
-
-                        sessionsToCreate.push({
-                            date: next.format('YYYY-MM-DD'),
-                            time: slot.time,
-                            patient: patientId,
-                            doctor: doctorId,
-                            package: newPackage._id,
-                            sessionValue: numericSessionValue,
-                            sessionType,
-                            specialty,
-                            status: 'scheduled',
-                            isPaid: false,
-                            paymentStatus: 'pending',
-                            visualFlag: 'pending',
-                            paymentMethod
-                        });
-                    }
-                }
+                sessionsToCreate.push({
+                    date: slot.date,
+                    time: slot.time,
+                    patient: patientId,
+                    doctor: doctorId,
+                    package: newPackage._id,
+                    sessionValue: numericSessionValue,
+                    sessionType,
+                    specialty,
+                    status: 'scheduled',
+                    isPaid: false,
+                    paymentStatus: 'pending',
+                    visualFlag: 'pending',
+                    paymentMethod
+                });
             }
 
+
+
+            // ==========================================================
+            // 🚫 5.1️⃣ VALIDAÇÃO DE CONFLITOS COM SESSÕES EXISTENTES
+            // ==========================================================
+            for (const s of sessionsToCreate) {
+                const conflict = await Session.findOne({
+                    date: s.date,
+                    time: s.time,
+                    doctor: s.doctor,
+                    patient: s.patient,
+                    specialty: s.specialty,
+                    status: { $ne: 'canceled' } // ignora canceladas
+                }).lean();
+
+                if (conflict) {
+                    throw new Error(
+                        `Conflito detectado: o paciente já possui uma sessão de ${s.specialty} com este profissional ` +
+                        `no dia ${moment(s.date).format('DD/MM/YYYY')} às ${s.time}.`
+                    );
+                }
+            }
 
 
             const insertedSessions = await Session.insertMany(sessionsToCreate, { session: mongoSession });
@@ -418,6 +338,14 @@ export const packageOperations = {
         } catch (error) {
             if (mongoSession?.inTransaction() && !transactionCommitted) {
                 await mongoSession.abortTransaction();
+            }
+
+            if (error.message.includes('Conflito detectado')) {
+                return res.status(409).json({
+                    success: false,
+                    message: error.message,
+                    errorCode: 'SESSION_CONFLICT'
+                });
             }
 
             if (error.code === 11000 && error.message.includes('unique_appointment')) {
