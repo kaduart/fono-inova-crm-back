@@ -1,4 +1,3 @@
-// config/socket.js
 import { Server } from "socket.io";
 
 let io;
@@ -16,7 +15,7 @@ export const initializeSocket = (server) => {
       methods: ["GET", "POST"],
       credentials: true,
     },
-    transports: isDev ? ["polling", "websocket"] : ["websocket"], // 👈 chave da correção
+    transports: isDev ? ["polling", "websocket"] : ["websocket"],
     allowEIO3: true,
     pingTimeout: 60000,
     pingInterval: 25000,
@@ -24,9 +23,20 @@ export const initializeSocket = (server) => {
 
   io.on("connection", (socket) => {
     console.log("⚡ Novo cliente conectado:", socket.id);
+
+    // ✅ aqui sim o 'socket' existe
+    socket.onAny((event, data) => {
+      console.log("📨 [EVENTO VINDO DO CLIENTE]", event, data);
+    });
+
     socket.on("disconnect", (reason) => {
       console.log(`⚠️ Cliente desconectado (${reason})`);
     });
+  });
+
+  // ✅ Diagnóstico do servidor (emissão e clientes conectados)
+  io.on("whatsapp:new_message", (data) => {
+    console.log("📡 [DEBUG SERVER] Evento whatsapp:new_message foi emitido:", data);
   });
 
   return io;
