@@ -1,8 +1,8 @@
 import { getIo } from '../config/socket.js';
 import Contact from '../models/Contact.js'; // 👈 novo
 import Message from '../models/Message.js';
-import { resolveMediaUrl } from "../services/whatsappMedia.js";
 import {
+    resolveMediaUrl,
     sendTemplateMessage,
     sendTextMessage
 } from '../services/whatsappService.js';
