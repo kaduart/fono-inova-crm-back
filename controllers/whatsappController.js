@@ -60,7 +60,10 @@ export const whatsappController = {
             // responde rápido pro Meta
             res.sendStatus(200);
 
-            if (!msg) return;
+            if (!msg) {
+                console.log("⚠️ Sem msg no payload:", JSON.stringify(req.body));
+                return;
+            }
 
             // normalização (igual ao front)
             const normalizePhone = (phone) => {
@@ -70,9 +73,27 @@ export const whatsappController = {
                 return cleaned;
             };
 
+            const isPlaceholderText = (txt) =>
+                /^\s*\[(?:AUDIO|IMAGE|VIDEO|DOCUMENT|STICKER)\]\s*$/i.test(String(txt || ""));
+
+            // debounce p/ IA por número (evita 2 respostas coladas)
+            const aiShouldReply = async (phone, ttlSeconds = 20) => {
+                try {
+                    // usando a MESMA assinatura que você já usa no Redis do proxy (EX/TTL como strings)
+                    const ok = await redis.set(`ai:auto:${phone}`, "1", "NX", "EX", ttlSeconds);
+                    console.log("🔐 aiShouldReply ->", ok ? "ALLOW" : "BLOCK", `(ttl=${ttlSeconds}s)`);
+                    return !!ok;
+                } catch (e) {
+                    console.warn("⚠️ Redis indisponível p/ AI debounce. Segue sem throttle.", e.message);
+                    return true; // não bloqueia se redis falhar
+                }
+            };
+
             const from = normalizePhone(msg.from || "");
             const type = msg.type; // 'text' | 'audio' | 'image' | 'video' | 'document' | 'sticker'
             const timestamp = new Date((parseInt(msg.timestamp, 10) || Date.now() / 1000) * 1000);
+
+            console.log("📨 INBOUND:", { fromRaw: msg.from, from, type, ts: timestamp.toISOString() });
 
             let content = "";
             let mediaUrl = null;
@@ -81,6 +102,7 @@ export const whatsappController = {
             // texto
             if (type === "text") {
                 content = msg.text?.body || "";
+                console.log("📝 Texto recebido:", content);
             }
 
             // mídia (resolve via Graph usando media.id)
@@ -106,6 +128,7 @@ export const whatsappController = {
                     const { url } = await resolveMediaUrl(msg.sticker.id);
                     mediaUrl = url;
                 }
+                if (mediaUrl) console.log("📎 Mídia resolvida:", { caption, mediaUrl });
             } catch (e) {
                 console.error("⚠️ Falha ao resolver URL da mídia:", e.message);
             }
@@ -123,7 +146,9 @@ export const whatsappController = {
                 timestamp,
             });
 
-            // emite pro front
+            console.log("💾 Mensagem salva:", { id: String(savedMessage._id), type, hasMedia: !!mediaUrl });
+
+            // emite pro front (texto x mídia)
             if (type === "text") {
                 io.emit("whatsapp:new_message", {
                     id: String(savedMessage._id),
@@ -141,6 +166,73 @@ export const whatsappController = {
                     timestamp,
                 });
             }
+
+            // ===============================
+            // 🤖 AUTO-REPLY AMANDA 💚
+            // ===============================
+            try {
+                // Apenas texto real (ignora placeholders)
+                if (type !== "text" || !content || isPlaceholderText(content)) {
+                    console.log("⏭️ AI: ignorando (não é texto real).");
+                    return;
+                }
+
+                // (opcional) evite loop: só pular se vier MARCADO como nosso envio (ex.: msg.context?.from_me)
+                if (msg?.from_me === true) {
+                    console.log("⏭️ AI: ignorando mensagem enviada por nós.");
+                    return;
+                }
+
+                // trava anti-dup por 20s
+                const allowed = await aiShouldReply(from);
+                if (!allowed) {
+                    console.log("⏭️ AI: bloqueado por debounce (já respondeu há pouco).");
+                    return;
+                }
+
+                // Buscar LEAD (para personalizar)
+                let leadDoc = null;
+                try {
+                    leadDoc = await Lead.findOne({ "contact.phone": { $regex: from.slice(-11) } }).lean();
+                } catch (e) {
+                    console.warn("⚠️ Lead lookup falhou:", e.message);
+                }
+
+                const leadId = leadDoc?._id || null;
+
+                // último contexto curtinho (opcional)
+                let lastInteraction = "agora";
+                try {
+                    const ctx = await ChatContext.findOne({ lead: leadId }).lean();
+                    const last = ctx?.messages?.[ctx.messages?.length - 1];
+                    if (last?.ts) lastInteraction = new Date(last.ts).toISOString();
+                } catch (e) {
+                    console.warn("⚠️ ChatContext lookup falhou:", e.message);
+                }
+
+                const leadStub = {
+                    name: leadDoc?.name || "tudo bem",
+                    reason: leadDoc?.reason || "avaliação/terapia",
+                    origin: leadDoc?.origin || "WhatsApp",
+                    lastInteraction,
+                };
+
+                console.log("🧠 IA: gerando resposta para", { to: from, lead: leadStub });
+
+                const aiText = await generateFollowupMessage(leadStub);
+                console.log("🧠 IA: texto gerado:", aiText);
+
+                if (aiText && aiText.trim()) {
+                    await sendTextMessage({ to: from, text: aiText, lead: leadId });
+                    console.log("✅ IA: resposta enviada");
+                } else {
+                    console.log("⚠️ IA: texto vazio, nada enviado.");
+                }
+            } catch (aiErr) {
+                console.error("🤖 IA (Amanda) falhou no auto-reply:", aiErr?.message || aiErr);
+            }
+            // ===============================
+
         } catch (err) {
             // já respondemos 200
             console.error("❌ Erro no webhook WhatsApp:", err);
