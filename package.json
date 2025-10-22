@@ -27,6 +27,7 @@
     "dotenv": "^16.6.1",
     "ejs": "^3.1.10",
     "express": "^4.21.2",
+    "express-rate-limit": "^8.1.0",
     "fono-inova-web": "file:..",
     "format": "^0.2.2",
     "google-ads-api": "^21.0.1",

@@ -50,10 +50,10 @@ import PackageRoutes from "./routes/Package.js";
 import patientRoutes from "./routes/patient.js";
 import PaymentRoutes from "./routes/Payment.js";
 import pixRoutes from "./routes/pix.js";
+import proxyMediaRoutes from "./routes/proxyMedia.js";
 import signupRoutes from "./routes/signup.js";
 import specialtyRouter from "./routes/specialty.js";
 import UserRoutes from "./routes/user.js";
-import proxyRoutes from "./routes/proxy.js";
 import whatsappRoutes from "./routes/whatsapp.js";
 console.log("🧠 PIX ROUTES carregado com sucesso ✅");
 
@@ -121,6 +121,7 @@ app.use((req, res, next) => {
 // ======================================================
 // 🌐 Rotas principais (ordem importa!)
 // ======================================================
+app.use("/api", proxyMediaRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/signup", signupRoutes);
 app.use("/api/login", loginRoutes);
@@ -138,7 +139,6 @@ app.use("/api/analytics", analitycsRoutes);
 app.use("/api/google-ads", googleAdsRoutes);
 app.use("/api/google-ads/auth", googleAdsAuthRoutes);
 app.use("/api/amanda", amandaRoutes);
-app.use('/api', proxyRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);
