@@ -1,11 +1,11 @@
 import { getIo } from '../config/socket.js';
 import Contact from '../models/Contact.js'; // 👈 novo
 import Message from '../models/Message.js';
+import { resolveMediaUrl } from "../services/whatsappMedia.js";
 import {
     sendTemplateMessage,
     sendTextMessage
 } from '../services/whatsappService.js';
-import axios from 'axios'; 
 
 export const whatsappController = {
     /** ✉️ Envia template (mensagem com variáveis dinâmicas) */
@@ -93,110 +93,129 @@ export const whatsappController = {
     },
 
     /** 📩 Webhook (mensagens recebidas / status) */
+    // controllers/whatsappController.js  (SUBSTITUA apenas este método)
+
     async webhook(req, res) {
         console.log('🔔 [DEBUG] WEBHOOK POST RECEIVED - FIRST LINE');
         console.log('📦 [DEBUG] Full body:', JSON.stringify(req.body, null, 2));
-
         console.log('🔔 WEBHOOK INICIADO - Headers:', req.headers);
-        console.log('📦 WEBHOOK BODY:', JSON.stringify(req.body, null, 2));
+
         try {
             const io = getIo();
             const entry = req.body.entry?.[0]?.changes?.[0]?.value;
             const msg = entry?.messages?.[0];
 
-            // ⚡ Responde imediatamente ao Meta
+            // ⚡ responde ao Meta imediatamente
             res.sendStatus(200);
 
             if (!msg) {
-                console.warn("⚠️ Nenhuma mensagem válida recebida. Body completo:", JSON.stringify(req.body, null, 2));
+                console.warn("⚠️ Nenhuma mensagem válida recebida. Body:", JSON.stringify(req.body, null, 2));
                 return;
             }
 
-            // 🔧 NORMALIZAÇÃO CORRIGIDA (igual ao frontend)
+            // normalização igual ao front
             const normalizePhone = (phone) => {
-                let cleaned = phone.replace(/\D/g, '');
-                if (cleaned.startsWith('55')) {
-                    cleaned = cleaned.substring(2);
-                }
-                if (cleaned.length === 10) {
-                    cleaned = cleaned.substring(0, 2) + '9' + cleaned.substring(2);
-                }
+                let cleaned = (phone || "").replace(/\D/g, '');
+                if (cleaned.startsWith('55')) cleaned = cleaned.substring(2);
+                if (cleaned.length === 10) cleaned = cleaned.substring(0, 2) + '9' + cleaned.substring(2);
                 return cleaned;
             };
 
             const from = normalizePhone(msg.from || '');
-            const type = msg.type;
-            const timestamp = new Date(parseInt(msg.timestamp) * 1000 || Date.now());
+            const type = msg.type;                          // 'text' | 'audio' | 'image' | 'video' | 'document' | 'sticker'
+            const timestamp = new Date((parseInt(msg.timestamp, 10) || (Date.now() / 1000)) * 1000);
 
             console.log(`📩 Mensagem recebida de ${from} (${type})`, {
                 originalFrom: msg.from,
                 normalizedFrom: from,
                 timestamp: timestamp.toISOString(),
-                body: req.body
             });
 
             let content = '';
             let mediaUrl = null;
+            let caption = null;
 
-            // 🔹 Texto normal
+            // 🔹 Texto
             if (type === 'text') {
                 content = msg.text?.body || '';
                 console.log(`📝 Conteúdo da mensagem: "${content}"`);
             }
 
-            // 🔹 Mídia
-            const mediaTypes = ['image', 'video', 'audio', 'document', 'sticker'];
-            if (mediaTypes.includes(type)) {
-                const media = msg[type] || {};
-                content = msg.caption || media.caption || `[${type.toUpperCase()}]`;
-                mediaUrl = media.url || null;
-                console.log(`📎 Mídia recebida: ${type}`, { caption: content, url: mediaUrl });
+            // 🔹 Mídia — resolve URL via Graph API usando o media.id
+            if (type === 'audio' && msg.audio?.id) {
+                caption = "[AUDIO]";
+                const { url } = await resolveMediaUrl(msg.audio.id);
+                mediaUrl = url;
+            } else if (type === 'image' && msg.image?.id) {
+                caption = msg.image.caption || "[IMAGE]";
+                const { url } = await resolveMediaUrl(msg.image.id);
+                mediaUrl = url;
+            } else if (type === 'video' && msg.video?.id) {
+                caption = msg.video.caption || "[VIDEO]";
+                const { url } = await resolveMediaUrl(msg.video.id);
+                mediaUrl = url;
+            } else if (type === 'document' && msg.document?.id) {
+                caption = msg.document.filename || "[DOCUMENT]";
+                const { url } = await resolveMediaUrl(msg.document.id);
+                mediaUrl = url;
+            } else if (type === 'sticker' && msg.sticker?.id) {
+                caption = "[STICKER]";
+                const { url } = await resolveMediaUrl(msg.sticker.id);
+                mediaUrl = url;
             }
 
-            // ✅ SALVAR NO BANCO PRIMEIRO
+            if (type !== 'text' && !mediaUrl) {
+                console.warn(`⚠️ Mídia do tipo ${type} sem URL resolvida (id ausente/expirada)`);
+            }
+
+            // texto/legenda que vai para o histórico
+            const contentToSave = type === 'text' ? (content || '') : (caption || `[${String(type).toUpperCase()}]`);
+
+            // ✅ salva mensagem
             const savedMessage = await Message.create({
-                from: from, // ✅ JÁ NORMALIZADO
+                from: from,
                 direction: "inbound",
                 type,
-                content: content,
-                mediaUrl: mediaUrl,
+                content: contentToSave,
+                mediaUrl: mediaUrl || null,
+                caption: caption || null,
                 status: "received",
                 timestamp,
             });
 
-            console.log('💾 Mensagem salva no banco:', {
+            console.log('💾 Mensagem salva:', {
                 id: savedMessage._id,
-                from: savedMessage.from,
-                content: savedMessage.content,
+                type: savedMessage.type,
+                hasMediaUrl: !!savedMessage.mediaUrl,
                 timestamp: savedMessage.timestamp
             });
 
-            // 🔹 Emitir para o front via socket.io
+            // 🔹 emite para o front
             if (type === 'text') {
-                console.log(`📤 Emitindo socket: whatsapp:new_message para ${from}`);
                 io.emit('whatsapp:new_message', {
-                    from: from, // ✅ JÁ NORMALIZADO
-                    text: content,
-                    timestamp: timestamp,
-                    id: savedMessage._id
+                    id: String(savedMessage._id),
+                    from,
+                    text: contentToSave,
+                    timestamp,
                 });
-            } else if (mediaUrl) {
-                console.log(`📤 Emitindo socket: whatsapp:new_media para ${from}`);
+            } else {
                 io.emit('whatsapp:new_media', {
-                    from: from, // ✅ JÁ NORMALIZADO
+                    id: String(savedMessage._id),
+                    from,
                     type,
-                    caption: content,
-                    url: mediaUrl,
-                    timestamp: timestamp,
-                    id: savedMessage._id
+                    caption: contentToSave,
+                    url: mediaUrl,           // front fará o proxy (/api/proxy-media)
+                    timestamp,
                 });
             }
 
         } catch (err) {
             console.error('❌ Erro no webhook WhatsApp:', err);
             console.error('🔧 Stack trace:', err.stack);
+            // já respondemos 200 pro Meta; só logamos.
         }
     },
+
 
     /** 🧾 Retorna histórico de chat */
     async getChat(req, res) {
