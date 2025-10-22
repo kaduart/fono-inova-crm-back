@@ -45,11 +45,16 @@ router.get("/proxy-media", async (req, res) => {
         }
 
         // token do WhatsApp Business (Meta Graph)
-        const token = process.env.WHATSAPP_ACCESS_TOKEN;
+        const token =
+            process.env.WHATSAPP_ACCESS_TOKEN ||
+            process.env.META_WABA_TOKEN ||
+            process.env.SHORT_TOKEN;
         if (!token) {
-            return res.status(500).json({ success: false, error: "Token do WhatsApp não configurado" });
+            return res.status(500).json({
+                success: false,
+                error: "Token do WhatsApp não configurado (verifique WHATSAPP_ACCESS_TOKEN, META_WABA_TOKEN ou SHORT_TOKEN)"
+            });
         }
-
         const key = hashKey(url);
 
         // 1) tenta cache
