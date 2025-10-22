@@ -36,35 +36,78 @@ export async function updateAppointmentFromSession(sessionDoc, mongoSession = nu
  */
 export async function updatePatientAppointments(patientId) {
   try {
-    const now = new Date();
+    const now = new Date(); // agora real
 
-    // Busca os agendamentos do paciente
+    const tz = "America/Sao_Paulo"; // seu fuso
+
     const result = await Appointment.aggregate([
       { $match: { patient: patientId } },
-      { $sort: { date: 1 } },
+
+      // Cria um datetime a partir de date (YYYY-MM-DD) + time (HH:mm)
+      {
+        $addFields: {
+          combinedDateTimeStr: {
+            $concat: [
+              { $ifNull: ['$date', '1970-01-01'] }, 'T',
+              { $ifNull: ['$time', '00:00'] }, ':00'
+            ]
+          }
+        }
+      },
+      {
+        $addFields: {
+          combinedDateTime: {
+            $dateFromString: {
+              dateString: '$combinedDateTimeStr',
+              timezone: tz
+            }
+          }
+        }
+      },
+
+      // Ordena pelo datetime real
+      { $sort: { combinedDateTime: 1 } },
+
+      // Separa passado/futuro comparando Date real com `now`
       {
         $group: {
           _id: null,
-          all: { $push: "$$ROOT" },
-          past: { $push: { $cond: [{ $lt: ["$date", now] }, "$$ROOT", null] } },
-          future: { $push: { $cond: [{ $gte: ["$date", now] }, "$$ROOT", null] } },
-        },
+          past: {
+            $push: {
+              $cond: [{ $lt: ['$combinedDateTime', now] }, '$$ROOT', null]
+            }
+          },
+          future: {
+            $push: {
+              $cond: [{ $gte: ['$combinedDateTime', now] }, '$$ROOT', null]
+            }
+          }
+        }
       },
       {
         $project: {
-          lastAppointment: { $arrayElemAt: ["$past", -1] },
-          nextAppointment: { $arrayElemAt: ["$future", 0] },
-        },
-      },
+          lastAppointment: {
+            $let: {
+              vars: { pastNonNull: { $filter: { input: '$past', as: 'p', cond: { $ne: ['$$p', null] } } } },
+              in: { $arrayElemAt: ['$$pastNonNull', -1] }
+            }
+          },
+          nextAppointment: {
+            $let: {
+              vars: { futureNonNull: { $filter: { input: '$future', as: 'f', cond: { $ne: ['$$f', null] } } } },
+              in: { $arrayElemAt: ['$$futureNonNull', 0] }
+            }
+          }
+        }
+      }
     ]);
 
     const updateData = {};
-
     if (result.length > 0) {
-      if (result[0].lastAppointment) {
+      if (result[0].lastAppointment?._id) {
         updateData.lastAppointment = result[0].lastAppointment._id;
       }
-      if (result[0].nextAppointment) {
+      if (result[0].nextAppointment?._id) {
         updateData.nextAppointment = result[0].nextAppointment._id;
       }
     }
@@ -74,3 +117,4 @@ export async function updatePatientAppointments(patientId) {
     console.error(`Erro ao atualizar agendamentos do paciente ${patientId}:`, error);
   }
 }
+

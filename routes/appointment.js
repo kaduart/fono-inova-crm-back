@@ -15,16 +15,6 @@ import Session from '../models/Session.js';
 import { handlePackageSessionUpdate, syncEvent } from '../services/syncService.js';
 import { updateAppointmentFromSession, updatePatientAppointments } from '../utils/appointmentUpdater.js';
 
-const ObjectId = mongoose.Types.ObjectId;
-
-class ValidationError extends Error {
-    constructor(message, errors) {
-        super(message);
-        this.name = 'ValidationError';
-        this.errors = errors;
-    }
-}
-
 dotenv.config();
 const router = express.Router();
 
@@ -49,6 +39,8 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
 
     const amount = parseFloat(req.body.paymentAmount) || 0;
     const currentDate = new Date();
+    let individualSessionId = null;
+    let createdAppointmentId = null; // 👈 novo
 
     try {
         // 🔹 Validação básica
@@ -125,7 +117,6 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
         }
 
         // 🔹 Caso 3: Sessão individual ou avaliação
-        let individualSessionId = null;
 
         if (serviceType === 'individual_session' || serviceType === 'evaluation') {
             const newSession = await Session.create({
@@ -150,16 +141,17 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
                 session: newSession._id,
                 date: req.body.date,
                 time: req.body.time,
-                status: 'scheduled',
                 paymentStatus: 'pending',
                 clinicalStatus: 'pending',
                 operationalStatus: 'scheduled',
                 visualFlag: 'pending',
+                sessionValue: amount,
                 serviceType,
                 specialty: sessionType || 'fonoaudiologia',
                 notes,
             });
 
+            createdAppointmentId = appointment._id;
             await updateAppointmentFromSession(newSession);
             await updatePatientAppointments(patientId);
         }
@@ -200,7 +192,9 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
             amount,
             paymentMethod,
             notes,
-            status: 'pending', // ✅ nunca nasce "paid"
+            status: 'pending',
+            paymentDate: req.body.date,
+            serviceDate: req.body.date,
             createdAt: currentDate,
             updatedAt: currentDate,
         };
@@ -209,10 +203,20 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
         if (serviceType === 'individual_session') paymentData.session = individualSessionId;
         if (serviceType === 'package_session') paymentData.package = packageId;
 
+        if (createdAppointmentId) paymentData.appointment = createdAppointmentId;
+
         const payment = await Payment.create(paymentData);
 
         const populatedPayment = await Payment.findById(payment._id)
             .populate('patient doctor session package');
+
+        // 👇 garanta o ponteiro inverso no appointment (não confie em múltiplos save())
+        if (createdAppointmentId) {
+            await Appointment.updateOne(
+                { _id: createdAppointmentId },
+                { $set: { payment: payment._id } }
+            );
+        }
 
         return res.status(201).json({
             success: true,
@@ -234,6 +238,8 @@ router.get('/', auth, async (req, res) => {
     try {
         const { patientId, doctorId, status, specialty, startDate, endDate } = req.query;
         const filter = {};
+        let individualSessionId = null;
+        let createdAppointmentId = null; // 👈 novo
 
         // 🔹 Filtros por paciente e médico
         if (patientId && patientId !== 'all' && mongoose.Types.ObjectId.isValid(patientId)) {
@@ -835,35 +841,66 @@ router.patch('/:id/complete', auth, async (req, res) => {
         let paymentRecord = null;
 
         // Sessão avulsa (individual ou avaliação)
-        if (
-            appointment.serviceType === 'individual_session' ||
-            appointment.serviceType === 'evaluation'
-        ) {
+        if (appointment.serviceType === 'individual_session' || appointment.serviceType === 'evaluation') {
             const sessionValue =
                 appointment.sessionValue ||
                 appointment.package?.sessionValue ||
                 200;
 
+            const method =
+                appointment.paymentMethod ||
+                'dinheiro';
+
+            // 1) caminho feliz: pelo ponteiro salvo no appointment
             if (appointment.payment) {
                 paymentRecord = await Payment.findById(appointment.payment);
-                if (paymentRecord) {
-                    paymentRecord.patient = appointment.patient._id;
-                    paymentRecord.doctor = appointment.doctor._id;
-                    paymentRecord.serviceType = appointment.serviceType;
-                    paymentRecord.amount = sessionValue;
-                    paymentRecord.paymentMethod =
-                        appointment.paymentMethod ||
-                        paymentRecord.paymentMethod ||
-                        'dinheiro';
-                    paymentRecord.status = 'paid';
-                    paymentRecord.appointment = appointment._id;
-                    paymentRecord.serviceDate = appointment.date;
-                    paymentRecord.notes =
-                        'Pagamento automático por confirmação de sessão avulsa';
-                    await paymentRecord.save();
+            }
+
+            // 2) fallback: achar pelo session (é assim que você cria o Payment na marcação)
+            if (!paymentRecord && appointment.session) {
+                const sessionId = appointment.session._id || appointment.session;
+                paymentRecord = await Payment.findOne({
+                    session: sessionId,
+                    serviceType: { $in: ['individual_session', 'evaluation'] }
+                }).sort({ createdAt: -1 });
+            }
+
+            if (typeof paymentRecord.amount !== 'number' || paymentRecord.amount <= 0) {
+                const computed =
+                    (appointment.sessionValue ?? appointment.package?.sessionValue ?? 200);
+                paymentRecord.amount = computed;
+            }
+
+            if (paymentRecord) {
+                // ✅ atualiza para paid e use paymentDate
+                paymentRecord.patient = appointment.patient._id;
+                paymentRecord.doctor = appointment.doctor._id;
+                paymentRecord.serviceType = appointment.serviceType;
+                paymentRecord.amount = computed;
+                paymentRecord.paymentMethod = method;
+                paymentRecord.status = 'paid';
+                paymentRecord.paymentDate = appointment.date;      // dia do atendimento
+
+                // garanta vínculos consistentes
+                paymentRecord.appointment = appointment._id;
+                paymentRecord.session = appointment.session?._id || appointment.session || paymentRecord.session || null;
+
+                paymentRecord.notes = paymentRecord.notes || 'Pagamento automático por confirmação de sessão avulsa';
+                await paymentRecord.save();
+
+                // 👇 marcar a sessão como paga também para avulso
+                if (appointment.session) {
+                    await Session.findByIdAndUpdate(appointment.session._id || appointment.session, {
+                        status: 'completed',
+                        paymentStatus: 'paid',
+                        isPaid: true,
+                        updatedAt: new Date(),
+                    });
                 }
             }
+
         }
+
 
         // Sessão de pacote
         if (appointment.serviceType === 'package_session' && appointment.session) {
