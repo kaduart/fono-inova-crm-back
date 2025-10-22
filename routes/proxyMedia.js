@@ -6,6 +6,7 @@ import express from "express";
 // 👉 usa a sua conexão única de Redis (singleton)
 import { redisConnection as redis } from "../config/redisConnection.js"; // <-- este arquivo é o seu
 import { mediaLimiter } from "../middleware/rateLimiter.js";
+import { getMetaToken } from "../utils/metaToken.js";
 
 const router = express.Router();
 
@@ -45,10 +46,7 @@ router.get("/proxy-media", async (req, res) => {
         }
 
         // token do WhatsApp Business (Meta Graph)
-        const token =
-            process.env.WHATSAPP_ACCESS_TOKEN ||
-            process.env.META_WABA_TOKEN ||
-            process.env.SHORT_TOKEN;
+        const token = getMetaToken();
         if (!token) {
             return res.status(500).json({
                 success: false,
