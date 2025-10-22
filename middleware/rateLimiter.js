@@ -8,3 +8,10 @@ export const loginLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 });
+
+export const mediaLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minuto
+    max: 60,             // 60 req/min por IP
+    standardHeaders: true,
+    legacyHeaders: false,
+});

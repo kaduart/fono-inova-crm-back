@@ -9,7 +9,7 @@ try {
   const isUpstash = redisUrl?.includes("upstash");
   const isLocal = !isUpstash;
 
-  console.log(chalk.cyan(`🔎 REDIS_URL em runtime: ${redisUrl || "N/D"}`));
+  console.log(chalk.cyan(`🔎 REDIS_URL em runtime: ${redisUrl ? "[definida]" : "N/D"}`));
   console.log(chalk.cyan(`🔎 NODE_ENV: ${process.env.NODE_ENV || "development"}`));
   console.log(chalk[isUpstash ? "green" : "yellow"](`🌍 Modo detectado: ${isUpstash ? "Upstash (TLS)" : "Local Redis"}`));
 
@@ -53,7 +53,6 @@ try {
       console.error(chalk.red("💥 Redis erro crítico:"), err.message);
   });
 
-  console.log(chalk.green("🚀 Redis conectado e validado!"));
 } catch (err) {
   console.error(chalk.red("❌ Falha ao conectar Redis:"), err.message);
   process.exit(1);

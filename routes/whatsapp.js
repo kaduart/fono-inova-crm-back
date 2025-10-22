@@ -19,6 +19,5 @@ router.get('/contacts', whatsappController.listContacts);
 router.post('/contacts', whatsappController.addContact);
 router.put('/contacts/:id', whatsappController.updateContact);
 router.delete('/contacts/:id', whatsappController.deleteContact);
-router.get('/media-proxy', whatsappController.proxyMedia);
 
 export default router;
