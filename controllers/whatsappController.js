@@ -1,20 +1,64 @@
 // controllers/whatsappController.js
-import { redisConnection as redis } from '../config/redisConnection.js'; // <— redis singleton (se tiver)
+import { redisConnection as redis } from '../config/redisConnection.js';
 import { getIo } from "../config/socket.js";
 import Contact from "../models/Contact.js";
-import Lead from '../models/Leads.js'; // <— modelo do lead
+import Lead from '../models/Leads.js';
 import Message from "../models/Message.js";
 import { generateAmandaReply } from "../services/aiAmandaService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 
+/* ========= Helpers de telefone ========= */
+const normalizeE164BR = (phone) => {
+    if (!phone) return "";
+    let s = String(phone).replace(/\D/g, "");
+    s = s.replace(/^0+/, "");          // remove zeros à esquerda
+    if (!s.startsWith("55")) s = "55" + s;
+    return "+" + s;                     // E.164
+};
+
+const tailPattern = (phone, min = 8, max = 11) => {
+    const d = String(phone).replace(/\D/g, "");
+    const tail = d.slice(-max);
+    return new RegExp(`${tail.slice(-min)}$`);
+};
+/* ====================================== */
+
 export const whatsappController = {
+
     async sendTemplate(req, res) {
         try {
             const { phone, template, params = [], leadId } = req.body;
             if (!phone || !template) {
                 return res.status(400).json({ success: false, error: "Campos obrigatórios: phone e template" });
             }
-            const result = await sendTemplateMessage({ to: phone, template, params, lead: leadId });
+            const to = normalizeE164BR(phone);
+            const result = await sendTemplateMessage({ to, template, params, lead: leadId });
+
+            // (opcional) persistir template outbound p/ aparecer no chat
+            const saved = await Message.create({
+                from: process.env.CLINIC_PHONE_E164 || to, // número da clínica
+                to,
+                direction: "outbound",
+                type: "template",
+                content: `[TEMPLATE] ${template}`,
+                templateName: template,
+                status: "sent",
+                timestamp: new Date(),
+                lead: leadId || null,
+            });
+
+            const io = getIo();
+            io.emit("message:new", {
+                id: String(saved._id),
+                from: saved.from,
+                to: saved.to,
+                direction: "outbound",
+                type: "template",
+                content: saved.content,
+                status: saved.status,
+                timestamp: saved.timestamp,
+            });
+
             res.json({ success: true, result });
         } catch (err) {
             console.error("❌ Erro ao enviar template WhatsApp:", err);
@@ -24,13 +68,40 @@ export const whatsappController = {
 
     async sendText(req, res) {
         try {
-
             const { phone, text, leadId } = req.body;
             if (!phone || !text) {
                 return res.status(400).json({ success: false, error: "Campos obrigatórios: phone e text" });
             }
-            const to = normalizeE164BR(phone);
+
+            const to = normalizeE164BR(phone); // cliente
+            const clinicFrom = process.env.CLINIC_PHONE_E164 || to; // número da clínica (melhor setar no .env)
+
             const result = await sendTextMessage({ to, text, lead: leadId });
+
+            // 🔹 PERSISTE OUTBOUND
+            const saved = await Message.create({
+                from: clinicFrom,
+                to,
+                direction: "outbound",
+                type: "text",
+                content: text,
+                status: "sent",
+                timestamp: new Date(),
+                lead: leadId || null,
+            });
+
+            // 🔹 EMITE PARA A UI
+            const io = getIo();
+            io.emit("message:new", {
+                id: String(saved._id),
+                from: saved.from,
+                to: saved.to,
+                direction: "outbound",
+                type: "text",
+                content: saved.content,
+                status: saved.status,
+                timestamp: saved.timestamp,
+            });
 
             res.json({ success: true, result });
         } catch (err) {
@@ -56,7 +127,6 @@ export const whatsappController = {
         }
     },
 
-    // dentro de export const whatsappController = { ... }
     async webhook(req, res) {
         console.log("🔔 [DEBUG] WEBHOOK POST RECEIVED");
         try {
@@ -71,14 +141,19 @@ export const whatsappController = {
             }
 
             const msg = value.messages[0];
-            const wamid = msg.id;              // id único do WhatsApp
+            const wamid = msg.id;
             const fromRaw = msg.from || "";
-            const toRaw = value?.metadata?.display_phone_number || value?.metadata?.phone_number_id || "";
+
+            // ⚠️ NÃO use phone_number_id como número de telefone. Use display_phone_number ou .env
+            const toRaw =
+                value?.metadata?.display_phone_number ||
+                process.env.CLINIC_PHONE_E164 ||
+                "";
 
             // responde rápido pro Meta
             res.sendStatus(200);
 
-            // 2) de-dup por wamid (WhatsApp pode reenviar)
+            // 2) de-dup por wamid
             try {
                 if (redis?.set) {
                     const seenKey = `wa:seen:${wamid}`;
@@ -92,17 +167,9 @@ export const whatsappController = {
                 console.warn("⚠️ Redis indisponível p/ seen:", e.message);
             }
 
-            // 3) normalização (igual ao front)
-            const normalizePhone = (phone) => {
-                let cleaned = (phone || "").replace(/\D/g, "");
-                if (cleaned.startsWith("55")) cleaned = cleaned.substring(2);
-                if (cleaned.length === 10) cleaned = cleaned.substring(0, 2) + "9" + cleaned.substring(2);
-                return cleaned;
-            };
-
-            const from = normalizeE164BR(fromRaw);
-            const to = normalizeE164BR(toRaw);
-            const type = msg.type; // 'text' | 'audio' | 'image' | 'video' | 'document' | 'sticker'
+            const from = normalizeE164BR(fromRaw); // cliente
+            const to = normalizeE164BR(toRaw);     // clínica
+            const type = msg.type;
             const timestamp = new Date((parseInt(msg.timestamp, 10) || Date.now() / 1000) * 1000);
 
             console.log("📨 INBOUND:", { wamid, fromRaw, from, type, ts: timestamp.toISOString() });
@@ -115,7 +182,6 @@ export const whatsappController = {
             // 4) extrai conteúdo
             if (type === "text") {
                 content = msg.text?.body || "";
-                console.log("📝 Texto recebido:", content);
             } else {
                 try {
                     if (type === "audio" && msg.audio?.id) {
@@ -151,8 +217,7 @@ export const whatsappController = {
 
             const contentToSave = type === "text" ? (content || "") : (caption || `[${String(type).toUpperCase()}]`);
 
-            // 5) persiste (mídia marcada para revisão humana)
-            // upsert contato e lead (garante que aparecem no CRM mesmo sem cadastro prévio)
+            // 5) upsert contato/lead e salva inbound
             let contact = await Contact.findOne({ phone: from });
             if (!contact) contact = await Contact.create({ phone: from, name: msg.profile?.name || "Contato" });
 
@@ -161,8 +226,8 @@ export const whatsappController = {
 
             const savedMessage = await Message.create({
                 wamid,
-                from,           // E.164 do cliente
-                to,             // E.164 do número da clínica
+                from,  // cliente
+                to,    // clínica
                 direction: "inbound",
                 type,
                 content: contentToSave,
@@ -174,15 +239,10 @@ export const whatsappController = {
                 timestamp,
                 contact: contact._id,
                 lead: lead._id,
-                raw: msg, // útil p/ debug e audit
+                raw: msg,
             });
 
-
-            console.log("💾 Mensagem salva:", {
-                id: String(savedMessage._id),
-                type: savedMessage.type,
-                hasMedia: !!savedMessage.mediaUrl,
-            });
+            console.log("💾 Mensagem salva (inbound):", String(savedMessage._id));
 
             // 6) emite pro front
             io.emit("message:new", {
@@ -192,10 +252,11 @@ export const whatsappController = {
                 direction: "inbound",
                 type,
                 content: contentToSave,
-                text: contentToSave, // 👈 compat com front antigo
+                text: contentToSave, // compat front antigo
                 mediaUrl,
                 mediaId,
                 caption,
+                status: "received",
                 timestamp,
             });
 
@@ -203,21 +264,16 @@ export const whatsappController = {
             // 🤖 AMANDA — responde só TEXTO
             // ============================
             if (type !== "text" || !contentToSave?.trim()) {
-                // opcional: confirmação simpática automática para mídia
-                // await sendTextMessage({
-                //   to: from,
-                //   text: "Recebi seu arquivo. Vou verificar e já te retorno, por favor um momento 💚\n\nEquipe Fono Inova 💚"
-                // });
-                return; // mídia: secretária assume no painel
+                return; // mídia: secretaria assume
             }
 
-            // (1) lock rápido anti corrida (10s)
+            // (1) lock rápido anti corrida
             try {
                 if (redis?.set) {
                     const lockKey = `ai:lock:${from}`;
-                    const ok = await redis.set(lockKey, "1", "EX", 10, "NX");
+                    const ok = await redis.set(lockKey, "1", "EX", 3, "NX"); // 3s para teste
                     if (ok !== "OK") {
-                        console.log("⏭️  AI lock ativo; evitando corrida");
+                        console.log("⏭️  AI lock ativo; evitando corrida", lockKey);
                         return;
                     }
                 }
@@ -226,7 +282,7 @@ export const whatsappController = {
             // (2) não responder se já houve resposta nossa há ~45s
             const fortyFiveAgo = new Date(Date.now() - 45 * 1000);
             const recentBotReply = await Message.findOne({
-                to: from, // agora to está em E.164
+                to: from,
                 direction: "outbound",
                 type: "text",
                 timestamp: { $gte: fortyFiveAgo },
@@ -236,12 +292,12 @@ export const whatsappController = {
                 return;
             }
 
-            // (3) debounce por número (60s)
+            // (3) debounce por número
             let canReply = true;
             try {
                 if (redis?.set) {
                     const key = `ai:debounce:${from}`;
-                    const ok = await redis.set(key, "1", "EX", 60, "NX");
+                    const ok = await redis.set(key, "1", "EX", 8, "NX"); // 8s p/ teste
                     if (ok !== "OK") canReply = false;
                 }
             } catch (e) {
@@ -249,26 +305,19 @@ export const whatsappController = {
             }
             if (!canReply) return;
 
-            // (4) lead + histórico curto (12 últimas mensagens de texto)
-            const tail11 = from.slice(-11);
-            const leadDoc = await Lead.findOne({ "contact.phone": { $regex: tail11 } })
-                .lean()
-                .catch(() => null);
+            // (4) lead + histórico curto (corrigido o lookup)
+            const leadDoc = await Lead.findOne({ phone: from }).lean().catch(() => null);
 
             const histDocs = await Message.find({
-                $or: [{ from: { $regex: tail11 } }, { to: { $regex: tail11 } }],
+                $or: [{ from }, { to: from }],
                 type: "text",
-            })
-                .sort({ timestamp: -1 })
-                .limit(12)
-                .lean();
+            }).sort({ timestamp: -1 }).limit(12).lean();
 
             const lastMessages = histDocs.reverse().map(m => (m.content || m.text || "").toString());
             const greetings = /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|tudo\s*bem|bom\s*dia|fala|e[aíi])[\s!,.]*$/i;
             const isFirstContact = lastMessages.length <= 1 || greetings.test(contentToSave.trim());
-            console.log("[AmandaReply] isFirstContact:", isFirstContact, "lastMessages:", lastMessages);
 
-            // (5) gera resposta contextual
+            // (5) gera resposta
             const aiText = await generateAmandaReply({
                 userText: contentToSave,
                 lead: {
@@ -281,10 +330,33 @@ export const whatsappController = {
 
             console.log("[AmandaReply] texto gerado:", aiText);
 
-            // (6) envia
+            // (6) envia, persiste e emite OUTBOUND (IA)
             if (aiText && aiText.trim()) {
                 await sendTextMessage({ to: from, text: aiText.trim(), lead: leadDoc?._id });
-                console.log("✅ IA (Amanda) enviada para", from);
+
+                const savedOut = await Message.create({
+                    from: to,         // clínica
+                    to: from,         // cliente
+                    direction: "outbound",
+                    type: "text",
+                    content: aiText.trim(),
+                    status: "sent",
+                    timestamp: new Date(),
+                    lead: leadDoc?._id || null,
+                });
+
+                io.emit("message:new", {
+                    id: String(savedOut._id),
+                    from: savedOut.from,
+                    to: savedOut.to,
+                    direction: "outbound",
+                    type: "text",
+                    content: savedOut.content,
+                    status: savedOut.status,
+                    timestamp: savedOut.timestamp,
+                });
+
+                console.log("✅ IA (Amanda) enviada e salva:", String(savedOut._id));
             }
         } catch (err) {
             // já respondemos 200
@@ -292,19 +364,18 @@ export const whatsappController = {
         }
     },
 
-
     async getChat(req, res) {
         try {
             const { phone } = req.params;
             if (!phone) return res.status(400).json({ error: "Número de telefone é obrigatório" });
 
             const pE164 = normalizeE164BR(phone);
-            // tenta match exato primeiro (mais rápido e preciso)
+            // match exato
             let msgs = await Message.find({
                 $or: [{ from: pE164 }, { to: pE164 }],
             }).sort({ timestamp: 1 });
 
-            // fallback: tentar pelo "rabo" (ex.: número salvo com/sem +, etc.)
+            // fallback por "rabo"
             if (msgs.length === 0) {
                 const tail = tailPattern(phone, 8, 11);
                 msgs = await Message.find({
@@ -334,10 +405,11 @@ export const whatsappController = {
             const { name, phone, avatar } = req.body;
             if (!name || !phone) return res.status(400).json({ error: "Nome e telefone são obrigatórios" });
 
-            const existing = await Contact.findOne({ phone });
+            const p = normalizeE164BR(phone);
+            const existing = await Contact.findOne({ phone: p });
             if (existing) return res.status(400).json({ error: "Contato com esse telefone já existe" });
 
-            const contact = await Contact.create({ name, phone, avatar });
+            const contact = await Contact.create({ name, phone: p, avatar });
             res.status(201).json(contact);
         } catch (err) {
             console.error("❌ Erro ao adicionar contato:", err);
@@ -347,6 +419,7 @@ export const whatsappController = {
 
     async updateContact(req, res) {
         try {
+            if (req.body?.phone) req.body.phone = normalizeE164BR(req.body.phone);
             const updated = await Contact.findByIdAndUpdate(req.params.id, req.body, { new: true });
             res.json(updated);
         } catch (err) {
