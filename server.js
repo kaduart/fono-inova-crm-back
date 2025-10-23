@@ -34,7 +34,7 @@ import "./models/index.js";
 // 📦 Rotas
 // ======================================================
 import adminRoutes from "./routes/admin.js";
-import amandaRoutes from "./routes/amanda.js";
+import amandaRoutes from "./routes/aiAmanda.js";
 import analitycsRoutes from "./routes/analytics.js";
 import appointmentRoutes from "./routes/appointment.js";
 import authRoutes from "./routes/auth.js";

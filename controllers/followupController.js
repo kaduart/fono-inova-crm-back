@@ -1,6 +1,6 @@
 import Followup from '../models/Followup.js';
 import Lead from '../models/Leads.js';
-import { generateFollowupMessage } from "../services/amandaService.js";
+import { generateFollowupMessage } from "../services/aiAmandaService.js";
 
 import { followupQueue } from "../config/bullConfig.js";
 

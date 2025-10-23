@@ -1,11 +1,10 @@
 // controllers/whatsappController.js
 import { redisConnection as redis } from '../config/redisConnection.js'; // <— redis singleton (se tiver)
 import { getIo } from "../config/socket.js";
-import ChatContext from '../models/ChatContext.js'; // <— contexto do chat
 import Contact from "../models/Contact.js";
 import Lead from '../models/Leads.js'; // <— modelo do lead
 import Message from "../models/Message.js";
-import { generateFollowupMessage } from '../services/amandaService.js';
+import { generateAmandaReply } from "../services/aiAmandaService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 
 export const whatsappController = {
@@ -54,16 +53,40 @@ export const whatsappController = {
         }
     },
 
+    // dentro de export const whatsappController = { ... }
     async webhook(req, res) {
         console.log("🔔 [DEBUG] WEBHOOK POST RECEIVED");
         try {
             const io = getIo();
-            const entry = req.body.entry?.[0]?.changes?.[0]?.value;
-            const msg = entry?.messages?.[0];
+            const change = req.body.entry?.[0]?.changes?.[0];
+            const value = change?.value;
+
+            // 1) Ignore eventos que não são "messages"
+            if (!value?.messages || !Array.isArray(value.messages) || !value.messages[0]) {
+                res.sendStatus(200);
+                return;
+            }
+
+            const msg = value.messages[0];
+            const wamid = msg.id; // id do WhatsApp (único)
+            const fromRaw = msg.from || "";
 
             // responde rápido pro Meta
             res.sendStatus(200);
-            if (!msg) return;
+
+            // 2) De-dup por wamid (WhatsApp pode reenviar)
+            try {
+                if (redis?.set) {
+                    const seenKey = `wa:seen:${wamid}`;
+                    const ok = await redis.set(seenKey, "1", "EX", 300, "NX");
+                    if (ok !== "OK") {
+                        console.log("⏭️  Ignorando repetição (wamid já visto)", wamid);
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn("⚠️ Redis indisponível p/ seen:", e.message);
+            }
 
             // normalização (igual ao front)
             const normalizePhone = (phone) => {
@@ -73,14 +96,11 @@ export const whatsappController = {
                 return cleaned;
             };
 
-            const fromRaw = msg.from || "";
             const from = normalizePhone(fromRaw);
             const type = msg.type; // 'text' | 'audio' | 'image' | 'video' | 'document' | 'sticker'
             const timestamp = new Date((parseInt(msg.timestamp, 10) || Date.now() / 1000) * 1000);
 
-            console.log("📨 INBOUND:", {
-                fromRaw, from, type, ts: timestamp.toISOString()
-            });
+            console.log("📨 INBOUND:", { wamid, fromRaw, from, type, ts: timestamp.toISOString() });
 
             let content = "";
             let mediaUrl = null;
@@ -125,16 +145,18 @@ export const whatsappController = {
                 console.error("⚠️ Falha ao resolver URL da mídia:", e.message);
             }
 
-            const contentToSave = type === "text" ? (content || "") : (caption || `[${String(type).toUpperCase()}]`);
+            const contentToSave =
+                type === "text" ? (content || "") : (caption || `[${String(type).toUpperCase()}]`);
 
-            // salva mensagem
+            // salva mensagem (guarde o wamid pra consultas futuras tbm)
             const savedMessage = await Message.create({
+                wamid,
                 from,
                 direction: "inbound",
                 type,
                 content: contentToSave,
                 mediaUrl: mediaUrl || null,
-                mediaId: mediaId || null,     // <- para proxy por mediaId no front
+                mediaId: mediaId || null,
                 caption: caption || null,
                 status: "received",
                 timestamp,
@@ -160,93 +182,98 @@ export const whatsappController = {
                     from,
                     type,
                     caption: contentToSave,
-                    url: mediaUrl,      // front passa pelo /api/proxy-media
-                    mediaId,            // front pode preferir mediaId
+                    url: mediaUrl,   // front passa no /api/proxy-media
+                    mediaId,
                     timestamp,
                 });
             }
 
             // ============================
-            // 🤖 AUTO-REPLY AMANDA (IA)
+            // 🤖 AMANDA — único bloco
             // ============================
-
-            // 1) Só responde para texto (evita reagir a mídia e a templates)
             if (type !== "text" || !contentToSave?.trim()) return;
 
-            // 2) Debounce para não responder várias vezes seguidas
-            //    Usa Redis se disponível; senão, um Map em memória
-            const DEBOUNCE_KEY = `ai:debounce:${from}`;
-            const DEBOUNCE_SECONDS = 60; // 1 min
-            let canReply = true;
-
+            // 3) Lock rápido anti conc/cluster (10s)
             try {
-                if (redis && typeof redis.set === "function") {
-                    const ok = await redis.set(DEBOUNCE_KEY, "1", "EX", DEBOUNCE_SECONDS, "NX");
+                if (redis?.set) {
+                    const lockKey = `ai:lock:${from}`;
+                    const ok = await redis.set(lockKey, "1", "EX", 10, "NX");
+                    if (ok !== "OK") {
+                        console.log("⏭️  AI lock ativo; evitando corrida");
+                        return;
+                    }
+                }
+            } catch { }
+
+            // 4) Não responder se já respondemos há ~45s
+            const fortyFiveAgo = new Date(Date.now() - 45 * 1000);
+            const recentBotReply = await Message.findOne({
+                to: { $regex: from.slice(-11) },
+                direction: "outbound",
+                type: "text",
+                timestamp: { $gte: fortyFiveAgo },
+            }).lean();
+            if (recentBotReply) {
+                console.log("⏭️  Já houve resposta nossa recente; pulando auto-reply.");
+                return;
+            }
+
+            // 5) Debounce por número (60s)
+            let canReply = true;
+            try {
+                if (redis?.set) {
+                    const key = `ai:debounce:${from}`;
+                    const ok = await redis.set(key, "1", "EX", 60, "NX");
                     if (ok !== "OK") canReply = false;
-                } else {
-                    console.warn("⚠️ Redis indisponível p/ AI debounce. Segue sem throttle.");
                 }
             } catch (e) {
-                console.warn("⚠️ Erro no debounce Redis:", e.message);
+                console.warn("⚠️ Redis debounce indisponível:", e.message);
             }
             if (!canReply) return;
 
-            // 3) Coletar dados do Lead / Contexto (se existir)
-            let leadDoc = null;
-            try {
-                // procura por últimos 11 dígitos do telefone
-                const tail11 = from.slice(-11);
-                leadDoc = await Lead.findOne({ "contact.phone": { $regex: tail11 } });
-            } catch (e) {
-                console.warn("⚠️ Lead lookup falhou:", e.message);
+            // 6) Lead + histórico curto (12 msgs texto de ida/volta)
+            const tail11 = from.slice(-11);
+            const leadDoc = await Lead.findOne({ "contact.phone": { $regex: tail11 } })
+                .lean()
+                .catch(() => null);
+
+            const histDocs = await Message.find({
+                $or: [{ from: { $regex: tail11 } }, { to: { $regex: tail11 } }],
+                type: "text",
+            })
+                .sort({ timestamp: -1 })
+                .limit(12)
+                .lean();
+
+            const lastMessages = histDocs.reverse().map(m => (m.content || m.text || "").toString());
+            const greetings = /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|tudo\s*bem|bom\s*dia|fala|e[aíi])[\s!,.]*$/i;
+            const isFirstContact = lastMessages.length <= 1 || greetings.test(contentToSave.trim());
+
+            console.log("[AmandaReply] isFirstContact:", isFirstContact,
+                "lastMessages:", lastMessages);
+
+            const aiText = await generateAmandaReply({
+                userText: contentToSave,
+                lead: {
+                    name: leadDoc?.name || "",
+                    reason: leadDoc?.reason || "avaliação/terapia",
+                    origin: leadDoc?.origin || "WhatsApp",
+                },
+                context: { lastMessages, isFirstContact },
+            });
+
+            console.log("[AmandaReply] texto gerado:", aiText);
+
+
+            if (aiText && aiText.trim()) {
+                await sendTextMessage({ to: from, text: aiText.trim(), lead: leadDoc?._id });
+                console.log("✅ IA (Amanda) enviada para", from);
             }
-
-            let ctx = null;
-            try {
-                if (leadDoc?._id) {
-                    ctx = await ChatContext.findOne({ lead: leadDoc._id }).lean();
-                }
-            } catch (e) {
-                console.warn("⚠️ ChatContext lookup falhou:", e.message);
-            }
-
-            // 4) Monta payload para IA
-            const aiLead = {
-                name: leadDoc?.name || "tudo bem",
-                reason: leadDoc?.reason || "avaliação/terapia",
-                origin: leadDoc?.origin || "WhatsApp",
-                lastInteraction: ctx?.lastUpdatedAt ? new Date(ctx.lastUpdatedAt).toLocaleDateString("pt-BR") : "agora",
-            };
-
-            console.log("🧠 IA: gerando resposta para", { to: from, lead: aiLead });
-
-            let aiText = "";
-            try {
-                aiText = await generateFollowupMessage(aiLead);
-            } catch (e) {
-                console.error("🤖 IA (Amanda) falhou no auto-reply:", e.message);
-            }
-
-            if (!aiText) return;
-
-            // 5) Envia a resposta da IA pelo mesmo serviço de WhatsApp
-            try {
-                await sendTextMessage({
-                    to: from,
-                    text: aiText,
-                    lead: leadDoc?._id || undefined,
-                });
-                console.log("✅ IA enviada para", from);
-            } catch (e) {
-                console.error("❌ Falha ao enviar resposta da IA:", e.message);
-            }
-
         } catch (err) {
             // já respondemos 200
             console.error("❌ Erro no webhook WhatsApp:", err);
         }
     },
-
 
     async getChat(req, res) {
         try {
