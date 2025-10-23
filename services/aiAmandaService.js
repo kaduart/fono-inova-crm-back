@@ -1,4 +1,3 @@
-// services/aiAmanda.js
 import axios from "axios";
 import OpenAI from "openai";
 import { Readable } from "stream";
