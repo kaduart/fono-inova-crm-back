@@ -1,5 +1,5 @@
 // utils/phone (inline aqui mesmo p/ ficar simples)
-const normalizeE164BR = (phone) => {
+export const normalizeE164BR = (phone) => {
     if (!phone) return "";
     let s = String(phone).replace(/\D/g, ""); // só dígitos
     // remove zeros à esquerda
@@ -11,7 +11,7 @@ const normalizeE164BR = (phone) => {
 };
 
 // ajuda para buscar por "rabo" do número (8–11 dígitos)
-const tailPattern = (phone, min = 8, max = 11) => {
+export const tailPattern = (phone, min = 8, max = 11) => {
     const digits = String(phone).replace(/\D/g, "");
     const tail = digits.slice(-max); // último bloco
     return new RegExp(`${tail.slice(-min)}$`); // termina com os últimos N
