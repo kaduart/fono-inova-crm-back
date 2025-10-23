@@ -59,9 +59,14 @@ export const packageOperations = {
             }
 
             // ==========================================================
-            // 2️⃣ CONVERSÃO DE SESSÃO EXISTENTE (recria a primeira)
+            // 2️⃣ CONVERSÃO / REAPROVEITAMENTO DO PRIMEIRO SLOT EXISTENTE
+            //     - Funciona com appointmentId explícito OU detecta automaticamente
+            //       pelo primeiro selectedSlot (data/hora).
             // ==========================================================
             let existingAppointment = null;
+            let replacedAppointmentId = null;
+
+            // 2.1) Caso explícito: veio appointmentId no body
             if (appointmentId) {
                 existingAppointment = await Appointment.findById(appointmentId)
                     .populate('session')
@@ -71,11 +76,64 @@ export const packageOperations = {
                     throw new Error('Agendamento a ser convertido não encontrado');
                 }
 
-                // Remove o appointment antigo e sua sessão para recriar do zero
-                await Payment.deleteOne({ appointment: appointmentId }).session(mongoSession);
+                // 🔁 Reaponta pagamentos desse appointment para o pacote a ser criado
+                await Payment.updateMany(
+                    { appointment: appointmentId },
+                    {
+                        $set: {
+                            // O package será definido mais abaixo, após criarmos o Package (update final)
+                            kind: 'package_receipt',
+                            serviceType: 'package_session'
+                        },
+                        $unset: { appointment: "" }
+                    },
+                    { session: mongoSession }
+                );
+
+                // Remove appointment + eventual session antiga (vamos recriar limpo já vinculado ao pacote)
                 await Appointment.deleteOne({ _id: appointmentId }).session(mongoSession);
                 if (existingAppointment.session) {
                     await Session.deleteOne({ _id: existingAppointment.session._id }).session(mongoSession);
+                }
+                replacedAppointmentId = appointmentId;
+            }
+
+            // 2.2) Caso implícito: NÃO veio appointmentId → detectar pelo primeiro slot
+            if (!existingAppointment && selectedSlots?.length > 0) {
+                const firstSlot = selectedSlots[0];
+                if (firstSlot?.date && firstSlot?.time) {
+                    const toConvert = await Appointment.findOne({
+                        patient: patientId,
+                        doctor: doctorId,
+                        date: firstSlot.date,
+                        time: firstSlot.time,
+                        status: { $ne: 'canceled' }
+                    })
+                        .populate('session')
+                        .session(mongoSession);
+
+                    // Achamos um agendamento "avulso" no mesmo horário da primeira sessão do pacote
+                    if (toConvert) {
+                        // 🔁 Reaponta pagamentos desse appointment para o pacote a ser criado
+                        await Payment.updateMany(
+                            { appointment: toConvert._id },
+                            {
+                                $set: {
+                                    kind: 'package_receipt',
+                                    serviceType: 'package_session'
+                                },
+                                $unset: { appointment: "" }
+                            },
+                            { session: mongoSession }
+                        );
+
+                        // Remove appointment + eventual session antiga
+                        await Appointment.deleteOne({ _id: toConvert._id }).session(mongoSession);
+                        if (toConvert.session) {
+                            await Session.deleteOne({ _id: toConvert.session._id }).session(mongoSession);
+                        }
+                        replacedAppointmentId = toConvert._id.toString();
+                    }
                 }
             }
 
