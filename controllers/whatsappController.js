@@ -7,21 +7,7 @@ import Message from "../models/Message.js";
 import { generateAmandaReply } from "../services/aiAmandaService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 
-/* ========= Helpers de telefone ========= */
-const normalizeE164BR = (phone) => {
-    if (!phone) return "";
-    let s = String(phone).replace(/\D/g, "");
-    s = s.replace(/^0+/, "");          // remove zeros à esquerda
-    if (!s.startsWith("55")) s = "55" + s;
-    return "+" + s;                     // E.164
-};
-
-const tailPattern = (phone, min = 8, max = 11) => {
-    const d = String(phone).replace(/\D/g, "");
-    const tail = d.slice(-max);
-    return new RegExp(`${tail.slice(-min)}$`);
-};
-/* ====================================== */
+import { normalizeE164BR, tailPattern } from "../utils/phone.js";
 
 export const whatsappController = {
 
