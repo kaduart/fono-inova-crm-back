@@ -10,7 +10,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
    ========================= */
 const POLICY = `
 • Não atendemos convênios/planos de saúde no momento (estamos em credenciamento).
-• Avaliação inicial: R$ 250 (promo CDL) ou R$ 300 valor normal.
+• Avaliação inicial: R$ 200 (promo CDL) ou R$ 250 valor normal.
 • Sessão avulsa: R$ 220.
 • Pacote mensal (1x/semana): R$ 180 cada (≈ R$ 720/mês).
 • Só ofereça horários quando o cliente pedir para agendar.
