@@ -1,23 +1,9 @@
 import axios from "axios";
 import OpenAI from "openai";
 import { Readable } from "stream";
+import { POLICY_RULES } from "./amandaPrompt";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-/* =========================
-   Políticas/valores da clínica
-   ========================= */
-const POLICY = `
-• Planos/convênios (ex.: IPASGO, Unimed etc.): estamos em credenciamento; no momento atendemos particular.
-• Avaliação inicial (particular): R$ 220.
-• CDL: só mencionar se o cliente falar “CDL” (avaliação R$ 200).
-• Sessão individual (avulsa): R$ 220.
-• Pacote mensal (1x/semana): R$ 180/sessão (~R$ 720/mês).
-• Pacote: só mencionar se o cliente perguntar por pacote/mensal. EXCEÇÃO: se perguntar sobre “sessão”, citar a comparação (R$ 220 vs R$ 180 no pacote).
-• Só ofereça horários quando o cliente pedir para agendar.
-• Respostas curtas (1–3 frases), humanas e objetivas. Use exatamente 1 💚 e assine “Equipe Fono Inova 💚”.
-• Se precisar confirmar algo: "Vou verificar e já te retorno, por favor um momento 💚".
-`.trim();
 
 /* =========================
    Detectores
@@ -48,7 +34,7 @@ export async function generateFollowupMessage(lead) {
 Você é a Amanda 💚, assistente da Clínica Fono Inova (Anápolis-GO).
 Estilo: acolhedor, claro e curto (1–3 frases). SEM links. Use exatamente 1 💚.
 Idioma: pt-BR.
-${POLICY}
+${POLICY_RULES}
 `.trim();
 
     const user = `
@@ -134,7 +120,7 @@ Assine como "Equipe Fono Inova 💚".
 Idioma: pt-BR.
 Nunca invente horários/valores. Se precisar confirmar algo: "Vou verificar e já te retorno, por favor um momento 💚".
 Regras comerciais:
-${POLICY}
+${POLICY_RULES}
 `.trim();
 
     const userPrompt = isFirstContact
