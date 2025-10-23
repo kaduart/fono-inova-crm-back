@@ -842,10 +842,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
 
         // Sessão avulsa (individual ou avaliação)
         if (appointment.serviceType === 'individual_session' || appointment.serviceType === 'evaluation') {
-            const sessionValue =
-                appointment.sessionValue ||
-                appointment.package?.sessionValue ||
-                200;
+
 
             const method =
                 appointment.paymentMethod ||
@@ -865,37 +862,49 @@ router.patch('/:id/complete', auth, async (req, res) => {
                 }).sort({ createdAt: -1 });
             }
 
+            // dentro do complete, quando for atualizar o payment:
+
+
             if (typeof paymentRecord.amount !== 'number' || paymentRecord.amount <= 0) {
-                const computed =
-                    (appointment.sessionValue ?? appointment.package?.sessionValue ?? 200);
-                paymentRecord.amount = computed;
-            }
+                const amountFromSession = appointment.session?.sessionValue ?? appointment.session?.paymentAmount;
+                const amountFromAppt = typeof appointment.paymentAmount === 'number' ? appointment.paymentAmount : appointment.amount;
+                paymentRecord.amount = amountFromSession ?? amountFromAppt ?? appointment.package?.sessionValue ?? 200;
+            }// ... (mesmo código acima)
 
             if (paymentRecord) {
-                // ✅ atualiza para paid e use paymentDate
+                if (typeof paymentRecord.amount !== 'number' || paymentRecord.amount <= 0) {
+                    const amountFromSession = appointment.session?.sessionValue ?? appointment.session?.paymentAmount;
+                    const amountFromAppt = (typeof appointment.paymentAmount === 'number' ? appointment.paymentAmount : appointment.amount);
+                    paymentRecord.amount = amountFromSession ?? amountFromAppt ?? appointment.package?.sessionValue ?? 200;
+                }
+
                 paymentRecord.patient = appointment.patient._id;
                 paymentRecord.doctor = appointment.doctor._id;
                 paymentRecord.serviceType = appointment.serviceType;
-                paymentRecord.amount = computed;
                 paymentRecord.paymentMethod = method;
                 paymentRecord.status = 'paid';
-                paymentRecord.paymentDate = appointment.date;      // dia do atendimento
+                paymentRecord.paymentDate = appointment.date;  // ✅ dia do atendimento
+                paymentRecord.serviceDate = appointment.date;  // ✅ REQUERIDO pelo schema
 
-                // garanta vínculos consistentes
+                // vínculos consistentes
                 paymentRecord.appointment = appointment._id;
                 paymentRecord.session = appointment.session?._id || appointment.session || paymentRecord.session || null;
 
                 paymentRecord.notes = paymentRecord.notes || 'Pagamento automático por confirmação de sessão avulsa';
                 await paymentRecord.save();
 
-                // 👇 marcar a sessão como paga também para avulso
+                // ✅ atualizar a sessão também
                 if (appointment.session) {
-                    await Session.findByIdAndUpdate(appointment.session._id || appointment.session, {
-                        status: 'completed',
-                        paymentStatus: 'paid',
-                        isPaid: true,
-                        updatedAt: new Date(),
-                    });
+                    await Session.findByIdAndUpdate(
+                        appointment.session._id || appointment.session,
+                        {
+                            status: 'completed',
+                            paymentStatus: 'paid',
+                            isPaid: true,
+                            visualFlag: 'ok',              // (opcional, mas bom)
+                            updatedAt: new Date(),
+                        }
+                    );
                 }
             }
 
