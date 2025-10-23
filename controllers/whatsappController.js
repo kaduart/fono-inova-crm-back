@@ -61,20 +61,20 @@ export const whatsappController = {
             const change = req.body.entry?.[0]?.changes?.[0];
             const value = change?.value;
 
-            // 1) Ignore eventos que não são "messages"
+            // 1) ignore eventos que não são mensagens
             if (!value?.messages || !Array.isArray(value.messages) || !value.messages[0]) {
                 res.sendStatus(200);
                 return;
             }
 
             const msg = value.messages[0];
-            const wamid = msg.id; // id do WhatsApp (único)
+            const wamid = msg.id;              // id único do WhatsApp
             const fromRaw = msg.from || "";
 
             // responde rápido pro Meta
             res.sendStatus(200);
 
-            // 2) De-dup por wamid (WhatsApp pode reenviar)
+            // 2) de-dup por wamid (WhatsApp pode reenviar)
             try {
                 if (redis?.set) {
                     const seenKey = `wa:seen:${wamid}`;
@@ -88,7 +88,7 @@ export const whatsappController = {
                 console.warn("⚠️ Redis indisponível p/ seen:", e.message);
             }
 
-            // normalização (igual ao front)
+            // 3) normalização (igual ao front)
             const normalizePhone = (phone) => {
                 let cleaned = (phone || "").replace(/\D/g, "");
                 if (cleaned.startsWith("55")) cleaned = cleaned.substring(2);
@@ -107,48 +107,46 @@ export const whatsappController = {
             let caption = null;
             let mediaId = null;
 
-            // texto
+            // 4) extrai conteúdo
             if (type === "text") {
                 content = msg.text?.body || "";
                 console.log("📝 Texto recebido:", content);
-            }
-
-            // mídia (resolve via Graph usando media.id)
-            try {
-                if (type === "audio" && msg.audio?.id) {
-                    mediaId = msg.audio.id;
-                    caption = "[AUDIO]";
-                    const { url } = await resolveMediaUrl(mediaId);
-                    mediaUrl = url;
-                } else if (type === "image" && msg.image?.id) {
-                    mediaId = msg.image.id;
-                    caption = msg.image.caption || "[IMAGE]";
-                    const { url } = await resolveMediaUrl(mediaId);
-                    mediaUrl = url;
-                } else if (type === "video" && msg.video?.id) {
-                    mediaId = msg.video.id;
-                    caption = msg.video.caption || "[VIDEO]";
-                    const { url } = await resolveMediaUrl(mediaId);
-                    mediaUrl = url;
-                } else if (type === "document" && msg.document?.id) {
-                    mediaId = msg.document.id;
-                    caption = msg.document.filename || "[DOCUMENT]";
-                    const { url } = await resolveMediaUrl(mediaId);
-                    mediaUrl = url;
-                } else if (type === "sticker" && msg.sticker?.id) {
-                    mediaId = msg.sticker.id;
-                    caption = "[STICKER]";
-                    const { url } = await resolveMediaUrl(mediaId);
-                    mediaUrl = url;
+            } else {
+                try {
+                    if (type === "audio" && msg.audio?.id) {
+                        mediaId = msg.audio.id;
+                        caption = "[AUDIO]";
+                        const { url } = await resolveMediaUrl(mediaId);
+                        mediaUrl = url;
+                    } else if (type === "image" && msg.image?.id) {
+                        mediaId = msg.image.id;
+                        caption = msg.image.caption || "[IMAGE]";
+                        const { url } = await resolveMediaUrl(mediaId);
+                        mediaUrl = url;
+                    } else if (type === "video" && msg.video?.id) {
+                        mediaId = msg.video.id;
+                        caption = msg.video.caption || "[VIDEO]";
+                        const { url } = await resolveMediaUrl(mediaId);
+                        mediaUrl = url;
+                    } else if (type === "document" && msg.document?.id) {
+                        mediaId = msg.document.id;
+                        caption = msg.document.filename || "[DOCUMENT]";
+                        const { url } = await resolveMediaUrl(mediaId);
+                        mediaUrl = url;
+                    } else if (type === "sticker" && msg.sticker?.id) {
+                        mediaId = msg.sticker.id;
+                        caption = "[STICKER]";
+                        const { url } = await resolveMediaUrl(mediaId);
+                        mediaUrl = url;
+                    }
+                } catch (e) {
+                    console.error("⚠️ Falha ao resolver URL da mídia:", e.message);
                 }
-            } catch (e) {
-                console.error("⚠️ Falha ao resolver URL da mídia:", e.message);
             }
 
-            const contentToSave =
-                type === "text" ? (content || "") : (caption || `[${String(type).toUpperCase()}]`);
+            const contentToSave = type === "text" ? (content || "") : (caption || `[${String(type).toUpperCase()}]`);
 
-            // salva mensagem (guarde o wamid pra consultas futuras tbm)
+            // 5) persiste (mídia marcada para revisão humana)
             const savedMessage = await Message.create({
                 wamid,
                 from,
@@ -159,16 +157,17 @@ export const whatsappController = {
                 mediaId: mediaId || null,
                 caption: caption || null,
                 status: "received",
+                needs_human_review: type !== "text",   // 👈 mídia vai para secretária
                 timestamp,
             });
 
             console.log("💾 Mensagem salva:", {
                 id: String(savedMessage._id),
                 type: savedMessage.type,
-                hasMedia: !!savedMessage.mediaUrl
+                hasMedia: !!savedMessage.mediaUrl,
             });
 
-            // emite pro front
+            // 6) emite pro front
             if (type === "text") {
                 io.emit("whatsapp:new_message", {
                     id: String(savedMessage._id),
@@ -189,11 +188,18 @@ export const whatsappController = {
             }
 
             // ============================
-            // 🤖 AMANDA — único bloco
+            // 🤖 AMANDA — responde só TEXTO
             // ============================
-            if (type !== "text" || !contentToSave?.trim()) return;
+            if (type !== "text" || !contentToSave?.trim()) {
+                // opcional: confirmação simpática automática para mídia
+                // await sendTextMessage({
+                //   to: from,
+                //   text: "Recebi seu arquivo. Vou verificar e já te retorno, por favor um momento 💚\n\nEquipe Fono Inova 💚"
+                // });
+                return; // mídia: secretária assume no painel
+            }
 
-            // 3) Lock rápido anti conc/cluster (10s)
+            // (1) lock rápido anti corrida (10s)
             try {
                 if (redis?.set) {
                     const lockKey = `ai:lock:${from}`;
@@ -205,7 +211,7 @@ export const whatsappController = {
                 }
             } catch { }
 
-            // 4) Não responder se já respondemos há ~45s
+            // (2) não responder se já houve resposta nossa há ~45s
             const fortyFiveAgo = new Date(Date.now() - 45 * 1000);
             const recentBotReply = await Message.findOne({
                 to: { $regex: from.slice(-11) },
@@ -218,7 +224,7 @@ export const whatsappController = {
                 return;
             }
 
-            // 5) Debounce por número (60s)
+            // (3) debounce por número (60s)
             let canReply = true;
             try {
                 if (redis?.set) {
@@ -231,7 +237,7 @@ export const whatsappController = {
             }
             if (!canReply) return;
 
-            // 6) Lead + histórico curto (12 msgs texto de ida/volta)
+            // (4) lead + histórico curto (12 últimas mensagens de texto)
             const tail11 = from.slice(-11);
             const leadDoc = await Lead.findOne({ "contact.phone": { $regex: tail11 } })
                 .lean()
@@ -248,10 +254,9 @@ export const whatsappController = {
             const lastMessages = histDocs.reverse().map(m => (m.content || m.text || "").toString());
             const greetings = /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|tudo\s*bem|bom\s*dia|fala|e[aíi])[\s!,.]*$/i;
             const isFirstContact = lastMessages.length <= 1 || greetings.test(contentToSave.trim());
+            console.log("[AmandaReply] isFirstContact:", isFirstContact, "lastMessages:", lastMessages);
 
-            console.log("[AmandaReply] isFirstContact:", isFirstContact,
-                "lastMessages:", lastMessages);
-
+            // (5) gera resposta contextual
             const aiText = await generateAmandaReply({
                 userText: contentToSave,
                 lead: {
@@ -264,7 +269,7 @@ export const whatsappController = {
 
             console.log("[AmandaReply] texto gerado:", aiText);
 
-
+            // (6) envia
             if (aiText && aiText.trim()) {
                 await sendTextMessage({ to: from, text: aiText.trim(), lead: leadDoc?._id });
                 console.log("✅ IA (Amanda) enviada para", from);
@@ -274,6 +279,7 @@ export const whatsappController = {
             console.error("❌ Erro no webhook WhatsApp:", err);
         }
     },
+
 
     async getChat(req, res) {
         try {

@@ -1,23 +1,25 @@
 // services/aiAmanda.js
+import axios from "axios";
 import OpenAI from "openai";
+import { Readable } from "stream";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// === Estilo base da Amanda ===
-const baseStyle = `
-Você é a Amanda 💚, assistente da Clínica Fono Inova (Anápolis-GO).
-Estilo: acolhedor, claro, proativo e curto (2–4 frases). SEM links. Use exatamente 1 💚.
-Assine como "Equipe Fono Inova 💚".
-Idioma: pt-BR.
-Tópicos: fonoaudiologia, avaliação, terapia, agendamentos, valores, endereços e horários.
-Se a pergunta exigir confirmação de agenda/valor/endereço específico, diga:
-"Vou verificar e já te retorno, por favor um momento 💚" e faça 1 pergunta objetiva para seguir.
-Jamais invente preços/horários. Se não souber, assuma e peça um instante.
-Quando oferecer horários, dê no máximo 2 opções objetivas (ex.: amanhã 9h ou sexta 15h).
-Sempre terminar convidando a continuar (ex.: "Posso te ajudar a agendar agora?").
-`;
+/* =========================
+   Políticas/valores da clínica
+   ========================= */
+const POLICY = `
+• Não atendemos convênios/planos de saúde no momento (estamos em credenciamento).
+• Avaliação inicial: R$ 250 (promo CDL) ou R$ 300 valor normal.
+• Sessão avulsa: R$ 220.
+• Pacote mensal (1x/semana): R$ 180 cada (≈ R$ 720/mês).
+• Só ofereça horários quando o cliente pedir para agendar.
+• Se precisar confirmar algo, diga: "Vou verificar e já te retorno, por favor um momento 💚".
+`.trim();
 
-// ——— personalização simples de origem para follow-up
+/* =========================
+   1) Follow-up curto (rota /draft etc.)
+   ========================= */
 function personalizeIntro(origin = "") {
     const o = (origin || "").toLowerCase();
     if (o.includes("google")) return "Vimos seu contato pelo Google e ficamos felizes em ajudar. ";
@@ -27,19 +29,21 @@ function personalizeIntro(origin = "") {
     return "";
 }
 
-// ======================================================
-// 1) Follow-up curto e propositivo (mantém sua rota /draft)
-// ======================================================
 export async function generateFollowupMessage(lead) {
     const name = lead?.name?.split(" ")[0] || "tudo bem";
     const reason = lead?.reason || "avaliação/terapia";
     const origin = lead?.origin || "WhatsApp";
 
-    const system = baseStyle.trim();
-    const intro = personalizeIntro(origin);
+    const system = `
+Você é a Amanda 💚, assistente da Clínica Fono Inova (Anápolis-GO).
+Estilo: acolhedor, claro, proativo e curto (2–4 frases). SEM links. Use exatamente 1 💚.
+Assine como "Equipe Fono Inova 💚".
+Idioma: pt-BR.
+${POLICY}
+`.trim();
 
     const user = `
-Gere uma mensagem curta de follow-up para ${name}.
+${personalizeIntro(origin)}Gere uma mensagem curta de follow-up para ${name}.
 Contexto:
 - Origem: ${origin}
 - Motivo do contato: ${reason}
@@ -49,7 +53,7 @@ Regras:
 - Use exatamente 1 emoji 💚 (obrigatório).
 - Ofereça no máximo 2 janelas de horário, se fizer sentido.
 - Termine com: "Posso te ajudar a agendar agora?".
-`;
+`.trim();
 
     try {
         let resp;
@@ -60,7 +64,7 @@ Regras:
                 max_tokens: 140,
                 messages: [
                     { role: "system", content: system },
-                    { role: "user", content: intro + user },
+                    { role: "user", content: user },
                 ],
             });
         } catch {
@@ -70,7 +74,7 @@ Regras:
                 max_tokens: 140,
                 messages: [
                     { role: "system", content: system },
-                    { role: "user", content: intro + user },
+                    { role: "user", content: user },
                 ],
             });
         }
@@ -83,84 +87,77 @@ Regras:
     }
 }
 
-// ======================================================
-// 2) Resposta conversacional (para qualquer texto) — /reply e webhook
-// ======================================================
-// services/aiAmanda.js
+/* =========================
+   2) Resposta conversacional (webhook/chat)
+   ========================= */
+const RE_SCHEDULE = /\b(agendar|marcar|marcação|agenda|hor[aá]rio|consulta|agendamento)\b/i;
+const RE_PRICE = /\b(pre[cç]o|valor|custa|quanto|mensal|pacote|planos?)\b/i;
+const RE_ADDRESS = /\b(endere[cç]o|local|onde fica|mapa)\b/i;
+const RE_PAYMENT = /\b(pagamento|pix|cart[aã]o|dinheiro|cr[eé]dito|d[eé]bito)\b/i;
+const RE_HOURS = /\b(hor[áa]rio[s]? de atendimento|abre|fecha|funcionamento)\b/i;
+const RE_GREET = /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|tudo\s*bem|bom\s*dia|fala|e[aíi])[\s!,.]*$/i;
+
 export async function generateAmandaReply({ userText, lead = {}, context = {} }) {
     const name = (lead?.name || "").split(" ")[0] || "";
     const reason = lead?.reason || "avaliação/terapia";
     const origin = lead?.origin || "WhatsApp";
 
-    // ===== 1) Sinal de intenção do usuário (quer agendar?) =====
-    const textNorm = (userText || "").toLowerCase();
-    const wantsSchedule = /\b(agendar|marcar|marcação|agenda|hor[aá]rio|consulta|agendamento)\b/.test(textNorm);
+    const text = (userText || "").trim();
+    const wantsSchedule = RE_SCHEDULE.test(text);
+    const asksPrice = RE_PRICE.test(text);
+    const asksAddress = RE_ADDRESS.test(text);
+    const asksPayment = RE_PAYMENT.test(text);
+    const asksHours = RE_HOURS.test(text);
 
-    // ===== 2) Heurística de "primeiro contato" =====
     const lastMsgs = Array.isArray(context?.lastMessages) ? context.lastMessages.slice(-5) : [];
-    const greetings = /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|tudo\s*bem|bom\s*dia|fala|e[aíi])[\s!,.]*$/i;
-    const isFirstContact =
-        !!context?.isFirstContact ||
-        lastMsgs.length === 0 ||
-        greetings.test((userText || "").trim());
+    const isFirstContact = !!context?.isFirstContact || lastMsgs.length === 0 || RE_GREET.test(text);
 
-    // ===== 3) System prompt curto e firme =====
     const system = `
 Você é a Amanda 💚, assistente da Clínica Fono Inova (Anápolis-GO).
 Estilo: acolhedor, claro, proativo e curto (2–4 frases). SEM links. Use exatamente 1 💚.
 Assine como "Equipe Fono Inova 💚".
 Idioma: pt-BR.
-Nunca invente preços/horários. Se precisar confirmar algo: "Vou verificar e já te retorno, por favor um momento 💚".
+Nunca invente horários/valores. Se precisar confirmar algo: "Vou verificar e já te retorno, por favor um momento 💚".
+Regras comerciais:
+${POLICY}
 `.trim();
 
-    // ===== 4) Prompt do usuário (primeiro contato vs. continuidade) =====
-    const firstContactPrompt = `
-Contexto: primeiro contato (saudação ou abertura de conversa).
-Mensagem do cliente: """${(userText || "").trim()}"""
-Sinal do sistema: wantsSchedule=${wantsSchedule ? "true" : "false"}.
+    const userPrompt = isFirstContact
+        ? `
+Contexto: primeiro contato (saudação/abertura).
+Mensagem do cliente: """${text}"""
 
 Objetivo:
-1) Cumprimentar pelo nome se souber (se não, cumprimente sem inventar).
-2) Perguntar de forma aberta no que pode ajudar (ex.: "Em que posso te ajudar hoje?").
-3) Se fizer sentido, oferecer 2 caminhos simples (ex.: avaliação ou tirar dúvidas rápidas).
-4) Não ofereça horários ainda; espere a necessidade do cliente.
+1) Cumprimente (use o nome se souber).
+2) Pergunte no que pode ajudar.
+3) Se fizer sentido, ofereça 2 caminhos simples (avaliação ou tirar dúvidas).
+4) NÃO ofereça horários agora.
 Regras:
-- 2–4 frases curtas.
-- Exatamente 1 emoji 💚.
-- Termine convidando a pessoa a dizer a dúvida/necessidade.
-`.trim();
-
-    const ongoingPrompt = `
+- 2–4 frases; 1 💚; finalize convidando a pessoa a dizer a necessidade.
+`.trim()
+        : `
 Contexto: conversa em andamento.
-Mensagem do cliente: """${(userText || "").trim()}"""
-Lead:
-- Nome: ${name || "(desconhecido)"}
-- Motivo: ${reason}
-- Origem: ${origin}
-Sinal do sistema: wantsSchedule=${wantsSchedule ? "true" : "false"}.
+Mensagem do cliente: """${text}"""
+Lead: nome=${name || "(desconhecido)"}; motivo=${reason}; origem=${origin}
+Sinais: wantsSchedule=${wantsSchedule}; asksPrice=${asksPrice}; asksAddress=${asksAddress}; asksPayment=${asksPayment}; asksHours=${asksHours}
 
 Objetivo:
-- Responder a dúvida de forma objetiva.
-- Se precisar de agenda/valor/endereço: diga "Vou verificar e já te retorno, por favor um momento 💚"
-  e faça 1 pergunta objetiva (ex.: "prefere manhã ou tarde?").
-- Não ofereça horários se o cliente NÃO pediu claramente para agendar.
-- Somente se o cliente demonstrar intenção de agendar, ofereça no máximo 2 horários objetivos.
+- Responda objetivamente.
+- Se pedirem valores: use os valores da política (avaliação R$250 CDL / R$300, sessão R$220, pacote R$180).
+- Se pedirem endereço/horário/pagamento e você não tiver 100% de certeza: diga "Vou verificar e já te retorno, por favor um momento 💚"
+  e faça 1 pergunta objetiva para avançar.
+- Só ofereça horários se wantsSchedule=true; ofereça no máximo 2 opções objetivas.
 Regras:
-- 2–4 frases curtas.
-- Exatamente 1 emoji 💚.
-- Final propositivo (ex.: "Posso te ajudar com mais alguma coisa?").
+- 2–4 frases, 1 💚, final propositivo.
 `.trim();
-
-    const userPrompt = isFirstContact ? firstContactPrompt : ongoingPrompt;
 
     try {
-        // ===== 5) Chamada ao modelo (com fallback) =====
         let resp;
         try {
             resp = await openai.chat.completions.create({
                 model: "gpt-5-mini",
                 temperature: isFirstContact ? 0.7 : 0.5,
-                max_tokens: 160,
+                max_tokens: 180,
                 messages: [
                     { role: "system", content: system },
                     { role: "user", content: userPrompt },
@@ -170,7 +167,7 @@ Regras:
             resp = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
                 temperature: isFirstContact ? 0.7 : 0.5,
-                max_tokens: 160,
+                max_tokens: 180,
                 messages: [
                     { role: "system", content: system },
                     { role: "user", content: userPrompt },
@@ -178,31 +175,28 @@ Regras:
             });
         }
 
-        // ===== 6) Texto gerado e fallback local =====
-        let text = resp?.choices?.[0]?.message?.content?.trim() || "";
-        if (!text) {
-            text = isFirstContact
+        let out = resp?.choices?.[0]?.message?.content?.trim() || "";
+
+        // Bloquear oferta de horários se o cliente não pediu agendamento
+        if (!isFirstContact && !wantsSchedule) {
+            out = out
+                .replace(/\b(amanh[aã]|hoje|segunda|ter[cç]a|quarta|quinta|sexta|s[áa]bado|domingo)\b[^.!\n]{0,60}\b(\d{1,2}h(\d{2})?)\b/gi, "")
+                .replace(/\b(\d{1,2}\s*h(\s*\d{2})?)\b/gi, "")
+                .replace(/\b(op[cç][aã]o|hor[áa]rio)s?:?[^.!\n]+/gi, "")
+                .replace(/\s{2,}/g, " ")
+                .trim();
+        }
+
+        if (!out.includes("💚")) out += " 💚";
+        if (!/Equipe Fono Inova 💚$/m.test(out.trim())) out += `\n\nEquipe Fono Inova 💚`;
+
+        if (!out.trim()) {
+            out = isFirstContact
                 ? `Oi${name ? `, ${name}` : ""}! Sou a Amanda da Fono Inova. Em que posso te ajudar hoje? 💚\n\nEquipe Fono Inova 💚`
                 : `Vou verificar e já te retorno, por favor um momento 💚 Qual período fica melhor para você (manhã ou tarde)?\n\nEquipe Fono Inova 💚`;
         }
 
-        // ===== 7) Pós-processo: bloquear oferta de horário quando NÃO houve intenção =====
-        if (!isFirstContact && !wantsSchedule) {
-            // remove sugestões evidentes de horários/opções
-            text = text
-                .replace(/\b(amanh[aã]|hoje|segunda|ter[cç]a|quarta|quinta|sexta|s[áa]bado|domingo)\b[^.!\n]{0,60}\b(\d{1,2}h(\d{2})?)\b/gi, "")
-                .replace(/\b(\d{1,2}\s*h(\s*\d{2})?)\b/gi, "")
-                .replace(/\b(op[cç][aã]o|hor[áa]rio)s?:?[^.!\n]+/gi, "");
-            text = text.replace(/\s{2,}/g, " ").trim();
-        }
-
-        // ===== 8) Garantias: 💚 no corpo + assinatura final =====
-        if (!text.includes("💚")) text += " 💚";
-        if (!/Equipe Fono Inova 💚$/m.test(text.trim())) {
-            text += `\n\nEquipe Fono Inova 💚`;
-        }
-
-        return text;
+        return out;
     } catch {
         return isFirstContact
             ? `Oi${name ? `, ${name}` : ""}! Sou a Amanda da Fono Inova. Em que posso te ajudar hoje? 💚\n\nEquipe Fono Inova 💚`
@@ -210,7 +204,61 @@ Regras:
     }
 }
 
+/* =========================
+   3) Áudio → texto (Whisper)
+   ========================= */
+export async function transcribeWaAudioFromGraph({ mediaUrl, fileName = "audio.ogg" }) {
+    try {
+        const { data } = await axios.get(mediaUrl, { responseType: "arraybuffer", timeout: 20000 });
+        const buffer = Buffer.from(data);
 
+        // Node: passe um Readable com filename para o SDK
+        const stream = Readable.from(buffer);
+        // @ts-ignore – atribuímos um nome para o multipart
+        stream.path = fileName;
 
+        const resp = await openai.audio.transcriptions.create({
+            file: stream,         // stream + .path para nome do arquivo
+            model: "whisper-1",   // estável p/ OGG/opus
+            language: "pt",
+            temperature: 0.2,
+        });
 
+        return (resp?.text || "").trim();
+    } catch (e) {
+        console.error("❌ transcribeWaAudioFromGraph:", e.message);
+        return "";
+    }
+}
 
+/* =========================
+   4) Descrição de imagem (curta)
+   ========================= */
+export async function describeWaImageFromGraph({ imageUrl, caption = "" }) {
+    try {
+        const resp = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            temperature: 0.4,
+            max_tokens: 160,
+            messages: [
+                {
+                    role: "system",
+                    content:
+                        "Você é a Amanda 💚, assistente da Clínica Fono Inova. Descreva brevemente a imagem em 1–2 frases, sem inventar, em pt-BR. Se não for possível entender, diga que verificará."
+                },
+                {
+                    role: "user",
+                    content: [
+                        { type: "text", text: `Legenda do cliente: ${caption || "(sem legenda)"}` },
+                        { type: "image_url", image_url: { url: imageUrl } },
+                    ]
+                }
+            ]
+        });
+
+        return (resp.choices?.[0]?.message?.content || "").trim();
+    } catch (e) {
+        console.error("❌ describeWaImageFromGraph:", e.message);
+        return "";
+    }
+}
