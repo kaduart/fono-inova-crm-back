@@ -1,6 +1,7 @@
 import axios from "axios";
 import OpenAI from "openai";
 import { Readable } from "stream";
+import { POLICY_RULES } from "../utils/amandaPrompt";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
