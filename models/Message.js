@@ -2,36 +2,51 @@
 import mongoose from 'mongoose';
 
 const messageSchema = new mongoose.Schema({
-    from: String,
-    to: String,
+    // Telefones sempre em E.164: +5562...
+    from: { type: String, index: true, required: true },
+    to: { type: String, index: true, required: true },
 
-    // quem enviou (inbound = paciente → clínica | outbound = clínica → paciente)
+    // Direção
     direction: { type: String, enum: ['inbound', 'outbound'], required: true },
 
-    // TIPOS SUPORTADOS
+    // Tipos suportados
     type: {
         type: String,
         enum: ['text', 'template', 'image', 'audio', 'video', 'document', 'sticker'],
         default: 'text'
     },
 
-    // texto visível no balão (ou legenda resumida do anexo)
-    content: String,
+    // Conteúdo renderizado (texto do balão ou legenda compacta)
+    content: { type: String, default: '' },
 
-    // 🔹 CAMPOS DE MÍDIA (novos)
-    caption: String,          // legenda/filename (ex.: "[AUDIO]" ou caption da imagem)
-    mediaUrl: String,         // URL lookaside vinda da Graph (o front passará pelo /api/proxy-media)
+    // Mídia
+    caption: String,        // legenda/filename
+    mediaUrl: String,       // link lookaside
+    mediaId: String,        // id da mídia no Graph
 
+    // Template (saída outbound)
     templateName: String,
 
-    status: { type: String, enum: ['sent', 'delivered', 'read', 'failed', 'received'], default: 'sent' },
+    // Status
+    status: { type: String, enum: ['sent', 'delivered', 'read', 'failed', 'received'], default: 'received' },
 
+    // Quando ocorreu no WhatsApp
     timestamp: { type: Date, default: Date.now },
 
-    lead: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead' }
+    // Referências úteis
+    lead: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead' },
+    contact: { type: mongoose.Schema.Types.ObjectId, ref: 'Contact' },
+
+    // Para triagem de mídia pela secretaria
+    needs_human_review: { type: Boolean, default: false },
+
+    // Raw payload p/ debug/auditoria
+    raw: { type: mongoose.Schema.Types.Mixed },
 }, { timestamps: true });
 
-// índice útil para histórico
+// Índices úteis
 messageSchema.index({ from: 1, to: 1, timestamp: 1 });
+messageSchema.index({ lead: 1, timestamp: 1 });
+messageSchema.index({ contact: 1, timestamp: 1 });
 
 export default mongoose.model('Message', messageSchema);

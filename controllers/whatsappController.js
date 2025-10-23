@@ -24,11 +24,14 @@ export const whatsappController = {
 
     async sendText(req, res) {
         try {
+
             const { phone, text, leadId } = req.body;
             if (!phone || !text) {
                 return res.status(400).json({ success: false, error: "Campos obrigatórios: phone e text" });
             }
-            const result = await sendTextMessage({ to: phone, text, lead: leadId });
+            const to = normalizeE164BR(phone);
+            const result = await sendTextMessage({ to, text, lead: leadId });
+
             res.json({ success: true, result });
         } catch (err) {
             console.error("❌ Erro ao enviar texto WhatsApp:", err);
@@ -70,6 +73,7 @@ export const whatsappController = {
             const msg = value.messages[0];
             const wamid = msg.id;              // id único do WhatsApp
             const fromRaw = msg.from || "";
+            const toRaw = value?.metadata?.display_phone_number || value?.metadata?.phone_number_id || "";
 
             // responde rápido pro Meta
             res.sendStatus(200);
@@ -96,7 +100,8 @@ export const whatsappController = {
                 return cleaned;
             };
 
-            const from = normalizePhone(fromRaw);
+            const from = normalizeE164BR(fromRaw);
+            const to = normalizeE164BR(toRaw);
             const type = msg.type; // 'text' | 'audio' | 'image' | 'video' | 'document' | 'sticker'
             const timestamp = new Date((parseInt(msg.timestamp, 10) || Date.now() / 1000) * 1000);
 
@@ -147,9 +152,17 @@ export const whatsappController = {
             const contentToSave = type === "text" ? (content || "") : (caption || `[${String(type).toUpperCase()}]`);
 
             // 5) persiste (mídia marcada para revisão humana)
+            // upsert contato e lead (garante que aparecem no CRM mesmo sem cadastro prévio)
+            let contact = await Contact.findOne({ phone: from });
+            if (!contact) contact = await Contact.create({ phone: from, name: msg.profile?.name || "Contato" });
+
+            let lead = await Lead.findOne({ phone: from });
+            if (!lead) lead = await Lead.create({ phone: from, name: contact.name, origin: "WhatsApp" });
+
             const savedMessage = await Message.create({
                 wamid,
-                from,
+                from,           // E.164 do cliente
+                to,             // E.164 do número da clínica
                 direction: "inbound",
                 type,
                 content: contentToSave,
@@ -157,9 +170,13 @@ export const whatsappController = {
                 mediaId: mediaId || null,
                 caption: caption || null,
                 status: "received",
-                needs_human_review: type !== "text",   // 👈 mídia vai para secretária
+                needs_human_review: type !== "text",
                 timestamp,
+                contact: contact._id,
+                lead: lead._id,
+                raw: msg, // útil p/ debug e audit
             });
+
 
             console.log("💾 Mensagem salva:", {
                 id: String(savedMessage._id),
@@ -168,24 +185,19 @@ export const whatsappController = {
             });
 
             // 6) emite pro front
-            if (type === "text") {
-                io.emit("whatsapp:new_message", {
-                    id: String(savedMessage._id),
-                    from,
-                    text: contentToSave,
-                    timestamp,
-                });
-            } else {
-                io.emit("whatsapp:new_media", {
-                    id: String(savedMessage._id),
-                    from,
-                    type,
-                    caption: contentToSave,
-                    url: mediaUrl,   // front passa no /api/proxy-media
-                    mediaId,
-                    timestamp,
-                });
-            }
+            io.emit("message:new", {
+                id: String(savedMessage._id),
+                from,
+                to,
+                direction: "inbound",
+                type,
+                content: contentToSave,
+                text: contentToSave, // 👈 compat com front antigo
+                mediaUrl,
+                mediaId,
+                caption,
+                timestamp,
+            });
 
             // ============================
             // 🤖 AMANDA — responde só TEXTO
@@ -214,7 +226,7 @@ export const whatsappController = {
             // (2) não responder se já houve resposta nossa há ~45s
             const fortyFiveAgo = new Date(Date.now() - 45 * 1000);
             const recentBotReply = await Message.findOne({
-                to: { $regex: from.slice(-11) },
+                to: from, // agora to está em E.164
                 direction: "outbound",
                 type: "text",
                 timestamp: { $gte: fortyFiveAgo },
@@ -286,12 +298,19 @@ export const whatsappController = {
             const { phone } = req.params;
             if (!phone) return res.status(400).json({ error: "Número de telefone é obrigatório" });
 
-            const cleanPhone = phone.replace(/\D/g, "");
-            const regex = new RegExp(cleanPhone, "i");
-
-            const msgs = await Message.find({
-                $or: [{ from: { $regex: regex } }, { to: { $regex: regex } }],
+            const pE164 = normalizeE164BR(phone);
+            // tenta match exato primeiro (mais rápido e preciso)
+            let msgs = await Message.find({
+                $or: [{ from: pE164 }, { to: pE164 }],
             }).sort({ timestamp: 1 });
+
+            // fallback: tentar pelo "rabo" (ex.: número salvo com/sem +, etc.)
+            if (msgs.length === 0) {
+                const tail = tailPattern(phone, 8, 11);
+                msgs = await Message.find({
+                    $or: [{ from: { $regex: tail } }, { to: { $regex: tail } }],
+                }).sort({ timestamp: 1 });
+            }
 
             res.json({ success: true, data: msgs });
         } catch (err) {
