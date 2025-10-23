@@ -6,21 +6,6 @@ import { POLICY_RULES } from "../utils/amandaPrompt.js";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /* =========================
-   Políticas/valores da clínica
-   ========================= */
-const POLICY = `
-• Planos/convênios (ex.: IPASGO, Unimed etc.): estamos em credenciamento; no momento atendemos particular.
-• Avaliação inicial (particular): R$ 220.
-• CDL: só mencionar se o cliente falar “CDL” (avaliação R$ 200).
-• Sessão individual (avulsa): R$ 220.
-• Pacote mensal (1x/semana): R$ 180/sessão (~R$ 720/mês).
-• Pacote: só mencionar se o cliente perguntar por pacote/mensal. EXCEÇÃO: se perguntar sobre “sessão”, citar a comparação (R$ 220 vs R$ 180 no pacote).
-• Só ofereça horários quando o cliente pedir para agendar.
-• Respostas curtas (1–3 frases), humanas e objetivas. Use exatamente 1 💚”.
-• Se precisar confirmar algo: "Vou verificar e já te retorno, por favor um momento 💚".
-`.trim();
-
-/* =========================
    Detectores
    ========================= */
 const RE_PLANS = /\b(ipasgo|unimed|amil|bradesco|sul\s*américa|sulamerica|hapvida|assim|golden\s*cross|notre\s*dame|interm[eé]dica|intermedica|base|plano[s]?|conv[eê]nio[s]?)\b/i;
