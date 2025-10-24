@@ -204,6 +204,16 @@ export async function generateAmandaReply({ userText, lead = {}, context = {} })
     out = clampTo1to3Sentences(out);
     out = ensureSingleHeartAtEnd(out);
 
+    console.log("🔍 [Amanda Debug] Flags detectadas:", {
+        text: text.substring(0, 100),
+        name,
+        origin,
+        isFirstContact,
+        derivedFlags,
+        fullFlags: flags
+    });
+
+    console.log("🔍 [Amanda Debug] Prompt enviado para OpenAI:", user);
     // 🔍 2.8 Se perguntaram endereço e o modelo não citou, adiciona de forma elegante
     if (flags.asksAddress && !/Anápolis|Minas Gerais/i.test(out)) {
         out = `${out}\n\n${CLINIC_ADDRESS}`;
