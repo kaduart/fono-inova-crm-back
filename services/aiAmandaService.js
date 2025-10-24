@@ -5,38 +5,11 @@ import axios from "axios";
 import OpenAI from "openai";
 import { Readable } from "stream";
 import {
-    CLINIC_ADDRESS,
-    POLICY_RULES,
-    SYSTEM_PROMPT_AMANDA,
-    buildUserPromptWithValuePitch,
+  CLINIC_ADDRESS,
+  POLICY_RULES,
+  SYSTEM_PROMPT_AMANDA,
+  buildUserPromptWithValuePitch,
 } from "../utils/amandaPrompt.js";
-
-// (adicione abaixo dos imports)
-const RE_ADDR = /\b(onde\s+fica|endere[cç]o|endereco|local|localiza[cç][aã]o|mapa|como\s+chegar)\b/i;
-const RE_PRICE = /\b(pre[çc]o|valor|custa|quanto|mensal|pacote|sess(ão|ao))\b/i;
-const RE_PLANS = /\b(ipasgo|unimed|amil|bradesco|sul\s*am[eé]rica|sulamerica|hapvida|assim|golden\s*cross|notre\s*dame|interm[eé]dica|intermedica|conv[eê]nio|planos?)\b/i;
-const RE_SCHEDULE = /\b(agendar|marcar|marca[çc][aã]o|agenda|hor[áa]rio|consulta|agendamento)\b/i;
-const RE_HOURS = /\b(hor[áa]rio[s]?\s*de\s*atendimento|abre|fecha|funcionamento)\b/i;
-const RE_PAYMENT = /\b(pagamento|pix|cart[aã]o|cr[eé]dito|d[eé]bito|dinheiro)\b/i;
-const RE_PSY_CHILD = /\b(psicolog[oa]\s*(infantil|p(?:ara)?\s*crian[cç]as?|pedi[aá]trico))\b/i;
-
-// helper para deduzir flags quando só vem "text"
-function deriveFlagsFromText(raw = "", lead = {}) {
-    const text = String(raw || "");
-    return {
-        text,
-        name: lead?.name,
-        origin: lead?.origin,
-        asksAddress: RE_ADDR.test(text),
-        asksPrice: RE_PRICE.test(text),
-        asksPlans: RE_PLANS.test(text),
-        wantsSchedule: RE_SCHEDULE.test(text),
-        asksHours: RE_HOURS.test(text),
-        asksPayment: RE_PAYMENT.test(text),
-        // tópico “rápido” se pedirem psicólogo infantil explicitamente
-        topic: RE_PSY_CHILD.test(text) ? "psicologia" : undefined,
-    };
-}
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -44,43 +17,66 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
    Utils de pós-processamento (garantias de formato)
    ========================================================================= */
 function stripLinks(text = "") {
-    // remove URLs explícitas (evitamos links)
-    return text.replace(/\bhttps?:\/\/\S+/gi, "").replace(/\s{2,}/g, " ").trim();
+  return text.replace(/\bhttps?:\/\/\S+/gi, "").replace(/\s{2,}/g, " ").trim();
 }
-
 function clampTo1to3Sentences(text = "") {
-    const parts = text.split(/(?<=[.!?])\s+/).filter(Boolean);
-    const out = parts.slice(0, 3).join(" ").trim();
-    return out || text.trim();
+  const parts = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+  const out = parts.slice(0, 3).join(" ").trim();
+  return out || text.trim();
+}
+function ensureSingleHeartAtEnd(text = "") {
+  const noHearts = text.replace(/💚/g, "").trim();
+  return `${noHearts} 💚`.replace(/\s{2,}/g, " ").trim();
 }
 
-function ensureSingleHeartAtEnd(text = "") {
-    // remove todos os corações, depois põe um no final
-    const noHearts = text.replace(/💚/g, "").trim();
-    return `${noHearts} 💚`.replace(/\s{2,}/g, " ").trim();
+/* =========================================================================
+   0) Derivador de FLAGS a partir do texto (essencial p/ o prompt rico)
+   ========================================================================= */
+function deriveFlagsFromText(text = "") {
+  const t = (text || "").toLowerCase();
+
+  const RE_SCHEDULE = /\b(agend(ar|o|a|amento)|marcar|marcação|agenda|hor[áa]rio|consulta)\b/;
+  const RE_PRICE = /\b(preç|preco|preço|valor|custa|quanto|mensal|pacote|planos?)\b/;
+  const RE_ADDRESS = /\b(endere[cç]o|end.|localiza(c|ç)(a|ã)o|onde fica|mapa|como chegar)\b/;
+  const RE_PAYMENT = /\b(pagamento|pix|cart(ão|ao)|dinheiro|cr[eé]dito|d[eé]bito)\b/;
+  const RE_HOURS = /\b(hor[áa]ri(o|os) de atendimento|abre|fecha|funcionamento)\b/;
+  const RE_PLANS = /\b(ipasgo|unimed|amil|bradesco|sul\s*am(e|é)rica|hapvida|assim|golden\s*cross|notre\s*dame|interm(e|é)dica|plano[s]?|conv(e|ê)nio[s]?)\b/;
+  const RE_INSIST_PRICE = /(só|so|apenas)\s*(o|a)?\s*pre(ç|c)o|fala\s*o\s*valor|me\s*diz\s*o\s*pre(ç|c)o/;
+  const RE_CHILD_PSY = /\b(psic(o|ó)logo infantil|psicologia infantil|psic(o|ó)loga infantil)\b/;
+
+  return {
+    asksPrice: RE_PRICE.test(t),
+    insistsPrice: RE_INSIST_PRICE.test(t),
+    wantsSchedule: RE_SCHEDULE.test(t),
+    asksAddress: RE_ADDRESS.test(t),
+    asksPayment: RE_PAYMENT.test(t),
+    asksHours: RE_HOURS.test(t),
+    asksPlans: RE_PLANS.test(t),
+    asksChildPsychology: RE_CHILD_PSY.test(t),
+  };
 }
 
 /* =========================================================================
    1) Follow-up curto (reengajar leads)
    ========================================================================= */
 function personalizeIntro(origin = "") {
-    const o = (origin || "").toLowerCase();
-    if (o.includes("google")) return "Vimos seu contato pelo Google e ficamos felizes em ajudar. ";
-    if (o.includes("instagram") || o.includes("facebook") || o.includes("meta"))
-        return "Recebemos sua mensagem pelo Instagram, que bom falar com você! ";
-    if (o.includes("indica")) return "Agradecemos a indicação! ";
-    return "";
+  const o = (origin || "").toLowerCase();
+  if (o.includes("google")) return "Vimos seu contato pelo Google e ficamos felizes em ajudar. ";
+  if (o.includes("instagram") || o.includes("facebook") || o.includes("meta"))
+    return "Recebemos sua mensagem pelo Instagram, que bom falar com você! ";
+  if (o.includes("indica")) return "Agradecemos a indicação! ";
+  return "";
 }
 
 export async function generateFollowupMessage(lead = {}) {
-    const name = lead?.name?.split(" ")[0] || "tudo bem";
-    const reason = lead?.reason || "avaliação/terapia";
-    const origin = lead?.origin || "WhatsApp";
-    const lastInteraction = lead?.lastInteraction || "há alguns dias";
+  const name = lead?.name?.split(" ")[0] || "tudo bem";
+  const reason = lead?.reason || "avaliação/terapia";
+  const origin = lead?.origin || "WhatsApp";
+  const lastInteraction = lead?.lastInteraction || "há alguns dias";
 
-    const system = SYSTEM_PROMPT_AMANDA;
+  const system = SYSTEM_PROMPT_AMANDA;
 
-    const user = `
+  const user = `
 Gere uma mensagem curta de follow-up para ${name}.
 Contexto:
 - Origem: ${origin}
@@ -94,180 +90,171 @@ Regras:
 Texto-base (se útil): ${personalizeIntro(origin)}
 `.trim();
 
-    try {
-        let resp;
-        try {
-            resp = await openai.chat.completions.create({
-                model: "gpt-5-mini",
-                temperature: 0.7,
-                max_tokens: 140,
-                messages: [
-                    { role: "system", content: system },
-                    { role: "user", content: user },
-                ],
-            });
-        } catch {
-            resp = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
-                temperature: 0.7,
-                max_tokens: 140,
-                messages: [
-                    { role: "system", content: system },
-                    { role: "user", content: user },
-                ],
-            });
-        }
-
-        let out =
-            resp.choices?.[0]?.message?.content?.trim() ||
-            `Oi ${name}, tudo bem? Podemos retomar sobre ${reason}. Temos horários flexíveis. Posso te ajudar a agendar agora?`;
-
-        // Garantias finais
-        out = stripLinks(out);
-        out = clampTo1to3Sentences(out);
-        out = ensureSingleHeartAtEnd(out);
-
-        return out;
-    } catch {
-        const fallback = `Oi ${name}, tudo bem? Passando para saber se posso te ajudar com ${reason}. Temos horários flexíveis nesta semana. Posso te ajudar a agendar agora?`;
-        return ensureSingleHeartAtEnd(fallback);
-    }
-}
-
-/* =========================================================================
-   2) Resposta conversacional (webhook/chat) com “Valor → Preço”
-   flags: {
-     text, name?, origin?, topic?, asksPrice?, insistsPrice?,
-     wantsSchedule?, asksAddress?, asksPayment?, asksHours?, asksPlans?
-   }
-   ========================================================================= */
-export async function generateAmandaReply(flags = {}) {
-    // se só vier { text }, enriquecemos com flags inferidas
-    const inferred = deriveFlagsFromText(flags.text || "", flags);
-    const merged = { ...inferred, ...flags };
-
-    // --- curto-circuitos determinísticos (evita resposta genérica) ---
-    // 1) Endereço direto
-    if (merged.asksAddress && !merged.text.match(/\b(rota|estacionamento|como chegar)\b/i)) {
-        // mensagem curtinha e objetiva + 1 pergunta de avanço
-        return ensureSingleHeartAtEnd(
-            `Estamos na ${CLINIC_ADDRESS}. Prefere que eu envie a localização pelo mapa para facilitar?`
-        );
-    }
-
-    // 2) Psicólogo infantil (valor→preço só se pedirem preço)
-    if (RE_PSY_CHILD.test(merged.text)) {
-        const pitch = "Temos psicologia infantil com abordagem baseada em evidências para regulação emocional, comportamento e desenvolvimento.";
-        const priceLine = merged.asksPrice ? "A avaliação inicial é R$ 220." : "";
-        const tail = "Posso te ajudar a agendar ou prefere tirar uma dúvida rápida?";
-        return ensureSingleHeartAtEnd([pitch, priceLine, tail].filter(Boolean).join(" "));
-    }
-
-    // --- prompt completo com Valor→Preço (do arquivo utils) ---
-    const user = buildUserPromptWithValuePitch(merged);
-
+  try {
     let resp;
     try {
-        resp = await openai.chat.completions.create({
-            model: "gpt-5-mini",
-            temperature: 0.5,
-            max_tokens: 220,
-            messages: [
-                { role: "system", content: SYSTEM_PROMPT_AMANDA },
-                { role: "user", content: user },
-            ],
-        });
+      resp = await openai.chat.completions.create({
+        model: "gpt-5-mini",
+        temperature: 0.7,
+        max_tokens: 140,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+      });
     } catch {
-        resp = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            temperature: 0.5,
-            max_tokens: 220,
-            messages: [
-                { role: "system", content: SYSTEM_PROMPT_AMANDA },
-                { role: "user", content: user },
-            ],
-        });
+      resp = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0.7,
+        max_tokens: 140,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+      });
     }
 
-    let out = resp.choices?.[0]?.message?.content?.trim() || "";
+    let out =
+      resp.choices?.[0]?.message?.content?.trim() ||
+      `Oi ${name}, tudo bem? Podemos retomar sobre ${reason}. Temos horários flexíveis. Posso te ajudar a agendar agora?`;
 
-    // Garantias finais
     out = stripLinks(out);
     out = clampTo1to3Sentences(out);
     out = ensureSingleHeartAtEnd(out);
 
-    // reforço de endereço se perguntaram e o modelo não trouxe
-    if (merged.asksAddress && !/Anápolis|Minas Gerais/i.test(out)) {
-        out = `${out}\n\n${CLINIC_ADDRESS}`;
-    }
-
     return out;
+  } catch {
+    const fallback = `Oi ${name}, tudo bem? Passando para saber se posso te ajudar com ${reason}. Temos horários flexíveis nesta semana. Posso te ajudar a agendar agora?`;
+    return ensureSingleHeartAtEnd(fallback);
+  }
+}
+
+/* =========================================================================
+   2) Resposta conversacional (webhook/chat) com “Valor → Preço”
+   ========================================================================= */
+export async function generateAmandaReply(flags = {}) {
+  // 2.1 Deriva flags do texto e mescla com flags recebidas (se vierem do caller)
+  const derived = deriveFlagsFromText(flags?.text || "");
+  const merged = { ...derived, ...flags };
+
+  // 2.2 Curto-circuitos úteis (garantem resposta certeira):
+  const t = (merged.text || "").toLowerCase();
+
+  // Endereço direto
+  if (derived.asksAddress) {
+    const msg = `Estamos na ${CLINIC_ADDRESS}. Prefere que eu te envie a localização pelo mapa?`;
+    return ensureSingleHeartAtEnd(clampTo1to3Sentences(stripLinks(msg)));
+  }
+
+  // Psicólogo infantil direto
+  if (derived.asksChildPsychology) {
+    const msg =
+      "Temos psicologia infantil com foco em desenvolvimento emocional e comportamental (TCC e intervenções para neurodesenvolvimento). Posso te ajudar com a avaliação inicial?";
+    return ensureSingleHeartAtEnd(clampTo1to3Sentences(stripLinks(msg)));
+  }
+
+  // 2.3 Monta o prompt rico com as flags corretas
+  const user = buildUserPromptWithValuePitch(merged);
+
+  let resp;
+  try {
+    resp = await openai.chat.completions.create({
+      model: "gpt-5-mini",
+      temperature: 0.5,
+      max_tokens: 220,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT_AMANDA },
+        { role: "user", content: user },
+      ],
+    });
+  } catch {
+    resp = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.5,
+      max_tokens: 220,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT_AMANDA },
+        { role: "user", content: user },
+      ],
+    });
+  }
+
+  let out = resp.choices?.[0]?.message?.content?.trim() || "";
+
+  // 2.4 Garantias finais de formato
+  out = stripLinks(out);
+  out = clampTo1to3Sentences(out);
+  out = ensureSingleHeartAtEnd(out);
+
+  // 2.5 Se perguntaram endereço e o modelo não citou, adiciona de forma elegante
+  if (merged.asksAddress && !/Anápolis|Minas Gerais/i.test(out)) {
+    out = `${out}\n\n${CLINIC_ADDRESS}`;
+  }
+
+  return out;
 }
 
 /* =========================================================================
    3) Áudio → texto (Whisper)
    ========================================================================= */
 export async function transcribeWaAudioFromGraph({ mediaUrl, fileName = "audio.ogg" } = {}) {
-    try {
-        const { data } = await axios.get(mediaUrl, {
-            responseType: "arraybuffer",
-            timeout: 20000,
-        });
-        const buffer = Buffer.from(data);
+  try {
+    const { data } = await axios.get(mediaUrl, {
+      responseType: "arraybuffer",
+      timeout: 20000,
+    });
+    const buffer = Buffer.from(data);
 
-        // Node: passe um Readable com filename para o SDK
-        const stream = Readable.from(buffer);
-        // atribuímos um nome para o multipart
-        stream.path = fileName;
+    const stream = Readable.from(buffer);
+    stream.path = fileName; // nome do arquivo no multipart
 
-        const resp = await openai.audio.transcriptions.create({
-            file: stream, // stream + .path para nome do arquivo
-            model: "whisper-1", // estável p/ OGG/opus
-            language: "pt",
-            temperature: 0.2,
-        });
+    const resp = await openai.audio.transcriptions.create({
+      file: stream,
+      model: "whisper-1",
+      language: "pt",
+      temperature: 0.2,
+    });
 
-        return (resp?.text || "").trim();
-    } catch (e) {
-        console.error("❌ transcribeWaAudioFromGraph:", e?.message || e);
-        return "";
-    }
+    return (resp?.text || "").trim();
+  } catch (e) {
+    console.error("❌ transcribeWaAudioFromGraph:", e?.message || e);
+    return "";
+  }
 }
 
 /* =========================================================================
    4) Descrição de imagem (curta)
    ========================================================================= */
 export async function describeWaImageFromGraph({ imageUrl, caption = "" } = {}) {
-    try {
-        const resp = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            temperature: 0.4,
-            max_tokens: 160,
-            messages: [
-                {
-                    role: "system",
-                    content:
-                        "Você é a Amanda 💚, assistente da Clínica Fono Inova. Descreva brevemente a imagem em 1–2 frases, sem inventar, em pt-BR. Se não for possível entender, diga que verificará.",
-                },
-                {
-                    role: "user",
-                    content: [
-                        { type: "text", text: `Legenda do cliente: ${caption || "(sem legenda)"}` },
-                        { type: "image_url", image_url: { url: imageUrl } },
-                    ],
-                },
-            ],
-        });
+  try {
+    const resp = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.4,
+      max_tokens: 160,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Você é a Amanda 💚, assistente da Clínica Fono Inova. Descreva brevemente a imagem em 1–2 frases, sem inventar, em pt-BR. Se não for possível entender, diga que verificará.",
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: `Legenda do cliente: ${caption || "(sem legenda)"}` },
+            { type: "image_url", image_url: { url: imageUrl } },
+          ],
+        },
+      ],
+    });
 
-        let out = (resp.choices?.[0]?.message?.content || "").trim();
-        out = stripLinks(out);
-        out = clampTo1to3Sentences(out);
-        // aqui não forçamos 💚 porque é uma descrição técnica curta
-        return out;
-    } catch (e) {
-        console.error("❌ describeWaImageFromGraph:", e?.message || e);
-        return "";
-    }
+    let out = (resp.choices?.[0]?.message?.content || "").trim();
+    out = stripLinks(out);
+    out = clampTo1to3Sentences(out);
+    return out; // sem 💚 aqui (descrição técnica)
+  } catch (e) {
+    console.error("❌ describeWaImageFromGraph:", e?.message || e);
+    return "";
+  }
 }
 
 /* =========================================================================
