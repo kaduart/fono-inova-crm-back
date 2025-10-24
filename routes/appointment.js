@@ -841,45 +841,96 @@ router.patch('/:id/complete', auth, async (req, res) => {
         let paymentRecord = null;
 
         // Sessão avulsa (individual ou avaliação)
+        // ===================================================
+        // 🔹 FLUXO DE PAGAMENTO AUTOMÁTICO (individual/evaluation)
+        // ===================================================
         if (appointment.serviceType === 'individual_session' || appointment.serviceType === 'evaluation') {
             const method = appointment.paymentMethod || 'dinheiro';
 
-            // 1) caminho feliz: pelo ponteiro salvo no appointment
+            // DEBUG
+            console.log('[complete] appt=', String(appointment._id),
+                'paymentPtr=', appointment.payment ? String(appointment.payment) : null,
+                'session=', appointment.session?._id ? String(appointment.session._id) : String(appointment.session));
+
+            let paymentRecord = null;
+
+            // 1) Ponteiro direto do agendamento
             if (appointment.payment) {
                 paymentRecord = await Payment.findById(appointment.payment);
             }
 
-            // 2) fallback: pela session
+            // 2) Fallback: buscar pelo ID da sessão
             if (!paymentRecord && appointment.session) {
                 const sessionId = appointment.session._id || appointment.session;
                 paymentRecord = await Payment.findOne({
                     session: sessionId,
-                    serviceType: { $in: ['individual_session', 'evaluation'] },
-                    status: { $in: ['pending', 'partial', 'paid'] } // opcional: filtrar status
+                    serviceType: { $in: ['individual_session', 'evaluation'] }
                 }).sort({ createdAt: -1 });
             }
 
-            // 👉 se ainda não achou, retorne erro sem tentar acessar .amount
+            // 3) Último fallback: por appointment
             if (!paymentRecord) {
-                return res.status(409).json({
-                    success: false,
-                    message: 'Payment pendente não encontrado para este agendamento.'
-                });
+                paymentRecord = await Payment.findOne({
+                    appointment: appointment._id,
+                    serviceType: { $in: ['individual_session', 'evaluation'] }
+                }).sort({ createdAt: -1 });
             }
 
-            // ✅ Daqui pra baixo, paymentRecord existe
-            // Não sobrescreva amount se já houver valor (>0). Só preencha se estiver vazio/zero.
+            // 4) Se ainda não achou → CRIA AGORA (legado/consistência)
+            if (!paymentRecord) {
+                console.warn('[complete] payment NOT FOUND → creating one for appt=', String(appointment._id));
+
+                const amountFromSession =
+                    appointment.session?.sessionValue ?? appointment.session?.paymentAmount;
+                const amountFromAppt =
+                    (typeof appointment.paymentAmount === 'number' ? appointment.paymentAmount : appointment.amount);
+                const computedAmount =
+                    amountFromSession ?? amountFromAppt ?? appointment.package?.sessionValue ?? 200;
+
+                paymentRecord = await Payment.create({
+                    patient: appointment.patient._id || appointment.patient,
+                    doctor: appointment.doctor._id || appointment.doctor,
+                    serviceType: appointment.serviceType,
+                    amount: computedAmount,                // nasce com valor coerente
+                    package: appointment.package?._id || appointment.package || null,
+                    session: appointment.session?._id || appointment.session || null,
+                    appointment: appointment._id,
+                    paymentMethod: method,
+                    status: 'paid',                        // complete => pago
+                    notes: 'Pagamento criado automaticamente no complete',
+                    serviceDate: appointment.date,              // requerido pelo schema
+                    paymentDate: appointment.date,              // dia do atendimento
+                    kind: 'manual',                      // ajuste se seu schema exigir
+                });
+
+                // garante ponteiro no appointment
+                await Appointment.updateOne(
+                    { _id: appointment._id },
+                    { $set: { payment: paymentRecord._id } }
+                );
+            }
+
+            // DEBUG
+            console.log('[complete] using payment=', String(paymentRecord._id),
+                'currentAmount=', paymentRecord.amount);
+
+            // ⚠️ NÃO sobrescreva amount se já houver (>0); só preencha se vazio/zero
             if (typeof paymentRecord.amount !== 'number' || paymentRecord.amount <= 0) {
                 const amountFromSession =
                     appointment.session?.sessionValue ?? appointment.session?.paymentAmount;
                 const amountFromAppt =
                     (typeof appointment.paymentAmount === 'number' ? appointment.paymentAmount : appointment.amount);
+
                 paymentRecord.amount =
-                    amountFromSession ?? amountFromAppt ?? appointment.package?.sessionValue ?? 200;
+                    amountFromSession ??
+                    amountFromAppt ??
+                    appointment.package?.sessionValue ??
+                    200;
             }
 
-            paymentRecord.patient = appointment.patient._id;
-            paymentRecord.doctor = appointment.doctor._id;
+            // Atualizações seguras
+            paymentRecord.patient = appointment.patient._id || appointment.patient;
+            paymentRecord.doctor = appointment.doctor._id || appointment.doctor;
             paymentRecord.serviceType = appointment.serviceType;
             paymentRecord.paymentMethod = method;
             paymentRecord.status = 'paid';
@@ -890,21 +941,17 @@ router.patch('/:id/complete', auth, async (req, res) => {
             paymentRecord.notes = paymentRecord.notes || 'Pagamento automático por confirmação de sessão avulsa';
             await paymentRecord.save();
 
-            // Marcar sessão como paga
+            // Marca a sessão como paga também
             if (appointment.session) {
-                await Session.findByIdAndUpdate(
-                    appointment.session._id || appointment.session,
-                    {
-                        status: 'completed',
-                        paymentStatus: 'paid',
-                        isPaid: true,
-                        visualFlag: 'ok', // opcional
-                        updatedAt: new Date(),
-                    }
-                );
+                await Session.findByIdAndUpdate(appointment.session._id || appointment.session, {
+                    status: 'completed',
+                    paymentStatus: 'paid',
+                    isPaid: true,
+                    visualFlag: 'ok',
+                    updatedAt: new Date(),
+                });
             }
         }
-
 
         // Sessão de pacote
         if (appointment.serviceType === 'package_session' && appointment.session) {
