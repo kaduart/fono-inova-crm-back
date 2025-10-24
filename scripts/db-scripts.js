@@ -1,6 +1,7 @@
 db.payments.deleteMany({
   patient: ObjectId("6897dc360683ca3788ae815d")
 });
+
 db.appointments.deleteMany({
   patient: ObjectId("6897dc360683ca3788ae815d")
 });
@@ -12,6 +13,7 @@ db.sessions.deleteMany({
 db.payments.deleteMany({
   _id: ObjectId("68f26a8ec5bd0b3e3273e1e3")
 });
+
 db.sessions.deleteMany({
   _id: ObjectId("68f24da3dbd680a8e1f108e7")
 });
@@ -46,9 +48,8 @@ db.sessions.find({
 
 //consulta pagamento por id patient
 db.payments.find({
-  patient: ObjectId("68e3b45a0d8aeeff1af03e1d"),
+  patient: ObjectId("68f0ecb22de6dcb26c88a8e8"),
 });
-
 
 //consulta agendamento por  patient
 db.appointments.find({
@@ -158,7 +159,7 @@ db.packages.deleteMany({
 db.packages.find({ patient: ObjectId("6897dc360683ca3788ae815d") }).pretty()
 
 //mostra os detalhes do pacote
-db.packages.find({ _id: ObjectId("68f682092286c73db5d29d38") }).pretty();
+db.packages.find({ _id: ObjectId("68fa8c584862040e3c0636e8") }).pretty();
 // deve retonrar qtd de sessoes do pacote
 db.sessions.find({ package: ObjectId("68f682092286c73db5d29d38") }).count();
 
