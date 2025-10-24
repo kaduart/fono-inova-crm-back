@@ -2,14 +2,13 @@
 import OpenAI from "openai";
 import { Readable } from "stream";
 import {
-  CLINIC_ADDRESS,
-  POLICY_RULES,
-  SYSTEM_PROMPT_AMANDA,
-  buildUserPromptWithValuePitch,
-  deriveFlagsFromText,
-  inferTopic,
-  VALUE_PITCH,
-  priceLineForTopic
+    CLINIC_ADDRESS,
+    POLICY_RULES,
+    SYSTEM_PROMPT_AMANDA,
+    VALUE_PITCH,
+    buildUserPromptWithValuePitch,
+    deriveFlagsFromText,
+    inferTopic
 } from "../utils/amandaPrompt.js";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -18,18 +17,18 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
    Utils de pós-processamento (garantias de formato)
    ========================================================================= */
 function stripLinks(text = "") {
-  return text.replace(/\bhttps?:\/\/\S+/gi, "").replace(/\s{2,}/g, " ").trim();
+    return text.replace(/\bhttps?:\/\/\S+/gi, "").replace(/\s{2,}/g, " ").trim();
 }
 
 function clampTo1to3Sentences(text = "") {
-  const parts = text.split(/(?<=[.!?])\s+/).filter(Boolean);
-  const out = parts.slice(0, 3).join(" ").trim();
-  return out || text.trim();
+    const parts = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+    const out = parts.slice(0, 3).join(" ").trim();
+    return out || text.trim();
 }
 
 function ensureSingleHeartAtEnd(text = "") {
-  const noHearts = text.replace(/💚/g, "").trim();
-  return `${noHearts} 💚`.replace(/\s{2,}/g, " ").trim();
+    const noHearts = text.replace(/💚/g, "").trim();
+    return `${noHearts} 💚`.replace(/\s{2,}/g, " ").trim();
 }
 
 /* =========================================================================
@@ -38,12 +37,12 @@ function ensureSingleHeartAtEnd(text = "") {
 function applyValuePriceStrategy(flags = {}) {
     const { text = "", topic, asksPrice, insistsPrice, isFirstContact } = flags;
     const t = text.toLowerCase();
-    
+
     // 🚫 REGRA: Nunca dar preço sem contexto na primeira mensagem
     if (!asksPrice && !insistsPrice) {
         return null;
     }
-    
+
     // 🚫 REGRA: Micro-qualificação para preços genéricos no primeiro contato
     if (isFirstContact && asksPrice && !insistsPrice && topic === "generico") {
         return {
@@ -52,17 +51,17 @@ function applyValuePriceStrategy(flags = {}) {
             question: "É para avaliação, sessão ou pacote?"
         };
     }
-    
+
     const mentionsCDL = /\bcdl\b/i.test(t);
     const asksSession = /\bsess[aã]o\b|sessão|sessao/i.test(t);
     const asksPackage = /\bpacote|mensal\b/i.test(t);
     const asksNeuro = /\bneuropsicol[oó]gica|neuropsico\b/i.test(t);
     const asksLinguinha = /\blinguinha|fr[eê]nulo\b/i.test(t);
-    
+
     let pitch = "";
     let price = "";
     let strategy = "value_price";
-    
+
     // 🎯 REGRA: CDL só se mencionado
     if (mentionsCDL) {
         pitch = VALUE_PITCH.avaliacao_inicial;
@@ -94,7 +93,7 @@ function applyValuePriceStrategy(flags = {}) {
         pitch = VALUE_PITCH.avaliacao_inicial;
         price = "A avaliação inicial é R$ 220.";
     }
-    
+
     return { strategy, pitch, price };
 }
 
@@ -109,13 +108,13 @@ export async function generateAmandaReply({ userText, lead = {}, context = {} })
 
     // 🔍 Detecção de flags do texto
     const derivedFlags = deriveFlagsFromText(text);
-    
+
     // 🔍 Determinar se é primeiro contato
     const lastMsgs = Array.isArray(context?.lastMessages) ? context.lastMessages.slice(-5) : [];
     const greetings = /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|tudo\s*bem|bom\s*dia|fala|e[aíi])[\s!,.]*$/i;
-    const isFirstContact = 
-        !!context?.isFirstContact || 
-        lastMsgs.length === 0 || 
+    const isFirstContact =
+        !!context?.isFirstContact ||
+        lastMsgs.length === 0 ||
         greetings.test(text.trim());
 
     // 🔍 Detectar tópico
@@ -174,7 +173,7 @@ export async function generateAmandaReply({ userText, lead = {}, context = {} })
 
     // 🎯 APLICAR ESTRATÉGIA VALOR → PREÇO
     const valuePriceInfo = applyValuePriceStrategy(flags);
-    
+
     // 🚀 CONSTRUIR PROMPT ESPECÍFICO BASEADO NAS REGRAS
     let customPrompt = "";
 
@@ -248,12 +247,108 @@ Saída: 2-3 frases, 1 💚 no final
     out = stripLinks(out);
     out = clampTo1to3Sentences(out);
     out = ensureSingleHeartAtEnd(out);
+    // 1) Forçar fluxo "explicação → preço → queixa" quando pedem valor da avaliação
+    out = enforceEvalPriceFlow(out, flags);
 
-    // 🔒 GARANTIR QUE REGRAS SEJAM RESPEITADAS
+    // 2) Segurar CTA de agendar até existir sinal
+    out = stripCTAIfNoSignal(out, flags);
+
+
+    // 🔒 REGRAS DE NEGÓCIO (pode ajustar preço/linguagem)
     out = applyBusinessRulesPostProcessing(out, flags);
+
+    // se NÃO houve pedido explícito de agendamento, limpe qualquer CTA duro
+    if (!flags?.wantsSchedule) {
+        out = removeAgendamentoFrases(out);
+    }
+
+    // se houve perguntas do cliente (preço/endereço/pagamento/horários/planos), feche com CTA SUAVE
+    if (!flags?.wantsSchedule) {
+        out = appendSoftCTAIfHelpful(out, flags);
+    }
+
+    // normaliza formato no final
+    out = clampTo1to3Sentences(out);
+    out = ensureSingleHeartAtEnd(out);
 
     console.log("🔍 [Amanda Debug] Resposta final:", out);
     return out;
+}
+
+// ===== Helpers de fluxo =====
+
+// avalia se podemos liberar CTA suave (sem oferecer horário)
+function canSoftCTA(flags = {}) {
+    const {
+        wantsSchedule,
+        asksDetails,       // novo flag (amandaPrompt.js)
+        resolvedDoubts,    // novo flag (amandaPrompt.js)
+        asksPrice,
+        insistsPrice,
+    } = (flags || {});
+    // libera CTA se: pediu agendar, fez perguntas/detalhes, sinalizou que entendeu,
+    // ou ficou perguntando muito sobre preço (engajamento)
+    return !!(wantsSchedule || asksDetails || resolvedDoubts || insistsPrice || (asksPrice && asksDetails));
+}
+
+// força o formato explicação → preço → pergunta da queixa (para "valor da avaliação")
+function enforceEvalPriceFlow(out = "", flags = {}) {
+    const t = (flags?.text || "").toLowerCase();
+    const askedEvalPrice =
+        flags?.asksPrice && /avali(a|á)ç(ã|a)o|fono(audiologia)?|consulta/i.test(t);
+
+    if (!askedEvalPrice) return out;
+
+    // Monta resposta seca e humana (sem CTA ainda)
+    const base =
+        "Primeiro fazemos uma avaliação para entender a queixa principal e definir o plano terapêutico. O valor da avaliação é R$ 220. Quer me contar qual é a queixa principal para eu orientar melhor?";
+
+    // mantém 1–3 frases e 1 💚 ao fim
+    return ensureSingleHeartAtEnd(clampTo1to3Sentences(base));
+}
+
+// remove qualquer CTA de agendar quando não há sinal
+function stripCTAIfNoSignal(out = "", flags = {}) {
+    if (canSoftCTA(flags)) return out;
+
+    // remove frases com 'agend' (agendar/agendamento/agende...), mantendo o resto
+    const cleaned = out
+        .split(/(?<=[.!?])\s+/)
+        .filter(s => !/agend/i.test(s))
+        .join(" ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+
+    // re-garantias
+    return ensureSingleHeartAtEnd(clampTo1to3Sentences(cleaned));
+}
+
+function removeAgendamentoFrases(text) {
+    return text
+        .split(/(?<=[.!?])\s+/)
+        .filter(s => !/agend/i.test(s)) // remove agendar/agendamento/agende/agend.
+        .join(" ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+}
+
+function appendSoftCTAIfHelpful(text, flags = {}) {
+    const askedAny =
+        !!flags.asksPrice ||
+        !!flags.asksAddress ||
+        !!flags.asksPayment ||
+        !!flags.asksHours ||
+        !!flags.asksPlans;
+
+    if (!askedAny) return text; // só adiciona quando o cliente realmente perguntou algo
+
+    // não põe coração aqui; o ensureSingleHeartAtEnd entra no final
+    const softClose = "Ficou alguma dúvida? Se quiser, posso ajudar com o agendamento.";
+    // evita duplicar se o modelo já falou algo muito parecido
+    if (new RegExp(softClose.replace(/[.?]/g, "\\$&"), "i").test(text)) return text;
+
+    // acrescenta como última frase
+    return [text, softClose].filter(Boolean).join(" ").replace(/\s{2,}/g, " ").trim();
 }
 
 /* =========================================================================
@@ -266,11 +361,11 @@ function generateFallbackResponse(flags) {
     if (isFirstContact) {
         return `Oi! Sou a Amanda da Fono Inova. Em que posso te ajudar hoje? 💚`;
     }
-    
+
     if (asksAddress) {
         return `Estamos na ${CLINIC_ADDRESS}. Precisa de ajuda com a localização? 💚`;
     }
-    
+
     if (asksPrice) {
         if (/\bcdl\b/.test(t)) {
             return `A avaliação CDL é R$ 200. Posso te ajudar a agendar? 💚`;
@@ -280,7 +375,7 @@ function generateFallbackResponse(flags) {
             return `A avaliação inicial é R$ 220 e define o melhor plano para você. É para avaliação, sessão ou pacote? 💚`;
         }
     }
-    
+
     if (wantsSchedule) {
         return `Perfeito! Temos horários amanhã à tarde ou quinta pela manhã. Qual prefere? 💚`;
     }
@@ -293,7 +388,7 @@ function generateFallbackResponse(flags) {
    ========================================================================= */
 function applyBusinessRulesPostProcessing(text, flags) {
     let processed = text;
-    
+
     // 🚫 REMOVER OFERTAS DE HORÁRIOS QUANDO NÃO SOLICITADO
     if (!flags.wantsSchedule) {
         processed = processed
