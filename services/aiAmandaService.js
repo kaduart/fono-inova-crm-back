@@ -11,6 +11,33 @@ import {
     buildUserPromptWithValuePitch,
 } from "../utils/amandaPrompt.js";
 
+// (adicione abaixo dos imports)
+const RE_ADDR = /\b(onde\s+fica|endere[cç]o|endereco|local|localiza[cç][aã]o|mapa|como\s+chegar)\b/i;
+const RE_PRICE = /\b(pre[çc]o|valor|custa|quanto|mensal|pacote|sess(ão|ao))\b/i;
+const RE_PLANS = /\b(ipasgo|unimed|amil|bradesco|sul\s*am[eé]rica|sulamerica|hapvida|assim|golden\s*cross|notre\s*dame|interm[eé]dica|intermedica|conv[eê]nio|planos?)\b/i;
+const RE_SCHEDULE = /\b(agendar|marcar|marca[çc][aã]o|agenda|hor[áa]rio|consulta|agendamento)\b/i;
+const RE_HOURS = /\b(hor[áa]rio[s]?\s*de\s*atendimento|abre|fecha|funcionamento)\b/i;
+const RE_PAYMENT = /\b(pagamento|pix|cart[aã]o|cr[eé]dito|d[eé]bito|dinheiro)\b/i;
+const RE_PSY_CHILD = /\b(psicolog[oa]\s*(infantil|p(?:ara)?\s*crian[cç]as?|pedi[aá]trico))\b/i;
+
+// helper para deduzir flags quando só vem "text"
+function deriveFlagsFromText(raw = "", lead = {}) {
+    const text = String(raw || "");
+    return {
+        text,
+        name: lead?.name,
+        origin: lead?.origin,
+        asksAddress: RE_ADDR.test(text),
+        asksPrice: RE_PRICE.test(text),
+        asksPlans: RE_PLANS.test(text),
+        wantsSchedule: RE_SCHEDULE.test(text),
+        asksHours: RE_HOURS.test(text),
+        asksPayment: RE_PAYMENT.test(text),
+        // tópico “rápido” se pedirem psicólogo infantil explicitamente
+        topic: RE_PSY_CHILD.test(text) ? "psicologia" : undefined,
+    };
+}
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /* =========================================================================
@@ -115,7 +142,29 @@ Texto-base (se útil): ${personalizeIntro(origin)}
    }
    ========================================================================= */
 export async function generateAmandaReply(flags = {}) {
-    const user = buildUserPromptWithValuePitch(flags);
+    // se só vier { text }, enriquecemos com flags inferidas
+    const inferred = deriveFlagsFromText(flags.text || "", flags);
+    const merged = { ...inferred, ...flags };
+
+    // --- curto-circuitos determinísticos (evita resposta genérica) ---
+    // 1) Endereço direto
+    if (merged.asksAddress && !merged.text.match(/\b(rota|estacionamento|como chegar)\b/i)) {
+        // mensagem curtinha e objetiva + 1 pergunta de avanço
+        return ensureSingleHeartAtEnd(
+            `Estamos na ${CLINIC_ADDRESS}. Prefere que eu envie a localização pelo mapa para facilitar?`
+        );
+    }
+
+    // 2) Psicólogo infantil (valor→preço só se pedirem preço)
+    if (RE_PSY_CHILD.test(merged.text)) {
+        const pitch = "Temos psicologia infantil com abordagem baseada em evidências para regulação emocional, comportamento e desenvolvimento.";
+        const priceLine = merged.asksPrice ? "A avaliação inicial é R$ 220." : "";
+        const tail = "Posso te ajudar a agendar ou prefere tirar uma dúvida rápida?";
+        return ensureSingleHeartAtEnd([pitch, priceLine, tail].filter(Boolean).join(" "));
+    }
+
+    // --- prompt completo com Valor→Preço (do arquivo utils) ---
+    const user = buildUserPromptWithValuePitch(merged);
 
     let resp;
     try {
@@ -147,8 +196,8 @@ export async function generateAmandaReply(flags = {}) {
     out = clampTo1to3Sentences(out);
     out = ensureSingleHeartAtEnd(out);
 
-    // Se perguntaram por endereço e a resposta não citou nada, reforça (sem quebrar o formato)
-    if (flags.asksAddress && !/Anápolis|Minas Gerais/i.test(out)) {
+    // reforço de endereço se perguntaram e o modelo não trouxe
+    if (merged.asksAddress && !/Anápolis|Minas Gerais/i.test(out)) {
         out = `${out}\n\n${CLINIC_ADDRESS}`;
     }
 
