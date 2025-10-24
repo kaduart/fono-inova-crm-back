@@ -52,25 +52,15 @@ REGRAS DE NEGÓCIO E TOM
 export function deriveFlagsFromText(text = "") {
     const t = (text || "").toLowerCase().trim();
 
-    const RE_SCHEDULE =
-        /\b(agend(ar|o|a|amento)|marcar|marcação|agenda|hor[áa]rio|consulta|quero\s+agendar|marcar\s+consulta)\b/;
-    const RE_PRICE =
-        /\b(pre(ç|c)o|valor|custa|quanto|mensal|pacote|planos?|quanto\s+custa|qual\s+o\s+valor|tabela)\b/;
-    const RE_ADDRESS =
-        /\b(endere(c|ç)o|end\.|localiza(c|ç)(a|ã)o|onde\s+fica|mapa|como\s+chegar|rua|av\.|avenida)\b/;
-    const RE_PAYMENT =
-        /\b(pagamento|pix|cart(ã|a)o|dinheiro|cr[eé]dito|d[eé]bito|forma(s)?\s+de\s+pagamento)\b/;
-    const RE_HOURS =
-        /\b(hor[áa]ri(o|os)\s*de\s*atendimento|abre|fecha|funcionamento|que\s*horas|qual\s*o\s*hor[áa]rio)\b/;
-    const RE_PLANS =
-        /\b(ipasgo|unimed|amil|bradesco|sul\s*am(e|é)rica|hapvida|assim|golden\s*cross|notre\s*dame|interm(e|é)dica|plano(s)?|conv(e|ê)nio(s)?)\b/;
-    const RE_INSIST_PRICE =
-        /\b((só|so|apenas)\s*(o|a)?\s*pre(ç|c)o|fala\s*o\s*valor|me\s*diz\s*o\s*pre(ç|c)o|quero\s*saber\s*o\s*pre[çc]o)\b/;
-    const RE_CHILD_PSY =
-        /\b(psic(o|ó)log[oa]\s*infantil|psicologia\s*infantil|psic(o|ó)log[oa]\s*para\s*cri(a|á)n(ç|c)a)\b/;
-    const RE_OK = /\b(ok|blz|beleza|entendi|certo|perfeito|tá bom|ta bom|td bem)\b/;
-    const RE_ANY_QUESTION = /\?|(como|quando|onde|qual|quais|aceita|fazem|tem)\b/i;
-
+    const RE_SCHEDULE = /\b(agend(ar|o|a|amento)|marcar|marcação|agenda|hor[áa]rio|consulta|marcar\s+consulta|quero\s+agendar)\b/;
+    const RE_PRICE = /\b(preç|preco|preço|valor|custa|quanto|mensal|pacote|planos?|quanto\s+custa|qual\s+o\s+valor|consulta|consulta\s+com|valor\s+da\s+consulta)\b/;
+    // cobre: onde fica / onde é / fica onde / endereço / local / localização / como chegar
+    const RE_ADDRESS = /\b(onde\s*(fica|é)|fica\s*onde|endere[cç]o|end\.|local|localiza(c|ç)(a|ã)o|mapa|como\s*chegar|rua|av\.|avenida)\b/;
+    const RE_PAYMENT = /\b(pagamento|pix|cart(ão|ao)|dinheiro|cr[eé]dito|d[eé]bito|forma\s+de\s+pagamento)\b/;
+    const RE_HOURS = /\b(hor[áa]ri(o|os)\s*de\s*atendimento|abre|fecha|funcionamento|que\s*horas)\b/;
+    const RE_PLANS = /\b(ipasgo|unimed|amil|bradesco|sul\s*am(e|é)rica|hapvida|assim|golden\s*cross|notre\s*dame|interm(e|é)dica|plano[s]?|conv(e|ê)nio[s]?)\b/;
+    const RE_INSIST_PRICE = /(só|so|apenas)\s*(o|a)?\s*pre(ç|c)o|fala\s*o\s*valor|me\s*diz\s*o\s*pre(ç|c)o|quero\s+saber\s*o\s*pre[çc]o/;
+    const RE_CHILD_PSY = /\b(psic(o|ó)logo infantil|psicologia infantil|psic(o|ó)loga infantil|psic(o|ó)logo\s+pra\s+crian|psic(o|ó)loga\s+pra\s+crian)\b/;
 
     return {
         asksPrice: RE_PRICE.test(t),
@@ -81,29 +71,40 @@ export function deriveFlagsFromText(text = "") {
         asksHours: RE_HOURS.test(t),
         asksPlans: RE_PLANS.test(t),
         asksChildPsychology: RE_CHILD_PSY.test(t),
-        resolvedDoubts: RE_OK.test(t),                    // cliente sinalizou que entendeu
-        asksDetails: (RE_ADDRESS.test(t) || RE_PAYMENT.test(t) || RE_HOURS.test(t) || RE_PLANS.test(t) || RE_ANY_QUESTION.test(t)),
-
     };
 }
+
 
 /* =========================================================================
    PITCH DE VALOR POR TEMA (1 LINHA) — usado antes do preço (sem jargões)
    ========================================================================= */
 export const VALUE_PITCH = {
-    generico: "Clínica multidisciplinar, atendimento integrado e acolhedor.",
-    avaliacao_inicial: "Primeiro fazemos uma avaliação para entender a queixa principal e definir, com calma, o plano terapêutico.",
-    sessao: "Sessões individuais com objetivos claros e acompanhamento próximo da família.",
-    pacote: "Pacote mensal para garantir continuidade e evolução com previsibilidade.",
-    neuropsicologica: "Avaliação que mede atenção, memória, linguagem e raciocínio para apoiar diagnóstico e orientar as intervenções.",
-    teste_linguinha: "Avaliação do frênulo lingual com protocolo reconhecido, rápida e segura.",
-    fonoaudiologia: "Avaliação e terapia de fala, linguagem, voz, audição e deglutição.",
-    psicologia: "Atendimento psicológico com práticas baseadas em evidências, sensível à rotina da família.",
-    terapia_ocupacional: "Intervenções para autonomia e integração sensorial nas atividades do dia a dia.",
-    fisioterapia: "Reabilitação motora, neurológica, respiratória e ortopédica, em plano personalizado.",
-    musicoterapia: "Intervenção mediada por música para comunicação, atenção e regulação emocional.",
-    neuropsicopedagogia: "Avaliação e intervenção em dificuldades de aprendizagem com apoio à família e escola."
+    generico:
+        "Primeiro fazemos uma avaliação para entender a queixa principal e definir o plano terapêutico.",
+    avaliacao_inicial:
+        "Primeiro fazemos uma avaliação para entender a queixa principal e definir o plano.",
+    sessao:
+        "As sessões são personalizadas com objetivos claros e acompanhamento próximo.",
+    pacote:
+        "O pacote garante continuidade do cuidado com melhor custo-benefício.",
+    neuropsicologica:
+        "A avaliação neuropsicológica investiga atenção, memória, linguagem e raciocínio para orientar condutas.",
+    teste_linguinha:
+        "O Teste da Linguinha avalia o frênulo lingual de forma rápida e segura.",
+    fonoaudiologia:
+        "Na fono, começamos com avaliação para entender fala/linguagem e montar o plano de cuidado.",
+    psicologia:
+        "Na psicologia, iniciamos com avaliação para entender a demanda emocional/comportamental e planejar o cuidado.",
+    terapia_ocupacional:
+        "Na TO, avaliamos funcionalidade e integração sensorial para definir o plano nas AVDs.",
+    fisioterapia:
+        "Na fisio, avaliamos a queixa motora/neurológica/respiratória para montar o plano.",
+    musicoterapia:
+        "Na musicoterapia, avaliamos objetivos de comunicação/atenção/regulação para direcionar a intervenção.",
+    neuropsicopedagogia:
+        "Na neuropsicopedagogia, avaliamos aprendizagem para alinhar estratégias com família e escola."
 };
+
 
 
 /* =========================================================================
@@ -253,26 +254,34 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     const topic = flags.topic || inferTopic(text);
     const pitch = VALUE_PITCH[topic] || VALUE_PITCH.generico;
 
-    // pedido explícito de preço da AVALIAÇÃO
+    // Pedido explícito de preço da AVALIAÇÃO
     const isEvalPriceAsk = !!asksPrice && /\bavalia(ç|c)[aã]o\b/i.test(text || "");
 
-    // Bloco padrão Valor → Preço (para outros casos de preço)
+    // Bloco padrão Valor → Preço (para pedidos de preço em geral)
     const valuePriceBlock =
-        asksPrice || insistsPrice
+        (asksPrice || insistsPrice)
             ? `
-
 Estratégia Valor → Preço (geral):
 • Explique em 1 frase: "${pitch}"
 • Depois informe o preço: "${priceLineForTopic(topic, text)}"
 `
             : "";
 
-    // Regra ESPECÍFICA p/ "valor da avaliação":
-    // 1) Dizer apenas o preço curto
-    // 2) Fazer UMA pergunta suave p/ entender necessidade/queixa (sem CTA de agendamento)
+    // Dica para “preço de avaliação genérica” (consulta / fono / psico / TO / fisio etc.)
+    const genericEvalPriceHint =
+        (asksPrice || insistsPrice) &&
+            /consulta|valor\s+da\s+consulta|fono|psico|terapia|to\b|fisi(o|oterap)|avalia(ç|c)[aã]o/i.test(text)
+            ? `
+Ao responder preço de avaliação genérica:
+• Frase 1 (explicativa, sem jargão): "Primeiro fazemos uma avaliação para entender a queixa principal e definir o plano terapêutico."
+• Frase 2 (preço curto): "O valor da avaliação é R$ 220,00."
+• Frase 3 (engajar sem pressão): "Quer me contar rapidamente qual é a queixa principal?"
+`
+            : "";
+
+    // Regra ESPECÍFICA p/ "valor da avaliação"
     const evalPriceBehavior = isEvalPriceAsk
         ? `
-
 Regra específica para "valor da avaliação":
 • Responda primeiro com o preço curto: "O valor da avaliação é R$ 220,00."
 • Em seguida, faça UMA pergunta acolhedora para entender a necessidade/queixa principal (ex.: "É para criança ou adulto?" ou "Quer me contar rapidamente qual é a principal queixa/objetivo?").
@@ -298,11 +307,13 @@ Instruções de resposta:
 2) Se asksPlans=true: diga que estamos em credenciamento e, no momento, atendimento é particular.
 3) Se pedirem endereço, use: ${CLINIC_ADDRESS}.
 4) Se tiver incerteza (pagamento/rota/estacionamento), diga: “Vou verificar e já te retorno, por favor um momento 💚” e faça 1 pergunta objetiva.
-5) Só ofereça horários se wantsSchedule=true (ou seja, **apenas quando o cliente pedir**).
+5) Só ofereça horários se wantsSchedule=true (apenas quando o cliente pedir).
 ${valuePriceBlock}
 ${evalPriceBehavior}
+${genericEvalPriceHint}
 Saída: apenas a mensagem para o cliente, sem marcadores. Tom acolhedor e objetivo.
 `.trim();
 }
+
 
 
