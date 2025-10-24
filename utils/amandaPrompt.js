@@ -46,6 +46,30 @@ REGRAS DE NEGÓCIO E TOM
   – Não use mais de 1 💚 nem emojis aleatórios.
 `.trim();
 
+export function deriveFlagsFromText(text = "") {
+    const t = (text || "").toLowerCase().trim();
+
+    const RE_SCHEDULE = /\b(agend(ar|o|a|amento)|marcar|marcação|agenda|hor[áa]rio|consulta|marcar\s+consulta|quero\s+agendar)\b/;
+    const RE_PRICE = /\b(preç|preco|preço|valor|custa|quanto|mensal|pacote|planos?|quanto\s+custa|qual\s+o\s+valor)\b/;
+    const RE_ADDRESS = /\b(endere[cç]o|end.|localiza(c|ç)(a|ã)o|onde fica|mapa|como chegar|rua|av\.|avenida)\b/;
+    const RE_PAYMENT = /\b(pagamento|pix|cart(ão|ao)|dinheiro|cr[eé]dito|d[eé]bito|forma\s+de\s+pagamento)\b/;
+    const RE_HOURS = /\b(hor[áa]ri(o|os) de atendimento|abre|fecha|funcionamento|que\s+horas)\b/;
+    const RE_PLANS = /\b(ipasgo|unimed|amil|bradesco|sul\s*am(e|é)rica|hapvida|assim|golden\s*cross|notre\s*dame|interm(e|é)dica|plano[s]?|conv(e|ê)nio[s]?)\b/;
+    const RE_INSIST_PRICE = /(só|so|apenas)\s*(o|a)?\s*pre(ç|c)o|fala\s*o\s*valor|me\s*diz\s*o\s*pre(ç|c)o|quero\s+saber\s*o\s*pre[çc]o/;
+    const RE_CHILD_PSY = /\b(psic(o|ó)logo infantil|psicologia infantil|psic(o|ó)loga infantil|psic(o|ó)logo\s+pra\s+crian|psic(o|ó)loga\s+pra\s+crian)\b/;
+
+    return {
+        asksPrice: RE_PRICE.test(t),
+        insistsPrice: RE_INSIST_PRICE.test(t),
+        wantsSchedule: RE_SCHEDULE.test(t),
+        asksAddress: RE_ADDRESS.test(t),
+        asksPayment: RE_PAYMENT.test(t),
+        asksHours: RE_HOURS.test(t),
+        asksPlans: RE_PLANS.test(t),
+        asksChildPsychology: RE_CHILD_PSY.test(t),
+    };
+}
+
 /* =========================================================================
    PITCH DE VALOR POR TEMA (1 LINHA) — usado antes do preço
    ========================================================================= */
