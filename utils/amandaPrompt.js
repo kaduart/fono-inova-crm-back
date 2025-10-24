@@ -95,7 +95,7 @@ export const VALUE_PITCH = {
     avaliacao_inicial: "Primeiro fazemos uma avaliação para entender a queixa principal e definir, com calma, o plano terapêutico.",
     sessao: "Sessões individuais com objetivos claros e acompanhamento próximo da família.",
     pacote: "Pacote mensal para garantir continuidade e evolução com previsibilidade.",
-    neuropsicologica: "Avaliação das funções cognitivas para apoiar o diagnóstico e orientar intervenções.",
+    neuropsicologica: "Avaliação que mede atenção, memória, linguagem e raciocínio para apoiar diagnóstico e orientar as intervenções.",
     teste_linguinha: "Avaliação do frênulo lingual com protocolo reconhecido, rápida e segura.",
     fonoaudiologia: "Avaliação e terapia de fala, linguagem, voz, audição e deglutição.",
     psicologia: "Atendimento psicológico com práticas baseadas em evidências, sensível à rotina da família.",
@@ -165,10 +165,10 @@ export const SYSTEM_PROMPT_AMANDA = `
                     • **Sessão individual (avulsa)**: **R$ 220** (**cite apenas se perguntarem valor da sessão**).
                     • **Pacote mensal (1x/semana)**: **R$ 180 por sessão (~R$ 720/mês)** (**não cite pacote sem o cliente perguntar**; exceção: se perguntarem valor da sessão, pode comparar avulsa 220 vs pacote 180).
                     • **Avaliação Neuropsicológica**:
-                    – Objetivo: avaliar funções cognitivas (atenção, memória, linguagem, raciocínio) e apoiar diagnóstico (**TDAH, TEA, dislexia, demências/Alzheimer, AVC, traumatismos**).
-                    – Etapas: **entrevista**, **observação**, **testes padronizados**, **análise**, **laudo** com recomendações e **planejamento**.
-                    – **Carga horária**: **10 sessões**, **1x/semana**, **50 min** cada (a partir de 4 anos).
-                    – **Preço**: **R$ 2.500,00 em até 6x no cartão** **ou** **R$ 2.300,00 à vista**.
+                    - Objetivo: avaliar funções cognitivas (atenção, memória, linguagem, raciocínio) e apoiar diagnóstico (**TDAH, TEA, dislexia, demências/Alzheimer, AVC, traumatismos**, etc.).
+                    - Etapas: **entrevista**, **observação**, **testes padronizados**, **análise**, **laudo técnico** com recomendações (compartilhável com médico, escola e equipe) e **planejamento**.
+                    - **Carga horária**: **10 sessões**, **1x/semana**, **50 min** cada (a partir de 4 anos).
+                    - **Preço**: **R$ 2.500,00 em até 6x no cartão** **ou** **R$ 2.300,00 à vista**.
                     • **Teste da Linguinha (frênulo lingual)**: **R$ 150,00**; protocolo Fernanda Lessa (Lei 13.002/2014); indicado para RN/bebês/crianças com dificuldades de amamentação, fala ou sucção.
 
                     HORÁRIOS E AGENDAMENTO

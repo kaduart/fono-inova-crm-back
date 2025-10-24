@@ -842,72 +842,67 @@ router.patch('/:id/complete', auth, async (req, res) => {
 
         // Sessão avulsa (individual ou avaliação)
         if (appointment.serviceType === 'individual_session' || appointment.serviceType === 'evaluation') {
-
-
-            const method =
-                appointment.paymentMethod ||
-                'dinheiro';
+            const method = appointment.paymentMethod || 'dinheiro';
 
             // 1) caminho feliz: pelo ponteiro salvo no appointment
             if (appointment.payment) {
                 paymentRecord = await Payment.findById(appointment.payment);
             }
 
-            // 2) fallback: achar pelo session (é assim que você cria o Payment na marcação)
+            // 2) fallback: pela session
             if (!paymentRecord && appointment.session) {
                 const sessionId = appointment.session._id || appointment.session;
                 paymentRecord = await Payment.findOne({
                     session: sessionId,
-                    serviceType: { $in: ['individual_session', 'evaluation'] }
+                    serviceType: { $in: ['individual_session', 'evaluation'] },
+                    status: { $in: ['pending', 'partial', 'paid'] } // opcional: filtrar status
                 }).sort({ createdAt: -1 });
             }
 
-            // dentro do complete, quando for atualizar o payment:
-
-
-            if (typeof paymentRecord.amount !== 'number' || paymentRecord.amount <= 0) {
-                const amountFromSession = appointment.session?.sessionValue ?? appointment.session?.paymentAmount;
-                const amountFromAppt = typeof appointment.paymentAmount === 'number' ? appointment.paymentAmount : appointment.amount;
-                paymentRecord.amount = amountFromSession ?? amountFromAppt ?? appointment.package?.sessionValue ?? 200;
-            }// ... (mesmo código acima)
-
-            if (paymentRecord) {
-                if (typeof paymentRecord.amount !== 'number' || paymentRecord.amount <= 0) {
-                    const amountFromSession = appointment.session?.sessionValue ?? appointment.session?.paymentAmount;
-                    const amountFromAppt = (typeof appointment.paymentAmount === 'number' ? appointment.paymentAmount : appointment.amount);
-                    paymentRecord.amount = amountFromSession ?? amountFromAppt ?? appointment.package?.sessionValue ?? 200;
-                }
-
-                paymentRecord.patient = appointment.patient._id;
-                paymentRecord.doctor = appointment.doctor._id;
-                paymentRecord.serviceType = appointment.serviceType;
-                paymentRecord.paymentMethod = method;
-                paymentRecord.status = 'paid';
-                paymentRecord.paymentDate = appointment.date;  // ✅ dia do atendimento
-                paymentRecord.serviceDate = appointment.date;  // ✅ REQUERIDO pelo schema
-
-                // vínculos consistentes
-                paymentRecord.appointment = appointment._id;
-                paymentRecord.session = appointment.session?._id || appointment.session || paymentRecord.session || null;
-
-                paymentRecord.notes = paymentRecord.notes || 'Pagamento automático por confirmação de sessão avulsa';
-                await paymentRecord.save();
-
-                // ✅ atualizar a sessão também
-                if (appointment.session) {
-                    await Session.findByIdAndUpdate(
-                        appointment.session._id || appointment.session,
-                        {
-                            status: 'completed',
-                            paymentStatus: 'paid',
-                            isPaid: true,
-                            visualFlag: 'ok',              // (opcional, mas bom)
-                            updatedAt: new Date(),
-                        }
-                    );
-                }
+            // 👉 se ainda não achou, retorne erro sem tentar acessar .amount
+            if (!paymentRecord) {
+                return res.status(409).json({
+                    success: false,
+                    message: 'Payment pendente não encontrado para este agendamento.'
+                });
             }
 
+            // ✅ Daqui pra baixo, paymentRecord existe
+            // Não sobrescreva amount se já houver valor (>0). Só preencha se estiver vazio/zero.
+            if (typeof paymentRecord.amount !== 'number' || paymentRecord.amount <= 0) {
+                const amountFromSession =
+                    appointment.session?.sessionValue ?? appointment.session?.paymentAmount;
+                const amountFromAppt =
+                    (typeof appointment.paymentAmount === 'number' ? appointment.paymentAmount : appointment.amount);
+                paymentRecord.amount =
+                    amountFromSession ?? amountFromAppt ?? appointment.package?.sessionValue ?? 200;
+            }
+
+            paymentRecord.patient = appointment.patient._id;
+            paymentRecord.doctor = appointment.doctor._id;
+            paymentRecord.serviceType = appointment.serviceType;
+            paymentRecord.paymentMethod = method;
+            paymentRecord.status = 'paid';
+            paymentRecord.paymentDate = appointment.date; // dia do atendimento
+            paymentRecord.serviceDate = appointment.date; // requerido pelo schema
+            paymentRecord.appointment = appointment._id;
+            paymentRecord.session = appointment.session?._id || appointment.session || paymentRecord.session || null;
+            paymentRecord.notes = paymentRecord.notes || 'Pagamento automático por confirmação de sessão avulsa';
+            await paymentRecord.save();
+
+            // Marcar sessão como paga
+            if (appointment.session) {
+                await Session.findByIdAndUpdate(
+                    appointment.session._id || appointment.session,
+                    {
+                        status: 'completed',
+                        paymentStatus: 'paid',
+                        isPaid: true,
+                        visualFlag: 'ok', // opcional
+                        updatedAt: new Date(),
+                    }
+                );
+            }
         }
 
 
