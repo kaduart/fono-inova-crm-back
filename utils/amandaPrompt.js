@@ -1,8 +1,9 @@
-// /src/utils/amandaPrompt.js
 /* =========================================================================
    AMANDA PROMPTS — Clínica Fono Inova (Anápolis-GO) - VERSÃO REFINADA
    Mantém NOMES FIXOS e API ESTÁVEL para integração no serviço.
    ========================================================================= */
+
+import { normalizeTherapyTerms } from "./therapyDetector.js";
 
 /* =========================================================================
    BLOCOS DE REGRAS E TEXTOS-BASE
@@ -50,7 +51,7 @@ REGRAS DE NEGÓCIO E TOM
    FLAGS — detecção robusta por regex (acentos e variações comuns)
    ========================================================================= */
 export function deriveFlagsFromText(text = "") {
-    const t = (text || "").toLowerCase().trim();
+    const t = normalizeTherapyTerms(text || "").toLowerCase().trim();
 
     const RE_SCHEDULE = /\b(agend(ar|o|a|amento)|marcar|marcação|agenda|hor[áa]rio|consulta|marcar\s+consulta|quero\s+agendar)\b/;
     const RE_PRICE = /\b(preç|preco|preço|valor|custa|quanto|mensal|pacote|planos?|quanto\s+custa|qual\s+o\s+valor|consulta|consulta\s+com|valor\s+da\s+consulta)\b/;

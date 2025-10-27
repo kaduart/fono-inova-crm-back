@@ -111,232 +111,6 @@ export const THERAPY_SPECIALTIES = {
 };
 
 /**
- * 🎯 CONHECIMENTO DE EQUIVALÊNCIAS - A Amanda SEMPRE sabe que são a mesma coisa
- */
-export const THERAPY_EQUIVALENCIES = {
-    neuropsychological: {
-        primary_name: "avaliação neuropsicológica",
-        equivalent_terms: [
-            "avaliação para laudo de conhecimento",
-            "avaliação de conhecimento",
-            "laudo de conhecimento",
-            "teste de conhecimento",
-            "avaliação neuro psicologia",
-            "neuro psicologia",
-            "psicóloga que avalia conhecimento",
-            "laudo para pular série",
-            "avaliação para avançar série",
-            "teste para pular série",
-            "avaliação escolar",
-            "laudo escolar",
-            "psicóloga conhecimento",
-            "teste psicológico conhecimento"
-        ],
-        description: "Processo completo de 10 sessões para mapear habilidades cognitivas e emitir laudo",
-        standard_response: "Avaliação neuropsicológica - 10 sessões de 50min para mapear atenção, memória, raciocínio e funções executivas. Ideal para casos de avanço de série e diagnóstico de dificuldades de aprendizagem."
-    },
-
-    speech: {
-        primary_name: "fonoaudiologia",
-        equivalent_terms: [
-            "fono",
-            "fona",
-            "fonoa",
-            "fonoaf",
-            "fonoafd",
-            "fonoafdi",
-            "fonoafdion",
-            "fonoafdionol",
-            "fonoafdionoli",
-            "fonoafdionolig",
-            "fonoafdionoliga",
-            "fonaudiologia",
-            "fonaudiologa",
-            "fonoaudiologa",
-            "fono udilogia",
-            "fona udilogia",
-            "terapia da fala",
-            "fala",
-            "gagueira",
-            "linguagem",
-            "pronúncia",
-            "troca letras"
-        ],
-        description: "Avaliação e terapia para desenvolvimento da fala e linguagem",
-        standard_response: "Fonoaudiologia - trabalhamos com gagueira, atraso de fala, troca de letras, comunicação alternativa e desenvolvimento da linguagem."
-    },
-
-    psychology: {
-        primary_name: "psicologia",
-        equivalent_terms: [
-            "psico",
-            "psicó",
-            "psic",
-            "psicologa",
-            "psicólogo",
-            "psicologo",
-            "psicolofia",
-            "psicologjia",
-            "psi",
-            "terapia psicológica",
-            "acompanhamento psicológico",
-            "comportamento",
-            "emocional"
-        ],
-        description: "Acompanhamento psicológico para questões emocionais e comportamentais",
-        standard_response: "Psicologia - atendimento para questões emocionais, comportamentais, TEA, TDAH, ansiedade, com abordagens como TCC e terapia infantil."
-    },
-
-    psychopedagogy: {
-        primary_name: "psicopedagogia",
-        equivalent_terms: [
-            "psicopedagoga",
-            "psicopedagogo",
-            "psico pedagogia",
-            "psico-pedagogia",
-            "dificuldade aprendizagem",
-            "problema escola",
-            "rendimento escolar",
-            "aprendizagem",
-            "dificuldade escola"
-        ],
-        description: "Avaliação e intervenção em dificuldades de aprendizagem",
-        standard_response: "Psicopedagogia - trabalhamos com dificuldades de aprendizagem, dislexia, TDAH escolar e estratégias pedagógicas personalizadas."
-    },
-
-    occupational: {
-        primary_name: "terapia ocupacional",
-        equivalent_terms: [
-            "to",
-            "t.o.",
-            "t o",
-            "terapeuta ocupacional",
-            "terapia ocupa",
-            "terapia ocp",
-            "integração sensorial",
-            "integracao sensorial",
-            "avd",
-            "atividades vida diária"
-        ],
-        description: "Terapia para desenvolvimento de habilidades funcionais e integração sensorial",
-        standard_response: "Terapia Ocupacional - trabalhamos com integração sensorial, coordenação motora, atividades de vida diária e autonomia."
-    },
-
-    physiotherapy: {
-        primary_name: "fisioterapia",
-        equivalent_terms: [
-            "fisio",
-            "fisioterapeuta",
-            "fisioterapia motora",
-            "fisio motora",
-            "coordenação motora",
-            "desenvolvimento motor",
-            "fisioterapia respiratória",
-            "fisio respiratória"
-        ],
-        description: "Terapia para desenvolvimento motor e funcional",
-        standard_response: "Fisioterapia - atendimento para desenvolvimento motor, coordenação, fortalecimento e questões respiratórias."
-    },
-
-    music: {
-        primary_name: "musicoterapia",
-        equivalent_terms: [
-            "musicoterapeuta",
-            "música terapia",
-            "musica terapia",
-            "terapia com música",
-            "terapia musical"
-        ],
-        description: "Terapia através da música para desenvolvimento e expressão",
-        standard_response: "Musicoterapia - utilizamos a música para trabalhar comunicação, expressão emocional, atenção e regulação."
-    },
-
-    physiotherapy: {
-        primary_name: "fisioterapia",
-        equivalent_terms: [
-            "fisio",
-            "fisioterapeuta",
-            "fisioterapia motora",
-            "fisio motora",
-            "coordenação motora",
-            "desenvolvimento motor",
-            "fisioterapia respiratória",
-            "fisio respiratória",
-            "fisioterapia neurologica",
-            "fisio neurologica",
-            "fisioterapia ortopédica",
-            "fisio ortopédica",
-            "fisioterapia pediatrica",
-            "fisio pediatrica",
-            // 🆕 Variações comuns de digitação
-            "fisioterapia",
-            "fisioterapia",
-            "fisioterapia",
-            "fisioterapia",
-            "fisioterapya",
-            "fisioterapya",
-            "fisioterapya"
-        ],
-        description: "Terapia para desenvolvimento motor, coordenação e funcionalidade",
-        standard_response: "Fisioterapia - trabalhamos com desenvolvimento motor, coordenação, fortalecimento, equilíbrio e questões respiratórias/ortopédicas."
-    },
-
-    tongue_tie: {
-        primary_name: "teste da linguinha",
-        equivalent_terms: [
-            "teste linguinha",
-            "teste da lingüinha",
-            "teste lingüinha",
-            "teste da lingunha",
-            "teste lingunha",
-            "teste da lingünha",
-            "teste lingünha",
-            "teste da linguina",
-            "teste linguina",
-            "frênulo lingual",
-            "freio lingual",
-            "frênulo",
-            "freio",
-            "linguinha",
-            "lingünha",
-            "lingunha",
-            "linguina",
-            "teste da língua",
-            "teste língua",
-            "avaliação linguinha",
-            "avaliação da linguinha",
-            // 🆕 Termos relacionados
-            "amamentação",
-            "dificuldade mamar",
-            "sucção",
-            "bebe não mama",
-            "bebê não mama"
-        ],
-        description: "Avaliação do frênulo lingual para verificar alterações na amamentação e fala",
-        standard_response: "Teste da Linguinha - avaliação rápida e segura do frênulo lingual. Ideal para bebês com dificuldade na amamentação. Valor: R$ 150,00."
-    },
-
-
-    caa: {
-        primary_name: "comunicação alternativa",
-        equivalent_terms: [
-            "caa",
-            "c.a.a.",
-            "comunicação suplementar",
-            "comunicacao alternativa",
-            "comunicacao suplementar",
-            "pecs",
-            "picture exchange",
-            "sistema comunicação",
-            "não verbal",
-            "não fala"
-        ],
-        description: "Sistemas de comunicação para pessoas não-verbais",
-        standard_response: "Comunicação Alternativa - desenvolvemos sistemas personalizados como PECS para pacientes não-verbais se comunicarem."
-    }
-};
-
-/**
  * 🎯 DETECTAR E UNIFICAR TERMOS EQUIVALENTES
  */
 export function normalizeTherapyTerms(text = "") {
@@ -628,3 +402,57 @@ export const THERAPY_EQUIVALENCIES = {
         standard_response: "Teste da Linguinha - avaliação rápida e segura do frênulo lingual. Ideal para bebês com dificuldade na amamentação. Valor: R$ 150,00."
     }
 };
+
+export const TYPEO_CORRECTIONS = {
+    // Correções comuns de digitação
+    "fonoafdionoliga": "fonoaudiologia",
+    "fonoafdionoli": "fonoaudiologia", 
+    "fonoafdionol": "fonoaudiologia",
+    "fonoafdiono": "fonoaudiologia",
+    "fonoafdion": "fonoaudiologia",
+    "fonoafdio": "fonoaudiologia",
+    "fonoafdi": "fonoaudiologia",
+    "fonoafd": "fonoaudiologia",
+    "fonoaf": "fonoaudiologia",
+    "fonoa": "fonoaudiologia",
+    "fona": "fonoaudiologia",
+    
+    "psicologjia": "psicologia",
+    "psicolofia": "psicologia",
+    "psicologa": "psicologia",
+    "psicologo": "psicologia",
+    
+    "terapia ocupa": "terapia ocupacional",
+    "terapia ocp": "terapia ocupacional",
+    
+    "musicoterapeuta": "musicoterapia",
+    
+    // Abreviações comuns
+    "fono": "fonoaudiologia",
+    "psico": "psicologia", 
+    "to": "terapia ocupacional",
+    "fisio": "fisioterapia",
+
+    // 🆕 Correções para Fisioterapia
+    "fisioterapia": "fisioterapia",
+    "fisioterapia": "fisioterapia",
+    "fisioterapia": "fisioterapia", 
+    "fisioterapya": "fisioterapia",
+    "fisioterapya": "fisioterapia",
+    "fisioterapya": "fisioterapia",
+    
+    // 🆕 Correções para Teste da Linguinha
+    "lingunha": "linguinha",
+    "lingünha": "linguinha",
+    "linguina": "linguinha",
+    "lingüinha": "linguinha",
+    "teste lingunha": "teste da linguinha",
+    "teste lingünha": "teste da linguinha", 
+    "teste linguina": "teste da linguinha",
+    "teste lingüinha": "teste da linguinha",
+    "frenulo": "frênulo",
+    "freio lingual": "frênulo lingual"
+
+};
+
+

@@ -1,11 +1,122 @@
 // /src/utils/amandaIntents.js
 /* =========================================================================
-   AMANDA INTENTS - Sistema de Fallback Local
-   Cérebro rápido com respostas pré-definidas para cenários críticos
+   AMANDA INTENTS + MANUAL (integrado)
+   Sistema de Fallback Local com respostas canônicas
    ========================================================================= */
 
+import { normalizeTherapyTerms } from './therapyDetector.js';
+
+/* =========================================================================
+   MANUAL_AMANDA (o que você me enviou) + helper getManual
+   ========================================================================= */
+export const MANUAL_AMANDA = {
+    "saudacao": "Olá! Tudo bem? 😊 Sou a Amanda, da Clínica Fono Inova. Fico muito feliz pelo seu contato! Como posso ajudar você e seu(ua) pequeno(a) hoje?",
+
+    "fonoaudiologia": {
+        "atraso_fala": "Oi! Que bom que você está atenta ao desenvolvimento do seu bebê! 💙 Com 2 anos, esperamos que as crianças já formem frases simples com 2-3 palavras. A ausência de fala pode ser um sinal importante para investigarmos. Nossas fonoaudiólogas são especializadas em estimulação precoce. Gostaria de agendar uma avaliação?",
+
+        "troca_letras": "Que olhar atento você tem! 👏 Essas trocas são comuns em determinadas fases, mas quando persistem podem precisar de atenção. Nossas fonoaudiólogas trabalham com consciência fonológica através de jogos e atividades lúdicas. Vamos agendar uma avaliação?",
+
+        "gagueira": "Oi, amor! É tão comum as famílias se preocuparem com a gagueira! 💙 A gagueira do desenvolvimento é muito frequente entre 2-5 anos. Trabalhamos com abordagem de fluência baseada em evidências. Que tal agendarmos uma conversa com nossa fono especialista?"
+    },
+
+    "psicologia": {
+        "tdah": "Oi, querida! É natural se sentir assim quando a escola traz essas observações. 💙 O TDAH é uma condição neurobiológica. Aqui fazemos uma avaliação completa com entrevista detalhada, observação lúdica e instrumentos validados. Nossas psicólogas usam Terapia Cognitivo-Comportamental adaptada para crianças!",
+
+        "dificuldade_emocional": "Oi, amor! Nossos pequenos sentem as emoções com tanta intensidade, não é? 💙 Aqui usamos a ludoterapia - terapia através do brincar - que permite à criança expressar sentimentos. Estamos aqui para acolher seu coraçãozinho!"
+    },
+
+    "neuropsicologia": {
+        "avaliacao": "Que pergunta importante! 💙 A avaliação neuropsicológica é como um 'mapa do cérebro' da criança - avaliamos funções como atenção, memória, raciocínio e linguagem. O processo inclui entrevistas, sessões com a criança e laudo detalhado. É fundamental para identificar TEA, TDAH e dificuldades de aprendizagem."
+    },
+
+    "psicopedagogia": {
+        "dificuldade_escolar": "Oi! Ver nosso filho com dificuldade na escola é realmente preocupante. 💙 Nossa psicopedagoga faz uma avaliação completa para entender como a criança processa informações e aprende. Trabalhamos com intervenções baseadas em ciência cognitica!"
+    },
+
+    "terapia_ocupacional": {
+        "o_que_faz": "Que pergunta importante! 💙 A terapia ocupacional ajuda as crianças a desenvolverem habilidades para o dia a dia - desde segurar um lápis até amarrar o tênis! Trabalhamos com coordenação motora, integração sensorial e habilidades sociais."
+    },
+
+    "fisioterapia": {
+        "quando_precisa": "A fisioterapia pediátrica vai muito além do que imaginamos! 💙 Trabalhamos com estimulação precoce, desenvolvimento motor, coordenação e muito mais. Para bebês e crianças com atraso motor, a intervenção precoce faz toda diferença!"
+    },
+
+    "musicoterapia": {
+        "o_que_e": "A musicoterapia é uma ferramenta maravilhosa! 💙 Através da música, trabalhamos comunicação, regulação emocional e habilidades sociais - e a criança não precisa saber música! É sobre se expressar e se desenvolver de forma natural."
+    },
+
+    "valores": {
+        "consulta": "Entendo perfeitamente! 💙 Temos opções acessíveis: Avaliação inicial: R$220 | Sessões: R$200 avulsa ou R$720/mês (4 sessões) | Avaliação neuropsicológica: a partir de R$2.300. Aceitamos cartão em até 6x, PIX e dinheiro!"
+    },
+
+    "planos_saude": {
+        "unimed": "Estamos em processo de credenciamento com os principais planos! 💙 Enquanto isso, atendemos particular mas emitimos nota fiscal para reembolso e temos condições especiais. O importante é não postergar o cuidado do seu pequeno!"
+    },
+
+    "localizacao": {
+        "endereco": "Ficamos na Av. Minas Gerais, 405 - Jundiaí, Anápolis! 🗺️ Temos estacionamento gratuito, acesso fácil e um ambiente totalmente preparado para receber crianças com todo conforto e carinho! 💙"
+    },
+
+    "agendamento": {
+        "info_necessarias": "Perfeito! Vou ajudar com o agendamento! 💙 Preciso de: Nome e idade da criança | Seu telefone | Principal queixa/objetivo. Lembre-se: buscar ajuda é demonstração de amor! 😊"
+    },
+
+    "despedida": "Foi um prazer conversar com você! Nossa equipe está aqui para acolhê-los com todo carinho e profissionalismo. Qualquer outra dúvida, estou à disposição! Tenha um dia abençoado! 💙",
+
+    "situacoes_especiais": {
+        "pais_angustiados": "Oi, querida! Sinto que você está bem preocupada... É completamente compreensível! 💙 Nossos filhos são nosso mundo! Mas saiba que você não está sozinha. Estamos aqui para caminhar junto com vocês!",
+
+        "duvidas_diagnostico": "Entendo sua cautela! 💙 O diagnóstico é um processo cuidadoso. Nosso foco é compreender seu filho para podermos ajudá-lo da melhor forma possível!",
+
+        "urgencias": "Oi! Entendo a urgência! 💙 Para casos que precisam de atenção imediata, temos horários reservados. Vou verificar nossa agenda e te retorno rapidamente!"
+    }
+};
+
+export function getManual(cat, sub) {
+    if (!cat) return null;
+    const node = MANUAL_AMANDA?.[cat];
+    if (!node) return null;
+    if (sub && typeof node === 'object') return node[sub] ?? null;
+    return typeof node === 'string' ? node : null;
+}
+
+/* =========================================================================
+   Helpers
+   ========================================================================= */
+const ensureSingleHeartAtEnd = (text = "") => {
+    const cleaned = String(text).replace(/💚/g, "").trim();
+    return `${cleaned} 💚`;
+};
+
+/* =========================================================================
+   Mapa: intenção → (categoria/sub) do MANUAL_AMANDA
+   ========================================================================= */
+const INTENT_TO_MANUAL = {
+    greeting: { cat: 'saudacao' },
+    goodbye: { cat: 'despedida' },
+
+    price_evaluation: { cat: 'valores', sub: 'consulta' },
+    health_plans: { cat: 'planos_saude', sub: 'unimed' },
+    address: { cat: 'localizacao', sub: 'endereco' },
+    scheduling: { cat: 'agendamento', sub: 'info_necessarias' },
+
+    neuropsychological: { cat: 'neuropsicologia', sub: 'avaliacao' },
+    speech_delay: { cat: 'fonoaudiologia', sub: 'atraso_fala' },
+    speech_stutter: { cat: 'fonoaudiologia', sub: 'gagueira' },
+    speech_letters: { cat: 'fonoaudiologia', sub: 'troca_letras' },
+
+    child_psychology: { cat: 'psicologia', sub: 'dificuldade_emocional' },
+
+    parent_anxious: { cat: 'situacoes_especiais', sub: 'pais_angustiados' },
+    diagnosis_doubt: { cat: 'situacoes_especiais', sub: 'duvidas_diagnostico' },
+    urgency: { cat: 'situacoes_especiais', sub: 'urgencias' },
+};
+
+/* =========================================================================
+   AMANDA INTENTS (fallback)
+   ========================================================================= */
 export const AMANDA_INTENTS = {
-    // 🎯 INTENÇÃO: SAUDAÇÃO INICIAL
     greeting: {
         patterns: [
             /^(oi|ola|olá|hey|hi|começar|iniciar)$/i,
@@ -19,7 +130,6 @@ export const AMANDA_INTENTS = {
         ]
     },
 
-    // 💰 INTENÇÃO: PREÇO DA AVALIAÇÃO
     price_evaluation: {
         patterns: [
             /(preço|preco|valor|custa|quanto).*(avalia|consulta|inicial)/i,
@@ -34,7 +144,6 @@ export const AMANDA_INTENTS = {
         ]
     },
 
-    // 🏥 INTENÇÃO: PLANOS DE SAÚDE
     health_plans: {
         patterns: [
             /(unimed|ipasgo|amil|plano|convênio|convenio)/i,
@@ -48,7 +157,6 @@ export const AMANDA_INTENTS = {
         ]
     },
 
-    // 📍 INTENÇÃO: ENDEREÇO/LOCALIZAÇÃO
     address: {
         patterns: [
             /(onde fica|endereço|local|localização|mapa|como chegar)/i,
@@ -62,7 +170,6 @@ export const AMANDA_INTENTS = {
         ]
     },
 
-    // 🧩 INTENÇÃO: TEA/TDAH
     tea_tdah: {
         patterns: [
             /(tea|autismo|tdah|transtorno|espectro)/i,
@@ -76,7 +183,6 @@ export const AMANDA_INTENTS = {
         ]
     },
 
-    // 🗣️ INTENÇÃO: FONO/ATRASO FALA
     speech_delay: {
         patterns: [
             /(fono|fala|linguagem|pronúncia|troca letras)/i,
@@ -90,7 +196,6 @@ export const AMANDA_INTENTS = {
         ]
     },
 
-    // ⏱️ INTENÇÃO: DURAÇÃO DA SESSÃO
     session_duration: {
         patterns: [
             /(quanto tempo|duração|dura quanto|tempo da sessão)/i,
@@ -104,7 +209,6 @@ export const AMANDA_INTENTS = {
         ]
     },
 
-    // 👶 INTENÇÃO: BEBÊS/CRIANÇAS PEQUENAS
     babies_toddlers: {
         patterns: [
             /(bebê|bebe|recém nascido|recem nascido|1 ano|2 anos|3 anos)/i,
@@ -118,7 +222,6 @@ export const AMANDA_INTENTS = {
         ]
     },
 
-    // 🧠 INTENÇÃO: PSICOLOGIA INFANTIL
     child_psychology: {
         patterns: [
             /(psicóloga infantil|psicologa infantil|psicólogo infantil)/i,
@@ -132,7 +235,6 @@ export const AMANDA_INTENTS = {
         ]
     },
 
-    // 📅 INTENÇÃO: AGENDAMENTO
     scheduling: {
         patterns: [
             /(agendar|marcar|marcação|consulta|horário|agenda)/i,
@@ -146,7 +248,6 @@ export const AMANDA_INTENTS = {
         ]
     },
 
-    // 💳 INTENÇÃO: PAGAMENTO
     payment: {
         patterns: [
             /(pagamento|pix|cartão|cartao|dinheiro|crédito|débito)/i,
@@ -160,7 +261,6 @@ export const AMANDA_INTENTS = {
         ]
     },
 
-    // 🧪 INTENÇÃO: AVALIAÇÃO NEUROPSICOLÓGICA
     neuropsychological: {
         patterns: [
             /(neuropsicológica|neuropsicologia|avaliação completa)/i,
@@ -174,7 +274,6 @@ export const AMANDA_INTENTS = {
         ]
     },
 
-    // 👅 INTENÇÃO: TESTE DA LINGUINHA
     tongue_tie: {
         patterns: [
             /(teste da linguinha|frênulo|freio lingual)/i,
@@ -188,7 +287,6 @@ export const AMANDA_INTENTS = {
         ]
     },
 
-    // ❓ INTENÇÃO: PEDIDO MÉDICO
     medical_request: {
         patterns: [
             /(pedido médico|receita|encaminhamento)/i,
@@ -202,7 +300,6 @@ export const AMANDA_INTENTS = {
         ]
     },
 
-    // 🎯 INTENÇÃO: PADRÃO (FALLBACK)
     default: {
         patterns: [/.*/],
         responses: [
@@ -214,16 +311,11 @@ export const AMANDA_INTENTS = {
 };
 
 /* =========================================================================
-   SISTEMA DE MATCH DE INTENÇÕES
+   Match de intenções
    ========================================================================= */
-
-/**
- * Encontra a intenção mais adequada para a mensagem do usuário
- */
 export function findMatchingIntent(userMessage) {
-    const message = userMessage.toLowerCase().trim();
+    const message = normalizeTherapyTerms(userMessage || "").toLowerCase().trim();
 
-    // Procura por intenções específicas (excluindo 'default')
     const intents = Object.entries(AMANDA_INTENTS)
         .filter(([intentName]) => intentName !== 'default')
         .map(([intentName, intentData]) => {
@@ -233,7 +325,6 @@ export function findMatchingIntent(userMessage) {
         .filter(result => result.matchScore > 0)
         .sort((a, b) => b.matchScore - a.matchScore);
 
-    // Retorna a intenção com maior score, ou default
     if (intents.length > 0 && intents[0].matchScore >= 0.3) {
         return intents[0];
     }
@@ -245,26 +336,18 @@ export function findMatchingIntent(userMessage) {
     };
 }
 
-/**
- * Calcula score de match baseado nos padrões
- */
 function calculateMatchScore(message, patterns) {
     let maxScore = 0;
 
     patterns.forEach(pattern => {
+        if (pattern.global) pattern.lastIndex = 0;
+
         if (pattern.test(message)) {
-            // Score base + bônus por padrões mais específicos
             let score = 0.5;
+            if (pattern.source.length > 20) score += 0.2;
 
-            // Bônus por match exato
-            if (message === pattern.source.replace(/^\/|\/i$/g, '')) {
-                score += 0.3;
-            }
-
-            // Bônus por padrões mais longos (mais específicos)
-            if (pattern.source.length > 20) {
-                score += 0.2;
-            }
+            const firstToken = pattern.source.split('|')[0]?.replace(/[^\p{L}\p{N}]+/gu, '');
+            if (firstToken && new RegExp(`^${firstToken}`, 'i').test(message)) score += 0.1;
 
             maxScore = Math.max(maxScore, score);
         }
@@ -273,19 +356,29 @@ function calculateMatchScore(message, patterns) {
     return maxScore;
 }
 
-/**
- * Obtém resposta aleatória para uma intenção
- */
+/* =========================================================================
+   Resposta de intenção (prioriza o MANUAL)
+   ========================================================================= */
 export function getIntentResponse(intentName) {
+    const link = INTENT_TO_MANUAL[intentName];
+    if (link) {
+        const manual = getManual(link.cat, link.sub);
+        if (manual) return ensureSingleHeartAtEnd(manual);
+    }
+
     const intent = AMANDA_INTENTS[intentName] || AMANDA_INTENTS.default;
-    const responses = intent.responses;
-    const randomIndex = Math.floor(Math.random() * responses.length);
-    return responses[randomIndex];
+    const responses = Array.isArray(intent?.responses) ? intent.responses : [];
+    if (responses.length > 0) {
+        const pick = responses[Math.floor(Math.random() * responses.length)];
+        return ensureSingleHeartAtEnd(pick);
+    }
+
+    return ensureSingleHeartAtEnd("Posso te ajudar com mais detalhes?");
 }
 
-/**
- * Processa mensagem e retorna resposta do sistema de intenções
- */
+/* =========================================================================
+   Facades
+   ========================================================================= */
 export function processWithIntents(userMessage) {
     const match = findMatchingIntent(userMessage);
     const response = getIntentResponse(match.intentName);
@@ -293,23 +386,14 @@ export function processWithIntents(userMessage) {
     return {
         intent: match.intentName,
         confidence: match.matchScore,
-        response: response,
+        response,
         source: 'intents_fallback'
     };
 }
 
-/* =========================================================================
-   INTEGRAÇÃO COM O SISTEMA EXISTENTE
-   ========================================================================= */
-
-/**
- * Função principal para uso no serviço - decide se usa IA ou fallback
- */
 export function getAmandaResponse(userMessage, useAIFallback = true) {
-    // Tenta primeiro o sistema de intenções
     const intentResult = processWithIntents(userMessage);
 
-    // Se confiança alta (>0.7) ou fallback forçado, usa intenções
     if (!useAIFallback || intentResult.confidence > 0.7) {
         return {
             message: intentResult.response,
@@ -318,31 +402,5 @@ export function getAmandaResponse(userMessage, useAIFallback = true) {
             confidence: intentResult.confidence
         };
     }
-
-    // Caso contrário, retorna null para usar a IA principal
     return null;
 }
-
-/* =========================================================================
-   ESTATÍSTICAS DE USO (opcional para analytics)
-   ========================================================================= */
-export const intentStats = {
-    usageCount: {},
-
-    recordUsage(intentName) {
-        this.usageCount[intentName] = (this.usageCount[intentName] || 0) + 1;
-    },
-
-    getStats() {
-        return this.usageCount;
-    },
-
-    getMostUsedIntents(limit = 5) {
-        return Object.entries(this.usageCount)
-            .sort(([, a], [, b]) => b - a)
-            .slice(0, limit)
-            .map(([intent, count]) => ({ intent, count }));
-    }
-};
-
-
