@@ -11,35 +11,18 @@ import {
     deriveFlagsFromText,
     inferTopic
 } from "../utils/amandaPrompt.js";
+import {
+    detectAllTherapies,
+    generateEquivalenceResponse,
+    generateMultiTherapyResponse,
+    isAskingAboutEquivalence,
+    normalizeTherapyTerms,
+} from "../utils/therapyDetector.js";
 
 // 🆕 IMPORTAR SISTEMA DE INTENÇÕES
-import { getAmandaResponse } from "../utils/amandaIntents.js";
+import { getAmandaResponse, getManual } from "../utils/amandaIntents.js";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-/* =========================================================================
-   CONFIGURAÇÃO DO ORQUESTRADOR
-   ========================================================================= */
-const ORCHESTRATOR_CONFIG = {
-    // Confiança mínima para usar intenções ao invés de IA
-    MIN_CONFIDENCE_FOR_INTENTS: 0.6,
-
-    // Intenções que SEMPRE usam fallback (respostas críticas)
-    FORCE_INTENTS_FOR: [
-        'price_evaluation',
-        'health_plans',
-        'address',
-        'session_duration',
-        'tongue_tie',
-        'medical_request'
-    ],
-
-    // Timeout para respostas de IA (ms)
-    AI_TIMEOUT: 10000,
-
-    // Usar fallback em caso de erro na IA
-    USE_INTENTS_ON_AI_ERROR: true
-};
 
 /* =========================================================================
    Utils de pós-processamento (garantias de formato)
@@ -57,33 +40,6 @@ function clampTo1to3Sentences(text = "") {
 function ensureSingleHeartAtEnd(text = "") {
     const noHearts = text.replace(/💚/g, "").trim();
     return `${noHearts} 💚`.replace(/\s{2,}/g, " ").trim();
-}
-
-/* =========================================================================
-   🆕 SISTEMA DE ORQUESTRAÇÃO - Decidir entre IA vs Intenções
-   ========================================================================= */
-function shouldUseIntents(flags = {}) {
-    const { text = "", asksPrice, insistsPrice, wantsSchedule, asksAddress, asksPlans, asksDuration } = flags;
-    const t = text.toLowerCase();
-
-    // 🎯 CASOS QUE SEMPRE USAM INTENÇÕES (críticos/consistência)
-    if (asksAddress) return true;
-    if (asksDuration) return true;
-    if (asksPlans) return true;
-    if (/\b(teste da linguinha|fr[eê]nulo|linguinha)\b/i.test(t)) return true;
-    if (/\b(pedido m[eé]dico|receita|encaminhamento)\b/i.test(t)) return true;
-
-    // 🎯 PERGUNTAS DE PREÇO DIRETAS (alta confiança)
-    if (insistsPrice) return true;
-    if (asksPrice && (
-        /\b(avalia(ç|c)[aã]o|consulta)\b/i.test(t) ||
-        /\b(quanto custa|qual o valor)\s+(a avalia|a consulta)/i.test(t)
-    )) return true;
-
-    // 🎯 SAUDAÇÕES SIMPLES
-    if (/^(oi|ola|olá|hey|hi|começar|iniciar)$/i.test(t.trim())) return true;
-
-    return false;
 }
 
 /* =========================================================================
@@ -108,10 +64,11 @@ function applyValuePriceStrategy(flags = {}) {
     }
 
     const mentionsCDL = /\bcdl\b/i.test(t);
-    const asksSession = /\bsess[aã]o\b|sessão|sessao/i.test(t);
-    const asksPackage = /\bpacote|mensal\b/i.test(t);
-    const asksNeuro = /\bneuropsicol[oó]gica|neuropsico\b/i.test(t);
-    const asksLinguinha = /\blinguinha|fr[eê]nulo\b/i.test(t);
+    const asksSession = /(?:\bsess[aã]o\b|sessão|sessao)/i.test(t);
+    const asksPackage = /(?:\bpacote\b|\bmensal\b)/i.test(t);
+    const asksNeuro = /(?:\bneuropsicol[oó]gica\b|\bneuropsico\b)/i.test(t);
+    const asksLinguinha = /(?:\blinguinha\b|\bfr[eê]nulo\b)/i.test(t);
+
 
     let pitch = "";
     let price = "";
@@ -155,7 +112,7 @@ function applyValuePriceStrategy(flags = {}) {
    🆕 FUNÇÃO PRINCIPAL ATUALIZADA COM ORQUESTRAÇÃO
    ========================================================================= */
 export async function generateAmandaReply({ userText, lead = {}, context = {} }) {
-    const text = userText || "";
+    const text = normalizeTherapyTerms(userText || "");
     const name = lead?.name || "";
     const origin = lead?.origin || "WhatsApp";
     const reason = lead?.reason || "avaliação/terapia";
@@ -168,12 +125,11 @@ export async function generateAmandaReply({ userText, lead = {}, context = {} })
     }
 
     // 🎯 SEGUNDO: Normalizar termos equivalentes ANTES da detecção
-    const normalizedText = normalizeTherapyTerms(text);
-    const detectedTherapies = detectAllTherapies(normalizedText);
+    const detectedTherapies = detectAllTherapies(text);
 
     if (detectedTherapies.length > 0) {
         console.log(`🎯 [TERAPIAS] Detectadas: ${detectedTherapies.length} - ${detectedTherapies.map(t => t.id).join(', ')}`);
-        const response = generateMultiTherapyResponse(detectedTherapies, normalizedText);
+        const response = generateMultiTherapyResponse(detectedTherapies, text);
         return ensureSingleHeartAtEnd(response);
     }
 
@@ -211,25 +167,17 @@ export async function generateAmandaReply({ userText, lead = {}, context = {} })
         ...derivedFlags
     };
 
-    console.log("🔍 [Amanda Debug] Flags detectadas:", flags);
-
-    // 🆕 ORQUESTRAÇÃO: DECIDIR ENTRE INTENÇÕES vs IA
-    const useIntents = shouldUseIntents(flags);
-
-    if (useIntents) {
-        console.log("🎯 [ORQUESTRAÇÃO] Usando sistema de intenções...");
-        const intentResponse = getAmandaResponse(text, true);
-        if (intentResponse) {
-            console.log(`🎯 [INTENÇÕES] ${intentResponse.intent} (conf: ${intentResponse.confidence})`);
-
-            // Aplicar pós-processamento básico na resposta das intenções
-            let response = intentResponse.message;
-            response = stripLinks(response);
-            response = clampTo1to3Sentences(response);
-            response = ensureSingleHeartAtEnd(response);
-
-            return response;
-        }
+    if (flags.asksAddress) {
+        const msg = getManual('localizacao', 'endereco');
+        if (msg) return ensureSingleHeartAtEnd(msg);
+    }
+    if (flags.asksPlans) {
+        const msg = getManual('planos_saude', 'unimed');
+        if (msg) return ensureSingleHeartAtEnd(msg);
+    }
+    if (flags.asksPrice || flags.insistsPrice) {
+        const msg = getManual('valores', 'consulta');
+        if (msg) return ensureSingleHeartAtEnd(msg);
     }
 
     // 🚀 SE CHEGOU AQUI, USA IA PRINCIPAL
@@ -327,12 +275,10 @@ Saída: 2-3 frases, 1 💚 no final
         console.error("❌ Erro OpenAI:", error);
 
         // 🆕 FALLBACK: Usar sistema de intenções em caso de erro
-        if (ORCHESTRATOR_CONFIG.USE_INTENTS_ON_AI_ERROR) {
-            console.log("🔄 [FALLBACK] Usando intenções devido a erro na IA...");
-            const intentResponse = getAmandaResponse(text, true);
-            if (intentResponse) {
-                return intentResponse.message;
-            }
+        console.log("🔄 [FALLBACK] Usando intenções devido a erro na IA...");
+        const intentResponse = getAmandaResponse(text, true);
+        if (intentResponse) {
+            return intentResponse.message;
         }
 
         // Fallback para garantir resposta
@@ -512,25 +458,6 @@ function applyBusinessRulesPostProcessing(text, flags) {
     processed = ensureSingleHeartAtEnd(processed);
 
     return processed;
-}
-
-/* =========================================================================
-   🆕 FUNÇÃO DE ORQUESTRAÇÃO SIMPLIFICADA (para uso externo)
-   ========================================================================= */
-export async function getOptimizedAmandaResponse(userText, context = {}) {
-    try {
-        return await generateAmandaReply({
-            userText,
-            lead: context.lead || {},
-            context
-        });
-    } catch (error) {
-        console.error("❌ Erro no orquestrador:", error);
-
-        // Fallback final usando intenções
-        const intentResponse = getAmandaResponse(userText, true);
-        return intentResponse?.message || "Desculpe, tive um problema técnico. Pode repetir? 💚";
-    }
 }
 
 /* =========================================================================
