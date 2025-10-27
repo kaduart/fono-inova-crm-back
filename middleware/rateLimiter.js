@@ -15,3 +15,10 @@ export const mediaLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 });
+
+export const rateLimitStrict = rateLimit({
+    windowMs: 10 * 60 * 1000, // 10 min
+    max: 5,                   // 5 req por IP
+    standardHeaders: true,
+    legacyHeaders: false,
+});

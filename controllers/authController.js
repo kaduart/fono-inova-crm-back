@@ -180,5 +180,106 @@ export const authController = {
         message: 'Erro ao verificar token'
       });
     }
+  },
+
+  async manualResetStart(req, res) {
+    try {
+      const { email, role } = req.body;
+
+      if (!email || !role || !['admin', 'doctor'].includes(role)) {
+        return res.status(400).json({ success: false, message: 'Email e role são obrigatórios (admin|doctor)' });
+      }
+
+      const Model = role === 'doctor' ? Doctor : Admin;
+      const user = await Model.findOne({ email }).select('_id email');
+      // resposta genérica (não revela existência)
+      if (!user) {
+        // ainda assim “finge” sucesso para não vazar cadastro
+        return res.json({ success: true, resetUrl: makeUrl('<dummy>') });
+      }
+
+      // gera token
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+
+      // salva token + expiração (10 min)
+      await Model.updateOne(
+        { _id: user._id },
+        {
+          $set: {
+            passwordResetToken: hashedToken,
+            passwordResetExpires: new Date(Date.now() + 10 * 60 * 1000),
+          }
+        }
+      );
+
+      const resetUrl = makeUrl(resetToken, role);
+      return res.json({ success: true, resetUrl });
+
+    } catch (e) {
+      console.error('[manualResetStart]', e);
+      return res.status(500).json({ success: false, message: 'Erro ao gerar link de redefinição' });
+    }
+  },
+
+  async setPasswordNoToken(req, res) {
+    try {
+      const { email, newPassword, role } = req.body;
+      if (!email || !newPassword || !role || !['doctor', 'admin'].includes(role)) {
+        return res.status(400).json({ success: false, message: 'Dados inválidos' });
+      }
+      const Model = role === 'doctor' ? Doctor : Admin;
+      const user = await Model.findOne({ email }).select('+password +requiresPasswordCreation');
+
+      if (!user) {
+        // resposta genérica
+        return res.status(200).json({ success: true, message: 'Senha definida (se a conta existir)' });
+      }
+
+      // Só permite **sem token** se for primeiro acesso/sem senha/flag
+      const isFirstSet =
+        !user.password || user.requiresPasswordCreation === true;
+
+      if (!isFirstSet) {
+        return res.status(400).json({
+          success: false,
+          message: 'Use o link de redefinição (token) para alterar a senha'
+        });
+      }
+
+      user.password = newPassword;
+      user.requiresPasswordCreation = false;
+      user.passwordResetToken = undefined;
+      user.passwordResetExpires = undefined;
+      await user.save({ validateBeforeSave: true });
+
+      const authToken = jwt.sign(
+        { id: user._id.toString(), role },
+        process.env.JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+
+      return res.json({
+        success: true,
+        message: 'Senha criada com sucesso!',
+        token: authToken,
+        user: { id: user._id, email: user.email, role }
+      });
+    } catch (err) {
+      console.error('[setPasswordNoToken] erro:', err);
+      return res.status(500).json({ success: false, message: 'Erro ao criar senha' });
+    }
   }
+
 };
+
+// helper: monta a URL do front
+function makeUrl(token, role = 'admin') {
+  const isProd = process.env.NODE_ENV === 'production';
+  const base =
+    (isProd ? process.env.FRONTEND_URL_PRD : process.env.FRONTEND_URL_DEV) ||
+    process.env.FRONTEND_URL ||
+    'http://localhost:5173';
+  return `${base}/reset-password/${token}?role=${role}`;
+}
+

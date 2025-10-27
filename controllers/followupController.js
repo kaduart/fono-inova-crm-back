@@ -1,21 +1,17 @@
+import { followupQueue } from "../config/bullConfig.js";
 import Followup from '../models/Followup.js';
 import Lead from '../models/Leads.js';
 import { generateFollowupMessage } from "../services/aiAmandaService.js";
 
-import { followupQueue } from "../config/bullConfig.js";
-
-
 /**
- * 🧩 Agendar novo follow-up
+ * 🧩 Agendar novo follow-up (com Amanda AI)
  */
 export const scheduleFollowup = async (req, res) => {
     try {
-        const { leadId, message, scheduledAt } = req.body;
+        const { leadId, message, scheduledAt, aiOptimized = false, context } = req.body;
 
-        if (!leadId || !message || !scheduledAt)
-            return res
-                .status(400)
-                .json({ error: 'Campos obrigatórios: leadId, message, scheduledAt' });
+        if (!leadId || !scheduledAt)
+            return res.status(400).json({ error: 'Campos obrigatórios: leadId, scheduledAt' });
 
         const lead = await Lead.findById(leadId);
         if (!lead) return res.status(404).json({ error: 'Lead não encontrado' });
@@ -26,11 +22,33 @@ export const scheduleFollowup = async (req, res) => {
         if (delay < 0)
             return res.status(400).json({ error: 'Data/hora precisa ser futura' });
 
+        let finalMessage = message;
+
+        // 🎯 SE SOLICITADO, AMANDA GERA MENSAGEM INTELIGENTE
+        if (aiOptimized || !message?.trim()) {
+            try {
+                finalMessage = await generateFollowupMessage(lead);
+                console.log(`🤖 Amanda gerou mensagem para lead ${lead.name}`);
+            } catch (aiError) {
+                console.warn("⚠️ Erro na Amanda AI, usando fallback:", aiError.message);
+                if (!message?.trim()) {
+                    finalMessage = `Olá ${lead.name?.split(' ')[0] || ''}! Passando para saber se posso te ajudar com ${lead.reason || 'nossos serviços'}. Posso te ajudar? 💚`;
+                }
+            }
+        }
+
         const followup = await Followup.create({
             lead: leadId,
-            message,
+            message: finalMessage,
             scheduledAt,
             status: 'scheduled',
+            aiOptimized: aiOptimized || !message?.trim(),
+            context: context || {},
+            processingMetadata: {
+                originalMessage: message,
+                aiGenerated: aiOptimized || !message?.trim(),
+                scheduledBy: req.user?.id || 'system'
+            }
         });
 
         await followupQueue.add('followup', { followupId: followup._id }, { delay });
@@ -41,9 +59,256 @@ export const scheduleFollowup = async (req, res) => {
             data: followup,
         });
     } catch (err) {
+        console.error("❌ Erro ao agendar follow-up:", err);
         res.status(500).json({ error: err.message });
     }
 };
+
+
+/**
+ * 🧠 Criar follow-up inteligente com Amanda AI
+ */
+export const createAIFollowup = async (req, res) => {
+    try {
+        const { leadId, scheduledAt, context = {}, objective } = req.body;
+
+        if (!leadId) return res.status(400).json({ error: 'leadId é obrigatório' });
+
+        const lead = await Lead.findById(leadId);
+        if (!lead) return res.status(404).json({ error: 'Lead não encontrado' });
+
+        // 🎯 AMANDA GERA MENSAGEM CONTEXTUAL
+        const message = await generateFollowupMessage(lead);
+
+        const followup = await Followup.create({
+            lead: leadId,
+            message,
+            scheduledAt: scheduledAt || new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 horas padrão
+            status: 'scheduled',
+            aiOptimized: true,
+            context: {
+                objective: objective || 'reengajamento',
+                leadStage: lead.stage,
+                previousInteractions: lead.interactionCount || 0,
+                ...context
+            },
+            processingMetadata: {
+                aiVersion: '1.0',
+                generatedAt: new Date(),
+                strategy: 'contextual_followup'
+            }
+        });
+
+        const delay = new Date(followup.scheduledAt).getTime() - Date.now();
+        await followupQueue.add('followup', { followupId: followup._id }, { delay });
+
+        res.status(201).json({
+            success: true,
+            message: 'Follow-up IA criado com sucesso!',
+            data: followup
+        });
+    } catch (err) {
+        console.error("❌ Erro ao criar follow-up IA:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+/**
+ * 📊 Estatísticas de follow-ups (com insights de IA)
+ */
+export const getFollowupStats = async (req, res) => {
+    try {
+        const total = await Followup.countDocuments();
+        const sent = await Followup.countDocuments({ status: "sent" });
+        const failed = await Followup.countDocuments({ status: "failed" });
+        const scheduled = await Followup.countDocuments({ status: "scheduled" });
+        const processing = await Followup.countDocuments({ status: "processing" });
+        const responded = await Followup.countDocuments({ responded: true });
+        const aiOptimized = await Followup.countDocuments({ aiOptimized: true });
+
+        const conversionRate = total ? ((responded / total) * 100).toFixed(1) : 0;
+        const aiConversionCount = await Followup.countDocuments({ aiOptimized: true, responded: true });
+        const aiConversionRate = aiOptimized ? ((aiConversionCount / aiOptimized) * 100).toFixed(1) : 0;
+
+        // 🔍 Dados complementares para Insights
+        const bestHours = await Followup.aggregate([
+            { $match: { status: "sent" } },
+            { $project: { hour: { $hour: { date: "$sentAt", timezone: "America/Sao_Paulo" } } } },
+            { $group: { _id: "$hour", total: { $sum: 1 }, responded: { $sum: { $cond: [{ $eq: ["$responded", true] }, 1, 0] } } } },
+            { $project: { hour: "$_id", total: 1, responseRate: { $multiply: [{ $divide: ["$responded", "$total"] }, 100] } } },
+            { $sort: { responseRate: -1 } },
+            { $limit: 1 },
+        ]);
+
+        const bestDays = await Followup.aggregate([
+            { $match: { status: "sent" } },
+            { $project: { weekday: { $dayOfWeek: { date: "$sentAt", timezone: "America/Sao_Paulo" } } } },
+            { $group: { _id: "$weekday", total: { $sum: 1 }, responded: { $sum: { $cond: [{ $eq: ["$responded", true] }, 1, 0] } } } },
+            { $project: { weekday: "$_id", total: 1, responseRate: { $multiply: [{ $divide: ["$responded", "$total"] }, 100] } } },
+            { $sort: { responseRate: -1 } },
+            { $limit: 1 },
+        ]);
+
+        const weekdayNames = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+        const bestHour = bestHours[0]?.hour ?? "-";
+        const bestDay = weekdayNames[(bestDays[0]?.weekday ?? 1) - 1];
+
+        // 🧠 Insights da Amanda AI
+        const aiPerformance = await Followup.aggregate([
+            { $match: { aiOptimized: true, status: "sent" } },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: 1 },
+                    responded: { $sum: { $cond: [{ $eq: ["$responded", true] }, 1, 0] } },
+                    avgResponseTime: { $avg: "$responseTimeMinutes" }
+                }
+            }
+        ]);
+
+        const aiData = aiPerformance[0] || { total: 0, responded: 0, avgResponseTime: 0 };
+        const aiEffectiveness = aiData.total && total ?
+            ((aiData.responded / aiData.total) / (responded / total) * 100).toFixed(1) : 0;
+
+        res.json({
+            success: true,
+            data: {
+                total,
+                sent,
+                failed,
+                scheduled,
+                processing,
+                responded,
+                aiOptimized,
+                conversionRate,
+                aiConversionRate,
+                bestHour: bestHour !== "-" ? `${bestHour}h` : "-",
+                bestDay,
+                aiPerformance: aiData,
+                insights: {
+                    aiEffectiveness,
+                    recommendedStrategy: bestHour !== "-" ? `Focar nos horários das ${bestHour}h` : 'Coletar mais dados'
+                }
+            },
+        });
+    } catch (err) {
+        console.error("Erro ao gerar estatísticas:", err);
+        res.status(500).json({ error: "Erro ao gerar estatísticas de follow-ups" });
+    }
+};
+
+export const computeFollowupStats = async () => {
+    try {
+        const since = new Date();
+        since.setDate(since.getDate() - 30);
+
+        const pipeline = [
+            { $match: { createdAt: { $gte: since } } },
+            { $group: { _id: "$status", total: { $sum: 1 } } },
+        ];
+
+        const data = await Followup.aggregate(pipeline);
+
+        const total = data.reduce((acc, d) => acc + d.total, 0);
+        const sent = data.find(d => d._id === "sent")?.total || 0;
+        const failed = data.find(d => d._id === "failed")?.total || 0;
+        const scheduled = data.find(d => d._id === "scheduled")?.total || 0;
+        const processing = data.find(d => d._id === "processing")?.total || 0;
+
+        return {
+            total,
+            sent,
+            failed,
+            scheduled,
+            processing,
+            successRate: total ? ((sent / total) * 100).toFixed(1) : 0,
+        };
+    } catch (err) {
+        console.error("❌ Erro computeFollowupStats:", err);
+        return {
+            total: 0, sent: 0, failed: 0, scheduled: 0, processing: 0, successRate: 0,
+        };
+    }
+};
+
+/**
+ * 📈 Analytics com inteligência da Amanda
+ */
+export const getAIFollowupAnalytics = async (req, res) => {
+    try {
+        // 🛠️ CORREÇÃO: Usar as funções diretamente em vez de req.query
+        const basicStats = await computeFollowupStats();
+        const trendData = await getFollowupTrend(req); // Passar o req para a função
+        const originData = await getFollowupConversionByOrigin(req); // Passar o req para a função
+
+        // 🧠 Análise de performance da IA
+        const aiAnalysis = await Followup.aggregate([
+            { $match: { status: "sent" } },
+            {
+                $group: {
+                    _id: "$aiOptimized",
+                    total: { $sum: 1 },
+                    responded: { $sum: { $cond: [{ $eq: ["$responded", true] }, 1, 0] } },
+                    avgResponseTime: { $avg: "$responseTimeMinutes" }
+                }
+            }
+        ]);
+
+        const manualStats = aiAnalysis.find(a => a._id === false) || { total: 0, responded: 0 };
+        const aiStats = aiAnalysis.find(a => a._id === true) || { total: 0, responded: 0 };
+
+        res.json({
+            success: true,
+            data: {
+                ...basicStats,
+                trends: trendData.data,
+                conversionByOrigin: originData.data,
+                aiPerformance: {
+                    manual: {
+                        total: manualStats.total,
+                        responded: manualStats.responded,
+                        conversionRate: manualStats.total ? ((manualStats.responded / manualStats.total) * 100).toFixed(1) : 0
+                    },
+                    ai: {
+                        total: aiStats.total,
+                        responded: aiStats.responded,
+                        conversionRate: aiStats.total ? ((aiStats.responded / aiStats.total) * 100).toFixed(1) : 0
+                    },
+                    improvement: aiStats.total && manualStats.total ?
+                        (((aiStats.responded / aiStats.total) - (manualStats.responded / manualStats.total)) * 100).toFixed(1) : 0
+                },
+                recommendations: generateAIRecommendations(aiStats, manualStats)
+            }
+        });
+    } catch (err) {
+        console.error("Erro ao gerar analytics IA:", err);
+        res.status(500).json({ error: "Erro ao gerar analytics inteligentes" });
+    }
+};
+
+/**
+ * 🎯 Gera recomendações baseadas em dados
+ */
+function generateAIRecommendations(aiStats, manualStats) {
+    const recommendations = [];
+
+    const aiConversion = aiStats.total ? (aiStats.responded / aiStats.total) : 0;
+    const manualConversion = manualStats.total ? (manualStats.responded / manualStats.total) : 0;
+
+    if (aiConversion > manualConversion + 0.1) { // 10% melhor
+        recommendations.push("Continue usando a Amanda AI - performance superior detectada");
+    }
+
+    if (aiStats.total < manualStats.total * 0.3) { // Poucos follow-ups IA
+        recommendations.push("Aumente o uso de follow-ups com IA para melhorar engajamento");
+    }
+
+    if (aiStats.total > 0 && manualStats.total > 0) {
+        recommendations.push(`IA é ${((aiConversion / manualConversion - 1) * 100).toFixed(1)}% mais eficaz que follow-ups manuais`);
+    }
+
+    return recommendations.length > 0 ? recommendations : ["Continue coletando dados para insights mais precisos"];
+}
 
 /**
  * 🔎 Listar todos os follow-ups
@@ -96,96 +361,6 @@ export const getFollowupHistory = async (req, res) => {
     }
 };
 
-// 🔹 Função auxiliar pura (sem res.json)
-export const computeFollowupStats = async () => {
-    try {
-        const since = new Date();
-        since.setDate(since.getDate() - 30);
-
-        const pipeline = [
-            { $match: { createdAt: { $gte: since } } },
-            { $group: { _id: "$status", total: { $sum: 1 } } },
-        ];
-
-        const data = await Followup.aggregate(pipeline);
-
-        const total = data.reduce((acc, d) => acc + d.total, 0);
-        const sent = data.find(d => d._id === "sent")?.total || 0;
-        const failed = data.find(d => d._id === "failed")?.total || 0;
-        const scheduled = data.find(d => d._id === "scheduled")?.total || 0;
-        const processing = data.find(d => d._id === "processing")?.total || 0;
-
-        return {
-            total,
-            sent,
-            failed,
-            scheduled,
-            processing,
-            successRate: total ? ((sent / total) * 100).toFixed(1) : 0,
-        };
-    } catch (err) {
-        console.error("❌ Erro computeFollowupStats:", err);
-        return {
-            total: 0, sent: 0, failed: 0, scheduled: 0, processing: 0, successRate: 0,
-        };
-    }
-};
-
-
-/**
- * 📊 Estatísticas de follow-ups
- */
-export const getFollowupStats = async (req, res) => {
-    try {
-        const total = await Followup.countDocuments();
-        const sent = await Followup.countDocuments({ status: "sent" });
-        const failed = await Followup.countDocuments({ status: "failed" });
-        const scheduled = await Followup.countDocuments({ status: "scheduled" });
-        const processing = await Followup.countDocuments({ status: "processing" });
-        const responded = await Followup.countDocuments({ responded: true });
-
-        const conversionRate = total ? ((responded / total) * 100).toFixed(1) : 0;
-
-        // 🔍 dados complementares para Insights
-        const bestHours = await Followup.aggregate([
-            { $project: { hour: { $hour: { date: "$scheduledAt", timezone: "America/Sao_Paulo" } } } },
-            { $group: { _id: "$hour", total: { $sum: 1 } } },
-            { $sort: { total: -1 } },
-            { $limit: 1 },
-        ]);
-
-        const bestDays = await Followup.aggregate([
-            { $project: { weekday: { $dayOfWeek: { date: "$scheduledAt", timezone: "America/Sao_Paulo" } } } },
-            { $group: { _id: "$weekday", total: { $sum: 1 } } },
-            { $sort: { total: -1 } },
-            { $limit: 1 },
-        ]);
-
-        const weekdayNames = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
-        const bestHour = bestHours[0]?._id ?? "-";
-        const bestDay = weekdayNames[(bestDays[0]?._id ?? 1) - 1];
-
-        res.json({
-            success: true,
-            data: {
-                total,
-                sent,
-                failed,
-                scheduled,
-                processing,
-                responded,
-                conversionRate,
-                bestHour: bestHour !== "-" ? `${bestHour}h` : "-",
-                bestDay,
-            },
-        });
-    } catch (err) {
-        console.error("Erro ao gerar estatísticas:", err);
-        res.status(500).json({ error: "Erro ao gerar estatísticas de follow-ups" });
-    }
-};
-
-
 /**
  * 🔍 Filtrar follow-ups
  */
@@ -212,6 +387,7 @@ export const filterFollowups = async (req, res) => {
     }
 };
 
+
 /**
  * 🔁 Reenviar follow-up falhado
  */
@@ -224,7 +400,8 @@ export const resendFollowup = async (req, res) => {
         if (!followup.lead?.contact?.phone)
             return res.status(400).json({ error: 'Lead sem telefone' });
 
-        await followupQueue.add('sendFollowup', { followupId: id });
+        // 🛠️ CORREÇÃO: Usar 'followup' em vez de 'sendFollowup' para consistência
+        await followupQueue.add('followup', { followupId: id });
         followup.status = 'processing';
         await followup.save();
 
@@ -424,4 +601,5 @@ export const createFollowup = async (req, res) => {
         res.status(500).json({ success: false, error: err.message });
     }
 };
+
 
