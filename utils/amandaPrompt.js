@@ -64,6 +64,10 @@ export function deriveFlagsFromText(text = "") {
     const RE_EVAL_INTENT = /\b(consulta|primeira\s*consulta|consulta\s*inicial)\b/;
     const RE_TEA_TDAH = /\b(tea|autismo|tdah|transtorno|espectro|déficit|hiperatividade)\b/;
     const RE_FONO_SPEECH = /\b(fono|fala|linguagem|pronúncia|troca\s+letras|gagueira)\b/;
+    const RE_PSYCHOPEDAGOGY = /\b(psicopedagog|dificuldade de aprendizagem|problema escolar|rendimento escolar)\b/i;
+    const RE_CAA = /\b(caa|comunicação alternativa|comunicacao alternativa|não verbal|pecs)\b/i;
+    const RE_AGE_MINIMUM = /\b(idade mínima|a partir de quantos anos|bebê|bebe|recém nascido)\b/i;
+    const RE_RESCHEDULING = /\b(cancelar|reagendar|remarcar|adiar|não posso ir)\b/i;
 
     return {
         asksPrice: RE_PRICE.test(t),
@@ -78,6 +82,10 @@ export function deriveFlagsFromText(text = "") {
         evalIntentByConsulta: RE_EVAL_INTENT.test(t),
         mentionsTEA_TDAH: RE_TEA_TDAH.test(t),
         mentionsSpeechTherapy: RE_FONO_SPEECH.test(t),
+        asksPsychopedagogy: RE_PSYCHOPEDAGOGY.test(t),
+        asksCAA: RE_CAA.test(t),
+        asksAgeMinimum: RE_AGE_MINIMUM.test(t),
+        asksRescheduling: RE_RESCHEDULING.test(t),
     };
 }
 
@@ -96,7 +104,11 @@ export const VALUE_PITCH = {
     terapia_ocupacional: "Na TO, avaliamos funcionalidade e integração sensorial para definir o plano nas AVDs.",
     fisioterapia: "Na fisio, avaliamos a queixa motora/neurológica/respiratória para montar o plano.",
     musicoterapia: "Na musicoterapia, avaliamos objetivos de comunicação/atenção/regulação para direcionar a intervenção.",
-    neuropsicopedagogia: "Na neuropsicopedagogia, avaliamos aprendizagem para alinhar estratégias com família e escola."
+    neuropsicopedagogia: "Na neuropsicopedagogia, avaliamos aprendizagem para alinhar estratégias com família e escola.",
+    psicopedagogia: "Na psicopedagogia, avaliamos as dificuldades de aprendizagem e criamos estratégias personalizadas com a escola e família.",
+    caa: "Na comunicação alternativa, avaliamos as necessidades de comunicação e desenvolvemos sistemas personalizados para cada paciente.",
+    planos: "Entendo sua preferência por plano! Estamos em credenciamento e no momento atendemos particular com condições especiais 💚"
+
 };
 
 /* =========================================================================
@@ -104,6 +116,8 @@ export const VALUE_PITCH = {
    ========================================================================= */
 export function priceLineForTopic(topic, userText) {
     const mentionsCDL = /\bcdl\b/i.test(userText || "");
+    const mentionsPsychopedagogy = /\b(psicopedagog|dificuldade de aprendizagem)\b/i.test(userText || "");
+
     switch (topic) {
         case "avaliacao_inicial":
             return mentionsCDL
@@ -117,10 +131,15 @@ export function priceLineForTopic(topic, userText) {
             return "A avaliação neuropsicológica é R$ 2.500,00 em até 6x no cartão ou R$ 2.300,00 à vista.";
         case "teste_linguinha":
             return "O Teste da Linguinha custa R$ 150,00.";
+        case "psicopedagogia":
+            return "Psicopedagogia: anamnese R$ 200,00; pacote mensal R$ 160,00 por sessão (~R$ 640,00/mês).";
         default:
-            return "O valor da avaliação é R$ 220,00.";
+            return mentionsPsychopedagogy
+                ? "Psicopedagogia: anamnese R$ 200,00; pacote mensal R$ 160,00/sessão."
+                : "O valor da avaliação é R$ 220,00.";
     }
 }
+
 
 /* =========================================================================
    SYSTEM PROMPT - VERSÃO REFINADA COM ABORDAGEM HUMANIZADA
@@ -148,6 +167,7 @@ Você é a Amanda 💚, assistente virtual da Clínica Fono Inova em Anápolis-G
 • Pacote mensal (1x/semana): R$ 180,00 por sessão (~R$ 720,00/mês)
 • Avaliação Neuropsicológica: R$ 2.500,00 (6x cartão) ou R$ 2.300,00 (à vista)
 • Teste da Linguinha: R$ 150,00
+• Psicopedagogia: Anamnese R$ 200,00 | Pacote mensal R$ 160,00/sessão
 
 🕒 DURAÇÃO:
 • Sessões: 40 minutos
@@ -159,7 +179,9 @@ Você é a Amanda 💚, assistente virtual da Clínica Fono Inova em Anápolis-G
 • Ofereça no máximo 2 opções (ex: "amanhã à tarde" ou "quinta pela manhã")
 
 🏥 CONVÊNIOS:
-• Estamos em credenciamento (Unimed, IPASGO, Amil)
+• Estamos em credenciamento (Unimed, IPASGO, Amil) - processo em andamento
+• Atendimento atual: "PARTICULAR com valores acessíveis"
+• Resposta padrão: "Entendo sua preferência por plano! Estamos em credenciamento e no momento atendemos particular com condições especiais 💚"
 • Atualmente: atendimento particular
 • Responda com empatia: "Entendo sua preferência por plano! Estamos em processo de credenciamento e atendemos particular por enquanto 💚"
 
@@ -173,6 +195,12 @@ Você é a Amanda 💚, assistente virtual da Clínica Fono Inova em Anápolis-G
 
 🧩 PARA NEURODIVERSOS (TEA, TDAH):
 "Temos equipe especializada em neurodiversidades 💚 O foco é atendimento humanizado e personalizado para cada criança."
+
+"📚 PARA DIFICULDADES DE APRENDIZAGEM:"
+"Entendo sobre as dificuldades na escola! 💚 Nossa psicopedagoga trabalha com estratégias específicas para melhorar o aprendizado."
+
+🗣️ PARA COMUNICAÇÃO ALTERNATIVA (CAA):
+"Temos fono especializada em CAA! 💚 Trabalhamos com PECS e outros sistemas para comunicação não-verbal."
 
 💬 FLUXOS INTELIGENTES:
 
@@ -313,6 +341,38 @@ AGENDAMENTO SOLICITADO:
 • Fechamento: "Posso reservar para [período] então? 💚"
 ` : "";
 
+    const psychopedagogyBlock = asksPsychopedagogy ? `
+PSICOPEDAGOGIA DETECTADA:
+• Valide: "Entendo sobre as dificuldades na escola! 💚"
+• Especialidade: "Nossa psicopedagoga trabalha com estratégias específicas para melhorar o aprendizado."
+• Preço: "Psicopedagogia: anamnese R$ 200,00; pacote mensal R$ 160,00/sessão."
+• Pergunta: "A criança já fez alguma avaliação pedagógica antes?"
+` : "";
+
+    const caaBlock = asksCAA ? `
+COMUNICAÇÃO ALTERNATIVA (CAA) DETECTADA:
+• Valide: "Temos fono especializada em CAA! 💚"
+• Especialidade: "Trabalhamos com PECS e outros sistemas para comunicação não-verbal."
+• Preço: "Avaliação R$ 220,00 com promoção do mês das crianças."
+• Pergunta: "O paciente já usa algum sistema de comunicação?"
+` : "";
+
+    const ageBlock = asksAgeMinimum ? `
+IDADE MÍNIMA:
+• Informação: "Atendemos a partir de 1 ano! 💚"
+• Neuropsicológica: "A avaliação neuropsicológica é a partir de 4 anos."
+• Pergunta: "Qual a idade do paciente?"
+` : "";
+
+    const reschedulingBlock = asksRescheduling ? `
+REAGENDAMENTO:
+• Empatia: "Sem problemas! 💚"
+• Política: "Pedimos aviso prévio para reagendarmos sem custos."
+• Ação: "Vou te ajudar a encontrar outro horário."
+• Pergunta: "Qual novo período te atende?"
+` : "";
+
+
     return `
 MENSAGEM DO CLIENTE: """${text}"""
 LEAD: nome=${name || "(desconhecido)"}; origem=${origin || "WhatsApp"}
@@ -327,6 +387,8 @@ SINAIS DETECTADOS:
 - Menciona TEA/TDAH: ${!!mentionsTEA_TDAH}
 - Menciona fono/fala: ${!!mentionsSpeechTherapy}
 - Pergunta duração: ${!!asksDuration}
+- Menciona fono/fala: ${!!mentionsSpeechTherapy}
+- Pergunta duração: ${!!asksDuration}
 
 INSTRUÇÕES DE RESPOSTA:
 • 1-3 frases máximo
@@ -336,6 +398,10 @@ INSTRUÇÕES DE RESPOSTA:
 
 ${valuePriceBlock}
 ${specificCaseBlock}
+${psychopedagogyBlock}
+${caaBlock}
+${ageBlock}
+${reschedulingBlock}
 ${durationAnswerBlock}
 ${plansBlock}
 ${addressBlock}
@@ -356,13 +422,14 @@ Perfeito 💚! Só preciso de alguns dados pra confirmar:
 • Idade:
 • Nome do responsável:
 • Principal queixa:
+• Especialidade de interesse: ${/* Pode ser preenchido automaticamente baseado na conversa */ ''}
 
 📍 AGENDAMENTO CONFIRMADO
 Clínica Fono Inova – Anápolis (GO)
 Data: [____]
 Horário: [____]
-Serviço: Avaliação Inicial
-Valor: R$220,00
+Serviço: [Avaliação Inicial/Especializada]
+Valor: [R$220,00/R$200,00 psicopedagogia/ etc.]
 Duração: 1h
 
 Enviarei um lembrete um dia antes 💚
