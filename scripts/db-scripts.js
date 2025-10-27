@@ -63,10 +63,15 @@ db.appointments.find({
 // consultar pagamentos do dia
 db.payments.find({
   createdAt: {
-    $gte: ISODate("2025-10-22T00:00:00.000Z"),
-    $lt: ISODate("2025-10-23T00:00:00.000Z")
+    $gte: ISODate("2025-10-24T00:00:00.000Z"),
+    $lt: ISODate("2025-10-25T00:00:00.000Z")
   }
 })
+/// atualizar pagamaneto por id
+db.payments.updateOne(
+  { _id: ObjectId("68fb8d1e2164a973dbbfa515") },
+  { $set: { amount: 150 } }
+)
 
 // consultar sessios do dia
 db.sessions.find({
@@ -78,10 +83,15 @@ db.sessions.find({
 //consutla por ceratedat
 db.appointments.find({
   createdAt: {
-    $gte: ISODate("2025-10-20T00:00:00.000Z"),
-    $lt: ISODate("2025-10-21T00:00:00.000Z")
+    $gte: ISODate("2025-10-27T00:00:00.000Z"),
+    $lt: ISODate("2025-10-28T00:00:00.000Z")
   }
 })
+
+///ouuuuu // Buscar agendamentos de hoje - 27/10/2025
+db.appointments.find({
+  date: "2025-10-27"
+}).sort({ time: 1 })
 
 //agendamentos do dia 
 db.appointments.find(
