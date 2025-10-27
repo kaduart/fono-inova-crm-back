@@ -160,6 +160,23 @@ export async function generateAmandaReply({ userText, lead = {}, context = {} })
     const origin = lead?.origin || "WhatsApp";
     const reason = lead?.reason || "avaliação/terapia";
 
+    // 🎯 PRIMEIRO: Verificar se é pergunta sobre equivalência
+    if (isAskingAboutEquivalence(text)) {
+        console.log("🔄 [EQUIVALÊNCIA] Paciente perguntando se são a mesma coisa");
+        const response = generateEquivalenceResponse(text);
+        return ensureSingleHeartAtEnd(response);
+    }
+
+    // 🎯 SEGUNDO: Normalizar termos equivalentes ANTES da detecção
+    const normalizedText = normalizeTherapyTerms(text);
+    const detectedTherapies = detectAllTherapies(normalizedText);
+
+    if (detectedTherapies.length > 0) {
+        console.log(`🎯 [TERAPIAS] Detectadas: ${detectedTherapies.length} - ${detectedTherapies.map(t => t.id).join(', ')}`);
+        const response = generateMultiTherapyResponse(detectedTherapies, normalizedText);
+        return ensureSingleHeartAtEnd(response);
+    }
+
     // 🔍 Detecção de flags do texto
     const derivedFlags = deriveFlagsFromText(text);
 
