@@ -567,13 +567,16 @@ router.patch('/:id', auth, async (req, res) => {
                         sessionValue: sessionData.amount,
                         patient: payment.patient,
                         doctor: payment.doctor,
-                        status: 'scheduled',
-                        isPaid: status === 'paid',
                         paymentMethod: paymentMethod || payment.paymentMethod,
                         isAdvance: true,
-                        appointment: newAppointment._id,
-                        payment: newPayment._id, // Vincula ao NOVO pagamento
-                        createdAt: currentDate, // DATA DA CRIAÇÃO DO PAGAMENTO
+                        payment: newPayment._id,
+                        status: 'scheduled',
+                        isPaid: status === 'paid',
+                        paymentStatus: status === 'paid' ? 'paid' : 'pending',
+                        visualFlag: status === 'paid' ? 'ok' : 'pending',
+                        appointmentId: newAppointment._id,
+                        paymentDate: status === 'paid' ? moment.tz(currentDate, "America/Sao_Paulo").format("YYYY-MM-DD") : undefined,
+                        createdAt: currentDate,
                         updatedAt: currentDate,
                     });
                     await newSession.save({ session: mongoSession });
@@ -1187,7 +1190,7 @@ router.get("/daily-closing", async (req, res) => {
             .filter(Boolean);
 
         const payments = await Payment.find({
-            status: "paid",
+            status: { $in: ["paid", "package_paid"] },
             $or: [
                 { paymentDate: targetDate },
                 { createdAt: { $gte: startOfDay, $lte: endOfDay } },
@@ -1211,7 +1214,7 @@ router.get("/daily-closing", async (req, res) => {
                 method.includes("cartão") ||
                 method.includes("card") ||
                 method.includes("credito") ||
-                method.includes("débito")
+                method.includes("débito") || method.includes("debito")
             )
                 return "cartão";
             return "dinheiro";
@@ -1273,7 +1276,7 @@ router.get("/daily-closing", async (req, res) => {
             const clinicalStatus = (appt.clinicalStatus || "").toLowerCase();
             const doctorName = appt.doctor?.fullName || "Não informado";
             const patientName = appt.patient?.fullName || "Não informado";
-            const method = appt.package?.paymentMethod || appt.paymentMethod || "—";
+
             const isPackage = appt.serviceType === "package_session";
 
             const relatedPayment = payments.find(
@@ -1282,7 +1285,9 @@ router.get("/daily-closing", async (req, res) => {
                     (p.appointment?._id?.toString() === appt._id?.toString() ||
                         p.package?._id?.toString() === appt.package?._id?.toString())
             );
-
+            const method = relatedPayment
+                ? normalizePaymentMethod(relatedPayment.paymentMethod)
+                : (appt.package?.paymentMethod || appt.paymentMethod || "—");
             const paymentDate = relatedPayment
                 ? typeof relatedPayment.paymentDate === "string"
                     ? relatedPayment.paymentDate

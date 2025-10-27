@@ -53,7 +53,7 @@ db.payments.find({
 
 //consulta agendamento por  patient
 db.appointments.find({
-  patient: ObjectId("68e7ed7b08b71f599ddc37e6"),
+  patient: ObjectId("68ff61062d280f005fbd9bad"),
 });
 // conbsultar agednamenmto por id 
 db.appointments.find({
@@ -72,6 +72,9 @@ db.payments.updateOne(
   { _id: ObjectId("68fb8d1e2164a973dbbfa515") },
   { $set: { amount: 150 } }
 )
+
+
+db.payments.findOne({_id: ISODate("68ff61082d280f005fbd9bb5")}, {status:1, paymentMethod:1})
 
 // consultar sessios do dia
 db.sessions.find({
@@ -112,7 +115,7 @@ db.appointments.find({
 
 //consulta do dia futuro
 db.payments.find({
-  date: "2025-08-29"
+  paymentDate: "2025-10-27"
 })
 
 // consulta do dia or doutor

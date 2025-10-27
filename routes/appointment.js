@@ -14,6 +14,7 @@ import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import { handlePackageSessionUpdate, syncEvent } from '../services/syncService.js';
 import { updateAppointmentFromSession, updatePatientAppointments } from '../utils/appointmentUpdater.js';
+import moment from 'moment-timezone';
 
 dotenv.config();
 const router = express.Router();
@@ -536,6 +537,8 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                             doctor: updateData.doctor || appointment.doctor,
                             amount: updateData.paymentAmount || appointment.paymentAmount,
                             method: updateData.paymentMethod || appointment.paymentMethod,
+                            amount: (updateData.amount ?? updateData.paymentAmount ?? appointment.paymentAmount),
+                            paymentMethod: updateData.paymentMethod || appointment.paymentMethod,
                             serviceDate: updateData.date || appointment.date,
                             serviceType: updateData.serviceType || appointment.serviceType,
                             updatedAt: currentDate
@@ -946,7 +949,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
                     status: 'paid', // ✅ JÁ CRIA COMO PAGO
                     notes: 'Pagamento criado automaticamente ao concluir sessão individual',
                     serviceDate: appointment.date,
-                    paymentDate: new Date(),
+                    paymentDate: moment.tz('America/Sao_Paulo').format('YYYY-MM-DD'),
                     kind: 'manual',
                 });
 
@@ -957,8 +960,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
 
                 paymentRecord.status = 'paid';
                 paymentRecord.paymentMethod = method;
-                paymentRecord.paymentDate = new Date();
                 paymentRecord.notes = paymentRecord.notes || 'Pagamento confirmado ao concluir sessão individual';
+                paymentRecord.paymentDate = moment.tz('America/Sao_Paulo').format('YYYY-MM-DD');
 
                 await paymentRecord.save();
                 console.log('✅ [DEBUG] Pagamento atualizado para paid');
