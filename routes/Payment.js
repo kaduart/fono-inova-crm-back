@@ -1199,35 +1199,44 @@ router.get("/daily-closing", async (req, res) => {
             .populate("patient doctor package appointment")
             .lean();
 
-        const filteredPayments = payments.filter((p) =>
-            patientIdsOfDay.includes(p.patient?._id?.toString())
-        );
-
         // ======================================================
         // 🔹 Helpers
         // ======================================================
+        // ✅ Usa SEMPRE paymentDate; se não existir, cai para o dia do createdAt
+        const getPaymentDate = (pay) => {
+            if (!pay) return null;
+            if (typeof pay.paymentDate === "string" && pay.paymentDate.trim()) return pay.paymentDate;
+            // fallback seguro (somente se não há paymentDate na doc)
+            return moment(pay.createdAt).tz("America/Sao_Paulo").format("YYYY-MM-DD");
+        };
+
+        const filteredPayments = payments.filter((p) => {
+            const belongsToPatientOfDay = patientIdsOfDay.includes(p.patient?._id?.toString());
+            const payDate = getPaymentDate(p);
+            return belongsToPatientOfDay && payDate === targetDate;
+        });
+
+        // ✅ Normaliza método de pagamento (mantém seus nomes)
         const normalizePaymentMethod = (method) => {
             if (!method) return "dinheiro";
-            method = method.toLowerCase().trim();
+            method = String(method).toLowerCase().trim();
             if (method.includes("pix")) return "pix";
             if (
-                method.includes("cartão") ||
-                method.includes("card") ||
-                method.includes("credito") ||
+                method.includes("cartão") || method.includes("cartao") ||
+                method.includes("card") || method.includes("credito") ||
                 method.includes("débito") || method.includes("debito")
-            )
-                return "cartão";
+            ) return "cartão";
             return "dinheiro";
         };
 
+        // ✅ Status helpers (mantém seu padrão)
         const isCanceled = (status) =>
             ["canceled", "cancelado"].includes((status || "").toLowerCase());
         const isConfirmed = (status) =>
             ["confirmed", "confirmado"].includes((status || "").toLowerCase());
         const isCompleted = (status) =>
-            ["completed", "completado", "realizado"].includes(
-                (status || "").toLowerCase()
-            );
+            ["completed", "completado", "realizado", "concluído"].includes((status || "").toLowerCase());
+
 
         // ======================================================
         // 🔹 Estrutura inicial
@@ -1279,28 +1288,26 @@ router.get("/daily-closing", async (req, res) => {
 
             const isPackage = appt.serviceType === "package_session";
 
-            const relatedPayment = payments.find(
-                (p) =>
-                    p.patient?._id?.toString() === appt.patient?._id?.toString() &&
-                    (p.appointment?._id?.toString() === appt._id?.toString() ||
-                        p.package?._id?.toString() === appt.package?._id?.toString())
-            );
-            const method = relatedPayment
-                ? normalizePaymentMethod(relatedPayment.paymentMethod)
-                : (appt.package?.paymentMethod || appt.paymentMethod || "—");
-            const paymentDate = relatedPayment
-                ? typeof relatedPayment.paymentDate === "string"
-                    ? relatedPayment.paymentDate
-                    : moment(relatedPayment.createdAt)
-                        .tz("America/Sao_Paulo")
-                        .format("YYYY-MM-DD")
-                : null;
+            // 🔗 payments do mesmo appointment OU do mesmo package (quando houver)
+            const allRelatedPays = payments.filter((p) => {
+                const sameAppt = p.appointment?._id?.toString() === appt._id?.toString();
+                const samePack = appt.package?._id && p.package?._id && (p.package._id.toString() === appt.package._id.toString());
+                return sameAppt || samePack;
+            });
 
-            const paidStatus = relatedPayment
-                ? paymentDate === targetDate
-                    ? "Pago no dia"
-                    : "Pago antes"
-                : "Pendente";
+            // 🔎 separa por data calculada
+            const relatedPayToday = allRelatedPays.find((p) => getPaymentDate(p) === targetDate);
+            const relatedPayAnyDay = allRelatedPays.find((p) => getPaymentDate(p) !== null); // qualquer pago
+
+            // método preferindo o do recebimento do dia; senão, caindo para appt/package
+            const method = relatedPayToday
+                ? normalizePaymentMethod(relatedPayToday.paymentMethod)
+                : normalizePaymentMethod(appt.package?.paymentMethod || appt.paymentMethod || "—");
+
+            const paidStatus = relatedPayToday
+                ? "Pago no dia"
+                : (relatedPayAnyDay ? "Pago antes" : "Pendente");
+
 
             const sessionValue = Number(appt.sessionValue || 0);
 
@@ -1337,12 +1344,9 @@ router.get("/daily-closing", async (req, res) => {
         // 🔹 Processar pagamentos
         // ======================================================
         for (const pay of filteredPayments) {
-            const paymentDate =
-                typeof pay.paymentDate === "string"
-                    ? pay.paymentDate
-                    : moment(pay.createdAt).tz("America/Sao_Paulo").format("YYYY-MM-DD");
+            const paymentDate = getPaymentDate(pay);
+            if (paymentDate !== targetDate) continue; // só entra quem é do dia, ponto.
 
-            if (paymentDate !== targetDate && pay.paymentDate) continue;
 
             const amount = Number(pay.amount || 0);
             const method = normalizePaymentMethod(pay.paymentMethod);

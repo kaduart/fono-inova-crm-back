@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import express from 'express';
+import moment from 'moment-timezone';
 import mongoose from 'mongoose';
 import { handleAdvancePayment } from '../helpers/handleAdvancePayment.js';
 import { auth } from '../middleware/auth.js';
@@ -14,7 +15,6 @@ import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import { handlePackageSessionUpdate, syncEvent } from '../services/syncService.js';
 import { updateAppointmentFromSession, updatePatientAppointments } from '../utils/appointmentUpdater.js';
-import moment from 'moment-timezone';
 
 dotenv.config();
 const router = express.Router();
@@ -132,6 +132,9 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
                 isPaid: false,
                 paymentStatus: 'pending',
                 visualFlag: 'pending',
+                date: req.body.date,
+                time: req.body.time,
+                sessionValue: amount,
                 createdAt: currentDate,
                 updatedAt: currentDate,
             });
@@ -482,7 +485,6 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
             const updateData = {
                 ...req.body,
                 doctor: req.body.doctorId || appointment.doctor,
-                createdAt: currentDate,
                 updatedAt: currentDate
             };
 
@@ -519,7 +521,7 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                             sessionType: updateData.sessionType || appointment.sessionType,
                             sessionValue: updateData.paymentAmount || appointment.paymentAmount,
                             notes: updateData.notes || appointment.notes,
-                            status: updateData.status || appointment.operationalStatus,
+                            status: (updateData.sessionStatus || updateData.operationalStatus || appointment.operationalStatus),
                             updatedAt: currentDate
                         }
                     },
@@ -535,8 +537,6 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                     {
                         $set: {
                             doctor: updateData.doctor || appointment.doctor,
-                            amount: updateData.paymentAmount || appointment.paymentAmount,
-                            method: updateData.paymentMethod || appointment.paymentMethod,
                             amount: (updateData.amount ?? updateData.paymentAmount ?? appointment.paymentAmount),
                             paymentMethod: updateData.paymentMethod || appointment.paymentMethod,
                             serviceDate: updateData.date || appointment.date,
@@ -708,35 +708,55 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
     try {
         await dbSession.startTransaction();
 
-        // 1. Validação básica
+        // 1) Validação de entrada
         const { reason, confirmedAbsence = false } = req.body;
         if (!reason) {
             await dbSession.abortTransaction();
             return res.status(400).json({ error: 'O motivo do cancelamento é obrigatório' });
         }
 
-        // 2. Buscar e travar o agendamento
-        const appointment = await Appointment.findOneAndUpdate(
-            { _id: req.params.id },
-            { $set: {} },
-            {
-                new: true,
-                session: dbSession
-            }
-        ).populate('session'); // Popula a sessão relacionada
+        // 2) Buscar o agendamento (com sessão de transação) + popular campos necessários
+        const appointment = await Appointment.findById(req.params.id)
+            .populate('session')
+            .session(dbSession);
 
         if (!appointment) {
             await dbSession.abortTransaction();
             return res.status(404).json({ error: 'Agendamento não encontrado' });
         }
 
-        // 3. Verificar status atual
+        // ⚠️ Bloqueio: não permitir cancelar se já estiver pago
+        if (appointment.payment) {
+            const pay = await Payment.findById(appointment.payment).lean();
+            if (pay && pay.status === 'paid') {
+                await dbSession.abortTransaction();
+                return res.status(409).json({
+                    error: 'Este agendamento já está pago e não pode ser cancelado.',
+                    code: 'PAID_APPOINTMENT_CANNOT_BE_CANCELED'
+                });
+            }
+        }
+
+
+        // 3) Já está cancelado?
         if (appointment.operationalStatus === 'canceled') {
             await dbSession.abortTransaction();
             return res.status(400).json({ error: 'Este agendamento já está cancelado' });
         }
 
-        // 4. Preparar dados do histórico
+        // 4) Se tiver pagamento QUITADO, bloqueia cancelamento
+        if (appointment.payment) {
+            const pay = await Payment.findById(appointment.payment).session(dbSession);
+            if (pay && pay.status === 'paid') {
+                await dbSession.abortTransaction();
+                return res.status(409).json({
+                    error: 'Não é permitido cancelar um agendamento já pago.',
+                    code: 'PAID_APPOINTMENT_CANNOT_BE_CANCELED'
+                });
+            }
+        }
+
+        // 5) Preparar histórico
         const historyEntry = {
             action: 'cancelamento',
             newStatus: 'canceled',
@@ -746,46 +766,26 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
             details: { reason, confirmedAbsence }
         };
 
-        // 5. Atualizar agendamento
-        const updatedAppointment = await Appointment.findByIdAndUpdate(
-            req.params.id,
-            {
-                operationalStatus: 'canceled',
-                status: 'canceled',
-                canceledReason: reason,
-                confirmedAbsence,
-                $push: { history: historyEntry }
-            },
-            { new: true, session: dbSession }
-        );
-
-        // Atualiza status financeiro
-        if (updatedAppointment.payment) {
-            await Payment.findByIdAndUpdate(
-                updatedAppointment.payment,
-                { status: 'canceled' },
-                { session: dbSession }
-            );
+        // 6) Atualizar Payment (se existir e não estiver pago) -> vira 'canceled'
+        let newPaymentStatus = appointment.paymentStatus || 'pending';
+        if (appointment.payment) {
+            const p = await Payment.findById(appointment.payment).session(dbSession);
+            if (p && p.status !== 'paid') {
+                p.status = 'canceled';
+                await p.save({ session: dbSession });
+                newPaymentStatus = 'canceled';
+            } else if (p && p.status === 'paid') {
+                // (por segurança – em teoria já retornamos 409 acima)
+                newPaymentStatus = 'paid';
+            }
         }
 
-        // Atualiza flag de pagamento no agendamento
-        await Appointment.findByIdAndUpdate(
-            updatedAppointment._id,
-            { paymentStatus: 'canceled' },
-            { session: dbSession }
-        );
-
-
-
-        // 6. Atualizar sessão relacionada se existir
+        // 7) Atualizar Session vinculada
         if (appointment.session) {
             await Session.findByIdAndUpdate(
                 appointment.session._id,
                 {
-                    $set: {
-                        status: 'canceled',
-                        confirmedAbsence
-                    },
+                    $set: { status: 'canceled', confirmedAbsence },
                     $push: {
                         history: {
                             action: 'cancelamento_via_agendamento',
@@ -795,27 +795,42 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
                         }
                     }
                 },
-                { session: dbSession }
+                { session: dbSession, new: true }
             );
         }
 
+        // 8) Atualizar o Appointment (uma única operação)
+        const clinical = confirmedAbsence ? 'missed' : 'pending';
+        const visual = newPaymentStatus === 'paid' ? 'ok' : 'blocked';
+
+        const updatedAppointment = await Appointment.findByIdAndUpdate(
+            appointment._id,
+            {
+                $set: {
+                    operationalStatus: 'canceled',
+                    clinicalStatus: clinical,
+                    paymentStatus: newPaymentStatus,
+                    visualFlag: visual,
+                    canceledReason: reason,
+                    confirmedAbsence
+                },
+                $push: { history: historyEntry }
+            },
+            { new: true, session: dbSession }
+        );
+
         await dbSession.commitTransaction();
 
-        // 7. Sincronização assíncrona
+        // 9) Sincronizações assíncronas (best-effort)
         setTimeout(async () => {
             try {
-                // Sincronizar agendamento
                 await syncEvent(updatedAppointment, 'appointment');
 
-                // Se for sessão de pacote, sincronizar tudo
                 if (updatedAppointment.serviceType === 'package_session') {
-                    // Sincronizar sessão
                     if (appointment.session) {
-                        const updatedSession = await Session.findById(appointment.session._id);
-                        await syncEvent(updatedSession, 'session');
+                        const updSession = await Session.findById(appointment.session._id);
+                        if (updSession) await syncEvent(updSession, 'session');
                     }
-
-                    // Sincronizar pacote
                     if (appointment.package) {
                         await syncPackageUpdate({
                             packageId: appointment.package,
@@ -825,233 +840,193 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
                         });
                     }
                 }
-            } catch (syncError) {
-                console.error('Erro na sincronização pós-cancelamento:', {
-                    error: syncError.message,
-                    appointmentId: appointment?._id,
-                    stack: syncError.stack
-                });
-                // Implementar lógica de retry aqui se necessário
+            } catch (e) {
+                console.error('Erro na sincronização pós-cancelamento:', e);
             }
         }, 100);
 
-        res.json(updatedAppointment);
-
+        return res.json(updatedAppointment);
     } catch (error) {
-        // Tratamento de erros
         if (dbSession.inTransaction()) {
             await dbSession.abortTransaction();
         }
 
-        console.error('Erro ao cancelar agendamento:', {
-            error: error.message,
-            appointmentId: req.params.id,
-            stack: error.stack
+        // logs para você
+        console.error('[appointments/cancel] erro:', {
+            name: error.name,
+            code: error.code,
+            message: error.message
         });
 
+        // respostas claras para o cliente
         if (error.name === 'ValidationError') {
-            const errors = Object.values(error.errors).reduce((acc, err) => {
-                acc[err.path] = err.message;
-                return acc;
-            }, {});
-            return res.status(400).json({ errors });
+            const details = Object.values(error.errors).map(e => ({
+                path: e.path, message: e.message
+            }));
+            return res.status(400).json({
+                error: 'Falha de validação nos dados enviados.',
+                code: 'VALIDATION_ERROR',
+                details
+            });
         }
 
-        res.status(500).json({
-            error: 'Erro interno no servidor',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        if (error.name === 'CastError') {
+            return res.status(400).json({
+                error: 'ID inválido. Verifique o parâmetro enviado.',
+                code: 'INVALID_ID'
+            });
+        }
+
+        if (error.name === 'MongoServerError' && error.code === 11000) {
+            return res.status(409).json({
+                error: 'Registro duplicado. Já existe um documento com esses dados.',
+                code: 'DUPLICATE_KEY'
+            });
+        }
+
+        // default
+        return res.status(500).json({
+            error: 'Não foi possível cancelar o agendamento neste momento.',
+            code: 'INTERNAL_SERVER_ERROR'
         });
     } finally {
         await dbSession.endSession();
     }
 });
 
+
 // Marca agendamento como concluído
+
+
 router.patch('/:id/complete', auth, async (req, res) => {
     try {
         const { id } = req.params;
+        const { amount, paymentMethod } = req.body; // ✅ pegar do body
 
-        // 🔹 Busca o agendamento
-        let appointment = await Appointment.findById(id)
-            .populate('session')
-            .populate('package')
-            .populate('patient')
-            .populate('doctor');
+        // Popula tudo que precisamos
+        const appointment = await Appointment.findById(id)
+            .populate('session package patient doctor payment');
 
         if (!appointment) {
             return res.status(404).json({ error: 'Agendamento não encontrado' });
         }
 
-        console.log('🔍 [DEBUG] Agendamento encontrado:', {
-            id: appointment._id,
-            serviceType: appointment.serviceType,
-            operationalStatus: appointment.operationalStatus,
-            paymentStatus: appointment.paymentStatus,
-            hasPaymentField: !!appointment.payment,
-            sessionId: appointment.session?._id
-        });
-
-        // 🔹 Verifica se já está finalizado
-        if (['completed', 'canceled'].includes(appointment.operationalStatus)) {
-            return res.status(400).json({ error: 'Este agendamento já está finalizado ou cancelado' });
-        }
+        // Valor e método
+        const chargeAmount = Number(
+            amount ??
+            appointment.sessionValue ??
+            appointment.package?.sessionValue ??
+            200
+        );
+        const method = paymentMethod || appointment.paymentMethod || 'dinheiro';
 
         let paymentRecord = null;
 
-        // 🔹 FLUXO SIMPLIFICADO PARA SESSÕES INDIVIDUAIS E AVALIAÇÕES
-        if (appointment.serviceType === 'individual_session' || appointment.serviceType === 'evaluation') {
-            console.log('💰 [DEBUG] Processando sessão INDIVIDUAL/AVALIAÇÃO');
-
-            const method = appointment.paymentMethod || 'dinheiro';
-
-            // 🔹 BUSCA O PAGAMENTO VINCULADO AO AGENDAMENTO
-            if (appointment.payment) {
-                paymentRecord = await Payment.findById(appointment.payment);
-                console.log('🔗 [DEBUG] Pagamento encontrado via appointment.payment:', paymentRecord?._id);
-            }
-
-            // 🔹 SE NÃO ENCONTROU, BUSCA POR APPOINTMENT ID
-            if (!paymentRecord) {
-                paymentRecord = await Payment.findOne({
-                    appointment: appointment._id
-                });
-                console.log('🔍 [DEBUG] Busca direta por appointment:', {
-                    appointmentId: appointment._id,
-                    found: paymentRecord ? paymentRecord._id : 'Nenhum'
-                });
-            }
-
-            // 🔹 SE AINDA NÃO ENCONTROU, CRIA UM NOVO
-            if (!paymentRecord) {
-                console.log('🆕 [DEBUG] Criando NOVO pagamento para sessão individual');
-
-                let amount = 200; // valor padrão
-
-                if (appointment.session?.sessionValue) {
-                    amount = Number(appointment.session.sessionValue);
-                } else if (appointment.session?.paymentAmount) {
-                    amount = Number(appointment.session.paymentAmount);
-                } else if (appointment.paymentAmount) {
-                    amount = Number(appointment.paymentAmount);
-                } else if (appointment.amount) {
-                    amount = Number(appointment.amount);
-                }
-
-                paymentRecord = await Payment.create({
-                    patient: appointment.patient._id,
-                    doctor: appointment.doctor._id,
-                    serviceType: appointment.serviceType,
-                    amount: amount,
-                    package: null, // 👈 NUNCA TEM PACOTE!
-                    session: appointment.session?._id || null,
-                    appointment: appointment._id,
+        // 1) Se já existe um payment vinculado → garantir PAID
+        if (appointment.payment) {
+            const existing = await Payment.findById(appointment.payment);
+            if (existing) {
+                const patchPayment = {
+                    status: 'paid',
+                    amount: chargeAmount,
                     paymentMethod: method,
-                    status: 'paid', // ✅ JÁ CRIA COMO PAGO
-                    notes: 'Pagamento criado automaticamente ao concluir sessão individual',
-                    serviceDate: appointment.date,
-                    paymentDate: moment.tz('America/Sao_Paulo').format('YYYY-MM-DD'),
-                    kind: 'manual',
-                });
-
-                console.log('✅ [DEBUG] Novo pagamento criado:', paymentRecord._id);
-            } else {
-                // 🔹 ATUALIZA O PAGAMENTO EXISTENTE PARA "PAID"
-                console.log('🔄 [DEBUG] Atualizando pagamento existente para PAID:', paymentRecord._id);
-
-                paymentRecord.status = 'paid';
-                paymentRecord.paymentMethod = method;
-                paymentRecord.notes = paymentRecord.notes || 'Pagamento confirmado ao concluir sessão individual';
-                paymentRecord.paymentDate = moment.tz('America/Sao_Paulo').format('YYYY-MM-DD');
-
-                await paymentRecord.save();
-                console.log('✅ [DEBUG] Pagamento atualizado para paid');
+                };
+                if (!existing.paymentDate) {
+                    patchPayment.paymentDate = moment.tz('America/Sao_Paulo').format('YYYY-MM-DD');
+                }
+                paymentRecord = await Payment.findByIdAndUpdate(
+                    existing._id,
+                    { $set: patchPayment },
+                    { new: true }
+                );
             }
+        }
 
-            // 🔹 ATUALIZA A SESSÃO
-            if (appointment.session) {
-                console.log('🔄 [DEBUG] Atualizando sessão individual:', appointment.session._id);
-                await Session.findByIdAndUpdate(
-                    appointment.session._id,
-                    {
+        // 2) Se NÃO existe payment, criamos um
+        if (!paymentRecord) {
+            paymentRecord = await Payment.create({
+                patient: appointment.patient._id,
+                doctor: appointment.doctor._id,
+                serviceType: appointment.serviceType,
+                amount: chargeAmount,
+                paymentMethod: method,
+                status: 'paid',
+                appointment: appointment._id,
+                session: appointment.session?._id || undefined,
+                notes: 'Auto payment on appointment completion',
+                serviceDate: appointment.date,
+                paymentDate: moment.tz('America/Sao_Paulo').format('YYYY-MM-DD'),
+            });
+
+            // vincula no appointment
+            await Appointment.findByIdAndUpdate(appointment._id, {
+                $set: { payment: paymentRecord._id }
+            });
+        }
+
+        // 3) Atualizar sessão (se existir): concluída e paga
+        if (appointment.session) {
+            await Session.findByIdAndUpdate(
+                appointment.session._id,
+                {
+                    $set: {
                         status: 'completed',
-                        paymentStatus: 'paid',
                         isPaid: true,
-                        visualFlag: 'ok',
-                        updatedAt: new Date(),
+                        paymentStatus: 'paid',
                     }
-                );
-                console.log('✅ [DEBUG] Sessão individual atualizada');
-            }
+                }
+            );
 
-            // 🔹 GARANTE O VÍNCULO NO AGENDAMENTO
-            if (!appointment.payment && paymentRecord) {
-                await Appointment.findByIdAndUpdate(
-                    appointment._id,
-                    { payment: paymentRecord._id }
+            // Se fizer parte de um pacote, incrementar sessões feitas
+            if (appointment.package) {
+                await Package.findByIdAndUpdate(
+                    appointment.package._id,
+                    { $inc: { sessionsDone: 1 } }
                 );
-                console.log('🔗 [DEBUG] Vínculo payment-appointment criado');
             }
         }
 
-        // 🔹 ATUALIZAÇÃO FINAL DO AGENDAMENTO
-        const updateData = {
-            operationalStatus: 'confirmed',
-            clinicalStatus: 'completed',
-            paymentStatus: 'paid',
-            completedAt: new Date(),
-            $push: {
-                history: {
-                    action: 'completed',
-                    newStatus: 'completed',
-                    changedBy: req.user._id,
-                    timestamp: new Date(),
-                    context: 'operational',
-                },
-            },
-        };
-
-        // 🔹 GARANTE que o payment fique vinculado
-        if (paymentRecord) {
-            updateData.payment = paymentRecord._id;
-        }
-
+        // 4) Atualizar appointment: concluído + pago + visual ok
         const updatedAppointment = await Appointment.findByIdAndUpdate(
             id,
-            updateData,
-            { new: true, runValidators: true }
-        ).populate('session package patient doctor payment');
+            {
+                $set: {
+                    operationalStatus: 'confirmed',   // EN
+                    clinicalStatus: 'completed',      // EN
+                    paymentStatus: 'paid',
+                    visualFlag: 'ok'
+                },
+                $push: {
+                    history: {
+                        action: 'confirmed',
+                        newStatus: 'confirmed',
+                        changedBy: req.user._id,
+                        timestamp: new Date(),
+                        context: 'operational',
+                    }
+                }
+            },
+            { new: true }
+        );
 
-        console.log('🎉 [DEBUG] Agendamento finalizado:', {
-            id: updatedAppointment._id,
-            operationalStatus: updatedAppointment.operationalStatus,
-            paymentStatus: updatedAppointment.paymentStatus,
-            paymentId: updatedAppointment.payment?._id
-        });
-
-        // 🔹 SINCRONIZAÇÃO
+        // Sync (best-effort)
         try {
             await syncEvent(updatedAppointment, 'appointment');
-            if (paymentRecord) await syncEvent(paymentRecord, 'payment');
-        } catch (syncError) {
-            console.error('Erro na sincronização:', syncError);
+            await syncEvent(paymentRecord, 'payment');
+        } catch (err) {
+            console.error('Sync error:', err);
         }
 
-        res.json({
-            success: true,
-            message: 'Sessão concluída e pagamento processado com sucesso 💚',
-            data: updatedAppointment,
-        });
+        return res.json(updatedAppointment);
 
     } catch (error) {
-        console.error('❌ Erro ao concluir agendamento:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Erro interno ao concluir agendamento',
-            details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+        console.error('Erro ao concluir agendamento:', error);
+        return res.status(500).json({
+            error: 'Erro interno no servidor',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 });
-
 
 // Busca todos os agendamentos de um paciente
 router.get('/patient/:id', validateId, auth, async (req, res) => {
