@@ -506,7 +506,7 @@ router.patch('/:id', auth, async (req, res) => {
                     {
                         $set: {
                             paymentStatus: status === 'paid' ? 'paid' : 'pending',
-                            operationalStatus: status === 'paid' ? 'confirmado' : 'pendente',
+                            operationalStatus: status === 'paid' ? 'confirmed' : 'pending',
                             updatedAt: currentDate
                         }
                     }
@@ -1164,19 +1164,29 @@ router.get("/daily-closing", async (req, res) => {
 
         for (const s of sessions) {
             await updateAppointmentFromSession(s);
+
             if (s.appointmentId) {
+                // pago se: session.isPaid = true OU paymentStatus indica pago/adiantado/parcial
+                const paidLike = ['paid', 'package_paid', 'advanced', 'partial'].includes(String(s.paymentStatus || '').toLowerCase()) || !!s.isPaid;
+
                 await Appointment.findByIdAndUpdate(
                     s.appointmentId,
                     {
                         sessionValue: s.sessionValue,
-                        paymentStatus: s.paymentStatus,
+                        // 🔹 PaymentStatus é quem carrega "paid"/"package_paid"/"partial"/"advanced"
+                        paymentStatus: paidLike ? (s.paymentStatus || 'paid') : (s.paymentStatus || 'pending'),
+
+                        // 🔹 Operacional SEMPRE mapeado sem "completed" (vai para "confirmed")
                         operationalStatus: mapStatusToOperational(s.status),
+
+                        // 🔹 Clínico pode ser "completed"
                         clinicalStatus: mapStatusToClinical(s.status),
                     },
                     { new: true, runValidators: false }
                 );
             }
         }
+
 
         // ======================================================
         // 🔹 Buscar agendamentos e pagamentos
@@ -1231,11 +1241,11 @@ router.get("/daily-closing", async (req, res) => {
 
         // ✅ Status helpers (mantém seu padrão)
         const isCanceled = (status) =>
-            ["canceled", "cancelado"].includes((status || "").toLowerCase());
+            ["canceled"].includes((status || "").toLowerCase());
         const isConfirmed = (status) =>
-            ["confirmed", "confirmado"].includes((status || "").toLowerCase());
+            ["confirmed"].includes((status || "").toLowerCase());
         const isCompleted = (status) =>
-            ["completed", "completado", "realizado", "concluído"].includes((status || "").toLowerCase());
+            ["completed"].includes((status || "").toLowerCase());
 
 
         // ======================================================
@@ -1542,7 +1552,7 @@ router.get("/daily-closing", async (req, res) => {
 });
 
 
-const mapStatusToOperational = (status) => {
+export const mapStatusToOperational = (status) => {
     switch ((status || "").toLowerCase()) {
         case "scheduled":
             return "scheduled";
@@ -1551,34 +1561,37 @@ const mapStatusToOperational = (status) => {
         case "paid":
             return "paid";
         case "canceled":
-        case "cancelado":
             return "canceled";
         case "missed":
-        case "faltou":
             return "missed";
         default:
             return "scheduled";
     }
 };
 
-const mapStatusToClinical = (status) => {
+export const mapStatusToClinical = (status) => {
     switch ((status || "").toLowerCase()) {
         case "pending":
-        case "pendente":
             return "pending";
         case "in_progress":
-        case "em_andamento":
             return "in_progress";
         case "completed":
-        case "concluído":
             return "completed";
         case "missed":
-        case "faltou":
             return "missed";
         default:
-            return "pending"; // nunca canceled
+            return "pending";
     }
 };
+
+// ✅ CORREÇÃO DAS FUNÇÕES DE VERIFICAÇÃO:
+const isCanceled = (status) =>
+    ["canceled"].includes((status || "").toLowerCase());
+const isConfirmed = (status) =>
+    ["confirmed"].includes((status || "").toLowerCase());
+const isCompleted = (status) =>
+    ["completed"].includes((status || "").toLowerCase());
+
 
 
 // Detalhamento de sessões agendadas

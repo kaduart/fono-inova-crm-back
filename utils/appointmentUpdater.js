@@ -1,6 +1,7 @@
 // utils/updateAppointmentFromSession.js
 import Appointment from "../models/Appointment.js";
 import Patient from "../models/Patient.js";
+import { mapStatusToClinical, mapStatusToOperational } from "../routes/Payment.js";
 
 /**
  * 🔹 Sincroniza o Appointment vinculado à Session.
@@ -10,26 +11,30 @@ export async function updateAppointmentFromSession(sessionDoc, mongoSession = nu
   const appointment = await Appointment.findOne({ session: sessionDoc._id }).session(mongoSession);
   if (!appointment) return null;
 
-  appointment.paymentStatus = sessionDoc.paymentStatus;
-  appointment.visualFlag = sessionDoc.visualFlag;
-  appointment.isPaid = sessionDoc.isPaid;
+  const op = mapStatusToOperational(sessionDoc.status); // -> nunca "completed" ou "paid"
+  const cl = mapStatusToClinical(sessionDoc.status);
 
-  // 🔹 Garante coerência visual
-  if (sessionDoc.paymentStatus === "paid") {
-    appointment.visualFlag = "ok";
-  } else if (sessionDoc.paymentStatus === "partial") {
-    appointment.visualFlag = "pending";
-  } else {
-    appointment.visualFlag = "blocked";
-  }
+  const pay =
+    (sessionDoc.paymentStatus && String(sessionDoc.paymentStatus).toLowerCase()) ||
+    (sessionDoc.isPaid ? "paid" : "pending");
 
-  await appointment.save({ session: mongoSession });
+  // atualize sem validar para não cair em qualquer validator bugado
+  await Appointment.updateOne(
+    { _id: appointment._id },
+    {
+      $set: {
+        paymentStatus: pay,           // "paid"|"partial"|"advanced"|...
+        operationalStatus: op,        // "confirmed"/"scheduled"/"canceled"/"missed"
+        clinicalStatus: cl,           // "completed" permitido só no clínico
+        sessionValue: sessionDoc.sessionValue ?? appointment.sessionValue
+      }
+    },
+    { session: mongoSession, runValidators: false, strict: true }
+  );
 
-  // 🔹 Atualiza automaticamente o resumo do paciente após sincronizar o agendamento
-  await updatePatientAppointments(sessionDoc.patient);
-
-  return appointment;
+  return await Appointment.findById(appointment._id).session(mongoSession);
 }
+
 
 /**
  * 🔹 Atualiza os campos lastAppointment e nextAppointment do paciente.

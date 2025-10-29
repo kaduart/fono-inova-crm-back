@@ -899,207 +899,127 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
 
 // routes/appointments.js (trecho)
 router.patch('/:id/complete', auth, async (req, res) => {
-    const MAX_RETRIES = 3;
-    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    let session = null;
+    try {
+        const { id } = req.params;
 
-    const { id } = req.params;
+        // 🔒 TRANSACTION 
+        session = await mongoose.startSession();
+        session.startTransaction();
 
-    // 🔎 0) Carrega só o necessário (sem populate aqui)
-    const apptBare = await Appointment.findById(
-        id,
-        { patient: 1, doctor: 1, session: 1, package: 1, serviceType: 1, payment: 1, paymentMethod: 1, date: 1, operationalStatus: 1, paymentAmount: 1 }
-    ).lean();
+        const appointment = await Appointment.findById(id)
+            .populate('session package patient doctor')
+            .populate({
+                path: 'package',
+                populate: { path: 'payments' }
+            })
+            .session(session);
 
-    if (!apptBare) {
-        return res.status(404).json({ success: false, message: 'Agendamento não encontrado' });
-    }
-    if (['completed', 'canceled'].includes(apptBare.operationalStatus)) {
-        return res.status(400).json({ success: false, message: 'Este agendamento já está finalizado ou cancelado' });
-    }
-
-    const method = apptBare.paymentMethod || 'dinheiro';
-    const toN = v => { const n = Number(v); return Number.isFinite(n) ? n : null; };
-    const sessionValue = toN(apptBare.paymentAmount) ?? 200; // mantém teu fallback
-
-    const runOnce = async () => {
-        const trx = await mongoose.startSession();
-        try {
-            await trx.withTransaction(async () => {
-                // 1) Garanti “lock” lógico do appointment: só prossegue se ainda não estiver completed/canceled
-                const lock = await Appointment.updateOne(
-                    { _id: apptBare._id, operationalStatus: { $nin: ['completed', 'canceled'] } },
-                    { $set: { /* touch */ updatedAt: new Date() } },
-                    { session: trx }
-                );
-                if (lock.matchedCount === 0) {
-                    throw new Error('Agendamento já finalizado/cancelado');
-                }
-
-                // 2) === TUAS REGRAS ORIGINAIS ===
-                //    Mantemos a separação de fluxos, só trocando a forma de “baixar” o Payment.
-                //    NADA é removido: apenas garantimos que o Payment vira 'paid' sem criar duplicata.
-
-                let paymentRecord = null;
-
-                // 2.1 Sessão avulsa (individual/evaluation) — mantém teu critério
-                if (apptBare.serviceType === 'individual_session' || apptBare.serviceType === 'evaluation') {
-
-                    // 🔁 UPSET atômico baseado no appointment (1:1) — NÃO sobrescreve amount > 0
-                    const setOnInsert = {
-                        patient: apptBare.patient,
-                        doctor: apptBare.doctor,
-                        serviceType: apptBare.serviceType,
-                        amount: sessionValue,
-                        package: null,
-                        session: apptBare.session || null,
-                        appointment: apptBare._id,
-                        kind: 'manual',
-                    };
-
-                    paymentRecord = await Payment.findOneAndUpdate(
-                        { appointment: apptBare._id, serviceType: { $in: ['individual_session', 'evaluation'] } },
-                        {
-                            $setOnInsert: setOnInsert,
-                            $set: {
-                                status: 'paid',
-                                paymentMethod: method,
-                                paymentDate: apptBare.date,
-                                serviceDate: apptBare.date,
-                                notes: 'Pagamento automático por confirmação de sessão avulsa',
-                            },
-                        },
-                        { new: true, upsert: true, session: trx }
-                    );
-
-                    // Se o valor existente for inválido/zero, ajusta para sessionValue (NÃO sobrescreve valor válido)
-                    const currAmt = Number(paymentRecord.amount);
-                    if (!Number.isFinite(currAmt) || currAmt <= 0) {
-                        paymentRecord.amount = sessionValue;
-                        await paymentRecord.save({ session: trx });
-                    }
-
-                    // ✅ Atualiza a Session (se existir) — mantém tuas flags
-                    if (apptBare.session) {
-                        await Session.updateOne(
-                            { _id: apptBare.session },
-                            {
-                                $set: {
-                                    status: 'completed',
-                                    paymentStatus: 'paid',
-                                    isPaid: true,
-                                    visualFlag: 'ok',
-                                    updatedAt: new Date(),
-                                }
-                            },
-                            { session: trx }
-                        );
-                    }
-                }
-
-                // 2.2 Sessão de pacote — MANTIDA (tuas regras), só com session: trx
-                if (apptBare.serviceType === 'package_session' && apptBare.session) {
-                    // Payment do pacote (session_payment)
-                    const setOnInsertPkg = {
-                        patient: apptBare.patient,
-                        doctor: apptBare.doctor,
-                        serviceType: 'package_session',
-                        amount: sessionValue,
-                        package: apptBare.package || null,
-                        session: apptBare.session,
-                        appointment: apptBare._id,
-                        kind: 'session_payment',
-                    };
-
-                    paymentRecord = await Payment.findOneAndUpdate(
-                        { appointment: apptBare._id, serviceType: 'package_session' },
-                        {
-                            $setOnInsert: setOnInsertPkg,
-                            $set: {
-                                status: 'paid',
-                                paymentMethod: method,
-                                paymentDate: apptBare.date,
-                                serviceDate: apptBare.date,
-                                notes: 'Pagamento automático por sessão de pacote',
-                            },
-                        },
-                        { new: true, upsert: true, session: trx }
-                    );
-
-                    // Atualiza sessão
-                    await Session.updateOne(
-                        { _id: apptBare.session },
-                        {
-                            $set: {
-                                status: 'completed',
-                                paymentStatus: 'paid',
-                                isPaid: true,
-                                updatedAt: new Date(),
-                            }
-                        },
-                        { session: trx }
-                    );
-
-                    // Incrementa pacote (sem duplicar) — se você JÁ tinha esse incremento simples, mantenho igual:
-                    if (apptBare.package) {
-                        await Package.updateOne(
-                            { _id: apptBare.package /* , 'usage.sessions': { $ne: apptBare.session } <-- só se já existir esse campo no seu schema */ },
-                            {
-                                $inc: { sessionsDone: 1 },
-                                // $addToSet: { 'usage.sessions': apptBare.session } // só se já existir no seu schema
-                            },
-                            { session: trx }
-                        );
-                    }
-                }
-
-                // 3) Finaliza o appointment e vincula o payment (se gerado/achado)
-                const setFinal = {
-                    operationalStatus: 'completed',
-                    clinicalStatus: 'completed',
-                    paymentStatus: 'paid',
-                };
-                if (paymentRecord?._id) setFinal.payment = paymentRecord._id;
-
-                await Appointment.updateOne(
-                    { _id: apptBare._id },
-                    {
-                        $set: setFinal,
-                        $push: {
-                            history: {
-                                action: 'confirmed',
-                                newStatus: 'confirmed',
-                                changedBy: req.user?._id || req.user?.id || null,
-                                timestamp: new Date(),
-                                context: 'operational',
-                            },
-                        },
-                    },
-                    { session: trx }
-                );
-
-            }, { writeConcern: { w: 'majority' } });
-        } finally {
-            trx.endSession();
+        if (!appointment) {
+            await session.abortTransaction();
+            return res.status(404).json({ error: 'Agendamento não encontrado' });
         }
-    };
 
-    // 🔁 Retry leve só para WriteConflict — não muda tuas regras
-    for (let i = 0; i <= MAX_RETRIES; i++) {
-        try {
-            await runOnce();
-            return res.json({ success: true, message: 'Agendamento confirmado com sucesso 💚' });
-        } catch (err) {
-            const msg = String(err?.message || '');
-            if ((/Write\s*Conflict/i).test(msg) && i < MAX_RETRIES) {
-                await sleep(50 * (i + 1)); // 50ms, 100ms, 150ms
-                continue;
+        if (appointment.operationalStatus === 'confirmed') {
+            await session.abortTransaction();
+            return res.status(400).json({ error: 'Este agendamento já está concluído' });
+        }
+
+        // ✅ VERIFICAR SE SESSÃO JÁ ESTAVA COMPLETA (EVITAR DUPLICAÇÃO)
+        let shouldUpdateSession = true;
+        let shouldIncrementPackage = true;
+
+        if (appointment.session) {
+            const sessionDoc = await Session.findById(appointment.session._id).session(session);
+            if (sessionDoc.status === 'completed') {
+                shouldUpdateSession = false;
+                shouldIncrementPackage = false;
+                console.log('⚠️ Sessão já estava completa - evitando duplicação');
             }
-            console.error('❌ /complete error:', err);
-            return res.status(500).json({ success: false, message: msg || 'Erro interno ao concluir agendamento' });
         }
+
+        // 1. ATUALIZAR SESSÃO (SE NECESSÁRIO)
+        if (shouldUpdateSession && appointment.session) {
+            await Session.updateOne(
+                { _id: appointment.session._id },
+                {
+                    status: 'completed', // ✅ PADRONIZAR PARA INGLÊS
+                    updatedAt: new Date()
+                }
+            ).session(session);
+        }
+
+        // 2. ATUALIZAR PACOTE (SE NECESSÁRIO E SE TEM PACOTE)
+        if (shouldIncrementPackage && appointment.package) {
+            // ✅ VERIFICAR SE NÃO VAI EXCEDER O TOTAL DE SESSÕES
+            const packageDoc = await Package.findById(appointment.package._id).session(session);
+            if (packageDoc.sessionsDone < packageDoc.totalSessions) {
+                await Package.updateOne(
+                    { _id: appointment.package._id },
+                    {
+                        $inc: { sessionsDone: 1 },
+                        updatedAt: new Date()
+                    }
+                ).session(session);
+            } else {
+                console.log('⚠️ Pacote já atingiu o limite de sessões');
+            }
+        }
+
+        // 3. ATUALIZAR AGENDAMENTO
+        const historyEntry = {
+            action: 'confirmed',
+            newStatus: 'confirmed',
+            changedBy: req.user._id,
+            timestamp: new Date(),
+            context: 'operacional',
+        };
+
+        const updateData = {
+            operationalStatus: 'confirmed',
+            clinicalStatus: 'completed',
+            completedAt: new Date(),
+            updatedAt: new Date(),
+            $push: { history: historyEntry }
+        };
+
+        // ✅ DEFINIR paymentStatus CORRETAMENTE
+        if (appointment.package) {
+            updateData.paymentStatus = 'package_paid'; // ✅ PARA PACOTES
+        } else {
+            updateData.paymentStatus = 'paid'; // ✅ PARA SESSÕES AVULSAS
+        }
+
+        await Appointment.updateOne(
+            { _id: id },
+            updateData
+        ).session(session);
+
+        await session.commitTransaction();
+
+        const updatedAppointment = await Appointment.findById(id)
+            .populate('session package patient doctor');
+
+        // Sincronização
+        try {
+            await syncEvent(updatedAppointment, 'appointment');
+        } catch (syncError) {
+            console.error('Erro na sincronização:', syncError);
+        }
+
+        res.json(updatedAppointment);
+
+    } catch (error) {
+        if (session) await session.abortTransaction();
+        console.error('Erro ao concluir agendamento:', error);
+        res.status(500).json({
+            error: 'Erro interno no servidor',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    } finally {
+        if (session) session.endSession();
     }
 });
-
 
 // Busca todos os agendamentos de um paciente
 router.get('/patient/:id', validateId, auth, async (req, res) => {
@@ -1299,7 +1219,7 @@ router.get('/stats', auth, async (req, res) => {
                         { $count: "count" }
                     ],
                     confirmed: [
-                        { $match: { status: 'confirmado' } },
+                        { $match: { status: 'confirmed' } },
                         { $count: "count" }
                     ],
                     totalPatients: [

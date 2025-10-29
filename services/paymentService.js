@@ -1,37 +1,36 @@
 // services/paymentService.js
 export const handleSessionPayment = ({ pkg, amount, paymentMethod }) => {
-    if (!['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia'].includes(pkg.type)) {
-        throw new Error('Tipo de terapia inválido para pagamento');
-    }
-    
-    const totalPaid = pkg.payments.reduce((sum, p) => sum + p.amount, 0);
-    const packageValue = pkg.totalSessions * amount;
-    const isFullyPaid = totalPaid >= packageValue;
+  if (!['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia'].includes(pkg.type)) {
+    throw new Error('Tipo de terapia inválido para pagamento');
+  }
 
-    // Se for per-session ou partial, ou se for full mas ainda não pago totalmente
-    if (pkg.paymentType !== 'full' || !isFullyPaid) {
-        const newPayment = {
-            amount,
-            date: new Date(),
-            paymentMethod,
-            status: pkg.paymentType === 'per-session' ? 'pago' : 'pendente',
-        };
-        pkg.payments.push(newPayment);
-    }
+  const totalPaid = pkg.payments.reduce((sum, p) => sum + p.amount, 0);
+  const packageValue = pkg.totalSessions * amount;
+  const isFullyPaid = totalPaid >= packageValue;
 
-    return pkg;
+  // Se for per-session ou partial, ou se for full mas ainda não pago totalmente
+  if (pkg.paymentType !== 'full' || !isFullyPaid) {
+    const newPayment = {
+      amount,
+      date: new Date(),
+      paymentMethod,
+      status: pkg.paymentType === 'per-session' ? 'paid' : 'pending',
+    };
+    pkg.payments.push(newPayment);
+  }
+
+  return pkg;
 };
 
-import mongoose from 'mongoose';
 import Appointment from '../models/Appointment.js';
-import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
+import Session from '../models/Session.js';
 
 async function generateDailyReport(date) {
   // 1. Converter data para intervalo do dia
   const startDate = new Date(date);
   startDate.setHours(0, 0, 0, 0);
-  
+
   const endDate = new Date(date);
   endDate.setHours(23, 59, 59, 999);
 
@@ -125,7 +124,7 @@ async function generateDailyReport(date) {
   payments.forEach(payment => {
     report.totals.payments.count++;
     report.totals.payments.value += payment.amount;
-    
+
     if (payment.paymentMethod) {
       report.totals.payments.methods[payment.paymentMethod] += payment.amount;
     }
@@ -134,7 +133,7 @@ async function generateDailyReport(date) {
     if (report.byProfessional[doctorId]) {
       const prof = report.byProfessional[doctorId];
       prof.payments.total += payment.amount;
-      
+
       if (payment.paymentMethod) {
         prof.payments.methods[payment.paymentMethod] += payment.amount;
       }
