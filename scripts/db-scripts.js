@@ -74,7 +74,7 @@ db.payments.updateOne(
 )
 
 
-db.payments.findOne({_id: ISODate("68ff61082d280f005fbd9bb5")}, {status:1, paymentMethod:1})
+db.payments.findOne({ _id: ISODate("68ff61082d280f005fbd9bb5") }, { status: 1, paymentMethod: 1 })
 
 // consultar sessios do dia
 db.sessions.find({
@@ -184,3 +184,27 @@ db.appointments.find(
   { package: ObjectId("68f6956de0e5b4debcb227e5") },
   { date: 1, status: 1, time: 1, operationalStatus: 1 }
 ).pretty();
+
+//consultar sessoes do pacote
+db.packages.find(
+  { _id: { $in: [ObjectId("68eeb6f049e195b37058bb7f"), ObjectId("68eeb5f549e195b37058bab2")] } },
+  { name: 1, sessionsDone: 1, "usage.sessions": { $slice: -3 } }
+).pretty()
+
+// diminuir qtd de sessoes do pacote
+db.packages.updateOne(
+  { _id: ObjectId("68eeb5f549e195b37058bab2") },
+  [
+    {
+      $set: {
+        sessionsDone: {
+          $cond: [
+            { $gt: ["$sessionsDone", 0] },
+            { $subtract: ["$sessionsDone", 1] },
+            0
+          ]
+        }
+      }
+    }
+  ]
+)
