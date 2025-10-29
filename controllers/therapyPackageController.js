@@ -245,8 +245,8 @@ export const packageOperations = {
                     session: s._id,
                     package: newPackage._id,
                     serviceType: 'package_session',
-                    status: 'scheduled',
                     operationalStatus: 'scheduled',
+                    clinicalStatus: 'pending',
                     paymentStatus: 'pending'
                 });
             }

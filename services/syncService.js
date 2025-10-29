@@ -106,48 +106,63 @@ const calculateValue = (doc, specialty) => {
     return DEFAULT_SPECIALTY_VALUES[specialty] || DEFAULT_SPECIALTY_VALUES.unknown;
 };
 
-// 🧭 Normaliza status operacional
 const getOperationalStatus = (status) => {
-    if (!status) return 'agendado';
+    if (!status) return 'scheduled';
 
     const normalized = status.toLowerCase();
     const statusMap = {
-        // inglês → português
-        completed: 'confirmado',
-        canceled: 'cancelado',
-        scheduled: 'agendado',
-        confirmed: 'confirmado',
-        paid: 'pago',
+        // inglês → inglês (mantém)
+        'completed': 'completed',
+        'canceled': 'canceled',
+        'scheduled': 'scheduled',
+        'confirmed': 'confirmed',
+        'paid': 'paid',
+        'pending': 'pending',
+        'missed': 'missed',
 
-        // português → português (mantém compatibilidade)
-        agendado: 'agendado',
-        confirmado: 'confirmado',
-        cancelado: 'cancelado',
-        concluído: 'concluído',
-        faltou: 'faltou',
-        pago: 'pago',
+        // português → inglês (corrige dados existentes)
+        'agendado': 'scheduled',
+        'confirmed': 'confirmed',
+        'canceled': 'canceled',
+        'completed': 'completed',
+        'missed': 'missed',
+        'paid': 'paid',
+        'pending': 'pending',
     };
 
-    return statusMap[normalized] || 'agendado';
+    return statusMap[normalized] || 'scheduled';
 };
 
-// 🧠 Normaliza status clínico (considera ausências confirmadas)
+// 🧠 Normaliza status clínico - MANTÉM INGLÊS
 const getClinicalStatus = (status, confirmedAbsence = false) => {
-    if (!status) return 'pendente';
+    if (!status) return 'pending';
 
     const normalized = status.toLowerCase();
 
-    if (['completed', 'concluído'].includes(normalized)) return 'concluído';
-    if (['in_progress', 'em_andamento'].includes(normalized)) return 'em_andamento';
-    if (['pending', 'pendente'].includes(normalized)) return 'pendente';
-    if (['missed', 'faltou'].includes(normalized)) return 'faltou';
+    const statusMap = {
+        // inglês → inglês (mantém)
+        'completed': 'completed',
+        'in_progress': 'in_progress',
+        'pending': 'pending',
+        'missed': 'missed',
+        'canceled': 'canceled',
 
-    if (['canceled', 'cancelado'].includes(normalized)) {
-        // Se a ausência foi confirmada, vira "faltou"
-        return confirmedAbsence ? 'faltou' : 'cancelado';
+        // português → inglês (corrige dados existentes)
+        'completed': 'completed',
+        'em_andamento': 'in_progress',
+        'pending': 'pending',
+        'faltou': 'missed',
+        'canceled': 'canceled',
+    };
+
+    let result = statusMap[normalized] || 'pending';
+
+    // Se a ausência foi confirmada, vira "missed" (inglês)
+    if (confirmedAbsence && result === 'canceled') {
+        result = 'missed';
     }
 
-    return 'pendente';
+    return result;
 };
 
 // Função principal de sincronização refatorada

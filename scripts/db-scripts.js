@@ -114,8 +114,8 @@ db.appointments.find({
 })
 
 //consulta do dia futuro
-db.payments.find({
-  paymentDate: "2025-10-27"
+db.packages.find({
+  paymentDate: "2025-10-29"
 })
 
 // consulta do dia or doutor
@@ -169,7 +169,7 @@ db.packages.deleteMany({
 });
 
 //pacote por paciente 
-db.packages.find({ patient: ObjectId("6897dc360683ca3788ae815d") }).pretty()
+db.packages.find({ patient: ObjectId("687f7ddbcfb03169c5c8cd33") }).pretty()
 
 //mostra os detalhes do pacote
 db.packages.find({ _id: ObjectId("68fa8c584862040e3c0636e8") }).pretty();
