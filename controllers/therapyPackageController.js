@@ -65,6 +65,7 @@ export const packageOperations = {
             // ==========================================================
             let existingAppointment = null;
             let replacedAppointmentId = null;
+            let replacedSessionId = null;
 
             // 2.1) Caso explícito: veio appointmentId no body
             if (appointmentId) {
@@ -76,19 +77,9 @@ export const packageOperations = {
                     throw new Error('Agendamento a ser convertido não encontrado');
                 }
 
-                // 🔁 Reaponta pagamentos desse appointment para o pacote a ser criado
-                await Payment.updateMany(
-                    { appointment: appointmentId },
-                    {
-                        $set: {
-                            // O package será definido mais abaixo, após criarmos o Package (update final)
-                            kind: 'package_receipt',
-                            serviceType: 'package_session'
-                        },
-                        $unset: { appointment: "" }
-                    },
-                    { session: mongoSession }
-                );
+                if (existingAppointment.session?._id) {
+                    replacedSessionId = existingAppointment.session._id.toString();
+                }
 
                 // Remove appointment + eventual session antiga (vamos recriar limpo já vinculado ao pacote)
                 await Appointment.deleteOne({ _id: appointmentId }).session(mongoSession);
@@ -114,18 +105,9 @@ export const packageOperations = {
 
                     // Achamos um agendamento "avulso" no mesmo horário da primeira sessão do pacote
                     if (toConvert) {
-                        // 🔁 Reaponta pagamentos desse appointment para o pacote a ser criado
-                        await Payment.updateMany(
-                            { appointment: toConvert._id },
-                            {
-                                $set: {
-                                    kind: 'package_receipt',
-                                    serviceType: 'package_session'
-                                },
-                                $unset: { appointment: "" }
-                            },
-                            { session: mongoSession }
-                        );
+                        if (toConvert.session?._id) {
+                            replacedSessionId = toConvert.session._id.toString(); // ⬅️ novo
+                        }
 
                         // Remove appointment + eventual session antiga
                         await Appointment.deleteOne({ _id: toConvert._id }).session(mongoSession);
@@ -180,6 +162,70 @@ export const packageOperations = {
             });
 
             await newPackage.save({ session: mongoSession });
+            // 🔧 Reconciliação mínima de pagamentos herdados da sessão/appointment avulso
+            if (replacedSessionId) {
+                // 2.1) Deleta pendentes/abertos da sessão avulsa (evita o “extra”)
+                await Payment.deleteMany(
+                    {
+                        session: replacedSessionId,
+                        status: { $in: ['pending', 'unpaid'] },
+                        serviceType: { $in: ['individual_session', 'evaluation'] }
+                    },
+                    { session: mongoSession }
+                );
+
+                // 2.2) Converte pagos da sessão avulsa em recibo do pacote (preserva histórico financeiro)
+                await Payment.updateMany(
+                    {
+                        session: replacedSessionId,
+                        status: 'paid',
+                        serviceType: { $in: ['individual_session', 'evaluation'] }
+                    },
+                    {
+                        $set: {
+                            package: newPackage._id,
+                            kind: 'package_receipt',
+                            serviceType: 'package_session',
+                            migratedFrom: { session: replacedSessionId }
+                        },
+                        $unset: { session: "", appointment: "" }
+                    },
+                    { session: mongoSession }
+                );
+            }
+
+            // (opcional) reforço por appointment também:
+            if (replacedAppointmentId) {
+                await Payment.updateMany(
+                    {
+                        appointment: replacedAppointmentId,
+                        status: { $in: ['pending', 'unpaid'] },
+                        serviceType: { $in: ['individual_session', 'evaluation'] }
+                    },
+                    { $unset: { appointment: "" } },
+                    { session: mongoSession }
+                );
+
+                await Payment.updateMany(
+                    {
+                        appointment: replacedAppointmentId,
+                        status: 'paid',
+                        serviceType: { $in: ['individual_session', 'evaluation'] }
+                    },
+                    {
+                        $set: {
+                            package: newPackage._id,
+                            kind: 'package_receipt',
+                            serviceType: 'package_session',
+                            migratedFrom: { appointment: replacedAppointmentId }
+                        },
+                        $unset: { appointment: "" }
+                    },
+                    { session: mongoSession }
+                );
+            }
+
+
             await Patient.findByIdAndUpdate(patientId, { $addToSet: { packages: newPackage._id } }, { session: mongoSession });
 
             // ==========================================================
@@ -342,6 +388,48 @@ export const packageOperations = {
             newPackage.financialStatus =
                 newPackage.balance <= 0 ? 'paid' :
                     newPackage.totalPaid > 0 ? 'partially_paid' : 'unpaid';
+
+            // 🔢 Soma dos pagos migrados (sessão/appointment avulsos convertidos)
+            const migratedPaid = await Payment.aggregate([
+                {
+                    $match: {
+                        package: newPackage._id,
+                        status: 'paid',
+                        kind: 'package_receipt',
+                        serviceType: 'package_session',
+                        migratedFrom: { $exists: true }            // ⬅️ só os que acabamos de migrar
+                    }
+                },
+                { $group: { _id: null, total: { $sum: '$amount' } } }
+            ]).session(mongoSession);
+
+            const migratedTotal = migratedPaid?.[0]?.total || 0;
+
+            // Atualiza o array de payments do pacote (IDs migrados)
+            const migratedIds = await Payment.find({
+                package: newPackage._id,
+                status: 'paid',
+                kind: 'package_receipt',
+                serviceType: 'package_session',
+                migratedFrom: { $exists: true }
+            }, { _id: 1 }).session(mongoSession);
+
+            if (migratedIds.length) {
+                await Package.updateOne(
+                    { _id: newPackage._id },
+                    { $addToSet: { payments: { $each: migratedIds.map(p => p._id) } } },
+                    { session: mongoSession }
+                );
+            }
+
+            // Agora some no totalPaid do pacote ANTES da finalização
+            newPackage.totalPaid = (newPackage.totalPaid || 0) + migratedTotal;
+            newPackage.balance = (newPackage.totalValue || 0) - (newPackage.totalPaid || 0);
+            newPackage.financialStatus =
+                newPackage.balance <= 0 ? 'paid' :
+                    newPackage.totalPaid > 0 ? 'partially_paid' : 'unpaid';
+            await newPackage.save({ session: mongoSession });
+
             await newPackage.save({ session: mongoSession });
 
             // ==========================================================
@@ -371,6 +459,16 @@ export const packageOperations = {
             // 🔁 Recarrega o pacote direto do banco, sem cache e com todas as sessões visíveis
             const reloadedPackage = await Package.findById(newPackage._id)
                 .lean();
+
+            // 💸 Distribui também o valor migrado (pagos convertidos do avulso → pacote)
+            if (migratedTotal > 0) {
+                try {
+                    await distributePayments(reloadedPackage._id, migratedTotal, null, null);
+                } catch (e) {
+                    console.error(`⚠️ Erro ao distribuir valor migrado:`, e.message);
+                }
+            }
+
 
             // 💰 Distribui pagamentos após garantir consistência total
             for (const p of paymentDocs) {

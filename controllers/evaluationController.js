@@ -2,27 +2,144 @@ import Evolution from "../models/Evolution.js";
 import Metric from "../models/Metric.js";
 
 // Criar avaliação
+// controllers/evolutionController.js
+import mongoose from 'mongoose';
+
+
+
+// Função auxiliar para clamp de números
+const clampNumber = (num, min, max) => Math.min(Math.max(num, min), max);
+
 export const createEvaluation = async (req, res) => {
-
   try {
+    const {
+      patient,
+      doctor,
+      specialty,
+      date,      // 'yyyy-MM-dd' - será convertido para Date
+      time,      // 'HH:mm'
+      content = '',
+      metrics = [],
+      evaluationAreas = [],
+      evaluationTypes = [],
+      plan = "",
+      treatmentStatus = 'in_progress' // ✅ VALOR PADRÃO DO SCHEMA
+    } = req.body || {};
 
+    // 🔎 Validações básicas
+    if (!patient || !mongoose.Types.ObjectId.isValid(patient)) {
+      return res.status(400).json({ message: 'Paciente inválido' });
+    }
+    if (!doctor || !mongoose.Types.ObjectId.isValid(doctor)) {
+      return res.status(400).json({ message: 'Médico inválido' });
+    }
+    if (!date) {
+      return res.status(400).json({ message: 'Data é obrigatória' });
+    }
+    if (!specialty) {
+      return res.status(400).json({ message: 'Especialidade é obrigatória' });
+    }
+
+    // ✅ CONVERTER DATE STRING PARA DATE OBJECT
+    let dateObj;
+    try {
+      // Tenta converter a string para Date
+      dateObj = new Date(date);
+      if (isNaN(dateObj.getTime())) {
+        throw new Error('Data inválida');
+      }
+    } catch (error) {
+      return res.status(400).json({ message: 'Data inválida' });
+    }
+
+    // 🧹 Normaliza métricas -> array {name, value:number}
+    const normalizedMetrics = Array.isArray(metrics)
+      ? metrics
+        .map(m => ({
+          name: String(m?.name || '').trim(),
+          value: Number(m?.value),
+        }))
+        .filter(m => m.name && Number.isFinite(m.value))
+      : [];
+
+    // 🧹 Normaliza áreas -> array {id, name, score:number(0..10)}
+    const normalizedAreas = Array.isArray(evaluationAreas)
+      ? evaluationAreas
+        .map(a => ({
+          id: String(a?.id || '').trim(),
+          name: String(a?.name || '').trim() || String(a?.id || '').trim(),
+          score: clampNumber(Number(a?.score), 0, 10),
+        }))
+        .filter(a => a.id && Number.isFinite(a.score))
+      : [];
+
+    // ↪️ Se não vierem types, deriva dos sliders (score >= 1)
+    const derivedTypes = normalizedAreas.filter(a => a.score >= 1).map(a => a.id);
+    const finalEvaluationTypes = Array.isArray(evaluationTypes) && evaluationTypes.length
+      ? evaluationTypes.filter(type =>
+        ['language', 'motor', 'cognitive', 'behavior', 'social'].includes(type)
+      )
+      : derivedTypes;
+
+    // ✅ MONTA O OBJETO ALINHADO COM O SCHEMA
     const evaluationData = {
-      ...req.body,
-      metrics: req.body.metrics 
+      patient: new mongoose.Types.ObjectId(patient),
+      doctor: new mongoose.Types.ObjectId(doctor),
+      specialty: String(specialty).trim(),
+      date: dateObj, // ✅ Date object (conforme schema)
+      time: time ? String(time).trim() : undefined,
+      content: String(content || '').trim(),
+      metrics: normalizedMetrics,
+      evaluationAreas: normalizedAreas,
+      evaluationTypes: finalEvaluationTypes,
+      plan: String(plan || '').trim(),
+      treatmentStatus: treatmentStatus // ✅ Usa o valor do enum
     };
+
+    // ✅ VALIDAÇÃO ADICIONAL DO TREATMENT STATUS
+    const validStatuses = ['initial_evaluation', 'in_progress', 'improving', 'stable', 'regressing', 'completed'];
+    if (!validStatuses.includes(evaluationData.treatmentStatus)) {
+      evaluationData.treatmentStatus = 'in_progress'; // fallback para padrão
+    }
+
+    console.log('Dados da avaliação a ser salva:', evaluationData);
 
     const evaluation = new Evolution(evaluationData);
     await evaluation.save();
 
-    res.status(201).json(evaluation);
+    // ✅ POPULA OS DADOS RELACIONADOS PARA RETORNO
+    const populatedEvaluation = await Evolution.findById(evaluation._id)
+      .populate('patient', 'fullName birthDate gender')
+      .populate('doctor', 'fullName specialty');
+
+    return res.status(201).json(populatedEvaluation);
+
   } catch (error) {
-    console.error("Erro ao criar avaliação:", error);
-    res.status(400).json({
-      message: "Erro na criação da avaliação",
-      error: error.message
+    console.error('Erro detalhado ao criar avaliação:', error);
+
+    // ✅ TRATAMENTO DE ERROS MAIS ESPECÍFICO
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        message: 'Erro de validação',
+        errors: errors
+      });
+    }
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        message: 'Duplicação de dados',
+        error: 'Já existe uma avaliação com esses dados'
+      });
+    }
+
+    return res.status(500).json({
+      message: 'Erro interno no servidor',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Erro desconhecido'
     });
   }
 };
+
 
 // Obter avaliações por paciente
 export const getEvaluationsByPatient = async (req, res) => {

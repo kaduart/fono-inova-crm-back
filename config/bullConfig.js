@@ -1,7 +1,7 @@
 // config/bullConfig.js
 import { Queue, QueueEvents } from "bullmq";
-import IORedis from "ioredis";
 import chalk from "chalk";
+import IORedis from "ioredis";
 
 // ======================================================
 // 🧠 Conexão Redis unificada (BullMQ + Bull Board)

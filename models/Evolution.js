@@ -16,16 +16,16 @@ const evolutionSchema = new mongoose.Schema({
         required: true
     },
     time: {
-        type: String // novo campo opcional (se quiser separar da data)
+        type: String
     },
     valuePaid: {
-        type: String // novo campo opcional
+        type: String
     },
     sessionType: {
-        type: String // novo campo opcional
+        type: String
     },
     paymentType: {
-        type: String // novo campo opcional
+        type: String
     },
     appointmentId: {
         type: mongoose.Schema.Types.ObjectId,
@@ -41,15 +41,24 @@ const evolutionSchema = new mongoose.Schema({
     evaluationTypes: [{
         type: String,
         enum: ['language', 'motor', 'cognitive', 'behavior', 'social'],
-        required: false // <- ajustado para não ser obrigatório
+        required: false
     }],
     metrics: [{
         name: String,
         value: Number
     }],
-
-    specialty: { type: String, required: true },
-    content: { type: mongoose.Schema.Types.Mixed },
+    evaluationAreas: [{ // ✅ ADICIONAR ESTE CAMPO
+        id: String,
+        name: String,
+        score: Number
+    }],
+    specialty: {
+        type: String,
+        required: true
+    },
+    content: {
+        type: mongoose.Schema.Types.Mixed
+    },
     observations: String,
     treatmentStatus: {
         type: String,
@@ -58,7 +67,5 @@ const evolutionSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
-
 const Evolution = mongoose.model('Evolution', evolutionSchema);
-
 export default Evolution;

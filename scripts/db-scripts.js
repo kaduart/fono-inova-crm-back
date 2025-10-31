@@ -63,8 +63,8 @@ db.appointments.find({
 // consultar pagamentos do dia
 db.payments.find({
   createdAt: {
-    $gte: ISODate("2025-10-24T00:00:00.000Z"),
-    $lt: ISODate("2025-10-25T00:00:00.000Z")
+    $gte: ISODate("2025-10-29T00:00:00.000Z"),
+    $lt: ISODate("2025-10-30T00:00:00.000Z")
   }
 })
 /// atualizar pagamaneto por id
@@ -93,7 +93,7 @@ db.appointments.find({
 
 ///ouuuuu // Buscar agendamentos de hoje - 27/10/2025
 db.appointments.find({
-  date: "2025-10-27"
+  date: "2025-10-29"
 }).sort({ time: 1 })
 
 //agendamentos do dia 
