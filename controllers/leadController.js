@@ -16,20 +16,26 @@ export const createLeadFromSheet = async (req, res) => {
             origin,
             scheduledDate
         } = req.body;
+        const phoneE164 = normalizeE164(phone);
 
-        const lead = await Lead.create({
-            name,
-            contact: { phone },
-            origin: origin || 'Tráfego pago',
-            appointment: {
-                seekingFor: seekingFor || 'Adulto +18 anos',
-                modality: modality || 'Online',
-                healthPlan: healthPlan || 'Mensalidade'
+        const lead = await Lead.findOneAndUpdate(
+            { 'contact.phone': phoneE164 || null },
+            {
+                $setOnInsert: {
+                    name,
+                    contact: { phone: phoneE164 },
+                    origin: origin || 'Tráfego pago',
+                    appointment: {
+                        seekingFor: seekingFor || 'Adulto +18 anos',
+                        modality: modality || 'Online',
+                        healthPlan: healthPlan || 'Mensalidade'
+                    },
+                    scheduledDate,
+                    status: 'novo'
+                }
             },
-            scheduledDate,
-            status: 'novo'
-        });
-
+            { upsert: true, new: true }
+        );
         // Iniciar circuito automático
         await manageLeadCircuit(lead._id, 'initial');
 

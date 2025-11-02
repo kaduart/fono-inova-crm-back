@@ -16,3 +16,9 @@ export const tailPattern = (phone, min = 8, max = 11) => {
     const tail = digits.slice(-max); // último bloco
     return new RegExp(`${tail.slice(-min)}$`); // termina com os últimos N
 };
+
+export function firstName(full) {
+    if (!full || typeof full !== 'string') return 'Olá';
+    const part = full.trim().split(/\s+/)[0];
+    return part || 'Olá';
+}
