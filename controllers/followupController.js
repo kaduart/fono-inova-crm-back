@@ -366,11 +366,12 @@ export const getFollowupHistory = async (req, res) => {
  */
 export const filterFollowups = async (req, res) => {
     try {
-        const { status, startDate, endDate, origin } = req.query;
+        const { status, startDate, endDate, origin, lead } = req.query;
         const query = {};
 
         if (status) query.status = status;
         if (origin) query.origin = origin;
+        if (lead) query.lead = lead;
         if (startDate || endDate) {
             query.scheduledAt = {};
             if (startDate) query.scheduledAt.$gte = new Date(startDate);

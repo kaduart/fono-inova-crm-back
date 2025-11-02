@@ -13,7 +13,7 @@ const interactionSchema = new mongoose.Schema({
 const leadSchema = new mongoose.Schema({
   name: { type: String, required: true },
   contact: {
-    email: String,
+    email: { type: String, lowercase: true, trim: true },
     phone: { type: String, index: true }
   },
   origin: {
@@ -74,6 +74,19 @@ const leadSchema = new mongoose.Schema({
   conversionScore: { type: Number, default: 0 },
 
 }, { timestamps: true });
+
+// Índices úteis
+leadSchema.index({ status: 1, createdAt: -1 });
+leadSchema.index({ origin: 1, createdAt: -1 });
+leadSchema.index({ createdAt: -1 });
+// Se quiser evitar duplicados de celular:
+// leadSchema.index({ 'contact.phone': 1 }, { unique: true, sparse: true });
+
+// Normalização de telefone
+leadSchema.pre('save', function (next) {
+  if (this.contact?.phone) this.contact.phone = normalizeE164(this.contact.phone);
+  next();
+});
 
 // Middleware para atualizar última interação
 leadSchema.pre('save', function (next) {
