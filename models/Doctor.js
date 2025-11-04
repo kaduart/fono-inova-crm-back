@@ -10,7 +10,13 @@ const DailyScheduleSchema = new mongoose.Schema({
 const doctorSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
   email: { type: String, required: true, unique: true },
-  password: { type: String, required: false, minlength: 6 }, // pode ser criado sem senha e definida depois
+  password: {
+    type: String,
+    minlength: 6,
+    required: false,
+    select: false,
+    set: v => (v === '' ? undefined : v) 
+  },
   specialty: { type: String, required: true, enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'pediatria', 'neuroped'] },
   specialties: [{ type: Schema.Types.ObjectId, ref: 'Specialty' }],
 

@@ -33,7 +33,7 @@ export const doctorOperations = {
       } = req.body;
 
       // Validação melhorada
-      const requiredFields = ['fullName', 'email', 'password', 'specialty', 'licenseNumber', 'phoneNumber'];
+      const requiredFields = ['fullName', 'email', 'specialty', 'licenseNumber', 'phoneNumber'];
       const missingFields = requiredFields.filter(field => !req.body[field]);
 
       if (missingFields.length > 0) {
@@ -139,29 +139,37 @@ export const doctorOperations = {
 
   update: async (req, res) => {
     try {
+      const update = { ...req.body };
 
-      const doctor = await Doctor.findByIdAndUpdate(req.params.id, req.body, {
+      // 1) NUNCA envie/salve senha vazia
+      if ('password' in update && !update.password) delete update.password;
+
+      // 2) Corrige boolean vindo como string
+      if (typeof update.active === 'string') update.active = update.active === 'true';
+
+      // 3) (Opcional) normaliza specialty se vier “humana”
+      const mapSpec = {
+        'terapeuta ocupacional': 'terapia_ocupacional',
+        'fono': 'fonoaudiologia',
+        'fonoaudiologia': 'fonoaudiologia',
+        'psico': 'psicologia'
+      };
+      if (update.specialty) update.specialty = mapSpec[update.specialty] || update.specialty;
+
+      const doctor = await Doctor.findByIdAndUpdate(req.params.id, update, {
         new: true,
         runValidators: true
       });
 
       if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
-
-      res.json(doctor);
+      return res.json(doctor);
     } catch (error) {
       if (error.name === 'ValidationError') {
-        // 💡 Extrai erros campo a campo
-        const errors = Object.keys(error.errors).reduce((acc, key) => {
-          acc[key] = error.errors[key].message;
-          return acc;
-        }, {});
-
-        return res.status(400).json({
-          message: 'Falha na validação dos dados',
-          errors
-        });
+        const errors = Object.fromEntries(
+          Object.entries(error.errors).map(([k, v]) => [k, v.message])
+        );
+        return res.status(400).json({ message: 'Falha na validação dos dados', errors });
       }
-
       return res.status(500).json({ error: 'Erro interno' });
     }
   },
