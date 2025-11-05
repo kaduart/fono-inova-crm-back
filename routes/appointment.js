@@ -324,8 +324,9 @@ router.get('/', auth, async (req, res) => {
         const appointments = await Appointment.find(filter)
             .populate({ path: 'doctor', select: 'fullName specialty' })
             .populate({ path: 'patient', select: 'fullName dateOfBirth gender phone email address cpf rg' })
-            .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue' }) // 🔸 inclui sessionValue para cálculo mais preciso
+            .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue' })
             .populate({ path: 'session', select: 'isPaid paymentStatus partialAmount' })
+            .populate({ path: 'payment', select: 'status amount paymentMethod' }) // ✅ ADICIONE ESTA LINHA
             .sort({ date: 1 })
             .lean();
 
@@ -334,14 +335,21 @@ router.get('/', auth, async (req, res) => {
 
         // 🔧 Função para resolver visualFlag com base no estado real
         const resolveVisualFlag = (appt) => {
-            if (appt.visualFlag) return appt.visualFlag; // já vem gravado? usa direto
+            if (appt.visualFlag) return appt.visualFlag;
+
+            // ✅ PRIORIZAR O PAYMENT VINCULADO
+            if (appt.payment) {
+                switch (appt.payment.status) {
+                    case 'paid': return 'ok';
+                    case 'partial': return 'partial';
+                    case 'pending': return 'pending';
+                }
+            }
 
             // Sessão vinculada a pacote
             if (appt.package) {
                 const pkg = appt.package;
                 const sess = appt.session;
-
-                // 🔸 Corrigido: lógica segura para evitar undefined em totalPaid
                 const totalPaid = pkg.totalPaid || 0;
                 const balance = pkg.balance ?? 0;
 
@@ -350,7 +358,7 @@ router.get('/', auth, async (req, res) => {
                 if (balance > 0 && !sess?.isPaid) return 'blocked';
             }
 
-            // Sessão avulsa
+            // Sessão avulsa (fallback)
             switch (appt.paymentStatus) {
                 case 'paid':
                 case 'package_paid':
@@ -363,7 +371,6 @@ router.get('/', auth, async (req, res) => {
                     return 'pending';
             }
         };
-
         // 🔹 Mapear para o formato do FullCalendar
         const calendarEvents = appointments
             .filter(appt => appt.patient || appt.package)
@@ -374,10 +381,12 @@ router.get('/', auth, async (req, res) => {
                 const end = new Date(start.getTime() + (appt.duration || 40) * 60000);
 
                 // ✅ Consolida o status financeiro
+                // ✅ Consolida o status financeiro
                 const paymentStatus =
-                    appt.paymentStatus ||
-                    appt.session?.paymentStatus ||
-                    (appt.package?.financialStatus === 'paid' ? 'paid' : 'pending');
+                    appt.payment?.status ||                    // 1º: Payment vinculado
+                    appt.paymentStatus ||                       // 2º: Campo do Appointment
+                    appt.session?.paymentStatus ||              // 3º: Session
+                    (appt.package?.financialStatus === 'paid' ? 'paid' : 'pending'); // 4º: Package
 
                 // 🧩 Resolve visualFlag de forma robusta
                 const visualFlag = resolveVisualFlag({ ...appt, paymentStatus });
@@ -908,7 +917,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
         session.startTransaction();
 
         const appointment = await Appointment.findById(id)
-            .populate('session package patient doctor')
+            .populate('session package patient doctor payment') // ✅ ADICIONA payment
             .populate({
                 path: 'package',
                 populate: { path: 'payments' }
@@ -938,20 +947,43 @@ router.patch('/:id/complete', auth, async (req, res) => {
             }
         }
 
-        // 1. ATUALIZAR SESSÃO (SE NECESSÁRIO)
+        // 1️⃣ ATUALIZAR SESSÃO (SE NECESSÁRIO)
         if (shouldUpdateSession && appointment.session) {
+            console.log('🔍 Vai atualizar Session:', {
+                sessionId: appointment.session._id,
+                shouldUpdateSession,
+                hasSession: !!appointment.session
+            });
             await Session.updateOne(
                 { _id: appointment.session._id },
                 {
-                    status: 'completed', // ✅ PADRONIZAR PARA INGLÊS
+                    status: 'completed',
+                    isPaid: true, // ✅ MARCA COMO PAGO
+                    paymentStatus: 'paid', // ✅ ATUALIZA STATUS
+                    visualFlag: 'ok', // ✅ FLAG VISUAL
                     updatedAt: new Date()
                 }
             ).session(session);
+
+            console.log('✅ Sessão atualizada:', appointment.session._id);
         }
 
-        // 2. ATUALIZAR PACOTE (SE NECESSÁRIO E SE TEM PACOTE)
+        // 2️⃣ ATUALIZAR PAYMENT (SE EXISTIR) - CRUCIAL!
+        if (appointment.payment) {
+            await Payment.updateOne(
+                { _id: appointment.payment._id },
+                {
+                    status: 'paid', // ✅ MARCA PAGAMENTO COMO PAGO
+                    paymentDate: new Date(), // ✅ DATA DO PAGAMENTO
+                    updatedAt: new Date()
+                }
+            ).session(session);
+
+            console.log('✅ Payment atualizado:', appointment.payment._id);
+        }
+
+        // 3️⃣ ATUALIZAR PACOTE (SE NECESSÁRIO E SE TEM PACOTE)
         if (shouldIncrementPackage && appointment.package) {
-            // ✅ VERIFICAR SE NÃO VAI EXCEDER O TOTAL DE SESSÕES
             const packageDoc = await Package.findById(appointment.package._id).session(session);
             if (packageDoc.sessionsDone < packageDoc.totalSessions) {
                 await Package.updateOne(
@@ -961,12 +993,14 @@ router.patch('/:id/complete', auth, async (req, res) => {
                         updatedAt: new Date()
                     }
                 ).session(session);
+
+                console.log('✅ Pacote atualizado:', appointment.package._id);
             } else {
                 console.log('⚠️ Pacote já atingiu o limite de sessões');
             }
         }
 
-        // 3. ATUALIZAR AGENDAMENTO
+        // 4️⃣ ATUALIZAR AGENDAMENTO
         const historyEntry = {
             action: 'confirmed',
             newStatus: 'confirmed',
@@ -980,14 +1014,15 @@ router.patch('/:id/complete', auth, async (req, res) => {
             clinicalStatus: 'completed',
             completedAt: new Date(),
             updatedAt: new Date(),
+            visualFlag: 'ok', // ✅ FLAG VISUAL
             $push: { history: historyEntry }
         };
 
         // ✅ DEFINIR paymentStatus CORRETAMENTE
         if (appointment.package) {
-            updateData.paymentStatus = 'package_paid'; // ✅ PARA PACOTES
+            updateData.paymentStatus = 'package_paid';
         } else {
-            updateData.paymentStatus = 'paid'; // ✅ PARA SESSÕES AVULSAS
+            updateData.paymentStatus = 'paid';
         }
 
         await Appointment.updateOne(
@@ -995,10 +1030,23 @@ router.patch('/:id/complete', auth, async (req, res) => {
             updateData
         ).session(session);
 
+        console.log('✅ Appointment atualizado:', id);
+
         await session.commitTransaction();
 
+        // ✅ BUSCAR COM TODOS OS RELACIONAMENTOS
         const updatedAppointment = await Appointment.findById(id)
-            .populate('session package patient doctor');
+            .populate('session package patient doctor payment');
+
+        console.log('🎯 Appointment completo:', {
+            id: updatedAppointment._id,
+            paymentStatus: updatedAppointment.paymentStatus,
+            payment: updatedAppointment.payment?.status,
+            session: {
+                isPaid: updatedAppointment.session?.isPaid,
+                paymentStatus: updatedAppointment.session?.paymentStatus
+            }
+        });
 
         // Sincronização
         try {
@@ -1020,7 +1068,6 @@ router.patch('/:id/complete', auth, async (req, res) => {
         if (session) session.endSession();
     }
 });
-
 // Busca todos os agendamentos de um paciente
 router.get('/patient/:id', validateId, auth, async (req, res) => {
 
