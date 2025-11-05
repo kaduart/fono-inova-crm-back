@@ -912,12 +912,11 @@ router.patch('/:id/complete', auth, async (req, res) => {
     try {
         const { id } = req.params;
 
-        // 🔒 TRANSACTION 
         session = await mongoose.startSession();
         session.startTransaction();
 
         const appointment = await Appointment.findById(id)
-            .populate('session package patient doctor payment') // ✅ ADICIONA payment
+            .populate('session package patient doctor payment')
             .populate({
                 path: 'package',
                 populate: { path: 'payments' }
@@ -934,55 +933,56 @@ router.patch('/:id/complete', auth, async (req, res) => {
             return res.status(400).json({ error: 'Este agendamento já está concluído' });
         }
 
-        // ✅ VERIFICAR SE SESSÃO JÁ ESTAVA COMPLETA (EVITAR DUPLICAÇÃO)
-        let shouldUpdateSession = true;
+        // ✅ VERIFICAR DUPLICAÇÃO APENAS PARA PACOTE
         let shouldIncrementPackage = true;
 
         if (appointment.session) {
             const sessionDoc = await Session.findById(appointment.session._id).session(session);
-            if (sessionDoc.status === 'completed') {
-                shouldUpdateSession = false;
+            if (sessionDoc.status === 'completed' && appointment.package) {
                 shouldIncrementPackage = false;
-                console.log('⚠️ Sessão já estava completa - evitando duplicação');
+                console.log('⚠️ Sessão já estava completa - evitando duplicar pacote');
             }
         }
 
-        // 1️⃣ ATUALIZAR SESSÃO (SE NECESSÁRIO)
-        if (shouldUpdateSession && appointment.session) {
-            console.log('🔍 Vai atualizar Session:', {
-                sessionId: appointment.session._id,
-                shouldUpdateSession,
-                hasSession: !!appointment.session
-            });
-            await Session.updateOne(
+        // 1️⃣ ATUALIZAR SESSÃO (SEMPRE!)
+        if (appointment.session) {
+            const sessionResult = await Session.updateOne(
                 { _id: appointment.session._id },
                 {
                     status: 'completed',
-                    isPaid: true, // ✅ MARCA COMO PAGO
-                    paymentStatus: 'paid', // ✅ ATUALIZA STATUS
-                    visualFlag: 'ok', // ✅ FLAG VISUAL
+                    isPaid: true,
+                    paymentStatus: 'paid',
+                    visualFlag: 'ok',
                     updatedAt: new Date()
                 }
             ).session(session);
 
-            console.log('✅ Sessão atualizada:', appointment.session._id);
+            console.log('✅ Session update:', {
+                id: appointment.session._id,
+                matched: sessionResult.matchedCount,
+                modified: sessionResult.modifiedCount
+            });
         }
 
-        // 2️⃣ ATUALIZAR PAYMENT (SE EXISTIR) - CRUCIAL!
+        // 2️⃣ ATUALIZAR PAYMENT (SE EXISTIR)
         if (appointment.payment) {
-            await Payment.updateOne(
+            const paymentResult = await Payment.updateOne(
                 { _id: appointment.payment._id },
                 {
-                    status: 'paid', // ✅ MARCA PAGAMENTO COMO PAGO
-                    paymentDate: new Date(), // ✅ DATA DO PAGAMENTO
+                    status: 'paid',
+                    paymentDate: new Date(),
                     updatedAt: new Date()
                 }
             ).session(session);
 
-            console.log('✅ Payment atualizado:', appointment.payment._id);
+            console.log('✅ Payment update:', {
+                id: appointment.payment._id,
+                matched: paymentResult.matchedCount,
+                modified: paymentResult.modifiedCount
+            });
         }
 
-        // 3️⃣ ATUALIZAR PACOTE (SE NECESSÁRIO E SE TEM PACOTE)
+        // 3️⃣ ATUALIZAR PACOTE (SE NECESSÁRIO)
         if (shouldIncrementPackage && appointment.package) {
             const packageDoc = await Package.findById(appointment.package._id).session(session);
             if (packageDoc.sessionsDone < packageDoc.totalSessions) {
@@ -994,9 +994,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
                     }
                 ).session(session);
 
-                console.log('✅ Pacote atualizado:', appointment.package._id);
-            } else {
-                console.log('⚠️ Pacote já atingiu o limite de sessões');
+                console.log('✅ Package incremented:', appointment.package._id);
             }
         }
 
@@ -1014,52 +1012,65 @@ router.patch('/:id/complete', auth, async (req, res) => {
             clinicalStatus: 'completed',
             completedAt: new Date(),
             updatedAt: new Date(),
-            visualFlag: 'ok', // ✅ FLAG VISUAL
+            visualFlag: 'ok',
             $push: { history: historyEntry }
         };
 
-        // ✅ DEFINIR paymentStatus CORRETAMENTE
         if (appointment.package) {
             updateData.paymentStatus = 'package_paid';
         } else {
             updateData.paymentStatus = 'paid';
         }
 
-        await Appointment.updateOne(
+        const appointmentResult = await Appointment.updateOne(
             { _id: id },
             updateData
         ).session(session);
 
-        console.log('✅ Appointment atualizado:', id);
-
-        await session.commitTransaction();
-
-        // ✅ BUSCAR COM TODOS OS RELACIONAMENTOS
-        const updatedAppointment = await Appointment.findById(id)
-            .populate('session package patient doctor payment');
-
-        console.log('🎯 Appointment completo:', {
-            id: updatedAppointment._id,
-            paymentStatus: updatedAppointment.paymentStatus,
-            payment: updatedAppointment.payment?.status,
-            session: {
-                isPaid: updatedAppointment.session?.isPaid,
-                paymentStatus: updatedAppointment.session?.paymentStatus
-            }
+        console.log('✅ Appointment update:', {
+            id,
+            matched: appointmentResult.matchedCount,
+            modified: appointmentResult.modifiedCount
         });
 
-        // Sincronização
+        // ✅ BUSCAR DENTRO DA TRANSAÇÃO (antes do commit)
+        const updatedAppointment = await Appointment.findById(id)
+            .populate('session package patient doctor payment')
+            .session(session);
+
+        console.log('🔍 Status ANTES do commit:', {
+            operationalStatus: updatedAppointment.operationalStatus,
+            paymentStatus: updatedAppointment.paymentStatus
+        });
+
+        // 5️⃣ SINCRONIZAR DENTRO DA TRANSAÇÃO
         try {
-            await syncEvent(updatedAppointment, 'appointment');
+            await syncEvent(updatedAppointment, 'appointment', session);
+            console.log('✅ Sync completado dentro da transação');
         } catch (syncError) {
-            console.error('Erro na sincronização:', syncError);
+            console.error('⚠️ Erro no sync (não crítico):', syncError.message);
+            // Não aborta a transação por erro de sync
         }
 
-        res.json(updatedAppointment);
+        // 6️⃣ COMMIT UMA ÚNICA VEZ
+        await session.commitTransaction();
+        console.log('✅ Transação commitada');
+
+        // 7️⃣ BUSCAR NOVAMENTE APÓS COMMIT (para garantir)
+        const finalAppointment = await Appointment.findById(id)
+            .populate('session package patient doctor payment');
+
+        console.log('🎯 Status APÓS commit:', {
+            operationalStatus: finalAppointment.operationalStatus,
+            paymentStatus: finalAppointment.paymentStatus,
+            sessionPaid: finalAppointment.session?.isPaid
+        });
+
+        res.json(finalAppointment);
 
     } catch (error) {
         if (session) await session.abortTransaction();
-        console.error('Erro ao concluir agendamento:', error);
+        console.error('❌ Erro ao concluir:', error);
         res.status(500).json({
             error: 'Erro interno no servidor',
             details: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -1068,6 +1079,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
         if (session) session.endSession();
     }
 });
+
 // Busca todos os agendamentos de um paciente
 router.get('/patient/:id', validateId, auth, async (req, res) => {
 
