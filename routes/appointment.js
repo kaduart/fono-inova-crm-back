@@ -928,10 +928,10 @@ router.patch('/:id/complete', auth, async (req, res) => {
             return res.status(404).json({ error: 'Agendamento não encontrado' });
         }
 
-        if (appointment.operationalStatus === 'confirmed') {
+        /* if (appointment.operationalStatus === 'confirmed') {
             await session.abortTransaction();
             return res.status(400).json({ error: 'Este agendamento já está concluído' });
-        }
+        } */
 
         // ✅ VERIFICAR DUPLICAÇÃO APENAS PARA PACOTE
         let shouldIncrementPackage = true;

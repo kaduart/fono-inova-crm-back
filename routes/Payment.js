@@ -1557,6 +1557,7 @@ export const mapStatusToOperational = (status) => {
         case "scheduled":
             return "scheduled";
         case "confirmed":
+        case "completed": 
             return "confirmed";
         case "paid":
             return "paid";

@@ -29,7 +29,7 @@ const appointmentSchema = new mongoose.Schema({
   },
   operationalStatus: {
     type: String,
-    enum: ['scheduled', 'confirmed','pending', 'canceled', 'paid', 'missed'],
+    enum: ['scheduled', 'confirmed', 'pending', 'canceled', 'paid', 'missed'],
     default: 'scheduled',
   },
   clinicalStatus: {
@@ -109,21 +109,35 @@ appointmentSchema.index(
 );
 
 appointmentSchema.post('save', async function (doc) {
-  await syncEvent(doc, 'appointment');
+  try {
+    await syncEvent(doc, 'appointment');
+  } catch (error) {
+    console.error('⚠️ Erro no hook post-save (não crítico):', error.message);
+    // NÃO propaga erro
+  }
 });
 
 appointmentSchema.post('findOneAndUpdate', async function (doc) {
   if (doc) {
-    await syncEvent(doc, 'appointment');
+    try {
+      await syncEvent(doc, 'appointment');
+    } catch (error) {
+      console.error('⚠️ Erro no hook post-findOneAndUpdate (não crítico):', error.message);
+      // NÃO propaga erro
+    }
   }
 });
 
 appointmentSchema.post('findOneAndDelete', async function (doc) {
   if (doc) {
-    await MedicalEvent.deleteOne({
-      originalId: doc._id,
-      type: 'appointment'
-    });
+    try {
+      await MedicalEvent.deleteOne({
+        originalId: doc._id,
+        type: 'appointment'
+      });
+    } catch (error) {
+      console.error('⚠️ Erro no hook post-delete (não crítico):', error.message);
+    }
   }
 });
 
