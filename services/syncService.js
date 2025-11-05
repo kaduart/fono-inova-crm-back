@@ -21,51 +21,51 @@ const DEFAULT_SPECIALTY_VALUES = {
 const MAX_SYNC_RETRIES = 5;
 const RETRY_BASE_DELAY = 100; // ms
 
-// Função de retry com backoff exponencial
+// ✅ Retry com backoff + reload do doc
 async function withSyncRetry(operation, doc, type) {
-    async function withSyncRetry(operation, doc, type) {
-        let lastError;
+    let lastError;
 
-        for (let attempt = 1; attempt <= MAX_SYNC_RETRIES; attempt++) {
-            const retrySession = await mongoose.startSession();
-            try {
-                await retrySession.startTransaction();
-                const result = await operation(retrySession);
-                await retrySession.commitTransaction();
-                return result;
-            } catch (error) {
-                // Abortar apenas se a transação foi iniciada
-                if (retrySession.inTransaction()) {
-                    await retrySession.abortTransaction();
-                }
-
-                lastError = error;
-
-                // Tratar apenas conflitos específicos
-                if (![112, 251].includes(error.code)) throw error;
-
-                console.warn(`[SYNC-RETRY] Tentativa ${attempt}/${MAX_SYNC_RETRIES} para ${doc._id}`, error.message);
-
-                // Backoff exponencial com jitter
-                const delay = RETRY_BASE_DELAY * Math.pow(2, attempt) + Math.random() * 100;
-                await new Promise(resolve => setTimeout(resolve, delay));
-
-                // Recarregar documento com versão atual
-                if (type === 'appointment') {
-                    doc = await Appointment.findById(doc._id);
-                } else if (type === 'session') {
-                    doc = await Session.findById(doc._id).populate('package appointmentId');
-                } else if (type === 'package') {
-                    doc = await Package.findById(doc._id);
-                }
-            } finally {
-                retrySession.endSession();
+    for (let attempt = 1; attempt <= MAX_SYNC_RETRIES; attempt++) {
+        const retrySession = await mongoose.startSession();
+        try {
+            await retrySession.startTransaction();
+            const result = await operation(retrySession);
+            await retrySession.commitTransaction();
+            return result;
+        } catch (error) {
+            if (retrySession.inTransaction()) {
+                await retrySession.abortTransaction();
             }
-        }
 
-        throw lastError;
+            lastError = error;
+
+            // Só conflitos típicos do Mongo/txn
+            if (![112, 251].includes(error.code)) throw error;
+
+            console.warn(
+                `[SYNC-RETRY] Tentativa ${attempt}/${MAX_SYNC_RETRIES} para ${doc?._id} (${type}) → ${error.message}`
+            );
+
+            const delay = RETRY_BASE_DELAY * Math.pow(2, attempt) + Math.random() * 100;
+            await new Promise(r => setTimeout(r, delay));
+
+            // Recarrega doc pra próxima tentativa
+            if (type === 'appointment') {
+                doc = await Appointment.findById(doc._id).lean();
+            } else if (type === 'session') {
+                doc = await Session.findById(doc._id).populate('package appointmentId').lean();
+            } else if (type === 'package') {
+                doc = await Package.findById(doc._id).lean();
+            }
+        } finally {
+            retrySession.endSession();
+        }
     }
+
+    throw lastError;
 }
+
+
 const safeObjectId = (id) => {
     if (!id) return null;
     if (typeof id === 'string') return id;
