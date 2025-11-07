@@ -734,11 +734,11 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
                 throw err;
             }
 
-            if (appointment.operationalStatus === 'canceled') {
+        /*     if (appointment.operationalStatus === 'canceled') {
                 const err = new Error('Este agendamento já está cancelado');
                 err.status = 400;
                 throw err;
-            }
+            } */
 
             // 2️⃣ Bloquear se pagamento QUITADO
             if (appointment.payment) {
