@@ -14,6 +14,7 @@ import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import { handlePackageSessionUpdate, syncEvent } from '../services/syncService.js';
 import { updateAppointmentFromSession, updatePatientAppointments } from '../utils/appointmentUpdater.js';
+import { runTransactionWithRetry } from '../utils/transactionRetry.js';
 
 dotenv.config();
 const router = express.Router();
@@ -711,165 +712,180 @@ router.get('/history/:patientId', async (req, res) => {
 
 // Cancela um agendamento
 router.patch('/:id/cancel', validateId, auth, async (req, res) => {
-    const dbSession = await mongoose.startSession();
-
     try {
-        await dbSession.startTransaction();
-
-        // 1) Validação de entrada
         const { reason, confirmedAbsence = false } = req.body;
+
         if (!reason) {
-            await dbSession.abortTransaction();
-            return res.status(400).json({ error: 'O motivo do cancelamento é obrigatório' });
+            return res.status(400).json({
+                error: 'O motivo do cancelamento é obrigatório'
+            });
         }
 
-        // 2) Buscar o agendamento (com sessão de transação) + popular campos necessários
-        const appointment = await Appointment.findById(req.params.id)
-            .populate('session')
-            .session(dbSession);
+        const updatedAppointment = await runTransactionWithRetry(async (session) => {
 
-        if (!appointment) {
-            await dbSession.abortTransaction();
-            return res.status(404).json({ error: 'Agendamento não encontrado' });
-        }
+            // 1️⃣ Buscar appointment
+            const appointment = await Appointment.findById(req.params.id)
+                .populate('session')
+                .session(session);
 
-        // ⚠️ Bloqueio: não permitir cancelar se já estiver pago
-        if (appointment.payment) {
-            const pay = await Payment.findById(appointment.payment).lean();
-            if (pay && pay.status === 'paid') {
-                await dbSession.abortTransaction();
-                return res.status(409).json({
-                    error: 'Este agendamento já está pago e não pode ser cancelado.',
-                    code: 'PAID_APPOINTMENT_CANNOT_BE_CANCELED'
+            if (!appointment) {
+                const err = new Error('Agendamento não encontrado');
+                err.status = 404;
+                throw err;
+            }
+
+            if (appointment.operationalStatus === 'canceled') {
+                const err = new Error('Este agendamento já está cancelado');
+                err.status = 400;
+                throw err;
+            }
+
+            // 2️⃣ Bloquear se pagamento QUITADO
+            if (appointment.payment) {
+                const pay = await Payment.findById(appointment.payment)
+                    .session(session)
+                    .lean();
+
+                if (pay?.status === 'paid') {
+                    const err = new Error('Este agendamento já está pago e não pode ser cancelado.');
+                    err.status = 409;
+                    err.code = 'PAID_APPOINTMENT_CANNOT_BE_CANCELED';
+                    throw err;
+                }
+            }
+
+            // 3️⃣ Atualizar Payment
+            if (appointment.payment) {
+                await Payment.findByIdAndUpdate(
+                    appointment.payment,
+                    {
+                        $set: {
+                            status: 'canceled',
+                            canceledAt: new Date(),
+                            canceledReason: reason,
+                            updatedAt: new Date()
+                        }
+                    },
+                    { session }
+                );
+
+                console.log('✅ Payment cancelado:', appointment.payment);
+            }
+
+            // 4️⃣ Atualizar Session
+            if (appointment.session) {
+                const updatedSession = await Session.findByIdAndUpdate(
+                    appointment.session._id || appointment.session,
+                    {
+                        $set: {
+                            status: 'canceled',
+                            paymentStatus: 'canceled',
+                            visualFlag: 'blocked',
+                            confirmedAbsence,
+                            updatedAt: new Date()
+                        },
+                        $push: {
+                            history: {
+                                action: 'cancelamento_via_agendamento',
+                                changedBy: req.user._id,
+                                timestamp: new Date(),
+                                details: { reason, confirmedAbsence }
+                            }
+                        }
+                    },
+                    {
+                        session,
+                        new: true  // ✅ RETORNA DOCUMENTO ATUALIZADO
+                    }
+                );
+
+                console.log('✅ Session cancelada (APÓS UPDATE):', {
+                    id: updatedSession._id,
+                    status: updatedSession.status,
+                    paymentStatus: updatedSession.paymentStatus,
+                    visualFlag: updatedSession.visualFlag
                 });
             }
-        }
 
-
-        // 3) Já está cancelado?
-        if (appointment.operationalStatus === 'canceled') {
-            await dbSession.abortTransaction();
-            return res.status(400).json({ error: 'Este agendamento já está cancelado' });
-        }
-
-        // 4) Se tiver pagamento QUITADO, bloqueia cancelamento
-        if (appointment.payment) {
-            const pay = await Payment.findById(appointment.payment).session(dbSession);
-            if (pay && pay.status === 'paid') {
-                await dbSession.abortTransaction();
-                return res.status(409).json({
-                    error: 'Não é permitido cancelar um agendamento já pago.',
-                    code: 'PAID_APPOINTMENT_CANNOT_BE_CANCELED'
-                });
-            }
-        }
-
-        // 5) Preparar histórico
-        const historyEntry = {
-            action: 'cancelamento',
-            newStatus: 'canceled',
-            changedBy: req.user._id,
-            timestamp: new Date(),
-            context: 'operacional',
-            details: { reason, confirmedAbsence }
-        };
-
-        // 6) Atualizar Payment (se existir e não estiver pago) -> vira 'canceled'
-        let newPaymentStatus = appointment.paymentStatus || 'pending';
-        if (appointment.payment) {
-            const p = await Payment.findById(appointment.payment).session(dbSession);
-            if (p && p.status !== 'paid') {
-                p.status = 'canceled';
-                await p.save({ session: dbSession });
-                newPaymentStatus = 'canceled';
-            } else if (p && p.status === 'paid') {
-                // (por segurança – em teoria já retornamos 409 acima)
-                newPaymentStatus = 'paid';
-            }
-        }
-
-        // 7) Atualizar Session vinculada
-        if (appointment.session) {
-            await Session.findByIdAndUpdate(
-                appointment.session._id,
+            // 5️⃣ Atualizar Appointment
+            const updated = await Appointment.findByIdAndUpdate(
+                appointment._id,
                 {
-                    $set: { status: 'canceled', confirmedAbsence },
+                    $set: {
+                        operationalStatus: 'canceled',
+                        clinicalStatus: confirmedAbsence ? 'missed' : 'pending',
+                        paymentStatus: 'canceled',
+                        visualFlag: 'blocked',
+                        canceledReason: reason,
+                        canceledAt: new Date(),
+                        confirmedAbsence,
+                        updatedAt: new Date()
+                    },
                     $push: {
                         history: {
-                            action: 'cancelamento_via_agendamento',
+                            action: 'cancelamento',
+                            newStatus: 'canceled',
                             changedBy: req.user._id,
                             timestamp: new Date(),
-                            details: { reason }
+                            context: 'operacional',
+                            details: { reason, confirmedAbsence }
                         }
                     }
                 },
-                { session: dbSession, new: true }
+                { new: true, session }
             );
-        }
 
-        // 8) Atualizar o Appointment (uma única operação)
-        const clinical = confirmedAbsence ? 'missed' : 'pending';
-        const visual = newPaymentStatus === 'paid' ? 'ok' : 'blocked';
+            console.log('✅ Appointment cancelado:', {
+                id: updated._id,
+                operationalStatus: updated.operationalStatus,
+                paymentStatus: updated.paymentStatus,
+                visualFlag: updated.visualFlag
+            });
 
-        const updatedAppointment = await Appointment.findByIdAndUpdate(
-            appointment._id,
-            {
-                $set: {
-                    operationalStatus: 'canceled',
-                    clinicalStatus: clinical,
-                    paymentStatus: newPaymentStatus,
-                    visualFlag: visual,
-                    canceledReason: reason,
-                    confirmedAbsence
-                },
-                $push: { history: historyEntry }
-            },
-            { new: true, session: dbSession }
-        );
+            return updated;
+        });
 
-        await dbSession.commitTransaction();
-
-        // 9) Sincronizações assíncronas (best-effort)
-        setTimeout(async () => {
+        // 6️⃣ Sincronizações assíncronas
+        setImmediate(async () => {
             try {
                 await syncEvent(updatedAppointment, 'appointment');
 
-                if (updatedAppointment.serviceType === 'package_session') {
-                    if (appointment.session) {
-                        const updSession = await Session.findById(appointment.session._id);
-                        if (updSession) await syncEvent(updSession, 'session');
-                    }
-                    if (appointment.package) {
-                        await syncPackageUpdate({
-                            packageId: appointment.package,
-                            action: 'cancel',
-                            changes: { reason, confirmedAbsence },
-                            appointmentId: appointment._id
-                        });
-                    }
+                if (updatedAppointment.serviceType === 'package_session' && updatedAppointment.session) {
+                    await handlePackageSessionUpdate(
+                        updatedAppointment,
+                        'cancel',
+                        req.user,
+                        { changes: { reason, confirmedAbsence } }
+                    );
+                } else if (updatedAppointment.session) {
+                    const sess = await Session.findById(updatedAppointment.session);
+                    if (sess) await syncEvent(sess, 'session');
                 }
-            } catch (e) {
-                console.error('Erro na sincronização pós-cancelamento:', e);
+            } catch (error) {
+                console.error('[sync-cancel] Erro:', error.message);
             }
-        }, 100);
+        });
 
         return res.json(updatedAppointment);
+
     } catch (error) {
-        if (dbSession.inTransaction()) {
-            await dbSession.abortTransaction();
+        if (error.status) {
+            return res.status(error.status).json({
+                error: error.message,
+                code: error.code
+            });
         }
 
-        // logs para você
         console.error('[appointments/cancel] erro:', {
             name: error.name,
             code: error.code,
             message: error.message
         });
 
-        // respostas claras para o cliente
         if (error.name === 'ValidationError') {
             const details = Object.values(error.errors).map(e => ({
-                path: e.path, message: e.message
+                path: e.path,
+                message: e.message
             }));
             return res.status(400).json({
                 error: 'Falha de validação nos dados enviados.',
@@ -885,20 +901,10 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
             });
         }
 
-        if (error.name === 'MongoServerError' && error.code === 11000) {
-            return res.status(409).json({
-                error: 'Registro duplicado. Já existe um documento com esses dados.',
-                code: 'DUPLICATE_KEY'
-            });
-        }
-
-        // default
         return res.status(500).json({
-            error: 'Não foi possível cancelar o agendamento neste momento.',
+            error: 'Não foi possível cancelar o agendamento. Tente novamente.',
             code: 'INTERNAL_SERVER_ERROR'
         });
-    } finally {
-        await dbSession.endSession();
     }
 });
 
