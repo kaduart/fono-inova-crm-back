@@ -72,7 +72,15 @@ const leadSchema = new mongoose.Schema({
   scheduledDate: { type: Date },
   convertedToPatient: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient' },
   conversionScore: { type: Number, default: 0 },
-
+  qualificationData: {
+    extractedInfo: {},
+    intent: String,
+    sentiment: String,
+    urgencyLevel: Number
+  },
+ // scoreHistory: [{ score, reason, date }],
+  lastScoreUpdate: Date,
+  
 }, { timestamps: true });
 
 // Índices úteis
