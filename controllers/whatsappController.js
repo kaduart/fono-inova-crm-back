@@ -1,13 +1,17 @@
 // controllers/whatsappController.js
+
 import { redisConnection as redis } from '../config/redisConnection.js';
 import { getIo } from "../config/socket.js";
 import Contact from "../models/Contact.js";
+import Followup from "../models/Followup.js";
 import Lead from '../models/Leads.js';
 import Message from "../models/Message.js";
 import { generateAmandaReply } from "../services/aiAmandaService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
-
 import { normalizeE164BR, tailPattern } from "../utils/phone.js";
+
+// ✅ AMANDA 2.0 - Response Tracking
+import { checkFollowupResponse } from "../services/responseTrackingService.js";
 
 export const whatsappController = {
 
@@ -207,8 +211,14 @@ export const whatsappController = {
             let contact = await Contact.findOne({ phone: from });
             if (!contact) contact = await Contact.create({ phone: from, name: msg.profile?.name || "Contato" });
 
-            let lead = await Lead.findOne({ phone: from });
-            if (!lead) lead = await Lead.create({ phone: from, name: contact.name, origin: "WhatsApp" });
+            let lead = await Lead.findOne({ 'contact.phone': from });
+            if (!lead) {
+                lead = await Lead.create({
+                    name: contact.name,
+                    contact: { phone: from },
+                    origin: "WhatsApp"
+                });
+            }
 
             const savedMessage = await Message.create({
                 wamid,
@@ -245,6 +255,34 @@ export const whatsappController = {
                 status: "received",
                 timestamp,
             });
+
+            // =====================================================
+            // 🆕 AMANDA 2.0 - RESPONSE TRACKING
+            // =====================================================
+
+            if (type === 'text' && contentToSave?.trim()) {
+                // 🔍 Verificar se é resposta a follow-up
+                const lastFollowup = await Followup.findOne({
+                    lead: lead._id,
+                    status: 'sent',
+                    responded: false
+                }).sort({ sentAt: -1 }).lean();
+
+                if (lastFollowup) {
+                    const timeSince = Date.now() - new Date(lastFollowup.sentAt).getTime();
+                    const WINDOW_72H = 72 * 60 * 60 * 1000;
+
+                    if (timeSince < WINDOW_72H) {
+                        console.log(`✅ Lead respondeu a follow-up! Processando...`);
+
+                        try {
+                            await checkFollowupResponse(lastFollowup._id);
+                        } catch (trackError) {
+                            console.error('⚠️ Erro ao processar resposta:', trackError.message);
+                        }
+                    }
+                }
+            }
 
             // ============================
             // 🤖 AMANDA — responde só TEXTO
@@ -292,7 +330,7 @@ export const whatsappController = {
             if (!canReply) return;
 
             // (4) lead + histórico curto (corrigido o lookup)
-            const leadDoc = await Lead.findOne({ phone: from }).lean().catch(() => null);
+            const leadDoc = await Lead.findOne({ 'contact.phone': from }).lean().catch(() => null);
 
             const histDocs = await Message.find({
                 $or: [{ from }, { to: from }],
@@ -423,5 +461,5 @@ export const whatsappController = {
             res.status(500).json({ error: err.message });
         }
     },
-    
+
 };

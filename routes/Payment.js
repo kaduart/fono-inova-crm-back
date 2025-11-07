@@ -685,6 +685,122 @@ router.patch('/:id', auth, async (req, res) => {
     });
 });
 
+// Novo endpoint simples para marcar como pago
+// router.patch('/:id/mark-as-paid' ...)
+router.patch('/:id/mark-as-paid', auth, authorize(['admin', 'secretary']), async (req, res) => {
+    const session = await mongoose.startSession();
+
+    const runTx = async () => {
+        return await session.withTransaction(async () => {
+            const id = req.params.id;
+
+            // 0) Idempotência – se já estiver pago, retorna ok
+            const existing = await Payment.findById(id).session(session).lean();
+            if (!existing) {
+                return res.status(404).json({ success: false, message: 'Pagamento não encontrado' });
+            }
+            if (existing.status === 'paid') {
+                return res.json({ success: true, message: 'Pagamento já estava pago', data: existing });
+            }
+
+            // 1) Atualiza Payment de forma atômica
+            const paidAt = new Date();
+            const payment = await Payment.findOneAndUpdate(
+                { _id: id, status: { $ne: 'paid' } },
+                { $set: { status: 'paid', paidAt } },
+                { new: true, session, runValidators: true }
+            );
+
+            if (!payment) {
+                // outro processo pode ter pago no meio do caminho
+                const latest = await Payment.findById(id).session(session);
+                return res.json({ success: true, message: 'Pagamento já foi marcado como pago', data: latest });
+            }
+
+            // 2) Atualiza Session (se existir)
+            if (payment.session) {
+                await Session.updateOne(
+                    { _id: payment.session },
+                    {
+                        $set: {
+                            isPaid: true,
+                            paymentStatus: 'paid',
+                            visualFlag: 'ok',
+                            paymentMethod: payment.paymentMethod
+                        }
+                    },
+                    { session }
+                );
+            }
+
+            // 3) Atualiza Appointment (se existir)
+            if (payment.appointment) {
+                await Appointment.updateOne(
+                    { _id: payment.appointment },
+                    {
+                        $set: {
+                            paymentStatus: 'paid',
+                            visualFlag: 'ok',
+                            // ⚠️ só mude se sua regra realmente usa 'paid' como estado operacional
+                            // operationalStatus: 'paid',
+                            paymentMethod: payment.paymentMethod
+                        }
+                    },
+                    { session }
+                );
+            }
+
+            return res.json({
+                success: true,
+                message: 'Pagamento marcado como pago com sucesso',
+                data: payment
+            });
+        }, {
+            readConcern: { level: 'snapshot' },
+            writeConcern: { w: 'majority' },
+            readPreference: 'primary'
+        });
+    };
+
+    try {
+        let attempt = 0;
+        const maxAttempts = 5;
+
+        while (true) {
+            try {
+                await runTx();
+                break; // sucesso
+            } catch (e) {
+                const msg = String(e?.message || '');
+                const isTransient = e?.errorLabels?.includes('TransientTransactionError')
+                    || msg.includes('Write conflict')
+                    || msg.includes('WriteConflict')
+                    || msg.includes('yielding is disabled');
+
+                if (isTransient && attempt < maxAttempts - 1) {
+                    attempt += 1;
+                    // backoff exponencial simples
+                    const delay = 50 * Math.pow(2, attempt);
+                    await new Promise(r => setTimeout(r, delay));
+                    continue;
+                }
+
+                throw e; // estoura de vez
+            }
+        }
+    } catch (error) {
+        console.error('Erro ao marcar pagamento como pago:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Erro ao marcar pagamento como pago',
+            error: error?.message
+        });
+    } finally {
+        session.endSession();
+    }
+});
+
+
 // Função auxiliar para atualizar status do pacote
 async function updatePackageStatus(packageId, session) {
     try {
@@ -1557,7 +1673,7 @@ export const mapStatusToOperational = (status) => {
         case "scheduled":
             return "scheduled";
         case "confirmed":
-        case "completed": 
+        case "completed":
             return "confirmed";
         case "paid":
             return "paid";

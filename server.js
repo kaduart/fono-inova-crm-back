@@ -58,8 +58,6 @@ import whatsappRoutes from "./routes/whatsapp.js";
 import reportsRoutes from "./routes/reports/index.js";
 import leadRoutes from './routes/leads.js';
 
-console.log("🧠 PIX ROUTES carregado com sucesso ✅");
-
 // ======================================================
 // 🧭 Inicialização base
 // ======================================================
@@ -202,6 +200,7 @@ function initFollowupWatcher() {
     await import("./workers/followup.worker.js");
     await import("./workers/followup.cron.js");
     await import("./jobs/followup.analytics.cron.js");
+    await import("./crons/responseTracking.cron.js"); // ✅ NOVO CRON
 
     // Conexão MongoDB
     await mongoose.connect(process.env.MONGO_URI);
