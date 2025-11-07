@@ -53,6 +53,12 @@ const appointmentSchema = new mongoose.Schema({
     ref: 'Payment',
     required: false
   },
+  visualFlag: {
+    type: String,
+    enum: ['ok', 'pending', 'partial', 'blocked'],
+    default: 'pending',
+    description: 'Indicador visual do estado financeiro para o calendário'
+  },
   specialty: {
     type: String,
     required: true,
