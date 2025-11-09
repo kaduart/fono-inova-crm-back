@@ -177,8 +177,6 @@ Valor: R$ 2.500,00 (6x cartão) ou R$ 2.300,00 (à vista). Posso te explicar o p
     return "Sim, são a mesma coisa! 💚 Posso te explicar melhor como funciona?";
 }
 
-
-
 /**
  * 🎯 Detecta TODAS as terapias mencionadas em uma mensagem
  */
@@ -198,36 +196,6 @@ export function detectAllTherapies(text = "") {
     });
 
     return detectedTherapies;
-}
-
-/**
- * 🧠 Gera resposta inteligente para múltiplas terapias
- */
-export function generateMultiTherapyResponse(therapies, userText = "") {
-    const therapyCount = therapies.length;
-
-    // 🚨 CASO: Frustração (não responde)
-    if (/(não responde|nao responde|ainda não|demora|esperando)/i.test(userText)) {
-        return generateFrustrationResponse(therapies);
-    }
-
-    // 🎯 CASO: 1 terapia
-    if (therapyCount === 1) {
-        return generateSingleTherapyResponse(therapies[0]);
-    }
-
-    // 🎯 CASO: 2 terapias (mais comum)
-    if (therapyCount === 2) {
-        return generateDualTherapyResponse(therapies);
-    }
-
-    // 🎯 CASO: 3+ terapias (pacote completo)
-    if (therapyCount >= 3) {
-        return generateMultiTherapyPackageResponse(therapies);
-    }
-
-    // Fallback
-    return "Entendi sua mensagem! 💚 Pode me contar qual é a principal queixa para eu te direcionar para a profissional ideal?";
 }
 
 
@@ -456,3 +424,76 @@ export const TYPEO_CORRECTIONS = {
 };
 
 
+// backend/utils/therapyDetector.js - ADICIONE ESTA FUNÇÃO
+
+/**
+ * Gera resposta para uma única terapia detectada
+ */
+export function generateSingleTherapyResponse(therapy, userText, flags) {
+  const { asksPrice, wantsSchedule, asksHours } = flags;
+  
+  const therapyNames = {
+    speech: "fonoaudiologia",
+    psychology: "psicologia",
+    occupational: "terapia ocupacional",
+    physiotherapy: "fisioterapia",
+    music: "musicoterapia",
+    neuropsychopedagogy: "neuropsicopedagogia",
+    psychopedagogy: "psicopedagogia"
+  };
+
+  const name = therapyNames[therapy] || therapy;
+
+  // Se pergunta preço
+  if (asksPrice) {
+    return `A avaliação de ${name} é R$ 220,00. Primeiro fazemos uma avaliação para entender a necessidade e montar o plano 💚`;
+  }
+
+  // Se quer agendar
+  if (wantsSchedule) {
+    return `Perfeito! Temos horários disponíveis para ${name}. Qual período funciona melhor: manhã ou tarde? 💚`;
+  }
+
+  // Se pergunta horários
+  if (asksHours) {
+    return `Nosso atendimento de ${name} é de segunda a sexta, das 8h às 18h. Posso te ajudar a agendar? 💚`;
+  }
+
+  // Resposta padrão
+  return `Temos especialistas em ${name}! A avaliação inicial é R$ 220,00. Posso te explicar como funciona? 💚`;
+}
+
+/**
+ * Gera resposta para múltiplas terapias
+ */
+export function generateMultiTherapyResponse(therapies, userText, flags) {
+  // Se for apenas 1 terapia, usa a função específica
+  if (therapies.length === 1) {
+    return generateSingleTherapyResponse(therapies[0], userText, flags);
+  }
+
+  // Se múltiplas terapias
+  const { asksPrice, wantsSchedule } = flags;
+  
+  const therapyNames = {
+    speech: "fonoaudiologia",
+    psychology: "psicologia",
+    occupational: "terapia ocupacional",
+    physiotherapy: "fisioterapia",
+    music: "musicoterapia",
+    neuropsychopedagogy: "neuropsicopedagogia",
+    psychopedagogy: "psicopedagogia"
+  };
+
+  const names = therapies.map(t => therapyNames[t] || t).join(', ');
+
+  if (asksPrice) {
+    return `Temos especialistas em ${names}! A avaliação inicial é R$ 220,00 para cada especialidade. Qual você gostaria de saber mais? 💚`;
+  }
+
+  if (wantsSchedule) {
+    return `Perfeito! Temos horários para ${names}. Qual especialidade te interessa mais? 💚`;
+  }
+
+  return `Atendemos em ${names}! Qual especialidade você procura? 💚`;
+}
