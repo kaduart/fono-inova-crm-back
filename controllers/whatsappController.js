@@ -1,5 +1,6 @@
 // controllers/whatsappController.js - VERSÃO CORRIGIDA
 
+import mongoose from 'mongoose';
 import { redisConnection as redis } from '../config/redisConnection.js';
 import { getIo } from "../config/socket.js";
 import Contact from "../models/Contact.js";
@@ -7,10 +8,9 @@ import Followup from "../models/Followup.js";
 import Lead from '../models/Leads.js';
 import Message from "../models/Message.js";
 import { generateAmandaReply } from "../services/aiAmandaService.js";
+import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 import { normalizeE164BR, tailPattern } from "../utils/phone.js";
-import { checkFollowupResponse } from "../services/responseTrackingService.js";
-import mongoose from 'mongoose';
 
 export const whatsappController = {
 
@@ -116,7 +116,7 @@ export const whatsappController = {
 
     async webhook(req, res) {
         console.log("🔔 [DEBUG] WEBHOOK POST RECEIVED", new Date().toISOString());
-        
+
         try {
             const change = req.body.entry?.[0]?.changes?.[0];
             const value = change?.value;
@@ -133,9 +133,9 @@ export const whatsappController = {
             const wamid = msg.id;
             const fromRaw = msg.from || "";
 
-            console.log("📨 INBOUND RECEBIDO:", { 
-                wamid, 
-                from: fromRaw, 
+            console.log("📨 INBOUND RECEBIDO:", {
+                wamid,
+                from: fromRaw,
                 type: msg.type,
                 timestamp: new Date().toISOString()
             });
@@ -245,7 +245,7 @@ async function processInboundMessage(msg, value) {
         const wamid = msg.id;
         const fromRaw = msg.from || "";
         const toRaw = value?.metadata?.display_phone_number || process.env.CLINIC_PHONE_E164 || "";
-        
+
         const from = normalizeE164BR(fromRaw);
         const to = normalizeE164BR(toRaw);
         const type = msg.type;
@@ -300,16 +300,16 @@ async function processInboundMessage(msg, value) {
         console.log("🔍 Buscando contact para:", from);
         let contact = await Contact.findOne({ phone: from });
         if (!contact) {
-            contact = await Contact.create({ 
-                phone: from, 
-                name: msg.profile?.name || "Contato WhatsApp" 
+            contact = await Contact.create({
+                phone: from,
+                name: msg.profile?.name || "Contato WhatsApp"
             });
             console.log("✅ Novo contact criado:", contact._id);
         }
 
         console.log("🔍 Buscando lead para:", from);
         let lead = await Lead.findOne({ 'contact.phone': from });
-        
+
         // ✅ VERIFICA SE EXISTE PATIENT COM ESTE TELEFONE
         let patient = null;
         try {
@@ -324,9 +324,9 @@ async function processInboundMessage(msg, value) {
             if (patient) {
                 lead = await Lead.create({
                     name: patient.fullName || contact.name,
-                    contact: { 
-                        phone: from, 
-                        email: patient.email || null 
+                    contact: {
+                        phone: from,
+                        email: patient.email || null
                     },
                     origin: "WhatsApp",
                     status: "virou_paciente",
@@ -347,7 +347,7 @@ async function processInboundMessage(msg, value) {
                     origin: "WhatsApp",
                     status: "novo",
                     appointment: {
-                        seekingFor: "Adulto +18 anos", 
+                        seekingFor: "Adulto +18 anos",
                         modality: "Online",
                         healthPlan: "Mensalidade"
                     }
@@ -356,7 +356,7 @@ async function processInboundMessage(msg, value) {
             }
         } else {
             console.log("✅ Lead existente encontrado:", lead._id);
-            
+
             // ✅ ATUALIZA lead se encontrou patient
             if (patient && !lead.convertedToPatient) {
                 lead.convertedToPatient = patient._id;
@@ -470,9 +470,10 @@ async function handleResponseTracking(leadId, content) {
     }
 }
 
+// ✅ FUNÇÃO CORRIGIDA - Cole no whatsappController.js (linha ~300)
 async function handleAutoReply(from, to, content, lead) {
     try {
-        // ✅ LOCK anti-corrida
+        // ✅ LOCK anti-corrida (mantém 3s - OK)
         let canProceed = true;
         try {
             if (redis?.set) {
@@ -489,27 +490,31 @@ async function handleAutoReply(from, to, content, lead) {
 
         if (!canProceed) return;
 
-        // ✅ Verifica se já respondeu recentemente
-        const fortyFiveAgo = new Date(Date.now() - 45 * 1000);
-        const recentBotReply = await Message.findOne({
+        // ✅ REMOVIDO: Verificação de 45 segundos
+        // ❌ ANTES: const fortyFiveAgo = new Date(Date.now() - 45 * 1000);
+        // ❌ ANTES: const recentBotReply = await Message.findOne({...});
+
+        // ✅ NOVA VERIFICAÇÃO: Apenas 5 segundos (evita duplicação do próprio webhook)
+        const fiveSecondsAgo = new Date(Date.now() - 5 * 1000);
+        const veryRecentReply = await Message.findOne({
             to: from,
             direction: "outbound",
             type: "text",
-            timestamp: { $gte: fortyFiveAgo },
+            timestamp: { $gte: fiveSecondsAgo },
         }).lean();
-        
-        if (recentBotReply) {
-            console.log("⏭️ Já houve resposta nossa recente; pulando auto-reply.");
+
+        if (veryRecentReply) {
+            console.log("⏭️ Resposta enviada há menos de 5s; evitando duplicação.");
             return;
         }
 
-        // ✅ DEBOUNCE por número
+        // ✅ DEBOUNCE reduzido: 3 segundos (era 8)
         try {
             if (redis?.set) {
                 const key = `ai:debounce:${from}`;
-                const ok = await redis.set(key, "1", "EX", 8, "NX");
+                const ok = await redis.set(key, "1", "EX", 3, "NX");
                 if (ok !== "OK") {
-                    console.log("⏭️ Debounce ativo; pulando auto-reply");
+                    console.log("⏭️ Debounce ativo (3s); pulando auto-reply");
                     return;
                 }
             }
