@@ -66,7 +66,7 @@ async function dispatchPendingFollowups() {
         "followup",
         { followupId: String(f._id) },
         {
-          jobId: `fu:${f._id}`, // idempotência
+          jobId: `fu-${f._id}`, // idempotência
           priority: getPriority(f.lead?.conversionScore || 0)
         }
       );

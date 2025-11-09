@@ -63,8 +63,8 @@ db.appointments.find({
 // consultar pagamentos do dia
 db.payments.find({
   createdAt: {
-    $gte: ISODate("2025-10-29T00:00:00.000Z"),
-    $lt: ISODate("2025-10-30T00:00:00.000Z")
+    $gte: ISODate("2025-11-07T00:00:00.000Z"),
+    $lt: ISODate("2025-11-08T00:00:00.000Z")
   }
 })
 /// atualizar pagamaneto por id
@@ -93,7 +93,7 @@ db.appointments.find({
 
 ///ouuuuu // Buscar agendamentos de hoje - 27/10/2025
 db.appointments.find({
-  date: "2025-10-29"
+  date: "2025-11-07"
 }).sort({ time: 1 })
 
 //agendamentos do dia 
@@ -101,6 +101,10 @@ db.appointments.find(
   { date: "2025-10-20" },
   { doctor: 1, time: 1, operationalStatus: 1, clinicalStatus: 1 }
 )
+
+//pagamentos do dia 
+db.payments.find({ serviceDate: "2025-11-06" }).sort({ paymentDate: 1 })
+db.payments.find({ paymentDate: "2025-11-06" }).sort({ serviceDate: 1 })
 
 
 db.admins.findOne({
@@ -208,3 +212,16 @@ db.packages.updateOne(
     }
   ]
 )
+
+//consultar todos agendamentos 
+db.appointments.find(
+  {}
+).sort({ createdAt: -1 }).skip(0).limit(20);
+//consultar todos pacietne 
+db.patients.find(
+  {}
+).sort({ createdAt: -1 }).skip(0).limit(20);
+ 
+// paciente por id
+const id = ObjectId("686e7f2bb26f4da03d426e7b");
+db.patients.findOne({ _id: id });

@@ -5,7 +5,6 @@ import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import Patient from '../models/Patient.js';
 
-
 const router = express.Router();
 
 router.post('/add', auth, async (req, res) => {
@@ -173,10 +172,10 @@ router.put('/:id', validateId, auth, async (req, res) => {
   }
 });
 
-// List all patients
+// 🔥 List all patients - MANTENDO TODA LÓGICA ORIGINAL + CORREÇÃO
 router.get('/', auth, async (req, res) => {
   try {
-    // Configurações de população
+    // Configurações de população - MANTIDAS
     const basePopulate = [
       {
         path: 'packages',
@@ -203,7 +202,7 @@ router.get('/', auth, async (req, res) => {
       }
     ];
 
-    // População de agendamentos com pacotes
+    // População de agendamentos com pacotes - MANTIDA
     const appointmentsPopulate = {
       path: 'appointments',
       options: { sort: { date: 1 } },
@@ -222,7 +221,7 @@ router.get('/', auth, async (req, res) => {
           }
         },
         {
-          path: 'package',  // Nova população direta de pacotes
+          path: 'package',
           select: 'sessionType sessionsPerWeek durationMonths totalSessions sessionsDone',
           populate: {
             path: 'sessions',
@@ -235,17 +234,17 @@ router.get('/', auth, async (req, res) => {
     let patients;
 
     try {
-      // Consulta principal
+      // Consulta principal - MANTIDA
       patients = await Patient.find()
         .populate(basePopulate)
         .populate(appointmentsPopulate)
-        .sort({ fullName: 1 })  // Ordenação segura no banco
-        .lean();  // Usar lean para melhor performance
+        .sort({ fullName: 1 })
+        .lean();
 
     } catch (error) {
       console.error('Erro na consulta principal:', error);
 
-      // Fallback simplificado
+      // Fallback simplificado - MANTIDO
       patients = await Patient.find()
         .populate(basePopulate)
         .populate({
@@ -264,22 +263,26 @@ router.get('/', auth, async (req, res) => {
         })
         .lean();
 
-      // Ordenação em memória
+      // Ordenação em memória - MANTIDA
       patients.sort((a, b) =>
         a.fullName.localeCompare(b.fullName, 'pt', { sensitivity: 'base' })
       );
     }
 
-    // Pós-processamento para garantir pacotes recentes
+    // 🔥 NOVO: Calcular lastAppointment e nextAppointment CORRETAMENTE
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    // Pós-processamento - MANTIDO + MELHORADO
     patients = patients.map(patient => {
-      // Coletar pacotes de múltiplas fontes
+      // Coletar pacotes de múltiplas fontes - MANTIDO
       const appointmentPackages = patient.appointments
         ?.filter(a => a.package)
         .map(a => a.package) || [];
 
       const directPackages = patient.packages || [];
 
-      // Combinar e remover duplicatas
+      // Combinar e remover duplicatas - MANTIDO
       const allPackages = [
         ...directPackages,
         ...appointmentPackages
@@ -287,9 +290,44 @@ router.get('/', auth, async (req, res) => {
         index === self.findIndex(p => p._id.toString() === pkg._id.toString())
       );
 
+      // 🔥 NOVO: Calcular lastAppointment e nextAppointment
+      const validAppointments = (patient.appointments || [])
+        .filter(apt => apt.operationalStatus !== 'canceled');
+
+      // Encontrar último agendamento (passado)
+      const pastAppointments = validAppointments
+        .filter(apt => {
+          if (!apt.date) return false;
+          const aptDate = new Date(apt.date);
+          aptDate.setHours(0, 0, 0, 0);
+          return aptDate < now;
+        })
+        .sort((a, b) => {
+          const dateCompare = new Date(b.date) - new Date(a.date);
+          if (dateCompare !== 0) return dateCompare;
+          return (b.time || '').localeCompare(a.time || '');
+        });
+
+      // Encontrar próximo agendamento (futuro ou hoje)
+      const futureAppointments = validAppointments
+        .filter(apt => {
+          if (!apt.date) return false;
+          const aptDate = new Date(apt.date);
+          aptDate.setHours(0, 0, 0, 0);
+          return aptDate >= now;
+        })
+        .sort((a, b) => {
+          const dateCompare = new Date(a.date) - new Date(b.date);
+          if (dateCompare !== 0) return dateCompare;
+          return (a.time || '').localeCompare(b.time || '');
+        });
+
       return {
         ...patient,
-        packages: allPackages
+        packages: allPackages,
+        // 🔥 SOBRESCREVER os virtuais com valores calculados corretamente
+        lastAppointment: pastAppointments[0] || patient.lastAppointment || null,
+        nextAppointment: futureAppointments[0] || patient.nextAppointment || null
       };
     });
 
@@ -328,8 +366,8 @@ router.get('/:id/appointments-summary', validateId, auth, async (req, res) => {
 
     // Buscar agendamentos do paciente com as referências populadas
     const appointments = await Appointment.find({ patient: id })
-      .populate('patient')  // Popula os dados do paciente (se necessário)
-      .populate('doctor')   // Popula os dados do médico (se necessário)
+      .populate('patient')
+      .populate('doctor')
       .sort({ date: 1 });
 
     const now = new Date();
@@ -341,6 +379,7 @@ router.get('/:id/appointments-summary', validateId, auth, async (req, res) => {
     // Obter o último agendamento passado e o próximo futuro
     const lastAppointment = pastAppointments.at(-1) || null;
     const nextAppointment = futureAppointments.at(0) || null;
+
     // Responder com as informações do último e próximo agendamento
     res.json({ lastAppointment, nextAppointment });
 
@@ -349,7 +388,6 @@ router.get('/:id/appointments-summary', validateId, auth, async (req, res) => {
     res.status(500).json({ message: 'Erro ao buscar consultas', error: err.message });
   }
 });
-
 
 // Substituir o uso de Session por TherapyPackage
 router.get('/patients/:patientId/sessions', auth, async (req, res) => {
@@ -368,7 +406,5 @@ router.get('/patients/:patientId/sessions', auth, async (req, res) => {
     res.status(500).json({ error: 'Erro ao buscar sessões do paciente' });
   }
 });
-
-
 
 export default router;

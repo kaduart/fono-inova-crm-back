@@ -21,6 +21,7 @@ router.patch('/:id/remove-session', auth, packageOperations.delete.session);
 // update session
 router.put('/:id/sessions/:sessionId',
     auth, validateId, validateSession, packageOperations.update.session);
+router.post('/:id/add-session', auth, validateId, packageOperations.addSessionToPackage);
 
 // Rotas de Pagamento
 router.post('/:id/payments', auth, packageOperations.registerPayment);

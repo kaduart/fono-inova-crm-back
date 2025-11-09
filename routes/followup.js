@@ -21,7 +21,7 @@ router.post('/', createFollowup);   // 👈 necessário pro FollowupComposer
 
 router.get('/', getAllFollowups);
 router.get('/pending', getPendingFollowups);
-router.get('/history', getFollowupHistory);
+router.get('/history/:leadId?', getFollowupHistory);
 router.get('/stats', getFollowupStats);
 router.get('/filter', filterFollowups);
 router.post('/resend/:id', resendFollowup);

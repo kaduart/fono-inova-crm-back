@@ -43,7 +43,7 @@ import evolutionRoutes from "./routes/evolution.js";
 import followupRoutes from "./routes/followup.js";
 import googleAdsRoutes from "./routes/google-ads.js";
 import googleAdsAuthRoutes from "./routes/google-auth.js";
-import leadsRouter from "./routes/Leads.js";
+import { default as leadRoutes, default as leadsRouter } from "./routes/leads.js";
 import loginRoutes from "./routes/login.js";
 import marketingRoutes from "./routes/marketing.js";
 import PackageRoutes from "./routes/Package.js";
@@ -51,12 +51,11 @@ import patientRoutes from "./routes/patient.js";
 import PaymentRoutes from "./routes/Payment.js";
 import pixRoutes from "./routes/pix.js";
 import proxyMediaRoutes from "./routes/proxyMedia.js";
+import reportsRoutes from "./routes/reports/index.js";
 import signupRoutes from "./routes/signup.js";
 import specialtyRouter from "./routes/specialty.js";
 import UserRoutes from "./routes/user.js";
 import whatsappRoutes from "./routes/whatsapp.js";
-import reportsRoutes from "./routes/reports/index.js";
-import leadRoutes from './routes/leads.js';
 
 // ======================================================
 // 🧭 Inicialização base

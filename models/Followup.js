@@ -3,7 +3,12 @@ import mongoose from "mongoose";
 const followupSchema = new mongoose.Schema({
     lead: { type: mongoose.Schema.Types.ObjectId, ref: "Leads", required: true },
     message: { type: String, default: "" },
-    stage: { type: String, enum: ['initial', 'follow_up', 'nurture', 'custom'], default: 'initial', index: true },
+    stage: {
+        type: String,
+        enum: ['initial', 'follow_up', 'nurture', 'custom', 'primeiro_contato'], // ✅ ADICIONADO
+        default: 'initial',
+        index: true
+    },
 
     // Agendamento & processamento
     scheduledAt: { type: Date, required: true, index: true },
@@ -28,50 +33,56 @@ const followupSchema = new mongoose.Schema({
     aiOptimized: { type: Boolean, default: false },
     finalMessage: { type: String },
     response: { type: mongoose.Schema.Types.Mixed },
+
+    // ✅ CORRIGIDO - ADICIONAR type: em todos os campos
     processingContext: {
-        optimized: Boolean,
-        sentAtHour: Number,
-        weekday: Number
+        optimized: { type: Boolean },
+        sentAtHour: { type: Number },
+        weekday: { type: Number }
     },
 
-    // Métricas clássicas (se você já usa)
+    // Métricas clássicas
     responded: { type: Boolean, default: false },
     responseTimeMinutes: { type: Number },
 
-    // Opcional: denormalização p/ filtro rápido no backend
+    // Denormalização
     origin: { type: String },
     playbook: { type: String },
-    // Denormalizações úteis (snapshot no momento da criação/envio)
+    note: { type: String }, // ✅ ADICIONADO (usado em createLeadFromAd)
     leadName: { type: String },
     leadPhoneE164: { type: String, index: true },
     wppMessageId: { type: String, index: true },
 }, { timestamps: true });
 
+// Índices
 followupSchema.index({ status: 1, scheduledAt: 1 });
 followupSchema.index({ lead: 1, createdAt: -1 });
 followupSchema.index({ status: 1, scheduledAt: 1, retryCount: 1 });
-// Para analytics rápidos
 followupSchema.index({ origin: 1, sentAt: -1 });
 followupSchema.index({ playbook: 1, sentAt: -1 });
-// Idempotência: evita duplicar o MESMO stage para o mesmo lead dentro da janela de 24h
-// (parcial: só aplica para scheduled/processing)
+followupSchema.index({ lead: 1, responded: 1 }); // ✅ ADICIONADO (usado no responseTracking)
+
+// Idempotência
 followupSchema.index(
     { lead: 1, stage: 1, status: 1, scheduledAt: 1 },
     {
         partialFilterExpression: { status: { $in: ['scheduled', 'processing'] } }
-    });
+    }
+);
 
-// Helpers para transições de estado (centraliza regra de métrica)
+// Helpers para transições de estado
 followupSchema.methods.markProcessing = function () {
     this.status = 'processing';
     this.processingAt = new Date();
     return this.save();
 };
+
 followupSchema.methods.markSent = function () {
     this.status = 'sent';
     this.sentAt = new Date();
     return this.save();
 };
+
 followupSchema.methods.markFailed = function (errMsg = '') {
     this.status = 'failed';
     this.failedAt = new Date();
@@ -80,6 +91,7 @@ followupSchema.methods.markFailed = function (errMsg = '') {
     this.retryCount = (this.retryCount || 0) + 1;
     return this.save();
 };
+
 followupSchema.methods.markResponded = function () {
     this.status = 'responded';
     this.responded = true;
@@ -91,4 +103,3 @@ followupSchema.methods.markResponded = function () {
 };
 
 export default mongoose.model("Followup", followupSchema);
-

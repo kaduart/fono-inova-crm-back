@@ -13,6 +13,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
     "@bull-board/express": "^6.13.0",
     "@google-analytics/data": "^5.2.0",
     "@sendgrid/mail": "^8.1.5",
