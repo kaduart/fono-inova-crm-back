@@ -280,6 +280,10 @@ export function buildUserPromptWithValuePitch(flags = {}) {
         mentionsTEA_TDAH,
         mentionsSpeechTherapy,
         asksDuration,
+        asksPsychopedagogy,
+        asksCAA,
+        asksAgeMinimum,
+        asksRescheduling,
     } = flags;
 
     const forceEval =
