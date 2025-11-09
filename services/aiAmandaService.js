@@ -124,17 +124,17 @@ export async function generateAmandaReply({ userText, lead = {}, context = {} })
         return ensureSingleHeartAtEnd(response);
     }
 
+    // 🔍 CRÍTICO: Derivar flags ANTES de detectar terapias
+    const derivedFlags = deriveFlagsFromText(text);
+
     // 🎯 SEGUNDO: Normalizar termos equivalentes ANTES da detecção
     const detectedTherapies = detectAllTherapies(text);
 
     if (detectedTherapies.length > 0) {
         console.log(`🎯 [TERAPIAS] Detectadas: ${detectedTherapies.length} - ${detectedTherapies.map(t => t.id).join(', ')}`);
-        const response = generateMultiTherapyResponse(detectedTherapies, text);
+        const response = generateMultiTherapyResponse(detectedTherapies, text, derivedFlags); // ✅ COM FLAGS!
         return ensureSingleHeartAtEnd(response);
     }
-
-    // 🔍 Detecção de flags do texto
-    const derivedFlags = deriveFlagsFromText(text);
 
     // 🔍 Determinar se é primeiro contato
     const lastMsgs = Array.isArray(context?.lastMessages) ? context.lastMessages.slice(-5) : [];
@@ -143,6 +143,7 @@ export async function generateAmandaReply({ userText, lead = {}, context = {} })
         !!context?.isFirstContact ||
         lastMsgs.length === 0 ||
         greetings.test(text.trim());
+
 
     // 🔍 Forçar "consulta" => avaliação (e preço genérico por especialidade => avaliação)
     const textLc = (text || "").toLowerCase();

@@ -508,6 +508,22 @@ async function handleAutoReply(from, to, content, lead) {
             return;
         }
 
+        // ✅ 3. VERIFICAÇÃO OPCIONAL: Se há follow-up ativo, deixar humano responder
+        // Descomente as linhas abaixo se quiser que Amanda NÃO responda durante follow-ups ativos:
+        /*
+        const activeFollowup = await Followup.findOne({
+            lead: lead._id,
+            status: 'sent',
+            responded: false,
+            sentAt: { $gte: new Date(Date.now() - 72 * 60 * 60 * 1000) }
+        }).lean();
+        
+        if (activeFollowup) {
+            console.log("⏭️ Follow-up ativo detectado; deixando para resposta humana.");
+            return;
+        }
+        */
+
         // ✅ DEBOUNCE reduzido: 3 segundos (era 8)
         try {
             if (redis?.set) {
