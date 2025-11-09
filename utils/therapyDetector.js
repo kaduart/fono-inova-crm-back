@@ -1,533 +1,315 @@
-// NOVO ARQUIVO: src/utils/therapyDetector.js
+// utils/therapyDetector.js - VERSÃO COMPLETA COM TUDO!
 
 export const THERAPY_SPECIALTIES = {
-    neuropsychological: {
-        names: ['neuropsicológica', 'neuropsicologia', 'avaliação conhecimento', 'laudo conhecimento', 'pular série', 'avançar série'],
-        patterns: [
-            /neuropsic(o|ol[oó]gic)/i,
-            /psic[oó]log[oa].*(conhecimento|avalia|laudo)/i,
-            /avalia.*conhecimento/i,
-            /laudo.*conhecimento/i,
-            /pular.*s[ée]rie/i,
-            /avan[cç]ar.*s[ée]rie/i,
-            /teste.*conhecimento/i
-        ],
-        description: "Avaliação neuropsicológica completa para laudo de conhecimento",
-        price: "R$ 2.500,00 (10 sessões)",
-        process: "10 sessões de 50min para mapear habilidades cognitivas"
-    },
-
-    speech: {
-        names: ['fono', 'fonoaudiologia', 'gagueira', 'fala', 'linguagem'],
-        patterns: [
-            /fono(audiologia)?/i,
-            /gaguej/i,
-            /fala.*travando/i,
-            /flu[eê]ncia/i,
-            /dificuldade.*fala/i,
-            /linguagem/i
-        ],
-        description: "Terapia para gagueira e desenvolvimento da fala",
-        price: "Avaliação R$ 220,00 | Sessão R$ 220,00",
-        process: "Avaliação + sessões personalizadas para fluência"
-    },
-
-    psychology: {
-        names: ['psicologia', 'psicóloga', 'psicólogo', 'comportamento', 'emocional'],
-        patterns: [
-            /psic[oó]log[oa]/i,
-            /comportamento/i,
-            /emocional/i,
-            /birra/i,
-            /mania/i
-        ],
-        description: "Acompanhamento psicológico infantil/comportamental",
-        price: "Avaliação R$ 220,00 | Sessão R$ 220,00",
-        process: "Avaliação + sessões semanais"
-    },
-
-    psychopedagogy: {
-        names: ['psicopedagogia', 'dificuldade aprendizagem', 'problema escola'],
-        patterns: [
-            /psicopedagog/i,
-            /dificuldade.*aprendizagem/i,
-            /problema.*escola/i,
-            /rendimento.*escolar/i
-        ],
-        description: "Avaliação e intervenção em dificuldades de aprendizagem",
-        price: "Anamnese R$ 200,00 | Sessão R$ 160,00",
-        process: "Anamnese + sessões com estratégias pedagógicas"
-    },
-
-    occupational: {
-        names: ['terapia ocupacional', 'to', 'integracao sensorial'],
-        patterns: [
-            /terapia.*ocupacional/i,
-            /\bto\b/i,
-            /integra[cç][aã]o.*sensorial/i,
-            /avd/i
-        ],
-        description: "Terapia para desenvolvimento de habilidades funcionais",
-        price: "Avaliação R$ 220,00 | Sessão R$ 220,00",
-        process: "Avaliação + sessões de integração sensorial"
-    },
-
-    physiotherapy: {
-        names: ['fisioterapia', 'fisio', 'motora'],
-        patterns: [
-            /fisioterapia/i,
-            /fisio/i,
-            /motora/i,
-            /coordena[cç][aã]o/i
-        ],
-        description: "Terapia para desenvolvimento motor",
-        price: "Avaliação R$ 220,00 | Sessão R$ 220,00",
-        process: "Avaliação + sessões de desenvolvimento motor"
-    },
-
-    music: {
-        names: ['musicoterapia', 'musica'],
-        patterns: [
-            /musicoterapia/i,
-            /m[uú]sica.*terapia/i
-        ],
-        description: "Terapia através da música para desenvolvimento",
-        price: "Avaliação R$ 220,00 | Sessão R$ 220,00",
-        process: "Avaliação + sessões com intervenções musicais"
-    },
-
-    caa: {
-        names: ['caa', 'comunicação alternativa'],
-        patterns: [
-            /\bcaa\b/i,
-            /comunica[cç][aã]o.*alternativa/i,
-            /n[aã]o.*verbal/i,
-            /pecs/i
-        ],
-        description: "Comunicação alternativa para não-verbais",
-        price: "Avaliação R$ 220,00 | Sessão R$ 220,00",
-        process: "Avaliação + desenvolvimento de sistema de comunicação"
-    }
-};
-
-export const THERAPY_EQUIVALENCIES = {
-    neuropsychological: {
-        primary_name: "avaliação neuropsicológica",
-        equivalent_terms: [
-            "avaliação para laudo de conhecimento",
-            "avaliação de conhecimento",
-            "laudo de conhecimento",
-            "teste de conhecimento",
-            "avaliação neuro psicologia",
-            "neuro psicologia",
-            "psicóloga que avalia conhecimento",
-            "laudo para pular série",
-            "avaliação para avançar série",
-            "teste para pular série",
-            "avaliação escolar",
-            "laudo escolar",
-            "psicóloga conhecimento",
-            "teste psicológico conhecimento",
-            "neuropsicológica"
-        ],
-        description: "Processo completo de 10 sessões para mapear habilidades cognitivas e emitir laudo",
-        standard_response: "Avaliação neuropsicológica - 10 sessões de 50min para mapear atenção, memória, raciocínio e funções executivas. Ideal para casos de avanço de série e diagnóstico de dificuldades de aprendizagem."
-    },
-
-    speech: {
-        primary_name: "fonoaudiologia",
-        equivalent_terms: [
-            "fono",
-            "fonoaudiologia",
-            "terapia da fala",
-            "fala",
-            "gagueira",
-            "linguagem",
-            "pronúncia",
-            "troca letras",
-            "atraso de fala",
-            "desenvolvimento da fala"
-        ],
-        description: "Avaliação e terapia para desenvolvimento da fala e linguagem",
-        standard_response: "Fonoaudiologia - trabalhamos com gagueira, atraso de fala, troca de letras, comunicação alternativa e desenvolvimento da linguagem."
-    },
-
-    psychology: {
-        primary_name: "psicologia",
-        equivalent_terms: [
-            "psico",
-            "psicóloga",
-            "psicólogo",
-            "psicologia",
-            "terapia psicológica",
-            "acompanhamento psicológico",
-            "comportamento",
-            "emocional",
-            "psicoterapia"
-        ],
-        description: "Acompanhamento psicológico para questões emocionais e comportamentais",
-        standard_response: "Psicologia - atendimento para questões emocionais, comportamentais, TEA, TDAH, ansiedade, com abordagens como TCC e terapia infantil."
-    },
-
-    psychopedagogy: {
-        primary_name: "psicopedagogia",
-        equivalent_terms: [
-            "psicopedagoga",
-            "psicopedagogo",
-            "psico pedagogia",
-            "dificuldade aprendizagem",
-            "problema escola",
-            "rendimento escolar",
-            "aprendizagem",
-            "dificuldade escola",
-            "dificuldade de aprendizado"
-        ],
-        description: "Avaliação e intervenção em dificuldades de aprendizagem",
-        standard_response: "Psicopedagogia - trabalhamos com dificuldades de aprendizagem, dislexia, TDAH escolar e estratégias pedagógicas personalizadas."
-    },
-
-    occupational: {
-        primary_name: "terapia ocupacional",
-        equivalent_terms: [
-            "to",
-            "t.o.",
-            "t o",
-            "terapeuta ocupacional",
-            "integração sensorial",
-            "integracao sensorial",
-            "avd",
-            "atividades vida diária",
-            "coordenação motora fina"
-        ],
-        description: "Terapia para desenvolvimento de habilidades funcionais e integração sensorial",
-        standard_response: "Terapia Ocupacional - trabalhamos com integração sensorial, coordenação motora, atividades de vida diária e autonomia."
-    },
-
-    physiotherapy: {
-        primary_name: "fisioterapia",
-        equivalent_terms: [
-            "fisio",
-            "fisioterapeuta",
-            "fisioterapia motora",
-            "fisio motora",
-            "coordenação motora",
-            "desenvolvimento motor",
-            "fisioterapia respiratória",
-            "fisio respiratória",
-            "fisioterapia neurologica",
-            "fisio neurologica",
-            "fisioterapia ortopédica",
-            "fisio ortopédica",
-            "fisioterapia pediatrica",
-            "fisio pediatrica"
-        ],
-        description: "Terapia para desenvolvimento motor e funcional",
-        standard_response: "Fisioterapia - trabalhamos com desenvolvimento motor, coordenação, fortalecimento, equilíbrio e questões respiratórias/ortopédicas."
-    },
-
-    music: {
-        primary_name: "musicoterapia",
-        equivalent_terms: [
-            "musicoterapeuta",
-            "música terapia",
-            "musica terapia",
-            "terapia com música",
-            "terapia musical"
-        ],
-        description: "Terapia através da música para desenvolvimento e expressão",
-        standard_response: "Musicoterapia - utilizamos a música para trabalhar comunicação, expressão emocional, atenção e regulação."
-    },
-
-    caa: {
-        primary_name: "comunicação alternativa",
-        equivalent_terms: [
-            "caa",
-            "c.a.a.",
-            "comunicação suplementar",
-            "comunicacao alternativa",
-            "comunicacao suplementar",
-            "pecs",
-            "picture exchange",
-            "sistema comunicação",
-            "não verbal",
-            "não fala"
-        ],
-        description: "Sistemas de comunicação para pessoas não-verbais",
-        standard_response: "Comunicação Alternativa - desenvolvemos sistemas personalizados como PECS para pacientes não-verbais se comunicarem."
-    },
-
-    tongue_tie: {
-        primary_name: "teste da linguinha",
-        equivalent_terms: [
-            "teste linguinha",
-            "teste da lingüinha",
-            "teste lingüinha",
-            "frênulo lingual",
-            "freio lingual",
-            "frênulo",
-            "freio",
-            "linguinha",
-            "avaliação linguinha",
-            "avaliação da linguinha",
-            "amamentação",
-            "dificuldade mamar",
-            "sucção",
-            "bebe não mama",
-            "bebê não mama"
-        ],
-        description: "Avaliação do frênulo lingual para verificar alterações na amamentação e fala",
-        standard_response: "Teste da Linguinha - avaliação rápida e segura do frênulo lingual. Ideal para bebês com dificuldade na amamentação. Valor: R$ 150,00."
-    }
-};
-
-export const TYPEO_CORRECTIONS = {
-    // Correções comuns de digitação
-    "fonoafdionoliga": "fonoaudiologia",
-    "fonoafdionoli": "fonoaudiologia",
-    "fonoafdionol": "fonoaudiologia",
-    "fonoafdiono": "fonoaudiologia",
-    "fonoafdion": "fonoaudiologia",
-    "fonoafdio": "fonoaudiologia",
-    "fonoafdi": "fonoaudiologia",
-    "fonoafd": "fonoaudiologia",
-    "fonoaf": "fonoaudiologia",
-    "fonoa": "fonoaudiologia",
-    "fona": "fonoaudiologia",
-
-    "psicologjia": "psicologia",
-    "psicolofia": "psicologia",
-    "psicologa": "psicologia",
-    "psicologo": "psicologia",
-
-    "terapia ocupa": "terapia ocupacional",
-    "terapia ocp": "terapia ocupacional",
-
-    "musicoterapeuta": "musicoterapia",
-
-    // Abreviações comuns
-    "fono": "fonoaudiologia",
-    "psico": "psicologia",
-    "to": "terapia ocupacional",
-    "fisio": "fisioterapia",
-
-    // 🆕 Correções para Fisioterapia
-    "fisioterapia": "fisioterapia",
-    "fisioterapia": "fisioterapia",
-    "fisioterapia": "fisioterapia",
-    "fisioterapya": "fisioterapia",
-    "fisioterapya": "fisioterapia",
-    "fisioterapya": "fisioterapia",
-
-    // 🆕 Correções para Teste da Linguinha
-    "lingunha": "linguinha",
-    "lingünha": "linguinha",
-    "linguina": "linguinha",
-    "lingüinha": "linguinha",
-    "teste lingunha": "teste da linguinha",
-    "teste lingünha": "teste da linguinha",
-    "teste linguina": "teste da linguinha",
-    "teste lingüinha": "teste da linguinha",
-    "frenulo": "frênulo",
-    "freio lingual": "frênulo lingual"
+  neuropsychological: {
+    names: ['neuropsicológica', 'neuropsicologia', 'avaliação cognitiva'],
+    patterns: [
+      /neuropsic(o|ó)log(a|ia|ica)/i,
+      /avalia(ç|c)(a|ã)o\s+(completa|cognitiva|conhecimento)/i,
+      /laudo\s+psicol(ó|o)gico/i
+    ]
+  },
+  speech: {
+    names: ['fonoaudiologia', 'fono'],
+    patterns: [
+      /fono(audi(o|ó)log(a|ia|o))?/i,
+      /\bfala\b|\blinguagem\b/i,
+      /pron(ú|u)ncia|troca\s+letras|gagueira/i,
+      /atraso\s+(de\s+)?fala/i
+    ]
+  },
+  tongue_tie: {
+    names: ['teste da linguinha', 'frênulo lingual'],
+    patterns: [
+      /teste\s+da\s+linguinha/i,
+      /fr(e|ê)nulo\s+(lingual)?/i,
+      /freio\s+da\s+l(í|i)ngua/i,
+      /amamentação|dificuldade.*mamar/i
+    ]
+  },
+  psychology: {
+    names: ['psicologia', 'psicólogo'],
+    patterns: [
+      /psic(o|ó)log(a|o|ia)(?!\s*pedag)/i,
+      /\btcc\b|ansiedade|depress(ã|a)o/i,
+      /psic(o|ó)log(o|a)\s+infantil/i
+    ]
+  },
+  occupational: {
+    names: ['terapia ocupacional', 'TO'],
+    patterns: [
+      /terapia\s+ocupacional|\bTO\b/i,
+      /integra(ç|c)(a|ã)o\s+sensorial/i,
+      /coordena(ç|c)(a|ã)o\s+motora/i
+    ]
+  },
+  physiotherapy: {
+    names: ['fisioterapia', 'fisio'],
+    patterns: [
+      /fisio(terapia)?/i,
+      /\bavc\b|paralisia|desenvolvimento\s+motor/i
+    ]
+  },
+  music: {
+    names: ['musicoterapia'],
+    patterns: [
+      /musicoterapia|m(ú|u)sica\s+terap(ê|e)utica/i
+    ]
+  },
+  neuropsychopedagogy: {
+    names: ['neuropsicopedagogia'],
+    patterns: [
+      /neuropsicopedagogia/i,
+      /dislexia|discalculia/i
+    ]
+  },
+  psychopedagogy: {
+    names: ['psicopedagogia'],
+    patterns: [
+      /psicopedagog/i,
+      /dificuldade\s+(de\s+)?aprendizagem/i,
+      /problema\s+escolar|rendimento\s+escolar/i
+    ]
+  }
 };
 
 /**
- * 🎯 DETECTAR E UNIFICAR TERMOS EQUIVALENTES
+ * Normaliza termos terapêuticos
  */
 export function normalizeTherapyTerms(text = "") {
-    let normalizedText = text.toLowerCase();
-
-    // 1️⃣ PRIMEIRO: Corrigir erros de digitação comuns
-    Object.entries(TYPEO_CORRECTIONS).forEach(([wrong, correct]) => {
-        const regex = new RegExp(wrong, 'gi');
-        normalizedText = normalizedText.replace(regex, correct);
-    });
-
-    // 2️⃣ SEGUNDO: Substituir termos equivalentes pelo termo primário
-    Object.values(THERAPY_EQUIVALENCIES).forEach(equivalency => {
-        equivalency.equivalent_terms.forEach(term => {
-            const regex = new RegExp(`\\b${term}\\b`, 'gi');
-            normalizedText = normalizedText.replace(regex, equivalency.primary_name);
-        });
-    });
-
-    console.log(`🔤 [NORMALIZAÇÃO] Original: "${text}" → Normalizada: "${normalizedText}"`);
-
-    return normalizedText;
+  if (!text) return "";
+  
+  let normalized = String(text).toLowerCase();
+  
+  normalized = normalized
+    .replace(/neuropsic(o|ó)log(a|ia|ica)/gi, 'neuropsicologia')
+    .replace(/fonoaudi(o|ó)log(a|o)/gi, 'fonoaudiologia')
+    .replace(/psic(o|ó)log(a|o|ia)/gi, 'psicologia')
+    .replace(/fr(e|ê)nulo/gi, 'frênulo');
+  
+  console.log(`🔤 [NORMALIZAÇÃO] Original: "${text}" → Normalizada: "${normalized}"`);
+  return normalized;
 }
 
 /**
- * 🎯 DETECTAR SE O PACIENTE ESTÁ PERGUNTANDO SOBRE EQUIVALÊNCIA
- */
-export function isAskingAboutEquivalence(text = "") {
-    const t = text.toLowerCase();
-    const equivalencePatterns = [
-        /(é|eh)\s+(a|a mesma)\s+(coisa|mesma)/i,
-        /(são|sao)\s+(a mesma|a mesma coisa)/i,
-        /(é|eh)\s+igual/i,
-        /mesma\s+coisa/i,
-        /significa\s+a\s+mesma/i,
-        /são\s+ a\s+mesma/i,
-        /sao\s+a\s+mesma/i,
-        /são\s+o\s+mesmo/i,
-        /sao\s+o\s+mesmo/i,
-        /quer\s+dizer\s+a\s+mesma/i
-    ];
-
-    return equivalencePatterns.some(pattern => pattern.test(t));
-}
-
-/**
- * 🎯 RESPOSTA PADRÃO PARA EQUIVALÊNCIAS
- */
-export function generateEquivalenceResponse(text = "") {
-    const normalizedText = normalizeTherapyTerms(text);
-
-    // Verificar se a pergunta é sobre neuropsicológica
-    if (normalizedText.includes("avaliação neuropsicológica")) {
-        return `Sim, é exatamente a mesma coisa! 💚 
-
-"Avaliação para laudo de conhecimento", "avaliação neuropsicológica", "teste de conhecimento" - todos são o mesmo processo completo de 10 sessões para mapear habilidades cognitivas e emitir o laudo.
-
-${THERAPY_EQUIVALENCIES.neuropsychological.standard_response}
-
-Valor: R$ 2.500,00 (6x cartão) ou R$ 2.300,00 (à vista). Posso te explicar o passo a passo?`;
-    }
-
-    return "Sim, são a mesma coisa! 💚 Posso te explicar melhor como funciona?";
-}
-
-/**
- * 🎯 Detecta TODAS as terapias mencionadas em uma mensagem
+ * Detecta todas as terapias mencionadas no texto
  */
 export function detectAllTherapies(text = "") {
-    const detectedTherapies = [];
-    const cleanText = text.toLowerCase();
+  const normalized = normalizeTherapyTerms(text);
+  const detected = [];
 
-    // Verificar cada especialidade
-    Object.entries(THERAPY_SPECIALTIES).forEach(([key, therapy]) => {
-        const hasMatch = therapy.patterns.some(pattern => pattern.test(cleanText));
-        if (hasMatch) {
-            detectedTherapies.push({
-                id: key,
-                ...therapy
-            });
-        }
+  for (const [id, spec] of Object.entries(THERAPY_SPECIALTIES)) {
+    const hasMatch = spec.patterns.some(pattern => {
+      if (pattern.global) pattern.lastIndex = 0;
+      return pattern.test(normalized);
     });
 
-    return detectedTherapies;
+    if (hasMatch) {
+      detected.push({
+        id,
+        name: spec.names[0],
+        allNames: spec.names
+      });
+    }
+  }
+
+  if (detected.length > 0) {
+    console.log(`🎯 [TERAPIAS] Detectadas: ${detected.length} - ${detected.map(t => t.id).join(', ')}`);
+  }
+
+  return detected;
+}
+
+// ✅ INFORMAÇÕES COMPLETAS OTIMIZADAS: VALOR → PREÇO → ENGAJAMENTO
+const THERAPY_RESPONSES = {
+  neuropsychological: {
+    explanation: "Avaliação completa que mapeia atenção, memória e raciocínio - como um 'mapa do cérebro' da criança",
+    price: "R$ 2.500 em 6x ou R$ 2.300 à vista",
+    details: "10 sessões + laudo detalhado",
+    engagement: "A criança já fez alguma avaliação antes?",
+    segments: {
+      school: "Ideal para casos de dificuldade escolar ou suspeita de TDAH/TEA",
+      advance: "Essencial para processos de avanço de série escolar"
+    }
+  },
+  
+  speech: {
+    explanation: "Avaliação especializada em desenvolvimento da fala e linguagem",
+    price: "R$ 220 a avaliação inicial",
+    details: "40min com fono experiente em infantil",
+    engagement: "É para bebê ou criança maior?",
+    segments: {
+      baby: "Para bebês com dificuldade na amamentação ou atraso na fala",
+      child: "Para crianças com troca de letras ou gagueira"
+    }
+  },
+  
+  tongue_tie: {
+    explanation: "Avaliação rápida do frênulo lingual",
+    price: "R$ 150,00",
+    details: "Protocolo completo em 30min",
+    engagement: "O bebê tem dificuldade para mamar?",
+    segments: {
+      baby: "Essencial nos primeiros meses para garantir amamentação adequada"
+    }
+  },
+  
+  psychology: {
+    explanation: "Avaliação comportamental e emocional",
+    price: "R$ 220 a avaliação inicial", 
+    details: "40min com psicóloga infantil",
+    engagement: "É questão emocional ou comportamental?",
+    segments: {
+      behavior: "Para birras, manias ou dificuldades de comportamento",
+      emotional: "Para ansiedade, medos ou questões emocionais"
+    }
+  },
+  
+  occupational: {
+    explanation: "Avaliação de funcionalidade e integração sensorial", 
+    price: "R$ 220 a avaliação inicial",
+    details: "40min focada em atividades diárias",
+    engagement: "A criança tem dificuldade com coordenação ou sensibilidade?",
+    segments: {
+      sensory: "Para crianças muito sensíveis a texturas, sons ou movimentos",
+      motor: "Para dificuldades em amarrar tênis, segurar lápis etc."
+    }
+  },
+  
+  physiotherapy: {
+    explanation: "Avaliação motora e neurológica",
+    price: "R$ 220 a avaliação inicial",
+    details: "40min com foco em desenvolvimento motor",
+    engagement: "A criança tem atraso motor ou outra questão específica?"
+  },
+  
+  music: {
+    explanation: "Avaliação através da música para comunicação e regulação",
+    price: "R$ 220 a avaliação inicial",
+    details: "40min usando música como ferramenta terapêutica",
+    engagement: "Qual o objetivo principal do atendimento?"
+  },
+  
+  neuropsychopedagogy: {
+    explanation: "Avaliação de aprendizagem e funções cognitivas",
+    price: "R$ 220 a avaliação inicial",
+    details: "Estratégias alinhadas com família e escola",
+    engagement: "A criança já fez alguma avaliação pedagógica?"
+  },
+  
+  psychopedagogy: {
+    explanation: "Avaliação de dificuldades de aprendizagem",
+    price: "Anamnese R$ 200 | Pacote R$ 160/sessão",
+    details: "Estratégias personalizadas com escola e família", 
+    engagement: "Quais as maiores dificuldades na escola?",
+    segments: {
+      learning: "Para notas baixas ou dificuldade em acompanhar a turma",
+      focus: "Para falta de atenção ou dispersão nas aulas"
+    }
+  }
+};
+
+/**
+ * 🎯 DETECTAR PERFIL DO LEAD PARA SEGMENTAÇÃO
+ */
+function detectUserProfile(text) {
+  const t = text.toLowerCase();
+  
+  if (/(bebê|bebe|recém|nascido|amamenta|mamar)/i.test(t)) return "baby";
+  if (/(escola|nota|professora|lição|dever)/i.test(t)) return "school"; 
+  if (/(birra|comportamento|mania|teima)/i.test(t)) return "behavior";
+  if (/(ansiedade|medo|chora|emocional)/i.test(t)) return "emotional";
+  if (/(sensível|sensibilidade|textura|som|toque)/i.test(t)) return "sensory";
+  if (/(coordenação|escrever|lápis|amarrar)/i.test(t)) return "motor";
+  if (/(nota|aprender|estudar|dificuldade escola)/i.test(t)) return "learning";
+  if (/(atenção|concentrar|distrair|hiperativo)/i.test(t)) return "focus";
+  
+  return "generic";
+}
+
+function fallbackResponse(therapyName) {
+  return `Temos ${therapyName}! Avaliação R$ 220. Posso te explicar como funciona?`;
 }
 
 /**
- * Gera resposta para uma única terapia detectada
+ * ✅ Gera resposta COMPLETA para UMA terapia
+ * Aplica VALOR → PREÇO → DETALHES → ENGAJAMENTO
  */
 export function generateSingleTherapyResponse(therapy, userText, flags = {}) {
-    const { asksPrice, wantsSchedule, asksHours } = flags;
+  const info = THERAPY_RESPONSES[therapy.id];
 
-    // Extrair nome corretamente
-    const therapyName = typeof therapy === 'object' ? therapy.name : therapy;
+  if (!info) {
+    return `Temos especialistas em ${therapy.name}! A avaliação inicial é R$ 220,00. Posso te explicar como funciona?`;
+  }
 
-    // Mapeamento de nomes amigáveis
-    const therapyInfo = {
-        'Neuropsicologia': {
-            pitch: 'A avaliação neuropsicológica investiga atenção, memória, linguagem e raciocínio para orientar condutas.',
-            price: 'R$ 2.500 em 6x no cartão ou R$ 2.300 à vista',
-            duration: '10 sessões de 50min'
-        },
-        'Fonoaudiologia': {
-            pitch: 'Na fono, começamos com avaliação para entender fala/linguagem e montar o plano de cuidado.',
-            price: 'R$ 220',
-            duration: 'Avaliação: 1 hora'
-        },
-        'Psicologia': {
-            pitch: 'Na psicologia, iniciamos com avaliação para entender a demanda emocional/comportamental.',
-            price: 'R$ 220',
-            duration: 'Avaliação: 1 hora'
-        },
-        'Terapia Ocupacional': {
-            pitch: 'Na TO, avaliamos funcionalidade e integração sensorial para definir o plano.',
-            price: 'R$ 220',
-            duration: 'Avaliação: 1 hora'
-        },
-        'Fisioterapia': {
-            pitch: 'Na fisio, avaliamos a queixa motora/neurológica/respiratória.',
-            price: 'R$ 220',
-            duration: 'Avaliação: 1 hora'
-        },
-        'Musicoterapia': {
-            pitch: 'Na musicoterapia, avaliamos objetivos de comunicação/atenção/regulação.',
-            price: 'R$ 220',
-            duration: 'Avaliação: 1 hora'
-        },
-        'Neuropsicopedagogia': {
-            pitch: 'Na neuropsicopedagogia, avaliamos aprendizagem para alinhar estratégias.',
-            price: 'R$ 220',
-            duration: 'Avaliação: 1 hora'
-        },
-        'Psicopedagogia': {
-            pitch: 'Na psicopedagogia, avaliamos dificuldades de aprendizagem e criamos estratégias personalizadas.',
-            price: 'Anamnese R$ 200 | Pacote mensal R$ 160/sessão',
-            duration: 'Avaliação: 1 hora'
-        }
-    };
+  const { asksPrice, wantsSchedule, asksHours } = flags;
+  
+  // 🎯 DETECTAR PERFIL DO LEAD
+  const userProfile = detectUserProfile(userText);
+  const segmentInfo = info.segments?.[userProfile] || "";
 
-    const info = therapyInfo[therapyName] || {
-        pitch: 'Fazemos avaliação completa para entender a necessidade.',
-        price: 'R$ 220',
-        duration: 'Avaliação: 1 hora'
-    };
+  // 🎯 RESPOSTAS OTIMIZADAS - MAIS CURTAS E DIRETAS
+  if (asksPrice) {
+    return `${info.explanation}. ${segmentInfo} Valor: ${info.price}. ${info.engagement}`;
+  }
 
-    // Se pergunta preço
-    if (asksPrice) {
-        return `${info.pitch} O valor é ${info.price}. É para criança ou adulto?`;
-    }
+  if (wantsSchedule) {
+    return `Perfeito! ${info.explanation}. Valor: ${info.price}. Qual período: manhã ou tarde?`;
+  }
 
-    // Se quer agendar
-    if (wantsSchedule) {
-        return `Perfeito! Temos ${therapyName} disponível. ${info.pitch} Qual período funciona melhor: manhã ou tarde?`;
-    }
+  if (asksHours) {
+    return `Atendemos seg-sex, 8h-18h. ${info.explanation}. ${info.engagement}`;
+  }
 
-    // Se pergunta horários
-    if (asksHours) {
-        return `Nosso atendimento de ${therapyName} é de segunda a sexta, das 8h às 18h. ${info.pitch} Posso te ajudar a agendar?`;
-    }
-
-    // Resposta padrão
-    return `Fazemos sim! ${info.pitch} O valor é ${info.price}. Posso te explicar como funciona?`;
+  // ✅ RESPOSTA PADRÃO COMPLETA
+  return `Fazemos sim! ${info.explanation}. ${segmentInfo} Valor: ${info.price}. ${info.engagement}`;
 }
 
 /**
- * Gera resposta para múltiplas terapias
+ * ✅✅✅ MANTIDO: Gera resposta para MÚLTIPLAS terapias
  */
 export function generateMultiTherapyResponse(therapies, userText, flags = {}) {
-    // Se for apenas 1 terapia, usa a função específica
-    if (therapies.length === 1) {
-        return generateSingleTherapyResponse(therapies[0], userText, flags);
-    }
+  // Se for apenas 1 terapia, usa função específica
+  if (therapies.length === 1) {
+    return generateSingleTherapyResponse(therapies[0], userText, flags);
+  }
 
-    // Se múltiplas terapias
-    const { asksPrice, wantsSchedule } = flags;
+  // Múltiplas terapias detectadas
+  const names = therapies.map(t => t.name).join(' e ');
+  const { asksPrice, wantsSchedule } = flags;
 
-    // Extrair nomes corretamente dos objetos
-    const names = therapies
-        .map(t => typeof t === 'object' ? t.name : t)
-        .join(', ')
-        .replace(/,(?=[^,]*$)/, ' e'); // Último item com "e"
+  if (asksPrice) {
+    return `Temos especialistas em ${names}! Cada uma tem sua avaliação específica. Qual você gostaria de saber mais?`;
+  }
 
-    if (asksPrice) {
-        return `Temos especialistas em ${names}! A avaliação inicial é R$ 220 para cada especialidade. Qual você gostaria de saber mais?`;
-    }
+  if (wantsSchedule) {
+    return `Perfeito! Atendemos em ${names}. Qual especialidade te interessa mais para agendar?`;
+  }
 
-    if (wantsSchedule) {
-        return `Perfeito! Temos horários para ${names}. Qual especialidade te interessa mais?`;
-    }
-
-    return `Atendemos em ${names}! Qual especialidade você procura?`;
+  return `Atendemos em ${names}! Qual especialidade você procura?`;
 }
 
 /**
- * Função principal para detectar terapias
+ * ✅✅✅ MANTIDO: Verifica se pergunta sobre equivalência
+ */
+export function isAskingAboutEquivalence(text = "") {
+  const patterns = [
+    /(\w+)\s+(é|e)\s+(a\s+mesma\s+coisa|igual|o\s+mesmo)\s+que\s+(\w+)/i,
+    /qual\s+(a\s+)?diferen(ç|c)a\s+entre\s+(\w+)\s+e\s+(\w+)/i
+  ];
+  return patterns.some(p => p.test(normalizeTherapyTerms(text)));
+}
+
+/**
+ * ✅✅✅ MANTIDO: Gera resposta sobre equivalência
+ */
+export function generateEquivalenceResponse(text) {
+  return "Cada avaliação tem seu propósito específico! Me conta mais sobre o que você precisa que te explico a diferença?";
+}
+
+/**
+ * ✅✅✅ MANTIDO: Função principal de detecção (alias para compatibilidade)
  */
 export function detectTherapies(text = "") {
-    return detectAllTherapies(text);
+  return detectAllTherapies(text);
 }
