@@ -123,10 +123,10 @@ export function detectAllTherapies(text = "") {
 // ✅ INFORMAÇÕES COMPLETAS OTIMIZADAS: VALOR → PREÇO → ENGAJAMENTO
 const THERAPY_RESPONSES = {
     neuropsychological: {
-        explanation: "Avaliação completa que mapeia atenção, memória e raciocínio - como um 'mapa do cérebro' da criança",
-        price: "R$ 2.500 em 6x ou R$ 2.300 à vista",
-        details: "10 sessões + laudo detalhado",
-        engagement: "A criança já fez alguma avaliação antes?",
+        explanation: "Avaliação neuropsicológica completa - são 10 sessões que incluem avaliação, aplicação de testes e laudo detalhado",
+        price: "R$ 2.500,00 (valor único para todo o processo)",
+        details: "10 sessões de 50min + avaliação + laudo completo",
+        engagement: "É para investigação de TDAH, TEA ou dificuldade escolar?",
         segments: {
             school: "Ideal para casos de dificuldade escolar ou suspeita de TDAH/TEA",
             advance: "Essencial para processos de avanço de série escolar"
@@ -244,6 +244,14 @@ export function generateSingleTherapyResponse(therapy, userText, flags = {}) {
     }
 
     const { asksPrice, wantsSchedule, asksHours } = flags;
+
+    // 🎯 RESPOSTA ESPECÍFICA PARA NEUROPSICOLÓGICA
+    if (therapy.id === 'neuropsychological') {
+        if (asksPrice || wantsSchedule) {
+            return `Fazemos sim! ${info.explanation}. ${info.price} - já inclui avaliação, aplicação de testes e laudo completo. ${info.engagement} 💚`;
+        }
+        return `Fazemos sim! ${info.explanation}. ${info.price} ${info.engagement} 💚`;
+    }
 
     // 🎯 DETECTAR PERFIL DO LEAD
     const userProfile = detectUserProfile(userText);

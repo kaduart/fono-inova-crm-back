@@ -19,7 +19,7 @@ import { initializeSocket } from "./config/socket.js";
 import Followup from "./models/Followup.js";
 import { getRedis, startRedis } from "./services/redisClient.js";
 import { registerWebhook } from "./services/sicoobService.js";
-
+import { sanitizeStack } from './middleware/sanitize.js';
 // ======================================================
 // 🧩 BullMQ e Painel Bull Board
 // ======================================================
@@ -85,15 +85,16 @@ process.on("error", (err) => {
 // ======================================================
 // 🔒 Middlewares globais
 // ======================================================
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 app.use(
   helmet({
     crossOriginEmbedderPolicy: false,
     contentSecurityPolicy: false,
-    crossOriginResourcePolicy: false, // 👈 permite Upgrade
+    crossOriginResourcePolicy: false,
   })
 );
-
-app.use(express.json({ limit: "2mb" }));
+app.use(...sanitizeStack()); 
 
 const allowedOrigins = [
   "https://app.clinicafonoinova.com.br",
@@ -122,6 +123,7 @@ app.use((req, res, next) => {
 // ======================================================
 // 🌐 Rotas principais (ordem importa!)
 // ======================================================
+
 app.use("/api", proxyMediaRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/signup", signupRoutes);
