@@ -110,97 +110,6 @@ export const THERAPY_SPECIALTIES = {
     }
 };
 
-/**
- * 🎯 DETECTAR E UNIFICAR TERMOS EQUIVALENTES
- */
-export function normalizeTherapyTerms(text = "") {
-    let normalizedText = text.toLowerCase();
-
-    // 1️⃣ PRIMEIRO: Corrigir erros de digitação comuns
-    Object.entries(TYPEO_CORRECTIONS).forEach(([wrong, correct]) => {
-        const regex = new RegExp(wrong, 'gi');
-        normalizedText = normalizedText.replace(regex, correct);
-    });
-
-    // 2️⃣ SEGUNDO: Substituir termos equivalentes pelo termo primário
-    Object.values(THERAPY_EQUIVALENCIES).forEach(equivalency => {
-        equivalency.equivalent_terms.forEach(term => {
-            const regex = new RegExp(`\\b${term}\\b`, 'gi');
-            normalizedText = normalizedText.replace(regex, equivalency.primary_name);
-        });
-    });
-
-    console.log(`🔤 [NORMALIZAÇÃO] Original: "${text}" → Normalizada: "${normalizedText}"`);
-
-    return normalizedText;
-}
-
-
-/**
- * 🎯 DETECTAR SE O PACIENTE ESTÁ PERGUNTANDO SOBRE EQUIVALÊNCIA
- */
-export function isAskingAboutEquivalence(text = "") {
-    const t = text.toLowerCase();
-    const equivalencePatterns = [
-        /(é|eh)\s+(a|a mesma)\s+(coisa|mesma)/i,
-        /(são|sao)\s+(a mesma|a mesma coisa)/i,
-        /(é|eh)\s+igual/i,
-        /mesma\s+coisa/i,
-        /significa\s+a\s+mesma/i,
-        /são\s+ a\s+mesma/i,
-        /sao\s+a\s+mesma/i,
-        /são\s+o\s+mesmo/i,
-        /sao\s+o\s+mesmo/i,
-        /quer\s+dizer\s+a\s+mesma/i
-    ];
-
-    return equivalencePatterns.some(pattern => pattern.test(t));
-}
-
-/**
- * 🎯 RESPOSTA PADRÃO PARA EQUIVALÊNCIAS
- */
-export function generateEquivalenceResponse(text = "") {
-    const normalizedText = normalizeTherapyTerms(text);
-
-    // Verificar se a pergunta é sobre neuropsicológica
-    if (normalizedText.includes("avaliação neuropsicológica")) {
-        return `Sim, é exatamente a mesma coisa! 💚 
-
-"Avaliação para laudo de conhecimento", "avaliação neuropsicológica", "teste de conhecimento" - todos são o mesmo processo completo de 10 sessões para mapear habilidades cognitivas e emitir o laudo.
-
-${THERAPY_EQUIVALENCIES.neuropsychological.standard_response}
-
-Valor: R$ 2.500,00 (6x cartão) ou R$ 2.300,00 (à vista). Posso te explicar o passo a passo?`;
-    }
-
-    return "Sim, são a mesma coisa! 💚 Posso te explicar melhor como funciona?";
-}
-
-/**
- * 🎯 Detecta TODAS as terapias mencionadas em uma mensagem
- */
-export function detectAllTherapies(text = "") {
-    const detectedTherapies = [];
-    const cleanText = text.toLowerCase();
-
-    // Verificar cada especialidade
-    Object.entries(THERAPY_SPECIALTIES).forEach(([key, therapy]) => {
-        const hasMatch = therapy.patterns.some(pattern => pattern.test(cleanText));
-        if (hasMatch) {
-            detectedTherapies.push({
-                id: key,
-                ...therapy
-            });
-        }
-    });
-
-    return detectedTherapies;
-}
-
-
-// ATUALIZAR THERAPY_EQUIVALENCIES com sistema completo
-
 export const THERAPY_EQUIVALENCIES = {
     neuropsychological: {
         primary_name: "avaliação neuropsicológica",
@@ -420,20 +329,102 @@ export const TYPEO_CORRECTIONS = {
     "teste lingüinha": "teste da linguinha",
     "frenulo": "frênulo",
     "freio lingual": "frênulo lingual"
-
 };
 
+/**
+ * 🎯 DETECTAR E UNIFICAR TERMOS EQUIVALENTES
+ */
+export function normalizeTherapyTerms(text = "") {
+    let normalizedText = text.toLowerCase();
 
-// utils/therapyDetector.js - CORREÇÃO COMPLETA
+    // 1️⃣ PRIMEIRO: Corrigir erros de digitação comuns
+    Object.entries(TYPEO_CORRECTIONS).forEach(([wrong, correct]) => {
+        const regex = new RegExp(wrong, 'gi');
+        normalizedText = normalizedText.replace(regex, correct);
+    });
+
+    // 2️⃣ SEGUNDO: Substituir termos equivalentes pelo termo primário
+    Object.values(THERAPY_EQUIVALENCIES).forEach(equivalency => {
+        equivalency.equivalent_terms.forEach(term => {
+            const regex = new RegExp(`\\b${term}\\b`, 'gi');
+            normalizedText = normalizedText.replace(regex, equivalency.primary_name);
+        });
+    });
+
+    console.log(`🔤 [NORMALIZAÇÃO] Original: "${text}" → Normalizada: "${normalizedText}"`);
+
+    return normalizedText;
+}
+
+/**
+ * 🎯 DETECTAR SE O PACIENTE ESTÁ PERGUNTANDO SOBRE EQUIVALÊNCIA
+ */
+export function isAskingAboutEquivalence(text = "") {
+    const t = text.toLowerCase();
+    const equivalencePatterns = [
+        /(é|eh)\s+(a|a mesma)\s+(coisa|mesma)/i,
+        /(são|sao)\s+(a mesma|a mesma coisa)/i,
+        /(é|eh)\s+igual/i,
+        /mesma\s+coisa/i,
+        /significa\s+a\s+mesma/i,
+        /são\s+ a\s+mesma/i,
+        /sao\s+a\s+mesma/i,
+        /são\s+o\s+mesmo/i,
+        /sao\s+o\s+mesmo/i,
+        /quer\s+dizer\s+a\s+mesma/i
+    ];
+
+    return equivalencePatterns.some(pattern => pattern.test(t));
+}
+
+/**
+ * 🎯 RESPOSTA PADRÃO PARA EQUIVALÊNCIAS
+ */
+export function generateEquivalenceResponse(text = "") {
+    const normalizedText = normalizeTherapyTerms(text);
+
+    // Verificar se a pergunta é sobre neuropsicológica
+    if (normalizedText.includes("avaliação neuropsicológica")) {
+        return `Sim, é exatamente a mesma coisa! 💚 
+
+"Avaliação para laudo de conhecimento", "avaliação neuropsicológica", "teste de conhecimento" - todos são o mesmo processo completo de 10 sessões para mapear habilidades cognitivas e emitir o laudo.
+
+${THERAPY_EQUIVALENCIES.neuropsychological.standard_response}
+
+Valor: R$ 2.500,00 (6x cartão) ou R$ 2.300,00 (à vista). Posso te explicar o passo a passo?`;
+    }
+
+    return "Sim, são a mesma coisa! 💚 Posso te explicar melhor como funciona?";
+}
+
+/**
+ * 🎯 Detecta TODAS as terapias mencionadas em uma mensagem
+ */
+export function detectAllTherapies(text = "") {
+    const detectedTherapies = [];
+    const cleanText = text.toLowerCase();
+
+    // Verificar cada especialidade
+    Object.entries(THERAPY_SPECIALTIES).forEach(([key, therapy]) => {
+        const hasMatch = therapy.patterns.some(pattern => pattern.test(cleanText));
+        if (hasMatch) {
+            detectedTherapies.push({
+                id: key,
+                ...therapy
+            });
+        }
+    });
+
+    return detectedTherapies;
+}
 
 /**
  * Gera resposta para uma única terapia detectada
- * ✅ CORRIGIDO: Agora usa therapy.name corretamente
  */
 export function generateSingleTherapyResponse(therapy, userText, flags = {}) {
     const { asksPrice, wantsSchedule, asksHours } = flags;
 
-    // ✅ CRÍTICO: Extrair nome corretamente
+    // Extrair nome corretamente
     const therapyName = typeof therapy === 'object' ? therapy.name : therapy;
 
     // Mapeamento de nomes amigáveis
@@ -486,8 +477,6 @@ export function generateSingleTherapyResponse(therapy, userText, flags = {}) {
         duration: 'Avaliação: 1 hora'
     };
 
-    // 🎯 ESTRATÉGIA: VALOR → PREÇO (nunca preço direto!)
-
     // Se pergunta preço
     if (asksPrice) {
         return `${info.pitch} O valor é ${info.price}. É para criança ou adulto?`;
@@ -503,13 +492,12 @@ export function generateSingleTherapyResponse(therapy, userText, flags = {}) {
         return `Nosso atendimento de ${therapyName} é de segunda a sexta, das 8h às 18h. ${info.pitch} Posso te ajudar a agendar?`;
     }
 
-    // Resposta padrão: SEMPRE valor antes do preço
+    // Resposta padrão
     return `Fazemos sim! ${info.pitch} O valor é ${info.price}. Posso te explicar como funciona?`;
 }
 
 /**
  * Gera resposta para múltiplas terapias
- * ✅ CORRIGIDO: Trata objetos corretamente
  */
 export function generateMultiTherapyResponse(therapies, userText, flags = {}) {
     // Se for apenas 1 terapia, usa a função específica
@@ -520,7 +508,7 @@ export function generateMultiTherapyResponse(therapies, userText, flags = {}) {
     // Se múltiplas terapias
     const { asksPrice, wantsSchedule } = flags;
 
-    // ✅ CRÍTICO: Extrair nomes corretamente dos objetos
+    // Extrair nomes corretamente dos objetos
     const names = therapies
         .map(t => typeof t === 'object' ? t.name : t)
         .join(', ')
@@ -537,8 +525,9 @@ export function generateMultiTherapyResponse(therapies, userText, flags = {}) {
     return `Atendemos em ${names}! Qual especialidade você procura?`;
 }
 
-// ✅ GARANTIR EXPORTS
-export {
-    detectAllTherapies,
-    detectTherapies, generateEquivalenceResponse, generateMultiTherapyResponse, generateSingleTherapyResponse, isAskingAboutEquivalence, normalizeTherapyTerms
-};
+/**
+ * Função principal para detectar terapias
+ */
+export function detectTherapies(text = "") {
+    return detectAllTherapies(text);
+}
