@@ -4,7 +4,7 @@
    ========================================================================= */
 
 import { normalizeTherapyTerms } from "./therapyDetector.js";
-
+import { PRICES } from './pricing.js';
 /* =========================================================================
    BLOCOS DE REGRAS E TEXTOS-BASE
    ========================================================================= */
@@ -129,7 +129,7 @@ export function priceLineForTopic(topic, userText) {
         case "pacote":
             return "O pacote (1x por semana) sai por R$ 180,00 por sessão (~R$ 720,00/mês).";
         case "neuropsicologica":
-            return "A avaliação neuropsicológica é R$ 2.500,00 em até 6x no cartão ou R$ 2.300,00 à vista.";
+            return `A avaliação neuropsicológica completa (10 sessões) é ${PRICES.neuropsicologica}.`;
         case "teste_linguinha":
             return "O Teste da Linguinha custa R$ 150,00.";
         case "psicopedagogia":

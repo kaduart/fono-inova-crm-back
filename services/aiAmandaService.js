@@ -82,7 +82,7 @@ function applyValuePriceStrategy(flags = {}) {
     // 🎯 REGRA: Neuropsicológica
     else if (asksNeuro) {
         pitch = VALUE_PITCH.neuropsicologica;
-        price = "A avaliação neuropsicológica é R$ 2.500 em até 6x no cartão ou R$ 2.300 à vista.";
+ price = `A avaliação neuropsicológica completa (10 sessões) é ${PRICES.neuropsicologica}.`;
     }
     // 🎯 REGRA: Teste da Linguinha
     else if (asksLinguinha) {
