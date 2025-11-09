@@ -116,7 +116,7 @@ const INTENT_TO_MANUAL = {
 /* =========================================================================
    AMANDA INTENTS (fallback)
    ========================================================================= */
-export const AMANDA_INTENTS = {
+/* export const AMANDA_INTENTS = {
     greeting: {
         patterns: [
             /^(oi|ola|olá|hey|hi|começar|iniciar)$/i,
@@ -301,14 +301,14 @@ export const AMANDA_INTENTS = {
     },
 
     default: {
-        patterns: [/.*/],
+        patterns: [/.],
         responses: [
             "Entendi! 💚 Pode me contar um pouco mais sobre o que precisa? Assim posso te ajudar melhor!",
             "Compreendo! 💚 Qual especialidade tem interesse? Fono, psicologia, terapia ocupacional?",
             "Obrigada pela mensagem! 💚 Pode me explicar qual é a queixa principal? Assim direciono para a profissional ideal!"
         ]
     }
-};
+}; */
 
 /* =========================================================================
    Match de intenções
