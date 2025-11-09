@@ -161,6 +161,7 @@ export const whatsappController = {
     }
 
     if (isDuplicate) return;
+    
 
     // ✅ 4. PROCESSAMENTO EM BACKGROUND (não bloqueia webhook)
     this.processInboundMessage(msg, value).catch(error => {
@@ -188,7 +189,7 @@ async processInboundMessage(msg, value) {
 
     console.log("🔄 Processando mensagem:", { from, type, wamid });
 
-    // ✅ 6. EXTRAÇÃO DE CONTEÚDO (igual ao seu código atual)
+    // ✅ EXTRAÇÃO DE CONTEÚDO MELHORADA
     let content = "";
     let mediaUrl = null;
     let caption = null;
@@ -197,15 +198,33 @@ async processInboundMessage(msg, value) {
     if (type === "text") {
       content = msg.text?.body || "";
     } else {
-      // ... (seu código atual de extração de mídia)
       try {
         if (type === "audio" && msg.audio?.id) {
           mediaId = msg.audio.id;
           caption = "[AUDIO]";
           const { url } = await resolveMediaUrl(mediaId);
           mediaUrl = url;
-        } 
-        // ... (outros tipos de mídia - mantenha seu código)
+        } else if (type === "image" && msg.image?.id) {
+          mediaId = msg.image.id;
+          caption = msg.image.caption || "[IMAGE]";
+          const { url } = await resolveMediaUrl(mediaId);
+          mediaUrl = url;
+        } else if (type === "video" && msg.video?.id) {
+          mediaId = msg.video.id;
+          caption = msg.video.caption || "[VIDEO]";
+          const { url } = await resolveMediaUrl(mediaId);
+          mediaUrl = url;
+        } else if (type === "document" && msg.document?.id) {
+          mediaId = msg.document.id;
+          caption = msg.document.filename || "[DOCUMENT]";
+          const { url } = await resolveMediaUrl(mediaId);
+          mediaUrl = url;
+        } else if (type === "sticker" && msg.sticker?.id) {
+          mediaId = msg.sticker.id;
+          caption = "[STICKER]";
+          const { url } = await resolveMediaUrl(mediaId);
+          mediaUrl = url;
+        }
       } catch (e) {
         console.error("⚠️ Falha ao resolver mídia:", e.message);
       }
@@ -213,26 +232,78 @@ async processInboundMessage(msg, value) {
 
     const contentToSave = type === "text" ? content : (caption || `[${type.toUpperCase()}]`);
 
-    // ✅ 7. SALVAR MENSAGEM NO CRM
+    // ✅ BUSCA UNIFICADA INTELIGENTE (CORRIGIDA)
+    console.log("🔍 Buscando contact para:", from);
     let contact = await Contact.findOne({ phone: from });
     if (!contact) {
       contact = await Contact.create({ 
         phone: from, 
-        name: msg.profile?.name || "Contato" 
+        name: msg.profile?.name || "Contato WhatsApp" 
       });
-      console.log("✅ Novo contato criado:", contact._id);
+      console.log("✅ Novo contact criado:", contact._id);
     }
 
+    console.log("🔍 Buscando lead para:", from);
     let lead = await Lead.findOne({ 'contact.phone': from });
-    if (!lead) {
-      lead = await Lead.create({
-        name: contact.name,
-        contact: { phone: from },
-        origin: "WhatsApp"
-      });
-      console.log("✅ Novo lead criado:", lead._id);
+    
+    // ✅ VERIFICA SE EXISTE PATIENT COM ESTE TELEFONE
+    let patient = null;
+    try {
+      patient = await mongoose.model('Patient').findOne({ phone: from });
+      console.log("🔍 Patient encontrado:", patient ? patient._id : "Nenhum");
+    } catch (e) {
+      console.log("ℹ️ Model Patient não disponível");
     }
 
+    if (!lead) {
+      // 🎯 DECISÃO INTELIGENTE: Se tem patient, cria lead vinculado
+      if (patient) {
+        lead = await Lead.create({
+          name: patient.fullName || contact.name,
+          contact: { 
+            phone: from, 
+            email: patient.email || null 
+          },
+          origin: "WhatsApp",
+          status: "virou_paciente",
+          convertedToPatient: patient._id,
+          conversionScore: 100,
+          appointment: {
+            seekingFor: "Adulto +18 anos",
+            modality: "Online",
+            healthPlan: "Mensalidade"
+          }
+        });
+        console.log("🔄 Patient convertido em lead:", lead._id);
+      } else {
+        // Cria novo lead normal
+        lead = await Lead.create({
+          name: contact.name,
+          contact: { phone: from },
+          origin: "WhatsApp",
+          status: "novo",
+          appointment: {
+            seekingFor: "Adulto +18 anos", 
+            modality: "Online",
+            healthPlan: "Mensalidade"
+          }
+        });
+        console.log("✅ Novo lead criado:", lead._id);
+      }
+    } else {
+      console.log("✅ Lead existente encontrado:", lead._id);
+      
+      // ✅ ATUALIZA lead se encontrou patient
+      if (patient && !lead.convertedToPatient) {
+        lead.convertedToPatient = patient._id;
+        lead.status = "virou_paciente";
+        lead.conversionScore = 100;
+        await lead.save();
+        console.log("🔄 Lead atualizado com patient:", patient._id);
+      }
+    }
+
+    // ✅ SALVAR MENSAGEM NO CRM (CORRIGIDO)
     const savedMessage = await Message.create({
       wamid,
       from,
@@ -251,9 +322,15 @@ async processInboundMessage(msg, value) {
       raw: msg,
     });
 
-    console.log("💾 Mensagem salva no CRM:", savedMessage._id);
+    console.log("💾 Mensagem salva no CRM:", {
+      id: savedMessage._id,
+      lead: lead._id,
+      contact: contact._id,
+      patient: patient?._id || "Nenhum",
+      content: contentToSave.substring(0, 50) + '...'
+    });
 
-    // ✅ 8. NOTIFICAR FRONTEND
+    // ✅ NOTIFICAR FRONTEND
     io.emit("message:new", {
       id: String(savedMessage._id),
       from,
@@ -267,15 +344,33 @@ async processInboundMessage(msg, value) {
       caption,
       status: "received",
       timestamp,
+      leadId: lead._id,
+      contactId: contact._id
     });
 
-    // ✅ 9. AMANDA 2.0 TRACKING (NÃO-BLOQUEANTE)
+    // ✅ ATUALIZAR ÚLTIMA INTERAÇÃO DO LEAD
+    try {
+      lead.lastInteractionAt = new Date();
+      lead.interactions.push({
+        date: new Date(),
+        channel: 'whatsapp',
+        direction: 'inbound',
+        message: contentToSave,
+        status: 'received'
+      });
+      await lead.save();
+      console.log("📅 Interação atualizada no lead");
+    } catch (updateError) {
+      console.error("⚠️ Erro ao atualizar interação:", updateError.message);
+    }
+
+    // ✅ AMANDA 2.0 TRACKING (NÃO-BLOQUEANTE)
     if (type === 'text' && contentToSave?.trim()) {
       this.handleResponseTracking(lead._id, contentToSave)
         .catch(err => console.error("⚠️ Tracking não crítico falhou:", err));
     }
 
-    // ✅ 10. RESPOSTA AUTOMÁTICA (NÃO-BLOQUEANTE)
+    // ✅ RESPOSTA AUTOMÁTICA (NÃO-BLOQUEANTE)
     if (type === "text" && contentToSave?.trim()) {
       this.handleAutoReply(from, to, contentToSave, lead)
         .catch(err => console.error("⚠️ Auto-reply não crítico falhou:", err));
@@ -284,8 +379,141 @@ async processInboundMessage(msg, value) {
     console.log("✅ Mensagem processada com sucesso:", wamid);
 
   } catch (error) {
-    console.error("❌ Erro no processInboundMessage:", error);
-    throw error;
+    console.error("❌ Erro CRÍTICO no processInboundMessage:", error);
+    // Não relança o erro para não quebrar o webhook
+  }
+},
+
+// ✅ MÉTODOS AUXILIARES (ADICIONE ESTES)
+async handleResponseTracking(leadId, content) {
+  try {
+    const Followup = mongoose.model('Followup');
+    const lastFollowup = await Followup.findOne({
+      lead: leadId,
+      status: 'sent', 
+      responded: false
+    }).sort({ sentAt: -1 }).lean();
+
+    if (lastFollowup) {
+      const timeSince = Date.now() - new Date(lastFollowup.sentAt).getTime();
+      const WINDOW_72H = 72 * 60 * 60 * 1000;
+
+      if (timeSince < WINDOW_72H) {
+        console.log(`✅ Lead respondeu a follow-up! Processando...`);
+        // Chama seu serviço de tracking existente
+        const { checkFollowupResponse } = await import("../services/responseTrackingService.js");
+        await checkFollowupResponse(lastFollowup._id);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Erro no tracking (não crítico):', error.message);
+  }
+},
+
+async handleAutoReply(from, to, content, lead) {
+  try {
+    // ✅ LOCK anti-corrida
+    let canProceed = true;
+    try {
+      if (redis?.set) {
+        const lockKey = `ai:lock:${from}`;
+        const ok = await redis.set(lockKey, "1", "EX", 3, "NX");
+        if (ok !== "OK") {
+          console.log("⏭️ AI lock ativo; evitando corrida", lockKey);
+          canProceed = false;
+        }
+      }
+    } catch (lockError) {
+      console.warn("⚠️ Redis lock indisponível:", lockError.message);
+    }
+
+    if (!canProceed) return;
+
+    // ✅ Verifica se já respondeu recentemente
+    const fortyFiveAgo = new Date(Date.now() - 45 * 1000);
+    const recentBotReply = await Message.findOne({
+      to: from,
+      direction: "outbound", 
+      type: "text",
+      timestamp: { $gte: fortyFiveAgo },
+    }).lean();
+    
+    if (recentBotReply) {
+      console.log("⏭️ Já houve resposta nossa recente; pulando auto-reply.");
+      return;
+    }
+
+    // ✅ DEBOUNCE por número
+    try {
+      if (redis?.set) {
+        const key = `ai:debounce:${from}`;
+        const ok = await redis.set(key, "1", "EX", 8, "NX");
+        if (ok !== "OK") {
+          console.log("⏭️ Debounce ativo; pulando auto-reply");
+          return;
+        }
+      }
+    } catch (debounceError) {
+      console.warn("⚠️ Redis debounce indisponível:", debounceError.message);
+    }
+
+    // ✅ Busca histórico para contexto
+    const leadDoc = await Lead.findById(lead._id).lean();
+    const histDocs = await Message.find({
+      $or: [{ from }, { to: from }],
+      type: "text",
+    }).sort({ timestamp: -1 }).limit(12).lean();
+
+    const lastMessages = histDocs.reverse().map(m => (m.content || m.text || "").toString());
+    const greetings = /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|tudo\s*bem|bom\s*dia|fala|e[aíi])[\s!,.]*$/i;
+    const isFirstContact = lastMessages.length <= 1 || greetings.test(content.trim());
+
+    // ✅ Gera resposta da Amanda
+    const { generateAmandaReply } = await import("../services/aiAmandaService.js");
+    const aiText = await generateAmandaReply({
+      userText: content,
+      lead: {
+        name: leadDoc?.name || "",
+        reason: leadDoc?.reason || "avaliação/terapia", 
+        origin: leadDoc?.origin || "WhatsApp",
+      },
+      context: { lastMessages, isFirstContact },
+    });
+
+    console.log("[AmandaReply] texto gerado:", aiText);
+
+    // ✅ Envia resposta
+    if (aiText && aiText.trim()) {
+      const { sendTextMessage } = await import("../services/whatsappService.js");
+      await sendTextMessage({ to: from, text: aiText.trim(), lead: lead._id });
+
+      const savedOut = await Message.create({
+        from: to,
+        to: from, 
+        direction: "outbound",
+        type: "text",
+        content: aiText.trim(),
+        status: "sent",
+        timestamp: new Date(),
+        lead: lead._id,
+      });
+
+      const io = getIo();
+      io.emit("message:new", {
+        id: String(savedOut._id),
+        from: savedOut.from,
+        to: savedOut.to,
+        direction: "outbound", 
+        type: "text",
+        content: savedOut.content,
+        status: savedOut.status,
+        timestamp: savedOut.timestamp,
+      });
+
+      console.log("✅ IA (Amanda) enviada e salva:", String(savedOut._id));
+    }
+  } catch (error) {
+    console.error('❌ Erro no auto-reply (não crítico):', error);
   }
 },
 
