@@ -1,0 +1,391 @@
+===================================================================================
+                    FONO-INOVA BACKEND ARCHITECTURE OVERVIEW
+===================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           EXTERNAL CLIENTS                                   │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────────┐  │
+│  │  Web Frontend    │  │  Mobile App      │  │  WhatsApp/WebSocket      │  │
+│  │ (Vercel/Local)   │  │                  │  │  Real-time Connection    │  │
+│  └──────────────────┘  └──────────────────┘  └──────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                    ┌─────────────────┼─────────────────┐
+                    │                 │                 │
+                    ▼                 ▼                 ▼
+        ┌──────────────────┐  ┌──────────────────┐  ┌──────────────┐
+        │  REST API        │  │  Socket.IO       │  │  Webhooks    │
+        │  /api/...        │  │  Real-time       │  │  /pix        │
+        │  Port 5000       │  │                  │  │  /whatsapp   │
+        └──────────────────┘  └──────────────────┘  └──────────────┘
+                    │                 │                 │
+        ┌───────────┴─────────────────┼─────────────────┴───────────┐
+        │                             │                             │
+        ▼                             ▼                             ▼
+┌───────────────────────┐    ┌───────────────────────┐    ┌──────────────────┐
+│   EXPRESS.JS SERVER   │    │  SOCKET.IO SERVER     │    │  WEBHOOK HANDLERS│
+│ (HTTP/REST)           │    │ (WebSocket)           │    │ (PIX/WhatsApp)   │
+│                       │    │                       │    │                  │
+│ ┌─────────────────┐   │    │ ┌─────────────────┐   │    │ ┌──────────────┐  │
+│ │ MIDDLEWARE      │   │    │ │ Socket Events   │   │    │ │ Verification │  │
+│ │ ┌───────────────┤   │    │ │ ┌─────────────┤   │    │ │ Processing   │  │
+│ │ │ Helmet        │   │    │ │ │ Connection  │   │    │ │ Database Sync│  │
+│ │ │ CORS          │   │    │ │ │ Disconnect  │   │    │ │              │  │
+│ │ │ JWT Auth      │   │    │ │ │ Message     │   │    │ │ PIX Confirm  │  │
+│ │ │ Error Handler │   │    │ │ │ Updates     │   │    │ │ WhatsApp Msg │  │
+│ │ │ Rate Limit    │   │    │ │ └─────────────┘   │    │ │              │  │
+│ │ └───────────────┘   │    │ │ Watchers        │   │    │ └──────────────┘  │
+│ │                     │    │ │ (MongoDB Change │   │    │                  │
+│ │ 23 ROUTE FILES      │    │ │  Streams)       │   │    │                  │
+│ │ ┌─────────────────┐ │    │ └─────────────────┘   │    │                  │
+│ │ │ appointments    │ │    │                       │    │                  │
+│ │ │ (1,397 LOC)     │ │    │                       │    │                  │
+│ │ │ Payment         │ │    │                       │    │                  │
+│ │ │ (2,107 LOC)     │ │    │                       │    │                  │
+│ │ │ admin           │ │    │                       │    │                  │
+│ │ │ patient         │ │    │                       │    │                  │
+│ │ │ leads           │ │    │                       │    │                  │
+│ │ │ followup        │ │    │                       │    │                  │
+│ │ │ whatsapp        │ │    │                       │    │                  │
+│ │ │ pix             │ │    │                       │    │                  │
+│ │ │ [15 more...]    │ │    │                       │    │                  │
+│ │ └─────────────────┘ │    │                       │    │                  │
+│ │                     │    │                       │    │                  │
+│ │ 10 CONTROLLERS      │    │                       │    │                  │
+│ │ ┌─────────────────┐ │    │                       │    │                  │
+│ │ │ therapyPackage  │ │    │                       │    │                  │
+│ │ │ followup        │ │    │                       │    │                  │
+│ │ │ whatsapp        │ │    │                       │    │                  │
+│ │ │ [7 more...]     │ │    │                       │    │                  │
+│ │ └─────────────────┘ │    │                       │    │                  │
+│ └─────────────────────┘    │                       │    │                  │
+└───────────────────────┘    └───────────────────────┘    └──────────────────┘
+        │                             │                             │
+        │          ┌──────────────────┼──────────────────┐          │
+        │          │                  │                  │          │
+        ▼          ▼                  ▼                  ▼          ▼
+   ┌─────────────────────────────────────────────────────────────────┐
+   │              24 SERVICE LAYER (Business Logic)                  │
+   │  ┌──────────────────────────────────────────────────────────┐  │
+   │  │ Core Services:                                           │  │
+   │  │  • paymentService (CRUD, distribution)                  │  │
+   │  │  • whatsappService (messaging)                          │  │
+   │  │  • sicoobService (PIX integration)                      │  │
+   │  │  • emailService (SendGrid/Nodemailer)                  │  │
+   │  │  • leadCircuitService (sales pipeline)                 │  │
+   │  │  • syncService (data synchronization)                  │  │
+   │  │  • analytics.js (metrics)                              │  │
+   │  │  [16 more services...]                                │  │
+   │  ├──────────────────────────────────────────────────────────┤  │
+   │  │ AI/Intelligence Services (/intelligence):               │  │
+   │  │  • leadIntelligence (qualification scoring)            │  │
+   │  │  • smartFollowup (intelligent responses)               │  │
+   │  │  • objectionHandler (handle objections)                │  │
+   │  │  • contextMemory (conversation context)                │  │
+   │  │  • analytics (AI metrics)                              │  │
+   │  └──────────────────────────────────────────────────────────┘  │
+   │                          │                                      │
+   │            ┌─────────────┼─────────────┐                        │
+   │            │             │             │                        │
+   └────────────┼─────────────┼─────────────┼────────────────────────┘
+                ▼             ▼             ▼
+          ┌──────────┐  ┌──────────┐  ┌──────────────┐
+          │ MongoDB  │  │ Redis    │  │ External APIs│
+          │ Atlas    │  │ Cache    │  │              │
+          │          │  │ Queue    │  │ ┌──────────┤
+          │ 29 Models│  │ (BullMQ) │  │ │ OpenAI   │
+          │          │  │          │  │ │ Google   │
+          │ Patient  │  │ Workers: │  │ │ WhatsApp │
+          │ Doctor   │  │ • Worker │  │ │ Sicoob   │
+          │ Appt     │  │ • Cron 1 │  │ └──────────┘
+          │ Payment  │  │ • Cron 2 │  │
+          │ Leads    │  │ • Cron 3 │  │
+          │ Session  │  │          │  │
+          │ Package  │  │ Dashboard│  │
+          │ [21 more]│  │ /admin/  │  │
+          │          │  │ queues   │  │
+          │ Indexes: │  │          │  │
+          │ Unique:  │  │          │  │
+          │ Appt:    │  │          │  │
+          │(patient, │  │          │  │
+          │ doctor,  │  │          │  │
+          │ date,    │  │          │  │
+          │ time)    │  │          │  │
+          └──────────┘  └──────────┘  └──────────────┘
+                │             │              │
+                └─────────────┼──────────────┘
+                              │
+              ┌───────────────┴───────────────┐
+              ▼                               ▼
+        ┌──────────────────┐        ┌──────────────────┐
+        │ DATABASE LAYER   │        │ BACKGROUND JOBS  │
+        │                  │        │                  │
+        │ 29 Models with:  │        │ BullMQ Queue:    │
+        │ • Relationships  │        │ followupQueue    │
+        │ • Pre-save hooks │        │                  │
+        │ • Post-save hooks│        │ 4 Scheduled Tasks│
+        │ • Validation     │        │ • Worker         │
+        │ • Indexes        │        │ • Cron 1         │
+        │ • Virtuals       │        │ • Cron 2         │
+        │                  │        │ • Cron 3         │
+        │ Collections:     │        │                  │
+        │ • patients       │        │ Processing:      │
+        │ • appointments   │        │ Schedule → Queue │
+        │ • payments       │        │ → Worker → DB    │
+        │ • leads          │        │ → Socket Emit    │
+        │ • followups      │        │                  │
+        │ • sessions       │        │ Redis backed for │
+        │ • packages       │        │ persistence      │
+        │ • evolutions     │        │                  │
+        │ • reports        │        │ Dashboard UI:    │
+        │ • medical_events │        │ Bull Board       │
+        │ [12 more...]     │        │ /admin/queues    │
+        └──────────────────┘        └──────────────────┘
+
+
+===================================================================================
+                            REQUEST/RESPONSE FLOW
+===================================================================================
+
+1. CLIENT REQUEST
+   Request → REST/Socket → Express.js
+   
+2. MIDDLEWARE LAYER
+   Helmet (headers) → CORS → JWT Auth → Error Handler → Route Handler
+   
+3. ROUTE HANDLER
+   Parse params/body → Call Controller
+   
+4. CONTROLLER LAYER
+   Validate (basic) → Call Service(s)
+   
+5. SERVICE LAYER (Business Logic)
+   Multiple services → Database operations → Redis operations
+   
+6. DATABASE LAYER
+   MongoDB query → Pre-hooks → Save/Update/Delete → Post-hooks
+   
+7. BACKGROUND PROCESSING
+   Event triggers → Add to Queue → Worker process → Database update
+   
+8. RESPONSE
+   Data → Success/Error format → JSON response → Client
+   
+9. REAL-TIME (Socket.IO)
+   Changes broadcast to connected clients via Socket events
+
+
+===================================================================================
+                        EXTERNAL INTEGRATIONS
+===================================================================================
+
+┌─────────────────────────────────────────────────────────────────┐
+│                 EXTERNAL SERVICES INTEGRATION                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│ ┌──────────────────────────────────────────────────────────┐   │
+│ │ PAYMENT (PIX via Sicoob)                                 │   │
+│ │  • OAuth 2.0 authentication                             │   │
+│ │  • Webhook: /api/pix/webhook                            │   │
+│ │  • Production environment configured                    │   │
+│ │  • Instant payment processing                           │   │
+│ └──────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│ ┌──────────────────────────────────────────────────────────┐   │
+│ │ MESSAGING                                                │   │
+│ │  • WhatsApp Business API                                │   │
+│ │  • Webhook: /api/whatsapp/webhook                       │   │
+│ │  • SendGrid (email)                                     │   │
+│ │  • Nodemailer (fallback)                                │   │
+│ └──────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│ ┌──────────────────────────────────────────────────────────┐   │
+│ │ AI/INTELLIGENCE                                          │   │
+│ │  • OpenAI GPT API                                       │   │
+│ │  • Lead qualification scoring                          │   │
+│ │  • Intelligent response generation                     │   │
+│ │  • Objection handling                                  │   │
+│ └──────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│ ┌──────────────────────────────────────────────────────────┐   │
+│ │ MARKETING & ANALYTICS                                    │   │
+│ │  • Google Ads API                                       │   │
+│ │  • Google Analytics 4                                   │   │
+│ │  • Campaign integration                                 │   │
+│ └──────────────────────────────────────────────────────────┘   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+
+===================================================================================
+                        SECURITY & AUTHENTICATION
+===================================================================================
+
+┌─────────────────────────────────────────────────────────────────┐
+│                      SECURITY LAYERS                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. AUTHENTICATION                                             │
+│     └─ JWT (JSON Web Tokens)                                  │
+│        • Token in Authorization header or cookies             │
+│        • Roles: admin, secretary, doctor, patient            │
+│        • Secret key in .env (never in code)                   │
+│                                                                 │
+│  2. AUTHORIZATION                                              │
+│     └─ Role-based Access Control (RBAC)                       │
+│        • Middleware: middleware/auth.js                       │
+│        • authorize(roles) middleware                          │
+│                                                                 │
+│  3. HTTP SECURITY                                              │
+│     └─ Helmet.js                                              │
+│        • Security headers (CSP, HSTS, X-Frame, etc.)         │
+│        • Configurable per endpoint                           │
+│                                                                 │
+│  4. CORS PROTECTION                                            │
+│     └─ Allowed Origins:                                        │
+│        • https://app.clinicafonoinova.com.br                 │
+│        • https://fono-inova-crm-front.vercel.app             │
+│        • http://localhost:5000 (dev)                          │
+│        • http://localhost:5173 (dev)                          │
+│                                                                 │
+│  5. PASSWORD HASHING                                           │
+│     └─ BCrypt with salt rounds                                │
+│                                                                 │
+│  6. RATE LIMITING                                              │
+│     └─ express-rate-limit middleware                          │
+│        • Prevents brute force attacks                         │
+│                                                                 │
+│  7. DATA VALIDATION                                            │
+│     └─ Mongoose schema validation (partial)                   │
+│        • Should add Joi/Zod for routes                        │
+│                                                                 │
+│  8. SSL/TLS CERTIFICATES                                       │
+│     └─ Available in /certs for PIX integration                │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+
+===================================================================================
+                      DATA FLOW EXAMPLES
+===================================================================================
+
+┌─────────────────────────────────────────────────────────────────┐
+│ APPOINTMENT CREATION                                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. Client POST /api/appointments                              │
+│     {patient, doctor, date, time, specialty}                  │
+│                                                                 │
+│  2. Middleware: JWT verification, CORS, Helmet                │
+│                                                                 │
+│  3. Routes/appointment.js: appointmentController.create()      │
+│                                                                 │
+│  4. Controller → Service layer                                 │
+│     • Check for appointment conflicts                          │
+│     • Validate patient exists                                  │
+│     • Validate doctor availability                             │
+│                                                                 │
+│  5. Database: Appointment.create()                             │
+│     • Pre-save hooks run                                       │
+│     • Document saved to MongoDB                                │
+│     • Post-save hooks run                                      │
+│                                                                 │
+│  6. Event Synchronization                                      │
+│     • syncService.js writes to MedicalEvent collection        │
+│                                                                 │
+│  7. Socket.IO Emit                                             │
+│     • Broadcast to connected clients                           │
+│                                                                 │
+│  8. Response: 201 Created                                      │
+│     {success: true, data: appointment, timestamp}             │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ PAYMENT DISTRIBUTION                                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. Client POST /api/payments                                  │
+│     {patient, doctor, amount, kind: 'package_receipt'}        │
+│                                                                 │
+│  2. Route: Payment.js post handler                             │
+│                                                                 │
+│  3. Service: paymentService.distributePayment()               │
+│     • Calculate session amounts                                │
+│     • Create multiple payment records                          │
+│     ⚠️ WARNING: No transactions - potential data loss!        │
+│                                                                 │
+│  4. Database Operations:                                        │
+│     a) Update Payment status                                   │
+│     b) Update Session payments                                 │
+│     c) Update Package totals                                   │
+│     d) Update Appointment payment status                       │
+│                                                                 │
+│  5. Response sent                                              │
+│     ⚠️ ISSUE: If step (c) fails, (a)-(b) already committed   │
+│                                                                 │
+│  6. RECOMMENDATION: Implement MongoDB transactions!            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ BACKGROUND FOLLOWUP JOB                                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  1. Scheduled Task (node-cron)                                 │
+│     • followup.cron.js checks for due followups               │
+│                                                                 │
+│  2. Add to Queue                                               │
+│     • BullMQ adds job to followupQueue (Redis)                │
+│                                                                 │
+│  3. Persist to Redis                                           │
+│     • Queue events stored in Redis                             │
+│                                                                 │
+│  4. Worker Processing                                          │
+│     • followup.worker.js receives job                          │
+│     • Calls aiAmandaService for response                       │
+│     • Sends WhatsApp message via whatsappService             │
+│                                                                 │
+│  5. Update Database                                            │
+│     • Mark followup as sent                                    │
+│     • Update response status                                   │
+│                                                                 │
+│  6. Event Emission                                             │
+│     • Socket.IO broadcasts update                              │
+│     • Dashboard shows job completion                           │
+│                                                                 │
+│  7. Dashboard Visibility                                        │
+│     • Bull Board shows at /admin/queues                        │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+
+===================================================================================
+                          STATISTICS & METRICS
+===================================================================================
+
+Code Organization:
+  • Total JavaScript files: 174
+  • Total lines of code: ~22,494
+  • Average file size: ~129 LOC
+  • Largest file: Payment.js (2,107 LOC) - NEEDS REFACTORING
+  • Second largest: appointment.js (1,397 LOC) - NEEDS REFACTORING
+
+Component Breakdown:
+  • Route files: 23
+  • Controller files: 10
+  • Service files: 24
+  • Model files: 29
+  • Middleware files: 13
+  • Config files: 6
+  • Worker/Cron files: 4
+
+Quality Metrics:
+  • Test coverage: 0% (NO TESTS FOUND)
+  • API documentation: None (No Swagger/OpenAPI)
+  • Type safety: None (Pure JavaScript, no TypeScript)
+  • Input validation: Partial (No Joi/Zod validation)
+  • Database transactions: None (Critical for payments!)
+  • Structured logging: Minimal (Console.log only)
+
+===================================================================================
