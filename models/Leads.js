@@ -1,4 +1,4 @@
-// models/Leads.js - VERSÃO ATUALIZADA
+// models/Leads.js - VERSÃO FINAL AMANDA 2.0
 import mongoose from 'mongoose';
 
 const interactionSchema = new mongoose.Schema({
@@ -22,7 +22,6 @@ const leadSchema = new mongoose.Schema({
     default: 'Outro'
   },
 
-  // ✅ CAMPOS NOVOS DA PLANILHA (sem quebrar estrutura existente)
   appointment: {
     seekingFor: {
       type: String,
@@ -41,7 +40,6 @@ const leadSchema = new mongoose.Schema({
     }
   },
 
-  // ✅ STATUS EXPANDIDO (mantendo compatibilidade)
   status: {
     type: String,
     enum: [
@@ -49,7 +47,6 @@ const leadSchema = new mongoose.Schema({
       'atendimento',
       'convertido',
       'perdido',
-      // Novos status da planilha
       'em_andamento',
       'lista_espera',
       'pendencia_documentacao',
@@ -67,36 +64,53 @@ const leadSchema = new mongoose.Schema({
   lastInteractionAt: { type: Date, default: Date.now },
   notes: String,
 
-  // ✅ NOVOS CAMPOS PARA MÉTRICAS
+  // ✅ CAMPOS AMANDA 2.0
   circuit: { type: String, default: 'Circuito Padrão' },
   scheduledDate: { type: Date },
   convertedToPatient: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient' },
-  conversionScore: { type: Number, default: 0 },
+  conversionScore: { type: Number, default: 0, index: true },
   qualificationData: {
-    extractedInfo: {},
+    extractedInfo: { type: mongoose.Schema.Types.Mixed, default: {} },
     intent: String,
     sentiment: String,
     urgencyLevel: Number
   },
- // scoreHistory: [{ score, reason, date }],
+  scoreHistory: [{
+    score: Number,
+    reason: String,
+    date: { type: Date, default: Date.now }
+  }],
   lastScoreUpdate: Date,
-  
+
+  // ✅ TRACKING DE RESPOSTA
+  responded: { type: Boolean, default: false },
+  respondedAt: Date,
+
 }, { timestamps: true });
 
-// Índices úteis
+// ✅ ÍNDICES OTIMIZADOS
 leadSchema.index({ status: 1, createdAt: -1 });
 leadSchema.index({ origin: 1, createdAt: -1 });
 leadSchema.index({ createdAt: -1 });
-// Se quiser evitar duplicados de celular:
-// leadSchema.index({ 'contact.phone': 1 }, { unique: true, sparse: true });
+leadSchema.index({ conversionScore: -1 });
+leadSchema.index({ 'contact.phone': 1 });
 
 // Normalização de telefone
+function normalizeE164(phone) {
+  if (!phone) return phone;
+  let digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('0')) digits = digits.substring(1);
+  if (digits.length === 11 && !digits.startsWith('55')) return `+55${digits}`;
+  if (digits.length === 13 && digits.startsWith('55')) return `+${digits}`;
+  return phone;
+}
+
 leadSchema.pre('save', function (next) {
   if (this.contact?.phone) this.contact.phone = normalizeE164(this.contact.phone);
   next();
 });
 
-// Middleware para atualizar última interação
+// Atualizar última interação
 leadSchema.pre('save', function (next) {
   if (this.interactions && this.interactions.length > 0) {
     this.lastInteractionAt = this.interactions[this.interactions.length - 1].date;

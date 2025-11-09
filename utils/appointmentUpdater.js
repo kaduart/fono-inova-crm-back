@@ -11,23 +11,22 @@ export async function updateAppointmentFromSession(sessionDoc, mongoSession = nu
   const appointment = await Appointment.findOne({ session: sessionDoc._id }).session(mongoSession);
   if (!appointment) return null;
 
-  const op = mapStatusToOperational(sessionDoc.status); // -> nunca "completed" ou "paid"
+  const op = mapStatusToOperational(sessionDoc.status); // nunca "completed" ou "paid"
   const cl = mapStatusToClinical(sessionDoc.status);
 
   const pay =
     (sessionDoc.paymentStatus && String(sessionDoc.paymentStatus).toLowerCase()) ||
     (sessionDoc.isPaid ? "paid" : "pending");
 
-  // atualize sem validar para não cair em qualquer validator bugado
   await Appointment.updateOne(
     { _id: appointment._id },
     {
       $set: {
-        paymentStatus: pay,           // "paid"|"partial"|"advanced"|...
-        operationalStatus: op,        // "confirmed"/"scheduled"/"canceled"/"missed"
-        clinicalStatus: cl,           // "completed" permitido só no clínico
-        sessionValue: sessionDoc.sessionValue ?? appointment.sessionValue
-      }
+        paymentStatus: pay,
+        operationalStatus: op,
+        clinicalStatus: cl,
+        sessionValue: sessionDoc.sessionValue ?? appointment.sessionValue,
+      },
     },
     { session: mongoSession, runValidators: false, strict: true }
   );
@@ -35,91 +34,116 @@ export async function updateAppointmentFromSession(sessionDoc, mongoSession = nu
   return await Appointment.findById(appointment._id).session(mongoSession);
 }
 
-
 /**
  * 🔹 Atualiza os campos lastAppointment e nextAppointment do paciente.
+ * Regras:
+ *  - PASSADO: (date < hoje) OR (date == hoje AND time < agora)
+ *  - FUTURO/HOJE: (date > hoje) OR (date == hoje AND time >= agora)
+ * Ordenação:
+ *  - lastAppointment: passado mais recente (desc)
+ *  - nextAppointment: hoje/futuro mais próximo (asc)
+ * Observação: comparação por STRING evita bugs de fuso/offset.
  */
 export async function updatePatientAppointments(patientId) {
   try {
-    const now = new Date(); // agora real
+    const tz = "America/Sao_Paulo";
 
-    const tz = "America/Sao_Paulo"; // seu fuso
+    const agg = await Appointment.aggregate([
+      { $match: { patient: patientId, operationalStatus: { $ne: "canceled" } } },
 
-    const result = await Appointment.aggregate([
-      { $match: { patient: patientId } },
-
-      // Cria um datetime a partir de date (YYYY-MM-DD) + time (HH:mm)
+      // Normaliza chaves de comparação como strings
       {
         $addFields: {
-          combinedDateTimeStr: {
-            $concat: [
-              { $ifNull: ['$date', '1970-01-01'] }, 'T',
-              { $ifNull: ['$time', '00:00'] }, ':00'
-            ]
-          }
-        }
+          _dateStr: { $ifNull: ["$date", ""] },     // "YYYY-MM-DD"
+          _timeStr: { $ifNull: ["$time", "00:00"] }, // "HH:mm"
+        },
       },
+
+      // "agora" no fuso correto, como strings
       {
         $addFields: {
-          combinedDateTime: {
-            $dateFromString: {
-              dateString: '$combinedDateTimeStr',
-              timezone: tz
-            }
-          }
-        }
+          _todayStr: {
+            $dateToString: { format: "%Y-%m-%d", date: "$$NOW", timezone: tz },
+          },
+          _nowTimeStr: {
+            $dateToString: { format: "%H:%M", date: "$$NOW", timezone: tz },
+          },
+        },
       },
 
-      // Ordena pelo datetime real
-      { $sort: { combinedDateTime: 1 } },
+      // Chave de ordenação e flags de passado/futuro por comparação de strings
+      {
+        $addFields: {
+          _sortKey: { $concat: ["$_dateStr", "T", { $ifNull: ["$_timeStr", "00:00"] }] },
 
-      // Separa passado/futuro comparando Date real com `now`
+          _isFutureOrToday: {
+            $or: [
+              { $gt: ["$_dateStr", "$_todayStr"] },
+              {
+                $and: [
+                  { $eq: ["$_dateStr", "$_todayStr"] },
+                  { $gte: ["$_timeStr", "$_nowTimeStr"] },
+                ],
+              },
+            ],
+          },
+        },
+      },
+
+      // Ordena cronologicamente (asc)
+      { $sort: { _sortKey: 1, _id: 1 } },
+
+      // Separa em passado/futuro preservando ordenação
       {
         $group: {
           _id: null,
           past: {
             $push: {
-              $cond: [{ $lt: ['$combinedDateTime', now] }, '$$ROOT', null]
-            }
+              $cond: [{ $not: ["$_isFutureOrToday"] }, "$$ROOT", "$$REMOVE"],
+            },
           },
           future: {
             $push: {
-              $cond: [{ $gte: ['$combinedDateTime', now] }, '$$ROOT', null]
-            }
-          }
-        }
+              $cond: ["$_isFutureOrToday", "$$ROOT", "$$REMOVE"],
+            },
+          },
+        },
       },
+
+      // Pega o último dos passados (mais recente) e o primeiro dos futuros (mais próximo)
       {
         $project: {
           lastAppointment: {
-            $let: {
-              vars: { pastNonNull: { $filter: { input: '$past', as: 'p', cond: { $ne: ['$$p', null] } } } },
-              in: { $arrayElemAt: ['$$pastNonNull', -1] }
-            }
+            $cond: [
+              { $gt: [{ $size: "$past" }, 0] },
+              { $arrayElemAt: ["$past", -1] },
+              null,
+            ],
           },
           nextAppointment: {
-            $let: {
-              vars: { futureNonNull: { $filter: { input: '$future', as: 'f', cond: { $ne: ['$$f', null] } } } },
-              in: { $arrayElemAt: ['$$futureNonNull', 0] }
-            }
-          }
-        }
-      }
+            $cond: [
+              { $gt: [{ $size: "$future" }, 0] },
+              { $arrayElemAt: ["$future", 0] },
+              null,
+            ],
+          },
+        },
+      },
     ]);
 
-    const updateData = {};
-    if (result.length > 0) {
-      if (result[0].lastAppointment?._id) {
-        updateData.lastAppointment = result[0].lastAppointment._id;
-      }
-      if (result[0].nextAppointment?._id) {
-        updateData.nextAppointment = result[0].nextAppointment._id;
-      }
-    }
+    const doc = agg[0] || {};
+    const updateData = {
+      // se não existir, seta null para limpar resíduos antigos
+      lastAppointment: doc.lastAppointment ? doc.lastAppointment._id : null,
+      nextAppointment: doc.nextAppointment ? doc.nextAppointment._id : null,
+    };
 
-    await Patient.findByIdAndUpdate(patientId, updateData);
+    await Patient.findByIdAndUpdate(
+      patientId,
+      { $set: updateData },
+      { new: false, runValidators: false }
+    );
   } catch (error) {
     console.error(`Erro ao atualizar agendamentos do paciente ${patientId}:`, error);
   }
 }
-

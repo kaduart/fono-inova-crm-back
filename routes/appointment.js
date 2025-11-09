@@ -116,11 +116,7 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
             } finally {
                 mongoSession.endSession();
             }
-        }
-
-        // 🔹 Caso 3: Sessão individual ou avaliação - CORRIGIDO
-        // 🔹 Caso 3: Sessão individual ou avaliação - CORRETO
-        if (serviceType === 'individual_session' || serviceType === 'evaluation') {
+        } else {
             // 🔹 PRIMEIRO cria a sessão
             const newSession = await Session.create({
                 serviceType,
@@ -178,6 +174,13 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
             });
 
             createdAppointmentId = appointment._id;
+
+            // após criar o appointment:
+            await Patient.findByIdAndUpdate(
+                patientId,
+                { $addToSet: { appointments: createdAppointmentId } },
+                { new: false }
+            );
 
             // 🔹 ATUALIZA O PAGAMENTO COM O ID DO AGENDAMENTO
             await Payment.findByIdAndUpdate(createdPaymentId, {
@@ -443,6 +446,25 @@ router.get('/', auth, async (req, res) => {
             error: 'Erro interno',
             details: error.message
         });
+    }
+});
+
+router.get('/with-appointments', async (req, res) => {
+    try {
+        const patients = await Patient.find(/* seu filtro */)
+            .select('-__v')
+            .populate({
+                path: 'appointments',
+                select:
+                    'date time doctor operationalStatus clinicalStatus paymentStatus serviceType session specialty payment',
+                match: { operationalStatus: { $ne: 'canceled' } },
+            })
+            .lean({ virtuals: false }); // 🔑 desliga virtuals
+
+        const enriched = attachLastAndNext(patients);
+        res.json({ success: true, data: enriched });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
     }
 });
 
@@ -907,9 +929,6 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
         });
     }
 });
-
-
-// Marca agendamento como concluído
 
 
 // routes/appointments.js (trecho)

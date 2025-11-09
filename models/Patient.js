@@ -28,12 +28,8 @@ const patientSchema = new mongoose.Schema({
   },
   phone: { type: String, trim: true },
   email: { type: String, trim: true, lowercase: true },
-  cpf: {
-    type: String, trim: true
-  },
-  rg: {
-    type: String, trim: true
-  },
+  cpf: { type: String, trim: true },
+  rg: { type: String, trim: true },
   mainComplaint: { type: String, trim: true },
   clinicalHistory: { type: String, trim: true },
   medications: { type: String, trim: true },
@@ -49,18 +45,8 @@ const patientSchema = new mongoose.Schema({
     phone: { type: String, trim: true },
     relationship: { type: String, trim: true },
   },
-  appointments: [
-    {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Appointment'
-    }
-  ],
-  packages: [
-    {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Package'
-    }
-  ],
+  appointments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' }],
+  packages: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Package' }],
   imageAuthorization: { type: Boolean, default: false },
 }, {
   toJSON: { virtuals: true },
@@ -68,14 +54,13 @@ const patientSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Campos virtuais para lastAppointment e nextAppointment
+// ---------- VIRTUALS (apenas ordenação simples) ----------
 patientSchema.virtual('lastAppointment', {
   ref: 'Appointment',
   localField: '_id',
   foreignField: 'patient',
   justOne: true,
-  match: { date: { $lt: new Date() } },
-  options: { sort: { date: -1 }, limit: 1 }
+  options: { sort: { date: -1, time: -1 } }
 });
 
 patientSchema.virtual('nextAppointment', {
@@ -83,46 +68,135 @@ patientSchema.virtual('nextAppointment', {
   localField: '_id',
   foreignField: 'patient',
   justOne: true,
-  match: { date: { $gte: new Date() } },
-  options: { sort: { date: 1 }, limit: 1 }
+  options: { sort: { date: 1, time: 1 } }
 });
 
-patientSchema.pre('save', function (next) {
-  const patient = this;
-
-  // Só atualiza se appointments foi modificado
-  if (!patient.isModified('appointments')) return next();
-
+// ---------- HELPERS LOCAIS (sem UTC bug) ----------
+function todayYMD() {
   const now = new Date();
-  let lastAppointment = null;
-  let nextAppointment = null;
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10); // "YYYY-MM-DD"
+}
+function nowHM() {
+  const parts = new Intl.DateTimeFormat('pt-BR', {
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo'
+  }).formatToParts(new Date());
+  const H = parts.find(p => p.type === 'hour')?.value ?? '00';
+  const M = parts.find(p => p.type === 'minute')?.value ?? '00';
+  return `${H}:${M}`;
+}
+function cmpAsc(a, b) { // data asc, hora asc
+  const da = (a.date || '').slice(0, 10), db = (b.date || '').slice(0, 10);
+  if (da !== db) return da < db ? -1 : 1;
+  const ta = a.time || '', tb = b.time || '';
+  if (ta === tb) return 0;
+  return ta < tb ? -1 : 1;
+}
+function cmpDesc(a, b) { return -cmpAsc(a, b); }
 
-  // Ordena appointments por data
-  const sortedAppointments = [...patient.appointments].sort((a, b) =>
-    new Date(a.date) - new Date(b.date)
-  );
-
-  // Encontra o último agendamento passado
-  for (let i = sortedAppointments.length - 1; i >= 0; i--) {
-    if (new Date(sortedAppointments[i].date) < now) {
-      lastAppointment = sortedAppointments[i];
-      break;
-    }
+// ---------- MÉTODO DE INSTÂNCIA ----------
+patientSchema.methods.calculateAppointments = async function () {
+  if (!this.populated('appointments')) {
+    await this.populate({
+      path: 'appointments',
+      populate: [
+        { path: 'doctor', select: 'fullName specialty' },
+        { path: 'payment', select: 'status amount paymentMethod' },
+        { path: 'package', select: 'sessionType totalSessions sessionsDone' }
+      ],
+      options: { sort: { date: 1, time: 1 } }
+    });
   }
 
-  // Encontra o próximo agendamento futuro
-  for (let i = 0; i < sortedAppointments.length; i++) {
-    if (new Date(sortedAppointments[i].date) >= now) {
-      nextAppointment = sortedAppointments[i];
-      break;
-    }
-  }
+  const today = todayYMD();
+  const hm = nowHM();
 
-  patient.lastAppointment = lastAppointment;
-  patient.nextAppointment = nextAppointment;
-  next();
-});
+  const appointments = this.appointments || [];
+  const valid = appointments.filter(apt => apt?.operationalStatus !== 'canceled');
+
+  const past = valid
+    .filter(apt => {
+      const d = (apt.date || '').slice(0, 10);
+      if (!d) return false;
+      if (d < today) return true;
+      if (d > today) return false;
+      return (apt.time || '') < hm;
+    })
+    .sort(cmpDesc);
+
+  const future = valid
+    .filter(apt => {
+      const d = (apt.date || '').slice(0, 10);
+      if (!d) return false;
+      if (d > today) return true;
+      if (d < today) return false;
+      return (apt.time || '') >= hm;
+    })
+    .sort(cmpAsc);
+
+  return {
+    lastAppointment: past[0] || null,
+    nextAppointment: future[0] || null
+  };
+};
+
+// ---------- MÉTODO ESTÁTICO ----------
+patientSchema.statics.findWithAppointments = async function (query = {}) {
+  let patients = await this.find(query)
+    .populate('doctor', 'fullName specialty')
+    .populate({
+      path: 'appointments',
+      populate: [
+        { path: 'doctor', select: 'fullName specialty' },
+        { path: 'payment', select: 'status amount paymentMethod' },
+        { path: 'package', select: 'sessionType totalSessions sessionsDone' }
+      ],
+      options: { sort: { date: 1, time: 1 } }
+    })
+    .populate({
+      path: 'packages',
+      populate: [
+        { path: 'doctor', select: 'fullName specialty' },
+        { path: 'sessions', select: 'date status' }
+      ]
+    })
+    .lean();
+
+  const today = todayYMD();
+  const hm = nowHM();
+
+  patients = patients.map(p => {
+    const valid = (p.appointments || []).filter(a => a?.operationalStatus !== 'canceled');
+
+    const past = valid
+      .filter(a => {
+        const d = (a.date || '').slice(0, 10);
+        if (!d) return false;
+        if (d < today) return true;
+        if (d > today) return false;
+        return (a.time || '') < hm;
+      })
+      .sort(cmpDesc);
+
+    const future = valid
+      .filter(a => {
+        const d = (a.date || '').slice(0, 10);
+        if (!d) return false;
+        if (d > today) return true;
+        if (d < today) return false;
+        return (a.time || '') >= hm;
+      })
+      .sort(cmpAsc);
+
+    return {
+      ...p,
+      lastAppointment: past[0] || null,
+      nextAppointment: future[0] || null
+    };
+  });
+
+  return patients;
+};
 
 const Patient = mongoose.model('Patient', patientSchema, 'patients');
-
 export default Patient;
