@@ -374,7 +374,7 @@ export const THERAPY_EQUIVALENCIES = {
 export const TYPEO_CORRECTIONS = {
     // Correções comuns de digitação
     "fonoafdionoliga": "fonoaudiologia",
-    "fonoafdionoli": "fonoaudiologia", 
+    "fonoafdionoli": "fonoaudiologia",
     "fonoafdionol": "fonoaudiologia",
     "fonoafdiono": "fonoaudiologia",
     "fonoafdion": "fonoaudiologia",
@@ -384,38 +384,38 @@ export const TYPEO_CORRECTIONS = {
     "fonoaf": "fonoaudiologia",
     "fonoa": "fonoaudiologia",
     "fona": "fonoaudiologia",
-    
+
     "psicologjia": "psicologia",
     "psicolofia": "psicologia",
     "psicologa": "psicologia",
     "psicologo": "psicologia",
-    
+
     "terapia ocupa": "terapia ocupacional",
     "terapia ocp": "terapia ocupacional",
-    
+
     "musicoterapeuta": "musicoterapia",
-    
+
     // Abreviações comuns
     "fono": "fonoaudiologia",
-    "psico": "psicologia", 
+    "psico": "psicologia",
     "to": "terapia ocupacional",
     "fisio": "fisioterapia",
 
     // 🆕 Correções para Fisioterapia
     "fisioterapia": "fisioterapia",
     "fisioterapia": "fisioterapia",
-    "fisioterapia": "fisioterapia", 
+    "fisioterapia": "fisioterapia",
     "fisioterapya": "fisioterapia",
     "fisioterapya": "fisioterapia",
     "fisioterapya": "fisioterapia",
-    
+
     // 🆕 Correções para Teste da Linguinha
     "lingunha": "linguinha",
     "lingünha": "linguinha",
     "linguina": "linguinha",
     "lingüinha": "linguinha",
     "teste lingunha": "teste da linguinha",
-    "teste lingünha": "teste da linguinha", 
+    "teste lingünha": "teste da linguinha",
     "teste linguina": "teste da linguinha",
     "teste lingüinha": "teste da linguinha",
     "frenulo": "frênulo",
@@ -424,76 +424,121 @@ export const TYPEO_CORRECTIONS = {
 };
 
 
-// backend/utils/therapyDetector.js - ADICIONE ESTA FUNÇÃO
+// utils/therapyDetector.js - CORREÇÃO COMPLETA
 
 /**
  * Gera resposta para uma única terapia detectada
+ * ✅ CORRIGIDO: Agora usa therapy.name corretamente
  */
-export function generateSingleTherapyResponse(therapy, userText, flags) {
-  const { asksPrice, wantsSchedule, asksHours } = flags;
-  
-  const therapyNames = {
-    speech: "fonoaudiologia",
-    psychology: "psicologia",
-    occupational: "terapia ocupacional",
-    physiotherapy: "fisioterapia",
-    music: "musicoterapia",
-    neuropsychopedagogy: "neuropsicopedagogia",
-    psychopedagogy: "psicopedagogia"
-  };
+export function generateSingleTherapyResponse(therapy, userText, flags = {}) {
+    const { asksPrice, wantsSchedule, asksHours } = flags;
 
-  const name = therapyNames[therapy] || therapy;
+    // ✅ CRÍTICO: Extrair nome corretamente
+    const therapyName = typeof therapy === 'object' ? therapy.name : therapy;
 
-  // Se pergunta preço
-  if (asksPrice) {
-    return `A avaliação de ${name} é R$ 220,00. Primeiro fazemos uma avaliação para entender a necessidade e montar o plano 💚`;
-  }
+    // Mapeamento de nomes amigáveis
+    const therapyInfo = {
+        'Neuropsicologia': {
+            pitch: 'A avaliação neuropsicológica investiga atenção, memória, linguagem e raciocínio para orientar condutas.',
+            price: 'R$ 2.500 em 6x no cartão ou R$ 2.300 à vista',
+            duration: '10 sessões de 50min'
+        },
+        'Fonoaudiologia': {
+            pitch: 'Na fono, começamos com avaliação para entender fala/linguagem e montar o plano de cuidado.',
+            price: 'R$ 220',
+            duration: 'Avaliação: 1 hora'
+        },
+        'Psicologia': {
+            pitch: 'Na psicologia, iniciamos com avaliação para entender a demanda emocional/comportamental.',
+            price: 'R$ 220',
+            duration: 'Avaliação: 1 hora'
+        },
+        'Terapia Ocupacional': {
+            pitch: 'Na TO, avaliamos funcionalidade e integração sensorial para definir o plano.',
+            price: 'R$ 220',
+            duration: 'Avaliação: 1 hora'
+        },
+        'Fisioterapia': {
+            pitch: 'Na fisio, avaliamos a queixa motora/neurológica/respiratória.',
+            price: 'R$ 220',
+            duration: 'Avaliação: 1 hora'
+        },
+        'Musicoterapia': {
+            pitch: 'Na musicoterapia, avaliamos objetivos de comunicação/atenção/regulação.',
+            price: 'R$ 220',
+            duration: 'Avaliação: 1 hora'
+        },
+        'Neuropsicopedagogia': {
+            pitch: 'Na neuropsicopedagogia, avaliamos aprendizagem para alinhar estratégias.',
+            price: 'R$ 220',
+            duration: 'Avaliação: 1 hora'
+        },
+        'Psicopedagogia': {
+            pitch: 'Na psicopedagogia, avaliamos dificuldades de aprendizagem e criamos estratégias personalizadas.',
+            price: 'Anamnese R$ 200 | Pacote mensal R$ 160/sessão',
+            duration: 'Avaliação: 1 hora'
+        }
+    };
 
-  // Se quer agendar
-  if (wantsSchedule) {
-    return `Perfeito! Temos horários disponíveis para ${name}. Qual período funciona melhor: manhã ou tarde? 💚`;
-  }
+    const info = therapyInfo[therapyName] || {
+        pitch: 'Fazemos avaliação completa para entender a necessidade.',
+        price: 'R$ 220',
+        duration: 'Avaliação: 1 hora'
+    };
 
-  // Se pergunta horários
-  if (asksHours) {
-    return `Nosso atendimento de ${name} é de segunda a sexta, das 8h às 18h. Posso te ajudar a agendar? 💚`;
-  }
+    // 🎯 ESTRATÉGIA: VALOR → PREÇO (nunca preço direto!)
 
-  // Resposta padrão
-  return `Temos especialistas em ${name}! A avaliação inicial é R$ 220,00. Posso te explicar como funciona? 💚`;
+    // Se pergunta preço
+    if (asksPrice) {
+        return `${info.pitch} O valor é ${info.price}. É para criança ou adulto?`;
+    }
+
+    // Se quer agendar
+    if (wantsSchedule) {
+        return `Perfeito! Temos ${therapyName} disponível. ${info.pitch} Qual período funciona melhor: manhã ou tarde?`;
+    }
+
+    // Se pergunta horários
+    if (asksHours) {
+        return `Nosso atendimento de ${therapyName} é de segunda a sexta, das 8h às 18h. ${info.pitch} Posso te ajudar a agendar?`;
+    }
+
+    // Resposta padrão: SEMPRE valor antes do preço
+    return `Fazemos sim! ${info.pitch} O valor é ${info.price}. Posso te explicar como funciona?`;
 }
 
 /**
  * Gera resposta para múltiplas terapias
+ * ✅ CORRIGIDO: Trata objetos corretamente
  */
-export function generateMultiTherapyResponse(therapies, userText, flags) {
-  // Se for apenas 1 terapia, usa a função específica
-  if (therapies.length === 1) {
-    return generateSingleTherapyResponse(therapies[0], userText, flags);
-  }
+export function generateMultiTherapyResponse(therapies, userText, flags = {}) {
+    // Se for apenas 1 terapia, usa a função específica
+    if (therapies.length === 1) {
+        return generateSingleTherapyResponse(therapies[0], userText, flags);
+    }
 
-  // Se múltiplas terapias
-  const { asksPrice, wantsSchedule } = flags;
-  
-  const therapyNames = {
-    speech: "fonoaudiologia",
-    psychology: "psicologia",
-    occupational: "terapia ocupacional",
-    physiotherapy: "fisioterapia",
-    music: "musicoterapia",
-    neuropsychopedagogy: "neuropsicopedagogia",
-    psychopedagogy: "psicopedagogia"
-  };
+    // Se múltiplas terapias
+    const { asksPrice, wantsSchedule } = flags;
 
-  const names = therapies.map(t => therapyNames[t] || t).join(', ');
+    // ✅ CRÍTICO: Extrair nomes corretamente dos objetos
+    const names = therapies
+        .map(t => typeof t === 'object' ? t.name : t)
+        .join(', ')
+        .replace(/,(?=[^,]*$)/, ' e'); // Último item com "e"
 
-  if (asksPrice) {
-    return `Temos especialistas em ${names}! A avaliação inicial é R$ 220,00 para cada especialidade. Qual você gostaria de saber mais? 💚`;
-  }
+    if (asksPrice) {
+        return `Temos especialistas em ${names}! A avaliação inicial é R$ 220 para cada especialidade. Qual você gostaria de saber mais?`;
+    }
 
-  if (wantsSchedule) {
-    return `Perfeito! Temos horários para ${names}. Qual especialidade te interessa mais? 💚`;
-  }
+    if (wantsSchedule) {
+        return `Perfeito! Temos horários para ${names}. Qual especialidade te interessa mais?`;
+    }
 
-  return `Atendemos em ${names}! Qual especialidade você procura? 💚`;
+    return `Atendemos em ${names}! Qual especialidade você procura?`;
 }
+
+// ✅ GARANTIR EXPORTS
+export {
+    detectAllTherapies,
+    detectTherapies, generateEquivalenceResponse, generateMultiTherapyResponse, generateSingleTherapyResponse, isAskingAboutEquivalence, normalizeTherapyTerms
+};
