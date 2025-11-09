@@ -550,7 +550,8 @@ async function handleAutoReply(from, to, content, lead) {
         const isFirstContact = lastMessages.length <= 1 || greetings.test(content.trim());
 
         // ✅ Gera resposta da Amanda
-        const aiText = await generateAmandaReply({
+        const aiText = await getOptimizedAmandaResponse({
+            content,
             userText: content,
             lead: {
                 name: leadDoc?.name || "",

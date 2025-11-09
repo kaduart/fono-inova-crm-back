@@ -5,3 +5,8 @@ export const PRICES = {
     neuropsicologica: 'R$ 2.400,00 (10 sessões)',
     testeLinguinha: 'R$ 150,00',
 };
+
+export const FEATURES = { campanhaAvulsa200: true }; // toggle rápido
+export function getSessaoAvulsa() {
+    return FEATURES.campanhaAvulsa200 ? PRICES.sessaoAvulsaCampanha : PRICES.sessaoAvulsaDefault;
+}
