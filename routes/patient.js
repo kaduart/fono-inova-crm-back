@@ -150,10 +150,8 @@ router.post('/add', auth, async (req, res) => {
 
 // Obter paciente por ID
 router.get('/:id', validateId, auth, async (req, res) => {
-  console.log(`Buscando paciente com ID: ${req.params.id}`);
   try {
     const patient = await Patient.findById(req.params.id);
-    console.log('Paciente encontrado:', patient);
     if (!patient) return res.status(404).json({ error: 'Paciente não encontrado' });
     res.json(patient);
   } catch (err) {

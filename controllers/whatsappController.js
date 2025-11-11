@@ -11,6 +11,7 @@ import { generateAmandaReply } from "../services/aiAmandaService.js";
 import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 import { normalizeE164BR, tailPattern } from "../utils/phone.js";
+import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
 
 export const whatsappController = {
 
