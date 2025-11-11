@@ -190,4 +190,3 @@ function inferTopic(text = "") {
 }
 
 export { inferTopic };
-

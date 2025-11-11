@@ -1,4 +1,4 @@
-// utils/amandaOrchestrator.js - VERSÃO CORRIGIDA E COMPLETA
+// utils/amandaOrchestrator.js - VERSÃO COMPLETA COM CONTEXTO INTELIGENTE
 
 import OpenAI from "openai";
 import { getManual } from './amandaIntents.js';
@@ -9,6 +9,8 @@ import {
     isAskingAboutEquivalence,
     generateEquivalenceResponse
 } from './therapyDetector.js';
+import enrichLeadContext from '../services/leadContext.js';
+import { getPromptByStage, getUrgencyTrigger } from './stagePrompts.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
