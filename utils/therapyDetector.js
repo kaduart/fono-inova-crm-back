@@ -1,14 +1,17 @@
-// utils/therapyDetector.js - VERSÃO COMPLETA COM TUDO!
+// utils/therapyDetector.js - VERSÃO CORRIGIDA COM PADRÕES AJUSTADOS
 
 export const THERAPY_SPECIALTIES = {
+    // ✅ NEUROPSICOLÓGICA PRIMEIRO (prioridade maior)
     neuropsychological: {
         names: ['neuropsicológica', 'neuropsicologia', 'avaliação cognitiva'],
         patterns: [
-            /neuropsic(o|ó)log(a|ia|ica)/i,
-            /avalia(ç|c)(a|ã)o\s+(completa|cognitiva|conhecimento)/i,
-            /laudo\s+psicol(ó|o)gico/i
+            /neuropsic(o|ó)log(a|ia|ica)/i,  // neuropsicológica, neuropsicologia
+            /neuropsi/i,  // captura "neuropsi" antes que psychology pegue
+            /avalia(ç|c)(a|ã)o\s+(completa|cognitiva|neuropsicol)/i,
+            /laudo\s+neuropsicol(ó|o)gico/i
         ]
     },
+
     speech: {
         names: ['fonoaudiologia', 'fono'],
         patterns: [
@@ -18,6 +21,7 @@ export const THERAPY_SPECIALTIES = {
             /atraso\s+(de\s+)?fala/i
         ]
     },
+
     tongue_tie: {
         names: ['teste da linguinha', 'frênulo lingual'],
         patterns: [
@@ -27,14 +31,18 @@ export const THERAPY_SPECIALTIES = {
             /amamentação|dificuldade.*mamar/i
         ]
     },
+
+    // ✅ PSYCHOLOGY POR ÚLTIMO (evita capturar "neuropsico")
     psychology: {
         names: ['psicologia', 'psicólogo'],
         patterns: [
-            /psic(o|ó)log(a|o|ia)(?!\s*pedag)/i,
+            /\bpsic(o|ó)log(a|o|ia)\b(?!\s*pedag)/i,  // psicologia MAS NÃO psicopedagogia
             /\btcc\b|ansiedade|depress(ã|a)o/i,
-            /psic(o|ó)log(o|a)\s+infantil/i
+            /psic(o|ó)log(o|a)\s+infantil/i,
+            /comportamento|emocional/i
         ]
     },
+
     occupational: {
         names: ['terapia ocupacional', 'TO'],
         patterns: [
@@ -43,6 +51,7 @@ export const THERAPY_SPECIALTIES = {
             /coordena(ç|c)(a|ã)o\s+motora/i
         ]
     },
+
     physiotherapy: {
         names: ['fisioterapia', 'fisio'],
         patterns: [
@@ -50,12 +59,14 @@ export const THERAPY_SPECIALTIES = {
             /\bavc\b|paralisia|desenvolvimento\s+motor/i
         ]
     },
+
     music: {
         names: ['musicoterapia'],
         patterns: [
             /musicoterapia|m(ú|u)sica\s+terap(ê|e)utica/i
         ]
     },
+
     neuropsychopedagogy: {
         names: ['neuropsicopedagogia'],
         patterns: [
@@ -63,6 +74,7 @@ export const THERAPY_SPECIALTIES = {
             /dislexia|discalculia/i
         ]
     },
+
     psychopedagogy: {
         names: ['psicopedagogia'],
         patterns: [
@@ -83,6 +95,7 @@ export function normalizeTherapyTerms(text = "") {
 
     normalized = normalized
         .replace(/neuropsic(o|ó)log(a|ia|ica)/gi, 'neuropsicologia')
+        .replace(/neuropsi/gi, 'neuropsicologia')  // ✅ ADICIONADO
         .replace(/fonoaudi(o|ó)log(a|o)/gi, 'fonoaudiologia')
         .replace(/psic(o|ó)log(a|o|ia)/gi, 'psicologia')
         .replace(/fr(e|ê)nulo/gi, 'frênulo');
@@ -92,19 +105,41 @@ export function normalizeTherapyTerms(text = "") {
 }
 
 /**
- * Detecta todas as terapias mencionadas no texto
+ * ✅ DETECTA TODAS AS TERAPIAS (ORDEM IMPORTA!)
  */
 export function detectAllTherapies(text = "") {
     const normalized = normalizeTherapyTerms(text);
     const detected = [];
 
-    for (const [id, spec] of Object.entries(THERAPY_SPECIALTIES)) {
+    // ✅ VERIFICA NA ORDEM: neuropsychological PRIMEIRO, psychology DEPOIS
+    const orderedSpecialties = [
+        'neuropsychological',
+        'speech',
+        'tongue_tie',
+        'occupational',
+        'physiotherapy',
+        'music',
+        'neuropsychopedagogy',
+        'psychopedagogy',
+        'psychology'  // POR ÚLTIMO!
+    ];
+
+    for (const id of orderedSpecialties) {
+        const spec = THERAPY_SPECIALTIES[id];
+        if (!spec) continue;
+
         const hasMatch = spec.patterns.some(pattern => {
             if (pattern.global) pattern.lastIndex = 0;
             return pattern.test(normalized);
         });
 
         if (hasMatch) {
+            // ✅ Evita duplicar se já detectou neuropsychological
+            if (id === 'psychology' && detected.some(d => d.id === 'neuropsychological')) {
+                console.log(`⏭️ [TERAPIAS] Ignorando 'psychology' pois já detectou 'neuropsychological'`);
+                continue;
+            }
+
             detected.push({
                 id,
                 name: spec.names[0],
@@ -120,12 +155,12 @@ export function detectAllTherapies(text = "") {
     return detected;
 }
 
-// ✅ INFORMAÇÕES COMPLETAS OTIMIZADAS: VALOR → PREÇO → ENGAJAMENTO
+// ✅ INFORMAÇÕES COMPLETAS OTIMIZADAS
 const THERAPY_RESPONSES = {
     neuropsychological: {
-        explanation: "Avaliação neuropsicológica completa - são 10 sessões que incluem avaliação, aplicação de testes e laudo detalhado",
-        price: "R$ 2.500,00 (valor único para todo o processo)",
-        details: "10 sessões de 50min + avaliação + laudo completo",
+        explanation: "A avaliação neuropsicológica completa investiga atenção, memória, linguagem e raciocínio",
+        price: "R$ 2.500,00 em até 6x no cartão ou R$ 2.300,00 à vista",
+        details: "São 10 sessões de 50min que incluem avaliação, aplicação de testes e laudo completo",
         engagement: "É para investigação de TDAH, TEA ou dificuldade escolar?",
         segments: {
             school: "Ideal para casos de dificuldade escolar ou suspeita de TDAH/TEA",
@@ -135,7 +170,7 @@ const THERAPY_RESPONSES = {
 
     speech: {
         explanation: "Avaliação especializada em desenvolvimento da fala e linguagem",
-        price: "R$ 220 a avaliação inicial",
+        price: "R$ 220,00 a avaliação inicial",
         details: "40min com fono experiente em infantil",
         engagement: "É para bebê ou criança maior?",
         segments: {
@@ -156,7 +191,7 @@ const THERAPY_RESPONSES = {
 
     psychology: {
         explanation: "Avaliação comportamental e emocional",
-        price: "R$ 220 a avaliação inicial",
+        price: "R$ 220,00 a avaliação inicial",
         details: "40min com psicóloga infantil",
         engagement: "É questão emocional ou comportamental?",
         segments: {
@@ -167,7 +202,7 @@ const THERAPY_RESPONSES = {
 
     occupational: {
         explanation: "Avaliação de funcionalidade e integração sensorial",
-        price: "R$ 220 a avaliação inicial",
+        price: "R$ 220,00 a avaliação inicial",
         details: "40min focada em atividades diárias",
         engagement: "A criança tem dificuldade com coordenação ou sensibilidade?",
         segments: {
@@ -178,28 +213,28 @@ const THERAPY_RESPONSES = {
 
     physiotherapy: {
         explanation: "Avaliação motora e neurológica",
-        price: "R$ 220 a avaliação inicial",
+        price: "R$ 220,00 a avaliação inicial",
         details: "40min com foco em desenvolvimento motor",
         engagement: "A criança tem atraso motor ou outra questão específica?"
     },
 
     music: {
         explanation: "Avaliação através da música para comunicação e regulação",
-        price: "R$ 220 a avaliação inicial",
+        price: "R$ 220,00 a avaliação inicial",
         details: "40min usando música como ferramenta terapêutica",
         engagement: "Qual o objetivo principal do atendimento?"
     },
 
     neuropsychopedagogy: {
         explanation: "Avaliação de aprendizagem e funções cognitivas",
-        price: "R$ 220 a avaliação inicial",
+        price: "R$ 220,00 a avaliação inicial",
         details: "Estratégias alinhadas com família e escola",
         engagement: "A criança já fez alguma avaliação pedagógica?"
     },
 
     psychopedagogy: {
         explanation: "Avaliação de dificuldades de aprendizagem",
-        price: "Anamnese R$ 200 | Pacote R$ 160/sessão",
+        price: "Anamnese R$ 200,00 | Pacote R$ 160,00/sessão",
         details: "Estratégias personalizadas com escola e família",
         engagement: "Quais as maiores dificuldades na escola?",
         segments: {
@@ -210,7 +245,7 @@ const THERAPY_RESPONSES = {
 };
 
 /**
- * 🎯 DETECTAR PERFIL DO LEAD PARA SEGMENTAÇÃO
+ * 🎯 DETECTAR PERFIL DO LEAD
  */
 function detectUserProfile(text) {
     const t = text.toLowerCase();
@@ -227,15 +262,9 @@ function detectUserProfile(text) {
     return "generic";
 }
 
-function fallbackResponse(therapyName) {
-    return `Temos ${therapyName}! Avaliação R$ 220. Posso te explicar como funciona?`;
-}
-
 /**
- * ✅ Gera resposta COMPLETA para UMA terapia
- * Aplica VALOR → PREÇO → DETALHES → ENGAJAMENTO
+ * ✅ Gera resposta para UMA terapia
  */
-// ✅ CORREÇÃO NA FUNÇÃO generateSingleTherapyResponse - TERAPIA DETECTOR
 export function generateSingleTherapyResponse(therapy, userText, flags = {}) {
     const info = THERAPY_RESPONSES[therapy.id];
 
@@ -248,9 +277,9 @@ export function generateSingleTherapyResponse(therapy, userText, flags = {}) {
     // 🎯 RESPOSTA ESPECÍFICA PARA NEUROPSICOLÓGICA
     if (therapy.id === 'neuropsychological') {
         if (asksPrice || wantsSchedule) {
-            return `Fazemos sim! ${info.explanation}. ${info.price} - já inclui avaliação, aplicação de testes e laudo completo. ${info.engagement} 💚`;
+            return `Fazemos sim! ${info.explanation}. ${info.details}. Valor: ${info.price}. ${info.engagement} 💚`;
         }
-        return `Fazemos sim! ${info.explanation}. ${info.price} ${info.engagement} 💚`;
+        return `Fazemos sim! ${info.explanation}. ${info.details}. Valor: ${info.price}. ${info.engagement} 💚`;
     }
 
     // 🎯 DETECTAR PERFIL DO LEAD
@@ -259,9 +288,7 @@ export function generateSingleTherapyResponse(therapy, userText, flags = {}) {
 
     console.log(`🎯 [TERAPIA] ${therapy.id} - Perfil: ${userProfile}, PerguntaPreço: ${asksPrice}`);
 
-    // 🎯 ESTRATÉGIA COMPLETA: VALOR → PREÇO → ENGAJAMENTO
-
-    // Se pergunta preço diretamente
+    // Se pergunta preço
     if (asksPrice) {
         return `Fazemos sim! ${info.explanation}. ${segmentInfo}Valor: ${info.price}. ${info.engagement} 💚`;
     }
@@ -276,36 +303,34 @@ export function generateSingleTherapyResponse(therapy, userText, flags = {}) {
         return `Atendemos seg-sex, 8h-18h. ${info.explanation}. ${info.engagement} 💚`;
     }
 
-    // ✅ RESPOSTA PADRÃO COMPLETA (VALOR → PREÇO → ENGAJAMENTO)
+    // ✅ RESPOSTA PADRÃO COMPLETA
     return `Fazemos sim! ${info.explanation}. ${segmentInfo}Valor: ${info.price}. ${info.engagement} 💚`;
 }
 
 /**
- * ✅✅✅ MANTIDO: Gera resposta para MÚLTIPLAS terapias
+ * ✅ Gera resposta para MÚLTIPLAS terapias
  */
 export function generateMultiTherapyResponse(therapies, userText, flags = {}) {
-    // Se for apenas 1 terapia, usa função específica
     if (therapies.length === 1) {
         return generateSingleTherapyResponse(therapies[0], userText, flags);
     }
 
-    // Múltiplas terapias detectadas
     const names = therapies.map(t => t.name).join(' e ');
     const { asksPrice, wantsSchedule } = flags;
 
     if (asksPrice) {
-        return `Temos especialistas em ${names}! Cada uma tem sua avaliação específica. Qual você gostaria de saber mais?`;
+        return `Temos especialistas em ${names}! Cada uma tem sua avaliação específica. Qual você gostaria de saber mais? 💚`;
     }
 
     if (wantsSchedule) {
-        return `Perfeito! Atendemos em ${names}. Qual especialidade te interessa mais para agendar?`;
+        return `Perfeito! Atendemos em ${names}. Qual especialidade te interessa mais para agendar? 💚`;
     }
 
-    return `Atendemos em ${names}! Qual especialidade você procura?`;
+    return `Atendemos em ${names}! Qual especialidade você procura? 💚`;
 }
 
 /**
- * ✅✅✅ MANTIDO: Verifica se pergunta sobre equivalência
+ * ✅ Verifica equivalência
  */
 export function isAskingAboutEquivalence(text = "") {
     const patterns = [
@@ -316,14 +341,14 @@ export function isAskingAboutEquivalence(text = "") {
 }
 
 /**
- * ✅✅✅ MANTIDO: Gera resposta sobre equivalência
+ * ✅ Resposta sobre equivalência
  */
 export function generateEquivalenceResponse(text) {
-    return "Cada avaliação tem seu propósito específico! Me conta mais sobre o que você precisa que te explico a diferença?";
+    return "Cada avaliação tem seu propósito específico! Me conta mais sobre o que você precisa que te explico a diferença? 💚";
 }
 
 /**
- * ✅✅✅ MANTIDO: Função principal de detecção (alias para compatibilidade)
+ * ✅ Alias para compatibilidade
  */
 export function detectTherapies(text = "") {
     return detectAllTherapies(text);
