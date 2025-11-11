@@ -76,6 +76,28 @@ const sessionSchema = new mongoose.Schema({
         enum: ['ok', 'pending', 'blocked'],
         default: 'pending',
         description: 'Indica o estado visual da sessão para exibição no calendário'
+    },
+    originalPartialAmount: {
+        type: Number,
+        description: 'Valor original pago antes do cancelamento'
+    },
+    originalPaymentStatus: {
+        type: String,
+        enum: ['paid', 'partial', 'pending'],
+        description: 'Status de pagamento original'
+    },
+    originalPaymentMethod: {
+        type: String,
+        enum: ['dinheiro', 'pix', 'cartão'],
+        description: 'Método de pagamento original'
+    },
+    originalIsPaid: {
+        type: Boolean,
+        description: 'Flag de pagamento original'
+    },
+    canceledAt: {
+        type: Date,
+        description: 'Data do cancelamento'
     }
 
 }, {
