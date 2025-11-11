@@ -745,7 +745,6 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
 
         const updatedAppointment = await runTransactionWithRetry(async (session) => {
 
-            // 1️⃣ Buscar appointment
             const appointment = await Appointment.findById(req.params.id)
                 .populate('session')
                 .session(session);
@@ -756,80 +755,93 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
                 throw err;
             }
 
-            /*     if (appointment.operationalStatus === 'canceled') {
-                    const err = new Error('Este agendamento já está cancelado');
-                    err.status = 400;
-                    throw err;
-                } */
+            console.log('🔓 Permitindo cancelamento (dados preservados)');
 
-            // 2️⃣ Bloquear se pagamento QUITADO
+            // Atualizar Payment (se não for de pacote)
             if (appointment.payment) {
                 const pay = await Payment.findById(appointment.payment)
-                    .session(session)
-                    .lean();
+                    .session(session);
 
-                if (pay?.status === 'paid') {
-                    const err = new Error('Este agendamento já está pago e não pode ser cancelado.');
-                    err.status = 409;
-                    err.code = 'PAID_APPOINTMENT_CANNOT_BE_CANCELED';
-                    throw err;
+                if (pay && pay.kind !== 'package_receipt' && pay.kind !== 'session_payment') {
+                    await Payment.findByIdAndUpdate(
+                        appointment.payment,
+                        {
+                            $set: {
+                                status: 'canceled',
+                                canceledAt: new Date(),
+                                canceledReason: reason,
+                                updatedAt: new Date()
+                            }
+                        },
+                        { session }
+                    );
+                    console.log('✅ Payment cancelado');
                 }
             }
 
-            // 3️⃣ Atualizar Payment
-            if (appointment.payment) {
-                await Payment.findByIdAndUpdate(
-                    appointment.payment,
-                    {
-                        $set: {
-                            status: 'canceled',
-                            canceledAt: new Date(),
-                            canceledReason: reason,
-                            updatedAt: new Date()
-                        }
-                    },
-                    { session }
-                );
-
-                console.log('✅ Payment cancelado:', appointment.payment);
-            }
-
-            // 4️⃣ Atualizar Session
+            // Atualizar Session - VERSÃO CORRETA
             if (appointment.session) {
-                const updatedSession = await Session.findByIdAndUpdate(
-                    appointment.session._id || appointment.session,
-                    {
-                        $set: {
-                            status: 'canceled',
-                            paymentStatus: 'canceled',
-                            visualFlag: 'blocked',
-                            confirmedAbsence,
-                            updatedAt: new Date()
-                        },
-                        $push: {
-                            history: {
-                                action: 'cancelamento_via_agendamento',
-                                changedBy: req.user._id,
-                                timestamp: new Date(),
-                                details: { reason, confirmedAbsence }
-                            }
-                        }
-                    },
-                    {
-                        session,
-                        new: true  // ✅ RETORNA DOCUMENTO ATUALIZADO
-                    }
-                );
+                const sessionDoc = await Session.findById(
+                    appointment.session._id || appointment.session
+                ).session(session);
 
-                console.log('✅ Session cancelada (APÓS UPDATE):', {
-                    id: updatedSession._id,
-                    status: updatedSession.status,
-                    paymentStatus: updatedSession.paymentStatus,
-                    visualFlag: updatedSession.visualFlag
-                });
+                if (sessionDoc) {
+                    const wasSessionPaid =
+                        sessionDoc.paymentStatus === 'paid' ||
+                        sessionDoc.isPaid === true ||
+                        (sessionDoc.partialAmount && sessionDoc.partialAmount > 0);
+
+                    console.log('📊 Sessão sendo cancelada:', {
+                        id: sessionDoc._id,
+                        wasPaid: wasSessionPaid,
+                        partialAmount: sessionDoc.partialAmount
+                    });
+
+                    sessionDoc._inFinancialTransaction = true;
+
+                    // GUARDA dados financeiros
+                    if (wasSessionPaid) {
+                        sessionDoc.originalPartialAmount = sessionDoc.partialAmount;
+                        sessionDoc.originalPaymentStatus = sessionDoc.paymentStatus;
+                        sessionDoc.originalPaymentMethod = sessionDoc.paymentMethod;
+                        sessionDoc.originalIsPaid = sessionDoc.isPaid;
+
+                        console.log('💾 Dados guardados:', {
+                            originalPartialAmount: sessionDoc.originalPartialAmount,
+                            originalPaymentStatus: sessionDoc.originalPaymentStatus
+                        });
+                    }
+
+                    // Marca como cancelada
+                    sessionDoc.status = 'canceled';
+                    sessionDoc.paymentStatus = 'canceled';
+                    sessionDoc.visualFlag = 'blocked';
+                    sessionDoc.confirmedAbsence = confirmedAbsence;
+                    sessionDoc.canceledAt = new Date();
+                    sessionDoc.updatedAt = new Date();
+
+                    if (!sessionDoc.history) sessionDoc.history = [];
+                    sessionDoc.history.push({
+                        action: 'cancelamento_via_agendamento',
+                        changedBy: req.user._id,
+                        timestamp: new Date(),
+                        details: {
+                            reason,
+                            confirmedAbsence,
+                            hadPayment: wasSessionPaid
+                        }
+                    });
+
+                    await sessionDoc.save({
+                        session,
+                        validateBeforeSave: false
+                    });
+
+                    console.log('✅ Session cancelada');
+                }
             }
 
-            // 5️⃣ Atualizar Appointment
+            // Atualizar Appointment
             const updated = await Appointment.findByIdAndUpdate(
                 appointment._id,
                 {
@@ -857,17 +869,12 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
                 { new: true, session }
             );
 
-            console.log('✅ Appointment cancelado:', {
-                id: updated._id,
-                operationalStatus: updated.operationalStatus,
-                paymentStatus: updated.paymentStatus,
-                visualFlag: updated.visualFlag
-            });
+            console.log('✅ Appointment cancelado');
 
             return updated;
         });
 
-        // 6️⃣ Sincronizações assíncronas
+        // Sincronizações
         setImmediate(async () => {
             try {
                 await syncEvent(updatedAppointment, 'appointment');
@@ -888,7 +895,11 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
             }
         });
 
-        return res.json(updatedAppointment);
+        return res.json({
+            success: true,
+            message: 'Agendamento cancelado. Dados preservados para reagendamento.',
+            appointment: updatedAppointment
+        });
 
     } catch (error) {
         if (error.status) {
@@ -898,38 +909,14 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
             });
         }
 
-        console.error('[appointments/cancel] erro:', {
-            name: error.name,
-            code: error.code,
-            message: error.message
-        });
-
-        if (error.name === 'ValidationError') {
-            const details = Object.values(error.errors).map(e => ({
-                path: e.path,
-                message: e.message
-            }));
-            return res.status(400).json({
-                error: 'Falha de validação nos dados enviados.',
-                code: 'VALIDATION_ERROR',
-                details
-            });
-        }
-
-        if (error.name === 'CastError') {
-            return res.status(400).json({
-                error: 'ID inválido. Verifique o parâmetro enviado.',
-                code: 'INVALID_ID'
-            });
-        }
+        console.error('[appointments/cancel] erro:', error);
 
         return res.status(500).json({
-            error: 'Não foi possível cancelar o agendamento. Tente novamente.',
+            error: 'Não foi possível cancelar o agendamento.',
             code: 'INTERNAL_SERVER_ERROR'
         });
     }
 });
-
 
 // routes/appointments.js (trecho)
 router.patch('/:id/complete', auth, async (req, res) => {

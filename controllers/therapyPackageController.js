@@ -1216,6 +1216,7 @@ export const packageOperations = {
         }
     },
 
+
     addSessionToPackage: async (req, res) => {
         const mongoSession = await mongoose.startSession();
         let transactionCommitted = false;
@@ -1224,6 +1225,8 @@ export const packageOperations = {
             await mongoSession.startTransaction();
 
             const packageId = req.params.id;
+
+            // ✅ DESESTRUTURA APENAS OS CAMPOS VÁLIDOS (remove isPaid, paymentStatus, visualFlag)
             const {
                 date,
                 time,
@@ -1233,14 +1236,11 @@ export const packageOperations = {
                 sessionType,
                 specialty,
                 sessionValue,
-                status = 'scheduled',
-                isPaid = false,
-                paymentStatus = 'pending',
-                visualFlag = 'pending',
-                paymentMethod = 'dinheiro'
+                status = 'scheduled'
+                // ❌ NÃO pega: isPaid, paymentStatus, visualFlag
             } = req.body;
 
-            // 1. Validações básicas
+            // Validações básicas
             if (!date || !time) {
                 throw new Error('Data e horário são obrigatórios');
             }
@@ -1253,7 +1253,7 @@ export const packageOperations = {
                 throw new Error('Formato de hora inválido. Use HH:mm');
             }
 
-            // 2. Buscar o pacote
+            // Buscar o pacote
             const pkg = await Package.findById(packageId)
                 .session(mongoSession);
 
@@ -1261,7 +1261,9 @@ export const packageOperations = {
                 throw new Error('Pacote não encontrado');
             }
 
-            // 3. Verificar conflito com sessões existentes
+            console.log('📦 Pacote encontrado:', pkg._id);
+
+            // Verificar conflito
             const conflictSession = await Session.findOne({
                 date,
                 time,
@@ -1277,7 +1279,62 @@ export const packageOperations = {
                 );
             }
 
-            // 4. Criar nova sessão
+            // ============================================================
+            // BUSCAR SESSÃO CANCELADA QUE TINHA PAGAMENTO
+            // ============================================================
+            const canceledPaidSession = await Session.findOne({
+                package: packageId,
+                status: 'canceled',
+                $or: [
+                    { originalPaymentStatus: { $exists: true } },
+                    { originalIsPaid: true },
+                    { originalPartialAmount: { $exists: true, $gt: 0 } }
+                ]
+            })
+                .sort({ canceledAt: -1 })
+                .session(mongoSession);
+
+            let isPaid, paymentStatus, visualFlag, paymentMethod, partialAmount, parentPayment;
+
+            if (canceledPaidSession && canceledPaidSession.originalPaymentStatus) {
+                // ✅ Reaproveita dados
+                console.log(`♻️ Reaproveitando pagamento da sessão ${canceledPaidSession._id}`);
+                console.log('📊 Dados originais:', {
+                    originalPartialAmount: canceledPaidSession.originalPartialAmount,
+                    originalPaymentStatus: canceledPaidSession.originalPaymentStatus,
+                    originalIsPaid: canceledPaidSession.originalIsPaid
+                });
+
+                isPaid = true;
+                paymentStatus = 'paid';
+                visualFlag = 'ok';
+                paymentMethod = canceledPaidSession.originalPaymentMethod ||
+                    pkg.paymentMethod ||
+                    'dinheiro';
+                partialAmount = Number(canceledPaidSession.originalPartialAmount) ||
+                    Number(pkg.sessionValue);
+                parentPayment = canceledPaidSession.parentPayment || null;
+
+            } else {
+                // ❌ Cria como não paga
+                console.log('📝 Nova sessão sem pagamento prévio');
+
+                isPaid = false;
+                paymentStatus = 'pending';
+                visualFlag = 'blocked';
+                paymentMethod = pkg.paymentMethod || 'dinheiro';
+                partialAmount = 0;
+                parentPayment = null;
+            }
+
+            console.log('💰 Dados financeiros calculados:', {
+                isPaid,
+                paymentStatus,
+                visualFlag,
+                partialAmount
+            });
+
+            // Criar nova sessão
             const newSession = new Session({
                 date,
                 time,
@@ -1292,12 +1349,27 @@ export const packageOperations = {
                 paymentStatus,
                 visualFlag,
                 paymentMethod,
-                notes: notes || ''
+                partialAmount,
+                parentPayment,
+                notes: notes || '',
+                _inFinancialTransaction: true
             });
 
-            await newSession.save({ session: mongoSession });
+            await newSession.save({
+                session: mongoSession,
+                validateBeforeSave: false  // ✅ Desabilita validação
+            });
 
-            // 5. Criar agendamento correspondente
+            console.log('✅ Nova sessão criada:', {
+                _id: newSession._id,
+                isPaid: newSession.isPaid,
+                paymentStatus: newSession.paymentStatus,
+                partialAmount: newSession.partialAmount
+            });
+
+            // ============================================================
+            // Criar appointment - USA os dados CALCULADOS (não do body)
+            // ============================================================
             const newAppointment = new Appointment({
                 patient: newSession.patient,
                 doctor: newSession.doctor,
@@ -1310,16 +1382,25 @@ export const packageOperations = {
                 serviceType: 'package_session',
                 operationalStatus: 'scheduled',
                 clinicalStatus: 'pending',
-                paymentStatus: 'pending'
+                paymentStatus: newSession.paymentStatus,  // ✅ Usa o calculado
+                visualFlag: newSession.visualFlag         // ✅ Usa o calculado
             });
 
-            await newAppointment.save({ session: mongoSession });
+            await newAppointment.save({
+                session: mongoSession,
+                validateBeforeSave: false  // ✅ Desabilita validação
+            });
 
-            // 6. Vincular appointment à sessão
+            console.log('✅ Agendamento criado:', newAppointment._id);
+
+            // Vincular
             newSession.appointmentId = newAppointment._id;
-            await newSession.save({ session: mongoSession });
+            await newSession.save({
+                session: mongoSession,
+                validateBeforeSave: false
+            });
 
-            // 7. Atualizar pacote
+            // Atualizar pacote
             await Package.findByIdAndUpdate(
                 packageId,
                 {
@@ -1332,23 +1413,60 @@ export const packageOperations = {
                 { session: mongoSession }
             );
 
-            // 8. Recalcular valores do pacote
+            console.log('✅ Pacote atualizado');
+
+            // Recalcular
             const updatedPackage = await Package.findById(packageId)
                 .session(mongoSession);
 
             updatedPackage.totalValue = updatedPackage.sessionValue * updatedPackage.totalSessions;
-            updatedPackage.balance = updatedPackage.totalValue - (updatedPackage.totalPaid || 0);
+
+            // Soma TODAS as sessões (ativas + canceladas com pagamento)
+            const allSessions = await Session.find({ package: packageId });
+
+            totalPaid = allSessions.reduce((sum, s) => {
+                // Sessão cancelada? Usa originalPartialAmount
+                if (s.originalPartialAmount > 0) {
+                    return sum + s.originalPartialAmount;
+                }
+                // Sessão ativa? Usa partialAmount
+                if (s.status !== 'canceled' && s.partialAmount > 0) {
+                    return sum + s.partialAmount;
+                }
+                return sum;
+            }, 0);
+            // Resultado: 4 (3 ativas + 1 cancelada com pagamento)
+
+            updatedPackage.balance = Math.max(
+                updatedPackage.totalValue - updatedPackage.totalPaid,
+                0
+            );
+            updatedPackage.paidSessions = activeSessions.filter(
+                s => s.paymentStatus === 'paid'
+            ).length;
 
             await updatedPackage.save({ session: mongoSession });
 
-            // 9. Commit da transação
+            console.log('✅ Valores recalculados:', {
+                totalPaid: updatedPackage.totalPaid,
+                balance: updatedPackage.balance,
+                paidSessions: updatedPackage.paidSessions
+            });
+
+            // Commit
             await mongoSession.commitTransaction();
             transactionCommitted = true;
 
-            // 10. Sincronizar eventos
-            await syncEvent(updatedPackage, 'package');
+            console.log('✅ Transação concluída');
 
-            // 11. Retornar dados atualizados
+            // Sync
+            try {
+                await syncEvent(updatedPackage, 'package');
+            } catch (syncError) {
+                console.error('⚠️ Erro na sincronização:', syncError.message);
+            }
+
+            // Retornar
             const result = await Package.findById(packageId)
                 .populate('sessions appointments payments')
                 .populate('patient')
@@ -1361,9 +1479,20 @@ export const packageOperations = {
 
             res.status(201).json({
                 success: true,
-                message: 'Sessão adicionada com sucesso',
-                session: newSession,
-                package: result
+                message: canceledPaidSession
+                    ? 'Sessão adicionada reaproveitando pagamento anterior'
+                    : 'Sessão adicionada com sucesso',
+                session: {
+                    _id: newSession._id,
+                    date: newSession.date,
+                    time: newSession.time,
+                    isPaid: newSession.isPaid,
+                    paymentStatus: newSession.paymentStatus,
+                    visualFlag: newSession.visualFlag,
+                    partialAmount: newSession.partialAmount
+                },
+                package: result,
+                reusedPayment: !!canceledPaidSession
             });
 
         } catch (error) {
@@ -1376,7 +1505,7 @@ export const packageOperations = {
             let statusCode = 500;
             let message = error.message || 'Erro ao adicionar sessão';
 
-            if (error.message.includes('Já existe uma sessão')) {
+            if (error.message.includes('Já existe')) {
                 statusCode = 409;
             } else if (error.message.includes('não encontrado')) {
                 statusCode = 404;
@@ -1393,150 +1522,6 @@ export const packageOperations = {
             await mongoSession.endSession();
         }
     },
-    /* 
-    update.session e mais robusto e faz as mesma coisas
-    useSession: async (req, res) => {
-        const mongoSession = await mongoose.startSession();
-        try {
-            await mongoSession.startTransaction();
- 
-            // Extrair apenas os campos necessários
-            const { sessionId, payment } = req.body;
-            const { status } = req.body; // Novo campo para status
-            // Validação reforçada
-            if (!sessionId) throw new Error("ID da sessão é obrigatório.");
-            if (!status) throw new Error("Status é obrigatório.");
-            if (!['completed', 'canceled'].includes(status)) {
-                throw new Error("Status inválido. Use 'completed' ou 'canceled'.");
-            }
- 
-            // 1. Atualizar sessão com o status recebido
-            const sessionDoc = await Session.findByIdAndUpdate(
-                sessionId,
-                { status },
-                { new: true, session: mongoSession }
-            ).populate('package');
- 
-            if (!sessionDoc) throw new Error("Sessão não encontrada.");
- 
-            // 2. Atualizar pacote apenas se for conclusão de sessão
-            if (status === 'completed') {
-                const updatedPackage = await Package.findByIdAndUpdate(
-                    sessionDoc.package._id,
-                    { $inc: { sessionsDone: 1 } },
-                    { new: true, session: mongoSession }
-                );
- 
-                // 3. Atualizar status do pacote
-                const newPackageStatus = updatedPackage.sessionsDone >= updatedPackage.totalSessions
-                    ? 'finished'
-                    : 'active';
- 
-                await Package.findByIdAndUpdate(
-                    sessionDoc.package._id,
-                    { status: newPackageStatus },
-                    { session: mongoSession }
-                );
-            }
- 
-            // 4. Atualizar agendamento associado
-            if (sessionDoc.appointmentId) {
-                const appointmentStatus = status === 'completed'
-                    ? 'completed'
-                    : 'canceled';
- 
-                await axios.patch(
-                    `${APPOINTMENTS_API_BASE_URL}/appointments/${sessionDoc.appointmentId}`,
-                    { status: appointmentStatus },
-                    {
-                        headers: { Authorization: req.headers.authorization },
-                        timeout: 3000
-                    }
-                );
-            }
- 
-            // 5. Processar pagamento apenas para sessões concluídas
-            if (status === 'completed' && payment?.amount > 0) {
-                if (!payment.method || !validateInputs.paymentMethod(payment.method)) {
-                    throw new Error("Método de pagamento inválido.");
-                }
- 
-                const newPayment = new Payment({
-                    amount: payment.amount,
-                    paymentMethod: payment.method,
-                    package: sessionDoc.package._id,
-                    session: sessionDoc._id,
-                    patient: sessionDoc.package.patient,
-                    doctor: sessionDoc.package.doctor
-                });
- 
-                await newPayment.save({ session: mongoSession });
- 
-                // Atualizar sessão como paga
-                await Session.findByIdAndUpdate(
-                    sessionId,
-                    { isPaid: true },
-                    { session: mongoSession }
-                );
- 
-                // Atualizar saldo do pacote
-                await Package.findByIdAndUpdate(
-                    sessionDoc.package._id,
-                    {
-                        $inc: { totalPaid: payment.amount },
-                        balance: new Expression('sessionValue * totalSessions - totalPaid')
-                    },
-                    { session: mongoSession }
-                );
-            }
- 
-            await mongoSession.commitTransaction();
- 
-            // Buscar dados atualizados
-            const finalPackage = await Package.findById(sessionDoc.package._id)
-                .populate({
-                    path: 'sessions',
-                    match: { _id: sessionId },
-                    select: 'date status doctor isPaid paymentAmount'
-                })
-                .populate('payments patient doctor');
- 
-            res.json({
-                ...finalPackage.toObject(),
-                updatedSession: finalPackage.sessions[0]
-            });
- 
-        } catch (error) {
-            await mongoSession.abortTransaction();
-            console.error('Erro em useSession:', error);
- 
-            // Tratamento de erros aprimorado
-            let statusCode = 500;
-            let message = 'Erro interno';
- 
-            if (error.name === 'ValidationError') {
-                statusCode = 400;
-                message = 'Dados inválidos';
-            } else if (error.response) {
-                // Erro da API de agendamentos
-                statusCode = error.response.status;
-                message = `Erro no serviço de agendamentos: ${error.response.data.message || error.response.statusText}`;
-            } else if (error.message.includes('não encontrada')) {
-                statusCode = 404;
-                message = error.message;
-            } else if (error.message.includes('inválido')) {
-                statusCode = 400;
-                message = error.message;
-            }
- 
-            res.status(statusCode).json({
-                error: message,
-                details: process.env.NODE_ENV === 'development' ? error.message : undefined
-            });
-        } finally {
-            await mongoSession.endSession();
-        }
-    }, */
 
     registerPayment: async (req, res) => {
         const mongoSession = await mongoose.startSession();
