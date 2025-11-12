@@ -1,14 +1,13 @@
 // utils/amandaOrchestrator.js - VERSÃO FINAL (COM CONTEXTO LEVE)
 
 import Anthropic from "@anthropic-ai/sdk";
-import Message from '../models/Message.js';
+import enrichLeadContext from "../services/leadContext.js";
 import { getManual } from './amandaIntents.js';
 import { SYSTEM_PROMPT_AMANDA } from './amandaPrompt.js';
 import { detectAllFlags } from './flagsDetector.js'; // ✅ ADICIONAR
 import { buildEquivalenceResponse } from './responseBuilder.js';
 import {
     detectAllTherapies,
-    getTherapyData,
     isAskingAboutEquivalence
 } from './therapyDetector.js';
 
@@ -24,7 +23,9 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     console.log(`🎯 [ORCHESTRATOR] Processando: "${text}"`);
 
     // ✅ CONTEXTO LEVE (busca dados que JÁ EXISTEM no banco)
-    const enrichedContext = await getBasicContext(lead._id, context);
+    const enrichedContext = lead._id
+        ? await enrichLeadContext(lead._id)
+        : { ...context, stage: 'novo', isFirstContact: true, messageCount: 0 };
 
     // ===== 1. TERAPIAS ESPECÍFICAS =====
     const therapies = detectAllTherapies(text);
@@ -81,8 +82,8 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
  * 🤖 IA COM DADOS DE TERAPIAS (contextualizada)
  */
 async function callClaudeWithTherapyData({ therapies, flags, userText, lead, context }) {
+    const { getTherapyData } = await import('./therapyDetector.js');
 
-    // ✅ Monta contexto de terapias
     const therapiesInfo = therapies.map(t => {
         const data = getTherapyData(t.id);
         return `
@@ -94,23 +95,44 @@ ${t.name.toUpperCase()}:
         `.trim();
     }).join('\n\n');
 
-    // ✅ Contexto do lead
-    const { stage, messageCount, lastMessages, mentionedTherapies } = context;
+    // ✅ USA DADOS RICOS DO CONTEXTO
+    const {
+        stage,
+        messageCount,
+        lastMessages,
+        mentionedTherapies,
+        isPatient,              // ✅ NOVO
+        hasAppointments,        // ✅ NOVO
+        needsUrgency,           // ✅ NOVO
+        daysSinceLastContact    // ✅ NOVO
+    } = context;
 
-    // ✅ Perfil detectado
+    // ✅ CONTEXTO ENRIQUECIDO
     const profileContext = flags.userProfile !== 'generic'
         ? `\nPerfil detectado: ${flags.userProfile}`
         : '';
 
-    // ✅ Histórico
     const historyContext = lastMessages.length > 0
         ? `\nÚltimas mensagens: ${lastMessages.slice(0, 3).join(' | ')}`
+        : '';
+
+    // ✅ CONTEXTO AVANÇADO
+    const patientStatus = isPatient
+        ? `\n⚠️ IMPORTANTE: Este lead JÁ É PACIENTE da clínica!`
+        : '';
+
+    const appointmentStatus = hasAppointments
+        ? `\n✅ Lead já tem agendamentos marcados`
+        : '';
+
+    const urgencyNote = needsUrgency
+        ? `\n🔥 URGÊNCIA: ${daysSinceLastContact} dias sem contato - seja mais proativa!`
         : '';
 
     const userPrompt = `
 MENSAGEM DO CLIENTE: "${userText}"
 LEAD: ${lead?.name || 'Desconhecido'} | Origem: ${lead?.origin || 'WhatsApp'}
-ESTÁGIO: ${stage.toUpperCase()} (${messageCount} mensagens)${profileContext}${historyContext}
+ESTÁGIO: ${stage.toUpperCase()} (${messageCount} mensagens)${profileContext}${historyContext}${patientStatus}${appointmentStatus}${urgencyNote}
 
 TERAPIAS DETECTADAS:
 ${therapiesInfo}
@@ -118,14 +140,16 @@ ${therapiesInfo}
 FLAGS IMPORTANTES:
 - Perguntou preço? ${flags.asksPrice ? 'SIM' : 'NÃO'}
 - Quer agendar? ${flags.wantsSchedule ? 'SIM' : 'NÃO'}
-- Pergunta horários? ${flags.asksHours ? 'NÃO' : 'NÃO'}
+- Pergunta horários? ${flags.asksHours ? 'SIM' : 'NÃO'}
 
 INSTRUÇÕES:
 1. Use os DADOS DAS TERAPIAS acima como referência
 2. ${flags.asksPrice ? 'Lead perguntou preço - use VALOR→PREÇO→PERGUNTA' : 'Apresente a terapia de forma acolhedora'}
 3. ${flags.wantsSchedule ? 'Lead quer agendar - seja DIRETA e ofereça horários' : 'Termine com pergunta engajadora'}
-4. Responda em 1-3 frases, tom humano e natural
-5. Use exatamente 1 💚 no final
+4. ${isPatient ? 'TOM DIFERENCIADO: Paciente ativo - seja mais próxima e solícita' : 'Tom acolhedor de captação'}
+5. ${needsUrgency ? 'REATIVAÇÃO: Faz tempo sem falar - seja calorosa e mostre que sentiu falta!' : ''}
+6. Responda em 1-3 frases, tom humano e natural
+7. Use exatamente 1 💚 no final
 
 IMPORTANTE: Não seja robótica. Adapte a resposta ao contexto da conversa!
 `.trim();
@@ -133,7 +157,7 @@ IMPORTANTE: Não seja robótica. Adapte a resposta ao contexto da conversa!
     const response = await anthropic.messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 200,
-        temperature: 0.7, // ✅ Mais criativo para terapias
+        temperature: 0.7,
         system: SYSTEM_PROMPT_AMANDA,
         messages: [{
             role: "user",
@@ -142,76 +166,6 @@ IMPORTANTE: Não seja robótica. Adapte a resposta ao contexto da conversa!
     });
 
     return response.content[0]?.text?.trim() || "Como posso te ajudar? 💚";
-}
-
-/**
- * 📊 CONTEXTO BÁSICO (usa dados que JÁ EXISTEM)
- */
-async function getBasicContext(leadId, baseContext = {}) {
-    // Se não tem leadId, retorna contexto básico
-    if (!leadId) {
-        return {
-            stage: 'novo',
-            messageCount: 0,
-            lastMessages: baseContext.lastMessages || [],
-            alreadyAskedPrice: false,
-            mentionedTherapies: []
-        };
-    }
-
-    try {
-        // ✅ Busca mensagens do lead (já estão no banco!)
-        const messages = await Message.find({
-            lead: leadId,
-            type: 'text'
-        })
-            .sort({ timestamp: -1 })
-            .limit(10)
-            .lean();
-
-        const messageCount = messages.length;
-        const lastMessages = messages.slice(0, 5).map(m => m.content || '');
-
-        // ✅ Detecta padrões simples
-        const alreadyAskedPrice = messages.some(m => /pre[cç]o|valor|quanto/i.test(m.content || ''));
-        const wantsSchedule = messages.some(m => /agend|marcar|hor[aá]rio/i.test(m.content || ''));
-
-        // ✅ Detecta terapias mencionadas
-        const mentionedTherapies = new Set();
-        messages.forEach(m => {
-            const content = (m.content || '').toLowerCase();
-            if (/neuropsic/i.test(content)) mentionedTherapies.add('neuropsicológica');
-            if (/fono/i.test(content)) mentionedTherapies.add('fonoaudiologia');
-            if (/psic[oó]log/i.test(content)) mentionedTherapies.add('psicologia');
-        });
-
-        // ✅ Determina estágio simples
-        let stage = 'novo';
-        if (wantsSchedule) stage = 'interessado_agendamento';
-        else if (alreadyAskedPrice) stage = 'pesquisando_preco';
-        else if (messageCount >= 3) stage = 'engajado';
-        else if (messageCount > 0) stage = 'primeiro_contato';
-
-        console.log(`📊 [CONTEXTO] Stage: ${stage} | Msgs: ${messageCount} | Terapias: ${Array.from(mentionedTherapies).join(', ')}`);
-
-        return {
-            stage,
-            messageCount,
-            lastMessages,
-            alreadyAskedPrice,
-            mentionedTherapies: Array.from(mentionedTherapies)
-        };
-
-    } catch (error) {
-        console.warn('⚠️ Erro ao buscar contexto:', error.message);
-        return {
-            stage: 'novo',
-            messageCount: 0,
-            lastMessages: [],
-            alreadyAskedPrice: false,
-            mentionedTherapies: []
-        };
-    }
 }
 
 /**
@@ -246,11 +200,13 @@ async function callOpenAIWithContext(userText, lead, context) {
         stage = 'novo',
         messageCount = 0,
         lastMessages = [],
-        alreadyAskedPrice = false,
-        mentionedTherapies = []
+        mentionedTherapies = [],
+        isPatient = false,           // ✅ NOVO
+        hasAppointments = false,     // ✅ NOVO
+        needsUrgency = false,        // ✅ NOVO
+        daysSinceLastContact = 0     // ✅ NOVO
     } = context;
 
-    // ✅ INSTRUÇÕES POR ESTÁGIO
     let stageInstruction = '';
 
     switch (stage) {
@@ -261,22 +217,35 @@ async function callOpenAIWithContext(userText, lead, context) {
             stageInstruction = '• Seja calorosa. Faça perguntas abertas sobre a necessidade.';
             break;
         case 'pesquisando_preco':
-            stageInstruction = '• Lead já perguntou sobre valores. Use estratégia VALOR→PREÇO→ENGAJAMENTO. Exemplo: "A avaliação é completa e personalizada. Valor: R$ 220. É para criança ou adulto?"';
+            stageInstruction = '• Lead já perguntou sobre valores. Use estratégia VALOR→PREÇO→ENGAJAMENTO.';
             break;
         case 'engajado':
-            stageInstruction = `• Lead já trocou ${messageCount} mensagens. Seja mais direta e objetiva. Facilite o caminho para agendamento.`;
+            stageInstruction = `• Lead já trocou ${messageCount} mensagens. Seja mais direta e objetiva.`;
             break;
         case 'interessado_agendamento':
             stageInstruction = '• Lead quer agendar! Ofereça 2 opções concretas de horário. Seja DIRETA.';
             break;
+        case 'agendado':  // ✅ NOVO
+            stageInstruction = '• Lead JÁ TEM AGENDAMENTO! Confirme horário ou tire dúvidas. Seja prestativa.';
+            break;
+        case 'paciente':  // ✅ NOVO
+            stageInstruction = '• PACIENTE ATIVO! Tom próximo e solícito. Pergunte como está o tratamento.';
+            break;
     }
 
-    // ✅ CONTEXTO DE TERAPIAS JÁ MENCIONADAS
+    // ✅ ADICIONA CONTEXTO RICO
+    const patientNote = isPatient
+        ? `\n⚠️ IMPORTANTE: Lead JÁ É PACIENTE. Seja mais próxima e atenciosa!`
+        : '';
+
+    const urgencyNote = needsUrgency
+        ? `\n🔥 ${daysSinceLastContact} dias sem contato - seja calorosa: "Que saudade! Como você está?"`
+        : '';
+
     const therapiesContext = mentionedTherapies.length > 0
         ? `\nTerapias já mencionadas: ${mentionedTherapies.join(', ')}`
         : '';
 
-    // ✅ HISTÓRICO RECENTE
     const historyContext = lastMessages.length > 0
         ? `\nÚltimas mensagens: ${lastMessages.slice(0, 3).join(' | ')}`
         : '';
@@ -284,9 +253,7 @@ async function callOpenAIWithContext(userText, lead, context) {
     const userPrompt = `
 MENSAGEM DO CLIENTE: "${userText}"
 LEAD: ${lead?.name || 'Desconhecido'} | Origem: ${lead?.origin || 'WhatsApp'}
-ESTÁGIO: ${stage.toUpperCase()} (${messageCount} mensagens trocadas)
-${historyContext}
-${therapiesContext}
+ESTÁGIO: ${stage.toUpperCase()} (${messageCount} mensagens trocadas)${historyContext}${therapiesContext}${patientNote}${urgencyNote}
 
 INSTRUÇÃO CONTEXTUAL:
 ${stageInstruction}
@@ -298,7 +265,6 @@ REGRAS GERAIS:
 - Use exatamente 1 💚 no final
 `.trim();
 
-    // ✅ ANTHROPIC API
     const response = await anthropic.messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 150,
@@ -312,6 +278,7 @@ REGRAS GERAIS:
 
     return response.content[0]?.text?.trim() || "Como posso te ajudar? 💚";
 }
+
 
 /**
  * 🎨 HELPER
