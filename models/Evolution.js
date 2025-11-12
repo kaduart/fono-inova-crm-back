@@ -56,6 +56,11 @@ const evolutionSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    createdBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
     content: {
         type: mongoose.Schema.Types.Mixed
     },
