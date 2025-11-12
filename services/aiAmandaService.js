@@ -1,12 +1,14 @@
 // services/aiAmandaService.js - VERSÃO SIMPLIFICADA (80% MENOS CÓDIGO)
 
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import axios from "axios";
+import OpenAI from "openai";
 import { Readable } from "stream";
 import getOptimizedAmandaResponse from "../utils/amandaOrchestrator.js";
-import { SYSTEM_PROMPT_AMANDA, CLINIC_ADDRESS } from "../utils/amandaPrompt.js";
 
+import { CLINIC_ADDRESS, SYSTEM_PROMPT_AMANDA } from "../utils/amandaPrompt.js";
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 /* =========================================================================
    🎯 FUNÇÃO PRINCIPAL - USA O ORCHESTRATOR
@@ -55,20 +57,19 @@ Exemplo: "Oi ${name}! Passando pra saber se posso te ajudar com ${reason}. Temos
 `.trim();
 
     try {
-        const resp = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+        const resp = await anthropic.messages.create({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 150,
             temperature: 0.7,
-            max_tokens: 120,
-            messages: [
-                { role: "system", content: SYSTEM_PROMPT_AMANDA },
-                { role: "user", content: userPrompt }
-            ]
+            system: SYSTEM_PROMPT_AMANDA,
+            messages: [{
+                role: "user",
+                content: `Gere follow-up curto para ${name}. Motivo: ${reason}. 2-3 frases. 1 💚 no final.`
+            }]
         });
 
-        let out = resp.choices?.[0]?.message?.content?.trim() ||
-            `Oi ${name}! Passando pra saber se posso te ajudar com ${reason}. Temos horários flexíveis esta semana 💚`;
-
-        return ensureSingleHeart(out);
+        const text = resp.content[0]?.text || `Oi ${name}! Posso te ajudar? 💚`;
+        return ensureSingleHeart(text);
     } catch (error) {
         console.error("❌ Erro ao gerar follow-up:", error);
         return `Oi ${name}! Passando pra saber se posso te ajudar com o agendamento 💚`;
