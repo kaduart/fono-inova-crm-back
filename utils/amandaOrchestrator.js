@@ -1,24 +1,21 @@
-// utils/amandaOrchestrator.js - VERSÃO COMPLETA COM CONTEXTO INTELIGENTE
+// utils/amandaOrchestrator.js - VERSÃO FINAL (COM CONTEXTO LEVE)
 
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
+import Message from '../models/Message.js';
 import { getManual } from './amandaIntents.js';
 import { SYSTEM_PROMPT_AMANDA } from './amandaPrompt.js';
+import { detectAllFlags } from './flagsDetector.js'; // ✅ ADICIONAR
+import { buildEquivalenceResponse } from './responseBuilder.js';
 import {
     detectAllTherapies,
-    generateMultiTherapyResponse,
-    isAskingAboutEquivalence,
-    generateEquivalenceResponse
+    getTherapyData,
+    isAskingAboutEquivalence
 } from './therapyDetector.js';
-import enrichLeadContext from '../services/leadContext.js';
-import { getPromptByStage, getUrgencyTrigger } from './stagePrompts.js';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 /**
- * 🎯 ORQUESTRADOR PRINCIPAL - PRIORIDADE CLARA:
- * 1. Terapias específicas (nossa estratégia VALOR→PREÇO→ENGAJAMENTO)
- * 2. Manual (respostas canônicas)
- * 3. IA (GPT-4o-mini como último recurso)
+ * 🎯 ORQUESTRADOR COM CONTEXTO LEVE
  */
 export async function getOptimizedAmandaResponse({ content, userText, lead = {}, context = {} }) {
     const text = userText || content || "";
@@ -26,40 +23,53 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
 
     console.log(`🎯 [ORCHESTRATOR] Processando: "${text}"`);
 
-    // ===== PRIORIDADE 1: TERAPIAS ESPECÍFICAS =====
+    // ✅ CONTEXTO LEVE (busca dados que JÁ EXISTEM no banco)
+    const enrichedContext = await getBasicContext(lead._id, context);
+
+    // ===== 1. TERAPIAS ESPECÍFICAS =====
     const therapies = detectAllTherapies(text);
 
     if (therapies.length > 0) {
         console.log(`🎯 [TERAPIAS] Detectadas: ${therapies.map(t => t.id).join(', ')}`);
 
-        // Flags básicas necessárias
-        const flags = {
-            asksPrice: /\b(pre[cç]o|valor|custa|quanto)\b/i.test(normalized),
-            wantsSchedule: /\b(agend|marcar|hor[aá]rio)\b/i.test(normalized),
-            asksHours: /\b(hor[aá]rio.*atendimento|abre|fecha)\b/i.test(normalized)
-        };
+        // ✅ Busca flags
+        const flags = detectAllFlags(text, lead, enrichedContext);
 
-        const response = generateMultiTherapyResponse(therapies, text, flags);
-        console.log(`✅ [ORCHESTRATOR] Resposta específica: ${response}`);
-        return response;
+        console.log(`🏁 [FLAGS]`, {
+            asksPrice: flags.asksPrice,
+            wantsSchedule: flags.wantsSchedule,
+            userProfile: flags.userProfile
+        });
+
+        // ✅ CHAMA IA COM DADOS DAS TERAPIAS (não resposta fixa)
+        const aiResponse = await callClaudeWithTherapyData({
+            therapies,
+            flags,
+            userText: text,
+            lead,
+            context: enrichedContext
+        });
+
+        return ensureSingleHeart(aiResponse);
     }
 
-    // Equivalência (ex: "fono é a mesma coisa que fonoaudiologia?")
+    // ===== 2. EQUIVALÊNCIA =====
+    // ===== 2. EQUIVALÊNCIA =====
     if (isAskingAboutEquivalence(text)) {
-        return generateEquivalenceResponse(text);
+        return buildEquivalenceResponse();
     }
 
-    // ===== PRIORIDADE 2: MANUAL (RESPOSTAS CANÔNICAS) =====
+    // ===== 3. MANUAL =====
     const manualResponse = tryManualResponse(normalized);
     if (manualResponse) {
         console.log(`✅ [ORCHESTRATOR] Resposta do manual`);
         return ensureSingleHeart(manualResponse);
     }
 
-    // ===== PRIORIDADE 3: IA (ÚLTIMO RECURSO) =====
-    console.log(`🤖 [ORCHESTRATOR] Usando IA para resposta genérica`);
+    // ===== 4. IA COM CONTEXTO =====
+    console.log(`🤖 [ORCHESTRATOR] IA | Stage: ${enrichedContext.stage} | Msgs: ${enrichedContext.messageCount}`);
     try {
-        const aiResponse = await callOpenAI(text, lead, context);
+        const aiResponse = await callOpenAIWithContext(text, lead, enrichedContext);
         return ensureSingleHeart(aiResponse);
     } catch (error) {
         console.error(`❌ [ORCHESTRATOR] Erro na IA:`, error.message);
@@ -68,26 +78,159 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
 }
 
 /**
- * 📖 TENTA RESPOSTA DO MANUAL (RÁPIDO)
+ * 🤖 IA COM DADOS DE TERAPIAS (contextualizada)
+ */
+async function callClaudeWithTherapyData({ therapies, flags, userText, lead, context }) {
+
+    // ✅ Monta contexto de terapias
+    const therapiesInfo = therapies.map(t => {
+        const data = getTherapyData(t.id);
+        return `
+${t.name.toUpperCase()}:
+- Explicação: ${data.explanation}
+- Preço: ${data.price}
+- Detalhes: ${data.details}
+- Pergunta engajadora: ${data.engagement}
+        `.trim();
+    }).join('\n\n');
+
+    // ✅ Contexto do lead
+    const { stage, messageCount, lastMessages, mentionedTherapies } = context;
+
+    // ✅ Perfil detectado
+    const profileContext = flags.userProfile !== 'generic'
+        ? `\nPerfil detectado: ${flags.userProfile}`
+        : '';
+
+    // ✅ Histórico
+    const historyContext = lastMessages.length > 0
+        ? `\nÚltimas mensagens: ${lastMessages.slice(0, 3).join(' | ')}`
+        : '';
+
+    const userPrompt = `
+MENSAGEM DO CLIENTE: "${userText}"
+LEAD: ${lead?.name || 'Desconhecido'} | Origem: ${lead?.origin || 'WhatsApp'}
+ESTÁGIO: ${stage.toUpperCase()} (${messageCount} mensagens)${profileContext}${historyContext}
+
+TERAPIAS DETECTADAS:
+${therapiesInfo}
+
+FLAGS IMPORTANTES:
+- Perguntou preço? ${flags.asksPrice ? 'SIM' : 'NÃO'}
+- Quer agendar? ${flags.wantsSchedule ? 'SIM' : 'NÃO'}
+- Pergunta horários? ${flags.asksHours ? 'NÃO' : 'NÃO'}
+
+INSTRUÇÕES:
+1. Use os DADOS DAS TERAPIAS acima como referência
+2. ${flags.asksPrice ? 'Lead perguntou preço - use VALOR→PREÇO→PERGUNTA' : 'Apresente a terapia de forma acolhedora'}
+3. ${flags.wantsSchedule ? 'Lead quer agendar - seja DIRETA e ofereça horários' : 'Termine com pergunta engajadora'}
+4. Responda em 1-3 frases, tom humano e natural
+5. Use exatamente 1 💚 no final
+
+IMPORTANTE: Não seja robótica. Adapte a resposta ao contexto da conversa!
+`.trim();
+
+    const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 200,
+        temperature: 0.7, // ✅ Mais criativo para terapias
+        system: SYSTEM_PROMPT_AMANDA,
+        messages: [{
+            role: "user",
+            content: userPrompt
+        }]
+    });
+
+    return response.content[0]?.text?.trim() || "Como posso te ajudar? 💚";
+}
+
+/**
+ * 📊 CONTEXTO BÁSICO (usa dados que JÁ EXISTEM)
+ */
+async function getBasicContext(leadId, baseContext = {}) {
+    // Se não tem leadId, retorna contexto básico
+    if (!leadId) {
+        return {
+            stage: 'novo',
+            messageCount: 0,
+            lastMessages: baseContext.lastMessages || [],
+            alreadyAskedPrice: false,
+            mentionedTherapies: []
+        };
+    }
+
+    try {
+        // ✅ Busca mensagens do lead (já estão no banco!)
+        const messages = await Message.find({
+            lead: leadId,
+            type: 'text'
+        })
+            .sort({ timestamp: -1 })
+            .limit(10)
+            .lean();
+
+        const messageCount = messages.length;
+        const lastMessages = messages.slice(0, 5).map(m => m.content || '');
+
+        // ✅ Detecta padrões simples
+        const alreadyAskedPrice = messages.some(m => /pre[cç]o|valor|quanto/i.test(m.content || ''));
+        const wantsSchedule = messages.some(m => /agend|marcar|hor[aá]rio/i.test(m.content || ''));
+
+        // ✅ Detecta terapias mencionadas
+        const mentionedTherapies = new Set();
+        messages.forEach(m => {
+            const content = (m.content || '').toLowerCase();
+            if (/neuropsic/i.test(content)) mentionedTherapies.add('neuropsicológica');
+            if (/fono/i.test(content)) mentionedTherapies.add('fonoaudiologia');
+            if (/psic[oó]log/i.test(content)) mentionedTherapies.add('psicologia');
+        });
+
+        // ✅ Determina estágio simples
+        let stage = 'novo';
+        if (wantsSchedule) stage = 'interessado_agendamento';
+        else if (alreadyAskedPrice) stage = 'pesquisando_preco';
+        else if (messageCount >= 3) stage = 'engajado';
+        else if (messageCount > 0) stage = 'primeiro_contato';
+
+        console.log(`📊 [CONTEXTO] Stage: ${stage} | Msgs: ${messageCount} | Terapias: ${Array.from(mentionedTherapies).join(', ')}`);
+
+        return {
+            stage,
+            messageCount,
+            lastMessages,
+            alreadyAskedPrice,
+            mentionedTherapies: Array.from(mentionedTherapies)
+        };
+
+    } catch (error) {
+        console.warn('⚠️ Erro ao buscar contexto:', error.message);
+        return {
+            stage: 'novo',
+            messageCount: 0,
+            lastMessages: [],
+            alreadyAskedPrice: false,
+            mentionedTherapies: []
+        };
+    }
+}
+
+/**
+ * 📖 MANUAL
  */
 function tryManualResponse(normalizedText) {
-    // Endereço
     if (/\b(endere[cç]o|onde fica|local|mapa|como chegar)\b/.test(normalizedText)) {
         return getManual('localizacao', 'endereco');
     }
 
-    // Planos de saúde
     if (/\b(plano|conv[eê]nio|unimed|ipasgo|amil)\b/.test(normalizedText)) {
         return getManual('planos_saude', 'unimed');
     }
 
-    // Valores (genérico - apenas se NÃO detectou terapia específica)
     if (/\b(pre[cç]o|valor|quanto.*custa)\b/.test(normalizedText) &&
         !/\b(neuropsic|fono|psico|terapia|fisio|musico)\b/.test(normalizedText)) {
         return getManual('valores', 'consulta');
     }
 
-    // Saudação inicial
     if (/^(oi|ol[aá]|boa\s*(tarde|noite|dia)|bom\s*dia)[\s!,.]*$/i.test(normalizedText)) {
         return getManual('saudacao');
     }
@@ -96,44 +239,82 @@ function tryManualResponse(normalizedText) {
 }
 
 /**
- * 🤖 CHAMA OPENAI (ÚLTIMO RECURSO)
+ * 🤖 IA COM CONTEXTO INTELIGENTE (ANTHROPIC)
  */
-async function callOpenAI(userText, lead, context) {
-    const { lastMessages = [], isFirstContact = false } = context;
+async function callOpenAIWithContext(userText, lead, context) {
+    const {
+        stage = 'novo',
+        messageCount = 0,
+        lastMessages = [],
+        alreadyAskedPrice = false,
+        mentionedTherapies = []
+    } = context;
 
-    // Contexto mínimo para IA
+    // ✅ INSTRUÇÕES POR ESTÁGIO
+    let stageInstruction = '';
+
+    switch (stage) {
+        case 'novo':
+            stageInstruction = '• Seja acolhedora e empática. Pergunte a necessidade antes de falar de preços.';
+            break;
+        case 'primeiro_contato':
+            stageInstruction = '• Seja calorosa. Faça perguntas abertas sobre a necessidade.';
+            break;
+        case 'pesquisando_preco':
+            stageInstruction = '• Lead já perguntou sobre valores. Use estratégia VALOR→PREÇO→ENGAJAMENTO. Exemplo: "A avaliação é completa e personalizada. Valor: R$ 220. É para criança ou adulto?"';
+            break;
+        case 'engajado':
+            stageInstruction = `• Lead já trocou ${messageCount} mensagens. Seja mais direta e objetiva. Facilite o caminho para agendamento.`;
+            break;
+        case 'interessado_agendamento':
+            stageInstruction = '• Lead quer agendar! Ofereça 2 opções concretas de horário. Seja DIRETA.';
+            break;
+    }
+
+    // ✅ CONTEXTO DE TERAPIAS JÁ MENCIONADAS
+    const therapiesContext = mentionedTherapies.length > 0
+        ? `\nTerapias já mencionadas: ${mentionedTherapies.join(', ')}`
+        : '';
+
+    // ✅ HISTÓRICO RECENTE
     const historyContext = lastMessages.length > 0
-        ? `\nÚltimas mensagens: ${lastMessages.slice(-3).join(' | ')}`
+        ? `\nÚltimas mensagens: ${lastMessages.slice(0, 3).join(' | ')}`
         : '';
 
     const userPrompt = `
 MENSAGEM DO CLIENTE: "${userText}"
 LEAD: ${lead?.name || 'Desconhecido'} | Origem: ${lead?.origin || 'WhatsApp'}
+ESTÁGIO: ${stage.toUpperCase()} (${messageCount} mensagens trocadas)
 ${historyContext}
+${therapiesContext}
 
-INSTRUÇÕES:
-• Responda em 1-3 frases, tom humano e acolhedor
-• Se perguntar sobre especialidades, mencione: Fono, Psicologia, TO, Fisio, Neuro
-• Se perguntar sobre valores genéricos: "A avaliação inicial é R$ 220. Qual especialidade te interessa?"
-• SEMPRE finalize com 1 pergunta objetiva para engajar
-• Use exatamente 1 💚 no final
+INSTRUÇÃO CONTEXTUAL:
+${stageInstruction}
+
+REGRAS GERAIS:
+- Responda em 1-3 frases, tom humano e acolhedor
+- Se perguntar sobre especialidades, mencione: Fono, Psicologia, TO, Fisio, Neuro
+- SEMPRE finalize com 1 pergunta objetiva para engajar
+- Use exatamente 1 💚 no final
 `.trim();
 
-    const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0.6,
+    // ✅ ANTHROPIC API
+    const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
         max_tokens: 150,
-        messages: [
-            { role: "system", content: SYSTEM_PROMPT_AMANDA },
-            { role: "user", content: userPrompt }
-        ]
+        temperature: 0.6,
+        system: SYSTEM_PROMPT_AMANDA,
+        messages: [{
+            role: "user",
+            content: userPrompt
+        }]
     });
 
-    return response.choices[0]?.message?.content?.trim() || "Como posso te ajudar? 💚";
+    return response.content[0]?.text?.trim() || "Como posso te ajudar? 💚";
 }
 
 /**
- * 🎨 GARANTE FORMATAÇÃO
+ * 🎨 HELPER
  */
 function ensureSingleHeart(text) {
     if (!text) return "Como posso te ajudar? 💚";
