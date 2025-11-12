@@ -19,7 +19,7 @@ router.use(auth);
 router.post("/", authorize(["admin", "doctor"]), createEvaluation);
 router.get("/patient/:patientId", authorize(["admin", "doctor"]), getEvaluationsByPatient);
 router.get("/chart/:patientId", authorize(["admin", "doctor"]), getEvaluationChartData);
-router.delete("/:id", authorize(["admin", "doctor"]), deleteEvaluation);
+router.delete("/:id", validateId, authorize(["admin", "doctor"]), deleteEvaluation);
 router.put('/:id', validateId, authorize(["admin", "doctor"]), updateEvaluation);
 
 // Métricas

@@ -93,9 +93,10 @@ export const createEvaluation = async (req, res) => {
       evaluationAreas: normalizedAreas,
       evaluationTypes: finalEvaluationTypes,
       plan: String(plan || '').trim(),
-      treatmentStatus: treatmentStatus // ✅ Usa o valor do enum
-    };
+      treatmentStatus: treatmentStatus,
+      createdBy: new mongoose.Types.ObjectId(req.user.id),
 
+    };
     // ✅ VALIDAÇÃO ADICIONAL DO TREATMENT STATUS
     const validStatuses = ['initial_evaluation', 'in_progress', 'improving', 'stable', 'regressing', 'completed'];
     if (!validStatuses.includes(evaluationData.treatmentStatus)) {
@@ -253,12 +254,18 @@ export const deleteEvaluation = async (req, res) => {
     const deleted = await Evolution.findByIdAndDelete(id);
     if (!deleted) return res.status(404).json({ message: "Avaliação não encontrada." });
 
-    // Registrar histórico
-    await SaveEvolutionHistory(id, req.user.id, 'DELETE', deleted.toObject());
+    try {
+      if (typeof SaveEvolutionHistory === "function") {
+        await SaveEvolutionHistory(id, req.user.id, "DELETE", deleted.toObject());
+      }
+    } catch (e) {
+      console.warn("Falha ao salvar histórico:", e?.message);
+    }
 
-    res.status(200).json({ message: "Avaliação excluída com sucesso." });
+    return res.status(200).json({ message: "Avaliação excluída com sucesso." });
   } catch (error) {
     console.error("Erro ao deletar avaliação:", error);
-    res.status(500).json({ message: "Erro ao deletar avaliação." });
+    return res.status(500).json({ message: "Erro ao deletar avaliação." });
   }
 };
+
