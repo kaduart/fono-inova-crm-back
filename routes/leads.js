@@ -1,47 +1,346 @@
-// routes/leads.js - VERSÃO COMPLETA ATUALIZADA
+// routes/leads.js - VERSÃO UNIFICADA E OTIMIZADA
 import express from 'express';
+import { auth, authorize } from '../middleware/auth.js';
+import validateId from '../middleware/validateId.js';
+import Lead from '../models/Leads.js';
 import {
     // 📊 Funções de planilha
     convertLeadToPatient,
+    getSheetMetrics,
+    getWeeklyMetrics,
     // 🆕 Funções de anúncios
     createLeadFromAd,
     createLeadFromSheet,
-    // ✅ NOVAS - Listagem
-    getAllLeads,
-    getLeadById,
-    getSheetMetrics,
-    getWeeklyMetrics,
+    // 📞 Webhooks
     googleLeadWebhook,
     metaLeadWebhook
 } from '../controllers/leadController.js';
-import { auth } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // =====================================================================
-// 📋 ROTAS DE LISTAGEM (NOVAS)
+// 🌐 WEBHOOKS PÚBLICOS (SEM AUTH) - Meta e Google Ads
 // =====================================================================
-router.get('/', auth, getAllLeads);
-router.get('/:id', auth, getLeadById);
-
-// =====================================================================
-// 🆕 ROTAS DE ANÚNCIOS (AMANDA 2.0)
-// =====================================================================
-router.post('/from-ad', auth, createLeadFromAd);
-
-// Webhooks Meta Ads (públicos)
+// Meta Ads Webhook (GET para verificação, POST para receber leads)
 router.get('/webhook/meta', metaLeadWebhook);
 router.post('/webhook/meta', metaLeadWebhook);
 
-// Webhook Google Ads (público)
+// Google Ads Webhook
 router.post('/webhook/google', googleLeadWebhook);
 
 // =====================================================================
-// 📊 ROTAS DE PLANILHA (EXISTENTES)
+// 🔒 ROTAS PROTEGIDAS (COM AUTH)
 // =====================================================================
-router.post('/from-sheet', createLeadFromSheet);
-router.get('/sheet-metrics', getSheetMetrics);
-router.get('/weekly-metrics', getWeeklyMetrics);
-router.post('/:leadId/convert-to-patient', convertLeadToPatient);
+router.use(auth);
+
+// =====================================================================
+// 📋 LISTAGEM E BUSCA DE LEADS
+// =====================================================================
+
+/**
+ * GET /leads
+ * Lista leads com filtros, paginação e busca
+ * Acesso: admin, secretary, professional
+ */
+router.get('/', authorize(['admin', 'secretary', 'professional']), async (req, res) => {
+    try {
+        const {
+            status,
+            origin,
+            from,
+            to,
+            page = 1,
+            limit = 20,
+            search
+        } = req.query;
+
+        // Monta filtros dinâmicos
+        const filters = {};
+        if (status) filters.status = status;
+        if (origin) filters.origin = origin;
+        if (from && to) {
+            filters.createdAt = {
+                $gte: new Date(from),
+                $lte: new Date(to)
+            };
+        }
+        if (search) {
+            filters.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } },
+                { phone: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        // Busca com paginação
+        const leads = await Lead.find(filters)
+            .sort({ createdAt: -1 })
+            .skip((page - 1) * parseInt(limit))
+            .limit(parseInt(limit));
+
+        const total = await Lead.countDocuments(filters);
+
+        res.json({
+            data: leads,
+            total,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            pages: Math.ceil(total / parseInt(limit))
+        });
+    } catch (err) {
+        console.error('❌ Erro ao listar leads:', err);
+        res.status(500).json({
+            message: 'Erro ao buscar leads',
+            error: err.message
+        });
+    }
+});
+
+/**
+ * GET /leads/:id
+ * Detalha um lead específico
+ * Acesso: admin, secretary, professional
+ */
+router.get('/:id',
+    validateId,
+    authorize(['admin', 'secretary', 'professional']),
+    async (req, res) => {
+        try {
+            const lead = await Lead.findById(req.params.id);
+
+            if (!lead) {
+                return res.status(404).json({
+                    message: 'Lead não encontrado'
+                });
+            }
+
+            res.json(lead);
+        } catch (err) {
+            console.error('❌ Erro ao buscar lead:', err);
+            res.status(500).json({
+                message: 'Erro ao buscar lead',
+                error: err.message
+            });
+        }
+    }
+);
+
+// =====================================================================
+// ➕ CRIAÇÃO DE LEADS
+// =====================================================================
+
+/**
+ * POST /leads
+ * Cria novo lead manualmente
+ * Acesso: admin, secretary
+ */
+router.post('/', authorize(['admin', 'secretary']), async (req, res) => {
+    try {
+        const lead = new Lead(req.body);
+        await lead.save();
+
+        console.log('✅ Lead criado manualmente:', lead._id);
+
+        res.status(201).json(lead);
+    } catch (err) {
+        console.error('❌ Erro ao criar lead:', err);
+        res.status(400).json({
+            message: 'Erro ao criar lead',
+            error: err.message
+        });
+    }
+});
+
+/**
+ * POST /leads/from-ad
+ * Cria lead vindo de anúncios (Meta/Google)
+ * Acesso: admin, secretary
+ * 
+ * Body esperado:
+ * {
+ *   name: string,
+ *   email: string,
+ *   phone: string,
+ *   origin: 'meta_ads' | 'google_ads',
+ *   adData: { campaignId, adSetId, etc... }
+ * }
+ */
+router.post('/from-ad', authorize(['admin', 'secretary']), createLeadFromAd);
+
+/**
+ * POST /leads/from-sheet
+ * Cria lead vindo de planilha
+ * Acesso: admin, secretary
+ */
+router.post('/from-sheet', authorize(['admin', 'secretary']), createLeadFromSheet);
+
+// =====================================================================
+// ✏️ ATUALIZAÇÃO E EXCLUSÃO
+// =====================================================================
+
+/**
+ * PUT /leads/:id
+ * Atualiza um lead
+ * Acesso: admin, secretary, professional
+ */
+router.put('/:id',
+    validateId,
+    authorize(['admin', 'secretary', 'professional']),
+    async (req, res) => {
+        try {
+            const lead = await Lead.findByIdAndUpdate(
+                req.params.id,
+                req.body,
+                {
+                    new: true,
+                    runValidators: true
+                }
+            );
+
+            if (!lead) {
+                return res.status(404).json({
+                    message: 'Lead não encontrado'
+                });
+            }
+
+            console.log('✅ Lead atualizado:', lead._id);
+
+            res.json(lead);
+        } catch (err) {
+            console.error('❌ Erro ao atualizar lead:', err);
+            res.status(400).json({
+                message: 'Erro ao atualizar lead',
+                error: err.message
+            });
+        }
+    }
+);
+
+/**
+ * DELETE /leads/:id
+ * Deleta um lead
+ * Acesso: admin, secretary
+ */
+router.delete('/:id',
+    validateId,
+    authorize(['admin', 'secretary']),
+    async (req, res) => {
+        try {
+            const lead = await Lead.findByIdAndDelete(req.params.id);
+
+            if (!lead) {
+                return res.status(404).json({
+                    message: 'Lead não encontrado'
+                });
+            }
+
+            console.log('✅ Lead deletado:', req.params.id);
+
+            res.status(204).end();
+        } catch (err) {
+            console.error('❌ Erro ao deletar lead:', err);
+            res.status(400).json({
+                message: 'Erro ao deletar lead',
+                error: err.message
+            });
+        }
+    }
+);
+
+// =====================================================================
+// 🔄 CONVERSÃO DE LEAD PARA PACIENTE
+// =====================================================================
+
+/**
+ * POST /leads/:leadId/convert-to-patient
+ * Converte um lead em paciente
+ * Acesso: admin, secretary
+ */
+router.post('/:leadId/convert-to-patient',
+    authorize(['admin', 'secretary']),
+    convertLeadToPatient
+);
+
+// =====================================================================
+// 📊 MÉTRICAS E RELATÓRIOS
+// =====================================================================
+
+/**
+ * GET /leads/report/summary
+ * Relatório resumido com totais por status e origem
+ * Acesso: admin, secretary
+ */
+router.get('/report/summary',
+    authorize(['admin', 'secretary']),
+    async (req, res) => {
+        try {
+            const summary = await Lead.aggregate([
+                {
+                    $facet: {
+                        byStatus: [
+                            {
+                                $group: {
+                                    _id: '$status',
+                                    count: { $sum: 1 }
+                                }
+                            },
+                            { $sort: { count: -1 } }
+                        ],
+                        byOrigin: [
+                            {
+                                $group: {
+                                    _id: '$origin',
+                                    count: { $sum: 1 }
+                                }
+                            },
+                            { $sort: { count: -1 } }
+                        ],
+                        total: [
+                            { $count: 'total' }
+                        ],
+                        thisMonth: [
+                            {
+                                $match: {
+                                    createdAt: {
+                                        $gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+                                    }
+                                }
+                            },
+                            { $count: 'total' }
+                        ]
+                    }
+                }
+            ]);
+
+            res.json(summary[0]);
+        } catch (err) {
+            console.error('❌ Erro ao gerar relatório:', err);
+            res.status(500).json({
+                message: 'Erro ao gerar relatório',
+                error: err.message
+            });
+        }
+    }
+);
+
+/**
+ * GET /leads/sheet-metrics
+ * Métricas específicas da planilha
+ * Acesso: admin, secretary
+ */
+router.get('/sheet-metrics',
+    authorize(['admin', 'secretary']),
+    getSheetMetrics
+);
+
+/**
+ * GET /leads/weekly-metrics
+ * Métricas semanais
+ * Acesso: admin, secretary
+ */
+router.get('/weekly-metrics',
+    authorize(['admin', 'secretary']),
+    getWeeklyMetrics
+);
 
 export default router;
