@@ -10,10 +10,7 @@ import { normalizeE164BR } from "../utils/phone.js";
 // =====================================================================
 
 /**
- * Cria lead a partir de anúncio (Meta/Google Ads)
- * POST /api/leads/from-ad
- */
-/**
+
  * Cria lead a partir de anúncio (Meta/Google Ads)
  * POST /api/leads/from-ad
  */

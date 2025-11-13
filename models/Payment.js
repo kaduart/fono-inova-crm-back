@@ -17,6 +17,8 @@ const paymentSchema = new mongoose.Schema({
             'evaluation',
             'session',
             'package_session',
+            'tongue_tie_test',
+            'neuropsych_evaluation',
             'individual_session',
             'meet',
             'alignment'
@@ -75,7 +77,7 @@ const paymentSchema = new mongoose.Schema({
     },
     sessionType: {
         type: String,
-        enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia'],
+        enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'tongue_tie_test', 'neuropsych_evaluation'],
     },
     serviceDate: {
         type: String,

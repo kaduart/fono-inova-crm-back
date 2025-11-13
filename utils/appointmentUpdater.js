@@ -1,7 +1,7 @@
 // utils/updateAppointmentFromSession.js
 import Appointment from "../models/Appointment.js";
 import Patient from "../models/Patient.js";
-import { mapStatusToClinical, mapStatusToOperational } from "../routes/Payment.js";
+import { mapStatusToClinical, mapStatusToOperational } from "./statusMappers.js";
 
 /**
  * 🔹 Sincroniza o Appointment vinculado à Session.
@@ -12,7 +12,7 @@ export async function updateAppointmentFromSession(sessionDoc, mongoSession = nu
   if (!appointment) return null;
 
   const op = mapStatusToOperational(sessionDoc.status); // nunca "completed" ou "paid"
-  const cl = mapStatusToClinical(sessionDoc.status);
+  const cl = (sessionDoc.status);
 
   const pay =
     (sessionDoc.paymentStatus && String(sessionDoc.paymentStatus).toLowerCase()) ||

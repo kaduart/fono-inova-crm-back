@@ -26,6 +26,7 @@ const appointmentSchema = new mongoose.Schema({
   notes: {
     type: String,
     required: false,
+    default: ''
   },
   operationalStatus: {
     type: String,
@@ -62,7 +63,7 @@ const appointmentSchema = new mongoose.Schema({
   specialty: {
     type: String,
     required: true,
-    enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'pediatria', 'neuroped'],
+    enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'tongue_tie_test', , 'neuropsych_evaluation', 'fisioterapia', 'pediatria', 'neuroped'],
 
   },
   paymentStatus: {
@@ -95,6 +96,7 @@ const appointmentSchema = new mongoose.Schema({
   sessionValue: {
     type: Number,
     min: 0,
+    default: 0
   },
   paymentMethod: {
     type: String,

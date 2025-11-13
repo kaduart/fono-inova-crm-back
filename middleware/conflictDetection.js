@@ -111,22 +111,22 @@ export const getAvailableTimeSlots = async (req, res) => {
 
         if (!dailyAvailability?.times?.length) return res.json([]);
 
-        // 🧩 Buscar agendamentos válidos (todos os tipos, exceto cancelados)
+        // 🧩 Buscar TODOS agendamentos não cancelados nesse dia/médico
         const appointments = await Appointment.find({
             doctor: doctorId,
             date,
-            serviceType: { $in: ['individual_session', 'package_session', 'evaluation'] },
             $nor: [
-                { status: { $in: ['canceled', 'cancelado', 'cancelada'] } },
                 { operationalStatus: { $in: ['canceled', 'cancelado', 'cancelada'] } },
                 { clinicalStatus: { $in: ['canceled', 'cancelado', 'cancelada'] } },
             ],
-        }).select('time serviceType status operationalStatus clinicalStatus');
+        }).select('time');
 
         const bookedTimes = appointments.map(a => a.time);
 
         // 🔹 Remove os horários ocupados
-        const availableSlots = dailyAvailability.times.filter(t => !bookedTimes.includes(t));
+        const availableSlots = dailyAvailability.times.filter(
+            (t) => !bookedTimes.includes(t)
+        );
 
         return res.json(availableSlots);
     } catch (err) {
@@ -134,6 +134,7 @@ export const getAvailableTimeSlots = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
 
 
 

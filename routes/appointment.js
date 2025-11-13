@@ -33,6 +33,7 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
         notes,
         packageId,
         sessionId,
+        specialty,
         sessionType,
         isAdvancePayment = false,
         advanceSessions = [],
@@ -169,7 +170,7 @@ router.post('/', checkAppointmentConflicts, async (req, res) => {
                 visualFlag: 'pending',
                 sessionValue: amount,
                 serviceType,
-                specialty: sessionType || 'fonoaudiologia',
+                specialty: specialty,
                 notes,
             });
 
