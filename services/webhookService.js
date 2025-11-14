@@ -3,6 +3,7 @@ import { getIo } from "../config/socket.js";
 import Package from "../models/Package.js";
 import Payment from "../models/Payment.js";
 import { distributePayments } from "../services/distributePayments.js";
+import moment from "moment-timezone";
 
 /**
  * 🔔 Webhook principal para notificações PIX do Sicoob
@@ -93,7 +94,10 @@ async function processPixTransaction(formattedPix, io) {
             serviceType: "package_session",
             kind: "package_receipt",
             notes: `Pagamento via PIX - ${payer}`,
-            paymentDate: new Date(),
+            paymentDate: moment()
+                .tz("America/Sao_Paulo")
+                .format("YYYY-MM-DD"),
+            updatedAt: new Date()
         });
         await paymentDoc.save({ session: mongoSession });
 

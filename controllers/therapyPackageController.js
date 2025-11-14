@@ -1553,7 +1553,10 @@ export const packageOperations = {
                 status: "paid",
                 kind: "package_receipt",
                 serviceType: "package_session",
-                paymentDate: new Date(),
+                paymentDate: moment()
+                    .tz("America/Sao_Paulo")
+                    .format("YYYY-MM-DD"),
+                updatedAt: new Date()
             });
 
             await paymentDoc.save({ session: mongoSession });
