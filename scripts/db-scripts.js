@@ -11,14 +11,14 @@ db.sessions.deleteMany({
 
 // deletar por id
 db.payments.deleteMany({
-  _id: ObjectId("68f26a8ec5bd0b3e3273e1e3")
+  _id: ObjectId("69178d81e34c6e12317aa044")
 });
 
 db.sessions.deleteMany({
-  _id: ObjectId("68f24da3dbd680a8e1f108e7")
+  _id: ObjectId("69178d81e34c6e12317aa044")
 });
 db.appointments.deleteMany({
-  _id: ObjectId("68ed08d59a37fc7155f8aeb7")
+  _id: ObjectId("69178d81e34c6e12317aa048")
 });
 
 // atualiza dados do pagamento
