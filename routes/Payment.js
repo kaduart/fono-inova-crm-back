@@ -253,19 +253,6 @@ async function handleAdvancePayment(req, res) {
     }
 }
 
-/**
- * GET /api/payments
- *
- * Query params:
- * - doctorId (string)
- * - patientId (string)
- * - status (string)
- * - startDate (YYYY-MM-DD) -> baseado em paymentDate
- * - endDate   (YYYY-MM-DD)
- * - page (number)
- * - limit (number)
- * - withDetails=true|false -> controla populates pesados
- */
 router.get('/', async (req, res) => {
     try {
         const {
@@ -274,52 +261,25 @@ router.get('/', async (req, res) => {
             status,
             startDate,
             endDate,
-            page: pageParam,
-            limit: limitParam,
-            withDetails,
         } = req.query;
 
         const filters = {};
 
-        // 🔎 Filtros básicos
+        // 🔍 Filtros básicos
         if (doctorId) filters.doctor = doctorId;
         if (patientId) filters.patient = patientId;
         if (status) filters.status = status;
 
-        // 🗓️ Filtro por PERÍODO usando paymentDate (string "YYYY-MM-DD")
-        const today = new Date();
-        const toYMD = (d) => d.toISOString().slice(0, 10); // "YYYY-MM-DD"
-
-        let start = startDate;
-        let end = endDate;
-
-        if (!start || !end) {
-            // Default: últimos 30 dias
-            const endObj = end ? new Date(end) : today;
-            const startObj = start
-                ? new Date(start)
-                : new Date(endObj.getTime() - 29 * 24 * 60 * 60 * 1000);
-
-            start = toYMD(startObj);
-            end = toYMD(endObj);
+        // 🔄 IMPORTANTE: fechamento financeiro usa paymentDate, não createdAt
+        if (startDate && endDate) {
+            filters.paymentDate = {
+                $gte: startDate, // já está no formato "2025-11-14"
+                $lte: endDate,
+            };
         }
 
-        filters.paymentDate = {
-            $gte: start,
-            $lte: end,
-        };
-
-        // 📄 Paginação
-        const page = parseInt(pageParam, 10) || 1;
-        const limit = Math.min(parseInt(limitParam, 10) || 50, 200);
-        const skip = (page - 1) * limit;
-
-        // 🧵 Query base
-        let query = Payment.find(filters)
-            .select(
-                // pega só o necessário do Payment
-                'amount status paymentMethod paymentDate serviceDate createdAt patient doctor package session appointment advanceSessions'
-            )
+        // 🧾 Busca dos pagamentos com todos os populates que você tinha antes
+        const payments = await Payment.find(filters)
             .populate({
                 path: 'patient',
                 select: 'fullName email phoneNumber',
@@ -329,89 +289,73 @@ router.get('/', async (req, res) => {
                 path: 'doctor',
                 select: 'fullName specialty',
                 model: 'Doctor',
-            });
+            })
+            .populate({
+                path: 'package',
+                model: 'Package',
+                select:
+                    '_id name totalSessions totalPaid balance financialStatus sessionType patient doctor',
+                populate: [
+                    {
+                        path: 'patient',
+                        select: '_id fullName phoneNumber',
+                        model: 'Patient',
+                    },
+                    {
+                        path: 'doctor',
+                        select: '_id fullName specialty',
+                        model: 'Doctor',
+                    },
+                ],
+            })
+            // 🔎 Sessão principal – agora com mais campos
+            .populate({
+                path: 'session',
+                select: 'date time sessionType status',
+                model: 'Session',
+            })
+            // 📅 Agendamento
+            .populate({
+                path: 'appointment',
+                select: 'date time status',
+                model: 'Appointment',
+            })
+            // 📦 Sessões adiantadas (pacote)
+            .populate({
+                path: 'advanceSessions.session',
+                select: 'date time sessionType status',
+                model: 'Session',
+            })
+            .sort({ createdAt: -1 })
+            .lean();
 
-        // 🔁 Detalhes pesados opcionais
-        if (withDetails === 'true') {
-            query = query
-                .populate({
-                    path: 'package',
-                    model: 'Package',
-                    select:
-                        '_id name totalSessions totalPaid balance financialStatus sessionType patient doctor',
-                    populate: [
-                        {
-                            path: 'patient',
-                            select: '_id fullName phoneNumber',
-                            model: 'Patient',
-                        },
-                        {
-                            path: 'doctor',
-                            select: '_id fullName specialty',
-                            model: 'Doctor',
-                        },
-                    ],
-                })
-                .populate({
-                    path: 'session',
-                    select: 'date status',
-                    model: 'Session',
-                })
-                .populate({
-                    path: 'appointment',
-                    select: 'date time status',
-                    model: 'Appointment',
-                })
-                .populate({
-                    path: 'advanceSessions.session',
-                    select: 'date time sessionType status',
-                    model: 'Session',
-                });
-        }
+        // ❌ Ignora pagamentos ligados a sessões canceladas
+        const validPayments = payments.filter(
+            (p) => p.session?.status !== 'canceled'
+        );
 
-        query = query
-            .sort({ createdAt: -1 }) // mais recentes primeiro
-            .skip(skip)
-            .limit(limit)
-            .lean(); // 🔥 deixa mais leve
-
-        // 🚀 Executa em paralelo: lista + contagem
-        const [payments, totalCount] = await Promise.all([
-            query,
-            Payment.countDocuments(filters),
-        ]);
-
-        if (!payments.length) {
+        if (validPayments.length === 0) {
             return res.status(404).json({
                 success: false,
                 message: 'Nenhum pagamento encontrado',
-                filtersUsed: {
-                    startDate: start,
-                    endDate: end,
-                    doctorId: doctorId || null,
-                    patientId: patientId || null,
-                    status: status || null,
-                },
             });
         }
 
-        // ❌ Ignora pagamentos onde a sessão está cancelada
-        const validPayments = payments.filter(
-            (p) => !p.session || p.session.status !== 'canceled'
-        );
-
         // 💰 Totais
         const totalReceived = validPayments.reduce((acc, p) => {
-            return ['paid', 'package_paid'].includes(p.status) ? acc + p.amount : acc;
+            return p.status === 'paid' ? acc + p.amount : acc;
         }, 0);
 
         const totalPending = validPayments.reduce((acc, p) => {
             return p.status === 'pending' ? acc + p.amount : acc;
         }, 0);
 
-        // ✨ Formatação pro front
+        // 🎨 Formatação final pro front (mantendo o shape antigo)
         const formattedPayments = validPayments.map((payment) => ({
             ...payment,
+            // ⚠️ serviceType continua vindo do próprio Payment (não tiramos nada)
+            // ex: payment.serviceType === 'tongue_tie_test'
+
             patientName: payment.patient?.fullName || 'Não informado',
             doctorName: payment.doctor?.fullName || 'Não informado',
             doctorSpecialty: payment.doctor?.specialty || 'Não informada',
@@ -432,21 +376,10 @@ router.get('/', async (req, res) => {
         return res.status(200).json({
             success: true,
             count: formattedPayments.length,
-            totalCount,
-            page,
-            totalPages: Math.ceil(totalCount / limit),
             data: formattedPayments,
             totals: {
                 received: totalReceived,
                 pending: totalPending,
-            },
-            filtersUsed: {
-                startDate: start,
-                endDate: end,
-                doctorId: doctorId || null,
-                patientId: patientId || null,
-                status: status || null,
-                withDetails: withDetails === 'true',
             },
         });
     } catch (err) {
@@ -459,8 +392,6 @@ router.get('/', async (req, res) => {
         });
     }
 });
-
-
 
 
 router.patch('/:id', auth, async (req, res) => {
