@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import express from 'express';
+import moment from 'moment-timezone';
 import mongoose from 'mongoose';
 import { handleAdvancePayment } from '../helpers/handleAdvancePayment.js';
 import { auth } from '../middleware/auth.js';
@@ -983,7 +984,9 @@ router.patch('/:id/complete', auth, async (req, res) => {
                 { _id: appointment.payment._id },
                 {
                     status: 'paid',
-                    paymentDate: new Date(),
+                    paymentDate: moment()
+                        .tz("America/Sao_Paulo")
+                        .format("YYYY-MM-DD"),
                     updatedAt: new Date()
                 }
             ).session(session);

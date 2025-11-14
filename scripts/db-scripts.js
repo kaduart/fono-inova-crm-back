@@ -103,7 +103,7 @@ db.appointments.find(
 )
 
 //pagamentos do dia 
-db.payments.find({ serviceDate: "2025-11-06" }).sort({ paymentDate: 1 })
+db.payments.find({ serviceDate: "2025-11-12" }).sort({ paymentDate: 1 })
 db.payments.find({ paymentDate: "2025-11-06" }).sort({ serviceDate: 1 })
 
 
