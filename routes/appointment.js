@@ -690,10 +690,16 @@ function determineActionType(updateData) {
 // Deleta um agendamento
 router.delete('/:id', validateId, auth, async (req, res) => {
     try {
-        await Appointment.findByIdAndDelete(req.params.id);
-        res.json({ message: 'Agendamento deletado com sucesso' });
+        const appt = await Appointment.findByIdAndDelete(req.params.id);
 
-        await updatePatientAppointments(req.body.patientId);
+        if (!appt) {
+            return res.status(404).json({ error: 'Agendamento não encontrado' });
+        }
+
+        // Recalcular agendamentos do paciente
+        await updatePatientAppointments(appt.patient);
+
+        res.json({ message: 'Agendamento deletado com sucesso' });
     } catch (error) {
         if (error.name === 'ValidationError') {
             const errors = Object.keys(error.errors).reduce((acc, key) => {
@@ -715,7 +721,7 @@ router.delete('/:id', validateId, auth, async (req, res) => {
 router.get('/history/:patientId', async (req, res) => {
     try {
         const { patientId } = req.params;
-        const history = await Appointment.find({ patientId }).sort({ date: -1 });
+        const history = await Appointment.find({ patient: patientId }).sort({ date: -1 });
         res.json(history);
     } catch (error) {
         if (error.name === 'ValidationError') {
@@ -1308,12 +1314,12 @@ router.get('/stats', auth, async (req, res) => {
                                 scheduled: { $sum: 1 },
                                 completed: {
                                     $sum: {
-                                        $cond: [{ $eq: ["$operationalStatus", "concluído"] }, 1, 0]
+                                        $cond: [{ $eq: ["$operationalStatus", "confirmed"] }, 1, 0]
                                     }
                                 },
                                 canceled: {
                                     $sum: {
-                                        $cond: [{ $eq: ["$operationalStatus", "cancelado"] }, 1, 0]
+                                        $cond: [{ $eq: ["$operationalStatus", "canceled"] }, 1, 0]
                                     }
                                 }
                             }
