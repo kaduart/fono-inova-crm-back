@@ -1414,15 +1414,15 @@ export const packageOperations = {
             );
 
             console.log('✅ Pacote atualizado');
-
+n
             // Recalcular
             const updatedPackage = await Package.findById(packageId)
                 .session(mongoSession);
 
             updatedPackage.totalValue = updatedPackage.sessionValue * updatedPackage.totalSessions;
-
             // Soma TODAS as sessões (ativas + canceladas com pagamento)
             const allSessions = await Session.find({ package: packageId });
+            const activeSessions = allSessions.filter(s => s.status !== 'canceled');
 
             const totalPaid = allSessions.reduce((sum, s) => {
                 // Sessão cancelada? Usa originalPartialAmount

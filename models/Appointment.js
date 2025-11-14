@@ -116,8 +116,14 @@ appointmentSchema.pre('findOneAndUpdate', function (next) {
 });
 
 appointmentSchema.index(
-  { patient: 1, doctor: 1, date: 1, time: 1 },
-  { unique: true, name: 'unique_appointment' }
+  { doctor: 1, date: 1, time: 1 },
+  {
+    unique: true,
+    name: 'unique_appointment_slot',
+    partialFilterExpression: {
+      operationalStatus: 'scheduled' // só bloqueia horário AGENDADO
+    }
+  }
 );
 
 appointmentSchema.post('save', async function (doc) {
