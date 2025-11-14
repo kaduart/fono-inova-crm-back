@@ -1424,7 +1424,7 @@ export const packageOperations = {
             // Soma TODAS as sessões (ativas + canceladas com pagamento)
             const allSessions = await Session.find({ package: packageId });
 
-            totalPaid = allSessions.reduce((sum, s) => {
+            const totalPaid = allSessions.reduce((sum, s) => {
                 // Sessão cancelada? Usa originalPartialAmount
                 if (s.originalPartialAmount > 0) {
                     return sum + s.originalPartialAmount;
