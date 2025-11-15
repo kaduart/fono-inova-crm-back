@@ -788,22 +788,24 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
             }
 
             // Atualizar Session - VERSÃO CORRETA
+            // Atualizar Session
             if (appointment.session) {
-                const sessionDoc = await Session.findById(
-                    appointment.session._id || appointment.session
-                ).session(session);
+                // 🔧 Busca direto do BD, não usa populate
+                const sessionDoc = await Session.findById(appointment.session)
+                    .session(session);
 
                 if (sessionDoc) {
+                    console.log('📊 Sessão ANTES do cancelamento:', {
+                        id: sessionDoc._id,
+                        isPaid: sessionDoc.isPaid,
+                        paymentStatus: sessionDoc.paymentStatus,
+                        partialAmount: sessionDoc.partialAmount
+                    });
+
                     const wasSessionPaid =
                         sessionDoc.paymentStatus === 'paid' ||
                         sessionDoc.isPaid === true ||
                         (sessionDoc.partialAmount && sessionDoc.partialAmount > 0);
-
-                    console.log('📊 Sessão sendo cancelada:', {
-                        id: sessionDoc._id,
-                        wasPaid: wasSessionPaid,
-                        partialAmount: sessionDoc.partialAmount
-                    });
 
                     sessionDoc._inFinancialTransaction = true;
 
@@ -816,8 +818,12 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
 
                         console.log('💾 Dados guardados:', {
                             originalPartialAmount: sessionDoc.originalPartialAmount,
-                            originalPaymentStatus: sessionDoc.originalPaymentStatus
+                            originalPaymentStatus: sessionDoc.originalPaymentStatus,
+                            originalPaymentMethod: sessionDoc.originalPaymentMethod,
+                            originalIsPaid: sessionDoc.originalIsPaid
                         });
+                    } else {
+                        console.log('⚠️ Sessão NÃO estava paga, não guarda original');
                     }
 
                     // Marca como cancelada
@@ -845,7 +851,7 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
                         validateBeforeSave: false
                     });
 
-                    console.log('✅ Session cancelada');
+                    console.log('✅ Session cancelada e salva');
                 }
             }
 

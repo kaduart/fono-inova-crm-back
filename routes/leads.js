@@ -1,20 +1,21 @@
 // routes/leads.js - VERSÃO UNIFICADA E OTIMIZADA
 import express from 'express';
-import { auth, authorize } from '../middleware/auth.js';
-import validateId from '../middleware/validateId.js';
-import Lead from '../models/Leads.js';
 import {
     // 📊 Funções de planilha
     convertLeadToPatient,
-    getSheetMetrics,
-    getWeeklyMetrics,
     // 🆕 Funções de anúncios
     createLeadFromAd,
     createLeadFromSheet,
+    getSheetMetrics,
+    getWeeklyMetrics,
     // 📞 Webhooks
     googleLeadWebhook,
     metaLeadWebhook
 } from '../controllers/leadController.js';
+import { auth, authorize } from '../middleware/auth.js';
+import validateId from '../middleware/validateId.js';
+import Lead from '../models/Leads.js';
+import { sendLeadToMeta } from '../services/metaConversionsService.js';
 
 const router = express.Router();
 
@@ -142,6 +143,18 @@ router.post('/', authorize(['admin', 'secretary']), async (req, res) => {
         console.log('✅ Lead criado manualmente:', lead._id);
 
         res.status(201).json(lead);
+        try {
+            await sendLeadToMeta({
+                email: lead?.contact?.email || lead?.email,
+                phone: lead?.contact?.phone || lead?.phone,
+                leadId: lead._id,
+            });
+        } catch (err) {
+            console.error(
+                '⚠️ Erro ao enviar lead para Meta CAPI (mas lead foi salvo):',
+                err.message
+            );
+        }
     } catch (err) {
         console.error('❌ Erro ao criar lead:', err);
         res.status(400).json({

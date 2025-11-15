@@ -46,17 +46,7 @@ const sessionSchema = new mongoose.Schema({
             message: 'Status inválido para sessão'
         },
     },
-    confirmedAbsence: {
-        type: Boolean,
-        default: null,
-        validate: {
-            validator: function (value) {
-                // Campo obrigatório apenas quando status é 'canceled'
-                return this.status !== 'canceled' || value !== null;
-            },
-            message: 'confirmedAbsence é obrigatório para sessões canceladas'
-        }
-    },
+    confirmedAbsence: { type: Boolean, default: null },
     notes: { type: String },
     paymentStatus: {
         type: String,

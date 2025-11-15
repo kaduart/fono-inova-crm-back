@@ -3,6 +3,7 @@ import Followup from '../models/Followup.js';
 import Lead from '../models/Leads.js';
 import Patient from '../models/Patient.js';
 import { calculateOptimalFollowupTime } from '../services/intelligence/smartFollowup.js';
+import { sendLeadToMeta } from '../services/metaConversionsService.js';
 import { normalizeE164BR } from "../utils/phone.js";
 
 // =====================================================================
@@ -117,6 +118,18 @@ export const createLeadFromAd = async (req, res) => {
             }
         });
 
+        try {
+            await sendLeadToMeta({
+                email: lead?.contact?.email || lead?.email,
+                phone: lead?.contact?.phone || lead?.phone,
+                leadId: lead._id,
+            });
+        } catch (err) {
+            console.error(
+                '⚠️ Erro ao enviar lead-from-ad para Meta CAPI:',
+                err.message
+            );
+        }
     } catch (error) {
         console.error('❌ Erro ao criar lead de anúncio:', error);
         res.status(500).json({
@@ -279,6 +292,20 @@ export const createLeadFromSheet = async (req, res) => {
             message: 'Lead criado da planilha!',
             data: lead
         });
+
+
+        try {
+            await sendLeadToMeta({
+                email: lead?.contact?.email || lead?.email,
+                phone: lead?.contact?.phone || lead?.phone,
+                leadId: lead._id,
+            });
+        } catch (err) {
+            console.error(
+                '⚠️ Erro ao enviar lead-from-sheet para Meta CAPI:',
+                err.message
+            );
+        }
     } catch (err) {
         console.error("Erro ao criar lead:", err);
         res.status(500).json({ error: err.message });

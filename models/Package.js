@@ -48,7 +48,12 @@ const packageSchema = new mongoose.Schema({
     default: 0,
     description: 'Valor total já pago pelo paciente neste pacote'
   },
-
+  totalValue: {
+    type: Number,
+    required: true,
+    min: 0,
+    description: 'Valor total fixo do pacote (do payment inicial)'
+  },
   lastPaymentAt: {
     type: Date,
     description: 'Data do último pagamento recebido'
@@ -65,14 +70,15 @@ packageSchema.set('toJSON', { virtuals: true });
 packageSchema.set('toObject', { virtuals: true })
 
 packageSchema.pre('save', function (next) {
-  const expectedTotal = this.totalSessions * this.sessionValue;
+  // ✅ USAR totalValue FIXO:
+  if (this.totalValue !== undefined && !isNaN(this.totalValue)) {
+    this.balance = this.totalValue - (this.totalPaid || 0);
+  }
 
-  // Atualiza balance dinamicamente sem invalidar pacotes parciais
-  this.balance = expectedTotal - (this.totalPaid || 0);
-
+  // Status financeiro
   if (this.totalPaid === 0) {
     this.financialStatus = 'unpaid';
-  } else if (this.totalPaid < expectedTotal) { 
+  } else if (this.totalPaid < this.totalValue) {
     this.financialStatus = 'partially_paid';
   } else {
     this.financialStatus = 'paid';

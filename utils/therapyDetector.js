@@ -97,3 +97,46 @@ export function isAskingAboutEquivalence(text = "") {
     ];
     return patterns.some(p => p.test(normalizeTherapyTerms(text)));
 }
+
+// ========================================
+// 🧠 TDAH - DETECÇÃO E RESPOSTA
+// ========================================
+
+/**
+ * Detecta perguntas sobre TDAH/tratamento
+ */
+export function isTDAHQuestion(text) {
+    const normalized = text.toLowerCase();
+    
+    const tdahKeywords = /\b(tdah|tdha|hiperativ|deficit.*aten[çc][aã]o|desaten[çc][aã]o|impulsiv)\b/i;
+    const treatmentKeywords = /\b(trata|ajud|fazer|como.*funciona|atend|consult|terap)\b/i;
+    
+    return tdahKeywords.test(normalized) && treatmentKeywords.test(normalized);
+}
+
+/**
+ * Resposta estruturada sobre TDAH
+ */
+export function getTDAHResponse(leadName = '') {
+    const greeting = leadName ? `Oi ${leadName}, tudo bem?` : 'Oi, tudo bem?';
+    
+    return `${greeting} 💚
+
+O TDAH pode ser tratado de forma bem efetiva com um plano multidisciplinar. Em geral, trabalhamos com:
+
+🧠 **Avaliação especializada** – para entender o grau do TDAH, se há outras dificuldades associadas (ansiedade, dificuldades de aprendizagem, TEA, etc.)
+
+🗣️ **Terapia com psicólogo** – ajuda na organização, controle de impulsividade, emoções e estratégias para foco
+
+👨‍👩‍👦 **Orientação aos pais** – para ajustar rotina, combinados em casa e manejo de comportamento no dia a dia
+
+🎓 **Apoio escolar** – adaptação de atividades, estratégias em sala e comunicação com a escola
+
+💊 **Acompanhamento médico** (neuropediatra/psiquiatra) – quando indicado, pode incluir medicação para ajudar na atenção e impulsividade
+
+🧩 **Outras terapias, quando necessário** – como fonoaudiologia, terapia ocupacional ou psicopedagogia, se houver dificuldades de linguagem, motricidade ou aprendizagem
+
+Aqui na clínica a gente monta um plano individualizado, de acordo com a idade, rotina e necessidades de cada paciente 💚
+
+Se você quiser, posso te explicar como funciona a avaliação aqui na Fono Inova e já ver um horário disponível pra gente começar. É para você ou para uma criança/adolescente? Quantos anos? 😊`.trim();
+}
