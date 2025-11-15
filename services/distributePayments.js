@@ -2,30 +2,16 @@ import Package from '../models/Package.js';
 import Session from '../models/Session.js';
 import { updateAppointmentFromSession } from '../utils/appointmentUpdater.js';
 
-/**
- * Distribui o valor pago de um pacote entre as sessões correspondentes,
- * atualizando os status financeiros e visuais sem duplicar pagamentos.
- *
- * - Mantém compatibilidade total com a versão anterior (que funcionava)
- * - Ordena as sessões por data para distribuir corretamente
- * - Atualiza pacote, sessões e appointments com base no valor pago
- *
- * @param {String} packageId - ID do pacote
- * @param {Number} amount - Valor recebido
- * @param {mongoose.ClientSession|null} mongoSession - Sessão opcional
- * @param {String|null} parentPaymentId - ID do pagamento principal (recibo)
- * @returns {Promise<{ totalPaid: number, balance: number, totalValue: number, financialStatus: string }>}
- */
 export const distributePayments = async (packageId, amount, mongoSession = null, parentPaymentId = null) => {
   const pkg = await Package.findById(packageId).session(mongoSession);
   if (!pkg) throw new Error('Pacote não encontrado.');
 
   const paymentMethod = pkg.paymentMethod || 'pix';
-  const sessionValue = pkg.sessionValue;
+  const sessionValue = pkg.sessionValue || 0;
   let remainingAmount = amount;
 
   // ======================================================
-  // 1️⃣ Buscar todas as sessões do pacote em ordem cronológica
+  // 1️⃣ Buscar todas as sessões do pacote
   // ======================================================
   const sessions = await Session.find({ package: packageId })
     .sort({ date: 1 })
@@ -33,16 +19,20 @@ export const distributePayments = async (packageId, amount, mongoSession = null,
 
   if (!sessions.length) {
     console.warn(`⚠️ Nenhuma sessão encontrada para o pacote ${packageId}`);
-    return;
+    return {
+      totalPaid: 0,
+      balance: Number(pkg.totalValue) || 0,
+      totalValue: Number(pkg.totalValue) || 0,
+      financialStatus: 'unpaid'
+    };
   }
 
   // ======================================================
-  // 2️⃣ Distribuir o pagamento entre as sessões
+  // 2️⃣ Distribuir pagamento entre sessões
   // ======================================================
   for (const s of sessions) {
     if (remainingAmount <= 0) break;
 
-    // Ignora sessões canceladas ou já pagas
     if (
       s.status === 'canceled' ||
       s.operationalStatus === 'canceled' ||
@@ -55,7 +45,6 @@ export const distributePayments = async (packageId, amount, mongoSession = null,
     if (payNow > 0) {
       s.partialAmount = (s.partialAmount || 0) + payNow;
 
-      // Define status conforme o novo saldo
       if (s.partialAmount >= sessionValue) {
         s.isPaid = true;
         s.paymentStatus = 'paid';
@@ -74,7 +63,6 @@ export const distributePayments = async (packageId, amount, mongoSession = null,
       s.paymentMethod = paymentMethod;
       await s.save({ session: mongoSession });
 
-      // 🔄 Mantém sincronizado com Appointment
       await updateAppointmentFromSession(s, mongoSession);
 
       remainingAmount -= payNow;
@@ -82,27 +70,64 @@ export const distributePayments = async (packageId, amount, mongoSession = null,
   }
 
   // ======================================================
-  // 3️⃣ Recalcular resumo financeiro do pacote
+  // 3️⃣ Recalcular resumo financeiro com VALIDAÇÃO
   // ======================================================
   const allSessions = await Session.find({ package: packageId }).session(mongoSession);
 
-  const totalPaid = allSessions.reduce((sum, s) => sum + (s.partialAmount || 0), 0);
-  const expectedTotal = pkg.totalSessions * sessionValue;
-  const balance = Math.max(expectedTotal - totalPaid, 0);
+  const totalPaid = allSessions.reduce((sum, s) => {
+    const partial = Number(s.partialAmount) || 0;
+    if (isNaN(partial)) {
+      console.error(`⚠️ Session ${s._id} tem partialAmount inválido:`, s.partialAmount);
+      return sum;
+    }
+    return sum + partial;
+  }, 0);
 
-  pkg.totalPaid = totalPaid;
+  // 🛡️ VALIDAÇÃO CRÍTICA: Garantir totalValue numérico
+  const safeTotalValue = Number(pkg.totalValue);
+  const safeTotalPaid = Number(totalPaid);
+
+  console.log('🔍 [distributePayments] Valores antes do cálculo:', {
+    packageId,
+    totalValue: pkg.totalValue,
+    safeTotalValue,
+    totalPaid,
+    safeTotalPaid,
+    isNaN_totalValue: isNaN(safeTotalValue),
+    isNaN_totalPaid: isNaN(safeTotalPaid)
+  });
+
+  if (isNaN(safeTotalValue)) {
+    console.error(`❌ pkg.totalValue é NaN! Pacote ${packageId}:`, pkg);
+    throw new Error('totalValue do pacote está inválido (NaN)');
+  }
+
+  if (isNaN(safeTotalPaid)) {
+    console.error(`❌ totalPaid é NaN! Pacote ${packageId}`);
+    throw new Error('totalPaid calculado está inválido (NaN)');
+  }
+
+  const balance = Math.max(safeTotalValue - safeTotalPaid, 0);
+
+  pkg.totalPaid = safeTotalPaid;
   pkg.balance = balance;
   pkg.paidSessions = allSessions.filter(s => s.paymentStatus === 'paid').length;
 
   if (balance <= 0) pkg.financialStatus = 'paid';
-  else if (totalPaid > 0 && totalPaid < expectedTotal) pkg.financialStatus = 'partially_paid';
+  else if (safeTotalPaid > 0 && safeTotalPaid < safeTotalValue) pkg.financialStatus = 'partially_paid';
   else pkg.financialStatus = 'unpaid';
 
   pkg.lastPaymentAt = new Date();
   await pkg.save({ session: mongoSession });
 
+  console.log('✅ [distributePayments] Pacote atualizado:', {
+    totalPaid: pkg.totalPaid,
+    balance: pkg.balance,
+    financialStatus: pkg.financialStatus
+  });
+
   // ======================================================
-  // 4️⃣ Atualizar visualFlags finais (garantia de consistência)
+  // 4️⃣ Atualizar visualFlags
   // ======================================================
   for (const s of allSessions) {
     let visualFlag = 'blocked';
@@ -112,12 +137,12 @@ export const distributePayments = async (packageId, amount, mongoSession = null,
   }
 
   // ======================================================
-  // 5️⃣ Retornar resumo coerente
+  // 5️⃣ Retornar resumo
   // ======================================================
   return {
-    totalPaid,
+    totalPaid: safeTotalPaid,
     balance,
-    totalValue: expectedTotal,
+    totalValue: safeTotalValue,
     financialStatus: pkg.financialStatus,
   };
 };

@@ -173,10 +173,10 @@ db.packages.deleteMany({
 });
 
 //pacote por paciente 
-db.packages.find({ patient: ObjectId("687f7ddbcfb03169c5c8cd33") }).pretty()
+db.packages.find({ patient: ObjectId("6917c359d364f9d3b07bcbe9") }).pretty()
 
 //mostra os detalhes do pacote
-db.packages.find({ _id: ObjectId("68fa8c584862040e3c0636e8") }).pretty();
+db.packages.find({ _id: ObjectId("6917c359d364f9d3b07bcbe9") }).pretty();
 // deve retonrar qtd de sessoes do pacote
 db.sessions.find({ package: ObjectId("68f682092286c73db5d29d38") }).count();
 
