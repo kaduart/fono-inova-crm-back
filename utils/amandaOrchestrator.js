@@ -25,12 +25,21 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     // ✅ CONTEXTO INTELIGENTE (busca de leadContext.js)
     const enrichedContext = lead._id
         ? await enrichLeadContext(lead._id)
-        : { stage: 'novo', isFirstContact: true, messageCount: 0, conversationHistory: [], conversationSummary: null, shouldGreet: true };
+        : {
+            stage: 'novo',
+            isFirstContact: true,
+            messageCount: 0,
+            conversationHistory: [],
+            conversationSummary: null,
+            shouldGreet: true
+        };
 
     // ===== 1. TDAH - RESPOSTA ESPECÍFICA =====
     if (isTDAHQuestion(text)) {
         console.log('🧠 [TDAH] Pergunta sobre tratamento TDAH detectada');
-        return getTDAHResponse(lead?.name);
+        const base = getTDAHResponse(lead?.name);
+        const scoped = enforceClinicScope(base, text);
+        return ensureSingleHeart(scoped);
     }
 
     // ===== 2. TERAPIAS ESPECÍFICAS =====
@@ -55,31 +64,38 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
             context: enrichedContext
         });
 
-        return ensureSingleHeart(aiResponse);
+        const scoped = enforceClinicScope(aiResponse, text);
+        return ensureSingleHeart(scoped);
     }
 
     // ===== 3. EQUIVALÊNCIA =====
     if (isAskingAboutEquivalence(text)) {
-        return buildEquivalenceResponse();
+        const base = buildEquivalenceResponse();
+        const scoped = enforceClinicScope(base, text);
+        return ensureSingleHeart(scoped);
     }
 
     // ===== 4. MANUAL =====
     const manualResponse = tryManualResponse(normalized);
     if (manualResponse) {
         console.log(`✅ [ORCHESTRATOR] Resposta do manual`);
-        return ensureSingleHeart(manualResponse);
+        const scoped = enforceClinicScope(manualResponse, text);
+        return ensureSingleHeart(scoped);
     }
 
     // ===== 5. IA COM CONTEXTO =====
     console.log(`🤖 [ORCHESTRATOR] IA | Stage: ${enrichedContext.stage} | Msgs: ${enrichedContext.messageCount}`);
     try {
         const aiResponse = await callOpenAIWithContext(text, lead, enrichedContext);
-        return ensureSingleHeart(aiResponse);
+        const scoped = enforceClinicScope(aiResponse, text);
+        return ensureSingleHeart(scoped);
     } catch (error) {
         console.error(`❌ [ORCHESTRATOR] Erro na IA:`, error.message);
+        // aqui já é uma msg fixa nossa, não precisa de enforceScope
         return "Vou verificar e já te retorno, por favor um momento 💚";
     }
 }
+
 
 /**
  * 📖 MANUAL
@@ -323,5 +339,48 @@ function ensureSingleHeart(text) {
     const clean = text.replace(/💚/g, '').trim();
     return `${clean} 💚`;
 }
+
+// 🔒 Regra de escopo da clínica (não fazemos exames / RPG / Pilates)
+function enforceClinicScope(aiText = "", userText = "") {
+    if (!aiText) return aiText;
+
+    const t = aiText.toLowerCase();
+    const u = (userText || "").toLowerCase();
+
+    const asksExam =
+        /(exame\s+de\s+au(diç|diçã|dição)|exame\s+auditivo|audiometria|bera|peate|emiss(ões)?\s+otoac[úu]stic)/i.test(
+            u + " " + t
+        );
+
+    const mentionsExamInReply =
+        /(exame\s+de\s+au(diç|diçã|dição)|exame\s+auditivo|audiometria|bera|peate|emiss(ões)?\s+otoac[úu]stic)/i.test(
+            t
+        );
+
+    const mentionsRPGorPilates = /\brpg\b|pilates/i.test(u + " " + t);
+
+    // 🧪 CASO 1: exames de audição / BERA / audiometria
+    if (asksExam || mentionsExamInReply) {
+        return (
+            "Aqui na Clínica Fono Inova nós **não realizamos exames de audição** " +
+            "(como audiometria ou BERA/PEATE). Nosso foco é na **avaliação e terapia fonoaudiológica**. " +
+            "Podemos agendar uma avaliação para entender melhor o caso e, se necessário, te orientar " +
+            "sobre onde fazer o exame com segurança. 💚"
+        );
+    }
+
+    // 🧪 CASO 2: RPG / Pilates / coisas de estúdio
+    if (mentionsRPGorPilates) {
+        return (
+            "Na Fono Inova, a Fisioterapia é voltada para **atendimento terapêutico clínico**, " +
+            "e não trabalhamos com **RPG ou Pilates**. Se você quiser, podemos agendar uma avaliação " +
+            "para entender direitinho o caso e indicar a melhor forma de acompanhamento. 💚"
+        );
+    }
+
+    // ✅ Não precisou corrigir
+    return aiText;
+}
+
 
 export default getOptimizedAmandaResponse;
