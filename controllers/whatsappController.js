@@ -246,34 +246,41 @@ export const whatsappController = {
             const lead = await Lead.findById(leadId).populate('contact');
 
             if (!lead) {
-                return res.status(404).json({ success: false, message: 'Lead não encontrado' });
+                return res.status(404).json({
+                    success: false,
+                    message: 'Lead não encontrado'
+                });
             }
 
-            // Envia mensagem marcada como MANUAL
-            await sendTextMessage({
+            // Envia mensagem
+            const result = await sendTextMessage({
                 to: lead.contact.phone,
                 text,
                 lead: leadId,
-                sentBy: 'manual', // ← IMPORTANTE
+                sentBy: 'manual',
                 userId
             });
 
-            // Ativa controle manual AUTOMATICAMENTE
+            // Ativa controle manual
             await Lead.findByIdAndUpdate(leadId, {
                 'manualControl.active': true,
                 'manualControl.takenOverAt': new Date(),
                 'manualControl.takenOverBy': userId
             });
 
-            console.log(`✅ Mensagem manual enviada - Amanda pausada para lead ${leadId}`);
+            console.log(`✅ Mensagem manual enviada - Amanda pausada`);
 
             res.json({
                 success: true,
-                message: 'Mensagem enviada. Amanda pausada automaticamente.'
+                message: 'Mensagem enviada. Amanda pausada.',
+                messageId: result.messages?.[0]?.id || `manual-${Date.now()}` // 🆕 RETORNA ID
             });
 
         } catch (error) {
-            res.status(500).json({ success: false, error: error.message });
+            res.status(500).json({
+                success: false,
+                error: error.message
+            });
         }
     }
 
