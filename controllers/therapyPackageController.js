@@ -1236,7 +1236,9 @@ export const packageOperations = {
             status = 'scheduled'
         } = req.body;
 
-        // Validações básicas
+        // ============================================================
+        // VALIDAÇÕES BÁSICAS
+        // ============================================================
         if (!date || !time) {
             throw new Error('Data e horário são obrigatórios');
         }
@@ -1249,7 +1251,9 @@ export const packageOperations = {
             throw new Error('Formato de hora inválido. Use HH:mm');
         }
 
-        // Buscar o pacote
+        // ============================================================
+        // BUSCAR O PACOTE
+        // ============================================================
         const pkg = await Package.findById(packageId).session(mongoSession);
         if (!pkg) {
             throw new Error('Pacote não encontrado');
@@ -1257,7 +1261,27 @@ export const packageOperations = {
 
         console.log('📦 Pacote encontrado:', pkg._id);
 
-        // Verificar conflito
+        // ============================================================
+        // ✅ VALIDAR E NORMALIZAR sessionValue
+        // ============================================================
+        let validSessionValue = pkg.sessionValue || 0;
+
+        if (sessionValue !== undefined && sessionValue !== null && sessionValue !== '') {
+            const parsed = Number(sessionValue);
+            if (!isNaN(parsed) && parsed >= 0) {
+                validSessionValue = parsed;
+            }
+        }
+
+        console.log('💰 SessionValue:', {
+            recebido: sessionValue,
+            doPacote: pkg.sessionValue,
+            utilizado: validSessionValue
+        });
+
+        // ============================================================
+        // VERIFICAR CONFLITO
+        // ============================================================
         const conflictSession = await Session.findOne({
             date,
             time,
@@ -1288,14 +1312,17 @@ export const packageOperations = {
             .sort({ canceledAt: -1 })
             .session(mongoSession);
 
+        // ============================================================
         // ✅ DEFINIR VALORES FINANCEIROS (HERDA DA CANCELADA SE EXISTIR)
+        // ============================================================
         let isPaid, paymentStatus, visualFlag, paymentMethod, partialAmount;
 
         if (canceledPaidSession && canceledPaidSession.originalPartialAmount > 0) {
             isPaid = true;
             paymentStatus = 'paid';
             visualFlag = 'ok';
-            paymentMethod = canceledPaidSession.originalPaymentMethod || pkg.paymentMethod || 'pix';
+            paymentMethod =
+                canceledPaidSession.originalPaymentMethod || pkg.paymentMethod || 'pix';
             partialAmount = Number(canceledPaidSession.originalPartialAmount);
 
             // ✅ ZERAR CANCELADA (UMA VEZ SÓ)
@@ -1303,6 +1330,7 @@ export const packageOperations = {
             canceledPaidSession.originalPaymentStatus = null;
             canceledPaidSession.originalIsPaid = false;
             canceledPaidSession.originalPaymentMethod = null;
+
             await canceledPaidSession.save({
                 session: mongoSession,
                 validateBeforeSave: false
@@ -1319,7 +1347,7 @@ export const packageOperations = {
             console.log('📝 Nova sessão sem pagamento prévio');
         }
 
-        console.log('💰 Dados financeiros calculados:', {
+        console.log('💰 Dados financeiros calculados PARA A SESSÃO:', {
             isPaid,
             paymentStatus,
             visualFlag,
@@ -1335,7 +1363,7 @@ export const packageOperations = {
             patient: patientId || pkg.patient,
             doctor: doctorId || pkg.doctor,
             package: packageId,
-            sessionValue: sessionValue || pkg.sessionValue,
+            sessionValue: validSessionValue,
             sessionType: sessionType || pkg.sessionType,
             specialty: specialty || pkg.specialty || pkg.sessionType,
             status,
@@ -1391,7 +1419,7 @@ export const packageOperations = {
         });
 
         // ============================================================
-        // ✅ ATUALIZAR PACOTE UMA VEZ SÓ
+        // ✅ ATUALIZAR PACOTE (SEM MEXER NO FINANCEIRO)
         // ============================================================
         const updatedPkg = await Package.findByIdAndUpdate(
             packageId,
@@ -1399,13 +1427,11 @@ export const packageOperations = {
                 $push: {
                     sessions: newSession._id,
                     appointments: newAppointment._id
-                },
-                $inc: { totalSessions: 1 },
-                $set: {
-                    balance: pkg.totalValue - pkg.totalPaid,
-                    financialStatus: pkg.totalValue - pkg.totalPaid <= 0 ? 'paid' :
-                        pkg.totalPaid > 0 ? 'partially_paid' : 'unpaid'
                 }
+                // 🔒 NÃO mexe em totalSessions
+                // 🔒 NÃO mexe em totalPaid
+                // 🔒 NÃO mexe em balance
+                // 🔒 NÃO mexe em financialStatus
             },
             {
                 session: mongoSession,
@@ -1413,7 +1439,13 @@ export const packageOperations = {
             }
         );
 
-        console.log('✅ Pacote atualizado');
+        console.log('✅ Pacote atualizado:', {
+            id: updatedPkg._id,
+            totalSessions: updatedPkg.totalSessions,
+            totalPaid: updatedPkg.totalPaid,
+            balance: updatedPkg.balance,
+            financialStatus: updatedPkg.financialStatus
+        });
 
         // ============================================================
         // COMMIT DA TRANSAÇÃO
@@ -1447,9 +1479,10 @@ export const packageOperations = {
 
         res.status(201).json({
             success: true,
-            message: canceledPaidSession && partialAmount > 0
-                ? 'Sessão adicionada reaproveitando pagamento anterior'
-                : 'Sessão adicionada com sucesso',
+            message:
+                canceledPaidSession && partialAmount > 0
+                    ? 'Sessão adicionada reaproveitando pagamento anterior'
+                    : 'Sessão adicionada com sucesso',
             session: {
                 _id: newSession._id,
                 date: newSession.date,
@@ -1457,12 +1490,12 @@ export const packageOperations = {
                 isPaid: newSession.isPaid,
                 paymentStatus: newSession.paymentStatus,
                 visualFlag: newSession.visualFlag,
-                partialAmount: newSession.partialAmount
+                partialAmount: newSession.partialAmount,
+                sessionValue: newSession.sessionValue
             },
             package: result,
             reusedPayment: !!(canceledPaidSession && partialAmount > 0)
         });
-
     } catch (error) {
         if (mongoSession?.inTransaction() && !transactionCommitted) {
             await mongoSession.abortTransaction();
