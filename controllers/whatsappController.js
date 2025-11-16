@@ -238,6 +238,45 @@ export const whatsappController = {
             res.status(500).json({ error: err.message });
         }
     },
+
+    async sendManualMessage(req, res) {
+        try {
+            const { leadId, text, userId } = req.body;
+
+            const lead = await Lead.findById(leadId).populate('contact');
+
+            if (!lead) {
+                return res.status(404).json({ success: false, message: 'Lead não encontrado' });
+            }
+
+            // Envia mensagem marcada como MANUAL
+            await sendTextMessage({
+                to: lead.contact.phone,
+                text,
+                lead: leadId,
+                sentBy: 'manual', // ← IMPORTANTE
+                userId
+            });
+
+            // Ativa controle manual AUTOMATICAMENTE
+            await Lead.findByIdAndUpdate(leadId, {
+                'manualControl.active': true,
+                'manualControl.takenOverAt': new Date(),
+                'manualControl.takenOverBy': userId
+            });
+
+            console.log(`✅ Mensagem manual enviada - Amanda pausada para lead ${leadId}`);
+
+            res.json({
+                success: true,
+                message: 'Mensagem enviada. Amanda pausada automaticamente.'
+            });
+
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    }
+
 };
 
 // ✅ FUNÇÃO SEPARADA (não depende do this)
@@ -418,23 +457,23 @@ async function processInboundMessage(msg, value) {
 
         // ✅ SALVAR MENSAGEM NO CRM
         const savedMessage = await Message.create({
-    wamid,
-    from,
-    to,
-    direction: "inbound",
-    type,
-    content: contentToSave,
-    mediaUrl,
-    mediaId,
-    caption,
-    status: "received",
-    // 🔹 Só marca como "precisa revisão" se NÃO for texto, áudio transcrito ou imagem descrita
-    needs_human_review: !(type === "text" || type === "audio" || type === "image"),
-    timestamp,
-    contact: contact._id,
-    lead: lead._id,
-    raw: msg,
-});
+            wamid,
+            from,
+            to,
+            direction: "inbound",
+            type,
+            content: contentToSave,
+            mediaUrl,
+            mediaId,
+            caption,
+            status: "received",
+            // 🔹 Só marca como "precisa revisão" se NÃO for texto, áudio transcrito ou imagem descrita
+            needs_human_review: !(type === "text" || type === "audio" || type === "image"),
+            timestamp,
+            contact: contact._id,
+            lead: lead._id,
+            raw: msg,
+        });
 
 
         console.log("💾 Mensagem salva no CRM:", {
@@ -523,10 +562,10 @@ async function handleResponseTracking(leadId, content) {
     }
 }
 
-// ✅ FUNÇÃO CORRIGIDA - Cole no whatsappController.js (linha ~300)
+// ✅ FUNÇÃO CORRIGIDA COM CONTROLE MANUAL
 async function handleAutoReply(from, to, content, lead) {
     try {
-        // ✅ LOCK anti-corrida (mantém 3s - OK)
+        // ✅ 1. LOCK anti-corrida (mantém 3s)
         let canProceed = true;
         try {
             if (redis?.set) {
@@ -543,11 +582,7 @@ async function handleAutoReply(from, to, content, lead) {
 
         if (!canProceed) return;
 
-        // ✅ REMOVIDO: Verificação de 45 segundos
-        // ❌ ANTES: const fortyFiveAgo = new Date(Date.now() - 45 * 1000);
-        // ❌ ANTES: const recentBotReply = await Message.findOne({...});
-
-        // ✅ NOVA VERIFICAÇÃO: Apenas 5 segundos (evita duplicação do próprio webhook)
+        // ✅ 2. Evita duplicação (5 segundos)
         const fiveSecondsAgo = new Date(Date.now() - 5 * 1000);
         const veryRecentReply = await Message.findOne({
             to: from,
@@ -561,23 +596,7 @@ async function handleAutoReply(from, to, content, lead) {
             return;
         }
 
-        // ✅ 3. VERIFICAÇÃO OPCIONAL: Se há follow-up ativo, deixar humano responder
-        // Descomente as linhas abaixo se quiser que Amanda NÃO responda durante follow-ups ativos:
-        /*
-        const activeFollowup = await Followup.findOne({
-            lead: lead._id,
-            status: 'sent',
-            responded: false,
-            sentAt: { $gte: new Date(Date.now() - 72 * 60 * 60 * 1000) }
-        }).lean();
-        
-        if (activeFollowup) {
-            console.log("⏭️ Follow-up ativo detectado; deixando para resposta humana.");
-            return;
-        }
-        */
-
-        // ✅ DEBOUNCE reduzido: 3 segundos (era 8)
+        // ✅ 3. DEBOUNCE (3 segundos)
         try {
             if (redis?.set) {
                 const key = `ai:debounce:${from}`;
@@ -591,8 +610,41 @@ async function handleAutoReply(from, to, content, lead) {
             console.warn("⚠️ Redis debounce indisponível:", debounceError.message);
         }
 
-        // ✅ Busca histórico para contexto
+        // ✅ 4. BUSCA LEAD COMPLETO (com manualControl)
         const leadDoc = await Lead.findById(lead._id).lean();
+
+        // 🆕 5. VERIFICA CONTROLE MANUAL
+        if (leadDoc.manualControl?.active) {
+            console.log('👤 [CONTROLE MANUAL] Ativo para lead:', leadDoc.name);
+
+            // Calcula tempo desde que assumiu controle
+            const minutesSince = (Date.now() - new Date(leadDoc.manualControl.takenOverAt)) / (1000 * 60);
+            const timeout = leadDoc.manualControl.autoResumeAfter || 30;
+
+            console.log(`⏱️ Tempo desde takeover: ${Math.floor(minutesSince)}min / Timeout: ${timeout}min`);
+
+            // Verifica se passou do timeout
+            if (minutesSince > timeout) {
+                console.log(`⏰ Timeout de ${timeout}min atingido - RETOMANDO Amanda`);
+
+                // Desativa controle manual
+                await Lead.findByIdAndUpdate(leadDoc._id, {
+                    'manualControl.active': false
+                });
+
+                console.log('✅ Amanda retomou atendimento automaticamente');
+
+                // Continua normalmente (vai gerar resposta abaixo)
+
+            } else {
+                const remaining = Math.floor(timeout - minutesSince);
+                console.log(`⏸️ Amanda PAUSADA - você está no controle (${remaining}min restantes)`);
+                console.log(`💡 Para retomar Amanda antes: POST /api/lead-control/${leadDoc._id}/resume-amanda`);
+                return; // ❌ NÃO RESPONDE
+            }
+        }
+
+        // ✅ 6. Busca histórico para contexto
         const histDocs = await Message.find({
             $or: [{ from }, { to: from }],
             type: "text",
@@ -602,11 +654,14 @@ async function handleAutoReply(from, to, content, lead) {
         const greetings = /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|tudo\s*bem|bom\s*dia|fala|e[aíi])[\s!,.]*$/i;
         const isFirstContact = lastMessages.length <= 1 || greetings.test(content.trim());
 
-        // ✅ Gera resposta da Amanda
+        // ✅ 7. Gera resposta da Amanda
+        console.log('🤖 Gerando resposta da Amanda...');
+
         const aiText = await getOptimizedAmandaResponse({
             content,
             userText: content,
             lead: {
+                _id: leadDoc._id, // ← Importante passar o ID
                 name: leadDoc?.name || "",
                 reason: leadDoc?.reason || "avaliação/terapia",
                 origin: leadDoc?.origin || "WhatsApp",
@@ -614,12 +669,18 @@ async function handleAutoReply(from, to, content, lead) {
             context: { lastMessages, isFirstContact },
         });
 
-        console.log("[AmandaReply] texto gerado:", aiText);
+        console.log("[AmandaReply] Texto gerado:", aiText?.substring(0, 50) + '...');
 
-        // ✅ Envia resposta
+        // ✅ 8. Envia resposta MARCADA como 'amanda'
         if (aiText && aiText.trim()) {
-            await sendTextMessage({ to: from, text: aiText.trim(), lead: lead._id });
+            await sendTextMessage({
+                to: from,
+                text: aiText.trim(),
+                lead: leadDoc._id,
+                sentBy: 'amanda' // ← MARCA ORIGEM
+            });
 
+            // Salva no banco também marcada
             const savedOut = await Message.create({
                 from: to,
                 to: from,
@@ -628,9 +689,13 @@ async function handleAutoReply(from, to, content, lead) {
                 content: aiText.trim(),
                 status: "sent",
                 timestamp: new Date(),
-                lead: lead._id,
+                lead: leadDoc._id,
+                metadata: {
+                    sentBy: 'amanda' // ← MARCA ORIGEM
+                }
             });
 
+            // Notifica frontend
             const io = getIo();
             io.emit("message:new", {
                 id: String(savedOut._id),
@@ -641,10 +706,12 @@ async function handleAutoReply(from, to, content, lead) {
                 content: savedOut.content,
                 status: savedOut.status,
                 timestamp: savedOut.timestamp,
+                sentBy: 'amanda'
             });
 
-            console.log("✅ IA (Amanda) enviada e salva:", String(savedOut._id));
+            console.log("✅ Amanda respondeu e enviou:", String(savedOut._id));
         }
+
     } catch (error) {
         console.error('❌ Erro no auto-reply (não crítico):', error);
     }

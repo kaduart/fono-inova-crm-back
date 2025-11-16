@@ -141,7 +141,12 @@ export async function sendTextMessage({ to, text, lead }) {
         waMessageId,
         timestamp: new Date(),
         lead,
+        metadata: {
+            sentBy,    // ← 'amanda' ou 'manual'
+            userId     // ← ID do user que enviou (se manual)
+        }
     });
+
 
     if (lead) await updateChatContext(lead, "outbound", text);
 

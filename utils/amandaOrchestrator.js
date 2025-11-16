@@ -174,12 +174,11 @@ ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${
     // 🧠 MONTA MENSAGENS COM CACHE MÁXIMO
     const messages = [];
 
-    // 1. Resumo com cache
+    // 1. Resumo (SEM cache_control dentro de messages)
     if (conversationSummary) {
         messages.push({
             role: 'user',
-            content: `📋 CONTEXTO DE CONVERSAS ANTERIORES:\n\n${conversationSummary}\n\n---\n\nAs mensagens abaixo são a continuação RECENTE desta conversa:`,
-            cache_control: { type: "ephemeral" }
+            content: `📋 CONTEXTO DE CONVERSAS ANTERIORES:\n\n${conversationSummary}\n\n---\n\nAs mensagens abaixo são a continuação RECENTE desta conversa:`
         });
         messages.push({
             role: 'assistant',
@@ -187,15 +186,17 @@ ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${
         });
     }
 
-    // 2. Histórico com cache na última mensagem
-    if (conversationHistory.length > 0) {
-        messages.push(...conversationHistory.slice(0, -1));
+    // 2. Histórico (apenas role + content)
+    if (conversationHistory && conversationHistory.length > 0) {
+        const safeHistory = conversationHistory.map(msg => ({
+            role: msg.role || 'user',
+            content: typeof msg.content === 'string'
+                ? msg.content
+                : JSON.stringify(msg.content),
+        }));
 
-        const lastHistoryMsg = conversationHistory[conversationHistory.length - 1];
-        messages.push({
-            ...lastHistoryMsg,
-            cache_control: { type: "ephemeral" }
-        });
+        // Se quiser manter só as últimas N, pode truncar aqui se um dia precisar
+        messages.push(...safeHistory);
     }
 
     // 3. Mensagem atual (SEM cache)
@@ -284,12 +285,11 @@ REGRAS:
     // 🧠 MONTA MENSAGENS COM CACHE MÁXIMO
     const messages = [];
 
-    // 1. Resumo com cache
+    // 1. Resumo (SEM cache_control)
     if (conversationSummary) {
         messages.push({
             role: 'user',
-            content: `📋 CONTEXTO ANTERIOR:\n\n${conversationSummary}\n\n---\n\nMensagens recentes abaixo:`,
-            cache_control: { type: "ephemeral" }
+            content: `📋 CONTEXTO ANTERIOR:\n\n${conversationSummary}\n\n---\n\nMensagens recentes abaixo:`
         });
         messages.push({
             role: 'assistant',
@@ -297,15 +297,16 @@ REGRAS:
         });
     }
 
-    // 2. Histórico com cache na última mensagem
-    if (conversationHistory.length > 0) {
-        messages.push(...conversationHistory.slice(0, -1));
+    // 2. Histórico (limpo)
+    if (conversationHistory && conversationHistory.length > 0) {
+        const safeHistory = conversationHistory.map(msg => ({
+            role: msg.role || 'user',
+            content: typeof msg.content === 'string'
+                ? msg.content
+                : JSON.stringify(msg.content),
+        }));
 
-        const lastHistoryMsg = conversationHistory[conversationHistory.length - 1];
-        messages.push({
-            ...lastHistoryMsg,
-            cache_control: { type: "ephemeral" }
-        });
+        messages.push(...safeHistory);
     }
 
     // 3. Mensagem atual (SEM cache)
