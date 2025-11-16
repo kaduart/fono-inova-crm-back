@@ -1,61 +1,83 @@
-// services/metaConversionsService.js
+// services/metaConversionsService.js - MELHORADO
+
 import axios from "axios";
 import crypto from "crypto";
 
-/**
- * Normaliza e faz hash SHA256 (padrão da Meta)
- */
 function normalizeAndHash(value) {
     if (!value) return null;
     const normalized = String(value).trim().toLowerCase();
     return crypto.createHash("sha256").update(normalized).digest("hex");
 }
 
-export async function sendLeadToMeta({ email, phone, leadId }) {
+/**
+ * Função genérica para enviar qualquer evento
+ */
+export async function sendEventToMeta({
+    eventName,      // 'Lead', 'Purchase', 'Schedule', 'Contact'
+    email,
+    phone,
+    leadId,
+    value,          // Valor monetário
+    currency = 'BRL',
+    customData = {} // Dados extras
+}) {
     try {
         const pixelId = process.env.META_PIXEL_ID;
         const accessToken = process.env.META_CONVERSIONS_TOKEN;
 
         if (!pixelId || !accessToken) {
-            console.warn("⚠️ Meta CAPI: META_PIXEL_ID ou META_CONVERSIONS_TOKEN não configurados");
+            console.warn("⚠️ Meta CAPI não configurado");
             return;
         }
 
         const url = `https://graph.facebook.com/v20.0/${pixelId}/events?access_token=${accessToken}`;
 
-        // Monta user_data com hashes
+        // User data com hashes
         const user_data = {};
 
-        const emailHash = normalizeAndHash(email);
-        if (emailHash) user_data.em = [emailHash];
-
-        // remove tudo que não é número, como +55, espaço, parênteses, etc.
-        const digitsPhone = phone ? phone.replace(/\D/g, "") : null;
-        const phoneHash = digitsPhone ? normalizeAndHash(digitsPhone) : null;
-        if (phoneHash) user_data.ph = [phoneHash];
-
-        if (leadId) {
-            user_data.lead_id = [String(leadId)];
+        if (email) user_data.em = [normalizeAndHash(email)];
+        if (phone) {
+            const digitsPhone = phone.replace(/\D/g, "");
+            user_data.ph = [normalizeAndHash(digitsPhone)];
         }
+        if (leadId) user_data.lead_id = [String(leadId)];
+
+        // Custom data (valor, moeda, etc)
+        const event_custom_data = { ...customData };
+        if (value) event_custom_data.value = value;
+        if (currency) event_custom_data.currency = currency;
 
         const payload = {
-            data: [
-                {
-                    event_name: "Lead",
-                    event_time: Math.floor(Date.now() / 1000),
-                    action_source: "website", // origem do lead
-                    event_source_url: "https://clinicafonoinova.com.br", // opcional
-                    user_data,
-                },
-            ],
+            data: [{
+                event_name: eventName,
+                event_time: Math.floor(Date.now() / 1000),
+                action_source: "website",
+                event_source_url: "https://clinicafonoinova.com.br",
+                user_data,
+                custom_data: event_custom_data
+            }]
         };
 
         const response = await axios.post(url, payload);
-        console.log("✅ Meta CAPI: Lead enviado com sucesso", response.data);
+        console.log(`✅ Meta CAPI: ${eventName} enviado`, response.data);
+
+        return response.data;
+
     } catch (err) {
-        console.error(
-            "💥 Erro ao enviar Lead para Meta CAPI:",
-            err.response?.data || err.message
-        );
+        console.error(`❌ Meta CAPI ${eventName}:`, err.response?.data || err.message);
+        throw err;
     }
+}
+
+// Atalhos para eventos comuns
+export async function sendLeadToMeta(data) {
+    return sendEventToMeta({ ...data, eventName: 'Lead' });
+}
+
+export async function sendScheduleToMeta(data) {
+    return sendEventToMeta({ ...data, eventName: 'Schedule' });
+}
+
+export async function sendPurchaseToMeta(data) {
+    return sendEventToMeta({ ...data, eventName: 'Purchase' });
 }

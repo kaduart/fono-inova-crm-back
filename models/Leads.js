@@ -14,7 +14,6 @@ const leadSchema = new mongoose.Schema({
   name: { type: String, required: true },
   contact: {
     email: { type: String, lowercase: true, trim: true },
-    phone: { type: String, index: true }
   },
   origin: {
     type: String,
@@ -84,6 +83,19 @@ const leadSchema = new mongoose.Schema({
 
   // ✅ TRACKING DE RESPOSTA
   responded: { type: Boolean, default: false },
+  conversationSummary: {
+    type: String,
+    default: null,
+    index: false
+  },
+  summaryGeneratedAt: {
+    type: Date,
+    default: null
+  },
+  summaryCoversUntilMessage: {
+    type: Number,
+    default: 0
+  },
   respondedAt: Date,
 
 }, { timestamps: true });
