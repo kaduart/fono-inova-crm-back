@@ -141,14 +141,22 @@ export async function transcribeWaAudioFromGraph({
 }
 
 /* =========================================================================
-   🖼️ DESCRIÇÃO DE IMAGEM - NOVA (mediaId → URL → GPT-4o-mini)
+   🖼️ DESCRIÇÃO DE IMAGEM - NOVA (mediaId → buffer → dataURL → GPT-4o-mini)
    ========================================================================= */
 export async function describeWaImage(mediaId, caption = "") {
     console.log(`🖼️ Processando imagem: ${mediaId}`);
 
     try {
-        const { url } = await resolveMediaUrl(mediaId);
+        // 1️⃣ Baixa o binário da mídia (como já faz com áudio)
+        const { buffer, mimeType } = await getMediaBuffer(mediaId);
 
+        console.log(`🖼️ Imagem carregada: ${buffer.length} bytes, tipo: ${mimeType}`);
+
+        // 2️⃣ Converte para data URL (base64)
+        const base64 = buffer.toString("base64");
+        const dataUrl = `data:${mimeType || "image/jpeg"};base64,${base64}`;
+
+        // 3️⃣ Envia para o GPT-4o-mini usando image_url com data URL
         const resp = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             temperature: 0.4,
@@ -168,7 +176,7 @@ export async function describeWaImage(mediaId, caption = "") {
                         },
                         {
                             type: "image_url",
-                            image_url: { url },
+                            image_url: { url: dataUrl },
                         },
                     ],
                 },
@@ -181,6 +189,7 @@ export async function describeWaImage(mediaId, caption = "") {
         return "";
     }
 }
+
 
 /* =========================================================================
    🖼️ DESCRIÇÃO DE IMAGEM - ANTIGA (URL direta)
