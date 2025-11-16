@@ -10,8 +10,8 @@ dotenv.config();
 const META_URL = "https://graph.facebook.com/v21.0";
 const PHONE_ID = process.env.META_WABA_PHONE_ID;
 
-function requireToken() {
-    const token = getMetaToken();
+async function requireToken() {
+    const token = await getMetaToken();
     if (!token) throw new Error("Token Meta/WhatsApp ausente.");
     return token;
 }
@@ -36,7 +36,7 @@ async function updateChatContext(leadId, direction, text) {
 
 /** 🔎 Resolve a URL lookaside a partir de um mediaId do WhatsApp */
 export async function resolveMediaUrl(mediaId) {
-    const token = requireToken();
+   const token = await requireToken(); 
 
     const url = `${META_URL}/${mediaId}?fields=id,mime_type,sha256,file_size,url`;
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
@@ -58,7 +58,7 @@ export async function resolveMediaUrl(mediaId) {
 
 /** ✉️ Envia template */
 export async function sendTemplateMessage({ to, template, params = [], lead }) {
-    const token = requireToken();
+    const token = await requireToken(); 
     if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
 
     const phone = normalizePhone(to);
@@ -109,7 +109,7 @@ export async function sendTemplateMessage({ to, template, params = [], lead }) {
 
 /** 💬 Envia texto */
 export async function sendTextMessage({ to, text, lead }) {
-    const token = requireToken();
+    const token = await requireToken(); 
     if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
 
     const phone = normalizePhone(to);
