@@ -7,11 +7,11 @@ import Contact from "../models/Contact.js";
 import Followup from "../models/Followup.js";
 import Lead from '../models/Leads.js';
 import Message from "../models/Message.js";
-import { generateAmandaReply } from "../services/aiAmandaService.js";
+import { transcribeWaAudio } from "../services/aiAmandaService.js";
 import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
-import { normalizeE164BR, tailPattern } from "../utils/phone.js";
 import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
+import { normalizeE164BR, tailPattern } from "../utils/phone.js";
 
 export const whatsappController = {
 
@@ -261,15 +261,33 @@ async function processInboundMessage(msg, value) {
         let mediaId = null;
 
         if (type === "text") {
+            // 💬 Texto normal
             content = msg.text?.body || "";
-        } else {
+        } else if (type === "audio" && msg.audio?.id) {
+            // 🎙️ ÁUDIO → transcrever
+            mediaId = msg.audio.id;
+            caption = "[AUDIO]"; // se quiser manter essa marcação em algum lugar
+
             try {
-                if (type === "audio" && msg.audio?.id) {
-                    mediaId = msg.audio.id;
-                    caption = "[AUDIO]";
-                    const { url } = await resolveMediaUrl(mediaId);
-                    mediaUrl = url;
-                } else if (type === "image" && msg.image?.id) {
+                // Opcional: ainda resolve URL para uso no front/proxy
+                const { url } = await resolveMediaUrl(mediaId);
+                mediaUrl = url;
+            } catch (e) {
+                console.error("⚠️ Falha ao resolver mídia (audio):", e.message);
+            }
+
+            console.log(`🎙️ Processando áudio para transcrição: ${mediaId}`);
+
+            // 🔹 TRANSCRIÇÃO
+            content = await transcribeWaAudio(mediaId, `audio_${wamid}.ogg`);
+
+            if (!content || content.length < 3) {
+                content = "[Áudio não pôde ser transcrito]";
+            }
+        } else {
+            // 🖼️ IMAGEM / VÍDEO / DOCUMENTO / STICKER (igual você já fazia)
+            try {
+                if (type === "image" && msg.image?.id) {
                     mediaId = msg.image.id;
                     caption = msg.image.caption || "[IMAGE]";
                     const { url } = await resolveMediaUrl(mediaId);
@@ -295,7 +313,12 @@ async function processInboundMessage(msg, value) {
             }
         }
 
-        const contentToSave = type === "text" ? content : (caption || `[${type.toUpperCase()}]`);
+        // 🔹 Agora: para TEXT e AUDIO usamos o próprio `content`
+        const contentToSave =
+            (type === "text" || type === "audio")
+                ? content
+                : (caption || `[${type.toUpperCase()}]`);
+
 
         // ✅ BUSCA UNIFICADA INTELIGENTE
         console.log("🔍 Buscando contact para:", from);
@@ -429,17 +452,20 @@ async function processInboundMessage(msg, value) {
             console.error("⚠️ Erro ao atualizar interação:", updateError.message);
         }
 
-        // ✅ AMANDA 2.0 TRACKING (NÃO-BLOQUEANTE)
-        if (type === 'text' && contentToSave?.trim()) {
+        const isRealText = contentToSave?.trim() && !contentToSave.startsWith("[");
+
+        // ✅ AMANDA 2.0 TRACKING (texto ou áudio transcrito)
+        if ((type === 'text' || type === 'audio') && isRealText) {
             handleResponseTracking(lead._id, contentToSave)
                 .catch(err => console.error("⚠️ Tracking não crítico falhou:", err));
         }
 
-        // ✅ RESPOSTA AUTOMÁTICA (NÃO-BLOQUEANTE)
-        if (type === "text" && contentToSave?.trim()) {
+        // ✅ RESPOSTA AUTOMÁTICA (Amanda) para texto ou áudio transcrito
+        if ((type === "text" || type === "audio") && isRealText) {
             handleAutoReply(from, to, contentToSave, lead)
                 .catch(err => console.error("⚠️ Auto-reply não crítico falhou:", err));
         }
+
 
         console.log("✅ Mensagem processada com sucesso:", wamid);
 
