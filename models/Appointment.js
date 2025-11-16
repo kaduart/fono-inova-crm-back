@@ -63,7 +63,7 @@ const appointmentSchema = new mongoose.Schema({
   specialty: {
     type: String,
     required: true,
-    enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'tongue_tie_test', , 'neuropsych_evaluation', 'fisioterapia', 'pediatria', 'neuroped'],
+    enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'tongue_tie_test', 'neuropsych_evaluation', 'fisioterapia', 'pediatria', 'neuroped'],
 
   },
   paymentStatus: {
