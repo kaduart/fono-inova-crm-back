@@ -418,22 +418,24 @@ async function processInboundMessage(msg, value) {
 
         // ✅ SALVAR MENSAGEM NO CRM
         const savedMessage = await Message.create({
-            wamid,
-            from,
-            to,
-            direction: "inbound",
-            type,
-            content: contentToSave,
-            mediaUrl,
-            mediaId,
-            caption,
-            status: "received",
-            needs_human_review: needsHumanReview,
-            timestamp,
-            contact: contact._id,
-            lead: lead._id,
-            raw: msg,
-        });
+    wamid,
+    from,
+    to,
+    direction: "inbound",
+    type,
+    content: contentToSave,
+    mediaUrl,
+    mediaId,
+    caption,
+    status: "received",
+    // 🔹 Só marca como "precisa revisão" se NÃO for texto, áudio transcrito ou imagem descrita
+    needs_human_review: !(type === "text" || type === "audio" || type === "image"),
+    timestamp,
+    contact: contact._id,
+    lead: lead._id,
+    raw: msg,
+});
+
 
         console.log("💾 Mensagem salva no CRM:", {
             id: savedMessage._id,
