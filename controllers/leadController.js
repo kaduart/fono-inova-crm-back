@@ -455,6 +455,13 @@ export const convertLeadToPatient = async (req, res) => {
             message: 'Lead convertido para paciente!',
             data: { lead, patient }
         });
+
+        // ❌ FALTA ADICIONAR AQUI:
+        await sendLeadToMeta({
+            email: lead.contact?.email,
+            phone: lead.contact?.phone,
+            leadId: lead._id
+        });
     } catch (err) {
         console.error("Erro ao converter lead:", err);
         res.status(500).json({ error: err.message });

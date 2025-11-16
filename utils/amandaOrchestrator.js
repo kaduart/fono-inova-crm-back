@@ -1,15 +1,18 @@
-import 'dotenv/config';
 import Anthropic from "@anthropic-ai/sdk";
+import 'dotenv/config';
+import Appointment from '../models/Appointment.js';
+import Lead from '../models/Leads.js';
+import Message from '../models/Message.js';
 import enrichLeadContext from "../services/leadContext.js";
 import { getManual } from './amandaIntents.js';
-import { SYSTEM_PROMPT_AMANDA } from './amandaPrompt.js';
+import { generateConversationSummary, needsNewSummary } from './conversationSummary.js';
 import { detectAllFlags } from './flagsDetector.js';
 import { buildEquivalenceResponse } from './responseBuilder.js';
 import {
     detectAllTherapies,
+    getTDAHResponse,
     isAskingAboutEquivalence,
-    isTDAHQuestion,
-    getTDAHResponse
+    isTDAHQuestion
 } from './therapyDetector.js';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -84,111 +87,188 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     }
 }
 
-/**
- * 🤖 IA COM DADOS DE TERAPIAS (contextualizada)
- */
-async function callClaudeWithTherapyData({ therapies, flags, userText, lead, context }) {
-    const { getTherapyData } = await import('./therapyDetector.js');
+export async function enrichLeadContext(leadId) {
+    try {
+        const lead = await Lead.findById(leadId)
+            .populate('contact')
+            .lean();
 
-    // ✅ BUSCA INSIGHTS APRENDIDOS
-    const { getLatestInsights } = await import('../services/amandaLearningService.js');
-    const insights = await getLatestInsights();
-
-    const therapiesInfo = therapies.map(t => {
-        const data = getTherapyData(t.id);
-        return `
-${t.name.toUpperCase()}:
-- Explicação: ${data.explanation}
-- Preço: ${data.price}
-- Detalhes: ${data.details}
-- Pergunta engajadora: ${data.engagement}
-        `.trim();
-    }).join('\n\n');
-
-    const {
-        stage, messageCount, lastMessages, mentionedTherapies,
-        isPatient, hasAppointments, needsUrgency, daysSinceLastContact
-    } = context;
-
-    const profileContext = flags.userProfile !== 'generic'
-        ? `\nPerfil detectado: ${flags.userProfile}`
-        : '';
-
-    const historyContext = lastMessages.length > 0
-        ? `\nÚltimas mensagens: ${lastMessages.slice(0, 3).join(' | ')}`
-        : '';
-
-    const patientStatus = isPatient
-        ? `\n⚠️ IMPORTANTE: Este lead JÁ É PACIENTE da clínica!`
-        : '';
-
-    const appointmentStatus = hasAppointments
-        ? `\n✅ Lead já tem agendamentos marcados`
-        : '';
-
-    const urgencyNote = needsUrgency
-        ? `\n🔥 URGÊNCIA: ${daysSinceLastContact} dias sem contato - seja mais proativa!`
-        : '';
-
-    // ✅ INSIGHTS APRENDIDOS
-    let learnedContext = '';
-    if (insights?.data) {
-        // Busca melhor resposta de preço para o cenário
-        if (flags.asksPrice) {
-            const scenario = stage === 'novo' ? 'first_contact' :
-                stage === 'engajado' ? 'engaged' : 'returning';
-
-            const bestPriceResponse = insights.data.effectivePriceResponses
-                ?.find(r => r.scenario === scenario);
-
-            if (bestPriceResponse) {
-                learnedContext += `\n💡 INSIGHT: Respostas sobre preço que converteram em "${scenario}":\n"${bestPriceResponse.response}"`;
-            }
+        if (!lead) {
+            return getDefaultContext();
         }
 
-        // Busca melhor pergunta de fechamento
-        if (stage === 'engajado' || stage === 'interessado_agendamento') {
-            const topQuestion = insights.data.successfulClosingQuestions?.[0];
-            if (topQuestion) {
-                learnedContext += `\n💡 PERGUNTA DE SUCESSO: "${topQuestion.question}"`;
-            }
+        // ✅ Busca TODAS as mensagens (não limita mais)
+        const messages = await Message.find({
+            lead: leadId,
+            type: 'text'
+        })
+            .sort({ timestamp: 1 }) // Ordem cronológica
+            .lean();
+
+        const totalMessages = messages.length;
+
+        // ✅ Busca agendamentos
+        const appointments = await Appointment.find({
+            patient: lead.convertedToPatient
+        }).lean();
+
+        // 🧠 LÓGICA DE CONTEXTO INTELIGENTE
+        let conversationHistory = [];
+        let shouldGreet = true;
+        let summaryContext = null;
+
+        if (totalMessages === 0) {
+            // Primeira mensagem ever
+            conversationHistory = [];
+            shouldGreet = true;
         }
+        else if (totalMessages <= 20) {
+            // Conversa curta: manda tudo
+            conversationHistory = messages.map(msg => ({
+                role: msg.direction === 'inbound' ? 'user' : 'assistant',
+                content: msg.content,
+                timestamp: msg.timestamp
+            }));
+
+            // Checa se deve cumprimentar (última msg >24h atrás)
+            const lastMsgTime = messages[messages.length - 1].timestamp;
+            const hoursSince = (Date.now() - new Date(lastMsgTime)) / (1000 * 60 * 60);
+            shouldGreet = hoursSince > 24;
+        }
+        else {
+            // Conversa longa (>20): resumo + últimas 20
+
+            // 1. Verifica se precisa gerar novo resumo
+            let leadDoc = await Lead.findById(leadId); // Busca versão mutável
+
+            if (needsNewSummary(lead, totalMessages)) {
+                console.log(`🧠 [CONTEXTO] Gerando resumo (${totalMessages} msgs)`);
+
+                // Mensagens antigas (todas menos últimas 20)
+                const oldMessages = messages.slice(0, -20);
+
+                // Gera resumo
+                const summary = await generateConversationSummary(oldMessages);
+
+                if (summary) {
+                    // Salva resumo no lead
+                    await leadDoc.updateOne({
+                        conversationSummary: summary,
+                        summaryGeneratedAt: new Date(),
+                        summaryCoversUntilMessage: totalMessages - 20
+                    });
+
+                    summaryContext = summary;
+                    console.log(`💾 [CONTEXTO] Resumo salvo (cobre ${oldMessages.length} msgs antigas)`);
+                }
+            } else {
+                // Reusa resumo existente
+                summaryContext = lead.conversationSummary;
+                console.log(`♻️ [CONTEXTO] Reutilizando resumo existente`);
+            }
+
+            // 2. Últimas 20 mensagens completas
+            const recentMessages = messages.slice(-20);
+            conversationHistory = recentMessages.map(msg => ({
+                role: msg.direction === 'inbound' ? 'user' : 'assistant',
+                content: msg.content,
+                timestamp: msg.timestamp
+            }));
+
+            // 3. Checa saudação
+            const lastMsgTime = recentMessages[recentMessages.length - 1].timestamp;
+            const hoursSince = (Date.now() - new Date(lastMsgTime)) / (1000 * 60 * 60);
+            shouldGreet = hoursSince > 24;
+        }
+
+        // ✅ Monta contexto final
+        const context = {
+            // Dados básicos
+            leadId: lead._id,
+            name: lead.name,
+            phone: lead.contact?.phone,
+            origin: lead.origin,
+
+            // Status
+            hasAppointments: appointments?.length > 0,
+            isPatient: !!lead.convertedToPatient,
+            conversionScore: lead.conversionScore || 0,
+            status: lead.status,
+
+            // Comportamento
+            messageCount: totalMessages,
+            lastInteraction: lead.lastInteractionAt,
+            daysSinceLastContact: calculateDaysSince(lead.lastInteractionAt),
+
+            // 🆕 CONTEXTO INTELIGENTE
+            conversationHistory,      // Array [{role, content, timestamp}]
+            conversationSummary: summaryContext, // String com resumo ou null
+            shouldGreet,              // Boolean
+
+            // Intenções (mantém pra flags)
+            mentionedTherapies: extractMentionedTherapies(messages),
+
+            // Estágio
+            stage: determineLeadStage(lead, messages, appointments),
+
+            // Flags úteis
+            isFirstContact: totalMessages <= 1,
+            isReturning: totalMessages > 3,
+            needsUrgency: calculateDaysSince(lead.lastInteractionAt) > 7
+        };
+
+        console.log(`📊 [CONTEXTO] Lead: ${context.name} | Stage: ${context.stage} | Msgs: ${context.messageCount} | Resumo: ${summaryContext ? 'SIM' : 'NÃO'} | Saudação: ${shouldGreet ? 'SIM' : 'NÃO'}`);
+
+        return context;
+
+    } catch (error) {
+        console.error('❌ [CONTEXTO] Erro:', error);
+        return getDefaultContext();
     }
+}
 
-    const userPrompt = `
-MENSAGEM DO CLIENTE: "${userText}"
-LEAD: ${lead?.name || 'Desconhecido'} | Origem: ${lead?.origin || 'WhatsApp'}
-ESTÁGIO: ${stage.toUpperCase()} (${messageCount} mensagens)${profileContext}${historyContext}${patientStatus}${appointmentStatus}${urgencyNote}${learnedContext}
+// Funções auxiliares permanecem iguais
+function determineLeadStage(lead, messages, appointments) {
+    if (lead.convertedToPatient || appointments?.length > 0) return 'paciente';
+    if (lead.status === 'agendado') return 'agendado';
+    if (messages.some(m => /agend|marcar|quero.*consulta/i.test(m.content))) return 'interessado_agendamento';
+    if (messages.some(m => /pre[cç]o|valor|quanto.*custa/i.test(m.content))) return 'pesquisando_preco';
+    if (messages.length >= 3) return 'engajado';
+    if (messages.length > 0) return 'primeiro_contato';
+    return 'novo';
+}
 
-TERAPIAS DETECTADAS:
-${therapiesInfo}
-
-FLAGS IMPORTANTES:
-- Perguntou preço? ${flags.asksPrice ? 'SIM' : 'NÃO'}
-- Quer agendar? ${flags.wantsSchedule ? 'SIM' : 'NÃO'}
-- Pergunta horários? ${flags.asksHours ? 'SIM' : 'NÃO'}
-
-INSTRUÇÕES:
-1. Use os DADOS DAS TERAPIAS acima como referência
-2. ${flags.asksPrice ? 'Lead perguntou preço - use VALOR→PREÇO→PERGUNTA (veja INSIGHT acima)' : 'Apresente a terapia de forma acolhedora'}
-3. ${flags.wantsSchedule ? 'Lead quer agendar - seja DIRETA e ofereça horários' : 'Termine com pergunta engajadora (veja INSIGHT acima)'}
-4. ${isPatient ? 'TOM DIFERENCIADO: Paciente ativo - seja mais próxima e solícita' : 'Tom acolhedor de captação'}
-5. ${needsUrgency ? 'REATIVAÇÃO: Faz tempo sem falar - seja calorosa e mostre que sentiu falta!' : ''}
-6. Responda em 1-3 frases, tom humano e natural
-7. Use exatamente 1 💚 no final
-
-IMPORTANTE: Use os INSIGHTS aprendidos mas adapte ao contexto. Não seja robótica!
-`.trim();
-
-    const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 200,
-        temperature: 0.7,
-        system: SYSTEM_PROMPT_AMANDA,
-        messages: [{ role: "user", content: userPrompt }]
+function extractMentionedTherapies(messages) {
+    const therapies = new Set();
+    messages.forEach(msg => {
+        const content = msg.content?.toLowerCase() || '';
+        if (/neuropsic/i.test(content)) therapies.add('neuropsicológica');
+        if (/fono/i.test(content)) therapies.add('fonoaudiologia');
+        if (/psic[oó]log(?!.*neuro)/i.test(content)) therapies.add('psicologia');
+        if (/terapia.*ocupacional|to\b/i.test(content)) therapies.add('terapia ocupacional');
+        if (/fisio/i.test(content)) therapies.add('fisioterapia');
+        if (/musico/i.test(content)) therapies.add('musicoterapia');
+        if (/psicopedagog/i.test(content)) therapies.add('psicopedagogia');
     });
+    return Array.from(therapies);
+}
 
-    return response.content[0]?.text?.trim() || "Como posso te ajudar? 💚";
+function calculateDaysSince(date) {
+    if (!date) return 999;
+    return Math.floor((Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function getDefaultContext() {
+    return {
+        stage: 'novo',
+        isFirstContact: true,
+        messageCount: 0,
+        mentionedTherapies: [],
+        conversationHistory: [],
+        conversationSummary: null,
+        shouldGreet: true,
+        needsUrgency: false
+    };
 }
 
 /**
@@ -216,92 +296,192 @@ function tryManualResponse(normalizedText) {
 }
 
 /**
- * 🤖 IA COM CONTEXTO INTELIGENTE (ANTHROPIC)
+ * 🤖 IA COM DADOS DE TERAPIAS + HISTÓRICO COMPLETO
  */
-async function callOpenAIWithContext(userText, lead, context) {
+async function callClaudeWithTherapyData({ therapies, flags, userText, lead, context }) {
+    const { getTherapyData } = await import('./therapyDetector.js');
+    const { getLatestInsights } = await import('../services/amandaLearningService.js');
+    const { SYSTEM_PROMPT_AMANDA } = await import('./amandaPrompt.js');
+
+    const insights = await getLatestInsights();
+
+    const therapiesInfo = therapies.map(t => {
+        const data = getTherapyData(t.id);
+        return `${t.name.toUpperCase()}: ${data.explanation} | Preço: ${data.price}`;
+    }).join('\n');
+
     const {
-        stage = 'novo',
-        messageCount = 0,
-        lastMessages = [],
-        mentionedTherapies = [],
-        isPatient = false,
-        hasAppointments = false,
-        needsUrgency = false,
-        daysSinceLastContact = 0
+        stage, messageCount, isPatient, hasAppointments,
+        needsUrgency, daysSinceLastContact,
+        conversationHistory, conversationSummary, shouldGreet
     } = context;
 
-    let stageInstruction = '';
-
-    switch (stage) {
-        case 'novo':
-            stageInstruction = '• Seja acolhedora e empática. Pergunte a necessidade antes de falar de preços.';
-            break;
-        case 'primeiro_contato':
-            stageInstruction = '• Seja calorosa. Faça perguntas abertas sobre a necessidade.';
-            break;
-        case 'pesquisando_preco':
-            stageInstruction = '• Lead já perguntou sobre valores. Use estratégia VALOR→PREÇO→ENGAJAMENTO.';
-            break;
-        case 'engajado':
-            stageInstruction = `• Lead já trocou ${messageCount} mensagens. Seja mais direta e objetiva.`;
-            break;
-        case 'interessado_agendamento':
-            stageInstruction = '• Lead quer agendar! Ofereça 2 opções concretas de horário. Seja DIRETA.';
-            break;
-        case 'agendado':
-            stageInstruction = '• Lead JÁ TEM AGENDAMENTO! Confirme horário ou tire dúvidas. Seja prestativa.';
-            break;
-        case 'paciente':
-            stageInstruction = '• PACIENTE ATIVO! Tom próximo e solícito. Pergunte como está o tratamento.';
-            break;
+    // ✅ INSIGHTS APRENDIDOS
+    let learnedContext = '';
+    if (insights?.data?.effectivePriceResponses && flags.asksPrice) {
+        const scenario = stage === 'novo' ? 'first_contact' : 'engaged';
+        const bestResponse = insights.data.effectivePriceResponses.find(r => r.scenario === scenario);
+        if (bestResponse) {
+            learnedContext = `\n💡 PADRÃO DE SUCESSO: "${bestResponse.response}"`;
+        }
     }
 
-    const patientNote = isPatient
-        ? `\n⚠️ IMPORTANTE: Lead JÁ É PACIENTE. Seja mais próxima e atenciosa!`
-        : '';
+    const patientStatus = isPatient ? `\n⚠️ PACIENTE ATIVO - Tom próximo!` : '';
+    const urgencyNote = needsUrgency ? `\n🔥 ${daysSinceLastContact} dias sem falar - reative com calor!` : '';
 
-    const urgencyNote = needsUrgency
-        ? `\n🔥 ${daysSinceLastContact} dias sem contato - seja calorosa: "Que saudade! Como você está?"`
-        : '';
+    // 🧠 MONTA MENSAGENS COM HISTÓRICO COMPLETO
+    const messages = [];
 
-    // ✅ CORREÇÃO PRINCIPAL - USA HISTÓRICO DE TERAPIAS
-    const therapiesContext = mentionedTherapies.length > 0
-        ? `\n🎯 TERAPIAS NO HISTÓRICO: ${mentionedTherapies.join(', ')}`
-        : '';
+    // 1. Se tem resumo, adiciona como contexto anterior
+    if (conversationSummary) {
+        messages.push({
+            role: 'user',
+            content: `📋 CONTEXTO DE CONVERSAS ANTERIORES:\n\n${conversationSummary}\n\n---\n\nAs mensagens abaixo são a continuação RECENTE desta conversa:`
+        });
+        messages.push({
+            role: 'assistant',
+            content: 'Entendi o contexto completo. Vou continuar a conversa de forma natural, lembrando de tudo que foi discutido.'
+        });
+    }
 
-    const historyContext = lastMessages.length > 0
-        ? `\nÚltimas mensagens: ${lastMessages.slice(0, 3).join(' | ')}`
-        : '';
+    // 2. Adiciona histórico recente (últimas 20 msgs)
+    messages.push(...conversationHistory);
 
-    const userPrompt = `
-MENSAGEM DO CLIENTE: "${userText}"
-LEAD: ${lead?.name || 'Desconhecido'} | Origem: ${lead?.origin || 'WhatsApp'}
-ESTÁGIO: ${stage.toUpperCase()} (${messageCount} mensagens trocadas)${historyContext}${therapiesContext}${patientNote}${urgencyNote}
+    // 3. Mensagem atual com instruções
+    const currentPrompt = `${userText}
 
-INSTRUÇÃO CONTEXTUAL:
-${stageInstruction}
+📊 CONTEXTO DESTA MENSAGEM:
+TERAPIAS DETECTADAS: ${therapiesInfo}
+FLAGS: Preço=${flags.asksPrice} | Agendar=${flags.wantsSchedule}
+ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${learnedContext}
 
-REGRAS GERAIS:
-- Responda em 1-3 frases, tom humano e acolhedor
-- ${mentionedTherapies.length > 0 ? `🚨 CRÍTICO: Lead já demonstrou interesse em ${mentionedTherapies.join(' e ')}. Mantenha foco NESSAS especialidades. NÃO ofereça outras sem o lead perguntar!` : 'Se perguntar sobre especialidades, mencione: Fono, Psicologia, TO, Fisio, Neuro'}
-- SEMPRE finalize com 1 pergunta objetiva para engajar
-- Use exatamente 1 💚 no final
-`.trim();
+🎯 INSTRUÇÕES CRÍTICAS:
+1. ${shouldGreet ? '✅ Pode cumprimentar naturalmente' : '🚨 NÃO USE SAUDAÇÕES (Oi/Olá) - conversa está ativa'}
+2. ${conversationSummary ? '🧠 Você TEM o resumo completo acima - USE esse contexto!' : '📜 Leia TODO o histórico de mensagens acima'}
+3. 🚨 NÃO PERGUNTE o que JÁ foi informado/discutido
+4. ${flags.asksPrice ? 'Responda preço: VALOR→PREÇO→PERGUNTA' : 'Apresente de forma acolhedora'}
+5. Máximo 3 frases, tom natural e humano
+6. Exatamente 1 💚 no final`;
 
+    messages.push({
+        role: 'user',
+        content: currentPrompt
+    });
+
+    // 🚀 CHAMA ANTHROPIC COM CACHE
     const response = await anthropic.messages.create({
         model: "claude-sonnet-4-20250514",
-        max_tokens: 150,
-        temperature: 0.6,
-        system: SYSTEM_PROMPT_AMANDA,
-        messages: [{
-            role: "user",
-            content: userPrompt
-        }]
+        max_tokens: 200,
+        temperature: 0.7,
+        system: [
+            {
+                type: "text",
+                text: SYSTEM_PROMPT_AMANDA,
+                cache_control: { type: "ephemeral" }
+            }
+        ],
+        messages
     });
 
     return response.content[0]?.text?.trim() || "Como posso te ajudar? 💚";
 }
 
+/**
+ * 🤖 IA COM CONTEXTO INTELIGENTE (SEM TERAPIAS ESPECÍFICAS)
+ */
+async function callOpenAIWithContext(userText, lead, context) {
+    const { SYSTEM_PROMPT_AMANDA } = await import('./amandaPrompt.js');
+
+    const {
+        stage = 'novo',
+        messageCount = 0,
+        mentionedTherapies = [],
+        isPatient = false,
+        needsUrgency = false,
+        daysSinceLastContact = 0,
+        conversationHistory = [],
+        conversationSummary = null,
+        shouldGreet = true
+    } = context;
+
+    let stageInstruction = '';
+    switch (stage) {
+        case 'novo':
+            stageInstruction = 'Seja acolhedora. Pergunte necessidade antes de preços.';
+            break;
+        case 'pesquisando_preco':
+            stageInstruction = 'Lead já perguntou valores. Use VALOR→PREÇO→ENGAJAMENTO.';
+            break;
+        case 'engajado':
+            stageInstruction = `Lead trocou ${messageCount} msgs. Seja mais direta.`;
+            break;
+        case 'interessado_agendamento':
+            stageInstruction = 'Lead quer agendar! Ofereça 2 períodos concretos.';
+            break;
+        case 'paciente':
+            stageInstruction = 'PACIENTE ATIVO! Tom próximo.';
+            break;
+    }
+
+    const patientNote = isPatient ? `\n⚠️ PACIENTE - seja próxima!` : '';
+    const urgencyNote = needsUrgency ? `\n🔥 ${daysSinceLastContact} dias sem contato - reative!` : '';
+    const therapiesContext = mentionedTherapies.length > 0
+        ? `\n🎯 TERAPIAS DISCUTIDAS: ${mentionedTherapies.join(', ')}`
+        : '';
+
+    // 🧠 MONTA MENSAGENS
+    const messages = [];
+
+    // 1. Resumo se existe
+    if (conversationSummary) {
+        messages.push({
+            role: 'user',
+            content: `📋 CONTEXTO ANTERIOR:\n\n${conversationSummary}\n\n---\n\nMensagens recentes abaixo:`
+        });
+        messages.push({
+            role: 'assistant',
+            content: 'Entendi o contexto. Continuando...'
+        });
+    }
+
+    // 2. Histórico recente
+    messages.push(...conversationHistory);
+
+    // 3. Mensagem atual
+    messages.push({
+        role: 'user',
+        content: `${userText}
+
+CONTEXTO:
+LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}
+
+INSTRUÇÃO: ${stageInstruction}
+
+REGRAS:
+- ${shouldGreet ? 'Pode cumprimentar' : '🚨 NÃO use Oi/Olá - conversa ativa'}
+- ${conversationSummary ? '🧠 USE o resumo acima' : '📜 Leia histórico acima'}
+- 🚨 NÃO pergunte o que já foi dito
+- 1-3 frases, tom humano
+- 1 pergunta engajadora
+- 1 💚 final`
+    });
+
+    const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 150,
+        temperature: 0.6,
+        system: [
+            {
+                type: "text",
+                text: SYSTEM_PROMPT_AMANDA,
+                cache_control: { type: "ephemeral" }
+            }
+        ],
+        messages
+    });
+
+    return response.content[0]?.text?.trim() || "Como posso te ajudar? 💚";
+}
 
 /**
  * 🎨 HELPER
