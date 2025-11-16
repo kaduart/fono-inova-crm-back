@@ -7,10 +7,11 @@ import Contact from "../models/Contact.js";
 import Followup from "../models/Followup.js";
 import Lead from '../models/Leads.js';
 import Message from "../models/Message.js";
-import { transcribeWaAudio } from "../services/aiAmandaService.js";
+import { describeWaImage, transcribeWaAudio } from "../services/aiAmandaService.js";
 import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
+
 import { normalizeE164BR, tailPattern } from "../utils/phone.js";
 
 export const whatsappController = {
@@ -266,7 +267,7 @@ async function processInboundMessage(msg, value) {
         } else if (type === "audio" && msg.audio?.id) {
             // 🎙️ ÁUDIO → transcrever
             mediaId = msg.audio.id;
-            caption = "[AUDIO]"; // se quiser manter essa marcação em algum lugar
+            caption = "[AUDIO]";
 
             try {
                 // Opcional: ainda resolve URL para uso no front/proxy
@@ -284,15 +285,38 @@ async function processInboundMessage(msg, value) {
             if (!content || content.length < 3) {
                 content = "[Áudio não pôde ser transcrito]";
             }
-        } else {
-            // 🖼️ IMAGEM / VÍDEO / DOCUMENTO / STICKER (igual você já fazia)
+        } else if (type === "image" && msg.image?.id) {
+            // 🖼️ IMAGEM → descrição + legenda
+            mediaId = msg.image.id;
+            caption = (msg.image.caption || "").trim();
+
+            // URL para o front / proxy
             try {
-                if (type === "image" && msg.image?.id) {
-                    mediaId = msg.image.id;
-                    caption = msg.image.caption || "[IMAGE]";
-                    const { url } = await resolveMediaUrl(mediaId);
-                    mediaUrl = url;
-                } else if (type === "video" && msg.video?.id) {
+                const { url } = await resolveMediaUrl(mediaId);
+                mediaUrl = url;
+            } catch (e) {
+                console.error("⚠️ Falha ao resolver mídia (image):", e.message);
+            }
+
+            try {
+                console.log(`🖼️ Gerando descrição para imagem: ${mediaId}`);
+                const description = await describeWaImage(mediaId, caption);
+
+                if (caption) {
+                    // legenda + descrição → vira texto rico pra Amanda
+                    content = `${caption}\n[Detalhe da imagem: ${description}]`;
+                } else {
+                    content = `Imagem enviada: ${description}`;
+                }
+            } catch (e) {
+                console.error("⚠️ Falha ao descrever imagem:", e.message);
+                // fallback: pelo menos algo textual
+                content = caption || "Imagem recebida.";
+            }
+        } else {
+            // 🎥 📄 😀 VÍDEO / DOCUMENTO / STICKER (mantém como marcador)
+            try {
+                if (type === "video" && msg.video?.id) {
                     mediaId = msg.video.id;
                     caption = msg.video.caption || "[VIDEO]";
                     const { url } = await resolveMediaUrl(mediaId);
@@ -313,11 +337,12 @@ async function processInboundMessage(msg, value) {
             }
         }
 
-        // 🔹 Agora: para TEXT e AUDIO usamos o próprio `content`
+        // 🔹 Agora: TEXT, AUDIO e IMAGE usam `content` (texto "de verdade")
         const contentToSave =
-            (type === "text" || type === "audio")
+            (type === "text" || type === "audio" || type === "image")
                 ? content
                 : (caption || `[${type.toUpperCase()}]`);
+
 
 
         // ✅ BUSCA UNIFICADA INTELIGENTE
@@ -403,7 +428,7 @@ async function processInboundMessage(msg, value) {
             mediaId,
             caption,
             status: "received",
-            needs_human_review: type !== "text",
+            needs_human_review: needsHumanReview,
             timestamp,
             contact: contact._id,
             lead: lead._id,
@@ -454,18 +479,17 @@ async function processInboundMessage(msg, value) {
 
         const isRealText = contentToSave?.trim() && !contentToSave.startsWith("[");
 
-        // ✅ AMANDA 2.0 TRACKING (texto ou áudio transcrito)
-        if ((type === 'text' || type === 'audio') && isRealText) {
+        // ✅ AMANDA 2.0 TRACKING (texto, áudio transcrito ou imagem descrita)
+        if ((type === 'text' || type === 'audio' || type === 'image') && isRealText) {
             handleResponseTracking(lead._id, contentToSave)
                 .catch(err => console.error("⚠️ Tracking não crítico falhou:", err));
         }
 
-        // ✅ RESPOSTA AUTOMÁTICA (Amanda) para texto ou áudio transcrito
-        if ((type === "text" || type === "audio") && isRealText) {
+        // ✅ RESPOSTA AUTOMÁTICA (Amanda) para texto, áudio transcrito ou imagem descrita
+        if ((type === "text" || type === "audio" || type === "image") && isRealText) {
             handleAutoReply(from, to, contentToSave, lead)
                 .catch(err => console.error("⚠️ Auto-reply não crítico falhou:", err));
         }
-
 
         console.log("✅ Mensagem processada com sucesso:", wamid);
 
