@@ -27,7 +27,7 @@ router.use("/proxy-media", mediaLimiter);
 
 router.get("/proxy-media", async (req, res) => {
     const startedAt = Date.now();
-    const token = getMetaToken();
+    const token = await getMetaToken();
     if (!token) {
         return res.status(500).json({
             success: false,
