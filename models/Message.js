@@ -42,7 +42,19 @@ const messageSchema = new mongoose.Schema({
 
     // Raw payload p/ debug/auditoria
     raw: { type: mongoose.Schema.Types.Mixed },
+    metadata: {
+        sentBy: {
+            type: String,
+            enum: ['amanda', 'manual', 'system'],
+            default: 'amanda'
+        },
+        userId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        }
+    },
 }, { timestamps: true });
+
 
 // Índices úteis
 messageSchema.index({ from: 1, to: 1, timestamp: 1 });
