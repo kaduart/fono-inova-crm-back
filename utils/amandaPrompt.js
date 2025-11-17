@@ -169,10 +169,11 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     instructions += `AGENDAMENTO: 
 - NÃO marque horário direto e NÃO ofereça dias ou horários específicos.
 - Se ainda não tiver no contexto, peça nome completo do paciente/criança e telefone de contato.
-- Pergunte se prefere período da manhã ou da tarde (sem sugerir horários exatos).
+- Pergunte se o paciente tem preferência por PERÍODO: manhã ou tarde (sem sugerir horários exatos).
 - Diga claramente que você vai encaminhar os dados para a equipe da clínica verificar a disponibilidade de agenda e retornar com os melhores horários.
 - Se o nome e telefone já estiverem no contexto, apenas confirme se é esse contato mesmo, sem repetir tudo.\n\n`;
   }
+
 
 
   if (asksPlans) {
