@@ -62,16 +62,23 @@ const worker = new Worker(
         .limit(10)
         .lean();
 
-      const lastInbound = recentMessages.find(m => m.direction === 'inbound');
+      const lastInbound = recentMessages.find(m => m.direction === "inbound");
 
-      // 2️⃣ Contar tentativas anteriores
+      // 2️⃣ Contar tentativas anteriores (janela móvel de 3 dias)
+      const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+      const threeDaysAgo = new Date(Date.now() - THREE_DAYS_MS);
+
       const previousAttempts = await Followup.countDocuments({
         lead: lead._id,
-        status: 'sent',
-        createdAt: { $lt: followup.createdAt }
+        status: "sent",
+        sentAt: { $gte: threeDaysAgo } // 🔥 só considera followups enviados nos últimos 3 dias
       });
 
-      console.log(chalk.blue(`[AMANDA] Lead: ${lead.name} | Tentativa: ${previousAttempts + 1}`));
+      console.log(
+        chalk.blue(
+          `[AMANDA] Lead: ${lead.name} | Tentativas nos últimos 3 dias: ${previousAttempts}`
+        )
+      );
 
       // 3️⃣ Análise inteligente (se tiver mensagem do lead)
       let analysis = null;
@@ -80,17 +87,21 @@ const worker = new Worker(
           analysis = await analyzeLeadMessage({
             text: lastInbound.content,
             lead,
-            history: recentMessages.map(m => m.content || '')
+            history: recentMessages.map(m => m.content || "")
           });
 
-          console.log(chalk.green(`[AMANDA] Análise: Score=${analysis.score} | Segment=${analysis.segment.emoji} | Intent=${analysis.intent.primary}`));
+          console.log(
+            chalk.green(
+              `[AMANDA] Análise: Score=${analysis.score} | Segment=${analysis.segment.emoji} | Intent=${analysis.intent.primary}`
+            )
+          );
 
           // 4️⃣ Atualizar score no Lead
           await Lead.findByIdAndUpdate(lead._id, {
             conversionScore: analysis.score,
-            'qualificationData.extractedInfo': analysis.extracted,
-            'qualificationData.intent': analysis.intent.primary,
-            'qualificationData.sentiment': analysis.intent.sentiment,
+            "qualificationData.extractedInfo": analysis.extracted,
+            "qualificationData.intent": analysis.intent.primary,
+            "qualificationData.sentiment": analysis.intent.sentiment,
             lastScoreUpdate: new Date(),
             $push: {
               scoreHistory: {
@@ -100,9 +111,8 @@ const worker = new Worker(
               }
             }
           });
-
         } catch (aiError) {
-          console.warn(chalk.yellow('⚠️ Erro na análise Amanda 2.0:', aiError.message));
+          console.warn(chalk.yellow("⚠️ Erro na análise Amanda 2.0:", aiError.message));
         }
       }
 
@@ -118,7 +128,11 @@ const worker = new Worker(
               analysis,
               attempt: previousAttempts + 1
             });
-            console.log(chalk.green(`[AMANDA 2.0] Mensagem gerada: "${messageToSend.substring(0, 50)}..."`));
+            console.log(
+              chalk.green(
+                `[AMANDA 2.0] Mensagem gerada: "${messageToSend.substring(0, 50)}..."`
+              )
+            );
           } else {
             // Fallback para Amanda 1.0
             const optimized = await generateFollowupMessage(lead);
@@ -144,7 +158,8 @@ const worker = new Worker(
         if (!analysis && lead.origin && !followup.aiOptimized) {
           const o = (lead.origin || "").toLowerCase();
           if (o.includes("google")) sentText = `Vimos seu contato pelo Google 😉 ${sentText}`;
-          else if (o.includes("meta") || o.includes("instagram")) sentText = `Olá! Vi sua mensagem pelo Instagram 💬 ${sentText}`;
+          else if (o.includes("meta") || o.includes("instagram"))
+            sentText = `Olá! Vi sua mensagem pelo Instagram 💬 ${sentText}`;
           else if (o.includes("indic")) sentText = `Ficamos felizes pela indicação 🙌 ${sentText}`;
         }
 
@@ -157,13 +172,13 @@ const worker = new Worker(
           to: lead.contact.phone,
           template: followup.playbook,
           params: [{ type: "text", text: sentText }],
-          lead: lead._id,
+          lead: lead._id
         });
       } else {
         await sendTextMessage({
           to: lead.contact.phone,
           text: sentText,
-          lead: lead._id,
+          lead: lead._id
         });
       }
 
@@ -178,40 +193,53 @@ const worker = new Worker(
           optimized: sentText !== (followup.message || ""),
           sentAtHour: new Date().getHours(),
           weekday: new Date().getDay(),
-          amandaVersion: analysis ? '2.0' : '1.0',
+          amandaVersion: analysis ? "2.0" : "1.0",
           score: analysis?.score || lead.conversionScore || 0
-        },
+        }
       });
 
-      // 9️⃣ Agendar próximo follow-up SE necessário
-      if (previousAttempts + 1 < 3) { // Máximo 3 tentativas
+      // 9️⃣ Agendar próximo follow-up SE necessário (máx. 3 em 3 dias)
+      const currentAttempt = previousAttempts + 1; // esta mensagem que estamos enviando agora
+
+      if (currentAttempt < 3) {
+        // só agenda próximo se ainda não bateu 3 na janela
+        const nextAttemptNumber = currentAttempt + 1; // próxima será a tentativa 2 ou 3
         const score = analysis?.score || lead.conversionScore || 50;
 
         const nextTime = calculateOptimalFollowupTime({
           lead,
           score,
           lastInteraction: new Date(),
-          attempt: previousAttempts + 2
+          attempt: nextAttemptNumber
         });
 
         await Followup.create({
           lead: lead._id,
-          stage: 'follow_up',
+          stage: "follow_up",
           scheduledAt: nextTime,
-          status: 'scheduled',
+          status: "scheduled",
           aiOptimized: true,
           origin: lead.origin,
           playbook: null,
-          note: `Auto-gerado pela Amanda 2.0 (tentativa ${previousAttempts + 2}/3)`
+          note: `Auto-gerado pela Amanda 2.0 (tentativa ${nextAttemptNumber}/3 - janela 3 dias)`
         });
 
-        console.log(chalk.green(`[AMANDA] Próximo follow-up agendado para ${nextTime.toLocaleString('pt-BR')}`));
+        console.log(
+          chalk.green(
+            `[AMANDA] Próximo follow-up agendado para ${nextTime.toLocaleString(
+              "pt-BR"
+            )} (tentativa ${nextAttemptNumber}/3)`
+          )
+        );
       } else {
-        console.log(chalk.yellow(`[AMANDA] Limite de tentativas atingido (3) - não agendar mais`));
+        console.log(
+          chalk.yellow(
+            `[AMANDA] Limite de tentativas atingido (3 em 3 dias) para lead ${lead._id} - não agendar mais`
+          )
+        );
       }
 
       console.log(chalk.green(`✅ Follow-up ${followupId} enviado com sucesso!`));
-
     } catch (err) {
       await handleFollowupError(followupId, err);
     }
@@ -241,43 +269,53 @@ async function handleFollowupError(followupId, error) {
       const nextAttempt = new Date(Date.now() + delayMs);
 
       await Followup.findByIdAndUpdate(followupId, {
-        status: 'scheduled',
+        status: "scheduled",
         scheduledAt: nextAttempt,
         retryCount,
         lastErrorAt: new Date(),
         error: error.message?.substring(0, 500)
       });
 
-      console.log(chalk.yellow(`⚠️ Follow-up ${followupId} reagendado para ${nextAttempt.toLocaleString('pt-BR')} (tentativa ${retryCount}/${maxRetries})`));
+      console.log(
+        chalk.yellow(
+          `⚠️ Follow-up ${followupId} reagendado para ${nextAttempt.toLocaleString(
+            "pt-BR"
+          )} (tentativa ${retryCount}/${maxRetries})`
+        )
+      );
     } else {
       // Falha definitiva
       await Followup.findByIdAndUpdate(followupId, {
-        status: 'failed',
+        status: "failed",
         failedAt: new Date(),
         retryCount,
         error: error.message?.substring(0, 500)
       });
 
-      console.error(chalk.red(`💥 Follow-up ${followupId} falhou definitivamente após ${maxRetries} tentativas`));
+      console.error(
+        chalk.red(
+          `💥 Follow-up ${followupId} falhou definitivamente após ${maxRetries} tentativas`
+        )
+      );
     }
   } catch (updateError) {
-    console.error(chalk.red('❌ Erro ao atualizar follow-up falhado:'), updateError);
+    console.error(chalk.red("❌ Erro ao atualizar follow-up falhado:"), updateError);
   }
 }
 
 // Eventos do worker
-worker.on('completed', (job) => {
+worker.on("completed", (job) => {
   console.log(chalk.green(`✅ Job ${job.id} concluído`));
 });
 
-worker.on('failed', (job, err) => {
+worker.on("failed", (job, err) => {
   console.error(chalk.red(`❌ Job ${job?.id} falhou:`), err.message);
 });
 
-worker.on('error', (err) => {
-  console.error(chalk.red('💥 Worker error:'), err);
+worker.on("error", (err) => {
+  console.error(chalk.red("💥 Worker error:"), err);
 });
 
-console.log(chalk.cyan('👷 Follow-up Worker iniciado com Amanda 2.0!'));
+console.log(chalk.cyan("👷 Follow-up Worker iniciado com Amanda 2.0!"));
 
 export default worker;

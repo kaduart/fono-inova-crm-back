@@ -57,6 +57,7 @@ import specialtyRouter from "./routes/specialty.js";
 import UserRoutes from "./routes/user.js";
 import whatsappRoutes from "./routes/whatsapp.js";
 import aiRoutes from "./routes/ai.js";
+import diagnosticRouter from './routes/whatsapp/diagnostic.js';
 
 // ======================================================
 // 🧭 Inicialização base
@@ -94,7 +95,7 @@ app.use(
     crossOriginResourcePolicy: false,
   })
 );
-app.use(...sanitizeStack()); 
+app.use(...sanitizeStack());
 
 const allowedOrigins = [
   "https://app.clinicafonoinova.com.br",
@@ -145,6 +146,7 @@ app.use("/api/amanda", amandaRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/leads', leadRoutes);
 app.use("/api/ai", aiRoutes);
+app.use('/api/whatsapp/diagnostic', diagnosticRouter);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);

@@ -91,6 +91,26 @@ db.appointments.find({
   }
 })
 
+///follow-ups 
+db.followups.find(
+  {
+    sentAt: {
+      $gte: ISODate("2025-11-16T00:00:00.000Z"),
+      $lt:  ISODate("2025-11-17T00:00:00.000Z")
+    }
+  },
+  {
+    _id: 1,
+    lead: 1,
+    sentAt: 1,
+    status: 1,
+    message: 1,
+    origin: 1
+  }
+).sort({ sentAt: 1 })
+
+
+
 ///ouuuuu // Buscar agendamentos de hoje - 27/10/2025
 db.appointments.find({
   date: "2025-11-07"

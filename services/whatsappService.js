@@ -36,7 +36,7 @@ async function updateChatContext(leadId, direction, text) {
 
 /** 🔎 Resolve a URL lookaside a partir de um mediaId do WhatsApp */
 export async function resolveMediaUrl(mediaId) {
-   const token = await requireToken(); 
+    const token = await requireToken();
 
     const url = `${META_URL}/${mediaId}?fields=id,mime_type,sha256,file_size,url`;
     const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
@@ -58,7 +58,7 @@ export async function resolveMediaUrl(mediaId) {
 
 /** ✉️ Envia template */
 export async function sendTemplateMessage({ to, template, params = [], lead }) {
-    const token = await requireToken(); 
+    const token = await requireToken();
     if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
 
     const phone = normalizePhone(to);
@@ -108,8 +108,16 @@ export async function sendTemplateMessage({ to, template, params = [], lead }) {
 }
 
 /** 💬 Envia texto */
-export async function sendTextMessage({ to, text, lead }) {
-    const token = await requireToken(); 
+/** 💬 Envia texto */
+export async function sendTextMessage({
+    to,
+    text,
+    lead,
+    // 👇 novos campos opcionais
+    sentBy = "amanda_auto",   // default: Amanda respondeu sozinha
+    userId = null,            // quando vier de usuário humano, passa o id aqui
+}) {
+    const token = await requireToken();
     if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
 
     const phone = normalizePhone(to);
@@ -124,7 +132,10 @@ export async function sendTextMessage({ to, text, lead }) {
 
     const res = await fetch(url, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+        },
         body: JSON.stringify(body),
     });
     const data = await res.json();
@@ -141,18 +152,20 @@ export async function sendTextMessage({ to, text, lead }) {
         waMessageId,
         timestamp: new Date(),
         lead,
+        // 👇 agora as variáveis existem sempre
         metadata: {
-            sentBy,    // ← 'amanda' ou 'manual'
-            userId     // ← ID do user que enviou (se manual)
-        }
+            sentBy,
+            userId,
+        },
     });
-
 
     if (lead) await updateChatContext(lead, "outbound", text);
 
     if (!res.ok) {
         console.error("❌ Erro WhatsApp:", data.error);
-        throw new Error(data.error?.message || "Erro ao enviar mensagem WhatsApp");
+        throw new Error(
+            data.error?.message || "Erro ao enviar mensagem WhatsApp"
+        );
     }
 
     return data;
