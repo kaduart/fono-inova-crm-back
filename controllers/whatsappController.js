@@ -193,7 +193,8 @@ export const whatsappController = {
 
     async listContacts(_req, res) {
         try {
-            const contacts = await Contact.find().sort({ name: 1 });
+            const contacts = await Contact.find()
+                .sort({ lastMessageAt: -1, name: 1 }); // 🆕 mais recente primeiro
             res.json(contacts);
         } catch (err) {
             console.error("❌ Erro ao listar contatos:", err);
@@ -202,87 +203,104 @@ export const whatsappController = {
     },
 
     async addContact(req, res) {
-        try {
-            const { name, phone, avatar } = req.body;
-            if (!name || !phone) return res.status(400).json({ error: "Nome e telefone são obrigatórios" });
-
-            const p = normalizeE164BR(phone);
-            const existing = await Contact.findOne({ phone: p });
-            if (existing) return res.status(400).json({ error: "Contato com esse telefone já existe" });
-
-            const contact = await Contact.create({ name, phone: p, avatar });
-            res.status(201).json(contact);
-        } catch (err) {
-            console.error("❌ Erro ao adicionar contato:", err);
-            res.status(500).json({ error: err.message });
-        }
+        ...
     },
 
-    async updateContact(req, res) {
+
+    async listContacts(_req, res) {
         try {
-            if (req.body?.phone) req.body.phone = normalizeE164BR(req.body.phone);
-            const updated = await Contact.findByIdAndUpdate(req.params.id, req.body, { new: true });
-            res.json(updated);
+            const contacts = await Contact.find()
+                .sort({ lastMessageAt: -1, name: 1 }); // 🆕 mais recente primeiro
+            res.json(contacts);
         } catch (err) {
-            console.error("❌ Erro ao atualizar contato:", err);
+            console.error("❌ Erro ao listar contatos:", err);
             res.status(500).json({ error: err.message });
-        }
-    },
-
-    async deleteContact(req, res) {
-        try {
-            await Contact.findByIdAndDelete(req.params.id);
-            res.json({ success: true });
-        } catch (err) {
-            console.error("❌ Erro ao deletar contato:", err);
-            res.status(500).json({ error: err.message });
-        }
-    },
-
-    async sendManualMessage(req, res) {
-        try {
-            const { leadId, text, userId } = req.body;
-
-            const lead = await Lead.findById(leadId).populate('contact');
-
-            if (!lead) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Lead não encontrado'
-                });
-            }
-
-            // Envia mensagem
-            const result = await sendTextMessage({
-                to: lead.contact.phone,
-                text,
-                lead: leadId,
-                sentBy: 'manual',
-                userId
-            });
-
-            // Ativa controle manual
-            await Lead.findByIdAndUpdate(leadId, {
-                'manualControl.active': true,
-                'manualControl.takenOverAt': new Date(),
-                'manualControl.takenOverBy': userId
-            });
-
-            console.log(`✅ Mensagem manual enviada - Amanda pausada`);
-
-            res.json({
-                success: true,
-                message: 'Mensagem enviada. Amanda pausada.',
-                messageId: result.messages?.[0]?.id || `manual-${Date.now()}` // 🆕 RETORNA ID
-            });
-
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                error: error.message
-            });
         }
     }
+
+
+    async addContact(req, res) {
+    try {
+        const { name, phone, avatar } = req.body;
+        if (!name || !phone) return res.status(400).json({ error: "Nome e telefone são obrigatórios" });
+
+        const p = normalizeE164BR(phone);
+        const existing = await Contact.findOne({ phone: p });
+        if (existing) return res.status(400).json({ error: "Contato com esse telefone já existe" });
+
+        const contact = await Contact.create({ name, phone: p, avatar });
+        res.status(201).json(contact);
+    } catch (err) {
+        console.error("❌ Erro ao adicionar contato:", err);
+        res.status(500).json({ error: err.message });
+    }
+},
+
+    async updateContact(req, res) {
+    try {
+        if (req.body?.phone) req.body.phone = normalizeE164BR(req.body.phone);
+        const updated = await Contact.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        res.json(updated);
+    } catch (err) {
+        console.error("❌ Erro ao atualizar contato:", err);
+        res.status(500).json({ error: err.message });
+    }
+},
+
+    async deleteContact(req, res) {
+    try {
+        await Contact.findByIdAndDelete(req.params.id);
+        res.json({ success: true });
+    } catch (err) {
+        console.error("❌ Erro ao deletar contato:", err);
+        res.status(500).json({ error: err.message });
+    }
+},
+
+    async sendManualMessage(req, res) {
+    try {
+        const { leadId, text, userId } = req.body;
+
+        const lead = await Lead.findById(leadId).populate('contact');
+
+        if (!lead) {
+            return res.status(404).json({
+                success: false,
+                message: 'Lead não encontrado'
+            });
+        }
+
+        // Envia mensagem
+        const result = await sendTextMessage({
+            to: lead.contact.phone,
+            text,
+            lead: leadId,
+            sentBy: 'manual',
+            userId
+        });
+
+        // Ativa controle manual
+        await Lead.findByIdAndUpdate(leadId, {
+            'manualControl.active': true,
+            'manualControl.takenOverAt': new Date(),
+            'manualControl.takenOverBy': userId
+        });
+
+        console.log(`✅ Mensagem manual enviada - Amanda pausada`);
+
+        res.json({
+            success: true,
+            message: 'Mensagem enviada. Amanda pausada.',
+            messageId: result.messages?.[0]?.id || `manual-${Date.now()}` // 🆕 RETORNA ID
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+}
 
 };
 
@@ -483,6 +501,12 @@ async function processInboundMessage(msg, value) {
         });
 
 
+        try {
+            contact.lastMessageAt = timestamp;
+            await contact.save();
+        } catch (e) {
+            console.error("⚠️ Erro ao atualizar lastMessageAt no Contact:", e.message);
+        }
         console.log("💾 Mensagem salva no CRM:", {
             id: savedMessage._id,
             lead: lead._id,
