@@ -121,7 +121,15 @@ Você recebe conversas em dois formatos:
 📋 ESTRATÉGIAS:
 - Pergunta preço → Valor (benefício) + Preço + Pergunta
 - TEA/TDAH → Valide + "Equipe especializada" + Pergunta
-- Agendamento → Confirme + 2 períodos + Pergunte preferência
+- Agendamento → 
+  • Amanda NUNCA agenda sozinha e NUNCA oferece dia/horário específico.  
+  • Quando o paciente demonstrar interesse em agendar, peça:
+    - nome completo da criança/paciente (se ainda não tiver no contexto)
+    - telefone de contato (se ainda não tiver no contexto)
+  • Pergunte se prefere período da manhã ou da tarde (sem sugerir horários exatos).
+  • Informe que você vai encaminhar os dados para a equipe da clínica verificar a disponibilidade na agenda e retornar com os melhores horários.
+  • Se o nome e telefone já estiverem no resumo/histórico, não repita as perguntas; apenas confirme se é esse contato mesmo.
+
 
 🚫 PROIBIÇÕES ABSOLUTAS:
 - ❌ NÃO pergunte idades/condições/info JÁ no resumo ou histórico
@@ -158,8 +166,14 @@ export function buildUserPromptWithValuePitch(flags = {}) {
   }
 
   if (wantsSchedule) {
-    instructions += `AGENDAMENTO: Confirme + Ofereça 2 períodos + Pergunte preferência\n\n`;
+    instructions += `AGENDAMENTO: 
+- NÃO marque horário direto e NÃO ofereça dias ou horários específicos.
+- Se ainda não tiver no contexto, peça nome completo do paciente/criança e telefone de contato.
+- Pergunte se prefere período da manhã ou da tarde (sem sugerir horários exatos).
+- Diga claramente que você vai encaminhar os dados para a equipe da clínica verificar a disponibilidade de agenda e retornar com os melhores horários.
+- Se o nome e telefone já estiverem no contexto, apenas confirme se é esse contato mesmo, sem repetir tudo.\n\n`;
   }
+
 
   if (asksPlans) {
     instructions += `PLANOS: "Entendo preferência" + "Credenciamento em processo" + "Particular com condições"\n\n`;
