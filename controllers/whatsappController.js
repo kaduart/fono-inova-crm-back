@@ -202,11 +202,6 @@ export const whatsappController = {
         }
     },
 
-    async addContact(req, res) {
-        ...
-    },
-
-
     async listContacts(_req, res) {
         try {
             const contacts = await Contact.find()
@@ -216,7 +211,7 @@ export const whatsappController = {
             console.error("❌ Erro ao listar contatos:", err);
             res.status(500).json({ error: err.message });
         }
-    }
+    },
 
 
     async addContact(req, res) {
