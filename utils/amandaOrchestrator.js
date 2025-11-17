@@ -253,7 +253,7 @@ async function callOpenAIWithContext(userText, lead, context) {
             stageInstruction = `Lead trocou ${messageCount} msgs. Seja mais direta.`;
             break;
         case 'interessado_agendamento':
-            stageInstruction = 'Lead quer agendar! Ofereça 2 períodos concretos.';
+            stageInstruction = 'Lead quer agendar! Explique de forma simples que você vai encaminhar os dados para a equipe da clínica, peça nome completo e telefone se ainda não tiver no contexto e pergunte se prefere período da manhã ou da tarde, sem oferecer dia ou horário específicos.';
             break;
         case 'paciente':
             stageInstruction = 'PACIENTE ATIVO! Tom próximo.';
