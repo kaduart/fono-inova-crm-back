@@ -7,6 +7,7 @@ const contactSchema = new mongoose.Schema(
     avatar: String,
     tags: [String],
     notes: String,
+    lastMessageAt: { type: Date },
   },
   { timestamps: true }
 );
