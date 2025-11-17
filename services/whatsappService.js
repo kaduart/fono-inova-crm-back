@@ -4,6 +4,7 @@ import fetch from "node-fetch";
 import ChatContext from "../models/ChatContext.js";
 import Message from "../models/Message.js";
 import { getMetaToken } from "../utils/metaToken.js";
+import Contact from "../models/Contact.js";
 
 dotenv.config();
 
@@ -33,6 +34,37 @@ async function updateChatContext(leadId, direction, text) {
         await ctx.save();
     }
 }
+
+export async function registerMessage({ leadId, contactId, patientId, direction, text }) {
+  const now = new Date();
+
+  const msg = await Message.create({
+    lead: leadId,
+    contact: contactId,
+    patient: patientId || null,
+    direction,
+    content: text,
+  });
+
+  await updateChatContext(leadId, direction, text);
+
+  try {
+    await Contact.findByIdAndUpdate(
+      contactId,
+      {
+        lastMessageAt: now,
+        lastMessagePreview: text.slice(0, 120),
+        lastDirection: direction,
+      },
+      { new: true }
+    );
+  } catch (err) {
+    console.error("⚠️ Erro ao atualizar lastMessageAt no contato:", err);
+  }
+
+  return msg;
+}
+
 
 /** 🔎 Resolve a URL lookaside a partir de um mediaId do WhatsApp */
 export async function resolveMediaUrl(mediaId) {
