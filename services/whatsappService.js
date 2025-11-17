@@ -26,7 +26,10 @@ async function updateChatContext(leadId, direction, text) {
     const now = new Date();
     const ctx = await ChatContext.findOneAndUpdate(
         { lead: leadId },
-        { $push: { messages: { direction, text, ts: now } }, $set: { lastUpdatedAt: now } },
+        {
+            $push: { messages: { direction, text, ts: now } },
+            $set: { lastUpdatedAt: now },
+        },
         { upsert: true, new: true }
     );
     if (ctx.messages.length > 10) {
@@ -35,36 +38,67 @@ async function updateChatContext(leadId, direction, text) {
     }
 }
 
-export async function registerMessage({ leadId, contactId, patientId, direction, text }) {
-  const now = new Date();
-
-  const msg = await Message.create({
-    lead: leadId,
-    contact: contactId,
-    patient: patientId || null,
+/**
+ * 🧱 Registro centralizado de mensagem (inbound/outbound)
+ */
+export async function registerMessage({
+    leadId,
+    contactId,
+    patientId,
     direction,
-    content: text,
-  });
+    text,
+    // extras opcionais (mantém compatibilidade com chamadas antigas)
+    type = "text",
+    status = null,
+    waMessageId = null,
+    timestamp = null,
+    to = null,
+    from = null,
+    metadata = null,
+}) {
+    const now = timestamp || new Date();
 
-  await updateChatContext(leadId, direction, text);
+    // 1) Salva mensagem no histórico
+    const payload = {
+        lead: leadId,
+        contact: contactId,
+        patient: patientId || null,
+        direction,
+        type,
+        content: text,
+        timestamp: now,
+    };
 
-  try {
-    await Contact.findByIdAndUpdate(
-      contactId,
-      {
-        lastMessageAt: now,
-        lastMessagePreview: text.slice(0, 120),
-        lastDirection: direction,
-      },
-      { new: true }
-    );
-  } catch (err) {
-    console.error("⚠️ Erro ao atualizar lastMessageAt no contato:", err);
-  }
+    if (status) payload.status = status;
+    if (waMessageId) payload.waMessageId = waMessageId;
+    if (to) payload.to = to;
+    if (from) payload.from = from;
+    if (metadata) payload.metadata = metadata;
 
-  return msg;
+    const msg = await Message.create(payload);
+
+    // 2) Atualiza contexto de chat
+    await updateChatContext(leadId, direction, text);
+
+    // 3) Atualiza contato para ordenação da lista
+    if (contactId) {
+        try {
+            await Contact.findByIdAndUpdate(
+                contactId,
+                {
+                    lastMessageAt: now,
+                    lastMessagePreview: text.slice(0, 120),
+                    lastDirection: direction,
+                },
+                { new: true }
+            );
+        } catch (err) {
+            console.error("⚠️ Erro ao atualizar lastMessageAt no contato:", err);
+        }
+    }
+
+    return msg;
 }
-
 
 /** 🔎 Resolve a URL lookaside a partir de um mediaId do WhatsApp */
 export async function resolveMediaUrl(mediaId) {
@@ -103,19 +137,29 @@ export async function sendTemplateMessage({ to, template, params = [], lead }) {
         template: {
             name: template,
             language: { code: "pt_BR" },
-            components: [{ type: "body", parameters: params.map((p) => ({ type: "text", text: p })) }],
+            components: [
+                {
+                    type: "body",
+                    parameters: params.map((p) => ({ type: "text", text: p })),
+                },
+            ],
         },
     };
 
     const res = await fetch(url, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+        },
         body: JSON.stringify(body),
     });
     const data = await res.json();
 
     const waMessageId = data?.messages?.[0]?.id || null;
 
+    // Mantive aqui o create direto, pq template geralmente é fluxo disparado e
+    // você talvez queira tratar contactId depois com calma
     await Message.create({
         to: phone,
         from: PHONE_ID,
@@ -140,12 +184,13 @@ export async function sendTemplateMessage({ to, template, params = [], lead }) {
 }
 
 /** 💬 Envia texto */
-/** 💬 Envia texto */
 export async function sendTextMessage({
     to,
     text,
     lead,
-    // 👇 novos campos opcionais
+    // novos campos opcionais
+    contactId = null,         // ← passa o contact._id quando tiver
+    patientId = null,         // ← se estiver vinculado a um paciente
     sentBy = "amanda_auto",   // default: Amanda respondeu sozinha
     userId = null,            // quando vier de usuário humano, passa o id aqui
 }) {
@@ -173,25 +218,26 @@ export async function sendTextMessage({
     const data = await res.json();
 
     const waMessageId = data?.messages?.[0]?.id || null;
+    const now = new Date();
 
-    await Message.create({
-        to: phone,
-        from: PHONE_ID,
+    // 🔁 Usa SEMPRE o registro centralizado
+    await registerMessage({
+        leadId: lead,
+        contactId,
+        patientId,
         direction: "outbound",
+        text,
         type: "text",
-        content: text,
         status: res.ok ? "sent" : "failed",
         waMessageId,
-        timestamp: new Date(),
-        lead,
-        // 👇 agora as variáveis existem sempre
+        timestamp: now,
+        to: phone,
+        from: PHONE_ID,
         metadata: {
             sentBy,
             userId,
         },
     });
-
-    if (lead) await updateChatContext(lead, "outbound", text);
 
     if (!res.ok) {
         console.error("❌ Erro WhatsApp:", data.error);
