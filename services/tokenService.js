@@ -11,7 +11,7 @@ export async function getAccessToken() {
         `?grant_type=fb_exchange_token` +
         `&client_id=${process.env.APP_ID}` +
         `&client_secret=${process.env.APP_SECRET}` +
-        `&fb_exchange_token=${process.env.SHORT_TOKEN}`;
+        `&fb_exchange_token=${process.env.META_WABA_TOKEN}`;
 
     const res = await fetch(url);
     const data = await res.json();
