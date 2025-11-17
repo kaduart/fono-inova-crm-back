@@ -32,7 +32,7 @@ router.get("/proxy-media", async (req, res) => {
         return res.status(500).json({
             success: false,
             error:
-                "Token do WhatsApp não configurado (verifique WHATSAPP_ACCESS_TOKEN, META_WABA_TOKEN ou SHORT_TOKEN)",
+                "Token do WhatsApp não configurado (verifique WHATSAPP_ACCESS_TOKEN, META_WABA_TOKEN ou META_WABA_TOKEN)",
         });
     }
 

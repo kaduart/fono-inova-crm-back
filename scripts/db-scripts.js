@@ -109,7 +109,10 @@ db.followups.find(
   }
 ).sort({ sentAt: 1 })
 
-
+// busca apociente pe,o, nomee 
+db.patients.find(
+  { name: { $regex: "heloisa", $options: "i" } }
+).pretty()
 
 ///ouuuuu // Buscar agendamentos de hoje - 27/10/2025
 db.appointments.find({
