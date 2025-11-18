@@ -97,26 +97,26 @@ const leadSchema = new mongoose.Schema({
     default: 0
   },
   respondedAt: Date,
-manualControl: {
-        active: {
-            type: Boolean,
-            default: false
-        },
-        takenOverAt: Date,
-        takenOverBy: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'User'
-        },
-        autoResumeAfter: {
-            type: Number,
-            default: 30 // minutos
-        }
+  manualControl: {
+    active: {
+      type: Boolean,
+      default: false
     },
-    
-    autoReplyEnabled: {
-        type: Boolean,
-        default: true
+    takenOverAt: Date,
+    takenOverBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
     },
+    autoResumeAfter: {
+      type: Number,
+      default: 720
+    }
+  },
+
+  autoReplyEnabled: {
+    type: Boolean,
+    default: true
+  },
 
 }, { timestamps: true });
 

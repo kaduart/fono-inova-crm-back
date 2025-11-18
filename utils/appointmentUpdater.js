@@ -1,4 +1,3 @@
-// utils/updateAppointmentFromSession.js
 import Appointment from "../models/Appointment.js";
 import Patient from "../models/Patient.js";
 import { mapStatusToClinical, mapStatusToOperational } from "./statusMappers.js";
@@ -12,11 +11,16 @@ export async function updateAppointmentFromSession(sessionDoc, mongoSession = nu
   if (!appointment) return null;
 
   const op = mapStatusToOperational(sessionDoc.status); // nunca "completed" ou "paid"
-  const cl = (sessionDoc.status);
+  const cl = sessionDoc.status;
 
   const pay =
     (sessionDoc.paymentStatus && String(sessionDoc.paymentStatus).toLowerCase()) ||
     (sessionDoc.isPaid ? "paid" : "pending");
+
+  // 🔹 NOVO: herda método de pagamento da sessão (ex: "pix" vindo do pacote)
+  const paymentMethod =
+    sessionDoc.paymentMethod ??
+    appointment.paymentMethod; // fallback pro que já estava
 
   await Appointment.updateOne(
     { _id: appointment._id },
@@ -26,6 +30,7 @@ export async function updateAppointmentFromSession(sessionDoc, mongoSession = nu
         operationalStatus: op,
         clinicalStatus: cl,
         sessionValue: sessionDoc.sessionValue ?? appointment.sessionValue,
+        paymentMethod, // 👈 entra aqui
       },
     },
     { session: mongoSession, runValidators: false, strict: true }
@@ -33,7 +38,6 @@ export async function updateAppointmentFromSession(sessionDoc, mongoSession = nu
 
   return await Appointment.findById(appointment._id).session(mongoSession);
 }
-
 /**
  * 🔹 Atualiza os campos lastAppointment e nextAppointment do paciente.
  * Regras:

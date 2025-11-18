@@ -1,33 +1,38 @@
 // utils/flagsDetector.js - DETECTA TODAS AS FLAGS
 
+import { deriveFlagsFromText } from './amandaPrompt.js';
+
 export function detectAllFlags(text = "", lead = {}, context = {}) {
     const t = (text || "").toLowerCase().trim();
 
+    // 🧩 FLAGS BASE vindas do amandaPrompt
+    // (asksPrice, insistsPrice, wantsSchedule, asksAddress, asksPayment, asksPlans,
+    // asksDuration, asksAgeMinimum, asksRescheduling,
+    // mentionsTEA_TDAH, mentionsSpeechTherapy, asksPsychopedagogy,
+    // asksCAA, mentionsTOD, mentionsABA, mentionsMethodPrompt,
+    // asksAreas, asksDays, asksTimes, mentionsAdult/Child/Teen,
+    // wantsHumanAgent, etc.)
+    const baseFlags = deriveFlagsFromText(text || "");
+
+    // 🙏 Encerramento / agradecimento simples
+    const saysThanks = /\b(obrigad[ao]s?|obg|obgd|brigad[ao]s?|valeu|vlw)\b/i.test(t);
+    const saysBye = /(tchau|até\s+logo|até\s+mais|até\s+amanhã|boa\s+noite|bom\s+descanso)/i.test(t);
+
     return {
-        // 🎯 Intenções gerais
-        asksPrice: /(pre[çc]o|valor|custa|quanto|mensal|pacote)/i.test(t),
-        insistsPrice: /(s[oó]|apenas)\s*o\s*pre[çc]o|fala\s*o\s*valor/i.test(t),
-        wantsSchedule: /(agend|marcar|hor[aá]rio|consulta|vaga)/i.test(t),
-        asksAddress: /(onde|endere[cç]o|local|mapa|como\s*chegar)/i.test(t),
-        asksPayment: /(pagamento|pix|cart[aã]o|dinheiro|parcel)/i.test(t),
-        asksPlans: /(ipasgo|unimed|amil|plano|conv[eê]nio)/i.test(t),
-        asksDuration: /(quanto\s*tempo|dura[çc][aã]o|dura\s*quanto)/i.test(t),
-        asksAgeMinimum: /(idade.*m[ií]nima|a\s*partir|beb[eê])/i.test(t),
-        asksRescheduling: /(cancelar|reagendar|remarcar|adiar)/i.test(t),
+        // ✅ Tudo que vem do prompt central
+        ...(baseFlags || {}),
 
-        // 🏥 Especialidades mencionadas
-        mentionsTEA_TDAH: /(tea|autismo|tdah|d[eé]ficit|hiperativ)/i.test(t),
-        mentionsSpeechTherapy: /(fono|fala|linguagem|gagueira|atraso)/i.test(t),
-        asksPsychopedagogy: /(psicopedagog|dificuldade.*aprendiz)/i.test(t),
-        asksCAA: /(caa|comunica[çc][aã]o.*alternativa|pecs)/i.test(t),
-
-        // 👤 Perfil do lead (contexto)
+        // 👤 Perfil do lead (contexto + texto atual)
         userProfile: detectUserProfile(t, lead, context),
 
         // 📊 Contexto conversacional
         isReturningLead: (context.messageCount || 0) > 1,
         alreadyAskedPrice: context.alreadyAskedPrice || false,
-        stage: context.stage || 'novo'
+        stage: context.stage || 'novo',
+
+        // 🙏 Encerramento
+        saysThanks,
+        saysBye,
     };
 }
 
@@ -53,7 +58,7 @@ function detectUserProfile(text, lead = {}, context = {}) {
 }
 
 /**
- * 🎯 Detecta intenções de manual (substitui tryManualResponse no orchestrator)
+ * 🎯 Detecta intenções de manual (substitui tryManualResponse no orchestrator se você quiser)
  */
 export function detectManualIntent(text = "") {
     const t = (text || "").toLowerCase().trim();

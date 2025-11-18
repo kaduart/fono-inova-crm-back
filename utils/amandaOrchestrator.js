@@ -34,6 +34,21 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
             shouldGreet: true
         };
 
+    // 🧩 FLAGS GERAIS (inclui thanks/bye/atendente, TEA, etc.)
+    const flags = detectAllFlags(text, lead, enrichedContext);
+
+    // 0️⃣ PEDIU ATENDENTE HUMANA → resposta curta e encerra IA
+    if (flags?.wantsHumanAgent) {
+        console.log('👤 [ORQUEST] Lead pediu atendente humana');
+        return "Claro, vou pedir para uma atendente da clínica assumir o seu atendimento e te responder aqui mesmo em instantes, tudo bem? 💚";
+    }
+
+    // 0️⃣.1 SÓ AGRADECEU / SE DESPEDIU → não puxa assunto novo
+    if (flags?.saysThanks || flags?.saysBye) {
+        console.log('🙏 [ORQUEST] Mensagem de encerramento detectada');
+        return "Eu que agradeço, qualquer coisa é só chamar 💚";
+    }
+
     // ===== 1. TDAH - RESPOSTA ESPECÍFICA =====
     if (isTDAHQuestion(text)) {
         console.log('🧠 [TDAH] Pergunta sobre tratamento TDAH detectada');
@@ -48,8 +63,7 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     if (therapies.length > 0) {
         console.log(`🎯 [TERAPIAS] Detectadas: ${therapies.map(t => t.id).join(', ')}`);
 
-        const flags = detectAllFlags(text, lead, enrichedContext);
-
+        // ⬇️ AQUI REUTILIZA AS MESMAS FLAGS
         console.log(`🏁 [FLAGS]`, {
             asksPrice: flags.asksPrice,
             wantsSchedule: flags.wantsSchedule,
@@ -91,11 +105,9 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         return ensureSingleHeart(scoped);
     } catch (error) {
         console.error(`❌ [ORCHESTRATOR] Erro na IA:`, error.message);
-        // aqui já é uma msg fixa nossa, não precisa de enforceScope
         return "Vou verificar e já te retorno, por favor um momento 💚";
     }
 }
-
 
 /**
  * 📖 MANUAL
@@ -241,6 +253,18 @@ async function callOpenAIWithContext(userText, lead, context) {
         shouldGreet = true
     } = context;
 
+    // 🧩 FLAGS SÓ PRA ENTENDER PERFIL (criança/ado/adulto)
+    const flags = detectAllFlags(userText, lead, context);
+
+    let ageProfileNote = '';
+    if (flags.mentionsChild) {
+        ageProfileNote = 'PERFIL: criança (fale com o responsável, não pergunte de novo se é criança ou adulto).';
+    } else if (flags.mentionsTeen) {
+        ageProfileNote = 'PERFIL: adolescente.';
+    } else if (flags.mentionsAdult) {
+        ageProfileNote = 'PERFIL: adulto falando de si.';
+    }
+
     let stageInstruction = '';
     switch (stage) {
         case 'novo':
@@ -266,11 +290,11 @@ async function callOpenAIWithContext(userText, lead, context) {
         ? `\n🎯 TERAPIAS DISCUTIDAS: ${mentionedTherapies.join(', ')}`
         : '';
 
-    // 🧠 PREPARA PROMPT ATUAL
     const currentPrompt = `${userText}
 
 CONTEXTO:
 LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}
+${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}
 
 INSTRUÇÃO: ${stageInstruction}
 
@@ -281,6 +305,7 @@ REGRAS:
 - 1-3 frases, tom humano
 - 1 pergunta engajadora
 - 1 💚 final`;
+
 
     // 🧠 MONTA MENSAGENS COM CACHE MÁXIMO
     const messages = [];
