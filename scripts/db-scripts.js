@@ -125,9 +125,10 @@ db.appointments.find(
   { doctor: 1, time: 1, operationalStatus: 1, clinicalStatus: 1 }
 )
 
+// atendimento dooo dia 
+db.payments.find({ serviceDate: "2025-11-18" }).sort({ paymentDate: 1 })
 //pagamentos do dia 
-db.payments.find({ serviceDate: "2025-11-12" }).sort({ paymentDate: 1 })
-db.payments.find({ paymentDate: "2025-11-06" }).sort({ serviceDate: 1 })
+db.payments.find({ paymentDate: "2025-11-18" }).sort({ serviceDate: 1 })
 
 
 db.admins.findOne({
@@ -196,7 +197,7 @@ db.packages.deleteMany({
 });
 
 //pacote por paciente 
-db.packages.find({ patient: ObjectId("6917c359d364f9d3b07bcbe9") }).pretty()
+db.packages.find({ patient: ObjectId("6897dc360683ca3788ae815d") }).pretty()
 
 //mostra os detalhes do pacote
 db.packages.find({ _id: ObjectId("6917c359d364f9d3b07bcbe9") }).pretty();

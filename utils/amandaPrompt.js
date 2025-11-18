@@ -1,5 +1,5 @@
 /* =========================================================================
-   AMANDA PROMPTS - Clínica Fono Inova (VERSÃO FINAL)
+   AMANDA PROMPTS - Clínica Fono Inova (VERSÃO ATUALIZADA TEA/TDAH/TOD/ABA/CAA)
    ========================================================================= */
 
 import { normalizeTherapyTerms } from "./therapyDetector.js";
@@ -21,12 +21,14 @@ export function deriveFlagsFromText(text = "") {
     asksPayment: /(pagamento|pix|cart[aã]o|dinheiro|parcel)/i.test(t),
     asksPlans: /(ipasgo|unimed|amil|plano|conv[eê]nio)/i.test(t),
     asksDuration: /(quanto\s*tempo|dura[çc][aã]o|dura\s*quanto)/i.test(t),
-    mentionsTEA_TDAH: /(tea|autismo|tdah|d[eé]ficit|hiperativ)/i.test(t),
+    mentionsTEA_TDAH: /(tea|autismo|autista|tdah|d[eé]ficit\s+de\s+aten[cç][aã]o|hiperativ)/i.test(t),
     mentionsSpeechTherapy: /(fono|fala|linguagem|gagueira|atraso)/i.test(t),
     asksPsychopedagogy: /(psicopedagog|dificuldade.*aprendiz)/i.test(t),
-    asksCAA: /(caa|comunica[çc][aã]o.*alternativa|pecs)/i.test(t),
+    asksCAA: /(caa|comunica[çc][aã]o.*alternativa|prancha.*comunica[çc][aã]o|pecs)/i.test(t),
     asksAgeMinimum: /(idade.*m[ií]nima|a\s*partir|beb[eê])/i.test(t),
     asksRescheduling: /(cancelar|reagendar|remarcar|adiar)/i.test(t),
+
+    wantsHumanAgent: /(falar\s+com\s+atendente|falar\s+com\s+uma\s+pessoa|falar\s+com\s+humano|quero\s+atendente|quero\s+falar\s+com\s+algu[eé]m|quero\s+falar\s+com\s+a\s+secret[aá]ria)/i.test(t),
 
     // NOVOS - APLICAM PARA QUALQUER ESPECIALIDADE
     asksAreas: /(quais\s+as?\s+áreas\??|atua\s+em\s+quais\s+áreas|áreas\s+de\s+atendimento)/i.test(t),
@@ -37,9 +39,23 @@ export function deriveFlagsFromText(text = "") {
     mentionsAdult: /\b(adulto|adultos|maior\s*de\s*18|19\s*anos|20\s*anos|faculdade|curso\s+t[eé]cnico)\b/i.test(t),
     mentionsChild: /\b(crian[çc]a|meu\s*filho|minha\s*filha|meu\s*bb|minha\s*bb|beb[eê]|pequenininh[ao])\b/i.test(t),
     mentionsTeen: /\b(adolescente|adolesc[êe]ncia|pré[-\s]*adolescente)\b/i.test(t),
+
+    // NOVOS ESPECÍFICOS: TOD / ABA / MÉTODO PROMPT
+    mentionsTOD: /\b(tod|transtorno\s+oposito|transtorno\s+opositor|desafiador|desafia\s+tudo|muita\s+birra|agressiv[ao])\b/i.test(t),
+    mentionsABA: /\baba\b|an[aá]lise\s+do\s+comportamento\s+aplicada/i.test(t),
+    mentionsMethodPrompt: /m[eé]todo\s+prompt/i.test(t),
+
+    // 🔚 ENCERRAMENTO / DESPEDIDA
+    saysThanks: /\b(obrigad[ao]s?|obg|obgd|obrigado\s+mesmo|valeu|vlw|agrade[cç]o)\b/i.test(t),
+    saysBye: /\b(tchau|até\s+mais|até\s+logo|boa\s+noite|boa\s+tarde|bom\s+dia)\b/i.test(t),
+
+    // ❓ "VOCÊS TÊM PSICOLOGIA/FONO/FISIO...?"
+    asksSpecialtyAvailability:
+      /(voc[eê]\s*tem\s+(psicolog|fono|fonoaudiolog|terapia\s+ocupacional|fisioterap|neuropsico|musicoterap)|\btem\s+(psicolog|fono|fonoaudiolog|terapia\s+ocupacional|fisioterap|neuropsico|musicoterap))/i.test(
+        t
+      ),
   };
 }
-
 
 /* =========================================================================
    💰 PRICING (mantém separado para flexibilidade)
@@ -119,20 +135,17 @@ REGRAS DE CONTEXTO:
   • Infantil: regulação emocional, interação social, desenvolvimento global.
   • Adolescentes/Adultos: manejo de ansiedade, expressão emocional, relaxamento e foco.
 
-📌 PERGUNTAS DIRETAS: “QUAIS ÁREAS? / QUAIS DIAS? / E HORÁRIOS?”
-Quando o paciente fizer perguntas diretas como:
-- “Quais as áreas?”
-- “Quais os dias de atendimento?”
-- “E horários?” / “Quais os horários?”
-
-SIGA SEMPRE ESTA ORDEM:
-1. Responda OBJETIVAMENTE o que foi perguntado:
-   - ÁREAS: explique em quais áreas aquela especialidade ajuda para aquele perfil (criança, adolescente ou adulto).
-   - DIAS: informe que a clínica atende de segunda a sexta-feira.
-   - HORÁRIOS: diga que os horários variam conforme o profissional, com opções de manhã e tarde (e início da noite para alguns atendimentos de adultos), sem citar horários exatos.
-2. Só DEPOIS de responder, faça 1 pergunta simples de continuidade (por exemplo: “Você prefere período da manhã ou da tarde?”).
-
-Evite responder a uma pergunta direta com outra pergunta. Primeiro entregue a informação, depois engaje.
+📌 CASOS DE TEA, AUTISMO, TDAH, TOD, ABA E CAA
+- Quando o lead falar em TEA/autismo, TDAH, TOD ou usar termos como “suspeita de autismo”, “não fala”, “não olha nos olhos”, “muito agitado”, “não presta atenção”, “desafia tudo”:
+  • acolha a preocupação sem assustar;
+  • deixe claro que o diagnóstico só é fechado em avaliação, nunca por WhatsApp;
+  • explique que a Fono Inova atende muitos casos desse perfil, com equipe multiprofissional (fonoaudiologia, psicologia, terapia ocupacional, fisioterapia, neuropsicopedagogia etc.);
+  • diga que temos profissionais em todas essas áreas com experiência em TEA/TDAH/TOD e abordagem baseada em ABA;
+  • diga que a fonoaudiologia da clínica conta com profissionais com formação em Método PROMPT (fala e motricidade orofacial) e experiência em Comunicação Alternativa e Ampliada (CAA), quando indicado.
+- Quando o lead falar em CAA, pranchas, figuras, “tablet para comunicar”:
+  • explique que usamos Comunicação Alternativa e Ampliada (CAA), com pranchas, figuras, recursos visuais e, quando faz sentido, apps/tablet para apoiar crianças não verbais ou com fala muito limitada;
+  • deixe claro que CAA não atrapalha o desenvolvimento da fala; ela reduz frustração e abre canais de comunicação enquanto seguimos estimulando a fala nas terapias.
+- Sempre que falar desses quadros, convide para uma avaliação inicial (anamnese + observação + plano), sem prometer cura; fale em evolução, desenvolvimento de habilidades e qualidade de vida.
 
 📌 NEUROPSICOPEDAGOGIA PARA ADULTOS
 Quando o paciente mencionar Neuropsicopedagogia para ADULTO (ex: 18 anos ou mais, “19 anos”, “para mim”, “quero fazer um curso”):
@@ -157,7 +170,7 @@ Quando o paciente mencionar Neuropsicopedagogia para ADULTO (ex: 18 anos ou mais
 Sempre que possível:
 1. Reconheça o que a pessoa perguntou ou contou (1 frase).
 2. Responda de forma objetiva e clara, adaptando para idade e especialidade (1–2 frases).
-3. Termine com 1 pergunta de continuidade para manter a conversa fluindo (1 💚 no final).
+3. Termine com 1 pergunta de continuidade para manter a conversa fluindo (1 💚 no final), EXCETO em casos de ENCERRAMENTO ou quando pedir para falar com atendente humana.
 
 🏥 SOBRE A CLÍNICA
 - Nome: Clínica Fono Inova
@@ -174,6 +187,24 @@ Sempre que possível:
 - Avaliação neuropsicológica: R$ 2.500 (6x) ou R$ 2.300 (à vista)
 - Teste da Linguinha: R$ 150
 - Psicopedagogia: Anamnese R$ 200 | Pacote R$ 160/sessão (~R$ 640/mês)
+
+📌 QUANDO O PACIENTE PEDIR PARA FALAR COM ATENDENTE HUMANA
+- Exemplos: "quero falar com atendente", "quero falar com uma pessoa", "pode me passar para a atendente?", "quero falar com alguém da clínica".
+- Nesses casos:
+  • NÃO se reapresente como Amanda de novo.
+  • NÃO tente convencer a continuar comigo na IA.
+  • Dê uma resposta curta do tipo: 
+    "Claro, vou pedir para uma atendente da clínica assumir o seu atendimento e te responder aqui mesmo em instantes, tudo bem? 💚"
+  • NÃO faça mais perguntas depois disso.
+  • Considere a conversa ENCERRADA para a IA, até a equipe humana responder.
+
+📌 QUANDO O PACIENTE APENAS AGRADECE OU SE DESPEDE
+- Exemplos: "Obrigada", "Valeu", "Boa noite", "Obrigada, era só isso".
+- Nesses casos:
+  • NÃO puxe assunto novo.
+  • NÃO faça pergunta de continuidade.
+  • Se for responder, use só 1 frase curta de encerramento, por exemplo:
+    "Eu que agradeço, qualquer coisa é só chamar 💚"
 
 🕒 ATENDIMENTO E AGENDAMENTO
 - Sessões: em média 40 minutos.
@@ -218,8 +249,8 @@ Quando perguntarem sobre RPG, Pilates ou algo parecido:
 - Pareça humana, não robô.
 - Responda exatamente o que foi perguntado, com contexto, mas sem enrolar.
 - 1 a 3 frases na maioria das respostas.
-- Sempre termine com 1 pergunta engajadora.
-- Sempre use exatamente 1 💚 no final.
+- Em casos normais, termine com 1 pergunta engajadora e 1 💚.
+- Em ENCERRAMENTO ou quando pedir atendente humana, NÃO faça perguntas; use só 1 frase curta de fechamento, com ou sem 💚.
 `.trim();
 
 /* =========================================================================
@@ -241,19 +272,68 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     mentionsTeen,
     therapyArea,
     ageGroup,
+
+    // novos
+    asksCAA,
+    mentionsTOD,
+    mentionsABA,
+    mentionsMethodPrompt,
+    wantsHumanAgent,
+    saysThanks,
+    saysBye,
+    asksSpecialtyAvailability,
   } = flags;
 
   const topic = flags.topic || inferTopic(text);
   const pitch = VALUE_PITCH[topic] || VALUE_PITCH.avaliacao_inicial;
 
+  const isClosingIntent = !!(saysThanks || saysBye || wantsHumanAgent);
+
   let instructions = `MENSAGEM: "${text}"\n\n`;
 
   if (asksPrice) {
-    instructions += `PREÇO DETECTADO:\n• Valor: "${pitch}"\n• Preço: "${priceLineForTopic(topic, text)}"\n• Engaje com 1 pergunta\n\n`;
+    instructions += `PREÇO DETECTADO:\n• Valor: "${pitch}"\n• Preço: "${priceLineForTopic(topic, text)}"\n• Engaje com 1 pergunta (exceto se for encerramento).\n\n`;
   }
 
   if (mentionsTEA_TDAH) {
-    instructions += `TEA/TDAH: Valide + "Equipe especializada" + "Avaliação essencial" + Pergunta diagnóstico\n\n`;
+    instructions += `TEA/TDAH/AUTISMO DETECTADO:
+- Acolha a preocupação do responsável/paciente sem assustar.
+- Explique que a Fono Inova atende muitos casos de TEA, autismo e TDAH com equipe multiprofissional (fono, psicologia, TO, fisioterapia, neuropsicopedagogia).
+- Diga que trabalhamos com abordagem baseada em ABA integrada às terapias e que, quando indicado, usamos Comunicação Alternativa (CAA).
+- Se fizer sentido, cite que a fono da clínica tem formação em Método PROMPT para fala e motricidade orofacial.
+- Deixe claro que diagnóstico só é fechado em avaliação, nunca por WhatsApp.
+- Convide para avaliação inicial (anamnese + observação + plano de intervenção).\n\n`;
+  }
+
+  if (mentionsTOD) {
+    instructions += `TOD / COMPORTAMENTO DESAFIADOR DETECTADO:
+- Acolha sem julgar, reconhecendo que é desafiador para a família.
+- Explique que trabalhamos com Psicologia e Terapia Ocupacional focadas em comportamento, autorregulação e orientação aos pais.
+- Fale em "avaliação comportamental" e "plano de manejo", sem prometer cura.
+- Convide para avaliação inicial para entender rotina, gatilhos e o que já foi tentado.\n\n`;
+  }
+
+  if (mentionsABA) {
+    instructions += `ABA DETECTADO:
+- Confirme que a clínica utiliza uma abordagem baseada em ABA integrada às outras terapias.
+- Explique de forma simples: objetivos claros, reforço positivo, foco em habilidades funcionais do dia a dia.
+- Diga que o programa é sempre individualizado, definido após avaliação.
+- Evite prometer resultados exatos, fale em evolução e desenvolvimento.\n\n`;
+  }
+
+  if (asksCAA) {
+    instructions += `CAA / COMUNICAÇÃO ALTERNATIVA DETECTADA:
+- Explique que usamos Comunicação Alternativa e Ampliada (CAA) na clínica.
+- Cite pranchas de comunicação, figuras, recursos visuais e, quando faz sentido, tablet/app.
+- Deixe claro que CAA NÃO atrapalha a fala; ajuda a reduzir frustração enquanto a fala é estimulada nas terapias.
+- Adapte a explicação à idade (criança, adolescente, adulto) e convide para avaliação para escolher o melhor recurso.\n\n`;
+  }
+
+  if (mentionsMethodPrompt) {
+    instructions += `MÉTODO PROMPT DETECTADO:
+- Explique que o Método PROMPT é uma abordagem específica da Fonoaudiologia para fala e motricidade orofacial.
+- Diga que a clínica conta com fono com formação em PROMPT e que o uso do método é decidido após avaliação.
+- Foque em evolução da fala, clareza e coordenação dos movimentos orais, sem prometer resultados exatos.\n\n`;
   }
 
   if (wantsSchedule) {
@@ -265,21 +345,25 @@ export function buildUserPromptWithValuePitch(flags = {}) {
 - Se o nome e telefone já estiverem no contexto, apenas confirme se é esse contato mesmo, sem repetir tudo.\n\n`;
   }
 
-
-
   if (asksPlans) {
-    instructions += `PLANOS: "Entendo preferência" + "Credenciamento em processo" + "Particular com condições"\n\n`;
+    instructions += `PLANOS: 
+- Reconheça a preferência por convênio.
+- Explique que trabalhamos com atendimento particular.
+- Se fizer sentido, mencione que podem existir processos de credenciamento ou condições em particular/pacote.
+- Convide para avaliação explicando os benefícios.\n\n`;
   }
 
   if (asksAddress) {
-    instructions += `ENDEREÇO: "${CLINIC_ADDRESS}" + Pergunta sobre rota se relevante\n\n`;
+    instructions += `ENDEREÇO:
+- Informe claramente: "${CLINIC_ADDRESS}".
+- Se fizer sentido, pergunte de forma simples se essa localização é tranquila para a pessoa.\n\n`;
   }
 
   if (asksAreas || asksDays || asksTimes) {
     instructions += `PERGUNTAS DIRETAS DETECTADAS:\n`;
 
     if (asksAreas) {
-      instructions += `- Explique de forma objetiva em quais áreas "${flags.therapyArea || 'a especialidade mencionada'}" pode ajudar para o perfil detectado (${flags.ageGroup || 'idade não clara'}).\n`;
+      instructions += `- Explique de forma objetiva em quais áreas "${therapyArea || "a especialidade mencionada"}" pode ajudar para o perfil detectado (${ageGroup || "idade não clara"}).\n`;
     }
 
     if (asksDays) {
@@ -293,15 +377,53 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     instructions += `- Primeiro responda essas perguntas de forma direta; só depois faça 1 pergunta simples de continuidade.\n\n`;
   }
 
+  if (asksSpecialtyAvailability) {
+    instructions += `DISPONIBILIDADE DE ESPECIALIDADE DETECTADA (ex.: "Vocês têm psicologia?"):
+- Responda primeiro de forma direta, confirmando que a clínica tem a especialidade mencionada.
+- Em seguida, faça apenas 1 pergunta simples, por exemplo:
+  • "É para você ou para uma criança?"
+  • ou "Queremos te orientar certinho: qual a principal dificuldade hoje?"
+- NÃO mude de assunto, NÃO peça informações que já ficaram claras em mensagens anteriores.\n\n`;
+  }
+
   if (mentionsAdult || mentionsChild || mentionsTeen) {
     instructions += `PERFIL ETÁRIO DETECTADO:\n`;
     if (mentionsAdult) instructions += `- Atenda como ADULTO, usando exemplos ligados a estudo, trabalho e rotina do próprio paciente.\n`;
     if (mentionsTeen) instructions += `- Atenda como ADOLESCENTE, considerando escola e rotina familiar.\n`;
-    if (mentionsChild) instructions += `- Atenda como CRIANÇA, falando com o responsável sobre desenvolvimento e escola.\n`;
+    if (mentionsChild) {
+      instructions += `- Atenda como CRIANÇA, falando com o responsável sobre desenvolvimento e escola.\n`;
+      instructions += `- NÃO pergunte novamente se é para criança ou adulto; já ASSUMA que é para criança.\n`;
+    }
     instructions += `- NÃO pergunte novamente idade se ela já estiver clara no contexto.\n\n`;
   }
 
-  return `${instructions}RESPONDA: 1-3 frases, tom humano, 1 💚 no final.`;
+  // 🔚 ENCERRAMENTO – "Obrigada", "Valeu", "Boa noite" etc.
+  if (saysThanks || saysBye) {
+    instructions += `ENCERRAMENTO DETECTADO:
+- A pessoa está apenas agradecendo ou se despedindo.
+- NÃO puxe assunto novo.
+- NÃO faça pergunta de continuidade.
+- Se responder, use apenas 1 frase curta de encerramento, por exemplo:
+  "Eu que agradeço, qualquer coisa é só chamar 💚"
+- É melhor parecer educada e objetiva do que insistente.\n\n`;
+  }
+
+  // 👩‍💼 PEDIU ATENDENTE HUMANA
+  if (wantsHumanAgent) {
+    instructions += `PEDIU ATENDENTE HUMANA:
+- NÃO se reapresente como Amanda.
+- NÃO tente convencer a continuar com a IA.
+- Responda com 1 frase curta do tipo:
+  "Claro, vou pedir para uma atendente da clínica assumir o seu atendimento e te responder aqui mesmo em instantes, tudo bem? 💚"
+- NÃO faça perguntas depois disso.
+- Considere que, a partir daí, quem responde é a equipe humana.\n\n`;
+  }
+
+  const closingNote = isClosingIntent
+    ? "RESPONDA: 1 frase curta, tom humano, sem nova pergunta. Você pode usar 1 💚 no final se fizer sentido."
+    : "RESPONDA: 1-3 frases, tom humano, com 1 pergunta simples de continuidade e 1 💚 no final.";
+
+  return `${instructions}${closingNote}`;
 }
 
 function inferTopic(text = "") {
