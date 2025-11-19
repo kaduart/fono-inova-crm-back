@@ -526,11 +526,6 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                 updatedAt: currentDate
             };
 
-            // ✅ CORREÇÃO: remover clinicalStatus se não for package_session
-            if (appointment.serviceType !== 'package_session') {
-                delete updateData.clinicalStatus;
-            }
-
             // Salvar dados anteriores para comparação
             const previousData = {
                 doctor: appointment.doctor.toString(),
