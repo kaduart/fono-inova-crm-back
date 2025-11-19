@@ -103,6 +103,15 @@ REGRAS DE CONTEXTO:
 - NÃO pergunte idade, área da terapia, nome ou outras informações que já estejam no resumo ou no histórico.
 - Se o paciente repetir a mesma informação (ex: “19 anos”, “Neuropsicopedagogia”), confirme que entendeu e SIGA a conversa, sem repetir a pergunta.
 
+📌 EVITAR REPETIÇÃO E LOOP DE PERGUNTAS
+- Se o paciente JÁ respondeu se é para criança ou adulto, NÃO volte a perguntar isso de novo.
+- Se o paciente JÁ deixou clara a área principal (ex: “fonoaudiologia”, “psicologia”, “terapia ocupacional”), NÃO volte a perguntar “é fono, psico ou TO?”.
+- Se o paciente JÁ falou a queixa principal (ex: “a fala”, “comportamento”, “aprendizagem”), NÃO volte a perguntar “qual é a dúvida?” como se nada tivesse sido dito.
+- Olhe sempre as ÚLTIMAS MENSAGENS antes de responder. Use o que já foi respondido para AVANÇAR a conversa (explicar como funciona, valores, próximo passo), e não para reiniciar a triagem.
+- Nunca faça a MESMA pergunta mais de uma vez na mesma conversa, a não ser que o paciente realmente não tenha respondido.
+- Se o paciente responder algo genérico como “dúvida”, mas você já sabe que é sobre fala de uma criança de 4 anos, foque nisso e pergunte algo mais específico, por exemplo: “Sobre a fala do seu filho de 4 anos, o que mais tem te preocupado no dia a dia?”.
+
+
 📌 PERFIL DO PACIENTE (IDADE E FAIXA ETÁRIA)
 - Se a conversa já deixou claro se é CRIANÇA, ADOLESCENTE, ADULTO ou BEBÊ, use essa informação para adaptar a resposta.
 - Use “você” quando for adulto falando de si, e “seu filho/sua filha” quando o responsável estiver falando de uma criança.
@@ -282,12 +291,16 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     saysThanks,
     saysBye,
     asksSpecialtyAvailability,
+    // ⚠️ estava faltando:
+    mentionsSpeechTherapy,
   } = flags;
+
 
   const topic = flags.topic || inferTopic(text);
   const pitch = VALUE_PITCH[topic] || VALUE_PITCH.avaliacao_inicial;
 
-  const isClosingIntent = !!(saysThanks || saysBye || wantsHumanAgent);
+const isClosingIntent =
+  !!(saysThanks || (saysBye && !/bom\s*dia/i.test(text)));
 
   let instructions = `MENSAGEM: "${text}"\n\n`;
 
@@ -419,11 +432,51 @@ export function buildUserPromptWithValuePitch(flags = {}) {
 - Considere que, a partir daí, quem responde é a equipe humana.\n\n`;
   }
 
+  const talksAboutSpeech =
+    /fala|fala dele|fala dela|não fala|não está falando|atraso de fala|linguagem/i.test(text) ||
+    mentionsSpeechTherapy;
+
+  if (talksAboutSpeech && (mentionsChild || ageGroup === "crianca")) {
+    instructions += `CASO DETECTADO: FALA EM CRIANÇA\n`;
+    instructions += `- NÃO volte a perguntar se é para criança ou adulto.\n`;
+    instructions += `- NÃO pergunte novamente a idade se isso já apareceu no histórico (por exemplo, "4 anos").\n`;
+    instructions += `- Explique de forma simples como a Fonoaudiologia ajuda na fala de crianças (articulação dos sons, clareza da fala, desenvolvimento da linguagem).\n`;
+    instructions += `- Faça 1 pergunta específica sobre a fala (ex.: se troca sons, se fala poucas palavras, se é difícil entender) e, se fizer sentido, convide para avaliação inicial.\n\n`;
+  }
+
+
+  if (ageGroup || therapyArea || mentionsChild || mentionsAdult || mentionsTeen) {
+    instructions += `\nCONTEXTOS JÁ DEFINIDOS (NÃO REPETIR PERGUNTAS):\n`;
+    if (mentionsChild || ageGroup === "crianca") {
+      instructions += `- Já sabemos que o caso é de CRIANÇA; NÃO volte a perguntar se é para criança ou adulto.\n`;
+    }
+    if (mentionsAdult || ageGroup === "adulto") {
+      instructions += `- Já sabemos que o caso é de ADULTO; NÃO volte a perguntar se é para criança ou adulto.\n`;
+    }
+    if (mentionsTeen || ageGroup === "adolescente") {
+      instructions += `- Já sabemos que o caso é de ADOLESCENTE; NÃO volte a perguntar se é para criança ou adulto.\n`;
+    }
+    if (therapyArea) {
+      instructions += `- A especialidade principal já foi definida como "${therapyArea}"; NÃO volte a perguntar "fono, psico ou TO?".\n`;
+    }
+    instructions += `- Use o histórico RECENTE da conversa (mensagens anteriores) para recuperar idade ou perfil, em vez de perguntar de novo.\n`;
+    instructions += `- Se no histórico aparecer algo como "criança, 4 anos", NÃO pergunte "Quantos anos ele tem?" de novo; apenas siga a partir dessa informação.\n\n`;
+  }
+
+
   const closingNote = isClosingIntent
     ? "RESPONDA: 1 frase curta, tom humano, sem nova pergunta. Você pode usar 1 💚 no final se fizer sentido."
-    : "RESPONDA: 1-3 frases, tom humano, com 1 pergunta simples de continuidade e 1 💚 no final.";
+    : [
+      "REGRAS FINAIS IMPORTANTES:",
+      "- NÃO pergunte novamente idade se ela já apareceu no resumo ou histórico recente.",
+      "- NÃO pergunte novamente se é para criança ou adulto se isso já ficou claro na conversa.",
+      "- Use o que já foi dito (ex.: criança, 4 anos, fonoaudiologia, fala) para AVANÇAR a resposta (explicar, orientar, falar de valores ou próxima etapa).",
+      "",
+      "RESPONDA: 1-3 frases, tom humano, com 1 pergunta simples de continuidade e 1 💚 no final."
+    ].join("\n");
 
   return `${instructions}${closingNote}`;
+
 }
 
 function inferTopic(text = "") {

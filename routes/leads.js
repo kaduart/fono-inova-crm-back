@@ -55,38 +55,43 @@ router.get('/', authorize(['admin', 'secretary', 'professional']), async (req, r
             search
         } = req.query;
 
-        // Monta filtros dinâmicos
         const filters = {};
+
         if (status) filters.status = status;
         if (origin) filters.origin = origin;
+
         if (from && to) {
             filters.createdAt = {
                 $gte: new Date(from),
                 $lte: new Date(to)
             };
         }
+
         if (search) {
+            const regex = { $regex: search, $options: 'i' };
             filters.$or = [
-                { name: { $regex: search, $options: 'i' } },
-                { email: { $regex: search, $options: 'i' } },
-                { phone: { $regex: search, $options: 'i' } }
+                { name: regex },
+                { 'contact.email': regex },
+                { 'contact.phone': regex }   // ✅ busca pelo telefone
             ];
         }
 
-        // Busca com paginação
+        const pageNumber = parseInt(page, 10);
+        const limitNumber = parseInt(limit, 10);
+
         const leads = await Lead.find(filters)
             .sort({ createdAt: -1 })
-            .skip((page - 1) * parseInt(limit))
-            .limit(parseInt(limit));
+            .skip((pageNumber - 1) * limitNumber)
+            .limit(limitNumber);
 
         const total = await Lead.countDocuments(filters);
 
         res.json({
-            data: leads,
+            data: leads,                 // ✅ aqui já vem phone e displayName como virtual
             total,
-            page: parseInt(page),
-            limit: parseInt(limit),
-            pages: Math.ceil(total / parseInt(limit))
+            page: pageNumber,
+            limit: limitNumber,
+            pages: Math.ceil(total / limitNumber)
         });
     } catch (err) {
         console.error('❌ Erro ao listar leads:', err);
@@ -96,6 +101,7 @@ router.get('/', authorize(['admin', 'secretary', 'professional']), async (req, r
         });
     }
 });
+
 
 /**
  * GET /leads/:id

@@ -34,6 +34,40 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
             shouldGreet: true
         };
 
+    const flags = detectAllFlags(text, lead, enrichedContext);
+
+    // 👇 NOVO: detectar se é a PRIMEIRA mensagem (ou bem início)
+    const isFirstMessage =
+        enrichedContext.isFirstContact ||
+        !enrichedContext.messageCount ||
+        enrichedContext.messageCount === 0;
+
+    // 👇 NOVO: saudação "pura", sem dúvida junto
+    const isPureGreeting =
+        /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|bom\s*dia)[\s!,.]*$/i.test(normalized);
+
+    // 👋 Regra: se for a PRIMEIRA mensagem e for só saudação, NÃO responder
+    if (isFirstMessage && isPureGreeting) {
+        console.log('👋 [ORQUEST] Saudação inicial detectada – aguardando próxima mensagem do lead, sem responder.');
+        // aqui escolhe o "protocolo de silêncio"
+        return null; // ou "" ou um token especial tipo "__NO_REPLY__"
+    }
+
+    const pureClosingRegex = /^(obrigad[ao]s?|obg|obgd|vale[u]?|vlw|agrade[cç]o|tchau|até\s+mais|até\s+logo|boa\s+noite|boa\s+tarde)[\s!,.]*$/i;
+
+    const isPureClosing =
+        !isFirstMessage &&                                      // nunca fecha na 1ª msg
+        (flags?.saysThanks || flags?.saysBye) &&
+        pureClosingRegex.test(normalized) &&                    // texto é SÓ isso
+        !flags?.asksPrice &&
+        !flags?.wantsSchedule &&
+        !flags?.asksAddress &&
+        !flags?.asksPlans &&
+        !flags?.asksAreas &&
+        !flags?.asksTimes &&
+        !flags?.asksDays;
+
+
     // 🧩 FLAGS GERAIS (inclui thanks/bye/atendente, TEA, etc.)
     const flags = detectAllFlags(text, lead, enrichedContext);
 
@@ -44,10 +78,21 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     }
 
     // 0️⃣.1 SÓ AGRADECEU / SE DESPEDIU → não puxa assunto novo
-    if (flags?.saysThanks || flags?.saysBye) {
+    const isPureClosing =
+        (flags?.saysThanks || flags?.saysBye) &&
+        !flags?.asksPrice &&
+        !flags?.wantsSchedule &&
+        !flags?.asksAddress &&
+        !flags?.asksPlans &&
+        !flags?.asksAreas &&
+        !flags?.asksTimes &&
+        !flags?.asksDays;
+
+    if (isPureClosing) {
         console.log('🙏 [ORQUEST] Mensagem de encerramento detectada');
         return "Eu que agradeço, qualquer coisa é só chamar 💚";
     }
+
 
     // ===== 1. TDAH - RESPOSTA ESPECÍFICA =====
     if (isTDAHQuestion(text)) {
@@ -149,12 +194,43 @@ async function callClaudeWithTherapyData({ therapies, flags, userText, lead, con
     }).join('\n');
 
     const {
-        stage, messageCount, isPatient, hasAppointments,
-        needsUrgency, daysSinceLastContact,
-        conversationHistory, conversationSummary, shouldGreet
+        stage,
+        messageCount,
+        isPatient,
+        needsUrgency,
+        daysSinceLastContact,
+        conversationHistory,
+        conversationSummary,
+        shouldGreet,
     } = context;
 
-    // ✅ INSIGHTS APRENDIDOS
+    // 🧠 PERFIL DE IDADE A PARTIR DO HISTÓRICO
+    let ageContextNote = "";
+    if (conversationHistory && conversationHistory.length > 0) {
+        const historyText = conversationHistory
+            .map(msg => typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content))
+            .join(" \n ")
+            .toLowerCase();
+
+        const ageMatch = historyText.match(/(\d{1,2})\s*anos\b/);
+        if (ageMatch) {
+            const detectedAge = parseInt(ageMatch[1], 10);
+            if (!isNaN(detectedAge)) {
+                const detectedAgeGroup =
+                    detectedAge < 12 ? "criança" :
+                        detectedAge < 18 ? "adolescente" :
+                            "adulto";
+
+                ageContextNote += `\nPERFIL_IDADE: já foi informado no histórico que o paciente é ${detectedAgeGroup} e tem ${detectedAge} anos. NÃO pergunte a idade novamente; use essa informação.`;
+            }
+        }
+
+        if (/crian[çc]a|meu filho|minha filha|minha criança|minha crianca/.test(historyText)) {
+            ageContextNote += `\nPERFIL_IDADE: o histórico deixa claro que o caso é de CRIANÇA. NÃO pergunte novamente se é para criança ou adulto; apenas siga a partir dessa informação.`;
+        }
+    }
+
+    // 💸 INSIGHTS APRENDIDOS (respostas de preço que funcionaram melhor)
     let learnedContext = '';
     if (insights?.data?.effectivePriceResponses && flags.asksPrice) {
         const scenario = stage === 'novo' ? 'first_contact' : 'engaged';
@@ -167,26 +243,27 @@ async function callClaudeWithTherapyData({ therapies, flags, userText, lead, con
     const patientStatus = isPatient ? `\n⚠️ PACIENTE ATIVO - Tom próximo!` : '';
     const urgencyNote = needsUrgency ? `\n🔥 ${daysSinceLastContact} dias sem falar - reative com calor!` : '';
 
-    // 🧠 PREPARA PROMPT ATUAL
+    // 🧠 PREPARA PROMPT ATUAL (sem ficar robótico, mas bem guiado)
     const currentPrompt = `${userText}
 
 📊 CONTEXTO DESTA MENSAGEM:
-TERAPIAS DETECTADAS: ${therapiesInfo}
+TERAPIAS DETECTADAS:
+${therapiesInfo}
+
 FLAGS: Preço=${flags.asksPrice} | Agendar=${flags.wantsSchedule}
-ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${learnedContext}
+ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${learnedContext}${ageContextNote}
 
 🎯 INSTRUÇÕES CRÍTICAS:
-1. ${shouldGreet ? '✅ Pode cumprimentar naturalmente' : '🚨 NÃO USE SAUDAÇÕES (Oi/Olá) - conversa está ativa'}
-2. ${conversationSummary ? '🧠 Você TEM o resumo completo acima - USE esse contexto!' : '📜 Leia TODO o histórico de mensagens acima'}
-3. 🚨 NÃO PERGUNTE o que JÁ foi informado/discutido
-4. ${flags.asksPrice ? 'Responda preço: VALOR→PREÇO→PERGUNTA' : 'Apresente de forma acolhedora'}
-5. Máximo 3 frases, tom natural e humano
-6. Exatamente 1 💚 no final`;
+1. ${shouldGreet ? '✅ Pode cumprimentar naturalmente se fizer sentido' : '🚨 NÃO USE SAUDAÇÕES (Oi/Olá) - conversa está ativa'}
+2. ${conversationSummary ? '🧠 Você TEM o resumo completo acima - USE esse contexto!' : '📜 Leia TODO o histórico de mensagens acima antes de responder'}
+3. 🚨 NÃO PERGUNTE o que JÁ foi informado/discutido (idade, se é criança/adulto, área principal etc.)
+4. ${flags.asksPrice ? 'Responda preço usando a lógica: VALOR → PREÇO → 1 pergunta leve de continuidade (sem pressão).' : 'Responda de forma acolhedora, focando na dúvida real.'}
+5. Máximo 2–3 frases, tom natural e humano, como uma recepcionista experiente.
+6. Exatamente 1 💚 no final.`;
 
     // 🧠 MONTA MENSAGENS COM CACHE MÁXIMO
     const messages = [];
 
-    // 1. Resumo (SEM cache_control dentro de messages)
     if (conversationSummary) {
         messages.push({
             role: 'user',
@@ -198,7 +275,6 @@ ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${
         });
     }
 
-    // 2. Histórico (apenas role + content)
     if (conversationHistory && conversationHistory.length > 0) {
         const safeHistory = conversationHistory.map(msg => ({
             role: msg.role || 'user',
@@ -207,17 +283,14 @@ ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${
                 : JSON.stringify(msg.content),
         }));
 
-        // Se quiser manter só as últimas N, pode truncar aqui se um dia precisar
         messages.push(...safeHistory);
     }
 
-    // 3. Mensagem atual (SEM cache)
     messages.push({
         role: 'user',
         content: currentPrompt
     });
 
-    // 🚀 CHAMA ANTHROPIC COM CACHE
     const response = await anthropic.messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 200,
@@ -234,6 +307,7 @@ ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${
 
     return response.content[0]?.text?.trim() || "Como posso te ajudar? 💚";
 }
+
 
 /**
  * 🤖 IA COM CONTEXTO INTELIGENTE + CACHE MÁXIMO
@@ -252,6 +326,32 @@ async function callOpenAIWithContext(userText, lead, context) {
         conversationSummary = null,
         shouldGreet = true
     } = context;
+
+    // 🧠 PERFIL DE IDADE A PARTIR DO HISTÓRICO (mesma lógica da outra função)
+    let historyAgeNote = "";
+    if (conversationHistory && conversationHistory.length > 0) {
+        const historyText = conversationHistory
+            .map(msg => typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content))
+            .join(" \n ")
+            .toLowerCase();
+
+        const ageMatch = historyText.match(/(\d{1,2})\s*anos\b/);
+        if (ageMatch) {
+            const age = parseInt(ageMatch[1], 10);
+            if (!isNaN(age)) {
+                const group =
+                    age < 12 ? "criança" :
+                        age < 18 ? "adolescente" :
+                            "adulto";
+
+                historyAgeNote += `\nPERFIL_IDADE_HISTÓRICO: já foi informado que o paciente é ${group} e tem ${age} anos. NÃO pergunte a idade novamente.`;
+            }
+        }
+
+        if (/crian[çc]a|meu filho|minha filha|minha criança|minha crianca/.test(historyText)) {
+            historyAgeNote += `\nPERFIL_IDADE_HISTÓRICO: o histórico mostra que o caso é de CRIANÇA. NÃO volte a perguntar se é para criança ou adulto.`;
+        }
+    }
 
     // 🧩 FLAGS SÓ PRA ENTENDER PERFIL (criança/ado/adulto)
     const flags = detectAllFlags(userText, lead, context);
@@ -292,19 +392,20 @@ async function callOpenAIWithContext(userText, lead, context) {
 
     const currentPrompt = `${userText}
 
-CONTEXTO:
-LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}
-${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}
+    CONTEXTO:
+    LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}
+    ${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}${historyAgeNote}
 
-INSTRUÇÃO: ${stageInstruction}
+    INSTRUÇÃO: ${stageInstruction}
 
-REGRAS:
-- ${shouldGreet ? 'Pode cumprimentar' : '🚨 NÃO use Oi/Olá - conversa ativa'}
-- ${conversationSummary ? '🧠 USE o resumo acima' : '📜 Leia histórico acima'}
-- 🚨 NÃO pergunte o que já foi dito
-- 1-3 frases, tom humano
-- 1 pergunta engajadora
-- 1 💚 final`;
+    REGRAS:
+    - ${shouldGreet ? 'Pode cumprimentar' : '🚨 NÃO use Oi/Olá - conversa ativa'}
+    - ${conversationSummary ? '🧠 USE o resumo acima' : '📜 Leia histórico acima'}
+    - 🚨 NÃO pergunte o que já foi dito (principalmente idade, se é criança/adulto e a área principal da terapia)
+    - 1-3 frases, tom humano
+    - 1 pergunta engajadora
+    - 1 💚 final`;
+
 
 
     // 🧠 MONTA MENSAGENS COM CACHE MÁXIMO
