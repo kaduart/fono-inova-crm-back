@@ -486,7 +486,6 @@ router.get('/by-specialty/:specialty', auth, async (req, res) => {
     }
 });
 
-// Atualiza um agendamento com verificação de conflitos
 router.put('/:id', validateId, auth, checkPackageAvailability,
     validateIndividualPayment, checkAppointmentConflicts, async (req, res) => {
 
@@ -505,13 +504,19 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
 
             if (!appointment) {
                 await mongoSession.abortTransaction();
-                return res.status(404).json({ error: 'Agendamento não encontrado' });
+                return res.status(404).json({
+                    error: 'Agendamento não encontrado',
+                    message: 'Este agendamento não existe mais.'
+                });
             }
 
             // 2. Verificar permissões
             if (req.user.role === 'doctor' && appointment.doctor.toString() !== req.user.id) {
                 await mongoSession.abortTransaction();
-                return res.status(403).json({ error: 'Acesso não autorizado' });
+                return res.status(403).json({
+                    error: 'Acesso não autorizado',
+                    message: 'Você não pode editar este agendamento.'
+                });
             }
 
             // 3. Aplicar atualizações manualmente
@@ -520,6 +525,11 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                 doctor: req.body.doctorId || appointment.doctor,
                 updatedAt: currentDate
             };
+
+            // ✅ CORREÇÃO: remover clinicalStatus se não for package_session
+            if (appointment.serviceType !== 'package_session') {
+                delete updateData.clinicalStatus;
+            }
 
             // Salvar dados anteriores para comparação
             const previousData = {
@@ -649,6 +659,15 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                 await mongoSession.abortTransaction();
             }
 
+            // ✅ NOVO: tratamento para write conflict
+            if (error.message?.includes('Write conflict') || error.code === 112 || error.codeName === 'WriteConflict') {
+                return res.status(409).json({
+                    error: 'Conflito de edição',
+                    message: 'Outro usuário está editando este agendamento. Recarregue a página e tente novamente.',
+                    code: 'WRITE_CONFLICT'
+                });
+            }
+
             if (error.name === 'ValidationError') {
                 const errors = Object.values(error.errors).reduce((acc, err) => {
                     acc[err.path] = err.message;
@@ -656,8 +675,9 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                 }, {});
 
                 return res.status(400).json({
-                    message: 'Falha na validação dos dados',
-                    errors
+                    error: 'Dados inválidos', // ✅ mudou de 'message' pra 'error'
+                    message: 'Verifique os campos destacados e tente novamente.', // ✅ adicionado
+                    fields: errors // ✅ mudou de 'errors' pra 'fields'
                 });
             }
 
@@ -669,18 +689,21 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
             }
 
             if (error.message === 'Pacote inválido ou sem sessões disponíveis') {
-                return res.status(400).json({ error: error.message });
+                return res.status(400).json({
+                    error: 'Pacote indisponível',
+                    message: error.message
+                });
             }
 
             res.status(500).json({
-                error: 'Erro interno',
+                error: 'Erro no servidor', // ✅ mudou de 'Erro interno'
+                message: 'Não foi possível atualizar o agendamento. Tente novamente em instantes.', // ✅ adicionado
                 details: process.env.NODE_ENV === 'development' ? error.message : undefined
             });
         } finally {
             await mongoSession.endSession();
         }
     });
-
 function determineActionType(updateData) {
     if (updateData.status === 'canceled') return 'cancel';
     if (updateData.date || updateData.time) return 'reschedule';
