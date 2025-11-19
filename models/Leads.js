@@ -14,6 +14,7 @@ const leadSchema = new mongoose.Schema({
   name: { type: String, required: true },
   contact: {
     email: { type: String, lowercase: true, trim: true },
+    phone: { type: String, trim: true },
   },
   origin: {
     type: String,
@@ -118,7 +119,11 @@ const leadSchema = new mongoose.Schema({
     default: true
   },
 
-}, { timestamps: true });
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
 
 // ✅ ÍNDICES OTIMIZADOS
 leadSchema.index({ status: 1, createdAt: -1 });
@@ -126,6 +131,10 @@ leadSchema.index({ origin: 1, createdAt: -1 });
 leadSchema.index({ createdAt: -1 });
 leadSchema.index({ conversionScore: -1 });
 leadSchema.index({ 'contact.phone': 1 });
+
+leadSchema.virtual('phone').get(function () {
+  return this.contact?.phone || null;
+});
 
 // Normalização de telefone
 function normalizeE164(phone) {
