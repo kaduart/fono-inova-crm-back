@@ -34,26 +34,36 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
             shouldGreet: true
         };
 
+    // 🧩 FLAGS GERAIS (inclui thanks/bye/atendente, TEA, etc.)
     const flags = detectAllFlags(text, lead, enrichedContext);
 
-    // 👇 NOVO: detectar se é a PRIMEIRA mensagem (ou bem início)
+    // 👋 É a PRIMEIRA mensagem (ou bem início)?
     const isFirstMessage =
         enrichedContext.isFirstContact ||
         !enrichedContext.messageCount ||
-        enrichedContext.messageCount === 0;
+        enrichedContext.messageCount <= 1 ||
+        (Array.isArray(enrichedContext.conversationHistory) &&
+            enrichedContext.conversationHistory.length <= 1);
 
-    // 👇 NOVO: saudação "pura", sem dúvida junto
+    // 👋 Saudação "pura", sem dúvida junto
     const isPureGreeting =
         /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|bom\s*dia)[\s!,.]*$/i.test(normalized);
+
+    // 0️⃣ PEDIU ATENDENTE HUMANA → responde SEMPRE, mesmo se for 1ª msg
+    if (flags?.wantsHumanAgent) {
+        console.log('👤 [ORQUEST] Lead pediu atendente humana');
+        return "Claro, vou pedir para uma atendente da clínica assumir o seu atendimento e te responder aqui mesmo em instantes, tudo bem? 💚";
+    }
 
     // 👋 Regra: se for a PRIMEIRA mensagem e for só saudação, NÃO responder
     if (isFirstMessage && isPureGreeting) {
         console.log('👋 [ORQUEST] Saudação inicial detectada – aguardando próxima mensagem do lead, sem responder.');
-        // aqui escolhe o "protocolo de silêncio"
-        return null; // ou "" ou um token especial tipo "__NO_REPLY__"
+        return null; // importante: caller não envia nada
     }
 
-    const pureClosingRegex = /^(obrigad[ao]s?|obg|obgd|vale[u]?|vlw|agrade[cç]o|tchau|até\s+mais|até\s+logo|boa\s+noite|boa\s+tarde)[\s!,.]*$/i;
+    // 🔚 ENCERRAMENTO "PURO" (obrigado, tchau etc.) → só se NÃO for a 1ª msg
+    const pureClosingRegex =
+        /^(obrigad[ao]s?|obg|obgd|vale[u]?|vlw|agrade[cç]o|tchau|falou|até\s+mais|até\s+logo|boa\s+noite|boa\s+tarde|bom\s+dia)[\s!,.]*$/i;
 
     const isPureClosing =
         !isFirstMessage &&                                      // nunca fecha na 1ª msg
@@ -67,32 +77,10 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         !flags?.asksTimes &&
         !flags?.asksDays;
 
-
-    // 🧩 FLAGS GERAIS (inclui thanks/bye/atendente, TEA, etc.)
-    const flags = detectAllFlags(text, lead, enrichedContext);
-
-    // 0️⃣ PEDIU ATENDENTE HUMANA → resposta curta e encerra IA
-    if (flags?.wantsHumanAgent) {
-        console.log('👤 [ORQUEST] Lead pediu atendente humana');
-        return "Claro, vou pedir para uma atendente da clínica assumir o seu atendimento e te responder aqui mesmo em instantes, tudo bem? 💚";
-    }
-
-    // 0️⃣.1 SÓ AGRADECEU / SE DESPEDIU → não puxa assunto novo
-    const isPureClosing =
-        (flags?.saysThanks || flags?.saysBye) &&
-        !flags?.asksPrice &&
-        !flags?.wantsSchedule &&
-        !flags?.asksAddress &&
-        !flags?.asksPlans &&
-        !flags?.asksAreas &&
-        !flags?.asksTimes &&
-        !flags?.asksDays;
-
     if (isPureClosing) {
         console.log('🙏 [ORQUEST] Mensagem de encerramento detectada');
         return "Eu que agradeço, qualquer coisa é só chamar 💚";
     }
-
 
     // ===== 1. TDAH - RESPOSTA ESPECÍFICA =====
     if (isTDAHQuestion(text)) {
@@ -108,7 +96,6 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     if (therapies.length > 0) {
         console.log(`🎯 [TERAPIAS] Detectadas: ${therapies.map(t => t.id).join(', ')}`);
 
-        // ⬇️ AQUI REUTILIZA AS MESMAS FLAGS
         console.log(`🏁 [FLAGS]`, {
             asksPrice: flags.asksPrice,
             wantsSchedule: flags.wantsSchedule,
