@@ -16,6 +16,7 @@ import { auth, authorize } from '../middleware/auth.js';
 import validateId from '../middleware/validateId.js';
 import Lead from '../models/Leads.js';
 import { sendLeadToMeta } from '../services/metaConversionsService.js';
+import { normalizeE164BR } from '../utils/phone.js';
 
 const router = express.Router();
 
@@ -83,6 +84,7 @@ router.get('/', authorize(['admin', 'secretary', 'professional']), async (req, r
             .sort({ createdAt: -1 })
             .skip((pageNumber - 1) * limitNumber)
             .limit(limitNumber);
+        console.log('📞 Primeiro lead:', JSON.stringify(leads[0], null, 2));
 
         const total = await Lead.countDocuments(filters);
 
@@ -143,33 +145,91 @@ router.get('/:id',
  */
 router.post('/', authorize(['admin', 'secretary']), async (req, res) => {
     try {
-        const lead = new Lead(req.body);
-        await lead.save();
+        const {
+            name,
+            phone,
+            email,
+            status,
+            origin,
+            notes
+        } = req.body;
 
-        console.log('✅ Lead criado manualmente:', lead._id);
-
-        res.status(201).json(lead);
-        try {
-            await sendLeadToMeta({
-                email: lead?.contact?.email || lead?.email,
-                phone: lead?.contact?.phone || lead?.phone,
-                leadId: lead._id,
+        if (!name) {
+            return res.status(400).json({
+                success: false,
+                message: 'Campo obrigatório: name'
             });
+        }
+
+        const leadData = {
+            name,
+            contact: {
+                phone: phone ? normalizeE164BR(phone) : null,
+                email: email || null
+            },
+            status: status || 'novo',
+            origin: origin || 'Outro',
+            notes: notes || null,
+            // Campos com defaults
+            circuit: 'Circuito Padrão',
+            conversionScore: 0,
+            responded: false,
+            conversationSummary: null,
+            summaryGeneratedAt: null,
+            summaryCoversUntilMessage: 0,
+            autoReplyEnabled: true,
+            manualControl: {
+                active: false,
+                autoResumeAfter: 720
+            },
+            appointment: {
+                seekingFor: 'Adulto +18 anos',
+                modality: 'Online',
+                healthPlan: 'Mensalidade'
+            },
+            interactions: [],
+            scoreHistory: [],
+            lastInteractionAt: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date()
+        };
+
+        console.log('🔧 Inserindo DIRETO no MongoDB (bypass total do Mongoose)');
+
+        // ✅ INSERE DIRETO NO MONGODB
+        const result = await Lead.collection.insertOne(leadData);
+
+        console.log('✅ Lead criado (raw):', result.insertedId);
+
+        // Busca o lead inserido
+        const leadWithVirtuals = await Lead.findById(result.insertedId);
+
+        res.status(201).json({
+            success: true,
+            data: leadWithVirtuals
+        });
+
+        // Meta CAPI
+        try {
+            if (leadWithVirtuals.contact?.phone || leadWithVirtuals.contact?.email) {
+                await sendLeadToMeta({
+                    email: leadWithVirtuals.contact?.email,
+                    phone: leadWithVirtuals.contact?.phone,
+                    leadId: leadWithVirtuals._id,
+                });
+            }
         } catch (err) {
-            console.error(
-                '⚠️ Erro ao enviar lead para Meta CAPI (mas lead foi salvo):',
-                err.message
-            );
+            console.error('⚠️ Erro Meta CAPI:', err.message);
         }
     } catch (err) {
-        console.error('❌ Erro ao criar lead:', err);
+        console.error('❌ Erro:', err);
         res.status(400).json({
+            success: false,
             message: 'Erro ao criar lead',
             error: err.message
         });
     }
 });
-
 /**
  * POST /leads/from-ad
  * Cria lead vindo de anúncios (Meta/Google)

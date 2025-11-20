@@ -45,20 +45,11 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         (Array.isArray(enrichedContext.conversationHistory) &&
             enrichedContext.conversationHistory.length <= 1);
 
-    // 👋 Saudação "pura", sem dúvida junto
-    const isPureGreeting =
-        /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|bom\s*dia)[\s!,.]*$/i.test(normalized);
 
     // 0️⃣ PEDIU ATENDENTE HUMANA → responde SEMPRE, mesmo se for 1ª msg
     if (flags?.wantsHumanAgent) {
         console.log('👤 [ORQUEST] Lead pediu atendente humana');
         return "Claro, vou pedir para uma atendente da clínica assumir o seu atendimento e te responder aqui mesmo em instantes, tudo bem? 💚";
-    }
-
-    // 👋 Regra: se for a PRIMEIRA mensagem e for só saudação, NÃO responder
-    if (isFirstMessage && isPureGreeting) {
-        console.log('👋 [ORQUEST] Saudação inicial detectada – aguardando próxima mensagem do lead, sem responder.');
-        return null; // importante: caller não envia nada
     }
 
     // 🔚 ENCERRAMENTO "PURO" (obrigado, tchau etc.) → só se NÃO for a 1ª msg
@@ -159,7 +150,7 @@ function tryManualResponse(normalizedText) {
     }
 
     if (/^(oi|ol[aá]|boa\s*(tarde|noite|dia)|bom\s*dia)[\s!,.]*$/i.test(normalizedText)) {
-        return getManual('saudacao');
+        return "Oi! Me conta rapidinho: em que posso te ajudar?";
     }
 
     return null;

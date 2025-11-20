@@ -1,5 +1,6 @@
 // models/Leads.js - VERSÃO FINAL AMANDA 2.0
 import mongoose from 'mongoose';
+import { normalizeE164BR } from '../utils/phone.js';
 
 const interactionSchema = new mongoose.Schema({
   date: { type: Date, default: Date.now },
@@ -136,18 +137,9 @@ leadSchema.virtual('phone').get(function () {
   return this.contact?.phone || null;
 });
 
-// Normalização de telefone
-function normalizeE164(phone) {
-  if (!phone) return phone;
-  let digits = phone.replace(/\D/g, '');
-  if (digits.startsWith('0')) digits = digits.substring(1);
-  if (digits.length === 11 && !digits.startsWith('55')) return `+55${digits}`;
-  if (digits.length === 13 && digits.startsWith('55')) return `+${digits}`;
-  return phone;
-}
 
 leadSchema.pre('save', function (next) {
-  if (this.contact?.phone) this.contact.phone = normalizeE164(this.contact.phone);
+  if (this.contact?.phone) this.contact.phone = normalizeE164BR(this.contact.phone);
   next();
 });
 
