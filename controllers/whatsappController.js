@@ -25,18 +25,20 @@ export const whatsappController = {
             const to = normalizeE164BR(phone);
             const result = await sendTemplateMessage({ to, template, params, lead: leadId });
 
-            // (opcional) persistir template outbound p/ aparecer no chat
-            const saved = await Message.create({
-                from: process.env.CLINIC_PHONE_E164 || to,
-                to,
-                direction: "outbound",
-                type: "template",
-                content: `[TEMPLATE] ${template}`,
-                templateName: template,
-                status: "sent",
-                timestamp: new Date(),
-                lead: leadId || null,
-            });
+const waMessageId = result?.waMessageId || result?.messages?.[0]?.id || null;
+
+const saved = await Message.create({
+    from: process.env.CLINIC_PHONE_E164 || to,
+    to,
+    direction: "outbound",
+    type: "template",
+    content: `[TEMPLATE] ${template}`,
+    templateName: template,
+    status: "sent",
+    timestamp: new Date(),
+    lead: leadId || null,
+    waMessageId,
+});
 
             const io = getIo();
             io.emit("message:new", {
@@ -299,17 +301,6 @@ export const whatsappController = {
         } catch (err) {
             console.error("❌ Erro ao buscar chat:", err);
             return res.status(500).json({ error: err.message });
-        }
-    },
-
-    async listContacts(_req, res) {
-        try {
-            const contacts = await Contact.find()
-                .sort({ lastMessageAt: -1, name: 1 }); // 🆕 mais recente primeiro
-            res.json(contacts);
-        } catch (err) {
-            console.error("❌ Erro ao listar contatos:", err);
-            res.status(500).json({ error: err.message });
         }
     },
 
@@ -772,7 +763,7 @@ async function handleAutoReply(from, to, content, lead) {
         try {
             if (redis?.set) {
                 const lockKey = `ai:lock:${from}`;
-                const ok = await redis.set(lockKey, "1", "EX", 3, "NX");
+                const ok = await redis.set(lockKey, "1", "EX", 10, "NX");
                 if (ok !== "OK") {
                     console.log("⏭️ AI lock ativo; evitando corrida", lockKey);
                     canProceed = false;
@@ -806,7 +797,7 @@ async function handleAutoReply(from, to, content, lead) {
         try {
             if (redis?.set) {
                 const key = `ai:debounce:${from}`;
-                const ok = await redis.set(key, "1", "EX", 3, "NX");
+                const ok = await redis.set(key, "1", "EX", 10, "NX");
                 if (ok !== "OK") {
                     console.log("⏭️ Debounce ativo (3s); pulando auto-reply");
                     return;
@@ -908,45 +899,68 @@ async function handleAutoReply(from, to, content, lead) {
         // 9. Envia resposta marcada como "amanda"
         // ================================
         if (aiText && aiText.trim()) {
-            const finalText = aiText.trim();
+    const finalText = aiText.trim();
 
-            await sendTextMessage({
-                to: from,
-                text: finalText,
-                lead: leadDoc._id,
+    // 🔎 Tenta achar o contact pra vincular na mensagem
+    const contactDoc = await Contact.findOne({ phone: from }).lean();
+    const patientId = leadDoc.convertedToPatient || null;
+
+    // 📤 Envia e REGISTRA (sendTextMessage + registerMessage)
+    const result = await sendTextMessage({
+        to: from,
+        text: finalText,
+        lead: leadDoc._id,
+        contactId: contactDoc?._id || null,
+        patientId,
+        sentBy: 'amanda'
+    });
+
+    const waMessageId = result?.messages?.[0]?.id || null;
+
+    // Dá um respiro pro Mongo gravar
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    // 🔍 Busca a mensagem salva pelo waMessageId
+    let savedOut = null;
+    if (waMessageId) {
+        savedOut = await Message.findOne({ waMessageId }).lean();
+        console.log('🔍 Busca Amanda por waMessageId:', savedOut ? 'ENCONTROU' : 'NÃO ACHOU');
+    }
+
+    // Fallback: última outbound para esse número
+    if (!savedOut) {
+        savedOut = await Message.findOne({
+            to: from,
+            direction: "outbound",
+            type: "text"
+        }).sort({ timestamp: -1 }).lean();
+        console.log('🔍 Busca Amanda por to + outbound:', savedOut ? 'ENCONTROU' : 'NÃO ACHOU');
+    }
+
+    if (savedOut) {
+        const io = getIo();
+        io.emit("message:new", {
+            id: String(savedOut._id),
+            from: savedOut.from,
+            to: savedOut.to,
+            direction: savedOut.direction,
+            type: savedOut.type,
+            content: savedOut.content,
+            text: savedOut.content,
+            status: savedOut.status,
+            timestamp: savedOut.timestamp,
+            leadId: String(savedOut.lead || leadDoc._id),
+            contactId: String(savedOut.contact || contactDoc?._id || ''),
+            metadata: savedOut.metadata || {
                 sentBy: 'amanda'
-            });
+            }
+        });
 
-            const savedOut = await Message.create({
-                from: to,
-                to: from,
-                direction: "outbound",
-                type: "text",
-                content: finalText,
-                status: "sent",
-                timestamp: new Date(),
-                lead: leadDoc._id,
-                metadata: {
-                    sentBy: 'amanda'
-                }
-            });
-
-            const io = getIo();
-            io.emit("message:new", {
-                id: String(savedOut._id),
-                from: savedOut.from,
-                to: savedOut.to,
-                direction: "outbound",
-                type: "text",
-                content: savedOut.content,
-                status: savedOut.status,
-                timestamp: savedOut.timestamp,
-                sentBy: 'amanda'
-            });
-
-            console.log("✅ Amanda respondeu e enviou:", String(savedOut._id));
-        }
-
+        console.log("✅ Amanda respondeu e emitiu via socket:", String(savedOut._id));
+    } else {
+        console.warn('⚠️ Não achei a mensagem da Amanda no banco pra emitir socket');
+    }
+}
     } catch (error) {
         console.error('❌ Erro no auto-reply (não crítico):', error);
     }

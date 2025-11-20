@@ -2,9 +2,9 @@
 import dotenv from "dotenv";
 import fetch from "node-fetch";
 import ChatContext from "../models/ChatContext.js";
+import Contact from "../models/Contact.js";
 import Message from "../models/Message.js";
 import { getMetaToken } from "../utils/metaToken.js";
-import Contact from "../models/Contact.js";
 
 dotenv.config();
 
@@ -70,13 +70,13 @@ export async function registerMessage({
     };
 
     if (status) payload.status = status;
-    
+
     // ✅ CORRIGIDO: Sempre salvar waMessageId quando existir
     if (waMessageId) {
         payload.waMessageId = waMessageId;
         console.log('💾 Salvando com waMessageId:', waMessageId);
     }
-    
+
     if (to) payload.to = to;
     if (from) payload.from = from;
     if (metadata) payload.metadata = metadata;
@@ -87,7 +87,7 @@ export async function registerMessage({
     });
 
     const msg = await Message.create(payload);
-    
+
     console.log('✅ Mensagem criada no banco:', {
         _id: msg._id,
         waMessageId: msg.waMessageId,
@@ -176,22 +176,10 @@ export async function sendTemplateMessage({ to, template, params = [], lead }) {
 
     const waMessageId = data?.messages?.[0]?.id || null;
 
-    // Mantive aqui o create direto, pq template geralmente é fluxo disparado e
-    // você talvez queira tratar contactId depois com calma
-    await Message.create({
-        to: phone,
-        from: PHONE_ID,
-        direction: "outbound",
-        type: "template",
-        content: JSON.stringify(params),
-        templateName: template,
-        status: res.ok ? "sent" : "failed",
-        waMessageId,
-        timestamp: new Date(),
-        lead,
-    });
-
-    if (lead) await updateChatContext(lead, "outbound", `[TEMPLATE] ${params.join(" ")}`);
+    // Se quiser manter contexto de conversa:
+    if (lead) {
+        await updateChatContext(lead, "outbound", `[TEMPLATE] ${params.join(" ")}`);
+    }
 
     if (!res.ok) {
         console.error("❌ Erro WhatsApp:", data.error);
