@@ -13,6 +13,9 @@ import {
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+const PURE_GREETING_REGEX =
+    /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|bom\s*dia)[\s!,.]*$/i;
+
 /**
  * 🎯 ORQUESTRADOR COM CONTEXTO INTELIGENTE
  */
@@ -45,6 +48,8 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         (Array.isArray(enrichedContext.conversationHistory) &&
             enrichedContext.conversationHistory.length <= 1);
 
+    // 👋 Saudação "pura", sem dúvida junto
+    const isPureGreeting = PURE_GREETING_REGEX.test(normalized);
 
     // 0️⃣ PEDIU ATENDENTE HUMANA → responde SEMPRE, mesmo se for 1ª msg
     if (flags?.wantsHumanAgent) {
@@ -149,8 +154,8 @@ function tryManualResponse(normalizedText) {
         return getManual('valores', 'consulta');
     }
 
-    if (/^(oi|ol[aá]|boa\s*(tarde|noite|dia)|bom\s*dia)[\s!,.]*$/i.test(normalizedText)) {
-        return "Oi! Me conta rapidinho: em que posso te ajudar?";
+    if (PURE_GREETING_REGEX.test(normalizedText)) {
+        return getManual('saudacao');
     }
 
     return null;
