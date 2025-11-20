@@ -41,43 +41,96 @@ export async function generateFollowupMessage(lead) {
     const reason = lead?.reason || "avaliação/terapia";
     const origin = lead?.origin || "WhatsApp";
 
+    // 🔎 Pega a última interação registrada no lead
+    const lastInteraction = Array.isArray(lead?.interactions) && lead.interactions.length > 0
+        ? lead.interactions[lead.interactions.length - 1]
+        : null;
+
+    const lastMsg = (lastInteraction?.message || "").trim();
+
+    // 🧠 Sinais de contexto para o follow-up
+    const talksAboutPrice =
+        /(pre[çc]o|valor|valores|custa|mensalidade|pacote|tabela|orçamento|orcamento)/i.test(lastMsg) ||
+        /(pre[çc]o|valor|valores|custa|mensalidade|pacote|tabela|orçamento|orcamento)/i.test(reason);
+
+    const talksAboutThinking =
+        /(vou\s+ver|vou\s+avaliar|vou\s+pensar|vou\s+conversar\s+com|depois\s+te\s+dou\s+retorno|ver\s+com\s+meu\s+espos[oa])/i
+            .test(lastMsg);
+
+    const askedForHuman =
+        /(falar\s+com\s+atendente|falar\s+com\s+uma\s+pessoa|secret[aá]ria|atendente)/i.test(lastMsg);
+
+    // 🎯 Template-base que você quer pra PRIMEIRO follow-up “padrão valores”
+    const baseTemplateValores = `Oi, ${name}! 😊
+Só passei para ver se conseguiu analisar os valores e se posso te ajudar com algo mais 💚
+
+Se quiser, já te envio os horários disponíveis para a avaliação ✨`;
+
+    // Versão mais genérica (quando não tá claramente falando de preço)
+    const baseTemplateGeral = `Oi, ${name}! 😊
+Só passei para saber se conseguiu ver com calma as informações que combinamos e se posso te ajudar com algo a mais 💚
+
+Se quiser, já te envio os horários disponíveis para a avaliação ✨`;
+
+    // Decide qual template usar como “âncora”
+    const baseTemplate = talksAboutPrice || talksAboutThinking ? baseTemplateValores : baseTemplateGeral;
+
+    const lastMsgDesc = lastMsg || "há alguns dias vocês conversaram sobre avaliação/terapia";
+
+    // 🧾 Prompt COMPLETO que guia o Claude MAS mantendo o CLIMA do teu template
     const userPrompt = `
-Gere uma mensagem curta de follow-up para ${name}.
-Contexto:
+Quero que você gere uma mensagem curta de follow-up para um lead da Clínica Fono Inova.
+
+DADOS DO LEAD:
+- Nome: ${name}
 - Origem: ${origin}
-- Motivo: ${reason}
-- Última interação: ${lead?.lastInteraction || "há alguns dias"}
+- Motivo/razão: ${reason}
+- Última interação relevante: "${lastMsgDesc}"
+
+CENÁRIO:
+- Essa é a PRIMEIRA mensagem de follow-up depois de uma conversa onde a pessoa pediu informações,
+  falou de valores ou disse que iria pensar/conversar com alguém antes de decidir.
+
+ESTILO BASE (NÃO COPIAR IGUAL, MAS MANTER O CLIMA):
+"${baseTemplate}"
 
 REGRAS:
-• 2-3 frases máximo
-• Tom amigável e não invasivo
-• Exatamente 1 💚 no final
-• Termine com pergunta sobre agendamento
-
-Exemplo: "Oi ${name}! Passando pra saber se posso te ajudar com ${reason}. Temos horários flexíveis esta semana. Posso te ajudar a agendar? 💚"
+- 2 a 3 frases no máximo.
+- Tom leve, humano, nada robótico.
+- Tratar o lead pelo primeiro nome.
+- Se houver contexto de valores, mencionar de forma suave que está vendo se conseguiu analisar os valores.
+- Em todos os casos, oferecer ajuda + possibilidade de enviar horários disponíveis para avaliação.
+- Exatamente 1 💚 na mensagem inteira.
+- Pode usar 1 ou 2 emojis leves (😊, ✨), sem exagero.
+- NÃO insista demais, é um lembrete educado, não cobrança.
 `.trim();
 
     try {
         const resp = await anthropic.messages.create({
             model: "claude-sonnet-4-20250514",
-            max_tokens: 150,
+            max_tokens: 200,
             temperature: 0.7,
             system: SYSTEM_PROMPT_AMANDA,
             messages: [
                 {
                     role: "user",
-                    content: `Gere follow-up curto para ${name}. Motivo: ${reason}. 2-3 frases. 1 💚 no final.`,
+                    content: userPrompt,   // 👉 agora usa o prompt completo
                 },
             ],
         });
 
-        const text = resp.content[0]?.text || `Oi ${name}! Posso te ajudar? 💚`;
-        return ensureSingleHeart(text);
+        const text = (resp.content?.[0]?.text || "").trim();
+
+        // Se por algum motivo vier vazio, usa o template que você ama
+        const final = text || baseTemplate;
+        return ensureSingleHeart(final); // garante só 1 💚
     } catch (error) {
         console.error("❌ Erro ao gerar follow-up:", error);
-        return `Oi ${name}! Passando pra saber se posso te ajudar com o agendamento 💚`;
+        // fallback se Claude der pau
+        return ensureSingleHeart(baseTemplate);
     }
 }
+
 
 /* =========================================================================
    🎙️ TRANSCRIÇÃO DE ÁUDIO - VERSÃO NOVA (mediaId → buffer → Whisper)

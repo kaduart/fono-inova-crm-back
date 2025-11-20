@@ -1,12 +1,8 @@
-// utils/phone (inline aqui mesmo p/ ficar simples)
 export const normalizeE164BR = (phone) => {
-    if (!phone) return "";
-    let s = String(phone).replace(/\D/g, ""); // só dígitos
-    // remove zeros à esquerda
+    if (!phone || String(phone).trim() === "") return null;  // ✅ retorna null
+    let s = String(phone).replace(/\D/g, "");
     s = s.replace(/^0+/, "");
-    // garante DDI 55
     if (!s.startsWith("55")) s = "55" + s;
-    // força "+"
     return "+" + s;
 };
 

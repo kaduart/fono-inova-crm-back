@@ -56,37 +56,46 @@ export const createLeadFromAd = async (req, res) => {
         if (urgency === 'high') initialScore += 15;
         if (urgency === 'low') initialScore -= 10;
 
-        // ✅ CRIAR LEAD - APENAS CAMPOS ESSENCIAIS
+        // ✅ CRIAR LEAD - CAMPOS COMPLETOS
         const leadData = {
             name,
-            contact: { phone: phoneE164 },
+            contact: {
+                phone: phoneE164,
+                email: email || null
+            },
             origin: origin || 'Tráfego pago',
             status: 'lead_quente',
             conversionScore: initialScore,
-            notes: initialMessage || `Lead captado via ${origin}`
+            notes: initialMessage || `Lead captado via ${origin}`,
+            // ✅ Campos com defaults
+            circuit: 'Circuito Padrão',
+            responded: false,
+            conversationSummary: null,
+            summaryGeneratedAt: null,
+            summaryCoversUntilMessage: 0,
+            autoReplyEnabled: true,
+            manualControl: {
+                active: false,
+                autoResumeAfter: 720
+            },
+            appointment: {
+                seekingFor: 'Adulto +18 anos',
+                modality: 'Online',
+                healthPlan: 'Mensalidade'
+            },
+            interactions: [],
+            scoreHistory: [],
+            lastInteractionAt: new Date(),
+            qualificationData: {
+                urgencyLevel: urgency === 'high' ? 3 : urgency === 'low' ? 1 : 2
+            },
+            lastScoreUpdate: new Date()
         };
 
-        // Adicionar email apenas se existir
-        if (email) {
-            leadData.contact.email = email;
-        }
-
-        const lead = await Lead.create(leadData);
+        // ✅ USA insertMany (bypass Mongoose bug)
+        const [lead] = await Lead.insertMany([leadData], { rawResult: false });
 
         console.log(`✅ Lead criado: ${name} (${phoneE164}) | Score: ${initialScore}`);
-
-        // ✅ ATUALIZAR CAMPOS EXTRAS DEPOIS (modo seguro)
-        try {
-            await Lead.findByIdAndUpdate(lead._id, {
-                $set: {
-                    'qualificationData.urgencyLevel': urgency === 'high' ? 3 : urgency === 'low' ? 1 : 2,
-                    lastScoreUpdate: new Date()
-                }
-            });
-        } catch (updateError) {
-            console.warn('⚠️ Erro ao atualizar campos extras:', updateError.message);
-            // Não falha - lead já foi criado
-        }
 
         // Agendar follow-up inteligente
         const followupTime = calculateOptimalFollowupTime({
@@ -120,8 +129,8 @@ export const createLeadFromAd = async (req, res) => {
 
         try {
             await sendLeadToMeta({
-                email: lead?.contact?.email || lead?.email,
-                phone: lead?.contact?.phone || lead?.phone,
+                email: lead.contact?.email,
+                phone: lead.contact?.phone,
                 leadId: lead._id,
             });
         } catch (err) {

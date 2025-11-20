@@ -70,12 +70,30 @@ export async function registerMessage({
     };
 
     if (status) payload.status = status;
-    if (waMessageId) payload.waMessageId = waMessageId;
+    
+    // ✅ CORRIGIDO: Sempre salvar waMessageId quando existir
+    if (waMessageId) {
+        payload.waMessageId = waMessageId;
+        console.log('💾 Salvando com waMessageId:', waMessageId);
+    }
+    
     if (to) payload.to = to;
     if (from) payload.from = from;
     if (metadata) payload.metadata = metadata;
 
+    console.log('💾 Payload completo para salvar:', {
+        ...payload,
+        content: payload.content?.substring(0, 50) + '...'
+    });
+
     const msg = await Message.create(payload);
+    
+    console.log('✅ Mensagem criada no banco:', {
+        _id: msg._id,
+        waMessageId: msg.waMessageId,
+        lead: msg.lead,
+        to: msg.to
+    });
 
     // 2) Atualiza contexto de chat
     await updateChatContext(leadId, direction, text);

@@ -64,7 +64,7 @@ export const whatsappController = {
                 text,
                 leadId,
                 userId = null,
-                sentBy = 'manual', // padrão: humano mandando do CRM
+                sentBy = 'manual',
             } = req.body;
 
             if (!phone || !text) {
@@ -90,6 +90,13 @@ export const whatsappController = {
             const resolvedLeadId = leadDoc?._id || leadId || null;
             const patientId = leadDoc?.convertedToPatient || null;
 
+            console.log('📤 Enviando mensagem via service...', {
+                to,
+                lead: resolvedLeadId,
+                contact: contact?._id,
+                text: text.substring(0, 50)
+            });
+
             // 📤 Envia usando o service centralizado
             const result = await sendTextMessage({
                 to,
@@ -101,17 +108,60 @@ export const whatsappController = {
                 userId
             });
 
-            // 🔁 Localiza a mensagem que o service acabou de registrar
+            console.log('✅ Service retornou:', result);
+
+            // ✅ Busca a mensagem recém-salva - CORRIGIDO
             const waMessageId = result?.messages?.[0]?.id || null;
+
+            // Espera 200ms para garantir que salvou
+            await new Promise(resolve => setTimeout(resolve, 200));
+
             let saved = null;
 
+            // 1ª tentativa: buscar pelo waMessageId
             if (waMessageId) {
                 saved = await Message.findOne({ waMessageId }).lean();
+                console.log('🔍 Busca por waMessageId:', saved ? 'ENCONTROU' : 'NÃO ACHOU');
             }
 
-            // 📡 Notifica o frontend via socket, se achou a mensagem
+            // 2ª tentativa: buscar pela mensagem mais recente para este lead/telefone
+            if (!saved && resolvedLeadId) {
+                saved = await Message.findOne({
+                    lead: resolvedLeadId,
+                    direction: 'outbound',
+                    type: 'text'
+                }).sort({ timestamp: -1 }).lean();
+                console.log('🔍 Busca por lead + outbound:', saved ? 'ENCONTROU' : 'NÃO ACHOU');
+            }
+
+            // 3ª tentativa: última mensagem outbound para este telefone
+            if (!saved) {
+                saved = await Message.findOne({
+                    to,
+                    direction: 'outbound',
+                    type: 'text'
+                }).sort({ timestamp: -1 }).lean();
+                console.log('🔍 Busca por to + outbound:', saved ? 'ENCONTROU' : 'NÃO ACHOU');
+            }
+
+            console.log('📡 Mensagem encontrada para emitir?', saved ? 'SIM' : 'NÃO');
+
+            if (saved) {
+                console.log('📡 Dados da mensagem:', {
+                    id: String(saved._id),
+                    waMessageId: saved.waMessageId,
+                    lead: saved.lead,
+                    contact: saved.contact,
+                    to: saved.to,
+                    from: saved.from
+                });
+            }
+
+            // 📡 Notifica o frontend via socket
             if (saved) {
                 const io = getIo();
+                console.log('📡 Emitindo message:new via socket...');
+
                 io.emit("message:new", {
                     id: String(saved._id),
                     from: saved.from,
@@ -119,15 +169,23 @@ export const whatsappController = {
                     direction: saved.direction,
                     type: saved.type,
                     content: saved.content,
+                    text: saved.content,
                     status: saved.status,
                     timestamp: saved.timestamp,
-                    leadId: saved.lead || resolvedLeadId,
-                    contactId: saved.contact || (contact?._id || null),
+                    leadId: String(saved.lead || resolvedLeadId || ''),
+                    contactId: String(saved.contact || contact?._id || ''),
                     metadata: saved.metadata || {
                         sentBy,
                         userId
                     }
                 });
+
+                console.log('✅ Socket emitido com sucesso!');
+            } else {
+                console.warn('⚠️ Mensagem não foi encontrada no banco para emitir socket!');
+                console.warn('⚠️ waMessageId:', waMessageId);
+                console.warn('⚠️ resolvedLeadId:', resolvedLeadId);
+                console.warn('⚠️ to:', to);
             }
 
             res.json({ success: true, result });
@@ -208,24 +266,39 @@ export const whatsappController = {
     async getChat(req, res) {
         try {
             const { phone } = req.params;
-            if (!phone) return res.status(400).json({ error: "Número de telefone é obrigatório" });
+            if (!phone) {
+                return res.status(400).json({ error: "Número de telefone é obrigatório" });
+            }
 
-            const pE164 = normalizeE164BR(phone);
+            // Normaliza pra E.164 (+55...)
+            const pE164 = normalizeE164BR(phone);      // ex: "+556181694922"
+            const numeric = pE164.replace(/\D/g, '');  // ex: "556181694922"
+
+            // 🔍 Busca considerando os dois formatos
             let msgs = await Message.find({
-                $or: [{ from: pE164 }, { to: pE164 }],
+                $or: [
+                    { from: pE164 },
+                    { to: pE164 },
+                    { from: numeric },
+                    { to: numeric },
+                ],
             }).sort({ timestamp: 1 });
 
+            // Fallback com tail se ainda não achar nada
             if (msgs.length === 0) {
-                const tail = tailPattern(phone, 8, 11);
+                const tail = tailPattern(numeric, 8, 11);
                 msgs = await Message.find({
-                    $or: [{ from: { $regex: tail } }, { to: { $regex: tail } }],
+                    $or: [
+                        { from: { $regex: tail } },
+                        { to: { $regex: tail } },
+                    ],
                 }).sort({ timestamp: 1 });
             }
 
-            res.json({ success: true, data: msgs });
+            return res.json({ success: true, data: msgs });
         } catch (err) {
             console.error("❌ Erro ao buscar chat:", err);
-            res.status(500).json({ error: err.message });
+            return res.status(500).json({ error: err.message });
         }
     },
 
@@ -290,86 +363,86 @@ export const whatsappController = {
         }
     },
 
-   async sendManualMessage(req, res) {
-    try {
-        const { leadId, text, userId } = req.body;
+    async sendManualMessage(req, res) {
+        try {
+            const { leadId, text, userId } = req.body;
 
-        const lead = await Lead.findById(leadId).populate('contact');
+            const lead = await Lead.findById(leadId).populate('contact');
 
-        if (!lead) {
-            return res.status(404).json({
-                success: false,
-                message: 'Lead não encontrado'
-            });
-        }
-
-        // 🔎 Contact de chat (coleção Contact) pelo telefone do lead
-        const normalizedPhone = normalizeE164BR(
-            lead.contact?.phone || lead.contact?.phoneWhatsapp || lead.contact?.phoneNumber || ''
-        );
-
-        const contact = await Contact.findOne({ phone: normalizedPhone }).lean();
-        const patientId = lead.convertedToPatient || null;
-
-        // 📤 Envia mensagem via service centralizado
-        const result = await sendTextMessage({
-            to: normalizedPhone,
-            text,
-            lead: leadId,
-            contactId: contact?._id || null,
-            patientId,
-            sentBy: 'manual',
-            userId
-        });
-
-        // 🔁 Localiza mensagem persistida pra emitir no socket
-        const waMessageId = result?.messages?.[0]?.id || null;
-        if (waMessageId) {
-            const saved = await Message.findOne({ waMessageId }).lean();
-            if (saved) {
-                const io = getIo();
-                io.emit("message:new", {
-                    id: String(saved._id),
-                    from: saved.from,
-                    to: saved.to,
-                    direction: saved.direction,
-                    type: saved.type,
-                    content: saved.content,
-                    status: saved.status,
-                    timestamp: saved.timestamp,
-                    leadId: saved.lead || leadId,
-                    contactId: saved.contact || (contact?._id || null),
-                    metadata: saved.metadata || {
-                        sentBy: 'manual',
-                        userId
-                    }
+            if (!lead) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Lead não encontrado'
                 });
             }
+
+            // 🔎 Contact de chat (coleção Contact) pelo telefone do lead
+            const normalizedPhone = normalizeE164BR(
+                lead.contact?.phone || lead.contact?.phoneWhatsapp || lead.contact?.phoneNumber || ''
+            );
+
+            const contact = await Contact.findOne({ phone: normalizedPhone }).lean();
+            const patientId = lead.convertedToPatient || null;
+
+            // 📤 Envia mensagem via service centralizado
+            const result = await sendTextMessage({
+                to: normalizedPhone,
+                text,
+                lead: leadId,
+                contactId: contact?._id || null,
+                patientId,
+                sentBy: 'manual',
+                userId
+            });
+
+            // 🔁 Localiza mensagem persistida pra emitir no socket
+            const waMessageId = result?.messages?.[0]?.id || null;
+            if (waMessageId) {
+                const saved = await Message.findOne({ waMessageId }).lean();
+                if (saved) {
+                    const io = getIo();
+                    io.emit("message:new", {
+                        id: String(saved._id),
+                        from: saved.from,
+                        to: saved.to,
+                        direction: saved.direction,
+                        type: saved.type,
+                        content: saved.content,
+                        status: saved.status,
+                        timestamp: saved.timestamp,
+                        leadId: saved.lead || leadId,
+                        contactId: saved.contact || (contact?._id || null),
+                        metadata: saved.metadata || {
+                            sentBy: 'manual',
+                            userId
+                        }
+                    });
+                }
+            }
+
+            // 🧠 Ativa controle manual (Amanda PAUSADA)
+            await Lead.findByIdAndUpdate(leadId, {
+                'manualControl.active': true,
+                'manualControl.takenOverAt': new Date(),
+                'manualControl.takenOverBy': userId
+            });
+
+            console.log(`✅ Mensagem manual enviada - Amanda pausada para o lead ${leadId}`);
+
+            res.json({
+                success: true,
+                message: 'Mensagem enviada. Amanda pausada.',
+                messageId: result.messages?.[0]?.id || `manual-${Date.now()}`
+            });
+
+        } catch (error) {
+            console.error("❌ Erro em sendManualMessage:", error);
+            res.status(500).json({
+                success: false,
+                error: error.message
+            });
         }
-
-        // 🧠 Ativa controle manual (Amanda PAUSADA)
-        await Lead.findByIdAndUpdate(leadId, {
-            'manualControl.active': true,
-            'manualControl.takenOverAt': new Date(),
-            'manualControl.takenOverBy': userId
-        });
-
-        console.log(`✅ Mensagem manual enviada - Amanda pausada para o lead ${leadId}`);
-
-        res.json({
-            success: true,
-            message: 'Mensagem enviada. Amanda pausada.',
-            messageId: result.messages?.[0]?.id || `manual-${Date.now()}`
-        });
-
-    } catch (error) {
-        console.error("❌ Erro em sendManualMessage:", error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
     }
-}
 
 
 };
@@ -505,7 +578,7 @@ async function processInboundMessage(msg, value) {
         if (!lead) {
             // 🎯 DECISÃO INTELIGENTE: Se tem patient, cria lead vinculado
             if (patient) {
-                lead = await Lead.create({
+                const leadData = {
                     name: patient.fullName || contact.name,
                     contact: {
                         phone: from,
@@ -519,12 +592,29 @@ async function processInboundMessage(msg, value) {
                         seekingFor: "Adulto +18 anos",
                         modality: "Online",
                         healthPlan: "Mensalidade"
-                    }
-                });
+                    },
+                    circuit: "Circuito Padrão",
+                    responded: false,
+                    conversationSummary: null,
+                    summaryGeneratedAt: null,
+                    summaryCoversUntilMessage: 0,
+                    autoReplyEnabled: true,
+                    manualControl: {
+                        active: false,
+                        autoResumeAfter: 30
+                    },
+                    interactions: [],
+                    scoreHistory: [],
+                    lastInteractionAt: new Date()
+                };
+
+                // ✅ USA insertMany (bypass Mongoose bug)
+                const [createdLead] = await Lead.insertMany([leadData], { rawResult: false });
+                lead = createdLead;
                 console.log("🔄 Patient convertido em lead:", lead._id);
             } else {
                 // Cria novo lead normal
-                lead = await Lead.create({
+                const leadData = {
                     name: contact.name,
                     contact: { phone: from },
                     origin: "WhatsApp",
@@ -533,20 +623,27 @@ async function processInboundMessage(msg, value) {
                         seekingFor: "Adulto +18 anos",
                         modality: "Online",
                         healthPlan: "Mensalidade"
-                    }
-                });
-                console.log("✅ Novo lead criado:", lead._id);
-            }
-        } else {
-            console.log("✅ Lead existente encontrado:", lead._id);
+                    },
+                    circuit: "Circuito Padrão",
+                    conversionScore: 0,
+                    responded: false,
+                    conversationSummary: null,
+                    summaryGeneratedAt: null,
+                    summaryCoversUntilMessage: 0,
+                    autoReplyEnabled: true,
+                    manualControl: {
+                        active: false,
+                        autoResumeAfter: 30
+                    },
+                    interactions: [],
+                    scoreHistory: [],
+                    lastInteractionAt: new Date()
+                };
 
-            // ✅ ATUALIZA lead se encontrou patient
-            if (patient && !lead.convertedToPatient) {
-                lead.convertedToPatient = patient._id;
-                lead.status = "virou_paciente";
-                lead.conversionScore = 100;
-                await lead.save();
-                console.log("🔄 Lead atualizado com patient:", patient._id);
+                // ✅ USA insertMany (bypass Mongoose bug)
+                const [createdLead] = await Lead.insertMany([leadData], { rawResult: false });
+                lead = createdLead;
+                console.log("✅ Novo lead criado:", lead._id);
             }
         }
 
@@ -666,6 +763,8 @@ async function handleResponseTracking(leadId, content) {
 // ✅ FUNÇÃO CORRIGIDA COM CONTROLE MANUAL
 async function handleAutoReply(from, to, content, lead) {
     try {
+        console.log('🤖 [AUTO-REPLY] Iniciando para', { from, to, leadId: lead?._id, content });
+
         // ================================
         // 1. LOCK anti-corrida (3s)
         // ================================

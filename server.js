@@ -20,6 +20,9 @@ import Followup from "./models/Followup.js";
 import { getRedis, startRedis } from "./services/redisClient.js";
 import { registerWebhook } from "./services/sicoobService.js";
 import { sanitizeStack } from './middleware/sanitize.js';
+
+import { startLearningCron } from "./crons/learningCron.js";
+
 // ======================================================
 // 🧩 BullMQ e Painel Bull Board
 // ======================================================
@@ -205,11 +208,14 @@ function initFollowupWatcher() {
     await import("./workers/followup.worker.js");
     await import("./workers/followup.cron.js");
     await import("./jobs/followup.analytics.cron.js");
-    await import("./crons/responseTracking.cron.js"); // ✅ NOVO CRON
+    await import("./crons/responseTracking.cron.js");
 
     // Conexão MongoDB
     await mongoose.connect(process.env.MONGO_URI);
     console.log("✅ Connected to MongoDB");
+
+    // 👉 AQUI LIGAMOS SEU CRON DIÁRIO DE APRENDIZADO
+    startLearningCron();
 
     // Registrar Webhook PIX no Sicoob
     try {
