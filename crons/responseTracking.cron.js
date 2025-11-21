@@ -300,21 +300,56 @@ async function taskDailyReport() {
  */
 async function taskHealthCheck() {
     const health = await healthCheck();
+    const checks = health.checks || {};
+    const { database, socket, recentActivity } = checks;
 
-    if (!health.healthy) {
-        logger.error('Sistema não está saudável', new Error('Health check failed'), {
-            checks: health.checks
-        });
+    const coreHealthy = database && socket;
 
-        // Alertar imediatamente
+    // 🔴 1) Problema real de infra (DB ou socket)
+    if (!coreHealthy) {
+        logger.error(
+            'Sistema não está saudável (problema de infraestrutura)',
+            new Error('Health check failed'),
+            { checks }
+        );
+
         if (CONFIG.ENABLE_ALERTS) {
-            sendAlert('healthCheck', 1.0);
+            try {
+                // erro crítico → taxa 1.0
+                await sendAlert('healthCheck', 1.0);
+            } catch (e) {
+                logger.error('[HealthCheck] Falha ao enviar alerta', e);
+            }
         }
-    } else {
-        logger.info('✓ Sistema saudável', health.checks);
+
+        return {
+            ...health,
+            healthy: false,
+        };
     }
 
-    return health;
+    // 🟡 2) Infra ok, mas sem atividade recente → só aviso
+    if (!recentActivity) {
+        logger.warn(
+            '[HealthCheck] Nenhuma atividade recente de Followups nas últimas 24h (pode ser normal)',
+            { checks }
+        );
+
+        // aqui você decide se quer marcar como healthy ou não;
+        // eu colocaria true, porque infra tá ok:
+        return {
+            ...health,
+            healthy: true,
+        };
+    }
+
+    // 🟢 3) Tudo certo
+    logger.info('✓ Sistema saudável (DB + socket + atividade recente)', checks);
+
+    return {
+        ...health,
+        healthy: true,
+    };
 }
 
 // =====================================================================
@@ -345,11 +380,6 @@ async function connectDatabase() {
             await mongoose.connect(process.env.MONGO_URI, {
                 serverSelectionTimeoutMS: 10000,
                 socketTimeoutMS: 45000,
-            });
-
-            logger.success('Conectado ao MongoDB', {
-                host: mongoose.connection.host,
-                db: mongoose.connection.name
             });
 
             return;

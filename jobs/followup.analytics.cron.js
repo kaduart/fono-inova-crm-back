@@ -15,7 +15,6 @@ dotenv.config();
   try {
     if (!mongoose.connection.readyState) {
       await mongoose.connect(process.env.MONGO_URI);
-      console.log("✅ Conectado ao MongoDB para análise semanal");
     }
   } catch (err) {
     console.error("❌ Erro ao conectar MongoDB (cron analytics):", err.message);
