@@ -400,19 +400,20 @@ router.patch('/:id', auth, async (req, res) => {
     const MAX_RETRIES = 8;
     let retryCount = 0;
     let result;
+    console.log('Erro ao exportar CSV:', req.body);
 
-    const executeCriticalOperation = async (operation, session, entity, filter, update) => {
+    const executeCriticalOperation = async (entity, filter, update, session) => {
         try {
-            return await operation(entity, filter, update, { session });
+            return await entity.updateMany(filter, update, { session });
         } catch (error) {
             if (error.code === 112 || error.codeName === 'WriteConflict') {
                 console.warn('Conflito detectado em operação crítica. Tentando abordagem alternativa...');
                 if (filter._id) {
-                    return await operation(entity, filter, update, { session });
+                    return await entity.updateMany(filter, update, { session });
                 } else {
                     const docs = await entity.find(filter).session(session);
                     for (const doc of docs) {
-                        await operation(entity, { _id: doc._id }, update, { session });
+                        await entity.updateOne({ _id: doc._id }, update, { session });
                     }
                     return { modifiedCount: docs.length };
                 }
@@ -479,8 +480,6 @@ router.patch('/:id', auth, async (req, res) => {
             if (payment.package) {
                 console.log('📦 Atualizando sessões do pacote:', payment.package);
                 await executeCriticalOperation(
-                    Session.updateMany.bind(Session),
-                    mongoSession,
                     Session,
                     { package: payment.package },
                     {
@@ -489,7 +488,8 @@ router.patch('/:id', auth, async (req, res) => {
                             status: status === 'paid' ? 'completed' : 'pending',
                             updatedAt: currentDate
                         }
-                    }
+                    },
+                    mongoSession
                 );
                 await updatePackageStatus(payment.package, mongoSession);
             }
@@ -517,23 +517,20 @@ router.patch('/:id', auth, async (req, res) => {
             ].filter(id => id);
 
             if (appointmentIds.length > 0) {
-                console.log('📅 Atualizando agendamentos vinculados:', appointmentIds.length);
-                await executeCriticalOperation(
-                    async (entity, filter, update, opts) => {
-                        return await entity.updateMany(filter, update, opts);
-                    },
-                    mongoSession,
-                    Appointment,
-                    { _id: { $in: appointmentIds } },
-                    {
-                        $set: {
-                            paymentStatus: status === 'paid' ? 'paid' : 'pending',
-                            operationalStatus: status === 'paid' ? 'confirmed' : 'pending',
-                            updatedAt: currentDate
-                        }
-                    }
-                );
+    console.log('📅 Atualizando agendamentos vinculados:', appointmentIds.length);
+    await executeCriticalOperation(
+        Appointment,
+        { _id: { $in: appointmentIds } },
+        {
+            $set: {
+                paymentStatus: status === 'paid' ? 'paid' : 'pending',
+                operationalStatus: status === 'paid' ? 'confirmed' : 'pending',
+                updatedAt: currentDate
             }
+        },
+        mongoSession
+    );
+}
 
             // 4. 🔥 LÓGICA advanceServices: CRIAR NOVOS PAGAMENTOS SEPARADOS
             if (advanceServices.length > 0) {
