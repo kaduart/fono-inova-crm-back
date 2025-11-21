@@ -2,6 +2,7 @@ import axios from "axios";
 import dotenv from "dotenv";
 import { getIo } from "../config/socket.js";
 import { getSicoobAccessToken } from "../services/sicoobAuth.js";
+import { getWebhookInfo } from "../services/sicoobService.js";
 
 dotenv.config();
 
