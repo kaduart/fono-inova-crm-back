@@ -19,11 +19,6 @@ const redirectUri = process.env.NODE_ENV === 'production'
     ? 'https://fono-inova-crm-back.onrender.com/api/google-ads/auth/oauth2callback'
     : 'http://localhost:5000/api/google-ads/auth/oauth2callback';
 
-console.log('🔹 Debug ENV', {
-    clientId: process.env.GOOGLE_ADS_CLIENT_ID,
-    clientSecret: process.env.GOOGLE_ADS_CLIENT_SECRET,
-    
-});
 if (!process.env.GOOGLE_ADS_CLIENT_ID || !process.env.GOOGLE_ADS_CLIENT_SECRET) {
     throw new Error('❌ GOOGLE_ADS_CLIENT_ID ou CLIENT_SECRET não estão definidos!');
 }

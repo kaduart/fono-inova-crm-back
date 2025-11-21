@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const messageSchema = new mongoose.Schema({
     // ✅ ADICIONAR: ID único da mensagem no WhatsApp
     waMessageId: { type: String, index: true, unique: true, sparse: true },
-    
+
     // Telefones sempre em E.164: +5562...
     from: { type: String, index: true, required: true },
     to: { type: String, index: true, required: true },
@@ -63,6 +63,5 @@ const messageSchema = new mongoose.Schema({
 messageSchema.index({ from: 1, to: 1, timestamp: 1 });
 messageSchema.index({ lead: 1, timestamp: 1 });
 messageSchema.index({ contact: 1, timestamp: 1 });
-messageSchema.index({ waMessageId: 1 }); // ✅ Índice para busca rápida
 
 export default mongoose.model('Message', messageSchema);

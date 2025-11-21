@@ -835,11 +835,11 @@ export async function healthCheck() {
     };
 
     try {
-        // DB Check
+        // 🔹 DB Check
         const count = await Followup.countDocuments().maxTimeMS(5000);
         checks.database = true;
 
-        // Socket Check
+        // 🔹 Socket Check
         try {
             const io = getIo();
             checks.socket = !!io;
@@ -847,14 +847,15 @@ export async function healthCheck() {
             checks.socket = false;
         }
 
-        // Activity Check (follow-ups nas últimas 24h)
+        // 🔹 Activity Check (follow-ups nas últimas 24h) – só pra métrica/log
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         const recentCount = await Followup.countDocuments({
             createdAt: { $gte: oneDayAgo }
         }).maxTimeMS(5000);
         checks.recentActivity = recentCount > 0;
 
-        const healthy = Object.values(checks).every(v => v === true);
+        // ✅ Saúde depende só de DB + socket
+        const healthy = checks.database && checks.socket;
 
         return {
             healthy,

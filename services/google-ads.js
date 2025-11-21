@@ -21,8 +21,6 @@ const client = new GoogleAdsApi({
     client_secret: GOOGLE_ADS_CLIENT_SECRET,
     developer_token: GOOGLE_ADS_DEVELOPER_TOKEN,
 })
-console.log('🔹 GOOGLE ADS ENV carregado corretamentessssss', client);
-
 
 const customer = client.Customer({
     customer_account_id: GOOGLE_ADS_CUSTOMER_ID,
