@@ -12,31 +12,15 @@ dotenv.config();
  */
 export const registerWebhookHandler = async (req, res) => {
   try {
-    const token = await getSicoobAccessToken();
-    const chavePix = process.env.SICOOB_PIX_KEY;
-    const webhookUrl = process.env.SICOOB_WEBHOOK_URL;
-    const url = `${process.env.SICOOB_API_BASE_URL}/webhook/${chavePix}`;
-
-    const response = await axios.put(
-      url,
-      { webhookUrl },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    console.log("✅ Webhook registrado com sucesso:", response.data);
-    res.status(200).json({
+    const data = await registerWebhook();
+    return res.status(200).json({
       success: true,
       message: "Webhook registrado com sucesso",
-      data: response.data,
+      data,
     });
   } catch (error) {
     console.error("❌ Erro ao registrar webhook:", error.response?.data || error.message);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Falha ao registrar webhook",
       error: error.response?.data || error.message,
@@ -104,7 +88,6 @@ export const getCobrancaHandler = async (req, res) => {
  * 4️⃣ WEBHOOK REAL – RECEBE NOTIFICAÇÕES DO SICOOB (PIX)
  * ============================================================
  */
-// controllers/sicoobController.js
 export const handlePixWebhook = async (req, res) => {
   try {
     console.log("📥 [PIX WEBHOOK] Chegou requisição no /api/pix/webhook");
@@ -274,7 +257,6 @@ async function processPixTransaction({ txid, amount, payer, date }, io) {
   }
 }
 
-
 /**
  * ============================================================
  * 🆕 GERAR COBRANÇA PIX SEM VALOR (QR GENÉRICO)
@@ -395,6 +377,20 @@ export const createDynamicPixHandler = async (req, res) => {
       success: false,
       message: "Erro ao gerar cobrança PIX.",
       error: error.response?.data || error.message,
+    });
+  }
+};
+
+
+export const debugWebhookHandler = async (req, res) => {
+  try {
+    const data = await getWebhookInfo();
+    return res.json({ success: true, data });
+  } catch (e) {
+    console.error("❌ Erro ao consultar webhook:", e.response?.data || e.message);
+    return res.status(500).json({
+      success: false,
+      error: e.response?.data || e.message,
     });
   }
 };
