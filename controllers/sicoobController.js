@@ -1,10 +1,6 @@
 import axios from "axios";
 import dotenv from "dotenv";
-import mongoose from "mongoose";
 import { getIo } from "../config/socket.js";
-import Package from "../models/Package.js";
-import Payment from "../models/Payment.js";
-import { distributePayments } from "../services/distributePayments.js";
 import { getSicoobAccessToken } from "../services/sicoobAuth.js";
 
 dotenv.config();
@@ -152,7 +148,7 @@ export const handlePixWebhook = async (req, res) => {
  * 5️⃣ PROCESSA PIX (CRIA PAGAMENTO + DISTRIBUI)
  * ============================================================
  */
-async function processPixTransaction({ txid, amount, payer, date }, io) {
+/* async function processPixTransaction({ txid, amount, payer, date }, io) {
   const mongoSession = await mongoose.startSession();
 
   try {
@@ -263,8 +259,20 @@ async function processPixTransaction({ txid, amount, payer, date }, io) {
   } finally {
     await mongoSession.endSession();
   }
-}
+} */
 
+// NÃO precisa mais de mongoose / Package / Payment / distributePayments aqui
+async function processPixTransaction({ txid, amount, payer, date }, io) {
+  try {
+    console.log("💾 [PIX] Modo simples: só registrando notificação, sem vincular a pagamento.");
+
+    // Exemplo: se um dia quiser salvar no banco sem amarrar nada:
+    // await PixNotification.create({ txid, amount, payer, date });
+
+  } catch (err) {
+    console.error(`❌ Erro ao processar PIX ${txid} (modo notificação):`, err);
+  }
+}
 
 
 /**
