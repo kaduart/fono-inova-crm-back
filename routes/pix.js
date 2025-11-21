@@ -13,6 +13,6 @@ router.post("/register-webhook", registerWebhookHandler);
 router.get("/received", listPixHandler);
 router.get("/cobranca/:txid", getCobrancaHandler);
 router.post("/webhook", handlePixWebhook);
-router.get("/checkout", createDynamicPixHandler);
+router.post("/checkout", createDynamicPixHandler);
 
 export default router;
