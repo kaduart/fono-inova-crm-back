@@ -25,20 +25,20 @@ export const whatsappController = {
             const to = normalizeE164BR(phone);
             const result = await sendTemplateMessage({ to, template, params, lead: leadId });
 
-const waMessageId = result?.waMessageId || result?.messages?.[0]?.id || null;
+            const waMessageId = result?.waMessageId || result?.messages?.[0]?.id || null;
 
-const saved = await Message.create({
-    from: process.env.CLINIC_PHONE_E164 || to,
-    to,
-    direction: "outbound",
-    type: "template",
-    content: `[TEMPLATE] ${template}`,
-    templateName: template,
-    status: "sent",
-    timestamp: new Date(),
-    lead: leadId || null,
-    waMessageId,
-});
+            const saved = await Message.create({
+                from: process.env.CLINIC_PHONE_E164 || to,
+                to,
+                direction: "outbound",
+                type: "template",
+                content: `[TEMPLATE] ${template}`,
+                templateName: template,
+                status: "sent",
+                timestamp: new Date(),
+                lead: leadId || null,
+                waMessageId,
+            });
 
             const io = getIo();
             io.emit("message:new", {
@@ -190,10 +190,93 @@ const saved = await Message.create({
                 console.warn('⚠️ to:', to);
             }
 
-            res.json({ success: true, result });
+            res.json({
+                success: true,
+                result,
+                messageId: saved?._id || null
+            });
         } catch (err) {
             console.error("❌ Erro ao enviar texto WhatsApp:", err);
             res.status(500).json({ success: false, error: err.message });
+        }
+    },
+
+    async deletarMsgChat(req, res) {
+        try {
+            const { id } = req.params;
+
+            console.log('🗑️ Recebendo requisição DELETE:', id);
+
+            // Valida ObjectId
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                console.log('❌ ID inválido:', id);
+                return res.status(400).json({
+                    success: false,
+                    error: 'ID inválido'
+                });
+            }
+
+            // Busca a mensagem ANTES de deletar
+            const message = await Message.findById(id);
+
+            if (!message) {
+                console.log('❌ Mensagem não encontrada:', id);
+                return res.status(404).json({
+                    success: false,
+                    error: 'Mensagem não encontrada'
+                });
+            }
+
+            console.log('📋 Mensagem encontrada:', {
+                id: message._id,
+                from: message.from,
+                to: message.to,
+                direction: message.direction,
+                content: message.content?.substring(0, 50)
+            });
+
+            // ✅ Só permite deletar mensagens OUTBOUND (enviadas)
+            if (message.direction !== 'outbound') {
+                console.log('❌ Tentativa de deletar mensagem inbound:', message.direction);
+                return res.status(403).json({
+                    success: false,
+                    error: 'Só é possível deletar mensagens enviadas'
+                });
+            }
+
+            // Deleta do banco
+            await Message.findByIdAndDelete(id);
+            console.log('✅ Mensagem deletada do banco');
+
+            // ✅ EMITE SOCKET para sincronizar
+            try {
+                const io = getIo();
+                const payload = {
+                    id: String(id),
+                    from: message.from,
+                    to: message.to
+                };
+
+                console.log('📡 Tentando emitir message:deleted via socket:', payload);
+
+                io.emit('message:deleted', payload);
+
+                console.log('✅ Socket message:deleted emitido com sucesso!');
+            } catch (socketError) {
+                console.error('❌ Erro ao emitir socket:', socketError);
+            }
+
+            res.json({
+                success: true,
+                message: 'Mensagem deletada com sucesso'
+            });
+
+        } catch (error) {
+            console.error('❌ Erro ao deletar mensagem:', error);
+            res.status(500).json({
+                success: false,
+                error: error.message
+            });
         }
     },
 
@@ -899,68 +982,68 @@ async function handleAutoReply(from, to, content, lead) {
         // 9. Envia resposta marcada como "amanda"
         // ================================
         if (aiText && aiText.trim()) {
-    const finalText = aiText.trim();
+            const finalText = aiText.trim();
 
-    // 🔎 Tenta achar o contact pra vincular na mensagem
-    const contactDoc = await Contact.findOne({ phone: from }).lean();
-    const patientId = leadDoc.convertedToPatient || null;
+            // 🔎 Tenta achar o contact pra vincular na mensagem
+            const contactDoc = await Contact.findOne({ phone: from }).lean();
+            const patientId = leadDoc.convertedToPatient || null;
 
-    // 📤 Envia e REGISTRA (sendTextMessage + registerMessage)
-    const result = await sendTextMessage({
-        to: from,
-        text: finalText,
-        lead: leadDoc._id,
-        contactId: contactDoc?._id || null,
-        patientId,
-        sentBy: 'amanda'
-    });
-
-    const waMessageId = result?.messages?.[0]?.id || null;
-
-    // Dá um respiro pro Mongo gravar
-    await new Promise(resolve => setTimeout(resolve, 200));
-
-    // 🔍 Busca a mensagem salva pelo waMessageId
-    let savedOut = null;
-    if (waMessageId) {
-        savedOut = await Message.findOne({ waMessageId }).lean();
-        console.log('🔍 Busca Amanda por waMessageId:', savedOut ? 'ENCONTROU' : 'NÃO ACHOU');
-    }
-
-    // Fallback: última outbound para esse número
-    if (!savedOut) {
-        savedOut = await Message.findOne({
-            to: from,
-            direction: "outbound",
-            type: "text"
-        }).sort({ timestamp: -1 }).lean();
-        console.log('🔍 Busca Amanda por to + outbound:', savedOut ? 'ENCONTROU' : 'NÃO ACHOU');
-    }
-
-    if (savedOut) {
-        const io = getIo();
-        io.emit("message:new", {
-            id: String(savedOut._id),
-            from: savedOut.from,
-            to: savedOut.to,
-            direction: savedOut.direction,
-            type: savedOut.type,
-            content: savedOut.content,
-            text: savedOut.content,
-            status: savedOut.status,
-            timestamp: savedOut.timestamp,
-            leadId: String(savedOut.lead || leadDoc._id),
-            contactId: String(savedOut.contact || contactDoc?._id || ''),
-            metadata: savedOut.metadata || {
+            // 📤 Envia e REGISTRA (sendTextMessage + registerMessage)
+            const result = await sendTextMessage({
+                to: from,
+                text: finalText,
+                lead: leadDoc._id,
+                contactId: contactDoc?._id || null,
+                patientId,
                 sentBy: 'amanda'
-            }
-        });
+            });
 
-        console.log("✅ Amanda respondeu e emitiu via socket:", String(savedOut._id));
-    } else {
-        console.warn('⚠️ Não achei a mensagem da Amanda no banco pra emitir socket');
-    }
-}
+            const waMessageId = result?.messages?.[0]?.id || null;
+
+            // Dá um respiro pro Mongo gravar
+            await new Promise(resolve => setTimeout(resolve, 200));
+
+            // 🔍 Busca a mensagem salva pelo waMessageId
+            let savedOut = null;
+            if (waMessageId) {
+                savedOut = await Message.findOne({ waMessageId }).lean();
+                console.log('🔍 Busca Amanda por waMessageId:', savedOut ? 'ENCONTROU' : 'NÃO ACHOU');
+            }
+
+            // Fallback: última outbound para esse número
+            if (!savedOut) {
+                savedOut = await Message.findOne({
+                    to: from,
+                    direction: "outbound",
+                    type: "text"
+                }).sort({ timestamp: -1 }).lean();
+                console.log('🔍 Busca Amanda por to + outbound:', savedOut ? 'ENCONTROU' : 'NÃO ACHOU');
+            }
+
+            if (savedOut) {
+                const io = getIo();
+                io.emit("message:new", {
+                    id: String(savedOut._id),
+                    from: savedOut.from,
+                    to: savedOut.to,
+                    direction: savedOut.direction,
+                    type: savedOut.type,
+                    content: savedOut.content,
+                    text: savedOut.content,
+                    status: savedOut.status,
+                    timestamp: savedOut.timestamp,
+                    leadId: String(savedOut.lead || leadDoc._id),
+                    contactId: String(savedOut.contact || contactDoc?._id || ''),
+                    metadata: savedOut.metadata || {
+                        sentBy: 'amanda'
+                    }
+                });
+
+                console.log("✅ Amanda respondeu e emitiu via socket:", String(savedOut._id));
+            } else {
+                console.warn('⚠️ Não achei a mensagem da Amanda no banco pra emitir socket');
+            }
+        }
     } catch (error) {
         console.error('❌ Erro no auto-reply (não crítico):', error);
     }
