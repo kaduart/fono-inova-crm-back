@@ -159,23 +159,38 @@ router.get("/proxy-media", async (req, res) => {
     } catch (err) {
         const status = err.response?.status || 500;
 
+        // tenta pegar query pra log
+        const { url, mediaId } = req.query;
+
         // limpa cache preventivamente
         try {
-            const { url, mediaId } = req.query;
             if (mediaId) {
                 const k = `media:id:${mediaId}`;
-                await redis.del(k); await redis.del(`${k}:type`);
+                await redis.del(k);
+                await redis.del(`${k}:type`);
             } else if (url) {
                 const k = hashKey(String(url));
-                await redis.del(k); await redis.del(`${k}:type`);
+                await redis.del(k);
+                await redis.del(`${k}:type`);
             }
         } catch { }
 
-        console.error("🔴 proxy-media ERROR:", { status, message: err.message });
+        console.error("🔴 proxy-media ERROR:", {
+            status,
+            message: err.message,
+            mediaId,
+            url,
+            providerUrl: err.config?.url,
+            method: err.config?.method,
+            responseData: err.response?.data, // AQUI vem o erro detalhado do Graph / lookaside
+        });
 
-        if (status === 403) return res.status(403).json({ success: false, error: "Acesso negado pelo provedor de mídia" });
-        if (status === 404) return res.status(404).json({ success: false, error: "Mídia não encontrada no provedor" });
-        if (err.code === "ECONNABORTED") return res.status(504).json({ success: false, error: "Timeout ao buscar mídia" });
+        if (status === 403)
+            return res.status(403).json({ success: false, error: "Acesso negado pelo provedor de mídia" });
+        if (status === 404)
+            return res.status(404).json({ success: false, error: "Mídia não encontrada no provedor" });
+        if (err.code === "ECONNABORTED")
+            return res.status(504).json({ success: false, error: "Timeout ao buscar mídia" });
 
         return res.status(500).json({ success: false, error: "Falha ao carregar mídia", details: err.message });
     }

@@ -699,6 +699,7 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
             await mongoSession.endSession();
         }
     });
+
 function determineActionType(updateData) {
     if (updateData.status === 'canceled') return 'cancel';
     if (updateData.date || updateData.time) return 'reschedule';
