@@ -6,7 +6,7 @@ const router = express.Router();
 // 📤 Envio de mensagens
 router.post('/send-template', whatsappController.sendTemplate);
 router.post('/send-text', whatsappController.sendText);
-
+router.delete('/messages/:id', whatsappController.deletarMsgChat);
 // 📩 Webhook
 router.post('/webhook', whatsappController.webhook);
 router.get('/webhook', whatsappController.getWebhook);
