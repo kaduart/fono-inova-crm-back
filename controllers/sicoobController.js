@@ -108,22 +108,24 @@ export const getCobrancaHandler = async (req, res) => {
  * 4️⃣ WEBHOOK REAL – RECEBE NOTIFICAÇÕES DO SICOOB (PIX)
  * ============================================================
  */
+// controllers/sicoobController.js
 export const handlePixWebhook = async (req, res) => {
   try {
-    const payload = req.body;
-    console.log("🔔 Notificação PIX recebida:", JSON.stringify(payload, null, 2));
+    console.log("📥 [PIX WEBHOOK] Chegou requisição no /api/pix/webhook");
+    console.log("Headers:", JSON.stringify(req.headers, null, 2));
+    console.log("Body:", JSON.stringify(req.body, null, 2));
 
-    // ✅ Retorno imediato ao Sicoob (obrigatório)
     res.status(200).json({ mensagem: "Notificação recebida com sucesso" });
 
-    if (!payload.pix || !Array.isArray(payload.pix)) {
-      console.warn("⚠️ Payload inválido recebido:", payload);
+    const payload = req.body;
+
+    if (!payload?.pix || !Array.isArray(payload.pix)) {
+      console.warn("⚠️ Payload sem array 'pix':", payload);
       return;
     }
 
     const io = getIo();
 
-    // Processa cada transação
     for (const pix of payload.pix) {
       const formattedPix = {
         txid: pix.txid,
@@ -133,17 +135,17 @@ export const handlePixWebhook = async (req, res) => {
         status: "recebido",
       };
 
-      console.log("💸 Pix processado:", formattedPix);
-      io.emit("pix-received", formattedPix); // Emite evento em tempo real
+      console.log("💸 Pix recebido:", formattedPix);
+      io.emit("pix-received", formattedPix);
 
-      // 🔧 Processar sem travar resposta
       processPixTransaction(formattedPix, io);
     }
   } catch (err) {
     console.error("❌ Erro ao processar webhook:", err);
-    res.status(500).json({ mensagem: "Erro ao processar notificação" });
+    // só loga, não precisa responder nada aqui porque já mandamos 200
   }
 };
+
 
 /**
  * ============================================================
@@ -156,7 +158,6 @@ async function processPixTransaction({ txid, amount, payer, date }, io) {
   try {
     await mongoSession.startTransaction();
 
-    // ⚠️ Evita duplicidade
     const existingPayment = await Payment.findOne({ txid, status: "paid" }).session(mongoSession);
     if (existingPayment) {
       console.warn(`⚠️ PIX ${txid} já processado anteriormente.`);
@@ -164,23 +165,55 @@ async function processPixTransaction({ txid, amount, payer, date }, io) {
       return;
     }
 
-    // 🔹 Localiza pacote vinculado
+    // tenta achar pacote
     let pkg = await Package.findOne({ txid }).populate("sessions").session(mongoSession);
     if (!pkg) {
       const now = new Date();
       pkg = await Package.findOne({
         totalValue: { $gte: amount - 1, $lte: amount + 1 },
-        createdAt: { $gte: new Date(now.getTime() - 3 * 60 * 60 * 1000) }, // 3h antes
+        createdAt: { $gte: new Date(now.getTime() - 3 * 60 * 60 * 1000) },
       }).populate("sessions").session(mongoSession);
     }
 
+    // ⚠️ SE NÃO ACHAR PACOTE → ainda assim registrar o PIX
     if (!pkg) {
-      console.warn(`⚠️ Nenhum pacote encontrado para TXID: ${txid}`);
-      await mongoSession.abortTransaction();
+      console.warn(`⚠️ Nenhum pacote encontrado para TXID: ${txid}. Registrando PIX solto.`);
+
+      const paymentDoc = new Payment({
+        package: null,
+        patient: null,
+        doctor: null,
+        txid,
+        amount,
+        paymentMethod: "pix",
+        status: "unallocated",           // 👈 novo status
+        serviceType: "pix_unallocated",  // 👈 livre
+        kind: "pix_unallocated",
+        notes: `PIX recebido sem pacote vinculado - ${payer}`,
+        paymentDate: date || new Date(),
+      });
+
+      await paymentDoc.save({ session: mongoSession });
+      await mongoSession.commitTransaction();
+
+      io.emit("paymentUpdate", {
+        type: "pix",
+        txid,
+        packageId: null,
+        patient: null,
+        doctor: null,
+        amount,
+        method: "pix",
+        totalPaid: amount,
+        balance: null,
+        financialStatus: "unallocated",
+        timestamp: new Date(),
+      });
+
       return;
     }
 
-    // 🔹 Cria pagamento
+    // 🔹 aqui segue o fluxo normal se achou pacote...
     const paymentDoc = new Payment({
       package: pkg._id,
       patient: pkg.patient,
@@ -196,23 +229,20 @@ async function processPixTransaction({ txid, amount, payer, date }, io) {
     });
     await paymentDoc.save({ session: mongoSession });
 
-    // 🔹 Distribui entre sessões
     await distributePayments(pkg._id, amount, mongoSession, paymentDoc._id);
 
-    // 🔹 Atualiza pacote
     pkg.totalPaid = (pkg.totalPaid || 0) + amount;
     pkg.balance = pkg.totalSessions * pkg.sessionValue - pkg.totalPaid;
     pkg.financialStatus =
       pkg.balance <= 0 ? "paid" : pkg.totalPaid > 0 ? "partially_paid" : "unpaid";
     pkg.lastPaymentAt = new Date();
     pkg.payments.push(paymentDoc._id);
-    await pkg.save({ session: mongoSession });
 
+    await pkg.save({ session: mongoSession });
     await mongoSession.commitTransaction();
 
     console.log(`✅ PIX ${txid} aplicado com sucesso ao pacote ${pkg._id}`);
 
-    // 🔔 Notifica o front-end em tempo real
     io.emit("paymentUpdate", {
       type: "pix",
       txid,
@@ -226,6 +256,7 @@ async function processPixTransaction({ txid, amount, payer, date }, io) {
       financialStatus: pkg.financialStatus,
       timestamp: new Date(),
     });
+
   } catch (err) {
     await mongoSession.abortTransaction();
     console.error(`❌ Erro ao aplicar PIX ${txid}:`, err);
@@ -233,6 +264,7 @@ async function processPixTransaction({ txid, amount, payer, date }, io) {
     await mongoSession.endSession();
   }
 }
+
 
 
 /**
