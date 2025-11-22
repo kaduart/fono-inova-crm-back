@@ -61,6 +61,7 @@ import UserRoutes from "./routes/user.js";
 import whatsappRoutes from "./routes/whatsapp.js";
 import aiRoutes from "./routes/ai.js";
 import diagnosticRouter from './routes/whatsapp/diagnostic.js';
+import protocolRoutes from './routes/protocol.js';
 
 // ======================================================
 // 🧭 Inicialização base
@@ -150,6 +151,7 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/leads', leadRoutes);
 app.use("/api/ai", aiRoutes);
 app.use('/api/diagnostic', diagnosticRouter);
+app.use('/api/protocols', protocolRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);

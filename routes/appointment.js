@@ -1398,7 +1398,7 @@ router.get('/stats', auth, async (req, res) => {
 router.patch('/:id/clinical-status', validateId, auth, async (req, res) => {
     try {
         const { status } = req.body;
-        const validStatuses = ['em_andamento', 'concluído', 'faltou'];
+        const validStatuses = ['pending', 'in_progress', 'completed', 'missed'];
 
         if (!validStatuses.includes(status)) {
             return res.status(400).json({ error: 'Status clínico inválido' });
