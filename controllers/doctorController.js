@@ -371,22 +371,31 @@ export const getDoctorPatients = async (req, res) => {
 
 export const getTodaysAppointments = async (req, res) => {
   try {
-    const doctor = req.user.id;
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    // ⚠️ garante que isso é MESMO o ObjectId do Doctor
+    const doctorId = req.user.doctorId || req.user._id || req.user.id;
 
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
+    // monta 'YYYY-MM-DD' igual está salvo no banco
+    const todayStr = new Date().toISOString().slice(0, 10);
+    // ex: '2025-11-22'
 
-    const appointments = await Appointment.find({
-      date: {
-        $gte: todayStart,
-        $lte: todayEnd
-      }
-    })
-      .populate('patientId', 'fullName')
-      .select('_id date time status patientId')
+    console.log('[GET_TODAYS_APPOINTMENTS] doctorId:', doctorId);
+    console.log('[GET_TODAYS_APPOINTMENTS] todayStr:', todayStr);
+
+    const filter = {
+      date: "2025-11-21",
+    };
+
+    // se você quiser filtrar por médico:
+    if (doctorId) {
+      filter.doctor = doctorId;
+    }
+
+    const appointments = await Appointment.find(filter)
+      .populate('patient', 'fullName') // no schema é 'patient'
+      .select('_id date time operationalStatus clinicalStatus patient')
       .lean();
+
+    console.log('[GET_TODAYS_APPOINTMENTS] encontrados:', appointments.length);
 
     res.status(200).json(appointments);
   } catch (error) {
@@ -394,6 +403,7 @@ export const getTodaysAppointments = async (req, res) => {
     res.status(500).json({ error: 'Erro interno no servidor' });
   }
 };
+
 
 // backend/controllers/doctorController.js
 export const getDoctorTherapySessions = async (req, res) => {
