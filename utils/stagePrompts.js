@@ -63,10 +63,10 @@ ${context.mentionedTherapies?.length > 0 ? `\n• Ele mencionou interesse em: ${
         'agendado': `
 ✅ LEAD AGENDADO - GARANTIR COMPARECIMENTO:
 • Confirme os detalhes do agendamento
-• Dê informações práticas (endereço, estacionamento)
+• Dê informações práticas (endereço)
 • Pergunte se tem alguma dúvida
 • Seja acolhedora mas não invasiva
-• Exemplo: "Confirmado! Dia [X] às [Y]. Ficamos na Av. Minas Gerais, 405 (tem estacionamento). Alguma dúvida?"
+• Exemplo: "Confirmado! Dia [X] às [Y]. Ficamos na Av. Minas Gerais, 405. Alguma dúvida?"
 `,
 
         'paciente': `
