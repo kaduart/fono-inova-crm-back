@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import 'dotenv/config';
+import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import enrichLeadContext from "../services/leadContext.js"; // ← IMPORTA, não define
 import { getManual } from './amandaIntents.js';
 import { detectAllFlags } from './flagsDetector.js';
@@ -10,7 +11,6 @@ import {
     isAskingAboutEquivalence,
     isTDAHQuestion
 } from './therapyDetector.js';
-import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -98,20 +98,6 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
             wantsSchedule: flags.wantsSchedule,
             userProfile: flags.userProfile
         });
-
-        const { extracted, intent, score } = await analyzeLeadMessage({
-            text,
-            lead,
-            history: enrichedContext.conversationHistory
-        });
-
-        // 2. Passa pro prompt
-        const urgencyContext = getUrgencyContext(extracted, intent);
-        instructions += `\n🔥 PERFIL: ${JSON.stringify(extracted)}`;
-        instructions += `\n🎯 INTENÇÃO: ${intent.primary} (${intent.sentiment})`;
-        if (urgencyContext) {
-            instructions += `\n⏰ URGÊNCIA: ${urgencyContext}`;
-        }
 
         const aiResponse = await callClaudeWithTherapyData({
             therapies,
@@ -241,6 +227,36 @@ async function callClaudeWithTherapyData({ therapies, flags, userText, lead, con
     const patientStatus = isPatient ? `\n⚠️ PACIENTE ATIVO - Tom próximo!` : '';
     const urgencyNote = needsUrgency ? `\n🔥 ${daysSinceLastContact} dias sem falar - reative com calor!` : '';
 
+    // 🧠 ANÁLISE INTELIGENTE DO LEAD (SPRINT 2)
+    let intelligenceNote = '';
+    try {
+        const analysis = await analyzeLeadMessage({
+            text: userText,
+            lead,
+            history: conversationHistory || []
+        });
+
+        if (analysis?.extracted) {
+            const { idade, urgencia, queixa } = analysis.extracted;
+            const { primary, sentiment } = analysis.intent || {};
+
+            intelligenceNote = `\n📊 PERFIL INTELIGENTE:`;
+            if (idade) intelligenceNote += `\n- Idade: ${idade} anos`;
+            if (queixa) intelligenceNote += `\n- Queixa: ${queixa}`;
+            if (urgencia) intelligenceNote += `\n- Urgência: ${urgencia}`;
+            if (primary) intelligenceNote += `\n- Intenção: ${primary}`;
+            if (sentiment) intelligenceNote += `\n- Sentimento: ${sentiment}`;
+
+            // 🔥 Alerta de urgência alta
+            if (urgencia === 'alta') {
+                intelligenceNote += `\n🔥 ATENÇÃO: Caso de urgência ALTA detectado - priorize contexto temporal!`;
+            }
+
+            console.log('🧠 [INTELLIGENCE]', analysis.extracted);
+        }
+    } catch (err) {
+        console.warn('⚠️ leadIntelligence falhou (não crítico):', err.message);
+    }
     // 🧠 PREPARA PROMPT ATUAL (sem ficar robótico, mas bem guiado)
     const currentPrompt = `${userText}
 
@@ -249,7 +265,7 @@ TERAPIAS DETECTADAS:
 ${therapiesInfo}
 
 FLAGS: Preço=${flags.asksPrice} | Agendar=${flags.wantsSchedule}
-ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${learnedContext}${ageContextNote}
+ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${learnedContext}${ageContextNote}${intelligenceNote}
 
 🎯 INSTRUÇÕES CRÍTICAS:
 1. ${shouldGreet ? '✅ Pode cumprimentar naturalmente se fizer sentido' : '🚨 NÃO USE SAUDAÇÕES (Oi/Olá) - conversa está ativa'}
@@ -384,6 +400,28 @@ async function callOpenAIWithContext(userText, lead, context) {
 
     const patientNote = isPatient ? `\n⚠️ PACIENTE - seja próxima!` : '';
     const urgencyNote = needsUrgency ? `\n🔥 ${daysSinceLastContact} dias sem contato - reative!` : '';
+
+    // 🧠 ANÁLISE INTELIGENTE DO LEAD (SPRINT 2)
+    let intelligenceNote = '';
+    try {
+        const analysis = await analyzeLeadMessage({
+            text: userText,
+            lead,
+            history: conversationHistory || []
+        });
+
+        if (analysis?.extracted) {
+            const { idade, urgencia, queixa } = analysis.extracted;
+            intelligenceNote = `\n📊 PERFIL: Idade ${idade || '?'} | Urgência ${urgencia || 'normal'} | Queixa ${queixa || 'geral'}`;
+
+            if (urgencia === 'alta') {
+                intelligenceNote += `\n🔥 URGÊNCIA ALTA DETECTADA!`;
+            }
+        }
+    } catch (err) {
+        console.warn('⚠️ leadIntelligence falhou (não crítico):', err.message);
+    }
+
     const therapiesContext = mentionedTherapies.length > 0
         ? `\n🎯 TERAPIAS DISCUTIDAS: ${mentionedTherapies.join(', ')}`
         : '';
@@ -391,7 +429,7 @@ async function callOpenAIWithContext(userText, lead, context) {
     const currentPrompt = `${userText}
 
     CONTEXTO:
-    LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}
+     LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}
     ${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}${historyAgeNote}
 
     INSTRUÇÃO: ${stageInstruction}
