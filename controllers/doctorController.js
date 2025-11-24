@@ -382,7 +382,7 @@ export const getTodaysAppointments = async (req, res) => {
     console.log('[GET_TODAYS_APPOINTMENTS] todayStr:', todayStr);
 
     const filter = {
-      date: "2025-11-21",
+      date: todayStr,
     };
 
     // se você quiser filtrar por médico:
