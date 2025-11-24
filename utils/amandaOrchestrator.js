@@ -10,6 +10,7 @@ import {
     isAskingAboutEquivalence,
     isTDAHQuestion
 } from './therapyDetector.js';
+import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
