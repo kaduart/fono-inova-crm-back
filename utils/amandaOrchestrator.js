@@ -170,6 +170,24 @@ function tryManualResponse(normalizedText) {
         return getManual('saudacao');
     }
 
+    // 💼 CURRÍCULO / VAGA / TRABALHO
+    if (/\b(curr[ií]culo|curriculo|cv\b|vaga|trabalhar|emprego|trampo)\b/.test(normalizedText)) {
+        return (
+            "Que bom que você tem interesse em trabalhar com a gente! 🥰\n\n" +
+            "Os currículos são recebidos **exclusivamente por e-mail**.\n" +
+            "Por favor, envie seu currículo para **clinicafonoinova@gmail.com**, " +
+            "colocando no assunto a área em que você tem interesse.\n\n" +
+            "Se quiser conhecer melhor nosso trabalho, é só acompanhar a clínica também no Instagram: **@clinicafonoinova** 💚"
+        );
+    }
+
+    if (/\b(insta(gram)?|rede[s]?\s+social(is)?|perfil\s+no\s+instagram)\b/.test(normalizedText)) {
+        return (
+            "Claro! Você pode acompanhar nosso trabalho no Instagram pelo perfil " +
+            "**@clinicafonoinova**. 💚"
+        );
+    }
+
     return null;
 }
 
@@ -393,6 +411,11 @@ async function callOpenAIWithContext(userText, lead, context) {
         shouldGreet = true
     } = context;
 
+    // 🎯 CONTEXTO DE TERAPIAS (AGORA EXISTE therapiesContext)
+    const therapiesContext = mentionedTherapies.length > 0
+        ? `\n🎯 TERAPIAS DISCUTIDAS: ${mentionedTherapies.join(', ')}`
+        : '';
+
     // 🧠 PERFIL DE IDADE A PARTIR DO HISTÓRICO
     let historyAgeNote = "";
     if (conversationHistory && conversationHistory.length > 0) {
@@ -451,7 +474,6 @@ async function callOpenAIWithContext(userText, lead, context) {
                 'Só diga que vai encaminhar os dados para a equipe QUANDO já tiver nome + telefone + período. ' +
                 'Nesse momento, faça uma única frase de confirmação (sem repetir isso a cada mensagem).';
             break;
-
         case 'paciente':
             stageInstruction = 'PACIENTE ATIVO! Tom próximo.';
             break;
@@ -483,24 +505,23 @@ async function callOpenAIWithContext(userText, lead, context) {
 
     const currentPrompt = `${userText}
 
-    CONTEXTO:
-    LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}
-    ${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}${historyAgeNote}
+CONTEXTO:
+LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}
+${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}${historyAgeNote}
 
-    INSTRUÇÃO: ${stageInstruction}
+INSTRUÇÃO: ${stageInstruction}
 
-    REGRAS:
-    - ${shouldGreet ? 'Pode cumprimentar' : '🚨 NÃO use Oi/Olá - conversa ativa'}
-    - ${conversationSummary ? '🧠 USE o resumo acima' : '📜 Leia histórico acima'}
-    - 🚨 NÃO pergunte o que já foi dito (principalmente idade, se é criança/adulto e a área principal da terapia)
-    - Em fluxos de AGENDAMENTO:
-    - Se ainda não tiver nome, telefone ou período definidos, confirme o que JÁ tem e peça só o que falta.
-    - NÃO diga que vai encaminhar pra equipe enquanto faltar alguma dessas informações.
-    - Depois que tiver nome + telefone + período, faça UMA única mensagem dizendo que vai encaminhar os dados.
-    - 1-3 frases, tom humano
-    - 1 pergunta engajadora (quando fizer sentido)
-    - 1 💚 final`;
-
+REGRAS:
+- ${shouldGreet ? 'Pode cumprimentar' : '🚨 NÃO use Oi/Olá - conversa ativa'}
+- ${conversationSummary ? '🧠 USE o resumo acima' : '📜 Leia histórico acima'}
+- 🚨 NÃO pergunte o que já foi dito (principalmente idade, se é criança/adulto e a área principal da terapia)
+- Em fluxos de AGENDAMENTO:
+  - Se ainda não tiver nome, telefone ou período definidos, confirme o que JÁ tem e peça só o que falta.
+  - NÃO diga que vai encaminhar pra equipe enquanto faltar alguma dessas informações.
+  - Depois que tiver nome + telefone + período, faça UMA única mensagem dizendo que vai encaminhar os dados.
+- 1-3 frases, tom humano
+- 1 pergunta engajadora (quando fizer sentido)
+- 1 💚 final`;
 
     // 🧠 MONTA MENSAGENS COM CACHE MÁXIMO
     const messages = [];
@@ -508,7 +529,7 @@ async function callOpenAIWithContext(userText, lead, context) {
     if (conversationSummary) {
         messages.push({
             role: 'user',
-            content: `📋 CONTEXTO ANTERIOR: \n\n${conversationSummary}\n\n---\n\nMensagens recentes abaixo: `
+            content: `📋 CONTEXTO ANTERIOR:\n\n${conversationSummary}\n\n---\n\nMensagens recentes abaixo:`
         });
         messages.push({
             role: 'assistant',
@@ -548,6 +569,7 @@ async function callOpenAIWithContext(userText, lead, context) {
 
     return response.content[0]?.text?.trim() || "Como posso te ajudar? 💚";
 }
+
 
 /**
  * 🎨 HELPER
