@@ -13,6 +13,7 @@ import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../servic
 import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
 
 import { normalizeE164BR, tailPattern } from "../utils/phone.js";
+const AUTO_TEST_NUMBERS = ["5561981694922", "556292013573"];
 
 export const whatsappController = {
 
@@ -68,7 +69,7 @@ export const whatsappController = {
                 userId = null,
                 sentBy = 'manual',
             } = req.body;
-console.log('📩 [/api/whatsapp/send-text] body recebido:', req.body);
+            console.log('📩 [/api/whatsapp/send-text] body recebido:', req.body);
             if (!phone || !text) {
                 return res.status(400).json({
                     success: false,
@@ -437,110 +438,110 @@ console.log('📩 [/api/whatsapp/send-text] body recebido:', req.body);
         }
     },
 
-   async sendManualMessage(req, res) {
-    try {
-        const { leadId, text, userId, phone } = req.body;
+    async sendManualMessage(req, res) {
+        try {
+            const { leadId, text, userId, phone } = req.body;
 
-        let lead = null;
+            let lead = null;
 
-        if (leadId) {
-            // fluxo antigo: já tenho o lead
-            lead = await Lead.findById(leadId).populate('contact');
-        }
+            if (leadId) {
+                // fluxo antigo: já tenho o lead
+                lead = await Lead.findById(leadId).populate('contact');
+            }
 
-        let normalizedPhone = null;
+            let normalizedPhone = null;
 
-        if (lead?.contact?.phone) {
-            normalizedPhone = normalizeE164BR(
-                lead.contact.phone ||
-                lead.contact.phoneWhatsapp ||
-                lead.contact.phoneNumber ||
-                ''
-            );
-        } else if (phone) {
-            // sem leadId, resolve pelo telefone
-            normalizedPhone = normalizeE164BR(phone);
-            lead = await Lead.findOne({ 'contact.phone': normalizedPhone }).populate('contact');
-        }
+            if (lead?.contact?.phone) {
+                normalizedPhone = normalizeE164BR(
+                    lead.contact.phone ||
+                    lead.contact.phoneWhatsapp ||
+                    lead.contact.phoneNumber ||
+                    ''
+                );
+            } else if (phone) {
+                // sem leadId, resolve pelo telefone
+                normalizedPhone = normalizeE164BR(phone);
+                lead = await Lead.findOne({ 'contact.phone': normalizedPhone }).populate('contact');
+            }
 
-        if (!lead) {
-            return res.status(404).json({
-                success: false,
-                message: 'Lead não encontrado para esse envio manual'
-            });
-        }
-
-        // 🔎 Contact de chat (coleção Contact) pelo telefone do lead
-        const chatPhone = normalizeE164BR(
-            lead.contact?.phone ||
-            lead.contact?.phoneWhatsapp ||
-            lead.contact?.phoneNumber ||
-            normalizedPhone ||
-            ''
-        );
-
-        const contact = await Contact.findOne({ phone: chatPhone }).lean();
-        const patientId = lead.convertedToPatient || null;
-
-        // 📤 Envia mensagem via service centralizado
-        const result = await sendTextMessage({
-            to: chatPhone,
-            text,
-            lead: lead._id,
-            contactId: contact?._id || null,
-            patientId,
-            sentBy: 'manual',
-            userId
-        });
-
-        // 🔁 Localiza mensagem persistida pra emitir no socket
-        const waMessageId = result?.messages?.[0]?.id || null;
-        if (waMessageId) {
-            const saved = await Message.findOne({ waMessageId }).lean();
-            if (saved) {
-                const io = getIo();
-                io.emit("message:new", {
-                    id: String(saved._id),
-                    from: saved.from,
-                    to: saved.to,
-                    direction: saved.direction,
-                    type: saved.type,
-                    content: saved.content,
-                    status: saved.status,
-                    timestamp: saved.timestamp,
-                    leadId: saved.lead || lead._id,
-                    contactId: saved.contact || (contact?._id || null),
-                    metadata: saved.metadata || {
-                        sentBy: 'manual',
-                        userId
-                    }
+            if (!lead) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Lead não encontrado para esse envio manual'
                 });
             }
+
+            // 🔎 Contact de chat (coleção Contact) pelo telefone do lead
+            const chatPhone = normalizeE164BR(
+                lead.contact?.phone ||
+                lead.contact?.phoneWhatsapp ||
+                lead.contact?.phoneNumber ||
+                normalizedPhone ||
+                ''
+            );
+
+            const contact = await Contact.findOne({ phone: chatPhone }).lean();
+            const patientId = lead.convertedToPatient || null;
+
+            // 📤 Envia mensagem via service centralizado
+            const result = await sendTextMessage({
+                to: chatPhone,
+                text,
+                lead: lead._id,
+                contactId: contact?._id || null,
+                patientId,
+                sentBy: 'manual',
+                userId
+            });
+
+            // 🔁 Localiza mensagem persistida pra emitir no socket
+            const waMessageId = result?.messages?.[0]?.id || null;
+            if (waMessageId) {
+                const saved = await Message.findOne({ waMessageId }).lean();
+                if (saved) {
+                    const io = getIo();
+                    io.emit("message:new", {
+                        id: String(saved._id),
+                        from: saved.from,
+                        to: saved.to,
+                        direction: saved.direction,
+                        type: saved.type,
+                        content: saved.content,
+                        status: saved.status,
+                        timestamp: saved.timestamp,
+                        leadId: saved.lead || lead._id,
+                        contactId: saved.contact || (contact?._id || null),
+                        metadata: saved.metadata || {
+                            sentBy: 'manual',
+                            userId
+                        }
+                    });
+                }
+            }
+
+            // 🧠 Ativa controle manual (Amanda PAUSADA)
+            await Lead.findByIdAndUpdate(lead._id, {
+                'manualControl.active': true,
+                'manualControl.takenOverAt': new Date(),
+                'manualControl.takenOverBy': userId
+            });
+
+            console.log(`✅ Mensagem manual enviada - Amanda pausada para o lead ${lead._id}`);
+
+            res.json({
+                success: true,
+                message: 'Mensagem enviada. Amanda pausada.',
+                messageId: waMessageId || `manual-${Date.now()}`
+            });
+
+        } catch (error) {
+            console.error("❌ Erro em sendManualMessage:", error);
+            res.status(500).json({
+                success: false,
+                error: error.message
+            });
         }
-
-        // 🧠 Ativa controle manual (Amanda PAUSADA)
-        await Lead.findByIdAndUpdate(lead._id, {
-            'manualControl.active': true,
-            'manualControl.takenOverAt': new Date(),
-            'manualControl.takenOverBy': userId
-        });
-
-        console.log(`✅ Mensagem manual enviada - Amanda pausada para o lead ${lead._id}`);
-
-        res.json({
-            success: true,
-            message: 'Mensagem enviada. Amanda pausada.',
-            messageId: waMessageId || `manual-${Date.now()}`
-        });
-
-    } catch (error) {
-        console.error("❌ Erro em sendManualMessage:", error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
     }
-}
 
 };
 
@@ -555,6 +556,12 @@ async function processInboundMessage(msg, value) {
         const from = normalizeE164BR(fromRaw);
         const to = normalizeE164BR(toRaw);
         const type = msg.type;
+        const fromNumeric = from.replace(/\D/g, '');
+        const isTestNumber = AUTO_TEST_NUMBERS.includes(fromNumeric);
+
+        console.log("🔎 isTestNumber?", fromNumeric, isTestNumber);
+
+
         const timestamp = new Date((parseInt(msg.timestamp, 10) || Date.now() / 1000) * 1000);
 
         console.log("🔄 Processando mensagem:", { from, type, wamid });
@@ -696,10 +703,9 @@ async function processInboundMessage(msg, value) {
                     summaryGeneratedAt: null,
                     summaryCoversUntilMessage: 0,
                     autoReplyEnabled: true,
-                    manualControl: {
-                        active: false,
-                        autoResumeAfter: 30
-                    },
+                    manualControl: isTestNumber
+                        ? { active: false, autoResumeAfter: 0 }  // 🧪 teste: sem espera
+                        : { active: false, autoResumeAfter: 30 },
                     interactions: [],
                     scoreHistory: [],
                     lastInteractionAt: new Date()
@@ -728,10 +734,9 @@ async function processInboundMessage(msg, value) {
                     summaryGeneratedAt: null,
                     summaryCoversUntilMessage: 0,
                     autoReplyEnabled: true,
-                    manualControl: {
-                        active: false,
-                        autoResumeAfter: 30
-                    },
+                    manualControl: isTestNumber
+                        ? { active: false, autoResumeAfter: 0 }  // 🧪 teste: sem espera
+                        : { active: false, autoResumeAfter: 30 },
                     interactions: [],
                     scoreHistory: [],
                     lastInteractionAt: new Date()
@@ -742,6 +747,23 @@ async function processInboundMessage(msg, value) {
                 lead = createdLead;
                 console.log("✅ Novo lead criado:", lead._id);
             }
+        }
+
+        // 🧪 Se for número de teste, sempre garantir que NÃO esteja em manual
+        if (isTestNumber && lead) {
+            await Lead.findByIdAndUpdate(lead._id, {
+                $set: {
+                    'manualControl.active': false,
+                    'manualControl.takenOverAt': null,
+                    'manualControl.takenOverBy': null,
+                    'manualControl.autoResumeAfter': 0,
+                    autoReplyEnabled: true,
+                }
+            });
+            lead.manualControl = { active: false, autoResumeAfter: 0 };
+            lead.autoReplyEnabled = true;
+
+            console.log("🧪 Lead de teste destravado de controle manual:", String(lead._id));
         }
 
         // ✅ SALVAR MENSAGEM NO CRM
@@ -862,6 +884,9 @@ async function handleAutoReply(from, to, content, lead) {
     try {
         console.log('🤖 [AUTO-REPLY] Iniciando para', { from, to, leadId: lead?._id, content });
 
+        const fromNumeric = from.replace(/\D/g, '');
+        const isTestNumber = AUTO_TEST_NUMBERS.includes(fromNumeric);
+
         // ================================
         // 1. LOCK anti-corrida (3s)
         // ================================
@@ -925,7 +950,7 @@ async function handleAutoReply(from, to, content, lead) {
         // ================================
         // 5. Controle manual (human takeover)
         // ================================
-        if (leadDoc.manualControl?.active) {
+        if (!isTestNumber && leadDoc.manualControl?.active) {
             console.log('👤 [CONTROLE MANUAL] Ativo para lead:', leadDoc._id, '-', leadDoc.name);
 
             const takenAt = leadDoc.manualControl.takenOverAt
@@ -940,7 +965,6 @@ async function handleAutoReply(from, to, content, lead) {
                 console.log(`⏱️ Tempo desde takeover: ${minutesSince.toFixed(1)}min / Timeout: ${timeout}min`);
 
                 if (minutesSince > timeout) {
-                    // ⏰ Passou do tempo → liberar Amanda
                     console.log(`⏰ Timeout de ${timeout}min atingido - RETOMANDO Amanda`);
 
                     await Lead.findByIdAndUpdate(leadDoc._id, {
@@ -952,12 +976,12 @@ async function handleAutoReply(from, to, content, lead) {
                 }
             }
 
-            // Se não tinha takenOverAt ou ainda não passou do tempo, mantém pausada
             if (aindaPausada) {
                 console.log('⏸️ Amanda PAUSADA - humano no controle. Não responderei por IA.');
-                console.log(`💡 Para reativar antes do tempo: POST /api/lead-control/${leadDoc._id}/resume-amanda`);
-                return; // ❌ NADA de IA aqui
+                return;
             }
+        } else if (isTestNumber) {
+            console.log('🧪 Número de teste → ignorando controle manual, Amanda sempre ativa.');
         }
 
         // ================================
