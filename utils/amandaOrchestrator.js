@@ -98,6 +98,20 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
             userProfile: flags.userProfile
         });
 
+        const { extracted, intent, score } = await analyzeLeadMessage({
+            text,
+            lead,
+            history: enrichedContext.conversationHistory
+        });
+
+        // 2. Passa pro prompt
+        const urgencyContext = getUrgencyContext(extracted, intent);
+        instructions += `\n🔥 PERFIL: ${JSON.stringify(extracted)}`;
+        instructions += `\n🎯 INTENÇÃO: ${intent.primary} (${intent.sentiment})`;
+        if (urgencyContext) {
+            instructions += `\n⏰ URGÊNCIA: ${urgencyContext}`;
+        }
+
         const aiResponse = await callClaudeWithTherapyData({
             therapies,
             flags,
