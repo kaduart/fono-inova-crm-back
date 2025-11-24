@@ -13,7 +13,7 @@ export function getPromptByStage(stage, context = {}) {
 • Foque em entender a dor/problema dele
 • Exemplo: "Olá! Como posso te ajudar hoje?"
 `,
-        
+
         'primeiro_contato': `
 👋 PRIMEIRO CONTATO - CONSTRUINDO RAPPORT:
 • Seja calorosa mas profissional
@@ -22,7 +22,7 @@ export function getPromptByStage(stage, context = {}) {
 • Foque em ENTENDER antes de VENDER
 • Exemplo: "Que bom seu contato! Qual especialidade te trouxe até aqui?"
 `,
-        
+
         'pesquisando_preco': `
 💰 LEAD PESQUISANDO PREÇO - USE ESTRATÉGIA VALOR→PREÇO:
 • JÁ PERGUNTOU SOBRE VALORES ANTES!
@@ -32,7 +32,7 @@ export function getPromptByStage(stage, context = {}) {
 • Exemplo: "A avaliação é completa e personalizada. Valor: R$ 220. É para criança ou adulto?"
 ${context.mentionedTherapies?.length > 0 ? `\n• Lembre que ele já perguntou sobre: ${context.mentionedTherapies.join(', ')}` : ''}
 `,
-        
+
         'engajado': `
 🔥 LEAD ENGAJADO - ${context.messageCount || 0} MENSAGENS:
 • Ele JÁ ESTÁ interessado (${context.messageCount}+ mensagens)
@@ -42,16 +42,24 @@ ${context.mentionedTherapies?.length > 0 ? `\n• Lembre que ele já perguntou s
 • Exemplo: "Perfeito! Tenho horários esta semana. Qual período te atende melhor?"
 ${context.mentionedTherapies?.length > 0 ? `\n• Ele mencionou interesse em: ${context.mentionedTherapies.join(', ')}` : ''}
 `,
-        
+
         'interessado_agendamento': `
-🎯 LEAD QUENTE - QUER AGENDAR:
-• PRIORIDADE MÁXIMA: Facilitar agendamento
-• Ofereça 2 opções CONCRETAS de horário
-• Seja DIRETA e OBJETIVA
-• Confirme dados de contato
-• Exemplo: "Perfeito! Tenho vaga amanhã 16h ou quinta 10h. Qual funciona melhor?"
+🎯 LEAD QUENTE - QUER AGENDAR (FOCO EM COLETAR DADOS):
+• PRIORIDADE MÁXIMA: organizar as informações pra equipe da clínica
+• Seu objetivo NÃO é marcar dia e horário exatos, e sim coletar:
+  - nome completo do paciente
+  - telefone com DDD
+  - preferência de período (manhã ou tarde)
+• Se o lead já respondeu com mais detalhes da queixa, NÃO repita o pedido inteiro de dados:
+  - primeiro mostre que entendeu o que ele explicou
+  - depois peça apenas o que ainda estiver faltando (nome, telefone ou período)
+• Só diga que vai "encaminhar os dados para a equipe" DEPOIS de ter nome + telefone + período
+• Quando já tiver tudo, faça UMA única mensagem de confirmação dizendo que vai passar os dados para a equipe, sem ficar repetindo isso em cada resposta
+• Use 1–3 frases, tom humano e acolhedor, sempre com 1 💚 no final
+• Exemplo: "Perfeito, entendi a dificuldade dele com as letrinhas. Pra eu organizar certinho aqui, me conta só o nome completo dele e se vocês preferem atendimento de manhã ou à tarde? 💚"
 `,
-        
+
+
         'agendado': `
 ✅ LEAD AGENDADO - GARANTIR COMPARECIMENTO:
 • Confirme os detalhes do agendamento
@@ -60,7 +68,7 @@ ${context.mentionedTherapies?.length > 0 ? `\n• Ele mencionou interesse em: ${
 • Seja acolhedora mas não invasiva
 • Exemplo: "Confirmado! Dia [X] às [Y]. Ficamos na Av. Minas Gerais, 405 (tem estacionamento). Alguma dúvida?"
 `,
-        
+
         'paciente': `
 ⭐ PACIENTE ATIVO - TRATAMENTO VIP:
 • Seja mais INFORMAL e PRÓXIMA
@@ -71,7 +79,7 @@ ${context.mentionedTherapies?.length > 0 ? `\n• Ele mencionou interesse em: ${
 ${context.hasAppointments ? '\n• Ele já tem consultas marcadas - seja ainda mais atenciosa!' : ''}
 `
     };
-    
+
     return prompts[stage] || prompts['novo'];
 }
 
@@ -107,7 +115,7 @@ export function getResponseStyleByStage(stage) {
         'interessado_agendamento': {
             tone: 'objetivo',
             length: 'curto',
-            cta: 'opções_concretas',
+            cta: 'coleta_dados',
             emoji: 1
         },
         'agendado': {
@@ -123,7 +131,7 @@ export function getResponseStyleByStage(stage) {
             emoji: 1
         }
     };
-    
+
     return styles[stage] || styles['novo'];
 }
 
@@ -133,12 +141,12 @@ export function getResponseStyleByStage(stage) {
 export function getUrgencyTrigger(stage, daysSinceLastContact) {
     // Só aplica urgência se faz mais de 3 dias
     if (daysSinceLastContact < 3) return null;
-    
+
     const triggers = {
         'pesquisando_preco': "Vagas limitadas esta semana!",
         'engajado': "Tenho horários disponíveis ainda hoje!",
         'interessado_agendamento': "As vagas estão acabando rápido!"
     };
-    
+
     return triggers[stage] || null;
 }
