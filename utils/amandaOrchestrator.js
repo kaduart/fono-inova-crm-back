@@ -443,8 +443,15 @@ async function callOpenAIWithContext(userText, lead, context) {
             stageInstruction = `Lead trocou ${messageCount} msgs. Seja mais direta.`;
             break;
         case 'interessado_agendamento':
-            stageInstruction = 'Lead quer agendar! Explique de forma simples que você vai encaminhar os dados para a equipe da clínica, peça nome completo e telefone se ainda não tiver no contexto e pergunte se prefere período da manhã ou da tarde, sem oferecer dia ou horário específicos.';
+            stageInstruction =
+                'Lead quer agendar! Seu objetivo agora é COLETAR os dados mínimos para enviar pra equipe: ' +
+                'nome completo, telefone e preferência de período (manhã ou tarde). ' +
+                'Se ainda faltar alguma dessas informações, foque em confirmar o que JÁ recebeu ' +
+                'e peça APENAS o que está faltando, em 1-2 frases, sem dizer que já encaminhou. ' +
+                'Só diga que vai encaminhar os dados para a equipe QUANDO já tiver nome + telefone + período. ' +
+                'Nesse momento, faça uma única frase de confirmação (sem repetir isso a cada mensagem).';
             break;
+
         case 'paciente':
             stageInstruction = 'PACIENTE ATIVO! Tom próximo.';
             break;
@@ -480,19 +487,23 @@ async function callOpenAIWithContext(userText, lead, context) {
 
     const currentPrompt = `${userText}
 
-CONTEXTO:
-LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}
-${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}${historyAgeNote}
+    CONTEXTO:
+    LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}
+    ${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}${historyAgeNote}
 
-INSTRUÇÃO: ${stageInstruction}
+    INSTRUÇÃO: ${stageInstruction}
 
-REGRAS:
-- ${shouldGreet ? 'Pode cumprimentar' : '🚨 NÃO use Oi/Olá - conversa ativa'}
-- ${conversationSummary ? '🧠 USE o resumo acima' : '📜 Leia histórico acima'}
-- 🚨 NÃO pergunte o que já foi dito (principalmente idade, se é criança/adulto e a área principal da terapia)
-- 1-3 frases, tom humano
-- 1 pergunta engajadora
-- 1 💚 final`;
+    REGRAS:
+    - ${shouldGreet ? 'Pode cumprimentar' : '🚨 NÃO use Oi/Olá - conversa ativa'}
+    - ${conversationSummary ? '🧠 USE o resumo acima' : '📜 Leia histórico acima'}
+    - 🚨 NÃO pergunte o que já foi dito (principalmente idade, se é criança/adulto e a área principal da terapia)
+    - Em fluxos de AGENDAMENTO:
+    - Se ainda não tiver nome, telefone ou período definidos, confirme o que JÁ tem e peça só o que falta.
+    - NÃO diga que vai encaminhar pra equipe enquanto faltar alguma dessas informações.
+    - Depois que tiver nome + telefone + período, faça UMA única mensagem dizendo que vai encaminhar os dados.
+    - 1-3 frases, tom humano
+    - 1 pergunta engajadora (quando fizer sentido)
+    - 1 💚 final
 
     // 🧠 MONTA MENSAGENS COM CACHE MÁXIMO
     const messages = [];
@@ -500,7 +511,7 @@ REGRAS:
     if (conversationSummary) {
         messages.push({
             role: 'user',
-            content: `📋 CONTEXTO ANTERIOR:\n\n${conversationSummary}\n\n---\n\nMensagens recentes abaixo:`
+            content: `📋 CONTEXTO ANTERIOR: \n\n${ conversationSummary }\n\n---\n\nMensagens recentes abaixo: `
         });
         messages.push({
             role: 'assistant',
@@ -547,7 +558,7 @@ REGRAS:
 function ensureSingleHeart(text) {
     if (!text) return "Como posso te ajudar? 💚";
     const clean = text.replace(/💚/g, '').trim();
-    return `${clean} 💚`;
+    return `${ clean } 💚`;
 }
 
 /**
