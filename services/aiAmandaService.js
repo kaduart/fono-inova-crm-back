@@ -8,7 +8,7 @@ import getOptimizedAmandaResponse from "../utils/amandaOrchestrator.js";
 import { CLINIC_ADDRESS, SYSTEM_PROMPT_AMANDA } from "../utils/amandaPrompt.js";
 
 // ⚠️ novos imports para mídia baseada em mediaId
-import { getMediaBuffer, resolveMediaUrl } from "./whatsappMediaService.js";
+import { getMediaBuffer } from "./whatsappMediaService.js";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -79,31 +79,40 @@ Se quiser, já te envio os horários disponíveis para a avaliação ✨`;
 
     // 🧾 Prompt COMPLETO que guia o Claude MAS mantendo o CLIMA do teu template
     const userPrompt = `
-Quero que você gere uma mensagem curta de follow-up para um lead da Clínica Fono Inova.
+    Quero que você gere uma mensagem curta de follow-up para um lead da Clínica Fono Inova.
 
-DADOS DO LEAD:
-- Nome: ${name}
-- Origem: ${origin}
-- Motivo/razão: ${reason}
-- Última interação relevante: "${lastMsgDesc}"
+    DADOS DO LEAD:
+    - Nome: ${name}
+    - Origem: ${origin}
+    - Motivo/razão: ${reason}
+    - Última interação relevante: "${lastMsgDesc}"
 
-CENÁRIO:
-- Essa é a PRIMEIRA mensagem de follow-up depois de uma conversa onde a pessoa pediu informações,
-  falou de valores ou disse que iria pensar/conversar com alguém antes de decidir.
+    CENÁRIO:
+    - Essa é a PRIMEIRA mensagem de follow-up depois de uma conversa onde a pessoa pediu informações,
+    falou de valores ou disse que iria pensar/conversar com alguém antes de decidir.
 
-ESTILO BASE (NÃO COPIAR IGUAL, MAS MANTER O CLIMA):
-"${baseTemplate}"
+    ESTILO BASE (NÃO COPIAR IGUAL, MAS MANTER O CLIMA):
+    "${baseTemplate}"
 
-REGRAS:
-- 2 a 3 frases no máximo.
-- Tom leve, humano, nada robótico.
-- Tratar o lead pelo primeiro nome.
-- Se houver contexto de valores, mencionar de forma suave que está vendo se conseguiu analisar os valores.
-- Em todos os casos, oferecer ajuda + possibilidade de enviar horários disponíveis para avaliação.
-- Exatamente 1 💚 na mensagem inteira.
-- Pode usar 1 ou 2 emojis leves (😊, ✨), sem exagero.
-- NÃO insista demais, é um lembrete educado, não cobrança.
-`.trim();
+    REGRAS:
+    - 2 a 3 frases no máximo.
+    - Tom leve, humano, nada robótico.
+    - Tratar o lead pelo primeiro nome.
+    - Se houver contexto de valores, mencionar de forma suave que está vendo se conseguiu analisar os valores.
+    - Em todos os casos, oferecer ajuda + possibilidade de enviar horários disponíveis para avaliação.
+    - Exatamente 1 💚 na mensagem inteira.
+    - Pode usar 1 ou 2 emojis leves (😊, ✨), sem exagero.
+    - NÃO insista demais, é um lembrete educado, não cobrança.
+
+    CONTEXTO ADICIONAL:
+    - Score atual: ${lead.conversionScore}/100
+    - Urgência: ${lead.qualificationData?.urgencyLevel || 2}/3
+    - Segmento: ${lead.conversionScore >= 80 ? '🔥 HOT' : '🟡 WARM'}
+
+    AJUSTE O TOM:
+    - Se score > 70: tom mais direto, ofereça horários
+    - Se score < 50: reforce valor antes de horários
+    `.trim();
 
     try {
         const resp = await anthropic.messages.create({
