@@ -68,7 +68,7 @@ export const whatsappController = {
                 userId = null,
                 sentBy = 'manual',
             } = req.body;
-
+console.log('📩 [/api/whatsapp/send-text] body recebido:', req.body);
             if (!phone || !text) {
                 return res.status(400).json({
                     success: false,
