@@ -1,3 +1,5 @@
+const AUTO_TEST_NUMBERS = ["5561981694922", "556292013573"];
+
 /**
  * 🎯 Handler do Webhook - VERSÃO CORRIGIDA
  */
@@ -6,12 +8,15 @@ export async function processInboundMessage(messageData) {
 
     console.log(`\n🔔 Mensagem ${type} de ${from}`);
 
+    const normalizedFrom = String(from).replace(/\D/g, "");
+    const isTestNumber = AUTO_TEST_NUMBERS.includes(normalizedFrom);
+
     try {
         let userText = '';
         let mediaInfo = null;
 
         // ========================================
-        // 🎙️ ÁUDIO - AGORA FUNCIONA!
+        // 🎙️ ÁUDIO
         // ========================================
         if (type === 'audio') {
             const mediaId = messageData.audio?.id;
@@ -82,17 +87,23 @@ export async function processInboundMessage(messageData) {
 
         // ========================================
         // 💾 SALVAR NO CRM
+        // Se você NÃO quiser poluir o CRM com testes,
+        // pode pular o saveMessageToCRM quando for número de teste:
         // ========================================
-        console.log(`💾 Salvando mensagem: "${userText.substring(0, 50)}..."`);
+        if (!isTestNumber) {
+            console.log(`💾 Salvando mensagem: "${userText.substring(0, 50)}..."`);
 
-        await saveMessageToCRM({
-            wamid,
-            from,
-            type,
-            content: userText,
-            mediaInfo,
-            timestamp
-        });
+            await saveMessageToCRM({
+                wamid,
+                from,
+                type,
+                content: userText,
+                mediaInfo,
+                timestamp
+            });
+        } else {
+            console.log('🧪 Número de teste – não vou salvar no CRM');
+        }
 
         // ========================================
         // 🤖 GERAR RESPOSTA DA AMANDA
