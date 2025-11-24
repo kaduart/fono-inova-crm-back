@@ -249,3 +249,30 @@ db.patients.find(
 // paciente por id
 const id = ObjectId("686e7f2bb26f4da03d426e7b");
 db.patients.findOne({ _id: id });
+
+
+
+// deletar chat do lead
+// 1️⃣ Deletar todas as mensagens do número
+db.messages.deleteMany({
+  $or: [
+    { from: "+556181694922" },
+    { to: "+556181694922" }
+  ]
+})
+
+// 2️⃣ Pegar o _id do Lead (pra usar depois)
+const lead = db.leads.findOne({ "contact.phone": "+556181694922" })
+const leadId = lead?._id
+
+// 3️⃣ Deletar ChatContext desse lead (se tiver)
+db.chatcontexts.deleteOne({ lead: leadId })
+
+// 4️⃣ Deletar Followups desse lead (se tiver)
+db.followups.deleteMany({ lead: leadId })
+
+// 5️⃣ Deletar o Lead
+db.leads.deleteOne({ "contact.phone": "+556181694922" })
+
+// 6️⃣ Deletar o Contact
+db.contacts.deleteOne({ phone: "+556181694922" })

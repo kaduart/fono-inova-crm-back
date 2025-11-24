@@ -68,9 +68,10 @@ export const VALUE_PITCH = {
   psicopedagogia: "Na psicopedagogia, avaliamos as dificuldades de aprendizagem e criamos estratégias personalizadas.",
 };
 
-export function priceLineForTopic(topic, userText) {
+export function priceLineForTopic(topic, userText, conversationSummary = '') {
   const mentionsCDL = /\bcdl\b/i.test(userText || "");
 
+  // 1️⃣ Tópico explícito na mensagem atual
   switch (topic) {
     case "avaliacao_inicial":
       return mentionsCDL ? "A avaliação CDL é R$ 200,00." : "O valor da avaliação é R$ 220,00.";
@@ -82,9 +83,45 @@ export function priceLineForTopic(topic, userText) {
       return "Sessão avulsa R$ 220; no pacote mensal sai por R$ 180/sessão (~R$ 720/mês).";
     case "psicopedagogia":
       return "Psicopedagogia: anamnese R$ 200; pacote mensal R$ 160/sessão (~R$ 640/mês).";
-    default:
-      return "O valor da avaliação é R$ 220,00.";
   }
+
+  // 2️⃣ Fallback: checa contexto/resumo
+  const ctx = (conversationSummary || '').toLowerCase();
+  const msg = (userText || '').toLowerCase();
+  const combined = `${ctx} ${msg}`;
+
+  // Prioridade 1: Neuropsico (TEA, TDAH, laudo, avaliação cognitiva)
+  if (/\b(tea|autis|tdah|neuro|laudo|avalia[çc][aã]o\s+completa|cognitiv)\b/.test(combined)) {
+    return "A avaliação neuropsicológica completa (10 sessões) é R$ 2.500 (6x) ou R$ 2.300 (à vista).";
+  }
+
+  // Prioridade 2: Psicopedagogia
+  if (/\b(psicopedagog|dificuldade.*aprendiz)\b/.test(combined)) {
+    return "Psicopedagogia: anamnese R$ 200; pacote mensal R$ 160/sessão (~R$ 640/mês).";
+  }
+
+  // Prioridade 3: Psicologia
+  if (/\b(psic[oó]log|ansiedade|emocional|comportamento)\b/.test(combined)) {
+    return "Avaliação inicial R$ 220; pacote mensal R$ 640 (1x/semana, R$ 160/sessão).";
+  }
+
+  // Prioridade 4: TO (Terapia Ocupacional)
+  if (/\b(terapia\s+ocupacional|to\b|integra[çc][aã]o\s+sensorial)\b/.test(combined)) {
+    return "Avaliação inicial R$ 220; pacote mensal R$ 720 (1x/semana, R$ 180/sessão).";
+  }
+
+  // Prioridade 5: Fisioterapia
+  if (/\b(fisioterap|fisio\b|reabilita[çc][aã]o)\b/.test(combined)) {
+    return "Avaliação inicial R$ 220; pacote mensal R$ 640 (1x/semana, R$ 160/sessão).";
+  }
+
+  // Prioridade 6: Fono (fala, linguagem, criança)
+  if (/\b(fono|fala|linguagem|crian[çc]a|beb[eê]|atraso)\b/.test(combined)) {
+    return "Avaliação inicial R$ 220; pacote mensal R$ 720 (1x/semana, R$ 180/sessão).";
+  }
+
+  // 3️⃣ Último recurso: NÃO assume especialidade
+  return null; // Força Amanda a perguntar especialidade
 }
 
 export const SYSTEM_PROMPT_AMANDA = `
@@ -410,8 +447,6 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     mentionsTeen,
     therapyArea,
     ageGroup,
-
-    // novos
     asksCAA,
     mentionsTOD,
     mentionsABA,
@@ -420,56 +455,73 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     saysThanks,
     saysBye,
     asksSpecialtyAvailability,
-    // ⚠️ estava faltando:
     mentionsSpeechTherapy,
   } = flags;
-
 
   const topic = flags.topic || inferTopic(text);
   const pitch = VALUE_PITCH[topic] || VALUE_PITCH.avaliacao_inicial;
 
-  const isClosingIntent =
-    !!(saysThanks || (saysBye && !/bom\s*dia/i.test(text)));
+  const isClosingIntent = !!(saysThanks || (saysBye && !/bom\s*dia/i.test(text)));
 
   let instructions = `MENSAGEM: "${text}"\n\n`;
 
- if (asksPrice) {
-  // 🎯 DETECTA PERFIL DE URGÊNCIA
-  let urgencyContext = '';
-  
-  // Criança 0-3 anos + fala
-  if ((ageGroup === 'crianca' || mentionsChild) && 
-      /fala|linguagem|atraso|não fala|grunhido|palavras?/.test(text)) {
-    const ageMatch = text.match(/(\d+)\s*anos?/);
-    const idade = ageMatch ? parseInt(ageMatch[1]) : null;
-    
-    if (idade && idade <= 3) {
-      urgencyContext = 'URGÊNCIA ALTA: Criança 0-3 anos + atraso fala. Use: "Nessa fase, cada mês faz diferença pro desenvolvimento"';
-    } else if (idade && idade <= 6) {
-      urgencyContext = 'URGÊNCIA ALTA: Criança 4-6 anos + fala. Use: "Quanto antes começar, mais rápido ele vai evoluir"';
-    }
-  }
-  
-  // Adulto sem diagnóstico TEA/TDAH
-  if ((mentionsAdult || ageGroup === 'adulto') && mentionsTEA_TDAH) {
-    urgencyContext = 'URGÊNCIA MÉDIA: Adulto sem diagnóstico. Use: "O laudo abre portas pra você entender melhor seus desafios"';
-  }
+  // 💰 DETECÇÃO INTELIGENTE DE PREÇO
+  if (asksPrice) {
+    const priceInfo = priceLineForTopic(topic, text, flags.conversationSummary || '');
 
-  instructions += `⚠️ PREÇO DETECTADO - SEQUÊNCIA OBRIGATÓRIA:
+    // Se não detectou especialidade, força pergunta
+    if (!priceInfo) {
+      instructions += `⚠️ PREÇO INDEFINIDO - PERGUNTE ESPECIALIDADE:
+
+O lead pediu preço mas não fica claro se é:
+- Fonoaudiologia (R$ 220)
+- Neuropsicologia (R$ 2.500)
+- Psicopedagogia (R$ 200)
+
+RESPONDA:
+"Claro! Pra te passar o valor certinho: é pra avaliação de fono, neuropsicologia ou psicopedagogia? 💚"
+
+NÃO dê preço genérico. Espere o lead especificar.
+`;
+      return instructions;
+    }
+
+    // 🎯 DETECTA PERFIL DE URGÊNCIA
+    let urgencyContext = '';
+
+    // Criança 0-3 anos + fala
+    if ((ageGroup === 'crianca' || mentionsChild) &&
+      /fala|linguagem|atraso|não fala|grunhido|palavras?/.test(text)) {
+      const ageMatch = text.match(/(\d+)\s*anos?/);
+      const idade = ageMatch ? parseInt(ageMatch[1]) : null;
+
+      if (idade && idade <= 3) {
+        urgencyContext = 'URGÊNCIA ALTA: Criança 0-3 anos + atraso fala. Use: "Nessa fase, cada mês faz diferença pro desenvolvimento"';
+      } else if (idade && idade <= 6) {
+        urgencyContext = 'URGÊNCIA ALTA: Criança 4-6 anos + fala. Use: "Quanto antes começar, mais rápido ele vai evoluir"';
+      }
+    }
+
+    // Adulto sem diagnóstico TEA/TDAH
+    if ((mentionsAdult || ageGroup === 'adulto') && mentionsTEA_TDAH) {
+      urgencyContext = 'URGÊNCIA MÉDIA: Adulto sem diagnóstico. Use: "O laudo abre portas pra você entender melhor seus desafios"';
+    }
+
+    instructions += `⚠️ PREÇO DETECTADO - SEQUÊNCIA OBRIGATÓRIA:
 
 1. Reconheça a pergunta (1 frase)
 2. CONTEXTO DE VALOR ${urgencyContext ? `(${urgencyContext})` : '(veja seção URGÊNCIA CONTEXTUAL)'}
-3. Dê o preço: "${priceLineForTopic(topic, text)}"
+3. Dê o preço: "${priceInfo}"
 4. ESCOLHA BINÁRIA FECHADA (veja seção REGRAS DE PERGUNTAS)
 
 🚫 NUNCA: "Quer que eu explique?" ou "Posso ajudar com algo mais?"
 ✅ SEMPRE: "Prefere agendar essa semana ou na próxima?"
 
 EXEMPLO:
-"${pitch} — ${urgencyContext || 'quanto antes começar, melhor!'} O investimento é ${priceLineForTopic(topic, text)}. Prefere manhã ou tarde pra começar? 💚"
+"${pitch} — ${urgencyContext || 'quanto antes começar, melhor!'} O investimento é ${priceInfo}. Prefere manhã ou tarde pra começar? 💚"
 
 `;
-}
+  }
 
   if (mentionsTEA_TDAH) {
     instructions += `TEA/TDAH/AUTISMO DETECTADO:
@@ -537,19 +589,15 @@ EXEMPLO:
 
   if (asksAreas || asksDays || asksTimes) {
     instructions += `PERGUNTAS DIRETAS DETECTADAS:\n`;
-
     if (asksAreas) {
       instructions += `- Explique de forma objetiva em quais áreas "${therapyArea || "a especialidade mencionada"}" pode ajudar para o perfil detectado (${ageGroup || "idade não clara"}).\n`;
     }
-
     if (asksDays) {
       instructions += `- Informe que a clínica atende de segunda a sexta-feira.\n`;
     }
-
     if (asksTimes) {
       instructions += `- Diga que os horários variam conforme o profissional, com opções de manhã e tarde (e início da noite para alguns atendimentos de adultos), sem citar horários exatos.\n`;
     }
-
     instructions += `- Primeiro responda essas perguntas de forma direta; só depois faça 1 pergunta simples de continuidade.\n\n`;
   }
 
@@ -560,7 +608,6 @@ EXEMPLO:
   • "É para você ou para uma criança?"
   • ou "Queremos te orientar certinho: qual a principal dificuldade hoje?"
 - NÃO mude de assunto, NÃO peça informações que já ficaram claras em mensagens anteriores.\n\n`;
-
   }
 
   if (mentionsAdult || mentionsChild || mentionsTeen) {
@@ -574,7 +621,6 @@ EXEMPLO:
     instructions += `- NÃO pergunte novamente idade se ela já estiver clara no contexto.\n\n`;
   }
 
-  // 🔚 ENCERRAMENTO – "Obrigada", "Valeu", "Boa noite" etc.
   if (saysThanks || saysBye) {
     instructions += `ENCERRAMENTO DETECTADO:
 - A pessoa está apenas agradecendo ou se despedindo.
@@ -585,7 +631,6 @@ EXEMPLO:
 - É melhor parecer educada e objetiva do que insistente.\n\n`;
   }
 
-  // 👩‍💼 PEDIU ATENDENTE HUMANA
   if (wantsHumanAgent) {
     instructions += `PEDIU ATENDENTE HUMANA:
 - NÃO se reapresente como Amanda.
@@ -607,7 +652,6 @@ EXEMPLO:
     instructions += `- Explique de forma simples como a Fonoaudiologia ajuda na fala de crianças (articulação dos sons, clareza da fala, desenvolvimento da linguagem).\n`;
     instructions += `- Faça 1 pergunta específica sobre a fala (ex.: se troca sons, se fala poucas palavras, se é difícil entender) e, se fizer sentido, convide para avaliação inicial.\n\n`;
   }
-
 
   if (ageGroup || therapyArea || mentionsChild || mentionsAdult || mentionsTeen) {
     instructions += `\nCONTEXTOS JÁ DEFINIDOS (NÃO REPETIR PERGUNTAS):\n`;
@@ -632,31 +676,30 @@ EXEMPLO:
   instructions += `Priorize: reconhecer → responder essencial → 1 pergunta.\n\n`;
 
   const closingNote = isClosingIntent
-  ? "RESPONDA: 1 frase curta, tom humano, sem nova pergunta. Você pode usar 1 💚 no final se fizer sentido."
-  : `🎯 REGRAS FINAIS OBRIGATÓRIAS:
+    ? "RESPONDA: 1 frase curta, tom humano, sem nova pergunta. Você pode usar 1 💚 no final se fizer sentido."
+    : `🎯 REGRAS FINAIS OBRIGATÓRIAS:
 
-    1. NÃO pergunte o que JÁ está no histórico/resumo
-    2. Se perguntaram PREÇO: use SEQUÊNCIA (valor → preço → escolha binária)
-    3. SEMPRE termine com ESCOLHA BINÁRIA (nunca pergunta de fuga)
-    4. Máximo 3 frases + 1 pergunta + 1 💚
+1. NÃO pergunte o que JÁ está no histórico/resumo
+2. Se perguntaram PREÇO: use SEQUÊNCIA (valor → preço → escolha binária)
+3. SEMPRE termine com ESCOLHA BINÁRIA (nunca pergunta de fuga)
+4. Máximo 3 frases + 1 pergunta + 1 💚
 
-    ✅ PERGUNTAS APROVADAS:
-    - "Prefere manhã ou tarde?"
-    - "Melhor essa semana ou semana que vem?"
-    - "É pra você ou pra criança?"
+✅ PERGUNTAS APROVADAS:
+- "Prefere manhã ou tarde?"
+- "Melhor essa semana ou semana que vem?"
+- "É pra você ou pra criança?"
 
-    ❌ PERGUNTAS PROIBIDAS:
-    - "Quer que eu explique?"
-    - "Posso ajudar com algo mais?"
-    - "Gostaria de saber mais?"
+❌ PERGUNTAS PROIBIDAS:
+- "Quer que eu explique?"
+- "Posso ajudar com algo mais?"
+- "Gostaria de saber mais?"
 
-    ⏰ LIMITE: 2-3 frases curtas + 1 pergunta binária + 1 💚
-    Se passou disso, CORTE pela metade.
+⏰ LIMITE: 2-3 frases curtas + 1 pergunta binária + 1 💚
+Se passou disso, CORTE pela metade.
 
-    RESPONDA AGORA seguindo essas regras.`;
+RESPONDA AGORA seguindo essas regras.`;
 
   return `${instructions}${closingNote}`;
-
 }
 
 function inferTopic(text = "") {

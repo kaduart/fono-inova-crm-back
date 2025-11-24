@@ -44,8 +44,7 @@ export function extractStructuredData(text) {
 
     // QUEIXA
     const queixas = {
-        'atraso_fala': /\b(n[aã]o\s+fala|atraso\s+fala|demora\s+falar)\b/,
-        'troca_letras': /\b(troca\s+letra|fala\s+errado)\b/,
+        'atraso_fala': /\b(n[aã]o\s+fala|atraso\s+fala|demora\s+falar|fala\s+(poucas|algumas)\s+palavras|s[oó]\s+fala\s+algumas|poucas\s+palavras)\b/, 'troca_letras': /\b(troca\s+letra|fala\s+errado)\b/,
         'gagueira': /\b(gagueira|gaguejar)\b/,
         'tea': /\b(tea|autis|espectro)\b/,
         'tdah': /\b(tdah|hiperativ|d[eé]ficit\s+aten)\b/,
@@ -82,6 +81,11 @@ export function extractStructuredData(text) {
         data.urgencia = 'alta';
     } else if (/\b(priorit[áa]ri|assim\s+que\s+poss)\b/.test(t)) {
         data.urgencia = 'media';
+    }
+
+    // 🔥 NOVO: Urgência baseada em idade + queixa
+    if (data.idadeRange === 'bebe_1a3' && data.queixa === 'atraso_fala') {
+        data.urgencia = 'alta';
     }
 
     // CONTEXTO EXTERNO

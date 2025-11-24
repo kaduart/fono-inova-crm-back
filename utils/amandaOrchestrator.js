@@ -1,8 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import 'dotenv/config';
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
-import enrichLeadContext from "../services/leadContext.js"; // ← IMPORTA, não define
+import enrichLeadContext from "../services/leadContext.js";
 import { getManual } from './amandaIntents.js';
+import { buildUserPromptWithValuePitch } from './amandaPrompt.js';
 import { detectAllFlags } from './flagsDetector.js';
 import { buildEquivalenceResponse } from './responseBuilder.js';
 import {
@@ -63,9 +64,9 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         /^(obrigad[ao]s?|obg|obgd|vale[u]?|vlw|agrade[cç]o|tchau|falou|até\s+mais|até\s+logo|boa\s+noite|boa\s+tarde|bom\s+dia)[\s!,.]*$/i;
 
     const isPureClosing =
-        !isFirstMessage &&                                      // nunca fecha na 1ª msg
+        !isFirstMessage &&
         (flags?.saysThanks || flags?.saysBye) &&
-        pureClosingRegex.test(normalized) &&                    // texto é SÓ isso
+        pureClosingRegex.test(normalized) &&
         !flags?.asksPrice &&
         !flags?.wantsSchedule &&
         !flags?.asksAddress &&
@@ -101,7 +102,10 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
 
         const aiResponse = await callClaudeWithTherapyData({
             therapies,
-            flags,
+            flags: {
+                ...flags,
+                conversationSummary: enrichedContext.conversationSummary || ''
+            },
             userText: text,
             lead,
             context: enrichedContext
@@ -129,7 +133,14 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     // ===== 5. IA COM CONTEXTO =====
     console.log(`🤖 [ORCHESTRATOR] IA | Stage: ${enrichedContext.stage} | Msgs: ${enrichedContext.messageCount}`);
     try {
-        const aiResponse = await callOpenAIWithContext(text, lead, enrichedContext);
+        const aiResponse = await callOpenAIWithContext(
+            text,
+            lead,
+            {
+                ...enrichedContext,
+                conversationSummary: enrichedContext.conversationSummary || ''
+            }
+        );
         const scoped = enforceClinicScope(aiResponse, text);
         return ensureSingleHeart(scoped);
     } catch (error) {
@@ -257,25 +268,8 @@ async function callClaudeWithTherapyData({ therapies, flags, userText, lead, con
     } catch (err) {
         console.warn('⚠️ leadIntelligence falhou (não crítico):', err.message);
     }
-    // 🧠 PREPARA PROMPT ATUAL (sem ficar robótico, mas bem guiado)
-    const currentPrompt = `${userText}
 
-📊 CONTEXTO DESTA MENSAGEM:
-TERAPIAS DETECTADAS:
-${therapiesInfo}
-
-FLAGS: Preço=${flags.asksPrice} | Agendar=${flags.wantsSchedule}
-ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${learnedContext}${ageContextNote}${intelligenceNote}
-
-🎯 INSTRUÇÕES CRÍTICAS:
-1. ${shouldGreet ? '✅ Pode cumprimentar naturalmente se fizer sentido' : '🚨 NÃO USE SAUDAÇÕES (Oi/Olá) - conversa está ativa'}
-2. ${conversationSummary ? '🧠 Você TEM o resumo completo acima - USE esse contexto!' : '📜 Leia TODO o histórico de mensagens acima antes de responder'}
-3. 🚨 NÃO PERGUNTE o que JÁ foi informado/discutido (idade, se é criança/adulto, área principal etc.)
-4. ${flags.asksPrice ? 'Responda preço usando a lógica: VALOR → PREÇO → 1 pergunta leve de continuidade (sem pressão).' : 'Responda de forma acolhedora, focando na dúvida real.'}
-5. Máximo 2–3 frases, tom natural e humano, como uma recepcionista experiente.
-6. Exatamente 1 💚 no final.`;
-
-    // 🧠 MONTA MENSAGENS COM CACHE MÁXIMO
+    // 🧠 MONTA MENSAGENS (declarado ANTES para ser usado pelo bloco de preço)
     const messages = [];
 
     if (conversationSummary) {
@@ -300,6 +294,64 @@ ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${
         messages.push(...safeHistory);
     }
 
+    // 🎯 SE PEDIR PREÇO, USA buildUserPromptWithValuePitch
+    if (flags.asksPrice) {
+        const enrichedFlags = {
+            ...flags,
+            conversationSummary: context.conversationSummary || '',
+            topic: therapies[0]?.id || 'avaliacao_inicial',
+            text: userText,
+            ageGroup: ageContextNote.includes('criança') ? 'crianca' :
+                ageContextNote.includes('adolescente') ? 'adolescente' :
+                    ageContextNote.includes('adulto') ? 'adulto' : null
+        };
+
+        const pricePrompt = buildUserPromptWithValuePitch(enrichedFlags);
+
+        console.log('💰 [PRICE PROMPT] Usando buildUserPromptWithValuePitch');
+
+        // Adiciona o prompt de preço às mensagens
+        messages.push({
+            role: 'user',
+            content: pricePrompt
+        });
+
+        const response = await anthropic.messages.create({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 200,
+            temperature: 0.7,
+            system: [
+                {
+                    type: "text",
+                    text: SYSTEM_PROMPT_AMANDA,
+                    cache_control: { type: "ephemeral" }
+                }
+            ],
+            messages
+        });
+
+        return response.content[0]?.text?.trim() || "Como posso te ajudar? 💚";
+    }
+
+    // 🧠 PREPARA PROMPT ATUAL (lógica normal se NÃO for preço)
+    const currentPrompt = `${userText}
+
+📊 CONTEXTO DESTA MENSAGEM:
+TERAPIAS DETECTADAS:
+${therapiesInfo}
+
+FLAGS: Preço=${flags.asksPrice} | Agendar=${flags.wantsSchedule}
+ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${learnedContext}${ageContextNote}${intelligenceNote}
+
+🎯 INSTRUÇÕES CRÍTICAS:
+1. ${shouldGreet ? '✅ Pode cumprimentar naturalmente se fizer sentido' : '🚨 NÃO USE SAUDAÇÕES (Oi/Olá) - conversa está ativa'}
+2. ${conversationSummary ? '🧠 Você TEM o resumo completo acima - USE esse contexto!' : '📜 Leia TODO o histórico de mensagens acima antes de responder'}
+3. 🚨 NÃO PERGUNTE o que JÁ foi informado/discutido (idade, se é criança/adulto, área principal etc.)
+4. Responda de forma acolhedora, focando na dúvida real.
+5. Máximo 2–3 frases, tom natural e humano, como uma recepcionista experiente.
+6. Exatamente 1 💚 no final.`;
+
+    // Adiciona a mensagem atual ao histórico
     messages.push({
         role: 'user',
         content: currentPrompt
@@ -341,7 +393,7 @@ async function callOpenAIWithContext(userText, lead, context) {
         shouldGreet = true
     } = context;
 
-    // 🧠 PERFIL DE IDADE A PARTIR DO HISTÓRICO (mesma lógica da outra função)
+    // 🧠 PERFIL DE IDADE A PARTIR DO HISTÓRICO
     let historyAgeNote = "";
     if (conversationHistory && conversationHistory.length > 0) {
         const historyText = conversationHistory
@@ -428,26 +480,23 @@ async function callOpenAIWithContext(userText, lead, context) {
 
     const currentPrompt = `${userText}
 
-    CONTEXTO:
-     LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}
-    ${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}${historyAgeNote}
+CONTEXTO:
+LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}
+${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}${historyAgeNote}
 
-    INSTRUÇÃO: ${stageInstruction}
+INSTRUÇÃO: ${stageInstruction}
 
-    REGRAS:
-    - ${shouldGreet ? 'Pode cumprimentar' : '🚨 NÃO use Oi/Olá - conversa ativa'}
-    - ${conversationSummary ? '🧠 USE o resumo acima' : '📜 Leia histórico acima'}
-    - 🚨 NÃO pergunte o que já foi dito (principalmente idade, se é criança/adulto e a área principal da terapia)
-    - 1-3 frases, tom humano
-    - 1 pergunta engajadora
-    - 1 💚 final`;
-
-
+REGRAS:
+- ${shouldGreet ? 'Pode cumprimentar' : '🚨 NÃO use Oi/Olá - conversa ativa'}
+- ${conversationSummary ? '🧠 USE o resumo acima' : '📜 Leia histórico acima'}
+- 🚨 NÃO pergunte o que já foi dito (principalmente idade, se é criança/adulto e a área principal da terapia)
+- 1-3 frases, tom humano
+- 1 pergunta engajadora
+- 1 💚 final`;
 
     // 🧠 MONTA MENSAGENS COM CACHE MÁXIMO
     const messages = [];
 
-    // 1. Resumo (SEM cache_control)
     if (conversationSummary) {
         messages.push({
             role: 'user',
@@ -459,7 +508,6 @@ async function callOpenAIWithContext(userText, lead, context) {
         });
     }
 
-    // 2. Histórico (limpo)
     if (conversationHistory && conversationHistory.length > 0) {
         const safeHistory = conversationHistory.map(msg => ({
             role: msg.role || 'user',
@@ -471,7 +519,6 @@ async function callOpenAIWithContext(userText, lead, context) {
         messages.push(...safeHistory);
     }
 
-    // 3. Mensagem atual (SEM cache)
     messages.push({
         role: 'user',
         content: currentPrompt
@@ -503,7 +550,9 @@ function ensureSingleHeart(text) {
     return `${clean} 💚`;
 }
 
-// 🔒 Regra de escopo da clínica (não fazemos exames / RPG / Pilates)
+/**
+ * 🔒 REGRA DE ESCOPO DA CLÍNICA
+ */
 function enforceClinicScope(aiText = "", userText = "") {
     if (!aiText) return aiText;
 
@@ -522,7 +571,6 @@ function enforceClinicScope(aiText = "", userText = "") {
 
     const mentionsRPGorPilates = /\brpg\b|pilates/i.test(u + " " + t);
 
-    // 🧪 CASO 1: exames de audição / BERA / audiometria
     if (asksExam || mentionsExamInReply) {
         return (
             "Aqui na Clínica Fono Inova nós **não realizamos exames de audição** " +
@@ -532,7 +580,6 @@ function enforceClinicScope(aiText = "", userText = "") {
         );
     }
 
-    // 🧪 CASO 2: RPG / Pilates / coisas de estúdio
     if (mentionsRPGorPilates) {
         return (
             "Na Fono Inova, a Fisioterapia é voltada para **atendimento terapêutico clínico**, " +
@@ -541,9 +588,7 @@ function enforceClinicScope(aiText = "", userText = "") {
         );
     }
 
-    // ✅ Não precisou corrigir
     return aiText;
 }
-
 
 export default getOptimizedAmandaResponse;
