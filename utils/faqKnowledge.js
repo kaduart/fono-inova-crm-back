@@ -56,24 +56,15 @@ Valor: R$ 2.500 em 6x no cartão ou R$ 2.300 à vista.`,
 
     // 🎯 CATEGORIA: LOGÍSTICA
     logistics: {
-        "estacionamento": {
-            question: "Tem estacionamento?",
-            answer: "Sim! Temos estacionamento gratuito na frente da clínica. É bem fácil de estacionar e tem bastante vaga 💚",
-            keywords: ["estacionamento", "estacionar", "vaga"],
-            relatedQuestions: ["como_chegar"]
-        },
-
         "como_chegar": {
             question: "Como chego na clínica?",
             answer: `Estamos na Av. Minas Gerais, 405 - Jundiaí, Anápolis-GO.
 
-📍 Referência: Em frente ao SESI
-🚗 Estacionamento gratuito na frente
-🗺️ Link do Google Maps: [enviar quando disponível]
+        📍 Referência: Em frente ao SESI
+        🗺️ Link do Google Maps: [enviar quando disponível]
 
-Vindo do centro: pegar Av. Brasil até Av. Minas Gerais 💚`,
+        Vindo do centro: pegar Av. Brasil até Av. Minas Gerais 💚`,
             keywords: ["endereço", "como chegar", "localização", "maps"],
-            relatedQuestions: ["estacionamento"]
         }
     },
 

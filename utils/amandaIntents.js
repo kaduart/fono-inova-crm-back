@@ -12,7 +12,7 @@ export const MANUAL_AMANDA = {
     "saudacao": "Olá! 😊 Sou a Amanda, da Clínica Fono Inova. Como posso ajudar você hoje? 💚",
 
     "localizacao": {
-        "endereco": "Ficamos na Av. Minas Gerais, 405 - Jundiaí, Anápolis-GO! Temos estacionamento gratuito e fácil acesso 💚",
+        "endereco": "Ficamos na Av. Minas Gerais, 405 - Jundiaí, Anápolis-GO!💚",
         "como_chegar": "Estamos em frente ao SESI no Jundiaí! Precisa do link do Google Maps? 💚"
     },
 

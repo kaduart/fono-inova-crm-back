@@ -437,87 +437,110 @@ console.log('📩 [/api/whatsapp/send-text] body recebido:', req.body);
         }
     },
 
-    async sendManualMessage(req, res) {
-        try {
-            const { leadId, text, userId } = req.body;
+   async sendManualMessage(req, res) {
+    try {
+        const { leadId, text, userId, phone } = req.body;
 
-            const lead = await Lead.findById(leadId).populate('contact');
+        let lead = null;
 
-            if (!lead) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Lead não encontrado'
-                });
-            }
+        if (leadId) {
+            // fluxo antigo: já tenho o lead
+            lead = await Lead.findById(leadId).populate('contact');
+        }
 
-            // 🔎 Contact de chat (coleção Contact) pelo telefone do lead
-            const normalizedPhone = normalizeE164BR(
-                lead.contact?.phone || lead.contact?.phoneWhatsapp || lead.contact?.phoneNumber || ''
+        let normalizedPhone = null;
+
+        if (lead?.contact?.phone) {
+            normalizedPhone = normalizeE164BR(
+                lead.contact.phone ||
+                lead.contact.phoneWhatsapp ||
+                lead.contact.phoneNumber ||
+                ''
             );
+        } else if (phone) {
+            // sem leadId, resolve pelo telefone
+            normalizedPhone = normalizeE164BR(phone);
+            lead = await Lead.findOne({ 'contact.phone': normalizedPhone }).populate('contact');
+        }
 
-            const contact = await Contact.findOne({ phone: normalizedPhone }).lean();
-            const patientId = lead.convertedToPatient || null;
-
-            // 📤 Envia mensagem via service centralizado
-            const result = await sendTextMessage({
-                to: normalizedPhone,
-                text,
-                lead: leadId,
-                contactId: contact?._id || null,
-                patientId,
-                sentBy: 'manual',
-                userId
-            });
-
-            // 🔁 Localiza mensagem persistida pra emitir no socket
-            const waMessageId = result?.messages?.[0]?.id || null;
-            if (waMessageId) {
-                const saved = await Message.findOne({ waMessageId }).lean();
-                if (saved) {
-                    const io = getIo();
-                    io.emit("message:new", {
-                        id: String(saved._id),
-                        from: saved.from,
-                        to: saved.to,
-                        direction: saved.direction,
-                        type: saved.type,
-                        content: saved.content,
-                        status: saved.status,
-                        timestamp: saved.timestamp,
-                        leadId: saved.lead || leadId,
-                        contactId: saved.contact || (contact?._id || null),
-                        metadata: saved.metadata || {
-                            sentBy: 'manual',
-                            userId
-                        }
-                    });
-                }
-            }
-
-            // 🧠 Ativa controle manual (Amanda PAUSADA)
-            await Lead.findByIdAndUpdate(leadId, {
-                'manualControl.active': true,
-                'manualControl.takenOverAt': new Date(),
-                'manualControl.takenOverBy': userId
-            });
-
-            console.log(`✅ Mensagem manual enviada - Amanda pausada para o lead ${leadId}`);
-
-            res.json({
-                success: true,
-                message: 'Mensagem enviada. Amanda pausada.',
-                messageId: result.messages?.[0]?.id || `manual-${Date.now()}`
-            });
-
-        } catch (error) {
-            console.error("❌ Erro em sendManualMessage:", error);
-            res.status(500).json({
+        if (!lead) {
+            return res.status(404).json({
                 success: false,
-                error: error.message
+                message: 'Lead não encontrado para esse envio manual'
             });
         }
-    }
 
+        // 🔎 Contact de chat (coleção Contact) pelo telefone do lead
+        const chatPhone = normalizeE164BR(
+            lead.contact?.phone ||
+            lead.contact?.phoneWhatsapp ||
+            lead.contact?.phoneNumber ||
+            normalizedPhone ||
+            ''
+        );
+
+        const contact = await Contact.findOne({ phone: chatPhone }).lean();
+        const patientId = lead.convertedToPatient || null;
+
+        // 📤 Envia mensagem via service centralizado
+        const result = await sendTextMessage({
+            to: chatPhone,
+            text,
+            lead: lead._id,
+            contactId: contact?._id || null,
+            patientId,
+            sentBy: 'manual',
+            userId
+        });
+
+        // 🔁 Localiza mensagem persistida pra emitir no socket
+        const waMessageId = result?.messages?.[0]?.id || null;
+        if (waMessageId) {
+            const saved = await Message.findOne({ waMessageId }).lean();
+            if (saved) {
+                const io = getIo();
+                io.emit("message:new", {
+                    id: String(saved._id),
+                    from: saved.from,
+                    to: saved.to,
+                    direction: saved.direction,
+                    type: saved.type,
+                    content: saved.content,
+                    status: saved.status,
+                    timestamp: saved.timestamp,
+                    leadId: saved.lead || lead._id,
+                    contactId: saved.contact || (contact?._id || null),
+                    metadata: saved.metadata || {
+                        sentBy: 'manual',
+                        userId
+                    }
+                });
+            }
+        }
+
+        // 🧠 Ativa controle manual (Amanda PAUSADA)
+        await Lead.findByIdAndUpdate(lead._id, {
+            'manualControl.active': true,
+            'manualControl.takenOverAt': new Date(),
+            'manualControl.takenOverBy': userId
+        });
+
+        console.log(`✅ Mensagem manual enviada - Amanda pausada para o lead ${lead._id}`);
+
+        res.json({
+            success: true,
+            message: 'Mensagem enviada. Amanda pausada.',
+            messageId: waMessageId || `manual-${Date.now()}`
+        });
+
+    } catch (error) {
+        console.error("❌ Erro em sendManualMessage:", error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+}
 
 };
 
