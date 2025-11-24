@@ -5,6 +5,7 @@ import Patient from '../models/Patient.js';
 import { calculateOptimalFollowupTime } from '../services/intelligence/smartFollowup.js';
 import { sendLeadToMeta } from '../services/metaConversionsService.js';
 import { normalizeE164BR } from "../utils/phone.js";
+import { followupQueue } from "../config/bullConfig.js";
 
 // =====================================================================
 // 🆕 FUNÇÕES DE ANÚNCIOS (META/GOOGLE ADS) - AMANDA 2.0
@@ -105,7 +106,8 @@ export const createLeadFromAd = async (req, res) => {
             attempt: 1
         });
 
-        await Followup.create({
+        // 🔥 Cria o follow-up
+        const followup = await Followup.create({
             lead: lead._id,
             stage: 'primeiro_contato',
             scheduledAt: followupTime,
@@ -115,7 +117,19 @@ export const createLeadFromAd = async (req, res) => {
             note: `Auto-agendado via ${origin}`
         });
 
-        console.log(`✅ Follow-up agendado: ${followupTime.toLocaleString('pt-BR')}`);
+        // 🔥 Enfileira no BullMQ
+        const delayMs = followupTime.getTime() - Date.now();
+
+        await followupQueue.add(
+            "followup",
+            { followupId: followup._id },
+            {
+                jobId: `fu-${followup._id}`,
+                ...(delayMs > 0 ? { delay: delayMs } : {})
+            }
+        );
+
+        console.log(`✅ Follow-up agendado e enfileirado: ${followupTime.toLocaleString('pt-BR')}`);
 
         res.status(201).json({
             success: true,

@@ -10,6 +10,7 @@ import { generateContextualFollowup } from "../services/intelligence/smartFollow
 
 // ✅ AMANDA 1.0 MELHORADA (API Anthropic)
 import { generateAmandaReply, generateFollowupMessage } from "../services/aiAmandaService.js";
+import { followupQueue } from "../config/bullConfig.js";
 
 const router = express.Router();
 
@@ -276,12 +277,23 @@ router.post("/send", async (req, res) => {
             aiOptimized,
             origin: lead.origin,
             note: campaign ? `Campanha: ${campaign}` : undefined,
-            // Campos opcionais da rota antiga
             ...(reason && { reason }),
             ...(therapist && { therapist })
         });
 
         console.log(`✅ Follow-up criado: ${followup._id}`);
+
+        const delayMs = new Date(followup.scheduledAt).getTime() - Date.now();
+
+
+        await followupQueue.add(
+            "followup",
+            { followupId: followup._id },
+            {
+                jobId: `fu-${followup._id}`,
+                ...(delayMs > 0 ? { delay: delayMs } : {})
+            }
+        );
 
         return res.json({
             success: true,

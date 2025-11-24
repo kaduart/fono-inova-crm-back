@@ -10,6 +10,7 @@ import {
     calculateOptimalFollowupTime,
     generateContextualFollowup
 } from "../services/intelligence/smartFollowup.js";
+import { createSmartFollowupForLead } from "../services/followupOrchestrator.js";
 
 // ⚠️ FALLBACK (Amanda 1.0)
 import { generateFollowupMessage } from "../services/aiAmandaService.js";
@@ -192,88 +193,26 @@ export const createFollowup = async (req, res) => {
     }
 };
 
-/**
- * 🧠 Criar follow-up inteligente com Amanda 2.0
- * POST /api/followups/ai
- */
 export const createAIFollowup = async (req, res) => {
     try {
         const { leadId, scheduledAt, objective } = req.body;
 
-        if (!leadId) return res.status(400).json({ error: 'leadId é obrigatório' });
+        if (!leadId) return res.status(400).json({ error: "leadId é obrigatório" });
 
-        const lead = await Lead.findById(leadId);
-        if (!lead) return res.status(404).json({ error: 'Lead não encontrado' });
-
-        // 🎯 AMANDA 2.0 - ANÁLISE COMPLETA
-        const recentMessages = await Message.find({
-            lead: leadId
-        }).sort({ timestamp: -1 }).limit(10).lean();
-
-        const lastInbound = recentMessages.find(m => m.direction === 'inbound');
-
-        let message;
-        let score = lead.conversionScore || 50;
-
-        if (lastInbound?.content) {
-            const analysis = await analyzeLeadMessage({
-                text: lastInbound.content,
-                lead,
-                history: recentMessages.map(m => m.content || '')
-            });
-
-            message = generateContextualFollowup({
-                lead,
-                analysis,
-                attempt: 1
-            });
-
-            score = analysis.score;
-
-            // Atualizar score do lead
-            await Lead.findByIdAndUpdate(leadId, {
-                conversionScore: score,
-                lastScoreUpdate: new Date()
-            });
-        } else {
-            // Fallback
-            message = await generateFollowupMessage(lead);
-        }
-
-        // Calcular melhor horário
-        const optimalTime = scheduledAt ?
-            new Date(scheduledAt) :
-            calculateOptimalFollowupTime({
-                lead,
-                score,
-                lastInteraction: new Date(),
-                attempt: 1
-            });
-
-        const followup = await Followup.create({
-            lead: leadId,
-            message,
-            scheduledAt: optimalTime,
-            status: 'scheduled',
-            aiOptimized: true,
-            origin: lead.origin,
-            note: `Amanda 2.0 - ${objective || 'reengajamento'} | Score: ${score}`
-        });
-
-        const delay = new Date(followup.scheduledAt).getTime() - Date.now();
-        await followupQueue.add('followup', { followupId: followup._id }, {
-            delay,
-            jobId: `fu-${followup._id}`
+        const { followup, score } = await createSmartFollowupForLead(leadId, {
+            explicitScheduledAt: scheduledAt,
+            objective: objective || "reengajamento",
+            attempt: 1
         });
 
         res.status(201).json({
             success: true,
-            message: 'Follow-up IA criado com sucesso!',
+            message: "Follow-up IA criado com sucesso!",
             data: followup,
             meta: {
-                amandaVersion: '2.0',
+                amandaVersion: "2.0",
                 score,
-                optimalTime
+                optimalTime: followup.scheduledAt
             }
         });
     } catch (err) {
@@ -281,6 +220,7 @@ export const createAIFollowup = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
 
 /**
  * ♻️ Reenviar follow-up
@@ -437,11 +377,11 @@ export const getPendingFollowups = async (req, res) => {
 export const getFollowupHistory = async (req, res) => {
     try {
         const leadId = req.params.leadId || req.query.leadId;
-        
+
         if (!leadId) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "leadId é obrigatório" 
+            return res.status(400).json({
+                success: false,
+                message: "leadId é obrigatório"
             });
         }
 
@@ -449,15 +389,15 @@ export const getFollowupHistory = async (req, res) => {
             .populate('lead', 'name contact.phone')
             .sort({ createdAt: -1 });
 
-        res.json({ 
-            success: true, 
+        res.json({
+            success: true,
             data: history,
-            count: history.length 
+            count: history.length
         });
     } catch (err) {
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: err.message 
+            error: err.message
         });
     }
 };
