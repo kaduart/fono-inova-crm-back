@@ -252,7 +252,6 @@ db.patients.findOne({ _id: id });
 
 
 
-// deletar chat do lead
 // 1️⃣ Deletar todas as mensagens do número
 const phone = "5561981694922";
 

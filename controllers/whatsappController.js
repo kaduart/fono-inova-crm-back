@@ -1,6 +1,7 @@
 // controllers/whatsappController.js - VERSÃO CORRIGIDA
 
 import mongoose from 'mongoose';
+import { followupQueue } from "../config/bullConfig.js";
 import { redisConnection as redis } from '../config/redisConnection.js';
 import { getIo } from "../config/socket.js";
 import Contact from "../models/Contact.js";
@@ -8,13 +9,14 @@ import Followup from "../models/Followup.js";
 import Lead from '../models/Leads.js';
 import Message from "../models/Message.js";
 import { describeWaImage, transcribeWaAudio } from "../services/aiAmandaService.js";
+import { calculateOptimalFollowupTime } from "../services/intelligence/smartFollowup.js";
 import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
-import { calculateOptimalFollowupTime } from "../services/intelligence/smartFollowup.js";
-import { followupQueue } from "../config/bullConfig.js";
 import { normalizeE164BR, tailPattern } from "../utils/phone.js";
-const AUTO_TEST_NUMBERS = ["5561981694922", "556292013573"];
+const AUTO_TEST_NUMBERS = [
+    "5561981694922", "5561981694922", "556292013573", "5562992013573"
+];
 
 export const whatsappController = {
 
