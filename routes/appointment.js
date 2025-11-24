@@ -814,12 +814,6 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
                     .session(session);
 
                 if (sessionDoc) {
-                    console.log('📊 Sessão ANTES do cancelamento:', {
-                        id: sessionDoc._id,
-                        isPaid: sessionDoc.isPaid,
-                        paymentStatus: sessionDoc.paymentStatus,
-                        partialAmount: sessionDoc.partialAmount
-                    });
 
                     const wasSessionPaid =
                         sessionDoc.paymentStatus === 'paid' ||
@@ -835,12 +829,6 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
                         sessionDoc.originalPaymentMethod = sessionDoc.paymentMethod;
                         sessionDoc.originalIsPaid = sessionDoc.isPaid;
 
-                        console.log('💾 Dados guardados:', {
-                            originalPartialAmount: sessionDoc.originalPartialAmount,
-                            originalPaymentStatus: sessionDoc.originalPaymentStatus,
-                            originalPaymentMethod: sessionDoc.originalPaymentMethod,
-                            originalIsPaid: sessionDoc.originalIsPaid
-                        });
                     } else {
                         console.log('⚠️ Sessão NÃO estava paga, não guarda original');
                     }
