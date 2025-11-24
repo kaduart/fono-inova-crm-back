@@ -481,10 +481,6 @@ async function callOpenAIWithContext(userText, lead, context) {
         console.warn('⚠️ leadIntelligence falhou (não crítico):', err.message);
     }
 
-    const therapiesContext = mentionedTherapies.length > 0
-        ? `\n🎯 TERAPIAS DISCUTIDAS: ${mentionedTherapies.join(', ')}`
-        : '';
-
     const currentPrompt = `${userText}
 
     CONTEXTO:
@@ -503,7 +499,8 @@ async function callOpenAIWithContext(userText, lead, context) {
     - Depois que tiver nome + telefone + período, faça UMA única mensagem dizendo que vai encaminhar os dados.
     - 1-3 frases, tom humano
     - 1 pergunta engajadora (quando fizer sentido)
-    - 1 💚 final
+    - 1 💚 final`;
+
 
     // 🧠 MONTA MENSAGENS COM CACHE MÁXIMO
     const messages = [];
@@ -511,7 +508,7 @@ async function callOpenAIWithContext(userText, lead, context) {
     if (conversationSummary) {
         messages.push({
             role: 'user',
-            content: `📋 CONTEXTO ANTERIOR: \n\n${ conversationSummary }\n\n---\n\nMensagens recentes abaixo: `
+            content: `📋 CONTEXTO ANTERIOR: \n\n${conversationSummary}\n\n---\n\nMensagens recentes abaixo: `
         });
         messages.push({
             role: 'assistant',
@@ -558,7 +555,7 @@ async function callOpenAIWithContext(userText, lead, context) {
 function ensureSingleHeart(text) {
     if (!text) return "Como posso te ajudar? 💚";
     const clean = text.replace(/💚/g, '').trim();
-    return `${ clean } 💚`;
+    return `${clean} 💚`;
 }
 
 /**
