@@ -76,7 +76,7 @@ export const createLeadFromAd = async (req, res) => {
             autoReplyEnabled: true,
             manualControl: {
                 active: false,
-                autoResumeAfter: 720
+                autoResumeAfter: 360
             },
             appointment: {
                 seekingFor: 'Adulto +18 anos',
