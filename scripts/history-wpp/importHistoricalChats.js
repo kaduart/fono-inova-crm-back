@@ -3,9 +3,9 @@
 import 'dotenv/config';
 import fs from 'fs';
 import mongoose from 'mongoose';
+import Contact from '../../models/Contact.js';
 import Lead from '../../models/Leads.js';
 import Message from '../../models/Message.js';
-import Contact from '../../models/Contact.js';
 
 /**
  * 🔄 IMPORTA CONVERSAS DO ARQUIVO TXT
@@ -19,7 +19,7 @@ async function importHistoricalChats(filePath) {
         const lines = content.split('\n');
 
         console.log(`📄 Arquivo carregado: ${lines.length} linhas\n`);
-console.log('linesssssssssssssssssss', lines)
+        console.log('linesssssssssssssssssss', lines)
         // 2. PARSEIA MENSAGENS
         const conversations = parseConversations(lines);
 
@@ -70,9 +70,12 @@ function parseConversations(lines) {
     const conversations = [];
     let currentConv = null;
     let lastMsg = null;
+    let convIndex = 0;
 
     // Casa linhas do tipo: [meta qualquer] Remetente: Mensagem
     const msgRegex = /^\[(.+?)\]\s*([^:]+):\s*(.*)$/;
+    // Telefone no formato do export: +55 62 9287-8419, +55 6292878419 etc
+    const phoneRegex = /\+\d{1,3}\s?\d{2}\s?\d{4,5}-?\d{4}/;
 
     for (const rawLine of lines) {
         const line = rawLine.trim();
@@ -80,6 +83,10 @@ function parseConversations(lines) {
         // 🔹 Separador de conversas: linha em branco
         if (!line) {
             if (currentConv && currentConv.messages.length > 0) {
+                // se até agora não achou telefone, usa sintético
+                if (!currentConv.phone) {
+                    currentConv.phone = `hist_${convIndex}`;
+                }
                 conversations.push(currentConv);
                 currentConv = null;
                 lastMsg = null;
@@ -94,26 +101,32 @@ function parseConversations(lines) {
             const sender = senderRaw.trim();
             const content = contentRaw.trim();
 
-            // Direção: se for a clínica → outbound, senão → inbound
             const isClinic = sender.includes('Clínica Fono Inova');
             const direction = isClinic ? 'outbound' : 'inbound';
 
             // Cria conversa se ainda não existir
             if (!currentConv) {
-                const convIndex = conversations.length + 1;
-                // ⚠️ Usamos um "phone" sintético só para chavear no banco
+                convIndex++;
                 currentConv = {
-                    phone: `hist_${convIndex}`,
+                    phone: null,      // 🔥 vamos tentar achar o telefone de verdade
                     messages: []
                 };
             }
 
-            // Timestamp: por enquanto, só um Date genérico
-            // (para aprendizado, não precisamos da data exata)
+            // Se for mensagem de entrada e o sender parece um telefone → usa como phone da conversa
+            if (direction === 'inbound' && !currentConv.phone) {
+                const phoneMatch = sender.match(phoneRegex);
+                if (phoneMatch) {
+                    const rawPhone = phoneMatch[0];
+                    currentConv.phone = normalizePhone(rawPhone); // usa helper lá de baixo
+                }
+            }
+
+            // Timestamp: genérico por enquanto
             const timestamp = new Date();
 
             lastMsg = {
-                phone: currentConv.phone,
+                phone: currentConv.phone, // pode estar null aqui, mas não tem problema
                 direction,
                 content,
                 timestamp
@@ -122,13 +135,16 @@ function parseConversations(lines) {
             currentConv.messages.push(lastMsg);
 
         } else if (lastMsg) {
-            // Linha que não casa com o padrão → continuação da última mensagem
+            // Linha de continuação da última mensagem
             lastMsg.content += '\n' + line;
         }
     }
 
     // Garante a última conversa
     if (currentConv && currentConv.messages.length > 0) {
+        if (!currentConv.phone) {
+            currentConv.phone = `hist_${++convIndex}`;
+        }
         conversations.push(currentConv);
     }
 
@@ -136,42 +152,45 @@ function parseConversations(lines) {
 }
 
 
+
 /**
  * 💾 IMPORTA UMA CONVERSA COMPLETA
  * ⚠️ AQUI É ONDE A GENTE BURLA A VALIDAÇÃO DO MONGOOSE
  */
 async function importConversation(conv) {
-    const { phone, messages } = conv;
+    let { phone, messages } = conv;
 
     if (!messages || messages.length === 0) {
         return;
     }
 
+    // 🔥 Se for telefone real, normaliza pro padrão E.164 (+55DDD...)
+    const isSynthetic = phone && phone.startsWith('hist_');
+    const phoneKey = isSynthetic ? phone : normalizePhone(phone || '');
+
     // 1. CRIA/ATUALIZA CONTACT
-    let contact = await Contact.findOne({ phone });
+    let contact = await Contact.findOne({ phone: phoneKey });
     if (!contact) {
         contact = new Contact({
-            phone,
+            phone: phoneKey,
             name: 'Lead Histórico',
             tags: ['importado']
         });
 
-        // ⚠️ PULA VALIDAÇÃO
         await contact.save({ validateBeforeSave: false });
     }
 
     // 2. CRIA/ATUALIZA LEAD
-    let lead = await Lead.findOne({ 'contact.phone': phone });
+    let lead = await Lead.findOne({ 'contact.phone': phoneKey });
 
     if (!lead) {
-        // Detecta status baseado nas mensagens
         const status = inferStatus(messages);
         const conversionScore = calculateScore(messages, status);
 
         lead = new Lead({
             name: contact.name || 'Lead Histórico',
             contact: {
-                phone,
+                phone: phoneKey,
                 email: null
             },
             origin: 'WhatsApp',
@@ -181,7 +200,7 @@ async function importConversation(conv) {
                 date: m.timestamp,
                 channel: 'WhatsApp',
                 direction: m.direction,
-                message: m.content.substring(0, 200), // Primeiros 200 chars
+                message: m.content.substring(0, 200),
                 status: 'completed'
             })),
             tags: ['historico_importado'],
@@ -189,13 +208,11 @@ async function importConversation(conv) {
             createdAt: messages[0].timestamp
         });
 
-        // ⚠️ PULA VALIDAÇÃO
         await lead.save({ validateBeforeSave: false });
     }
 
     // 3. CRIA MESSAGES
     for (const msg of messages) {
-        // Verifica se já existe (para evitar duplicar se rodar mais de uma vez)
         const existing = await Message.findOne({
             lead: lead._id,
             timestamp: msg.timestamp,
@@ -207,11 +224,11 @@ async function importConversation(conv) {
                 lead: lead._id,
                 contact: contact._id,
                 from: msg.direction === 'inbound'
-                    ? phone
+                    ? phoneKey
                     : process.env.WHATSAPP_BUSINESS_PHONE,
                 to: msg.direction === 'inbound'
                     ? process.env.WHATSAPP_BUSINESS_PHONE
-                    : phone,
+                    : phoneKey,
                 direction: msg.direction,
                 type: 'text',
                 content: msg.content,
@@ -220,11 +237,11 @@ async function importConversation(conv) {
                 needs_human_review: false
             });
 
-            // ⚠️ PULA VALIDAÇÃO
             await doc.save({ validateBeforeSave: false });
         }
     }
 }
+
 
 /**
  * 🎯 INFERE STATUS DO LEAD
