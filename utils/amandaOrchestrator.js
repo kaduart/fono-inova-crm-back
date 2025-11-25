@@ -18,6 +18,66 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const PURE_GREETING_REGEX =
     /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|bom\s*dia)[\s!,.]*$/i;
 
+// 🧭 STATE MACHINE SIMPLES DE FUNIL
+function nextStage(
+    currentStage,
+    {
+        flags = {},
+        intent = {},
+        extracted = {},
+        score = 50,
+        isFirstMessage = false,
+        messageCount = 0,
+        lead = {},
+    } = {}
+) {
+    let stage = currentStage || 'novo';
+
+    // Já é paciente? não desce mais no funil
+    if (stage === 'paciente' || lead.isPatient) {
+        return 'paciente';
+    }
+
+    // 1️⃣ Sinais fortes de agendamento → vai pra interessado_agendamento
+    if (
+        flags.wantsSchedule ||
+        intent.primary === 'agendar_urgente' ||
+        intent.primary === 'agendar_avaliacao'
+    ) {
+        return 'interessado_agendamento';
+    }
+
+    // 2️⃣ Lead claramente em modo "ver preço"
+    if (
+        stage === 'novo' &&
+        (flags.asksPrice || intent.primary === 'informacao_preco')
+    ) {
+        return 'pesquisando_preco';
+    }
+
+    // 3️⃣ Se já perguntou preço antes e continua engajando → engajado
+    if (
+        (stage === 'pesquisando_preco' || stage === 'novo') &&
+        (score >= 70 || messageCount >= 4)
+    ) {
+        return 'engajado';
+    }
+
+    // 4️⃣ Se está em engajado e vem alguma intenção de agendar → sobe
+    if (
+        stage === 'engajado' &&
+        (flags.wantsSchedule ||
+            intent.primary === 'agendar_avaliacao' ||
+            intent.primary === 'agendar_urgente')
+    ) {
+        return 'interessado_agendamento';
+    }
+
+    // 5️⃣ Se nada bate, mantém
+    return stage;
+}
+
+
 /**
  * 🎯 ORQUESTRADOR COM CONTEXTO INTELIGENTE
  */
@@ -42,13 +102,84 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     // 🧩 FLAGS GERAIS (inclui thanks/bye/atendente, TEA, etc.)
     const flags = detectAllFlags(text, lead, enrichedContext);
 
+    const isVisitFunnel =
+        (flags.isNewLead || enrichedContext.stage === 'novo') &&
+        (flags.visitLeadHot || flags.visitLeadCold || enrichedContext.messageCount <= 2);
+
+    // Se for claramente início de funil + foco em visita, já empurra instruções extras
+    if (isVisitFunnel && !flags.asksPrice && !flags.wantsHumanAgent) {
+        const aiResponse = await callVisitFunnelAI({
+            text,
+            lead,
+            context: enrichedContext,
+            flags,
+        });
+        const scoped = enforceClinicScope(aiResponse, text);
+        return ensureSingleHeart(scoped);
+    }
+
+    // 🧠 NOVO: análise do lead pra stage/score/urgência
+    let analysis = null;
+    try {
+        analysis = await analyzeLeadMessage({
+            text,
+            lead,
+            history: enrichedContext.conversationHistory || [],
+        });
+    } catch (err) {
+        console.warn('⚠️ leadIntelligence falhou no orchestrator:', err.message);
+    }
+
+    const extracted = analysis?.extracted || {};
+    const intent = analysis?.intent || {};
+    const score = analysis?.score ?? lead.conversionScore ?? 50;
+
+    // 🧭 CALCULA PRÓXIMO STAGE A PARTIR DA INTELIGÊNCIA
+    const currentStage =
+        enrichedContext.stage ||
+        lead.stage ||
+        'novo';
+
+    const messageCount = enrichedContext.messageCount || 0;
+
+    const newStage = nextStage(currentStage, {
+        flags,
+        intent,
+        extracted,
+        score,
+        isFirstMessage: enrichedContext.isFirstContact,
+        messageCount,
+        lead,
+    });
+
+    if (newStage !== currentStage) {
+        console.log('🔁 [STAGE] Transição de stage:', {
+            from: currentStage,
+            to: newStage,
+            score,
+            intent: intent.primary,
+            urgencia: extracted.urgencia,
+            bloqueioDecisao: extracted.bloqueioDecisao,
+        });
+
+        // 🔧 AQUI seria o ponto ideal pra persistir no banco, ex:
+        // await LeadModel.findByIdAndUpdate(lead._id, { stage: newStage });
+    }
+
+    // Usa SEMPRE esse contexto já com stage atualizado pro resto do fluxo
+    const contextWithStage = {
+        ...enrichedContext,
+        stage: newStage,
+    };
+
     // 👋 É a PRIMEIRA mensagem (ou bem início)?
     const isFirstMessage =
-        enrichedContext.isFirstContact ||
-        !enrichedContext.messageCount ||
-        enrichedContext.messageCount <= 1 ||
-        (Array.isArray(enrichedContext.conversationHistory) &&
-            enrichedContext.conversationHistory.length <= 1);
+        contextWithStage.isFirstContact ||
+        !contextWithStage.messageCount ||
+        contextWithStage.messageCount <= 1 ||
+        (Array.isArray(contextWithStage.conversationHistory) &&
+            contextWithStage.conversationHistory.length <= 1);
+
 
     // 👋 Saudação "pura", sem dúvida junto
     const isPureGreeting = PURE_GREETING_REGEX.test(normalized);
@@ -104,12 +235,13 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
             therapies,
             flags: {
                 ...flags,
-                conversationSummary: enrichedContext.conversationSummary || ''
+                conversationSummary: contextWithStage.conversationSummary || ''
             },
             userText: text,
             lead,
-            context: enrichedContext
+            context: contextWithStage
         });
+
 
         const scoped = enforceClinicScope(aiResponse, text);
         return ensureSingleHeart(scoped);
@@ -131,16 +263,17 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     }
 
     // ===== 5. IA COM CONTEXTO =====
-    console.log(`🤖 [ORCHESTRATOR] IA | Stage: ${enrichedContext.stage} | Msgs: ${enrichedContext.messageCount}`);
+    console.log(`🤖 [ORCHESTRATOR] IA | Stage: ${contextWithStage.stage} | Msgs: ${contextWithStage.messageCount}`);
     try {
         const aiResponse = await callOpenAIWithContext(
             text,
             lead,
             {
-                ...enrichedContext,
-                conversationSummary: enrichedContext.conversationSummary || ''
+                ...contextWithStage,
+                conversationSummary: contextWithStage.conversationSummary || ''
             }
         );
+
         const scoped = enforceClinicScope(aiResponse, text);
         return ensureSingleHeart(scoped);
     } catch (error) {
@@ -148,6 +281,88 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         return "Vou verificar e já te retorno, por favor um momento 💚";
     }
 }
+
+async function callVisitFunnelAI({ text, lead, context, flags }) {
+    const { SYSTEM_PROMPT_AMANDA } = await import('./amandaPrompt.js');
+
+    const messages = [];
+
+    if (context.conversationSummary) {
+        messages.push({
+            role: 'user',
+            content: `📋 CONTEXTO ANTERIOR:\n\n${context.conversationSummary}\n\n---\n\nMensagens recentes abaixo:`
+        });
+        messages.push({
+            role: 'assistant',
+            content: 'Entendi o contexto. Vou seguir o funil de VISITA PRESENCIAL.'
+        });
+    }
+
+    if (context.conversationHistory?.length) {
+        const safeHistory = context.conversationHistory.map(msg => ({
+            role: msg.role || 'user',
+            content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+        }));
+        messages.push(...safeHistory);
+    }
+
+    const visitPrompt = `
+${text}
+
+🎯 MODO VISITA PRESENCIAL ATIVO
+- Lead ${flags.visitLeadHot ? 'QUENTE (quer resolver logo)' : 'FRIO (ainda pesquisando)'}.
+- Seu objetivo é conduzir para VISITA PRESENCIAL na clínica, seguindo:
+
+1) PRIMEIRO CONTATO
+- Pergunte nome da criança, idade e o que motivou a busca (se isso ainda não estiver claro no histórico).
+- Classifique mentalmente como lead quente ou frio.
+
+2) LEAD QUENTE
+- Ofereça a ideia da visita presencial como passo natural ("vir conhecer o espaço e conversar com a equipe").
+- Dê SEMPRE uma escolha binária que AVANÇA:
+  • "Prefere deixar encaminhada uma visita essa semana ou na próxima?"
+  • "Melhor período pra vocês costuma ser manhã ou tarde?"
+
+3) LEAD FRIO
+- Normalize a pesquisa ("muita gente começa só pesquisando").
+- Ofereça VISITA sem compromisso:
+  • "Podemos deixar encaminhada uma visita gratuita, sem compromisso, só pra você conhecer o espaço e tirar dúvidas."
+- Feche com pergunta binária:
+  • "Faz mais sentido já deixar essa visita combinada ou prefere só receber mais informações por enquanto?"
+
+4) OBJECÕES (usar se aparecerem):
+- Plano de saúde, valor, falta de tempo, outra clínica, filho pequeno/suspeita de TEA:
+  • Acolha.
+  • Responda de forma simples.
+  • Puxe de volta para a VISITA como próximo passo.
+
+REGRAS:
+- Máximo 2 frases + 1 pergunta binária.
+- Fale sempre como recepcionista acolhedora.
+- NÃO repita perguntas que já tenham sido respondidas no histórico.
+- Termine com 1 💚.
+`;
+
+    messages.push({ role: 'user', content: visitPrompt });
+
+    const response = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 200,
+        temperature: 0.6,
+        system: [
+            {
+                type: "text",
+                text: SYSTEM_PROMPT_AMANDA,
+                cache_control: { type: "ephemeral" }
+            }
+        ],
+        messages
+    });
+
+    return response.content[0]?.text?.trim() || "Posso te ajudar a escolher um dia pra visitar a clínica? 💚";
+}
+
+
 
 /**
  * 📖 MANUAL
@@ -398,6 +613,7 @@ ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${
  */
 async function callOpenAIWithContext(userText, lead, context) {
     const { SYSTEM_PROMPT_AMANDA } = await import('./amandaPrompt.js');
+    const { getLatestInsights } = await import('../services/amandaLearningService.js');
 
     const {
         stage = 'novo',
@@ -503,11 +719,34 @@ async function callOpenAIWithContext(userText, lead, context) {
         console.warn('⚠️ leadIntelligence falhou (não crítico):', err.message);
     }
 
+    const insights = await getLatestInsights();
+    let openingsNote = '';
+    let closingNote = '';
+
+    if (insights?.data?.bestOpeningLines?.length) {
+        const examples = insights.data.bestOpeningLines
+            .slice(0, 3)
+            .map(o => `- "${o.text}"`)
+            .join('\n');
+
+        openingsNote = `\n💡 EXEMPLOS DE ABERTURA QUE FUNCIONARAM:\n${examples}`;
+    }
+
+    if (insights?.data?.successfulClosingQuestions?.length) {
+        const examples = insights.data.successfulClosingQuestions
+            .slice(0, 5)
+            .map(q => `- "${q.question}"`)
+            .join('\n');
+
+        closingNote = `\n💡 PERGUNTAS DE FECHAMENTO QUE LEVARAM A AGENDAMENTO:\n${examples}\nUse esse estilo (sem copiar exatamente).`;
+    }
+
     const currentPrompt = `${userText}
 
 CONTEXTO:
 LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}
 ${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}${historyAgeNote}
+${openingsNote}${closingNote}
 
 INSTRUÇÃO: ${stageInstruction}
 
@@ -571,6 +810,7 @@ REGRAS:
 }
 
 
+
 /**
  * 🎨 HELPER
  */
@@ -588,20 +828,23 @@ function enforceClinicScope(aiText = "", userText = "") {
 
     const t = aiText.toLowerCase();
     const u = (userText || "").toLowerCase();
+    const combined = `${u} ${t}`;
 
-    const asksExam =
+    const isHearingExamContext =
         /(exame\s+de\s+au(diç|diçã|dição)|exame\s+auditivo|audiometria|bera|peate|emiss(ões)?\s+otoac[úu]stic)/i.test(
-            u + " " + t
+            combined
         );
 
-    const mentionsExamInReply =
-        /(exame\s+de\s+au(diç|diçã|dição)|exame\s+auditivo|audiometria|bera|peate|emiss(ões)?\s+otoac[úu]stic)/i.test(
-            t
+    // 🚑 NOVO: contexto de frênulo / teste da linguinha
+    const isFrenuloOrLinguinha =
+        /\b(fr[eê]nulo|freio\s+lingual|fr[eê]nulo\s+lingual|teste\s+da\s+linguinha|linguinha)\b/i.test(
+            combined
         );
 
-    const mentionsRPGorPilates = /\brpg\b|pilates/i.test(u + " " + t);
+    const mentionsRPGorPilates = /\brpg\b|pilates/i.test(combined);
 
-    if (asksExam || mentionsExamInReply) {
+    // 🔊 Só bloqueia exame auditivo se NÃO for caso de frênulo/linguinha
+    if (isHearingExamContext && !isFrenuloOrLinguinha) {
         return (
             "Aqui na Clínica Fono Inova nós **não realizamos exames de audição** " +
             "(como audiometria ou BERA/PEATE). Nosso foco é na **avaliação e terapia fonoaudiológica**. " +

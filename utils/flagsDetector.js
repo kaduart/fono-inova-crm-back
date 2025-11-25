@@ -12,27 +12,76 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
     // asksCAA, mentionsTOD, mentionsABA, mentionsMethodPrompt,
     // asksAreas, asksDays, asksTimes, mentionsAdult/Child/Teen,
     // wantsHumanAgent, etc.)
-    const baseFlags = deriveFlagsFromText(text || "");
+    const baseFlags = deriveFlagsFromText(text || "") || {};
 
     // 🙏 Encerramento / agradecimento simples
     const saysThanks = /\b(obrigad[ao]s?|obg|obgd|brigad[ao]s?|valeu|vlw)\b/i.test(t);
     const saysBye = /(tchau|até\s+logo|até\s+mais|até\s+amanhã|boa\s+noite|bom\s+descanso)/i.test(t);
 
+    // 📊 Contexto conversacional básico
+    const stage = context.stage || 'novo';
+    const messageCount = context.messageCount || 0;
+    const isReturningLead = messageCount > 1;
+    const alreadyAskedPrice = context.alreadyAskedPrice || false;
+
+    // 👤 Perfil do lead (contexto + texto atual)
+    const userProfile = detectUserProfile(t, lead, context);
+
+    // 🔎 MODO VISITA PRESENCIAL (funil)
+    const isNewLead =
+        !context.isPatient &&
+        (stage === 'novo' || !stage) &&
+        messageCount <= 3;
+
+    // sinais de “quero resolver logo”
+    const wantsFastSolution = /(?:come[cç]ar logo|quero come[cç]ar|o quanto antes|o mais r[aá]pido poss[ií]vel|urgente|urg[êe]ncia)/i.test(t);
+
+    // baseFlags.wantsSchedule já vem do deriveFlagsFromText
+    const wantsSchedule = !!baseFlags.wantsSchedule;
+
+    // sinais de “só pesquisando / vendo opções”
+    const justResearching =
+        /(s[oó]\s*s[oó]|s[oó]\s*pesquisando|s[oó]\s*olhando|vendo outras cl[ií]nicas|vendo outras opções|ainda vou ver|ainda estou vendo)/i.test(t);
+
+    // lead quente = novo + quer agendar/tem urgência
+    const visitLeadHot =
+        isNewLead &&
+        (wantsSchedule || wantsFastSolution);
+
+    // lead frio = novo + explicitamente em pesquisa + não é lead quente
+    const visitLeadCold =
+        isNewLead &&
+        justResearching &&
+        !visitLeadHot;
+
+    // atalho: estamos num contexto bom pra aplicar funil de visita?
+    const isVisitFunnel =
+        isNewLead &&
+        (visitLeadHot || visitLeadCold || messageCount <= 2) &&
+        !baseFlags.wantsHumanAgent; // se pediu atendente humana, IA sai do caminho
+
     return {
         // ✅ Tudo que vem do prompt central
-        ...(baseFlags || {}),
+        ...baseFlags,
 
-        // 👤 Perfil do lead (contexto + texto atual)
-        userProfile: detectUserProfile(t, lead, context),
+        // 👤 Perfil do lead
+        userProfile,
 
         // 📊 Contexto conversacional
-        isReturningLead: (context.messageCount || 0) > 1,
-        alreadyAskedPrice: context.alreadyAskedPrice || false,
-        stage: context.stage || 'novo',
+        isReturningLead,
+        alreadyAskedPrice,
+        stage,
+        messageCount,
 
         // 🙏 Encerramento
         saysThanks,
         saysBye,
+
+        // 🎯 Funil de visita presencial
+        isNewLead,
+        visitLeadHot,
+        visitLeadCold,
+        isVisitFunnel,
     };
 }
 
