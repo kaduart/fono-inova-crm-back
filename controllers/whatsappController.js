@@ -13,7 +13,7 @@ import { calculateOptimalFollowupTime } from "../services/intelligence/smartFoll
 import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
-import { normalizeE164BR, tailPattern } from "../utils/phone.js";
+import { normalizeE164BR } from "../utils/phone.js";
 const AUTO_TEST_NUMBERS = [
     "5561981694922", "5561981694922", "556292013573", "5562992013573"
 ];
@@ -352,56 +352,98 @@ export const whatsappController = {
         }
     },
 
-    async getChat(req, res) {
+    async listContacts(req, res) {
         try {
-            const { phone } = req.params;
-            if (!phone) {
-                return res.status(400).json({ error: "Número de telefone é obrigatório" });
+            const {
+                page = 1,
+                limit = 50,
+                search = ''
+            } = req.query;
+
+            const skip = (parseInt(page) - 1) * parseInt(limit);
+            const limitNum = Math.min(parseInt(limit), 100);
+
+            const filter = {};
+            if (search) {
+                filter.$or = [
+                    { name: { $regex: search, $options: 'i' } },
+                    { phone: { $regex: search } }
+                ];
             }
 
-            // Normaliza pra E.164 (+55...)
-            const pE164 = normalizeE164BR(phone);      // ex: "+556181694922"
-            const numeric = pE164.replace(/\D/g, '');  // ex: "556181694922"
+            const [contacts, total] = await Promise.all([
+                Contact.find(filter)
+                    .select('_id name phone avatar lastMessageAt lastMessage hasNewMessage unreadCount')
+                    .sort({ lastMessageAt: -1, name: 1 })
+                    .skip(skip)
+                    .limit(limitNum)
+                    .lean(),
+                Contact.countDocuments(filter)
+            ]);
 
-            // 🔍 Busca considerando os dois formatos
-            let msgs = await Message.find({
-                $or: [
-                    { from: pE164 },
-                    { to: pE164 },
-                    { from: numeric },
-                    { to: numeric },
-                ],
-            }).sort({ timestamp: 1 });
-
-            // Fallback com tail se ainda não achar nada
-            if (msgs.length === 0) {
-                const tail = tailPattern(numeric, 8, 11);
-                msgs = await Message.find({
-                    $or: [
-                        { from: { $regex: tail } },
-                        { to: { $regex: tail } },
-                    ],
-                }).sort({ timestamp: 1 });
-            }
-
-            return res.json({ success: true, data: msgs });
-        } catch (err) {
-            console.error("❌ Erro ao buscar chat:", err);
-            return res.status(500).json({ error: err.message });
-        }
-    },
-
-    async listContacts(_req, res) {
-        try {
-            const contacts = await Contact.find()
-                .sort({ lastMessageAt: -1, name: 1 }); // 🆕 mais recente primeiro
-            res.json(contacts);
+            res.json({
+                success: true,
+                data: contacts,
+                pagination: {
+                    page: parseInt(page),
+                    limit: limitNum,
+                    total,
+                    hasMore: skip + contacts.length < total
+                }
+            });
         } catch (err) {
             console.error("❌ Erro ao listar contatos:", err);
             res.status(500).json({ error: err.message });
         }
     },
 
+    async getChat(req, res) {
+        try {
+            const { phone } = req.params;
+            const { limit = 50, before } = req.query;
+
+            if (!phone) {
+                return res.status(400).json({ error: "Número de telefone é obrigatório" });
+            }
+
+            const pE164 = normalizeE164BR(phone);
+            const numeric = pE164.replace(/\D/g, '');
+            const limitNum = Math.min(parseInt(limit), 100);
+
+            // Query otimizada com $in ao invés de múltiplos $or
+            const phoneVariants = [pE164, numeric, `+${numeric}`];
+
+            const filter = {
+                $or: [
+                    { from: { $in: phoneVariants } },
+                    { to: { $in: phoneVariants } }
+                ]
+            };
+
+            // Paginação por cursor
+            if (before) {
+                filter.timestamp = { $lt: new Date(before) };
+            }
+
+            const msgs = await Message.find(filter)
+                .select('_id from to content text type timestamp direction status mediaUrl mediaId caption')
+                .sort({ timestamp: before ? -1 : -1 })
+                .limit(limitNum)
+                .lean();
+
+            // Ordena cronologicamente
+            msgs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+            return res.json({
+                success: true,
+                data: msgs,
+                hasMore: msgs.length === limitNum
+            });
+        } catch (err) {
+            console.error("❌ Erro ao buscar chat:", err);
+            return res.status(500).json({ error: err.message });
+        }
+    },
 
     async addContact(req, res) {
         try {
