@@ -19,7 +19,7 @@ async function importHistoricalChats(filePath) {
         const lines = content.split('\n');
 
         console.log(`📄 Arquivo carregado: ${lines.length} linhas\n`);
-
+console.log('linesssssssssssssssssss', lines)
         // 2. PARSEIA MENSAGENS
         const conversations = parseConversations(lines);
 

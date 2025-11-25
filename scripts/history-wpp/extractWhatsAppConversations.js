@@ -1,10 +1,65 @@
 // scripts/extractWhatsAppConversations.js - EXTRAÇÃO AUTOMÁTICA
 
-import puppeteer from 'puppeteer';
 import fs from 'fs';
+import puppeteer from 'puppeteer';
 
 // Cada card de conversa na sua conta está em <div role="row" ...>
 const CHAT_ITEM_SELECTOR = 'div[role="row"]';
+
+async function getPhoneForCurrentChat(page) {
+    try {
+        // 1) Tentar clicar no header para abrir dados do contato
+        const headerButton =
+            (await page.$('header [data-testid="conversation-info-header"]')) ||
+            (await page.$('header [data-testid="chat-header"]')) ||
+            (await page.$('header'));
+
+        if (headerButton) {
+            await headerButton.click();
+            await page.waitForTimeout(1000);
+
+            await page
+                .waitForSelector(
+                    '[data-testid="contact-info"], [data-testid="chat-subtitle"], [role="dialog"]',
+                    { timeout: 5000 }
+                )
+                .catch(() => {});
+        }
+
+        // 2) Dentro do painel, procurar um texto com formato de telefone
+        const phone = await page.evaluate(() => {
+            const phoneRegex = /\+\d{1,3}\s?\d{2}\s?\d{4,5}-?\d{4}/; // ex: +55 62 9287-8419
+
+            const containers = [
+                document.querySelector('[data-testid="contact-info"]'),
+                document.querySelector('[role="dialog"]'),
+                document
+            ].filter(Boolean);
+
+            for (const root of containers) {
+                const els = Array.from(root.querySelectorAll('span, div'));
+                for (const el of els) {
+                    const text = (el.textContent || '').trim();
+                    const match = text.match(phoneRegex);
+                    if (match) {
+                        return match[0];
+                    }
+                }
+            }
+            return null;
+        });
+
+        // 3) Fecha painel com ESC
+        try {
+            await page.keyboard.press('Escape');
+        } catch (e) {}
+
+        return phone;
+    } catch (err) {
+        console.warn('⚠️ Erro ao buscar telefone do contato:', err.message);
+        return null;
+    }
+}
 
 /**
  * 🤖 EXTRAI CONVERSAS DO WHATSAPP WEB
@@ -57,7 +112,6 @@ async function extractConversations() {
         while (scrollRounds < MAX_SCROLL_ROUNDS && totalProcessed < MAX_CONVERSATIONS) {
             scrollRounds++;
 
-            // 👉 Pega os cards visíveis neste momento
             let items = await page.$$(CHAT_ITEM_SELECTOR);
 
             console.log(`🔍 Lote ${scrollRounds}: ${items.length} cards visíveis`);
@@ -99,13 +153,17 @@ async function extractConversations() {
                     await items[i].click();
                     await new Promise(resolve => setTimeout(resolve, 2000));
 
-                    // Extrai nome do contato pelo header (fallback para o título)
+                    // 1) Nome no topo (pode ser nome salvo ou o próprio número)
                     const contactName = await page.$eval(
                         'header h1, header span[title], header span[dir="auto"]',
                         el => el.textContent || el.getAttribute('title')
                     ).catch(() => title);
 
-                    // Extrai mensagens da conversa
+                    // 2) Tenta pegar o telefone cru no painel de info
+                    const phoneNumber = await getPhoneForCurrentChat(page);
+                    console.log(`   ☎️ Telefone detectado: ${phoneNumber || 'não encontrado'}`);
+
+                    // 3) Extrai mensagens
                     const messages = await page.$$eval(
                         'div[data-id], div.message-in, div.message-out',
                         (msgs) => msgs.map(msg => {
@@ -129,9 +187,11 @@ async function extractConversations() {
 
                     console.log(`   ✅ ${messages.length} mensagens extraídas`);
 
+                    // 👉 AGORA SÓ UM PUSH, COM phone
                     allChats.push({
                         contact: contactName,
-                        messages: messages.filter(m => m.text) // remove vazias
+                        phone: phoneNumber || null,
+                        messages: messages.filter(m => m.text)
                     });
 
                     if (totalProcessed >= MAX_CONVERSATIONS) break;
@@ -141,7 +201,7 @@ async function extractConversations() {
             }
 
             if (totalProcessed >= MAX_CONVERSATIONS) {
-                console.log('⚠️ Atingiu o limite de conversas configurado (MAX_CONVERSATIONS).');
+                console.log('⚠️ Atingiu o limite de conversas configurado (MAX_CONVERSASIONS).');
                 break;
             }
 
@@ -153,9 +213,9 @@ async function extractConversations() {
             if (pane) {
                 const reachedBottom = await pane.evaluate(el => {
                     const before = el.scrollTop;
-                    el.scrollBy(0, 600); // rola 600px pra baixo
+                    el.scrollBy(0, 600);
                     const after = el.scrollTop;
-                    return after === before; // se não mudou, chegou no fim
+                    return after === before;
                 });
 
                 if (reachedBottom) {
@@ -163,7 +223,6 @@ async function extractConversations() {
                     break;
                 }
             } else {
-                // fallback: rola a página inteira
                 const reachedBottom = await page.evaluate(() => {
                     const before = window.scrollY;
                     window.scrollBy(0, 600);
@@ -177,7 +236,7 @@ async function extractConversations() {
                 }
             }
 
-            await new Promise(resolve => setTimeout(resolve, 1500)); // espera carregar mais
+            await new Promise(resolve => setTimeout(resolve, 1500));
         }
 
         console.log(`📊 Total de conversas processadas: ${allChats.length}\n`);
@@ -212,48 +271,23 @@ function formatChatsToTxt(chats) {
     let output = '';
 
     chats.forEach(chat => {
+        // se achou telefone, ele vira o “nome” do lead
+        const inboundSender = chat.phone || chat.contact;
+
         chat.messages.forEach(msg => {
             const sender =
                 msg.direction === 'outbound'
                     ? 'Clínica Fono Inova'
-                    : chat.contact;
+                    : inboundSender;
 
             output += `[${msg.time}] ${sender}: ${msg.text}\n`;
         });
 
-        // Separador entre conversas
+        // separador de conversa
         output += '\n\n\n';
     });
 
     return output;
-}
-
-/**
- * 🔄 ROLA ATÉ O TOPO (OPCIONAL - NÃO USADO NO FLUXO ATUAL)
- */
-async function scrollToTop(page) {
-    let previousHeight = 0;
-    let currentHeight = await page.$eval(
-        'div[data-tab], div[role="application"]',
-        el => el.scrollHeight
-    ).catch(() => 0);
-
-    if (!currentHeight) return;
-
-    while (currentHeight > previousHeight) {
-        await page.$eval(
-            'div[data-tab], div[role="application"]',
-            el => el.scrollTo(0, 0)
-        ).catch(() => {});
-
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        previousHeight = currentHeight;
-        currentHeight = await page.$eval(
-            'div[data-tab], div[role="application"]',
-            el => el.scrollHeight
-        ).catch(() => previousHeight);
-    }
 }
 
 // EXECUTAR

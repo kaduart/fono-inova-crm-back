@@ -40,6 +40,18 @@ const leadSchema = new mongoose.Schema({
       default: 'Mensalidade'
     }
   },
+  stage: {
+    type: String,
+    enum: [
+      'novo',
+      'pesquisando_preco',
+      'engajado',
+      'interessado_agendamento',
+      'paciente'
+    ],
+    default: 'novo',
+    index: true
+  },
 
   status: {
     type: String,

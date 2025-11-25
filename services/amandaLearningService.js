@@ -264,7 +264,7 @@ export async function analyzeHistoricalConversations() {
             generatedAt: new Date()
         });
 
-        console.log('✅ [LEARNING] Insights salvos:', saved._id);
+        console.log(`✅ Encontrados ${successfulLeads.length} leads convertidos`);
         console.log(`📊 Aberturas únicas: ${aggregated.bestOpeningLines.length}`);
         console.log(`💰 Respostas de preço: ${aggregated.effectivePriceResponses.length}`);
         console.log(`❓ Perguntas de fechamento: ${aggregated.successfulClosingQuestions.length}`);

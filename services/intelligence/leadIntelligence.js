@@ -17,7 +17,11 @@ export function extractStructuredData(text) {
         planoSaude: null,
         disponibilidade: null,
         contextoExterno: null,
-        queixaDetalhada: []
+        queixaDetalhada: [],
+
+        proximaAcaoDeclarada: null,
+        bloqueioDecisao: null,
+        mencionaTerceiro: null,
     };
 
     // IDADE
@@ -50,12 +54,13 @@ export function extractStructuredData(text) {
         'tdah': /\b(tdah|hiperativ|d[eé]ficit\s+aten)\b/,
         'dificuldade_aprendizagem': /\b(dificuldade\s+escolar|n[aã]o\s+aprende)\b/,
         'ansiedade': /\b(ansiedade|ansiosa)\b/,
-        'comportamento': /\b(birra|agressiv)\b/
+        'comportamento': /\b(birra|agressiv)\b/,
+        'freio_lingual': /\b(fr[eê]nulo|freio\s+lingual|fr[eê]nulo\s+lingual|teste\s+da\s+linguinha|linguinha)\b/,
     };
 
     for (const [key, regex] of Object.entries(queixas)) {
         if (regex.test(t)) {
-            data.queixa = key;
+            if (!data.queixa) data.queixa = key;  // primeira vira principal
             data.queixaDetalhada.push(key);
         }
     }
@@ -84,9 +89,13 @@ export function extractStructuredData(text) {
     }
 
     // 🔥 NOVO: Urgência baseada em idade + queixa
-    if (data.idadeRange === 'bebe_1a3' && data.queixa === 'atraso_fala') {
+    if (data.idadeRange === 'bebe_1a3' && (data.queixa === 'atraso_fala' || data.queixa === 'freio_lingual')) {
         data.urgencia = 'alta';
     }
+    if (data.idadeRange === 'infantil_4a6' && data.queixa === 'freio_lingual') {
+        data.urgencia = 'media'; // por exemplo
+    }
+
 
     // CONTEXTO EXTERNO
     if (/\b(escola|professora)\b/.test(t)) {
@@ -103,6 +112,41 @@ export function extractStructuredData(text) {
     if (/\b(manh[aã])\b/.test(t)) data.disponibilidade = 'manha';
     else if (/\b(tarde)\b/.test(t)) data.disponibilidade = 'tarde';
     else if (/\b(noite)\b/.test(t)) data.disponibilidade = 'noite';
+
+    // COMPROMISSOS / PROXIMA AÇÃO
+
+    // falar com marido/esposa/família
+    if (!data.bloqueioDecisao && /\b(falar|conversar)\s+com\s+(meu\s+marido|minha\s+esposa|meu\s+esposo|minha\s+mulher|minha\s+companheira|meu\s+companheiro|meus?\s+pais|minha\s+m[aã]e|meu\s+pai|fam[ií]lia)\b/.test(t)) {
+        data.bloqueioDecisao = 'consultar_terceiro';
+        data.mencionaTerceiro = 'familia';
+        data.proximaAcaoDeclarada = 'consultar_familia';
+    }
+
+    // falar com escola / coordenação
+    if (!data.bloqueioDecisao && /\b(falar|ver)\s+com\s+(a\s+escola|a\s+professora|a\s+coordena[cç][aã]o)\b/.test(t)) {
+        data.bloqueioDecisao = 'consultar_escola';
+        data.mencionaTerceiro = 'escola';
+        data.proximaAcaoDeclarada = 'consultar_escola';
+    }
+
+    // "vou ver o preço", "vou ver as contas"
+    if (!data.bloqueioDecisao && /\b(vou\s+ver|ver\s+certinho|ver\s+melhor)\b.*\b(pre[çc]o|valor|contas?|or[cç]amento)\b/.test(t)) {
+        data.bloqueioDecisao = 'avaliar_preco';
+        data.proximaAcaoDeclarada = 'avaliar_preco';
+    }
+
+    // "vou olhar agenda", "vou ver horário", "vou organizar rotina"
+    if (!data.bloqueioDecisao && /\b(vou\s+ver|vou\s+olhar|vou\s+organizar)\b.*\b(agenda|hor[aá]rio|rotina)\b/.test(t)) {
+        data.bloqueioDecisao = 'ajustar_rotina';
+        data.proximaAcaoDeclarada = 'ajustar_rotina';
+    }
+
+    // pensar
+    if (!data.bloqueioDecisao && /\b(pensar\s+melhor|decidir\s+melhor|depois\s+eu\s+vejo|vou\s+pensar)\b/.test(t)) {
+        data.bloqueioDecisao = 'refletir';
+        data.proximaAcaoDeclarada = 'pensar_melhor';
+    }
+
 
     return data;
 }

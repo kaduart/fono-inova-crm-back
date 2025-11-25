@@ -11,7 +11,7 @@ import {
     getFollowupTrend,
     getPendingFollowups,
     resendFollowup,
-    scheduleFollowup
+    scheduleFollowup,
 } from '../controllers/followupController.js';
 
 const router = express.Router();

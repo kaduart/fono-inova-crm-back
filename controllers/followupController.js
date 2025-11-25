@@ -4,12 +4,11 @@ import Followup from '../models/Followup.js';
 import Lead from '../models/Leads.js';
 import Message from '../models/Message.js';
 
+import { createSmartFollowupForLead } from "../services/followupOrchestrator.js";
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import {
-    calculateOptimalFollowupTime,
     generateContextualFollowup
 } from "../services/intelligence/smartFollowup.js";
-import { createSmartFollowupForLead } from "../services/followupOrchestrator.js";
 
 // ⚠️ FALLBACK (Amanda 1.0)
 import { generateFollowupMessage } from "../services/aiAmandaService.js";
@@ -565,5 +564,125 @@ export const getAvgResponseTime = async (req, res) => {
         res.json({ success: true, data: { avgMinutes } });
     } catch (err) {
         res.status(500).json({ error: "Erro ao calcular tempo médio", details: err.message });
+    }
+};
+
+
+export const backfillAllUnconverted = async (req, res) => {
+    try {
+        const objective = req.body.objective || "reengajamento";
+
+        // opcional: se quiser limitar pra testar primeiro
+        const limit = Number(req.body.limit || 0); // 0 = sem limite
+
+        const baseQuery = {
+            // ainda não virou paciente
+            status: { $ne: "virou_paciente" },
+            $or: [
+                { convertedToPatient: { $exists: false } },
+                { convertedToPatient: null }
+            ],
+            // precisa ter telefone
+            "contact.phone": { $exists: true, $ne: null }
+        };
+
+        console.log("🔍 Iniciando backfill ALL com filtro:", baseQuery);
+
+        const leadsCursor = Lead.find(baseQuery)
+            .select("_id name status origin contact autoReplyEnabled manualControl")
+            .cursor();
+
+        const now = new Date();
+        let total = 0;
+        let created = 0;
+        const skipped = [];
+
+        for await (const lead of leadsCursor) {
+            total++;
+
+            if (limit && created >= limit) {
+                skipped.push({
+                    leadId: lead._id,
+                    reason: "limit_reached"
+                });
+                continue;
+            }
+
+            // 1) autoReply desligado
+            if (lead.autoReplyEnabled === false) {
+                skipped.push({
+                    leadId: lead._id,
+                    reason: "autoReply_disabled"
+                });
+                continue;
+            }
+
+            // 2) controle manual ativo
+            if (lead.manualControl?.active) {
+                skipped.push({
+                    leadId: lead._id,
+                    reason: "manual_control_active"
+                });
+                continue;
+            }
+
+            // 3) já tem followup futuro
+            const existing = await Followup.findOne({
+                lead: lead._id,
+                status: { $in: ["scheduled", "processing"] },
+                scheduledAt: { $gte: now }
+            }).lean();
+
+            if (existing) {
+                skipped.push({
+                    leadId: lead._id,
+                    reason: "already_has_future_followup",
+                    followupId: existing._id
+                });
+                continue;
+            }
+
+            // 4) criar follow-up inteligente com Amanda 2.0
+            try {
+                const { followup, score } = await createSmartFollowupForLead(
+                    lead._id,
+                    {
+                        explicitScheduledAt: null, // Amanda escolhe melhor horário
+                        objective,
+                        attempt: 1
+                    }
+                );
+
+                created++;
+
+                console.log("✅ Backfill FU criado:", {
+                    leadId: String(lead._id),
+                    name: lead.name,
+                    followupId: String(followup._id),
+                    score,
+                    scheduledAt: followup.scheduledAt
+                });
+            } catch (err) {
+                console.warn("⚠️ Erro ao criar FU para lead", String(lead._id), err.message);
+                skipped.push({
+                    leadId: lead._id,
+                    reason: err.message
+                });
+            }
+        }
+
+        return res.json({
+            success: true,
+            objective,
+            totalLeadsChecked: total,
+            followupsCreated: created,
+            skipped
+        });
+    } catch (err) {
+        console.error("❌ Erro no backfill ALL unconverted:", err);
+        return res.status(500).json({
+            success: false,
+            error: err.message
+        });
     }
 };

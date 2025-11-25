@@ -9,6 +9,7 @@ import Lead from '../../models/Leads.js';
 // import Lead from '../../models/Lead.js';
 
 import { auth } from '../../middleware/auth.js';
+import { normalizePhoneForCompare } from '../../utils/phone.js';
 
 const router = express.Router();
 
@@ -89,25 +90,20 @@ router.get('/sync', auth, async (req, res) => {
       // Continua com array vazio se a API não suportar listagem de contatos
     }
 
-    // 3️⃣ Normaliza phones para comparação
-    const normalizePhone = (phone) => {
-      if (!phone) return '';
-      return phone.replace(/\D/g, '').replace(/^55/, '');
-    };
 
     const mongoPhones = new Set(
       realLeads
-        .map((l) => normalizePhone(l.phone))
+        .map((l) => normalizePhoneForCompare(l.phone || l.contact?.phone))
         .filter((p) => p && p.length >= 10) // Só phones válidos
     );
 
     const whatsappPhones = new Set(
-      whatsappContacts.map((c) => normalizePhone(c.wa_id))
+      whatsappContacts.map((c) => normalizePhoneForCompare(c.wa_id))
     );
 
     // 4️⃣ Identifica divergências
     const missingInMongo = whatsappContacts
-      .filter((c) => !mongoPhones.has(normalizePhone(c.wa_id)))
+      .filter((c) => !mongoPhones.has(normalizePhoneForCompare(c.wa_i || l.contact?.phone)))
       .map((c) => ({
         phone: c.wa_id,
         name: (c.profile && c.profile.name) || 'Sem nome',
@@ -116,7 +112,7 @@ router.get('/sync', auth, async (req, res) => {
 
     const missingInWhatsApp = realLeads
       .filter((l) => {
-        const normalized = normalizePhone(l.phone);
+        const normalized = normalizePhoneForCompare(l.phone);
         return normalized && normalized.length >= 10 && !whatsappPhones.has(normalized);
       })
       .map((l) => l.phone);

@@ -5,6 +5,7 @@ import ChatContext from "../models/ChatContext.js";
 import Contact from "../models/Contact.js";
 import Message from "../models/Message.js";
 import { getMetaToken } from "../utils/metaToken.js";
+import { normalizeE164BR } from "../utils/phone.js";
 
 dotenv.config();
 
@@ -15,10 +16,6 @@ async function requireToken() {
     const token = await getMetaToken();
     if (!token) throw new Error("Token Meta/WhatsApp ausente.");
     return token;
-}
-
-function normalizePhone(phone) {
-    return phone.replace(/\D/g, "").replace(/^55?/, "55");
 }
 
 async function updateChatContext(leadId, direction, text) {
@@ -145,7 +142,7 @@ export async function sendTemplateMessage({ to, template, params = [], lead }) {
     const token = await requireToken();
     if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
 
-    const phone = normalizePhone(to);
+    const phone = normalizeE164BR(to);
     const url = `${META_URL}/${PHONE_ID}/messages`;
 
     const body = {
@@ -203,7 +200,7 @@ export async function sendTextMessage({
     const token = await requireToken();
     if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
 
-    const phone = normalizePhone(to);
+    const phone = normalizeE164BR(to);
     const url = `${META_URL}/${PHONE_ID}/messages`;
 
     const body = {
