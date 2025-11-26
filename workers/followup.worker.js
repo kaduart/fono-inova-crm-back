@@ -1,5 +1,4 @@
 import dotenv from "dotenv";
-
 dotenv.config();
 
 import { Worker } from "bullmq";
@@ -8,7 +7,9 @@ import mongoose from "mongoose";
 import Followup from "../models/Followup.js";
 import Lead from "../models/Leads.js";
 import Message from "../models/Message.js";
-import { redisConnection } from "../config/redisConnection.js";
+
+// ⬇️ EM VEZ DE importar redisConnection direto, usa a mesma queue do sistema
+import { followupQueue } from "../config/bullConfig.js";
 
 // ✅ IMPORTS DA AMANDA 2.0
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
@@ -23,8 +24,13 @@ import { sendTemplateMessage, sendTextMessage } from "../services/whatsappServic
 
 await mongoose.connect(process.env.MONGO_URI);
 
+// 🔍 DEBUG: garante que estamos na mesma fila/conexão
+console.log(chalk.yellow("🧵 Worker ligado na fila:"), followupQueue.name);
+console.log(chalk.yellow("🔌 Connection presente:"), !!followupQueue.opts.connection);
+
 const worker = new Worker(
-  "followupQueue",
+  // usa o MESMO nome da fila
+  followupQueue.name,
   async (job) => {
     const { followupId } = job.data;
 
@@ -248,7 +254,7 @@ const worker = new Worker(
     }
   },
   {
-    connection: redisConnection,
+    connection: followupQueue.opts.connection,
     concurrency: 5 // Processa até 5 follow-ups em paralelo
   }
 );

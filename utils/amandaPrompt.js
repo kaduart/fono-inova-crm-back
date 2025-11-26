@@ -79,7 +79,7 @@ export function priceLineForTopic(topic, userText, conversationSummary = '') {
       // NEUROPSICOLOGIA: não existe avaliação inicial separada
       // Tudo é a avaliação neuropsicológica completa (pacote ~10 sessões)
       return "A avaliação neuropsicológica é um pacote de aproximadamente 10 sessões, incluindo a entrevista inicial, as sessões de testes e a devolutiva com laudo. O valor total é de R$ 2.500 em até 6x, ou R$ 2.300 à vista.";
-
+    case "teste_linguinha":
       return "O Teste da Linguinha custa R$ 150,00.";
     case "sessao":
       return "Sessão avulsa R$ 220; no pacote mensal sai por R$ 180/sessão (~R$ 720/mês).";
@@ -93,9 +93,9 @@ export function priceLineForTopic(topic, userText, conversationSummary = '') {
   const combined = `${ctx} ${msg}`;
 
   // Prioridade 1: Neuropsico (TEA, TDAH, laudo, avaliação cognitiva)
- if (/\b(tea|autis|tdah|neuro|laudo|avalia[çc][aã]o\s+completa|cognitiv)\b/.test(combined)) {
-  return "A avaliação neuropsicológica completa (10 sessões) é R$ 2.500 (6x) ou R$ 2.300 (à vista).";
-}
+  if (/\b(tea|autis|tdah|neuro|laudo|avalia[çc][aã]o\s+completa|cognitiv)\b/.test(combined)) {
+    return "A avaliação neuropsicológica completa (10 sessões) é R$ 2.500 (6x) ou R$ 2.300 (à vista).";
+  }
 
   // Prioridade 2: Psicopedagogia
   if (/\b(psicopedagog|dificuldade.*aprendiz)\b/.test(combined)) {
