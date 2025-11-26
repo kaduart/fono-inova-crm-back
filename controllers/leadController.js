@@ -1,11 +1,11 @@
 // controllers/leadController.js - VERSÃO COMPLETA (Planilha + Anúncios)
+import { followupQueue } from "../config/bullConfig.js";
 import Followup from '../models/Followup.js';
 import Lead from '../models/Leads.js';
 import Patient from '../models/Patient.js';
 import { calculateOptimalFollowupTime } from '../services/intelligence/smartFollowup.js';
 import { sendLeadToMeta } from '../services/metaConversionsService.js';
 import { normalizeE164BR } from "../utils/phone.js";
-import { followupQueue } from "../config/bullConfig.js";
 
 // =====================================================================
 // 🆕 FUNÇÕES DE ANÚNCIOS (META/GOOGLE ADS) - AMANDA 2.0
@@ -661,3 +661,78 @@ export const getLeadById = async (req, res) => {
 // =====================================================================
 // 🛠️ UTILITÁRIOS
 // =====================================================================
+
+export const getHistoryMetrics = async (req, res) => {
+    try {
+        const matchStage = {
+            name: 'Lead Histórico',        // marca que veio do histórico
+            // origin: 'WhatsApp'          // se quiser restringir
+        };
+
+        const metrics = await Lead.aggregate([
+            { $match: matchStage },
+            {
+                $group: {
+                    _id: null,
+                    totalLeads: { $sum: 1 },
+                    virouPaciente: {
+                        $sum: { $cond: [{ $eq: ["$status", "virou_paciente"] }, 1, 0] }
+                    },
+                    engajado: {
+                        $sum: { $cond: [{ $eq: ["$status", "engajado"] }, 1, 0] }
+                    },
+                    pesquisandoPreco: {
+                        $sum: { $cond: [{ $eq: ["$status", "pesquisando_preco"] }, 1, 0] }
+                    },
+                    primeiroContato: {
+                        $sum: { $cond: [{ $eq: ["$status", "primeiro_contato"] }, 1, 0] }
+                    },
+                    leadFrio: {
+                        $sum: { $cond: [{ $eq: ["$status", "lead_frio"] }, 1, 0] }
+                    },
+                    novo: {
+                        $sum: { $cond: [{ $eq: ["$status", "novo"] }, 1, 0] }
+                    }
+                }
+            },
+            {
+                $project: {
+                    _id: 0,
+                    totalLeads: 1,
+                    virouPaciente: 1,
+                    engajado: 1,
+                    pesquisandoPreco: 1,
+                    primeiroContato: 1,
+                    leadFrio: 1,
+                    novo: 1,
+                    taxaConversao: {
+                        $round: [{
+                            $multiply: [{
+                                $divide: ["$virouPaciente", "$totalLeads"]
+                            }, 100]
+                        }, 1]
+                    }
+                }
+            }
+        ]);
+
+        const result = metrics[0] || {
+            totalLeads: 0,
+            virouPaciente: 0,
+            engajado: 0,
+            pesquisandoPreco: 0,
+            primeiroContato: 0,
+            leadFrio: 0,
+            novo: 0,
+            taxaConversao: 0
+        };
+
+        res.json({
+            success: true,
+            data: result
+        });
+    } catch (err) {
+        console.error("Erro ao buscar métricas históricas:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
