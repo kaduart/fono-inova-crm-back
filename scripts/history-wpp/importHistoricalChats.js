@@ -70,27 +70,25 @@ function parseConversations(lines) {
     const conversations = [];
     let currentConv = null;
     let lastMsg = null;
-    let convIndex = 0;
 
-    // Casa linhas do tipo: [meta qualquer] Remetente: Mensagem
     const msgRegex = /^\[(.+?)\]\s*([^:]+):\s*(.*)$/;
-    // Telefone no formato do export: +55 62 9287-8419, +55 6292878419 etc
-    const phoneRegex = /\+\d{1,3}\s?\d{2}\s?\d{4,5}-?\d{4}/;
+
+    // helper pra saber se um texto parece número de telefone
+    const looksLikePhone = (sender) => {
+        const digits = (sender || "").replace(/\D/g, "");
+        return digits.length >= 10; // DDD + número
+    };
 
     for (const rawLine of lines) {
         const line = rawLine.trim();
 
-        // 🔹 Separador de conversas: linha em branco
+        // 🔹 linha em branco → fim da conversa
         if (!line) {
-            if (currentConv && currentConv.messages.length > 0) {
-                // se até agora não achou telefone, usa sintético
-                if (!currentConv.phone) {
-                    currentConv.phone = `hist_${convIndex}`;
-                }
+            if (currentConv && currentConv.messages.length > 0 && currentConv.phone) {
                 conversations.push(currentConv);
-                currentConv = null;
-                lastMsg = null;
             }
+            currentConv = null;
+            lastMsg = null;
             continue;
         }
 
@@ -101,55 +99,46 @@ function parseConversations(lines) {
             const sender = senderRaw.trim();
             const content = contentRaw.trim();
 
-            const isClinic = sender.includes('Clínica Fono Inova');
-            const direction = isClinic ? 'outbound' : 'inbound';
+            const isClinic = sender.includes("Clínica Fono Inova");
+            const direction = isClinic ? "outbound" : "inbound";
 
-            // Cria conversa se ainda não existir
+            // cria conversa se ainda não existe
             if (!currentConv) {
-                convIndex++;
                 currentConv = {
-                    phone: null,      // 🔥 vamos tentar achar o telefone de verdade
+                    phone: null,   // vamos descobrir
                     messages: []
                 };
             }
 
-            // Se for mensagem de entrada e o sender parece um telefone → usa como phone da conversa
-            if (direction === 'inbound' && !currentConv.phone) {
-                const phoneMatch = sender.match(phoneRegex);
-                if (phoneMatch) {
-                    const rawPhone = phoneMatch[0];
-                    currentConv.phone = normalizePhone(rawPhone); // usa helper lá de baixo
-                }
+            // se é mensagem inbound e ainda não temos phone, tenta extrair
+            if (!isClinic && !currentConv.phone && looksLikePhone(sender)) {
+                currentConv.phone = sender; // ex: "+55 62 9373-6302" ou "62 9373-6302"
             }
 
-            // Timestamp: genérico por enquanto
-            const timestamp = new Date();
+            const timestamp = new Date(); // por enquanto qualquer data
 
             lastMsg = {
-                phone: currentConv.phone, // pode estar null aqui, mas não tem problema
+                phone: currentConv.phone,
                 direction,
                 content,
                 timestamp
             };
 
             currentConv.messages.push(lastMsg);
-
         } else if (lastMsg) {
-            // Linha de continuação da última mensagem
-            lastMsg.content += '\n' + line;
+            // continuação de mensagem anterior
+            lastMsg.content += "\n" + line;
         }
     }
 
-    // Garante a última conversa
-    if (currentConv && currentConv.messages.length > 0) {
-        if (!currentConv.phone) {
-            currentConv.phone = `hist_${++convIndex}`;
-        }
+    // garante última conversa
+    if (currentConv && currentConv.messages.length > 0 && currentConv.phone) {
         conversations.push(currentConv);
     }
 
     return conversations;
 }
+
 
 
 
@@ -160,13 +149,12 @@ function parseConversations(lines) {
 async function importConversation(conv) {
     let { phone, messages } = conv;
 
-    if (!messages || messages.length === 0) {
+    if (!messages || messages.length === 0 || !phone) {
         return;
     }
 
-    // 🔥 Se for telefone real, normaliza pro padrão E.164 (+55DDD...)
-    const isSynthetic = phone && phone.startsWith('hist_');
-    const phoneKey = isSynthetic ? phone : normalizePhone(phone || '');
+    // 🔥 Normaliza UMA vez só aqui
+    const phoneKey = normalizePhone(phone);
 
     // 1. CRIA/ATUALIZA CONTACT
     let contact = await Contact.findOne({ phone: phoneKey });
@@ -211,7 +199,7 @@ async function importConversation(conv) {
         await lead.save({ validateBeforeSave: false });
     }
 
-    // 3. CRIA MESSAGES
+    // 3. MESSAGES
     for (const msg of messages) {
         const existing = await Message.findOne({
             lead: lead._id,
@@ -241,6 +229,7 @@ async function importConversation(conv) {
         }
     }
 }
+
 
 
 /**
@@ -310,6 +299,7 @@ function normalizePhone(phone) {
     return '+' + cleaned;
 }
 
+
 /**
  * 🚀 EXECUÇÃO PRINCIPAL
  */
@@ -348,8 +338,15 @@ async function main() {
         console.warn('⚠️ Não foi possível rodar análise de aprendizado:', err.message);
     }
 
-    await mongoose.disconnect();
-    console.log('✅ Importação finalizada!\n');
+    try {
+        await mongoose.disconnect();
+        console.log('✅ Importação finalizada! (Mongo desconectado)\n');
+    } catch (err) {
+        console.warn('⚠️ Erro ao desconectar do MongoDB (pode ignorar neste script):', err.message);
+        console.log('✅ Importação finalizada mesmo assim!\n');
+        process.exit(0);
+    }
+
 }
 
 // Executa se chamado diretamente
