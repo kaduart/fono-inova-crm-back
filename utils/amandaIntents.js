@@ -42,7 +42,7 @@ export const MANUAL_AMANDA = {
 
     "duvidas_frequentes": {
         "duracao": "Cada sessão dura 40 minutos. É um tempo pensado para que a criança participe bem, sem ficar cansada 💚",
-        "idade_minima": "Atendemos a partir de 1 ano! 💚 A avaliação neuropsicológica é a partir de 4 anos",
+        "idade_minima": "Atendemos a partir de 1 ano! 💚 A avaliação neuropsicológica é a partir de 4 anos e adulto",
         "pagamento": "Aceitamos PIX, cartão em até 6x e dinheiro 💚",
         "pedido_medico": "Não precisa de pedido médico para agendar! 💚 A avaliação é o primeiro passo"
     },

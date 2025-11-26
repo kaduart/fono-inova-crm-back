@@ -1,4 +1,7 @@
-// workers/followup.worker.js
+import dotenv from "dotenv";
+
+dotenv.config();
+
 import { Worker } from "bullmq";
 import chalk from "chalk";
 import mongoose from "mongoose";
