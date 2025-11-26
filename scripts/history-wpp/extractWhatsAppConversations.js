@@ -2,6 +2,7 @@
 
 import fs from 'fs';
 import puppeteer from 'puppeteer';
+import moment from 'moment';
 
 const CHAT_ITEM_SELECTOR = 'div[role="row"]';
 

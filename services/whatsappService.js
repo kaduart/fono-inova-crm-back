@@ -194,7 +194,7 @@ export async function sendTextMessage({
     // novos campos opcionais
     contactId = null,         // ← passa o contact._id quando tiver
     patientId = null,         // ← se estiver vinculado a um paciente
-    sentBy = "amanda_auto",   // default: Amanda respondeu sozinha
+    sentBy = "amanda",   // default: Amanda respondeu sozinha
     userId = null,            // quando vier de usuário humano, passa o id aqui
 }) {
     const token = await requireToken();
