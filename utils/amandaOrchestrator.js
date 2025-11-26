@@ -18,6 +18,11 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const PURE_GREETING_REGEX =
     /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|bom\s*dia)[\s!,.]*$/i;
 
+// 🔥 Novo: pedido genérico de “agendar avaliação” sem detalhes
+const GENERIC_SCHEDULE_EVAL_REGEX =
+    /\b(agendar|marcar|agendamento|quero\s+agendar|gostaria\s+de\s+agendar)\b.*\b(avalia[çc][aã]o)\b/i;
+
+
 // 🧭 STATE MACHINE SIMPLES DE FUNIL
 function nextStage(
     currentStage,
@@ -102,12 +107,41 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     // 🧩 FLAGS GERAIS (inclui thanks/bye/atendente, TEA, etc.)
     const flags = detectAllFlags(text, lead, enrichedContext);
 
+    // 👶👨‍🦳 TRIAGEM OBRIGATÓRIA QUANDO SÓ FALA "AGENDAR AVALIAÇÃO"
+    const isFirstMessageEarly =
+        enrichedContext.isFirstContact ||
+        !enrichedContext.messageCount ||
+        enrichedContext.messageCount <= 1 ||
+        (Array.isArray(enrichedContext.conversationHistory) &&
+            enrichedContext.conversationHistory.length <= 1);
+
+    const hasAnyAgeOrArea =
+        flags.mentionsAdult ||
+        flags.mentionsChild ||
+        flags.mentionsTeen ||
+        !!flags.therapyArea ||
+        !!enrichedContext.therapyArea ||
+        (enrichedContext.mentionedTherapies &&
+            enrichedContext.mentionedTherapies.length > 0);
+
+    const isGenericScheduleEval =
+        flags.wantsSchedule &&
+        GENERIC_SCHEDULE_EVAL_REGEX.test(text) &&
+        !hasAnyAgeOrArea;
+
+    if (isFirstMessageEarly && isGenericScheduleEval) {
+        return "Que bom que você quer agendar! Só pra eu te orientar certinho: é pra você ou pra alguma criança/familiar? E hoje a maior preocupação é mais com a fala, com o comportamento, com a aprendizagem ou outra coisa? 💚";
+    }
+
+
     const isVisitFunnel =
         (flags.isNewLead || enrichedContext.stage === 'novo') &&
-        (flags.visitLeadHot || flags.visitLeadCold || enrichedContext.messageCount <= 2);
+        (flags.visitLeadHot || flags.visitLeadCold || enrichedContext.messageCount <= 2) &&
+        !flags.asksPlans; // ❌ não entra em funil se estiver perguntando de plano/convênio
+
 
     // Se for claramente início de funil + foco em visita, já empurra instruções extras
-    if (isVisitFunnel && !flags.asksPrice && !flags.wantsHumanAgent) {
+    if (isVisitFunnel && !flags.asksPrice && !flags.wantsHumanAgent && !flags.asksPlans) {
         const aiResponse = await callVisitFunnelAI({
             text,
             lead,
@@ -265,7 +299,7 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     // ===== 5. IA COM CONTEXTO =====
     console.log(`🤖 [ORCHESTRATOR] IA | Stage: ${contextWithStage.stage} | Msgs: ${contextWithStage.messageCount}`);
     try {
-        const aiResponse = await callOpenAIWithContext(
+        const aiResponse = await callAmandaAIWithContext(
             text,
             lead,
             {
@@ -368,19 +402,30 @@ REGRAS:
  * 📖 MANUAL
  */
 function tryManualResponse(normalizedText) {
+    // 🌍 ENDEREÇO / LOCALIZAÇÃO
     if (/\b(endere[cç]o|onde fica|local|mapa|como chegar)\b/.test(normalizedText)) {
         return getManual('localizacao', 'endereco');
     }
 
-    if (/\b(plano|conv[eê]nio|unimed|ipasgo|amil)\b/.test(normalizedText)) {
-        return getManual('planos_saude', 'unimed');
+    // 💳 CASO ESPECÍFICO: "mas queria pelo plano", "preferia pelo plano"
+    if (/\b(queria|preferia|quero)\b.*\b(plano|conv[eê]nio|unimed|ipasgo|amil)\b/i.test(normalizedText)) {
+        return "Entendo, muita gente prefere usar o plano mesmo. Hoje na Fono Inova todos os atendimentos são particulares, ainda não temos credenciamento com Unimed ou outros convênios. Se em algum momento isso mudar, posso te avisar por aqui, combinado? 💚";
     }
 
+    // 🩺 PERGUNTA GERAL SOBRE PLANO/CONVÊNIO
+    if (/\b(plano|conv[eê]nio|unimed|ipasgo|amil)\b/.test(normalizedText)) {
+        // usa a chave CERTA do MANUAL_AMANDA
+        return getManual('planos_saude', 'credenciamento');
+    }
+
+    // 💰 PREÇO GENÉRICO (sem dizer área)
     if (/\b(pre[cç]o|valor|quanto.*custa)\b/.test(normalizedText) &&
         !/\b(neuropsic|fono|psico|terapia|fisio|musico)\b/.test(normalizedText)) {
-        return getManual('valores', 'consulta');
+        // usa a chave CERTA do MANUAL_AMANDA
+        return getManual('valores', 'avaliacao');
     }
 
+    // 👋 SAUDAÇÃO PURA
     if (PURE_GREETING_REGEX.test(normalizedText)) {
         return getManual('saudacao');
     }
@@ -396,6 +441,7 @@ function tryManualResponse(normalizedText) {
         );
     }
 
+    // 📱 INSTAGRAM / REDES
     if (/\b(insta(gram)?|rede[s]?\s+social(is)?|perfil\s+no\s+instagram)\b/.test(normalizedText)) {
         return (
             "Claro! Você pode acompanhar nosso trabalho no Instagram pelo perfil " +
@@ -405,6 +451,7 @@ function tryManualResponse(normalizedText) {
 
     return null;
 }
+
 
 /**
  * 🤖 IA COM DADOS DE TERAPIAS + HISTÓRICO COMPLETO + CACHE MÁXIMO
@@ -611,7 +658,7 @@ ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${
 /**
  * 🤖 IA COM CONTEXTO INTELIGENTE + CACHE MÁXIMO
  */
-async function callOpenAIWithContext(userText, lead, context) {
+async function callAmandaAIWithContext(userText, lead, context) {
     const { SYSTEM_PROMPT_AMANDA } = await import('./amandaPrompt.js');
     const { getLatestInsights } = await import('../services/amandaLearningService.js');
 
