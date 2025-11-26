@@ -1,11 +1,11 @@
 // controllers/leadController.js - VERSÃO COMPLETA (Planilha + Anúncios)
-import { followupQueue } from "../config/bullConfig.js";
 import Followup from '../models/Followup.js';
 import Lead from '../models/Leads.js';
 import Patient from '../models/Patient.js';
 import { calculateOptimalFollowupTime } from '../services/intelligence/smartFollowup.js';
 import { sendLeadToMeta } from '../services/metaConversionsService.js';
 import { normalizeE164BR } from "../utils/phone.js";
+import { followupQueue } from "../config/bullConfig.js";
 
 // =====================================================================
 // 🆕 FUNÇÕES DE ANÚNCIOS (META/GOOGLE ADS) - AMANDA 2.0
@@ -662,11 +662,18 @@ export const getLeadById = async (req, res) => {
 // 🛠️ UTILITÁRIOS
 // =====================================================================
 
+/**
+ * 📊 Métricas da base histórica (WhatsApp importado)
+ * GET /api/leads/history-metrics
+ */
 export const getHistoryMetrics = async (req, res) => {
     try {
+        // aqui estou usando "Lead Histórico" pra identificar os importados
+        // se depois você marcar com tag, dá pra trocar o filtro
         const matchStage = {
-            name: 'Lead Histórico',        // marca que veio do histórico
-            // origin: 'WhatsApp'          // se quiser restringir
+            name: 'Lead Histórico'
+            // ou, se quiser incluir todos de WhatsApp:
+            // origin: 'WhatsApp'
         };
 
         const metrics = await Lead.aggregate([
@@ -675,6 +682,7 @@ export const getHistoryMetrics = async (req, res) => {
                 $group: {
                     _id: null,
                     totalLeads: { $sum: 1 },
+
                     virouPaciente: {
                         $sum: { $cond: [{ $eq: ["$status", "virou_paciente"] }, 1, 0] }
                     },
@@ -706,11 +714,21 @@ export const getHistoryMetrics = async (req, res) => {
                     leadFrio: 1,
                     novo: 1,
                     taxaConversao: {
-                        $round: [{
-                            $multiply: [{
-                                $divide: ["$virouPaciente", "$totalLeads"]
-                            }, 100]
-                        }, 1]
+                        $cond: [
+                            { $gt: ["$totalLeads", 0] },
+                            {
+                                $round: [
+                                    {
+                                        $multiply: [
+                                            { $divide: ["$virouPaciente", "$totalLeads"] },
+                                            100
+                                        ]
+                                    },
+                                    1
+                                ]
+                            },
+                            0
+                        ]
                     }
                 }
             }
@@ -727,12 +745,15 @@ export const getHistoryMetrics = async (req, res) => {
             taxaConversao: 0
         };
 
-        res.json({
+        return res.json({
             success: true,
             data: result
         });
-    } catch (err) {
-        console.error("Erro ao buscar métricas históricas:", err);
-        res.status(500).json({ error: err.message });
+    } catch (error) {
+        console.error("Erro ao buscar history-metrics:", error);
+        return res.status(500).json({
+            success: false,
+            error: error.message
+        });
     }
 };

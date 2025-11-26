@@ -10,6 +10,7 @@ import {
     getWeeklyMetrics,
     // 📞 Webhooks
     googleLeadWebhook,
+    getHistoryMetrics,
     metaLeadWebhook
 } from '../controllers/leadController.js';
 import { auth, authorize } from '../middleware/auth.js';
@@ -26,6 +27,7 @@ const router = express.Router();
 // Meta Ads Webhook (GET para verificação, POST para receber leads)
 router.get('/webhook/meta', metaLeadWebhook);
 router.post('/webhook/meta', metaLeadWebhook);
+router.get('/:id', getHistoryMetrics);
 
 // Google Ads Webhook
 router.post('/webhook/google', googleLeadWebhook);
