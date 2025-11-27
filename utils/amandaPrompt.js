@@ -11,6 +11,8 @@ export const CLINIC_ADDRESS = "Av. Minas Gerais, 405 - Jundiaí, Anápolis - GO,
    ========================================================================= */
 export function deriveFlagsFromText(text = "") {
   const t = normalizeTherapyTerms(text || "").toLowerCase().trim();
+  const mentionsLinguinha =
+    /\b(linguinha|fr[eê]nulo\s+lingual|freio\s+da\s+l[ií]ngua|freio\s+lingual)\b/i.test(t);
 
   return {
     asksPrice: /(pre[çc]o|valor|custa|quanto|mensal|pacote)/i.test(t),
@@ -28,6 +30,8 @@ export function deriveFlagsFromText(text = "") {
     asksRescheduling: /(cancelar|reagendar|remarcar|adiar)/i.test(t),
 
     wantsHumanAgent: /(falar\s+com\s+atendente|falar\s+com\s+uma\s+pessoa|falar\s+com\s+humano|quero\s+atendente|quero\s+falar\s+com\s+algu[eé]m|quero\s+falar\s+com\s+a\s+secret[aá]ria)/i.test(t),
+    alreadyScheduled:
+      /\b(já\s+est[aá]\s+(agendado|marcado)|já\s+agendei|já\s+marquei|consegui(u|mos)\s+agendar|minha\s+esposa\s+conseguiu\s+agendar|minha\s+mulher\s+conseguiu\s+agendar)\b/i.test(t),
 
     // NOVOS - APLICAM PARA QUALQUER ESPECIALIDADE
     asksAreas: /(quais\s+as?\s+áreas\??|atua\s+em\s+quais\s+áreas|áreas\s+de\s+atendimento)/i.test(t),
@@ -36,13 +40,15 @@ export function deriveFlagsFromText(text = "") {
 
     // PERFIL DE IDADE
     mentionsAdult: /\b(adulto|adultos|maior\s*de\s*18|19\s*anos|20\s*anos|faculdade|curso\s+t[eé]cnico)\b/i.test(t),
-    mentionsChild: /\b(crian[çc]a|meu\s*filho|minha\s*filha|meu\s*bb|minha\s*bb|beb[eê]|pequenininh[ao])\b/i.test(t),
+    mentionsChild: /\b(crian[çc]a|meu\s*filho|minha\s*filha|meu\s*bb|minha\s*bb|beb[eê]|pequenininh[ao])\b/i.test(t) || mentionsLinguinha,
     mentionsTeen: /\b(adolescente|adolesc[êe]ncia|pré[-\s]*adolescente)\b/i.test(t),
 
     // NOVOS ESPECÍFICOS: TOD / ABA / MÉTODO PROMPT
     mentionsTOD: /\b(tod|transtorno\s+oposito|transtorno\s+opositor|desafiador|desafia\s+tudo|muita\s+birra|agressiv[ao])\b/i.test(t),
     mentionsABA: /\baba\b|an[aá]lise\s+do\s+comportamento\s+aplicada/i.test(t),
     mentionsMethodPrompt: /m[eé]todo\s+prompt/i.test(t),
+    mentionsDenver: /\b(denver|early\s*start\s*denver|esdm)\b/i.test(t),
+    mentionsBobath: /\bbobath\b/i.test(t),
 
     // 🔚 ENCERRAMENTO / DESPEDIDA
     saysThanks: /\b(obrigad[ao]s?|obg|obgd|obrigado\s+mesmo|valeu|vlw|agrade[cç]o)\b/i.test(t),
@@ -226,6 +232,15 @@ Se for INÍCIO DE CONVERSA (primeiras 1–2 mensagens, sem histórico relevante)
     - Convidar para VISITA ou AVALIAÇÃO.
     - Pergunta binária: "Prefere vir amanhã à tarde ou em outro dia dessa semana?" 
       (sempre sem confirmar horário fixo, só preferência de período/semana).
+    - Quando o responsável mencionar “Método Denver”, “Modelo Denver” ou “ESDM”:
+      • considere que a clínica trabalha com princípios desse modelo no atendimento de crianças com TEA/atraso de desenvolvimento;
+      • explique de forma simples (brincadeiras estruturadas, objetivos de comunicação, socialização e autonomia, com participação da família);
+      • convide para avaliação inicial para montar um plano nesse formato, sem prometer cura.
+
+    - Quando perguntarem sobre “Bobath”:
+      • explique que a Fisioterapia da clínica utiliza abordagem neurofuncional baseada em Bobath quando indicado;
+      • fale em foco na postura, movimento funcional e independência;
+      • convide para avaliação de Fisioterapia para definir certinho o plano.
 
 - LEAD FRIO: frases de “só pesquisando”, “vendo valores”, “ainda decidindo”.
   → Resposta padrão:
@@ -280,6 +295,9 @@ REGRA: Se a idade + queixa se encaixam em URGÊNCIA ALTA, você DEVE mencionar o
   • Deixe claro que na clínica fazemos a avaliação fonoaudiológica e, quando indicado, o Teste da Linguinha — é um procedimento rápido e seguro, focado no frênulo da língua (não é exame de ouvido).
   • Se houver dúvida sobre "cortar ou não", diga que essa decisão é sempre do médico/odontopediatra; o papel da fono é avaliar a função e orientar a família.
   • Convide para avaliação inicial de fono para observar a fala, o uso da língua e, se necessário, aplicar o Teste da Linguinha.
+  - O Teste da Linguinha na Fono Inova é voltado para BEBÊS E CRIANÇAS.
+  - Por isso, quando alguém falar em "teste da linguinha", "freio da língua" ou "frênulo", NÃO pergunte "é pra você ou pra uma criança?". ASSUMA que é para um bebê/criança.
+  - Nesses casos, pergunte diretamente algo como: "Ele/ela está com quantos meses?" ou "Quantos meses o bebê tem?".
 
 - Quando perguntarem preço ligado a frênulo/linguinha:
   • Use o valor do Teste da Linguinha (R$ 150,00) quando fizer sentido mencionar o exame em si.
@@ -636,6 +654,8 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     mentionsTOD,
     mentionsABA,
     mentionsMethodPrompt,
+    mentionsDenver,
+    mentionsBobath,
     wantsHumanAgent,
     saysThanks,
     saysBye,
@@ -668,16 +688,16 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     if (!priceInfo) {
       instructions += `⚠️ PREÇO INDEFINIDO - PERGUNTE ESPECIALIDADE:
 
-O lead pediu preço mas não fica claro se é:
-- Fonoaudiologia(R$ 220)
-  - Neuropsicologia(R$ 2.500)
-  - Psicopedagogia(R$ 200)
+                        O lead pediu preço mas não fica claro se é:
+                        - Fonoaudiologia(R$ 220)
+                          - Neuropsicologia(R$ 2.500)
+                          - Psicopedagogia(R$ 200)
 
-RESPONDA:
-"Claro! Pra te passar o valor certinho: é pra avaliação de fono, neuropsicologia ou psicopedagogia? 💚"
+                        RESPONDA:
+                        "Claro! Pra te passar o valor certinho: é pra avaliação de fono, neuropsicologia ou psicopedagogia? 💚"
 
-NÃO dê preço genérico.Espere o lead especificar.
-`;
+                        NÃO dê preço genérico.Espere o lead especificar.
+                        `;
       return instructions;
     }
 
@@ -704,96 +724,112 @@ NÃO dê preço genérico.Espere o lead especificar.
 
     instructions += `⚠️ PREÇO DETECTADO - SEQUÊNCIA OBRIGATÓRIA:
 
-1. Reconheça a pergunta(1 frase)
-2. CONTEXTO DE VALOR ${urgencyContext ? `(${urgencyContext})` : '(veja seção URGÊNCIA CONTEXTUAL)'}
-3. Dê o preço: "${priceInfo}"
-4. ESCOLHA BINÁRIA FECHADA(veja seção REGRAS DE PERGUNTAS)
+                    1. Reconheça a pergunta(1 frase)
+                    2. CONTEXTO DE VALOR ${urgencyContext ? `(${urgencyContext})` : '(veja seção URGÊNCIA CONTEXTUAL)'}
+                    3. Dê o preço: "${priceInfo}"
+                    4. ESCOLHA BINÁRIA FECHADA(veja seção REGRAS DE PERGUNTAS)
 
-🚫 NUNCA: "Quer que eu explique?" ou "Posso ajudar com algo mais?"
-✅ SEMPRE: "Prefere agendar essa semana ou na próxima?"
+                    🚫 NUNCA: "Quer que eu explique?" ou "Posso ajudar com algo mais?"
+                    ✅ SEMPRE: "Prefere agendar essa semana ou na próxima?"
 
-EXEMPLO:
-"${pitch} — ${urgencyContext || 'quanto antes começar, melhor pro desenvolvimento dele.'} ${priceInfo} Prefere agendar essa semana ou na próxima? 💚"
+                    EXEMPLO:
+                    "${pitch} — ${urgencyContext || 'quanto antes começar, melhor pro desenvolvimento dele.'} ${priceInfo} Prefere agendar essa semana ou na próxima? 💚"
 
-`;
+                    `;
   }
 
   if (mentionsTEA_TDAH) {
     instructions += `TEA / TDAH / AUTISMO DETECTADO:
-- Acolha a preocupação do responsável / paciente sem assustar.
-- Explique que a Fono Inova atende muitos casos de TEA, autismo e TDAH com equipe multiprofissional(fono, psicologia, TO, fisioterapia, neuropsicopedagogia).
-- Diga que trabalhamos com abordagem baseada em ABA integrada às terapias e que, quando indicado, usamos Comunicação Alternativa(CAA).
-- Se fizer sentido, cite que a fono da clínica tem formação em Método PROMPT para fala e motricidade orofacial.
-- Deixe claro que diagnóstico só é fechado em avaliação, nunca por WhatsApp.
-- Convide para avaliação inicial(anamnese + observação + plano de intervenção).\n\n`;
+                      - Acolha a preocupação do responsável / paciente sem assustar.
+                      - Explique que a Fono Inova atende muitos casos de TEA, autismo e TDAH com equipe multiprofissional(fono, psicologia, TO, fisioterapia, neuropsicopedagogia).
+                      - Diga que trabalhamos com abordagem baseada em ABA integrada às terapias e que, quando indicado, usamos Comunicação Alternativa(CAA).
+                      - Se fizer sentido, cite que a fono da clínica tem formação em Método PROMPT para fala e motricidade orofacial.
+                      - Deixe claro que diagnóstico só é fechado em avaliação, nunca por WhatsApp.
+                      - Convide para avaliação inicial(anamnese + observação + plano de intervenção).\n\n`;
   }
 
   // 🩺 QUANDO AVALIAÇÃO NÃO ESTÁ CLARA E NÃO HÁ PEDIDO MÉDICO
   if (talksAboutTypeOfAssessment && !detectedMedicalReferral) {
     instructions += `DÚVIDA SOBRE QUAL AVALIAÇÃO FAZER (SEM PEDIDO MÉDICO DETECTADO):
-- A família está falando em avaliação / laudo, mas não está claro se é mesmo neuropsicológica, psicopedagógica, fono etc.
-- NÃO defina o tipo de avaliação só pelo nome que a pessoa usou.
-- Primeiro pergunte se já existe pedido médico ou relatório da escola:
-  "Você já tem algum pedido médico ou relatório da escola dizendo qual avaliação ele precisa, ou ainda não?"
-- Se disser que JÁ TEM, siga o tipo de avaliação do pedido.
-- Se disser que AINDA NÃO TEM, explique que o mais seguro é começar por uma avaliação inicial (anamnese + observação) com o profissional mais ligado à queixa principal, e só então definir se precisa de avaliação neuropsicológica, psicopedagógica ou outro laudo.\n\n`;
+                      - A família está falando em avaliação / laudo, mas não está claro se é mesmo neuropsicológica, psicopedagógica, fono etc.
+                      - NÃO defina o tipo de avaliação só pelo nome que a pessoa usou.
+                      - Primeiro pergunte se já existe pedido médico ou relatório da escola:
+                        "Você já tem algum pedido médico ou relatório da escola dizendo qual avaliação ele precisa, ou ainda não?"
+                      - Se disser que JÁ TEM, siga o tipo de avaliação do pedido.
+                      - Se disser que AINDA NÃO TEM, explique que o mais seguro é começar por uma avaliação inicial (anamnese + observação) com o profissional mais ligado à queixa principal, e só então definir se precisa de avaliação neuropsicológica, psicopedagógica ou outro laudo.\n\n`;
   }
 
 
   if (mentionsTOD) {
     instructions += `TOD / COMPORTAMENTO DESAFIADOR DETECTADO:
-- Acolha sem julgar, reconhecendo que é desafiador para a família.
-- Explique que trabalhamos com Psicologia e Terapia Ocupacional focadas em comportamento, autorregulação e orientação aos pais.
-- Fale em "avaliação comportamental" e "plano de manejo", sem prometer cura.
-- Convide para avaliação inicial para entender rotina, gatilhos e o que já foi tentado.\n\n`;
+                      - Acolha sem julgar, reconhecendo que é desafiador para a família.
+                      - Explique que trabalhamos com Psicologia e Terapia Ocupacional focadas em comportamento, autorregulação e orientação aos pais.
+                      - Fale em "avaliação comportamental" e "plano de manejo", sem prometer cura.
+                      - Convide para avaliação inicial para entender rotina, gatilhos e o que já foi tentado.\n\n`;
   }
 
   if (mentionsABA) {
     instructions += `ABA DETECTADO:
-- Confirme que a clínica utiliza uma abordagem baseada em ABA integrada às outras terapias.
-- Explique de forma simples: objetivos claros, reforço positivo, foco em habilidades funcionais do dia a dia.
-- Diga que o programa é sempre individualizado, definido após avaliação.
-- Evite prometer resultados exatos, fale em evolução e desenvolvimento.\n\n`;
+                      - Confirme que a clínica utiliza uma abordagem baseada em ABA integrada às outras terapias.
+                      - Explique de forma simples: objetivos claros, reforço positivo, foco em habilidades funcionais do dia a dia.
+                      - Diga que o programa é sempre individualizado, definido após avaliação.
+                      - Evite prometer resultados exatos, fale em evolução e desenvolvimento.\n\n`;
   }
 
   if (asksCAA) {
     instructions += `CAA / COMUNICAÇÃO ALTERNATIVA DETECTADA:
-- Explique que usamos Comunicação Alternativa e Ampliada(CAA) na clínica.
-- Cite pranchas de comunicação, figuras, recursos visuais e, quando faz sentido, tablet / app.
-- Deixe claro que CAA NÃO atrapalha a fala; ajuda a reduzir frustração enquanto a fala é estimulada nas terapias.
-- Adapte a explicação à idade(criança, adolescente, adulto) e convide para avaliação para escolher o melhor recurso.\n\n`;
+                      - Explique que usamos Comunicação Alternativa e Ampliada(CAA) na clínica.
+                      - Cite pranchas de comunicação, figuras, recursos visuais e, quando faz sentido, tablet / app.
+                      - Deixe claro que CAA NÃO atrapalha a fala; ajuda a reduzir frustração enquanto a fala é estimulada nas terapias.
+                      - Adapte a explicação à idade(criança, adolescente, adulto) e convide para avaliação para escolher o melhor recurso.\n\n`;
   }
 
   if (mentionsMethodPrompt) {
     instructions += `MÉTODO PROMPT DETECTADO:
-- Explique que o Método PROMPT é uma abordagem específica da Fonoaudiologia para fala e motricidade orofacial.
-- Diga que a clínica conta com fono com formação em PROMPT e que o uso do método é decidido após avaliação.
-- Foque em evolução da fala, clareza e coordenação dos movimentos orais, sem prometer resultados exatos.\n\n`;
+                      - Explique que o Método PROMPT é uma abordagem específica da Fonoaudiologia para fala e motricidade orofacial.
+                      - Diga que a clínica conta com fono com formação em PROMPT e que o uso do método é decidido após avaliação.
+                      - Foque em evolução da fala, clareza e coordenação dos movimentos orais, sem prometer resultados exatos.\n\n`;
+  }
+
+  if (mentionsDenver) {
+    instructions += `MÉTODO DENVER / ESDM DETECTADO:
+                      - Considere que a clínica TRABALHA com princípios do Modelo Denver (Early Start Denver Model) no atendimento de crianças com TEA ou atraso de desenvolvimento.
+                      - Explique em linguagem simples: sessões lúdicas e estruturadas, objetivos de comunicação, interação social e autonomia, com participação ativa da família.
+                      - Deixe claro que essa abordagem pode ser usada em Psicologia, Fonoaudiologia e, quando fizer sentido, em Terapia Ocupacional/Fisioterapia, sempre definida a partir de uma avaliação inicial.
+                      - Convide para a avaliação inicial para montar um plano com esse tipo de abordagem, sem prometer cura ou resultado exato.\n\n`;
+  }
+
+  if (mentionsBobath) {
+    instructions += `BOBATH DETECTADO:
+                      - Explique que a Fisioterapia da clínica utiliza abordagem neurofuncional baseada em Bobath em casos de atraso motor e questões neurológicas, quando indicado.
+                      - Fale simples: trabalho com postura, tônus, equilíbrio e movimentos funcionais para o dia a dia da criança.
+                      - Deixe claro que a escolha da abordagem é feita após avaliação de Fisioterapia, de forma individualizada.
+                      - Convide para avaliação inicial de Fisioterapia para definir se essa é a melhor abordagem para o caso.\n\n`;
   }
 
   if (wantsSchedule) {
     instructions += `AGENDAMENTO:
-  - NÃO marque horário direto e NÃO ofereça dias ou horários específicos.
-  - Se ainda não tiver no contexto, peça nome completo do paciente / criança e telefone de contato.
-  - Pergunte se o paciente tem preferência por PERÍODO: manhã ou tarde(sem sugerir horários exatos).
-  - Diga claramente que você vai encaminhar os dados para a equipe da clínica verificar a disponibilidade de agenda e retornar com os melhores horários.
-  - Se o nome e telefone já estiverem no contexto, apenas confirme se é esse contato mesmo, sem repetir tudo.\n\n`;
+                      - NÃO marque horário direto e NÃO ofereça dias ou horários específicos.
+                      - Se ainda não tiver no contexto, peça nome completo do paciente / criança e telefone de contato.
+                      - Pergunte se o paciente tem preferência por PERÍODO: manhã ou tarde(sem sugerir horários exatos).
+                      - Diga claramente que você vai encaminhar os dados para a equipe da clínica verificar a disponibilidade de agenda e retornar com os melhores horários.
+                      - Se o nome e telefone já estiverem no contexto, apenas confirme se é esse contato mesmo, sem repetir tudo.\n\n`;
   }
 
   if (asksPlans) {
     instructions += `PLANOS / CONVÊNIOS DETECTADOS (Unimed, Ipasgo, Amil etc):
-- Deixe MUITO claro que a clínica NÃO atende por NENHUM plano de saúde no momento.
-- NÃO diga que "atende Unimed", "aceita plano" ou "é credenciado" em hipótese alguma.
-- Responda sempre algo na linha de:
-  "Entendo, muitos pacientes usam plano, mas hoje na Fono Inova os atendimentos são particulares, não temos credenciamento com convênios como Unimed ou Ipasgo."
-- Depois disso, convide de forma gentil para seguir no particular (avaliação / visita), usando pergunta binária.
-- Se o paciente insistir em plano, apenas reafirme que é particular e, se fizer sentido, foque nos benefícios da avaliação.\n\n`;
+                      - Deixe MUITO claro que a clínica NÃO atende por NENHUM plano de saúde no momento.
+                      - NÃO diga que "atende Unimed", "aceita plano" ou "é credenciado" em hipótese alguma.
+                      - Responda sempre algo na linha de:
+                        "Entendo, muitos pacientes usam plano, mas hoje na Fono Inova os atendimentos são particulares, não temos credenciamento com convênios como Unimed ou Ipasgo."
+                      - Depois disso, convide de forma gentil para seguir no particular (avaliação / visita), usando pergunta binária.
+                      - Se o paciente insistir em plano, apenas reafirme que é particular e, se fizer sentido, foque nos benefícios da avaliação.\n\n`;
   }
 
   if (asksAddress) {
     instructions += `ENDEREÇO:
-  - Informe claramente: "${CLINIC_ADDRESS}".
-  - Se fizer sentido, pergunte de forma simples se essa localização é tranquila para a pessoa.\n\n`;
+                      - Informe claramente: "${CLINIC_ADDRESS}".
+                      - Se fizer sentido, pergunte de forma simples se essa localização é tranquila para a pessoa.\n\n`;
   }
 
   if (asksAreas || asksDays || asksTimes) {

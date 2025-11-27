@@ -245,6 +245,23 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         return "Eu que agradeço, qualquer coisa é só chamar 💚";
     }
 
+    const LINGUINHA_REGEX =
+        /\b(teste\s+da\s+linguinha|linguinha|fr[eê]nulo\s+lingual|freio\s+da\s+l[ií]ngua|freio\s+lingual)\b/i;
+    if (LINGUINHA_REGEX.test(normalized) && !flags.mentionsAdult) {
+        return "Fazemos sim! O fono avalia o frênulo e como a língua se movimenta pra mamar, engolir e futuramente falar. Geralmente esse exame é pra bebês e crianças. Ele ou ela está com quantos meses? 💚";
+    }
+
+    if (flags?.alreadyScheduled) {
+        // Se quiser, pode tentar pegar nome do paciente do lead ou do histórico.
+        const nomePaciente = lead?.patientName || lead?.name || null;
+
+        if (nomePaciente) {
+            return `Que bom que vocês já conseguiram agendar, isso é um passo importante pro acompanhamento do(a) ${nomePaciente}! Se surgir qualquer dúvida até lá, é só chamar 💚`;
+        }
+
+        return "Que bom que vocês já conseguiram deixar o atendimento agendado, isso ajuda muito na continuidade do tratamento. Se surgir qualquer dúvida até lá, é só chamar 💚";
+    }
+
     // ===== 1. TDAH - RESPOSTA ESPECÍFICA =====
     if (isTDAHQuestion(text)) {
         console.log('🧠 [TDAH] Pergunta sobre tratamento TDAH detectada');
@@ -289,7 +306,7 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     }
 
     // ===== 4. MANUAL =====
-    const manualResponse = tryManualResponse(normalized);
+    const manualResponse = tryManualResponse(normalized, contextWithStage, flags);
     if (manualResponse) {
         console.log(`✅ [ORCHESTRATOR] Resposta do manual`);
         const scoped = enforceClinicScope(manualResponse, text);
@@ -401,7 +418,9 @@ REGRAS:
 /**
  * 📖 MANUAL
  */
-function tryManualResponse(normalizedText) {
+function tryManualResponse(normalizedText, context = {}, flags = {}) {
+    const { isFirstContact, messageCount = 0 } = context;
+
     // 🌍 ENDEREÇO / LOCALIZAÇÃO
     if (/\b(endere[cç]o|onde fica|local|mapa|como chegar)\b/.test(normalizedText)) {
         return getManual('localizacao', 'endereco');
@@ -418,17 +437,54 @@ function tryManualResponse(normalizedText) {
         return getManual('planos_saude', 'credenciamento');
     }
 
-    // 💰 PREÇO GENÉRICO (sem dizer área)
+    // 💰 PREÇO GENÉRICO (sem dizer área na mensagem atual)
     if (/\b(pre[cç]o|valor|quanto.*custa)\b/.test(normalizedText) &&
         !/\b(neuropsic|fono|psico|terapia|fisio|musico)\b/.test(normalizedText)) {
-        // usa a chave CERTA do MANUAL_AMANDA
+
+        // tenta descobrir a área pelo contexto TODO (histórico + flags)
+        const area = inferAreaFromContext(normalizedText, context, flags);
+
+        // se conseguiu inferir, responde já adaptado por área
+        if (area === "psicologia") {
+            return "Na psicologia, a avaliação inicial é R$ 220; depois o pacote mensal costuma ficar em torno de R$ 640 (1x/semana). Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚";
+        }
+
+        if (area === "fonoaudiologia") {
+            return "Na fonoaudiologia, a avaliação inicial é R$ 220; depois o pacote mensal sai em torno de R$ 720 (1x/semana). Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚";
+        }
+
+        if (area === "terapia_ocupacional") {
+            return "Na terapia ocupacional, a avaliação inicial é R$ 220; o pacote mensal fica em torno de R$ 720 (1x/semana). Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚";
+        }
+
+        if (area === "fisioterapia") {
+            return "Na fisioterapia, a avaliação inicial é R$ 220; o pacote mensal costuma ficar em torno de R$ 640 (1x/semana). Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚";
+        }
+
+        if (area === "psicopedagogia") {
+            return "Na psicopedagogia, a anamnese inicial é R$ 200 e o pacote mensal sai em torno de R$ 640 (1x/semana). Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚";
+        }
+
+        if (area === "neuropsicologia") {
+            // aqui você pode ser mais neutro, e deixar o resto com o fluxo de neuro se quiser
+            return "Na neuropsicologia trabalhamos com avaliação completa em formato de pacote de sessões; o valor total hoje é R$ 2.500 em até 6x, ou R$ 2.300 à vista. Prefere deixar essa avaliação encaminhada pra começar em qual turno, manhã ou tarde? 💚";
+        }
+
+        // fallback: não conseguiu inferir área ➜ usa texto genérico do manual (já sem 'para criança ou adulto')
         return getManual('valores', 'avaliacao');
     }
 
     // 👋 SAUDAÇÃO PURA
     if (PURE_GREETING_REGEX.test(normalizedText)) {
-        return getManual('saudacao');
+        // Se é realmente primeiro contato -> usa saudação completa
+        if (isFirstContact || !messageCount) {
+            return getManual('saudacao');
+        }
+
+        // Se já é conversa em andamento → saudação curta, sem se reapresentar
+        return "Oi! Que bom falar com você de novo 😊 Me conta, deu tudo certo com o agendamento ou ficou mais alguma dúvida? 💚";
     }
+
 
     // 💼 CURRÍCULO / VAGA / TRABALHO
     if (/\b(curr[ií]culo|curriculo|cv\b|vaga|trabalhar|emprego|trampo)\b/.test(normalizedText)) {
@@ -447,6 +503,38 @@ function tryManualResponse(normalizedText) {
             "Claro! Você pode acompanhar nosso trabalho no Instagram pelo perfil " +
             "**@clinicafonoinova**. 💚"
         );
+    }
+
+    function inferAreaFromContext(normalizedText, context = {}, flags = {}) {
+        const t = normalizedText.toLowerCase();
+
+        // puxa histórico recente
+        const historyText = Array.isArray(context.conversationHistory)
+            ? context.conversationHistory
+                .map(msg =>
+                    typeof msg.content === "string"
+                        ? msg.content
+                        : JSON.stringify(msg.content)
+                )
+                .join(" \n ")
+                .toLowerCase()
+            : "";
+
+        const combined = `${t} ${historyText}`;
+
+        // se algum serviço seu já preencheu isso:
+        if (flags.therapyArea) return flags.therapyArea;
+        if (context.therapyArea) return context.therapyArea;
+
+        // tenta inferir por palavra-chave
+        if (/\bpsicolog|psicologia\b/.test(combined)) return "psicologia";
+        if (/\bfono|fonoaudiolog\b/.test(combined)) return "fonoaudiologia";
+        if (/\b(terapia\s+ocupacional|to)\b/.test(combined)) return "terapia_ocupacional";
+        if (/\bfisio|fisioterap\b/.test(combined)) return "fisioterapia";
+        if (/\bpsicopedagog\b/.test(combined)) return "psicopedagogia";
+        if (/\bneuropsicolog\b/.test(combined)) return "neuropsicologia";
+
+        return null;
     }
 
     return null;
