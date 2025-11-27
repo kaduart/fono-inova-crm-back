@@ -12,6 +12,7 @@ import {
     isTDAHQuestion
 } from './therapyDetector.js';
 
+import Leads from "../models/Leads.js";
 import { handleInboundMessageForFollowups } from "../services/responseTrackingService.js";
 import {
     buildDynamicSystemPrompt,
@@ -105,16 +106,21 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
             .catch(err => console.warn('[FOLLOWUP-REALTIME] erro:', err.message));
     }
 
-    // ✅ CONTEXTO INTELIGENTE (busca de leadContext.js)
-    const enrichedContext = lead._id ?
-        await enrichLeadContext(lead._id) : {
-            stage: 'novo',
+    const baseContext = lead._id
+        ? await enrichLeadContext(lead._id)
+        : {
+            stage: "novo",
             isFirstContact: true,
             messageCount: 0,
             conversationHistory: [],
             conversationSummary: null,
-            shouldGreet: true
+            shouldGreet: true,
         };
+
+    const enrichedContext = {
+        ...baseContext,
+        ...context, // se vier algo explícito da chamada, sobrescreve
+    };
 
     // 🧩 FLAGS GERAIS (inclui thanks/bye/atendente, TEA, etc.)
     const flags = detectAllFlags(text, lead, enrichedContext);
@@ -199,7 +205,7 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     });
 
     if (newStage !== currentStage && lead?._id) {
-        await Lead.findByIdAndUpdate(
+        await Leads.findByIdAndUpdate(
             lead._id, { $set: { stage: newStage, conversionScore: score } }, { new: false }
         ).catch(err => {
             console.warn('[LEAD-STAGE] falha ao atualizar stage:', err.message);
@@ -341,32 +347,40 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
 /**
  * 🔥 FUNÇÃO DE FUNIL DE VISITA
  */
-async function callVisitFunnelAI({ text, lead, context, flags }) {
+async function callVisitFunnelAI({ text, lead, context = {}, flags = {} }) {
+    const stage =
+        context.stage ||
+        lead?.stage ||
+        "novo";
+
     const systemContext = buildSystemContext(
         flags,
-        userText,
+        text,
         stage
     );
+
     const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
 
     const messages = [];
 
     if (context.conversationSummary) {
         messages.push({
-            role: 'user',
+            role: "user",
             content: `📋 CONTEXTO ANTERIOR:\n\n${context.conversationSummary}\n\n---\n\nMensagens recentes abaixo:`
         });
         messages.push({
-            role: 'assistant',
-            content: 'Entendi o contexto. Vou seguir o funil de VISITA PRESENCIAL.'
+            role: "assistant",
+            content: "Entendi o contexto. Vou seguir o funil de VISITA PRESENCIAL."
         });
     }
 
     if (context.conversationHistory?.length) {
         const safeHistory = context.conversationHistory.map(msg => ({
-            role: msg.role || 'user',
-            content: typeof msg.content === 'string' ?
-                msg.content : JSON.stringify(msg.content),
+            role: msg.role || "user",
+            content:
+                typeof msg.content === "string"
+                    ? msg.content
+                    : JSON.stringify(msg.content),
         }));
         messages.push(...safeHistory);
     }
@@ -375,28 +389,30 @@ async function callVisitFunnelAI({ text, lead, context, flags }) {
 ${text}
 
 🎯 MODO VISITA PRESENCIAL ATIVO
-...
+(complete aqui com suas instruções específicas de funil de visita)
 `.trim();
 
-    messages.push({ role: 'user', content: visitPrompt });
+    messages.push({ role: "user", content: visitPrompt });
 
     const response = await anthropic.messages.create({
         model: AI_MODEL,
         max_tokens: 200,
         temperature: 0.6,
-        system: [{
-            type: "text",
-            text: dynamicSystemPrompt,
-            cache_control: { type: "ephemeral" }
-        }],
-        messages
+        system: [
+            {
+                type: "text",
+                text: dynamicSystemPrompt,
+                cache_control: { type: "ephemeral" },
+            },
+        ],
+        messages,
     });
 
-    return response.content?.[0]?.text?.trim() ||
-        "Posso te ajudar a escolher um dia pra visitar a clínica? 💚";
+    return (
+        response.content?.[0]?.text?.trim() ||
+        "Posso te ajudar a escolher um dia pra visitar a clínica? 💚"
+    );
 }
-
-
 
 /**
  * 📖 MANUAL
