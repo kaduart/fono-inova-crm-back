@@ -4,32 +4,34 @@ dotenv.config();
 import { Worker } from "bullmq";
 import chalk from "chalk";
 import mongoose from "mongoose";
+
+import Contact from "../models/Contact.js";
 import Followup from "../models/Followup.js";
 import Lead from "../models/Leads.js";
 import Message from "../models/Message.js";
 
-// ⬇️ EM VEZ DE importar redisConnection direto, usa a mesma queue do sistema
 import { followupQueue } from "../config/bullConfig.js";
+import { getIo } from "../config/socket.js";
+import { normalizeE164BR } from "../utils/phone.js";
 
-// ✅ IMPORTS DA AMANDA 2.0
+// Amanda 2.0
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import {
   calculateOptimalFollowupTime,
   generateContextualFollowup
 } from "../services/intelligence/smartFollowup.js";
 
-// Fallback (se Amanda 2.0 falhar)
+// Amanda 1.0 (fallback)
 import { generateFollowupMessage } from "../services/aiAmandaService.js";
 import { sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 
 await mongoose.connect(process.env.MONGO_URI);
 
-// 🔍 DEBUG: garante que estamos na mesma fila/conexão
-console.log(chalk.yellow("🧵 Worker ligado na fila:"), followupQueue.name);
-console.log(chalk.yellow("🔌 Connection presente:"), !!followupQueue.opts.connection);
+const FOLLOWUP_WINDOW_DAYS = 3;      // só pra log se quiser usar depois
+const MAX_ATTEMPTS_PER_LEAD = 3;     // ⛔ máximo de contatos por lead
+const MIN_INTERVAL_HOURS = 24;
 
 const worker = new Worker(
-  // usa o MESMO nome da fila
   followupQueue.name,
   async (job) => {
     const { followupId } = job.data;
@@ -42,9 +44,12 @@ const worker = new Worker(
       return;
     }
 
-    // Não reprocessar terminais
     if (["sent", "failed"].includes(followup.status)) {
-      console.warn(chalk.yellow(`⚠️ Follow-up ${followupId} já terminal (${followup.status})`));
+      console.warn(
+        chalk.yellow(
+          `⚠️ Follow-up ${followupId} já terminal (${followup.status}), ignorando`
+        )
+      );
       return;
     }
 
@@ -53,50 +58,60 @@ const worker = new Worker(
       await Followup.findByIdAndUpdate(followupId, {
         status: "failed",
         error: "Lead sem telefone",
-        failedAt: new Date(),
+        failedAt: new Date()
       });
       return;
     }
 
     try {
       // =====================================================
-      // 🧠 AMANDA 2.0 - INTELIGÊNCIA INTEGRADA
+      // 🧠 1. AMANDA 2.0 - ANÁLISE DO CONTEXTO
       // =====================================================
-
-      // 1️⃣ Buscar histórico de mensagens
-      const recentMessages = await Message.find({
-        lead: lead._id
-      })
+      const recentMessages = await Message.find({ lead: lead._id })
         .sort({ timestamp: -1 })
         .limit(10)
         .lean();
 
-      const lastInbound = recentMessages.find(m => m.direction === "inbound");
+      const lastInbound = recentMessages.find(
+        (m) => m.direction === "inbound"
+      );
 
-      // 2️⃣ Contar tentativas anteriores (janela móvel de 3 dias)
-      const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
-      const threeDaysAgo = new Date(Date.now() - THREE_DAYS_MS);
-
+      // Tentativas anteriores (todas que já foram enviadas pra esse lead)
       const previousAttempts = await Followup.countDocuments({
         lead: lead._id,
-        status: "sent",
-        sentAt: { $gte: threeDaysAgo } // 🔥 só considera followups enviados nos últimos 3 dias
+        status: "sent"
       });
 
       console.log(
         chalk.blue(
-          `[AMANDA] Lead: ${lead.name} | Tentativas nos últimos 3 dias: ${previousAttempts}`
+          `[AMANDA] Lead: ${lead.name} | Tentativas já feitas: ${previousAttempts}`
         )
       );
 
-      // 3️⃣ Análise inteligente (se tiver mensagem do lead)
+      // se já bateu o limite, NÃO manda mais nada
+      if (previousAttempts >= MAX_ATTEMPTS_PER_LEAD) {
+        console.log(
+          chalk.yellow(
+            `[AMANDA] Lead ${lead._id} já recebeu ${previousAttempts} follow-ups. Não enviar mais.`
+          )
+        );
+
+        await Followup.findByIdAndUpdate(followupId, {
+          status: "failed",
+          error: `Limite de ${MAX_ATTEMPTS_PER_LEAD} follow-ups atingido`,
+          failedAt: new Date()
+        });
+
+        return;
+      }
+
       let analysis = null;
       if (lastInbound?.content) {
         try {
           analysis = await analyzeLeadMessage({
             text: lastInbound.content,
             lead,
-            history: recentMessages.map(m => m.content || "")
+            history: recentMessages.map((m) => m.content || "")
           });
 
           console.log(
@@ -105,7 +120,6 @@ const worker = new Worker(
             )
           );
 
-          // 4️⃣ Atualizar score no Lead
           await Lead.findByIdAndUpdate(lead._id, {
             conversionScore: analysis.score,
             "qualificationData.extractedInfo": analysis.extracted,
@@ -121,29 +135,38 @@ const worker = new Worker(
             }
           });
         } catch (aiError) {
-          console.warn(chalk.yellow("⚠️ Erro na análise Amanda 2.0:", aiError.message));
+          console.warn(
+            chalk.yellow("⚠️ Erro na análise Amanda 2.0:"),
+            aiError.message
+          );
         }
       }
 
-      // 5️⃣ Gerar mensagem contextualizada
+      // =====================================================
+      // ✍️ 2. DEFINIR TEXTO FINAL A ENVIAR
+      // =====================================================
       let messageToSend = followup.message || "";
 
       if (followup.aiOptimized || !messageToSend.trim()) {
         try {
-          // 🎯 USAR AMANDA 2.0
           if (analysis) {
+            // Amanda 2.0
             messageToSend = generateContextualFollowup({
               lead,
               analysis,
               attempt: previousAttempts + 1
             });
+
             console.log(
               chalk.green(
-                `[AMANDA 2.0] Mensagem gerada: "${messageToSend.substring(0, 50)}..."`
+                `[AMANDA 2.0] Mensagem gerada: "${messageToSend.substring(
+                  0,
+                  80
+                )}..."`
               )
             );
           } else {
-            // Fallback para Amanda 1.0
+            // Fallback Amanda 1.0
             const optimized = await generateFollowupMessage(lead);
             if (optimized?.trim()) {
               messageToSend = optimized;
@@ -151,47 +174,163 @@ const worker = new Worker(
             }
           }
         } catch (e) {
-          console.warn(chalk.yellow("⚠️ Erro na geração de mensagem:", e.message));
-          // Fallback genérico
+          console.warn(
+            chalk.yellow("⚠️ Erro na geração de mensagem:"),
+            e.message
+          );
           const firstName = (lead?.name || "").split(" ")[0] || "tudo bem";
           messageToSend = `Oi ${firstName}! 💚 Passando para saber se posso te ajudar. Estamos à disposição!`;
         }
       }
 
-      // 6️⃣ Personalização adicional (origem)
+      // Personalização
       let sentText = messageToSend;
       if (!followup.playbook) {
-        const firstName = (lead?.name || "").trim().split(/\s+/)[0] || "tudo bem";
+        const rawName = (lead?.name || "").trim();
+        let firstName = rawName.split(/\s+/)[0] || "";
+
+        // protege contra nomes genéricos que possam ter escapado
+        const blacklist = ["contato", "cliente", "lead", "paciente"];
+        if (firstName && blacklist.includes(firstName.toLowerCase())) {
+          firstName = "";
+        }
 
         // Só adiciona prefixo de origem se NÃO for Amanda 2.0
         if (!analysis && lead.origin && !followup.aiOptimized) {
           const o = (lead.origin || "").toLowerCase();
-          if (o.includes("google")) sentText = `Vimos seu contato pelo Google 😉 ${sentText}`;
-          else if (o.includes("meta") || o.includes("instagram"))
+          if (o.includes("google")) {
+            sentText = `Vimos seu contato pelo Google 😉 ${sentText}`;
+          } else if (o.includes("meta") || o.includes("instagram")) {
             sentText = `Olá! Vi sua mensagem pelo Instagram 💬 ${sentText}`;
-          else if (o.includes("indic")) sentText = `Ficamos felizes pela indicação 🙌 ${sentText}`;
+          } else if (o.includes("indic")) {
+            sentText = `Ficamos felizes pela indicação 🙌 ${sentText}`;
+          }
         }
 
-        sentText = sentText.replace("{{nome}}", firstName);
+        if (firstName) {
+          // substitui todos {{nome}}, {{ nome }}, etc (case-insensitive)
+          sentText = sentText.replace(/{{\s*nome\s*}}/gi, firstName);
+        } else {
+          // sem nome → remove placeholder e vírgula/ponto grudado
+          // Ex: "Oi {{nome}}! 💚" -> "Oi 💚"
+          sentText = sentText.replace(/[ ,]*{{\s*nome\s*}}[!,.]?/gi, "");
+        }
       }
 
-      // 7️⃣ Enviar mensagem
+
+      // =====================================================
+      // 🚀 3. ENVIO + REGISTRO NO CHAT (Message + socket)
+      // =====================================================
+      const to = normalizeE164BR(lead.contact.phone);
+      const contact = await Contact.findOne({ phone: to }).lean();
+      const patientId = lead.convertedToPatient || null;
+      const io = getIo();
+
+      let waMessageId = null;
+      let saved = null;
+
       if (followup.playbook) {
-        await sendTemplateMessage({
-          to: lead.contact.phone,
+        // ---------- TEMPLATE (PLAYBOOK) ----------
+        const result = await sendTemplateMessage({
+          to,
           template: followup.playbook,
           params: [{ type: "text", text: sentText }],
           lead: lead._id
         });
-      } else {
-        await sendTextMessage({
-          to: lead.contact.phone,
-          text: sentText,
-          lead: lead._id
+
+        waMessageId =
+          result?.waMessageId || result?.messages?.[0]?.id || null;
+
+        // Salva manualmente em Message (igual ao controller sendTemplate)
+        saved = await Message.create({
+          from: process.env.CLINIC_PHONE_E164 || to,
+          to,
+          direction: "outbound",
+          type: "template",
+          content: `[TEMPLATE][Amanda] ${followup.playbook}`,
+          templateName: followup.playbook,
+          status: "sent",
+          timestamp: new Date(),
+          lead: lead._id,
+          contact: contact?._id || null,
+          waMessageId,
+          metadata: {
+            sentBy: "amanda_followup"
+          }
         });
+
+        // Emite socket para aparecer no chat
+        io.emit("message:new", {
+          id: String(saved._id),
+          from: saved.from,
+          to: saved.to,
+          direction: saved.direction,
+          type: saved.type,
+          content: saved.content,
+          text: sentText,
+          status: saved.status,
+          timestamp: saved.timestamp,
+          leadId: String(saved.lead || lead._id),
+          contactId: String(saved.contact || contact?._id || ""),
+          metadata: saved.metadata
+        });
+      } else {
+        // ---------- TEXTO NORMAL ----------
+        const result = await sendTextMessage({
+          to,
+          text: sentText,
+          lead: lead._id,
+          contactId: contact?._id || null,
+          patientId,
+          sentBy: "amanda_followup",
+          userId: null
+        });
+
+        waMessageId = result?.messages?.[0]?.id || null;
+
+        // Espera salvar no Mongo
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        if (waMessageId) {
+          saved = await Message.findOne({ waMessageId }).lean();
+        }
+        if (!saved) {
+          saved = await Message.findOne({
+            to,
+            direction: "outbound",
+            type: "text"
+          })
+            .sort({ timestamp: -1 })
+            .lean();
+        }
+
+        if (saved) {
+          io.emit("message:new", {
+            id: String(saved._id),
+            from: saved.from,
+            to: saved.to,
+            direction: saved.direction,
+            type: saved.type,
+            content: saved.content,
+            text: saved.content,
+            status: saved.status,
+            timestamp: saved.timestamp,
+            leadId: String(saved.lead || lead._id),
+            contactId: String(saved.contact || contact?._id || ""),
+            metadata: saved.metadata || { sentBy: "amanda_followup" }
+          });
+        } else {
+          console.warn(
+            chalk.yellow(
+              "⚠️ Mensagem de follow-up enviada, mas não encontrei registro em Message para emitir socket."
+            )
+          );
+        }
       }
 
-      // 8️⃣ Atualizar follow-up como enviado
+      // =====================================================
+      // ✅ 4. MARCAR FOLLOW-UP COMO ENVIADO
+      // =====================================================
       await Followup.findByIdAndUpdate(followupId, {
         status: "sent",
         sentAt: new Date(),
@@ -207,20 +346,27 @@ const worker = new Worker(
         }
       });
 
-      // 9️⃣ Agendar próximo follow-up SE necessário (máx. 3 em 3 dias)
-      const currentAttempt = previousAttempts + 1; // esta mensagem que estamos enviando agora
+      // =====================================================
+      // 🔁 5. AGENDAR PRÓXIMO FOLLOW-UP (DRIP)
+      // =====================================================
+      const currentAttempt = previousAttempts + 1; // esta mensagem que acabamos de enviar
 
-      if (currentAttempt < 3) {
-        // só agenda próximo se ainda não bateu 3 na janela
-        const nextAttemptNumber = currentAttempt + 1; // próxima será a tentativa 2 ou 3
+      if (currentAttempt < MAX_ATTEMPTS_PER_LEAD) {
+        const nextAttemptNumber = currentAttempt + 1;
         const score = analysis?.score || lead.conversionScore || 50;
 
-        const nextTime = calculateOptimalFollowupTime({
+        let nextTime = calculateOptimalFollowupTime({
           lead,
           score,
           lastInteraction: new Date(),
           attempt: nextAttemptNumber
         });
+
+        const MIN_INTERVAL_MS = MIN_INTERVAL_HOURS * 60 * 60 * 1000;
+        const minAllowed = new Date(Date.now() + MIN_INTERVAL_MS);
+        if (nextTime < minAllowed) {
+          nextTime = minAllowed;
+        }
 
         await Followup.create({
           lead: lead._id,
@@ -230,23 +376,24 @@ const worker = new Worker(
           aiOptimized: true,
           origin: lead.origin,
           playbook: null,
-          note: `Auto-gerado pela Amanda 2.0 (tentativa ${nextAttemptNumber}/3 - janela 3 dias)`
+          note: `Auto-gerado pela Amanda 2.0 (tentativa ${nextAttemptNumber}/${MAX_ATTEMPTS_PER_LEAD})`
         });
 
         console.log(
           chalk.green(
             `[AMANDA] Próximo follow-up agendado para ${nextTime.toLocaleString(
               "pt-BR"
-            )} (tentativa ${nextAttemptNumber}/3)`
+            )} (tentativa ${nextAttemptNumber}/${MAX_ATTEMPTS_PER_LEAD})`
           )
         );
       } else {
         console.log(
           chalk.yellow(
-            `[AMANDA] Limite de tentativas atingido (3 em 3 dias) para lead ${lead._id} - não agendar mais`
+            `[AMANDA] Limite de tentativas atingido (${MAX_ATTEMPTS_PER_LEAD}) para lead ${lead._id} - não agendar mais`
           )
         );
       }
+
 
       console.log(chalk.green(`✅ Follow-up ${followupId} enviado com sucesso!`));
     } catch (err) {
@@ -255,15 +402,18 @@ const worker = new Worker(
   },
   {
     connection: followupQueue.opts.connection,
-    concurrency: 5 // Processa até 5 follow-ups em paralelo
+    concurrency: 5
   }
 );
 
-/**
- * Trata erros com retry inteligente
- */
+// =====================================================
+// ⚠️ 6. TRATAMENTO DE ERROS / RETENTATIVAS
+// =====================================================
 async function handleFollowupError(followupId, error) {
-  console.error(chalk.red(`❌ Erro ao processar follow-up ${followupId}:`), error.message);
+  console.error(
+    chalk.red(`❌ Erro ao processar follow-up ${followupId}:`),
+    error.message
+  );
 
   try {
     const followup = await Followup.findById(followupId);
@@ -273,8 +423,7 @@ async function handleFollowupError(followupId, error) {
     const maxRetries = 3;
 
     if (retryCount < maxRetries) {
-      // Reagendar com backoff exponencial
-      const delayMs = Math.pow(2, retryCount) * 60 * 1000; // 2min, 4min, 8min
+      const delayMs = Math.pow(2, retryCount) * 60 * 1000; // 2, 4, 8 min
       const nextAttempt = new Date(Date.now() + delayMs);
 
       await Followup.findByIdAndUpdate(followupId, {
@@ -293,7 +442,6 @@ async function handleFollowupError(followupId, error) {
         )
       );
     } else {
-      // Falha definitiva
       await Followup.findByIdAndUpdate(followupId, {
         status: "failed",
         failedAt: new Date(),
@@ -308,7 +456,10 @@ async function handleFollowupError(followupId, error) {
       );
     }
   } catch (updateError) {
-    console.error(chalk.red("❌ Erro ao atualizar follow-up falhado:"), updateError);
+    console.error(
+      chalk.red("❌ Erro ao atualizar follow-up falhado:"),
+      updateError
+    );
   }
 }
 

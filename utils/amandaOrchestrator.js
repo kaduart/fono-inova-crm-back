@@ -3,7 +3,6 @@ import 'dotenv/config';
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import enrichLeadContext from "../services/leadContext.js";
 import { getManual } from './amandaIntents.js';
-import { buildDynamicSystemPrompt, buildUserPromptWithValuePitch } from './amandaPrompt.js';
 import { detectAllFlags } from './flagsDetector.js';
 import { buildEquivalenceResponse } from './responseBuilder.js';
 import {
@@ -12,6 +11,12 @@ import {
     isAskingAboutEquivalence,
     isTDAHQuestion
 } from './therapyDetector.js';
+
+import { handleInboundMessageForFollowups } from "../services/responseTrackingService.js";
+import {
+    buildDynamicSystemPrompt,
+    buildUserPromptWithValuePitch,
+} from './amandaPrompt.js';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -28,8 +33,7 @@ const GENERIC_SCHEDULE_EVAL_REGEX =
 
 // 🧭 STATE MACHINE SIMPLES DE FUNIL
 function nextStage(
-    currentStage,
-    {
+    currentStage, {
         flags = {},
         intent = {},
         extracted = {},
@@ -95,10 +99,15 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
 
     console.log(`🎯 [ORCHESTRATOR] Processando: "${text}"`);
 
+    // ➕ NOVO: integrar inbound do chat com followups
+    if (lead?._id) {
+        handleInboundMessageForFollowups(lead._id)
+            .catch(err => console.warn('[FOLLOWUP-REALTIME] erro:', err.message));
+    }
+
     // ✅ CONTEXTO INTELIGENTE (busca de leadContext.js)
-    const enrichedContext = lead._id
-        ? await enrichLeadContext(lead._id)
-        : {
+    const enrichedContext = lead._id ?
+        await enrichLeadContext(lead._id) : {
             stage: 'novo',
             isFirstContact: true,
             messageCount: 0,
@@ -189,19 +198,15 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         lead,
     });
 
-    if (newStage !== currentStage) {
-        console.log('🔁 [STAGE] Transição de stage:', {
-            from: currentStage,
-            to: newStage,
-            score,
-            intent: intent.primary,
-            urgencia: extracted.urgencia,
-            bloqueioDecisao: extracted.bloqueioDecisao,
+    if (newStage !== currentStage && lead?._id) {
+        await Lead.findByIdAndUpdate(
+            lead._id, { $set: { stage: newStage, conversionScore: score } }, { new: false }
+        ).catch(err => {
+            console.warn('[LEAD-STAGE] falha ao atualizar stage:', err.message);
         });
-
-        // 🔧 AQUI seria o ponto ideal pra persistir no banco, ex:
-        // await LeadModel.findByIdAndUpdate(lead._id, { stage: newStage });
     }
+
+
 
     // Usa SEMPRE esse contexto já com stage atualizado pro resto do fluxo
     const contextWithStage = {
@@ -218,9 +223,6 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
             contextWithStage.conversationHistory.length <= 1);
 
 
-    // 👋 Saudação "pura", sem dúvida junto
-    const isPureGreeting = PURE_GREETING_REGEX.test(normalized);
-
     // 0️⃣ PEDIU ATENDENTE HUMANA → responde SEMPRE, mesmo se for 1ª msg
     if (flags?.wantsHumanAgent) {
         console.log('👤 [ORQUEST] Lead pediu atendente humana');
@@ -231,8 +233,7 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     const pureClosingRegex =
         /^(obrigad[ao]s?|obg|obgd|vale[u]?|vlw|agrade[cç]o|tchau|falou|até\s+mais|até\s+logo|boa\s+noite|boa\s+tarde|bom\s+dia)[\s!,.]*$/i;
 
-    const isPureClosing =
-        !isFirstMessage &&
+    const isPureClosing = !isFirstMessage &&
         (flags?.saysThanks || flags?.saysBye) &&
         pureClosingRegex.test(normalized) &&
         !flags?.asksPrice &&
@@ -321,11 +322,10 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     try {
         const aiResponse = await callAmandaAIWithContext(
             text,
-            lead,
-            {
-                ...contextWithStage,
-                conversationSummary: contextWithStage.conversationSummary || ''
-            },
+            lead, {
+            ...contextWithStage,
+            conversationSummary: contextWithStage.conversationSummary || ''
+        },
             flags
         );
 
@@ -337,16 +337,16 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     }
 }
 
+
 /**
  * 🔥 FUNÇÃO DE FUNIL DE VISITA
  */
 async function callVisitFunnelAI({ text, lead, context, flags }) {
-    // 🔥 NOVO: Monta contexto para System Prompt dinâmico
-    const systemContext = {
-        isHotLead: flags.visitLeadHot,
-        isColdLead: flags.visitLeadCold,
-        negativeScopeTriggered: /audiometria|bera|rpg|pilates/i.test(text),
-    };
+    const systemContext = buildSystemContext(
+        flags,
+        userText,
+        stage
+    );
     const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
 
     const messages = [];
@@ -365,7 +365,8 @@ async function callVisitFunnelAI({ text, lead, context, flags }) {
     if (context.conversationHistory?.length) {
         const safeHistory = context.conversationHistory.map(msg => ({
             role: msg.role || 'user',
-            content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+            content: typeof msg.content === 'string' ?
+                msg.content : JSON.stringify(msg.content),
         }));
         messages.push(...safeHistory);
     }
@@ -374,38 +375,8 @@ async function callVisitFunnelAI({ text, lead, context, flags }) {
 ${text}
 
 🎯 MODO VISITA PRESENCIAL ATIVO
-- Lead ${flags.visitLeadHot ? 'QUENTE (quer resolver logo)' : 'FRIO (ainda pesquisando)'}.
-- Seu objetivo é conduzir para VISITA PRESENCIAL na clínica, seguindo:
-
-1) PRIMEIRO CONTATO
-- Pergunte nome da criança, idade e o que motivou a busca (se isso ainda não estiver claro no histórico).
-- Classifique mentalmente como lead quente ou frio.
-
-2) LEAD QUENTE
-- Ofereça a ideia da visita presencial como passo natural ("vir conhecer o espaço e conversar com a equipe").
-- Dê SEMPRE uma escolha binária que AVANÇA:
-  • "Prefere deixar encaminhada uma visita essa semana ou na próxima?"
-  • "Melhor período pra vocês costuma ser manhã ou tarde?"
-
-3) LEAD FRIO
-- Normalize a pesquisa ("muita gente começa só pesquisando").
-- Ofereça VISITA sem compromisso:
-  • "Podemos deixar encaminhada uma visita gratuita, sem compromisso, só pra você conhecer o espaço e tirar dúvidas."
-- Feche com pergunta binária:
-  • "Faz mais sentido já deixar essa visita combinada ou prefere só receber mais informações por enquanto?"
-
-4) OBJECÕES (usar se aparecerem):
-- Plano de saúde, valor, falta de tempo, outra clínica, filho pequeno/suspeita de TEA:
-  • Acolha.
-  • Responda de forma simples.
-  • Puxe de volta para a VISITA como próximo passo.
-
-REGRAS:
-- Máximo 2 frases + 1 pergunta binária.
-- Fale sempre como recepcionista acolhedora.
-- NÃO repita perguntas que já tenham sido respondidas no histórico.
-- Termine com 1 💚.
-`;
+...
+`.trim();
 
     messages.push({ role: 'user', content: visitPrompt });
 
@@ -413,17 +384,16 @@ REGRAS:
         model: AI_MODEL,
         max_tokens: 200,
         temperature: 0.6,
-        system: [
-            {
-                type: "text",
-                text: dynamicSystemPrompt,
-                cache_control: { type: "ephemeral" }
-            }
-        ],
+        system: [{
+            type: "text",
+            text: dynamicSystemPrompt,
+            cache_control: { type: "ephemeral" }
+        }],
         messages
     });
 
-    return response.content[0]?.text?.trim() || "Posso te ajudar a escolher um dia pra visitar a clínica? 💚";
+    return response.content?.[0]?.text?.trim() ||
+        "Posso te ajudar a escolher um dia pra visitar a clínica? 💚";
 }
 
 
@@ -528,16 +498,16 @@ function inferAreaFromContext(normalizedText, context = {}, flags = {}) {
     const t = normalizedText.toLowerCase();
 
     // puxa histórico recente
-    const historyText = Array.isArray(context.conversationHistory)
-        ? context.conversationHistory
+    const historyText = Array.isArray(context.conversationHistory) ?
+        context.conversationHistory
             .map(msg =>
-                typeof msg.content === "string"
-                    ? msg.content
-                    : JSON.stringify(msg.content)
+                typeof msg.content === "string" ?
+                    msg.content :
+                    JSON.stringify(msg.content)
             )
             .join(" \n ")
-            .toLowerCase()
-        : "";
+            .toLowerCase() :
+        "";
 
     const combined = `${t} ${historyText}`;
 
@@ -561,8 +531,10 @@ function inferAreaFromContext(normalizedText, context = {}, flags = {}) {
  * 🤖 IA COM DADOS DE TERAPIAS + HISTÓRICO COMPLETO + CACHE MÁXIMO
  */
 async function callClaudeWithTherapyData({ therapies, flags, userText, lead, context }) {
-    const { getTherapyData } = await import('./therapyDetector.js');
-    const { getLatestInsights } = await import('../services/amandaLearningService.js');
+    const { getTherapyData } = await
+        import('./therapyDetector.js');
+    const { getLatestInsights } = await
+        import('../services/amandaLearningService.js');
 
     const insights = await getLatestInsights();
 
@@ -582,12 +554,11 @@ async function callClaudeWithTherapyData({ therapies, flags, userText, lead, con
         shouldGreet,
     } = context;
 
-    // 🔥 NOVO: Monta contexto para System Prompt dinâmico
-    const systemContext = {
-        isHotLead: flags.visitLeadHot || stage === 'interessado_agendamento',
-        isColdLead: flags.visitLeadCold || stage === 'novo',
-        negativeScopeTriggered: /audiometria|bera|rpg|pilates/i.test(userText),
-    };
+    const systemContext = buildSystemContext(
+        flags,
+        userText,
+        stage
+    );
     const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
 
     // 🧠 PERFIL DE IDADE A PARTIR DO HISTÓRICO
@@ -677,9 +648,8 @@ async function callClaudeWithTherapyData({ therapies, flags, userText, lead, con
     if (conversationHistory && conversationHistory.length > 0) {
         const safeHistory = conversationHistory.map(msg => ({
             role: msg.role || 'user',
-            content: typeof msg.content === 'string'
-                ? msg.content
-                : JSON.stringify(msg.content),
+            content: typeof msg.content === 'string' ?
+                msg.content : JSON.stringify(msg.content),
         }));
 
         messages.push(...safeHistory);
@@ -692,9 +662,7 @@ async function callClaudeWithTherapyData({ therapies, flags, userText, lead, con
             conversationSummary: context.conversationSummary || '',
             topic: therapies[0]?.id || 'avaliacao_inicial',
             text: userText,
-            ageGroup: ageContextNote.includes('criança') ? 'crianca' :
-                ageContextNote.includes('adolescente') ? 'adolescente' :
-                    ageContextNote.includes('adulto') ? 'adulto' : null
+            ageGroup: ageContextNote.includes('criança') ? 'crianca' : ageContextNote.includes('adolescente') ? 'adolescente' : ageContextNote.includes('adulto') ? 'adulto' : null
         };
 
         const pricePrompt = buildUserPromptWithValuePitch(enrichedFlags);
@@ -711,13 +679,11 @@ async function callClaudeWithTherapyData({ therapies, flags, userText, lead, con
             model: AI_MODEL,
             max_tokens: 200,
             temperature: 0.7,
-            system: [
-                {
-                    type: "text",
-                    text: dynamicSystemPrompt,
-                    cache_control: { type: "ephemeral" }
-                }
-            ],
+            system: [{
+                type: "text",
+                text: dynamicSystemPrompt,
+                cache_control: { type: "ephemeral" }
+            }],
             messages
         });
 
@@ -752,13 +718,11 @@ ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${
         model: AI_MODEL,
         max_tokens: 200,
         temperature: 0.7,
-        system: [
-            {
-                type: "text",
-                text: dynamicSystemPrompt,
-                cache_control: { type: "ephemeral" }
-            }
-        ],
+        system: [{
+            type: "text",
+            text: dynamicSystemPrompt,
+            cache_control: { type: "ephemeral" }
+        }],
         messages
     });
 
@@ -770,7 +734,8 @@ ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${
  * 🤖 IA COM CONTEXTO INTELIGENTE + CACHE MÁXIMO
  */
 async function callAmandaAIWithContext(userText, lead, context, flagsFromOrchestrator = {}) {
-    const { getLatestInsights } = await import('../services/amandaLearningService.js');
+    const { getLatestInsights } = await
+        import('../services/amandaLearningService.js');
 
     const {
         stage = 'novo',
@@ -787,18 +752,17 @@ async function callAmandaAIWithContext(userText, lead, context, flagsFromOrchest
     // 🧩 FLAGS SÓ PRA ENTENDER PERFIL (criança/ado/adulto)
     const flags = flagsFromOrchestrator || detectAllFlags(userText, lead, context);
 
-    // 🔥 NOVO: Monta contexto para System Prompt dinâmico
-    const systemContext = {
-        isHotLead: flags.visitLeadHot || stage === 'interessado_agendamento',
-        isColdLead: flags.visitLeadCold || stage === 'novo',
-        negativeScopeTriggered: /audiometria|bera|rpg|pilates/i.test(userText),
-    };
+    const systemContext = buildSystemContext(
+        flags,
+        userText,
+        stage
+    );
     const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
 
     // 🎯 CONTEXTO DE TERAPIAS (AGORA EXISTE therapiesContext)
-    const therapiesContext = mentionedTherapies.length > 0
-        ? `\n🎯 TERAPIAS DISCUTIDAS: ${mentionedTherapies.join(', ')}`
-        : '';
+    const therapiesContext = mentionedTherapies.length > 0 ?
+        `\n🎯 TERAPIAS DISCUTIDAS: ${mentionedTherapies.join(', ')}` :
+        '';
 
     // 🧠 PERFIL DE IDADE A PARTIR DO HISTÓRICO
     let historyAgeNote = "";
@@ -1028,5 +992,45 @@ function enforceClinicScope(aiText = "", userText = "") {
 
     return aiText;
 }
+
+const buildSystemContext = (flags, text = "", stage = "novo") => ({
+    // Funil
+    isHotLead: flags.visitLeadHot || stage === 'interessado_agendamento',
+    isColdLead: flags.visitLeadCold || stage === 'novo',
+
+    // Escopo negativo
+    negativeScopeTriggered: /audiometria|bera|rpg|pilates/i.test(text),
+
+    // 🛡️ OBJEÇÕES (NOVO)
+    priceObjectionTriggered:
+        flags.mentionsPriceObjection ||
+        /outra\s+cl[ií]nica|mais\s+(barato|em\s+conta)|encontrei.*barato|vou\s+fazer\s+l[aá]|n[aã]o\s+precisa\s+mais|muito\s+caro|caro\s+demais/i.test(
+            text
+        ),
+
+    insuranceObjectionTriggered:
+        flags.mentionsInsuranceObjection ||
+        /queria\s+(pelo|usar)\s+plano|s[oó]\s+atendo\s+por\s+plano|particular\s+[eé]\s+caro|pelo\s+conv[eê]nio/i.test(
+            text
+        ),
+
+    timeObjectionTriggered:
+        flags.mentionsTimeObjection ||
+        /n[aã]o\s+tenho\s+tempo|sem\s+tempo|correria|agenda\s+cheia/i.test(text),
+
+    otherClinicObjectionTriggered:
+        flags.mentionsOtherClinicObjection ||
+        /j[aá]\s+(estou|tô)\s+(vendo|fazendo)|outra\s+cl[ií]nica|outro\s+profissional/i.test(
+            text
+        ),
+
+    teaDoubtTriggered:
+        flags.mentionsDoubtTEA ||
+        /ser[aá]\s+que\s+[eé]\s+tea|suspeita\s+de\s+(tea|autismo)|muito\s+novo\s+pra\s+saber/i.test(
+            text
+        ),
+});
+
+
 
 export default getOptimizedAmandaResponse;

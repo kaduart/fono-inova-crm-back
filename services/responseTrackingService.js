@@ -20,16 +20,16 @@ import { analyzeLeadMessage } from './intelligence/leadIntelligence.js';
 // =====================================================================
 
 const CONFIG = {
-    RESPONSE_WINDOW_HOURS: 72,           // Janela para considerar resposta válida
-    BATCH_SIZE: 50,                      // Leads processados por lote
-    NON_RESPONDER_THRESHOLD_HOURS: 48,  // Tempo para considerar lead frio
-    MIN_FOLLOWUPS_FOR_COLD: 2,          // Mínimo de follow-ups para marcar como frio
-    SCORE_PENALTY_COLD: 30,             // Penalidade de score para leads frios
+    RESPONSE_WINDOW_HOURS: 72, // Janela para considerar resposta válida
+    BATCH_SIZE: 50, // Leads processados por lote
+    NON_RESPONDER_THRESHOLD_HOURS: 48, // Tempo para considerar lead frio
+    MIN_FOLLOWUPS_FOR_COLD: 2, // Mínimo de follow-ups para marcar como frio
+    SCORE_PENALTY_COLD: 30, // Penalidade de score para leads frios
 
     // Timeouts e retries
-    DB_OPERATION_TIMEOUT: 10000,        // 10s
+    DB_OPERATION_TIMEOUT: 10000, // 10s
     MAX_RETRIES: 3,
-    RETRY_DELAY: 1000                   // 1s
+    RETRY_DELAY: 1000 // 1s
 };
 
 // =====================================================================
@@ -73,6 +73,25 @@ const logger = {
         console.error(chalk.red(`[ERROR] ${msg}`), { error: error.message, ...data });
     }
 };
+
+
+export async function handleInboundMessageForFollowups(leadId) {
+    if (!leadId) return;
+
+    // Pega o último followup enviado pra esse lead
+    const lastSent = await Followup.findOne({
+        lead: leadId,
+        status: 'sent',
+        responded: false,
+    })
+        .sort({ sentAt: -1 })
+        .lean();
+
+    if (!lastSent) return;
+
+    // Reaproveita TODA a inteligência já feita em checkFollowupResponse
+    await checkFollowupResponse(lastSent._id);
+}
 
 /**
  * Retry wrapper para operações de banco
@@ -209,9 +228,7 @@ export async function checkFollowupResponse(followupId, options = {}) {
             async () => {
                 const followupDoc = await Followup.findById(followupId);
                 if (followupDoc && !followupDoc.responded) {
-                    await followupDoc.markResponded();
-                    followupDoc.responseTimeMinutes = responseTime;
-                    await followupDoc.save();
+                    await followupDoc.markRespondedAt(firstResponse.timestamp);
                 }
             },
             `marcar follow-up ${followupId} como respondido`
@@ -255,26 +272,23 @@ export async function checkFollowupResponse(followupId, options = {}) {
         if (analysis) {
             await withRetry(
                 async () => Lead.findByIdAndUpdate(
-                    lead._id,
-                    {
-                        $set: {
-                            conversionScore: analysis.score,
-                            status: analysis.score >= 80 ? 'lead_quente' :
-                                analysis.score < 50 ? 'lead_frio' : lead.status,
-                            'qualificationData.extractedInfo': analysis.extracted,
-                            'qualificationData.intent': analysis.intent.primary,
-                            'qualificationData.sentiment': analysis.intent.sentiment,
-                            lastScoreUpdate: new Date()
-                        },
-                        $push: {
-                            scoreHistory: {
-                                score: analysis.score,
-                                reason: `Resposta a follow-up: ${analysis.intent.primary}`,
-                                date: new Date()
-                            }
-                        }
+                    lead._id, {
+                    $set: {
+                        conversionScore: analysis.score,
+                        status: analysis.score >= 80 ? 'lead_quente' : analysis.score < 50 ? 'lead_frio' : lead.status,
+                        'qualificationData.extractedInfo': analysis.extracted,
+                        'qualificationData.intent': analysis.intent.primary,
+                        'qualificationData.sentiment': analysis.intent.sentiment,
+                        lastScoreUpdate: new Date()
                     },
-                    { new: false }
+                    $push: {
+                        scoreHistory: {
+                            score: analysis.score,
+                            reason: `Resposta a follow-up: ${analysis.intent.primary}`,
+                            date: new Date()
+                        }
+                    }
+                }, { new: false }
                 ),
                 `atualizar lead ${lead._id} após resposta`
             );
@@ -282,20 +296,17 @@ export async function checkFollowupResponse(followupId, options = {}) {
 
         // 8. CANCELAR FOLLOW-UPS FUTUROS (lead está engajado)
         const cancelResult = await withRetry(
-            async () => Followup.updateMany(
-                {
-                    lead: lead._id,
-                    status: 'scheduled',
-                    scheduledAt: { $gt: new Date() }
-                },
-                {
-                    $set: {
-                        status: 'cancelled',
-                        error: 'Lead respondeu - sequência cancelada',
-                        updatedAt: new Date()
-                    }
+            async () => Followup.updateMany({
+                lead: lead._id,
+                status: 'scheduled',
+                scheduledAt: { $gt: new Date() }
+            }, {
+                $set: {
+                    status: 'cancelled',
+                    error: 'Lead respondeu - sequência cancelada',
+                    updatedAt: new Date()
                 }
-            ),
+            }),
             `cancelar follow-ups futuros do lead ${lead._id}`
         );
 
@@ -438,9 +449,9 @@ export async function processPendingResponses(options = {}) {
 
         // 3. MÉTRICAS FINAIS
         const duration = Date.now() - startTime;
-        const responseRate = stats.processed > 0
-            ? ((stats.responded / stats.processed) * 100).toFixed(1)
-            : 0;
+        const responseRate = stats.processed > 0 ?
+            ((stats.responded / stats.processed) * 100).toFixed(1) :
+            0;
 
         logger.success('Processamento em lote concluído', {
             ...stats,
@@ -485,31 +496,30 @@ export async function identifyNonResponders(options = {}) {
 
         // 1. AGREGAÇÃO PARA ENCONTRAR NÃO RESPONDENTES
         const nonResponders = await withRetry(
-            async () => Followup.aggregate([
-                {
-                    $match: {
-                        status: 'sent',
-                        responded: false,
-                        sentAt: { $lte: cutoffDate }
-                    }
-                },
-                {
-                    $group: {
-                        _id: '$lead',
-                        totalFollowups: { $sum: 1 },
-                        lastFollowupSent: { $max: '$sentAt' },
-                        firstFollowupSent: { $min: '$sentAt' },
-                        followupIds: { $push: '$_id' }
-                    }
-                },
-                {
-                    $match: {
-                        totalFollowups: { $gte: minFollowups }
-                    }
-                },
-                {
-                    $sort: { totalFollowups: -1 }
+            async () => Followup.aggregate([{
+                $match: {
+                    status: 'sent',
+                    responded: false,
+                    sentAt: { $lte: cutoffDate }
                 }
+            },
+            {
+                $group: {
+                    _id: '$lead',
+                    totalFollowups: { $sum: 1 },
+                    lastFollowupSent: { $max: '$sentAt' },
+                    firstFollowupSent: { $min: '$sentAt' },
+                    followupIds: { $push: '$_id' }
+                }
+            },
+            {
+                $match: {
+                    totalFollowups: { $gte: minFollowups }
+                }
+            },
+            {
+                $sort: { totalFollowups: -1 }
+            }
             ]).maxTimeMS(CONFIG.DB_OPERATION_TIMEOUT),
             'agregar leads frios'
         );
@@ -617,123 +627,120 @@ export async function getResponseAnalytics(days = 7) {
 
         // 1. MÉTRICAS GERAIS
         const overall = await withRetry(
-            async () => Followup.aggregate([
-                {
-                    $match: {
-                        sentAt: { $gte: since },
-                        status: 'sent'
-                    }
-                },
-                {
-                    $group: {
-                        _id: null,
-                        total: { $sum: 1 },
-                        responded: {
-                            $sum: { $cond: [{ $eq: ['$responded', true] }, 1, 0] }
-                        },
-                        avgResponseTime: {
-                            $avg: {
-                                $cond: [
-                                    { $gt: ['$responseTimeMinutes', 0] },
-                                    '$responseTimeMinutes',
-                                    null
-                                ]
-                            }
+            async () => Followup.aggregate([{
+                $match: {
+                    sentAt: { $gte: since },
+                    status: 'sent'
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: 1 },
+                    responded: {
+                        $sum: { $cond: [{ $eq: ['$responded', true] }, 1, 0] }
+                    },
+                    avgResponseTime: {
+                        $avg: {
+                            $cond: [
+                                { $gt: ['$responseTimeMinutes', 0] },
+                                '$responseTimeMinutes',
+                                null
+                            ]
                         }
                     }
-                },
-                {
-                    $project: {
-                        _id: 0,
-                        total: 1,
-                        responded: 1,
-                        notResponded: { $subtract: ['$total', '$responded'] },
-                        responseRate: {
-                            $round: [
-                                { $multiply: [{ $divide: ['$responded', '$total'] }, 100] },
-                                1
-                            ]
-                        },
-                        avgResponseTime: { $round: ['$avgResponseTime', 0] }
-                    }
                 }
+            },
+            {
+                $project: {
+                    _id: 0,
+                    total: 1,
+                    responded: 1,
+                    notResponded: { $subtract: ['$total', '$responded'] },
+                    responseRate: {
+                        $round: [
+                            { $multiply: [{ $divide: ['$responded', '$total'] }, 100] },
+                            1
+                        ]
+                    },
+                    avgResponseTime: { $round: ['$avgResponseTime', 0] }
+                }
+            }
             ]).maxTimeMS(CONFIG.DB_OPERATION_TIMEOUT),
             'calcular métricas gerais'
         );
 
         // 2. POR ORIGEM
         const byOrigin = await withRetry(
-            async () => Followup.aggregate([
-                {
-                    $match: {
-                        sentAt: { $gte: since },
-                        status: 'sent'
+            async () => Followup.aggregate([{
+                $match: {
+                    sentAt: { $gte: since },
+                    status: 'sent'
+                }
+            },
+            {
+                $group: {
+                    _id: '$origin',
+                    total: { $sum: 1 },
+                    responded: {
+                        $sum: { $cond: [{ $eq: ['$responded', true] }, 1, 0] }
                     }
-                },
-                {
-                    $group: {
-                        _id: '$origin',
-                        total: { $sum: 1 },
-                        responded: {
-                            $sum: { $cond: [{ $eq: ['$responded', true] }, 1, 0] }
-                        }
+                }
+            },
+            {
+                $project: {
+                    origin: '$_id',
+                    total: 1,
+                    responded: 1,
+                    responseRate: {
+                        $round: [
+                            { $multiply: [{ $divide: ['$responded', '$total'] }, 100] },
+                            1
+                        ]
                     }
-                },
-                {
-                    $project: {
-                        origin: '$_id',
-                        total: 1,
-                        responded: 1,
-                        responseRate: {
-                            $round: [
-                                { $multiply: [{ $divide: ['$responded', '$total'] }, 100] },
-                                1
-                            ]
-                        }
-                    }
-                },
-                { $sort: { responseRate: -1 } }
+                }
+            },
+            { $sort: { responseRate: -1 } }
             ]).maxTimeMS(CONFIG.DB_OPERATION_TIMEOUT),
             'calcular métricas por origem'
         );
 
         // 3. POR HORÁRIO
         const byHour = await withRetry(
-            async () => Followup.aggregate([
-                {
-                    $match: {
-                        sentAt: { $gte: since },
-                        status: 'sent'
+            async () => Followup.aggregate([{
+                $match: {
+                    sentAt: { $gte: since },
+                    status: 'sent'
+                }
+            },
+            {
+                $project: {
+                    hour: { $hour: { date: '$sentAt', timezone: 'America/Sao_Paulo' } },
+                    responded: '$responded'
+                }
+            },
+            {
+                $group: {
+                    _id: '$hour',
+                    total: { $sum: 1 },
+                    responded: {
+                        $sum: { $cond: [{ $eq: ['$responded', true] }, 1, 0] }
                     }
-                },
-                {
-                    $project: {
-                        hour: { $hour: { date: '$sentAt', timezone: 'America/Sao_Paulo' } },
-                        responded: '$responded'
+                }
+            },
+            {
+                $project: {
+                    hour: '$_id',
+                    total: 1,
+                    responseRate: {
+                        $round: [
+                            { $multiply: [{ $divide: ['$responded', '$total'] }, 100] },
+                            1
+                        ]
                     }
-                },
-                {
-                    $group: {
-                        _id: '$hour',
-                        total: { $sum: 1 },
-                        responded: {
-                            $sum: { $cond: [{ $eq: ['$responded', true] }, 1, 0] }
-                        }
-                    }
-                },
-                {
-                    $project: {
-                        hour: '$_id',
-                        total: 1,
-                        responseRate: {
-                            $round: [
-                                { $multiply: [{ $divide: ['$responded', '$total'] }, 100] },
-                                1
-                            ]
-                        }
-                    }
-                },
-                { $sort: { responseRate: -1 } }
+                }
+            },
+            { $sort: { responseRate: -1 } }
             ]).maxTimeMS(CONFIG.DB_OPERATION_TIMEOUT),
             'calcular métricas por horário'
         );

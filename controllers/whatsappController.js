@@ -1,7 +1,6 @@
 // controllers/whatsappController.js - VERSÃO CORRIGIDA
 
 import mongoose from 'mongoose';
-import { followupQueue } from "../config/bullConfig.js";
 import { redisConnection as redis } from '../config/redisConnection.js';
 import { getIo } from "../config/socket.js";
 import Contact from "../models/Contact.js";
@@ -9,7 +8,6 @@ import Followup from "../models/Followup.js";
 import Lead from '../models/Leads.js';
 import Message from "../models/Message.js";
 import { describeWaImage, transcribeWaAudio } from "../services/aiAmandaService.js";
-import { calculateOptimalFollowupTime } from "../services/intelligence/smartFollowup.js";
 import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
@@ -896,71 +894,52 @@ async function processInboundMessage(msg, value) {
 
         // 🔥 AUTO-AGENDADOR DE FOLLOW-UP (Amanda 2.0)
         try {
-            // Recarrega lead mais fresquinho
             const freshLead = await Lead.findById(lead._id).lean();
 
-            // Respeita flags
             const autoReplyOn = freshLead?.autoReplyEnabled !== false;
             const manualActive = freshLead?.manualControl?.active === true;
 
             if (autoReplyOn && !manualActive) {
-                // Evita duplicar: procura followup futuro já agendado
+                // Evita duplicar: follow-up futuro já agendado
                 const existing = await Followup.findOne({
                     lead: freshLead._id,
-                    status: { $in: ['scheduled', 'processing'] },
-                    scheduledAt: { $gte: new Date() }
+                    status: { $in: ["scheduled", "processing"] },
+                    scheduledAt: { $gte: new Date() },
                 }).lean();
 
                 if (!existing) {
-                    const score = freshLead.conversionScore || 50;
-
-                    const scheduledAt = calculateOptimalFollowupTime({
-                        lead: freshLead,
-                        score,
-                        lastInteraction: new Date(),
-                        attempt: 1
+                    await createSmartFollowupForLead(freshLead._id, {
+                        explicitScheduledAt: null, // deixa a Amanda decidir o melhor horário
+                        objective: "reengajamento_inbound",
+                        attempt: 1,
                     });
 
-                    const fu = await Followup.create({
-                        lead: freshLead._id,
-                        stage: 'follow_up',
-                        scheduledAt,
-                        status: 'scheduled',
-                        aiOptimized: true,
-                        origin: freshLead.origin || 'WhatsApp',
-                        note: 'Auto-agendado via WhatsApp inbound'
-                    });
-
-                    const delayMs = scheduledAt.getTime() - Date.now();
-
-                    await followupQueue.add(
-                        "followup",
-                        { followupId: fu._id },
-                        {
-                            jobId: `fu-${fu._id}`,
-                            ...(delayMs > 0 ? { delay: delayMs } : {})
-                        }
-                    );
-
-                    console.log('💚🤍 Follow-up auto-agendado a partir de inbound WhatsApp:', {
+                    console.log("💚🤍 Follow-up inteligente auto-agendado via Amanda 2.0:", {
                         leadId: String(freshLead._id),
-                        followupId: String(fu._id),
-                        scheduledAt
                     });
                 } else {
-                    console.log('ℹ️ Já existe follow-up futuro para este lead, não vou duplicar:', {
-                        leadId: String(freshLead._id),
-                        followupId: String(existing._id),
-                        status: existing.status,
-                        scheduledAt: existing.scheduledAt
-                    });
+                    console.log(
+                        "ℹ️ Já existe follow-up futuro para este lead, não vou duplicar:",
+                        {
+                            leadId: String(freshLead._id),
+                            followupId: String(existing._id),
+                            status: existing.status,
+                            scheduledAt: existing.scheduledAt,
+                        }
+                    );
                 }
             } else {
-                console.log('ℹ️ Auto follow-up ignorado (manualControl ativo ou autoReply desativado).');
+                console.log(
+                    "ℹ️ Auto follow-up ignorado (manualControl ativo ou autoReply desativado)."
+                );
             }
         } catch (autoFuError) {
-            console.error('⚠️ Erro ao auto-agendar follow-up via inbound WhatsApp (não crítico):', autoFuError.message);
+            console.error(
+                "⚠️ Erro ao auto-agendar follow-up via inbound WhatsApp (não crítico):",
+                autoFuError.message
+            );
         }
+
 
         console.log("✅ Mensagem processada com sucesso:", wamid);
 
