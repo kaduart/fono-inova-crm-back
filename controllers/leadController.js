@@ -1,11 +1,11 @@
 // controllers/leadController.js - VERSÃO COMPLETA (Planilha + Anúncios)
+import { followupQueue } from "../config/bullConfig.js";
 import Followup from '../models/Followup.js';
 import Lead from '../models/Leads.js';
 import Patient from '../models/Patient.js';
 import { calculateOptimalFollowupTime } from '../services/intelligence/smartFollowup.js';
 import { sendLeadToMeta } from '../services/metaConversionsService.js';
 import { normalizeE164BR } from "../utils/phone.js";
-import { followupQueue } from "../config/bullConfig.js";
 
 // =====================================================================
 // 🆕 FUNÇÕES DE ANÚNCIOS (META/GOOGLE ADS) - AMANDA 2.0
@@ -18,58 +18,64 @@ import { followupQueue } from "../config/bullConfig.js";
  */
 export const createLeadFromAd = async (req, res) => {
     try {
-        const {
+        let {
             name,
             phone,
             email,
             origin,
             adDetails = {},
             initialMessage = null,
-            urgency = 'medium'
+            urgency = "medium",
         } = req.body;
 
+        // 🔤 tratar nome
+        let safeName =
+            typeof name === "string"
+                ? name.trim()
+                : "";
+
+        const blacklist = ["contato", "cliente", "lead", "lead meta", "lead histórico", "lead historico"];
+        if (safeName && blacklist.includes(safeName.toLowerCase())) {
+            safeName = "";
+        }
+
         // Validações
-        if (!name || !phone) {
+        if (!safeName || !phone) {
             return res.status(400).json({
                 success: false,
-                error: 'Campos obrigatórios: name, phone'
+                error: "Campos obrigatórios: name (válido) e phone",
             });
         }
 
-        // Normalizar telefone
         const phoneE164 = normalizeE164BR(phone);
 
-        // Verificar duplicado
-        const existing = await Lead.findOne({ 'contact.phone': phoneE164 });
+        const existing = await Lead.findOne({ "contact.phone": phoneE164 });
         if (existing) {
-            console.log(`⚠️ Lead duplicado: ${name} (${phoneE164})`);
+            console.log(`⚠️ Lead duplicado: ${safeName} (${phoneE164})`);
             return res.status(409).json({
                 success: false,
-                error: 'Lead já existe',
-                leadId: existing._id
+                error: "Lead já existe",
+                leadId: existing._id,
             });
         }
 
-        // Score inicial
         let initialScore = 60;
-        if (origin?.toLowerCase().includes('google')) initialScore = 70;
-        if (origin?.toLowerCase().includes('meta')) initialScore = 65;
-        if (urgency === 'high') initialScore += 15;
-        if (urgency === 'low') initialScore -= 10;
+        if (origin?.toLowerCase().includes("google")) initialScore = 70;
+        if (origin?.toLowerCase().includes("meta")) initialScore = 65;
+        if (urgency === "high") initialScore += 15;
+        if (urgency === "low") initialScore -= 10;
 
-        // ✅ CRIAR LEAD - CAMPOS COMPLETOS
         const leadData = {
-            name,
+            name: safeName, // 👈 usa o tratado
             contact: {
                 phone: phoneE164,
-                email: email || null
+                email: email || null,
             },
-            origin: origin || 'Tráfego pago',
-            status: 'lead_quente',
+            origin: origin || "Tráfego pago",
+            status: "lead_quente",
             conversionScore: initialScore,
             notes: initialMessage || `Lead captado via ${origin}`,
-            // ✅ Campos com defaults
-            circuit: 'Circuito Padrão',
+            circuit: "Circuito Padrão",
             responded: false,
             conversationSummary: null,
             summaryGeneratedAt: null,
@@ -77,23 +83,22 @@ export const createLeadFromAd = async (req, res) => {
             autoReplyEnabled: true,
             manualControl: {
                 active: false,
-                autoResumeAfter: 360
+                autoResumeAfter: 360,
             },
             appointment: {
-                seekingFor: 'Adulto +18 anos',
-                modality: 'Online',
-                healthPlan: 'Mensalidade'
+                seekingFor: "Adulto +18 anos",
+                modality: "Online",
+                healthPlan: "Mensalidade",
             },
             interactions: [],
             scoreHistory: [],
             lastInteractionAt: new Date(),
             qualificationData: {
-                urgencyLevel: urgency === 'high' ? 3 : urgency === 'low' ? 1 : 2
+                urgencyLevel: urgency === "high" ? 3 : urgency === "low" ? 1 : 2,
             },
-            lastScoreUpdate: new Date()
+            lastScoreUpdate: new Date(),
         };
 
-        // ✅ USA insertMany (bypass Mongoose bug)
         const [lead] = await Lead.insertMany([leadData], { rawResult: false });
 
         console.log(`✅ Lead criado: ${name} (${phoneE164}) | Score: ${initialScore}`);
@@ -192,29 +197,36 @@ export const metaLeadWebhook = async (req, res) => {
 
         // Extrair campos
         const fields = {};
-        field_data?.forEach(f => {
+        field_data?.forEach((f) => {
             fields[f.name] = f.values?.[0];
         });
 
-        console.log('📩 Lead recebido do Meta:', fields);
+        console.log("📩 Lead recebido do Meta:", fields);
+
+        // Nome que a PESSOA preencheu no formulário
+        const rawName =
+            (fields.full_name || fields.name || "").trim();
 
         // Criar lead via controller
-        await createLeadFromAd({
-            body: {
-                name: fields.full_name || fields.name || 'Lead Meta',
-                phone: fields.phone_number || fields.phone,
-                email: fields.email,
-                origin: 'Meta Ads',
-                adDetails: {
-                    leadgenId: leadgen_id,
-                    adId: leadData.ad_id,
-                    formId: leadData.form_id,
-                    campaign: leadData.ad_name
+        await createLeadFromAd(
+            {
+                body: {
+                    name: rawName,
+                    phone: fields.phone_number || fields.phone,
+                    email: fields.email,
+                    origin: "Meta Ads",
+                    adDetails: {
+                        leadgenId: leadgen_id,
+                        adId: leadData.ad_id,
+                        formId: leadData.form_id,
+                        campaign: leadData.ad_name,
+                    },
+                    initialMessage: fields.message,
+                    urgency: "high",
                 },
-                initialMessage: fields.message,
-                urgency: 'high'
-            }
-        }, res);
+            },
+            res
+        );
 
     } catch (error) {
         console.error('❌ Erro no webhook Meta:', error);
@@ -289,33 +301,45 @@ export const createLeadFromSheet = async (req, res) => {
             origin,
             scheduledDate
         } = req.body;
+
         const phoneE164 = normalizeE164BR(phone);
 
+        // 🔤 tratar nome vindo da planilha
+        let safeName =
+            typeof name === "string"
+                ? name.trim()
+                : "";
+
+        // opcional: evitar nomes genéricos
+        const blacklist = ["contato", "cliente", "lead"];
+        if (safeName && blacklist.includes(safeName.toLowerCase())) {
+            safeName = "";
+        }
+
         const lead = await Lead.findOneAndUpdate(
-            { 'contact.phone': phoneE164 || null },
+            { "contact.phone": phoneE164 || null },
             {
                 $setOnInsert: {
-                    name,
+                    name: safeName, // 👈 agora existe
                     contact: { phone: phoneE164 },
-                    origin: origin || 'Tráfego pago',
+                    origin: origin || "Tráfego pago",
                     appointment: {
-                        seekingFor: seekingFor || 'Adulto +18 anos',
-                        modality: modality || 'Online',
-                        healthPlan: healthPlan || 'Mensalidade'
+                        seekingFor: seekingFor || "Adulto +18 anos",
+                        modality: modality || "Online",
+                        healthPlan: healthPlan || "Mensalidade",
                     },
                     scheduledDate,
-                    status: 'novo'
-                }
+                    status: "novo",
+                },
             },
             { upsert: true, new: true }
         );
 
         res.status(201).json({
             success: true,
-            message: 'Lead criado da planilha!',
-            data: lead
+            message: "Lead criado da planilha!",
+            data: lead,
         });
-
 
         try {
             await sendLeadToMeta({
@@ -325,7 +349,7 @@ export const createLeadFromSheet = async (req, res) => {
             });
         } catch (err) {
             console.error(
-                '⚠️ Erro ao enviar lead-from-sheet para Meta CAPI:',
+                "⚠️ Erro ao enviar lead-from-sheet para Meta CAPI:",
                 err.message
             );
         }
@@ -334,6 +358,7 @@ export const createLeadFromSheet = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
 
 /**
  * 📊 Dashboard específico para métricas da planilha

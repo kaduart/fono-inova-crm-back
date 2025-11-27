@@ -19,7 +19,7 @@ const followupSchema = new mongoose.Schema({
 
     status: {
         type: String,
-        enum: ["scheduled", "processing", "sent", "failed", "responded"],
+        enum: ["scheduled", "processing", "sent", "failed", "responded", "cancelled"],
         default: "scheduled",
         index: true
     },
@@ -61,6 +61,7 @@ followupSchema.index({ status: 1, scheduledAt: 1, retryCount: 1 });
 followupSchema.index({ origin: 1, sentAt: -1 });
 followupSchema.index({ playbook: 1, sentAt: -1 });
 followupSchema.index({ lead: 1, responded: 1 }); // ✅ ADICIONADO (usado no responseTracking)
+followupSchema.index({ status: 1, responded: 1, sentAt: 1 });
 
 // Idempotência
 followupSchema.index(
@@ -92,12 +93,14 @@ followupSchema.methods.markFailed = function (errMsg = '') {
     return this.save();
 };
 
-followupSchema.methods.markResponded = function () {
+followupSchema.methods.markRespondedAt = function (timestamp) {
     this.status = 'responded';
     this.responded = true;
-    this.respondedAt = new Date();
-    if (this.sentAt) {
-        this.responseTimeMinutes = Math.round((this.respondedAt - this.sentAt) / 60000);
+    this.respondedAt = timestamp || new Date();
+    if (this.sentAt && this.respondedAt) {
+        this.responseTimeMinutes = Math.round(
+          (this.respondedAt - this.sentAt) / 60000
+        );
     }
     return this.save();
 };

@@ -48,7 +48,7 @@ const messageSchema = new mongoose.Schema({
     metadata: {
         sentBy: {
             type: String,
-            enum: ['amanda', 'manual', 'system'],
+            enum: ['amanda', 'amanda_followup', 'manual', 'system'],
             default: 'amanda'
         },
         userId: {
