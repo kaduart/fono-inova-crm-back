@@ -105,8 +105,9 @@ const worker = new Worker(
         return;
       }
 
-      let analysis = null;
+            let analysis = null;
       let shouldStopByIntent = false;
+
       if (lastInbound?.content) {
         try {
           analysis = await analyzeLeadMessage({
@@ -136,8 +137,9 @@ const worker = new Worker(
             }
           });
 
-          // 👉 Se a Amanda 2.0 entendeu que a pessoa NÃO TEM INTERESSE, parar tudo
           const intentPrimary = (analysis.intent?.primary || "").toLowerCase();
+
+          // 👇 1) Intenções de "não quero mais / sem interesse"
           const uninterestedIntents = [
             "sem_interesse",
             "sem interesse",
@@ -146,7 +148,19 @@ const worker = new Worker(
             "not_interested"
           ];
 
+          // 👇 2) Intenções de "já resolvi / já agendei"
+          const resolvedIntents = [
+            "consulta_agendada",
+            "agendado",
+            "ja_agendou",
+            "já_agendou",
+            "atendimento_marcado",
+            "resolved",
+            "problema_resolvido"
+          ];
+
           if (uninterestedIntents.includes(intentPrimary)) {
+            // caso 1: não tem interesse
             shouldStopByIntent = true;
 
             await Lead.findByIdAndUpdate(lead._id, {
@@ -155,7 +169,20 @@ const worker = new Worker(
 
             console.log(
               chalk.yellow(
-                `[AMANDA] Lead ${lead._id} sinalizou desinteresse (${intentPrimary}). Não enviar mais follow-ups.`
+                `[AMANDA] Lead ${lead._id} sinalizou DESINTERESSE (${intentPrimary}). Não enviar mais follow-ups.`
+              )
+            );
+          } else if (resolvedIntents.includes(intentPrimary)) {
+            // caso 2: já resolveu / já agendou (ex: pai do João Guilherme)
+            shouldStopByIntent = true;
+
+            await Lead.findByIdAndUpdate(lead._id, {
+              status: "em_andamento" // ou 'virou_paciente', se fizer mais sentido no teu funil
+            });
+
+            console.log(
+              chalk.yellow(
+                `[AMANDA] Lead ${lead._id} informou que JÁ RESOLVEU (${intentPrimary}). Não enviar mais follow-ups.`
               )
             );
           }
