@@ -106,6 +106,7 @@ const worker = new Worker(
       }
 
       let analysis = null;
+      let shouldStopByIntent = false;
       if (lastInbound?.content) {
         try {
           analysis = await analyzeLeadMessage({
@@ -134,12 +135,48 @@ const worker = new Worker(
               }
             }
           });
+
+          // 👉 Se a Amanda 2.0 entendeu que a pessoa NÃO TEM INTERESSE, parar tudo
+          const intentPrimary = (analysis.intent?.primary || "").toLowerCase();
+          const uninterestedIntents = [
+            "sem_interesse",
+            "sem interesse",
+            "nao_interessado",
+            "não_interessado",
+            "not_interested"
+          ];
+
+          if (uninterestedIntents.includes(intentPrimary)) {
+            shouldStopByIntent = true;
+
+            await Lead.findByIdAndUpdate(lead._id, {
+              status: "sem_interesse"
+            });
+
+            console.log(
+              chalk.yellow(
+                `[AMANDA] Lead ${lead._id} sinalizou desinteresse (${intentPrimary}). Não enviar mais follow-ups.`
+              )
+            );
+          }
+
         } catch (aiError) {
           console.warn(
             chalk.yellow("⚠️ Erro na análise Amanda 2.0:"),
             aiError.message
           );
         }
+      }
+
+      // Se a pessoa já sinalizou desinteresse, não envia nada e não agenda próximo
+      if (shouldStopByIntent) {
+        await Followup.findByIdAndUpdate(followupId, {
+          status: "failed",
+          error: "Lead sinalizou desinteresse (Amanda 2.0)",
+          failedAt: new Date()
+        });
+
+        return;
       }
 
       // =====================================================
@@ -178,9 +215,22 @@ const worker = new Worker(
             chalk.yellow("⚠️ Erro na geração de mensagem:"),
             e.message
           );
-          const firstName = (lead?.name || "").split(" ")[0] || "tudo bem";
-          messageToSend = `Oi ${firstName}! 💚 Passando para saber se posso te ajudar. Estamos à disposição!`;
+
+          const rawName = (lead?.name || "").trim();
+          let firstName = rawName.split(/\s+/)[0] || "";
+
+          const blacklist = ["contato", "cliente", "lead", "paciente"];
+          if (firstName && blacklist.includes(firstName.toLowerCase())) {
+            firstName = "";
+          }
+
+          if (firstName) {
+            messageToSend = `Oi ${firstName}! 💚 Passando para saber se posso te ajudar. Estamos à disposição!`;
+          } else {
+            messageToSend = `Oi! 💚 Passando para saber se posso te ajudar. Estamos à disposição!`;
+          }
         }
+
       }
 
       // Personalização
