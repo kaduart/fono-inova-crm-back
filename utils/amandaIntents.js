@@ -15,7 +15,7 @@ export const MANUAL_AMANDA = {
     },
 
     "valores": {
-        "avaliacao": "Avaliação inicial: R$ 220 | É o primeiro passo para entender a queixa e traçar o plano ideal. Para criança ou adulto? 💚",
+        "avaliacao": "A avaliação inicial é R$ 220; é o primeiro passo para entender a queixa e traçar o plano ideal. Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚",
         "neuropsico": "Avaliação Neuropsicológica completa (10 sessões): R$ 2.500 em até 6x ou R$ 2.300 à vista 💚",
         "teste_linguinha": "Teste da Linguinha: R$ 150. Avaliamos o frênulo lingual de forma rápida e segura 💚",
         "sessao": "Sessão avulsa R$ 220 | Pacote mensal (1x/semana): R$ 180/sessão (~R$ 720/mês) 💚",

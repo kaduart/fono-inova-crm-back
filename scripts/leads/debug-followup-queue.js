@@ -35,12 +35,13 @@ async function main() {
         data: job.data,
       });
     }
-  } catch (err) {
+   } catch (err) {
     console.error("❌ Erro no debug da fila:", err);
   } finally {
-    await mongoose.disconnect();
+    // await mongoose.disconnect(); // por enquanto, sem fechar (mongoose está bugado)
     process.exit(0);
   }
+
 }
 
 main();
