@@ -3,7 +3,7 @@ import 'dotenv/config';
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import enrichLeadContext from "../services/leadContext.js";
 import { getManual } from './amandaIntents.js';
-import { buildUserPromptWithValuePitch } from './amandaPrompt.js';
+import { buildDynamicSystemPrompt, buildUserPromptWithValuePitch } from './amandaPrompt.js';
 import { detectAllFlags } from './flagsDetector.js';
 import { buildEquivalenceResponse } from './responseBuilder.js';
 import {
@@ -15,10 +15,13 @@ import {
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// 🔧 CONFIGURAÇÃO DO MODELO
+const AI_MODEL = "claude-opus-4-5-20251101";
+
 const PURE_GREETING_REGEX =
     /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|bom\s*dia)[\s!,.]*$/i;
 
-// 🔥 Novo: pedido genérico de “agendar avaliação” sem detalhes
+// 🔥 Novo: pedido genérico de "agendar avaliação" sem detalhes
 const GENERIC_SCHEDULE_EVAL_REGEX =
     /\b(agendar|marcar|agendamento|quero\s+agendar|gostaria\s+de\s+agendar)\b.*\b(avalia[çc][aã]o)\b/i;
 
@@ -322,7 +325,8 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
             {
                 ...contextWithStage,
                 conversationSummary: contextWithStage.conversationSummary || ''
-            }
+            },
+            flags
         );
 
         const scoped = enforceClinicScope(aiResponse, text);
@@ -333,8 +337,17 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     }
 }
 
+/**
+ * 🔥 FUNÇÃO DE FUNIL DE VISITA
+ */
 async function callVisitFunnelAI({ text, lead, context, flags }) {
-    const { SYSTEM_PROMPT_AMANDA } = await import('./amandaPrompt.js');
+    // 🔥 NOVO: Monta contexto para System Prompt dinâmico
+    const systemContext = {
+        isHotLead: flags.visitLeadHot,
+        isColdLead: flags.visitLeadCold,
+        negativeScopeTriggered: /audiometria|bera|rpg|pilates/i.test(text),
+    };
+    const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
 
     const messages = [];
 
@@ -397,13 +410,13 @@ REGRAS:
     messages.push({ role: 'user', content: visitPrompt });
 
     const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: AI_MODEL,
         max_tokens: 200,
         temperature: 0.6,
         system: [
             {
                 type: "text",
-                text: SYSTEM_PROMPT_AMANDA,
+                text: dynamicSystemPrompt,
                 cache_control: { type: "ephemeral" }
             }
         ],
@@ -505,37 +518,40 @@ function tryManualResponse(normalizedText, context = {}, flags = {}) {
         );
     }
 
-    function inferAreaFromContext(normalizedText, context = {}, flags = {}) {
-        const t = normalizedText.toLowerCase();
+    return null;
+}
 
-        // puxa histórico recente
-        const historyText = Array.isArray(context.conversationHistory)
-            ? context.conversationHistory
-                .map(msg =>
-                    typeof msg.content === "string"
-                        ? msg.content
-                        : JSON.stringify(msg.content)
-                )
-                .join(" \n ")
-                .toLowerCase()
-            : "";
+/**
+ * 🔍 HELPER: Infere área pelo contexto
+ */
+function inferAreaFromContext(normalizedText, context = {}, flags = {}) {
+    const t = normalizedText.toLowerCase();
 
-        const combined = `${t} ${historyText}`;
+    // puxa histórico recente
+    const historyText = Array.isArray(context.conversationHistory)
+        ? context.conversationHistory
+            .map(msg =>
+                typeof msg.content === "string"
+                    ? msg.content
+                    : JSON.stringify(msg.content)
+            )
+            .join(" \n ")
+            .toLowerCase()
+        : "";
 
-        // se algum serviço seu já preencheu isso:
-        if (flags.therapyArea) return flags.therapyArea;
-        if (context.therapyArea) return context.therapyArea;
+    const combined = `${t} ${historyText}`;
 
-        // tenta inferir por palavra-chave
-        if (/\bpsicolog|psicologia\b/.test(combined)) return "psicologia";
-        if (/\bfono|fonoaudiolog\b/.test(combined)) return "fonoaudiologia";
-        if (/\b(terapia\s+ocupacional|to)\b/.test(combined)) return "terapia_ocupacional";
-        if (/\bfisio|fisioterap\b/.test(combined)) return "fisioterapia";
-        if (/\bpsicopedagog\b/.test(combined)) return "psicopedagogia";
-        if (/\bneuropsicolog\b/.test(combined)) return "neuropsicologia";
+    // se algum serviço seu já preencheu isso:
+    if (flags.therapyArea) return flags.therapyArea;
+    if (context.therapyArea) return context.therapyArea;
 
-        return null;
-    }
+    // tenta inferir por palavra-chave
+    if (/\bpsicolog|psicologia\b/.test(combined)) return "psicologia";
+    if (/\bfono|fonoaudiolog\b/.test(combined)) return "fonoaudiologia";
+    if (/\b(terapia\s+ocupacional|to)\b/.test(combined)) return "terapia_ocupacional";
+    if (/\bfisio|fisioterap\b/.test(combined)) return "fisioterapia";
+    if (/\bpsicopedagog\b/.test(combined)) return "psicopedagogia";
+    if (/\bneuropsicolog\b/.test(combined)) return "neuropsicologia";
 
     return null;
 }
@@ -547,7 +563,6 @@ function tryManualResponse(normalizedText, context = {}, flags = {}) {
 async function callClaudeWithTherapyData({ therapies, flags, userText, lead, context }) {
     const { getTherapyData } = await import('./therapyDetector.js');
     const { getLatestInsights } = await import('../services/amandaLearningService.js');
-    const { SYSTEM_PROMPT_AMANDA } = await import('./amandaPrompt.js');
 
     const insights = await getLatestInsights();
 
@@ -566,6 +581,14 @@ async function callClaudeWithTherapyData({ therapies, flags, userText, lead, con
         conversationSummary,
         shouldGreet,
     } = context;
+
+    // 🔥 NOVO: Monta contexto para System Prompt dinâmico
+    const systemContext = {
+        isHotLead: flags.visitLeadHot || stage === 'interessado_agendamento',
+        isColdLead: flags.visitLeadCold || stage === 'novo',
+        negativeScopeTriggered: /audiometria|bera|rpg|pilates/i.test(userText),
+    };
+    const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
 
     // 🧠 PERFIL DE IDADE A PARTIR DO HISTÓRICO
     let ageContextNote = "";
@@ -685,13 +708,13 @@ async function callClaudeWithTherapyData({ therapies, flags, userText, lead, con
         });
 
         const response = await anthropic.messages.create({
-            model: "claude-sonnet-4-20250514",
+            model: AI_MODEL,
             max_tokens: 200,
             temperature: 0.7,
             system: [
                 {
                     type: "text",
-                    text: SYSTEM_PROMPT_AMANDA,
+                    text: dynamicSystemPrompt,
                     cache_control: { type: "ephemeral" }
                 }
             ],
@@ -726,13 +749,13 @@ ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${
     });
 
     const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: AI_MODEL,
         max_tokens: 200,
         temperature: 0.7,
         system: [
             {
                 type: "text",
-                text: SYSTEM_PROMPT_AMANDA,
+                text: dynamicSystemPrompt,
                 cache_control: { type: "ephemeral" }
             }
         ],
@@ -746,8 +769,7 @@ ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${
 /**
  * 🤖 IA COM CONTEXTO INTELIGENTE + CACHE MÁXIMO
  */
-async function callAmandaAIWithContext(userText, lead, context) {
-    const { SYSTEM_PROMPT_AMANDA } = await import('./amandaPrompt.js');
+async function callAmandaAIWithContext(userText, lead, context, flagsFromOrchestrator = {}) {
     const { getLatestInsights } = await import('../services/amandaLearningService.js');
 
     const {
@@ -761,6 +783,17 @@ async function callAmandaAIWithContext(userText, lead, context) {
         conversationSummary = null,
         shouldGreet = true
     } = context;
+
+    // 🧩 FLAGS SÓ PRA ENTENDER PERFIL (criança/ado/adulto)
+    const flags = flagsFromOrchestrator || detectAllFlags(userText, lead, context);
+
+    // 🔥 NOVO: Monta contexto para System Prompt dinâmico
+    const systemContext = {
+        isHotLead: flags.visitLeadHot || stage === 'interessado_agendamento',
+        isColdLead: flags.visitLeadCold || stage === 'novo',
+        negativeScopeTriggered: /audiometria|bera|rpg|pilates/i.test(userText),
+    };
+    const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
 
     // 🎯 CONTEXTO DE TERAPIAS (AGORA EXISTE therapiesContext)
     const therapiesContext = mentionedTherapies.length > 0
@@ -792,9 +825,6 @@ async function callAmandaAIWithContext(userText, lead, context) {
             historyAgeNote += `\nPERFIL_IDADE_HISTÓRICO: o histórico mostra que o caso é de CRIANÇA. NÃO volte a perguntar se é para criança ou adulto.`;
         }
     }
-
-    // 🧩 FLAGS SÓ PRA ENTENDER PERFIL (criança/ado/adulto)
-    const flags = detectAllFlags(userText, lead, context);
 
     let ageProfileNote = '';
     if (flags.mentionsChild) {
@@ -928,13 +958,13 @@ REGRAS:
     });
 
     const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: AI_MODEL,
         max_tokens: 150,
         temperature: 0.6,
         system: [
             {
                 type: "text",
-                text: SYSTEM_PROMPT_AMANDA,
+                text: dynamicSystemPrompt,
                 cache_control: { type: "ephemeral" }
             }
         ],
