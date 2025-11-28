@@ -377,11 +377,12 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         try {
             console.log('🔄 [FALLBACK] Tentando OpenAI...');
             const fallbackText = await callOpenAIFallback({
-                systemPrompt: dynamicSystemPrompt,
-                messages,
+                systemPrompt: "Você é a Amanda, atendente da Clínica Fono Inova. Responda de forma acolhedora e objetiva em português do Brasil.",
+                messages: [{ role: 'user', content: text }],
                 maxTokens: 150,
-                temperature: 0.6
+                temperature: 0.6,
             });
+
             if (fallbackText) {
                 console.log('✅ [FALLBACK] OpenAI respondeu!');
                 return ensureSingleHeart(fallbackText);
