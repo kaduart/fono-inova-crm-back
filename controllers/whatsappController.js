@@ -584,7 +584,149 @@ export const whatsappController = {
                 error: error.message
             });
         }
+    },
+
+    async amandaResume(req, res) {
+        try {
+            const { leadId } = req.params;
+
+            if (!leadId) {
+                return res.status(400).json({ success: false, error: 'leadId obrigatório' });
+            }
+
+            // 1. Busca o lead
+            const lead = await Lead.findById(leadId);
+            if (!lead) {
+                return res.status(404).json({ success: false, error: 'Lead não encontrado' });
+            }
+
+            console.log(`🔄 [AMANDA-RESUME] Reativando para lead ${leadId}`);
+
+            // 2. Desativa controle manual
+            lead.manualControl.active = false;
+            lead.manualControl.takenOverAt = null;
+            lead.manualControl.takenOverBy = null;
+            lead.autoReplyEnabled = true;
+            await lead.save();
+
+            // 3. Busca última mensagem inbound sem resposta
+            const lastInbound = await Message.findOne({
+                lead: lead._id,
+                direction: 'inbound'
+            }).sort({ timestamp: -1 }).lean();
+
+            if (!lastInbound) {
+                return res.json({
+                    success: true,
+                    message: 'Amanda reativada, mas não há mensagem pendente',
+                    responded: false
+                });
+            }
+
+            // 4. Verifica se já foi respondida
+            const alreadyReplied = await Message.findOne({
+                lead: lead._id,
+                direction: 'outbound',
+                timestamp: { $gt: lastInbound.timestamp }
+            }).lean();
+
+            if (alreadyReplied) {
+                return res.json({
+                    success: true,
+                    message: 'Amanda reativada, última mensagem já foi respondida',
+                    responded: false
+                });
+            }
+
+            // 5. Gera resposta da Amanda
+            console.log(`🤖 [AMANDA-RESUME] Gerando resposta para: "${lastInbound.content?.substring(0, 50)}..."`);
+
+            const aiText = await getOptimizedAmandaResponse({
+                content: lastInbound.content,
+                userText: lastInbound.content,
+                lead: {
+                    _id: lead._id,
+                    name: lead.name || '',
+                    origin: lead.origin || 'WhatsApp'
+                },
+                context: {}
+            });
+
+            if (!aiText || !aiText.trim()) {
+                return res.json({
+                    success: true,
+                    message: 'Amanda reativada, mas não gerou resposta',
+                    responded: false
+                });
+            }
+
+            // 6. Envia via WhatsApp
+            const phone = lead.contact?.phone;
+            if (!phone) {
+                return res.status(400).json({ success: false, error: 'Lead sem telefone' });
+            }
+
+            const contact = await Contact.findOne({ phone }).lean();
+
+            const result = await sendTextMessage({
+                to: phone,
+                text: aiText.trim(),
+                lead: lead._id,
+                contactId: contact?._id || null,
+                patientId: lead.convertedToPatient || null,
+                sentBy: 'amanda'
+            });
+
+            // 7. Emite socket
+            await new Promise(resolve => setTimeout(resolve, 200));
+
+            const waMessageId = result?.messages?.[0]?.id || null;
+            let savedMsg = null;
+
+            if (waMessageId) {
+                savedMsg = await Message.findOne({ waMessageId }).lean();
+            }
+
+            if (!savedMsg) {
+                savedMsg = await Message.findOne({
+                    lead: lead._id,
+                    direction: 'outbound'
+                }).sort({ timestamp: -1 }).lean();
+            }
+
+            if (savedMsg) {
+                const io = getIo();
+                io.emit("message:new", {
+                    id: String(savedMsg._id),
+                    from: savedMsg.from,
+                    to: savedMsg.to,
+                    direction: 'outbound',
+                    type: 'text',
+                    content: savedMsg.content,
+                    text: savedMsg.content,
+                    status: savedMsg.status,
+                    timestamp: savedMsg.timestamp,
+                    leadId: String(lead._id),
+                    contactId: String(contact?._id || ''),
+                    metadata: { sentBy: 'amanda' }
+                });
+            }
+
+            console.log(`✅ [AMANDA-RESUME] Respondido com sucesso!`);
+
+            res.json({
+                success: true,
+                message: 'Amanda reativada e respondeu!',
+                responded: true,
+                response: aiText.substring(0, 100) + '...'
+            });
+
+        } catch (error) {
+            console.error('❌ [AMANDA-RESUME] Erro:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
     }
+
 
 };
 
@@ -1187,3 +1329,5 @@ async function handleAutoReply(from, to, content, lead) {
         console.error('❌ Erro no auto-reply (não crítico):', error);
     }
 }
+
+

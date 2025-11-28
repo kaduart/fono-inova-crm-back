@@ -19,6 +19,7 @@ router.get('/contacts', whatsappController.listContacts);
 router.post('/contacts', whatsappController.addContact);
 router.put('/contacts/:id', whatsappController.updateContact);
 router.delete('/contacts/:id', whatsappController.deleteContact);
-router.post('/send-manual',whatsappController.sendManualMessage);
+router.post('/send-manual', whatsappController.sendManualMessage);
+router.post('/amanda-resume/:leadId', whatsappController.amandaResume);
 
 export default router;

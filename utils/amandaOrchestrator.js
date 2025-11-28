@@ -11,14 +11,15 @@ import {
     isTDAHQuestion
 } from './therapyDetector.js';
 
+import Followup from "../models/Followup.js";
 import Leads from "../models/Leads.js";
+import { callOpenAIFallback } from "../services/aiAmandaService.js";
 import { handleInboundMessageForFollowups } from "../services/responseTrackingService.js";
 import {
     buildDynamicSystemPrompt,
     buildUserPromptWithValuePitch,
     getManual,
 } from './amandaPrompt.js';
-import Followup from "../models/Followup.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
@@ -95,7 +96,7 @@ function nextStage(
 /**
  * 🎯 ORQUESTRADOR COM CONTEXTO INTELIGENTE
  */
-export async function getOptimizedAmandaResponse({ content, userText, lead = {}, context = {}, , messageId = null }) {
+export async function getOptimizedAmandaResponse({ content, userText, lead = {}, context = {}, messageId = null }) {
     const text = userText || content || "";
     const normalized = text.toLowerCase().trim();
 
