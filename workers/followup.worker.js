@@ -38,13 +38,7 @@ const worker = new Worker(
 
     console.log(chalk.cyan(`[WORKER] Processando follow-up ${followupId}`));
 
-    // Busca followup e popula lead + contact para ter todas as flags disponíveis
-    const followup = await Followup.findById(followupId)
-      .populate({
-        path: "lead",
-        populate: { path: "contact", select: "phone phoneE164 stopAutomation" }
-      });
-
+    const followup = await Followup.findById(followupId).populate("lead");
     if (!followup) {
       console.warn(chalk.yellow(`⚠️ Follow-up ${followupId} não encontrado`));
       return;
@@ -56,35 +50,6 @@ const worker = new Worker(
           `⚠️ Follow-up ${followupId} já terminal (${followup.status}), ignorando`
         )
       );
-      return;
-    }
-
-
-    // Checagem centralizada: shouldSendFollowup (retorna { allow: boolean, reason?:string })
-    try {
-      const check = await shouldSendFollowup(followup, {
-        minIntervalHours: MIN_INTERVAL_HOURS,
-        maxAttemptsInWindow: MAX_ATTEMPTS_PER_LEAD
-      });
-
-      if (!check.allow) {
-        console.log(chalk.yellow(`[WORKER] followup ${followupId} bloqueado: ${check.reason}`));
-        await Followup.findByIdAndUpdate(followupId, {
-          status: "canceled",
-          canceledReason: check.reason,
-          updatedAt: new Date()
-        });
-        return;
-      }
-    } catch (e) {
-      // se a checagem falhar por algum motivo, evita enviar por segurança e loga
-      console.error(chalk.red(`[WORKER] Erro na validação shouldSendFollowup para ${followupId}:`), e?.message || e);
-      await Followup.findByIdAndUpdate(followupId, {
-        status: "scheduled",
-        scheduledAt: new Date(Date.now() + 60 * 1000), // tenta novamente daqui 1 minuto
-        lastErrorAt: new Date(),
-        error: `shouldSendFollowup_error: ${e?.message || String(e)}`
-      });
       return;
     }
 
@@ -108,49 +73,41 @@ const worker = new Worker(
         .lean();
 
       const lastInbound = recentMessages.find(
-        (m) => m.direction === "inbound") || null;
+        (m) => m.direction === "inbound"
+      );
 
       // Tentativas anteriores (todas que já foram enviadas pra esse lead)
       const previousAttempts = await Followup.countDocuments({
-        lead: followup.lead._id,
+        lead: lead._id,
         status: "sent"
       });
 
-      const lastSent = await Followup.findOne({ lead: followup.lead._id, status: "sent" })
-        .sort({ sentAt: -1 })
-        .lean();
+      console.log(
+        chalk.blue(
+          `[AMANDA] Lead: ${lead.name} | Tentativas já feitas: ${previousAttempts}`
+        )
+      );
 
+      // se já bateu o limite, NÃO manda mais nada
+      if (previousAttempts >= MAX_ATTEMPTS_PER_LEAD) {
+        console.log(
+          chalk.yellow(
+            `[AMANDA] Lead ${lead._id} já recebeu ${previousAttempts} follow-ups. Não enviar mais.`
+          )
+        );
 
-      try {
-        const check = await shouldSendFollowup(followup, {
-          minIntervalHours: MIN_INTERVAL_HOURS,
-          maxAttemptsInWindow: MAX_ATTEMPTS_PER_LEAD,
-          context: { previousAttempts, lastSent, lastInbound }
-        });
-
-        if (!check.allow) {
-          console.log(chalk.yellow(`[WORKER] followup ${followupId} bloqueado: ${check.reason}`));
-          await Followup.findByIdAndUpdate(followupId, {
-            status: "canceled",
-            canceledReason: check.reason,
-            updatedAt: new Date()
-          });
-          return;
-        }
-      } catch (e) {
-        console.error(chalk.red(`[WORKER] Erro na validação shouldSendFollowup para ${followupId}:`), e?.message || e);
         await Followup.findByIdAndUpdate(followupId, {
-          status: "scheduled",
-          scheduledAt: new Date(Date.now() + 60 * 1000), // tenta novamente em 1min
-          lastErrorAt: new Date(),
-          error: `shouldSendFollowup_error: ${e?.message || String(e)}`
+          status: "failed",
+          error: `Limite de ${MAX_ATTEMPTS_PER_LEAD} follow-ups atingido`,
+          failedAt: new Date()
         });
+
         return;
       }
 
-
-      let analysis = null;
+            let analysis = null;
       let shouldStopByIntent = false;
+
       if (lastInbound?.content) {
         try {
           analysis = await analyzeLeadMessage({
@@ -180,8 +137,9 @@ const worker = new Worker(
             }
           });
 
-          // 👉 Se a Amanda 2.0 entendeu que a pessoa NÃO TEM INTERESSE, parar tudo
           const intentPrimary = (analysis.intent?.primary || "").toLowerCase();
+
+          // 👇 1) Intenções de "não quero mais / sem interesse"
           const uninterestedIntents = [
             "sem_interesse",
             "sem interesse",
@@ -190,7 +148,19 @@ const worker = new Worker(
             "not_interested"
           ];
 
+          // 👇 2) Intenções de "já resolvi / já agendei"
+          const resolvedIntents = [
+            "consulta_agendada",
+            "agendado",
+            "ja_agendou",
+            "já_agendou",
+            "atendimento_marcado",
+            "resolved",
+            "problema_resolvido"
+          ];
+
           if (uninterestedIntents.includes(intentPrimary)) {
+            // caso 1: não tem interesse
             shouldStopByIntent = true;
 
             await Lead.findByIdAndUpdate(lead._id, {
@@ -199,7 +169,20 @@ const worker = new Worker(
 
             console.log(
               chalk.yellow(
-                `[AMANDA] Lead ${lead._id} sinalizou desinteresse (${intentPrimary}). Não enviar mais follow-ups.`
+                `[AMANDA] Lead ${lead._id} sinalizou DESINTERESSE (${intentPrimary}). Não enviar mais follow-ups.`
+              )
+            );
+          } else if (resolvedIntents.includes(intentPrimary)) {
+            // caso 2: já resolveu / já agendou (ex: pai do João Guilherme)
+            shouldStopByIntent = true;
+
+            await Lead.findByIdAndUpdate(lead._id, {
+              status: "em_andamento" // ou 'virou_paciente', se fizer mais sentido no teu funil
+            });
+
+            console.log(
+              chalk.yellow(
+                `[AMANDA] Lead ${lead._id} informou que JÁ RESOLVEU (${intentPrimary}). Não enviar mais follow-ups.`
               )
             );
           }
@@ -263,10 +246,8 @@ const worker = new Worker(
           const rawName = (lead?.name || "").trim();
           let firstName = rawName.split(/\s+/)[0] || "";
 
-          const blacklist = [
-            "contato", "cliente", "lead", "paciente",
-            "contato whatsapp", "whatsapp", "desconhecido"
-          ]; if (firstName && blacklist.includes(firstName.toLowerCase())) {
+          const blacklist = ["contato", "cliente", "lead", "paciente"];
+          if (firstName && blacklist.includes(firstName.toLowerCase())) {
             firstName = "";
           }
 
@@ -573,73 +554,5 @@ worker.on("error", (err) => {
 });
 
 console.log(chalk.cyan("👷 Follow-up Worker iniciado com Amanda 2.0!"));
-
-export async function shouldSendFollowup(followup, opts = {}) {
-  // opts: { minIntervalHours, maxAttemptsInWindow, context: { previousAttempts, lastSent, lastInbound } }
-  const MIN_INTERVAL_HOURS = opts.minIntervalHours || 24;
-  const MAX_ATTEMPTS = opts.maxAttemptsInWindow || 3;
-  const ctx = opts.context || {};
-
-  if (!followup) return { allow: false, reason: "no_followup" };
-  const lead = followup.lead || {};
-  const contact = lead.contact || {};
-
-  // 1) lead já agendado/convertido?
-  if (lead.status === "agendado" || lead.status === "converted" || lead.convertedToPatient) {
-    return { allow: false, reason: "lead_resolved" };
-  }
-
-  // 2) contato com stopAutomation
-  if (contact.stopAutomation === true) {
-    return { allow: false, reason: "stop_automation" };
-  }
-
-  // 3) já atingiu máximo de envios? (usa valor do contexto se fornecido)
-  let previousAttempts = typeof ctx.previousAttempts === "number"
-    ? ctx.previousAttempts
-    : await Followup.countDocuments({ lead: lead._id, status: "sent" });
-
-  if (previousAttempts >= MAX_ATTEMPTS) {
-    return { allow: false, reason: "max_attempts_reached" };
-  }
-
-  // 4) se lead respondeu depois do agendamento, não enviar
-  if (followup.scheduledAt) {
-    const lastInbound = ctx.lastInbound || await Message.findOne({ lead: lead._id, direction: "inbound" }).sort({ timestamp: -1 }).lean();
-    if (lastInbound) {
-      const lastInboundAt = new Date(lastInbound.timestamp || lastInbound.createdAt);
-      const scheduledAt = new Date(followup.scheduledAt);
-      if (lastInboundAt > scheduledAt) {
-        return { allow: false, reason: "lead_responded_after_schedule" };
-      }
-    }
-  }
-
-  // 5) garantir intervalo mínimo entre envios
-  const lastSent = ctx.lastSent || await Followup.findOne({ lead: lead._id, status: "sent" }).sort({ sentAt: -1 }).lean();
-  if (lastSent) {
-    const elapsed = Date.now() - new Date(lastSent.sentAt).getTime();
-    const minMs = MIN_INTERVAL_HOURS * 60 * 60 * 1000;
-    if (elapsed < minMs) {
-      return { allow: false, reason: "min_interval_violation" };
-    }
-  }
-
-  // 6) NOVO: lead é parceiro/fornecedor? não enviar
-  const leadOrigin = (lead.origin || '').toLowerCase();
-  const leadNotes = (lead.notes || '').toLowerCase();
-  const isNotClient =
-    /parceria|parceiro|fornecedor|curriculo|currículo|vaga|trabalhar/i.test(leadOrigin) ||
-    /parceria|parceiro|fornecedor|curriculo|currículo|vaga|trabalhar/i.test(leadNotes) ||
-    /musicoterapeuta|psicólog[ao]|fono|terapeuta/i.test(leadNotes); // profissional buscando parceria
-
-  if (isNotClient) {
-    return { allow: false, reason: "lead_is_partner_or_vendor" };
-  }
-
-  // ok para enviar
-  return { allow: true };
-}
-
 
 export default worker;
