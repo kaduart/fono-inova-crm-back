@@ -2,7 +2,6 @@ import Anthropic from "@anthropic-ai/sdk";
 import 'dotenv/config';
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import enrichLeadContext from "../services/leadContext.js";
-import { getManual } from './amandaIntents.js';
 import { detectAllFlags } from './flagsDetector.js';
 import { buildEquivalenceResponse } from './responseBuilder.js';
 import {
@@ -17,10 +16,12 @@ import { handleInboundMessageForFollowups } from "../services/responseTrackingSe
 import {
     buildDynamicSystemPrompt,
     buildUserPromptWithValuePitch,
+    getManual,
 } from './amandaPrompt.js';
+import Followup from "../models/Followup.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
+const recentResponses = new Map();
 // 🔧 CONFIGURAÇÃO DO MODELO
 const AI_MODEL = "claude-opus-4-5-20251101";
 
@@ -94,7 +95,7 @@ function nextStage(
 /**
  * 🎯 ORQUESTRADOR COM CONTEXTO INTELIGENTE
  */
-export async function getOptimizedAmandaResponse({ content, userText, lead = {}, context = {} }) {
+export async function getOptimizedAmandaResponse({ content, userText, lead = {}, context = {}, , messageId = null }) {
     const text = userText || content || "";
     const normalized = text.toLowerCase().trim();
 
@@ -104,6 +105,22 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     if (lead?._id) {
         handleInboundMessageForFollowups(lead._id)
             .catch(err => console.warn('[FOLLOWUP-REALTIME] erro:', err.message));
+    }
+
+    if (messageId) {
+        const lastResponse = recentResponses.get(messageId);
+        if (lastResponse && Date.now() - lastResponse < 5000) {
+            console.warn(`[ORCHESTRATOR] Resposta duplicada bloqueada para ${messageId}`);
+            return null; // ou retorna a mesma resposta anterior
+        }
+        recentResponses.set(messageId, Date.now());
+
+        // Limpa cache antigo
+        if (recentResponses.size > 100) {
+            const oldest = [...recentResponses.entries()]
+                .sort((a, b) => a[1] - b[1])[0];
+            recentResponses.delete(oldest[0]);
+        }
     }
 
     const baseContext = lead._id
@@ -262,15 +279,22 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     }
 
     if (flags?.alreadyScheduled) {
-        // Se quiser, pode tentar pegar nome do paciente do lead ou do histórico.
-        const nomePaciente = lead?.patientName || lead?.name || null;
+        if (lead?._id) {
+            // Atualiza status
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: { status: "agendado" }
+            });
 
-        if (nomePaciente) {
-            return `Que bom que vocês já conseguiram agendar, isso é um passo importante pro acompanhamento do(a) ${nomePaciente}! Se surgir qualquer dúvida até lá, é só chamar 💚`;
+            // Cancela TODOS os follow-ups pendentes
+            await Followup.updateMany(
+                { lead: lead._id, status: "scheduled" },
+                { $set: { status: "canceled", canceledReason: "lead_confirmed_scheduled" } }
+            );
         }
 
-        return "Que bom que vocês já conseguiram deixar o atendimento agendado, isso ajuda muito na continuidade do tratamento. Se surgir qualquer dúvida até lá, é só chamar 💚";
+        return "Que bom que vocês já conseguiram agendar! Qualquer dúvida, é só chamar 💚";
     }
+
 
     // ===== 1. TDAH - RESPOSTA ESPECÍFICA =====
     if (isTDAHQuestion(text)) {
@@ -338,8 +362,26 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         const scoped = enforceClinicScope(aiResponse, text);
         return ensureSingleHeart(scoped);
     } catch (error) {
-        console.error(`❌ [ORCHESTRATOR] Erro na IA:`, error.message);
-        return "Vou verificar e já te retorno, por favor um momento 💚";
+        console.error(`❌ [ORCHESTRATOR] Erro Anthropic:`, error.message);
+
+        // 🔄 Tenta OpenAI como fallback
+        try {
+            console.log('🔄 [FALLBACK] Tentando OpenAI...');
+            const fallbackText = await callOpenAIFallback({
+                systemPrompt: dynamicSystemPrompt,
+                messages,
+                maxTokens: 150,
+                temperature: 0.6
+            });
+            if (fallbackText) {
+                console.log('✅ [FALLBACK] OpenAI respondeu!');
+                return ensureSingleHeart(fallbackText);
+            }
+        } catch (openaiErr) {
+            console.error('❌ [FALLBACK] OpenAI também falhou:', openaiErr.message);
+        }
+
+        return "Como posso te ajudar hoje? 💚";
     }
 }
 

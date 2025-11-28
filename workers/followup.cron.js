@@ -26,41 +26,63 @@ async function dispatchPendingFollowups() {
   await withLock(LOCK_KEY, LOCK_TTL_SECONDS, async () => {
     const now = new Date();
 
-    // ✅ MELHORIA: Prioriza por score (leads quentes primeiro)
+    // busca followups agendados até agora (limit pra evitar varredura gigante)
     const pend = await Followup.find({
       status: "scheduled",
       scheduledAt: { $lte: now }
     })
-      .populate('lead', 'conversionScore name')
+      .populate({
+        path: "lead",
+        select: "conversionScore name status convertedToPatient origin contact stopAutomation"
+      })
       .sort({ scheduledAt: 1 })
       .limit(200)
       .lean();
 
-    if (!pend.length) {
+    if (!pend || !pend.length) {
       console.log(chalk.gray("⏳ Nenhum follow-up pendente..."));
       return;
     }
 
-    // ✅ MELHORIA: Ordena por score (quentes primeiro)
-    const sorted = pend.sort((a, b) => {
-      const scoreA = a.lead?.conversionScore || 0;
-      const scoreB = b.lead?.conversionScore || 0;
-      return scoreB - scoreA; // Maior score primeiro
+    // filtra followups que NÃO devem ser enviados
+    const filtered = pend.filter(f => {
+      const lead = f.lead || {};
+      const contact = lead.contact || {};
+      // rejeita leads que já marcaram/foram convertidos
+      if (lead.status === "agendado") return false;
+      if (lead.status === "converted") return false;
+      if (lead.convertedToPatient) return false;
+      // rejeita contatos com flag para parar automações
+      if (contact.stopAutomation === true) return false;
+      return true;
     });
 
-    // ✅ MELHORIA: Estatísticas
+    if (!filtered.length) {
+      console.log(chalk.gray("⏳ Após filtro, nenhum follow-up válido."));
+      return;
+    }
+
+    // ordena por score (quentes primeiro)
+    const sorted = filtered.sort((a, b) => {
+      const scoreA = a.lead?.conversionScore || 0;
+      const scoreB = b.lead?.conversionScore || 0;
+      return scoreB - scoreA;
+    });
+
+    // log simples
     const hot = sorted.filter(f => (f.lead?.conversionScore || 0) >= 80).length;
     const warm = sorted.filter(f => {
-      const score = f.lead?.conversionScore || 0;
-      return score >= 50 && score < 80;
+      const s = f.lead?.conversionScore || 0;
+      return s >= 50 && s < 80;
     }).length;
     const cold = sorted.length - hot - warm;
 
-    console.log(chalk.cyan(`📬 ${pend.length} follow-ups prontos para envio:`));
-    console.log(chalk.red(`   🔥 ${hot} quentes (≥80)`));
-    console.log(chalk.yellow(`   🟡 ${warm} mornos (50-79)`));
-    console.log(chalk.blue(`   🧊 ${cold} frios (<50)`));
+    console.log(chalk.cyan(`📬 ${sorted.length} follow-ups prontos para envio (após filtro)`));
+    console.log(chalk.red(`   🔥 ${hot} quentes`));
+    console.log(chalk.yellow(`   🟡 ${warm} mornos`));
+    console.log(chalk.blue(`   🧊 ${cold} frios`));
 
+    // enfileira
     for (const f of sorted) {
       await followupQueue.add(
         "followup",

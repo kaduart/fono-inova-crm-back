@@ -261,3 +261,16 @@ db.messages.deleteMany({
   $or: [{ from: phone }, { to: phone }]
 });
 db.followups.deleteMany({}); // se quiser zerar todos followups de teste
+
+
+// cancelar followup
+db.contacts.updateOne(
+  { phone: "556291433223" },
+  {
+    $set: {
+      status: "agendado",          // ou "encerrado", como vocês usam
+      stopAutomation: true,        // flag pra travar qualquer campanha
+      updatedAt: new Date()
+    }
+  }
+);
