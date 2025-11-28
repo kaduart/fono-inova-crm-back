@@ -705,7 +705,7 @@ async function processInboundMessage(msg, value) {
         if (!contact) {
             contact = await Contact.create({
                 phone: from,
-                name: msg.profile?.name || "Contato WhatsApp"
+                name: msg.profile?.name || null
             });
             console.log("✅ Novo contact criado:", contact._id);
         }
@@ -726,7 +726,7 @@ async function processInboundMessage(msg, value) {
             // 🎯 DECISÃO INTELIGENTE: Se tem patient, cria lead vinculado
             if (patient) {
                 const leadData = {
-                    name: patient.fullName || contact.name,
+                    name: patient.fullName || null,
                     contact: {
                         phone: from,
                         email: patient.email || null
@@ -761,7 +761,7 @@ async function processInboundMessage(msg, value) {
             } else {
                 // Cria novo lead normal
                 const leadData = {
-                    name: contact.name,
+                    name: null,
                     contact: { phone: from },
                     origin: "WhatsApp",
                     status: "novo",

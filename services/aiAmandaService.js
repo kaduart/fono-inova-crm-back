@@ -278,6 +278,29 @@ export async function transcribeWaAudioFromGraph({
     }
 }
 
+// =====================================================================
+// 🔄 FALLBACK OPENAI (quando Anthropic falha)
+// =====================================================================
+export async function callOpenAIFallback({ systemPrompt, messages, maxTokens = 200, temperature = 0.7 }) {
+    const openaiMessages = [
+        { role: "system", content: systemPrompt },
+        ...messages.map(msg => ({
+            role: msg.role,
+            content: typeof msg.content === 'string'
+                ? msg.content
+                : JSON.stringify(msg.content)
+        }))
+    ];
+
+    const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: openaiMessages,
+        max_tokens: maxTokens,
+        temperature
+    });
+
+    return response.choices[0]?.message?.content?.trim() || null;
+}
 /* =========================================================================
    🖼️ DESCRIÇÃO DE IMAGEM - NOVA (mediaId → buffer → dataURL → GPT-4o-mini)
    ========================================================================= */
