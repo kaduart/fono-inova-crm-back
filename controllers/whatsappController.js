@@ -585,24 +585,44 @@ export const whatsappController = {
             });
         }
     },
-
     async amandaResume(req, res) {
         try {
-            const { leadId } = req.params;
+            const { leadId: rawId } = req.params;
 
-            if (!leadId) {
+            if (!rawId) {
                 return res.status(400).json({ success: false, error: 'leadId obrigatório' });
             }
 
-            // 1. Busca o lead
-            const lead = await Lead.findById(leadId);
+            let lead = null;
+
+            // 1) Tenta como ID de Lead
+            if (mongoose.Types.ObjectId.isValid(rawId)) {
+                lead = await Lead.findById(rawId);
+            }
+
+            // 2) Se não achou, tenta como ID de Contact
+            if (!lead && mongoose.Types.ObjectId.isValid(rawId)) {
+                const contactDoc = await Contact.findById(rawId).lean();
+                if (contactDoc?.phone) {
+                    const phoneNorm = normalizeE164BR(contactDoc.phone);
+                    lead = await Lead.findOne({ 'contact.phone': phoneNorm });
+                }
+            }
+
+            // 3) Se ainda não achou, tenta tratar como telefone
+            if (!lead) {
+                const phoneNorm = normalizeE164BR(rawId);
+                lead = await Lead.findOne({ 'contact.phone': phoneNorm });
+            }
+
             if (!lead) {
                 return res.status(404).json({ success: false, error: 'Lead não encontrado' });
             }
 
-            console.log(`🔄 [AMANDA-RESUME] Reativando para lead ${leadId}`);
+            console.log(`🔄 [AMANDA-RESUME] Reativando para lead ${lead._id}`);
 
             // 2. Desativa controle manual
+            lead.manualControl = lead.manualControl || {};
             lead.manualControl.active = false;
             lead.manualControl.takenOverAt = null;
             lead.manualControl.takenOverBy = null;
@@ -660,16 +680,17 @@ export const whatsappController = {
                 });
             }
 
-            // 6. Envia via WhatsApp
-            const phone = lead.contact?.phone;
-            if (!phone) {
+            // 6. Envia via WhatsApp (NORMALIZANDO IGUAL AO sendText)
+            const rawPhone = lead.contact?.phone;
+            if (!rawPhone) {
                 return res.status(400).json({ success: false, error: 'Lead sem telefone' });
             }
 
-            const contact = await Contact.findOne({ phone }).lean();
+            const to = normalizeE164BR(rawPhone);   // 👈 MESMO padrão do sendText
+            const contact = await Contact.findOne({ phone: to }).lean();
 
             const result = await sendTextMessage({
-                to: phone,
+                to,
                 text: aiText.trim(),
                 lead: lead._id,
                 contactId: contact?._id || null,
@@ -677,39 +698,62 @@ export const whatsappController = {
                 sentBy: 'amanda'
             });
 
-            // 7. Emite socket
-            await new Promise(resolve => setTimeout(resolve, 200));
+            // 7. Reaproveita a MESMA lógica de achar a mensagem e emitir socket
 
             const waMessageId = result?.messages?.[0]?.id || null;
+
+            // Dá um tempinho pro Mongo gravar
+            await new Promise(resolve => setTimeout(resolve, 200));
+
             let savedMsg = null;
 
+            // 1ª tentativa: pelo waMessageId
             if (waMessageId) {
                 savedMsg = await Message.findOne({ waMessageId }).lean();
             }
 
+            // 2ª: última outbound desse lead
             if (!savedMsg) {
                 savedMsg = await Message.findOne({
                     lead: lead._id,
-                    direction: 'outbound'
+                    direction: 'outbound',
+                    type: 'text'
+                }).sort({ timestamp: -1 }).lean();
+            }
+
+            // 3ª: última outbound pra esse telefone
+            if (!savedMsg) {
+                savedMsg = await Message.findOne({
+                    to,
+                    direction: 'outbound',
+                    type: 'text'
                 }).sort({ timestamp: -1 }).lean();
             }
 
             if (savedMsg) {
                 const io = getIo();
+                console.log('📡 [AMANDA-RESUME] Emitindo message:new para chat:', {
+                    id: String(savedMsg._id),
+                    from: savedMsg.from,
+                    to: savedMsg.to
+                });
+
                 io.emit("message:new", {
                     id: String(savedMsg._id),
                     from: savedMsg.from,
                     to: savedMsg.to,
-                    direction: 'outbound',
-                    type: 'text',
+                    direction: savedMsg.direction,
+                    type: savedMsg.type,
                     content: savedMsg.content,
                     text: savedMsg.content,
                     status: savedMsg.status,
                     timestamp: savedMsg.timestamp,
-                    leadId: String(lead._id),
-                    contactId: String(contact?._id || ''),
-                    metadata: { sentBy: 'amanda' }
+                    leadId: String(savedMsg.lead || lead._id),
+                    contactId: String(savedMsg.contact || contact?._id || ''),
+                    metadata: savedMsg.metadata || { sentBy: 'amanda' }
                 });
+            } else {
+                console.warn('⚠️ [AMANDA-RESUME] Não achou mensagem salva pra emitir no socket');
             }
 
             console.log(`✅ [AMANDA-RESUME] Respondido com sucesso!`);
@@ -726,6 +770,7 @@ export const whatsappController = {
             res.status(500).json({ success: false, error: error.message });
         }
     }
+
 
 
 };

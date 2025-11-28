@@ -348,6 +348,14 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         return ensureSingleHeart(scoped);
     }
 
+    if (lead?._id && extracted?.therapyArea) {
+        await Leads.findByIdAndUpdate(
+            lead._id,
+            { $set: { therapyArea: extracted.therapyArea } },
+            { new: false }
+        ).catch(err => console.warn('[LEAD-AREA] falha ao atualizar therapyArea:', err.message));
+    }
+
     // ===== 5. IA COM CONTEXTO =====
     console.log(`🤖 [ORCHESTRATOR] IA | Stage: ${contextWithStage.stage} | Msgs: ${contextWithStage.messageCount}`);
     try {
@@ -431,9 +439,38 @@ async function callVisitFunnelAI({ text, lead, context = {}, flags = {} }) {
     const visitPrompt = `
 ${text}
 
-🎯 MODO VISITA PRESENCIAL ATIVO
-(complete aqui com suas instruções específicas de funil de visita)
+🎯 MODO AVALIAÇÃO + VISITA ATIVO
+
+REGRAS DO FUNIL INICIAL:
+
+1) PRIMEIRA OPÇÃO: AVALIAÇÃO INICIAL
+- Sempre tente primeiro AGENDAR UMA AVALIAÇÃO INICIAL presencial.
+- Explique que a avaliação serve pra entender o desenvolvimento, organizar o caso e definir quais terapias são indicadas.
+- Fale em DIA + PERÍODO (manhã/tarde), nunca invente horário exato.
+
+2) SEGUNDA OPÇÃO: VISITA LEVE (QUANDO AVALIAÇÃO NÃO FOR ACEITA)
+- Se a pessoa disser que:
+  • "ainda está só pesquisando",
+  • "ainda não quer se comprometer",
+  • "por enquanto só quer conhecer o espaço" ou algo parecido,
+  então ofereça uma VISITA PRESENCIAL leve, sem compromisso.
+- Deixe claro que a visita é só pra conhecer a clínica e tirar dúvidas.
+
+3) COMO FALAR NA PRÁTICA:
+- Primeiro: convide para AVALIAÇÃO INICIAL.
+- Se recusar ou enrolar muito: ofereça VISITA como alternativa mais leve.
+- Exemplo:
+  "Podemos agendar uma avaliação inicial pra entender direitinho o desenvolvimento."
+  → Se recusar:
+  "Sem problema! Se você preferir, podemos combinar só uma visita rápida pra vocês conhecerem o espaço e tirarem dúvidas pessoalmente."
+
+4) LEMBRETE:
+- Nunca prometa horário exato, só [dia/período].
+- Só diga que vai encaminhar pra equipe confirmar depois que tiver: nome completo + telefone + dia/período.
+
+Use sempre o tom acolhedor, simples e profissional da Amanda 💚
 `.trim();
+
 
     messages.push({ role: "user", content: visitPrompt });
 
@@ -480,13 +517,12 @@ function tryManualResponse(normalizedText, context = {}, flags = {}) {
     }
 
     // 💰 PREÇO GENÉRICO (sem dizer área na mensagem atual)
+    // 💰 PREÇO GENÉRICO (sem área na mensagem atual)
     if (/\b(pre[cç]o|valor|quanto.*custa)\b/.test(normalizedText) &&
         !/\b(neuropsic|fono|psico|terapia|fisio|musico)\b/.test(normalizedText)) {
 
-        // tenta descobrir a área pelo contexto TODO (histórico + flags)
         const area = inferAreaFromContext(normalizedText, context, flags);
 
-        // se conseguiu inferir, responde já adaptado por área
         if (area === "psicologia") {
             return "Na psicologia, a avaliação inicial é R$ 220; depois o pacote mensal costuma ficar em torno de R$ 640 (1x/semana). Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚";
         }
@@ -508,13 +544,15 @@ function tryManualResponse(normalizedText, context = {}, flags = {}) {
         }
 
         if (area === "neuropsicologia") {
-            // aqui você pode ser mais neutro, e deixar o resto com o fluxo de neuro se quiser
             return "Na neuropsicologia trabalhamos com avaliação completa em formato de pacote de sessões; o valor total hoje é R$ 2.500 em até 6x, ou R$ 2.300 à vista. Prefere deixar essa avaliação encaminhada pra começar em qual turno, manhã ou tarde? 💚";
         }
 
-        // fallback: não conseguiu inferir área ➜ usa texto genérico do manual (já sem 'para criança ou adulto')
-        return getManual('valores', 'avaliacao');
+        // ❗ AQUI É O PONTO IMPORTANTE:
+        // se NÃO deu pra saber a área com segurança, não inventa.
+        // usa texto genérico que serve pra qualquer área:
+        return getManual('valores', 'avaliacao');  // algo tipo "a avaliação inicial é 220..."
     }
+
 
     // 👋 SAUDAÇÃO PURA
     if (PURE_GREETING_REGEX.test(normalizedText)) {
@@ -529,11 +567,11 @@ function tryManualResponse(normalizedText, context = {}, flags = {}) {
 
 
     // 💼 CURRÍCULO / VAGA / TRABALHO
-    if (/\b(curr[ií]culo|curriculo|cv\b|vaga|trabalhar|emprego|trampo)\b/.test(normalizedText)) {
+    if (/\b(curr[ií]culo|curriculo|cv\b|trabalhar|emprego|trampo)\b/.test(normalizedText)) {
         return (
             "Que bom que você tem interesse em trabalhar com a gente! 🥰\n\n" +
             "Os currículos são recebidos **exclusivamente por e-mail**.\n" +
-            "Por favor, envie seu currículo para **clinicafonoinova@gmail.com**, " +
+            "Por favor, envie seu currículo para **contato@clinicafonoinova.com.br**, " +
             "colocando no assunto a área em que você tem interesse.\n\n" +
             "Se quiser conhecer melhor nosso trabalho, é só acompanhar a clínica também no Instagram: **@clinicafonoinova** 💚"
         );
@@ -554,36 +592,61 @@ function tryManualResponse(normalizedText, context = {}, flags = {}) {
  * 🔍 HELPER: Infere área pelo contexto
  */
 function inferAreaFromContext(normalizedText, context = {}, flags = {}) {
-    const t = normalizedText.toLowerCase();
+    const t = (normalizedText || "").toLowerCase();
 
-    // puxa histórico recente
-    const historyText = Array.isArray(context.conversationHistory) ?
-        context.conversationHistory
-            .map(msg =>
-                typeof msg.content === "string" ?
-                    msg.content :
-                    JSON.stringify(msg.content)
-            )
-            .join(" \n ")
-            .toLowerCase() :
-        "";
+    // 1) histórico em array
+    const historyArray = Array.isArray(context.conversationHistory)
+        ? context.conversationHistory
+        : [];
 
-    const combined = `${t} ${historyText}`;
+    const historyTexts = historyArray.map(msg =>
+        (typeof msg.content === "string"
+            ? msg.content
+            : JSON.stringify(msg.content)
+        ).toLowerCase()
+    );
 
-    // se algum serviço seu já preencheu isso:
+    // definição das áreas + regex
+    const AREA_DEFS = [
+        { id: "fonoaudiologia", regex: /\bfono|fonoaudiolog\b/ },
+        { id: "psicologia", regex: /\bpsicolog|psicologia\b/ },
+        { id: "terapia_ocupacional", regex: /\b(terapia\s+ocupacional|[^a-z]to[^a-z])\b/ },
+        { id: "fisioterapia", regex: /\bfisio|fisioterap\b/ },
+        { id: "psicopedagogia", regex: /\bpsicopedagog\b/ },
+        { id: "neuropsicologia", regex: /\bneuropsicolog\b/ },
+    ];
+
+    const detectAreaInText = (txt) => {
+        if (!txt) return null;
+        const found = AREA_DEFS.filter(a => a.regex.test(txt)).map(a => a.id);
+        if (found.length === 1) return found[0];   // só 1 área → ok
+        return null;                               // 0 ou >1 → não decide aqui
+    };
+
+    // 0️⃣ se algum serviço já marcou área, respeita
     if (flags.therapyArea) return flags.therapyArea;
     if (context.therapyArea) return context.therapyArea;
 
-    // tenta inferir por palavra-chave
-    if (/\bpsicolog|psicologia\b/.test(combined)) return "psicologia";
-    if (/\bfono|fonoaudiolog\b/.test(combined)) return "fonoaudiologia";
-    if (/\b(terapia\s+ocupacional|to)\b/.test(combined)) return "terapia_ocupacional";
-    if (/\bfisio|fisioterap\b/.test(combined)) return "fisioterapia";
-    if (/\bpsicopedagog\b/.test(combined)) return "psicopedagogia";
-    if (/\bneuropsicolog\b/.test(combined)) return "neuropsicologia";
+    // 1️⃣ tenta na própria mensagem atual
+    const areaNow = detectAreaInText(t);
+    if (areaNow) return areaNow;
 
+    // 2️⃣ olha APENAS as últimas N mensagens (mais recentes primeiro)
+    const recentTexts = historyTexts.slice(-5).reverse(); // últimas 5, começando da mais nova
+    for (const txt of recentTexts) {
+        const area = detectAreaInText(txt);
+        if (area) return area;
+    }
+
+    // 3️⃣ fallback: se quiser, olha o histórico inteiro concatenado
+    const combined = [t, ...historyTexts].join(" ");
+    const fallbackArea = detectAreaInText(combined);
+    if (fallbackArea) return fallbackArea;
+
+    // 4️⃣ não conseguiu decidir → melhor dizer "não sei"
     return null;
 }
+
 
 
 /**
