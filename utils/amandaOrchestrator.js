@@ -298,6 +298,7 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         console.warn('⚠️ leadIntelligence falhou no orchestrator:', err.message);
     }
 
+
     const extracted = analysis?.extracted || {};
     const intent = analysis?.intent || {};
     const score = analysis?.score ?? lead.conversionScore ?? 50;
@@ -582,8 +583,10 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
             },
             userText: text,
             lead,
-            context: contextWithStage
+            context: contextWithStage,
+            analysis,
         });
+
 
 
         const scoped = enforceClinicScope(aiResponse, text);
@@ -618,12 +621,15 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     try {
         const aiResponse = await callAmandaAIWithContext(
             text,
-            lead, {
-            ...contextWithStage,
-            conversationSummary: contextWithStage.conversationSummary || ''
-        },
-            flags
+            lead,
+            {
+                ...contextWithStage,
+                conversationSummary: contextWithStage.conversationSummary || ''
+            },
+            flags,
+            analysis
         );
+
 
         const scoped = enforceClinicScope(aiResponse, text);
         return ensureSingleHeart(scoped);
@@ -945,18 +951,24 @@ function inferAreaFromContext(normalizedText, context = {}, flags = {}) {
 /**
  * 🤖 IA COM DADOS DE TERAPIAS + HISTÓRICO COMPLETO + CACHE MÁXIMO
  */
-async function callClaudeWithTherapyData({ therapies, flags, userText, lead, context }) {
-    const { getTherapyData } = await
-        import('./therapyDetector.js');
-    const { getLatestInsights } = await
-        import('../services/amandaLearningService.js');
-
-    const insights = await getLatestInsights();
+async function callClaudeWithTherapyData({
+    therapies,
+    flags,
+    userText,
+    lead,
+    context,
+    analysis: passedAnalysis = null,   // recebe análise pronta, se existir
+}) {
+    const { getTherapyData } = await import('./therapyDetector.js');
 
     const therapiesInfo = therapies.map(t => {
         const data = getTherapyData(t.id);
+        if (!data) {
+            return `${t.name.toUpperCase()}: (sem dados cadastrados ainda)`;
+        }
         return `${t.name.toUpperCase()}: ${data.explanation} | Preço: ${data.price}`;
     }).join('\n');
+
 
     const {
         stage,
@@ -1003,26 +1015,39 @@ async function callClaudeWithTherapyData({ therapies, flags, userText, lead, con
     }
 
     // 💸 INSIGHTS APRENDIDOS (respostas de preço que funcionaram melhor)
+    let insights = null;
     let learnedContext = '';
-    if (insights?.data?.effectivePriceResponses && flags.asksPrice) {
-        const scenario = stage === 'novo' ? 'first_contact' : 'engaged';
-        const bestResponse = insights.data.effectivePriceResponses.find(r => r.scenario === scenario);
-        if (bestResponse) {
-            learnedContext = `\n💡 PADRÃO DE SUCESSO: "${bestResponse.response}"`;
+
+    if (flags.asksPrice) {
+        const { getLatestInsights } = await import('../services/amandaLearningService.js');
+        insights = await getLatestInsights();
+
+        if (insights?.data?.effectivePriceResponses && flags.asksPrice) {
+            const scenario = stage === 'novo' ? 'first_contact' : 'engaged';
+            const bestResponse = insights.data.effectivePriceResponses.find(r => r.scenario === scenario);
+            if (bestResponse) {
+                learnedContext = `\n💡 PADRÃO DE SUCESSO: "${bestResponse.response}"`;
+            }
         }
-    }
 
-    const patientStatus = isPatient ? `\n⚠️ PACIENTE ATIVO - Tom próximo!` : '';
-    const urgencyNote = needsUrgency ? `\n🔥 ${daysSinceLastContact} dias sem falar - reative com calor!` : '';
+        const patientStatus = isPatient ? `\n⚠️ PACIENTE ATIVO - Tom próximo!` : '';
+        const urgencyNote = needsUrgency ? `\n🔥 ${daysSinceLastContact} dias sem falar - reative com calor!` : '';
 
-    // 🧠 ANÁLISE INTELIGENTE DO LEAD (SPRINT 2)
-    let intelligenceNote = '';
-    try {
-        const analysis = await analyzeLeadMessage({
-            text: userText,
-            lead,
-            history: conversationHistory || []
-        });
+        // 🧠 ANÁLISE INTELIGENTE DO LEAD (reaproveita se já vier do orquestrador)
+        let analysis = passedAnalysis;
+        let intelligenceNote = '';
+
+        if (!analysis) {
+            try {
+                analysis = await analyzeLeadMessage({
+                    text: userText,
+                    lead,
+                    history: conversationHistory || []
+                });
+            } catch (err) {
+                console.warn('⚠️ leadIntelligence falhou (não crítico):', err.message);
+            }
+        }
 
         if (analysis?.extracted) {
             const { idade, urgencia, queixa } = analysis.extracted;
@@ -1035,60 +1060,97 @@ async function callClaudeWithTherapyData({ therapies, flags, userText, lead, con
             if (primary) intelligenceNote += `\n- Intenção: ${primary}`;
             if (sentiment) intelligenceNote += `\n- Sentimento: ${sentiment}`;
 
-            // 🔥 Alerta de urgência alta
             if (urgencia === 'alta') {
                 intelligenceNote += `\n🔥 ATENÇÃO: Caso de urgência ALTA detectado - priorize contexto temporal!`;
             }
-
-            console.log('🧠 [INTELLIGENCE]', analysis.extracted);
         }
 
-    } catch (err) {
-        console.warn('⚠️ leadIntelligence falhou (não crítico):', err.message);
-    }
+        // 🧠 MONTA MENSAGENS (declarado ANTES para ser usado pelo bloco de preço)
+        const messages = [];
 
-    // 🧠 MONTA MENSAGENS (declarado ANTES para ser usado pelo bloco de preço)
-    const messages = [];
+        if (conversationSummary) {
+            messages.push({
+                role: 'user',
+                content: `📋 CONTEXTO DE CONVERSAS ANTERIORES:\n\n${conversationSummary}\n\n---\n\nAs mensagens abaixo são a continuação RECENTE desta conversa:`
+            });
+            messages.push({
+                role: 'assistant',
+                content: 'Entendi o contexto completo. Vou continuar a conversa de forma natural, lembrando de tudo que foi discutido.'
+            });
+        }
 
-    if (conversationSummary) {
+        if (conversationHistory && conversationHistory.length > 0) {
+            const safeHistory = conversationHistory.map(msg => ({
+                role: msg.role || 'user',
+                content: typeof msg.content === 'string'
+                    ? msg.content
+                    : JSON.stringify(msg.content),
+            }));
+
+            messages.push(...safeHistory);
+        }
+
+        // 🎯 SE PEDIR PREÇO, USA buildUserPromptWithValuePitch
+        if (flags.asksPrice) {
+            const enrichedFlags = {
+                ...flags,
+                conversationSummary: context.conversationSummary || '',
+                topic: therapies[0]?.id || 'avaliacao_inicial',
+                text: userText,
+                ageGroup: ageContextNote.includes('criança')
+                    ? 'crianca'
+                    : ageContextNote.includes('adolescente')
+                        ? 'adolescente'
+                        : ageContextNote.includes('adulto')
+                            ? 'adulto'
+                            : null
+            };
+
+            const pricePrompt = buildUserPromptWithValuePitch(enrichedFlags);
+
+            console.log('💰 [PRICE PROMPT] Usando buildUserPromptWithValuePitch');
+
+            messages.push({
+                role: 'user',
+                content: pricePrompt
+            });
+
+            const response = await anthropic.messages.create({
+                model: AI_MODEL,
+                max_tokens: 200,
+                temperature: 0.7,
+                system: [{
+                    type: "text",
+                    text: dynamicSystemPrompt,
+                    cache_control: { type: "ephemeral" }
+                }],
+                messages
+            });
+
+            return response.content[0]?.text?.trim() || "Como posso te ajudar? 💚";
+        }
+
+        // 🧠 PREPARA PROMPT ATUAL (lógica normal se NÃO for preço)
+        const currentPrompt = `${userText}
+
+📊 CONTEXTO DESTA MENSAGEM:
+TERAPIAS DETECTADAS:
+${therapiesInfo}
+
+FLAGS: Preço=${flags.asksPrice} | Agendar=${flags.wantsSchedule}
+ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${learnedContext}${ageContextNote}${intelligenceNote}
+
+🎯 INSTRUÇÕES CRÍTICAS:
+1. ${shouldGreet ? '✅ Pode cumprimentar naturalmente se fizer sentido' : '🚨 NÃO USE SAUDAÇÕES (Oi/Olá) - conversa está ativa'}
+2. ${conversationSummary ? '🧠 Você TEM o resumo completo acima - USE esse contexto!' : '📜 Leia TODO o histórico de mensagens acima antes de responder'}
+3. 🚨 NÃO PERGUNTE o que JÁ foi informado/discutido (idade, se é criança/adulto, área principal etc.)
+4. Responda de forma acolhedora, focando na dúvida real.
+5. Máximo 2–3 frases, tom natural e humano, como uma recepcionista experiente.
+6. Exatamente 1 💚 no final.`;
+
         messages.push({
             role: 'user',
-            content: `📋 CONTEXTO DE CONVERSAS ANTERIORES:\n\n${conversationSummary}\n\n---\n\nAs mensagens abaixo são a continuação RECENTE desta conversa:`
-        });
-        messages.push({
-            role: 'assistant',
-            content: 'Entendi o contexto completo. Vou continuar a conversa de forma natural, lembrando de tudo que foi discutido.'
-        });
-    }
-
-    if (conversationHistory && conversationHistory.length > 0) {
-        const safeHistory = conversationHistory.map(msg => ({
-            role: msg.role || 'user',
-            content: typeof msg.content === 'string' ?
-                msg.content : JSON.stringify(msg.content),
-        }));
-
-        messages.push(...safeHistory);
-    }
-
-    // 🎯 SE PEDIR PREÇO, USA buildUserPromptWithValuePitch
-    if (flags.asksPrice) {
-        const enrichedFlags = {
-            ...flags,
-            conversationSummary: context.conversationSummary || '',
-            topic: therapies[0]?.id || 'avaliacao_inicial',
-            text: userText,
-            ageGroup: ageContextNote.includes('criança') ? 'crianca' : ageContextNote.includes('adolescente') ? 'adolescente' : ageContextNote.includes('adulto') ? 'adulto' : null
-        };
-
-        const pricePrompt = buildUserPromptWithValuePitch(enrichedFlags);
-
-        console.log('💰 [PRICE PROMPT] Usando buildUserPromptWithValuePitch');
-
-        // Adiciona o prompt de preço às mensagens
-        messages.push({
-            role: 'user',
-            content: pricePrompt
+            content: currentPrompt
         });
 
         const response = await anthropic.messages.create({
@@ -1106,422 +1168,387 @@ async function callClaudeWithTherapyData({ therapies, flags, userText, lead, con
         return response.content[0]?.text?.trim() || "Como posso te ajudar? 💚";
     }
 
-    // 🧠 PREPARA PROMPT ATUAL (lógica normal se NÃO for preço)
-    const currentPrompt = `${userText}
 
-                                📊 CONTEXTO DESTA MENSAGEM:
-                                TERAPIAS DETECTADAS:
-                                ${therapiesInfo}
-
-                                FLAGS: Preço=${flags.asksPrice} | Agendar=${flags.wantsSchedule}
-                                ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${learnedContext}${ageContextNote}${intelligenceNote}
-
-                                🎯 INSTRUÇÕES CRÍTICAS:
-                                1. ${shouldGreet ? '✅ Pode cumprimentar naturalmente se fizer sentido' : '🚨 NÃO USE SAUDAÇÕES (Oi/Olá) - conversa está ativa'}
-                                2. ${conversationSummary ? '🧠 Você TEM o resumo completo acima - USE esse contexto!' : '📜 Leia TODO o histórico de mensagens acima antes de responder'}
-                                3. 🚨 NÃO PERGUNTE o que JÁ foi informado/discutido (idade, se é criança/adulto, área principal etc.)
-                                4. Responda de forma acolhedora, focando na dúvida real.
-                                5. Máximo 2–3 frases, tom natural e humano, como uma recepcionista experiente.
-                                6. Exatamente 1 💚 no final.`;
-
-    // Adiciona a mensagem atual ao histórico
-    messages.push({
-        role: 'user',
-        content: currentPrompt
-    });
-
-    const response = await anthropic.messages.create({
-        model: AI_MODEL,
-        max_tokens: 200,
-        temperature: 0.7,
-        system: [{
-            type: "text",
-            text: dynamicSystemPrompt,
-            cache_control: { type: "ephemeral" }
-        }],
-        messages
-    });
-
-    return response.content[0]?.text?.trim() || "Como posso te ajudar? 💚";
-}
-
-
-/**
- * 🤖 IA COM CONTEXTO INTELIGENTE + CACHE MÁXIMO
- */
-async function callAmandaAIWithContext(userText, lead, context, flagsFromOrchestrator = {}) {
-    const { getLatestInsights } = await
-        import('../services/amandaLearningService.js');
-
-    const {
-        stage = 'novo',
-        messageCount = 0,
-        mentionedTherapies = [],
-        isPatient = false,
-        needsUrgency = false,
-        daysSinceLastContact = 0,
-        conversationHistory = [],
-        conversationSummary = null,
-        shouldGreet = true
-    } = context;
-
-    // 🧩 FLAGS SÓ PRA ENTENDER PERFIL (criança/ado/adulto)
-    const flags = flagsFromOrchestrator || detectAllFlags(userText, lead, context);
-
-    // 🔍 Info básicas pro agendamento (visão da IA)
-    const therapyAreaForScheduling =
-        context.therapyArea ||
-        flags.therapyArea ||
-        lead.therapyArea;
-
-    const hasAgeOrProfile =
-        flags.mentionsChild ||
-        flags.mentionsTeen ||
-        flags.mentionsAdult ||
-        context.ageGroup ||
-        /\d+\s*anos?\b/i.test(userText);
-
-    let scheduleInfoNote = '';
-    if (stage === 'interessado_agendamento') {
-        if (!therapyAreaForScheduling && !hasAgeOrProfile) {
-            scheduleInfoNote =
-                'FALTAM DADOS PARA AGENDAR: não sabemos ainda a área (fono, psico, TO, fisio etc.) nem se é criança/adolescente/adulto.' +
-                ' Antes de falar em encaminhar pra equipe ou oferecer horários, faça UMA pergunta simples e natural para descobrir área e perfil.';
-        } else if (!therapyAreaForScheduling) {
-            scheduleInfoNote =
-                'FALTAM DADOS PARA AGENDAR: não sabemos ainda a área (fono, psico, TO, fisio etc.).' +
-                ' Antes de oferecer horários, pergunte de forma acolhedora para qual área a família está buscando ajuda.';
-        } else if (!hasAgeOrProfile) {
-            scheduleInfoNote =
-                'FALTAM DADOS PARA AGENDAR: não sabemos se o caso é criança, adolescente ou adulto.' +
-                ' Antes de oferecer horários, pergunte de forma natural pra quem é (criança/adulto) e, se fizer sentido, idade aproximada.';
-        }
-    }
-
-    const systemContext = buildSystemContext(
-        flags,
+    /**
+     * 🤖 IA COM CONTEXTO INTELIGENTE + CACHE MÁXIMO
+     */
+    async function callAmandaAIWithContext(
         userText,
-        stage
-    );
-    const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
+        lead,
+        context,
+        flagsFromOrchestrator = {},
+        analysisFromOrchestrator = null
+    ) {
+        const { getLatestInsights } =
+            await import('../services/amandaLearningService.js');
 
-    // 🎯 CONTEXTO DE TERAPIAS (AGORA EXISTE therapiesContext)
-    const therapiesContext = mentionedTherapies.length > 0 ?
-        `\n🎯 TERAPIAS DISCUTIDAS: ${mentionedTherapies.join(', ')}` :
-        '';
+        const {
+            stage = 'novo',
+            messageCount = 0,
+            mentionedTherapies = [],
+            isPatient = false,
+            needsUrgency = false,
+            daysSinceLastContact = 0,
+            conversationHistory = [],
+            conversationSummary = null,
+            shouldGreet = true
+        } = context;
 
-    // 🧠 PERFIL DE IDADE A PARTIR DO HISTÓRICO
-    let historyAgeNote = "";
-    if (conversationHistory && conversationHistory.length > 0) {
-        const historyText = conversationHistory
-            .map(msg => typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content))
-            .join(" \n ")
-            .toLowerCase();
+        // 🧩 FLAGS SÓ PRA ENTENDER PERFIL (criança/ado/adulto)
+        const flags = flagsFromOrchestrator || detectAllFlags(userText, lead, context);
 
-        const ageMatch = historyText.match(/(\d{1,2})\s*anos\b/);
-        if (ageMatch) {
-            const age = parseInt(ageMatch[1], 10);
-            if (!isNaN(age)) {
-                const group =
-                    age < 12 ? "criança" :
-                        age < 18 ? "adolescente" :
-                            "adulto";
+        // 🔍 Info básicas pro agendamento (visão da IA)
+        const therapyAreaForScheduling =
+            context.therapyArea ||
+            flags.therapyArea ||
+            lead.therapyArea;
 
-                historyAgeNote += `\nPERFIL_IDADE_HISTÓRICO: já foi informado que o paciente é ${group} e tem ${age} anos. NÃO pergunte a idade novamente.`;
+        const hasAgeOrProfile =
+            flags.mentionsChild ||
+            flags.mentionsTeen ||
+            flags.mentionsAdult ||
+            context.ageGroup ||
+            /\d+\s*anos?\b/i.test(userText);
+
+        let scheduleInfoNote = '';
+        if (stage === 'interessado_agendamento') {
+            if (!therapyAreaForScheduling && !hasAgeOrProfile) {
+                scheduleInfoNote =
+                    'FALTAM DADOS PARA AGENDAR: não sabemos ainda a área (fono, psico, TO, fisio etc.) nem se é criança/adolescente/adulto.' +
+                    ' Antes de falar em encaminhar pra equipe ou oferecer horários, faça UMA pergunta simples e natural para descobrir área e perfil.';
+            } else if (!therapyAreaForScheduling) {
+                scheduleInfoNote =
+                    'FALTAM DADOS PARA AGENDAR: não sabemos ainda a área (fono, psico, TO, fisio etc.).' +
+                    ' Antes de oferecer horários, pergunte de forma acolhedora para qual área a família está buscando ajuda.';
+            } else if (!hasAgeOrProfile) {
+                scheduleInfoNote =
+                    'FALTAM DADOS PARA AGENDAR: não sabemos se o caso é criança, adolescente ou adulto.' +
+                    ' Antes de oferecer horários, pergunte de forma natural pra quem é (criança/adulto) e, se fizer sentido, idade aproximada.';
             }
         }
 
-        if (/crian[çc]a|meu filho|minha filha|minha criança|minha crianca/.test(historyText)) {
-            historyAgeNote += `\nPERFIL_IDADE_HISTÓRICO: o histórico mostra que o caso é de CRIANÇA. NÃO volte a perguntar se é para criança ou adulto.`;
-        }
-    }
+        const systemContext = buildSystemContext(
+            flags,
+            userText,
+            stage
+        );
+        const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
 
-    let ageProfileNote = '';
-    if (flags.mentionsChild) {
-        ageProfileNote = 'PERFIL: criança (fale com o responsável, não pergunte de novo se é criança ou adulto).';
-    } else if (flags.mentionsTeen) {
-        ageProfileNote = 'PERFIL: adolescente.';
-    } else if (flags.mentionsAdult) {
-        ageProfileNote = 'PERFIL: adulto falando de si.';
-    }
+        // 🎯 CONTEXTO DE TERAPIAS
+        const therapiesContext = mentionedTherapies.length > 0 ?
+            `\n🎯 TERAPIAS DISCUTIDAS: ${mentionedTherapies.join(', ')}` :
+            '';
 
-    let stageInstruction = '';
-    switch (stage) {
-        case 'novo':
-            stageInstruction = 'Seja acolhedora. Pergunte necessidade antes de preços.';
-            break;
-        case 'pesquisando_preco':
-            stageInstruction = 'Lead já perguntou valores. Use VALOR→PREÇO→ENGAJAMENTO.';
-            break;
-        case 'engajado':
-            stageInstruction = `Lead trocou ${messageCount} msgs. Seja mais direta.`;
-            break;
-        case 'interessado_agendamento':
-            if (flags.wantsSchedule || flags.choseSlot || context.pendingSchedulingSlots) {
-                // Mensagem atual ainda tá na vibe de horário / vaga / marcar
-                stageInstruction =
-                    'Lead já demonstrou que QUER AGENDAR e a mensagem atual fala de horário, vaga ou dia.' +
-                    ' Seu objetivo é COLETAR os dados mínimos para enviar pra equipe: nome completo, telefone e preferência de período (manhã ou tarde).' +
-                    ' Se ainda faltar alguma dessas informações, confirme o que JÁ recebeu e peça APENAS o que falta, em 1-2 frases, sem dizer que já encaminhou.' +
-                    ' Só diga que vai encaminhar pra equipe QUANDO já tiver nome + telefone + período, e diga isso em uma única frase (sem repetir em todas as respostas).';
-            } else {
-                // Mensagem atual é mais de dúvida / explicação
-                stageInstruction =
-                    'Esse lead já mostrou interesse em agendar em algum momento, mas a mensagem atual é principalmente uma DÚVIDA ou pedido de explicação.' +
-                    ' Priorize responder a dúvida de forma clara e acolhedora, como uma recepcionista experiente.' +
-                    ' No final, se fizer sentido, você pode lembrar de forma leve que é possível agendar uma avaliação quando a família se sentir pronta, sem pressionar e sem oferecer horários agora.';
+        // 🧠 PERFIL DE IDADE A PARTIR DO HISTÓRICO
+        let historyAgeNote = "";
+        if (conversationHistory && conversationHistory.length > 0) {
+            const historyText = conversationHistory
+                .map(msg => typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content))
+                .join(" \n ")
+                .toLowerCase();
+
+            const ageMatch = historyText.match(/(\d{1,2})\s*anos\b/);
+            if (ageMatch) {
+                const age = parseInt(ageMatch[1], 10);
+                if (!isNaN(age)) {
+                    const group =
+                        age < 12 ? "criança" :
+                            age < 18 ? "adolescente" :
+                                "adulto";
+
+                    historyAgeNote += `\nPERFIL_IDADE_HISTÓRICO: já foi informado que o paciente é ${group} e tem ${age} anos. NÃO pergunte a idade novamente.`;
+                }
             }
-            break;
 
-        case 'paciente':
-            stageInstruction = 'PACIENTE ATIVO! Tom próximo.';
-            break;
-    }
+            if (/crian[çc]a|meu filho|minha filha|minha criança|minha crianca/.test(historyText)) {
+                historyAgeNote += `\nPERFIL_IDADE_HISTÓRICO: o histórico mostra que o caso é de CRIANÇA. NÃO volte a perguntar se é para criança ou adulto.`;
+            }
+        }
 
-    const patientNote = isPatient ? `\n⚠️ PACIENTE - seja próxima!` : '';
-    const urgencyNote = needsUrgency ? `\n🔥 ${daysSinceLastContact} dias sem contato - reative!` : '';
+        let ageProfileNote = '';
+        if (flags.mentionsChild) {
+            ageProfileNote = 'PERFIL: criança (fale com o responsável, não pergunte de novo se é criança ou adulto).';
+        } else if (flags.mentionsTeen) {
+            ageProfileNote = 'PERFIL: adolescente.';
+        } else if (flags.mentionsAdult) {
+            ageProfileNote = 'PERFIL: adulto falando de si.';
+        }
 
-    // 🧠 ANÁLISE INTELIGENTE DO LEAD (SPRINT 2)
-    let intelligenceNote = '';
-    try {
-        const analysis = await analyzeLeadMessage({
-            text: userText,
-            lead,
-            history: conversationHistory || []
-        });
+        let stageInstruction = '';
+        switch (stage) {
+            case 'novo':
+                stageInstruction = 'Seja acolhedora. Pergunte necessidade antes de preços.';
+                break;
+            case 'pesquisando_preco':
+                stageInstruction = 'Lead já perguntou valores. Use VALOR→PREÇO→ENGAJAMENTO.';
+                break;
+            case 'engajado':
+                stageInstruction = `Lead trocou ${messageCount} msgs. Seja mais direta.`;
+                break;
+            case 'interessado_agendamento':
+                if (flags.wantsSchedule || flags.choseSlot || context.pendingSchedulingSlots) {
+                    stageInstruction =
+                        'Lead já demonstrou que QUER AGENDAR e a mensagem atual fala de horário, vaga ou dia.' +
+                        ' Seu objetivo é COLETAR os dados mínimos para enviar pra equipe: nome completo, telefone e preferência de período (manhã ou tarde).' +
+                        ' Se ainda faltar alguma dessas informações, confirme o que JÁ recebeu e peça APENAS o que falta, em 1-2 frases, sem dizer que já encaminhou.' +
+                        ' Só diga que vai encaminhar pra equipe QUANDO já tiver nome + telefone + período, e diga isso em uma única frase (sem repetir em todas as respostas).';
+                } else {
+                    stageInstruction =
+                        'Esse lead já mostrou interesse em agendar em algum momento, mas a mensagem atual é principalmente uma DÚVIDA ou pedido de explicação.' +
+                        ' Priorize responder a dúvida de forma clara e acolhedora, como uma recepcionista experiente.' +
+                        ' No final, se fizer sentido, você pode lembrar de forma leve que é possível agendar uma avaliação quando a família se sentir pronta, sem pressionar e sem oferecer horários agora.';
+                }
+                break;
+            case 'paciente':
+                stageInstruction = 'PACIENTE ATIVO! Tom próximo.';
+                break;
+        }
+
+        const patientNote = isPatient ? `\n⚠️ PACIENTE - seja próxima!` : '';
+        const urgencyNote = needsUrgency ? `\n🔥 ${daysSinceLastContact} dias sem contato - reative!` : '';
+
+        // 🧠 ANÁLISE INTELIGENTE DO LEAD (SPRINT 2) – reaproveitando se já veio do orquestrador
+        let analysis = analysisFromOrchestrator;
+        let intelligenceNote = '';
+
+        if (!analysis) {
+            try {
+                analysis = await analyzeLeadMessage({
+                    text: userText,
+                    lead,
+                    history: conversationHistory || []
+                });
+            } catch (err) {
+                console.warn('⚠️ leadIntelligence falhou (não crítico):', err.message);
+            }
+        }
 
         if (analysis?.extracted) {
             const { idade, urgencia, queixa } = analysis.extracted;
             intelligenceNote = `\n📊 PERFIL: Idade ${idade || '?'} | Urgência ${urgencia || 'normal'} | Queixa ${queixa || 'geral'}`;
-
             if (urgencia === 'alta') {
                 intelligenceNote += `\n🔥 URGÊNCIA ALTA DETECTADA!`;
             }
         }
-    } catch (err) {
-        console.warn('⚠️ leadIntelligence falhou (não crítico):', err.message);
-    }
 
-    const insights = await getLatestInsights();
-    let openingsNote = '';
-    let closingNote = '';
+        const insights = await getLatestInsights();
+        let openingsNote = '';
+        let closingNote = '';
 
-    if (insights?.data?.bestOpeningLines?.length) {
-        const examples = insights.data.bestOpeningLines
-            .slice(0, 3)
-            .map(o => `- "${o.text}"`)
-            .join('\n');
+        if (insights?.data?.bestOpeningLines?.length) {
+            const examples = insights.data.bestOpeningLines
+                .slice(0, 3)
+                .map(o => `- "${o.text}"`)
+                .join('\n');
 
-        openingsNote = `\n💡 EXEMPLOS DE ABERTURA QUE FUNCIONARAM:\n${examples}`;
-    }
+            openingsNote = `\n💡 EXEMPLOS DE ABERTURA QUE FUNCIONARAM:\n${examples}`;
+        }
 
-    if (insights?.data?.successfulClosingQuestions?.length) {
-        const examples = insights.data.successfulClosingQuestions
-            .slice(0, 5)
-            .map(q => `- "${q.question}"`)
-            .join('\n');
+        if (insights?.data?.successfulClosingQuestions?.length) {
+            const examples = insights.data.successfulClosingQuestions
+                .slice(0, 5)
+                .map(q => `- "${q.question}"`)
+                .join('\n');
 
-        closingNote = `\n💡 PERGUNTAS DE FECHAMENTO QUE LEVARAM A AGENDAMENTO:\n${examples}\nUse esse estilo (sem copiar exatamente).`;
-    }
+            closingNote = `\n💡 PERGUNTAS DE FECHAMENTO QUE LEVARAM A AGENDAMENTO:\n${examples}\nUse esse estilo (sem copiar exatamente).`;
+        }
 
-    let slotsInstruction = '';
+        let slotsInstruction = '';
 
-    if (context.pendingSchedulingSlots?.primary) {
-        const slots = context.pendingSchedulingSlots;
+        if (context.pendingSchedulingSlots?.primary) {
+            const slots = context.pendingSchedulingSlots;
 
-        const slotsText = [
-            `1️⃣ ${formatSlot(slots.primary)}`,
-            ...slots.alternativesSamePeriod.slice(0, 2).map((s, i) =>
-                `${i + 2}️⃣ ${formatSlot(s)}`
-            )
-        ].join('\n');
+            const slotsText = [
+                `1️⃣ ${formatSlot(slots.primary)}`,
+                ...slots.alternativesSamePeriod.slice(0, 2).map((s, i) =>
+                    `${i + 2}️⃣ ${formatSlot(s)}`
+                )
+            ].join('\n');
 
-        slotsInstruction = `
-                            🎯 HORÁRIOS REAIS DISPONÍVEIS:
-                            ${slotsText}
+            slotsInstruction = `
+🎯 HORÁRIOS REAIS DISPONÍVEIS:
+${slotsText}
 
-                            REGRAS CRÍTICAS:
-                            - Ofereça no máximo 2-3 desses horários
-                            - NÃO invente horário diferente
-                            - Fale sempre "dia + horário" (ex: segunda às 15h)
-                            - Pergunte qual o lead prefere
-                            `;
-    } else if (stage === 'interessado_agendamento') {
-        slotsInstruction = `
-                            ⚠️ Ainda não conseguimos buscar horários disponíveis.
-                            - Se o usuário escolher um período (manhã/tarde), use isso
-                            - Diga que vai verificar com a equipe os melhores horários
-                            - NÃO invente horário específico
-                            `;
-    }
+REGRAS CRÍTICAS:
+- Ofereça no máximo 2-3 desses horários
+- NÃO invente horário diferente
+- Fale sempre "dia + horário" (ex: segunda às 15h)
+- Pergunte qual o lead prefere
+`;
+        } else if (stage === 'interessado_agendamento') {
+            slotsInstruction = `
+⚠️ Ainda não conseguimos buscar horários disponíveis.
+- Se o usuário escolher um período (manhã/tarde), use isso
+- Diga que vai verificar com a equipe os melhores horários
+- NÃO invente horário específico
+`;
+        }
 
+        const currentPrompt = `${userText}
 
-    const currentPrompt = `${userText}
+CONTEXTO:
+LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}
+${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}${historyAgeNote}
+${scheduleInfoNote ? `\n${scheduleInfoNote}` : ''}
+${openingsNote}${closingNote}
 
-                    CONTEXTO:
-                    LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}
-                    ${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}${historyAgeNote}
-                    ${scheduleInfoNote ? `\n${scheduleInfoNote}` : ''}
-                    ${openingsNote}${closingNote}
+INSTRUÇÕES:
+- ${stageInstruction}
+${slotsInstruction ? `- ${slotsInstruction}` : ''}
 
-                    INSTRUÇÕES:
-                    - ${stageInstruction}
-                    ${slotsInstruction ? `- ${slotsInstruction}` : ''}
+REGRAS:
+- ${shouldGreet ? 'Pode cumprimentar' : '🚨 NÃO use Oi/Olá - conversa ativa'}
+- ${conversationSummary ? '🧠 USE o resumo acima' : '📜 Leia histórico acima'}
+- 🚨 NÃO pergunte o que já foi dito (principalmente idade, se é criança/adulto e a área principal)
+- Em fluxos de AGENDAMENTO:
+  - Se ainda não tiver nome, telefone ou período definidos, confirme o que JÁ tem e peça só o que falta.
+  - NÃO diga que vai encaminhar pra equipe enquanto faltar alguma dessas informações.
+  - Depois que tiver nome + telefone + período, faça UMA única mensagem dizendo que vai encaminhar os dados.
+- 1-3 frases, tom humano
+- 1 pergunta engajadora (quando fizer sentido)
+- 1 💚 final`;
 
-                    REGRAS:
-                    - ${shouldGreet ? 'Pode cumprimentar' : '🚨 NÃO use Oi/Olá - conversa ativa'}
-                    - ${conversationSummary ? '🧠 USE o resumo acima' : '📜 Leia histórico acima'}
-                    - 🚨 NÃO pergunte o que já foi dito (principalmente idade, se é criança/adulto e a área principal)
-                    - Em fluxos de AGENDAMENTO:
-                    - Se ainda não tiver nome, telefone ou período definidos, confirme o que JÁ tem e peça só o que falta.
-                    - NÃO diga que vai encaminhar pra equipe enquanto faltar alguma dessas informações.
-                    - Depois que tiver nome + telefone + período, faça UMA única mensagem dizendo que vai encaminhar os dados.
-                    - 1-3 frases, tom humano
-                    - 1 pergunta engajadora (quando fizer sentido)
-                    - 1 💚 final`;
+        // 🧠 MONTA MENSAGENS COM CACHE MÁXIMO
+        const messages = [];
 
+        if (conversationSummary) {
+            messages.push({
+                role: 'user',
+                content: `📋 CONTEXTO ANTERIOR:\n\n${conversationSummary}\n\n---\n\nMensagens recentes abaixo:`
+            });
+            messages.push({
+                role: 'assistant',
+                content: 'Entendi o contexto. Continuando...'
+            });
+        }
 
+        if (conversationHistory && conversationHistory.length > 0) {
+            const safeHistory = conversationHistory.map(msg => ({
+                role: msg.role || 'user',
+                content: typeof msg.content === 'string'
+                    ? msg.content
+                    : JSON.stringify(msg.content),
+            }));
 
-    // 🧠 MONTA MENSAGENS COM CACHE MÁXIMO
-    const messages = [];
+            messages.push(...safeHistory);
+        }
 
-    if (conversationSummary) {
         messages.push({
             role: 'user',
-            content: `📋 CONTEXTO ANTERIOR:\n\n${conversationSummary}\n\n---\n\nMensagens recentes abaixo:`
+            content: currentPrompt
         });
-        messages.push({
-            role: 'assistant',
-            content: 'Entendi o contexto. Continuando...'
+
+        const response = await anthropic.messages.create({
+            model: AI_MODEL,
+            max_tokens: 150,
+            temperature: 0.6,
+            system: [
+                {
+                    type: "text",
+                    text: dynamicSystemPrompt,
+                    cache_control: { type: "ephemeral" }
+                }
+            ],
+            messages
         });
+
+        return response.content[0]?.text?.trim() || "Como posso te ajudar? 💚";
     }
 
-    if (conversationHistory && conversationHistory.length > 0) {
-        const safeHistory = conversationHistory.map(msg => ({
-            role: msg.role || 'user',
-            content: typeof msg.content === 'string'
-                ? msg.content
-                : JSON.stringify(msg.content),
-        }));
 
-        messages.push(...safeHistory);
+
+
+    /**
+     * 🎨 HELPER
+     */
+    function ensureSingleHeart(text) {
+        if (!text) return "Como posso te ajudar? 💚";
+        const clean = text.replace(/💚/g, '').trim();
+        return `${clean} 💚`;
     }
 
-    messages.push({
-        role: 'user',
-        content: currentPrompt
+    /**
+     * 🔒 REGRA DE ESCOPO DA CLÍNICA
+     */
+    function enforceClinicScope(aiText = "", userText = "") {
+        if (!aiText) return aiText;
+
+        const t = aiText.toLowerCase();
+        const u = (userText || "").toLowerCase();
+        const combined = `${u} ${t}`;
+
+        const isHearingExamContext =
+            /(exame\s+de\s+au(diç|diçã|dição)|exame\s+auditivo|audiometria|bera|peate|emiss(ões)?\s+otoac[úu]stic)/i.test(
+                combined
+            );
+
+        // 🚑 NOVO: contexto de frênulo / teste da linguinha
+        const isFrenuloOrLinguinha =
+            /\b(fr[eê]nulo|freio\s+lingual|fr[eê]nulo\s+lingual|teste\s+da\s+linguinha|linguinha)\b/i.test(
+                combined
+            );
+
+        const mentionsRPGorPilates = /\brpg\b|pilates/i.test(combined);
+
+        // 🔊 Só bloqueia exame auditivo se NÃO for caso de frênulo/linguinha
+        if (isHearingExamContext && !isFrenuloOrLinguinha) {
+            return (
+                "Aqui na Clínica Fono Inova nós **não realizamos exames de audição** " +
+                "(como audiometria ou BERA/PEATE). Nosso foco é na **avaliação e terapia fonoaudiológica**. " +
+                "Podemos agendar uma avaliação para entender melhor o caso e, se necessário, te orientar " +
+                "sobre onde fazer o exame com segurança. 💚"
+            );
+        }
+
+        if (mentionsRPGorPilates) {
+            return (
+                "Na Fono Inova, a Fisioterapia é voltada para **atendimento terapêutico clínico**, " +
+                "e não trabalhamos com **RPG ou Pilates**. Se você quiser, podemos agendar uma avaliação " +
+                "para entender direitinho o caso e indicar a melhor forma de acompanhamento. 💚"
+            );
+        }
+
+        return aiText;
+    }
+
+    const buildSystemContext = (flags, text = "", stage = "novo") => ({
+        // Funil
+        isHotLead: flags.visitLeadHot || stage === 'interessado_agendamento',
+        isColdLead: flags.visitLeadCold || stage === 'novo',
+
+        // Escopo negativo
+        negativeScopeTriggered: /audiometria|bera|rpg|pilates/i.test(text),
+
+        // 🛡️ OBJEÇÕES (NOVO)
+        priceObjectionTriggered:
+            flags.mentionsPriceObjection ||
+            /outra\s+cl[ií]nica|mais\s+(barato|em\s+conta)|encontrei.*barato|vou\s+fazer\s+l[aá]|n[aã]o\s+precisa\s+mais|muito\s+caro|caro\s+demais/i.test(
+                text
+            ),
+
+        insuranceObjectionTriggered:
+            flags.mentionsInsuranceObjection ||
+            /queria\s+(pelo|usar)\s+plano|s[oó]\s+atendo\s+por\s+plano|particular\s+[eé]\s+caro|pelo\s+conv[eê]nio/i.test(
+                text
+            ),
+
+        timeObjectionTriggered:
+            flags.mentionsTimeObjection ||
+            /n[aã]o\s+tenho\s+tempo|sem\s+tempo|correria|agenda\s+cheia/i.test(text),
+
+        otherClinicObjectionTriggered:
+            flags.mentionsOtherClinicObjection ||
+            /j[aá]\s+(estou|tô)\s+(vendo|fazendo)|outra\s+cl[ií]nica|outro\s+profissional/i.test(
+                text
+            ),
+
+        teaDoubtTriggered:
+            flags.mentionsDoubtTEA ||
+            /ser[aá]\s+que\s+[eé]\s+tea|suspeita\s+de\s+(tea|autismo)|muito\s+novo\s+pra\s+saber/i.test(
+                text
+            ),
     });
 
-    const response = await anthropic.messages.create({
-        model: AI_MODEL,
-        max_tokens: 150,
-        temperature: 0.6,
-        system: [
-            {
-                type: "text",
-                text: dynamicSystemPrompt,
-                cache_control: { type: "ephemeral" }
-            }
-        ],
-        messages
-    });
-
-    return response.content[0]?.text?.trim() || "Como posso te ajudar? 💚";
-}
 
 
-
-/**
- * 🎨 HELPER
- */
-function ensureSingleHeart(text) {
-    if (!text) return "Como posso te ajudar? 💚";
-    const clean = text.replace(/💚/g, '').trim();
-    return `${clean} 💚`;
-}
-
-/**
- * 🔒 REGRA DE ESCOPO DA CLÍNICA
- */
-function enforceClinicScope(aiText = "", userText = "") {
-    if (!aiText) return aiText;
-
-    const t = aiText.toLowerCase();
-    const u = (userText || "").toLowerCase();
-    const combined = `${u} ${t}`;
-
-    const isHearingExamContext =
-        /(exame\s+de\s+au(diç|diçã|dição)|exame\s+auditivo|audiometria|bera|peate|emiss(ões)?\s+otoac[úu]stic)/i.test(
-            combined
-        );
-
-    // 🚑 NOVO: contexto de frênulo / teste da linguinha
-    const isFrenuloOrLinguinha =
-        /\b(fr[eê]nulo|freio\s+lingual|fr[eê]nulo\s+lingual|teste\s+da\s+linguinha|linguinha)\b/i.test(
-            combined
-        );
-
-    const mentionsRPGorPilates = /\brpg\b|pilates/i.test(combined);
-
-    // 🔊 Só bloqueia exame auditivo se NÃO for caso de frênulo/linguinha
-    if (isHearingExamContext && !isFrenuloOrLinguinha) {
-        return (
-            "Aqui na Clínica Fono Inova nós **não realizamos exames de audição** " +
-            "(como audiometria ou BERA/PEATE). Nosso foco é na **avaliação e terapia fonoaudiológica**. " +
-            "Podemos agendar uma avaliação para entender melhor o caso e, se necessário, te orientar " +
-            "sobre onde fazer o exame com segurança. 💚"
-        );
-    }
-
-    if (mentionsRPGorPilates) {
-        return (
-            "Na Fono Inova, a Fisioterapia é voltada para **atendimento terapêutico clínico**, " +
-            "e não trabalhamos com **RPG ou Pilates**. Se você quiser, podemos agendar uma avaliação " +
-            "para entender direitinho o caso e indicar a melhor forma de acompanhamento. 💚"
-        );
-    }
-
-    return aiText;
-}
-
-const buildSystemContext = (flags, text = "", stage = "novo") => ({
-    // Funil
-    isHotLead: flags.visitLeadHot || stage === 'interessado_agendamento',
-    isColdLead: flags.visitLeadCold || stage === 'novo',
-
-    // Escopo negativo
-    negativeScopeTriggered: /audiometria|bera|rpg|pilates/i.test(text),
-
-    // 🛡️ OBJEÇÕES (NOVO)
-    priceObjectionTriggered:
-        flags.mentionsPriceObjection ||
-        /outra\s+cl[ií]nica|mais\s+(barato|em\s+conta)|encontrei.*barato|vou\s+fazer\s+l[aá]|n[aã]o\s+precisa\s+mais|muito\s+caro|caro\s+demais/i.test(
-            text
-        ),
-
-    insuranceObjectionTriggered:
-        flags.mentionsInsuranceObjection ||
-        /queria\s+(pelo|usar)\s+plano|s[oó]\s+atendo\s+por\s+plano|particular\s+[eé]\s+caro|pelo\s+conv[eê]nio/i.test(
-            text
-        ),
-
-    timeObjectionTriggered:
-        flags.mentionsTimeObjection ||
-        /n[aã]o\s+tenho\s+tempo|sem\s+tempo|correria|agenda\s+cheia/i.test(text),
-
-    otherClinicObjectionTriggered:
-        flags.mentionsOtherClinicObjection ||
-        /j[aá]\s+(estou|tô)\s+(vendo|fazendo)|outra\s+cl[ií]nica|outro\s+profissional/i.test(
-            text
-        ),
-
-    teaDoubtTriggered:
-        flags.mentionsDoubtTEA ||
-        /ser[aá]\s+que\s+[eé]\s+tea|suspeita\s+de\s+(tea|autismo)|muito\s+novo\s+pra\s+saber/i.test(
-            text
-        ),
-});
-
-
-
-export default getOptimizedAmandaResponse;
+    export default getOptimizedAmandaResponse;

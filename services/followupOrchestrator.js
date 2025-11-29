@@ -1,8 +1,9 @@
 // services/followupOrchestrator.js
+import { followupQueue } from "../config/bullConfig.js";
 import Followup from "../models/Followup.js";
 import Lead from "../models/Leads.js";
 import Message from "../models/Message.js";
-import { followupQueue } from "../config/bullConfig.js";
+import { generateFollowupMessage } from "../services/aiAmandaService.js";
 import {
   analyzeLeadMessage
 } from "../services/intelligence/leadIntelligence.js";
@@ -10,7 +11,6 @@ import {
   calculateOptimalFollowupTime,
   generateContextualFollowup
 } from "../services/intelligence/smartFollowup.js";
-import { generateFollowupMessage } from "../services/aiAmandaService.js";
 
 /**
  * Cria e enfileira um follow-up inteligente para um lead.
@@ -51,9 +51,10 @@ export async function createSmartFollowupForLead(leadId, options = {}) {
     message = generateContextualFollowup({
       lead,
       analysis,
-      attempt
+      attempt,
+      history: recentMessages
     });
-
+    
     score = analysis.score;
 
     await Lead.findByIdAndUpdate(leadId, {
@@ -72,11 +73,11 @@ export async function createSmartFollowupForLead(leadId, options = {}) {
   const scheduledAt = explicitScheduledAt
     ? new Date(explicitScheduledAt)
     : calculateOptimalFollowupTime({
-        lead,
-        score,
-        lastInteraction: new Date(),
-        attempt
-      });
+      lead,
+      score,
+      lastInteraction: new Date(),
+      attempt
+    });
 
   // 3) criar followup
   const followup = await Followup.create({
