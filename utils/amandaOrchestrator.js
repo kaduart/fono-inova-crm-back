@@ -256,9 +256,10 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
 
 
     const isVisitFunnel =
+        !flags.wantsSchedule && // 👈 NÃO dispara funil de visita se a pessoa já quer agendar
         (flags.isNewLead || enrichedContext.stage === 'novo') &&
         (flags.visitLeadHot || flags.visitLeadCold || enrichedContext.messageCount <= 2) &&
-        !flags.asksPlans; // ❌ não entra em funil se estiver perguntando de plano/convênio
+        !flags.asksPlans;
 
 
     // Se for claramente início de funil + foco em visita, já empurra instruções extras
@@ -315,6 +316,10 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         });
     }
 
+    const justEnteredScheduling =
+        currentStage !== 'interessado_agendamento' &&
+        newStage === 'interessado_agendamento';
+
 
     // Usa SEMPRE esse contexto já com stage atualizado pro resto do fluxo
     const contextWithStage = {
@@ -325,10 +330,14 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     // 🔍 Se o lead entrou no estágio de agendamento e ainda não buscamos slots
     if (
         newStage === 'interessado_agendamento' &&
-        flags.wantsSchedule &&
-        !enrichedContext.pendingSchedulingSlots
+        !enrichedContext.pendingSchedulingSlots &&
+        (flags.wantsSchedule || justEnteredScheduling)
     ) {
-        const therapyArea = contextWithStage.therapyArea || extracted.therapyArea;
+        const therapyArea =
+            contextWithStage.therapyArea ||
+            extracted.therapyArea ||
+            lead.therapyArea; // se vc estiver salvando isso no lead
+
         if (therapyArea) {
             const slots = await findAvailableSlots({
                 therapyArea,
@@ -338,13 +347,15 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
             });
 
             if (slots?.primary && lead?._id) {
-                await Leads.findByIdAndUpdate(lead._id, { $set: { pendingSchedulingSlots: slots } });
+                await Leads.findByIdAndUpdate(
+                    lead._id,
+                    { $set: { pendingSchedulingSlots: slots } }
+                ).catch(() => { });
             }
 
             contextWithStage.pendingSchedulingSlots = slots;
         }
     }
-
 
     /**
      * BLOCO 2: CRIA AGENDAMENTO QUANDO USUÁRIO ESCOLHE HORÁRIO
