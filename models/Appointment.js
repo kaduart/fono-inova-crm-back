@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { syncEvent } from '../services/syncService.js';
 import MedicalEvent from './MedicalEvent.js';
+import { NON_BLOCKING_OPERATIONAL_STATUSES } from '../constants/appointmentStatus.js';
 
 
 const appointmentSchema = new mongoose.Schema({
@@ -121,7 +122,8 @@ appointmentSchema.index(
     unique: true,
     name: 'unique_appointment_slot',
     partialFilterExpression: {
-      operationalStatus: 'scheduled' // só bloqueia horário AGENDADO
+      // entra no índice só quem BLOQUEIA o horário
+      operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES }
     }
   }
 );

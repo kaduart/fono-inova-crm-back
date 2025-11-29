@@ -14,6 +14,13 @@ import {
 import Followup from "../models/Followup.js";
 import Leads from "../models/Leads.js";
 import { callOpenAIFallback } from "../services/aiAmandaService.js";
+import {
+    autoBookAppointment,
+    findAvailableSlots,
+    formatDatePtBr,
+    formatSlot,
+    pickSlotFromUserReply
+} from '../services/amandaBookingService.js';
 import { handleInboundMessageForFollowups } from "../services/responseTrackingService.js";
 import {
     buildDynamicSystemPrompt,
@@ -108,6 +115,83 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
             .catch(err => console.warn('[FOLLOWUP-REALTIME] erro:', err.message));
     }
 
+    if (lead.pendingPatientInfoForScheduling && lead._id) {
+        console.log('📝 [ORCHESTRATOR] Lead está pendente de dados do paciente');
+
+        // 🔄 Opcional, mas melhor: recarregar o lead fresco do banco
+        const freshLead = await Leads.findById(lead._id).lean().catch(() => null);
+        const leadForInfo = freshLead || lead;
+
+        const patientInfo = extractPatientInfoFromLead(leadForInfo, text);
+
+        if (patientInfo.fullName && patientInfo.birthDate) {
+            // ✅ Pega o slot que estava salvo (de preferência o escolhido)
+            const chosenSlot =
+                leadForInfo.pendingChosenSlot ||
+                leadForInfo.pendingSchedulingSlots?.primary;
+
+            // ✅ Limpa flags e já aproveita pra salvar patientInfo no lead
+            await Leads.findByIdAndUpdate(lead._id, {
+                $unset: {
+                    pendingPatientInfoForScheduling: "",
+                    pendingChosenSlot: ""
+                },
+                $set: {
+                    "patientInfo.fullName": patientInfo.fullName,
+                    "patientInfo.birthDate": patientInfo.birthDate,
+                    "patientInfo.phone": patientInfo.phone,
+                    "patientInfo.email": patientInfo.email
+                }
+            }).catch(() => { });
+
+            if (chosenSlot) {
+                console.log('🚀 [ORCHESTRATOR] Tentando agendar após coletar dados');
+
+                const bookingResult = await autoBookAppointment({
+                    lead,
+                    chosenSlot,
+                    patientInfo
+                });
+
+                if (bookingResult.success) {
+                    await Leads.findByIdAndUpdate(lead._id, {
+                        $set: {
+                            status: 'agendado',
+                            stage: 'paciente',
+                            patientId: bookingResult.patientId
+                        },
+                        $unset: { pendingSchedulingSlots: "" }
+                    }).catch(() => { });
+
+                    await Followup.updateMany(
+                        { lead: lead._id, status: 'scheduled' },
+                        {
+                            $set: {
+                                status: 'canceled',
+                                canceledReason: 'agendamento_confirmado_amanda'
+                            }
+                        }
+                    ).catch(() => { });
+
+                    const humanDate = formatDatePtBr(chosenSlot.date);
+                    const humanTime = chosenSlot.time.slice(0, 5);
+
+                    return `Perfeito! ✅ Agendado para ${humanDate} às ${humanTime} com ${chosenSlot.doctorName}. Qualquer coisa é só me avisar 💚`;
+                } else if (bookingResult.code === 'TIME_CONFLICT') {
+                    return "Esse horário acabou de ser preenchido 😕 A equipe vai te enviar novas opções em instantes 💚";
+                } else {
+                    return "Tive um probleminha ao confirmar. A equipe vai te responder por aqui em instantes 💚";
+                }
+            } else {
+                // Não tinha slot salvo por algum motivo
+                return "Obrigada pelos dados! A equipe vai te enviar as melhores opções de horário em instantes 💚";
+            }
+        } else {
+            return "Não consegui pegar certinho. Me manda: Nome completo e data de nascimento (ex: João Silva, 12/03/2015)? 💚";
+        }
+    }
+
+
     if (messageId) {
         const lastResponse = recentResponses.get(messageId);
         if (lastResponse && Date.now() - lastResponse < 5000) {
@@ -134,6 +218,7 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
             conversationSummary: null,
             shouldGreet: true,
         };
+
 
     const enrichedContext = {
         ...baseContext,
@@ -231,12 +316,143 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     }
 
 
-
     // Usa SEMPRE esse contexto já com stage atualizado pro resto do fluxo
     const contextWithStage = {
         ...enrichedContext,
         stage: newStage,
     };
+
+    // 🔍 Se o lead entrou no estágio de agendamento e ainda não buscamos slots
+    if (
+        newStage === 'interessado_agendamento' &&
+        flags.wantsSchedule &&
+        !enrichedContext.pendingSchedulingSlots
+    ) {
+        const therapyArea = contextWithStage.therapyArea || extracted.therapyArea;
+        if (therapyArea) {
+            const slots = await findAvailableSlots({
+                therapyArea,
+                preferredDay: extracted.preferredDay,
+                preferredPeriod: extracted.preferredPeriod,
+                daysAhead: 7,
+            });
+
+            if (slots?.primary && lead?._id) {
+                await Leads.findByIdAndUpdate(lead._id, { $set: { pendingSchedulingSlots: slots } });
+            }
+
+            contextWithStage.pendingSchedulingSlots = slots;
+        }
+    }
+
+
+    /**
+     * BLOCO 2: CRIA AGENDAMENTO QUANDO USUÁRIO ESCOLHE HORÁRIO
+     */
+
+    // 📅 Se o usuário escolheu um slot
+    if (flags.choseSlot && lead?._id && contextWithStage.pendingSchedulingSlots) {
+        console.log('✅ [ORCHESTRATOR] Usuário escolheu horário, processando...');
+
+        const chosenSlot = pickSlotFromUserReply(
+            text,
+            contextWithStage.pendingSchedulingSlots
+        );
+
+        if (!chosenSlot) {
+            return "Não entendi certinho qual horário você prefere. Pode repetir o dia e horário? 💚";
+        }
+
+        // 🔐 Valida dados do paciente
+        const patientInfo = extractPatientInfoFromLead(lead, text);
+
+        if (!patientInfo.fullName || !patientInfo.birthDate) {
+            let missing = [];
+            if (!patientInfo.fullName) missing.push('nome completo');
+            if (!patientInfo.birthDate) missing.push('data de nascimento');
+
+            // ✅ MARCA a flag
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: {
+                    pendingPatientInfoForScheduling: true,
+                    pendingChosenSlot: chosenSlot
+                }
+            }).catch(() => { });
+
+            return `Perfeito! Só preciso confirmar ${missing.join(' e ')} para finalizar. Pode me passar? 💚`;
+        }
+
+        // 🚀 CHAMA AS ROTAS EXISTENTES
+        console.log('🚀 [ORCHESTRATOR] Criando agendamento automático');
+
+        const bookingResult = await autoBookAppointment({
+            lead,
+            chosenSlot,
+            patientInfo
+        });
+
+        // ✅ SUCESSO
+        if (bookingResult.success) {
+            console.log('✅ [ORCHESTRATOR] Agendamento criado:', bookingResult.appointment?._id);
+
+            // Atualiza lead
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: {
+                    status: 'agendado',
+                    stage: 'paciente',
+                    patientId: bookingResult.patientId
+                },
+                $unset: { pendingSchedulingSlots: "" }
+            }).catch(() => { });
+
+            // Cancela follow-ups
+            await Followup.updateMany(
+                { lead: lead._id, status: 'scheduled' },
+                {
+                    $set: {
+                        status: 'canceled',
+                        canceledReason: 'agendamento_confirmado_amanda'
+                    }
+                }
+            ).catch(() => { });
+
+            const humanDate = formatDatePtBr(chosenSlot.date);
+            const humanTime = chosenSlot.time.slice(0, 5);
+            const profName = chosenSlot.doctorName;
+
+            return `Perfeito! ✅ Já está confirmado para **${humanDate} às ${humanTime}** com **${profName}**. ` +
+                `Vou enviar os detalhes completos agora. Qualquer coisa é só me avisar por aqui 💚`;
+        }
+
+        // ⚠️ CONFLITO DE HORÁRIO
+        if (bookingResult.code === 'TIME_CONFLICT') {
+            console.warn('⚠️ [ORCHESTRATOR] Conflito - buscando novos slots');
+
+            const newSlots = await findAvailableSlots({
+                therapyArea: contextWithStage.therapyArea,
+                daysAhead: 10
+            });
+
+            if (newSlots?.primary) {
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: { pendingSchedulingSlots: newSlots }
+                }).catch(() => { });
+
+                const options = [
+                    formatSlot(newSlots.primary),
+                    ...newSlots.alternativesSamePeriod.slice(0, 2).map(formatSlot)
+                ].join('\n• ');
+
+                return `Esse horário acabou de ser preenchido 😕 Mas tenho estas opções:\n\n• ${options}\n\nQual funciona melhor? 💚`;
+            }
+
+            return "Esse horário não está mais disponível. A equipe vai te enviar novas opções em instantes 💚";
+        }
+
+        // ❌ ERRO GENÉRICO
+        console.error('❌ [ORCHESTRATOR] Erro no agendamento:', bookingResult.error);
+        return "Tive um probleminha ao confirmar o horário. A equipe vai te responder por aqui em instantes 💚";
+    }
 
     // 👋 É a PRIMEIRA mensagem (ou bem início)?
     const isFirstMessage =
@@ -356,6 +572,8 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         ).catch(err => console.warn('[LEAD-AREA] falha ao atualizar therapyArea:', err.message));
     }
 
+
+
     // ===== 5. IA COM CONTEXTO =====
     console.log(`🤖 [ORCHESTRATOR] IA | Stage: ${contextWithStage.stage} | Msgs: ${contextWithStage.messageCount}`);
     try {
@@ -395,6 +613,40 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     }
 }
 
+
+
+/**
+ * Extrai nome + data de nascimento do lead ou da mensagem atual
+    */
+function extractPatientInfoFromLead(lead, lastMessage) {
+    let fullName = lead.patientInfo?.fullName || lead.name;
+    let birthDate = lead.patientInfo?.birthDate;
+    const phone = lead.contact?.phone || lead.phone;
+    const email = lead.contact?.email || lead.email;
+
+    // Tenta extrair da mensagem se não tiver no lead
+    if (!fullName || !birthDate) {
+        // Regex simples para nome (2+ palavras)
+        const nameMatch = lastMessage.match(/(?:meu nome [eé]|me chamo|sou)\s+([a-zà-úA-ZÀ-Ú\s]+)/i);
+        if (nameMatch) {
+            fullName = nameMatch[1].trim();
+        }
+
+        // Regex para data de nascimento (DD/MM/YYYY ou DD-MM-YYYY)
+        const dateMatch = lastMessage.match(/\b(\d{2})[\/\-](\d{2})[\/\-](\d{4})\b/);
+        if (dateMatch) {
+            const [, day, month, year] = dateMatch;
+            birthDate = `${year}-${month}-${day}`; // formato YYYY-MM-DD
+        }
+    }
+
+    return {
+        fullName: fullName || null,
+        birthDate: birthDate || null,
+        phone: phone || null,
+        email: email || null
+    };
+}
 
 /**
  * 🔥 FUNÇÃO DE FUNIL DE VISITA
@@ -750,6 +1002,7 @@ async function callClaudeWithTherapyData({ therapies, flags, userText, lead, con
 
             console.log('🧠 [INTELLIGENCE]', analysis.extracted);
         }
+
     } catch (err) {
         console.warn('⚠️ leadIntelligence falhou (não crítico):', err.message);
     }
@@ -816,20 +1069,20 @@ async function callClaudeWithTherapyData({ therapies, flags, userText, lead, con
     // 🧠 PREPARA PROMPT ATUAL (lógica normal se NÃO for preço)
     const currentPrompt = `${userText}
 
-📊 CONTEXTO DESTA MENSAGEM:
-TERAPIAS DETECTADAS:
-${therapiesInfo}
+                                📊 CONTEXTO DESTA MENSAGEM:
+                                TERAPIAS DETECTADAS:
+                                ${therapiesInfo}
 
-FLAGS: Preço=${flags.asksPrice} | Agendar=${flags.wantsSchedule}
-ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${learnedContext}${ageContextNote}${intelligenceNote}
+                                FLAGS: Preço=${flags.asksPrice} | Agendar=${flags.wantsSchedule}
+                                ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${learnedContext}${ageContextNote}${intelligenceNote}
 
-🎯 INSTRUÇÕES CRÍTICAS:
-1. ${shouldGreet ? '✅ Pode cumprimentar naturalmente se fizer sentido' : '🚨 NÃO USE SAUDAÇÕES (Oi/Olá) - conversa está ativa'}
-2. ${conversationSummary ? '🧠 Você TEM o resumo completo acima - USE esse contexto!' : '📜 Leia TODO o histórico de mensagens acima antes de responder'}
-3. 🚨 NÃO PERGUNTE o que JÁ foi informado/discutido (idade, se é criança/adulto, área principal etc.)
-4. Responda de forma acolhedora, focando na dúvida real.
-5. Máximo 2–3 frases, tom natural e humano, como uma recepcionista experiente.
-6. Exatamente 1 💚 no final.`;
+                                🎯 INSTRUÇÕES CRÍTICAS:
+                                1. ${shouldGreet ? '✅ Pode cumprimentar naturalmente se fizer sentido' : '🚨 NÃO USE SAUDAÇÕES (Oi/Olá) - conversa está ativa'}
+                                2. ${conversationSummary ? '🧠 Você TEM o resumo completo acima - USE esse contexto!' : '📜 Leia TODO o histórico de mensagens acima antes de responder'}
+                                3. 🚨 NÃO PERGUNTE o que JÁ foi informado/discutido (idade, se é criança/adulto, área principal etc.)
+                                4. Responda de forma acolhedora, focando na dúvida real.
+                                5. Máximo 2–3 frases, tom natural e humano, como uma recepcionista experiente.
+                                6. Exatamente 1 💚 no final.`;
 
     // Adiciona a mensagem atual ao histórico
     messages.push({
@@ -993,26 +1246,61 @@ async function callAmandaAIWithContext(userText, lead, context, flagsFromOrchest
         closingNote = `\n💡 PERGUNTAS DE FECHAMENTO QUE LEVARAM A AGENDAMENTO:\n${examples}\nUse esse estilo (sem copiar exatamente).`;
     }
 
+    let slotsInstruction = '';
+
+    if (context.pendingSchedulingSlots?.primary) {
+        const slots = context.pendingSchedulingSlots;
+
+        const slotsText = [
+            `1️⃣ ${formatSlot(slots.primary)}`,
+            ...slots.alternativesSamePeriod.slice(0, 2).map((s, i) =>
+                `${i + 2}️⃣ ${formatSlot(s)}`
+            )
+        ].join('\n');
+
+        slotsInstruction = `
+                            🎯 HORÁRIOS REAIS DISPONÍVEIS:
+                            ${slotsText}
+
+                            REGRAS CRÍTICAS:
+                            - Ofereça no máximo 2-3 desses horários
+                            - NÃO invente horário diferente
+                            - Fale sempre "dia + horário" (ex: segunda às 15h)
+                            - Pergunte qual o lead prefere
+                            `;
+    } else if (stage === 'interessado_agendamento') {
+        slotsInstruction = `
+                            ⚠️ Ainda não conseguimos buscar horários disponíveis.
+                            - Se o usuário escolher um período (manhã/tarde), use isso
+                            - Diga que vai verificar com a equipe os melhores horários
+                            - NÃO invente horário específico
+                            `;
+    }
+
+
     const currentPrompt = `${userText}
 
-CONTEXTO:
-LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}
-${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}${historyAgeNote}
-${openingsNote}${closingNote}
+                    CONTEXTO:
+                    LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}
+                    ${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}${historyAgeNote}
+                    ${openingsNote}${closingNote}
 
-INSTRUÇÃO: ${stageInstruction}
+                    INSTRUÇÕES:
+                    - ${stageInstruction}
+                    ${slotsInstruction ? `- ${slotsInstruction}` : ''}
 
-REGRAS:
-- ${shouldGreet ? 'Pode cumprimentar' : '🚨 NÃO use Oi/Olá - conversa ativa'}
-- ${conversationSummary ? '🧠 USE o resumo acima' : '📜 Leia histórico acima'}
-- 🚨 NÃO pergunte o que já foi dito (principalmente idade, se é criança/adulto e a área principal da terapia)
-- Em fluxos de AGENDAMENTO:
-  - Se ainda não tiver nome, telefone ou período definidos, confirme o que JÁ tem e peça só o que falta.
-  - NÃO diga que vai encaminhar pra equipe enquanto faltar alguma dessas informações.
-  - Depois que tiver nome + telefone + período, faça UMA única mensagem dizendo que vai encaminhar os dados.
-- 1-3 frases, tom humano
-- 1 pergunta engajadora (quando fizer sentido)
-- 1 💚 final`;
+                    REGRAS:
+                    - ${shouldGreet ? 'Pode cumprimentar' : '🚨 NÃO use Oi/Olá - conversa ativa'}
+                    - ${conversationSummary ? '🧠 USE o resumo acima' : '📜 Leia histórico acima'}
+                    - 🚨 NÃO pergunte o que já foi dito (principalmente idade, se é criança/adulto e a área principal da terapia)
+                    - Em fluxos de AGENDAMENTO:
+                    - Se ainda não tiver nome, telefone ou período definidos, confirme o que JÁ tem e peça só o que falta.
+                    - NÃO diga que vai encaminhar pra equipe enquanto faltar alguma dessas informações.
+                    - Depois que tiver nome + telefone + período, faça UMA única mensagem dizendo que vai encaminhar os dados.
+                    - 1-3 frases, tom humano
+                    - 1 pergunta engajadora (quando fizer sentido)
+                    - 1 💚 final`;
+
 
     // 🧠 MONTA MENSAGENS COM CACHE MÁXIMO
     const messages = [];

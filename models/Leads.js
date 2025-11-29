@@ -131,6 +131,16 @@ const leadSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  patientInfo: {
+    fullName: String,
+    birthDate: String,   // "YYYY-MM-DD"
+    phone: String,
+    email: String,
+  },
+  pendingPatientInfoForScheduling: { type: Boolean, default: false },
+  pendingSchedulingSlots: { type: mongoose.Schema.Types.Mixed, default: null },
+  pendingChosenSlot: { type: mongoose.Schema.Types.Mixed, default: null },
+
 
 }, {
   timestamps: true,
