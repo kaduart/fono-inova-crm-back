@@ -245,25 +245,22 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         (enrichedContext.mentionedTherapies &&
             enrichedContext.mentionedTherapies.length > 0);
 
-    const isGenericScheduleEval =
-        flags.wantsSchedule &&
-        GENERIC_SCHEDULE_EVAL_REGEX.test(text) &&
-        !hasAnyAgeOrArea;
-
-    if (isFirstMessageEarly && isGenericScheduleEval) {
-        return "Que bom que você quer agendar! Só pra eu te orientar certinho: é pra você ou pra alguma criança/familiar? E hoje a maior preocupação é mais com a fala, com o comportamento, com a aprendizagem ou outra coisa? 💚";
-    }
-
-
     const isVisitFunnel =
-        !flags.wantsSchedule && // 👈 NÃO dispara funil de visita se a pessoa já quer agendar
         (flags.isNewLead || enrichedContext.stage === 'novo') &&
         (flags.visitLeadHot || flags.visitLeadCold || enrichedContext.messageCount <= 2) &&
-        !flags.asksPlans;
+        !flags.asksPlans &&
+        !flags.wantsHumanAgent &&
+        !flags.alreadyScheduled &&
+        (
+            // cenário clássico: ninguém falou em agendar ainda
+            !flags.wantsSchedule
+            ||
+            // cenário de tráfego: falou "quero agendar", mas é MUITO cedo e não temos área/perfil
+            (isFirstMessageEarly && !hasAnyAgeOrArea)
+        );
 
-
-    // Se for claramente início de funil + foco em visita, já empurra instruções extras
-    if (isVisitFunnel && !flags.asksPrice && !flags.wantsHumanAgent && !flags.asksPlans) {
+    // Se for claramente início de funil + foco em visita/descoberta
+    if (isVisitFunnel && !flags.asksPrice) {
         const aiResponse = await callVisitFunnelAI({
             text,
             lead,
@@ -272,6 +269,21 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         });
         const scoped = enforceClinicScope(aiResponse, text);
         return ensureSingleHeart(scoped);
+    }
+
+    const isGenericScheduleEval =
+        flags.wantsSchedule &&
+        GENERIC_SCHEDULE_EVAL_REGEX.test(text) &&
+        !hasAnyAgeOrArea;
+
+    // Só uso esse "script pronto" se NÃO for lead de tráfego
+    if (
+        isFirstMessageEarly &&
+        isGenericScheduleEval &&
+        !flags.visitLeadHot &&
+        !flags.visitLeadCold
+    ) {
+        return "Que bom que você quer agendar! Só pra eu te orientar certinho: é pra você ou pra alguma criança/familiar? E hoje a maior preocupação é mais com a fala, com o comportamento, com a aprendizagem ou outra coisa? 💚";
     }
 
     // 🧠 NOVO: análise do lead pra stage/score/urgência
@@ -289,6 +301,27 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     const extracted = analysis?.extracted || {};
     const intent = analysis?.intent || {};
     const score = analysis?.score ?? lead.conversionScore ?? 50;
+
+    // 🔧 Normaliza especialidade → therapyArea
+    if (extracted.especialidade && !extracted.therapyArea) {
+        const esp = extracted.especialidade.toLowerCase();
+
+        if (/fono/.test(esp)) {
+            extracted.therapyArea = 'fonoaudiologia';
+        } else if (/psico/.test(esp)) {
+            extracted.therapyArea = 'psicologia';
+        } else if (/terapia\s*ocupacional|[^a-z]to[^a-z]/i.test(esp)) {
+            extracted.therapyArea = 'terapia_ocupacional';
+        } else if (/fisioterap/.test(esp)) {
+            extracted.therapyArea = 'fisioterapia';
+        } else if (/psicopedagog/.test(esp)) {
+            extracted.therapyArea = 'psicopedagogia';
+        } else if (/neuropsicolog/.test(esp)) {
+            extracted.therapyArea = 'neuropsicologia';
+        } else {
+            extracted.therapyArea = esp; // fallback bruto
+        }
+    }
 
     // 🧭 CALCULA PRÓXIMO STAGE A PARTIR DA INTELIGÊNCIA
     const currentStage =
@@ -326,6 +359,7 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
         ...enrichedContext,
         stage: newStage,
     };
+
 
     // 🔍 Se o lead entrou no estágio de agendamento e ainda não buscamos slots
     if (
@@ -535,14 +569,10 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
     // ===== 2. TERAPIAS ESPECÍFICAS =====
     const therapies = detectAllTherapies(text);
 
-    if (therapies.length > 0) {
+    if (therapies.length > 0 &&
+        newStage !== 'interessado_agendamento' &&
+        !flags.wantsSchedule) {
         console.log(`🎯 [TERAPIAS] Detectadas: ${therapies.map(t => t.id).join(', ')}`);
-
-        console.log(`🏁 [FLAGS]`, {
-            asksPrice: flags.asksPrice,
-            wantsSchedule: flags.wantsSchedule,
-            userProfile: flags.userProfile
-        });
 
         const aiResponse = await callClaudeWithTherapyData({
             therapies,
@@ -582,8 +612,6 @@ export async function getOptimizedAmandaResponse({ content, userText, lead = {},
             { new: false }
         ).catch(err => console.warn('[LEAD-AREA] falha ao atualizar therapyArea:', err.message));
     }
-
-
 
     // ===== 5. IA COM CONTEXTO =====
     console.log(`🤖 [ORCHESTRATOR] IA | Stage: ${contextWithStage.stage} | Msgs: ${contextWithStage.messageCount}`);
@@ -660,7 +688,7 @@ function extractPatientInfoFromLead(lead, lastMessage) {
 }
 
 /**
- * 🔥 FUNÇÃO DE FUNIL DE VISITA
+ * 🔥 FUNIL INICIAL: AVALIAÇÃO → VISITA (se recusar) 
  */
 async function callVisitFunnelAI({ text, lead, context = {}, flags = {} }) {
     const stage =
@@ -685,8 +713,9 @@ async function callVisitFunnelAI({ text, lead, context = {}, flags = {} }) {
         });
         messages.push({
             role: "assistant",
-            content: "Entendi o contexto. Vou seguir o funil de VISITA PRESENCIAL."
+            content: "Entendi o contexto. Vou seguir o funil de AVALIAÇÃO INICIAL como primeiro passo e, se o lead não quiser avaliação agora, ofereço VISITA PRESENCIAL leve como alternativa."
         });
+
     }
 
     if (context.conversationHistory?.length) {
@@ -1139,6 +1168,36 @@ async function callAmandaAIWithContext(userText, lead, context, flagsFromOrchest
     // 🧩 FLAGS SÓ PRA ENTENDER PERFIL (criança/ado/adulto)
     const flags = flagsFromOrchestrator || detectAllFlags(userText, lead, context);
 
+    // 🔍 Info básicas pro agendamento (visão da IA)
+    const therapyAreaForScheduling =
+        context.therapyArea ||
+        flags.therapyArea ||
+        lead.therapyArea;
+
+    const hasAgeOrProfile =
+        flags.mentionsChild ||
+        flags.mentionsTeen ||
+        flags.mentionsAdult ||
+        context.ageGroup ||
+        /\d+\s*anos?\b/i.test(userText);
+
+    let scheduleInfoNote = '';
+    if (stage === 'interessado_agendamento') {
+        if (!therapyAreaForScheduling && !hasAgeOrProfile) {
+            scheduleInfoNote =
+                'FALTAM DADOS PARA AGENDAR: não sabemos ainda a área (fono, psico, TO, fisio etc.) nem se é criança/adolescente/adulto.' +
+                ' Antes de falar em encaminhar pra equipe ou oferecer horários, faça UMA pergunta simples e natural para descobrir área e perfil.';
+        } else if (!therapyAreaForScheduling) {
+            scheduleInfoNote =
+                'FALTAM DADOS PARA AGENDAR: não sabemos ainda a área (fono, psico, TO, fisio etc.).' +
+                ' Antes de oferecer horários, pergunte de forma acolhedora para qual área a família está buscando ajuda.';
+        } else if (!hasAgeOrProfile) {
+            scheduleInfoNote =
+                'FALTAM DADOS PARA AGENDAR: não sabemos se o caso é criança, adolescente ou adulto.' +
+                ' Antes de oferecer horários, pergunte de forma natural pra quem é (criança/adulto) e, se fizer sentido, idade aproximada.';
+        }
+    }
+
     const systemContext = buildSystemContext(
         flags,
         userText,
@@ -1198,14 +1257,22 @@ async function callAmandaAIWithContext(userText, lead, context, flagsFromOrchest
             stageInstruction = `Lead trocou ${messageCount} msgs. Seja mais direta.`;
             break;
         case 'interessado_agendamento':
-            stageInstruction =
-                'Lead quer agendar! Seu objetivo agora é COLETAR os dados mínimos para enviar pra equipe: ' +
-                'nome completo, telefone e preferência de período (manhã ou tarde). ' +
-                'Se ainda faltar alguma dessas informações, foque em confirmar o que JÁ recebeu ' +
-                'e peça APENAS o que está faltando, em 1-2 frases, sem dizer que já encaminhou. ' +
-                'Só diga que vai encaminhar os dados para a equipe QUANDO já tiver nome + telefone + período. ' +
-                'Nesse momento, faça uma única frase de confirmação (sem repetir isso a cada mensagem).';
+            if (flags.wantsSchedule || flags.choseSlot || context.pendingSchedulingSlots) {
+                // Mensagem atual ainda tá na vibe de horário / vaga / marcar
+                stageInstruction =
+                    'Lead já demonstrou que QUER AGENDAR e a mensagem atual fala de horário, vaga ou dia.' +
+                    ' Seu objetivo é COLETAR os dados mínimos para enviar pra equipe: nome completo, telefone e preferência de período (manhã ou tarde).' +
+                    ' Se ainda faltar alguma dessas informações, confirme o que JÁ recebeu e peça APENAS o que falta, em 1-2 frases, sem dizer que já encaminhou.' +
+                    ' Só diga que vai encaminhar pra equipe QUANDO já tiver nome + telefone + período, e diga isso em uma única frase (sem repetir em todas as respostas).';
+            } else {
+                // Mensagem atual é mais de dúvida / explicação
+                stageInstruction =
+                    'Esse lead já mostrou interesse em agendar em algum momento, mas a mensagem atual é principalmente uma DÚVIDA ou pedido de explicação.' +
+                    ' Priorize responder a dúvida de forma clara e acolhedora, como uma recepcionista experiente.' +
+                    ' No final, se fizer sentido, você pode lembrar de forma leve que é possível agendar uma avaliação quando a família se sentir pronta, sem pressionar e sem oferecer horários agora.';
+            }
             break;
+
         case 'paciente':
             stageInstruction = 'PACIENTE ATIVO! Tom próximo.';
             break;
@@ -1294,6 +1361,7 @@ async function callAmandaAIWithContext(userText, lead, context, flagsFromOrchest
                     CONTEXTO:
                     LEAD: ${lead?.name || 'Desconhecido'} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}
                     ${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ''}${historyAgeNote}
+                    ${scheduleInfoNote ? `\n${scheduleInfoNote}` : ''}
                     ${openingsNote}${closingNote}
 
                     INSTRUÇÕES:
@@ -1303,7 +1371,7 @@ async function callAmandaAIWithContext(userText, lead, context, flagsFromOrchest
                     REGRAS:
                     - ${shouldGreet ? 'Pode cumprimentar' : '🚨 NÃO use Oi/Olá - conversa ativa'}
                     - ${conversationSummary ? '🧠 USE o resumo acima' : '📜 Leia histórico acima'}
-                    - 🚨 NÃO pergunte o que já foi dito (principalmente idade, se é criança/adulto e a área principal da terapia)
+                    - 🚨 NÃO pergunte o que já foi dito (principalmente idade, se é criança/adulto e a área principal)
                     - Em fluxos de AGENDAMENTO:
                     - Se ainda não tiver nome, telefone ou período definidos, confirme o que JÁ tem e peça só o que falta.
                     - NÃO diga que vai encaminhar pra equipe enquanto faltar alguma dessas informações.
@@ -1311,6 +1379,7 @@ async function callAmandaAIWithContext(userText, lead, context, flagsFromOrchest
                     - 1-3 frases, tom humano
                     - 1 pergunta engajadora (quando fizer sentido)
                     - 1 💚 final`;
+
 
 
     // 🧠 MONTA MENSAGENS COM CACHE MÁXIMO
