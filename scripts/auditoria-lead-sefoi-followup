@@ -1,0 +1,34 @@
+const phone = "5562XXXXXXXX"; // troca aqui
+
+const contato = db.contacts.findOne({ phone });
+print("== CONTATO ==");
+printjson(contato);
+
+// 1) followups de lead
+print("\n== FOLLOWUPS PENDENTES ==");
+printjson(
+  db.followups.find({
+    contactId: contato._id,
+    status: { $in: ["scheduled", "pending", "queued"] },
+    type: { $in: ["lead_followup", "lead_recovery", "lead"] }
+  }).toArray()
+);
+
+// 2) messagesQueue (lead)
+print("\n== MESSAGES QUEUE (lead_followup) ==");
+printjson(
+  db.messagesQueue.find({
+    to: phone,
+    status: { $in: ["scheduled", "pending", "queued"] },
+    category: "lead_followup"
+  }).toArray()
+);
+
+// 3) scheduled_messages direto
+print("\n== SCHEDULED_MESSAGES ==");
+printjson(
+  db.scheduled_messages.find({
+    to: phone,
+    status: { $in: ["pending", "scheduled", "queued"] }
+  }).toArray()
+);
