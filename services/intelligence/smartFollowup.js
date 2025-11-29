@@ -5,32 +5,37 @@
  */
 export function calculateOptimalFollowupTime({ lead, score, lastInteraction, attempt = 1 }) {
     const now = new Date();
-    let delayMs = 0;
+    let delayHours = 0;
 
-    // DELAY BASE POR SCORE
-    if (score >= 80) delayMs = 1 * 60 * 60 * 1000; // 1h
-    else if (score >= 50) delayMs = 4 * 60 * 60 * 1000; // 4h
-    else delayMs = 24 * 60 * 60 * 1000; // 24h
+    // base por score (mais espaçado)
+    if (score >= 80) delayHours = 24;      // 1 dia
+    else if (score >= 50) delayHours = 48; // 2 dias
+    else delayHours = 72;                  // 3 dias
 
-    // AUMENTA A CADA TENTATIVA
-    delayMs *= Math.pow(1.5, attempt - 1);
+    // aumentar por tentativa
+    // tentativa 1 → base
+    // tentativa 2 → base * 1.5
+    // tentativa 3+ → base * 2
+    const multiplier = attempt === 1 ? 1 : (attempt === 2 ? 1.5 : 2);
+    let delayMs = delayHours * multiplier * 60 * 60 * 1000;
 
     let scheduledTime = new Date(now.getTime() + delayMs);
 
-    // AJUSTA HORÁRIO COMERCIAL (8h-18h)
+    // horário comercial
     const hour = scheduledTime.getHours();
-    const day = scheduledTime.getDay();
+    let day = scheduledTime.getDay();
 
     if (hour < 8 || hour >= 18) {
         scheduledTime.setHours(9, 0, 0, 0);
         if (hour >= 18) scheduledTime.setDate(scheduledTime.getDate() + 1);
     }
 
-    // FIM DE SEMANA → segunda 9h
-    if (day === 0) { // Domingo
+    // fim de semana → segunda 9h
+    day = scheduledTime.getDay();
+    if (day === 0) {
         scheduledTime.setDate(scheduledTime.getDate() + 1);
         scheduledTime.setHours(9, 0, 0, 0);
-    } else if (day === 6) { // Sábado
+    } else if (day === 6) {
         scheduledTime.setDate(scheduledTime.getDate() + 2);
         scheduledTime.setHours(9, 0, 0, 0);
     }
@@ -38,61 +43,145 @@ export function calculateOptimalFollowupTime({ lead, score, lastInteraction, att
     return scheduledTime;
 }
 
-/**
- * 💬 Gera mensagem contextualizada
- */
-export function generateContextualFollowup({ lead, analysis, attempt = 1 }) {
-    const { extracted, intent, score } = analysis;
-    const firstName = (lead.name || '').split(' ')[0] || 'tudo bem';
 
-    const templates = {
-        first_hot_scheduling: [
-            `Oi ${firstName}! 💚 Vi que você quer agendar ${extracted.queixa ? `avaliação para ${extracted.queixa.replace('_', ' ')}` : 'uma avaliação'}. Temos horários disponíveis ainda esta semana. Posso te ajudar?`,
-            `${firstName}! 💚 Sobre o agendamento, temos vagas nos próximos dias. Qual período funciona melhor?`
-        ],
-        first_hot_price: [
-            `Oi ${firstName}! 💚 A avaliação é R$ 220,00. ${extracted.urgencia === 'alta' ? 'Vi que é urgente - temos horários ainda esta semana!' : 'Posso te ajudar a agendar?'}`,
-            `${firstName}! 💚 Sobre o valor: R$ 220,00 a avaliação. Quer reservar um horário?`
-        ],
-        first_warm: [
-            `Oi ${firstName}! 💚 Passando para saber se ficou alguma dúvida. Posso te ajudar?`,
-            `${firstName}! 💚 Nossa equipe está à disposição para esclarecer qualquer dúvida!`
-        ],
-        first_cold: [
-            `Oi! 💚 Passando para saber se posso te ajudar com alguma informação. Estamos à disposição!`
-        ],
-        second_hot: [
-            `${firstName}, oi! 💚 Não conseguimos finalizar o agendamento. ${extracted.urgencia === 'alta' ? 'Como é urgente, separei horários prioritários.' : 'Ainda tem interesse?'}`
-        ],
-        second_warm: [
-            `${firstName}! 💚 Vi que você ainda não agendou. Ficou alguma dúvida? Estou aqui para ajudar!`
-        ],
-        third_plus: [
-            `Oi! 💚 Esta é minha última tentativa de contato. Se ainda tiver interesse, estaremos sempre à disposição. Equipe Fono Inova! 💚`
-        ]
-    };
+function inferTopic({ extracted = {}, intentPrimary = '', history = [] }) {
+    const pieces = [];
 
-    let selectedTemplates;
+    if (extracted.queixa) pieces.push(String(extracted.queixa));
+    if (extracted.indicacao) pieces.push(String(extracted.indicacao));
+    if (extracted.motivo) pieces.push(String(extracted.motivo));
 
-    if (attempt >= 3) {
-        selectedTemplates = templates.third_plus;
-    } else if (attempt === 2) {
-        selectedTemplates = score >= 80 ? templates.second_hot : templates.second_warm;
-    } else {
-        if (score >= 80) {
-            if (intent.primary === 'agendar_avaliacao' || intent.primary === 'agendar_urgente') {
-                selectedTemplates = templates.first_hot_scheduling;
-            } else if (intent.primary === 'informacao_preco') {
-                selectedTemplates = templates.first_hot_price;
-            } else {
-                selectedTemplates = templates.first_hot_scheduling;
-            }
-        } else if (score >= 50) {
-            selectedTemplates = templates.first_warm;
-        } else {
-            selectedTemplates = templates.first_cold;
+    const historyText = history
+        .map(m => (m.content || m.text || '').toLowerCase())
+        .join(' | ');
+
+    const blob = (pieces.join(' | ') + ' | ' + historyText).toLowerCase();
+
+    const childName = extracted.childName || extractChildNameFromHistory(history);
+
+    // 👉 se tiver nome, usa forma neutra (de João / de Ana)
+    if (childName) {
+        return `o acompanhamento de ${childName}`;
+    }
+
+    // 👇 Casos de família/criança (sem nome)
+    if (blob.includes('meu filho') || blob.includes('meu filho ') || blob.includes('meu filho,') || blob.includes('meu filho o ')) {
+        return 'o acompanhamento do seu filho';
+    }
+
+    if (blob.includes('minha filha') || blob.includes('minha filha ') || blob.includes('minha filha,') || blob.includes('minha filha ')) {
+        return 'o acompanhamento da sua filha';
+    }
+
+    if (blob.includes('criança') || blob.includes('crianca') || blob.includes('meu neto') || blob.includes('minha neta')) {
+        return 'o acompanhamento da criança';
+    }
+
+    // 👇 Alzheimer / neuro
+    if (blob.includes('alzheimer') || blob.includes('demência') || blob.includes('demencia')) {
+        return 'a avaliação neuropsicológica para investigar Alzheimer';
+    }
+
+    if (blob.includes('neuropsicol')) {
+        return 'a avaliação neuropsicológica';
+    }
+
+    // 👇 escola / aprendizagem
+    if (blob.includes('escola') || blob.includes('aprendizado') || blob.includes('dificuldade para aprender')) {
+        return 'a avaliação para investigar dificuldades de aprendizagem';
+    }
+
+    // 👇 psicologia infantil
+    if (blob.includes('psicanalista') || blob.includes('psicologia infantil') || blob.includes('psicóloga infantil') || blob.includes('psicologa infantil')) {
+        return 'o acompanhamento de psicologia infantil';
+    }
+
+    // 👇 fono
+    if (blob.includes('atraso de fala') || blob.includes('fala') || blob.includes('fonoaudiolog')) {
+        return 'a terapia fonoaudiológica';
+    }
+
+    return 'o atendimento na Fono Inova';
+}
+
+
+function extractChildNameFromHistory(history = []) {
+    const text = history
+        .map(m => (m.content || m.text || ''))
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    // Ex: "meu filho o João Guilherme", "meu filho João Carlos 8 anos"
+    const regexes = [
+        /meu filho(?: o)? ([A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÖØ-öø-ÿ]+(?: [A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÖØ-öø-ÿ]+){0,2})/g,
+        /minha filha(?: a)? ([A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÖØ-öø-ÿ]+(?: [A-ZÀ-ÖØ-Ý][A-Za-zÀ-ÖØ-öø-ÿ]+){0,2})/g
+    ];
+
+    for (const r of regexes) {
+        const match = r.exec(text);
+        if (match && match[1]) {
+            return match[1].trim();
         }
     }
 
-    return selectedTemplates[Math.floor(Math.random() * selectedTemplates.length)];
+    return null;
+}
+
+
+/**
+ * 💬 Gera mensagem contextualizada
+ */
+export function generateContextualFollowup({ lead, analysis, attempt = 1, history = [] }) {
+    const { extracted = {}, intent = {}, score = lead.conversionScore || 50 } = analysis || {};
+
+    // nome sanitizado
+    let firstName = ((lead?.name || '').trim().split(/\s+/)[0]) || '';
+    const blacklist = ['contato', 'cliente', 'lead', 'paciente'];
+    if (firstName && blacklist.includes(firstName.toLowerCase())) {
+        firstName = '';
+    }
+
+    const greeting = firstName ? `Oi ${firstName}! 💚` : 'Oi! 💚';
+    const intentPrimary = (intent.primary || '').toLowerCase();
+    const topic = inferTopic({ extracted, intentPrimary, history });
+
+    // === TENTATIVA 3+ → despedida gentil, sem empurrar ===
+    if (attempt >= 3) {
+        return `${greeting} Esta é a minha última mensagem por aqui, só pra reforçar que, se você decidir seguir com ${topic}, a Fono Inova fica à disposição. Pode chamar quando for um bom momento pra você.`;
+    }
+
+    // === TENTATIVA 2 → reforço leve, sem pressão ===
+    if (attempt === 2) {
+        if (score >= 80) {
+            return `${greeting} Vi que a gente ainda não finalizou ${topic}. Se quiser, posso te passar agora alguns horários disponíveis pra facilitar.`;
+        }
+
+        return `${greeting} Passando só pra saber se ficou alguma dúvida sobre ${topic} ou se prefere deixar pra depois. Se eu puder te ajudar com algo específico, é só me falar.`;
+    }
+
+    // === TENTATIVA 1 → mais direta, mas ainda humana ===
+    if (intentPrimary === 'agendar_avaliacao' || intentPrimary === 'agendar_urgente') {
+        return `${greeting} Sobre ${topic}, tenho alguns horários livres nos próximos dias. Você prefere período da manhã ou da tarde pra gente tentar encaixar?`;
+    }
+
+    if (intentPrimary === 'informacao_preco') {
+        const preco =
+            extracted.precoAvaliacao ||
+            extracted.preco ||
+            'a avaliação inicial é R$ 220,00';
+
+        return `${greeting} Sobre os valores: ${preco}. Se fizer sentido pra você, posso já te ajudar a escolher um horário pra começar.`;
+    }
+
+    if (score >= 70) {
+        return `${greeting} Só passando pra saber se ficou alguma dúvida sobre ${topic}. Se quiser, posso te mandar opções de horários ou explicar melhor como funciona o processo.`;
+    }
+
+    if (score >= 40) {
+        return `${greeting} Vi seu contato sobre ${topic} e queria saber se ainda posso te ajudar com alguma informação ou orientação.`;
+    }
+
+    // bem frio / lead distante
+    return `${greeting} Notei que você entrou em contato sobre ${topic}. Se ainda fizer sentido pra você, fico à disposição pra te ajudar por aqui.`;
 }

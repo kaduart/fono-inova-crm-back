@@ -12,10 +12,10 @@ import Message from "../models/Message.js";
 
 import { followupQueue } from "../config/bullConfig.js";
 import { getIo } from "../config/socket.js";
+import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import { normalizeE164BR } from "../utils/phone.js";
 
 // Amanda 2.0
-import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import {
   calculateOptimalFollowupTime,
   generateContextualFollowup
@@ -27,9 +27,7 @@ import { sendTemplateMessage, sendTextMessage } from "../services/whatsappServic
 
 await mongoose.connect(process.env.MONGO_URI);
 
-const FOLLOWUP_WINDOW_DAYS = 3;      // só pra log se quiser usar depois
-const MAX_ATTEMPTS_PER_LEAD = 3;     // ⛔ máximo de contatos por lead
-const MIN_INTERVAL_HOURS = 24;
+const MAX_ATTEMPTS_PER_LEAD = 3;
 
 const worker = new Worker(
   followupQueue.name,
@@ -76,17 +74,16 @@ const worker = new Worker(
         (m) => m.direction === "inbound"
       );
 
+
       // Tentativas anteriores (todas que já foram enviadas pra esse lead)
       const previousAttempts = await Followup.countDocuments({
         lead: lead._id,
         status: "sent"
       });
 
-      console.log(
-        chalk.blue(
-          `[AMANDA] Lead: ${lead.name} | Tentativas já feitas: ${previousAttempts}`
-        )
-      );
+
+      const currentAttempt = previousAttempts + 1;
+
 
       // se já bateu o limite, NÃO manda mais nada
       if (previousAttempts >= MAX_ATTEMPTS_PER_LEAD) {
@@ -105,95 +102,71 @@ const worker = new Worker(
         return;
       }
 
-            let analysis = null;
+      let analysis = null;
       let shouldStopByIntent = false;
 
+      const lastInboundText = (lastInbound?.content || "").toLowerCase();
+
+      // tenta usar Amanda 2.0 se tiver mensagem recente do lead
       if (lastInbound?.content) {
         try {
           analysis = await analyzeLeadMessage({
             text: lastInbound.content,
             lead,
-            history: recentMessages.map((m) => m.content || "")
+            history: recentMessages.map(m => m.content || "")
           });
-
-          console.log(
-            chalk.green(
-              `[AMANDA] Análise: Score=${analysis.score} | Segment=${analysis.segment.emoji} | Intent=${analysis.intent.primary}`
-            )
-          );
-
-          await Lead.findByIdAndUpdate(lead._id, {
-            conversionScore: analysis.score,
-            "qualificationData.extractedInfo": analysis.extracted,
-            "qualificationData.intent": analysis.intent.primary,
-            "qualificationData.sentiment": analysis.intent.sentiment,
-            lastScoreUpdate: new Date(),
-            $push: {
-              scoreHistory: {
-                score: analysis.score,
-                reason: `${analysis.intent.primary} - ${analysis.intent.sentiment}`,
-                date: new Date()
-              }
-            }
-          });
-
-          const intentPrimary = (analysis.intent?.primary || "").toLowerCase();
-
-          // 👇 1) Intenções de "não quero mais / sem interesse"
-          const uninterestedIntents = [
-            "sem_interesse",
-            "sem interesse",
-            "nao_interessado",
-            "não_interessado",
-            "not_interested"
-          ];
-
-          // 👇 2) Intenções de "já resolvi / já agendei"
-          const resolvedIntents = [
-            "consulta_agendada",
-            "agendado",
-            "ja_agendou",
-            "já_agendou",
-            "atendimento_marcado",
-            "resolved",
-            "problema_resolvido"
-          ];
-
-          if (uninterestedIntents.includes(intentPrimary)) {
-            // caso 1: não tem interesse
-            shouldStopByIntent = true;
-
-            await Lead.findByIdAndUpdate(lead._id, {
-              status: "sem_interesse"
-            });
-
-            console.log(
-              chalk.yellow(
-                `[AMANDA] Lead ${lead._id} sinalizou DESINTERESSE (${intentPrimary}). Não enviar mais follow-ups.`
-              )
-            );
-          } else if (resolvedIntents.includes(intentPrimary)) {
-            // caso 2: já resolveu / já agendou (ex: pai do João Guilherme)
-            shouldStopByIntent = true;
-
-            await Lead.findByIdAndUpdate(lead._id, {
-              status: "em_andamento" // ou 'virou_paciente', se fizer mais sentido no teu funil
-            });
-
-            console.log(
-              chalk.yellow(
-                `[AMANDA] Lead ${lead._id} informou que JÁ RESOLVEU (${intentPrimary}). Não enviar mais follow-ups.`
-              )
-            );
-          }
-
-        } catch (aiError) {
+        } catch (e) {
           console.warn(
-            chalk.yellow("⚠️ Erro na análise Amanda 2.0:"),
-            aiError.message
+            chalk.yellow("⚠️ Erro ao rodar leadIntelligence no worker:"),
+            e.message
           );
         }
       }
+
+      if (analysis) {
+        await Lead.findByIdAndUpdate(lead._id, {
+          conversionScore: analysis.score,
+          lastScoreUpdate: new Date(),
+          "qualificationData.extractedInfo": analysis.extracted,
+          "qualificationData.intent": analysis.intent.primary,
+          "qualificationData.sentiment": analysis.intent.sentiment
+        }).catch(() => { });
+      }
+
+      // heurística simples, independente da IA
+      const hardStopPatterns = [
+        "não preciso mais",
+        "nao preciso mais",
+        "não preciso mais da consulta",
+        "nao preciso mais da consulta",
+        "ja agendei",
+        "já agendei",
+        "minha esposa conseguiu agendar",
+        "minha esposa marcou",
+        "já está agendado",
+        "ja está agendado",
+        "já está marcado",
+        "ja está marcado",
+        "não tenho interesse",
+        "nao tenho interesse",
+        "não quero",
+        "nao quero"
+      ];
+
+      if (lastInboundText && hardStopPatterns.some(p => lastInboundText.includes(p))) {
+        shouldStopByIntent = true;
+
+        await Lead.findByIdAndUpdate(lead._id, {
+          status: "sem_interesse" // ou 'em_andamento', se for caso de já agendou
+        });
+
+        console.log(
+          chalk.yellow(
+            `[AMANDA] Hard stop por texto detectado para lead ${lead._id}. Não enviar mais follow-ups.`
+          )
+        );
+      }
+
 
       // Se a pessoa já sinalizou desinteresse, não envia nada e não agenda próximo
       if (shouldStopByIntent) {
@@ -211,22 +184,20 @@ const worker = new Worker(
       // =====================================================
       let messageToSend = followup.message || "";
 
-      if (followup.aiOptimized || !messageToSend.trim()) {
+      if (!messageToSend.trim()) {
         try {
           if (analysis) {
             // Amanda 2.0
             messageToSend = generateContextualFollowup({
               lead,
               analysis,
-              attempt: previousAttempts + 1
+              attempt: currentAttempt,
+              history: recentMessages
             });
 
             console.log(
               chalk.green(
-                `[AMANDA 2.0] Mensagem gerada: "${messageToSend.substring(
-                  0,
-                  80
-                )}..."`
+                `[AMANDA 2.0] Mensagem gerada (tentativa ${currentAttempt}): "${messageToSend.substring(0, 80)}..."`
               )
             );
           } else {
@@ -234,7 +205,7 @@ const worker = new Worker(
             const optimized = await generateFollowupMessage(lead);
             if (optimized?.trim()) {
               messageToSend = optimized;
-              console.log(chalk.yellow(`[AMANDA 1.0] Fallback usado`));
+              console.log(chalk.yellow(`[AMANDA 1.0] Fallback usado no worker`));
             }
           }
         } catch (e) {
@@ -245,7 +216,6 @@ const worker = new Worker(
 
           const rawName = (lead?.name || "").trim();
           let firstName = rawName.split(/\s+/)[0] || "";
-
           const blacklist = ["contato", "cliente", "lead", "paciente"];
           if (firstName && blacklist.includes(firstName.toLowerCase())) {
             firstName = "";
@@ -257,8 +227,8 @@ const worker = new Worker(
             messageToSend = `Oi! 💚 Passando para saber se posso te ajudar. Estamos à disposição!`;
           }
         }
-
       }
+
 
       // Personalização
       let sentText = messageToSend;
@@ -426,7 +396,6 @@ const worker = new Worker(
       // =====================================================
       // 🔁 5. AGENDAR PRÓXIMO FOLLOW-UP (DRIP)
       // =====================================================
-      const currentAttempt = previousAttempts + 1; // esta mensagem que acabamos de enviar
 
       if (currentAttempt < MAX_ATTEMPTS_PER_LEAD) {
         const nextAttemptNumber = currentAttempt + 1;
@@ -439,13 +408,15 @@ const worker = new Worker(
           attempt: nextAttemptNumber
         });
 
-        const MIN_INTERVAL_MS = MIN_INTERVAL_HOURS * 60 * 60 * 1000;
+        const minHours = getMinIntervalHoursForAttempt(nextAttemptNumber);
+        const MIN_INTERVAL_MS = minHours * 60 * 60 * 1000;
         const minAllowed = new Date(Date.now() + MIN_INTERVAL_MS);
+
         if (nextTime < minAllowed) {
           nextTime = minAllowed;
         }
 
-        await Followup.create({
+        const nextFollowup = await Followup.create({
           lead: lead._id,
           stage: "follow_up",
           scheduledAt: nextTime,
@@ -456,13 +427,17 @@ const worker = new Worker(
           note: `Auto-gerado pela Amanda 2.0 (tentativa ${nextAttemptNumber}/${MAX_ATTEMPTS_PER_LEAD})`
         });
 
-        console.log(
-          chalk.green(
-            `[AMANDA] Próximo follow-up agendado para ${nextTime.toLocaleString(
-              "pt-BR"
-            )} (tentativa ${nextAttemptNumber}/${MAX_ATTEMPTS_PER_LEAD})`
-          )
+        const delayMsNext = nextTime.getTime() - Date.now();
+
+        await followupQueue.add(
+          "followup",
+          { followupId },
+          {
+            delay: delayMs
+          }
         );
+
+
       } else {
         console.log(
           chalk.yellow(
@@ -537,6 +512,18 @@ async function handleFollowupError(followupId, error) {
       chalk.red("❌ Erro ao atualizar follow-up falhado:"),
       updateError
     );
+  }
+}
+
+// função auxiliar
+function getMinIntervalHoursForAttempt(attemptNumber) {
+  switch (attemptNumber) {
+    case 2: // indo da 1ª para a 2ª
+      return 48; // 2 dias
+    case 3: // indo da 2ª para a 3ª
+      return 72; // 3 dias
+    default:
+      return 24;
   }
 }
 
