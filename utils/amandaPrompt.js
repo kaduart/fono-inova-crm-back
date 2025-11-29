@@ -25,7 +25,9 @@ export function deriveFlagsFromText(text = "") {
   return {
     asksPrice: /(pre[çc]o|valor|custa|quanto|mensal|pacote)/i.test(t),
     insistsPrice: /(s[oó]|apenas)\s*o\s*pre[çc]o|fala\s*o\s*valor|me\s*diz\s*o\s*pre[çc]o/i.test(t),
-    wantsSchedule: /(agend|marcar|hor[aá]rio|consulta|vaga)/i.test(t),
+   wantsSchedule: /\b(agendar|marcar|agendamento|remarcar|remarcar)\b/i.test(text) ||
+                  /\b(teria\s+vaga|tem\s+vaga|tem\s+hor[áa]rio|conseguir\s+um\s+hor[áa]rio)\b/i.test(text) ||
+                  /\b(hor[áa]rio\s+pra\s+(consulta|avalia[çc][aã]o))\b/i.test(text),
     asksAddress: /(onde|endere[cç]o|local|mapa|como\s*chegar)/i.test(t),
     asksPayment: /(pagamento|pix|cart[aã]o|dinheiro|parcel)/i.test(t),
     asksPlans: /(ipasgo|unimed|amil|plano|conv[eê]nio)/i.test(t),
