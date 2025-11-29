@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { NON_BLOCKING_OPERATIONAL_STATUSES } from '../constants/appointmentStatus.js';
 import Appointment from '../models/Appointment.js';
 import Doctor from '../models/Doctor.js';
 
@@ -6,7 +7,6 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     const { doctorId, patientId, date, time } = req.body;
     const appointmentId = req.params.id;
 
-    // Verificação mais robusta de campos obrigatórios
     if (!doctorId || !patientId || !date || !time) {
         return res.status(400).json({
             error: "Dados incompletos para verificação de conflitos",
@@ -20,56 +20,50 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     }
 
     try {
-        // Verificação de conflitos para o médico - versão mais segura
+        const doctorObjectId = new mongoose.Types.ObjectId(doctorId);
+        const patientObjectId = new mongoose.Types.ObjectId(patientId);
+
+        // 🔹 Conflito para o médico
         const doctorConflict = await Appointment.findOne({
-            doctor: new mongoose.Types.ObjectId(doctorId),
+            doctor: doctorObjectId,
             date,
             time,
-            operationalStatus: { $ne: 'canceled' },
-            _id: { $ne: appointmentId }
-        }).lean();
+            // 👇 mesma regra do índice & available-slots
+            operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
+            ...(appointmentId && { _id: { $ne: appointmentId } }) // pra atualização
+        }).populate('patient', 'fullName').lean();
 
         if (doctorConflict) {
-            const conflictInfo = {
-                appointmentId: doctorConflict._id,
-                // Acesso seguro a fullName com fallback
-                patientName: doctorConflict.patient?.fullName
-                    || doctorConflict.patientId?.fullName
-                    || 'Nome não disponível',
-                existingAppointment: doctorConflict
-            };
-
             return res.status(409).json({
                 error: 'Conflito de agenda médica',
                 message: 'O médico já possui um compromisso neste horário',
-                conflict: conflictInfo,
+                conflict: {
+                    appointmentId: doctorConflict._id,
+                    patientName: doctorConflict.patient?.fullName || 'Nome não disponível',
+                    existingAppointment: doctorConflict
+                },
                 suggestion: 'Por favor, escolha outro horário ou médico'
             });
         }
 
-        // Verificação de conflitos para o paciente - versão mais segura
+        // 🔹 Conflito para o paciente
         const patientConflict = await Appointment.findOne({
-            patient: new mongoose.Types.ObjectId(patientId),
+            patient: patientObjectId,
             date,
             time,
-            operationalStatus: { $ne: 'canceled' },
-            _id: { $ne: appointmentId }
-        }).lean();
+            operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
+            ...(appointmentId && { _id: { $ne: appointmentId } })
+        }).populate('doctor', 'fullName').lean();
 
         if (patientConflict) {
-            const conflictInfo = {
-                appointmentId: patientConflict._id,
-                // Acesso seguro a fullName com fallback
-                doctorName: patientConflict.doctor?.fullName
-                    || patientConflict.doctorId?.fullName
-                    || 'Nome não disponível',
-                existingAppointment: patientConflict
-            };
-
             return res.status(409).json({
                 error: 'Conflito de agenda do paciente',
                 message: 'O paciente já possui um compromisso neste horário',
-                conflict: conflictInfo,
+                conflict: {
+                    appointmentId: patientConflict._id,
+                    doctorName: patientConflict.doctor?.fullName || 'Nome não disponível',
+                    existingAppointment: patientConflict
+                },
                 suggestion: 'Por favor, escolha outro horário ou paciente'
             });
         }
@@ -94,38 +88,44 @@ export const checkAppointmentConflicts = async (req, res, next) => {
 };
 
 
+
 export const getAvailableTimeSlots = async (req, res) => {
     try {
         const { doctorId, date } = req.query;
 
-        if (!doctorId || !date)
+        if (!doctorId || !date) {
             return res.status(400).json({ error: 'doctorId e date são obrigatórios' });
+        }
 
         const doctor = await Doctor.findById(doctorId).lean();
-        if (!doctor) return res.status(404).json({ error: 'Médico não encontrado' });
+        if (!doctor) {
+            return res.status(404).json({ error: 'Médico não encontrado' });
+        }
 
-        // 🗓️ Dia da semana (0 = domingo)
-        const dayOfWeek = new Date(`${date}T12:00:00Z`).getDay();
+        // 🗓️ Dia da semana (forçando horário "meio-dia" em SP pra evitar bug de fuso)
+        const dayOfWeek = new Date(`${date}T12:00:00-03:00`).getDay();
         const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-        const dailyAvailability = doctor.weeklyAvailability.find(d => d.day === days[dayOfWeek]);
 
-        if (!dailyAvailability?.times?.length) return res.json([]);
+        const dailyAvailability = doctor.weeklyAvailability
+            ?.find(d => d.day === days[dayOfWeek]);
+
+        if (!dailyAvailability?.times?.length) {
+            return res.json([]); // nenhum horário cadastrado nesse dia
+        }
 
         // 🧩 Buscar TODOS agendamentos não cancelados nesse dia/médico
         const appointments = await Appointment.find({
             doctor: doctorId,
             date,
-            $nor: [
-                { operationalStatus: { $in: ['canceled', 'cancelado', 'cancelada'] } },
-                { clinicalStatus: { $in: ['canceled', 'cancelado', 'cancelada'] } },
-            ],
+            operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES }
         }).select('time');
 
-        const bookedTimes = appointments.map(a => a.time);
+        // transforma em Set pra lookup O(1)
+        const bookedTimes = new Set(appointments.map(a => a.time));
 
         // 🔹 Remove os horários ocupados
         const availableSlots = dailyAvailability.times.filter(
-            (t) => !bookedTimes.includes(t)
+            (t) => !bookedTimes.has(t)
         );
 
         return res.json(availableSlots);

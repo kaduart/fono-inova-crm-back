@@ -16,12 +16,13 @@ import Session from '../models/Session.js';
 import { handlePackageSessionUpdate, syncEvent } from '../services/syncService.js';
 import { updateAppointmentFromSession, updatePatientAppointments } from '../utils/appointmentUpdater.js';
 import { runTransactionWithRetry } from '../utils/transactionRetry.js';
+import { flexibleAuth } from '../middleware/amandaAuth.js';
 
 dotenv.config();
 const router = express.Router();
 
 // Verifica horários disponíveis
-router.get('/available-slots', auth, getAvailableTimeSlots);
+router.get('/available-slots', auth, flexibleAuth, getAvailableTimeSlots);
 
 // Cria um novo agendamento
 router.post('/', checkAppointmentConflicts, async (req, res) => {
@@ -469,7 +470,6 @@ router.get('/with-appointments', async (req, res) => {
         res.status(500).json({ success: false, message: e.message });
     }
 });
-
 
 // Busca agendamentos por especialidade
 router.get('/by-specialty/:specialty', auth, async (req, res) => {
@@ -1382,7 +1382,6 @@ router.get('/stats', auth, async (req, res) => {
     }
 });
 
-
 router.patch('/:id/clinical-status', validateId, auth, async (req, res) => {
     try {
         const { status } = req.body;
@@ -1423,5 +1422,43 @@ router.patch('/:id/clinical-status', validateId, auth, async (req, res) => {
         res.status(500).json({ error: 'Erro interno no servidor' });
     }
 });
+
+// controllers/appointmentController.js
+export const bookFromAmanda = async (req, res) => {
+    try {
+        const { leadId, doctorId, date, time, source = 'amanda' } = req.body;
+
+        if (!leadId || !doctorId || !date || !time) {
+            return res.status(400).json({ error: 'Campos obrigatórios: leadId, doctorId, date, time' });
+        }
+
+        // 1) garante que o slot ainda está livre
+        const stillFree = await isSlotFree(doctorId, date, time);
+        if (!stillFree) {
+            return res.status(409).json({ error: 'Horário acabou de ser ocupado' });
+        }
+
+        // 2) cria Appointment
+        const appointment = await Appointment.create({
+            lead: leadId,
+            doctor: doctorId,
+            date,
+            time,
+            source,
+            operationalStatus: 'scheduled',
+            clinicalStatus: 'scheduled',
+        });
+
+        // 3) atualiza lead -> status/agendado
+        await Leads.findByIdAndUpdate(leadId, {
+            $set: { status: 'agendado' }
+        });
+
+        return res.json({ success: true, appointment });
+    } catch (err) {
+        console.error('❌ Erro bookFromAmanda:', err);
+        return res.status(500).json({ error: err.message });
+    }
+};
 
 export default router;
