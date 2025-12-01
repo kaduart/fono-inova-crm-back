@@ -3,7 +3,6 @@
 import mongoose from 'mongoose';
 import { redisConnection as redis } from '../config/redisConnection.js';
 import { getIo } from "../config/socket.js";
-import Contacts from '../models/Contacts.js';
 import Followup from "../models/Followup.js";
 import Lead from '../models/Leads.js';
 import Message from "../models/Message.js";
@@ -13,6 +12,7 @@ import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
 import { normalizeE164BR } from "../utils/phone.js";
+import Contacts from '../models/Contacts.js';
 
 const AUTO_TEST_NUMBERS = [
     "5561981694922", "5561981694922", "556292013573", "5562992013573"
