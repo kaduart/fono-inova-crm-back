@@ -1,10 +1,15 @@
-// models/Contact.ts
-import mongoose, { Schema } from 'mongoose';
+import mongoose from "mongoose";
 
-const ContactSchema = new Schema({
-  name: { type: String, required: true },
-  phone: { type: String, required: true, unique: true },
-  avatar: { type: String },
-});
+const contactSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    phone: { type: String, required: true, unique: true },
+    avatar: String,
+    tags: [String],
+    notes: String,
+    lastMessageAt: { type: Date },
+  },
+  { timestamps: true }
+);
 
-export default mongoose.model('Contact', ContactSchema);
+export default mongoose.model("Contact", contactSchema);
