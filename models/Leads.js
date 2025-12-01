@@ -12,7 +12,7 @@ const interactionSchema = new mongoose.Schema({
 });
 
 const leadSchema = new mongoose.Schema({
-  name: { type: String, required: true },
+  name: { type: String, default: null },
   contact: {
     email: { type: String, lowercase: true, trim: true },
     phone: { type: String, trim: true },
