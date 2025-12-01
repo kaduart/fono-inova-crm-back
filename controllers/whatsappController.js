@@ -8,10 +8,12 @@ import Followup from "../models/Followup.js";
 import Lead from '../models/Leads.js';
 import Message from "../models/Message.js";
 import { describeWaImage, transcribeWaAudio } from "../services/aiAmandaService.js";
+import { createSmartFollowupForLead } from "../services/followupOrchestrator.js";
 import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
 import { normalizeE164BR } from "../utils/phone.js";
+
 const AUTO_TEST_NUMBERS = [
     "5561981694922", "5561981694922", "556292013573", "5562992013573"
 ];
@@ -890,11 +892,13 @@ async function processInboundMessage(msg, value) {
         console.log("🔍 Buscando contact para:", from);
         let contact = await Contact.findOne({ phone: from });
         if (!contact) {
-            contact = await Contact.create({
-                phone: from,
-                name: msg.profile?.name || null
-            });
-            console.log("✅ Novo contact criado:", contact._id);
+            if (!contact) {
+                contact = await Contact.create({
+                    phone: from,
+                    name: msg.profile?.name || `WhatsApp ${from.slice(-4)}`
+                });
+                console.log("✅ Novo contact criado:", contact._id);
+            }
         }
 
         console.log("🔍 Buscando lead para:", from);
