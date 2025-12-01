@@ -1,17 +1,15 @@
 // utils/flagsDetector.js - DETECTA TODAS AS FLAGS
 
-import { deriveFlagsFromText } from './amandaPrompt.js';
+import { deriveFlagsFromText, inferTopic } from './amandaPrompt.js';
+
+// utils/flagsDetector.js - DETECTA TODAS AS FLAGS
+
+import { deriveFlagsFromText, inferTopic } from './amandaPrompt.js';
 
 export function detectAllFlags(text = "", lead = {}, context = {}) {
     const t = (text || "").toLowerCase().trim();
 
     // 🧩 FLAGS BASE vindas do amandaPrompt
-    // (asksPrice, insistsPrice, wantsSchedule, asksAddress, asksPayment, asksPlans,
-    // asksDuration, asksAgeMinimum, asksRescheduling,
-    // mentionsTEA_TDAH, mentionsSpeechTherapy, asksPsychopedagogy,
-    // asksCAA, mentionsTOD, mentionsABA, mentionsMethodPrompt,
-    // asksAreas, asksDays, asksTimes, mentionsAdult/Child/Teen,
-    // wantsHumanAgent, etc.)
     const baseFlags = deriveFlagsFromText(text || "") || {};
 
     // 🙏 Encerramento / agradecimento simples
@@ -34,7 +32,8 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
         messageCount <= 3;
 
     // sinais de “quero resolver logo”
-    const wantsFastSolution = /(?:come[cç]ar logo|quero come[cç]ar|o quanto antes|o mais r[aá]pido poss[ií]vel|urgente|urg[êe]ncia)/i.test(t);
+    const wantsFastSolution =
+        /(?:come[cç]ar logo|quero come[cç]ar|o quanto antes|o mais r[aá]pido poss[ií]vel|urgente|urg[êe]ncia)/i.test(t);
 
     // baseFlags.wantsSchedule já vem do deriveFlagsFromText
     const wantsSchedule = !!baseFlags.wantsSchedule;
@@ -60,6 +59,45 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
         (visitLeadHot || visitLeadCold || messageCount <= 2) &&
         !baseFlags.wantsHumanAgent; // se pediu atendente humana, IA sai do caminho
 
+    // 🔧 NOVO: resposta de período/dia (ex.: "a tarde", "sexta", "qualquer")
+    const answersPeriodOrDay =
+        /\b(manh[ãa]|tarde|noite|qualquer|tanto faz)\b/.test(t) ||
+        /\b(seg(unda)?|ter(ça|ca)?|qua(rta)?|qui(nta)?|sex(ta)?|s[áa]bado|sabado|dom(ingo)?)\b/.test(t);
+
+    // 🔧 NOVO: confirmação "sim / ok / pode ser"
+    const isAffirmative =
+        /\b(sim|isso mesmo|isso|ok|pode ser|fechado|combinado|t[áa]\s*bom|ta bom|beleza|blz|uhum|aham)\b/.test(t);
+
+    // 🔧 NOVO: última mensagem da Amanda (se o orchestrator passar)
+    const lastBotRaw = context.lastBotMessage || "";
+    const lastBotMessage = typeof lastBotRaw === "string"
+        ? lastBotRaw.toLowerCase()
+        : (lastBotRaw?.content || "").toLowerCase();
+
+    // 🔧 NOVO: Amanda perguntou sobre horário / período / agendar?
+    const lastBotAskedSchedule =
+        /\b(agendar|marcar|consulta|avalia[çc][aã]o|visita)\b/.test(lastBotMessage) ||
+        /prefere.*semana/.test(lastBotMessage) ||
+        /prefere.*manh[ãa].*tarde/.test(lastBotMessage) ||
+        /qual\s+per[ií]odo\s+funciona\s+melhor/.test(lastBotMessage) ||
+        /qual\s+turno\s+fica\s+melhor/.test(lastBotMessage);
+
+    // 🔧 NOVO: estamos num fluxo de agendamento?
+    const inSchedulingFlow =
+        !!lead?.pendingSchedulingSlots ||
+        !!lead?.pendingChosenSlot ||
+        !!lead?.autoBookingContext?.active ||
+        lastBotAskedSchedule;
+
+    // 🔧 NOVO: quer agendar AGORA (bug do "a tarde" e "sim" resolve aqui)
+    const wantsSchedulingNow =
+        wantsSchedule ||                     // palavras tipo "agendar", "marcar", etc.
+        (answersPeriodOrDay && inSchedulingFlow) || // "a tarde", "sexta" depois da Amanda perguntar
+        (isAffirmative && inSchedulingFlow);        // "sim / pode ser" respondendo proposta de agendamento
+
+    // 🔧 NOVO: topic (neuropsicologica, psicopedagogia, teste_linguinha, etc.)
+    const topic = inferTopic(text || "");
+
     return {
         // ✅ Tudo que vem do prompt central
         ...baseFlags,
@@ -82,6 +120,13 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
         visitLeadHot,
         visitLeadCold,
         isVisitFunnel,
+
+        // 🧠 NOVO: info pra booking
+        topic,
+        answersPeriodOrDay,
+        isAffirmative,
+        inSchedulingFlow,
+        wantsSchedulingNow,
     };
 }
 

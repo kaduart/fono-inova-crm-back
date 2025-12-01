@@ -73,10 +73,19 @@ export async function fetchAvailableSlotsForDoctor({ doctorId, date }) {
  */
 export async function findAvailableSlots({
     therapyArea,
-    preferredDay = null,
-    preferredPeriod = null,
+    specialties = [],
+    preferredDay,
+    preferredPeriod,
     daysAhead = 7,
 }) {
+    const doctorFilter = {
+        active: true,
+        specialty: therapyArea,
+    };
+
+    if (Array.isArray(specialties) && specialties.length) {
+        doctorFilter.specialties = { $in: specialties };
+    }
     console.log("🔍 [BOOKING] Buscando slots:", {
         therapyArea,
         preferredDay,
@@ -84,13 +93,12 @@ export async function findAvailableSlots({
     });
 
     // pega todos os profissionais da área (principal ou extra)
-    const doctors = await Doctor.find({
-        active: true,
-        $or: [
-            { specialty: therapyArea },
-            { specialties: therapyArea },
-        ],
-    }).lean();
+    const doctors = await Doctor.find(doctorFilter).lean();
+
+    if (!doctors.length) {
+        return null;
+    }
+
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
