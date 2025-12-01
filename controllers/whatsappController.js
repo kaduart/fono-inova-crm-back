@@ -90,7 +90,7 @@ export const whatsappController = {
             if (leadId) {
                 leadDoc = await Lead.findById(leadId).lean();
             } else {
-                leadDoc = await Lead.findOne({ 'contacts.phone': to }).lean();
+                leadDoc = await Lead.findOne({ 'contact.phone': to }).lean();
             }
 
             const resolvedLeadId = leadDoc?._id || leadId || null;
@@ -498,15 +498,15 @@ export const whatsappController = {
 
             if (lead?.contact?.phone) {
                 normalizedPhone = normalizeE164BR(
-                    lead.contacts.phone ||
-                    lead.contacts.phoneWhatsapp ||
-                    lead.contacts.phoneNumber ||
+                    lead.contact.phone ||
+                    lead.contact.phoneWhatsapp ||
+                    lead.contact.phoneNumber ||
                     ''
                 );
             } else if (phone) {
                 // sem leadId, resolve pelo telefone
                 normalizedPhone = normalizeE164BR(phone);
-                lead = await Lead.findOne({ 'contacts.phone': normalizedPhone }).populate('contact');
+                lead = await Lead.findOne({ 'contact.phone': normalizedPhone }).populate('contact');
             }
 
             if (!lead) {
@@ -607,14 +607,14 @@ export const whatsappController = {
                 const contactDoc = await Contacts.findById(rawId).lean();
                 if (contactDoc?.phone) {
                     const phoneNorm = normalizeE164BR(contactDoc.phone);
-                    lead = await Lead.findOne({ 'contacts.phone': phoneNorm });
+                    lead = await Lead.findOne({ 'contact.phone': phoneNorm });
                 }
             }
 
             // 3) Se ainda não achou, tenta tratar como telefone
             if (!lead) {
                 const phoneNorm = normalizeE164BR(rawId);
-                lead = await Lead.findOne({ 'contacts.phone': phoneNorm });
+                lead = await Lead.findOne({ 'contact.phone': phoneNorm });
             }
 
             if (!lead) {
@@ -901,7 +901,7 @@ async function processInboundMessage(msg, value) {
         }
 
         console.log("🔍 Buscando lead para:", from);
-        let lead = await Lead.findOne({ 'contacts.phone': from });
+        let lead = await Lead.findOne({ 'contact.phone': from });
 
         // ✅ VERIFICA SE EXISTE PATIENT COM ESTE TELEFONE
         let patient = null;
