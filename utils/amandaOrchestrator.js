@@ -361,16 +361,30 @@ export async function getOptimizedAmandaResponse({
         stage: newStage,
     };
 
-    // 🔍 Se entrou em interessado_agendamento, busca slots
+    const wantsSchedulingNow =
+        flags.wantsSchedule ||
+        flags.asksTimes ||
+        flags.asksDays ||
+        intent?.primary === "agendar_avaliacao" ||
+        intent?.primary === "agendar_urgente";
+
     if (
         newStage === "interessado_agendamento" &&
         !enrichedContext.pendingSchedulingSlots &&
-        (flags.wantsSchedule || justEnteredScheduling)
+        (wantsSchedulingNow || justEnteredScheduling)
     ) {
         const therapyArea =
             contextWithStage.therapyArea ||
             extracted.therapyArea ||
+            flags.therapyArea ||        // 👉 inclui também os flags
             lead.therapyArea;
+
+        console.log("🩺 [BOOKING] Disparando busca de slots:", {
+            newStage,
+            wantsSchedulingNow,
+            justEnteredScheduling,
+            therapyArea,
+        });
 
         if (therapyArea) {
             const slots = await findAvailableSlots({
@@ -387,6 +401,8 @@ export async function getOptimizedAmandaResponse({
             }
 
             contextWithStage.pendingSchedulingSlots = slots;
+        } else {
+            console.log("⚠️ [BOOKING] Sem therapyArea, não vou buscar slots");
         }
     }
 
