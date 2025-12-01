@@ -53,6 +53,27 @@ const leadSchema = new mongoose.Schema({
     index: true
   },
 
+  autoBookingContext: {
+    type: {
+      active: { type: Boolean, default: false },
+      therapyArea: { type: String, default: null },
+      lastOfferedSlots: {
+        primary: { type: Object, default: null },
+        alternativesSamePeriod: { type: Array, default: [] },
+      },
+      patientInfo: {
+        fullName: String,
+        birthDate: String,
+        phone: String,
+        email: String,
+      },
+    },
+    default: null,
+  },
+  therapyArea: { type: String, default: null },
+  default: 'novo',
+  index: true,
+
   status: {
     type: String,
     enum: [

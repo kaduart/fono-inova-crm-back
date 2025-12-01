@@ -137,7 +137,8 @@ export async function getOptimizedAmandaResponse({
         if (patientInfo.fullName && patientInfo.birthDate) {
             const chosenSlot =
                 leadForInfo.pendingChosenSlot ||
-                leadForInfo.pendingSchedulingSlots?.primary;
+                leadForInfo.pendingSchedulingSlots?.primary ||
+                leadForInfo.autoBookingContext?.lastOfferedSlots?.primary;
 
             await Leads.findByIdAndUpdate(lead._id, {
                 $unset: {
@@ -170,7 +171,11 @@ export async function getOptimizedAmandaResponse({
                             stage: "paciente",
                             patientId: bookingResult.patientId,
                         },
-                        $unset: { pendingSchedulingSlots: "" },
+                        $unset: {
+                            pendingSchedulingSlots: "",
+                            pendingChosenSlot: "",
+                            autoBookingContext: "",
+                        },
                     }).catch(() => { });
 
                     await Followup.updateMany(
@@ -349,6 +354,42 @@ export async function getOptimizedAmandaResponse({
     }
 
 
+    if (!extracted.preferredDay) {
+        const dayMatch = normalized.match(
+            /\b(segunda|ter[çc]a|terça|quarta|quinta|sexta|s[áa]bado|sabado|domingo)\b/
+        );
+
+        if (dayMatch) {
+            const dia = dayMatch[1].normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+            const map = {
+                domingo: "sunday",
+                segunda: "monday",
+                terca: "tuesday",
+                terça: "tuesday",
+                quarta: "wednesday",
+                quinta: "thursday",
+                sexta: "friday",
+                sabado: "saturday",
+                sabado: "saturday",
+            };
+
+            extracted.preferredDay = map[dia];
+        }
+    }
+
+    // ⏰ Período preferido (manhã / tarde / noite)
+    if (!extracted.preferredPeriod) {
+        if (/\bmanh[ãa]\b/.test(normalized)) {
+            extracted.preferredPeriod = "manha";
+        } else if (/\btard(e|inha)?\b/.test(normalized)) {
+            extracted.preferredPeriod = "tarde";
+        } else if (/\bnoite\b/.test(normalized)) {
+            extracted.preferredPeriod = "noite";
+        }
+    }
+
+
     // 🧭 CALCULA PRÓXIMO STAGE
     const currentStage = enrichedContext.stage || lead.stage || "novo";
     const messageCount = enrichedContext.messageCount || 0;
@@ -401,13 +442,14 @@ export async function getOptimizedAmandaResponse({
     if (
         newStage === "interessado_agendamento" &&
         !enrichedContext.pendingSchedulingSlots &&
-        (wantsSchedulingNow || justEnteredScheduling)
+        (wantsSchedulingNow || justEnteredScheduling || flags.choseSlot)
     ) {
         const therapyArea =
             contextWithStage.therapyArea ||
             extracted.therapyArea ||
             flags.therapyArea ||
-            lead.therapyArea;
+            lead.therapyArea ||
+            inferAreaFromContext(normalized, contextWithStage, flags);
 
         console.log("🩺 [BOOKING] Disparando busca de slots:", {
             therapyArea,
@@ -418,9 +460,6 @@ export async function getOptimizedAmandaResponse({
 
         if (!therapyArea) {
             console.warn("⚠️ [BOOKING] Sem therapyArea, não vou buscar slots");
-            // aqui você pode até dar um fallback tipo:
-            // return "Entendi que você quer agendar, é pra fono, psico, TO ou fisio? 💚";
-            // se quiser
         } else {
             const slots = await findAvailableSlots({
                 therapyArea,
@@ -431,30 +470,63 @@ export async function getOptimizedAmandaResponse({
 
             if (slots?.primary && lead?._id) {
                 await Leads.findByIdAndUpdate(lead._id, {
-                    $set: { pendingSchedulingSlots: slots },
+                    $set: {
+                        pendingSchedulingSlots: slots,
+                        therapyArea,
+                        autoBookingContext: {
+                            active: true,
+                            therapyArea,
+                            lastOfferedSlots: {
+                                primary: slots.primary,
+                                alternativesSamePeriod: slots.alternativesSamePeriod || [],
+                            },
+                            patientInfo: lead.patientInfo || {},
+                        },
+                    },
                 }).catch(() => { });
             }
 
             contextWithStage.pendingSchedulingSlots = slots;
+            contextWithStage.therapyArea = therapyArea;
         }
     }
+
+
+    const userSeemsToChooseSpecificTime =
+        /\b(segunda|ter[çc]a|terça|quarta|quinta|sexta|s[áa]bado|sabado|domingo)\b/i.test(normalized) &&
+        /\b(\d{1,2})(?:\s*[:hH]\s*(\d{2})?)?\b/.test(normalized);
+
+    if (!flags.choseSlot && userSeemsToChooseSpecificTime) {
+        flags.choseSlot = true;
+    }
+
 
     /**
      * BLOCO 2: CRIA AGENDAMENTO QUANDO USUÁRIO ESCOLHE HORÁRIO
      */
-    if (flags.choseSlot && lead?._id && contextWithStage.pendingSchedulingSlots) {
+    if (flags.choseSlot && lead?._id) {
         console.log("✅ [ORCHESTRATOR] Usuário escolheu horário, processando...");
 
-        const chosenSlot = pickSlotFromUserReply(
-            text,
-            contextWithStage.pendingSchedulingSlots,
-        );
+        // sempre tenta pegar o lead mais fresco do banco
+        const freshLead = await Leads.findById(lead._id).lean().catch(() => null);
+        const leadSource = freshLead || lead;
+
+        const slotsSource =
+            leadSource.autoBookingContext?.lastOfferedSlots ||
+            leadSource.pendingSchedulingSlots ||
+            contextWithStage.pendingSchedulingSlots;
+
+        if (!slotsSource?.primary) {
+            return "Não achei certinho as opções de horário que eu te passei. Me diz de novo o dia e o horário que você prefere? 💚";
+        }
+
+        const chosenSlot = pickSlotFromUserReply(text, slotsSource);
 
         if (!chosenSlot) {
             return "Não entendi certinho qual horário você prefere. Pode repetir o dia e horário? 💚";
         }
 
-        const patientInfo = extractPatientInfoFromLead(lead, text);
+        const patientInfo = extractPatientInfoFromLead(leadSource, text);
 
         if (!patientInfo.fullName || !patientInfo.birthDate) {
             const missing = [];
@@ -476,7 +548,7 @@ export async function getOptimizedAmandaResponse({
         console.log("🚀 [ORCHESTRATOR] Criando agendamento automático");
 
         const bookingResult = await autoBookAppointment({
-            lead,
+            lead: leadSource,
             chosenSlot,
             patientInfo,
         });
@@ -493,7 +565,12 @@ export async function getOptimizedAmandaResponse({
                     stage: "paciente",
                     patientId: bookingResult.patientId,
                 },
-                $unset: { pendingSchedulingSlots: "" },
+                $unset: {
+                    pendingSchedulingSlots: "",
+                    pendingChosenSlot: "",
+                    pendingPatientInfoForScheduling: "",
+                    autoBookingContext: "",
+                },
             }).catch(() => { });
 
             await Followup.updateMany(
@@ -520,13 +597,24 @@ export async function getOptimizedAmandaResponse({
             console.warn("⚠️ [ORCHESTRATOR] Conflito - buscando novos slots");
 
             const newSlots = await findAvailableSlots({
-                therapyArea: contextWithStage.therapyArea,
+                therapyArea: leadSource.therapyArea || contextWithStage.therapyArea,
                 daysAhead: 10,
             });
 
             if (newSlots?.primary) {
                 await Leads.findByIdAndUpdate(lead._id, {
-                    $set: { pendingSchedulingSlots: newSlots },
+                    $set: {
+                        pendingSchedulingSlots: newSlots,
+                        autoBookingContext: {
+                            active: true,
+                            therapyArea: leadSource.therapyArea || contextWithStage.therapyArea,
+                            lastOfferedSlots: {
+                                primary: newSlots.primary,
+                                alternativesSamePeriod: newSlots.alternativesSamePeriod || [],
+                            },
+                            patientInfo: leadSource.patientInfo || {},
+                        },
+                    },
                 }).catch(() => { });
 
                 const options = [
@@ -543,6 +631,7 @@ export async function getOptimizedAmandaResponse({
         console.error("❌ [ORCHESTRATOR] Erro no agendamento:", bookingResult.error);
         return "Tive um probleminha ao confirmar o horário. A equipe vai te responder por aqui em instantes 💚";
     }
+
 
     // 👋 PRIMEIRA mensagem?
     const isFirstMessage =
@@ -658,15 +747,13 @@ export async function getOptimizedAmandaResponse({
         return ensureSingleHeart(scoped);
     }
 
-    if (lead?._id && extracted?.therapyArea) {
-        await Leads.findByIdAndUpdate(
-            lead._id,
-            { $set: { therapyArea: extracted.therapyArea } },
-            { new: false },
-        ).catch((err) =>
-            console.warn("[LEAD-AREA] falha ao atualizar therapyArea:", err.message),
-        );
-    }
+    if (lead?._id && flags.therapyArea && !lead.therapyArea) {
+  await Leads.findByIdAndUpdate(
+    lead._id,
+    { $set: { therapyArea: flags.therapyArea } },
+  ).catch(() => {});
+}
+
 
     // ===== 5. IA COM CONTEXTO GERAL =====
     console.log(
