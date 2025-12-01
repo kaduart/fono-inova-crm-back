@@ -897,7 +897,6 @@ async function processInboundMessage(msg, value) {
                     phone: from,
                     name: msg.profile?.name || `WhatsApp ${from.slice(-4)}`
                 });
-                console.log("✅ Novo contact criado:", contacts._id);
             }
         }
 
@@ -1015,26 +1014,19 @@ async function processInboundMessage(msg, value) {
             // 🔹 Só marca como "precisa revisão" se NÃO for texto, áudio transcrito ou imagem descrita
             needs_human_review: !(type === "text" || type === "audio" || type === "image"),
             timestamp,
-            contact: contacts._id,
+            contact: contact._id,
             lead: lead._id,
             raw: msg,
         });
 
 
         try {
-            contacts.lastMessageAt = timestamp;
-            await contacts.save();
+            contact.lastMessageAt = timestamp;
+            await contact.save();
         } catch (e) {
             console.error("⚠️ Erro ao atualizar lastMessageAt no Contact:", e.message);
         }
-        console.log("💾 Mensagem salva no CRM:", {
-            id: savedMessage._id,
-            lead: lead._id,
-            contact: contacts._id,
-            patient: patient?._id || "Nenhum",
-            content: contentToSave.substring(0, 50) + '...'
-        });
-
+       
         // ✅ NOTIFICAR FRONTEND
         io.emit("message:new", {
             id: String(savedMessage._id),
@@ -1050,7 +1042,7 @@ async function processInboundMessage(msg, value) {
             status: "received",
             timestamp,
             leadId: lead._id,
-            contactId: contacts._id
+            contactId: contact._id
         });
 
         // ✅ ATUALIZAR ÚLTIMA INTERAÇÃO DO LEAD
