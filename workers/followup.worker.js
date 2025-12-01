@@ -5,7 +5,7 @@ import { Worker } from "bullmq";
 import chalk from "chalk";
 import mongoose from "mongoose";
 
-import Contact from "../models/Contact.js";
+import Contact from "../models/Contacts.js";
 import Followup from "../models/Followup.js";
 import Lead from "../models/Leads.js";
 import Message from "../models/Message.js";

@@ -2,7 +2,7 @@
 import dotenv from "dotenv";
 import fetch from "node-fetch";
 import ChatContext from "../models/ChatContext.js";
-import Contact from "../models/Contact.js";
+import Contact from "../models/Contacts.js";
 import Message from "../models/Message.js";
 import { getMetaToken } from "../utils/metaToken.js";
 import { normalizeE164BR } from "../utils/phone.js";

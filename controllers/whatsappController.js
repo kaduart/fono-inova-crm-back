@@ -3,7 +3,7 @@
 import mongoose from 'mongoose';
 import { redisConnection as redis } from '../config/redisConnection.js';
 import { getIo } from "../config/socket.js";
-import Contact from "../models/Contact.js";
+import Contacts from '../models/Contacts.js';
 import Followup from "../models/Followup.js";
 import Lead from '../models/Leads.js';
 import Message from "../models/Message.js";
@@ -893,7 +893,7 @@ async function processInboundMessage(msg, value) {
         let contact = await Contact.findOne({ phone: from });
         if (!contact) {
             if (!contact) {
-                contact = await Contact.create({
+                contact = await Contacts.create({
                     phone: from,
                     name: msg.profile?.name || `WhatsApp ${from.slice(-4)}`
                 });

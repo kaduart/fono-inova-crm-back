@@ -3,7 +3,7 @@
 import 'dotenv/config';
 import fs from 'fs';
 import mongoose from 'mongoose';
-import Contact from '../../models/Contact.js';
+import Contact from '../../models/Contacts.js';
 import Lead from '../../models/Leads.js';
 import Message from '../../models/Message.js';
 
