@@ -3,6 +3,7 @@ import express from 'express';
 import moment from 'moment-timezone';
 import mongoose from 'mongoose';
 import { handleAdvancePayment } from '../helpers/handleAdvancePayment.js';
+import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { auth } from '../middleware/auth.js';
 import { checkPackageAvailability } from '../middleware/checkPackageAvailability.js';
 import { checkAppointmentConflicts, getAvailableTimeSlots } from '../middleware/conflictDetection.js';
@@ -16,16 +17,15 @@ import Session from '../models/Session.js';
 import { handlePackageSessionUpdate, syncEvent } from '../services/syncService.js';
 import { updateAppointmentFromSession, updatePatientAppointments } from '../utils/appointmentUpdater.js';
 import { runTransactionWithRetry } from '../utils/transactionRetry.js';
-import { flexibleAuth } from '../middleware/amandaAuth.js';
 
 dotenv.config();
 const router = express.Router();
 
 // Verifica horários disponíveis
-router.get('/available-slots', auth, flexibleAuth, getAvailableTimeSlots);
+router.get('/available-slots', flexibleAuth, getAvailableTimeSlots);
 
 // Cria um novo agendamento
-router.post('/', checkAppointmentConflicts, async (req, res) => {
+router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
     const {
         patientId,
         doctorId,

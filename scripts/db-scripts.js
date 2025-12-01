@@ -238,7 +238,7 @@ db.packages.updateOne(
 )
 
 //consultar todos agendamentos 
-db.appointments.find(
+db.doctors.find(
   {}
 ).sort({ createdAt: -1 }).skip(0).limit(20);
 //consultar todos pacietne 

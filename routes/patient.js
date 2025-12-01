@@ -4,10 +4,11 @@ import validateId from '../middleware/validateId.js';
 import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import Patient from '../models/Patient.js';
+import { flexibleAuth } from '../middleware/amandaAuth.js';
 
 const router = express.Router();
 
-router.post('/add', auth, async (req, res) => {
+router.post('/add', flexibleAuth, async (req, res) => {
   try {
     if (req.user.role !== 'admin') {
       return res.status(403).json({
