@@ -6,8 +6,22 @@
 import axios from 'axios';
 import Doctor from '../models/Doctor.js';
 
-const API_BASE = process.env.BACKEND_URL_PRD || 'http://localhost:5000';
-const ADMIN_TOKEN = process.env.ADMIN_API_TOKEN;
+const api = axios.create({
+    baseURL: process.env.BACKEND_URL_PRD || "http://localhost:5000",
+    timeout: 5000,
+});
+
+api.interceptors.request.use((config) => {
+    const token = process.env.ADMIN_API_TOKEN;
+
+    if (!token) {
+        console.warn("[AMANDA-BOOKING] ADMIN_API_TOKEN não definido!");
+    } else {
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+
+    return config;
+});
 
 const bookingStats = {
     totalAttempts: 0,
@@ -22,148 +36,75 @@ const bookingStats = {
 /**
  * Encontra os melhores horários disponíveis para uma área de terapia
  */
+// ainda em amandaBookingService.js
+import { addDays, format } from "date-fns";
+
 export async function findAvailableSlots({
     therapyArea,
     preferredDay = null,
     preferredPeriod = null,
-    daysAhead = 5,
+    daysAhead = 7,
 }) {
-    try {
-        console.log('🔍 [BOOKING] Buscando slots:', { therapyArea, preferredPeriod });
+    console.log("🔍 [BOOKING] Buscando slots:", {
+        therapyArea,
+        preferredPeriod,
+    });
 
-        if (!therapyArea) {
-            console.warn('⚠️ [BOOKING] therapyArea não informada');
-            return null;
-        }
+    // pega todos os fonoaudiólogos ativos, por exemplo
+    const doctors = await Doctor.find({
+        specialty: therapyArea,
+        active: true,
+    }).lean();
 
-        // 👉 No banco: specialty = 'fonoaudiologia', 'psicologia' etc (minúsculo)
-        // 👉 No banco: active: true (não isActive)
-        const doctors = await Doctor.find({
-            specialty: therapyArea,   // ex: 'fonoaudiologia'
-            role: 'doctor',
-            $or: [
-                { active: true },    // principal
-                { isActive: true },  // compatibilidade se existir
-                {
-                    active: { $exists: false },
-                    isActive: { $exists: false }
-                }
-            ]
-        })
-            .select('_id fullName specialty weeklyAvailability')
-            .lean();
+    const today = new Date();
 
-        if (!doctors.length) {
-            console.warn('⚠️ [BOOKING] Nenhum profissional encontrado para', therapyArea);
-            return null;
-        }
+    const allCandidates = [];
 
-        // Data de partida (hoje ou “segunda / terça / amanhã”)
-        const startDateObj = preferredDay
-            ? parseDateFromUserInput(preferredDay)
-            : (() => {
-                const d = new Date();
-                d.setHours(0, 0, 0, 0);
-                return d;
-            })();
-
-        // Gera array de strings YYYY-MM-DD
-        const dateStrings = [];
+    for (const doctor of doctors) {
         for (let i = 0; i < daysAhead; i++) {
-            const d = new Date(startDateObj);
-            d.setDate(startDateObj.getDate() + i);
-            const dateStr = d.toISOString().split('T')[0];
-            dateStrings.push(dateStr);
-        }
+            const dateObj = addDays(today, i);
+            const date = format(dateObj, "yyyy-MM-dd");
 
-        // Chama /api/appointments/available-slots pra cada (doctor, data)
-        const tasks = [];
-
-        for (const doctor of doctors) {
-            for (const dateStr of dateStrings) {
-                tasks.push(
-                    callAvailableSlotsAPI(doctor._id, dateStr)
-                        .then((slots) => ({
-                            doctor,
-                            dateStr,
-                            slots: Array.isArray(slots) ? slots : [],
-                        }))
-                        .catch((err) => {
-                            console.warn(
-                                `⚠️ [BOOKING] Erro slots (${doctor._id}, ${dateStr}):`,
-                                err.message
-                            );
-                            return { doctor, dateStr, slots: [] };
-                        })
-                );
-            }
-        }
-
-        const results = await Promise.all(tasks);
-
-        const allSlots = [];
-
-        for (const { doctor, dateStr, slots } of results) {
-            if (!slots || !slots.length) continue;
-
-            const filteredSlots = preferredPeriod
-                ? filterSlotsByPeriod(slots, preferredPeriod) // slots = ["14:00", ...]
-                : slots;
-
-            for (const time of filteredSlots) {
-                allSlots.push({
-                    doctorId: doctor._id,
-                    doctorName: doctor.fullName || doctor.name || 'Profissional',
-                    specialty: doctor.specialty,
-                    date: dateStr,               // "2025-12-01"
-                    time,                        // "14:00"
-                    period: getTimePeriod(time), // "manhã" / "tarde"
+            try {
+                const slots = await fetchAvailableSlotsForDoctor({
+                    doctorId: doctor._id.toString(),
+                    date,
                 });
+
+                if (!slots?.length) continue;
+
+                for (const time of slots) {
+                    allCandidates.push({
+                        doctorId: doctor._id.toString(),
+                        doctorName: doctor.fullName,
+                        date,
+                        time,
+                    });
+                }
+            } catch (err) {
+                // já logamos dentro de fetchAvailableSlots
+                continue;
             }
         }
+    }
 
-        if (!allSlots.length) {
-            console.log('ℹ️ [BOOKING] Nenhum slot disponível encontrado');
-            return null;
-        }
-
-        // Ordena por data + hora
-        allSlots.sort((a, b) => {
-            if (a.date !== b.date) {
-                return a.date.localeCompare(b.date);
-            }
-            return a.time.localeCompare(b.time);
-        });
-
-        const primary = allSlots[0];
-        const samePeriod = allSlots
-            .filter(
-                (s) =>
-                    s.period === primary.period &&
-                    (s.date !== primary.date || s.time !== primary.time)
-            )
-            .slice(0, 3);
-
-        const otherPeriod = allSlots
-            .filter((s) => s.period !== primary.period)
-            .slice(0, 2);
-
-        console.log('✅ [BOOKING] Slots encontrados:', {
-            total: allSlots.length,
-            primary,
-        });
-
-        return {
-            primary,
-            alternativesSamePeriod: samePeriod,
-            alternativesOtherPeriod: otherPeriod,
-            totalFound: allSlots.length,
-        };
-    } catch (error) {
-        console.error('❌ [BOOKING] Erro ao buscar slots:', error.message);
+    if (!allCandidates.length) {
+        console.log("ℹ️ [BOOKING] Nenhum slot disponível encontrado");
         return null;
     }
+
+    // aqui você aplica sua lógica de primary / alternativas etc.
+    const primary = allCandidates[0];
+
+    const alternativesSamePeriod = allCandidates.slice(1, 4);
+
+    return {
+        primary,
+        alternativesSamePeriod,
+        all: allCandidates,
+    };
 }
+
 
 // ============================================================================
 // 📅 PASSO 2 + 3: CRIAR PACIENTE + AGENDAR (FLUXO COMPLETO)
@@ -315,6 +256,21 @@ export async function autoBookAppointment({
     }
 }
 
+export async function fetchAvailableSlotsForDoctor({ doctorId, date }) {
+    try {
+        const res = await api.get("/api/appointments/available-slots", {
+            params: { doctorId, date },
+        });
+        return res.data; // [ "08:00", "08:40", ... ]
+    } catch (err) {
+        console.error(
+            "[AMANDA-BOOKING] Erro ao buscar slots",
+            { doctorId, date, status: err.response?.status },
+            err.response?.data
+        );
+        throw err;
+    }
+}
 
 // ============================================================================
 // 🛠️ FUNÇÕES AUXILIARES
