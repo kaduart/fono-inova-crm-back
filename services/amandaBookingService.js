@@ -10,8 +10,7 @@ import Doctor from "../models/Doctor.js";
 // 🔗 Base interna: primeiro INTERNAL_BASE_URL, depois BACKEND_URL_PRD, depois localhost
 const API_BASE =
     process.env.INTERNAL_BASE_URL ||
-    process.env.BACKEND_URL_PRD ||
-    "http://localhost:5000";
+    process.env.BACKEND_URL_PRD;
 
 const ADMIN_TOKEN = process.env.ADMIN_API_TOKEN;
 
@@ -74,21 +73,28 @@ export async function fetchAvailableSlotsForDoctor({ doctorId, date }) {
  */
 export async function findAvailableSlots({
     therapyArea,
-    preferredDay = null, // por enquanto não usamos, mas já tá no contrato
-    preferredPeriod = null, // "manhã", "tarde" etc
+    preferredDay = null,
+    preferredPeriod = null,
     daysAhead = 7,
 }) {
     console.log("🔍 [BOOKING] Buscando slots:", {
         therapyArea,
+        preferredDay,
         preferredPeriod,
     });
 
+    // pega todos os profissionais da área (principal ou extra)
     const doctors = await Doctor.find({
-        specialty: therapyArea,
         active: true,
+        $or: [
+            { specialty: therapyArea },
+            { specialties: therapyArea },
+        ],
     }).lean();
 
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
     const allCandidates = [];
 
     for (const doctor of doctors) {
@@ -97,30 +103,23 @@ export async function findAvailableSlots({
             const date = format(dateObj, "yyyy-MM-dd");
 
             try {
-                let slots = await fetchAvailableSlotsForDoctor({
+                const slots = await fetchAvailableSlotsForDoctor({
                     doctorId: doctor._id.toString(),
                     date,
                 });
 
-                if (!slots || !slots.length) continue;
-
-                // Se o lead pediu manhã/tarde, filtra
-                if (preferredPeriod) {
-                    slots = filterSlotsByPeriod(slots, preferredPeriod);
-                    if (!slots.length) continue;
-                }
+                if (!slots?.length) continue;
 
                 for (const time of slots) {
                     allCandidates.push({
                         doctorId: doctor._id.toString(),
                         doctorName: doctor.fullName,
-                        specialty: doctor.specialty || therapyArea, // ✅ agora chosenSlot.specialty existe
                         date,
                         time,
                     });
                 }
             } catch (err) {
-                // erro já logado em fetchAvailableSlotsForDoctor
+                // erro de um médico/dia não derruba o resto
                 continue;
             }
         }
@@ -131,16 +130,98 @@ export async function findAvailableSlots({
         return null;
     }
 
-    // ordena por data + horário
-    allCandidates.sort((a, b) => {
-        if (a.date === b.date) {
-            return a.time.localeCompare(b.time);
-        }
-        return a.date.localeCompare(b.date);
-    });
+    const weekdayIndex = {
+        sunday: 0,
+        monday: 1,
+        tuesday: 2,
+        wednesday: 3,
+        thursday: 4,
+        friday: 5,
+        saturday: 6,
+    };
 
-    const primary = allCandidates[0];
-    const alternativesSamePeriod = allCandidates.slice(1, 4);
+    const getDow = (dateStr) =>
+        new Date(dateStr + "T12:00:00-03:00").getDay();
+
+    const matchesPeriod = (slot) => {
+        if (!preferredPeriod) return true;
+        return getTimePeriod(slot.time) === preferredPeriod;
+    };
+
+    // 1️⃣ Tenta escolher o primary no dia pedido (ex: sexta de manhã)
+    let primary = null;
+
+    if (preferredDay && weekdayIndex[preferredDay] !== undefined) {
+        const targetDow = weekdayIndex[preferredDay];
+
+        const preferredDaySlots = allCandidates
+            .filter(
+                (slot) =>
+                    getDow(slot.date) === targetDow && matchesPeriod(slot)
+            )
+            .sort(
+                (a, b) =>
+                    a.date.localeCompare(b.date) ||
+                    a.time.localeCompare(b.time)
+            );
+
+        if (preferredDaySlots.length) {
+            primary = preferredDaySlots[0];
+        }
+    }
+
+    // 2️⃣ Se não achar nesse dia, pega o primeiro compatível com o período
+    if (!primary) {
+        const filtered = allCandidates
+            .filter(matchesPeriod)
+            .sort(
+                (a, b) =>
+                    a.date.localeCompare(b.date) ||
+                    a.time.localeCompare(b.time)
+            );
+
+        primary = filtered[0] || allCandidates[0];
+    }
+
+    // 3️⃣ Monta alternativas no MESMO período, tentando outro dia
+    const primaryPeriod = getTimePeriod(primary.time);
+
+    const samePeriodSlots = allCandidates
+        .filter(
+            (slot) =>
+                !(slot.date === primary.date && slot.time === primary.time) &&
+                getTimePeriod(slot.time) === primaryPeriod
+        )
+        .sort(
+            (a, b) =>
+                a.date.localeCompare(b.date) ||
+                a.time.localeCompare(b.time)
+        );
+
+    const alternativesSamePeriod = [];
+
+    // primeiro tenta dias diferentes
+    for (const slot of samePeriodSlots) {
+        if (alternativesSamePeriod.length >= 3) break;
+        if (slot.date !== primary.date) {
+            alternativesSamePeriod.push(slot);
+        }
+    }
+
+    // se ainda tiver espaço, preenche com outros horários no mesmo dia
+    if (alternativesSamePeriod.length < 3) {
+        for (const slot of samePeriodSlots) {
+            if (alternativesSamePeriod.length >= 3) break;
+            if (
+                slot.date === primary.date &&
+                !alternativesSamePeriod.some(
+                    (s) => s.date === slot.date && s.time === slot.time
+                )
+            ) {
+                alternativesSamePeriod.push(slot);
+            }
+        }
+    }
 
     return {
         primary,
@@ -148,6 +229,7 @@ export async function findAvailableSlots({
         all: allCandidates,
     };
 }
+
 
 // ============================================================================
 // 📅 PASSO 2 + 3: CRIAR PACIENTE + AGENDAR (FLUXO COMPLETO)
@@ -315,10 +397,13 @@ function filterSlotsByPeriod(slots, period) {
 /**
  * Determina se é manhã ou tarde baseado na hora
  */
-function getTimePeriod(time) {
+export function getTimePeriod(time) {
     const hour = parseInt(time.split(":")[0], 10);
-    return hour < 12 ? "manhã" : "tarde";
+    if (hour < 12) return "manha";
+    if (hour < 18) return "tarde";
+    return "noite";
 }
+
 
 /**
  * Extrai data de texto do usuário (hoje, amanhã, segunda, etc.)
@@ -405,7 +490,7 @@ export function pickSlotFromUserReply(text, availableSlots) {
     const weekdayMatch = normalized.match(
         /\b(segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo)\b/
     );
-    const timeMatch = normalized.match(/\b(\d{1,2})[h:]\s*(\d{2})?\b/);
+    const timeMatch = normalized.match(/\b(\d{1,2})(?:[h:]\s*(\d{2})?)?\b/);
 
     if (weekdayMatch && timeMatch) {
         const targetDay = weekdayMatch[1];
