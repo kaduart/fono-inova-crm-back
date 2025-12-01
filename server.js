@@ -204,7 +204,6 @@ function initFollowupWatcher() {
 
     const redisClient = getRedis();
     await redisClient.ping();
-    console.log("🔒 Redis Upstash confirmado ativo");
 
     // Workers e Crons
     await import("./workers/followup.worker.js");
