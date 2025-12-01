@@ -25,9 +25,9 @@ export function deriveFlagsFromText(text = "") {
   return {
     asksPrice: /(pre[çc]o|valor|custa|quanto|mensal|pacote)/i.test(t),
     insistsPrice: /(s[oó]|apenas)\s*o\s*pre[çc]o|fala\s*o\s*valor|me\s*diz\s*o\s*pre[çc]o/i.test(t),
-   wantsSchedule: /\b(agendar|marcar|agendamento|remarcar|remarcar)\b/i.test(text) ||
-                  /\b(teria\s+vaga|tem\s+vaga|tem\s+hor[áa]rio|conseguir\s+um\s+hor[áa]rio)\b/i.test(text) ||
-                  /\b(hor[áa]rio\s+pra\s+(consulta|avalia[çc][aã]o))\b/i.test(text),
+    wantsSchedule: /\b(agendar|marcar|agendamento|remarcar|remarcar)\b/i.test(text) ||
+      /\b(teria\s+vaga|tem\s+vaga|tem\s+hor[áa]rio|conseguir\s+um\s+hor[áa]rio)\b/i.test(text) ||
+      /\b(hor[áa]rio\s+pra\s+(consulta|avalia[çc][aã]o))\b/i.test(text),
     asksAddress: /(onde|endere[cç]o|local|mapa|como\s*chegar)/i.test(t),
     asksPayment: /(pagamento|pix|cart[aã]o|dinheiro|parcel)/i.test(t),
     asksPlans: /(ipasgo|unimed|amil|plano|conv[eê]nio)/i.test(t),
@@ -420,57 +420,75 @@ porque você vai ter clareza do que fazer. Vale o investimento de tempo inicial.
 
   // 🏥 OBJEÇÃO: JÁ ESTÁ EM OUTRA CLÍNICA
   otherClinicObjection: `
-🛡️ OBJEÇÃO: "JÁ ESTOU VENDO EM OUTRA CLÍNICA"
+                          🛡️ OBJEÇÃO: "JÁ ESTOU VENDO EM OUTRA CLÍNICA"
 
-SCRIPT:
-"Que bom que vocês já estão cuidando! Cada clínica tem um jeito de trabalhar. 
-Recomendo vir conhecer a nossa também — o acolhimento e a equipe integrada 
-fazem muita diferença. Muitos pais que vieram 'só comparar' acabaram ficando. 
-Quer agendar uma visita sem compromisso?"
+                          SCRIPT:
+                          "Que bom que vocês já estão cuidando! Cada clínica tem um jeito de trabalhar. 
+                          Recomendo vir conhecer a nossa também — o acolhimento e a equipe integrada 
+                          fazem muita diferença. Muitos pais que vieram 'só comparar' acabaram ficando. 
+                          Quer agendar uma visita sem compromisso?"
 
-SE PARECER SATISFEITO COM A OUTRA:
-"Fico feliz que esteja dando certo! Se em algum momento quiser uma segunda opinião 
-ou conhecer outra abordagem, a porta tá aberta. Posso guardar seu contato?"
+                          SE PARECER SATISFEITO COM A OUTRA:
+                          "Fico feliz que esteja dando certo! Se em algum momento quiser uma segunda opinião 
+                          ou conhecer outra abordagem, a porta tá aberta. Posso guardar seu contato?"
 
-DIFERENCIAL:
-"Aqui o diferencial é a equipe multiprofissional que trabalha JUNTO. 
-Fono, psicólogo, TO — todo mundo conversa sobre o caso. 
-Nem toda clínica tem isso."
-`.trim(),
+                          DIFERENCIAL:
+                          "Aqui o diferencial é a equipe multiprofissional que trabalha JUNTO. 
+                          Fono, psicólogo, TO — todo mundo conversa sobre o caso. 
+                          Nem toda clínica tem isso."
+                          `.trim(),
 
   // 👶 OBJEÇÃO: DÚVIDA SOBRE TEA / FILHO MUITO NOVO
   teaDoubtObjection: `
-🛡️ OBJEÇÃO: "SERÁ QUE É TEA?" / "ELE É MUITO NOVO PRA SABER"
+                      🛡️ OBJEÇÃO: "SERÁ QUE É TEA?" / "ELE É MUITO NOVO PRA SABER"
 
-SCRIPT:
-"Entendo a dúvida — é natural ficar inseguro. A visita ajuda justamente nisso: 
-entender o desenvolvimento e ver se há necessidade de acompanhamento. 
-É leve, sem compromisso, e você já sai com uma orientação inicial. 
-Quer agendar?"
+                      SCRIPT:
+                      "Entendo a dúvida — é natural ficar inseguro. A visita ajuda justamente nisso: 
+                      entender o desenvolvimento e ver se há necessidade de acompanhamento. 
+                      É leve, sem compromisso, e você já sai com uma orientação inicial. 
+                      Quer agendar?"
 
-REFORÇO:
-"Quanto mais cedo a gente observa, melhor. Não precisa esperar ter certeza 
-pra buscar orientação. E se não for nada, você sai tranquilo."
+                      REFORÇO:
+                      "Quanto mais cedo a gente observa, melhor. Não precisa esperar ter certeza 
+                      pra buscar orientação. E se não for nada, você sai tranquilo."
 
-SE RESISTIR:
-"Muitos pais vêm com essa mesma dúvida. A avaliação serve exatamente pra isso — 
-dar clareza. E aqui a gente faz com muito cuidado e acolhimento."
-`.trim(),
+                      SE RESISTIR:
+                      "Muitos pais vêm com essa mesma dúvida. A avaliação serve exatamente pra isso — 
+                      dar clareza. E aqui a gente faz com muito cuidado e acolhimento."
+                      `.trim(),
 
   // =========================================================================
   // 📅 MÓDULO DE AGENDAMENTO
   // =========================================================================
   schedulingContext: `
-📅 SCRIPT AGENDAMENTO:
-- Você NÃO tem acesso à agenda real.
-- NUNCA confirme horário específico (ex: "segunda às 14h").
-- FLUXO:
-  1. Confirme a intenção de agendar.
-  2. Peça: Nome completo + Telefone (se não tiver).
-  3. Pergunte: Preferência de turno (Manhã ou Tarde).
-  4. Diga: "Vou encaminhar para a equipe confirmar os horários."
-- Só diga que vai encaminhar QUANDO tiver nome + telefone + período.
-`.trim(),
+                    📅 SCRIPT DE AGENDAMENTO (COM AGENDA EM TEMPO REAL):
+
+                    - Você TEM acesso a uma lista de horários disponíveis (slots) enviada pelo sistema,
+                      já filtrada pela área/profissional correto.
+                    - Use APENAS esses horários: não invente horário ou período que não esteja na lista.
+
+                    REGRAS:
+                    1. Você só pode dizer que "tem horário de manhã/tarde/noite" se existir
+                      pelo menos um slot disponível nesse período para a área/profissional corretos.
+                      ❌ Proibido: "Temos sim de manhã" se não houver NENHUM horário de manhã.
+                    2. Nunca confirme um horário específico que NÃO esteja nos slots recebidos.
+                    3. Quando oferecer horários, use sempre data + hora reais do contexto
+                      (ex.: "quinta às 14h ou 14h40").
+                    4. Se o paciente pedir um período sem disponibilidade (ex.: manhã) e só tiver tarde:
+                      → Explique: "Pra essa área, hoje estamos com vagas concentradas à tarde,
+                          por exemplo quinta às 14h ou 14h40. Algum desses funciona pra você?"
+                    5. O objetivo é ajudar a pessoa a ESCOLHER um dos horários disponíveis
+                      e coletar os dados mínimos do paciente (nome completo + data de nascimento
+                      e telefone se ainda não tiver).
+
+                    Fluxo recomendado:
+                    1. Confirme se é mesmo pra agendar (se ainda houver dúvida).
+                    2. Se for agendamento, use os slots reais.
+                    3. Peça os dados do paciente apenas se ainda não tiver no cadastro.
+                    4. Depois que a pessoa escolher um horário, confirme o resumo:
+                      "Então fica [área] com [NomeProf], [dia] às [hora]."
+                    `.trim(),
+
 
   // =========================================================================
   // 🚫 MÓDULO DE ESCOPO NEGATIVO

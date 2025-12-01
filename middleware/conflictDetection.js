@@ -87,8 +87,6 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     }
 };
 
-
-
 export const getAvailableTimeSlots = async (req, res) => {
     try {
         const { doctorId, date } = req.query;
