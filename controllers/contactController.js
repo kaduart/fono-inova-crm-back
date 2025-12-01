@@ -1,5 +1,5 @@
 // controllers/contactController.js
-import Contact from "../models/Contact.js";
+import Contact from "../models/Contacts.js";
 import { normalizeE164 } from "../utils/phone.js";
 
 export const upsertContact = async (req, res) => {

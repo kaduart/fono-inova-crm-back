@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import getOptimizedAmandaResponse from '../amanda/amandaOptimizedReply.js';
-import Contact from '../models/Contact.js';
+import Contact from '../models/Contacts.js';
 import Lead from '../models/Leads.js';
 import Message from '../models/Message.js';
 dotenv.config();
