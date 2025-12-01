@@ -83,14 +83,14 @@ export const whatsappController = {
             const to = normalizeE164BR(phone);
 
             // 🔎 Tenta achar Contact pelo telefone
-            const contact = await Contact.findOne({ phone: to }).lean();
+            const contact = await Contacts.findOne({ phone: to }).lean();
 
             // 🔎 Tenta achar Lead (ou pelo id, ou pelo telefone)
             let leadDoc = null;
             if (leadId) {
                 leadDoc = await Lead.findById(leadId).lean();
             } else {
-                leadDoc = await Lead.findOne({ 'contact.phone': to }).lean();
+                leadDoc = await Lead.findOne({ 'contacts.phone': to }).lean();
             }
 
             const resolvedLeadId = leadDoc?._id || leadId || null;
@@ -372,13 +372,13 @@ export const whatsappController = {
             }
 
             const [contacts, total] = await Promise.all([
-                Contact.find(filter)
+                Contacts.find(filter)
                     .select('_id name phone avatar lastMessageAt lastMessage hasNewMessage unreadCount')
                     .sort({ lastMessageAt: -1, name: 1 })
                     .skip(skip)
                     .limit(limitNum)
                     .lean(),
-                Contact.countDocuments(filter)
+                Contacts.countDocuments(filter)
             ]);
 
             res.json({
@@ -451,10 +451,10 @@ export const whatsappController = {
             if (!name || !phone) return res.status(400).json({ error: "Nome e telefone são obrigatórios" });
 
             const p = normalizeE164BR(phone);
-            const existing = await Contact.findOne({ phone: p });
+            const existing = await Contacts.findOne({ phone: p });
             if (existing) return res.status(400).json({ error: "Contato com esse telefone já existe" });
 
-            const contact = await Contact.create({ name, phone: p, avatar });
+            const contact = await Contacts.create({ name, phone: p, avatar });
             res.status(201).json(contact);
         } catch (err) {
             console.error("❌ Erro ao adicionar contato:", err);
@@ -465,7 +465,7 @@ export const whatsappController = {
     async updateContact(req, res) {
         try {
             if (req.body?.phone) req.body.phone = normalizeE164BR(req.body.phone);
-            const updated = await Contact.findByIdAndUpdate(req.params.id, req.body, { new: true });
+            const updated = await Contacts.findByIdAndUpdate(req.params.id, req.body, { new: true });
             res.json(updated);
         } catch (err) {
             console.error("❌ Erro ao atualizar contato:", err);
@@ -475,7 +475,7 @@ export const whatsappController = {
 
     async deleteContact(req, res) {
         try {
-            await Contact.findByIdAndDelete(req.params.id);
+            await Contacts.findByIdAndDelete(req.params.id);
             res.json({ success: true });
         } catch (err) {
             console.error("❌ Erro ao deletar contato:", err);
@@ -498,15 +498,15 @@ export const whatsappController = {
 
             if (lead?.contact?.phone) {
                 normalizedPhone = normalizeE164BR(
-                    lead.contact.phone ||
-                    lead.contact.phoneWhatsapp ||
-                    lead.contact.phoneNumber ||
+                    lead.contacts.phone ||
+                    lead.contacts.phoneWhatsapp ||
+                    lead.contacts.phoneNumber ||
                     ''
                 );
             } else if (phone) {
                 // sem leadId, resolve pelo telefone
                 normalizedPhone = normalizeE164BR(phone);
-                lead = await Lead.findOne({ 'contact.phone': normalizedPhone }).populate('contact');
+                lead = await Lead.findOne({ 'contacts.phone': normalizedPhone }).populate('contact');
             }
 
             if (!lead) {
@@ -525,7 +525,7 @@ export const whatsappController = {
                 ''
             );
 
-            const contact = await Contact.findOne({ phone: chatPhone }).lean();
+            const contact = await Contacts.findOne({ phone: chatPhone }).lean();
             const patientId = lead.convertedToPatient || null;
 
             // 📤 Envia mensagem via service centralizado
@@ -604,17 +604,17 @@ export const whatsappController = {
 
             // 2) Se não achou, tenta como ID de Contact
             if (!lead && mongoose.Types.ObjectId.isValid(rawId)) {
-                const contactDoc = await Contact.findById(rawId).lean();
+                const contactDoc = await Contacts.findById(rawId).lean();
                 if (contactDoc?.phone) {
                     const phoneNorm = normalizeE164BR(contactDoc.phone);
-                    lead = await Lead.findOne({ 'contact.phone': phoneNorm });
+                    lead = await Lead.findOne({ 'contacts.phone': phoneNorm });
                 }
             }
 
             // 3) Se ainda não achou, tenta tratar como telefone
             if (!lead) {
                 const phoneNorm = normalizeE164BR(rawId);
-                lead = await Lead.findOne({ 'contact.phone': phoneNorm });
+                lead = await Lead.findOne({ 'contacts.phone': phoneNorm });
             }
 
             if (!lead) {
@@ -689,7 +689,7 @@ export const whatsappController = {
             }
 
             const to = normalizeE164BR(rawPhone);   // 👈 MESMO padrão do sendText
-            const contact = await Contact.findOne({ phone: to }).lean();
+            const contact = await Contacts.findOne({ phone: to }).lean();
 
             const result = await sendTextMessage({
                 to,
@@ -890,19 +890,19 @@ async function processInboundMessage(msg, value) {
 
         // ✅ BUSCA UNIFICADA INTELIGENTE
         console.log("🔍 Buscando contact para:", from);
-        let contact = await Contact.findOne({ phone: from });
+        let contact = await Contacts.findOne({ phone: from });
         if (!contact) {
             if (!contact) {
                 contact = await Contacts.create({
                     phone: from,
                     name: msg.profile?.name || `WhatsApp ${from.slice(-4)}`
                 });
-                console.log("✅ Novo contact criado:", contact._id);
+                console.log("✅ Novo contact criado:", contacts._id);
             }
         }
 
         console.log("🔍 Buscando lead para:", from);
-        let lead = await Lead.findOne({ 'contact.phone': from });
+        let lead = await Lead.findOne({ 'contacts.phone': from });
 
         // ✅ VERIFICA SE EXISTE PATIENT COM ESTE TELEFONE
         let patient = null;
@@ -1015,22 +1015,22 @@ async function processInboundMessage(msg, value) {
             // 🔹 Só marca como "precisa revisão" se NÃO for texto, áudio transcrito ou imagem descrita
             needs_human_review: !(type === "text" || type === "audio" || type === "image"),
             timestamp,
-            contact: contact._id,
+            contact: contacts._id,
             lead: lead._id,
             raw: msg,
         });
 
 
         try {
-            contact.lastMessageAt = timestamp;
-            await contact.save();
+            contacts.lastMessageAt = timestamp;
+            await contacts.save();
         } catch (e) {
             console.error("⚠️ Erro ao atualizar lastMessageAt no Contact:", e.message);
         }
         console.log("💾 Mensagem salva no CRM:", {
             id: savedMessage._id,
             lead: lead._id,
-            contact: contact._id,
+            contact: contacts._id,
             patient: patient?._id || "Nenhum",
             content: contentToSave.substring(0, 50) + '...'
         });
@@ -1050,7 +1050,7 @@ async function processInboundMessage(msg, value) {
             status: "received",
             timestamp,
             leadId: lead._id,
-            contactId: contact._id
+            contactId: contacts._id
         });
 
         // ✅ ATUALIZAR ÚLTIMA INTERAÇÃO DO LEAD
@@ -1315,7 +1315,7 @@ async function handleAutoReply(from, to, content, lead) {
             const finalText = aiText.trim();
 
             // 🔎 Tenta achar o contact pra vincular na mensagem
-            const contactDoc = await Contact.findOne({ phone: from }).lean();
+            const contactDoc = await Contacts.findOne({ phone: from }).lean();
             const patientId = leadDoc.convertedToPatient || null;
 
             // 📤 Envia e REGISTRA (sendTextMessage + registerMessage)
