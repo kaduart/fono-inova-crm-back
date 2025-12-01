@@ -71,8 +71,6 @@ const leadSchema = new mongoose.Schema({
     default: null,
   },
   therapyArea: { type: String, default: null },
-  default: 'novo',
-  index: true,
 
   status: {
     type: String,
