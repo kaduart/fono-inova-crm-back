@@ -112,6 +112,8 @@ export async function getOptimizedAmandaResponse({
 }) {
     const text = userText || content || "";
     const normalized = text.toLowerCase().trim();
+    const SCHEDULING_REGEX = /\b(agendar|marcar|consulta|atendimento|avalia[cç][aã]o)\b|\b(qual\s+dia|qual\s+hor[áa]rio|tem\s+hor[áa]rio|dispon[ií]vel|disponivel|essa\s+semana)\b/i;
+
 
     console.log(`🎯 [ORCHESTRATOR] Processando: "${text}"`);
 
@@ -328,6 +330,25 @@ export async function getOptimizedAmandaResponse({
         }
     }
 
+    if (!extracted.therapyArea) {
+        const raw = normalized;
+
+        if (/fono/.test(raw)) {
+            extracted.therapyArea = "fonoaudiologia";
+        } else if (/psico/.test(raw)) {
+            extracted.therapyArea = "psicologia";
+        } else if (/terapia\s*ocupacional|[^a-z]to[^a-z]/i.test(raw)) {
+            extracted.therapyArea = "terapia_ocupacional";
+        } else if (/fisioterap/.test(raw)) {
+            extracted.therapyArea = "fisioterapia";
+        } else if (/psicopedagog/.test(raw)) {
+            extracted.therapyArea = "psicopedagogia";
+        } else if (/neuropsicolog/.test(raw)) {
+            extracted.therapyArea = "neuropsicologia";
+        }
+    }
+
+
     // 🧭 CALCULA PRÓXIMO STAGE
     const currentStage = enrichedContext.stage || lead.stage || "novo";
     const messageCount = enrichedContext.messageCount || 0;
@@ -356,17 +377,26 @@ export async function getOptimizedAmandaResponse({
         currentStage !== "interessado_agendamento" &&
         newStage === "interessado_agendamento";
 
+    const wantsSchedulingNow =
+        flags.wantsSchedule ||
+        intent?.primary === "agendar_avaliacao" ||
+        intent?.primary === "agendar_urgente" ||
+        SCHEDULING_REGEX.test(normalized);
+
+    console.log("🩺 [BOOKING-GATE]", {
+        currentStage,
+        newStage,
+        pendingSchedulingSlots: !!enrichedContext.pendingSchedulingSlots,
+        wantsSchedule: flags.wantsSchedule,
+        wantsSchedulingNow,
+        justEnteredScheduling,
+        intentPrimary: intent?.primary,
+    });
+
     const contextWithStage = {
         ...enrichedContext,
         stage: newStage,
     };
-
-    const wantsSchedulingNow =
-        flags.wantsSchedule ||
-        flags.asksTimes ||
-        flags.asksDays ||
-        intent?.primary === "agendar_avaliacao" ||
-        intent?.primary === "agendar_urgente";
 
     if (
         newStage === "interessado_agendamento" &&
@@ -376,17 +406,22 @@ export async function getOptimizedAmandaResponse({
         const therapyArea =
             contextWithStage.therapyArea ||
             extracted.therapyArea ||
-            flags.therapyArea ||        // 👉 inclui também os flags
+            flags.therapyArea ||
             lead.therapyArea;
 
         console.log("🩺 [BOOKING] Disparando busca de slots:", {
-            newStage,
-            wantsSchedulingNow,
-            justEnteredScheduling,
             therapyArea,
+            ctxArea: contextWithStage.therapyArea,
+            extractedArea: extracted.therapyArea,
+            leadArea: lead.therapyArea,
         });
 
-        if (therapyArea) {
+        if (!therapyArea) {
+            console.warn("⚠️ [BOOKING] Sem therapyArea, não vou buscar slots");
+            // aqui você pode até dar um fallback tipo:
+            // return "Entendi que você quer agendar, é pra fono, psico, TO ou fisio? 💚";
+            // se quiser
+        } else {
             const slots = await findAvailableSlots({
                 therapyArea,
                 preferredDay: extracted.preferredDay,
@@ -401,8 +436,6 @@ export async function getOptimizedAmandaResponse({
             }
 
             contextWithStage.pendingSchedulingSlots = slots;
-        } else {
-            console.log("⚠️ [BOOKING] Sem therapyArea, não vou buscar slots");
         }
     }
 
