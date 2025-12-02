@@ -1113,6 +1113,7 @@ REGRAS CRÍTICAS:
 
         return aiText;
     }
+    }
 
     const buildSystemContext = (flags, text = "", stage = "novo") => ({
         // Funil
