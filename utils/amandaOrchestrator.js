@@ -319,7 +319,7 @@ export async function getOptimizedAmandaResponse({
         const textResp = await runAnthropicWithFallback({
             systemPrompt: dynamicSystemPrompt,
             messages,
-            maxTokens: 200,
+            maxTokens: 300,
             temperature: 0.7,
         });
 
@@ -630,7 +630,7 @@ Use sempre o tom acolhedor, simples e profissional da Amanda 💚
     const textResp = await runAnthropicWithFallback({
         systemPrompt: dynamicSystemPrompt,
         messages,
-        maxTokens: 200,
+        maxTokens: 300,
         temperature: 0.6,
     });
 
@@ -969,7 +969,7 @@ async function callClaudeWithTherapyData({
         const textResp = await runAnthropicWithFallback({
             systemPrompt: dynamicSystemPrompt,
             messages,
-            maxTokens: 200,
+            maxTokens: 300,
             temperature: 0.7,
         });
 
@@ -1002,7 +1002,7 @@ ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${
     const textResp = await runAnthropicWithFallback({
         systemPrompt: dynamicSystemPrompt,
         messages,
-        maxTokens: 200,
+        maxTokens: 300,
         temperature: 0.7,
     });
 
@@ -1303,7 +1303,7 @@ REGRAS CRÍTICAS:
     const textResp = await runAnthropicWithFallback({
         systemPrompt: dynamicSystemPrompt,
         messages,
-        maxTokens: 150,
+        maxTokens: 300,
         temperature: 0.6,
     });
 
