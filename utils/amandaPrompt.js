@@ -827,9 +827,24 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     return `⚠️ PEDIDO DE HUMANO: Responda APENAS: "Claro, vou pedir para uma atendente assumir o atendimento em instantes. 💚" e encerre.`;
   }
 
-  const isClosingIntent = !!(saysThanks || (saysBye && !/bom\s*dia/i.test(text)));
-  if (isClosingIntent && !mentionsPriceObjection) {
-    return `👋 DESPEDIDA: Agradeça curto: "Eu que agradeço, qualquer coisa chame! 💚"(Sem perguntas).`;
+  // 👋 DESPEDIDA / DESISTÊNCIA EDUCADA
+  const isGivingUp = flags.givingUp || /n[aã]o\s+vou\s+esperar\s+mais/i.test(normalized);
+  const isClosingIntent = !!(
+    (flags.saysThanks && isGivingUp) ||
+    (flags.saysBye && !/bom\s*dia/i.test(text))
+  );
+
+  if (isClosingIntent && !flags.wantsSchedule) {
+    return ensureSingleHeart(
+      "Entendi! Fico à disposição quando precisar. Foi um prazer conversar com você!"
+    );
+  }
+
+  // Caso especial: "não vou esperar mais" seguido de "obrigada" na mesma msg ou msg seguinte
+  if (isGivingUp && flags.saysThanks) {
+    return ensureSingleHeart(
+      "Entendi! Quando fizer sentido pra vocês, é só me chamar. Fico à disposição!"
+    );
   }
 
   // =========================================================================
