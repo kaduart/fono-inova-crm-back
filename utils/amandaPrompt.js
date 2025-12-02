@@ -32,7 +32,6 @@ export function deriveFlagsFromText(text = "") {
     asksPayment: /(pagamento|pix|cart[aã]o|dinheiro|parcel)/i.test(t),
     asksPlans: /(ipasgo|unimed|amil|plano|conv[eê]nio)/i.test(t),
     asksDuration: /(quanto\s*tempo|dura[çc][aã]o|dura\s*quanto)/i.test(t),
-    mentionsTEA_TDAH: /(tea|autismo|autista|tdah|d[eé]ficit\s+de\s+aten[cç][aã]o|hiperativ)/i.test(t),
     mentionsSpeechTherapy: /(fono|fala|linguagem|gagueira|atraso)/i.test(t),
     asksPsychopedagogy: /(psicopedagog|dificuldade.*aprendiz)/i.test(t),
     asksCAA: /(caa|comunica[çc][aã]o.*alternativa|prancha.*comunica[çc][aã]o|pecs)/i.test(t),
@@ -50,6 +49,7 @@ export function deriveFlagsFromText(text = "") {
     mentionsAdult: /\b(adulto|adultos|maior\s*de\s*18|\d{2,}\s*anos|pra\s+mim|para\s+mim)\b/i.test(t),
     mentionsChild: /\b(crian[çc]a|meu\s*filho|minha\s*filha|meu\s*bb|minha\s*bb|beb[eê]|pequenininh[ao])\b/i.test(t) || mentionsLinguinha,
     mentionsTeen: /\b(adolescente|adolesc[êe]ncia|pré[-\s]*adolescente)\b/i.test(t),
+    mentionsTEA_TDAH: /(tea|autismo|autista|tdah|d[eé]ficit\s+de\s+aten[cç][aã]o|hiperativ)/i.test(t),
 
     mentionsTOD: /\b(tod|transtorno\s+oposito|transtorno\s+opositor|desafiador|desafia\s+tudo|muita\s+birra|agressiv[ao])\b/i.test(t),
     mentionsABA: /\baba\b|an[aá]lise\s+do\s+comportamento\s+aplicada/i.test(t),
@@ -78,6 +78,12 @@ export function deriveFlagsFromText(text = "") {
 
     mentionsDoubtTEA:
       /\b(ser[aá]\s+que\s+[eé]\s+tea|suspeita\s+de\s+(tea|autismo)|acho\s+que\s+pode\s+ser|n[aã]o\s+sei\s+se\s+[eé]|muito\s+novo\s+pra\s+saber)\b/i.test(t),
+
+    mentionsNeuropediatra:
+      /\bneuro(pediatra)?\b/i.test(t), // "neuro" ou "neuropediatra"
+    mentionsLaudo:
+      /\blaudo\b/i.test(t),
+
   };
 }
 
@@ -98,7 +104,7 @@ export function priceLineForTopic(topic, userText, conversationSummary = '') {
 
   switch (topic) {
     case "avaliacao_inicial":
-      return mentionsCDL ? "A avaliação CDL é R$ 200,00." : "O valor da avaliação é R$ 220,00.";
+      return mentionsCDL ? "A avaliação CDL é R$ 180,00." : "O valor da avaliação é R$ 220,00.";
     case "neuropsicologica":
       return "A avaliação neuropsicológica é um pacote de aproximadamente 10 sessões, incluindo a entrevista inicial, as sessões de testes e a devolutiva com laudo. O valor total é de R$ 2.500 em até 6x, ou R$ 2.300 à vista.";
     case "teste_linguinha":
@@ -133,7 +139,12 @@ export function priceLineForTopic(topic, userText, conversationSummary = '') {
     return "Avaliação inicial R$ 220; pacote mensal R$ 640 (1x/semana, R$ 160/sessão).";
   }
   if (/\b(fono|fala|linguagem|crian[çc]a|beb[eê]|atraso)\b/.test(combined)) {
-    return "Avaliação inicial R$ 220; pacote mensal R$ 720 (1x/semana, R$ 180/sessão).";
+    return (
+      "Na fonoaudiologia, a avaliação inicial é R$ 200. " +
+      "Depois, cada sessão de fonoterapia fica em torno de R$ 180; " +
+      "o valor mensal vai depender da frequência — muita gente começa com 1 vez por semana " +
+      "(fica em torno de R$ 720 no mês)."
+    );
   }
 
   return null;
@@ -212,7 +223,48 @@ O pai/mãe precisa entender que está investindo no MELHOR para o filho.
 - Diagnóstico final só em avaliação presencial, nunca por WhatsApp.
 - Equipe: Multiprofissional (Fono, Psico, TO, Fisio, Neuropsicopedagogia).
 - DIFERENCIAL: "Temos profissionais especializados em TEA e planos individuais."
-- AÇÃO: Convide para VISITA/AVALIAÇÃO como próximo passo natural.
+
+📌 REGRA ESPECÍFICA QUANDO A DOR É "AUTISMO / TEA / LAUDO":
+- Sempre explique que, nesse tipo de caso, a Fono Inova trabalha com DOIS CAMINHOS principais:
+  1) **Avaliação neuropsicológica completa** (pacote de ~10 sessões) que gera um **laudo** detalhado;
+  2) **Iniciar terapias** (Fono / Psico / TO) por cerca de 3 meses, e ao final a equipe emite um **relatório clínico** para levar ao neuropediatra.
+
+- Deixe claro que:
+  • Terapia sozinha NÃO substitui laudo médico;
+  • O laudo geralmente vem do neuropediatra/psiquiatra, e a clínica ajuda com laudo neuropsicológico e/ou relatório terapêutico.
+
+- SEMPRE faça uma pergunta binária para o responsável escolher:
+  "Pra vocês, faz mais sentido começar pela **avaliação pra laudo** ou pelas **terapias com relatório pro neuropediatra**?"
+
+- AÇÃO: Depois que a pessoa escolher o caminho (neuropsico ou terapias), aí sim conduza para agendar avaliação ou montar o plano.
+`.trim(),
+
+  // 🔴 NOVO: módulo focado em triagem quando aparece TEA + laudo/neuro
+  teaTriageContext: `
+🧭 TRIAGEM ESPECÍFICA TEA / LAUDO
+
+USE ESTE MÓDULO QUANDO:
+- o responsável fala em TEA/autismo/suspeita de autismo
+E TAMBÉM
+- pergunta sobre laudo, neuropediatra ou comenta encaminhamento/SUS.
+
+OBJETIVO:
+- Explicar que a Fono Inova ajuda em duas frentes (avaliação neuropsicológica × terapias + relatório);
+- Validar a dificuldade de acesso ao neuro;
+- Levar o responsável a escolher um dos caminhos.
+
+ROTEIRO SUGERIDO (ADAPTE, MAS SIGA A LÓGICA):
+
+"Entendo, muita família passa exatamente por isso, ainda mais com a dificuldade de conseguir neuropediatra pelo SUS. Aqui na Fono Inova a gente não tem médico neuropediatra, mas conseguimos adiantar bastante o processo:
+
+• com a **avaliação neuropsicológica completa**, que é um pacote de sessões e gera um laudo psicológico detalhado;
+• e com as **terapias** (fono, psicologia, TO), onde depois de um tempo de acompanhamento fazemos um relatório clínico pra você levar ao neuro quando conseguir a consulta.
+
+Pensando no que você precisa agora, faz mais sentido começar pela **avaliação pra laudo** ou pelas **terapias com relatório**?"
+
+REGRAS:
+- Responder em no máximo 2–3 frases + 1 pergunta binária.
+- Sempre terminar com 💚.
 `.trim(),
 
   speechContext: `
@@ -381,24 +433,23 @@ E se mudar de ideia, a porta tá sempre aberta pra vocês."
 🛡️ OBJEÇÃO: "QUERIA PELO PLANO" / "SÓ ATENDO POR CONVÊNIO"
 
 SCRIPT PRINCIPAL:
-"Muitas famílias têm plano, mas escolhem o atendimento particular justamente 
-pra começar mais rápido e ter uma equipe especializada desde o início. 
-A evolução do seu filho não pode esperar fila de convênio. 
-Que tal vir conhecer nosso espaço e entender como funciona?"
+"Entendo totalmente, muita gente usa plano de saúde. 
+Hoje a Fono Inova é 100% **particular**, mas emitimos nota/recibo com todos os dados 
+pra você solicitar **reembolso diretamente ao seu convênio**, de acordo com as regras do contrato. 
+A vantagem é que aqui você consegue começar mais rápido, com equipe especializada."
 
 REFORÇO DE VALOR:
 "Pelo plano, às vezes a espera é de meses. Aqui a gente começa em poucos dias, 
 com profissionais que realmente entendem de neurodesenvolvimento."
 
 SE INSISTIR:
-"Entendo totalmente. Hoje a Fono Inova é 100% particular — 
-não temos credenciamento com Unimed, Ipasgo ou outros. 
-Mas posso te mostrar por que tantas famílias escolhem investir no particular. 
-Quer conhecer o espaço?"
+"Sem problema, eu te entendo. Se quiser, posso te explicar direitinho como funciona 
+essa parte do reembolso com o plano, ou te ajudar a pensar qual seria o melhor passo agora."
 
 ❌ NUNCA diga "atendemos convênio" — é mentira.
-✅ SEMPRE redirecione para o VALOR do particular.
+✅ SEMPRE redirecione para o VALOR do particular + possibilidade de reembolso.
 `.trim(),
+
 
   // ⏰ OBJEÇÃO: FALTA DE TEMPO
   timeObjection: `
@@ -651,13 +702,14 @@ o acolhimento faz muita diferença. Muitos pais que vieram comparar acabaram fic
 - NUNCA diga que "atendemos plano"
 
 💰 VALORES (só informe DEPOIS de agregar valor):
-- Avaliação inicial: R$ 220
+- Avaliação inicial: a partir de R$ 200 (a maioria das áreas infantis)
 - Avaliação CDL: R$ 200
-- Sessão avulsa: R$ 220
-- Pacote mensal (1x/semana): R$ 180/sessão (~R$ 720/mês)
+- Sessão avulsa: em torno de R$ 220
+- Pacote mensal (1x/semana): em torno de R$ 180/sessão (≈ R$ 640–720/mês, conforme área)
 - Avaliação neuropsicológica: R$ 2.500 (6x) ou R$ 2.300 (à vista)
 - Teste da Linguinha: R$ 150
 - Psicopedagogia: Anamnese R$ 200 | Pacote R$ 160/sessão (~R$ 640/mês)
+
 
 💰 REGRA: VALOR → PREÇO → AÇÃO
 1. Contextualize o valor/diferencial
@@ -755,6 +807,9 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     mentionsTimeObjection,
     mentionsOtherClinicObjection,
     mentionsDoubtTEA,
+    mentionsNeuropediatra,
+    mentionsLaudo,
+
   } = flags;
 
   const rawText = text || "";
@@ -800,6 +855,8 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     activeModules.push(DYNAMIC_MODULES.teaDoubtObjection);
   }
 
+  
+
   // 📊 MÓDULO: PERFIL ETÁRIO
   if (mentionsChild || ageGroup === 'crianca') {
     activeModules.push(DYNAMIC_MODULES.childProfile);
@@ -809,10 +866,24 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     activeModules.push(DYNAMIC_MODULES.teenProfile);
   }
 
-  // 🧠 MÓDULO: NEURODIVERSIDADE
+    // 🧠 MÓDULO: NEURODIVERSIDADE
   if (mentionsTEA_TDAH || mentionsABA || mentionsDenver) {
     activeModules.push(DYNAMIC_MODULES.neuroContext);
   }
+
+  // 🔴 NOVO: TRIAGEM TEA → "laudo x terapias"
+  // Dispara quando tem TEA + (neuro ou laudo ou encaminhamento médico)
+  if (
+    mentionsTEA_TDAH &&
+    (
+      mentionsNeuropediatra ||
+      mentionsLaudo ||
+      hasMedicalReferral
+    )
+  ) {
+    activeModules.push(DYNAMIC_MODULES.teaTriageContext);
+  }
+
   if (mentionsTOD) {
     activeModules.push(DYNAMIC_MODULES.todContext);
   }
@@ -975,7 +1046,14 @@ export const MANUAL_AMANDA = {
   },
 
   "planos_saude": {
-    "credenciamento": "Muitas famílias têm plano, mas escolhem o particular pra começar mais rápido e ter equipe especializada. Hoje a Fono Inova é 100% particular — a evolução do seu filho não pode esperar fila de convênio. Quer conhecer nosso espaço? 💚"
+    "credenciamento": (
+      "Hoje todos os atendimentos na Fono Inova são **particulares**, " +
+      "não temos credenciamento direto com Unimed, Ipasgo ou outros convênios. " +
+      "Mas emitimos **nota/recibo com todos os dados** para você solicitar **reembolso ao seu plano**, " +
+      "conforme as regras do contrato e a legislação de planos de saúde. " +
+      "Muitas famílias fazem assim e conseguem reembolso parcial ou total. " +
+      "Se quiser, posso te explicar rapidinho como funciona esse processo. 💚"
+    )
   },
 
   "agendamento": {
@@ -984,7 +1062,14 @@ export const MANUAL_AMANDA = {
   },
 
   "especialidades": {
-    "tea_tdah": "Temos profissionais especializados em TEA e planos individuais! O ideal é vir conhecer o espaço e conversar com a equipe. Amanhã à tarde ou quinta pela manhã seria melhor? 💚",
+    "tea_tdah": (
+      "Temos profissionais especializados em TEA e trabalhamos de forma multiprofissional (Fono, Psicologia, TO). " +
+      "Quando a preocupação é autismo/TEA, normalmente temos dois caminhos: " +
+      "fazer uma **avaliação neuropsicológica completa**, que gera um laudo, " +
+      "ou começar pelas **terapias** por cerca de 3 meses e, ao final, emitir um **relatório clínico** para levar ao neuropediatra. " +
+      "O que faz mais sentido pra vocês nesse momento: focar na avaliação pra laudo ou começar pelas terapias? 💚"
+    ),
+
     "fono": "Nossas fonoaudiólogas são especializadas em desenvolvimento da linguagem. A intervenção precoce faz toda diferença! Quer conhecer o espaço? 💚",
     "psicologia": "Nossas psicólogas são especializadas em infantil e trabalham de forma integrada com a equipe. Vamos agendar uma visita? 💚",
     "caa": "Temos fono especializada em CAA! 💚 Trabalhamos com PECS e outros sistemas. A comunicação alternativa NÃO atrapalha a fala — pelo contrário!"
@@ -1101,8 +1186,8 @@ export const OBJECTION_SCRIPTS = {
 
   // 🏥 Plano de saúde
   insurance: {
-    primary: "Muitas famílias têm plano, mas escolhem o particular justamente pra começar mais rápido e ter equipe especializada desde o início. A evolução do seu filho não pode esperar fila de convênio. 💚",
-    secondary: "Pelo plano, às vezes a espera é de meses. Aqui a gente começa em poucos dias, com profissionais que realmente entendem de neurodesenvolvimento. Quer conhecer? 💚",
+    primary: "Muitas famílias têm plano, mas escolhem o atendimento particular justamente pra começar mais rápido e ter equipe especializada desde o início. Hoje a Fono Inova é 100% particular, mas emitimos nota/recibo com todos os dados pra você solicitar reembolso ao seu plano, conforme as regras do contrato. 💚",
+    secondary: "Pelo plano, às vezes a espera é de meses. Aqui a gente começa em poucos dias, com profissionais que realmente entendem de neurodesenvolvimento — e você ainda pode tentar reembolso junto ao convênio usando a nota fiscal. 💚",
   },
 
   // ⏰ Falta de tempo

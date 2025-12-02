@@ -107,3 +107,20 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
     product: "avaliacao_inicial",
   };
 }
+
+/**
+ * Só loga os sinais principais do funil de agendamento.
+ * O orquestrador já chama `logBookingGate(flags)`, então definimos aqui.
+ */
+export function logBookingGate(flags = {}) {
+  try {
+    console.log("[BOOKING_GATE]", {
+      wantsSchedule: !!flags.wantsSchedule,
+      wantsSchedulingNow: !!flags.wantsSchedulingNow,
+      asksPrice: !!flags.asksPrice,
+      therapyArea: flags.therapyArea || null,
+    });
+  } catch {
+    // não deixa quebrar por causa de log
+  }
+}
