@@ -1,9 +1,3 @@
-// utils/flagsDetector.js - DETECTA TODAS AS FLAGS
-
-import { deriveFlagsFromText, inferTopic } from './amandaPrompt.js';
-
-// utils/flagsDetector.js - DETECTA TODAS AS FLAGS
-
 import { deriveFlagsFromText, inferTopic } from './amandaPrompt.js';
 
 export function detectAllFlags(text = "", lead = {}, context = {}) {

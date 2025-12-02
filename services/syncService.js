@@ -6,13 +6,13 @@ import Patient from '../models/Patient.js'; // Adicione esta importação
 import Session from '../models/Session.js'; // Adicione esta importação
 
 const DEFAULT_SPECIALTY_VALUES = {
-    fonoaudiologia: 200,
-    psicologia: 200,
-    'terapia_ocupacional': 200,
+    fonoaudiologia: 180,
+    psicologia: 160,
+    'terapia_ocupacional': 180,
     fisioterapia: 200,
     pediatria: 220,
     neuroped: 250,
-    avaliacao: 250,
+    avaliacao: 200,
     unknown: 200
 };
 
