@@ -153,46 +153,6 @@ export async function getOptimizedAmandaResponse({
     const normalized = text.toLowerCase().trim();
     const SCHEDULING_REGEX = /\b(agendar|marcar|consulta|atendimento|avalia[cç][aã]o)\b|\b(qual\s+dia|qual\s+hor[áa]rio|tem\s+hor[áa]rio|dispon[ií]vel|disponivel|essa\s+semana)\b/i;
 
-    const isPurePriceQuestion =
-        flags.asksPrice &&
-        !flags.mentionsPriceObjection &&
-        !flags.wantsSchedule &&
-        !flags.wantsSchedulingNow;
-
-    // prioridade máxima pra pergunta de preço
-    if (isPurePriceQuestion) {
-        const manualAnswer = tryManualResponse(normalized, enrichedContext, flags);
-
-        if (manualAnswer) {
-            return ensureSingleHeart(manualAnswer);
-        }
-
-        // fallback: usa o value pitch dinâmico
-        const enrichedFlags = {
-            ...flags,
-            text,
-            conversationSummary: enrichedContext.conversationSummary || "",
-        };
-
-        const systemContext = buildSystemContext(flags, text, newStage);
-        const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
-        const pricePrompt = buildUserPromptWithValuePitch(enrichedFlags);
-
-        const messages = [{ role: "user", content: pricePrompt }];
-
-        const textResp = await runAnthropicWithFallback({
-            systemPrompt: dynamicSystemPrompt,
-            messages,
-            maxTokens: 200,
-            temperature: 0.7,
-        });
-
-        return ensureSingleHeart(
-            textResp || "A avaliação inicial é R$ 220; ela é o primeiro passo pra entender direitinho o que o seu filho precisa. Prefere essa semana ou a próxima? 💚",
-        );
-    }
-
-
     console.log(`🎯 [ORCHESTRATOR] Processando: "${text}"`);
 
     // ➕ NOVO: integrar inbound do chat com followups
@@ -326,6 +286,45 @@ export async function getOptimizedAmandaResponse({
 
     if (!flags.therapyArea && bookingProduct.therapyArea) {
         flags.therapyArea = bookingProduct.therapyArea;
+    }
+
+    const isPurePriceQuestion =
+        flags.asksPrice &&
+        !flags.mentionsPriceObjection &&
+        !flags.wantsSchedule &&
+        !flags.wantsSchedulingNow;
+
+    // prioridade máxima pra pergunta de preço
+    if (isPurePriceQuestion) {
+        const manualAnswer = tryManualResponse(normalized, enrichedContext, flags);
+
+        if (manualAnswer) {
+            return ensureSingleHeart(manualAnswer);
+        }
+
+        // fallback: usa o value pitch dinâmico
+        const enrichedFlags = {
+            ...flags,
+            text,
+            conversationSummary: enrichedContext.conversationSummary || "",
+        };
+
+        const systemContext = buildSystemContext(flags, text, newStage);
+        const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
+        const pricePrompt = buildUserPromptWithValuePitch(enrichedFlags);
+
+        const messages = [{ role: "user", content: pricePrompt }];
+
+        const textResp = await runAnthropicWithFallback({
+            systemPrompt: dynamicSystemPrompt,
+            messages,
+            maxTokens: 200,
+            temperature: 0.7,
+        });
+
+        return ensureSingleHeart(
+            textResp || "A avaliação inicial é R$ 220; ela é o primeiro passo pra entender direitinho o que o seu filho precisa. Prefere essa semana ou a próxima? 💚",
+        );
     }
 
     logBookingGate(flags);
