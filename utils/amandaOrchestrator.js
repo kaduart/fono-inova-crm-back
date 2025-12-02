@@ -429,7 +429,7 @@ export async function getOptimizedAmandaResponse({
     if (
         (flags.wantsSchedule || flags.wantsSchedulingNow) &&
         !enrichedContext.pendingSchedulingSlots &&
-        !lead.pendingPatientInfoForScheduling  
+        !lead.pendingPatientInfoForScheduling
     ) {
         // Detecta período preferido da mensagem
         let preferredPeriod = null;
@@ -1355,6 +1355,21 @@ function enforceClinicScope(aiText = "", userText = "") {
             "Na Fono Inova, a Fisioterapia é voltada para **atendimento terapêutico clínico**, " +
             "e não trabalhamos com **RPG ou Pilates**. Se você quiser, podemos agendar uma avaliação " +
             "para entender direitinho o caso e indicar a melhor forma de acompanhamento. 💚"
+        );
+    }
+
+    // 🆕 ROUQUIDÃO PÓS-CIRURGIA
+    const isPostSurgeryVoice =
+        /\b(rouquid[aã]o|perda\s+de\s+voz|voz\s+rouca|afonia)\b/i.test(combined) &&
+        /\b(p[oó]s[-\s]?(cirurgia|operat[oó]rio)|ap[oó]s\s+(a\s+)?cirurgia|depois\s+da\s+cirurgia|intuba[çc][aã]o|entuba[çc][aã]o|cirurgia\s+de\s+tireoide)\b/i.test(combined);
+
+    if (isPostSurgeryVoice) {
+        return (
+            "Aqui na Fono Inova **não trabalhamos com reabilitação vocal pós-cirúrgica** " +
+            "(como após intubação ou cirurgia de tireoide). " +
+            "Nosso foco é em casos de rouquidão por uso excessivo da voz, " +
+            "alterações vocais em professores, cantores, etc. " +
+            "Se precisar de indicação de especialista pra esse caso, posso tentar te ajudar! 💚"
         );
     }
 
