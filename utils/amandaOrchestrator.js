@@ -429,7 +429,7 @@ export async function getOptimizedAmandaResponse({
     if (
         (flags.wantsSchedule || flags.wantsSchedulingNow) &&
         !enrichedContext.pendingSchedulingSlots &&
-        !lead.pendingPatientInfoForScheduling  // ← ADICIONAR
+        !lead.pendingPatientInfoForScheduling  
     ) {
         // Detecta período preferido da mensagem
         let preferredPeriod = null;

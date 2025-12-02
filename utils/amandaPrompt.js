@@ -240,31 +240,29 @@ O pai/mãe precisa entender que está investindo no MELHOR para o filho.
 `.trim(),
 
   // 🔴 NOVO: módulo focado em triagem quando aparece TEA + laudo/neuro
+  // ═══════════════════════════════════════════════════════════════════
+  // MÓDULO teaTriageContext (substituir o existente)
+  // ═══════════════════════════════════════════════════════════════════
   teaTriageContext: `
-🧭 TRIAGEM ESPECÍFICA TEA / LAUDO
+🧭 TRIAGEM TEA/AUTISMO - REGRA OBRIGATÓRIA
 
-USE ESTE MÓDULO QUANDO:
-- o responsável fala em TEA/autismo/suspeita de autismo
-E TAMBÉM
-- pergunta sobre laudo, neuropediatra ou comenta encaminhamento/SUS.
+⚠️ SEMPRE QUE O RESPONSÁVEL MENCIONAR TEA/AUTISMO/SUSPEITA:
 
-OBJETIVO:
-- Explicar que a Fono Inova ajuda em duas frentes (avaliação neuropsicológica × terapias + relatório);
-- Validar a dificuldade de acesso ao neuro;
-- Levar o responsável a escolher um dos caminhos.
+1. Acolha brevemente
+2. Explique os DOIS CAMINHOS:
 
-ROTEIRO SUGERIDO (ADAPTE, MAS SIGA A LÓGICA):
+   📋 CAMINHO 1 - AVALIAÇÃO NEUROPSICOLÓGICA:
+   • Pacote ~10 sessões → gera LAUDO
+   • R$ 2.500 (6x) ou R$ 2.300 à vista
 
-"Entendo, muita família passa exatamente por isso, ainda mais com a dificuldade de conseguir neuropediatra pelo SUS. Aqui na Fono Inova a gente não tem médico neuropediatra, mas conseguimos adiantar bastante o processo:
+   🧩 CAMINHO 2 - TERAPIAS + RELATÓRIO:
+   • Fono/Psico/TO por ~3 meses
+   • Equipe emite RELATÓRIO CLÍNICO pro neuropediatra
 
-• com a **avaliação neuropsicológica completa**, que é um pacote de sessões e gera um laudo psicológico detalhado;
-• e com as **terapias** (fono, psicologia, TO), onde depois de um tempo de acompanhamento fazemos um relatório clínico pra você levar ao neuro quando conseguir a consulta.
+3. SEMPRE PERGUNTE:
+   "Pra vocês, faz mais sentido começar pela **avaliação pra laudo** ou pelas **terapias com relatório pro neuro**?"
 
-Pensando no que você precisa agora, faz mais sentido começar pela **avaliação pra laudo** ou pelas **terapias com relatório**?"
-
-REGRAS:
-- Responder em no máximo 2–3 frases + 1 pergunta binária.
-- Sempre terminar com 💚.
+🚨 NÃO ofereça só neuropsico direto! Dê as duas opções primeiro.
 `.trim(),
 
   speechContext: `
@@ -855,7 +853,7 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     activeModules.push(DYNAMIC_MODULES.teaDoubtObjection);
   }
 
-  
+
 
   // 📊 MÓDULO: PERFIL ETÁRIO
   if (mentionsChild || ageGroup === 'crianca') {
@@ -866,21 +864,14 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     activeModules.push(DYNAMIC_MODULES.teenProfile);
   }
 
-    // 🧠 MÓDULO: NEURODIVERSIDADE
-  if (mentionsTEA_TDAH || mentionsABA || mentionsDenver) {
+  // 🧠 MÓDULO: NEURODIVERSIDADE
+  if (mentionsTEA_TDAH) {
     activeModules.push(DYNAMIC_MODULES.neuroContext);
   }
 
   // 🔴 NOVO: TRIAGEM TEA → "laudo x terapias"
   // Dispara quando tem TEA + (neuro ou laudo ou encaminhamento médico)
-  if (
-    mentionsTEA_TDAH &&
-    (
-      mentionsNeuropediatra ||
-      mentionsLaudo ||
-      hasMedicalReferral
-    )
-  ) {
+  if (mentionsTEA_TDAH) {
     activeModules.push(DYNAMIC_MODULES.teaTriageContext);
   }
 
