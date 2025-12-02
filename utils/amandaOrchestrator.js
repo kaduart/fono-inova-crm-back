@@ -16,6 +16,7 @@ import Leads from "../models/Leads.js";
 import { callOpenAIFallback } from "../services/aiAmandaService.js";
 import {
     autoBookAppointment,
+    findAvailableSlots,
     formatDatePtBr,
     formatSlot
 } from "../services/amandaBookingService.js";
@@ -422,6 +423,72 @@ export async function getOptimizedAmandaResponse({
     } catch (err) {
         console.warn("[ORCHESTRATOR] Erro em detectAllTherapies:", err.message);
         therapies = [];
+    }
+
+    // 🎯 BUSCA SLOTS QUANDO LEAD QUER AGENDAR
+    if (
+        (flags.wantsSchedule || flags.wantsSchedulingNow) &&
+        !enrichedContext.pendingSchedulingSlots &&
+        !lead.pendingPatientInfoForScheduling  // ← ADICIONAR
+    ) {
+        // Detecta período preferido da mensagem
+        let preferredPeriod = null;
+        if (/\b(manh[ãa]|cedo)\b/i.test(text)) preferredPeriod = "manha";
+        else if (/\b(tarde)\b/i.test(text)) preferredPeriod = "tarde";
+        else if (/\b(noite)\b/i.test(text)) preferredPeriod = "noite";
+
+        // Detecta dia preferido
+        let preferredDay = null;
+        const dayMatch = text.toLowerCase().match(
+            /\b(segunda|ter[çc]a|quarta|quinta|sexta|s[aá]bado|domingo)\b/
+        );
+        if (dayMatch) {
+            const dayMap = {
+                domingo: "sunday", segunda: "monday", "terça": "tuesday", "terca": "tuesday",
+                quarta: "wednesday", quinta: "thursday", sexta: "friday", "sábado": "saturday", sabado: "saturday"
+            };
+            preferredDay = dayMap[dayMatch[1]] || null;
+        }
+
+        console.log("🔍 [ORCHESTRATOR] Buscando slots para:", {
+            therapyArea: bookingProduct.therapyArea,
+            specialties: bookingProduct.specialties,
+            preferredPeriod,
+            preferredDay,
+        });
+
+        try {
+            const slots = await findAvailableSlots({
+                therapyArea: bookingProduct.therapyArea,
+                specialties: bookingProduct.specialties,
+                preferredDay,
+                preferredPeriod,
+                daysAhead: 10,
+            });
+
+            if (slots?.primary) {
+                enrichedContext.pendingSchedulingSlots = slots;
+
+                // Salva no lead para persistir entre mensagens
+                if (lead._id) {
+                    await Leads.findByIdAndUpdate(lead._id, {
+                        $set: {
+                            pendingSchedulingSlots: slots,
+                            therapyArea: bookingProduct.therapyArea,
+                        },
+                    }).catch(() => { });
+                }
+
+                console.log("✅ [ORCHESTRATOR] Slots encontrados:", {
+                    primary: formatSlot(slots.primary),
+                    alternatives: slots.alternativesSamePeriod?.length || 0,
+                });
+            } else {
+                console.log("⚠️ [ORCHESTRATOR] Nenhum slot disponível encontrado");
+            }
+        } catch (err) {
+            console.error("❌ [ORCHESTRATOR] Erro ao buscar slots:", err.message);
+        }
     }
 
     if (Array.isArray(therapies) && therapies.length > 0) {

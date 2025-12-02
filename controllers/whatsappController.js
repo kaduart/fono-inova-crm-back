@@ -3,6 +3,7 @@
 import mongoose from 'mongoose';
 import { redisConnection as redis } from '../config/redisConnection.js';
 import { getIo } from "../config/socket.js";
+import Contacts from '../models/Contacts.js';
 import Followup from "../models/Followup.js";
 import Lead from '../models/Leads.js';
 import Message from "../models/Message.js";
@@ -12,7 +13,6 @@ import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
 import { normalizeE164BR } from "../utils/phone.js";
-import Contacts from '../models/Contacts.js';
 
 const AUTO_TEST_NUMBERS = [
     "5561981694922", "5561981694922", "556292013573", "5562992013573"
@@ -688,7 +688,7 @@ export const whatsappController = {
                 return res.status(400).json({ success: false, error: 'Lead sem telefone' });
             }
 
-            const to = normalizeE164BR(rawPhone);   // 👈 MESMO padrão do sendText
+            const to = normalizeE164BR(rawPhone);
             const contact = await Contacts.findOne({ phone: to }).lean();
 
             const result = await sendTextMessage({
@@ -700,11 +700,9 @@ export const whatsappController = {
                 sentBy: 'amanda'
             });
 
-            // 7. Reaproveita a MESMA lógica de achar a mensagem e emitir socket
-
             const waMessageId = result?.messages?.[0]?.id || null;
 
-            // Dá um tempinho pro Mongo gravar
+            // Dá um tempinho pro Mongo gravar (se o sendTextMessage já salva)
             await new Promise(resolve => setTimeout(resolve, 200));
 
             let savedMsg = null;
@@ -732,31 +730,46 @@ export const whatsappController = {
                 }).sort({ timestamp: -1 }).lean();
             }
 
-            if (savedMsg) {
-                const io = getIo();
-                console.log('📡 [AMANDA-RESUME] Emitindo message:new para chat:', {
-                    id: String(savedMsg._id),
-                    from: savedMsg.from,
-                    to: savedMsg.to
+            // 🔥 4ª: se MESMO ASSIM não achou, cria manualmente pra garantir que apareça no chat
+            if (!savedMsg) {
+                savedMsg = await Message.create({
+                    waMessageId,
+                    lead: lead._id,
+                    contact: contact?._id || null,
+                    from: process.env.WHATSAPP_PHONE_NUMBER_ID || 'whatsapp:amanda',
+                    to,
+                    direction: 'outbound',
+                    type: 'text',
+                    content: aiText.trim(),
+                    status: 'sent',
+                    timestamp: new Date(),
+                    metadata: { sentBy: 'amanda', source: 'amanda-resume' }
                 });
-
-                io.emit("message:new", {
-                    id: String(savedMsg._id),
-                    from: savedMsg.from,
-                    to: savedMsg.to,
-                    direction: savedMsg.direction,
-                    type: savedMsg.type,
-                    content: savedMsg.content,
-                    text: savedMsg.content,
-                    status: savedMsg.status,
-                    timestamp: savedMsg.timestamp,
-                    leadId: String(savedMsg.lead || lead._id),
-                    contactId: String(savedMsg.contact || contact?._id || ''),
-                    metadata: savedMsg.metadata || { sentBy: 'amanda' }
-                });
-            } else {
-                console.warn('⚠️ [AMANDA-RESUME] Não achou mensagem salva pra emitir no socket');
             }
+
+            // Agora **sempre** temos uma mensagem pra mandar pro socket
+            const io = getIo();
+            console.log('📡 [AMANDA-RESUME] Emitindo message:new para chat:', {
+                id: String(savedMsg._id),
+                from: savedMsg.from,
+                to: savedMsg.to
+            });
+
+            // Se no resto do sistema você emite pra um room (ex: tenant), adapta aqui:
+            io.emit("message:new", {
+                id: String(savedMsg._id),
+                from: savedMsg.from,
+                to: savedMsg.to,
+                direction: savedMsg.direction,
+                type: savedMsg.type,
+                content: savedMsg.content,
+                text: savedMsg.content,
+                status: savedMsg.status,
+                timestamp: savedMsg.timestamp,
+                leadId: String(savedMsg.lead || lead._id),
+                contactId: String(savedMsg.contact || contact?._id || ''),
+                metadata: { ...(savedMsg.metadata || {}), sentBy: 'amanda' }
+            });
 
             console.log(`✅ [AMANDA-RESUME] Respondido com sucesso!`);
 
@@ -766,6 +779,7 @@ export const whatsappController = {
                 responded: true,
                 response: aiText.substring(0, 100) + '...'
             });
+
 
         } catch (error) {
             console.error('❌ [AMANDA-RESUME] Erro:', error);
@@ -1026,7 +1040,7 @@ async function processInboundMessage(msg, value) {
         } catch (e) {
             console.error("⚠️ Erro ao atualizar lastMessageAt no Contact:", e.message);
         }
-       
+
         // ✅ NOTIFICAR FRONTEND
         io.emit("message:new", {
             id: String(savedMessage._id),
