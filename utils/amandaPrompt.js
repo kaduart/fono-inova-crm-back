@@ -37,6 +37,7 @@ export function deriveFlagsFromText(text = "") {
     asksCAA: /(caa|comunica[çc][aã]o.*alternativa|prancha.*comunica[çc][aã]o|pecs)/i.test(t),
     asksAgeMinimum: /(idade.*m[ií]nima|a\s*partir|beb[eê])/i.test(t),
     asksRescheduling: /(cancelar|reagendar|remarcar|adiar)/i.test(t),
+    givingUp: /\b(n[aã]o\s+vou\s+esperar|desist|vou\s+deixar\s+pra\s+l[aá]|depois\s+eu\s+vejo|vou\s+pensar|deixa\s+quieto)\b/i.test(t),
 
     wantsHumanAgent: /(falar\s+com\s+atendente|falar\s+com\s+uma\s+pessoa|falar\s+com\s+humano|quero\s+atendente|quero\s+falar\s+com\s+algu[eé]m|quero\s+falar\s+com\s+a\s+secret[aá]ria)/i.test(t),
     alreadyScheduled:
@@ -713,6 +714,14 @@ o acolhimento faz muita diferença.Muitos pais que vieram comparar acabaram fica
           - Teste da Linguinha: R$ 150
             - Psicopedagogia: Anamnese R$ 200 | Pacote R$ 160 / sessão(~R$ 640 / mês)
 
+            // Adicionar após a seção de VALORES ou antes do fechamento do prompt
+
+📅 RECESSO DE FIM DE ANO:
+- A clínica estará em RECESSO de 19/12/2024 a 04/01/2025
+- NÃO ofereça horários nesse período
+- Agendamentos disponíveis A PARTIR DE 05/01/2025
+- Se o lead perguntar sobre agendar agora, diga:
+  "Estaremos em recesso do dia 19/12 até 04/01, mas já posso deixar sua avaliação agendada pro início de janeiro! Prefere a primeira semana de janeiro pela manhã ou tarde?"
 
 💰 REGRA: VALOR → PREÇO → AÇÃO
 1. Contextualize o valor / diferencial
@@ -828,23 +837,18 @@ export function buildUserPromptWithValuePitch(flags = {}) {
   }
 
   // 👋 DESPEDIDA / DESISTÊNCIA EDUCADA
-  const isGivingUp = flags.givingUp || /n[aã]o\s+vou\s+esperar\s+mais/i.test(normalized);
+ const isGivingUp = flags.givingUp || /n[aã]o\s+vou\s+esperar\s+mais/i.test(text.toLowerCase());
   const isClosingIntent = !!(
     (flags.saysThanks && isGivingUp) ||
     (flags.saysBye && !/bom\s*dia/i.test(text))
   );
 
   if (isClosingIntent && !flags.wantsSchedule) {
-    return ensureSingleHeart(
-      "Entendi! Fico à disposição quando precisar. Foi um prazer conversar com você!"
-    );
+    return ("Entendi! Fico à disposição quando precisar. Foi um prazer conversar com você!");
   }
 
-  // Caso especial: "não vou esperar mais" seguido de "obrigada" na mesma msg ou msg seguinte
   if (isGivingUp && flags.saysThanks) {
-    return ensureSingleHeart(
-      "Entendi! Quando fizer sentido pra vocês, é só me chamar. Fico à disposição!"
-    );
+    return ("Entendi! Quando fizer sentido pra vocês, é só me chamar. Fico à disposição!");
   }
 
   // =========================================================================
