@@ -21,6 +21,7 @@ import {
     formatSlot
 } from "../services/amandaBookingService.js";
 import { handleInboundMessageForFollowups } from "../services/responseTrackingService.js";
+import { extractPreferredDateFromText, formatAsIsoDate } from "../utils/dateParser.js";
 import {
     buildDynamicSystemPrompt,
     buildUserPromptWithValuePitch,
@@ -282,6 +283,12 @@ export async function getOptimizedAmandaResponse({
     // 🧩 FLAGS GERAIS
     const flags = detectAllFlags(text, lead, enrichedContext);
 
+    // 🔎 Tenta extrair uma data explícita do texto (22/12, 20-10-2022, 10 outubro 2020 etc.)
+    const parsedDate = extractPreferredDateFromText(text);
+    if (parsedDate) {
+        flags.preferredDate = formatAsIsoDate(parsedDate); // "2025-12-22"
+    }
+
 
     const bookingProduct = mapFlagsToBookingProduct({ ...flags, text }, lead);
 
@@ -432,36 +439,44 @@ export async function getOptimizedAmandaResponse({
         !enrichedContext.pendingSchedulingSlots &&
         !lead.pendingPatientInfoForScheduling
     ) {
-        // 🚧 Se ainda não sabemos a área, não tenta buscar slot
         if (!bookingProduct.therapyArea) {
             console.log("⚠️ [ORCHESTRATOR] Lead quer agendar, mas therapyArea ainda não está definida. Faltou triagem de área.");
-            // deixa a Amanda só conversar/triagiar, sem chamar agenda
-            // (o prompt já puxa os módulos de triagem TEA/área)
         } else {
-            // Detecta período preferido da mensagem
+            // período: manhã/tarde/noite
             let preferredPeriod = null;
             if (/\b(manh[ãa]|cedo)\b/i.test(text)) preferredPeriod = "manha";
             else if (/\b(tarde)\b/i.test(text)) preferredPeriod = "tarde";
             else if (/\b(noite)\b/i.test(text)) preferredPeriod = "noite";
 
-            // Detecta dia preferido
+            // dia da semana: segunda, terça, etc
             let preferredDay = null;
             const dayMatch = text.toLowerCase().match(
                 /\b(segunda|ter[çc]a|quarta|quinta|sexta|s[aá]bado|domingo)\b/
             );
             if (dayMatch) {
                 const dayMap = {
-                    domingo: "sunday", segunda: "monday", "terça": "tuesday", "terca": "tuesday",
-                    quarta: "wednesday", quinta: "thursday", sexta: "friday", "sábado": "saturday", sabado: "saturday"
+                    domingo: "sunday",
+                    segunda: "monday",
+                    "terça": "tuesday",
+                    "terca": "tuesday",
+                    quarta: "wednesday",
+                    quinta: "thursday",
+                    sexta: "friday",
+                    "sábado": "saturday",
+                    sabado: "saturday",
                 };
                 preferredDay = dayMap[dayMatch[1]] || null;
             }
+
+            // 🗓️ Data específica tipo "22/12"
+            const preferredSpecificDate = flags.preferredDate || null;
 
             console.log("🔍 [ORCHESTRATOR] Buscando slots para:", {
                 therapyArea: bookingProduct.therapyArea,
                 specialties: bookingProduct.specialties,
                 preferredPeriod,
                 preferredDay,
+                preferredSpecificDate,
             });
 
             try {
@@ -470,35 +485,47 @@ export async function getOptimizedAmandaResponse({
                     specialties: bookingProduct.specialties,
                     preferredDay,
                     preferredPeriod,
+                    preferredDate: preferredSpecificDate,
                     daysAhead: 30,
                 });
 
                 if (slots?.primary) {
-                enrichedContext.pendingSchedulingSlots = slots;
-                enrichedContext.therapyArea = bookingProduct.therapyArea;
+                    enrichedContext.pendingSchedulingSlots = slots;
+                    enrichedContext.therapyArea = bookingProduct.therapyArea;
 
-                // Salva no lead para persistir entre mensagens
-                if (lead._id) {
-                    await Leads.findByIdAndUpdate(lead._id, {
-                        $set: {
-                            pendingSchedulingSlots: slots,
-                            therapyArea: bookingProduct.therapyArea,
-                        },
-                    }).catch(() => { });
+                    if (lead._id) {
+                        await Leads.findByIdAndUpdate(lead._id, {
+                            $set: {
+                                pendingSchedulingSlots: slots,
+                                therapyArea: bookingProduct.therapyArea,
+                            },
+                        }).catch(() => { });
+                    }
+
+                    const primaryText = formatSlot(slots.primary);
+                    const alternativesText = (slots.alternativesSamePeriod ?? [])
+                        .map(formatSlot)
+                        .join(" | ");
+
+                    enrichedContext.bookingSlotsForLLM = {
+                        primary: primaryText,
+                        alternatives: alternativesText,
+                        preferredDate: preferredSpecificDate, // 👈 dá pro LLM saber que foi pedido isso
+                    };
+
+                    console.log("✅ [ORCHESTRATOR] Slots encontrados:", {
+                        primary: primaryText,
+                        alternatives: slots.alternativesSamePeriod?.length || 0,
+                    });
+                } else {
+                    console.log("⚠️ [ORCHESTRATOR] Nenhum slot disponível encontrado");
                 }
-
-                console.log("✅ [ORCHESTRATOR] Slots encontrados:", {
-                    primary: formatSlot(slots.primary),
-                    alternatives: slots.alternativesSamePeriod?.length || 0,
-                });
-            } else {
-                console.log("⚠️ [ORCHESTRATOR] Nenhum slot disponível encontrado");
-            }
             } catch (err) {
                 console.error("❌ [ORCHESTRATOR] Erro ao buscar slots:", err.message);
             }
         }
     }
+
 
 
     if (Array.isArray(therapies) && therapies.length > 0) {
