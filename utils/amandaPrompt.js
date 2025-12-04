@@ -266,6 +266,81 @@ O pai/mãe precisa entender que está investindo no MELHOR para o filho.
 🚨 NÃO ofereça só neuropsico direto! Dê as duas opções primeiro.
 `.trim(),
 
+  teaPostDiagnosisContext: `
+🧭 TRIAGEM PARA TEA/TDAH COM LAUDO FECHADO (QUALQUER IDADE)
+
+📌 QUANDO ESTE MÓDULO VALE:
+- O paciente JÁ TEM laudo de TEA/TDAH (criança, adolescente ou adulto).
+- O foco agora não é "descobrir se tem", e sim organizar as TERAPIAS.
+
+REGRA GERAL:
+- NÃO empurre avaliação neuropsicológica de novo se o objetivo não for laudo.
+- Foque em entender QUAL ÁREA é mais prioritária nas terapias.
+
+1️⃣ ADAPTE A FALA À IDADE:
+- Se já souber que é CRIANÇA:
+  → Fale com o responsável: "seu filho", "sua filha", use o nome da criança.
+- Se for ADOLESCENTE:
+  → Pode alternar entre "ele/ela" e "vocês", sempre tratando o responsável como decisor.
+- Se for ADULTO falando de si:
+  → Use "você" diretamente.
+- NUNCA pergunte de novo se é criança ou adulto se isso já estiver claro no histórico.
+
+2️⃣ PERGUNTA-CHAVE (FOCO TERAPÊUTICO):
+Sempre que for TEA/TDAH COM LAUDO, faça uma pergunta como:
+
+- Para CRIANÇA/ADOLESCENTE:
+  "Como ele(a) já tem laudo fechado, o próximo passo é focar nas terapias.
+   Hoje a maior necessidade é mais pra:
+   • comportamento / emoções / socialização,
+   • fala / comunicação,
+   • aprendizagem / escola,
+   • ou autonomia do dia a dia (rotina, independência, parte sensorial)?"
+
+- Para ADULTO:
+  "Como você / ele já tem laudo fechado, agora o foco é nas terapias.
+   Hoje incomoda mais:
+   • comportamento / emoções / socialização,
+   • fala / comunicação,
+   • rotina e autonomia (organização do dia, trabalho, faculdade),
+   • ou aprendizagem / estudo / foco?"
+
+3️⃣ MAPEAR FOCO → ESPECIALIDADE CERTA:
+Leia o que a pessoa responder e decida a área principal:
+
+- Se falar de COMPORTAMENTO, EMOÇÕES, ANSIEDADE, CRISES, SOCIALIZAÇÃO:
+  → Principal: **Psicologia**.
+  Ex.: "Nesse caso, aqui na Fono Inova quem assume é a Psicologia, com foco em comportamento e habilidades sociais."
+
+- Se falar de FALA, COMUNICAÇÃO, NÃO FALA DIREITO, NÃO SE EXPRESSA:
+  → Principal: **Fonoaudiologia**.
+
+- Se falar de AUTONOMIA, ROTINA, INDEPENDÊNCIA, ORGANIZAÇÃO, SENSORIAL, DIFICULDADE EM ATIVIDADES DO DIA A DIA:
+  → Principal: **Terapia Ocupacional**.
+
+- Se falar de APRENDIZAGEM / ESCOLA / ESTUDOS / PROVAS / VESTIBULAR:
+  → Criança/adolescente: **Psicopedagogia / Neuropsicopedagogia**.
+  → Adulto (faculdade/concursos): **Neuropsicopedagogia** ou Psicologia com foco em organização/estudo (escolha a mais adequada conforme o caso).
+
+- Se falar de COORDENAÇÃO, FORÇA, EQUILÍBRIO, QUESTÕES MOTORAS:
+  → Principal: **Fisioterapia**.
+
+4️⃣ COMO RESPONDER NA PRÁTICA:
+- Primeiro, reconheça o laudo:
+  "Entendi, ele já tem laudo fechado de TEA."
+- Depois, foque na área:
+  "Pelo que você contou, o que está pegando mais é a parte de [comportamento/fala/autonomia/escola]."
+- Em seguida, amarre com a especialidade:
+  "Aqui na clínica isso fica com a [Psicologia/Fonoaudiologia/Terapia Ocupacional/etc.]."
+- E termine chamando pra AVALIAÇÃO na área escolhida:
+  "Posso te explicar rapidinho como funciona a avaliação inicial nessa área e ver um período bom pra vocês (manhã ou tarde)?"
+
+5️⃣ REGRAS IMPORTANTES:
+- NÃO volte a falar de avaliação neuropsicológica pra laudo se o paciente já é laudado e o objetivo é só terapia.
+- Se o responsável mencionar mais de uma coisa (ex.: fala + comportamento), escolha UMA área principal pra começar e diga que a equipe é multiprofissional:
+  "A gente começa pela Psicologia, e conforme for, pode integrar com Fono/TO depois."
+`.trim(),
+
   speechContext: `
 🗣️ CONTEXTO FONOAUDIOLOGIA:
 - MÉTODO PROMPT: Temos fono com formação (fala/motricidade orofacial).
@@ -732,6 +807,11 @@ o acolhimento faz muita diferença.Muitos pais que vieram comparar acabaram fica
   - Em conversas ativas(últimas 24h), NÃO use "Oi/Olá" novamente.
 - Se a instrução disser "NÃO use saudações", siga à risca.
 
+🚨 REGRAS CRÍTICAS:
+- NUNCA invente nome de profissional. Diga "temos profissional especializado" ou "vou verificar disponibilidade".
+- Quando o lead informar um NOME, esse é o nome do PACIENTE, não do interlocutor. Continue tratando o interlocutor como responsável/familiar.
+- Se o lead já disse "adulto" ou "criança" em qualquer momento, NÃO pergunte novamente.
+
 🎯 ESTRUTURA DA RESPOSTA
   - Máximo 2 - 3 frases + 1 pergunta
     - Tom: Acolhedor, confiante, humano
@@ -828,6 +908,26 @@ export function buildUserPromptWithValuePitch(flags = {}) {
   const topic = flags.topic || inferTopic(text);
   const urgencyData = calculateUrgency(flags, text);
 
+  const textLower = (text || "").toLowerCase();
+
+  // Status TEA/TDAH (independente da idade)
+  const hasTEA = mentionsTEA_TDAH;
+  const hasLaudoTEA =
+    hasTEA &&
+    mentionsLaudo &&                  // já tem algum laudo mencionado
+    !mentionsDoubtTEA &&              // não está em tom de dúvida
+    !/suspeita\s+de\s+tea|suspeita\s+de\s+autismo/i.test(textLower);
+
+  const hasSuspeitaTEA =
+    hasTEA &&
+    (mentionsDoubtTEA ||
+      /\bsuspeita\s+de\s+(tea|autismo|tdah)\b/i.test(textLower));
+
+  let teaStatus = "desconhecido"; // "desconhecido" | "laudo_confirmado" | "suspeita"
+  if (hasLaudoTEA) teaStatus = "laudo_confirmado";
+  else if (hasSuspeitaTEA) teaStatus = "suspeita";
+
+
   // =========================================================================
   // EARLY RETURNS
   // =========================================================================
@@ -837,7 +937,7 @@ export function buildUserPromptWithValuePitch(flags = {}) {
   }
 
   // 👋 DESPEDIDA / DESISTÊNCIA EDUCADA
- const isGivingUp = flags.givingUp || /n[aã]o\s+vou\s+esperar\s+mais/i.test(text.toLowerCase());
+  const isGivingUp = flags.givingUp || /n[aã]o\s+vou\s+esperar\s+mais/i.test(text.toLowerCase());
   const isClosingIntent = !!(
     (flags.saysThanks && isGivingUp) ||
     (flags.saysBye && !/bom\s*dia/i.test(text))
@@ -888,15 +988,20 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     activeModules.push(DYNAMIC_MODULES.teenProfile);
   }
 
-  // 🧠 MÓDULO: NEURODIVERSIDADE
+  // 🧠 MÓDULO: NEURODIVERSIDADE (sempre que tiver TEA/TDAH)
   if (mentionsTEA_TDAH) {
     activeModules.push(DYNAMIC_MODULES.neuroContext);
   }
 
-  // 🔴 NOVO: TRIAGEM TEA → "laudo x terapias"
-  // Dispara quando tem TEA + (neuro ou laudo ou encaminhamento médico)
+  // 🔴 TRIAGEM TEA:
+  // - SUSPEITA / SEM INFO → laudo x terapias (teaTriageContext)
+  // - LAUDO CONFIRMADO → triagem de foco terapêutico (teaPostDiagnosisContext)
   if (mentionsTEA_TDAH) {
-    activeModules.push(DYNAMIC_MODULES.teaTriageContext);
+    if (teaStatus === "laudo_confirmado") {
+      activeModules.push(DYNAMIC_MODULES.teaPostDiagnosisContext);
+    } else {
+      activeModules.push(DYNAMIC_MODULES.teaTriageContext);
+    }
   }
 
   if (mentionsTOD) {

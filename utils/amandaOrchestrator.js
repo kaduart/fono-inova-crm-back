@@ -289,6 +289,8 @@ export async function getOptimizedAmandaResponse({
         flags.therapyArea = bookingProduct.therapyArea;
     }
 
+    const stageFromContext = enrichedContext.stage || lead.stage || "novo";
+
     const isPurePriceQuestion =
         flags.asksPrice &&
         !flags.mentionsPriceObjection &&
@@ -310,7 +312,7 @@ export async function getOptimizedAmandaResponse({
             conversationSummary: enrichedContext.conversationSummary || "",
         };
 
-        const systemContext = buildSystemContext(flags, text, newStage);
+        const systemContext = buildSystemContext(flags, text, stageFromContext);
         const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
         const pricePrompt = buildUserPromptWithValuePitch(enrichedFlags);
 
@@ -343,7 +345,6 @@ export async function getOptimizedAmandaResponse({
     }
 
     // 🔀 Atualiza estágio do funil usando nextStage
-    const stageFromContext = enrichedContext.stage || lead.stage || "novo";
 
     const newStage = nextStage(stageFromContext, {
         flags,
@@ -431,49 +432,50 @@ export async function getOptimizedAmandaResponse({
         !enrichedContext.pendingSchedulingSlots &&
         !lead.pendingPatientInfoForScheduling
     ) {
-        // Detecta período preferido da mensagem
-        let preferredPeriod = null;
-        if (/\b(manh[ãa]|cedo)\b/i.test(text)) preferredPeriod = "manha";
-        else if (/\b(tarde)\b/i.test(text)) preferredPeriod = "tarde";
-        else if (/\b(noite)\b/i.test(text)) preferredPeriod = "noite";
+        // 🚧 Se ainda não sabemos a área, não tenta buscar slot
+        if (!bookingProduct.therapyArea) {
+            console.log("⚠️ [ORCHESTRATOR] Lead quer agendar, mas therapyArea ainda não está definida. Faltou triagem de área.");
+            // deixa a Amanda só conversar/triagiar, sem chamar agenda
+            // (o prompt já puxa os módulos de triagem TEA/área)
+        } else {
+            // Detecta período preferido da mensagem
+            let preferredPeriod = null;
+            if (/\b(manh[ãa]|cedo)\b/i.test(text)) preferredPeriod = "manha";
+            else if (/\b(tarde)\b/i.test(text)) preferredPeriod = "tarde";
+            else if (/\b(noite)\b/i.test(text)) preferredPeriod = "noite";
 
-        // Detecta dia preferido
-        let preferredDay = null;
-        const dayMatch = text.toLowerCase().match(
-            /\b(segunda|ter[çc]a|quarta|quinta|sexta|s[aá]bado|domingo)\b/
-        );
-        if (dayMatch) {
-            const dayMap = {
-                domingo: "sunday", segunda: "monday", "terça": "tuesday", "terca": "tuesday",
-                quarta: "wednesday", quinta: "thursday", sexta: "friday", "sábado": "saturday", sabado: "saturday"
-            };
-            preferredDay = dayMap[dayMatch[1]] || null;
-        }
-
-        console.log("🔍 [ORCHESTRATOR] Buscando slots para:", {
-            therapyArea: bookingProduct.therapyArea,
-            specialties: bookingProduct.specialties,
-            preferredPeriod,
-            preferredDay,
-        });
-
-        try {
-            const slots = await findAvailableSlots({
-                therapyArea: bookingProduct.therapyArea,
-                specialties: bookingProduct.specialties,
-                preferredDay,
-                preferredPeriod,
-                daysAhead: 30,
-            });
-
-            if (slots?.blocked && slots?.reason === "recesso") {
-                return ensureSingleHeart(
-                    "Estaremos em recesso do dia 19/12 até 05/01, mas já posso deixar sua avaliação agendada pro início de janeiro! Prefere a primeira semana de janeiro pela manhã ou tarde?"
-                );
+            // Detecta dia preferido
+            let preferredDay = null;
+            const dayMatch = text.toLowerCase().match(
+                /\b(segunda|ter[çc]a|quarta|quinta|sexta|s[aá]bado|domingo)\b/
+            );
+            if (dayMatch) {
+                const dayMap = {
+                    domingo: "sunday", segunda: "monday", "terça": "tuesday", "terca": "tuesday",
+                    quarta: "wednesday", quinta: "thursday", sexta: "friday", "sábado": "saturday", sabado: "saturday"
+                };
+                preferredDay = dayMap[dayMatch[1]] || null;
             }
 
-            if (slots?.primary) {
+            console.log("🔍 [ORCHESTRATOR] Buscando slots para:", {
+                therapyArea: bookingProduct.therapyArea,
+                specialties: bookingProduct.specialties,
+                preferredPeriod,
+                preferredDay,
+            });
+
+            try {
+                const slots = await findAvailableSlots({
+                    therapyArea: bookingProduct.therapyArea,
+                    specialties: bookingProduct.specialties,
+                    preferredDay,
+                    preferredPeriod,
+                    daysAhead: 30,
+                });
+
+                if (slots?.primary) {
                 enrichedContext.pendingSchedulingSlots = slots;
+                enrichedContext.therapyArea = bookingProduct.therapyArea;
 
                 // Salva no lead para persistir entre mensagens
                 if (lead._id) {
@@ -492,10 +494,12 @@ export async function getOptimizedAmandaResponse({
             } else {
                 console.log("⚠️ [ORCHESTRATOR] Nenhum slot disponível encontrado");
             }
-        } catch (err) {
-            console.error("❌ [ORCHESTRATOR] Erro ao buscar slots:", err.message);
+            } catch (err) {
+                console.error("❌ [ORCHESTRATOR] Erro ao buscar slots:", err.message);
+            }
         }
     }
+
 
     if (Array.isArray(therapies) && therapies.length > 0) {
         try {
@@ -1321,9 +1325,32 @@ REGRAS CRÍTICAS:
  */
 function ensureSingleHeart(text) {
     if (!text) return "Como posso te ajudar? 💚";
-    const clean = text.replace(/💚/g, "").trim();
+
+    let clean = text.replace(/💚/g, "").trim();
+
+    // 1) Remove vocativo tipo "Obrigada, Carlos" / "Obrigado, João" no começo
+    clean = clean.replace(
+        /^(obrigad[oa]\s*,?\s+[a-zÀ-ú]+(?:\s+[a-zÀ-ú]+)*)/i,
+        (match) => {
+            // Normaliza pra um agradecimento neutro
+            return /obrigada/i.test(match) ? "Obrigada" : "Obrigado";
+        }
+    );
+
+    // 2) Também dá pra limpar "Oi, Carlos" no começo, se quiser
+    clean = clean.replace(
+        /^(oi|olá|ola)\s*,?\s+[a-zÀ-ú]+(?:\s+[a-zÀ-ú]+)*/i,
+        (match, oi) => {
+            // vira só "Oi" / "Olá"
+            return oi.charAt(0).toUpperCase() + oi.slice(1).toLowerCase();
+        }
+    );
+
+    clean = clean.trim();
+
     return `${clean} 💚`;
 }
+
 
 /**
  * 🔒 REGRA DE ESCOPO DA CLÍNICA
