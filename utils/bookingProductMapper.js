@@ -24,7 +24,7 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
     };
   }
 
-  // 📝 PSICOPEDAGOGIA (criança ou adulto)
+  // 📝 PSICOPEDAGOGIA (criança ou adulto) → agenda na PSICO com especialidade
   if (
     topic === "psicopedagogia" ||
     flags.asksPsychopedagogy ||
@@ -47,7 +47,10 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
   }
 
   // 📣 CAA / Comunicação Alternativa → Lorrany
-  if (flags.asksCAA || /comunica[çc][aã]o\s+alternativa|pecs|caa\b/i.test(text)) {
+  if (
+    flags.asksCAA ||
+    /comunica[çc][aã]o\s+alternativa|pecs|caa\b/i.test(text)
+  ) {
     return {
       therapyArea: "fonoaudiologia",
       specialties: ["caa"],
@@ -91,7 +94,78 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
     };
   }
 
-  // Fallback: se o lead já tem area salva, usa
+  // 🧩 TEA / AUTISMO / TDAH (CAMINHO DE TERAPIA, QUALQUER IDADE)
+  //
+  // Aqui não é laudo neuropsico (já tratado lá em cima).
+  // É para organizar as terapias pós-laudo: comportamento, fala, autonomia, escola.
+  const mentionsTEA =
+    flags.mentionsTEA_TDAH ||
+    /\b(tea|autismo|autista|tdah)\b/i.test(text);
+
+  if (mentionsTEA) {
+    const mentionsBehavior =
+      /comport|emoç|ansied|crise|birra|socializ|socializa|relacionar|conviv[êe]ncia|agressiv/i.test(
+        text
+      );
+    const mentionsSpeech =
+      flags.mentionsSpeechTherapy ||
+      /fala|linguagem|comunica[çc][aã]o/i.test(text);
+    const mentionsAutonomy =
+      /autonomi|rotina|independ[êe]ncia|avd(s)?|sensorial|integra[çc][aã]o\s+sensorial|organiza[çc][aã]o/i.test(
+        text
+      );
+    const mentionsSchool =
+      /escola|escolar|aprendiz|estudo|prova|liç[aã]o|liçao|tarefa|vestibular|enem/i.test(
+        text
+      );
+
+    // 👇 Aqui a triagem fina por foco:
+
+    // 1) COMPORTAMENTO / EMOÇÃO / SOCIALIZAÇÃO → Psicologia
+    if (mentionsBehavior) {
+      return {
+        therapyArea: "psicologia",
+        specialties: ["psicologia_tea", "habilidades_sociais"],
+        product: "psicologia_tea_comportamental",
+      };
+    }
+
+    // 2) FALA / COMUNICAÇÃO → Fonoaudiologia
+    if (mentionsSpeech) {
+      return {
+        therapyArea: "fonoaudiologia",
+        specialties: ["fono_tea"],
+        product: "fono_tea",
+      };
+    }
+
+    // 3) AUTONOMIA / ROTINA / SENSORIAL → Terapia Ocupacional
+    if (mentionsAutonomy) {
+      return {
+        therapyArea: "terapia_ocupacional",
+        specialties: ["to_tea"],
+        product: "to_tea",
+      };
+    }
+
+    // 4) ESCOLA / APRENDIZAGEM / ESTUDOS → Psico / Neuropsicopedagogia (agenda em psico)
+    if (mentionsSchool) {
+      return {
+        therapyArea: "psicologia",
+        specialties: ["neuropsicopedagogia", "psicopedagogia"],
+        product: "psico_aprendizagem_tea",
+      };
+    }
+
+    // 5) Só diz que é autista/TEA, sem foco → Psicologia TEA genérico
+    return {
+      therapyArea: "psicologia",
+      specialties: ["psicologia_tea"],
+      product: "psicologia_tea",
+    };
+  }
+
+  // Fallback: se o lead já tem área salva, usa
   if (lead.therapyArea) {
     return {
       therapyArea: lead.therapyArea,
