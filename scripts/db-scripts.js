@@ -258,7 +258,7 @@ db.patients.findOne({ _id: id });
 
 
 // 1️⃣ Deletar todas as mensagens do número
-const phone = "556291304192";
+const phone = "556181694922";
 
 db.contacts.deleteMany({ phone });
 db.leads.deleteMany({ "contact.phone": phone });
