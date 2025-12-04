@@ -1,5 +1,5 @@
 // utils/dateParser.js
-import { parse, isValid, format } from "date-fns";
+import { format, isValid, parse } from "date-fns";
 import { ptBR } from "date-fns/locale"; // você já usa date-fns no projeto
 
 // Padrões de data em pt-BR que queremos aceitar
@@ -36,34 +36,34 @@ export function parsePtBrDate(text = "") {
   return null;
 }
 
-/**
- * Extrai a primeira data “plausível” de um texto em pt-BR.
- * Retorna um Date ou null.
- */
 export function extractPreferredDateFromText(text = "") {
-  if (!text) return null;
+  const normalized = (text || "").toLowerCase();
 
-  // 1) Formatos numéricos: 22/12, 22-12, 22/12/2025, 22-12-25...
-  const numericMatch = text.match(
-    /(\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?)/
+  // pega primeiro padrão dd/MM ou dd-MM
+  const match = normalized.match(/\b(\d{1,2})[\/\-](\d{1,2})\b/);
+  if (!match) return null;
+
+  const day = match[1].padStart(2, "0");
+  const month = match[2].padStart(2, "0");
+
+  const today = new Date();
+  const year = today.getFullYear();
+
+  let date = parse(`${day}/${month}/${year}`, "dd/MM/yyyy", new Date());
+  if (!isValid(date)) return null;
+
+  // se já passou hoje, sobe pro ano seguinte
+  const todayMidnight = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate()
   );
 
-  // 2) Formatos escritos: "22 de dezembro", "22 de dezembro de 2025" etc.
-  const longMatch = text.match(
-    /(\d{1,2}\s+de\s+[a-zç]+(?:\s+de\s+\d{4})?)/i
-  );
+  if (date < todayMidnight) {
+    const nextYear = year + 1;
+    date = parse(`${day}/${month}/${nextYear}`, "dd/MM/yyyy", new Date());
+    if (!isValid(date)) return null;
+  }
 
-  const raw = numericMatch?.[1] || longMatch?.[1];
-  if (!raw) return null;
-
-  const d = parsePtBrDate(raw);
-  return d && isValid(d) ? d : null;
-}
-
-/**
- * Formata um Date em "YYYY-MM-DD" pro backend (agenda)
- */
-export function formatAsIsoDate(date) {
-  if (!date || !isValid(date)) return null;
-  return format(date, "yyyy-MM-dd");
+  return format(date, "yyyy-MM-dd"); // **string ISO curtinha**
 }

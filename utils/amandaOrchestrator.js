@@ -27,7 +27,7 @@ import {
     getManual,
 } from "./amandaPrompt.js";
 import { logBookingGate, mapFlagsToBookingProduct } from "./bookingProductMapper.js";
-import { extractPreferredDateFromText, formatAsIsoDate } from "./dateParser.js";
+import { extractPreferredDateFromText } from "./dateParser.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
@@ -284,11 +284,10 @@ export async function getOptimizedAmandaResponse({
     const flags = detectAllFlags(text, lead, enrichedContext);
 
     // 🔎 Tenta extrair uma data explícita do texto (22/12, 20-10-2022, 10 outubro 2020 etc.)
-    const parsedDate = extractPreferredDateFromText(text);
-    if (parsedDate) {
-        flags.preferredDate = formatAsIsoDate(parsedDate); // "2025-12-22"
+    const parsedDateStr = extractPreferredDateFromText(text); // "2025-12-22"
+    if (parsedDateStr) {
+        flags.preferredDate = parsedDateStr;
     }
-
 
     const bookingProduct = mapFlagsToBookingProduct({ ...flags, text }, lead);
 
@@ -475,6 +474,7 @@ export async function getOptimizedAmandaResponse({
                 therapyArea: bookingProduct.therapyArea,
                 specialties: bookingProduct.specialties,
                 preferredPeriod,
+                preferredDate: preferredSpecificDate,
                 preferredDay,
                 preferredSpecificDate,
             });

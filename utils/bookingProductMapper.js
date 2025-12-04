@@ -1,5 +1,3 @@
-// utils/bookingProductMapper.js
-
 import { inferTopic } from "./amandaPrompt.js";
 
 /**
