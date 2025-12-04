@@ -31,6 +31,7 @@ import { extractPreferredDateFromText } from "./dateParser.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
+const AI_MODEL = "claude-opus-4-5-20251101";
 
 async function runAnthropicWithFallback({ systemPrompt, messages, maxTokens, temperature }) {
     try {
@@ -70,9 +71,6 @@ async function runAnthropicWithFallback({ systemPrompt, messages, maxTokens, tem
         }
     }
 }
-
-// 🔧 CONFIGURAÇÃO DO MODELO
-const AI_MODEL = "claude-opus-4-5-20251101";
 
 const PURE_GREETING_REGEX =
     /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|bom\s*dia)[\s!,.]*$/i;
