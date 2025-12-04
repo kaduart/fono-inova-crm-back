@@ -508,16 +508,40 @@ export async function getOptimizedAmandaResponse({
                     enrichedContext.bookingSlotsForLLM = {
                         primary: primaryText,
                         alternatives: alternativesText,
-                        preferredDate: preferredSpecificDate, // 👈 dá pro LLM saber que foi pedido isso
+                        preferredDate: preferredSpecificDate,
                     };
 
                     console.log("✅ [ORCHESTRATOR] Slots encontrados:", {
                         primary: primaryText,
                         alternatives: slots.alternativesSamePeriod?.length || 0,
                     });
-                } else {
-                    console.log("⚠️ [ORCHESTRATOR] Nenhum slot disponível encontrado");
+
+                    // ⚡ Novo early-return para oferecer horários
+                    if (
+                        (flags.wantsSchedule || flags.wantsSchedulingNow) &&
+                        (enrichedContext.messageCount || 1) <= 1 // primeira interação de agendamento
+                    ) {
+                        const alts = (slots.alternativesSamePeriod ?? [])
+                            .slice(0, 2)
+                            .map(formatSlot);
+
+                        const texto = [
+                            "Que bom que você quer agendar! 😊",
+                            "",
+                            "Como estaremos em recesso de 19/12 a 05/01, os primeiros horários disponíveis são:",
+                            `1️⃣ ${primaryText}`,
+                            alts[0] ? `2️⃣ ${alts[0]}` : "",
+                            alts[1] ? `3️⃣ ${alts[1]}` : "",
+                            "",
+                            "Qual desses fica melhor pra você?",
+                        ]
+                            .filter(Boolean)
+                            .join("\n");
+
+                        return ensureSingleHeart(texto);
+                    }
                 }
+
             } catch (err) {
                 console.error("❌ [ORCHESTRATOR] Erro ao buscar slots:", err.message);
             }
@@ -1083,16 +1107,23 @@ async function callAmandaAIWithContext(
         /\d+\s*anos?\b/i.test(userText);
 
     let scheduleInfoNote = "";
+
     if (stage === "interessado_agendamento") {
+        // canal WhatsApp: já temos o telefone do lead
+        scheduleInfoNote =
+            "No WhatsApp, considere que o telefone de contato principal já é o número desta conversa. " +
+            "Para agendar, você precisa garantir: nome completo do paciente e um dia/período preferido. " +
+            "Só peça outro telefone se a pessoa fizer questão de deixar um número diferente.";
+
         if (!therapyAreaForScheduling && !hasAgeOrProfile) {
-            scheduleInfoNote =
-                "FALTAM DADOS PARA AGENDAR: não sabemos ainda a área (fono, psico, TO, fisio etc.) nem se é criança/adolescente/adulto. Antes de falar em encaminhar pra equipe ou oferecer horários, faça UMA pergunta simples e natural para descobrir área e perfil.";
+            scheduleInfoNote +=
+                " Ainda faltam: área principal (fono, psico, TO etc.) e se é criança/adolescente/adulto.";
         } else if (!therapyAreaForScheduling) {
-            scheduleInfoNote =
-                "FALTAM DADOS PARA AGENDAR: não sabemos ainda a área (fono, psico, TO, fisio etc.). Antes de oferecer horários, pergunte de forma acolhedora para qual área a família está buscando ajuda.";
+            scheduleInfoNote +=
+                " Ainda falta descobrir a área principal (fono, psico, TO etc.).";
         } else if (!hasAgeOrProfile) {
-            scheduleInfoNote =
-                "FALTAM DADOS PARA AGENDAR: não sabemos se o caso é criança, adolescente ou adulto. Antes de oferecer horários, pergunte de forma natural pra quem é (criança/adulto) e, se fizer sentido, idade aproximada.";
+            scheduleInfoNote +=
+                " Ainda falta deixar claro se é criança, adolescente ou adulto.";
         }
     }
 
@@ -1159,10 +1190,9 @@ async function callAmandaAIWithContext(
                     "Lead já demonstrou que QUER AGENDAR e a mensagem fala de horário/vaga/dia. " +
                     "O sistema já te mostra horários REAIS disponíveis: use apenas esses. " +
                     "Seu objetivo é ajudar a pessoa a escolher um dos horários e coletar os dados mínimos " +
-                    "do paciente (nome completo, data de nascimento e telefone se ainda não tiver). " +
-                    "Se ainda faltar alguma dessas infos, confirme o que JÁ tem e peça só o que falta em 1–2 frases. " +
-                    "Não invente novos horários e não diga que 'vai ver com a equipe'; considere que você já está " +
-                    "acessando a agenda em tempo real.";
+                    "do paciente: nome completo e data de nascimento. " +
+                    "Considere que o telefone de contato principal é o número desta conversa (WhatsApp); " +
+                    "só peça outro telefone se a pessoa quiser deixar um número diferente.";
             } else {
                 stageInstruction =
                     "Esse lead já mostrou interesse em agendar em algum momento, mas a mensagem atual é mais " +
@@ -1299,10 +1329,12 @@ REGRAS CRÍTICAS:
                                     - ${shouldGreet ? "Pode cumprimentar" : "🚨 NÃO use Oi/Olá - conversa ativa"}
                                     - ${conversationSummary ? "🧠 USE o resumo acima" : "📜 Leia histórico acima"}
                                     - 🚨 NÃO pergunte o que já foi dito (principalmente idade, se é criança/adulto e a área principal)
-                                    - Em fluxos de AGENDAMENTO:
-                                    - Se ainda não tiver nome, telefone ou período definidos, confirme o que JÁ tem e peça só o que falta.
-                                    - NÃO diga que vai encaminhar pra equipe enquanto faltar alguma dessas informações.
-                                    - Depois que tiver nome + telefone + período, faça UMA única mensagem dizendo que vai encaminhar os dados.
+                                    - Em fluxos de AGENDAMENTO (WhatsApp):
+                                    - Considere que o telefone de contato principal já é o número desta conversa.
+                                    - Garanta que você tenha: nome completo do paciente + dia/período preferido.
+                                    - Só peça outro telefone se a pessoa quiser deixar um número diferente.
+                                    - Depois que tiver esses dados, faça UMA única mensagem dizendo que vai encaminhar o agendamento pra equipe.
+
                                     - 1-3 frases, tom humano
                                     - 1 💚 final`;
 
