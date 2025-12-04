@@ -4,16 +4,16 @@
 // Arquivo: services/amandaBookingService.js
 
 import axios from "axios";
-import { addDays, format } from "date-fns";
+import {
+    addDays,
+    format,
+    isAfter,
+    isWithinInterval,
+    parseISO,
+    startOfDay,
+} from "date-fns";
 import Doctor from "../models/Doctor.js";
 
-const BLOCKED_PERIODS = [
-    {
-        start: "2024-12-19",
-        end: "2025-01-04",
-        message: "Estaremos em recesso do dia 19/12 até 05/01"
-    }
-];
 // 🔗 Base interna: primeiro INTERNAL_BASE_URL, depois BACKEND_URL_PRD, depois localhost
 const API_BASE =
     process.env.INTERNAL_BASE_URL ||
@@ -53,20 +53,17 @@ const bookingStats = {
 };
 
 
-function isDateBlocked(dateStr) {
-    const date = new Date(dateStr + "T12:00:00-03:00");
+const RECESSO_START = parseISO("2025-12-19");
+const RECESSO_END = parseISO("2026-01-05");
 
-    for (const period of BLOCKED_PERIODS) {
-        const start = new Date(period.start + "T00:00:00-03:00");
-        const end = new Date(period.end + "T23:59:59-03:00");
-
-        if (date >= start && date <= end) {
-            return true;
-        }
+export function isDateBlocked(dateStr) {
+    try {
+        const d = parseISO(dateStr); // "yyyy-MM-dd"
+        return isWithinInterval(d, { start: RECESSO_START, end: RECESSO_END });
+    } catch {
+        return false;
     }
-    return false;
 }
-
 
 // ============================================================================
 // 🔍 PASSO 1: BUSCAR SLOTS DISPONÍVEIS
@@ -100,7 +97,7 @@ export async function findAvailableSlots({
     specialties = [],
     preferredDay,
     preferredPeriod,
-    preferredDate,      // 👈 AGORA usamos a data pedida (ex.: 2025-12-22)
+    preferredDate, // "yyyy-MM-dd" ou null
     daysAhead = 30,
 }) {
     const doctorFilter = {
@@ -120,44 +117,35 @@ export async function findAvailableSlots({
     });
 
     const doctors = await Doctor.find(doctorFilter).lean();
-
     if (!doctors.length) {
         return null;
     }
 
-    // 🕒 "Agora" no servidor
     const now = new Date();
+    const today = startOfDay(now);
+    const todayStr = format(today, "yyyy-MM-dd");
 
-    // Dia de hoje (zerado)
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-
-    // 🧷 Data de início da busca = hoje ou data pedida, o que for MAIOR
-    let startDate = today;
+    // 👉 Se o cliente pediu uma data e ela é no futuro, começamos A PARTIR DELA
+    let searchStart = today;
 
     if (preferredDate) {
-        // preferredDate vem como "yyyy-MM-dd" do extractPreferredDateFromText/formatAsIsoDate
-        const parsedPreferred = new Date(`${preferredDate}T00:00:00`);
+        try {
+            const pref = startOfDay(parseISO(preferredDate));
 
-        if (!Number.isNaN(parsedPreferred.getTime())) {
-            parsedPreferred.setHours(0, 0, 0, 0);
-            if (parsedPreferred > startDate) {
-                startDate = parsedPreferred;
+            // Se a data pedida é depois de hoje, começamos dali
+            if (isAfter(pref, today)) {
+                searchStart = pref;
             }
-        } else {
-            console.warn("[BOOKING] preferredDate inválida:", preferredDate);
+        } catch {
+            // se der erro, ignora e segue com hoje
         }
     }
-
-    // Pra filtrar horários que já passaram HOJE
-    const todayStr = format(now, "yyyy-MM-dd");
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
     const allCandidates = [];
 
     for (const doctor of doctors) {
         for (let i = 0; i < daysAhead; i++) {
-            const dateObj = addDays(startDate, i);
+            const dateObj = addDays(searchStart, i);
             const date = format(dateObj, "yyyy-MM-dd");
 
             try {
@@ -169,15 +157,17 @@ export async function findAvailableSlots({
                 if (!slots?.length) continue;
 
                 for (const time of slots) {
-                    // ⏱️ NÃO sugerir horário que já passou hoje
-                    if (date === todayStr) {
-                        const [hStr, mStr] = String(time).split(":");
-                        const slotMinutes =
-                            parseInt(hStr, 10) * 60 +
-                            parseInt(mStr || "0", 10);
+                    // ❌ Pula qualquer horário em dia de recesso
+                    if (isDateBlocked(date)) continue;
 
-                        if (Number.isFinite(slotMinutes) && slotMinutes <= nowMinutes) {
-                            continue; // pula 08:00 se já são 18:00, por exemplo
+                    // ❌ Pula horários que já passaram HOJE
+                    if (date === todayStr) {
+                        const [hStr, mStr] = time.split(":");
+                        const slotDate = new Date(dateObj);
+                        slotDate.setHours(parseInt(hStr, 10), parseInt(mStr, 10), 0, 0);
+
+                        if (slotDate <= now) {
+                            continue; // já passou
                         }
                     }
 
@@ -188,7 +178,7 @@ export async function findAvailableSlots({
                         time,
                     });
                 }
-            } catch (err) {
+            } catch (_err) {
                 // erro de um médico/dia não derruba o resto
                 continue;
             }
@@ -200,20 +190,10 @@ export async function findAvailableSlots({
         return null;
     }
 
-    // 🔒 Aplica recesso / datas bloqueadas
-    const filteredCandidates = allCandidates.filter(
-        (slot) => !isDateBlocked(slot.date),
-    );
-
-    if (!filteredCandidates.length) {
-        console.log("⚠️ [BOOKING] Todos os slots caíram em datas bloqueadas (recesso?)");
-        return {
-            blocked: true,
-            reason: "recesso",
-            message:
-                "Estaremos em recesso do dia 19/12 até 05/01. Posso agendar a partir de 06/01!",
-        };
-    }
+    // se preferredDate caiu dentro do recesso, aqui já não terá nada entre 19/12 e 05/01,
+    // porque estamos pulando no laço acima.
+    // Ou seja: se o paciente pedir "29/12", a busca começa em 29/12, mas os dias de recesso são ignorados,
+    // então o primeiro horário vai ser logo DEPOIS do recesso (ex.: 06/01).
 
     const weekdayIndex = {
         sunday: 0,
@@ -233,21 +213,21 @@ export async function findAvailableSlots({
         return getTimePeriod(slot.time) === preferredPeriod;
     };
 
-    // 1️⃣ Tenta escolher o primary no dia pedido (segunda, terça, quinta etc.)
+    // 1️⃣ Tenta escolher o primary no dia da semana preferido (segunda, quinta etc.)
     let primary = null;
 
     if (preferredDay && weekdayIndex[preferredDay] !== undefined) {
         const targetDow = weekdayIndex[preferredDay];
 
-        const preferredDaySlots = filteredCandidates
+        const preferredDaySlots = allCandidates
             .filter(
                 (slot) =>
-                    getDow(slot.date) === targetDow && matchesPeriod(slot),
+                    getDow(slot.date) === targetDow && matchesPeriod(slot)
             )
             .sort(
                 (a, b) =>
                     a.date.localeCompare(b.date) ||
-                    a.time.localeCompare(b.time),
+                    a.time.localeCompare(b.time)
             );
 
         if (preferredDaySlots.length) {
@@ -255,32 +235,37 @@ export async function findAvailableSlots({
         }
     }
 
-    // 2️⃣ Se não achar nesse dia, pega o primeiro compatível com o período
+    // 2️⃣ Se não achar por dia da semana, pega o primeiro compatível com o período
     if (!primary) {
-        const filtered = filteredCandidates
+        const filtered = allCandidates
             .filter(matchesPeriod)
             .sort(
                 (a, b) =>
                     a.date.localeCompare(b.date) ||
-                    a.time.localeCompare(b.time),
+                    a.time.localeCompare(b.time)
             );
 
-        primary = filtered[0] || filteredCandidates[0];
+        primary = filtered[0] || allCandidates[0];
     }
 
-    // 3️⃣ Alternativas no MESMO período, priorizando outros dias
+    if (!primary) {
+        console.log("ℹ️ [BOOKING] Nenhum slot sobrando após filtros");
+        return null;
+    }
+
+    // 3️⃣ Monta alternativas no MESMO período, tentando outro dia
     const primaryPeriod = getTimePeriod(primary.time);
 
-    const samePeriodSlots = filteredCandidates
+    const samePeriodSlots = allCandidates
         .filter(
             (slot) =>
                 !(slot.date === primary.date && slot.time === primary.time) &&
-                getTimePeriod(slot.time) === primaryPeriod,
+                getTimePeriod(slot.time) === primaryPeriod
         )
         .sort(
             (a, b) =>
                 a.date.localeCompare(b.date) ||
-                a.time.localeCompare(b.time),
+                a.time.localeCompare(b.time)
         );
 
     const alternativesSamePeriod = [];
@@ -300,7 +285,7 @@ export async function findAvailableSlots({
             if (
                 slot.date === primary.date &&
                 !alternativesSamePeriod.some(
-                    (s) => s.date === slot.date && s.time === slot.time,
+                    (s) => s.date === slot.date && s.time === slot.time
                 )
             ) {
                 alternativesSamePeriod.push(slot);
@@ -311,9 +296,10 @@ export async function findAvailableSlots({
     return {
         primary,
         alternativesSamePeriod,
-        all: filteredCandidates,
+        all: allCandidates,
     };
 }
+
 
 // ============================================================================
 // 📅 PASSO 2 + 3: CRIAR PACIENTE + AGENDAR (FLUXO COMPLETO)
