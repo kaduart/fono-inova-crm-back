@@ -7,6 +7,13 @@ import axios from "axios";
 import { addDays, format } from "date-fns";
 import Doctor from "../models/Doctor.js";
 
+const BLOCKED_PERIODS = [
+    {
+        start: "2024-12-19",
+        end: "2025-01-04",
+        message: "Estaremos em recesso do dia 19/12 até 05/01"
+    }
+];
 // 🔗 Base interna: primeiro INTERNAL_BASE_URL, depois BACKEND_URL_PRD, depois localhost
 const API_BASE =
     process.env.INTERNAL_BASE_URL ||
@@ -45,6 +52,22 @@ const bookingStats = {
     errors: 0,
 };
 
+
+function isDateBlocked(dateStr) {
+    const date = new Date(dateStr + "T12:00:00-03:00");
+
+    for (const period of BLOCKED_PERIODS) {
+        const start = new Date(period.start + "T00:00:00-03:00");
+        const end = new Date(period.end + "T23:59:59-03:00");
+
+        if (date >= start && date <= end) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
 // ============================================================================
 // 🔍 PASSO 1: BUSCAR SLOTS DISPONÍVEIS
 // ============================================================================
@@ -76,7 +99,7 @@ export async function findAvailableSlots({
     specialties = [],
     preferredDay,
     preferredPeriod,
-    daysAhead = 7,
+    daysAhead = 30,
 }) {
     const doctorFilter = {
         active: true,
@@ -138,6 +161,17 @@ export async function findAvailableSlots({
         return null;
     }
 
+    const filteredCandidates = allCandidates.filter(slot => !isDateBlocked(slot.date));
+    if (!filteredCandidates.length) {
+        console.log("⚠️ [BOOKING] Todos os slots no período de recesso");
+        return {
+            blocked: true,
+            reason: "recesso",
+            message: "Estaremos em recesso do dia 19/12 até 05/01. Posso agendar a partir de 06/01!"
+        };
+    }
+
+
     const weekdayIndex = {
         sunday: 0,
         monday: 1,
@@ -162,7 +196,7 @@ export async function findAvailableSlots({
     if (preferredDay && weekdayIndex[preferredDay] !== undefined) {
         const targetDow = weekdayIndex[preferredDay];
 
-        const preferredDaySlots = allCandidates
+        const preferredDaySlots = filteredCandidates
             .filter(
                 (slot) =>
                     getDow(slot.date) === targetDow && matchesPeriod(slot)
@@ -180,7 +214,7 @@ export async function findAvailableSlots({
 
     // 2️⃣ Se não achar nesse dia, pega o primeiro compatível com o período
     if (!primary) {
-        const filtered = allCandidates
+        const filtered = filteredCandidates
             .filter(matchesPeriod)
             .sort(
                 (a, b) =>
@@ -188,13 +222,13 @@ export async function findAvailableSlots({
                     a.time.localeCompare(b.time)
             );
 
-        primary = filtered[0] || allCandidates[0];
+        primary = filtered[0] || filteredCandidates[0];
     }
 
     // 3️⃣ Monta alternativas no MESMO período, tentando outro dia
     const primaryPeriod = getTimePeriod(primary.time);
 
-    const samePeriodSlots = allCandidates
+    const samePeriodSlots = filteredCandidates
         .filter(
             (slot) =>
                 !(slot.date === primary.date && slot.time === primary.time) &&
@@ -234,7 +268,7 @@ export async function findAvailableSlots({
     return {
         primary,
         alternativesSamePeriod,
-        all: allCandidates,
+        all: filteredCandidates,
     };
 }
 

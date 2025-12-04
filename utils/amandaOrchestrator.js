@@ -463,8 +463,14 @@ export async function getOptimizedAmandaResponse({
                 specialties: bookingProduct.specialties,
                 preferredDay,
                 preferredPeriod,
-                daysAhead: 10,
+                daysAhead: 30,
             });
+
+            if (slots?.blocked && slots?.reason === "recesso") {
+                return ensureSingleHeart(
+                    "Estaremos em recesso do dia 19/12 até 05/01, mas já posso deixar sua avaliação agendada pro início de janeiro! Prefere a primeira semana de janeiro pela manhã ou tarde?"
+                );
+            }
 
             if (slots?.primary) {
                 enrichedContext.pendingSchedulingSlots = slots;
