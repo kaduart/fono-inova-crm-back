@@ -94,7 +94,6 @@ export async function fetchAvailableSlotsForDoctor({ doctorId, date }) {
 /**
  * Encontra candidatos de horários para a área de terapia
  */
-// amandaBookingService.js
 
 export async function findAvailableSlots({
     therapyArea,
@@ -315,7 +314,6 @@ export async function findAvailableSlots({
         all: filteredCandidates,
     };
 }
-
 
 // ============================================================================
 // 📅 PASSO 2 + 3: CRIAR PACIENTE + AGENDAR (FLUXO COMPLETO)
