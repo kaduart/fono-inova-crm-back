@@ -21,13 +21,13 @@ import {
     formatSlot
 } from "../services/amandaBookingService.js";
 import { handleInboundMessageForFollowups } from "../services/responseTrackingService.js";
-import { extractPreferredDateFromText, formatAsIsoDate } from "../utils/dateParser.js";
 import {
     buildDynamicSystemPrompt,
     buildUserPromptWithValuePitch,
     getManual,
 } from "./amandaPrompt.js";
 import { logBookingGate, mapFlagsToBookingProduct } from "./bookingProductMapper.js";
+import { extractPreferredDateFromText, formatAsIsoDate } from "./dateParser.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
