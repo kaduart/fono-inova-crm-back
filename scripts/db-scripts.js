@@ -258,19 +258,23 @@ db.patients.findOne({ _id: id });
 
 
 // 1️⃣ Deletar todas as mensagens do número
-const phone = "5561981694922";
+const phone = "556291304192";
 
 db.contacts.deleteMany({ phone });
 db.leads.deleteMany({ "contact.phone": phone });
 db.messages.deleteMany({
   $or: [{ from: phone }, { to: phone }]
 });
+
+
+
+
 db.followups.deleteMany({}); // se quiser zerar todos followups de teste
 
 
 // cancelar followup
 db.contacts.updateOne(
-  { phone: "556291433223" },
+  { phone: "556291304192" },
   {
     $set: {
       status: "agendado",          // ou "encerrado", como vocês usam
