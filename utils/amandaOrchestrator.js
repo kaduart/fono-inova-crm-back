@@ -278,6 +278,14 @@ export async function getOptimizedAmandaResponse({
         ...context,
     };
 
+    // 🧮 Normaliza a contagem de mensagens (histórico + mensagem atual)
+    const historyLen = Array.isArray(enrichedContext.conversationHistory)
+        ? enrichedContext.conversationHistory.length
+        : (enrichedContext.messageCount || 0);
+
+    const msgCount = historyLen + 1; // inclui a mensagem atual
+    enrichedContext.messageCount = msgCount;
+
     // 🧩 FLAGS GERAIS
     const flags = detectAllFlags(text, lead, enrichedContext);
 
@@ -349,39 +357,55 @@ export async function getOptimizedAmandaResponse({
     }
 
     // 🔀 Atualiza estágio do funil usando nextStage
-
     const newStage = nextStage(stageFromContext, {
         flags,
         intent: analysis?.intent || {},
         extracted: analysis?.extracted || {},
         score: analysis?.score ?? lead.conversionScore ?? 50,
         isFirstMessage: enrichedContext.isFirstContact,
-        messageCount: enrichedContext.messageCount || 1,
+        messageCount: msgCount,
         lead,
     });
 
     enrichedContext.stage = newStage;
 
-    // 👀 Detecta mensagens "de agendamento" / avaliação / visita
+    // 👀 Detecta mensagens "de agendamento" / avaliação / visita inutilizado mas pode reativa se nao conseguir agendamento marcar paa pacinete vir conhecer o espaco
     const isSchedulingLike =
         GENERIC_SCHEDULE_EVAL_REGEX.test(normalized) ||
         SCHEDULING_REGEX.test(normalized) ||
         flags.wantsSchedule ||
         flags.wantsSchedulingNow;
 
-    // Contagem de mensagens da conversa (pra sua regra da "quarta vez")
-    const msgCount = enrichedContext.messageCount || 1;
+    // 🔎 Lead resistindo a agendar (só pesquisando, adiando, etc.)
+    const RESISTS_SCHEDULING_REGEX =
+        /\b(s[oó]\s+pesquisando|s[oó]\s+estou\s+pesquisando|mais\s+pra\s+frente|depois\s+eu\s+vejo|agora\s+n[aã]o\s+consigo|por\s+enquanto\s+n[aã]o|s[oó]\s+queria\s+saber\s+os\s+valores?)\b/i;
+
+    const isResistingScheduling =
+        // flags que possam vir do detectAllFlags
+        flags.visitLeadCold ||
+        // texto atual
+        RESISTS_SCHEDULING_REGEX.test(normalized) ||
+        // intenção fria da análise
+        analysis?.intent?.primary === "apenas_informacao" ||
+        analysis?.intent?.primary === "pesquisa_preco";
+
 
     // Usar funil de AVALIAÇÃO → VISITA APENAS:
     // - quando é mensagem de agendamento
     // - a partir da 4ª mensagem
     // - em estágios de lead (não paciente nem já agendando com slots)
     const shouldUseVisitFunnel =
-        isSchedulingLike &&
-        msgCount >= 4 && // 👈 AQUI: só depois da terceira resposta (na quarta)
-        (newStage === "novo" || newStage === "pesquisando_preco" || newStage === "engajado") &&
+        msgCount >= 4 &&                                // já teve um mínimo de conversa
+        isResistingScheduling &&                       // lead está resistindo a agendar
+        !flags.wantsSchedule &&                        // NÃO é um pedido ativo de agendamento
+        !flags.wantsSchedulingNow &&                   // (não é “quero marcar agora”)
+        (newStage === "novo" ||
+            newStage === "pesquisando_preco" ||
+            newStage === "engajado") &&
         !enrichedContext.pendingSchedulingSlots &&
         !lead.pendingPatientInfoForScheduling;
+
+
 
     if (shouldUseVisitFunnel) {
         const visitAnswer = await callVisitFunnelAI({
@@ -430,14 +454,17 @@ export async function getOptimizedAmandaResponse({
         therapies = [];
     }
 
-    // 🎯 BUSCA SLOTS QUANDO LEAD QUER AGENDAR
+    // 🎯 BUSCA SLOTS QUANDO LEAD QUER AGENDAR (SÓ A PARTIR DA 4ª MENSAGEM)
     if (
         (flags.wantsSchedule || flags.wantsSchedulingNow) &&
+        msgCount >= 4 && // 👈 só depois de já ter conversado um pouco
         !enrichedContext.pendingSchedulingSlots &&
         !lead.pendingPatientInfoForScheduling
     ) {
         if (!bookingProduct.therapyArea) {
-            console.log("⚠️ [ORCHESTRATOR] Lead quer agendar, mas therapyArea ainda não está definida. Faltou triagem de área.");
+            console.log(
+                "⚠️ [ORCHESTRATOR] Lead quer agendar, mas therapyArea ainda não está definida. Faltou triagem de área."
+            );
         } else {
             // período: manhã/tarde/noite
             let preferredPeriod = null;
@@ -516,37 +543,15 @@ export async function getOptimizedAmandaResponse({
                         alternatives: slots.alternativesSamePeriod?.length || 0,
                     });
 
-                    // ⚡ Novo early-return para oferecer horários
-                    if (
-                        (flags.wantsSchedule || flags.wantsSchedulingNow) &&
-                        (enrichedContext.messageCount || 1) <= 1 // primeira interação de agendamento
-                    ) {
-                        const alts = (slots.alternativesSamePeriod ?? [])
-                            .slice(0, 2)
-                            .map(formatSlot);
-
-                        const texto = [
-                            "Que bom que você quer agendar! 😊",
-                            "",
-                            "Como estaremos em recesso de 19/12 a 05/01, os primeiros horários disponíveis são:",
-                            `1️⃣ ${primaryText}`,
-                            alts[0] ? `2️⃣ ${alts[0]}` : "",
-                            alts[1] ? `3️⃣ ${alts[1]}` : "",
-                            "",
-                            "Qual desses fica melhor pra você?",
-                        ]
-                            .filter(Boolean)
-                            .join("\n");
-
-                        return ensureSingleHeart(texto);
-                    }
+                    // 👇 sem early-return aqui: quem usa esses slots
+                    // é o callAmandaAIWithContext, via slotsInstruction
                 }
-
             } catch (err) {
                 console.error("❌ [ORCHESTRATOR] Erro ao buscar slots:", err.message);
             }
         }
     }
+
 
 
 
