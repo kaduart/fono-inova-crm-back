@@ -61,15 +61,250 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
             return await handleAdvancePayment(req, res);
         }
 
-        // 🔹 Caso 2: Pagamento de pacote
+        // 🔹 Caso 2: Pacote
         if (serviceType === 'package_session') {
             if (!packageId) {
                 return res.status(400).json({
                     success: false,
-                    message: 'ID do pacote é obrigatório para pagamentos de pacote',
+                    message: 'ID do pacote é obrigatório para operações de pacote',
                 });
             }
 
+            // 📌 DIFERENCIAR:
+            // - amount > 0  → pagamento de pacote (fluxo financeiro atual)
+            // - amount <= 0 → apenas agendar sessão usando o pacote (reaproveita cancelada se houver)
+            if (amount <= 0) {
+                const mongoSession = await mongoose.startSession();
+                mongoSession.startTransaction();
+
+                try {
+                    const pkg = await Package.findById(packageId).session(mongoSession);
+                    if (!pkg) {
+                        await mongoSession.abortTransaction();
+                        return res.status(404).json({
+                            success: false,
+                            message: 'Pacote não encontrado',
+                        });
+                    }
+
+                    const { date, time } = req.body;
+
+                    if (!date || !time) {
+                        await mongoSession.abortTransaction();
+                        return res.status(400).json({
+                            success: false,
+                            message: 'Data e horário são obrigatórios para sessão de pacote',
+                        });
+                    }
+
+                    // 🔹 Definições básicas herdando do pacote quando necessário
+                    const sessionPatient = patientId || pkg.patient;
+                    const sessionDoctor = doctorId || pkg.doctor;
+                    const sessionSpecialty = specialty || pkg.specialty || pkg.sessionType;
+                    const sessionTypeValue = sessionType || pkg.sessionType;
+
+                    // 🔹 Valor da sessão (herda do pacote por padrão)
+                    let validSessionValue = pkg.sessionValue || 0;
+                    if (
+                        req.body.sessionValue !== undefined &&
+                        req.body.sessionValue !== null &&
+                        req.body.sessionValue !== ''
+                    ) {
+                        const parsed = Number(req.body.sessionValue);
+                        if (!Number.isNaN(parsed) && parsed >= 0) {
+                            validSessionValue = parsed;
+                        }
+                    }
+
+                    // 🔹 Verificar conflito de horário
+                    const conflictSession = await Session.findOne({
+                        date,
+                        time,
+                        doctor: sessionDoctor,
+                        patient: sessionPatient,
+                        specialty: sessionSpecialty,
+                        status: { $ne: 'canceled' }
+                    }).session(mongoSession);
+
+                    if (conflictSession) {
+                        await mongoSession.abortTransaction();
+                        return res.status(409).json({
+                            success: false,
+                            message: 'Já existe uma sessão agendada para este horário para este paciente/profissional',
+                        });
+                    }
+
+                    // 🔹 Buscar sessão cancelada com crédito reaproveitável
+                    const canceledPaidSession = await Session.findOne({
+                        package: packageId,
+                        status: 'canceled',
+                        $or: [
+                            { originalPaymentStatus: { $exists: true } },
+                            { originalIsPaid: true },
+                            { originalPartialAmount: { $exists: true, $gt: 0 } }
+                        ]
+                    })
+                        .sort({ canceledAt: -1 })
+                        .session(mongoSession);
+
+                    let isPaid;
+                    let paymentStatus;
+                    let visualFlag;
+                    let paymentMethodToUse;
+                    let partialAmount;
+
+                    if (canceledPaidSession && canceledPaidSession.originalPartialAmount > 0) {
+                        // ✅ Reaproveita o crédito da sessão cancelada
+                        isPaid = true;
+                        paymentStatus = 'paid';
+                        visualFlag = 'ok';
+                        paymentMethodToUse =
+                            canceledPaidSession.originalPaymentMethod ||
+                            pkg.paymentMethod ||
+                            paymentMethod;
+                        partialAmount = Number(canceledPaidSession.originalPartialAmount);
+
+                        // Zera os campos "originais" da sessão cancelada
+                        canceledPaidSession.originalPartialAmount = 0;
+                        canceledPaidSession.originalPaymentStatus = null;
+                        canceledPaidSession.originalIsPaid = false;
+                        canceledPaidSession.originalPaymentMethod = null;
+
+                        await canceledPaidSession.save({
+                            session: mongoSession,
+                            validateBeforeSave: false
+                        });
+                    } else {
+                        // ✅ Nova sessão sem pagamento prévio
+                        isPaid = false;
+                        paymentStatus = 'pending';
+                        visualFlag = 'pending';
+                        paymentMethodToUse = pkg.paymentMethod || paymentMethod;
+                        partialAmount = 0;
+                    }
+
+                    // 🔹 Criar nova sessão do pacote
+                    const newSession = new Session({
+                        date,
+                        time,
+                        patient: sessionPatient,
+                        doctor: sessionDoctor,
+                        package: packageId,
+                        sessionValue: validSessionValue,
+                        sessionType: sessionTypeValue,
+                        specialty: sessionSpecialty,
+                        status,
+                        isPaid,
+                        paymentStatus,
+                        visualFlag,
+                        paymentMethod: paymentMethodToUse,
+                        partialAmount,
+                        notes: notes || '',
+                        _inFinancialTransaction: true
+                    });
+
+                    await newSession.save({
+                        session: mongoSession,
+                        validateBeforeSave: false
+                    });
+
+                    // 🔹 Criar appointment vinculado
+                    const newAppointment = new Appointment({
+                        patient: newSession.patient,
+                        doctor: newSession.doctor,
+                        date: newSession.date,
+                        time: newSession.time,
+                        duration: 40,
+                        specialty: newSession.specialty,
+                        session: newSession._id,
+                        package: packageId,
+                        serviceType: 'package_session',
+                        operationalStatus: 'scheduled',
+                        clinicalStatus: 'pending',
+                        paymentStatus: newSession.paymentStatus,
+                        visualFlag: newSession.visualFlag,
+                        notes: notes || ''
+                    });
+
+                    await newAppointment.save({
+                        session: mongoSession,
+                        validateBeforeSave: false
+                    });
+
+                    // Vincular appointment na sessão
+                    newSession.appointmentId = newAppointment._id;
+                    await newSession.save({
+                        session: mongoSession,
+                        validateBeforeSave: false
+                    });
+
+                    // Atualizar pacote com nova sessão/appointment
+                    const updatedPkg = await Package.findByIdAndUpdate(
+                        packageId,
+                        {
+                            $push: {
+                                sessions: newSession._id,
+                                appointments: newAppointment._id
+                            }
+                        },
+                        {
+                            session: mongoSession,
+                            new: true
+                        }
+                    );
+
+                    await mongoSession.commitTransaction();
+
+                    // (Opcional) se quiser sincronizar o pacote aqui também:
+                    // try {
+                    //     await syncEvent(updatedPkg, 'package');
+                    // } catch (syncError) {
+                    //     console.error('⚠️ Erro na sincronização:', syncError.message);
+                    // }
+
+                    const result = await Package.findById(packageId)
+                        .populate('sessions appointments payments')
+                        .populate('patient')
+                        .populate({
+                            path: 'doctor',
+                            model: 'Doctor',
+                            select: '_id fullName specialty'
+                        })
+                        .lean();
+
+                    return res.status(201).json({
+                        success: true,
+                        message:
+                            canceledPaidSession && partialAmount > 0
+                                ? 'Sessão de pacote agendada reaproveitando pagamento anterior'
+                                : 'Sessão de pacote agendada com sucesso',
+                        session: {
+                            _id: newSession._id,
+                            date: newSession.date,
+                            time: newSession.time,
+                            isPaid: newSession.isPaid,
+                            paymentStatus: newSession.paymentStatus,
+                            visualFlag: newSession.visualFlag,
+                            partialAmount: newSession.partialAmount,
+                            sessionValue: newSession.sessionValue
+                        },
+                        package: result,
+                        reusedPayment: !!(canceledPaidSession && partialAmount > 0)
+                    });
+                } catch (err) {
+                    await mongoSession.abortTransaction();
+                    console.error('❌ Erro ao agendar sessão de pacote:', err);
+                    return res.status(500).json({
+                        success: false,
+                        message: err.message || 'Erro ao agendar sessão de pacote',
+                        errorCode: 'PACKAGE_SESSION_SCHEDULE_ERROR'
+                    });
+                } finally {
+                    await mongoSession.endSession();
+                }
+            }
+
+            // 🔹 amount > 0 → fluxo financeiro de pagamento de pacote (mantido)
             const mongoSession = await mongoose.startSession();
             mongoSession.startTransaction();
 
@@ -120,7 +355,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 mongoSession.endSession();
             }
         } else {
-            // 🔹 PRIMEIRO cria a sessão
+            // 🔹 PRIMEIRO cria a sessão (fluxo AVULSO — permanece exatamente como já estava)
             const newSession = await Session.create({
                 serviceType,
                 sessionType,
