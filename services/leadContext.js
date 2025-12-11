@@ -1,7 +1,7 @@
 import Appointment from '../models/Appointment.js';
 import Lead from '../models/Leads.js';
 import Message from '../models/Message.js';
-import { generateConversationSummary, needsNewSummary } from './conversationSummary.js'; // ✅
+import { generateConversationSummary, needsNewSummary } from './conversationSummary.js';
 
 export async function enrichLeadContext(leadId) {
     try {

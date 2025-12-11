@@ -678,4 +678,119 @@ export const getAtendencePatient = async (req, res) => {
   }
 };
 
+/**
+ * @route   GET /api/doctors/:doctorId/financial-report
+ * @desc    Relatório completo: receita x despesa de um profissional
+ * @query   ?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+ * @access  Private (admin/próprio médico)
+ */
+export const getDoctorFinancialReport = async (req, res) => {
+  try {
+    const { doctorId } = req.params;
+    const { startDate, endDate } = req.query;
 
+    // Validar datas
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'startDate e endDate são obrigatórios'
+      });
+    }
+
+    // Buscar doctor
+    const doctor = await Doctor.findById(doctorId).select('fullName specialty').lean();
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Profissional não encontrado' });
+    }
+
+    // Queries paralelas
+    const [payments, expenses] = await Promise.all([
+      // Receitas do profissional
+      Payment.find({
+        doctor: doctorId,
+        status: 'paid',
+        paymentDate: { $gte: startDate, $lte: endDate }
+      })
+        .populate('patient', 'fullName')
+        .populate('appointment', 'date time')
+        .select('amount paymentDate serviceType paymentMethod')
+        .lean(),
+
+      // Despesas do profissional
+      mongoose.model('Expense').find({
+        relatedDoctor: doctorId,
+        status: 'paid',
+        date: { $gte: startDate, $lte: endDate }
+      })
+        .select('amount date category subcategory')
+        .lean()
+    ]);
+
+    // Cálculos
+    const totalRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
+    const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const profitMargin = totalRevenue - totalExpenses;
+    const marginPercentage = totalRevenue > 0
+      ? ((profitMargin / totalRevenue) * 100).toFixed(2)
+      : 0;
+
+    const sessionsCount = payments.length;
+    const avgRevenuePerSession = sessionsCount > 0
+      ? (totalRevenue / sessionsCount).toFixed(2)
+      : 0;
+
+    // Agrupamento de despesas por categoria
+    const expensesByCategory = expenses.reduce((acc, e) => {
+      const cat = e.category || 'other';
+      if (!acc[cat]) acc[cat] = { amount: 0, count: 0 };
+      acc[cat].amount += e.amount;
+      acc[cat].count += 1;
+      return acc;
+    }, {});
+
+    res.json({
+      success: true,
+      data: {
+        doctor: {
+          _id: doctor._id,
+          fullName: doctor.fullName,
+          specialty: doctor.specialty
+        },
+        period: { startDate, endDate },
+        revenue: {
+          total: totalRevenue,
+          sessions: payments.map(p => ({
+            date: p.paymentDate,
+            patient: p.patient?.fullName || 'N/A',
+            amount: p.amount,
+            serviceType: p.serviceType,
+            paymentMethod: p.paymentMethod
+          }))
+        },
+        expenses: {
+          total: totalExpenses,
+          byCategory: expensesByCategory,
+          breakdown: expenses.map(e => ({
+            date: e.date,
+            description: e.description,
+            category: e.category,
+            subcategory: e.subcategory,
+            amount: e.amount
+          }))
+        },
+        profitMargin,
+        marginPercentage: `${marginPercentage}%`,
+        sessionsCount,
+        avgRevenuePerSession: Number(avgRevenuePerSession)
+      }
+    });
+
+  } catch (error) {
+    console.error('Erro ao gerar relatório financeiro:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erro ao gerar relatório',
+      error: error.message
+    });
+  }
+};
