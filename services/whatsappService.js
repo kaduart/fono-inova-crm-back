@@ -202,11 +202,18 @@ export async function sendTextMessage({
     const phone = normalizeE164BR(to);
     const url = `${META_URL}/${PHONE_ID}/messages`;
 
+    const formattedText = text
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .join('\n▫️ ')  // Adiciona bullet point
+        .replace(/\n▫️ $/g, '');
+
     const body = {
         messaging_product: "whatsapp",
         to: phone,
         type: "text",
-        text: { body: text.replace(/\n/g, '\n\n') },
+        text: { body: formattedText },
     };
 
     const res = await fetch(url, {
