@@ -15,7 +15,7 @@ const doctorSchema = new mongoose.Schema({
     minlength: 6,
     required: false,
     select: false,
-    set: v => (v === '' ? undefined : v) 
+    set: v => (v === '' ? undefined : v)
   },
   specialty: { type: String, required: true, enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'pediatria', 'neuroped'] },
   specialties: { type: [String], default: [] },
@@ -30,6 +30,32 @@ const doctorSchema = new mongoose.Schema({
   // 🔑 reset de senha
   passwordResetToken: { type: String, index: true, select: false },
   passwordResetExpires: { type: Date, select: false },
+  commissionRules: {
+    standardSession: {
+      type: Number,
+      default: 60,
+      min: 0,
+      description: 'Valor fixo por sessão regular (ex: R$ 60 ou R$ 65)'
+    },
+    evaluationSession: {
+      type: Number,
+      default: 0,
+      min: 0,
+      description: 'Valor por avaliação (se diferente de sessão padrão)'
+    },
+    neuropsychEvaluation: {
+      type: Number,
+      default: 1200,
+      min: 0,
+      description: 'Valor total ao completar 10 sessões de aval. neuropsicológica'
+    },
+    customRules: [{
+      serviceType: { type: String },  // ex: 'tongue_tie_test'
+      value: { type: Number },
+      condition: { type: String }     // ex: 'per_session', 'per_completed_package'
+    }]
+  },
+
 }, { timestamps: true });
 
 // comparar senha

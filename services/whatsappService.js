@@ -191,7 +191,6 @@ export async function sendTextMessage({
     to,
     text,
     lead,
-    // novos campos opcionais
     contactId = null,         // ← passa o contact._id quando tiver
     patientId = null,         // ← se estiver vinculado a um paciente
     sentBy = "amanda",   // default: Amanda respondeu sozinha
@@ -207,7 +206,7 @@ export async function sendTextMessage({
         messaging_product: "whatsapp",
         to: phone,
         type: "text",
-        text: { body: text },
+        text: { body: text.replace(/\n/g, '\n\n') },
     };
 
     const res = await fetch(url, {

@@ -115,8 +115,8 @@ db.patients.find(
 ).pretty()
 
 ///ouuuuu // Buscar agendamentos de hoje - 27/10/2025
-db.appointments.find({
-  date: "2025-11-07"
+db.packages.find({
+  date: "2025-12-08"
 }).sort({ time: 1 })
 
 //agendamentos do dia 
@@ -143,7 +143,7 @@ db.appointments.find({
 
 //consulta do dia futuro
 db.packages.find({
-  paymentDate: "2025-10-29"
+  paymentDate: "2025-12-08"
 })
 
 // consulta do dia or doutor
@@ -201,6 +201,7 @@ db.packages.find({ patient: ObjectId("6897dc360683ca3788ae815d") }).pretty()
 
 //mostra os detalhes do pacote
 db.packages.find({ _id: ObjectId("6917c359d364f9d3b07bcbe9") }).pretty();
+
 // deve retonrar qtd de sessoes do pacote
 db.sessions.find({ package: ObjectId("68f682092286c73db5d29d38") }).count();
 

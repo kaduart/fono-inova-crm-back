@@ -9,7 +9,7 @@ dotenv.config();
 import {
     generateConversationSummary,
     needsNewSummary
-} from '../../services/conversationSummary.js'; // ajuste o path conforme o nome real do arquivo
+} from '../../services/conversationSummary.js'; 
 
 async function generateSummariesForHistoricalLeads(limit = 200) {
     console.log('🧠 [SUMMARY] Iniciando geração de resumos para históricos...\n');

@@ -62,6 +62,10 @@ import whatsappRoutes from "./routes/whatsapp.js";
 import aiRoutes from "./routes/ai.js";
 import diagnosticRouter from './routes/whatsapp/diagnostic.js';
 import protocolRoutes from './routes/protocol.js';
+import expenseRoutes from './routes/financial/expense.js';
+import cashflowRoutes from './routes/financial/cashflow.js';
+import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
+import planningRoutes from './routes/planning.js';
 
 // ======================================================
 // 🧭 Inicialização base
@@ -73,6 +77,10 @@ dotenv.config({ path: path.resolve(__dirname, "./.env") });
 const app = express();
 const server = http.createServer(app);
 const io = initializeSocket(server);
+
+// 🔹 Iniciar cron jobs
+scheduleMonthlyCommissions();
+
 const PORT = process.env.PORT || 5000;
 
 // ======================================================
@@ -152,6 +160,9 @@ app.use('/api/leads', leadRoutes);
 app.use("/api/ai", aiRoutes);
 app.use('/api/diagnostic', diagnosticRouter);
 app.use('/api/protocols', protocolRoutes);
+app.use('/api/expenses', expenseRoutes);
+app.use('/api/cashflow', cashflowRoutes);
+app.use('/api/planning', planningRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);
