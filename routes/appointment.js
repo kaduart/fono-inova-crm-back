@@ -562,6 +562,8 @@ router.get('/', auth, async (req, res) => {
             };
         }
 
+        console.time('appointments.query');
+
         // 🔹 Buscar agendamentos com relacionamentos importantes
         const appointments = await Appointment.find(filter)
             .populate({ path: 'doctor', select: 'fullName specialty' })
@@ -571,7 +573,6 @@ router.get('/', auth, async (req, res) => {
             .populate({ path: 'payment', select: 'status amount paymentMethod' }) // ✅ ADICIONE ESTA LINHA
             .sort({ date: 1 })
             .lean();
-
 
         console.log('📦 Total appointments encontrados:', appointments.length);
 
@@ -622,7 +623,6 @@ router.get('/', auth, async (req, res) => {
                 start.setHours(hours, minutes);
                 const end = new Date(start.getTime() + (appt.duration || 40) * 60000);
 
-                // ✅ Consolida o status financeiro
                 // ✅ Consolida o status financeiro
                 const paymentStatus =
                     appt.payment?.status ||                    // 1º: Payment vinculado
