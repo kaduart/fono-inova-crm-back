@@ -25,7 +25,7 @@ export function deriveFlagsFromText(text = "") {
   return {
     asksPrice: /(pre[çc]o|valor|custa|quanto|mensal|pacote)/i.test(t),
     insistsPrice: /(s[oó]|apenas)\s*o\s*pre[çc]o|fala\s*o\s*valor|me\s*diz\s*o\s*pre[çc]o/i.test(t),
-    wantsSchedule: /\b(agendar|marcar|agendamento|remarcar|remarcar)\b/i.test(text) ||
+    wantsSchedule: /\b(agendar|marcar|agendamento|remarcar|consultar)\b/i.test(text) ||
       /\b(teria\s+vaga|tem\s+vaga|tem\s+hor[áa]rio|conseguir\s+um\s+hor[áa]rio)\b/i.test(text) ||
       /\b(hor[áa]rio\s+pra\s+(consulta|avalia[çc][aã]o))\b/i.test(text),
     asksAddress: /(onde|endere[cç]o|local|mapa|como\s*chegar)/i.test(t),
@@ -792,7 +792,7 @@ o acolhimento faz muita diferença.Muitos pais que vieram comparar acabaram fica
             // Adicionar após a seção de VALORES ou antes do fechamento do prompt
 
 📅 RECESSO DE FIM DE ANO:
-- A clínica estará em RECESSO de 19/12/2024 a 04/01/2025
+- A clínica estará em RECESSO de 19/12/2025 a 04/01/2025
 - NÃO ofereça horários nesse período
 - Agendamentos disponíveis A PARTIR DE 05/01/2025
 - Se o lead perguntar sobre agendar agora, diga:
@@ -1035,7 +1035,7 @@ export function buildUserPromptWithValuePitch(flags = {}) {
   }
 
   // 📅 MÓDULO: AGENDAMENTO
-  if (wantsSchedule) {
+  if (wantsSchedule || flags.wantsSchedulingNow || flags.inSchedulingFlow) {
     activeModules.push(DYNAMIC_MODULES.schedulingContext);
   }
 

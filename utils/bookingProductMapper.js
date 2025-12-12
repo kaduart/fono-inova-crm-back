@@ -1,5 +1,6 @@
 import { inferTopic } from "./amandaPrompt.js";
 
+
 /**
  * Normaliza em algo que a camada de agenda entende:
  *  - therapyArea: 'fonoaudiologia' | 'psicologia' | 'fisioterapia' | 'terapia_ocupacional'
@@ -9,6 +10,21 @@ import { inferTopic } from "./amandaPrompt.js";
 export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
   const text = (flags.text || "").toLowerCase();
   const topic = flags.topic || inferTopic(flags.text || "");
+
+  // ✅ Se estamos no fluxo de agendamento e já existe área salva, NÃO remapear por mensagem curta ("manhã", "sim", etc.)
+  if (flags.inSchedulingFlow || flags.wantsSchedulingNow) {
+    const therapyArea =
+      lead?.autoBookingContext?.mappedTherapyArea || lead?.therapyArea;
+
+    if (therapyArea) {
+      return {
+        therapyArea,
+        specialties: lead?.autoBookingContext?.mappedSpecialties || [],
+        product: lead?.autoBookingContext?.mappedProduct || therapyArea,
+      };
+    }
+  }
+
 
   // 🧠 NEUROPSICOLOGIA / AVALIAÇÃO NEUROPSICOLÓGICA → Vitória
   if (
@@ -65,6 +81,7 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
     };
   }
 
+
   // 🗣️ Fono com método PROMPT
   if (flags.mentionsMethodPrompt) {
     return {
@@ -84,7 +101,10 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
   }
 
   // ✋ Terapia Ocupacional
-  if (/terapia\s+ocupacional|\bto\b/i.test(text)) {
+  const mentionsTO =
+    /terapia\s+ocupacional|terapeuta\s+ocupacional|\bT\.?\s*O\.?\b/i.test(flags.text || "");
+
+  if (mentionsTO) {
     return {
       therapyArea: "terapia_ocupacional",
       specialties: [],
@@ -184,15 +204,13 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
  * Só loga os sinais principais do funil de agendamento.
  * O orquestrador já chama `logBookingGate(flags)`, então definimos aqui.
  */
-export function logBookingGate(flags = {}) {
-  try {
-    console.log("[BOOKING_GATE]", {
-      wantsSchedule: !!flags.wantsSchedule,
-      wantsSchedulingNow: !!flags.wantsSchedulingNow,
-      asksPrice: !!flags.asksPrice,
-      therapyArea: flags.therapyArea || null,
-    });
-  } catch {
-    // não deixa quebrar por causa de log
-  }
+export function logBookingGate(flags = {}, mapped = null) {
+  console.log("[BOOKING_GATE]", {
+    wantsSchedule: !!flags.wantsSchedule,
+    wantsSchedulingNow: !!flags.wantsSchedulingNow,
+    inSchedulingFlow: !!flags.inSchedulingFlow,
+    mappedTherapyArea: mapped?.therapyArea || null,
+    topic: flags.topic || null,
+  });
 }
+
