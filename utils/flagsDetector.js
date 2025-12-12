@@ -89,14 +89,12 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
         (answersPeriodOrDay && inSchedulingFlow) || // "a tarde", "sexta" depois da Amanda perguntar
         (isAffirmative && inSchedulingFlow);        // "sim / pode ser" respondendo proposta de agendamento
 
-    // 🔧 NOVO: topic (neuropsicologica, psicopedagogia, teste_linguinha, etc.)
+
     const topic = inferTopic(text || "");
 
     return {
-        // ✅ Tudo que vem do prompt central
         ...baseFlags,
-
-        // 👤 Perfil do lead
+        text,
         userProfile,
 
         // 📊 Contexto conversacional

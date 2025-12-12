@@ -54,7 +54,7 @@ const bookingStats = {
 
 
 const RECESSO_START = parseISO("2025-12-19");
-const RECESSO_END = parseISO("2026-01-05");
+const RECESSO_END = parseISO("2026-01-04");
 
 export function isDateBlocked(dateStr) {
     try {
@@ -97,7 +97,7 @@ export async function findAvailableSlots({
     specialties = [],
     preferredDay,
     preferredPeriod,
-    preferredDate, // "yyyy-MM-dd" ou null
+    preferredDate,
     daysAhead = 30,
 }) {
     const doctorFilter = {
@@ -176,6 +176,8 @@ export async function findAvailableSlots({
                         doctorName: doctor.fullName,
                         date,
                         time,
+                        specialty: therapyArea,
+                        requestedSpecialties: specialties,
                     });
                 }
             } catch (_err) {
@@ -535,6 +537,17 @@ export function pickSlotFromUserReply(text, availableSlots) {
 
     const normalized = text.toLowerCase();
 
+    const wantsMorning = /\b(manh[ãa]|cedo)\b/.test(normalized);
+    const wantsAfternoon = /\b(tarde)\b/.test(normalized);
+    const wantsNight = /\b(noite)\b/.test(normalized);
+
+    const primaryPeriod = getTimePeriod(availableSlots.primary.time);
+
+    if (wantsMorning && primaryPeriod !== "manha") return null;
+    if (wantsAfternoon && primaryPeriod !== "tarde") return null;
+    if (wantsNight && primaryPeriod !== "noite") return null;
+
+
     // "primeiro", "1", "opção 1"
     if (/\b(primeiro|1|op[çc][aã]o\s*1)\b/.test(normalized)) {
         return availableSlots.primary;
@@ -560,7 +573,7 @@ export function pickSlotFromUserReply(text, availableSlots) {
     const weekdayMatch = normalized.match(
         /\b(segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo)\b/
     );
-    const timeMatch = normalized.match(/\b(\d{1,2})(?:[h:]\s*(\d{2})?)?\b/);
+    const timeMatch = normalized.match(/\b(\d{1,2}):(\d{2})\b|\b(\d{1,2})\s*h\b/);
 
     if (weekdayMatch && timeMatch) {
         const targetDay = weekdayMatch[1];
