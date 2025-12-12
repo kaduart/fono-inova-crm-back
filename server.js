@@ -66,6 +66,7 @@ import expenseRoutes from './routes/financial/expense.js';
 import cashflowRoutes from './routes/financial/cashflow.js';
 import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
 import planningRoutes from './routes/planning.js';
+import compression from 'compression';
 
 // ======================================================
 // 🧭 Inicialização base
@@ -108,6 +109,7 @@ app.use(
   })
 );
 app.use(...sanitizeStack());
+app.use(compression());
 
 const allowedOrigins = [
   "https://app.clinicafonoinova.com.br",
