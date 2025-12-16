@@ -151,7 +151,7 @@ Gostaria de entender se isso tem relação com funções cognitivas e quanto cus
         console.log('━'.repeat(60));
         console.log('\n✅ Testes concluídos!\n');
         console.log('💡 O que observar:');
-        console.log('   - Se no TESTE 4 ela fala em 8–10 sessões, laudo, valor 2.500 etc.');
+        console.log('   - Se no TESTE 4 ela fala em 8–10 sessões, laudo, valor 2.000 etc.');
         console.log('   - Se mantém 1 💚 no final.');
         console.log('   - Se o tom está alinhado com o caso da Flávia.\n');
 

@@ -67,7 +67,7 @@ export function detectAllTherapies(text = "") {
 export const THERAPY_DATA = {
     neuropsychological: {
         explanation: "A avaliação neuropsicológica completa investiga atenção, memória, linguagem e raciocínio",
-        price: "R$ 2.500 (6x) ou R$ 2.300 (à vista)",
+        price: "R$ 2.000(até 6x)",
         details: "São 10 sessões de 50min",
         engagement: "Faça 1 pergunta simples sobre a principal dificuldade e para quem é o atendimento (sem repetir idade se já estiver no histórico)."
     },

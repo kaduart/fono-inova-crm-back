@@ -343,7 +343,7 @@ export async function getOptimizedAmandaResponse({
                 ...(rawSlots.alternativesOtherPeriod || []),
             ].filter(Boolean),
         };
-        
+
         // heurística: só tenta escolher se a msg parece escolha
         const looksLikeChoice =
             /\b([a-f])\b/i.test(text) ||
@@ -452,7 +452,7 @@ export async function getOptimizedAmandaResponse({
         }
 
         return ensureSingleHeart(
-            "Hoje é particular (com recibo pra reembolso). Só confirmando: tudo bem seguir assim mesmo pra eu te passar horários? 💚"
+            "Atendemos no particular e emitimos recibo/nota pra você tentar reembolso no plano. Quer que eu já te mostre os horários disponíveis? 💚"
         );
     }
 
