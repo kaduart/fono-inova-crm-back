@@ -29,7 +29,7 @@ const paymentSchema = new mongoose.Schema({
     amount: {
         type: Number,
         required: true,
-        min: 0.01
+        min: 0
     },
     package: {
         type: mongoose.Schema.Types.ObjectId,
@@ -64,7 +64,7 @@ const paymentSchema = new mongoose.Schema({
 
     paymentMethod: {
         type: String,
-        enum: ['dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'cartão', 'transferencia_bancaria','plano-unimed', 'outro'],
+        enum: ['dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'cartão', 'transferencia_bancaria', 'plano-unimed', 'outro'],
         required: true
     },
     status: {
@@ -118,6 +118,9 @@ const paymentSchema = new mongoose.Schema({
     toJSON: { virtuals: true }
 });
 
+paymentSchema.path("appointment").set((v) => (v === false ? null : v));
+paymentSchema.path("session").set((v) => (v === false ? null : v));
+paymentSchema.path("package").set((v) => (v === false ? null : v));
 
 paymentSchema.pre('save', async function (next) {
     // 🚫 Ignora pagamentos do novo fluxo de pacotes

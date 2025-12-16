@@ -40,9 +40,22 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
         isAdvancePayment = false,
         advanceSessions = [],
     } = req.body;
-
+console.log("DEBUG IDS", {
+  patientId, doctorId, packageId, sessionId,
+  t_patientId: typeof patientId,
+  t_doctorId: typeof doctorId,
+  t_packageId: typeof packageId,
+  t_sessionId: typeof sessionId,
+});
     const amount = parseFloat(req.body.paymentAmount) || 0;
     const currentDate = new Date();
+    const safeId = (v) => {
+        if (v === false || v === true) return null;
+        if (v === "false" || v === "true") return null;
+        if (v === "" || v === undefined || v === null) return null;
+        return v;
+    };
+
     let individualSessionId = null;
     let createdAppointmentId = null;
     let createdPaymentId = null; // 👈 NOVO: guardar o ID do pagamento
@@ -357,10 +370,10 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
         } else {
             // 🔹 PRIMEIRO cria a sessão (fluxo AVULSO — permanece exatamente como já estava)
             const newSession = await Session.create({
+                patient: safeId(patientId),
+                doctor: safeId(doctorId),
                 serviceType,
                 sessionType,
-                patient: patientId,
-                doctor: doctorId,
                 notes,
                 status: 'scheduled',
                 isPaid: false,
@@ -374,44 +387,48 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
             });
             individualSessionId = newSession._id;
 
-            // 🔹 SEGUNDO cria o PAGAMENTO INDIVIDUAL (PENDENTE)
-            const paymentData = {
-                patient: patientId,
-                doctor: doctorId,
-                serviceType,
-                amount,
-                paymentMethod,
-                notes,
-                status: 'pending', // ✅ PENDENTE na criação
-                paymentDate: req.body.date,
-                serviceDate: req.body.date,
-                session: individualSessionId,
-                createdAt: currentDate,
-                updatedAt: currentDate,
-            };
-
-            const payment = await Payment.create(paymentData);
-            createdPaymentId = payment._id;
-
-            // 🔹 TERCEIRO cria o AGENDAMENTO JÁ VINCULADO AO PAGAMENTO
             const appointment = await Appointment.create({
-                patient: patientId,
-                doctor: doctorId,
-                session: newSession._id,
-                payment: createdPaymentId, // 👈 VINCULO DIRETO - CRUCIAL!
+                patient: safeId(patientId),
+                doctor: safeId(doctorId),
+                session: safeId(newSession._id),
+                package: safeId(packageId),
                 date: req.body.date,
                 time: req.body.time,
-                paymentStatus: 'pending', // ✅ PENDENTE na criação
+                paymentStatus: 'pending',
                 clinicalStatus: 'pending',
                 operationalStatus: 'scheduled',
                 visualFlag: 'pending',
                 sessionValue: amount,
                 serviceType,
-                specialty: specialty,
+                specialty,
                 notes,
             });
-
             createdAppointmentId = appointment._id;
+
+            // 🔹 SEGUNDO cria o PAGAMENTO INDIVIDUAL (PENDENTE)
+            const paymentData = {
+                patient: safeId(patientId),
+                doctor: safeId(doctorId),
+                session: safeId(individualSessionId),
+                package: safeId(packageId),
+                appointment: safeId(createdAppointmentId),
+                serviceType,
+                amount,
+                paymentMethod,
+                notes,
+                status: 'pending',
+                paymentDate: req.body.date,
+                serviceDate: req.body.date,
+                createdAt: currentDate,
+                updatedAt: currentDate,
+            };
+
+
+            const payment = await Payment.create(paymentData);
+            createdPaymentId = payment._id;
+
+
+
 
             // após criar o appointment:
             await Patient.findByIdAndUpdate(
@@ -422,7 +439,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
 
             // 🔹 ATUALIZA O PAGAMENTO COM O ID DO AGENDAMENTO
             await Payment.findByIdAndUpdate(createdPaymentId, {
-                appointment: createdAppointmentId
+                appointment: safeId(createdAppointmentId)
             });
 
             console.log('✅ [POST] Sessão individual criada:', {
@@ -462,8 +479,8 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
 
             // 🔹 Cria pagamento para sessão existente
             const paymentData = {
-                patient: patientId,
-                doctor: doctorId,
+                patient: safeId(patientId),
+                doctor: safeId(doctorId),
                 serviceType,
                 amount,
                 paymentMethod,
@@ -471,7 +488,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 status: 'pending',
                 paymentDate: req.body.date,
                 serviceDate: req.body.date,
-                session: sessionId,
+                session: safeId(sessionId),
                 createdAt: currentDate,
                 updatedAt: currentDate,
             };
@@ -491,8 +508,8 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
         } else {
             // Fallback para outros casos
             const paymentData = {
-                patient: patientId,
-                doctor: doctorId,
+                patient: safeId(patientId),
+                doctor: safeId(doctorId),
                 serviceType,
                 amount,
                 paymentMethod,
@@ -504,10 +521,11 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 updatedAt: currentDate,
             };
 
-            if (serviceType === 'session') paymentData.session = sessionId;
-            if (serviceType === 'individual_session') paymentData.session = individualSessionId;
-            if (serviceType === 'package_session') paymentData.package = packageId;
-            if (createdAppointmentId) paymentData.appointment = createdAppointmentId;
+            if (serviceType === 'session') paymentData.session = safeId(sessionId);
+            if (serviceType === 'individual_session') paymentData.session = safeId(individualSessionId);
+            if (serviceType === 'package_session') paymentData.package = safeId(packageId);
+            if (createdAppointmentId) paymentData.appointment = safeId(createdAppointmentId);
+
 
             const payment = await Payment.create(paymentData);
             populatedPayment = await Payment.findById(payment._id)
@@ -526,15 +544,18 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
             message: 'Agendamento criado (pagamento pendente)',
             data: populatedPayment,
         });
-    } catch (error) {
-        console.error('❌ Erro ao registrar agendamento:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Erro ao registrar agendamento',
-            error: error.message,
-        });
+    } catch (err) {
+        console.error("ERR:", err?.message);
+        console.error("MODEL:", err?.model?.modelName);     // às vezes existe
+        console.error("PATH:", err?.path);                  // MUITO importante
+        console.error("VALUE:", err?.value);
+        console.error("KIND:", err?.kind);
+        console.error(err?.errors);                         // se tiver ValidationError
+        console.error(err?.stack);
+        throw err;
     }
 });
+
 // Busca agendamentos com filtros
 router.get('/', auth, async (req, res) => {
     try {

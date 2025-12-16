@@ -122,3 +122,43 @@ export function getTDAHResponse(leadName = '') {
 
   return `${namePart}o TDAH costuma ser trabalhado com avaliação especializada e um plano multidisciplinar, envolvendo principalmente psicologia, orientação à família e, quando necessário, outras terapias e acompanhamento médico. Aqui na Fono Inova a gente monta um plano individualizado de acordo com a rotina e as necessidades de cada paciente. Você quer saber mais sobre como funciona a avaliação inicial ou já prefere ver a possibilidade de horário para começar? 💚`;
 }
+
+
+export function detectNegativeScopes(text = "") {
+  const normalized = normalizeTherapyTerms(text);
+
+  const mentionsOrelhinha =
+    /(teste\s+da\s+orelhinha|triagem\s+auditiva(\s+neonatal)?|\bTAN\b)/i.test(normalized);
+
+  return { mentionsOrelhinha };
+}
+
+
+export function pickPrimaryTherapy(detected = []) {
+  const ids = detected.map(d => d.id);
+
+  // neuropsico domina porque é produto fechado
+  if (ids.includes("neuropsychological")) return "neuropsychological";
+
+  // se falou linguinha junto com fono, a principal costuma ser linguinha
+  if (ids.includes("tongue_tie")) return "tongue_tie";
+
+  // prioridade comum (ajuste como você quiser)
+  const priority = ["speech", "psychology", "occupational", "physiotherapy", "psychopedagogy", "neuropsychopedagogy", "music"];
+  return priority.find(p => ids.includes(p)) || (detected[0]?.id ?? null);
+}
+
+export function getPriceLinesForDetectedTherapies(detected = [], { max = 2 } = {}) {
+  const lines = [];
+
+  for (const t of detected) {
+    const data = getTherapyData(t.id);
+    if (!data?.price) continue;
+
+    // forma curta: "Fono: R$ 220..."
+    lines.push(`${t.name}: ${data.price}.`);
+    if (lines.length >= max) break;
+  }
+
+  return lines;
+}

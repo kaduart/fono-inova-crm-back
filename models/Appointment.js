@@ -64,8 +64,17 @@ const appointmentSchema = new mongoose.Schema({
   specialty: {
     type: String,
     required: true,
-    enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'tongue_tie_test', 'neuropsych_evaluation', 'fisioterapia', 'pediatria', 'neuroped'],
-
+    enum: [
+      'fonoaudiologia',
+      'terapia_ocupacional',
+      'psicologia',
+      'tongue_tie_test',
+      'neuropsych_evaluation',
+      'fisioterapia',
+      'pediatria',
+      'neuroped'
+    ],
+    set: v => typeof v === 'string' ? v.toLowerCase() : v
   },
   paymentStatus: {
     type: String,
@@ -101,7 +110,7 @@ const appointmentSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ['dinheiro', 'pix', 'cartão'],
+    enum: ['dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'cartão', 'transferencia_bancaria', 'plano-unimed', 'outro'],
     default: 'dinheiro'
   }
 }, {

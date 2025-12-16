@@ -1,4 +1,4 @@
-import { deriveFlagsFromText, inferTopic } from './amandaPrompt.js';
+import { deriveFlagsFromText, resolveTopicFromFlags } from './amandaPrompt.js';
 
 export function detectAllFlags(text = "", lead = {}, context = {}) {
     const t = (text || "").toLowerCase().trim();
@@ -18,6 +18,13 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
 
     // 👤 Perfil do lead (contexto + texto atual)
     const userProfile = detectUserProfile(t, lead, context);
+
+    const mentionsBaby =
+        /\b(beb[eê]|rec[ée]m[-\s]?nascid[oa]|rn\b|meses)\b/i.test(t);
+
+    // ✅ bebê conta como criança pro funil
+    const mentionsChildFromBaby =
+        mentionsBaby || userProfile === "baby";
 
     // 🔎 MODO VISITA PRESENCIAL (funil)
     const isNewLead =
@@ -90,12 +97,13 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
         (isAffirmative && inSchedulingFlow);        // "sim / pode ser" respondendo proposta de agendamento
 
 
-    const topic = inferTopic(text || "");
+    const topic = resolveTopicFromFlags(text || "");
 
     return {
         ...baseFlags,
         text,
         userProfile,
+        mentionsChild: !!(baseFlags.mentionsChild || mentionsChildFromBaby),
 
         // 📊 Contexto conversacional
         isReturningLead,
@@ -131,7 +139,7 @@ function detectUserProfile(text, lead = {}, context = {}) {
     if (context.mentionedTherapies?.includes('fonoaudiologia')) return 'speech';
 
     // Detecta no texto atual
-    if (/(bebê|bebe|recém|nascido|amamenta|mamar)/i.test(text)) return 'baby';
+    if (/(bebê|bebe|recém|nenem|nascido|amamenta|mamar)/i.test(text)) return 'baby';
     if (/(escola|nota|professora|lição|dever)/i.test(text)) return 'school';
     if (/(birra|comportamento|mania|teima)/i.test(text)) return 'behavior';
     if (/(ansiedade|medo|chora|emocional)/i.test(text)) return 'emotional';

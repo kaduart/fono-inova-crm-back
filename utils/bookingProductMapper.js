@@ -1,4 +1,4 @@
-import { inferTopic } from "./amandaPrompt.js";
+import { resolveTopicFromFlags } from "./amandaPrompt.js";
 
 
 /**
@@ -9,7 +9,19 @@ import { inferTopic } from "./amandaPrompt.js";
  */
 export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
   const text = (flags.text || "").toLowerCase();
-  const topic = flags.topic || inferTopic(flags.text || "");
+  const topic = flags.topic || resolveTopicFromFlags(flags.text || "");
+
+  const wantsLinguinha = /linguinha|fr[eê]nulo/i.test(text);
+const wantsFisio = /fisioterap|fisio\b/i.test(text);
+
+if (wantsLinguinha && wantsFisio) {
+  return {
+    therapyArea: null, // força triagem no orchestrator
+    specialties: [],
+    product: "multi_servico",
+    multi: ["teste_linguinha", "fisioterapia"],
+  };
+}
 
   // ✅ Se estamos no fluxo de agendamento e já existe área salva, NÃO remapear por mensagem curta ("manhã", "sim", etc.)
   if (flags.inSchedulingFlow || flags.wantsSchedulingNow) {

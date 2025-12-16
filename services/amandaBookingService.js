@@ -295,9 +295,46 @@ export async function findAvailableSlots({
         }
     }
 
+    const alternativesOtherPeriod = [];
+
+    const otherPeriodSlots = allCandidates
+        .filter(
+            (slot) =>
+                !(slot.date === primary.date && slot.time === primary.time) &&
+                getTimePeriod(slot.time) !== primaryPeriod
+        )
+        .sort(
+            (a, b) =>
+                a.date.localeCompare(b.date) ||
+                a.time.localeCompare(b.time)
+        );
+
+    // tenta pegar 2 de períodos diferentes primeiro (ex.: manhã e tarde)
+    const seenPeriods = new Set();
+    for (const slot of otherPeriodSlots) {
+        if (alternativesOtherPeriod.length >= 2) break;
+        const p = getTimePeriod(slot.time);
+        if (!seenPeriods.has(p)) {
+            seenPeriods.add(p);
+            alternativesOtherPeriod.push(slot);
+        }
+    }
+
+    // se não deu 2 ainda, completa com os próximos melhores
+    if (alternativesOtherPeriod.length < 2) {
+        for (const slot of otherPeriodSlots) {
+            if (alternativesOtherPeriod.length >= 2) break;
+            if (!alternativesOtherPeriod.some(s => s.date === slot.date && s.time === slot.time)) {
+                alternativesOtherPeriod.push(slot);
+            }
+        }
+    }
+
+
     return {
         primary,
         alternativesSamePeriod,
+        alternativesOtherPeriod,
         all: allCandidates,
     };
 }
@@ -374,7 +411,7 @@ export async function autoBookAppointment({
             time: chosenSlot.time, // string HH:mm
             serviceType: "individual_session",
             sessionType: "avaliacao",
-            paymentMethod: "to_define",
+            paymentMethod: "pix",
             paymentAmount: 0,
             status: "scheduled",
             notes: "[AGENDADO AUTOMATICAMENTE VIA AMANDA/WHATSAPP]",
@@ -444,29 +481,6 @@ export async function autoBookAppointment({
 // ============================================================================
 
 /**
- * Filtra horários por período (manhã/tarde)
- */
-function filterSlotsByPeriod(slots, period) {
-    if (!period) return slots;
-
-    const normalized = period.toLowerCase();
-
-    return slots.filter((time) => {
-        const hour = parseInt(time.split(":")[0], 10);
-
-        if (normalized.includes("manh") || normalized.includes("cedo")) {
-            return hour >= 7 && hour < 12;
-        }
-
-        if (normalized.includes("tard")) {
-            return hour >= 12 && hour < 18;
-        }
-
-        return true;
-    });
-}
-
-/**
  * Determina se é manhã ou tarde baseado na hora
  */
 export function getTimePeriod(time) {
@@ -474,51 +488,6 @@ export function getTimePeriod(time) {
     if (hour < 12) return "manha";
     if (hour < 18) return "tarde";
     return "noite";
-}
-
-
-/**
- * Extrai data de texto do usuário (hoje, amanhã, segunda, etc.)
- */
-function parseDateFromUserInput(text) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const normalized = text.toLowerCase();
-
-    if (/\bhoje\b/.test(normalized)) return today;
-
-    if (/\bamanh[ãa]\b/.test(normalized)) {
-        const tomorrow = new Date(today);
-        tomorrow.setDate(today.getDate() + 1);
-        return tomorrow;
-    }
-
-    const weekdays = {
-        domingo: 0,
-        segunda: 1,
-        terça: 2,
-        terca: 2,
-        quarta: 3,
-        quinta: 4,
-        sexta: 5,
-        sábado: 6,
-        sabado: 6,
-    };
-
-    for (const [day, targetDay] of Object.entries(weekdays)) {
-        if (normalized.includes(day)) {
-            const currentDay = today.getDay();
-            let daysToAdd = targetDay - currentDay;
-            if (daysToAdd <= 0) daysToAdd += 7;
-
-            const result = new Date(today);
-            result.setDate(today.getDate() + daysToAdd);
-            return result;
-        }
-    }
-
-    return today;
 }
 
 /**
@@ -533,71 +502,87 @@ export function formatDatePtBr(dateStr) {
  * Extrai slot escolhido da mensagem do usuário
  */
 export function pickSlotFromUserReply(text, availableSlots) {
-    if (!availableSlots?.primary) return null;
+    if (!availableSlots) return null;
 
-    const normalized = text.toLowerCase();
+    const normalized = (text || "").toLowerCase().trim();
 
+    // Monta a lista A..F (ordem: primary, samePeriod..., otherPeriod...)
+    const primary = availableSlots.primary || null;
+    const same = availableSlots.alternativesSamePeriod || [];
+    const other = availableSlots.alternativesOtherPeriod || [];
+
+    const allSlots = [primary, ...same, ...other].filter(Boolean);
+
+    if (allSlots.length === 0) return null;
+
+    // Helper: pega slot por letra A-F
+    const pickByLetter = (letter) => {
+        const L = (letter || "").toUpperCase();
+
+        if (L === "A") return primary;
+        if (L === "B") return same[0] || null;
+        if (L === "C") return same[1] || null;
+        if (L === "D") return same[2] || null;
+        if (L === "E") return other[0] || null;
+        if (L === "F") return other[1] || null;
+
+        return null;
+    };
+
+    // 1) Letra A-F (aceita "A", "A)", "opção B", "alternativa c", "letra d")
+    const letterMatch = normalized.match(
+        /(?:^|\b)(?:op(?:c|ç)[aã]o|alternativa|letra)?\s*([a-f])(?:\b|[\)\.\:\-]|$)/i
+    );
+    if (letterMatch?.[1]) {
+        const picked = pickByLetter(letterMatch[1]);
+        if (picked) return picked;
+    }
+
+    // 2) Número 1-6 (mapeia para A-F na mesma ordem)
+    const numMatch = normalized.match(
+        /(?:^|\b)(?:op(?:c|ç)[aã]o|alternativa)?\s*([1-6])(?:\b|[\)\.\:\-]|$)/
+    );
+    if (numMatch?.[1]) {
+        const idx = parseInt(numMatch[1], 10) - 1;
+        return allSlots[idx] || null;
+    }
+
+    // 3) Filtro por período (se a pessoa falar "de manhã/tarde/noite",
+    // tenta retornar o PRIMEIRO slot daquele período)
     const wantsMorning = /\b(manh[ãa]|cedo)\b/.test(normalized);
     const wantsAfternoon = /\b(tarde)\b/.test(normalized);
     const wantsNight = /\b(noite)\b/.test(normalized);
 
-    const primaryPeriod = getTimePeriod(availableSlots.primary.time);
+    if (wantsMorning || wantsAfternoon || wantsNight) {
+        const desired =
+            wantsMorning ? "manha" : wantsAfternoon ? "tarde" : "noite";
 
-    if (wantsMorning && primaryPeriod !== "manha") return null;
-    if (wantsAfternoon && primaryPeriod !== "tarde") return null;
-    if (wantsNight && primaryPeriod !== "noite") return null;
+        const slotByPeriod = allSlots.find((s) => getTimePeriod(s.time) === desired);
+        if (slotByPeriod) return slotByPeriod;
 
-
-    // "primeiro", "1", "opção 1"
-    if (/\b(primeiro|1|op[çc][aã]o\s*1)\b/.test(normalized)) {
-        return availableSlots.primary;
+        // falou período mas não tem nenhum slot nele
+        return null;
     }
 
-    // "segundo", "2"
-    if (
-        /\b(segundo|2|op[çc][aã]o\s*2)\b/.test(normalized) &&
-        availableSlots.alternativesSamePeriod?.[0]
-    ) {
-        return availableSlots.alternativesSamePeriod[0];
-    }
-
-    // "terceiro", "3"
-    if (
-        /\b(terceiro|3|op[çc][aã]o\s*3)\b/.test(normalized) &&
-        availableSlots.alternativesSamePeriod?.[1]
-    ) {
-        return availableSlots.alternativesSamePeriod[1];
-    }
-
-    // Tenta extrair dia + horário específico
+    // 4) Dia da semana + horário ("quinta 14:00" ou "quinta 14h")
     const weekdayMatch = normalized.match(
         /\b(segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo)\b/
     );
     const timeMatch = normalized.match(/\b(\d{1,2}):(\d{2})\b|\b(\d{1,2})\s*h\b/);
 
     if (weekdayMatch && timeMatch) {
-        const targetDay = weekdayMatch[1];
-        const targetHour = timeMatch[1].padStart(2, "0");
-        const targetMin = timeMatch[2] || "00";
-        const targetTime = `${targetHour}:${targetMin}`;
+        const targetDay = weekdayMatch[1]
+            .replace("terça", "terca")
+            .replace("sábado", "sabado");
 
-        const allSlots = [
-            availableSlots.primary,
-            ...(availableSlots.alternativesSamePeriod || []),
-            ...(availableSlots.alternativesOtherPeriod || []),
-        ];
+        const hourRaw = timeMatch[1] ?? timeMatch[3];
+        const minRaw = timeMatch[2] ?? "00";
+        const targetHour = String(hourRaw).padStart(2, "0");
+        const targetTime = `${targetHour}:${minRaw}`;
 
         for (const slot of allSlots) {
             const slotDate = new Date(slot.date + "T12:00:00-03:00");
-            const slotDay = [
-                "domingo",
-                "segunda",
-                "terça",
-                "quarta",
-                "quinta",
-                "sexta",
-                "sábado",
-            ][slotDate.getDay()];
+            const slotDay = ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"][slotDate.getDay()];
 
             if (slotDay === targetDay && slot.time.startsWith(targetTime)) {
                 return slot;
@@ -605,9 +590,127 @@ export function pickSlotFromUserReply(text, availableSlots) {
         }
     }
 
-    // Fallback: retorna o primeiro
-    return availableSlots.primary;
+    // 5) Fallback: se não entendeu, devolve a primary (A)
+    return primary;
 }
+
+
+
+export async function bookFixedSlot({
+    patientId: providedPatientId = null, // 👈 novo
+    patientInfo,
+    doctorId,
+    specialty,
+    date,
+    time,
+    notes = "",
+    sessionType = "avaliacao",
+    serviceType = "individual_session",
+    paymentMethod = "pix",
+    sessionValue = 0,                    // 👈 novo (valor real)
+    status = "scheduled",
+    packageId = null,                    // 👈 novo
+}) {
+    bookingStats.totalAttempts++;
+
+    try {
+        // 1) resolve patientId (usa o que veio, senão cria/busca)
+        let patientId = providedPatientId;
+
+        if (!patientId) {
+            const { fullName, birthDate, phone, email } = patientInfo || {};
+            const missing = [];
+            if (!fullName) missing.push("fullName");
+            if (!birthDate) missing.push("birthDate");
+            if (!phone) missing.push("phone");
+            if (missing.length) {
+                return { success: false, code: "MISSING_FIELDS", error: `Campos faltando: ${missing.join(", ")}` };
+            }
+
+            try {
+                const patientResponse = await api.post("/api/patients/add", {
+                    fullName,
+                    dateOfBirth: birthDate,
+                    phone,
+                    email: email || undefined,
+                });
+
+                if (patientResponse.data?.success && patientResponse.data?.data?._id) {
+                    patientId = patientResponse.data.data._id;
+                }
+            } catch (patientError) {
+                if (patientError.response?.status === 409 && patientError.response.data?.existingId) {
+                    patientId = patientError.response.data.existingId;
+                } else {
+                    throw patientError;
+                }
+            }
+
+            if (!patientId) {
+                return { success: false, code: "PATIENT_ERROR", error: "Não foi possível criar/encontrar o paciente" };
+            }
+        }
+
+        // 2) calcula paymentAmount correto
+        const isPackage = serviceType === "package_session";
+        const paymentAmount = isPackage ? 0 : Number(sessionValue) || 0;
+
+        if (!isPackage && paymentAmount <= 0) {
+            return { success: false, code: "INVALID_VALUE", error: "sessionValue deve ser > 0 para atendimentos avulsos" };
+        }
+
+        // 3) cria agendamento no CRM
+        const appointmentPayload = {
+            patientId,
+            doctorId,
+            specialty: specialty || "fonoaudiologia",
+            date,
+            time,
+            serviceType,
+            sessionType,
+            paymentMethod,
+            paymentAmount,
+            status,
+            notes: notes || "[IMPORTADO DA AGENDA PROVISÓRIA]",
+            isAdvancePayment: false,
+            ...(isPackage ? { packageId } : {}),
+        };
+
+        const appointmentResponse = await api.post("/api/appointments", appointmentPayload);
+
+        if (!appointmentResponse.data?.success) {
+            bookingStats.errors++;
+            return {
+                success: false,
+                code: appointmentResponse.data?.code || "APPOINTMENT_ERROR",
+                error: appointmentResponse.data?.message || "Erro ao criar agendamento",
+            };
+        }
+
+        const appointmentData = appointmentResponse.data.data;
+        bookingStats.successful++;
+
+        return {
+            success: true,
+            patientId,
+            appointment: appointmentData.appointment,
+            payment: appointmentData,
+            session: appointmentData.session,
+        };
+    } catch (error) {
+        const message = error.response?.data?.message || error.message || "";
+        const isConflict = error.response?.status === 409 || /conflito|conflict|occupied|preenchido/i.test(message);
+
+        if (isConflict) {
+            bookingStats.conflicts++;
+            return { success: false, code: "TIME_CONFLICT", error: "Horário não está mais disponível" };
+        }
+
+        bookingStats.errors++;
+        return { success: false, code: "INTERNAL_ERROR", error: message };
+    }
+}
+
 
 /**
  * Formata slot para exibição humana
@@ -622,3 +725,4 @@ export function formatSlot(slot) {
 
     return `${weekday.charAt(0).toUpperCase() + weekday.slice(1)}, ${date} às ${time} - ${slot.doctorName}`;
 }
+

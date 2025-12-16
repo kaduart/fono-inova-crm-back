@@ -52,6 +52,13 @@ const worker = new Worker(
     }
 
     const lead = followup.lead;
+    if (lead.insuranceHardNo && lead.acceptedPrivateCare !== true) {
+      await Followup.findByIdAndUpdate(followupId, {
+        status: "failed",
+        error: "Lead recusou atendimento particular (convênio)"
+      });
+      return;
+    }
     if (!lead?.contact?.phone) {
       await Followup.findByIdAndUpdate(followupId, {
         status: "failed",
@@ -431,10 +438,8 @@ const worker = new Worker(
 
         await followupQueue.add(
           "followup",
-          { followupId },
-          {
-            delay: delayMs
-          }
+          { followupId: nextFollowup._id },
+          { delay: delayMsNext }
         );
 
 

@@ -10,9 +10,11 @@ const patientSchema = new mongoose.Schema({
     index: true,
     validate: {
       validator: function (v) {
-        return mongoose.Types.ObjectId.isValid(v);
+        if (!v) return true;
+        return v instanceof mongoose.Types.ObjectId ||
+          mongoose.Types.ObjectId.isValid(v);
       },
-      message: props => `${props.value} não é um ID válido para médico!`
+      message: 'ID do médico inválido'
     }
   },
   gender: { type: String, trim: true },

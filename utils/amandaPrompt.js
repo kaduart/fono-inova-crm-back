@@ -21,13 +21,20 @@ export function deriveFlagsFromText(text = "") {
   const t = normalizeTherapyTerms(text || "").toLowerCase().trim();
   const mentionsLinguinha =
     /\b(linguinha|fr[eê]nulo\s+lingual|freio\s+da\s+l[ií]ngua|freio\s+lingual)\b/i.test(t);
+  const ageGroup =
+    /\b(adulto|maior\s*de\s*18)\b/i.test(t) ? "adulto"
+      : /\b(adolescente|adolesc[êe]ncia|pré[-\s]*adolescente)\b/i.test(t) ? "adolescente"
+        : (/\b(crian[çc]a|meu\s*filho|minha\s*filha|beb[eê]|bb)\b/i.test(t) || mentionsLinguinha) ? "crianca"
+          : null;
 
   return {
+    ageGroup,
     asksPrice: /(pre[çc]o|valor|custa|quanto|mensal|pacote)/i.test(t),
     insistsPrice: /(s[oó]|apenas)\s*o\s*pre[çc]o|fala\s*o\s*valor|me\s*diz\s*o\s*pre[çc]o/i.test(t),
-    wantsSchedule: /\b(agendar|marcar|agendamento|remarcar|consultar)\b/i.test(text) ||
-      /\b(teria\s+vaga|tem\s+vaga|tem\s+hor[áa]rio|conseguir\s+um\s+hor[áa]rio)\b/i.test(text) ||
-      /\b(hor[áa]rio\s+pra\s+(consulta|avalia[çc][aã]o))\b/i.test(text),
+    wantsSchedule:
+      /\b(agendar|marcar|agendamento|remarcar|consultar)\b/i.test(t) ||
+      /\b(teria\s+vaga|tem\s+vaga|tem\s+hor[áa]rio|conseguir\s+um\s+hor[áa]rio)\b/i.test(t) ||
+      /\b(hor[áa]rio\s+pra\s+(consulta|avalia[çc][aã]o))\b/i.test(t),
     asksAddress: /(onde|endere[cç]o|local|mapa|como\s*chegar)/i.test(t),
     asksPayment: /(pagamento|pix|cart[aã]o|dinheiro|parcel)/i.test(t),
     asksPlans: /(ipasgo|unimed|amil|plano|conv[eê]nio)/i.test(t),
@@ -38,6 +45,8 @@ export function deriveFlagsFromText(text = "") {
     asksAgeMinimum: /(idade.*m[ií]nima|a\s*partir|beb[eê])/i.test(t),
     asksRescheduling: /(cancelar|reagendar|remarcar|adiar)/i.test(t),
     givingUp: /\b(n[aã]o\s+vou\s+esperar|desist|vou\s+deixar\s+pra\s+l[aá]|depois\s+eu\s+vejo|vou\s+pensar|deixa\s+quieto)\b/i.test(t),
+    talksAboutTypeOfAssessment: /(avalia[çc][aã]o|teste|laudo|relat[oó]rio)/i.test(t),
+    hasMedicalReferral: /(pedido|encaminhamento|requisi[çc][aã]o)\s+m[eé]dic/i.test(t),
 
     wantsHumanAgent: /(falar\s+com\s+atendente|falar\s+com\s+uma\s+pessoa|falar\s+com\s+humano|quero\s+atendente|quero\s+falar\s+com\s+algu[eé]m|quero\s+falar\s+com\s+a\s+secret[aá]ria)/i.test(t),
     alreadyScheduled:
@@ -99,66 +108,6 @@ export const VALUE_PITCH = {
   pacote: "O pacote garante continuidade do cuidado com melhor custo-benefício.",
   psicopedagogia: "Na psicopedagogia, avaliamos as dificuldades de aprendizagem e criamos estratégias personalizadas.",
 };
-
-export function priceLineForTopic(topic, userText, conversationSummary = '') {
-  const mentionsCDL = /\bcdl\b/i.test(userText || "");
-
-  switch (topic) {
-    case "avaliacao_inicial":
-      return mentionsCDL ? "A avaliação CDL é R$ 180,00." : "O valor da avaliação é R$ 220,00.";
-    case "neuropsicologica":
-      return "A avaliação neuropsicológica é um pacote de aproximadamente 10 sessões, incluindo a entrevista inicial, as sessões de testes e a devolutiva com laudo. O valor total é de R$ 2.500 em até 6x, ou R$ 2.300 à vista.";
-    case "teste_linguinha":
-      return "O Teste da Linguinha custa R$ 150,00.";
-    case "sessao":
-      return "Sessão avulsa R$ 220; no pacote mensal sai por R$ 180/sessão (~R$ 720/mês).";
-    case "psicopedagogia":
-      return "Psicopedagogia: anamnese R$ 200; pacote mensal R$ 160/sessão (~R$ 640/mês).";
-  }
-
-  const ctx = (conversationSummary || '').toLowerCase();
-  const msg = (userText || '').toLowerCase();
-  const combined = `${ctx} ${msg}`;
-
-  if (/adulto|\d{2,}\s*anos|pra\s+mim|para\s+mim/.test(combined) && /neuro|tea|tdah|laudo|avalia[çc][aã]o/.test(combined)) {
-    return "A avaliação neuropsicológica para adultos também é o pacote completo (~10 sessões): R$ 2.500 em até 6x ou R$ 2.300 à vista. Prefere manhã ou tarde? 💚";
-  }
-
-  if (/\b(tea|autis|tdah|neuro|laudo|avalia[çc][aã]o\s+completa|cognitiv)\b/.test(combined)) {
-    return "A avaliação neuropsicológica completa (10 sessões) é R$ 2.500 (6x) ou R$ 2.300 (à vista).";
-  }
-  if (/\b(psicopedagog|dificuldade.*aprendiz)\b/.test(combined)) {
-    return "Psicopedagogia: anamnese R$ 200; pacote mensal R$ 160/sessão (~R$ 640/mês).";
-  }
-  if (/\b(psic[oó]log|ansiedade|emocional|comportamento)\b/.test(combined)) {
-    return "Avaliação inicial R$ 220; pacote mensal R$ 640 (1x/semana, R$ 160/sessão).";
-  }
-  if (/\b(terapia\s+ocupacional|to\b|integra[çc][aã]o\s+sensorial)\b/.test(combined)) {
-    return "Avaliação inicial R$ 220; pacote mensal R$ 720 (1x/semana, R$ 180/sessão).";
-  }
-  if (/\b(fisioterap|fisio\b|reabilita[çc][aã]o)\b/.test(combined)) {
-    return "Avaliação inicial R$ 220; pacote mensal R$ 640 (1x/semana, R$ 160/sessão).";
-  }
-  if (/\b(fono|fala|linguagem|crian[çc]a|beb[eê]|atraso)\b/.test(combined)) {
-    return (
-      "Na fonoaudiologia, a avaliação inicial é R$ 200. " +
-      "Depois, cada sessão de fonoterapia fica em torno de R$ 180; " +
-      "o valor mensal vai depender da frequência — muita gente começa com 1 vez por semana " +
-      "(fica em torno de R$ 720 no mês)."
-    );
-  }
-
-  return null;
-}
-
-export function inferTopic(text = "") {
-  const t = text.toLowerCase();
-  if (/neuropsico/.test(t)) return "neuropsicologica";
-  if (/linguinha|fr[eê]nulo/.test(t)) return "teste_linguinha";
-  if (/psicopedagog/.test(t)) return "psicopedagogia";
-  if (/sess[aã]o|pacote/.test(t)) return "sessao";
-  return "avaliacao_inicial";
-}
 
 /* =========================================================================
    3. MÓDULOS DINÂMICOS (VERSÃO 3.0 - FOCO EM VALOR)
@@ -442,9 +391,8 @@ SE DEMONSTRAR RESISTÊNCIA À AVALIAÇÃO:
 pra vocês conhecerem o espaço, verem como funciona e tirarem dúvidas pessoalmente, sem compromisso. 
 Você prefere já deixar essa visita combinada ou quer pensar mais um pouquinho?"
 
-SE AGENDAR QUALQUER UMA (AVALIAÇÃO OU VISITA):
-"Perfeito! Fica registrado então pra [dia/período]. Nosso endereço é ${CLINIC_ADDRESS}. 
-Um dia antes te envio um lembrete por aqui. Vai ser ótimo receber vocês!"
+✔ SE A PESSOA ESCOLHER UM HORÁRIO:
+"Perfeito! Vou só confirmar os dados do paciente e já encaminho pra equipe finalizar o agendamento 💚"
 
 SE NÃO AGENDAR NADA:
 "Sem problema! Posso te mandar algumas informações pra você conhecer melhor nosso trabalho. 
@@ -585,34 +533,39 @@ porque você vai ter clareza do que fazer. Vale o investimento de tempo inicial.
   // =========================================================================
   // 📅 MÓDULO DE AGENDAMENTO
   // =========================================================================
+  // =========================================================================
+  // 📅 MÓDULO DE AGENDAMENTO (A/B/C/D + E/F outro período)
+  // =========================================================================
   schedulingContext: `
-                    📅 SCRIPT DE AGENDAMENTO (COM AGENDA EM TEMPO REAL):
+              📅 SCRIPT DE AGENDAMENTO (COM AGENDA EM TEMPO REAL):
 
-                    - Você TEM acesso a uma lista de horários disponíveis (slots) enviada pelo sistema,
-                      já filtrada pela área/profissional correto.
-                    - Use APENAS esses horários: não invente horário ou período que não esteja na lista.
+              - Você recebe do sistema uma lista de horários disponíveis (slots), já filtrada pela área/profissional.
+              - Use APENAS esses horários. NÃO invente horário.
 
-                    REGRAS:
-                    1. Você só pode dizer que "tem horário de manhã/tarde/noite" se existir
-                      pelo menos um slot disponível nesse período para a área/profissional corretos.
-                      ❌ Proibido: "Temos sim de manhã" se não houver NENHUM horário de manhã.
-                    2. Nunca confirme um horário específico que NÃO esteja nos slots recebidos.
-                    3. Quando oferecer horários, use sempre data + hora reais do contexto
-                      (ex.: "quinta às 14h ou 14h40").
-                    4. Se o paciente pedir um período sem disponibilidade (ex.: manhã) e só tiver tarde:
-                      → Explique: "Pra essa área, hoje estamos com vagas concentradas à tarde,
-                          por exemplo quinta às 14h ou 14h40. Algum desses funciona pra você?"
-                    5. O objetivo é ajudar a pessoa a ESCOLHER um dos horários disponíveis
-                      e coletar os dados mínimos do paciente (nome completo + data de nascimento
-                      e telefone se ainda não tiver).
+              FORMATO DE OPÇÕES (quando o sistema fornecer):
+              A) slot principal (primary)
+              B) alternativa mesmo período (alternativesSamePeriod[0])
+              C) alternativa mesmo período (alternativesSamePeriod[1])
+              D) alternativa mesmo período (alternativesSamePeriod[2])
+              E) alternativa outro período (alternativesOtherPeriod[0])
+              F) alternativa outro período (alternativesOtherPeriod[1])
 
-                    Fluxo recomendado:
-                    1. Confirme se é mesmo pra agendar (se ainda houver dúvida).
-                    2. Se for agendamento, use os slots reais.
-                    3. Peça os dados do paciente apenas se ainda não tiver no cadastro.
-                    4. Depois que a pessoa escolher um horário, confirme o resumo:
-                      "Então fica [área] com [NomeProf], [dia] às [hora]."
-                    `.trim(),
+              REGRAS CRÍTICAS:
+              1) Nunca confirme um horário que NÃO esteja nos slots recebidos.
+              2) Se o paciente pedir "manhã" e NÃO houver slot de manhã:
+                → explique que, pra essa área, as vagas no momento estão concentradas nos horários listados
+                  e ofereça 2–4 opções reais (incluindo E/F se existirem).
+              3) Fale sempre "dia + horário" (ex.: quinta às 14h).
+              4) Objetivo: ajudar a pessoa a ESCOLHER uma opção (A-F ou por texto tipo "quinta 14h")
+                e coletar os dados mínimos do paciente: nome completo + data de nascimento.
+              5) Depois que a pessoa escolher, peça os dados (se ainda não tiver) e diga que vai confirmar.
+
+              Fluxo recomendado:
+              1) Mostre as opções reais (A-F) quando existirem.
+              2) Pergunte: "Qual você prefere? (A, B, C, D, E ou F)"
+              3) Ao escolher: peça nome completo + data de nascimento.
+              `.trim(),
+
 
 
   // =========================================================================
@@ -716,6 +669,9 @@ Se você quiser, podemos agendar uma AVALIAÇÃO INICIAL aqui na clínica, sem c
   só pra entender melhor o desenvolvimento e tirar dúvidas com calma. 
 Faz sentido já deixar essa avaliação combinada ou prefere receber mais informações por enquanto ? "
 
+Se o usuário responder com texto ("quinta 14h", "de manhã"), você deve escolher o slot mais próximo entre A-F e responder:
+"Perfeito — vou reservar a opção [LETRA]. Só confirma nome completo e data de nascimento?"
+
 Se mostrar resistência à avaliação, ofereça VISITA nos mesmos termos de alternativa leve.
 
 ▶ SE FOR LEAD FRIO(ainda pesquisando):
@@ -792,9 +748,9 @@ o acolhimento faz muita diferença.Muitos pais que vieram comparar acabaram fica
             // Adicionar após a seção de VALORES ou antes do fechamento do prompt
 
 📅 RECESSO DE FIM DE ANO:
-- A clínica estará em RECESSO de 19/12/2025 a 04/01/2025
+- A clínica estará em RECESSO de 19/12/2025 a 04/01/2026
 - NÃO ofereça horários nesse período
-- Agendamentos disponíveis A PARTIR DE 05/01/2025
+- Agendamentos disponíveis A PARTIR DE 05/01/2026
 - Se o lead perguntar sobre agendar agora, diga:
   "Estaremos em recesso do dia 19/12 até 04/01, mas já posso deixar sua avaliação agendada pro início de janeiro! Prefere a primeira semana de janeiro pela manhã ou tarde?"
 
@@ -905,7 +861,7 @@ export function buildUserPromptWithValuePitch(flags = {}) {
   } = flags;
 
   const rawText = text || "";
-  const topic = flags.topic || inferTopic(text);
+  const topic = resolveTopicFromFlags(flags, text);
   const urgencyData = calculateUrgency(flags, text);
 
   const textLower = (text || "").toLowerCase();
@@ -1014,7 +970,10 @@ export function buildUserPromptWithValuePitch(flags = {}) {
   }
 
   // 📚 MÓDULO: NEUROPSICOLOGIA
-  const isNeuroContext = topic === 'neuropsicologica' || talksAboutTypeOfAssessment || /neuropsic/i.test(text);
+  const isNeuroContext =
+    topic === "neuropsicologica" ||
+    talksAboutTypeOfAssessment ||
+    /neuropsic/i.test((text || "").toLowerCase());
   if (isNeuroContext) {
     activeModules.push(DYNAMIC_MODULES.neuroPsychContext);
   }
@@ -1093,6 +1052,45 @@ Responda agora:
   }
 
   return `${instructions}${closingNote} `;
+}
+
+export function resolveTopicFromFlags(flags = {}, text = "") {
+  const t = (text || "").toLowerCase();
+
+  // 1) Se o orquestrador já mandou, respeita
+  if (flags.topic) return flags.topic;
+
+  // 2) Determinístico por intenção/termos (sem IA)
+  if (flags.talksAboutTypeOfAssessment || /neuropsic/i.test(t)) return "neuropsicologica";
+  if (/linguinha|fr[eê]nulo|freio\s+da\s+l[ií]ngua|freio\s+lingual/i.test(t)) return "teste_linguinha";
+  if (flags.asksPsychopedagogy || /psicopedagog/i.test(t)) return "psicopedagogia";
+  if (flags.mentionsSpeechTherapy || /\bfono\b|fala|linguagem|gagueira|atraso/i.test(t)) return "fono";
+  if (/psicolog|ansiedad|comportamento|emocional/i.test(t)) return "psicologia";
+  if (/terapia\s+ocupacional|\bto\b|integra[çc][aã]o\s+sensorial/i.test(t)) return "terapia_ocupacional";
+  if (/fisioterap|fisio\b|bobath/i.test(t)) return "fisioterapia";
+  if (/musicoterap/i.test(t)) return "musicoterapia";
+
+  // 3) Desconhecido (força pergunta de clarificação só quando precisar preço)
+  return null;
+}
+
+function priceLineForTopic(topic) {
+  switch (topic) {
+    case "neuropsicologica":
+      return "Avaliação Neuropsicológica completa (pacote ~10 sessões): R$ 2.500 em até 6x ou R$ 2.300 à vista.";
+    case "teste_linguinha":
+      return "Teste da Linguinha: R$ 150 (rápido e seguro).";
+    case "psicopedagogia":
+      return "Psicopedagogia: Anamnese R$ 200 | Pacote mensal R$ 160/sessão (~R$ 640/mês).";
+    case "fono":
+    case "psicologia":
+    case "terapia_ocupacional":
+    case "fisioterapia":
+    case "musicoterapia":
+      return "Avaliação inicial: R$ 220 (primeiro passo pra entender a queixa e definir o plano).";
+    default:
+      return null;
+  }
 }
 
 /* =========================================================================
