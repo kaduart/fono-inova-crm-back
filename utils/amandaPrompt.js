@@ -203,7 +203,7 @@ O pai/mãe precisa entender que está investindo no MELHOR para o filho.
 
    📋 CAMINHO 1 - AVALIAÇÃO NEUROPSICOLÓGICA:
    • Pacote ~10 sessões → gera LAUDO
-   • R$ 2.500 (6x) ou R$ 2.300 à vista
+   • R$ 2.000 (até 6x)
 
    🧩 CAMINHO 2 - TERAPIAS + RELATÓRIO:
    • Fono/Psico/TO por ~3 meses
@@ -303,7 +303,7 @@ Leia o que a pessoa responder e decida a área principal:
 - NÃO existe "avaliação inicial avulsa" separada.
 - O PRODUTO É: "Avaliação Neuropsicológica Completa".
 - ESTRUTURA: Pacote de ~10 sessões (Entrevista + Testes + Laudo).
-- PREÇO: R$ 2.500 (6x) ou R$ 2.300 (à vista).
+- PREÇO: R$ 2.000 (até 6x).
 - Atendemos CRIANÇAS (a partir de 4 anos) e ADULTOS.
 `.trim(),
 
@@ -728,7 +728,7 @@ o acolhimento faz muita diferença.Muitos pais que vieram comparar acabaram fica
 
 📌 NEUROPSICOLOGIA(REGRA ESPECIAL)
   - Avaliação completa em pacote(~10 sessões)
-    - R$ 2.500(6x) ou R$ 2.300(à vista)
+    - R$ 2.000(até 6x)
       - NÃO existe avaliação avulsa separada
 
 📌 PLANOS DE SAÚDE
@@ -741,7 +741,7 @@ o acolhimento faz muita diferença.Muitos pais que vieram comparar acabaram fica
   - Avaliação CDL: R$ 200
     - Sessão avulsa: em torno de R$ 220
       - Pacote mensal(1x / semana): em torno de R$ 180 / sessão(≈ R$ 640–720 / mês, conforme área)
-        - Avaliação neuropsicológica: R$ 2.500(6x) ou R$ 2.300(à vista)
+        - Avaliação neuropsicológica: R$ 2.000(até 6x)
           - Teste da Linguinha: R$ 150
             - Psicopedagogia: Anamnese R$ 200 | Pacote R$ 160 / sessão(~R$ 640 / mês)
 
@@ -1077,7 +1077,7 @@ export function resolveTopicFromFlags(flags = {}, text = "") {
 function priceLineForTopic(topic) {
   switch (topic) {
     case "neuropsicologica":
-      return "Avaliação Neuropsicológica completa (pacote ~10 sessões): R$ 2.500 em até 6x ou R$ 2.300 à vista.";
+      return "Avaliação Neuropsicológica completa (pacote ~10 sessões): R$ 2.000 em até 6x.";
     case "teste_linguinha":
       return "Teste da Linguinha: R$ 150 (rápido e seguro).";
     case "psicopedagogia":
@@ -1157,7 +1157,7 @@ export const MANUAL_AMANDA = {
 
   "valores": {
     "avaliacao": "A avaliação inicial é R$ 220; é o primeiro passo para entender a queixa e traçar o plano ideal. Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚",
-    "neuropsico": "Avaliação Neuropsicológica completa (10 sessões): R$ 2.500 em até 6x ou R$ 2.300 à vista 💚",
+    "neuropsico": "Avaliação Neuropsicológica completa (10 sessões): R$ 2.000 em até 6x 💚",
     "teste_linguinha": "Teste da Linguinha: R$ 150. Avaliamos o frênulo lingual de forma rápida e segura 💚",
     "sessao": "Sessão avulsa R$ 220 | Pacote mensal (1x/semana): R$ 180/sessão (~R$ 720/mês) 💚",
     "psicopedagogia": "Psicopedagogia: Anamnese R$ 200 | Pacote mensal R$ 160/sessão (~R$ 640/mês) 💚"

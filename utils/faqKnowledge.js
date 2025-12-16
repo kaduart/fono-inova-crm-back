@@ -17,7 +17,7 @@ O laudo é detalhado e serve para:
 ✅ Laudos para escola, INSS, processos judiciais
 ✅ Orientação para família e professores
 
-Valor: R$ 2.500 em 6x no cartão ou R$ 2.300 à vista.`,
+Valor: R$ 2.000 em 6x no cartão.`,
             keywords: ["neuropsico", "como funciona", "etapas", "laudo"],
             relatedQuestions: ["quanto_tempo_neuropsico", "idade_minima_neuropsico"]
         },

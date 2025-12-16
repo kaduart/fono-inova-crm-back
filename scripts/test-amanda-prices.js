@@ -4,7 +4,7 @@ function priceLineForTopic(topic, userText, conversationSummary = '') {
 
     switch (topic) {
         case "neuropsicologica":
-            return "A avaliação neuropsicológica completa (10 sessões) é R$ 2.500 (6x) ou R$ 2.300 (à vista).";
+            return "A avaliação neuropsicológica completa (10 sessões) é R$ 2.000 (6x)";
         case "teste_linguinha":
             return "O Teste da Linguinha custa R$ 150,00.";
         case "sessao":
@@ -18,7 +18,7 @@ function priceLineForTopic(topic, userText, conversationSummary = '') {
     const combined = `${ctx} ${msg}`;
 
     if (/\b(tea|autis|tdah|neuro|laudo|avalia[çc][aã]o\s+completa|cognitiv)\b/.test(combined)) {
-        return "A avaliação neuropsicológica completa (10 sessões) é R$ 2.500 (6x) ou R$ 2.300 (à vista).";
+        return "A avaliação neuropsicológica completa (10 sessões) é R$ 2.000 (6x)";
     }
 
     if (/\b(psicopedagog|dificuldade.{0,20}aprend)/i.test(combined)) {
@@ -55,7 +55,7 @@ const tests = [
         topic: 'avaliacao_inicial',
         text: 'Qual o valor?',
         summary: 'Lead adulto, 26 anos, precisa laudo TEA para trabalho.',
-        expect: r => r?.includes('2.500')
+        expect: r => r?.includes('2.000')
     },
     {
         name: 'Criança Fala',
