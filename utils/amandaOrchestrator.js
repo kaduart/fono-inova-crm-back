@@ -18,7 +18,8 @@ import {
     autoBookAppointment,
     findAvailableSlots,
     formatDatePtBr,
-    formatSlot
+    formatSlot,
+    pickSlotFromUserReply
 } from "../services/amandaBookingService.js";
 import { handleInboundMessageForFollowups } from "../services/responseTrackingService.js";
 import {
@@ -186,7 +187,7 @@ export async function getOptimizedAmandaResponse({
 
         const needsArea = !knownArea;
         const needsProfile =
-            !(flags.mentionsChild || flags.mentionsTeen || flags.mentionsAdult);
+            !(flags.mentionsChild || flags.mentionsTeen || flags.mentionsAdult || context.ageGroup);
 
         if (needsArea && needsProfile) {
             return "Perfeito! Só pra eu encaminhar certinho: é para qual área (Fono, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicológica) e é para criança, adolescente ou adulto?";
@@ -332,6 +333,42 @@ export async function getOptimizedAmandaResponse({
     const msgCount = historyLen + 1; // inclui a mensagem atual
     enrichedContext.messageCount = msgCount;
 
+    // ✅ Se já tem slots pendentes e o lead respondeu escolhendo (A/B/C/D ou dia+hora)
+    if (lead?._id && (lead.pendingSchedulingSlots?.primary || enrichedContext?.pendingSchedulingSlots?.primary)) {
+        const slotsCtx = {
+            ...rawSlots,
+            all: [
+                rawSlots.primary,
+                ...(rawSlots.alternativesSamePeriod || []),
+                ...(rawSlots.alternativesOtherPeriod || []),
+            ].filter(Boolean),
+        };
+        
+        // heurística: só tenta escolher se a msg parece escolha
+        const looksLikeChoice =
+            /\b([a-f])\b/i.test(text) ||
+            /\b(op[çc][aã]o)\s*[a-f]\b/i.test(text) ||
+            /\b(\d{1,2}:\d{2})\b/.test(text) ||
+            /\b(segunda|ter[çc]a|quarta|quinta|sexta|s[aá]bado|domingo)\b/i.test(text) ||
+            /\b(manh[ãa]|tarde|noite)\b/i.test(text);
+
+        if (looksLikeChoice) {
+            const chosen = pickSlotFromUserReply(text, slotsCtx);
+
+            if (chosen) {
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: {
+                        pendingChosenSlot: chosen,
+                        pendingPatientInfoForScheduling: true,
+                    },
+                }).catch(() => { });
+
+                // pede dados mínimos (WhatsApp já tem o telefone)
+                return "Perfeito! Pra eu confirmar esse horário, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚";
+            }
+        }
+    }
+
     // 🧩 FLAGS GERAIS
     const flags = detectAllFlags(text, lead, enrichedContext);
 
@@ -369,34 +406,24 @@ export async function getOptimizedAmandaResponse({
 
     // prioridade máxima pra pergunta de preço
     if (isPurePriceQuestion) {
-        const manualAnswer = tryManualResponse(normalized, enrichedContext, flags);
+        const detectedTherapies = detectAllTherapies(text);
 
-        if (manualAnswer) {
-            return ensureSingleHeart(manualAnswer);
+        // 🔴 Nenhuma terapia clara → perguntar área
+        if (!detectedTherapies.length) {
+            return ensureSingleHeart(
+                "Pra te passar o valor certinho, seria pra Fono, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicológica? 💚"
+            );
         }
 
-        // fallback: usa o value pitch dinâmico
-        const enrichedFlags = {
-            ...flags,
-            text,
-            conversationSummary: enrichedContext.conversationSummary || "",
-        };
+        // 🧠 Monta linhas de preço (máx 2)
+        const priceLines = getPriceLinesForDetectedTherapies(detectedTherapies, { max: 2 });
 
-        const systemContext = buildSystemContext(flags, text, stageFromContext);
-        const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
-        const pricePrompt = buildUserPromptWithValuePitch(enrichedFlags);
+        const urgency = calculateUrgency(flags, text);
 
-        const messages = [{ role: "user", content: pricePrompt }];
-
-        const textResp = await runAnthropicWithFallback({
-            systemPrompt: dynamicSystemPrompt,
-            messages,
-            maxTokens: 300,
-            temperature: 0.7,
-        });
+        const priceText = priceLines.join(" ");
 
         return ensureSingleHeart(
-            textResp || "A avaliação inicial é R$ 220; ela é o primeiro passo pra entender direitinho o que o seu filho precisa. Prefere essa semana ou a próxima? 💚",
+            `${urgency.pitch} ${priceText} Prefere agendar essa semana ou na próxima?`
         );
     }
 
@@ -412,6 +439,21 @@ export async function getOptimizedAmandaResponse({
         });
     } catch (err) {
         console.warn("[ORCHESTRATOR] leadIntelligence falhou no orquestrador:", err.message);
+    }
+
+    const wantsPlan = /\b(unimed|plano|conv[eê]nio|ipasgo|amil)\b/i.test(text);
+    const isHardPlanCondition = /\b(s[oó]\s*se|apenas\s*se|somente\s*se|quero\s+continuar\s+se)\b.*\b(unimed|plano|conv[eê]nio)\b/i.test(text);
+
+
+    if (wantsPlan && lead.acceptedPrivateCare !== true) {
+        if (isHardPlanCondition) {
+            // marca como objeção dura
+            if (lead._id) await Leads.findByIdAndUpdate(lead._id, { $set: { insuranceHardNo: true, acceptedPrivateCare: false } });
+        }
+
+        return ensureSingleHeart(
+            "Hoje é particular (com recibo pra reembolso). Só confirmando: tudo bem seguir assim mesmo pra eu te passar horários? 💚"
+        );
     }
 
     // 🔀 Atualiza estágio do funil usando nextStage
@@ -481,6 +523,12 @@ export async function getOptimizedAmandaResponse({
         lead?.autoBookingContext?.mappedTherapyArea ||
         lead?.therapyArea
     );
+
+    if (bookingProduct?.product === "multi_servico") {
+        return ensureSingleHeart(
+            "Perfeito! Só confirmando: você quer **Fisioterapia** e **Teste da Linguinha**, certo? Quer agendar **primeiro qual dos dois**? 💚"
+        );
+    }
 
     const shouldForceTriage =
         wantsScheduling &&
@@ -557,6 +605,7 @@ export async function getOptimizedAmandaResponse({
     const hasProfileNow = hasAgeOrProfileNow(text, flags, enrichedContext);
 
     const shouldFetchSlots =
+        Boolean(lead?._id) &&
         wantsScheduling &&
         hasAreaNow &&
         hasProfileNow &&
@@ -608,7 +657,7 @@ export async function getOptimizedAmandaResponse({
         });
 
         try {
-            const slots = await findAvailableSlots({
+            const availableSlots = await findAvailableSlots({
                 therapyArea: therapyAreaForSlots,
                 specialties: specialtiesForSlots,
                 preferredDay,
@@ -617,39 +666,51 @@ export async function getOptimizedAmandaResponse({
                 daysAhead: 30,
             });
 
-            if (slots?.primary) {
-                enrichedContext.pendingSchedulingSlots = slots;
-                enrichedContext.therapyArea = therapyAreaForSlots;
-
-                if (lead._id) {
-                    await Leads.findByIdAndUpdate(lead._id, {
-                        $set: {
-                            pendingSchedulingSlots: slots,
-                            therapyArea: therapyAreaForSlots,
-                            "autoBookingContext.mappedTherapyArea": therapyAreaForSlots,
-                            "autoBookingContext.mappedSpecialties": specialtiesForSlots,
-                            "autoBookingContext.mappedProduct": bookingProduct?.product || therapyAreaForSlots,
-                            "autoBookingContext.lastOfferedSlots": slots,
-                        },
-                    }).catch(() => { });
-                }
-
-                const primaryText = formatSlot(slots.primary);
-                const alternativesText = (slots.alternativesSamePeriod ?? [])
-                    .map(formatSlot)
-                    .join(" | ");
-
-                enrichedContext.bookingSlotsForLLM = {
-                    primary: primaryText,
-                    alternatives: alternativesText,
-                    preferredDate: preferredSpecificDate,
-                };
-
-                console.log("✅ [ORCHESTRATOR] Slots encontrados:", {
-                    primary: primaryText,
-                    alternatives: slots.alternativesSamePeriod?.length || 0,
-                });
+            if (!availableSlots?.primary) {
+                return "No momento não achei horários certinhos pra essa área. Me diga: prefere manhã ou tarde, e qual dia da semana fica melhor? 💚";
             }
+
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: {
+                    pendingSchedulingSlots: availableSlots,
+                    autoBookingContext: {
+                        active: true,
+                        mappedTherapyArea: therapyAreaForSlots,
+                        mappedSpecialties: specialtiesForSlots,
+                        mappedProduct: bookingProduct.product,
+                        lastOfferedSlots: availableSlots,
+                    },
+                },
+            });
+
+            if (availableSlots?.primary) {
+                const options = [
+                    { key: "A", slot: availableSlots.primary },
+                    { key: "B", slot: availableSlots.alternativesSamePeriod?.[0] },
+                    { key: "C", slot: availableSlots.alternativesSamePeriod?.[1] },
+                    { key: "D", slot: availableSlots.alternativesSamePeriod?.[2] },
+                    { key: "E", slot: availableSlots.alternativesOtherPeriod?.[0] }, // ✅ novo
+                    { key: "F", slot: availableSlots.alternativesOtherPeriod?.[1] }, // ✅ novo
+                ].filter(o => o.slot);
+
+
+                const optionsText = options.map(o => `${o.key}) ${formatSlot(o.slot)}`).join("\n");
+
+                return `Encontrei estes horários:\n\n${optionsText}\n\nQual você prefere? (Responda A, B, C, D, E ou F) 💚`;
+            }
+
+            enrichedContext.bookingSlotsForLLM = {
+                primary: availableSlots?.primary ? formatSlot(availableSlots.primary) : null,
+                alternativesSamePeriod: (availableSlots?.alternativesSamePeriod || []).map(formatSlot),
+                alternativesOtherPeriod: (availableSlots?.alternativesOtherPeriod || []).map(formatSlot),
+                preferredDate: preferredSpecificDate,
+            };
+
+            console.log("✅ [ORCHESTRATOR] Slots encontrados:", {
+                primary: availableSlots?.primary ? formatSlot(availableSlots.primary) : null,
+                alternatives: availableSlots?.alternativesSamePeriod?.length || 0,
+            });
+
         } catch (err) {
             console.error("❌ [ORCHESTRATOR] Erro ao buscar slots:", err.message);
         }
@@ -839,33 +900,8 @@ function tryManualResponse(normalizedText, context = {}, flags = {}) {
     ) {
         const area = inferAreaFromContext(normalizedText, context, flags);
 
-        if (area === "psicologia") {
-            return "Na psicologia, a avaliação inicial é R$ 200; depois o pacote mensal costuma ficar em torno de R$ 640 (1x/semana). Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚";
-        }
-
-        if (area === "fonoaudiologia") {
-            return (
-                "Na fonoaudiologia, a avaliação inicial é R$ 200. " +
-                "Depois, cada sessão de fonoterapia fica em torno de R$ 180; " +
-                "o valor mensal vai depender da frequência — muita gente começa com 1 vez por semana. " +
-                "Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚"
-            );
-        }
-
-        if (area === "terapia_ocupacional") {
-            return "Na terapia ocupacional, a avaliação inicial é R$ 220; o pacote mensal fica em torno de R$ 720 (1x/semana). Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚";
-        }
-
-        if (area === "fisioterapia") {
-            return "Na fisioterapia, a avaliação inicial é R$ 200; o pacote mensal costuma ficar em torno de R$ 640 (1x/semana). Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚";
-        }
-
-        if (area === "psicopedagogia") {
-            return "Na psicopedagogia, a anamnese inicial é R$ 200 e o pacote mensal sai em torno de R$ 640 (1x/semana). Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚";
-        }
-
-        if (area === "neuropsicologia") {
-            return "Na neuropsicologia trabalhamos com avaliação completa em formato de pacote de sessões; o valor total hoje é R$ 2.500 em até 6x, ou R$ 2.300 à vista. Prefere deixar essa avaliação encaminhada pra começar em qual turno, manhã ou tarde? 💚";
+        if (!area) {
+            return "Pra te passar o valor certinho, seria pra Fono, Psicologia, TO, Fisioterapia ou Neuropsicológica? 💚";
         }
 
         return getManual("valores", "avaliacao");
@@ -1090,6 +1126,17 @@ async function callClaudeWithTherapyData({
                     : JSON.stringify(msg.content),
         }));
         messages.push(...safeHistory);
+    }
+    const { mentionsOrelhinha } = detectNegativeScopes(text);
+
+    if (mentionsOrelhinha) {
+        // IMPORTANTE: não “empurra” linguinha se não foi citado
+        const detected = detectAllTherapies(text);
+        const hasLinguinha = detected.some(t => t.id === "tongue_tie");
+
+        return hasLinguinha
+            ? "O teste da orelhinha (triagem auditiva/TAN) nós não realizamos aqui. O Teste da Linguinha a gente faz sim (R$ 150). Quer agendar pra essa semana ou pra próxima? 💚"
+            : "O teste da orelhinha (triagem auditiva/TAN) nós não realizamos aqui. Mas podemos te ajudar com avaliação e terapias (Fono, Psico, TO, Fisio…). O que você está buscando exatamente: avaliação, terapia ou um exame específico? 💚";
     }
 
     // 💸 Se pediu PREÇO → usa value pitch + insights
@@ -1545,15 +1592,22 @@ function enforceClinicScope(aiText = "", userText = "") {
     const combined = `${u} ${t}`;
 
     const isHearingExamContext =
-        /(exame\s+de\s+au(diç|diçã|dição)|exame\s+auditivo|audiometria|bera|peate|emiss(ões)?\s+otoac[úu]stic)/i.test(
-            combined,
-        );
+        /(teste\s+da\s+orelhinha|triagem\s+auditiva(\s+neonatal)?|\bTAN\b|emiss(ões|oes)?\s+otoac(u|ú)stic(as)?|exame\s+auditivo|audiometria|bera|peate)/i
+            .test(combined);
 
     const isFrenuloOrLinguinha =
         /\b(fr[eê]nulo|freio\s+lingual|fr[eê]nulo\s+lingual|teste\s+da\s+linguinha|linguinha)\b/i.test(
             combined,
         );
+    const mentionsOrelhinha =
+        /(teste\s+da\s+orelhinha|triagem\s+auditiva(\s+neonatal)?|\bTAN\b)/i.test(combined);
 
+    if (mentionsOrelhinha) {
+        return (
+            "O teste da orelhinha (triagem auditiva) nós **não realizamos** aqui. " +
+            "A gente realiza o **Teste da Linguinha (R$150)**, e se você quiser eu já te passo horários pra agendar 💚"
+        );
+    }
     const mentionsRPGorPilates = /\brpg\b|pilates/i.test(combined);
 
     if (isHearingExamContext && !isFrenuloOrLinguinha) {

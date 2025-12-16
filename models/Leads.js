@@ -8,7 +8,9 @@ const interactionSchema = new mongoose.Schema({
   direction: { type: String, enum: ['inbound', 'outbound'], default: 'outbound' },
   message: String,
   note: String,
-  status: { type: String, enum: ['sent', 'received', 'failed', 'read'], default: 'sent' }
+  status: { type: String, enum: ['sent', 'received', 'failed', 'read'], default: 'sent' },
+  acceptedPrivateCare: { type: Boolean, default: null },
+  insuranceHardNo: { type: Boolean, default: false }
 });
 
 const leadSchema = new mongoose.Schema({

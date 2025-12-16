@@ -174,68 +174,63 @@ export const syncEvent = async (originalDoc, type, session = null) => {
     }
 
     try {
+        // ✅ Sanitização profunda antes de tudo
+        const cleanDoc = JSON.parse(JSON.stringify(originalDoc, (key, value) => {
+            if (value === false) return null;
+            return value;
+        }));
+
         return await withSyncRetry(async (retrySession) => {
-            const specialty = await getSpecialty(originalDoc, type);
-            const value = calculateValue(originalDoc, specialty);
-            const confirmedAbsence = originalDoc.confirmedAbsence || false;
+            const specialty = await getSpecialty(cleanDoc, type);
+            const value = calculateValue(cleanDoc, specialty);
+            const confirmedAbsence = cleanDoc.confirmedAbsence || false;
 
-            let finalDate = originalDoc.date;
+            let finalDate = cleanDoc.date;
 
-            if ((type === 'appointment' || type === 'session') && originalDoc.time) {
-                const [hour, minute] = originalDoc.time.split(':').map(Number);
-                const dateCopy = new Date(originalDoc.date);
+            if ((type === 'appointment' || type === 'session') && cleanDoc.time) {
+                const [hour, minute] = cleanDoc.time.split(':').map(Number);
+                const dateCopy = new Date(cleanDoc.date);
                 dateCopy.setHours(hour, minute, 0, 0);
                 finalDate = dateCopy;
             }
 
             const updateData = {
                 date: finalDate,
-                time: originalDoc.time,
-                doctor: safeObjectId(originalDoc.doctor),
-                patient: safeObjectId(originalDoc.patient),
+                time: cleanDoc.time,
+                doctor: safeObjectId(cleanDoc.doctor),
+                patient: safeObjectId(cleanDoc.patient),
                 specialty,
                 value,
-                operationalStatus: getOperationalStatus(originalDoc.operationalStatus || originalDoc.status),
-                clinicalStatus: getClinicalStatus(originalDoc.clinicalStatus || originalDoc.status, confirmedAbsence),
+                operationalStatus: getOperationalStatus(cleanDoc.operationalStatus || cleanDoc.status),
+                clinicalStatus: getClinicalStatus(cleanDoc.clinicalStatus || cleanDoc.status, confirmedAbsence),
                 type,
-                package: safeObjectId(originalDoc.package),  // ✅ Já retorna null se não existir
+                package: safeObjectId(cleanDoc.package),
                 relatedAppointment:
-                    type === 'session' && originalDoc.appointmentId
-                        ? safeObjectId(originalDoc.appointmentId)
+                    type === 'session' && cleanDoc.appointmentId
+                        ? safeObjectId(cleanDoc.appointmentId)
                         : null
             };
 
-            // ✅ REMOVER CAMPOS INVÁLIDOS (false, undefined)
+            // ✅ Segunda camada de limpeza
             Object.keys(updateData).forEach(key => {
                 if (updateData[key] === false || updateData[key] === undefined) {
                     delete updateData[key];
                 }
             });
 
-            if (type === 'appointment' &&
-                originalDoc.serviceType === 'package_session' &&
-                originalDoc.session) {
-
-                const relatedSession = await Session.findById(originalDoc.session);
-                if (relatedSession) {
-                    await syncEvent(relatedSession, 'session', retrySession);
-                }
-            }
-
-            // ✅ DESABILITAR runValidators TEMPORARIAMENTE (DEBUG)
             await MedicalEvent.findOneAndUpdate(
-                { originalId: originalDoc._id, type },
+                { originalId: cleanDoc._id, type },
                 updateData,
                 {
                     upsert: true,
                     session: retrySession,
                     new: true,
-                    runValidators: false  // ✅ Desabilita validação por enquanto
+                    runValidators: false
                 }
             );
 
             return true;
-        }, originalDoc, type, session);
+        }, cleanDoc, type, session);
 
     } catch (error) {
         console.error('Erro na sincronização:', {
@@ -245,10 +240,10 @@ export const syncEvent = async (originalDoc, type, session = null) => {
             specialty: originalDoc.specialty || 'não definida',
             stack: error.stack
         });
-        // ✅ NÃO propaga erro (não crítico)
         return false;
     }
 };
+
 
 
 export const handlePackageSessionUpdate = async (appointment, action, user, details = {}) => {

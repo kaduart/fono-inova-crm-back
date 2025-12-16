@@ -96,11 +96,6 @@ const sessionSchema = new mongoose.Schema({
     toObject: { virtuals: true }
 });
 
-// Middlewares de sincronização
-sessionSchema.post('save', async function (doc) {
-    await syncEvent(doc, 'session');
-});
-
 sessionSchema.post('findOneAndUpdate', async function (doc) {
     if (doc) await syncEvent(doc, 'session');
 });

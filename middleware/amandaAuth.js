@@ -1,38 +1,37 @@
-import jwt from 'jsonwebtoken';
-
 /**
  * Middleware que aceita TANTO autenticação de usuário QUANTO token de serviço
  * Use nas rotas que Amanda precisa chamar
  */
+import jwt from "jsonwebtoken";
+
 export const flexibleAuth = (req, res, next) => {
-    const token = req.headers.authorization?.replace('Bearer ', '');
+    const raw = req.headers.authorization || "";
+    const token = raw.startsWith("Bearer ") ? raw.slice(7).trim() : null;
 
     if (!token) {
-        return res.status(401).json({
-            success: false,
-            message: 'Token não fornecido'
-        });
+        return res.status(401).json({ success: false, message: "Token não fornecido" });
     }
 
-    // 1️⃣ Verifica se é token de serviço (Amanda)
-    if (token === process.env.ADMIN_API_TOKEN) {
+    // ✅ service token Amanda ou Agenda
+    const serviceTokens = new Set(
+        [process.env.ADMIN_API_TOKEN, process.env.AGENDA_EXPORT_TOKEN].filter(Boolean)
+    );
+
+    if (serviceTokens.has(token)) {
         req.user = {
-            id: 'amanda-service',
-            role: 'admin',
-            isService: true
+            id: token === process.env.AGENDA_EXPORT_TOKEN ? "agenda-service" : "amanda-service",
+            role: "admin",
+            isService: true,
         };
         return next();
     }
 
-    // 2️⃣ Senão, valida como JWT normal
+    // ✅ JWT normal
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
         return next();
-    } catch (error) {
-        return res.status(401).json({
-            success: false,
-            message: 'Token inválido'
-        });
+    } catch (err) {
+        return res.status(401).json({ success: false, message: "Token inválido" });
     }
 };

@@ -1,11 +1,13 @@
 // ======================================================
 // 🧱 Importações principais
 // ======================================================
+// import "./mongooseTrap.js";
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
 import helmet from "helmet";
 import http from "http";
+//import "./mongooseGuards.js";
 import mongoose from "mongoose";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -67,6 +69,7 @@ import cashflowRoutes from './routes/financial/cashflow.js';
 import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
 import planningRoutes from './routes/planning.js';
 import compression from 'compression';
+import importFromAgendaRouter from './routes/importFromAgenda.js';
 
 // ======================================================
 // 🧭 Inicialização base
@@ -112,22 +115,27 @@ app.use(...sanitizeStack());
 app.use(compression());
 
 const allowedOrigins = [
+  "http://localhost:5174",
   "https://app.clinicafonoinova.com.br",
   "https://fono-inova-crm-front.vercel.app",
   "http://localhost:5000",
   "http://localhost:5173",
 ];
 
+const corsOptions = {
+  origin: (origin, cb) =>
+    !origin || allowedOrigins.includes(origin)
+      ? cb(null, true)
+      : cb(new Error(`Origem não permitida pelo CORS: ${origin}`)),
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
 app.use(
-  cors({
-    origin: (origin, cb) =>
-      !origin || allowedOrigins.includes(origin)
-        ? cb(null, true)
-        : cb(new Error("Origem não permitida pelo CORS")),
-    credentials: true,
-  })
+ cors(corsOptions)
 );
-app.options("*", cors());
+app.options("*", cors(corsOptions));
 
 // Logger simples
 app.use((req, res, next) => {
@@ -172,6 +180,7 @@ app.use("/api/pix", pixRoutes);
 app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/followups", followupRoutes);
 app.use("/api/marketing", marketingRoutes);
+app.use('/api', importFromAgendaRouter);
 
 // ======================================================
 // 💚 Health Check
