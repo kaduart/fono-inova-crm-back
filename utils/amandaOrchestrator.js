@@ -520,26 +520,40 @@ export async function getOptimizedAmandaResponse({
 
     // prioridade máxima pra pergunta de preço
     if (isPurePriceQuestion) {
-        const detectedTherapies = detectAllTherapies(text);
+    let detectedTherapies = detectAllTherapies(text);
 
-        // 🔴 Nenhuma terapia clara → perguntar área
-        if (!detectedTherapies.length) {
-            return ensureSingleHeart(
-                "Pra te passar o valor certinho, seria pra Fono, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicológica? 💚"
-            );
+    // 🧠 Se não achou terapia explícita, usa flags derivadas do AmandaPrompt
+    if (!detectedTherapies.length) {
+        if (flags.asksPsychopedagogy || /dificuldade.*(escola|aprendiz)/i.test(text)) {
+            detectedTherapies = [{ id: "neuropsychological", name: "Neuropsicopedagogia" }];
+        } else if (flags.mentionsSpeechTherapy) {
+            detectedTherapies = [{ id: "speech", name: "Fonoaudiologia" }];
+        } else if (flags.mentionsTEA_TDAH || /aten[cç][aã]o|hiperativ/i.test(text)) {
+            detectedTherapies = [{ id: "neuropsychological", name: "Neuropsicologia" }];
+        } else if (/comportamento|emo[cç][aã]o|ansiedad/i.test(text)) {
+            detectedTherapies = [{ id: "psychology", name: "Psicologia" }];
+        } else if (/motor|coordena[cç][aã]o|sensorial|rotina/i.test(text)) {
+            detectedTherapies = [{ id: "occupational", name: "Terapia Ocupacional" }];
         }
+    }
 
-        // 🧠 Monta linhas de preço (máx 2)
-        const priceLines = getPriceLinesForDetectedTherapies(detectedTherapies, { max: 2 });
-
-        const urgency = calculateUrgency(flags, text);
-
-        const priceText = priceLines.join(" ");
-
+    // 🔴 Nenhuma terapia clara → perguntar área
+    if (!detectedTherapies.length) {
         return ensureSingleHeart(
-            `${urgency.pitch} ${priceText} Prefere agendar essa semana ou na próxima?`
+            "Pra te passar o valor certinho, seria pra Fono, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicológica? 💚"
         );
     }
+
+    // 🧠 Monta linhas de preço (máx 2)
+    const priceLines = getPriceLinesForDetectedTherapies(detectedTherapies, { max: 2 });
+    const urgency = calculateUrgency(flags, text);
+    const priceText = priceLines.join(" ");
+
+    return ensureSingleHeart(
+        `${urgency.pitch} ${priceText} Prefere agendar essa semana ou na próxima?`
+    );
+}
+
 
     logBookingGate(flags, bookingProduct);
 
@@ -1153,6 +1167,7 @@ function tryManualResponse(normalizedText, context = {}, flags = {}) {
 
     return null;
 }
+
 
 /**
  * 🔍 HELPER: Infere área pelo contexto
