@@ -9,6 +9,7 @@ import {
     getTDAHResponse,
     isAskingAboutEquivalence,
     isTDAHQuestion,
+    detectNegativeScopes
 } from "./therapyDetector.js";
 
 import Followup from "../models/Followup.js";
@@ -169,12 +170,30 @@ export async function getOptimizedAmandaResponse({
     const SCHEDULING_REGEX = /\b(agendar|marcar|consulta|atendimento|avalia[cç][aã]o)\b|\b(qual\s+dia|qual\s+hor[áa]rio|tem\s+hor[áa]rio|dispon[ií]vel|disponivel|essa\s+semana)\b/i;
 
     function hasAgeOrProfileNow(text = "", flags = {}, context = {}) {
+        const t = String(text || "");
+        const hasYears = /\b\d{1,2}\s*anos?\b/i.test(t);
+        const hasMonths = /\b\d{1,2}\s*(mes|meses)\b/i.test(t);
+        const mentionsBaby =
+            /\b(beb[eê]|rec[eé]m[-\s]*nascid[oa]|rn)\b/i.test(t) || hasMonths;
+
+        // Se for bebê e ainda não tem perfil, trate como "criança" (pediatria)
+        if (
+            mentionsBaby &&
+            !flags.mentionsChild &&
+            !flags.mentionsTeen &&
+            !flags.mentionsAdult
+        ) {
+            flags.mentionsChild = true;
+            if (!context.ageGroup) context.ageGroup = "crianca";
+        }
+
         return !!(
             flags.mentionsChild ||
             flags.mentionsTeen ||
             flags.mentionsAdult ||
             context.ageGroup ||
-            /\b\d{1,2}\s*anos?\b/i.test(text)
+            hasYears ||
+            hasMonths
         );
     }
 
@@ -190,14 +209,14 @@ export async function getOptimizedAmandaResponse({
             !(flags.mentionsChild || flags.mentionsTeen || flags.mentionsAdult || context.ageGroup);
 
         if (needsArea && needsProfile) {
-            return "Perfeito! Só pra eu encaminhar certinho: é para qual área (Fono, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicológica) e é para criança, adolescente ou adulto?";
+            return "Perfeito! Só pra eu encaminhar certinho: é para qual área (Fono, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicológica) e qual a idade (em meses ou anos)?";
         }
 
         if (needsArea) {
             return "Perfeito! É para qual área (Fono, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicológica)?";
         }
 
-        return "Perfeito! Esse atendimento é para criança, adolescente ou adulto?";
+        return "Perfeito! Qual a idade do paciente (em meses ou anos)?";
     }
 
     console.log(`🎯 [ORCHESTRATOR] Processando: "${text}"`);
@@ -334,7 +353,7 @@ export async function getOptimizedAmandaResponse({
     enrichedContext.messageCount = msgCount;
 
     // ✅ Se já tem slots pendentes e o lead respondeu escolhendo (A/B/C/D ou dia+hora)
-
+    
     if (lead?._id && (lead.pendingSchedulingSlots?.primary || enrichedContext?.pendingSchedulingSlots?.primary)) {
         // 🔁 Já oferecemos horários antes — agora o lead está escolhendo (A/B/C/D/E/F ou dia+hora/período)
         const rawSlots =
@@ -361,7 +380,7 @@ export async function getOptimizedAmandaResponse({
         if (onlyOne && isYes) {
             await Leads.findByIdAndUpdate(lead._id, {
                 $set: { pendingChosenSlot: onlyOne, pendingPatientInfoForScheduling: true },
-            }).catch(() => { });
+            }).catch(() => {});
 
             return "Perfeito! Pra eu confirmar, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚";
         }
@@ -400,8 +419,8 @@ export async function getOptimizedAmandaResponse({
         if (!chosen) {
             const preferPeriod =
                 /\b(manh[ãa]|cedo)\b/i.test(text) ? "manha" :
-                    /\b(tarde)\b/i.test(text) ? "tarde" :
-                        /\b(noite)\b/i.test(text) ? "noite" : null;
+                /\b(tarde)\b/i.test(text) ? "tarde" :
+                /\b(noite)\b/i.test(text) ? "noite" : null;
 
             const slotHour = (s) => {
                 const h = parseInt(String(s?.time || "").slice(0, 2), 10);
@@ -427,11 +446,11 @@ export async function getOptimizedAmandaResponse({
                 if (!hasPreferred) {
                     await Leads.findByIdAndUpdate(lead._id, {
                         $set: { pendingChosenSlot: earliest, pendingPatientInfoForScheduling: true },
-                    }).catch(() => { });
+                    }).catch(() => {});
 
                     const prefLabel =
                         preferPeriod === "manha" ? "de manhã" :
-                            preferPeriod === "tarde" ? "à tarde" : "à noite";
+                        preferPeriod === "tarde" ? "à tarde" : "à noite";
 
                     return `Entendi que você prefere ${prefLabel}. Hoje não tenho vaga ${prefLabel}; o mais cedo disponível é **${formatSlot(earliest)}**.\n\nPra eu confirmar, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚`;
                 }
@@ -444,7 +463,7 @@ export async function getOptimizedAmandaResponse({
         // ✅ escolheu
         await Leads.findByIdAndUpdate(lead._id, {
             $set: { pendingChosenSlot: chosen, pendingPatientInfoForScheduling: true },
-        }).catch(() => { });
+        }).catch(() => {});
 
         return "Perfeito! Pra eu confirmar esse horário, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚";
     }
@@ -475,6 +494,20 @@ export async function getOptimizedAmandaResponse({
 
     if (!flags.therapyArea && bookingProduct.therapyArea) {
         flags.therapyArea = bookingProduct.therapyArea;
+    }
+
+    // ✅ Persistência de contexto: evita “trocar de área” em mensagens seguintes (ex.: fisio virar psico)
+    const resolvedTherapyArea =
+        flags.therapyArea ||
+        lead?.autoBookingContext?.mappedTherapyArea ||
+        lead?.therapyArea ||
+        null;
+
+    if (resolvedTherapyArea) {
+        enrichedContext.therapyArea = resolvedTherapyArea;
+        if (lead?._id && lead?.therapyArea !== resolvedTherapyArea) {
+            Leads.findByIdAndUpdate(lead._id, { $set: { therapyArea: resolvedTherapyArea } }).catch(() => { });
+        }
     }
 
     const stageFromContext = enrichedContext.stage || lead.stage || "novo";
@@ -560,6 +593,84 @@ export async function getOptimizedAmandaResponse({
 
     const wantsScheduling =
         flags.wantsSchedule || flags.wantsSchedulingNow || isSchedulingLikeText;
+
+    // 🦴🍼 TRIAGEM OSTEOPATA (Fisio bebê): só direciona pra Fisioterapia se já tiver passado pelo Osteopata/indicação
+    // Regra de negócio: muitas mães procuram fisio direto, mas a triagem inicial deve ser com o Osteopata.
+    const babyContext =
+        /\b\d{1,2}\s*(mes|meses)\b/i.test(text) ||
+        /\b(beb[eê]|rec[eé]m[-\s]*nascid[oa]|rn)\b/i.test(text);
+
+    const therapyAreaForGate =
+        enrichedContext.therapyArea ||
+        flags.therapyArea ||
+        bookingProduct?.therapyArea ||
+        lead?.autoBookingContext?.mappedTherapyArea ||
+        lead?.therapyArea ||
+        null;
+
+    const shouldOsteoGate =
+        Boolean(lead?._id) &&
+        wantsScheduling &&
+        babyContext &&
+        therapyAreaForGate === "fisioterapia" &&
+        !lead?.autoBookingContext?.osteopathyOk;
+
+    if (shouldOsteoGate) {
+        const mentionsOsteo = /\b(osteopata|osteopatia|osteo)\b/i.test(text);
+
+        const saidYes =
+            (/\b(sim|s\b|ja|j[aá]|passou|consultou|avaliou|foi)\b/i.test(text) && mentionsOsteo) ||
+            /\b(osteop)\w*\s+(indicou|encaminhou|orientou)\b/i.test(text) ||
+            /\bfoi\s+o\s+osteop\w*\s+que\s+indicou\b/i.test(text);
+
+        const saidNo =
+            (/\b(n[aã]o|nao|ainda\s+n[aã]o|ainda\s+nao|nunca)\b/i.test(text) && (mentionsOsteo || /\bpassou\b/i.test(text))) ||
+            /\b(n[aã]o|nao)\s+passou\b/i.test(text);
+
+        const gatePending = Boolean(lead?.autoBookingContext?.osteopathyGatePending);
+
+        if (gatePending) {
+            if (saidYes) {
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: { "autoBookingContext.osteopathyOk": true },
+                    $unset: { "autoBookingContext.osteopathyGatePending": "" },
+                }).catch(() => { });
+                // segue o fluxo normal (buscar slots etc.)
+            } else if (saidNo) {
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: { "autoBookingContext.osteopathyOk": false },
+                    $unset: { "autoBookingContext.osteopathyGatePending": "" },
+                }).catch(() => { });
+
+                return ensureSingleHeart(
+                    "Perfeito 😊 Só pra alinhar: no caso de bebê, a triagem inicial precisa ser com nosso **Osteopata**. Depois da avaliação dele (e se ele indicar), a gente já encaminha pra Fisioterapia certinho. Você quer agendar a avaliação com o Osteopata essa semana ou na próxima?"
+                );
+            } else {
+                return ensureSingleHeart(
+                    "Só pra eu te direcionar certinho: o bebê **já passou pelo Osteopata** e foi ele quem indicou a Fisioterapia? 💚"
+                );
+            }
+        } else {
+            // primeira vez: pergunta antes de buscar horários/confirmar
+            if (!mentionsOsteo) {
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: { "autoBookingContext.osteopathyGatePending": true },
+                }).catch(() => { });
+
+                return ensureSingleHeart(
+                    "Só pra eu te direcionar certinho: o bebê **já passou pelo Osteopata** e foi ele quem indicou a Fisioterapia? 💚"
+                );
+            }
+
+            // se já mencionou osteo e parece “sim”, marca ok e segue
+            if (saidYes) {
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: { "autoBookingContext.osteopathyOk": true },
+                    $unset: { "autoBookingContext.osteopathyGatePending": "" },
+                }).catch(() => { });
+            }
+        }
+    }
 
 
     // 🔎 Lead resistindo a agendar (só pesquisando, adiando, etc.)
@@ -953,7 +1064,26 @@ function tryManualResponse(normalizedText, context = {}, flags = {}) {
     const { isFirstContact, messageCount = 0 } = context;
 
     // 🌍 ENDEREÇO / LOCALIZAÇÃO
-    if (/\b(endere[cç]o|onde fica|local|mapa|como chegar)\b/.test(normalizedText)) {
+    const askedLocation = /\b(endere[cç]o|onde fica|local|mapa|como chegar)\b/.test(normalizedText);
+    const askedPrice =
+        /(pre[çc]o|preco|valor(es)?|quanto\s+custa|custa\s+quanto|qual\s+o\s+valor|qual\s+[eé]\s+o\s+valor)/i.test(normalizedText);
+
+    // ✅ Pergunta “valor + onde fica” na mesma mensagem → responde os dois
+    if (askedLocation && askedPrice) {
+        const area = inferAreaFromContext(normalizedText, context, flags);
+        const addr = getManual("localizacao", "endereco");
+
+        if (!area) {
+            return (
+                addr +
+                "\n\nSobre valores: me diz se é pra **Fono**, **Psicologia**, **TO**, **Fisioterapia** ou **Neuropsicológica** que eu já te passo certinho."
+            );
+        }
+
+        return addr + "\n\n" + getManual("valores", "avaliacao");
+    }
+
+    if (askedLocation) {
         return getManual("localizacao", "endereco");
     }
 
