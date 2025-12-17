@@ -353,7 +353,7 @@ export async function getOptimizedAmandaResponse({
     enrichedContext.messageCount = msgCount;
 
     // ✅ Se já tem slots pendentes e o lead respondeu escolhendo (A/B/C/D ou dia+hora)
-    
+
     if (lead?._id && (lead.pendingSchedulingSlots?.primary || enrichedContext?.pendingSchedulingSlots?.primary)) {
         // 🔁 Já oferecemos horários antes — agora o lead está escolhendo (A/B/C/D/E/F ou dia+hora/período)
         const rawSlots =
@@ -380,7 +380,7 @@ export async function getOptimizedAmandaResponse({
         if (onlyOne && isYes) {
             await Leads.findByIdAndUpdate(lead._id, {
                 $set: { pendingChosenSlot: onlyOne, pendingPatientInfoForScheduling: true },
-            }).catch(() => {});
+            }).catch(() => { });
 
             return "Perfeito! Pra eu confirmar, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚";
         }
@@ -419,8 +419,8 @@ export async function getOptimizedAmandaResponse({
         if (!chosen) {
             const preferPeriod =
                 /\b(manh[ãa]|cedo)\b/i.test(text) ? "manha" :
-                /\b(tarde)\b/i.test(text) ? "tarde" :
-                /\b(noite)\b/i.test(text) ? "noite" : null;
+                    /\b(tarde)\b/i.test(text) ? "tarde" :
+                        /\b(noite)\b/i.test(text) ? "noite" : null;
 
             const slotHour = (s) => {
                 const h = parseInt(String(s?.time || "").slice(0, 2), 10);
@@ -446,11 +446,11 @@ export async function getOptimizedAmandaResponse({
                 if (!hasPreferred) {
                     await Leads.findByIdAndUpdate(lead._id, {
                         $set: { pendingChosenSlot: earliest, pendingPatientInfoForScheduling: true },
-                    }).catch(() => {});
+                    }).catch(() => { });
 
                     const prefLabel =
                         preferPeriod === "manha" ? "de manhã" :
-                        preferPeriod === "tarde" ? "à tarde" : "à noite";
+                            preferPeriod === "tarde" ? "à tarde" : "à noite";
 
                     return `Entendi que você prefere ${prefLabel}. Hoje não tenho vaga ${prefLabel}; o mais cedo disponível é **${formatSlot(earliest)}**.\n\nPra eu confirmar, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚`;
                 }
@@ -463,7 +463,7 @@ export async function getOptimizedAmandaResponse({
         // ✅ escolheu
         await Leads.findByIdAndUpdate(lead._id, {
             $set: { pendingChosenSlot: chosen, pendingPatientInfoForScheduling: true },
-        }).catch(() => {});
+        }).catch(() => { });
 
         return "Perfeito! Pra eu confirmar esse horário, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚";
     }
@@ -520,39 +520,39 @@ export async function getOptimizedAmandaResponse({
 
     // prioridade máxima pra pergunta de preço
     if (isPurePriceQuestion) {
-    let detectedTherapies = detectAllTherapies(text);
+        let detectedTherapies = detectAllTherapies(text);
 
-    // 🧠 Se não achou terapia explícita, usa flags derivadas do AmandaPrompt
-    if (!detectedTherapies.length) {
-        if (flags.asksPsychopedagogy || /dificuldade.*(escola|aprendiz)/i.test(text)) {
-            detectedTherapies = [{ id: "neuropsychological", name: "Neuropsicopedagogia" }];
-        } else if (flags.mentionsSpeechTherapy) {
-            detectedTherapies = [{ id: "speech", name: "Fonoaudiologia" }];
-        } else if (flags.mentionsTEA_TDAH || /aten[cç][aã]o|hiperativ/i.test(text)) {
-            detectedTherapies = [{ id: "neuropsychological", name: "Neuropsicologia" }];
-        } else if (/comportamento|emo[cç][aã]o|ansiedad/i.test(text)) {
-            detectedTherapies = [{ id: "psychology", name: "Psicologia" }];
-        } else if (/motor|coordena[cç][aã]o|sensorial|rotina/i.test(text)) {
-            detectedTherapies = [{ id: "occupational", name: "Terapia Ocupacional" }];
+        // 🧠 Se não achou terapia explícita, usa flags derivadas do AmandaPrompt
+        if (!detectedTherapies.length) {
+            if (flags.asksPsychopedagogy || /dificuldade.*(escola|aprendiz)/i.test(text)) {
+                detectedTherapies = [{ id: "neuropsychological", name: "Neuropsicopedagogia" }];
+            } else if (flags.mentionsSpeechTherapy) {
+                detectedTherapies = [{ id: "speech", name: "Fonoaudiologia" }];
+            } else if (flags.mentionsTEA_TDAH || /aten[cç][aã]o|hiperativ/i.test(text)) {
+                detectedTherapies = [{ id: "neuropsychological", name: "Neuropsicologia" }];
+            } else if (/comportamento|emo[cç][aã]o|ansiedad/i.test(text)) {
+                detectedTherapies = [{ id: "psychology", name: "Psicologia" }];
+            } else if (/motor|coordena[cç][aã]o|sensorial|rotina/i.test(text)) {
+                detectedTherapies = [{ id: "occupational", name: "Terapia Ocupacional" }];
+            }
         }
-    }
 
-    // 🔴 Nenhuma terapia clara → perguntar área
-    if (!detectedTherapies.length) {
+        // 🔴 Nenhuma terapia clara → perguntar área
+        if (!detectedTherapies.length) {
+            return ensureSingleHeart(
+                "Pra te passar o valor certinho, seria pra Fono, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicológica? 💚"
+            );
+        }
+
+        // 🧠 Monta linhas de preço (máx 2)
+        const priceLines = getPriceLinesForDetectedTherapies(detectedTherapies, { max: 2 });
+        const urgency = calculateUrgency(flags, text);
+        const priceText = priceLines.join(" ");
+
         return ensureSingleHeart(
-            "Pra te passar o valor certinho, seria pra Fono, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicológica? 💚"
+            `${urgency.pitch} ${priceText} Prefere agendar essa semana ou na próxima?`
         );
     }
-
-    // 🧠 Monta linhas de preço (máx 2)
-    const priceLines = getPriceLinesForDetectedTherapies(detectedTherapies, { max: 2 });
-    const urgency = calculateUrgency(flags, text);
-    const priceText = priceLines.join(" ");
-
-    return ensureSingleHeart(
-        `${urgency.pitch} ${priceText} Prefere agendar essa semana ou na próxima?`
-    );
-}
 
 
     logBookingGate(flags, bookingProduct);
@@ -889,21 +889,22 @@ export async function getOptimizedAmandaResponse({
                 },
             });
 
-            if (availableSlots?.primary) {
-                const options = [
-                    { key: "A", slot: availableSlots.primary },
-                    { key: "B", slot: availableSlots.alternativesSamePeriod?.[0] },
-                    { key: "C", slot: availableSlots.alternativesSamePeriod?.[1] },
-                    { key: "D", slot: availableSlots.alternativesSamePeriod?.[2] },
-                    { key: "E", slot: availableSlots.alternativesOtherPeriod?.[0] }, // ✅ novo
-                    { key: "F", slot: availableSlots.alternativesOtherPeriod?.[1] }, // ✅ novo
-                ].filter(o => o.slot);
+            const letters = ["A", "B", "C", "D", "E", "F"];
 
+            const slotsOrdered = [
+                availableSlots.primary,
+                ...(availableSlots.alternativesSamePeriod || []),
+                ...(availableSlots.alternativesOtherPeriod || []),
+            ].filter(Boolean).slice(0, 6);
 
-                const optionsText = options.map(o => `${o.key}) ${formatSlot(o.slot)}`).join("\n");
+            const optionsText = slotsOrdered
+                .map((slot, idx) => `${letters[idx]}) ${formatSlot(slot)}`)
+                .join("\n");
 
-                return `Encontrei estes horários:\n\n${optionsText}\n\nQual você prefere? (Responda A, B, C, D, E ou F) 💚`;
-            }
+            const allowedLetters = letters.slice(0, slotsOrdered.length).join(", ");
+
+            return `Encontrei estes horários:\n\n${optionsText}\n\nQual você prefere? (Responda ${allowedLetters}) 💚`;
+
 
             enrichedContext.bookingSlotsForLLM = {
                 primary: availableSlots?.primary ? formatSlot(availableSlots.primary) : null,
@@ -1394,13 +1395,13 @@ async function callClaudeWithTherapyData({
                         : null,
         };
 
-        const pricePrompt = buildUserPromptWithValuePitch(enrichedFlags);
+        const prompt = buildUserPromptWithValuePitch({ ...flags, text });
 
         console.log("💰 [PRICE PROMPT] Usando buildUserPromptWithValuePitch");
 
         messages.push({
             role: "user",
-            content: pricePrompt + learnedContext + intelligenceNote + patientStatus + urgencyNote,
+            content: prompt + learnedContext + intelligenceNote + patientStatus + urgencyNote,
         });
 
         const textResp = await runAnthropicWithFallback({
