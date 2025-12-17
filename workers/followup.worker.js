@@ -42,7 +42,7 @@ const worker = new Worker(
       return;
     }
 
-    if (["sent", "failed"].includes(followup.status)) {
+    if (["sent", "failed", "canceled"].includes(followup.status)) {
       console.warn(
         chalk.yellow(
           `⚠️ Follow-up ${followupId} já terminal (${followup.status}), ignorando`
@@ -52,6 +52,14 @@ const worker = new Worker(
     }
 
     const lead = followup.lead;
+    if (!lead) {
+      await Followup.findByIdAndUpdate(followupId, {
+        status: "failed",
+        error: "Lead não encontrado (ref quebrada)",
+        failedAt: new Date()
+      });
+      return;
+    }
     if (lead.insuranceHardNo && lead.acceptedPrivateCare !== true) {
       await Followup.findByIdAndUpdate(followupId, {
         status: "failed",
@@ -59,11 +67,33 @@ const worker = new Worker(
       });
       return;
     }
-    if (!lead?.contact?.phone) {
+
+    function isFuture(d) {
+      if (!d) return false;
+      const dt = new Date(d);
+      return !isNaN(dt) && dt > new Date();
+    }
+
+    function shouldSuppressByState(lead) {
+      const stage = (lead?.stage || lead?.status || "").toString().toLowerCase();
+
+      // ajuste aqui conforme seus valores reais
+      const terminalStages = ["visit_scheduled", "scheduled", "patient", "paciente", "agendado", "visita_marcada"];
+
+      return (
+        terminalStages.includes(stage) ||
+        isFuture(lead?.nextAppointmentAt) ||
+        isFuture(lead?.visitAt) ||
+        lead?.alreadyScheduled === true
+      );
+    }
+
+    // ✅ GATE: se já está agendado/visita, cancela o follow-up atual e sai
+    if (shouldSuppressByState(lead)) {
       await Followup.findByIdAndUpdate(followupId, {
-        status: "failed",
-        error: "Lead sem telefone",
-        failedAt: new Date()
+        status: "canceled",
+        canceledAt: new Date(),
+        cancelReason: "gate_blocked_already_scheduled"
       });
       return;
     }
@@ -275,8 +305,33 @@ const worker = new Worker(
       // =====================================================
       // 🚀 3. ENVIO + REGISTRO NO CHAT (Message + socket)
       // =====================================================
-      const to = normalizeE164BR(lead.contact.phone);
-      const contact = await Contact.findOne({ phone: to }).lean();
+      // ✅ resolve o phone mesmo quando lead.contact é ObjectId
+      let contactDoc = null;
+
+      // se veio populado (raro no seu código atual)
+      if (lead?.contact && typeof lead.contact === "object" && lead.contact.phone) {
+        contactDoc = lead.contact;
+      } else if (lead?.contact) {
+        // caso normal: lead.contact é ObjectId
+        contactDoc = await Contact.findById(lead.contact).lean();
+      }
+
+      const rawPhone = contactDoc?.phone || null;
+
+      if (!rawPhone) {
+        await Followup.findByIdAndUpdate(followupId, {
+          status: "failed",
+          error: "Lead sem telefone (contact sem phone ou não encontrado)",
+          failedAt: new Date()
+        });
+        return;
+      }
+
+      const to = normalizeE164BR(rawPhone);
+
+      // garante contact pelo phone normalizado (caso o id tenha falhado)
+      const contact = contactDoc || (await Contact.findOne({ phone: to }).lean());
+
       const patientId = lead.convertedToPatient || null;
       const io = getIo();
 
@@ -404,7 +459,7 @@ const worker = new Worker(
       // 🔁 5. AGENDAR PRÓXIMO FOLLOW-UP (DRIP)
       // =====================================================
 
-      if (currentAttempt < MAX_ATTEMPTS_PER_LEAD) {
+      if (currentAttempt < MAX_ATTEMPTS_PER_LEAD && !shouldSuppressByState(lead)) {
         const nextAttemptNumber = currentAttempt + 1;
         const score = analysis?.score || lead.conversionScore || 50;
 
@@ -439,9 +494,8 @@ const worker = new Worker(
         await followupQueue.add(
           "followup",
           { followupId: nextFollowup._id },
-          { delay: delayMsNext }
+          { delay: delayMsNext, jobId: `followup:${nextFollowup._id}` }
         );
-
 
       } else {
         console.log(
