@@ -334,40 +334,121 @@ export async function getOptimizedAmandaResponse({
     enrichedContext.messageCount = msgCount;
 
     // ✅ Se já tem slots pendentes e o lead respondeu escolhendo (A/B/C/D ou dia+hora)
+
     if (lead?._id && (lead.pendingSchedulingSlots?.primary || enrichedContext?.pendingSchedulingSlots?.primary)) {
+        // 🔁 Já oferecemos horários antes — agora o lead está escolhendo (A/B/C/D/E/F ou dia+hora/período)
+        const rawSlots =
+            lead?.pendingSchedulingSlots ||
+            enrichedContext?.pendingSchedulingSlots ||
+            lead?.autoBookingContext?.lastOfferedSlots ||
+            null;
+
+        const safeRawSlots = rawSlots && typeof rawSlots === "object" ? rawSlots : {};
         const slotsCtx = {
-            ...rawSlots,
+            ...safeRawSlots,
             all: [
-                rawSlots.primary,
-                ...(rawSlots.alternativesSamePeriod || []),
-                ...(rawSlots.alternativesOtherPeriod || []),
+                safeRawSlots.primary,
+                ...(safeRawSlots.alternativesSamePeriod || []),
+                ...(safeRawSlots.alternativesOtherPeriod || []),
             ].filter(Boolean),
         };
 
-        // heurística: só tenta escolher se a msg parece escolha
+        // ✅ se só tem 1 slot oferecido e o lead respondeu "sim", confirma esse
+        const onlyOne = slotsCtx.all.length === 1 ? slotsCtx.all[0] : null;
+        const isYes = /\b(sim|confirmo|pode|ok|pode\s+ser|fechado|beleza)\b/i.test(text);
+        const isNo = /\b(n[aã]o|nao|prefiro\s+outro|outro\s+hor[aá]rio)\b/i.test(text);
+
+        if (onlyOne && isYes) {
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: { pendingChosenSlot: onlyOne, pendingPatientInfoForScheduling: true },
+            }).catch(() => { });
+
+            return "Perfeito! Pra eu confirmar, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚";
+        }
+
+        if (onlyOne && isNo) {
+            return "Sem problema! Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor? 💚";
+        }
+
+        // 🧠 Heurística: só tenta “escolher” se a mensagem parece escolha
+        const hasLetterChoice =
+            /(?:^|\s)([A-F])(?:\s|$|[).,;!?])/i.test(text) ||
+            /\bop[çc][aã]o\s*([A-F])\b/i.test(text);
+
         const looksLikeChoice =
-            /\b([a-f])\b/i.test(text) ||
-            /\b(op[çc][aã]o)\s*[a-f]\b/i.test(text) ||
+            hasLetterChoice ||
             /\b(\d{1,2}:\d{2})\b/.test(text) ||
             /\b(segunda|ter[çc]a|quarta|quinta|sexta|s[aá]bado|domingo)\b/i.test(text) ||
-            /\b(manh[ãa]|tarde|noite)\b/i.test(text);
+            /\b(manh[ãa]|cedo|tarde|noite)\b/i.test(text);
 
-        if (looksLikeChoice) {
-            const chosen = pickSlotFromUserReply(text, slotsCtx);
+        const letters = ["A", "B", "C", "D", "E", "F"];
+        const optionsText = slotsCtx.all
+            .slice(0, 6)
+            .map((s, i) => `${letters[i]}) ${formatSlot(s)}`)
+            .join("\n");
 
-            if (chosen) {
-                await Leads.findByIdAndUpdate(lead._id, {
-                    $set: {
-                        pendingChosenSlot: chosen,
-                        pendingPatientInfoForScheduling: true,
-                    },
-                }).catch(() => { });
-
-                // pede dados mínimos (WhatsApp já tem o telefone)
-                return "Perfeito! Pra eu confirmar esse horário, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚";
-            }
+        if (!looksLikeChoice) {
+            // ✅ NÃO deixa cair no LLM: se já tem slots, re-mostre e peça escolha
+            return `Tenho esses horários no momento:\n\n${optionsText}\n\nQual você prefere? (A, B, C, D, E ou F) 💚`;
         }
+
+        // ✅ modo strict: se não entender a escolha, volta null (e a gente pede de novo)
+        let chosen = pickSlotFromUserReply(text, slotsCtx, { strict: true });
+
+        // ✅ REGRA DE DEDUÇÃO:
+        // Se a pessoa pede "manhã/cedo" mas não existe slot de manhã, oferecer o mais cedo disponível (ex.: 12:00)
+        if (!chosen) {
+            const preferPeriod =
+                /\b(manh[ãa]|cedo)\b/i.test(text) ? "manha" :
+                    /\b(tarde)\b/i.test(text) ? "tarde" :
+                        /\b(noite)\b/i.test(text) ? "noite" : null;
+
+            const slotHour = (s) => {
+                const h = parseInt(String(s?.time || "").slice(0, 2), 10);
+                return Number.isFinite(h) ? h : null;
+            };
+
+            const matchesPeriod = (s, p) => {
+                const h = slotHour(s);
+                if (h === null) return false;
+                if (p === "manha") return h < 12;
+                if (p === "tarde") return h >= 12 && h < 18;
+                if (p === "noite") return h >= 18;
+                return true;
+            };
+
+            const sortKey = (s) => `${s.date}T${String(s.time).slice(0, 5)}`;
+            const earliest = slotsCtx.all
+                .slice()
+                .sort((a, b) => sortKey(a).localeCompare(sortKey(b)))[0];
+
+            if (preferPeriod && earliest) {
+                const hasPreferred = slotsCtx.all.some((s) => matchesPeriod(s, preferPeriod));
+                if (!hasPreferred) {
+                    await Leads.findByIdAndUpdate(lead._id, {
+                        $set: { pendingChosenSlot: earliest, pendingPatientInfoForScheduling: true },
+                    }).catch(() => { });
+
+                    const prefLabel =
+                        preferPeriod === "manha" ? "de manhã" :
+                            preferPeriod === "tarde" ? "à tarde" : "à noite";
+
+                    return `Entendi que você prefere ${prefLabel}. Hoje não tenho vaga ${prefLabel}; o mais cedo disponível é **${formatSlot(earliest)}**.\n\nPra eu confirmar, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚`;
+                }
+            }
+
+            // ✅ ainda não escolheu → re-mostrar opções (sem LLM)
+            return `Não consegui identificar qual você escolheu 😅\n\n${optionsText}\n\nResponda A-F ou escreva o dia e a hora 💚`;
+        }
+
+        // ✅ escolheu
+        await Leads.findByIdAndUpdate(lead._id, {
+            $set: { pendingChosenSlot: chosen, pendingPatientInfoForScheduling: true },
+        }).catch(() => { });
+
+        return "Perfeito! Pra eu confirmar esse horário, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚";
     }
+
 
     // 🧩 FLAGS GERAIS
     const flags = detectAllFlags(text, lead, enrichedContext);

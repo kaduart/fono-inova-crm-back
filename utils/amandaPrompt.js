@@ -783,7 +783,7 @@ o acolhimento faz muita diferença.Muitos pais que vieram comparar acabaram fica
 /* =========================================================================
    5. FUNÇÃO AUXILIAR: CALCULA URGÊNCIA
    ========================================================================= */
-function calculateUrgency(flags, text) {
+export function calculateUrgency(flags, text) {
   const t = text.toLowerCase();
   let pitch = "A avaliação é o primeiro passo pra entender o que seu filho precisa e traçar o melhor plano.";
   let level = "NORMAL";
