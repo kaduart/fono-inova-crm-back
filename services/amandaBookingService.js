@@ -501,10 +501,11 @@ export function formatDatePtBr(dateStr) {
 /**
  * Extrai slot escolhido da mensagem do usuário
  */
-export function pickSlotFromUserReply(text, availableSlots) {
+export function pickSlotFromUserReply(text, availableSlots, opts = {}) {
     if (!availableSlots) return null;
 
     const normalized = (text || "").toLowerCase().trim();
+    const strict = Boolean(opts?.strict);
 
     // Monta a lista A..F (ordem: primary, samePeriod..., otherPeriod...)
     const primary = availableSlots.primary || null;
@@ -590,8 +591,10 @@ export function pickSlotFromUserReply(text, availableSlots) {
         }
     }
 
-    // 5) Fallback: se não entendeu, devolve a primary (A)
-    return primary;
+    // 5) Fallback
+    // - modo padrão: se não entendeu, devolve a primary (A)
+    // - modo strict: se não entendeu, devolve null (pra você re-perguntar sem “chutar”)
+    return strict ? null : primary;
 }
 
 
