@@ -1,5 +1,3 @@
-// services/intelligence/smartFollowup.js
-
 /**
  * ⏰ Calcula tempo ideal para follow-up
  */
@@ -38,6 +36,13 @@ export function calculateOptimalFollowupTime({ lead, score, lastInteraction, att
     } else if (day === 6) {
         scheduledTime.setDate(scheduledTime.getDate() + 2);
         scheduledTime.setHours(9, 0, 0, 0);
+    }
+
+    const recessStart = new Date("2025-12-19T00:00:00-03:00");
+    const recessEnd = new Date("2026-01-05T00:00:00-03:00"); // 05/01 já pode
+
+    if (scheduledTime >= recessStart && scheduledTime < recessEnd) {
+        scheduledTime = new Date("2026-01-05T09:00:00-03:00");
     }
 
     return scheduledTime;
@@ -129,6 +134,14 @@ function extractChildNameFromHistory(history = []) {
 }
 
 
+function ensureSingleHeart(text = "") {
+    const cleaned = String(text)
+        .replace(/💚/g, "")          // remove todos
+        .replace(/\s+/g, " ")
+        .trim();
+    return `${cleaned} 💚`;
+}
+
 /**
  * 💬 Gera mensagem contextualizada
  */
@@ -136,52 +149,63 @@ export function generateContextualFollowup({ lead, analysis, attempt = 1, histor
     const { extracted = {}, intent = {}, score = lead.conversionScore || 50 } = analysis || {};
 
     // nome sanitizado
-    let firstName = ((lead?.name || '').trim().split(/\s+/)[0]) || '';
-    const blacklist = ['contato', 'cliente', 'lead', 'paciente'];
-    if (firstName && blacklist.includes(firstName.toLowerCase())) {
-        firstName = '';
-    }
+    let firstName = ((lead?.name || "").trim().split(/\s+/)[0]) || "";
+    const blacklist = ["contato", "cliente", "lead", "paciente"];
+    if (firstName && blacklist.includes(firstName.toLowerCase())) firstName = "";
 
-    const greeting = firstName ? `Oi ${firstName}! 💚` : 'Oi! 💚';
-    const intentPrimary = (intent.primary || '').toLowerCase();
+    // ✅ SEM 💚 aqui (o coração vai só no final)
+    const greeting = firstName ? `Oi ${firstName}!` : "Oi!";
+    const intentPrimary = (intent.primary || "").toLowerCase();
     const topic = inferTopic({ extracted, intentPrimary, history });
 
     // === TENTATIVA 3+ → despedida gentil, sem empurrar ===
     if (attempt >= 3) {
-        return `${greeting} Esta é a minha última mensagem por aqui, só pra reforçar que, se você decidir seguir com ${topic}, a Fono Inova fica à disposição. Pode chamar quando for um bom momento pra você.`;
+        return ensureSingleHeart(
+            `${greeting} Esta é a minha última mensagem por aqui, só pra reforçar que, se você decidir seguir com ${topic}, a Fono Inova fica à disposição. Pode chamar quando for um bom momento pra você.`
+        );
     }
 
     // === TENTATIVA 2 → reforço leve, sem pressão ===
     if (attempt === 2) {
         if (score >= 80) {
-            return `${greeting} Vi que a gente ainda não finalizou ${topic}. Se quiser, posso te passar agora alguns horários disponíveis pra facilitar.`;
+            return ensureSingleHeart(
+                `${greeting} Vi que a gente ainda não finalizou ${topic}. Se quiser, posso te passar agora alguns horários disponíveis pra facilitar.`
+            );
         }
 
-        return `${greeting} Passando só pra saber se ficou alguma dúvida sobre ${topic} ou se prefere deixar pra depois. Se eu puder te ajudar com algo específico, é só me falar.`;
+        return ensureSingleHeart(
+            `${greeting} Passando só pra saber se ficou alguma dúvida sobre ${topic} ou se prefere deixar pra depois. Se eu puder te ajudar com algo específico, é só me falar.`
+        );
     }
 
     // === TENTATIVA 1 → mais direta, mas ainda humana ===
-    if (intentPrimary === 'agendar_avaliacao' || intentPrimary === 'agendar_urgente') {
-        return `${greeting} Sobre ${topic}, tenho alguns horários livres nos próximos dias. Você prefere período da manhã ou da tarde pra gente tentar encaixar?`;
+    if (intentPrimary === "agendar_avaliacao" || intentPrimary === "agendar_urgente") {
+        return ensureSingleHeart(
+            `${greeting} Sobre ${topic}, tenho alguns horários livres nos próximos dias. Você prefere período da manhã ou da tarde pra gente tentar encaixar?`
+        );
     }
 
-    if (intentPrimary === 'informacao_preco') {
-        const preco =
-            extracted.precoAvaliacao ||
-            extracted.preco ||
-            'a avaliação inicial é R$ 220,00';
-
-        return `${greeting} Sobre os valores: ${preco}. Se fizer sentido pra você, posso já te ajudar a escolher um horário pra começar.`;
+    if (intentPrimary === "informacao_preco") {
+        const preco = extracted.precoAvaliacao || extracted.preco || "a avaliação inicial é R$ 220,00";
+        return ensureSingleHeart(
+            `${greeting} Sobre os valores: ${preco}. Se fizer sentido pra você, posso já te ajudar a escolher um horário pra começar.`
+        );
     }
 
     if (score >= 70) {
-        return `${greeting} Só passando pra saber se ficou alguma dúvida sobre ${topic}. Se quiser, posso te mandar opções de horários ou explicar melhor como funciona o processo.`;
+        return ensureSingleHeart(
+            `${greeting} Só passando pra saber se ficou alguma dúvida sobre ${topic}. Se quiser, posso te mandar opções de horários ou explicar melhor como funciona o processo.`
+        );
     }
 
     if (score >= 40) {
-        return `${greeting} Vi seu contato sobre ${topic} e queria saber se ainda posso te ajudar com alguma informação ou orientação.`;
+        return ensureSingleHeart(
+            `${greeting} Vi seu contato sobre ${topic} e queria saber se ainda posso te ajudar com alguma informação ou orientação.`
+        );
     }
 
-    // bem frio / lead distante
-    return `${greeting} Notei que você entrou em contato sobre ${topic}. Se ainda fizer sentido pra você, fico à disposição pra te ajudar por aqui.`;
+    return ensureSingleHeart(
+        `${greeting} Notei que você entrou em contato sobre ${topic}. Se ainda fizer sentido pra você, fico à disposição pra te ajudar por aqui.`
+    );
 }
+
