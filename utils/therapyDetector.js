@@ -5,15 +5,72 @@ export const THERAPY_SPECIALTIES = {
         names: ['neuropsicológica', 'neuropsicologia', 'avaliação cognitiva'],
         patterns: [
             /neuropsic(o|ó)log(a|ia|ica)/i,
-            /neuropsi/i,
-            /avalia(ç|c)(a|ã)o\s+(completa|cognitiva|neuropsicol)/i
+            /avalia(ç|c)(a|ã)o\s+(completa|cognitiva|conhecimento)/i,
+            /laudo\s+psicol(ó|o)gico/i
         ]
     },
     speech: {
         names: ['fonoaudiologia', 'fono'],
-        patterns: [/fono(audi(o|ó)log(a|ia|o))?/i, /\bfala\b|\blinguagem\b/i]
+        patterns: [
+            /fono(audi(o|ó)log(a|ia|o))?/i,
+            /\bfala\b|\blinguagem\b/i,
+            /pron(ú|u)ncia|troca\s+letras|gagueira/i,
+            /atraso\s+(de\s+)?fala/i
+        ]
     },
-    // ... demais terapias
+    tongue_tie: {
+        names: ['teste da linguinha', 'frênulo lingual'],
+        patterns: [
+            /teste\s+da\s+linguinha/i,
+            /fr(e|ê)nulo\s+(lingual)?/i,
+            /freio\s+da\s+l(í|i)ngua/i,
+            /amamentação|dificuldade.*mamar/i
+        ]
+    },
+    psychology: {
+        names: ['psicologia', 'psicólogo'],
+        patterns: [
+            /psic(o|ó)log(a|o|ia)(?!\s*pedag)/i,
+            /\btcc\b|ansiedade|depress(ã|a)o/i,
+            /psic(o|ó)log(o|a)\s+infantil/i
+        ]
+    },
+    occupational: {
+        names: ['terapia ocupacional', 'TO'],
+        patterns: [
+            /terapia\s+ocupacional|\bTO\b/i,
+            /integra(ç|c)(a|ã)o\s+sensorial/i,
+            /coordena(ç|c)(a|ã)o\s+motora/i
+        ]
+    },
+    physiotherapy: {
+        names: ['fisioterapia', 'fisio'],
+        patterns: [
+            /fisio(terapia)?/i,
+            /\bavc\b|paralisia|desenvolvimento\s+motor/i
+        ]
+    },
+    music: {
+        names: ['musicoterapia'],
+        patterns: [
+            /musicoterapia|m(ú|u)sica\s+terap(ê|e)utica/i
+        ]
+    },
+    neuropsychopedagogy: {
+        names: ['neuropsicopedagogia'],
+        patterns: [
+            /neuropsicopedagogia/i,
+            /dislexia|discalculia/i
+        ]
+    },
+    psychopedagogy: {
+        names: ['psicopedagogia'],
+        patterns: [
+            /psicopedagog/i,
+            /dificuldade\s+(de\s+)?aprendizagem/i,
+            /problema\s+escolar|rendimento\s+escolar/i
+        ]
+    }
 };
 
 /**
@@ -118,47 +175,47 @@ export function isTDAHQuestion(text) {
  * Resposta estruturada sobre TDAH
  */
 export function getTDAHResponse(leadName = '') {
-  const namePart = leadName ? `${leadName}, ` : '';
+    const namePart = leadName ? `${leadName}, ` : '';
 
-  return `${namePart}o TDAH costuma ser trabalhado com avaliação especializada e um plano multidisciplinar, envolvendo principalmente psicologia, orientação à família e, quando necessário, outras terapias e acompanhamento médico. Aqui na Fono Inova a gente monta um plano individualizado de acordo com a rotina e as necessidades de cada paciente. Você quer saber mais sobre como funciona a avaliação inicial ou já prefere ver a possibilidade de horário para começar? 💚`;
+    return `${namePart}o TDAH costuma ser trabalhado com avaliação especializada e um plano multidisciplinar, envolvendo principalmente psicologia, orientação à família e, quando necessário, outras terapias e acompanhamento médico. Aqui na Fono Inova a gente monta um plano individualizado de acordo com a rotina e as necessidades de cada paciente. Você quer saber mais sobre como funciona a avaliação inicial ou já prefere ver a possibilidade de horário para começar? 💚`;
 }
 
 
 export function detectNegativeScopes(text = "") {
-  const normalized = normalizeTherapyTerms(text);
+    const normalized = normalizeTherapyTerms(text);
 
-  const mentionsOrelhinha =
-    /(teste\s+da\s+orelhinha|triagem\s+auditiva(\s+neonatal)?|\bTAN\b)/i.test(normalized);
+    const mentionsOrelhinha =
+        /(teste\s+da\s+orelhinha|triagem\s+auditiva(\s+neonatal)?|\bTAN\b)/i.test(normalized);
 
-  return { mentionsOrelhinha };
+    return { mentionsOrelhinha };
 }
 
 
 export function pickPrimaryTherapy(detected = []) {
-  const ids = detected.map(d => d.id);
+    const ids = detected.map(d => d.id);
 
-  // neuropsico domina porque é produto fechado
-  if (ids.includes("neuropsychological")) return "neuropsychological";
+    // neuropsico domina porque é produto fechado
+    if (ids.includes("neuropsychological")) return "neuropsychological";
 
-  // se falou linguinha junto com fono, a principal costuma ser linguinha
-  if (ids.includes("tongue_tie")) return "tongue_tie";
+    // se falou linguinha junto com fono, a principal costuma ser linguinha
+    if (ids.includes("tongue_tie")) return "tongue_tie";
 
-  // prioridade comum (ajuste como você quiser)
-  const priority = ["speech", "psychology", "occupational", "physiotherapy", "psychopedagogy", "neuropsychopedagogy", "music"];
-  return priority.find(p => ids.includes(p)) || (detected[0]?.id ?? null);
+    // prioridade comum (ajuste como você quiser)
+    const priority = ["speech", "psychology", "occupational", "physiotherapy", "psychopedagogy", "neuropsychopedagogy", "music"];
+    return priority.find(p => ids.includes(p)) || (detected[0]?.id ?? null);
 }
 
 export function getPriceLinesForDetectedTherapies(detected = [], { max = 2 } = {}) {
-  const lines = [];
+    const lines = [];
 
-  for (const t of detected) {
-    const data = getTherapyData(t.id);
-    if (!data?.price) continue;
+    for (const t of detected) {
+        const data = getTherapyData(t.id);
+        if (!data?.price) continue;
 
-    // forma curta: "Fono: R$ 220..."
-    lines.push(`${t.name}: ${data.price}.`);
-    if (lines.length >= max) break;
-  }
+        // forma curta: "Fono: R$ 220..."
+        lines.push(`${t.name}: ${data.price}.`);
+        if (lines.length >= max) break;
+    }
 
-  return lines;
+    return lines;
 }
