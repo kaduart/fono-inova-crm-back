@@ -224,12 +224,13 @@ export async function getOptimizedAmandaResponse({
         );
 
         if (needsArea && needsProfile) {
-            return "Perfeito! Só pra eu encaminhar certinho: é para qual área (Fono, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicológica) e qual a idade (em meses ou anos)?";
+            return "Oi! 😊 Pra eu te ajudar certinho: é pra qual área (Fono, Psicologia, TO, Fisioterapia ou Neuropsicológica) e qual a idade (meses ou anos)?";
         }
         if (needsArea) {
-            return "Perfeito! É para qual área (Fono, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicológica)?";
+            return "Perfeito 😊 É pra qual área: Fono, Psicologia, TO, Fisioterapia ou Neuropsicológica?";
         }
-        return "Perfeito! Qual a idade do paciente (em meses ou anos)?";
+        return "Perfeito 😊 Qual a idade do paciente (em meses ou anos)?";
+
     }
 
     // ✅ Wrappers defensivos (pra não quebrar se helpers não estiverem no arquivo/import)
