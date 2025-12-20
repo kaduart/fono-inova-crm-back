@@ -22,7 +22,7 @@ import {
     findAvailableSlots,
     formatDatePtBr,
     formatSlot,
-    pickSlotFromUserReply
+    pickSlotFromUserReply,
     buildSlotMenuMessage
 } from "../services/amandaBookingService.js";
 
