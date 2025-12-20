@@ -179,6 +179,8 @@ export const checkAppointmentConflicts = async (req, res, next) => {
 // ✅ GET: /available-slots?doctorId=...&date=YYYY-MM-DD
 // ======================================================
 export const getAvailableTimeSlots = async (req, res) => {
+  console.log("[AVAILABLE-SLOTS]", req.query);
+
   try {
     const { doctorId, date } = req.query;
 
