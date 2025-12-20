@@ -23,6 +23,7 @@ import {
     formatDatePtBr,
     formatSlot,
     pickSlotFromUserReply
+    buildSlotMenuMessage
 } from "../services/amandaBookingService.js";
 
 import { handleInboundMessageForFollowups } from "../services/responseTrackingService.js";
