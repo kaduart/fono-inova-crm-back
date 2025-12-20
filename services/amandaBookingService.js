@@ -17,7 +17,9 @@ import Doctor from "../models/Doctor.js";
 // 🔗 Base interna: primeiro INTERNAL_BASE_URL, depois BACKEND_URL_PRD, depois localhost
 const API_BASE =
     process.env.INTERNAL_BASE_URL ||
-    process.env.BACKEND_URL_PRD;
+    process.env.BACKEND_URL_PRD ||
+    "http://localhost:5000";
+
 
 const ADMIN_TOKEN = process.env.ADMIN_API_TOKEN;
 
@@ -30,13 +32,14 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-    if (!ADMIN_TOKEN) {
-        console.warn("[AMANDA-BOOKING] ADMIN_API_TOKEN não definido!");
+    config.headers = config.headers || {};
+
+    if (ADMIN_TOKEN) {
+        config.headers["Authorization"] = `Bearer ${ADMIN_TOKEN}`;
     } else {
-        config.headers.Authorization = `Bearer ${ADMIN_TOKEN}`;
+        console.warn("[AMANDA-BOOKING] ADMIN_API_TOKEN não definido!");
     }
 
-    // garante content-type pra POST/PUT/PATCH
     if (!config.headers["Content-Type"] && config.method !== "get") {
         config.headers["Content-Type"] = "application/json";
     }
@@ -79,12 +82,14 @@ export async function fetchAvailableSlotsForDoctor({ doctorId, date }) {
         // [ "08:00", "08:40", ... ]
         return res.data;
     } catch (err) {
-        console.error(
-            "[AMANDA-BOOKING] Erro ao buscar slots",
-            { doctorId, date, status: err.response?.status },
-            err.response?.data
-        );
-        throw err;
+        console.error("[AMANDA-BOOKING] available-slots falhou", {
+            base: API_BASE,
+            doctorId,
+            date,
+            status: err.response?.status,
+            data: err.response?.data,
+        });
+        throw err; 
     }
 }
 
