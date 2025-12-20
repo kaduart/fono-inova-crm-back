@@ -74,24 +74,6 @@ const logger = {
     }
 };
 
-export async function createSmartFollowupForLead(leadId, {
-  delayMinutes = 120,
-  channel = 'whatsapp',
-  reason = 'auto_inbound_reengagement',
-  metadata = {}
-} = {}) {
-  const scheduledFor = new Date(Date.now() + delayMinutes * 60 * 1000);
-
-  return Followup.create({
-    lead: leadId,
-    channel,
-    status: 'scheduled',
-    scheduledFor,
-    reason,
-    metadata
-  });
-}
-
 
 export async function handleInboundMessageForFollowups(leadId) {
     if (!leadId) return;

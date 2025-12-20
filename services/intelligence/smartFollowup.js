@@ -145,7 +145,7 @@ function ensureSingleHeart(text = "") {
 /**
  * 💬 Gera mensagem contextualizada
  */
-export function generateContextualFollowup({ lead, analysis, attempt = 1, history = [] }) {
+export function generateContextualFollowup({ lead, analysis, attempt = 1, history = [], sameDay = false, summaryText = null }) {
     const { extracted = {}, intent = {}, score = lead.conversionScore || 50 } = analysis || {};
 
     // nome sanitizado
@@ -155,8 +155,25 @@ export function generateContextualFollowup({ lead, analysis, attempt = 1, histor
 
     // ✅ SEM 💚 aqui (o coração vai só no final)
     const greeting = firstName ? `Oi ${firstName}!` : "Oi!";
+
+    // 🧠 Se existir resumo persistido, injeta no contexto (sem "inventar")
+    const historyWithSummary = Array.isArray(history) ? [...history] : [];
+    if (summaryText) {
+        historyWithSummary.unshift({ direction: "system", content: `[RESUMO] ${summaryText}` });
+    }
+
+    // 🧩 pega últimos trechos para follow-up ficar "da conversa de hoje"
+    const lastOutbound = [...historyWithSummary].find(m => m && m.direction === "outbound" && (m.content || "").toString().trim().length > 0);
+    const lastInbound = [...historyWithSummary].find(m => m && m.direction === "inbound" && (m.content || "").toString().trim().length > 0);
+    const lastOutboundText = (lastOutbound?.content || "").toString().trim();
+    const lastInboundText = (lastInbound?.content || "").toString().trim();
+
+    const continuityPrefix = sameDay
+        ? "Só passando aqui pra dar continuidade no que a gente conversou hoje."
+        : "Passei por aqui só pra dar sequência no seu atendimento."
+
     const intentPrimary = (intent.primary || "").toLowerCase();
-    const topic = inferTopic({ extracted, intentPrimary, history });
+    const topic = inferTopic({ extracted, intentPrimary, history: historyWithSummary });
 
     // === TENTATIVA 3+ → despedida gentil, sem empurrar ===
     if (attempt >= 3) {
@@ -181,31 +198,31 @@ export function generateContextualFollowup({ lead, analysis, attempt = 1, histor
     // === TENTATIVA 1 → mais direta, mas ainda humana ===
     if (intentPrimary === "agendar_avaliacao" || intentPrimary === "agendar_urgente") {
         return ensureSingleHeart(
-            `${greeting} Sobre ${topic}, tenho alguns horários livres nos próximos dias. Você prefere período da manhã ou da tarde pra gente tentar encaixar?`
+            `${opener} Sobre ${topic}, tenho alguns horários livres nos próximos dias. Você prefere período da manhã ou da tarde pra gente tentar encaixar?`
         );
     }
 
     if (intentPrimary === "informacao_preco") {
         const preco = extracted.precoAvaliacao || extracted.preco || "a avaliação inicial é R$ 220,00";
         return ensureSingleHeart(
-            `${greeting} Sobre os valores: ${preco}. Se fizer sentido pra você, posso já te ajudar a escolher um horário pra começar.`
+            `${opener} Sobre os valores: ${preco}. Se fizer sentido pra você, posso já te ajudar a escolher um horário pra começar.`
         );
     }
 
     if (score >= 70) {
         return ensureSingleHeart(
-            `${greeting} Só passando pra saber se ficou alguma dúvida sobre ${topic}. Se quiser, posso te mandar opções de horários ou explicar melhor como funciona o processo.`
+            `${opener} Só passando pra saber se ficou alguma dúvida sobre ${topic}. Se quiser, posso te mandar opções de horários ou explicar melhor como funciona o processo.`
         );
     }
 
     if (score >= 40) {
         return ensureSingleHeart(
-            `${greeting} Vi seu contato sobre ${topic} e queria saber se ainda posso te ajudar com alguma informação ou orientação.`
+            `${opener} Vi seu contato sobre ${topic} e queria saber se ainda posso te ajudar com alguma informação ou orientação.`
         );
     }
 
     return ensureSingleHeart(
-        `${greeting} Notei que você entrou em contato sobre ${topic}. Se ainda fizer sentido pra você, fico à disposição pra te ajudar por aqui.`
+        `${opener} Notei que você entrou em contato sobre ${topic}. Se ainda fizer sentido pra você, fico à disposição pra te ajudar por aqui.`
     );
 }
 

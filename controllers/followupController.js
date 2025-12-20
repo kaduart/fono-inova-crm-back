@@ -3,6 +3,9 @@ import { followupQueue } from "../config/bullConfig.js";
 import Followup from '../models/Followup.js';
 import Lead from '../models/Leads.js';
 import Message from '../models/Message.js';
+// controllers/followupController.js
+import enrichLeadContext from "../services/leadContext.js";
+import { buildContextPack } from "../services/intelligence/ContextPack.js";
 
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import {
@@ -11,6 +14,7 @@ import {
 
 // ⚠️ FALLBACK (Amanda 1.0)
 import { generateFollowupMessage } from "../services/aiAmandaService.js";
+import { createSmartFollowupForLead } from "../services/followupOrchestrator.js";
 
 /**
  * 🧩 Agendar novo follow-up (com Amanda 2.0)
@@ -38,68 +42,93 @@ export const scheduleFollowup = async (req, res) => {
         // 🤖 AMANDA 2.0 - GERAÇÃO INTELIGENTE
         if (aiOptimized || !message?.trim()) {
             try {
-                // Buscar histórico
-                const recentMessages = await Message.find({
-                    lead: leadId
-                }).sort({ timestamp: -1 }).limit(10).lean();
+                // Buscar histórico (mais forte)
+                const recentMessages = await Message.find({ lead: leadId })
+                    .sort({ timestamp: -1 })
+                    .limit(30)
+                    .lean();
 
-                const lastInbound = recentMessages.find(m => m.direction === 'inbound');
+                const lastInbound = recentMessages.find(m => m.direction === "inbound" && m.content);
+
+                // Contexto persistido (resumo + pack)
+                const enriched = await enrichLeadContext(leadId).catch(() => null);
+                const summaryText = enriched?.conversationSummary || lead?.conversationSummary || null;
+                const contextPack = await buildContextPack(leadId).catch(() => null);
+                const fullContext = { ...(enriched || {}), ...(contextPack || {}) };
+
+                // Histórico cronológico pro modelo
+                const historyForModel = recentMessages
+                    .slice()
+                    .reverse()
+                    .map(m => (m.content ?? "").toString())
+                    .filter(Boolean);
+
+                if (summaryText) historyForModel.unshift(`[RESUMO] ${summaryText}`);
+
+                // Same-day SP (igual ao worker)
+                const now = new Date();
+                const startOfDaySP = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+                startOfDaySP.setHours(0, 0, 0, 0);
+                const sameDay = recentMessages.some(m => m.timestamp && new Date(m.timestamp) >= startOfDaySP);
 
                 if (lastInbound?.content) {
-                    // Usar Amanda 2.0
                     const analysis = await analyzeLeadMessage({
                         text: lastInbound.content,
                         lead,
-                        history: recentMessages.map(m => m.content || '')
+                        history: historyForModel,
                     });
 
                     finalMessage = generateContextualFollowup({
                         lead,
                         analysis,
-                        attempt: 1
+                        attempt: 1,
+                        history: recentMessages,
+                        sameDay,
+                        summaryText,
+                        context: fullContext,
                     });
 
-                    amandaVersion = '2.0';
-                    console.log(`🤖 Amanda 2.0 gerou mensagem para lead ${lead.name}`);
-                } else {
-                    // Fallback Amanda 1.0
-                    finalMessage = await generateFollowupMessage(lead);
-                    console.log(`🤖 Amanda 1.0 gerou mensagem para lead ${lead.name}`);
-                }
-            } catch (aiError) {
-                console.warn("⚠️ Erro na Amanda AI, usando fallback:", aiError.message);
-                if (!message?.trim()) {
-                    finalMessage = `Olá ${lead.name?.split(' ')[0] || ''}! Passando para saber se posso te ajudar com ${lead.reason || 'nossos serviços'}. Posso te ajudar? 💚`;
-                }
+                    amandaVersion = "2.0";
+
+            } else {
+                // Fallback Amanda 1.0
+                finalMessage = await generateFollowupMessage(lead);
+                console.log(`🤖 Amanda 1.0 gerou mensagem para lead ${lead.name}`);
+            }
+        } catch (aiError) {
+            console.warn("⚠️ Erro na Amanda AI, usando fallback:", aiError.message);
+            if (!message?.trim()) {
+                finalMessage = `Olá ${lead.name?.split(' ')[0] || ''}! Passando para saber se posso te ajudar com ${lead.reason || 'nossos serviços'}. Posso te ajudar? 💚`;
             }
         }
+    }
 
         const followup = await Followup.create({
-            lead: leadId,
-            message: finalMessage,
-            scheduledAt,
-            status: 'scheduled',
-            aiOptimized: aiOptimized || !message?.trim(),
-            origin: lead.origin,
-            note: `Amanda ${amandaVersion} - Agendado manualmente`
-        });
+        lead: leadId,
+        message: finalMessage,
+        scheduledAt,
+        status: 'scheduled',
+        aiOptimized: aiOptimized || !message?.trim(),
+        origin: lead.origin,
+        note: `Amanda ${amandaVersion} - Agendado manualmente`
+    });
 
-        // ✅ ADICIONAR NA FILA
-        await followupQueue.add('followup', { followupId: followup._id }, {
-            delay,
-            jobId: `fu-${followup._id}`
-        });
+    // ✅ ADICIONAR NA FILA
+    await followupQueue.add('followup', { followupId: followup._id }, {
+        delay,
+        jobId: `fu-${followup._id}`
+    });
 
-        res.status(201).json({
-            success: true,
-            message: 'Follow-up agendado com sucesso!',
-            data: followup,
-            meta: { amandaVersion }
-        });
-    } catch (err) {
-        console.error("❌ Erro ao agendar follow-up:", err);
-        res.status(500).json({ error: err.message });
-    }
+    res.status(201).json({
+        success: true,
+        message: 'Follow-up agendado com sucesso!',
+        data: followup,
+        meta: { amandaVersion }
+    });
+} catch (err) {
+    console.error("❌ Erro ao agendar follow-up:", err);
+    res.status(500).json({ error: err.message });
+}
 };
 
 /**

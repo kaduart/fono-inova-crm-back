@@ -729,3 +729,54 @@ export function formatSlot(slot) {
     return `${weekday.charAt(0).toUpperCase() + weekday.slice(1)}, ${date} às ${time} - ${slot.doctorName}`;
 }
 
+
+// ============================================================================
+// 🧷 Helper único: montar opções A..F (para NÃO duplicar em orquestrador/controller)
+// ============================================================================
+export function buildSlotOptions(availableSlots) {
+    const letters = ["A", "B", "C", "D", "E", "F"];
+    if (!availableSlots) return [];
+
+    const primary = availableSlots.primary || null;
+    const same = availableSlots.alternativesSamePeriod || [];
+    const other = availableSlots.alternativesOtherPeriod || [];
+
+    const ordered = [primary, ...same, ...other].filter(Boolean).slice(0, 6);
+
+    return ordered.map((slot, idx) => ({
+        letter: letters[idx],
+        slot,
+        text: `${letters[idx]}) ${formatSlot(slot)}`,
+    }));
+}
+
+// ✅ Ordena os slots na ordem do menu (primary + samePeriod + otherPeriod)
+export function buildOrderedSlotOptions(slotsCtx = {}) {
+    return [
+        slotsCtx.primary,
+        ...(slotsCtx.alternativesSamePeriod || []),
+        ...(slotsCtx.alternativesOtherPeriod || []),
+    ].filter(Boolean);
+}
+
+// ✅ Monta a mensagem A/B/C/D/E/F com o mesmo padrão em TODO lugar
+export function buildSlotMenuMessage(
+    slotsCtx,
+    {
+        title = "Tenho esses horários no momento:",
+        question = "Qual você prefere? (A, B, C, D, E ou F)",
+        max = 6,
+    } = {}
+) {
+    const opts = buildSlotOptions(slotsCtx).slice(0, max);
+    if (!opts.length) return { message: null, optionsText: "", ordered: [], letters: [] };
+
+    const letters = opts.map(o => o.letter);
+    const ordered = opts.map(o => o.slot);
+    const optionsText = opts.map(o => o.text).join("\n");
+
+    const message = `${title}\n\n${optionsText}\n\n${question} 💚`;
+
+    return { message, optionsText, ordered, letters };
+}
+

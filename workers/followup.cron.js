@@ -4,6 +4,7 @@ import chalk from "chalk";
 import { followupQueue } from "../config/bullConfig.js";
 import { redisConnection } from "../config/redisConnection.js";
 import Followup from "../models/Followup.js";
+import Message from "../models/Message.js";
 
 await mongoose.connect(process.env.MONGO_URI);
 
@@ -45,7 +46,7 @@ async function dispatchPendingFollowups() {
     }
 
     // filtra followups que NÃO devem ser enviados
-    const filtered = pend.filter(f => {
+    const filtered = pend.filter(async f => {
       const lead = f.lead || {};
       const contact = lead.contact || {};
       // rejeita leads que já marcaram/foram convertidos
@@ -54,6 +55,15 @@ async function dispatchPendingFollowups() {
       if (lead.convertedToPatient) return false;
       // rejeita contatos com flag para parar automações
       if (contact.stopAutomation === true) return false;
+
+      const recentInbound = await Message.findOne({
+        lead: f.lead._id,
+        direction: "inbound",
+        timestamp: { $gte: new Date(Date.now() - 1000 * 60 * 60 * 12) } // últimas 12h
+      });
+      if (recentInbound) return false;
+
+
       return true;
     });
 
