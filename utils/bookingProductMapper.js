@@ -1,4 +1,3 @@
-import Leads from "../models/Leads.js";
 import { resolveTopicFromFlags } from "./flagsDetector.js";
 
 /**
@@ -32,23 +31,13 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
           : /terapia\s+ocupacional|terapeuta\s+ocupacional|\bT\.?\s*O\.?\b/i.test(flags.text || "") ? "terapia_ocupacional"
             : null;
 
-  if (explicitArea && lead?._id) {
-    // salva a área correta pro resto do fluxo
-    Leads.findByIdAndUpdate(lead._id, {
-      $set: { therapyArea: explicitArea, "autoBookingContext.mappedTherapyArea": explicitArea }
-    }).catch(() => { });
-  }
-
   if (explicitArea) {
     return {
       therapyArea: explicitArea,
-      specialties: [],
-      product: explicitArea,
-      _shouldPersistTherapyArea: true,
-      _areaSource: "explicit",
+      specialties: lead?.autoBookingContext?.mappedSpecialties || [],
+      product: lead?.autoBookingContext?.mappedProduct || explicitArea,
     };
   }
-
   // ✅ Se estamos no fluxo de agendamento e já existe área salva, NÃO remapear
   // ...a menos que o usuário tenha dito explicitamente outra área agora
   if (flags.inSchedulingFlow || flags.wantsSchedulingNow) {
@@ -230,26 +219,12 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
     };
   }
 
-  // Fallback: se o lead já tem área salva, usa
-  const savedArea = lead?.autoBookingContext?.mappedTherapyArea || lead?.therapyArea;
-  if (savedArea) {
-    return {
-      therapyArea: savedArea,
-      specialties: lead?.autoBookingContext?.mappedSpecialties || [],
-      product: lead?.autoBookingContext?.mappedProduct || savedArea,
-      _areaSource: "saved",
-    };
-  }
-
-  // ❌ NÃO inventar psicologia aqui
+  // Fallback genérico: psicologia / avaliação inicial
   return {
-    therapyArea: null,
+    therapyArea: "psicologia",
     specialties: [],
     product: "avaliacao_inicial",
-    _needsTriage: true,
-    _areaSource: "none",
   };
-
 }
 
 /**

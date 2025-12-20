@@ -8,6 +8,7 @@ const contactSchema = new mongoose.Schema(
     tags: [String],
     notes: String,
     lastMessageAt: { type: Date },
+    leadId: { type: mongoose.Schema.Types.ObjectId, ref: "Leads", default: null },
   },
   { timestamps: true }
 );

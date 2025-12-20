@@ -1,40 +1,31 @@
 // controllers/contactController.js
 import Contact from "../models/Contacts.js";
-import { normalizeE164 } from "../utils/phone.js";
+import mongoose from "mongoose";
 
-export const upsertContact = async (req, res) => {
+export const updateContactById = async (req, res) => {
   try {
-    // sem default "Contato"
-    const { name, phone, tags = [] } = req.body;
-    const phoneE164 = normalizeE164(phone);
-    if (!phoneE164) {
-      return res.status(400).json({ error: "Telefone inválido" });
+    const { id } = req.params;
+    const { leadId } = req.body;
+
+    const setData = {};
+
+    if (leadId !== undefined) {
+      if (leadId === null || leadId === "") setData.leadId = null;
+      else if (mongoose.Types.ObjectId.isValid(leadId)) setData.leadId = leadId;
+      else return res.status(400).json({ error: "leadId inválido" });
     }
 
-    // limpa e valida nome recebido
-    let safeName = typeof name === "string" ? name.trim() : "";
-    const blacklist = ["contato", "cliente", "lead", "teste"];
-    if (safeName && blacklist.includes(safeName.toLowerCase())) safeName = "";
-
-    // monta $set sem sobrescrever nome com vazio
-    const setData = {
-      phoneRaw: phone,
-      phoneE164,
-    };
-    if (safeName) setData.name = safeName;
-
-    const contact = await Contact.findOneAndUpdate(
-      { phoneE164 },
-      {
-        $set: setData,
-        $addToSet: { tags: { $each: tags } },
-      },
-      { new: true, upsert: true }
+    const updated = await Contact.findByIdAndUpdate(
+      id,
+      { $set: setData },
+      { new: true }
     );
 
-    return res.json({ success: true, data: contact });
+    if (!updated) return res.status(404).json({ error: "Contato não encontrado" });
+
+    return res.json({ success: true, data: updated });
   } catch (e) {
-    console.error("upsertContact erro:", e);
+    console.error("updateContactById erro:", e);
     return res.status(500).json({ error: e.message });
   }
 };

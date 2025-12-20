@@ -109,15 +109,11 @@ function nextStage(
         return "paciente";
     }
 
-    const areaSource = bookingProduct?._areaSource || "none";
-
     const hasArea = Boolean(
-        bookingProduct?.therapyArea ||
         flags?.therapyArea ||
         lead?.autoBookingContext?.mappedTherapyArea ||
         lead?.therapyArea
-    ) && areaSource !== "none";
-
+    );
 
     const hasProfile =
         !!(
@@ -507,6 +503,7 @@ export async function getOptimizedAmandaResponse({
     );
 
     const bookingProduct = mapFlagsToBookingProduct({ ...flags, text }, lead);
+    const areaSource = bookingProduct?._areaSource || "none";
     // ✅ Persistir explicitArea escolhida (somente quando mapper pediu)
     // (garante que “Quero agendar com a fono” não fique preso em psicologia)
     if (
@@ -833,7 +830,7 @@ export async function getOptimizedAmandaResponse({
         lead?.autoBookingContext?.mappedSpecialties ||
         [];
 
-    const hasAreaNow = !!therapyAreaForSlots && (areaSource === "explicit" || areaSource === "saved");
+    const hasAreaNow = !!therapyAreaForSlots;
     const hasProfileNow = hasAgeOrProfileNow(text, flags, enrichedContext);
 
     const shouldFetchSlots =
