@@ -17,10 +17,13 @@ import Doctor from "../models/Doctor.js";
 // 🔗 Base interna: primeiro INTERNAL_BASE_URL, depois BACKEND_URL_PRD, depois localhost
 const API_BASE =
     process.env.INTERNAL_BASE_URL ||
-    process.env.BACKEND_URL_PRD ||
-    "http://localhost:5000";
+    process.env.BACKEND_URL_PRD
 
-
+if (!API_BASE) {
+    throw new Error(
+        "[AMANDA-BOOKING] API_BASE não definido. Defina INTERNAL_BASE_URL ou BACKEND_URL_PRD."
+    );
+}
 const ADMIN_TOKEN = process.env.ADMIN_API_TOKEN;
 
 // ============================================================================
@@ -77,6 +80,11 @@ export async function fetchAvailableSlotsForDoctor({ doctorId, date }) {
         const res = await api.get("/api/appointments/available-slots", {
             params: { doctorId, date },
         });
+        console.log("[BOOKING] Request slots", {
+            baseURL: api.defaults.baseURL,
+            doctorId,
+            date
+        });
 
         // sua rota já retorna um array de strings:
         // [ "08:00", "08:40", ... ]
@@ -89,7 +97,7 @@ export async function fetchAvailableSlotsForDoctor({ doctorId, date }) {
             status: err.response?.status,
             data: err.response?.data,
         });
-        throw err; 
+        throw err;
     }
 }
 
