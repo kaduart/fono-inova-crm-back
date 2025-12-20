@@ -97,7 +97,7 @@ const appointmentSchema = new mongoose.Schema({
     type: String,
     enum: [
       'evaluation', 'session', 'package_session',
-      'individual_session', 'meet', 'alignment',
+      'individual_session', 'meet', 'alignment', 'return',
       'tongue_tie_test', 'neuropsych_evaluation'
     ],
 
