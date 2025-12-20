@@ -166,36 +166,35 @@ export async function findAvailableSlots({
 
         // 🔴 ignora recesso SEM consumir daysAhead
         if (isDateBlocked(date)) {
-            continue;
+            continue; // ✅ só pode existir aqui dentro do while
         }
 
-        const slots = await fetchAvailableSlotsForDoctor({
-            doctorId: doctor._id.toString(),
-            date,
-        });
-
-        if (!slots?.length) {
-            validDaysChecked++; // conta como dia válido, mesmo sem slots
-            continue;
-        }
-
-        for (const time of slots) {
-            // pula horários passados no mesmo dia
-            if (date === todayStr) {
-                const [h, m] = time.split(":");
-                const slotDate = new Date(dateObj);
-                slotDate.setHours(+h, +m, 0, 0);
-                if (slotDate <= now) continue;
-            }
-
-            allCandidates.push({
-                doctorId: doctor._id.toString(),
-                doctorName: doctor.fullName,
+        // ✅ percorre todos os médicos elegíveis
+        for (const doctor of doctors) {
+            const slots = await fetchAvailableSlotsForDoctor({
+                doctorId: String(doctor._id),
                 date,
-                time,
-                specialty: therapyArea,
-                requestedSpecialties: specialties,
             });
+
+            if (!slots?.length) continue;
+
+            for (const time of slots) {
+                if (date === todayStr) {
+                    const [h, m] = time.split(":");
+                    const slotDate = new Date(dateObj);
+                    slotDate.setHours(+h, +m, 0, 0);
+                    if (slotDate <= now) continue;
+                }
+
+                allCandidates.push({
+                    doctorId: String(doctor._id),
+                    doctorName: doctor.fullName,
+                    date,
+                    time,
+                    specialty: therapyArea,
+                    requestedSpecialties: specialties,
+                });
+            }
         }
 
         validDaysChecked++;
