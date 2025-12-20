@@ -83,7 +83,7 @@ const logger = {
 // =====================================================================
 // CONTROLE DE EXECUÇÃO
 // =====================================================================
-
+let isShuttingDown = false;
 const taskLocks = new Map();
 const taskStats = {
     checkResponses: { runs: 0, errors: 0, lastRun: null, lastDuration: 0 },
@@ -96,6 +96,10 @@ const taskStats = {
  * Wrapper para executar tarefas com proteção
  */
 async function runTask(taskName, taskFn, options = {}) {
+    if (isShuttingDown) {
+        logger.warn(`Tarefa ${taskName} ignorada: sistema em shutdown`);
+        return;
+    }
     const {
         timeout = CONFIG.TASK_TIMEOUT,
         retries = CONFIG.MAX_RETRIES
@@ -403,6 +407,9 @@ async function connectDatabase() {
  */
 function setupGracefulShutdown() {
     const shutdown = async (signal) => {
+        if (isShuttingDown) return;
+        isShuttingDown = true;
+
         logger.warn(`Recebido sinal ${signal} - iniciando shutdown...`);
 
         // Esperar tarefas em execução terminarem
@@ -428,6 +435,7 @@ function setupGracefulShutdown() {
             logger.info('Estatísticas finais:', taskStats);
 
             clearTimeout(timeout);
+            logger.info('Processo finalizado com shutdown gracioso');
             process.exit(0);
 
         } catch (error) {
@@ -449,9 +457,15 @@ function setupErrorHandlers() {
     });
 
     process.on('uncaughtException', (error) => {
+        if (isShuttingDown) {
+            logger.warn('Erro durante shutdown — ignorado', { message: error.message });
+            return;
+        }
+
         logger.error('Uncaught Exception', error);
         process.exit(1);
     });
+
 }
 
 // =====================================================================
