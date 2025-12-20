@@ -434,6 +434,10 @@ export async function getOptimizedAmandaResponse({
 
         const { message: menuMsg, optionsText } = buildSlotMenuMessage(slotsCtx);
 
+        if (!menuMsg) {
+            return "Beleza 😊 Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor? 💚";
+        }
+
         if (!looksLikeChoice) {
             return menuMsg;
         }
@@ -862,7 +866,7 @@ export async function getOptimizedAmandaResponse({
                 preferredDay,
                 preferredPeriod,
                 preferredDate: preferredSpecificDate,
-                daysAhead: 30,
+                daysAhead: 15,
             });
 
             if (!availableSlots?.primary) {
