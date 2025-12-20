@@ -109,11 +109,15 @@ function nextStage(
         return "paciente";
     }
 
-    const hasArea = !!(flags.therapyArea ||
-        extracted?.therapyArea ||
+    const areaSource = bookingProduct?._areaSource || "none";
+
+    const hasArea = Boolean(
+        bookingProduct?.therapyArea ||
+        flags?.therapyArea ||
         lead?.autoBookingContext?.mappedTherapyArea ||
         lead?.therapyArea
-    );
+    ) && areaSource !== "none";
+
 
     const hasProfile =
         !!(
@@ -225,12 +229,16 @@ export async function getOptimizedAmandaResponse({
         );
 
         if (needsArea && needsProfile) {
-            return "Oi! 😊 Pra eu te ajudar certinho: é pra qual área (Fono, Psicologia, TO, Fisioterapia ou Neuropsicológica) e qual a idade (meses ou anos)?";
+            return "Perfeito 😊 Pra eu agendar certinho: é pra qual área (Fono, Psicologia, TO, Fisioterapia ou Neuropsicológica) e qual a idade (meses ou anos)? E me conta em 1 frase o que vocês têm notado.";
         }
         if (needsArea) {
-            return "Perfeito 😊 É pra qual área: Fono, Psicologia, TO, Fisioterapia ou Neuropsicológica?";
+            return "Perfeito 😊 É pra qual área: Fono, Psicologia, TO, Fisioterapia ou Neuropsicológica? E em 1 frase, o que te fez procurar a avaliação? 💚";
         }
-        return "Perfeito 😊 Qual a idade do paciente (em meses ou anos)?";
+        if (needsProfile) {
+            return "Perfeito 😊 Qual a idade do paciente (meses ou anos)? E o que você tem notado que te fez procurar a avaliação? 💚";
+        }
+        return "Perfeito 😊 Me conta em 1 frase o que você tem notado (ex.: fala/atenção/comportamento), e aí eu já vejo os melhores horários 💚";
+
 
     }
 
@@ -261,64 +269,96 @@ export async function getOptimizedAmandaResponse({
 
     // 🔁 Fluxo: pendência de dados do paciente (pós-escolha de horário)
     if (lead?.pendingPatientInfoForScheduling && lead?._id) {
-        console.log("📝 [ORCHESTRATOR] Lead está pendente de dados do paciente");
-
         const freshLead = await Leads.findById(lead._id).lean().catch(() => null);
         const leadForInfo = freshLead || lead;
 
-        const patientInfo = extractPatientInfoFromLead(leadForInfo, text);
-        const chosenSlot =
-            leadForInfo?.pendingChosenSlot ||
-            leadForInfo?.autoBookingContext?.pendingChosenSlot ||
-            lead?.pendingChosenSlot ||
-            null;
+        const step = leadForInfo.pendingPatientInfoStep || "name";
+        const chosenSlot = leadForInfo?.pendingChosenSlot || null;
 
-        if (patientInfo.fullName && patientInfo.birthDate && chosenSlot) {
+        // helpers simples
+        const extractName = (msg) => {
+            const t = String(msg || "").trim();
+            // aceita "Nome: X" ou só "X" (desde que tenha 2 palavras)
+            const m1 = t.match(/\b(nome|paciente)\s*[:\-]\s*([a-zÀ-úA-ZÀ-Ú\s]{3,80})/i);
+            if (m1) return m1[2].trim();
+            if (/^[a-zÀ-úA-ZÀ-Ú]{2,}\s+[a-zÀ-úA-ZÀ-Ú]{2,}/.test(t)) return t;
+            return null;
+        };
+
+        const extractBirth = (msg) => {
+            const t = String(msg || "").trim();
+            const m = t.match(/\b(\d{2})[\/\-](\d{2})[\/\-](\d{4})\b/);
+            if (!m) return null;
+            return `${m[3]}-${m[2]}-${m[1]}`;
+        };
+
+        // PASSO 1: NOME
+        if (step === "name") {
+            const name = extractName(text);
+            if (!name) return "Pra eu confirmar certinho: qual o **nome completo** do paciente? 💚";
+
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: { "patientInfo.fullName": name, pendingPatientInfoStep: "birth" }
+            }).catch(() => { });
+
+            return "Obrigada! Agora me manda a **data de nascimento** (dd/mm/aaaa) 💚";
+        }
+
+        // PASSO 2: NASCIMENTO
+        if (step === "birth") {
+            const birthDate = extractBirth(text);
+            if (!birthDate) return "Me manda a **data de nascimento** no formato **dd/mm/aaaa** 💚";
+
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: { "patientInfo.birthDate": birthDate }
+            }).catch(() => { });
+
+            // pega os dados completos do lead (com nome salvo)
+            const updated = await Leads.findById(lead._id).lean().catch(() => null);
+            const fullName = updated?.patientInfo?.fullName || null;
+
+            if (!fullName || !chosenSlot) {
+                // fallback bem seguro
+                return "Perfeito! Só mais um detalhe: confirma pra mim o **nome completo** do paciente? 💚";
+            }
+
+            // ✅ AGENDAR DE VERDADE
             const bookingResult = await autoBookAppointment({
-                lead: leadForInfo,
+                lead: updated || leadForInfo,
                 chosenSlot,
-                patientInfo
+                patientInfo: { fullName, birthDate }
             });
 
             if (bookingResult.success) {
                 await Leads.findByIdAndUpdate(lead._id, {
-                    $set: {
-                        status: "agendado",
-                        stage: "paciente",
-                        patientId: bookingResult.patientId,
-                    },
+                    $set: { status: "agendado", stage: "paciente", patientId: bookingResult.patientId },
                     $unset: {
                         pendingSchedulingSlots: "",
                         pendingChosenSlot: "",
-                        autoBookingContext: "",
-                    },
+                        pendingPatientInfoForScheduling: "",
+                        pendingPatientInfoStep: "",
+                        autoBookingContext: ""
+                    }
                 }).catch(() => { });
 
                 await Followup.updateMany(
                     { lead: lead._id, status: "scheduled" },
-                    {
-                        $set: {
-                            status: "canceled",
-                            canceledReason: "agendamento_confirmado_amanda",
-                        },
-                    },
+                    { $set: { status: "canceled", canceledReason: "agendamento_confirmado_amanda" } }
                 ).catch(() => { });
 
                 const humanDate = formatDatePtBr(chosenSlot.date);
                 const humanTime = String(chosenSlot.time || "").slice(0, 5);
-
-                return `Perfeito! ✅ Agendado para ${humanDate} às ${humanTime} com ${chosenSlot.doctorName}. Qualquer coisa é só me avisar 💚`;
+                return `Perfeito! ✅ Agendado para ${humanDate} às ${humanTime}. Te espero na clínica 💚`;
             }
 
             if (bookingResult.code === "TIME_CONFLICT") {
-                return "Esse horário acabou de ser preenchido 😕 A equipe vai te enviar novas opções em instantes 💚";
+                return "Esse horário acabou de ser preenchido 😕 Quer que eu te envie outras opções? 💚";
             }
 
-            return "Tive um probleminha ao confirmar. A equipe vai te responder por aqui em instantes 💚";
-        } else {
-            return "Não consegui pegar certinho. Me manda: Nome completo e data de nascimento (ex: João Silva, 12/03/2015)? 💚";
+            return "Tive um probleminha ao confirmar. Já vou pedir pra equipe te ajudar por aqui 💚";
         }
     }
+
 
     // 🔁 Anti-resposta duplicada por messageId
     if (messageId) {
@@ -427,7 +467,15 @@ export async function getOptimizedAmandaResponse({
         }
 
         if (looksLikeChoice) {
-            const chosen = pickSlotFromUserReply(text, slotsCtx, { strict: true });
+            const normalizedChoice = text
+                .replace(/\b(primeira|primeiro)\b/i, "A")
+                .replace(/\b(segunda|segundo)\b/i, "B")
+                .replace(/\b(terceira|terceiro)\b/i, "C")
+                .replace(/\b(quarta|quarto)\b/i, "D")
+                .replace(/\b(quinta|quinto)\b/i, "E")
+                .replace(/\b(sexta|sexto)\b/i, "F");
+
+            const chosen = pickSlotFromUserReply(normalizedChoice, slotsCtx, { strict: true });
 
             if (chosen) {
                 await Leads.findByIdAndUpdate(lead._id, {
@@ -459,14 +507,37 @@ export async function getOptimizedAmandaResponse({
     );
 
     const bookingProduct = mapFlagsToBookingProduct({ ...flags, text }, lead);
+    // ✅ Persistir explicitArea escolhida (somente quando mapper pediu)
+    // (garante que “Quero agendar com a fono” não fique preso em psicologia)
+    if (
+        lead?._id &&
+        bookingProduct?._shouldPersistTherapyArea &&
+        bookingProduct?.therapyArea &&
+        bookingProduct.therapyArea !== (lead?.autoBookingContext?.mappedTherapyArea || lead?.therapyArea)
+    ) {
+        await Leads.findByIdAndUpdate(lead._id, {
+            $set: {
+                therapyArea: bookingProduct.therapyArea,
+                "autoBookingContext.mappedTherapyArea": bookingProduct.therapyArea,
+                // opcional: limpar specialties/produto antigo se você quiser evitar lixo herdado
+                "autoBookingContext.mappedSpecialties": [],
+                "autoBookingContext.mappedProduct": bookingProduct.product || bookingProduct.therapyArea,
+            },
+        }).catch(() => { });
+    }
 
     if (!flags.therapyArea && bookingProduct?.therapyArea) {
         flags.therapyArea = bookingProduct.therapyArea;
     }
 
     // ✅ Persistência: não trocar de área depois
+
     const resolvedTherapyArea =
-        flags.therapyArea || lead?.autoBookingContext?.mappedTherapyArea || lead?.therapyArea || null;
+        bookingProduct?.therapyArea ||
+        flags.therapyArea ||
+        lead?.autoBookingContext?.mappedTherapyArea ||
+        lead?.therapyArea ||
+        null;
 
     if (resolvedTherapyArea) {
         enrichedContext.therapyArea = resolvedTherapyArea;
@@ -667,6 +738,10 @@ export async function getOptimizedAmandaResponse({
         flags.mentionsChild = true;
     }
 
+    const GENERIC_NO_COMPLAINT_REGEX =
+        /\b(avalia[çc][aã]o)\b/i.test(text) &&
+        !/\b(fala|linguagem|troca\s+letra|autismo|tea|tdah|comport|ansied|atenc|aprender|sensorial|coordena|dor|les[aã]o|respira|ronco)\b/i.test(text);
+
     const hasArea = !!(
         bookingProduct?.therapyArea ||
         flags?.therapyArea ||
@@ -686,11 +761,16 @@ export async function getOptimizedAmandaResponse({
         );
     }
 
+    const hasComplaint =
+        Boolean(analysis?.extracted?.queixa) ||
+        /\b(fala|linguagem|troca\s+letra|autismo|tea|tdah|comport|ansied|atenc|aprender|sensorial|coordena|dor|les[aã]o|respira|ronco)\b/i.test(text);
+
     const shouldForceTriage =
         wantsScheduling &&
-        (!hasArea || !hasProfile) &&
+        (!hasArea || !hasProfile || (GENERIC_SCHEDULE_EVAL_REGEX.test(text) && !hasComplaint)) &&
         !enrichedContext?.pendingSchedulingSlots &&
         !lead?.pendingPatientInfoForScheduling;
+
 
     if (shouldForceTriage) {
         return ensureSingleHeart(
@@ -753,7 +833,7 @@ export async function getOptimizedAmandaResponse({
         lead?.autoBookingContext?.mappedSpecialties ||
         [];
 
-    const hasAreaNow = !!therapyAreaForSlots;
+    const hasAreaNow = !!therapyAreaForSlots && (areaSource === "explicit" || areaSource === "saved");
     const hasProfileNow = hasAgeOrProfileNow(text, flags, enrichedContext);
 
     const shouldFetchSlots =
@@ -977,34 +1057,44 @@ function pickTwoSlots(slots) {
  * Extrai nome + data de nascimento do lead ou da mensagem atual
  */
 function extractPatientInfoFromLead(lead, lastMessage) {
-    let fullName = lead.patientInfo?.fullName || lead.name;
-    let birthDate = lead.patientInfo?.birthDate;
-    const phone = lead.contact?.phone || lead.phone;
-    const email = lead.contact?.email || lead.email;
+    let fullName = lead.patientInfo?.fullName || lead.name || null;
+    let birthDate = lead.patientInfo?.birthDate || null;
+    const phone = lead.contact?.phone || lead.phone || null;
+    const email = lead.contact?.email || lead.email || null;
 
-    if (!fullName || !birthDate) {
-        const nameMatch = lastMessage.match(
-            /(?:meu nome [eé]|me chamo|sou)\s+([a-zà-úA-ZÀ-Ú\s]+)/i,
-        );
-        if (nameMatch) {
-            fullName = nameMatch[1].trim();
-        }
+    const msg = String(lastMessage || "").trim();
 
-        const dateMatch = lastMessage.match(
-            /\b(\d{2})[\/\-](\d{2})[\/\-](\d{4})\b/,
-        );
-        if (dateMatch) {
-            const [, day, month, year] = dateMatch;
-            birthDate = `${year}-${month}-${day}`;
+    // ✅ 1) Padrão: "Nome, dd/mm/aaaa"
+    if ((!fullName || !birthDate)) {
+        const combo = msg.match(/^\s*([^,\n]{3,80})\s*,\s*(\d{2})[\/\-](\d{2})[\/\-](\d{4})\s*$/);
+        if (combo) {
+            fullName = fullName || combo[1].trim();
+            const [, , d, m, y] = combo;
+            birthDate = birthDate || `${y}-${m}-${d}`;
         }
     }
 
-    return {
-        fullName: fullName || null,
-        birthDate: birthDate || null,
-        phone: phone || null,
-        email: email || null,
-    };
+    // ✅ 2) "Nome: X" / "Nascimento: dd/mm/aaaa"
+    if (!fullName) {
+        const n = msg.match(/\b(nome|paciente)\s*[:\-]\s*([a-zÀ-úA-ZÀ-Ú\s]{3,80})/i);
+        if (n) fullName = n[2].trim();
+    }
+    if (!birthDate) {
+        const d = msg.match(/\b(nasc|nascimento|data\s*de\s*nasc)\s*[:\-]?\s*(\d{2})[\/\-](\d{2})[\/\-](\d{4})/i);
+        if (d) birthDate = `${d[4]}-${d[3]}-${d[2]}`;
+    }
+
+    // ✅ 3) Teu padrão antigo ("me chamo", etc.) continua valendo
+    if (!fullName) {
+        const nameMatch = msg.match(/(?:meu nome [eé]|me chamo|sou)\s+([a-zà-úA-ZÀ-Ú\s]+)/i);
+        if (nameMatch) fullName = nameMatch[1].trim();
+    }
+    if (!birthDate) {
+        const dateMatch = msg.match(/\b(\d{2})[\/\-](\d{2})[\/\-](\d{4})\b/);
+        if (dateMatch) birthDate = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+    }
+
+    return { fullName, birthDate, phone, email };
 }
 
 /**
