@@ -156,48 +156,49 @@ export async function findAvailableSlots({
 
     const allCandidates = [];
 
-    for (const doctor of doctors) {
-        for (let i = 0; i < daysAhead; i++) {
-            const dateObj = addDays(searchStart, i);
-            const date = format(dateObj, "yyyy-MM-dd");
+    let validDaysChecked = 0;
+    let offset = 0;
 
-            try {
-                const slots = await fetchAvailableSlotsForDoctor({
-                    doctorId: doctor._id.toString(),
-                    date,
-                });
+    while (validDaysChecked < daysAhead) {
+        const dateObj = addDays(searchStart, offset);
+        const date = format(dateObj, "yyyy-MM-dd");
+        offset++;
 
-                if (!slots?.length) continue;
-
-                for (const time of slots) {
-                    // ❌ Pula qualquer horário em dia de recesso
-                    if (isDateBlocked(date)) continue;
-
-                    // ❌ Pula horários que já passaram HOJE
-                    if (date === todayStr) {
-                        const [hStr, mStr] = time.split(":");
-                        const slotDate = new Date(dateObj);
-                        slotDate.setHours(parseInt(hStr, 10), parseInt(mStr, 10), 0, 0);
-
-                        if (slotDate <= now) {
-                            continue; // já passou
-                        }
-                    }
-
-                    allCandidates.push({
-                        doctorId: doctor._id.toString(),
-                        doctorName: doctor.fullName,
-                        date,
-                        time,
-                        specialty: therapyArea,
-                        requestedSpecialties: specialties,
-                    });
-                }
-            } catch (_err) {
-                // erro de um médico/dia não derruba o resto
-                continue;
-            }
+        // 🔴 ignora recesso SEM consumir daysAhead
+        if (isDateBlocked(date)) {
+            continue;
         }
+
+        const slots = await fetchAvailableSlotsForDoctor({
+            doctorId: doctor._id.toString(),
+            date,
+        });
+
+        if (!slots?.length) {
+            validDaysChecked++; // conta como dia válido, mesmo sem slots
+            continue;
+        }
+
+        for (const time of slots) {
+            // pula horários passados no mesmo dia
+            if (date === todayStr) {
+                const [h, m] = time.split(":");
+                const slotDate = new Date(dateObj);
+                slotDate.setHours(+h, +m, 0, 0);
+                if (slotDate <= now) continue;
+            }
+
+            allCandidates.push({
+                doctorId: doctor._id.toString(),
+                doctorName: doctor.fullName,
+                date,
+                time,
+                specialty: therapyArea,
+                requestedSpecialties: specialties,
+            });
+        }
+
+        validDaysChecked++;
     }
 
     if (!allCandidates.length) {
