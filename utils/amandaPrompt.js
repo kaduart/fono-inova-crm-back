@@ -851,11 +851,6 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     activeModules.push(DYNAMIC_MODULES.teenProfile);
   }
 
-  // 🧠 MÓDULO: NEURODIVERSIDADE (sempre que tiver TEA/TDAH)
-  if (mentionsTEA_TDAH) {
-    activeModules.push(DYNAMIC_MODULES.neuroContext);
-  }
-
   // 🔴 TRIAGEM TEA:
   // - SUSPEITA / SEM INFO → laudo x terapias (teaTriageContext)
   // - LAUDO CONFIRMADO → triagem de foco terapêutico (teaPostDiagnosisContext)

@@ -267,71 +267,54 @@ export async function getOptimizedAmandaResponse({
         const leadForInfo = freshLead || lead;
 
         const patientInfo = extractPatientInfoFromLead(leadForInfo, text);
+        const chosenSlot =
+            leadForInfo?.pendingChosenSlot ||
+            leadForInfo?.autoBookingContext?.pendingChosenSlot ||
+            lead?.pendingChosenSlot ||
+            null;
 
-        if (patientInfo.fullName && patientInfo.birthDate) {
-            const chosenSlot =
-                leadForInfo.pendingChosenSlot ||
-                leadForInfo.pendingSchedulingSlots?.primary ||
-                leadForInfo.autoBookingContext?.lastOfferedSlots?.primary;
+        if (patientInfo.fullName && patientInfo.birthDate && chosenSlot) {
+            const bookingResult = await autoBookAppointment({
+                lead: leadForInfo,
+                chosenSlot,
+                patientInfo
+            });
 
-            await Leads.findByIdAndUpdate(lead._id, {
-                $unset: {
-                    pendingPatientInfoForScheduling: "",
-                    pendingChosenSlot: "",
-                },
-                $set: {
-                    "patientInfo.fullName": patientInfo.fullName,
-                    "patientInfo.birthDate": patientInfo.birthDate,
-                    "patientInfo.phone": patientInfo.phone,
-                    "patientInfo.email": patientInfo.email,
-                },
-            }).catch(() => { });
+            if (bookingResult.success) {
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: {
+                        status: "agendado",
+                        stage: "paciente",
+                        patientId: bookingResult.patientId,
+                    },
+                    $unset: {
+                        pendingSchedulingSlots: "",
+                        pendingChosenSlot: "",
+                        autoBookingContext: "",
+                    },
+                }).catch(() => { });
 
-            if (chosenSlot) {
-                console.log("🚀 [ORCHESTRATOR] Tentando agendar após coletar dados do paciente");
-
-                const bookingResult = await autoBookAppointment({
-                    lead: leadForInfo,
-                    chosenSlot,
-                    patientInfo,
-                });
-
-                if (bookingResult.success) {
-                    await Leads.findByIdAndUpdate(lead._id, {
+                await Followup.updateMany(
+                    { lead: lead._id, status: "scheduled" },
+                    {
                         $set: {
-                            status: "agendado",
-                            stage: "paciente",
-                            patientId: bookingResult.patientId,
+                            status: "canceled",
+                            canceledReason: "agendamento_confirmado_amanda",
                         },
-                        $unset: {
-                            pendingSchedulingSlots: "",
-                            pendingChosenSlot: "",
-                            autoBookingContext: "",
-                        },
-                    }).catch(() => { });
+                    },
+                ).catch(() => { });
 
-                    await Followup.updateMany(
-                        { lead: lead._id, status: "scheduled" },
-                        {
-                            $set: {
-                                status: "canceled",
-                                canceledReason: "agendamento_confirmado_amanda",
-                            },
-                        },
-                    ).catch(() => { });
+                const humanDate = formatDatePtBr(chosenSlot.date);
+                const humanTime = String(chosenSlot.time || "").slice(0, 5);
 
-                    const humanDate = formatDatePtBr(chosenSlot.date);
-                    const humanTime = String(chosenSlot.time || "").slice(0, 5);
-
-                    return `Perfeito! ✅ Agendado para ${humanDate} às ${humanTime} com ${chosenSlot.doctorName}. Qualquer coisa é só me avisar 💚`;
-                } else if (bookingResult.code === "TIME_CONFLICT") {
-                    return "Esse horário acabou de ser preenchido 😕 A equipe vai te enviar novas opções em instantes 💚";
-                } else {
-                    return "Tive um probleminha ao confirmar. A equipe vai te responder por aqui em instantes 💚";
-                }
-            } else {
-                return "Obrigada pelos dados! A equipe vai te enviar as melhores opções de horário em instantes 💚";
+                return `Perfeito! ✅ Agendado para ${humanDate} às ${humanTime} com ${chosenSlot.doctorName}. Qualquer coisa é só me avisar 💚`;
             }
+
+            if (bookingResult.code === "TIME_CONFLICT") {
+                return "Esse horário acabou de ser preenchido 😕 A equipe vai te enviar novas opções em instantes 💚";
+            }
+
+            return "Tive um probleminha ao confirmar. A equipe vai te responder por aqui em instantes 💚";
         } else {
             return "Não consegui pegar certinho. Me manda: Nome completo e data de nascimento (ex: João Silva, 12/03/2015)? 💚";
         }
@@ -387,15 +370,16 @@ export async function getOptimizedAmandaResponse({
     enrichedContext.messageCount = msgCount;
 
     // ✅ Se já tem slots pendentes e o lead respondeu escolhendo
-    if (
-        lead?._id &&
-        (lead?.pendingSchedulingSlots?.primary || enrichedContext?.pendingSchedulingSlots?.primary)
-    ) {
+    const hasPendingSlots =
+        lead?.pendingSchedulingSlots ||
+        enrichedContext?.pendingSchedulingSlots ||
+        lead?.autoBookingContext?.lastOfferedSlots;
+
+    if (lead?._id && hasPendingSlots) {
         const rawSlots =
-            lead?.pendingSchedulingSlots ||
-            enrichedContext?.pendingSchedulingSlots ||
-            lead?.autoBookingContext?.lastOfferedSlots ||
-            null;
+            lead.pendingSchedulingSlots ||
+            enrichedContext.pendingSchedulingSlots ||
+            lead.autoBookingContext.lastOfferedSlots;
 
         const safeRawSlots = rawSlots && typeof rawSlots === "object" ? rawSlots : {};
         const slotsCtx = {
@@ -442,62 +426,20 @@ export async function getOptimizedAmandaResponse({
             return menuMsg;
         }
 
-        let chosen = pickSlotFromUserReply(text, slotsCtx, { strict: true });
+        if (looksLikeChoice) {
+            const chosen = pickSlotFromUserReply(text, slotsCtx, { strict: true });
 
-        // Dedução: pediu período inexistente -> oferece o mais cedo
-        if (!chosen) {
-            const preferPeriod =
-                /\b(manh[ãa]|cedo)\b/i.test(text)
-                    ? "manha"
-                    : /\b(tarde)\b/i.test(text)
-                        ? "tarde"
-                        : /\b(noite)\b/i.test(text)
-                            ? "noite"
-                            : null;
+            if (chosen) {
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: {
+                        pendingChosenSlot: chosen,
+                        pendingPatientInfoForScheduling: true
+                    }
+                });
 
-            const slotHour = (s) => {
-                const h = parseInt(String(s?.time || "").slice(0, 2), 10);
-                return Number.isFinite(h) ? h : null;
-            };
-
-            const matchesPeriod = (s, p) => {
-                const h = slotHour(s);
-                if (h === null) return false;
-                if (p === "manha") return h < 12;
-                if (p === "tarde") return h >= 12 && h < 18;
-                if (p === "noite") return h >= 18;
-                return true;
-            };
-
-            const sortKey = (s) => `${s.date}T${String(s.time).slice(0, 5)}`;
-            const earliest = slotsCtx.all
-                .slice()
-                .sort((a, b) => sortKey(a).localeCompare(sortKey(b)))[0];
-
-            if (preferPeriod && earliest) {
-                const hasPreferred = slotsCtx.all.some((s) => matchesPeriod(s, preferPeriod));
-                if (!hasPreferred) {
-                    await Leads.findByIdAndUpdate(lead._id, {
-                        $set: { pendingChosenSlot: earliest, pendingPatientInfoForScheduling: true },
-                    }).catch(() => { });
-
-                    const prefLabel =
-                        preferPeriod === "manha" ? "de manhã" : preferPeriod === "tarde" ? "à tarde" : "à noite";
-
-                    return `Entendi que você prefere ${prefLabel}. Hoje não tenho vaga ${prefLabel}; o mais cedo disponível é **${formatSlot(
-                        earliest,
-                    )}**.\n\nPra eu confirmar, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚`;
-                }
+                return "Perfeito! Pra eu confirmar esse horário, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚";
             }
-
-            return `Não consegui identificar qual você escolheu 😅\n\n${optionsText}\n\nResponda A-F ou escreva o dia e a hora 💚`;
         }
-
-        await Leads.findByIdAndUpdate(lead._id, {
-            $set: { pendingChosenSlot: chosen, pendingPatientInfoForScheduling: true },
-        }).catch(() => { });
-
-        return "Perfeito! Pra eu confirmar esse horário, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚";
     }
 
     // 🔎 Data explícita no texto
@@ -544,31 +486,35 @@ export async function getOptimizedAmandaResponse({
         !flags.wantsSchedulingNow;
 
     // ✅ prioridade máxima pra preço
+    // ✅ prioridade máxima pra preço (mas usando o builder + Claude)
     if (isPurePriceQuestion) {
-        let detectedTherapies = detectAllTherapies(text);
-
-        if (!detectedTherapies?.length) {
-            if (flags.asksPsychopedagogy || /dificuldade.*(escola|aprendiz)/i.test(text)) {
-                detectedTherapies = [{ id: "neuropsychological", name: "Neuropsicopedagogia" }];
-            } else if (flags.mentionsSpeechTherapy) {
-                detectedTherapies = [{ id: "speech", name: "Fonoaudiologia" }];
-            } else if (flags.mentionsTEA_TDAH || /aten[cç][aã]o|hiperativ/i.test(text)) {
-                detectedTherapies = [{ id: "neuropsychological", name: "Neuropsicologia" }];
-            } else if (/comportamento|emo[cç][aã]o|ansiedad/i.test(text)) {
-                detectedTherapies = [{ id: "psychology", name: "Psicologia" }];
-            } else if (/motor|coordena[cç][aã]o|sensorial|rotina/i.test(text)) {
-                detectedTherapies = [{ id: "occupational", name: "Terapia Ocupacional" }];
-            } else {
-                detectedTherapies = [];
-            }
+        // tenta inferir a terapia pra ajudar o topic/priceLine
+        let therapies = [];
+        try {
+            therapies = detectAllTherapies(text) || [];
+        } catch (_) {
+            therapies = [];
         }
 
-        const priceLines = safeGetPriceLinesForDetectedTherapies(detectedTherapies, { max: 2 });
-        const urgency = safeCalculateUrgency(flags, text);
-        const priceText = (priceLines || []).join(" ").trim();
+        // se não detectou nada, deixa vazio mesmo — o builder vai pedir a área
+        const therapyAnswer = await callClaudeWithTherapyData({
+            therapies,
+            flags: {
+                ...flags,
+                asksPrice: true,        // garante
+                text,                   // garante
+                rawText: text,          // garante
+            },
+            userText: text,
+            lead,
+            context: enrichedContext,
+            analysis,
+        });
 
-        return ensureSingleHeart(`${urgency?.pitch ? urgency.pitch + " " : ""}${priceText} Prefere agendar essa semana ou na próxima?`);
+        const scoped = enforceClinicScope(therapyAnswer, text);
+        return ensureSingleHeart(scoped);
     }
+
 
     logBookingGate(flags, bookingProduct);
 
@@ -889,10 +835,12 @@ export async function getOptimizedAmandaResponse({
 
                     const prioritized = urgencyScheduler(flatSlots, urgencyLevel).slice(0, 6);
 
+                    const limitedSlots = pickTwoSlots(availableSlots);
+
                     if (prioritized.length) {
-                        availableSlots.primary = prioritized[0];
-                        availableSlots.alternativesSamePeriod = prioritized.slice(1, 4);
-                        availableSlots.alternativesOtherPeriod = prioritized.slice(4, 6);
+                        availableSlots.primary = limitedSlots.primary;
+                        availableSlots.alternativesSamePeriod = limitedSlots.alternativesSamePeriod;
+                        availableSlots.alternativesOtherPeriod = [];
                     }
 
 
@@ -984,6 +932,44 @@ export async function getOptimizedAmandaResponse({
 
     const finalScoped = enforceClinicScope(genericAnswer, text);
     return ensureSingleHeart(finalScoped);
+}
+
+
+function pickTwoSlots(slots) {
+    const all = [
+        slots.primary,
+        ...(slots.alternativesSamePeriod || []),
+        ...(slots.alternativesOtherPeriod || [])
+    ].filter(Boolean);
+
+    const byPeriod = {
+        manha: [],
+        tarde: [],
+    };
+
+    for (const s of all) {
+        const h = parseInt(s.time.slice(0, 2), 10);
+        if (h < 12) byPeriod.manha.push(s);
+        else if (h < 18) byPeriod.tarde.push(s);
+    }
+
+    const result = [];
+
+    if (byPeriod.manha.length) result.push(byPeriod.manha[0]);
+    if (byPeriod.tarde.length) result.push(byPeriod.tarde[0]);
+
+    // fallback: só manhã ou só tarde
+    if (result.length === 1) {
+        const samePeriod =
+            result[0].time < "12:00" ? byPeriod.manha : byPeriod.tarde;
+        if (samePeriod[1]) result.push(samePeriod[1]);
+    }
+
+    return {
+        primary: result[0],
+        alternativesSamePeriod: result.slice(1),
+        alternativesOtherPeriod: []
+    };
 }
 
 
@@ -1414,7 +1400,15 @@ async function callClaudeWithTherapyData({
             }
         }
 
-        const prompt = buildUserPromptWithValuePitch(enrichedFlags);
+        const prompt = buildUserPromptWithValuePitch({
+            ...flags,
+            text: userText,          // garante que sempre tem texto
+            rawText: userText,       // usa o raw (sem mexer)
+            conversationSummary: context?.conversationSummary || "",
+            inSchedulingFlow: flags.inSchedulingFlow || context?.inSchedulingFlow,
+            therapyArea: flags.therapyArea || context?.therapyArea,
+            ageGroup: flags.ageGroup || context?.ageGroup,
+        });
         console.log("💰 [PRICE PROMPT] Usando buildUserPromptWithValuePitch");
 
         messages.push({
