@@ -371,6 +371,7 @@ export const whatsappController = {
                 ];
             }
 
+            // 🔹 Busca contatos (como já fazia)
             const [contacts, total] = await Promise.all([
                 Contacts.find(filter)
                     .select('_id name phone avatar lastMessageAt lastMessage hasNewMessage unreadCount')
@@ -381,14 +382,41 @@ export const whatsappController = {
                 Contacts.countDocuments(filter)
             ]);
 
+            // 🔹 Coleta telefones normalizados
+            const phones = contacts
+                .map(c => normalizeE164BR(c.phone))
+                .filter(Boolean);
+
+            // 🔹 Busca leads relacionados (1 query só)
+            const leads = await Lead.find(
+                { phone: { $in: phones } },
+                { _id: 1, phone: 1 }
+            ).lean();
+
+            // 🔹 Mapa phone -> leadId
+            const leadByPhone = new Map(
+                leads
+                    .map(l => [normalizeE164BR(l.phone), l._id.toString()])
+                    .filter(([p]) => p)
+            );
+
+            // 🔹 Injeta leadId em cada contato
+            const enrichedContacts = contacts.map(c => {
+                const phone = normalizeE164BR(c.phone);
+                return {
+                    ...c,
+                    leadId: phone ? leadByPhone.get(phone) || null : null
+                };
+            });
+
             res.json({
                 success: true,
-                data: contacts,
+                data: enrichedContacts,
                 pagination: {
                     page: parseInt(page),
                     limit: limitNum,
                     total,
-                    hasMore: skip + contacts.length < total
+                    hasMore: skip + enrichedContacts.length < total
                 }
             });
         } catch (err) {
