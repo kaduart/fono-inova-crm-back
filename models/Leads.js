@@ -24,7 +24,7 @@ const leadSchema = new mongoose.Schema({
     enum: ['WhatsApp', 'Site', 'Indicação', 'Outro', 'Tráfego pago', 'Google', 'Instagram', 'Meta Ads'],
     default: 'Outro'
   },
-
+  urgencyApplied: { type: String, default: null },
   appointment: {
     seekingFor: {
       type: String,
@@ -73,7 +73,7 @@ const leadSchema = new mongoose.Schema({
     default: null,
   },
   therapyArea: { type: String, default: null },
-
+  urgencyApplied: { type: String, default: null },
   status: {
     type: String,
     enum: [

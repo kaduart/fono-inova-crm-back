@@ -52,11 +52,18 @@ export function deriveFlagsFromText(text = "") {
         asksDays: /(quais\s+os\s+dias\s+de\s+atendimento|dias\s+de\s+atendimento|atende\s+quais\s+dias)/i.test(normalizedText),
         asksTimes: /(quais\s+os\s+hor[aá]rios|e\s+hor[aá]rios|tem\s+hor[aá]rio|quais\s+hor[aá]rios\s+de\s+atendimento)/i.test(normalizedText),
 
-        mentionsAdult: /\b(adulto|adultos|maior\s*de\s*18|\d{2,}\s*anos|pra\s*mim|para\s*mim)\b/i.test(normalizedText),
-        mentionsChild:
-            /\b(crian[çc]a|meu\s*filho|minha\s*filha|meu\s*bb|minha\s*bb|beb[eê]|pequenininh[ao])\b/i.test(normalizedText) || mentionsLinguinha,
-        mentionsTeen: /\b(adolescente|adolesc[êe]ncia|pré[-\s]*adolescente)\b/i.test(normalizedText),
+        mentionsAdult:
+            ageGroup === "adulto" ||
+            /\b(adulto|adultos|maior\s*de\s*18|pra\s*mim|para\s*mim)\b/i.test(normalizedText),
 
+        mentionsTeen:
+            ageGroup === "adolescente" ||
+            /\b(adolescente|adolesc[êe]ncia|pré[-\s]*adolescente)\b/i.test(normalizedText),
+
+        mentionsChild:
+            ageGroup === "crianca" ||
+            /\b(crian[çc]a|meu\s*filho|minha\s*filha|meu\s*bb|minha\s*bb|beb[eê]|pequenininh[ao])\b/i.test(normalizedText) ||
+            mentionsLinguinha,
         mentionsTEA_TDAH: /(tea|autismo|autista|tdah|d[eé]ficit\s+de\s+aten[cç][aã]o|hiperativ)/i.test(normalizedText),
 
         mentionsTOD:
@@ -68,7 +75,7 @@ export function deriveFlagsFromText(text = "") {
 
         // aqui fica só 1 lugar pro “bye/thanks”
         saysThanks: /\b(obrigad[ao]s?|obg|obgd|brigad[ao]s?|valeu|vlw|agrade[cç]o)\b/i.test(normalizedText),
-        saysBye: /\b(tchau|até\s+mais|até\s+logo|boa\s+noite|boa\s+tarde|bom\s+dia|bom\s+descanso|até\s+amanhã)\b/i.test(normalizedText),
+        saysBye: /\b(tchau|até\s+mais|até\s+logo|até\s+amanhã|até)\b/i.test(normalizedText),
 
         asksSpecialtyAvailability:
             /(voc[eê]\s*tem\s+(psicolog|fono|fonoaudiolog|terapia\s+ocupacional|fisioterap|neuropsico|musicoterap)|\btem\s+(psicolog|fono|fonoaudiolog|terapia\s+ocupacional|fisioterap|neuropsico|musicoterap))/i.test(normalizedText),
@@ -100,22 +107,41 @@ export function deriveFlagsFromText(text = "") {
 // 1️⃣ Extração de idade e definição de faixa
 function extractAgeGroup(text = "") {
     const normalized = text.toLowerCase();
-    const ageMatch = normalized.match(/(\d{1,2})\s*anos?/);
 
-    const explicitAge = ageMatch ? parseInt(ageMatch[1], 10) : null;
+    // anos
+    const yearsMatch = normalized.match(/(\d{1,2})\s*anos?/);
+    const years = yearsMatch ? parseInt(yearsMatch[1], 10) : null;
 
-    if (explicitAge !== null) {
-        if (explicitAge <= 12) return "crianca";
-        if (explicitAge <= 17) return "adolescente";
+    // meses (ex.: "18 meses")
+    const monthsMatch = normalized.match(/(\d{1,2})\s*mes(?:es)?/);
+    const months = monthsMatch ? parseInt(monthsMatch[1], 10) : null;
+
+    // caso "1 ano e 8 meses"
+    const yearsAndMonths = normalized.match(/(\d{1,2})\s*anos?.*?(\d{1,2})\s*mes(?:es)?/);
+    if (yearsAndMonths) {
+        const y = parseInt(yearsAndMonths[1], 10);
+        // criança / adolescente / adulto pela parte em anos já resolve
+        if (y <= 12) return "crianca";
+        if (y <= 17) return "adolescente";
         return "adulto";
     }
 
-    // fallback: termos sem idade explícita
+    if (Number.isFinite(years)) {
+        if (years <= 12) return "crianca";
+        if (years <= 17) return "adolescente";
+        return "adulto";
+    }
+
+    // só meses -> criança
+    if (Number.isFinite(months)) return "crianca";
+
     if (/\badulto|maior\s*de\s*18/.test(normalized)) return "adulto";
     if (/\badolescente|pré[-\s]*adolescente|adolesc[êe]ncia/.test(normalized)) return "adolescente";
     if (/\b(crian[çc]a|meu\s*filho|minha\s*filha|beb[eê]|bb)\b/.test(normalized)) return "crianca";
+
     return null;
 }
+
 
 /* =========================================================================
    2) TOPIC — FONTE DA VERDADE
@@ -169,6 +195,8 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
     const rawText = String(text ?? "");
     const baseFlags = deriveFlagsFromText(rawText || "");
     const t = baseFlags.normalizedText;
+    if (context?.urgency?.level) baseFlags.urgencyLevel = context.urgency.level;
+    if (context?.mode) baseFlags.mode = context.mode;
 
     // contexto conversacional
     const stage = context.stage || "novo";

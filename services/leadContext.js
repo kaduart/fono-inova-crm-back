@@ -16,7 +16,8 @@ export async function enrichLeadContext(leadId) {
         // ✅ Busca TODAS as mensagens (não limita mais)
         const messages = await Message.find({
             lead: leadId,
-            type: 'text'
+            // inclui template/mídia também (mantém contexto e evita 'esquecimento')
+            type: { $in: ['text', 'template', 'image', 'audio', 'video', 'document'] }
         })
             .sort({ timestamp: 1 }) // Ordem cronológica
             .lean();
@@ -40,11 +41,14 @@ export async function enrichLeadContext(leadId) {
         }
         else if (totalMessages <= 20) {
             // Conversa curta: manda tudo
-            conversationHistory = messages.map(msg => ({
-                role: msg.direction === 'inbound' ? 'user' : 'assistant',
-                content: msg.content,
-                timestamp: msg.timestamp
-            }));
+            conversationHistory = messages
+                .filter(msg => (msg.content || '').toString().trim().length > 0)
+                .map(msg => ({
+                    role: msg.direction === 'inbound' ? 'user' : 'assistant',
+                    content: msg.content,
+                    timestamp: msg.timestamp,
+                    type: msg.type
+                }));
 
             // Checa se deve cumprimentar (última msg >24h atrás)
             const lastMsgTime = messages[messages.length - 1].timestamp;
@@ -85,11 +89,14 @@ export async function enrichLeadContext(leadId) {
 
             // 2. Últimas 20 mensagens completas
             const recentMessages = messages.slice(-20);
-            conversationHistory = recentMessages.map(msg => ({
-                role: msg.direction === 'inbound' ? 'user' : 'assistant',
-                content: msg.content,
-                timestamp: msg.timestamp
-            }));
+            conversationHistory = recentMessages
+                .filter(msg => (msg.content || '').toString().trim().length > 0)
+                .map(msg => ({
+                    role: msg.direction === 'inbound' ? 'user' : 'assistant',
+                    content: msg.content,
+                    timestamp: msg.timestamp,
+                    type: msg.type
+                }));
 
             // 3. Checa saudação
             const lastMsgTime = recentMessages[recentMessages.length - 1].timestamp;

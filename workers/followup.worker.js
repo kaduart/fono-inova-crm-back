@@ -13,6 +13,7 @@ import Message from "../models/Message.js";
 import { followupQueue } from "../config/bullConfig.js";
 import { getIo } from "../config/socket.js";
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
+import enrichLeadContext from "../services/leadContext.js";
 import { normalizeE164BR } from "../utils/phone.js";
 
 // Amanda 2.0
@@ -24,6 +25,7 @@ import {
 // Amanda 1.0 (fallback)
 import { generateFollowupMessage } from "../services/aiAmandaService.js";
 import { sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
+import { buildContextPack } from "../services/intelligence/ContextPack.js";
 
 await mongoose.connect(process.env.MONGO_URI);
 
@@ -77,8 +79,15 @@ const worker = new Worker(
     function shouldSuppressByState(lead) {
       const stage = (lead?.stage || lead?.status || "").toString().toLowerCase();
 
-      // ajuste aqui conforme seus valores reais
-      const terminalStages = ["visit_scheduled", "scheduled", "patient", "paciente", "agendado", "visita_marcada"];
+      // SOMENTE estados realmente terminais
+      const terminalStages = [
+        "visit_scheduled",
+        "scheduled",
+        "patient",
+        "paciente",
+        "agendado",
+        "visita_marcada"
+      ];
 
       return (
         terminalStages.includes(stage) ||
@@ -88,12 +97,15 @@ const worker = new Worker(
       );
     }
 
+
     // ✅ GATE: se já está agendado/visita, cancela o follow-up atual e sai
     if (shouldSuppressByState(lead)) {
       await Followup.findByIdAndUpdate(followupId, {
         status: "canceled",
         canceledAt: new Date(),
-        cancelReason: "gate_blocked_already_scheduled"
+        cancelReason: "gate_blocked_already_scheduled",
+        cancelReason: "gate_blocked_already_scheduled",
+
       });
       return;
     }
@@ -102,10 +114,37 @@ const worker = new Worker(
       // =====================================================
       // 🧠 1. AMANDA 2.0 - ANÁLISE DO CONTEXTO
       // =====================================================
-      const recentMessages = await Message.find({ lead: lead._id })
+      const recentMessages = await Message.find({
+        lead: lead._id,
+        type: { $in: ['text', 'template', 'image', 'audio', 'video', 'document'] }
+      })
         .sort({ timestamp: -1 })
-        .limit(10)
+        .limit(30)
         .lean();
+
+
+      // 🧠 Contexto persistido (resumo + histórico) para follow-up não ficar genérico
+      const enrichedContext = await enrichLeadContext(lead._id).catch(() => null);
+      const summaryText = enrichedContext?.conversationSummary || lead.conversationSummary || null;
+      const contextPack = await buildContextPack(lead._id).catch(() => null);
+      const fullContext = { ...(enrichedContext || {}), ...(contextPack || {}) };
+
+      // 🇧🇷 mesmo-dia (SP) → follow-up deve referenciar a conversa de hoje
+      const now = new Date();
+      const startOfDaySP = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+      startOfDaySP.setHours(0, 0, 0, 0);
+      const sameDay = recentMessages.some(m => m.timestamp && new Date(m.timestamp) >= startOfDaySP);
+
+      // Histórico em ordem cronológica para modelos
+      const historyForModel = recentMessages
+        .slice()
+        .reverse()
+        .map(m => (m.content || "").toString())
+        .filter(Boolean);
+
+      if (summaryText) {
+        historyForModel.unshift(`[RESUMO] ${summaryText}`);
+      }
 
       const lastInbound = recentMessages.find(
         (m) => m.direction === "inbound"
@@ -150,7 +189,7 @@ const worker = new Worker(
           analysis = await analyzeLeadMessage({
             text: lastInbound.content,
             lead,
-            history: recentMessages.map(m => m.content || "")
+            history: historyForModel
           });
         } catch (e) {
           console.warn(
@@ -171,39 +210,16 @@ const worker = new Worker(
       }
 
       // heurística simples, independente da IA
-      const hardStopPatterns = [
-        "não preciso mais",
-        "nao preciso mais",
-        "não preciso mais da consulta",
-        "nao preciso mais da consulta",
-        "ja agendei",
-        "já agendei",
-        "minha esposa conseguiu agendar",
-        "minha esposa marcou",
-        "já está agendado",
-        "ja está agendado",
-        "já está marcado",
-        "ja está marcado",
-        "não tenho interesse",
-        "nao tenho interesse",
-        "não quero",
-        "nao quero"
+      const hardStopRegexes = [
+        /\b(n[aã]o\s+quero\s+mais|n[aã]o\s+tenho\s+interesse|parem\s+de\s+me\s+chamar|n[aã]o\s+me\s+chame)\b/i,
+        /\b(j[aá]\s+(agendei|marquei)|j[aá]\s+est[aá]\s+(agendad[oa]|marcad[oa]))\b/i,
+        /\b(n[aã]o\s+preciso\s+mais)\b/i,
       ];
 
-      if (lastInboundText && hardStopPatterns.some(p => lastInboundText.includes(p))) {
+      if (lastInboundText && hardStopRegexes.some(r => r.test(lastInboundText))) {
         shouldStopByIntent = true;
-
-        await Lead.findByIdAndUpdate(lead._id, {
-          status: "sem_interesse" // ou 'em_andamento', se for caso de já agendou
-        });
-
-        console.log(
-          chalk.yellow(
-            `[AMANDA] Hard stop por texto detectado para lead ${lead._id}. Não enviar mais follow-ups.`
-          )
-        );
+        await Lead.findByIdAndUpdate(lead._id, { status: "sem_interesse" }).catch(() => { });
       }
-
 
       // Se a pessoa já sinalizou desinteresse, não envia nada e não agenda próximo
       if (shouldStopByIntent) {
@@ -229,7 +245,10 @@ const worker = new Worker(
               lead,
               analysis,
               attempt: currentAttempt,
-              history: recentMessages
+              history: recentMessages,
+              sameDay,
+              summaryText,
+              context: fullContext,
             });
 
             console.log(
@@ -268,7 +287,7 @@ const worker = new Worker(
 
 
       // Personalização
-      let sentText = messageToSend;
+      let sentText = ensureSingleHeart(messageToSend);
       if (!followup.playbook) {
         const rawName = (lead?.name || "").trim();
         let firstName = rawName.split(/\s+/)[0] || "";
@@ -343,30 +362,33 @@ const worker = new Worker(
         const result = await sendTemplateMessage({
           to,
           template: followup.playbook,
-          params: [{ type: "text", text: sentText }],
-          lead: lead._id
+          params: [sentText],
+          renderedText: sentText,
+          lead: lead._id,
+          contactId: contact?._id || null,
+          patientId,
+          sentBy: "amanda_followup"
         });
 
         waMessageId =
           result?.waMessageId || result?.messages?.[0]?.id || null;
 
-        // Salva manualmente em Message (igual ao controller sendTemplate)
-        saved = await Message.create({
-          from: process.env.CLINIC_PHONE_E164 || to,
-          to,
-          direction: "outbound",
-          type: "template",
-          content: `[TEMPLATE][Amanda] ${followup.playbook}`,
-          templateName: followup.playbook,
-          status: "sent",
-          timestamp: new Date(),
-          lead: lead._id,
-          contact: contact?._id || null,
-          waMessageId,
-          metadata: {
-            sentBy: "amanda_followup"
-          }
-        });
+        // ✅ Mensagem template já é registrada dentro de sendTemplateMessage (whatsappService)
+        const waMessageIdLocal =
+          result?.waMessageId || result?.messages?.[0]?.id || null;
+
+        waMessageId = waMessageIdLocal;
+
+        saved = waMessageIdLocal
+          ? await Message.findOne({ waMessageId: waMessageIdLocal }).lean()
+          : null;
+
+        // fallback: última outbound template do lead
+        if (!saved) {
+          saved = await Message.findOne({ lead: lead._id, direction: "outbound" })
+            .sort({ timestamp: -1 })
+            .lean();
+        }
 
         // Emite socket para aparecer no chat
         io.emit("message:new", {
@@ -516,6 +538,12 @@ const worker = new Worker(
     concurrency: 5
   }
 );
+
+function ensureSingleHeart(text) {
+  if (!text) return "Como posso te ajudar? 💚";
+  const clean = String(text).replace(/💚/g, "").trim();
+  return `${clean} 💚`;
+}
 
 // =====================================================
 // ⚠️ 6. TRATAMENTO DE ERROS / RETENTATIVAS

@@ -26,6 +26,7 @@ async function updateChatContext(leadId, direction, text) {
         {
             $push: { messages: { direction, text, ts: now } },
             $set: { lastUpdatedAt: now },
+            $setOnInsert: { lead: leadId },
         },
         { upsert: true, new: true }
     );
@@ -138,12 +139,70 @@ export async function resolveMediaUrl(mediaId) {
 }
 
 /** ✉️ Envia template */
-export async function sendTemplateMessage({ to, template, params = [], lead }) {
+
+/**
+ * 🧼 Formata texto para WhatsApp sem destruir parágrafos
+ * - mode="preserve": mantém quebras de linha e parágrafos (default recomendado)
+ * - mode="bullets": transforma linhas em lista com ▫️
+ * - mode="auto": preserva parágrafos; só usa bullets se o texto já parece lista
+ */
+function formatWhatsAppText(text, { mode = "auto" } = {}) {
+    const raw = (text ?? "").toString();
+
+    // normaliza quebras
+    const normalized = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+    // Se o caller pediu preservar, faz só um trim suave
+    if (mode === "preserve") {
+        // remove espaços no fim de linha, mas mantém linhas vazias
+        return normalized
+            .split("\n")
+            .map(line => line.replace(/\s+$/g, ""))
+            .join("\n")
+            .trim();
+    }
+
+    // Detecta se já é lista (linhas iniciando com -, •, ▫️, 1), 2), etc)
+    const lines = normalized.split("\n");
+    const nonEmpty = lines.filter(l => l.trim().length > 0);
+    const looksLikeList =
+        nonEmpty.length >= 3 &&
+        nonEmpty.every(l => /^\s*(?:[-•▫️]|\d+[\)\.]|\*)\s+/.test(l));
+
+    // AUTO: por padrão preserva parágrafos; bullets só quando já parece lista
+    if (mode === "auto" && !looksLikeList) {
+        return formatWhatsAppText(normalized, { mode: "preserve" });
+    }
+
+    // BULLETS (ou auto + lista)
+    const bulletLines = nonEmpty.map(l => l.trim().replace(/^\s*(?:[-•▫️]|\d+[\)\.]|\*)\s+/, ""));
+    return bulletLines.map((l, idx) => (idx === 0 ? `▫️ ${l}` : `▫️ ${l}`)).join("\n").trim();
+}
+
+export async function sendTemplateMessage({
+    to,
+    template,
+    params = [],
+    lead = null,
+    contactId = null,
+    patientId = null,
+    renderedText = null,
+    sentBy = "amanda",
+    userId = null
+}) {
     const token = await requireToken();
     if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
 
     const phone = normalizeE164BR(to);
     const url = `${META_URL}/${PHONE_ID}/messages`;
+
+    // ✅ Aceita params como string OU como objeto {type,text}
+    const safeParams = (params || []).map((p) => {
+        if (typeof p === "string") return { type: "text", text: p };
+        if (p && typeof p === "object" && p.type && typeof p.text === "string") return p;
+        // fallback
+        return { type: "text", text: String(p ?? "") };
+    });
 
     const body = {
         messaging_product: "whatsapp",
@@ -155,7 +214,7 @@ export async function sendTemplateMessage({ to, template, params = [], lead }) {
             components: [
                 {
                     type: "body",
-                    parameters: params.map((p) => ({ type: "text", text: p })),
+                    parameters: safeParams,
                 },
             ],
         },
@@ -169,13 +228,42 @@ export async function sendTemplateMessage({ to, template, params = [], lead }) {
         },
         body: JSON.stringify(body),
     });
+
     const data = await res.json();
-
     const waMessageId = data?.messages?.[0]?.id || null;
+    const now = new Date();
 
-    // Se quiser manter contexto de conversa:
+    // Texto para salvar no CRM (não temos o conteúdo "real" do template, então salvamos um texto útil)
+    const paramsText = safeParams.map(p => p.text).filter(Boolean).join(" ");
+    const contentToSave =
+        (renderedText && String(renderedText).trim()) ||
+        (paramsText ? paramsText : `[TEMPLATE:${template}]`);
+
+    // 🔁 Mantém contexto de conversa (ChatContext)
     if (lead) {
-        await updateChatContext(lead, "outbound", `[TEMPLATE] ${params.join(" ")}`);
+        await updateChatContext(lead, "outbound", contentToSave);
+    }
+
+    // 💾 Registra a mensagem no CRM (Message)
+    if (lead) {
+        await registerMessage({
+            leadId: lead,
+            contactId,
+            patientId,
+            direction: "outbound",
+            text: contentToSave,
+            type: "template",
+            status: res.ok ? "sent" : "failed",
+            waMessageId,
+            timestamp: now,
+            to: phone,
+            from: PHONE_ID,
+            metadata: {
+                templateName: template,
+                sentBy,
+                userId
+            },
+        });
     }
 
     if (!res.ok) {
@@ -183,7 +271,7 @@ export async function sendTemplateMessage({ to, template, params = [], lead }) {
         throw new Error(data.error?.message || "Erro ao enviar template WhatsApp");
     }
 
-    return data;
+    return { ...data, waMessageId };
 }
 
 /** 💬 Envia texto */
@@ -195,6 +283,7 @@ export async function sendTextMessage({
     patientId = null,         // ← se estiver vinculado a um paciente
     sentBy = "amanda",   // default: Amanda respondeu sozinha
     userId = null,            // quando vier de usuário humano, passa o id aqui
+    formatMode = "auto",      // "auto" | "preserve" | "bullets"
 }) {
     const token = await requireToken();
     if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
@@ -202,12 +291,7 @@ export async function sendTextMessage({
     const phone = normalizeE164BR(to);
     const url = `${META_URL}/${PHONE_ID}/messages`;
 
-    const formattedText = text
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-        .join('\n▫️ ')  // Adiciona bullet point
-        .replace(/\n▫️ $/g, '');
+    const formattedText = formatWhatsAppText(text, { mode: formatMode });
 
     const body = {
         messaging_product: "whatsapp",
