@@ -6,7 +6,7 @@ import mongoose from "mongoose";
 import "../models/LearningInsight.js";
 
 // 2) importa o orquestrador
-import { getOptimizedAmandaResponse } from "../utils/amandaOrchestrator.js";
+import  getOptimizedAmandaResponse  from "../utils/amandaOrchestrator.js";
 
 // 3) importa Leads (vamos mockar writes)
 import Leads from "../models/Leads.js";

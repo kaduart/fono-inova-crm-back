@@ -12,7 +12,7 @@
 
 import { normalizeTherapyTerms } from "./therapyDetector.js";
 
-export const CLINIC_ADDRESS = "Av. Minas Gerais, 405 - Jundiaí, Anápolis - GO, 75110-770, Brasil";
+export const CLINIC_ADDRESS = "Av. Minas Gerais, 405 - Bairro Jundiaí, Anápolis - GO, 75110-770, Brasil";
 
 
 /* =========================================================================
@@ -1030,7 +1030,7 @@ export const MANUAL_AMANDA = {
   "saudacao": "Olá! 😊 Sou a Amanda, da Clínica Fono Inova. Como posso ajudar você hoje? 💚",
 
   "localizacao": {
-    "endereco": "Ficamos na Av. Minas Gerais, 405 - Jundiaí, Anápolis-GO! 💚",
+    "endereco": "Ficamos na Av. Minas Gerais, 405 - Bairro Jundiaí, Anápolis-GO! 💚",
     "como_chegar": "Estamos em frente ao SESI no Jundiaí! Precisa do link do Google Maps? 💚"
   },
 
