@@ -19,7 +19,7 @@ if (mongoose.models.LearningInsight) {
 }
 
 // ✅ Importa orquestrador primeiro
-import { getOptimizedAmandaResponse } from "../utils/amandaOrchestrator.js";
+import  getOptimizedAmandaResponse  from "../utils/amandaOrchestrator.js";
 
 // 🧩 Cria mock leve se o modelo não existir
 if (!mongoose.models.LearningInsight) {

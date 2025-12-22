@@ -58,7 +58,7 @@ Valor: R$ 2.000 em 6x no cartão.`,
     logistics: {
         "como_chegar": {
             question: "Como chego na clínica?",
-            answer: `Estamos na Av. Minas Gerais, 405 - Jundiaí, Anápolis-GO.
+            answer: `Estamos na Av. Minas Gerais, 405 - Bairro Jundiaí, Anápolis-GO.
 
         📍 Referência: Em frente ao SESI
         🗺️ Link do Google Maps: [enviar quando disponível]

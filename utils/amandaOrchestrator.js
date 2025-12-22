@@ -10,6 +10,7 @@ import {
     detectNegativeScopes,
     getPriceLinesForDetectedTherapies,
     getTDAHResponse,
+    getTherapyData,
     isAskingAboutEquivalence,
     isTDAHQuestion
 } from "./therapyDetector.js";
@@ -36,6 +37,8 @@ import {
 } from "./amandaPrompt.js";
 import { logBookingGate, mapFlagsToBookingProduct } from "./bookingProductMapper.js";
 import { extractPreferredDateFromText } from "./dateParser.js";
+import { getLatestInsights } from "../services/amandaLearningService.js";
+import Appointment from "../models/Appointment.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
@@ -111,7 +114,7 @@ function nextStage(
 
     const hasArea = Boolean(
         flags?.therapyArea ||
-        lead?.autoBookingContext?.mappedTherapyArea ||
+        lead?.autoBookingContext?.therapyArea ||
         lead?.therapyArea
     );
 
@@ -161,17 +164,51 @@ function nextStage(
     return stage;
 }
 
+function normalizeSlots(raw) {
+    const s = raw && typeof raw === "object" ? raw : {};
+    const primary = s.primary || null;
+    const same = Array.isArray(s.alternativesSamePeriod) ? s.alternativesSamePeriod : [];
+    const other = Array.isArray(s.alternativesOtherPeriod) ? s.alternativesOtherPeriod : [];
+    return { primary, alternativesSamePeriod: same, alternativesOtherPeriod: other };
+}
+
+function hasAnySlot(raw) {
+    if (!raw) return false;
+    const s = normalizeSlots(raw);
+    const all = [
+        s.primary,
+        ...s.alternativesSamePeriod,
+        ...s.alternativesOtherPeriod,
+    ].filter(Boolean);
+    return all.length > 0;
+}
+
+function getCurrentSlots(lead, context) {
+    return (
+        lead?.pendingSchedulingSlots ||
+        context?.pendingSchedulingSlots ||
+        lead?.autoBookingContext?.lastOfferedSlots ||
+        null
+    );
+}
+
+function isSimpleYes(text = "") {
+    return /\b(sim|s\b|ok|okay|pode|pode\s+ser|beleza|fechado|confirmo|perfeito)\b/i.test(text);
+}
+
 /**
  * 🎯 ORQUESTRADOR COM CONTEXTO INTELIGENTE
  */
-export async function getOptimizedAmandaResponse({
+export default async function getOptimizedAmandaResponse({
     content,
     userText,
     lead = {},
     context = {},
     messageId = null,
 }) {
-    const text = userText || content || "";
+    const raw = userText ?? content;
+const text = typeof raw === "string" ? raw : "";
+
     const normalized = text.toLowerCase().trim();
 
     const SCHEDULING_REGEX =
@@ -184,59 +221,69 @@ export async function getOptimizedAmandaResponse({
         const mentionsBaby =
             /\b(beb[eê]|rec[eé]m[-\s]*nascid[oa]|rn)\b/i.test(t) || hasMonths;
 
-        // Se for bebê e ainda não tem perfil, trate como "criança"
-        if (
-            mentionsBaby &&
-            !flags.mentionsChild &&
-            !flags.mentionsTeen &&
-            !flags.mentionsAdult
-        ) {
-            flags.mentionsChild = true;
-            if (!ctx.ageGroup) ctx.ageGroup = "crianca";
+        const inferred = {
+            mentionsChild: false,
+            ageGroup: null
+        };
+
+        if (mentionsBaby) {
+            inferred.mentionsChild = true;
+            inferred.ageGroup = "crianca";
         }
 
-        return !!(
-            flags.mentionsChild ||
-            flags.mentionsTeen ||
-            flags.mentionsAdult ||
-            ctx.ageGroup ||
-            hasYears ||
-            hasMonths
-        );
+        const hasProfile =
+            !!(
+                flags.mentionsChild ||
+                flags.mentionsTeen ||
+                flags.mentionsAdult ||
+                ctx.ageGroup ||
+                lead?.patientInfo?.birthDate ||
+                lead?.patientInfo?.fullName ||
+                hasYears ||
+                hasMonths ||
+                inferred.mentionsChild
+            );
+
+        return { hasProfile, inferred };
     }
 
-    function buildTriageSchedulingMessage({
-        flags = {},
-        bookingProduct = {},
-        ctx = {},
-    } = {}) {
-        const knownArea =
+    // ✅ ADICIONAR parâmetro conversationHistory
+    function buildTriageSchedulingMessage({ flags, bookingProduct, ctx, conversationHistory = [], lead = {} }) {
+        const hasAgeInHistory = conversationHistory.some(msg => {
+            const c = typeof msg?.content === "string" ? msg.content : "";
+            return /\b\d{1,2}\s*anos?\b/i.test(c) || /\b\d{1,2}\s*(mes|meses)\b/i.test(c);
+        });
+
+        const hasAgeInLead = Boolean(lead?.ageGroup || lead?.patientInfo?.birthDate || lead?.contextMemory?.hasAge);
+
+        const needsProfile = !(flags.mentionsChild || flags.mentionsTeen || flags.mentionsAdult || ctx.ageGroup || hasAgeInHistory || hasAgeInLead);
+        if (needsProfile) return "Qual a idade do paciente? 💚";
+
+        const needsArea = !(
+            flags.therapyArea ||
             bookingProduct?.therapyArea ||
-            flags?.therapyArea ||
-            lead?.autoBookingContext?.mappedTherapyArea ||
-            lead?.therapyArea;
-
-        const needsArea = !knownArea;
-        const needsProfile = !(
-            flags.mentionsChild ||
-            flags.mentionsTeen ||
-            flags.mentionsAdult ||
-            ctx.ageGroup
+            ctx.therapyArea ||
+            lead?.autoBookingContext?.therapyArea ||
+            lead?.therapyArea
         );
 
-        if (needsArea && needsProfile) {
-            return "Perfeito 😊 Pra eu agendar certinho: é pra qual área (Fono, Psicologia, TO, Fisioterapia ou Neuropsicológica) e qual a idade (meses ou anos)? E me conta em 1 frase o que vocês têm notado.";
-        }
         if (needsArea) {
-            return "Perfeito 😊 É pra qual área: Fono, Psicologia, TO, Fisioterapia ou Neuropsicológica? E em 1 frase, o que te fez procurar a avaliação? 💚";
+            return "Perfeito! É pra qual área? (Fono, Psicologia, TO, Fisioterapia ou Neuropsico) 💚";
         }
-        if (needsProfile) {
-            return "Perfeito 😊 Qual a idade do paciente (meses ou anos)? E o que você tem notado que te fez procurar a avaliação? 💚";
+
+        // se já tem perfil + área, pede a queixa (bem curto) OU período
+        const hasComplaint =
+            /\b(fala|linguagem|troca\s+letra|tea|tdah|comport|ansied|aprender|sensorial|coordena|dor|respira|ronco)\b/i
+                .test(String((ctx?.lastUserText || "") + " " + (ctx?.currentUserText || ""))) ||
+            Boolean(lead?.qualificationData?.extractedInfo?.queixa);
+
+        if (!hasComplaint) {
+            return "Pra eu direcionar certinho: o que você tem notado e te trouxe pra essa avaliação? 💚";
         }
-        return "Perfeito 😊 Me conta em 1 frase o que você tem notado (ex.: fala/atenção/comportamento), e aí eu já vejo os melhores horários 💚";
 
-
+        return "Show! Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor? 💚";
     }
+
 
     // ✅ Wrappers defensivos (pra não quebrar se helpers não estiverem no arquivo/import)
     function safeCalculateUrgency(flags, txt) {
@@ -318,34 +365,70 @@ export async function getOptimizedAmandaResponse({
                 return "Perfeito! Só mais um detalhe: confirma pra mim o **nome completo** do paciente? 💚";
             }
 
-            // ✅ AGENDAR DE VERDADE
+            const phone =
+                updated?.contact?.phone ||
+                leadForInfo?.contact?.phone ||
+                null;
+
+            const email =
+                updated?.contact?.email ||
+                leadForInfo?.contact?.email ||
+                null;
+
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: {
+                    "patientInfo.birthDate": birthDate,
+                    "patientInfo.phone": phone,
+                    "patientInfo.email": email,
+                }
+            }).catch(() => { });
+
             const bookingResult = await autoBookAppointment({
                 lead: updated || leadForInfo,
                 chosenSlot,
-                patientInfo: { fullName, birthDate }
+                patientInfo: { fullName, birthDate, phone, email }
             });
 
             if (bookingResult.success) {
+                const appointmentId =
+                    bookingResult?.appointment?._id ||
+                    bookingResult?.appointmentId ||
+                    bookingResult?.appointment;
+
+                if (!appointmentId) {
+                    console.error("[BOOKING] success=true mas sem appointmentId");
+                    return "Tive um problema ao confirmar. Vou pedir pra equipe te ajudar 💚";
+                }
+
+                let appointment = null;
+                try {
+                    appointment = await Appointment.findById(appointmentId).lean();
+                } catch (e) { }
+
+                if (!appointment) {
+                    console.error("[BOOKING] Appointment success mas não está no BD:", appointmentId);
+                    return "Tive um problema ao confirmar. Vou pedir pra equipe te ajudar 💚";
+                }
+
                 await Leads.findByIdAndUpdate(lead._id, {
-                    $set: { status: "agendado", stage: "paciente", patientId: bookingResult.patientId },
-                    $unset: {
-                        pendingSchedulingSlots: "",
-                        pendingChosenSlot: "",
-                        pendingPatientInfoForScheduling: "",
-                        pendingPatientInfoStep: "",
-                        autoBookingContext: ""
+                    $set: {
+                        stage: "paciente",
+                        pendingPatientInfoForScheduling: false,
+                        pendingPatientInfoStep: null,
+                        pendingChosenSlot: null,
+                        pendingSchedulingSlots: null,
                     }
                 }).catch(() => { });
 
-                await Followup.updateMany(
-                    { lead: lead._id, status: "scheduled" },
-                    { $set: { status: "canceled", canceledReason: "agendamento_confirmado_amanda" } }
-                ).catch(() => { });
+                // ✅ Mensagem final de confirmação (usa chosenSlot se quiser; aqui uso appointment se tiver)
+                const when =
+                    (appointment?.date && appointment?.time)
+                        ? `${formatDatePtBr(appointment.date)} às ${appointment.time}`
+                        : (chosenSlot ? formatSlot(chosenSlot) : "o horário combinado");
 
-                const humanDate = formatDatePtBr(chosenSlot.date);
-                const humanTime = String(chosenSlot.time || "").slice(0, 5);
-                return `Perfeito! ✅ Agendado para ${humanDate} às ${humanTime}. Te espero na clínica 💚`;
+                return `Perfeito! Agendamento confirmado para **${when}**. Qualquer coisa, estou por aqui 💚`;
             }
+
 
             if (bookingResult.code === "TIME_CONFLICT") {
                 return "Esse horário acabou de ser preenchido 😕 Quer que eu te envie outras opções? 💚";
@@ -392,10 +475,27 @@ export async function getOptimizedAmandaResponse({
         ...(contextPack ? { mode: contextPack.mode, urgency: contextPack.urgency } : {}),
     };
 
+    // ✅ set correto (pra triagem e pro LLM)
+    enrichedContext.lastUserText = text;
+    enrichedContext.currentUserText = text;
+
+
     if (contextPack?.mode) console.log("[AmandaAI] ContextPack mode:", contextPack.mode);
 
     // 4) flags já enxergam mode/urgency
-    const flags = detectAllFlags(text, lead, enrichedContext);
+    let flags = detectAllFlags(text, lead, enrichedContext);
+
+    // 🧠 Análise inteligente (uma vez)
+    let analysis = null;
+    try {
+        analysis = await analyzeLeadMessage({
+            text,
+            lead,
+            history: enrichedContext.conversationHistory || [],
+        });
+    } catch (err) {
+        console.warn("[ORCHESTRATOR] leadIntelligence falhou no orquestrador:", err.message);
+    }
 
     // 🧮 Normaliza contagem de mensagens
     const historyLen = Array.isArray(enrichedContext.conversationHistory)
@@ -406,26 +506,23 @@ export async function getOptimizedAmandaResponse({
     enrichedContext.messageCount = msgCount;
 
     // ✅ Se já tem slots pendentes e o lead respondeu escolhendo
-    const hasPendingSlots =
+    const rawPending =
         lead?.pendingSchedulingSlots ||
         enrichedContext?.pendingSchedulingSlots ||
-        lead?.autoBookingContext?.lastOfferedSlots;
+        lead?.autoBookingContext?.lastOfferedSlots ||
+        null;
+
+    const hasPendingSlots = hasAnySlot(rawPending);
+
 
     if (lead?._id && hasPendingSlots) {
-        const rawSlots =
-            lead.pendingSchedulingSlots ||
-            enrichedContext.pendingSchedulingSlots ||
-            lead.autoBookingContext.lastOfferedSlots;
+        const slotsCtx = normalizeSlots(rawPending);
+        slotsCtx.all = [
+            slotsCtx.primary,
+            ...slotsCtx.alternativesSamePeriod,
+            ...slotsCtx.alternativesOtherPeriod,
+        ].filter(Boolean);
 
-        const safeRawSlots = rawSlots && typeof rawSlots === "object" ? rawSlots : {};
-        const slotsCtx = {
-            ...safeRawSlots,
-            all: [
-                safeRawSlots.primary,
-                ...(safeRawSlots.alternativesSamePeriod || []),
-                ...(safeRawSlots.alternativesOtherPeriod || []),
-            ].filter(Boolean),
-        };
 
         const onlyOne = slotsCtx.all.length === 1 ? slotsCtx.all[0] : null;
         const isYes = /\b(sim|confirmo|pode|ok|pode\s+ser|fechado|beleza)\b/i.test(text);
@@ -455,11 +552,14 @@ export async function getOptimizedAmandaResponse({
         const { message: menuMsg, optionsText } = buildSlotMenuMessage(slotsCtx);
 
         if (!menuMsg) {
-            return "Beleza 😊 Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor? 💚";
+            return ensureSingleHeart(
+                `${optionsText || ""}\n\nMe responde com a **letra** (A, B, C...) ou com o **dia/horário** pra eu confirmar 💚`
+            );
         }
 
+
         if (!looksLikeChoice) {
-            return menuMsg;
+            return ensureSingleHeart(menuMsg);
         }
 
         if (looksLikeChoice) {
@@ -471,7 +571,18 @@ export async function getOptimizedAmandaResponse({
                 .replace(/\b(quinta|quinto)\b/i, "E")
                 .replace(/\b(sexta|sexto)\b/i, "F");
 
-            const chosen = pickSlotFromUserReply(normalizedChoice, slotsCtx, { strict: true });
+            let chosen = pickSlotFromUserReply(normalizedChoice, slotsCtx, { strict: true });
+
+            if (!chosen) {
+                chosen = pickSlotFromUserReply(normalizedChoice, slotsCtx, { strict: false });
+            }
+
+            if (!chosen) {
+                // aqui você NÃO perde o “humano”: pede confirmação objetiva
+                return ensureSingleHeart(
+                    `${optionsText}\n\nSó pra eu não errar: me responde com o **dia** (ex.: “segunda”) ou com a **letra** (A, B, C...) 💚`
+                );
+            }
 
             if (chosen) {
                 await Leads.findByIdAndUpdate(lead._id, {
@@ -479,7 +590,7 @@ export async function getOptimizedAmandaResponse({
                         pendingChosenSlot: chosen,
                         pendingPatientInfoForScheduling: true
                     }
-                });
+                }).catch(() => { });
 
                 return "Perfeito! Pra eu confirmar esse horário, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚";
             }
@@ -491,16 +602,18 @@ export async function getOptimizedAmandaResponse({
     if (parsedDateStr) flags.preferredDate = parsedDateStr;
 
     // ✅ bookingMapper sabe que estamos no fluxo de agendamento
+    const currentSlotsForFlow = getCurrentSlots(lead, enrichedContext);
+    const hasSlotsForFlow = hasAnySlot(currentSlotsForFlow);
+
     flags.inSchedulingFlow = Boolean(
-        lead?.pendingSchedulingSlots?.primary ||
-        enrichedContext?.pendingSchedulingSlots?.primary ||
+        hasSlotsForFlow ||
         lead?.pendingChosenSlot ||
         lead?.pendingPatientInfoForScheduling ||
-        lead?.autoBookingContext?.lastOfferedSlots?.primary ||
-        lead?.autoBookingContext?.mappedTherapyArea ||
+        lead?.autoBookingContext?.therapyArea ||
         enrichedContext?.stage === "interessado_agendamento" ||
-        lead?.stage === "interessado_agendamento",
+        lead?.stage === "interessado_agendamento"
     );
+
 
     const bookingProduct = mapFlagsToBookingProduct({ ...flags, text }, lead);
     const areaSource = bookingProduct?._areaSource || "none";
@@ -510,12 +623,12 @@ export async function getOptimizedAmandaResponse({
         lead?._id &&
         bookingProduct?._shouldPersistTherapyArea &&
         bookingProduct?.therapyArea &&
-        bookingProduct.therapyArea !== (lead?.autoBookingContext?.mappedTherapyArea || lead?.therapyArea)
+        bookingProduct.therapyArea !== (lead?.autoBookingContext?.therapyArea || lead?.therapyArea)
     ) {
         await Leads.findByIdAndUpdate(lead._id, {
             $set: {
                 therapyArea: bookingProduct.therapyArea,
-                "autoBookingContext.mappedTherapyArea": bookingProduct.therapyArea,
+                "autoBookingContext.therapyArea": bookingProduct.therapyArea,
                 // opcional: limpar specialties/produto antigo se você quiser evitar lixo herdado
                 "autoBookingContext.mappedSpecialties": [],
                 "autoBookingContext.mappedProduct": bookingProduct.product || bookingProduct.therapyArea,
@@ -532,14 +645,14 @@ export async function getOptimizedAmandaResponse({
     const resolvedTherapyArea =
         bookingProduct?.therapyArea ||
         flags.therapyArea ||
-        lead?.autoBookingContext?.mappedTherapyArea ||
+        lead?.autoBookingContext?.therapyArea ||
         lead?.therapyArea ||
         null;
 
     if (resolvedTherapyArea) {
         enrichedContext.therapyArea = resolvedTherapyArea;
         if (lead?._id && lead?.therapyArea !== resolvedTherapyArea) {
-            Leads.findByIdAndUpdate(lead._id, { $set: { therapyArea: resolvedTherapyArea } }).catch(
+            await Leads.findByIdAndUpdate(lead._id, { $set: { therapyArea: resolvedTherapyArea } }).catch(
                 () => { },
             );
         }
@@ -586,16 +699,34 @@ export async function getOptimizedAmandaResponse({
 
     logBookingGate(flags, bookingProduct);
 
-    // 🧠 Análise inteligente (uma vez)
-    let analysis = null;
-    try {
-        analysis = await analyzeLeadMessage({
-            text,
-            lead,
-            history: enrichedContext.conversationHistory || [],
-        });
-    } catch (err) {
-        console.warn("[ORCHESTRATOR] leadIntelligence falhou no orquestrador:", err.message);
+    const acceptedPrivateNow =
+        /\b(ok|beleza|pode\s+ser|tudo\s+bem|sem\s+problema|particular\s+mesmo|pode\s+seguir)\b/i.test(text) &&
+        /\b(particular|reembolso|plano|conv[eê]nio|unimed|ipasgo|amil)\b/i.test(text);
+
+    if (lead?._id && acceptedPrivateNow) {
+        await Leads.findByIdAndUpdate(lead._id, {
+            $set: { acceptedPrivateCare: true, insuranceHardNo: false },
+        }).catch(() => { });
+    }
+    // ✅ Se eu estava no gate do plano e o lead respondeu "ok/sim", aceita particular sem precisar repetir "plano"
+    if (lead?._id && lead?.insuranceGatePending && isSimpleYes(text)) {
+        await Leads.findByIdAndUpdate(lead._id, {
+            $set: { acceptedPrivateCare: true, insuranceHardNo: false },
+            $unset: { insuranceGatePending: "" }
+        }).catch(() => { });
+    }
+
+    // PRD: não deixar gate pendurado travar a conversa
+    if (lead?._id && lead?.insuranceGatePending) {
+        const movedOn =
+            /\b(agendar|marcar|hor[aá]rio|dia|semana|tarde|manh[ãa]|sexta|segunda)\b/i.test(text) ||
+            /\b(pre[çc]o|preco|valor|quanto\s+custa)\b/i.test(text);
+
+        if (movedOn && !isSimpleYes(text)) {
+            await Leads.findByIdAndUpdate(lead._id, {
+                $unset: { insuranceGatePending: "" }
+            }).catch(() => { });
+        }
     }
 
     const wantsPlan = /\b(unimed|plano|conv[eê]nio|ipasgo|amil)\b/i.test(text);
@@ -605,15 +736,21 @@ export async function getOptimizedAmandaResponse({
         );
 
     if (wantsPlan && lead?.acceptedPrivateCare !== true) {
-        if (isHardPlanCondition) {
-            if (lead?._id)
-                await Leads.findByIdAndUpdate(lead._id, {
-                    $set: { insuranceHardNo: true, acceptedPrivateCare: false },
-                }).catch(() => { });
+        if (isHardPlanCondition && lead?._id) {
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: { insuranceHardNo: true, acceptedPrivateCare: false },
+            }).catch(() => { });
+        }
+
+        // marca pending
+        if (lead?._id) {
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: { insuranceGatePending: true },
+            }).catch(() => { });
         }
 
         return ensureSingleHeart(
-            "Atendemos no particular e emitimos recibo/nota pra você tentar reembolso no plano. Quer que eu já te mostre os horários disponíveis? 💚",
+            "Atendemos no particular e emitimos recibo/nota pra você tentar reembolso no plano. Quer que eu já te mostre os horários disponíveis? 💚"
         );
     }
 
@@ -629,6 +766,12 @@ export async function getOptimizedAmandaResponse({
     });
 
     enrichedContext.stage = newStage;
+    // ✅ (Opcional, recomendado) Persistir stage para consistência em follow-up e próximos ciclos
+    if (lead?._id && newStage && newStage !== lead?.stage) {
+        Leads.findByIdAndUpdate(lead._id, { $set: { stage: newStage } })
+            .catch(() => { });
+    }
+
 
     const isSchedulingLikeText = GENERIC_SCHEDULE_EVAL_REGEX.test(normalized) || SCHEDULING_REGEX.test(normalized);
     const wantsScheduling = flags.wantsSchedule || flags.wantsSchedulingNow || isSchedulingLikeText;
@@ -641,7 +784,7 @@ export async function getOptimizedAmandaResponse({
         enrichedContext.therapyArea ||
         flags.therapyArea ||
         bookingProduct?.therapyArea ||
-        lead?.autoBookingContext?.mappedTherapyArea ||
+        lead?.autoBookingContext?.therapyArea ||
         lead?.therapyArea ||
         null;
 
@@ -727,9 +870,9 @@ export async function getOptimizedAmandaResponse({
         !enrichedContext.pendingSchedulingSlots &&
         !lead?.pendingPatientInfoForScheduling;
 
-    const hasProfile =
-        hasAgeOrProfileNow(text, flags, enrichedContext) ||
-        /\b(meu|minha)\s+(filh[oa]|crian[çc]a)\b/i.test(text);
+    const profileCheck2 = hasAgeOrProfileNow(text, flags, enrichedContext);
+    const hasProfile = profileCheck2.hasProfile || /\b(meu|minha)\s+(filh[oa]|crian[çc]a)\b/i.test(text);
+
 
     if (/\b(meu|minha)\s+(filh[oa]|crian[çc]a)\b/i.test(text)) {
         flags.mentionsChild = true;
@@ -742,15 +885,32 @@ export async function getOptimizedAmandaResponse({
     const hasArea = !!(
         bookingProduct?.therapyArea ||
         flags?.therapyArea ||
-        lead?.autoBookingContext?.mappedTherapyArea ||
+        lead?.autoBookingContext?.therapyArea ||
         lead?.therapyArea
     );
 
     if (bookingProduct?.product === "multi_servico") {
+        const combined = `${text}`.toLowerCase();
+        const wantsLinguinha = /\b(teste\s+da\s+linguinha|linguinha|freio\s+lingual|fr[eê]nulo)\b/i.test(combined);
+        const wantsFisio = /\b(fisio|fisioterapia)\b/i.test(combined);
+
+        const services = [
+            wantsFisio ? "Fisioterapia" : null,
+            wantsLinguinha ? "Teste da Linguinha" : null,
+        ].filter(Boolean);
+
+        if (services.length >= 2) {
+            return ensureSingleHeart(
+                `Perfeito! Só confirmando: você quer **${services.join("** e **")}**, certo? Quer agendar **primeiro qual dos dois**? 💚`
+            );
+        }
+
+        // fallback neutro: não inventa
         return ensureSingleHeart(
-            "Perfeito! Só confirmando: você quer **Fisioterapia** e **Teste da Linguinha**, certo? Quer agendar **primeiro qual dos dois**? 💚",
+            "Perfeito! Só pra eu organizar certinho: você quer agendar **quais atendimentos**? (ex.: Fono, Psicologia, TO, Fisio, Neuropsico) 💚"
         );
     }
+
 
     if (RESCHEDULE_REGEX.test(normalized)) {
         return ensureSingleHeart(
@@ -758,9 +918,16 @@ export async function getOptimizedAmandaResponse({
         );
     }
 
-    const hasComplaint =
+    const hasComplaintMemory =
         Boolean(analysis?.extracted?.queixa) ||
-        /\b(fala|linguagem|troca\s+letra|autismo|tea|tdah|comport|ansied|atenc|aprender|sensorial|coordena|dor|les[aã]o|respira|ronco)\b/i.test(text);
+        Boolean(lead?.qualificationData?.extractedInfo?.queixa) ||
+        Boolean(lead?.qualificationData?.extractedInfo?.complaint);
+
+    const hasComplaintNow =
+        /\b(fala|linguagem|troca\s+letra|autismo|tea|tdah|comport|ansied|atenc|aprender|sensorial|coordena|dor|les[aã]o|respira|ronco)\b/i
+            .test(text);
+
+    const hasComplaint = hasComplaintNow || hasComplaintMemory;
 
     const shouldForceTriage =
         wantsScheduling &&
@@ -768,10 +935,15 @@ export async function getOptimizedAmandaResponse({
         !enrichedContext?.pendingSchedulingSlots &&
         !lead?.pendingPatientInfoForScheduling;
 
-
     if (shouldForceTriage) {
         return ensureSingleHeart(
-            buildTriageSchedulingMessage({ flags, bookingProduct, ctx: enrichedContext }),
+            buildTriageSchedulingMessage({
+                flags,
+                bookingProduct,
+                ctx: enrichedContext, // ✅ aqui
+                conversationHistory: enrichedContext.conversationHistory,
+                lead,
+            })
         );
     }
 
@@ -820,7 +992,7 @@ export async function getOptimizedAmandaResponse({
     const therapyAreaForSlots =
         bookingProduct?.therapyArea ||
         flags?.therapyArea ||
-        lead?.autoBookingContext?.mappedTherapyArea ||
+        lead?.autoBookingContext?.therapyArea ||
         lead?.therapyArea ||
         enrichedContext?.therapyArea ||
         null;
@@ -830,23 +1002,51 @@ export async function getOptimizedAmandaResponse({
         lead?.autoBookingContext?.mappedSpecialties ||
         [];
 
-    const hasAreaNow = !!therapyAreaForSlots;
-    const hasProfileNow = hasAgeOrProfileNow(text, flags, enrichedContext);
+    const profileCheck = hasAgeOrProfileNow(text, flags, enrichedContext);
+    const hasProfileNow = profileCheck.hasProfile;
+
+    if (profileCheck.inferred?.mentionsChild) flags.mentionsChild = true;
+    if (profileCheck.inferred?.ageGroup && !enrichedContext.ageGroup) enrichedContext.ageGroup = profileCheck.inferred.ageGroup;
+
+    if (profileCheck.inferred?.ageGroup && lead?._id) {
+        await Leads.findByIdAndUpdate(lead._id, {
+            $set: {
+                ageGroup: profileCheck.inferred.ageGroup,
+                "contextMemory.hasAge": true,
+                "contextMemory.lastAgeDetected": new Date()
+            }
+        }).catch(() => { });
+    }
+    const ageMatch = text.match(/\b(\d{1,2})\s*anos?\b/i);
+    if (ageMatch && lead?._id && !lead?.ageGroup) {
+        const age = parseInt(ageMatch[1], 10);
+        const group = age < 12 ? "crianca" : age < 18 ? "adolescente" : "adulto";
+        await Leads.findByIdAndUpdate(lead._id, {
+            $set: { ageGroup: group, "contextMemory.hasAge": true, "contextMemory.lastAgeDetected": new Date() }
+        }).catch(() => { });
+    }
+
+    const alreadyHasSlots = hasAnySlot(getCurrentSlots(lead, enrichedContext));
 
     const shouldFetchSlots =
         Boolean(lead?._id) &&
         wantsScheduling &&
-        hasAreaNow &&
+        therapyAreaForSlots &&
         hasProfileNow &&
-        !enrichedContext?.pendingSchedulingSlots?.primary &&
-        !lead?.pendingSchedulingSlots?.primary &&
+        !alreadyHasSlots &&
         !lead?.pendingPatientInfoForScheduling;
 
     if (shouldFetchSlots) {
         if (!therapyAreaForSlots) {
             console.log("⚠️ [ORCHESTRATOR] quer agendar mas sem therapyArea (triagem faltando)");
             return ensureSingleHeart(
-                buildTriageSchedulingMessage({ flags, bookingProduct, ctx: enrichedContext }),
+                buildTriageSchedulingMessage({
+                    flags,
+                    bookingProduct,
+                   ctx: enrichedContext, // ✅ aqui
+                    conversationHistory: enrichedContext.conversationHistory,
+                    lead,
+                })
             );
         }
 
@@ -892,8 +1092,8 @@ export async function getOptimizedAmandaResponse({
                 daysAhead: 30,
             });
 
-            if (!availableSlots?.primary) {
-                return "No momento não achei horários certinhos pra essa área. Me diga: prefere manhã ou tarde, e qual dia da semana fica melhor? 💚";
+            if (!hasAnySlot(availableSlots)) {
+                return ensureSingleHeart("No momento não encontrei horários disponíveis pra esse perfil 😕 Você prefere **manhã ou tarde**?");
             }
 
             // ======================================================
@@ -912,14 +1112,17 @@ export async function getOptimizedAmandaResponse({
 
                     const prioritized = urgencyScheduler(flatSlots, urgencyLevel).slice(0, 6);
 
-                    const limitedSlots = pickTwoSlots(availableSlots);
-
                     if (prioritized.length) {
-                        availableSlots.primary = limitedSlots.primary;
-                        availableSlots.alternativesSamePeriod = limitedSlots.alternativesSamePeriod;
+                        const picked = pickTwoSlots({
+                            primary: prioritized[0],
+                            alternativesSamePeriod: prioritized.slice(1),
+                            alternativesOtherPeriod: [],
+                        });
+
+                        availableSlots.primary = picked.primary;
+                        availableSlots.alternativesSamePeriod = picked.alternativesSamePeriod;
                         availableSlots.alternativesOtherPeriod = [];
                     }
-
 
                     console.log(`🔎 Urgência aplicada (${urgencyLevel}) → ${prioritized.length} slots priorizados`);
                 } catch (err) {
@@ -932,7 +1135,7 @@ export async function getOptimizedAmandaResponse({
                     pendingSchedulingSlots: availableSlots,
                     urgencyApplied: urgencyLevel,
                     "autoBookingContext.active": true,
-                    "autoBookingContext.mappedTherapyArea": therapyAreaForSlots,
+                    "autoBookingContext.therapyArea": therapyAreaForSlots,
                     "autoBookingContext.mappedSpecialties": specialtiesForSlots,
                     "autoBookingContext.mappedProduct": bookingProduct?.product,
                     "autoBookingContext.lastOfferedSlots": availableSlots,
@@ -942,14 +1145,22 @@ export async function getOptimizedAmandaResponse({
             enrichedContext.pendingSchedulingSlots = availableSlots;
 
             // ✅ Fonte única de menu A..F
-            const { message: menuMsg, optionsText, ordered, letters } = buildSlotMenuMessage(availableSlots);
+            const normalizedSlots = normalizeSlots(availableSlots);
+            const { message: menuMsg, optionsText, ordered, letters } = buildSlotMenuMessage(normalizedSlots);
 
-            if (!menuMsg || !ordered?.length) {
-                // fallback seguro (não mata o fluxo)
+            if (!menuMsg) {
+                // se o builder falhar, pelo menos entrega o optionsText ou um menu simples
+                const fallbackText =
+                    optionsText ||
+                    `A) ${formatSlot(availableSlots.primary)}\n` +
+                    (availableSlots.alternativesSamePeriod?.[0] ? `B) ${formatSlot(availableSlots.alternativesSamePeriod[0])}\n` : "") +
+                    (availableSlots.alternativesSamePeriod?.[1] ? `C) ${formatSlot(availableSlots.alternativesSamePeriod[1])}\n` : "");
+
                 return ensureSingleHeart(
-                    "No momento não encontrei horários disponíveis. Quer me dizer se prefere manhã ou tarde, e qual dia da semana fica melhor? 💚"
+                    `Tenho esses horários no momento:\n\n${fallbackText}\n\nMe responde com a letra (A, B, C...) 💚`
                 );
             }
+
 
             // ✅ allowed baseado no que realmente existe
             const allowed = letters.slice(0, ordered.length).join(", ");
@@ -1004,30 +1215,47 @@ export async function getOptimizedAmandaResponse({
         }
     }
 
+    // ✅ garante que o contexto do LLM tenha os slots reais, mesmo que só estejam no lead
+    if (!enrichedContext.pendingSchedulingSlots && lead?.pendingSchedulingSlots) {
+        enrichedContext.pendingSchedulingSlots = lead.pendingSchedulingSlots;
+    }
     // Fluxo geral
     const genericAnswer = await callAmandaAIWithContext(text, lead, enrichedContext, flags, analysis);
 
     const finalScoped = enforceClinicScope(genericAnswer, text);
     return ensureSingleHeart(finalScoped);
 }
+function safeHour(slot) {
+    const t = slot?.time;
+    if (typeof t !== "string") return null;
+    const m = t.match(/^(\d{1,2}):(\d{2})/);
+    if (!m) return null;
+    const h = parseInt(m[1], 10);
+    if (Number.isNaN(h)) return null;
+    return h;
+}
 
 
 function pickTwoSlots(slots) {
     const all = [
-        slots.primary,
-        ...(slots.alternativesSamePeriod || []),
-        ...(slots.alternativesOtherPeriod || [])
+        slots?.primary,
+        ...(slots?.alternativesSamePeriod || []),
+        ...(slots?.alternativesOtherPeriod || []),
     ].filter(Boolean);
 
-    const byPeriod = {
-        manha: [],
-        tarde: [],
-    };
+    const byPeriod = { manha: [], tarde: [] };
 
     for (const s of all) {
-        const h = parseInt(s.time.slice(0, 2), 10);
+        const h = safeHour(s);
+        if (h === null) continue;
         if (h < 12) byPeriod.manha.push(s);
         else if (h < 18) byPeriod.tarde.push(s);
+    }
+
+    // se nenhum slot tem hora válida, só devolve o primeiro “safe”
+    if (!byPeriod.manha.length && !byPeriod.tarde.length) {
+        const first = all[0] || null;
+        return { primary: first, alternativesSamePeriod: all.slice(1, 2), alternativesOtherPeriod: [] };
     }
 
     const result = [];
@@ -1037,8 +1265,9 @@ function pickTwoSlots(slots) {
 
     // fallback: só manhã ou só tarde
     if (result.length === 1) {
-        const samePeriod =
-            result[0].time < "12:00" ? byPeriod.manha : byPeriod.tarde;
+        const h0 = safeHour(result[0]);
+        const samePeriod = (h0 !== null && h0 < 12) ? byPeriod.manha : byPeriod.tarde;
+
         if (samePeriod[1]) result.push(samePeriod[1]);
     }
 
@@ -1065,9 +1294,9 @@ function extractPatientInfoFromLead(lead, lastMessage) {
     if ((!fullName || !birthDate)) {
         const combo = msg.match(/^\s*([^,\n]{3,80})\s*,\s*(\d{2})[\/\-](\d{2})[\/\-](\d{4})\s*$/);
         if (combo) {
-            fullName = fullName || combo[1].trim();
-            const [, , d, m, y] = combo;
-            birthDate = birthDate || `${y}-${m}-${d}`;
+            const [, name, dd, mm, yyyy] = combo;
+            fullName = fullName || name.trim();
+            birthDate = birthDate || `${yyyy}-${mm}-${dd}`;
         }
     }
 
@@ -1339,11 +1568,6 @@ async function callClaudeWithTherapyData({
     context,
     analysis: passedAnalysis = null,
 }) {
-    const { getTherapyData } = await import("./therapyDetector.js");
-    const { getLatestInsights } = await import(
-        "../services/amandaLearningService.js"
-    );
-
     const therapiesInfo = therapies
         .map((t) => {
             const data = getTherapyData(t.id);
@@ -1461,16 +1685,24 @@ async function callClaudeWithTherapyData({
         messages.push(...safeHistory);
     }
     const { mentionsOrelhinha } = detectNegativeScopes(userText);
+    const isFrenuloOrLinguinha =
+        /\b(fr[eê]nulo|freio\s+lingual|fr[eê]nulo\s+lingual|teste\s+da\s+linguinha|linguinha)\b/i.test(userText || "");
 
     if (mentionsOrelhinha) {
-        // IMPORTANTE: não “empurra” linguinha se não foi citado
-        const detected = detectAllTherapies(userText);
-        const hasLinguinha = detected.some(t => t.id === "tongue_tie");
+        // só menciona linguinha se o usuário citou linguinha/freio/frênulo
+        if (isFrenuloOrLinguinha) {
+            return (
+                "O teste da orelhinha (triagem auditiva) nós **não realizamos** aqui. " +
+                "Já o **Teste da Linguinha (R$150)** a gente faz sim. Quer agendar pra essa semana ou pra próxima? 💚"
+            );
+        }
 
-        return hasLinguinha
-            ? "O teste da orelhinha (triagem auditiva/TAN) nós não realizamos aqui. O Teste da Linguinha a gente faz sim (R$ 150). Quer agendar pra essa semana ou pra próxima? 💚"
-            : "O teste da orelhinha (triagem auditiva/TAN) nós não realizamos aqui. Mas podemos te ajudar com avaliação e terapias (Fono, Psico, TO, Fisio…). O que você está buscando exatamente: avaliação, terapia ou um exame específico? 💚";
+        return (
+            "O teste da orelhinha (triagem auditiva/TAN) nós **não realizamos** aqui. " +
+            "Você está buscando **um exame** (auditivo) ou é **avaliação/terapia** pra alguma queixa (fala, linguagem, etc.)? 💚"
+        );
     }
+
 
     // 💸 Se pediu PREÇO → usa value pitch + insights
     if (flags.asksPrice) {
@@ -1556,10 +1788,6 @@ async function callAmandaAIWithContext(
     flagsFromOrchestrator = {},
     analysisFromOrchestrator = null,
 ) {
-    const { getLatestInsights } = await import(
-        "../services/amandaLearningService.js"
-    );
-
     const {
         stage = "novo",
         messageCount = 0,
@@ -1577,7 +1805,7 @@ async function callAmandaAIWithContext(
     const therapyAreaForScheduling =
         context.therapyArea ||
         flags.therapyArea ||
-        lead?.autoBookingContext?.mappedTherapyArea ||
+        lead?.autoBookingContext?.therapyArea ||
         lead?.therapyArea;
 
     const hasAgeOrProfile =
@@ -1762,7 +1990,9 @@ async function callAmandaAIWithContext(
         const periodStats = { morning: 0, afternoon: 0, evening: 0 };
 
         for (const s of allSlots) {
-            const hour = parseInt(s.time.slice(0, 2), 10);
+            const hour = safeHour(s);
+            if (hour === null) continue;
+
             if (hour < 12) periodStats.morning++;
             else if (hour < 18) periodStats.afternoon++;
             else periodStats.evening++;
@@ -1895,15 +2125,24 @@ function ensureSingleHeart(text) {
 }
 
 function normalizeClaudeMessages(messages = []) {
-    return messages.map((m) => ({
-        role: m.role,
-        content:
-            typeof m.content === "string"
-                ? [{ type: "text", text: m.content }]
-                : m.content,
-    }));
-}
+    const allowed = new Set(["user", "assistant"]);
+    return (messages || [])
+        .filter(Boolean)
+        .map((m) => {
+            const role = allowed.has(m.role) ? m.role : "user";
 
+            let contentBlocks;
+            if (typeof m.content === "string") {
+                contentBlocks = [{ type: "text", text: m.content }];
+            } else if (Array.isArray(m.content)) {
+                contentBlocks = m.content;
+            } else {
+                contentBlocks = [{ type: "text", text: JSON.stringify(m.content) }];
+            }
+
+            return { role, content: contentBlocks };
+        });
+}
 
 /**
  * 🔒 REGRA DE ESCOPO DA CLÍNICA
@@ -1927,11 +2166,19 @@ function enforceClinicScope(aiText = "", userText = "") {
         /(teste\s+da\s+orelhinha|triagem\s+auditiva(\s+neonatal)?|\bTAN\b)/i.test(combined);
 
     if (mentionsOrelhinha) {
+        if (isFrenuloOrLinguinha) {
+            return (
+                "O teste da orelhinha (triagem auditiva) nós **não realizamos** aqui. " +
+                "Já o **Teste da Linguinha (R$150)** a gente faz sim. Quer agendar pra essa semana ou pra próxima? 💚"
+            );
+        }
+
         return (
-            "O teste da orelhinha (triagem auditiva) nós **não realizamos** aqui. " +
-            "A gente realiza o **Teste da Linguinha (R$150)**, e se você quiser eu já te passo horários pra agendar 💚"
+            "O teste da orelhinha (triagem auditiva/TAN) nós **não realizamos** aqui. " +
+            "Você está buscando **um exame** (auditivo) ou é **avaliação/terapia** pra alguma queixa (fala, linguagem etc.)? 💚"
         );
     }
+
     const mentionsRPGorPilates = /\brpg\b|pilates/i.test(combined);
 
     if (isHearingExamContext && !isFrenuloOrLinguinha) {
@@ -2008,4 +2255,3 @@ const buildSystemContext = (flags, text = "", stage = "novo") => ({
         ),
 });
 
-export default getOptimizedAmandaResponse;
