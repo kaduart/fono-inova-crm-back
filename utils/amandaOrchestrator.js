@@ -264,7 +264,7 @@ export default async function getOptimizedAmandaResponse({
         const hasAgeInLead = Boolean(lead?.ageGroup || lead?.patientInfo?.birthDate || lead?.contextMemory?.hasAge);
 
         const needsProfile = !(flags.mentionsChild || flags.mentionsTeen || flags.mentionsAdult || ctx.ageGroup || hasAgeInHistory || hasAgeInLead);
-        if (needsProfile) return "Qual a idade do paciente? 💚";
+        if (needsProfile) return null;
 
         const needsArea = !(
             flags.therapyArea ||
