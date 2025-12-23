@@ -207,9 +207,15 @@ export default async function getOptimizedAmandaResponse({
     messageId = null,
 }) {
     const raw = userText ?? content;
-const text = typeof raw === "string" ? raw : "";
+    const text = typeof raw === "string" ? raw : "";
 
     const normalized = text.toLowerCase().trim();
+    // ✅ Fonte da verdade: sempre preferir o lead do banco para flags "pending"
+    const freshLead = lead?._id
+        ? await Leads.findById(lead._id).lean().catch(() => null)
+        : null;
+
+    lead = freshLead || lead;
 
     const SCHEDULING_REGEX =
         /\b(agendar|marcar|consulta|atendimento|avalia[cç][aã]o)\b|\b(qual\s+dia|qual\s+hor[áa]rio|tem\s+hor[áa]rio|dispon[ií]vel|disponivel|essa\s+semana)\b/i;
@@ -315,8 +321,14 @@ const text = typeof raw === "string" ? raw : "";
         const freshLead = await Leads.findById(lead._id).lean().catch(() => null);
         const leadForInfo = freshLead || lead;
 
+
+        const patientInfo = extractPatientInfoFromLead(leadForInfo, text);
+        const chosenSlot =
+            leadForInfo?.pendingChosenSlot ||
+            leadForInfo?.autoBookingContext?.pendingChosenSlot ||
+            null;
+
         const step = leadForInfo.pendingPatientInfoStep || "name";
-        const chosenSlot = leadForInfo?.pendingChosenSlot || null;
 
         // helpers simples
         const extractName = (msg) => {
@@ -504,6 +516,10 @@ const text = typeof raw === "string" ? raw : "";
 
     const msgCount = historyLen + 1;
     enrichedContext.messageCount = msgCount;
+
+    if (!enrichedContext?.pendingSchedulingSlots && lead?.pendingSchedulingSlots) {
+        enrichedContext.pendingSchedulingSlots = lead.pendingSchedulingSlots;
+    }
 
     // ✅ Se já tem slots pendentes e o lead respondeu escolhendo
     const rawPending =
@@ -1026,8 +1042,15 @@ const text = typeof raw === "string" ? raw : "";
         }).catch(() => { });
     }
 
-    const alreadyHasSlots = hasAnySlot(getCurrentSlots(lead, enrichedContext));
+    const pendingSlotsNow = getCurrentSlots(lead, enrichedContext);
+    const alreadyHasSlots = hasAnySlot(pendingSlotsNow);
 
+    if (alreadyHasSlots) {
+        // garante que o contexto tenha os slots pra construção do menu
+        if (!enrichedContext.pendingSchedulingSlots && lead?.pendingSchedulingSlots) {
+            enrichedContext.pendingSchedulingSlots = lead.pendingSchedulingSlots;
+        }
+    }
     const shouldFetchSlots =
         Boolean(lead?._id) &&
         wantsScheduling &&
@@ -1043,7 +1066,7 @@ const text = typeof raw === "string" ? raw : "";
                 buildTriageSchedulingMessage({
                     flags,
                     bookingProduct,
-                   ctx: enrichedContext, // ✅ aqui
+                    ctx: enrichedContext, // ✅ aqui
                     conversationHistory: enrichedContext.conversationHistory,
                     lead,
                 })

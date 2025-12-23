@@ -352,79 +352,128 @@ export const whatsappController = {
         }
     },
 
-    async listContacts(req, res) {
-        try {
-            const {
-                page = 1,
-                limit = 50,
-                search = ''
-            } = req.query;
+   async listContacts(req, res) {
+    try {
+        const page = Math.max(parseInt(req.query.page || "1", 10), 1);
+        const limit = Math.min(parseInt(req.query.limit || "50", 10), 100);
+        const search = (req.query.search || "").trim();
+        const skip = (page - 1) * limit;
 
-            const skip = (parseInt(page) - 1) * parseInt(limit);
-            const limitNum = Math.min(parseInt(limit), 100);
-
-            const filter = {};
-            if (search) {
-                filter.$or = [
-                    { name: { $regex: search, $options: 'i' } },
-                    { phone: { $regex: search } }
-                ];
-            }
-
-            // 🔹 Busca contatos (como já fazia)
-            const [contacts, total] = await Promise.all([
-                Contacts.find(filter)
-                    .select('_id name phone avatar lastMessageAt lastMessage hasNewMessage unreadCount')
-                    .sort({ lastMessageAt: -1, name: 1 })
-                    .skip(skip)
-                    .limit(limitNum)
-                    .lean(),
-                Contacts.countDocuments(filter)
-            ]);
-
-            // 🔹 Coleta telefones normalizados
-            const phones = contacts
-                .map(c => normalizeE164BR(c.phone))
-                .filter(Boolean);
-
-            // 🔹 Busca leads relacionados (1 query só)
-            const leads = await Lead.find(
-                { phone: { $in: phones } },
-                { _id: 1, phone: 1 }
-            ).lean();
-
-            // 🔹 Mapa phone -> leadId
-            const leadByPhone = new Map(
-                leads
-                    .map(l => [normalizeE164BR(l.phone), l._id.toString()])
-                    .filter(([p]) => p)
-            );
-
-            // 🔹 Injeta leadId em cada contato
-            const enrichedContacts = contacts.map(c => {
-                const phone = normalizeE164BR(c.phone);
-                return {
-                    ...c,
-                    leadId: phone ? leadByPhone.get(phone) || null : null
-                };
-            });
-
-            res.json({
-                success: true,
-                data: enrichedContacts,
-                pagination: {
-                    page: parseInt(page),
-                    limit: limitNum,
-                    total,
-                    hasMore: skip + enrichedContacts.length < total
-                }
-            });
-        } catch (err) {
-            console.error("❌ Erro ao listar contatos:", err);
-            res.status(500).json({ error: err.message });
+        const filter = {};
+        if (search) {
+            filter.$or = [
+                { name: { $regex: search, $options: "i" } },
+                { phone: { $regex: search } }
+            ];
         }
-    },
 
+        const pipeline = [
+            {
+                $match: {
+                    ...filter,
+                    phone: { $regex: /^\d+$/ }
+                }
+            },
+            
+            { $sort: { lastMessageAt: -1, name: 1 } },
+            { $skip: skip },
+            { $limit: limit },
+
+            {
+                $lookup: {
+                    from: "leads",
+                    let: { contactPhone: "$phone" },
+                    pipeline: [
+                        {
+                            $match: {
+                                $expr: {
+                                    $and: [
+                                        { $ne: ["$contact.phone", null] },
+                                        { $ne: ["$contact.phone", ""] },
+                                        { $eq: ["$contact.phone", "$$contactPhone"] }
+                                    ]
+                                }
+                            }
+                        },
+                        { $sort: { updatedAt: -1 } },
+                        { $limit: 1 },
+                        { $project: { _id: 1 } }
+                    ],
+                    as: "leadMatches"
+                }
+            },
+            
+            {
+                $addFields: {
+                    leadId: {
+                        $cond: {
+                            if: { $gt: [{ $size: "$leadMatches" }, 0] },
+                            then: { $arrayElemAt: ["$leadMatches._id", 0] },
+                            else: null
+                        }
+                    }
+                }
+            },
+            
+            {
+                $project: {
+                    leadMatches: 0
+                }
+            }
+        ];
+
+        const [rawData, total] = await Promise.all([
+            Contacts.aggregate(pipeline),
+            Contacts.countDocuments({
+                ...filter,
+                phone: { $regex: /^\d+$/ }
+            })
+        ]);
+
+        // ✅ SERIALIZA ObjectIds pra STRING
+        const data = rawData.map(contact => ({
+            _id: String(contact._id),
+            phone: contact.phone,
+            name: contact.name,
+            lastMessageAt: contact.lastMessageAt,
+            leadId: contact.leadId ? String(contact.leadId) : null,
+            // ✅ inclua outros campos que você precisa
+            tags: contact.tags || [],
+            phoneE164: contact.phoneE164,
+            phoneRaw: contact.phoneRaw,
+            avatar: contact.avatar,
+            unreadCount: contact.unreadCount || 0,
+            hasNewMessage: contact.hasNewMessage || false
+        }));
+
+        console.log(`✅ [CONTACTS] Retornando ${data.length} de ${total} contacts`);
+        console.log(`📊 [CONTACTS] ${data.filter(c => c.leadId).length}/${data.length} têm leadId`);
+
+        // ✅ LOG DO PRIMEIRO
+        if (data.length > 0) {
+            console.log("🔍 [FIRST CONTACT]", {
+                phone: data[0].phone,
+                leadId: data[0].leadId,
+                type: typeof data[0].leadId
+            });
+        }
+
+        res.json({
+            success: true,
+            data,
+            pagination: {
+                page,
+                limit,
+                total,
+                hasMore: skip + data.length < total
+            }
+        });
+
+    } catch (err) {
+        console.error("❌ Erro ao listar contatos:", err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+},
     async getChat(req, res) {
         try {
             const { phone } = req.params;
@@ -942,8 +991,16 @@ async function processInboundMessage(msg, value) {
             }
         }
 
-        console.log("🔍 Buscando lead para:", from);
-        let lead = await Lead.findOne({ 'contact.phone': from });
+        const lead = await resolveLeadByPhone(from, patient ? {
+            name: patient.fullName,
+            status: "virou_paciente",
+            convertedToPatient: patient._id,
+            conversionScore: 100
+        } : {
+            status: "novo",
+            conversionScore: 0
+        });
+
 
         // ✅ VERIFICA SE EXISTE PATIENT COM ESTE TELEFONE
         let patient = null;
@@ -954,75 +1011,7 @@ async function processInboundMessage(msg, value) {
             console.log("ℹ️ Model Patient não disponível");
         }
 
-        if (!lead) {
-            // 🎯 DECISÃO INTELIGENTE: Se tem patient, cria lead vinculado
-            if (patient) {
-                const leadData = {
-                    name: patient.fullName || null,
-                    contact: {
-                        phone: from,
-                        email: patient.email || null
-                    },
-                    origin: "WhatsApp",
-                    status: "virou_paciente",
-                    convertedToPatient: patient._id,
-                    conversionScore: 100,
-                    appointment: {
-                        seekingFor: "Adulto +18 anos",
-                        modality: "Online",
-                        healthPlan: "Mensalidade"
-                    },
-                    circuit: "Circuito Padrão",
-                    responded: false,
-                    conversationSummary: null,
-                    summaryGeneratedAt: null,
-                    summaryCoversUntilMessage: 0,
-                    autoReplyEnabled: true,
-                    manualControl: isTestNumber
-                        ? { active: false, autoResumeAfter: 0 }  // 🧪 teste: sem espera
-                        : { active: false, autoResumeAfter: 30 },
-                    interactions: [],
-                    scoreHistory: [],
-                    lastInteractionAt: new Date()
-                };
 
-                // ✅ USA insertMany (bypass Mongoose bug)
-                const [createdLead] = await Lead.insertMany([leadData], { rawResult: false });
-                lead = createdLead;
-                console.log("🔄 Patient convertido em lead:", lead._id);
-            } else {
-                // Cria novo lead normal
-                const leadData = {
-                    name: null,
-                    contact: { phone: from },
-                    origin: "WhatsApp",
-                    status: "novo",
-                    appointment: {
-                        seekingFor: "Adulto +18 anos",
-                        modality: "Online",
-                        healthPlan: "Mensalidade"
-                    },
-                    circuit: "Circuito Padrão",
-                    conversionScore: 0,
-                    responded: false,
-                    conversationSummary: null,
-                    summaryGeneratedAt: null,
-                    summaryCoversUntilMessage: 0,
-                    autoReplyEnabled: true,
-                    manualControl: isTestNumber
-                        ? { active: false, autoResumeAfter: 0 }  // 🧪 teste: sem espera
-                        : { active: false, autoResumeAfter: 30 },
-                    interactions: [],
-                    scoreHistory: [],
-                    lastInteractionAt: new Date()
-                };
-
-                // ✅ USA insertMany (bypass Mongoose bug)
-                const [createdLead] = await Lead.insertMany([leadData], { rawResult: false });
-                lead = createdLead;
-                console.log("✅ Novo lead criado:", lead._id);
-            }
-        }
 
         // 🧪 Se for número de teste, sempre garantir que NÃO esteja em manual
         if (isTestNumber && lead) {
