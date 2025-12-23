@@ -10,7 +10,17 @@ const interactionSchema = new mongoose.Schema({
   note: String,
   status: { type: String, enum: ['sent', 'received', 'failed', 'read'], default: 'sent' },
   acceptedPrivateCare: { type: Boolean, default: null },
-  insuranceHardNo: { type: Boolean, default: false }
+  insuranceHardNo: { type: Boolean, default: false },
+  triageStep: {
+  type: String,
+  enum: [
+    'ask_profile',     // idade
+    'ask_complaint',   // queixa/motivo
+    'ask_period',      // dia/período
+    'done'
+  ],
+  default: null,
+},
 });
 
 const leadSchema = new mongoose.Schema({

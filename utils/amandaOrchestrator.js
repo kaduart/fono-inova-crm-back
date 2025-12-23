@@ -255,40 +255,20 @@ export default async function getOptimizedAmandaResponse({
     }
 
     // ✅ ADICIONAR parâmetro conversationHistory
-    function buildTriageSchedulingMessage({ flags, bookingProduct, ctx, conversationHistory = [], lead = {} }) {
-        const hasAgeInHistory = conversationHistory.some(msg => {
-            const c = typeof msg?.content === "string" ? msg.content : "";
-            return /\b\d{1,2}\s*anos?\b/i.test(c) || /\b\d{1,2}\s*(mes|meses)\b/i.test(c);
-        });
-
-        const hasAgeInLead = Boolean(lead?.ageGroup || lead?.patientInfo?.birthDate || lead?.contextMemory?.hasAge);
-
-        const needsProfile = !(flags.mentionsChild || flags.mentionsTeen || flags.mentionsAdult || ctx.ageGroup || hasAgeInHistory || hasAgeInLead);
-        if (needsProfile) return null;
-
-        const needsArea = !(
-            flags.therapyArea ||
-            bookingProduct?.therapyArea ||
-            ctx.therapyArea ||
-            lead?.autoBookingContext?.therapyArea ||
-            lead?.therapyArea
-        );
-
-        if (needsArea) {
-            return "Perfeito! É pra qual área? (Fono, Psicologia, TO, Fisioterapia ou Neuropsico) 💚";
+    function buildTriageSchedulingMessage({ lead }) {
+        if (lead.triageStep === "ask_profile") {
+            return "Perfeito 😊 Pra eu te orientar certinho, qual a idade do paciente? 💚";
         }
 
-        // se já tem perfil + área, pede a queixa (bem curto) OU período
-        const hasComplaint =
-            /\b(fala|linguagem|troca\s+letra|tea|tdah|comport|ansied|aprender|sensorial|coordena|dor|respira|ronco)\b/i
-                .test(String((ctx?.lastUserText || "") + " " + (ctx?.currentUserText || ""))) ||
-            Boolean(lead?.qualificationData?.extractedInfo?.queixa);
-
-        if (!hasComplaint) {
-            return "Pra eu direcionar certinho: o que você tem notado e te trouxe pra essa avaliação? 💚";
+        if (lead.triageStep === "ask_complaint") {
+            return "E me conta: o que vocês têm notado no dia a dia que motivou procurar a avaliação? 💚";
         }
 
-        return "Show! Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor? 💚";
+        if (lead.triageStep === "ask_period") {
+            return "Ótimo! Qual dia da semana e período (manhã ou tarde) fica melhor pra vocês? 💚";
+        }
+
+        return null;
     }
 
 
@@ -497,6 +477,80 @@ export default async function getOptimizedAmandaResponse({
 
     // 4) flags já enxergam mode/urgency
     let flags = detectAllFlags(text, lead, enrichedContext);
+    const isSchedulingLikeText =
+        GENERIC_SCHEDULE_EVAL_REGEX.test(normalized) ||
+        SCHEDULING_REGEX.test(normalized);
+
+    const wantsScheduling =
+        flags.wantsSchedule ||
+        flags.wantsSchedulingNow ||
+        isSchedulingLikeText;
+    // 🚦 INÍCIO ÚNICO DA TRIAGEM
+    if (
+        wantsScheduling &&
+        lead?._id &&
+        !lead.triageStep
+    ) {
+        await Leads.findByIdAndUpdate(lead._id, {
+            $set: {
+                stage: "triagem_agendamento",
+                triageStep: "ask_profile"
+            }
+        }).catch(() => { });
+
+        // ⚠️ Recarrega o lead imediatamente
+        lead = await Leads.findById(lead._id).lean().catch(() => lead);
+    }
+    // ===============================
+    // 🔁 TRIAGEM DE AGENDAMENTO (STATE MACHINE)
+    // ===============================
+    if (lead?._id && lead.triageStep && lead.triageStep !== "done") {
+
+        const profileCheck = hasAgeOrProfileNow(text, flags, enrichedContext);
+
+        // 1️⃣ PERFIL (idade / criança-adulto)
+        if (lead.triageStep === "ask_profile" && profileCheck.hasProfile) {
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: { triageStep: "ask_complaint" }
+            }).catch(() => { });
+        }
+
+        // 2️⃣ QUEIXA
+        const hasComplaintNow =
+            /\b(fala|linguagem|troca\s+letra|autismo|tea|tdah|comport|ansied|aten[cç][aã]o|aprend|sensorial|coordena|dor|les[aã]o|respira|ronco)\b/i
+                .test(text);
+
+        if (lead.triageStep === "ask_complaint" && hasComplaintNow) {
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: { triageStep: "ask_period" }
+            }).catch(() => { });
+        }
+
+        // 3️⃣ PERÍODO
+        if (
+            lead.triageStep === "ask_period" &&
+            (/\b(manh[ãa]|tarde|segunda|terça|quarta|quinta|sexta|sábado|domingo)\b/i.test(text))
+        ) {
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: {
+                    triageStep: "done",
+                    stage: "interessado_agendamento"
+                }
+            }).catch(() => { });
+        }
+    }
+
+
+    // 🚧 BLOQUEIO FORTE: triagem tem prioridade absoluta
+    if (
+        lead?.triageStep &&
+        lead.triageStep !== "done" &&
+        !lead?.pendingPatientInfoForScheduling
+    ) {
+        return ensureSingleHeart(
+            buildTriageSchedulingMessage({ lead })
+        );
+    }
 
     // 🧠 Análise inteligente (uma vez)
     let analysis = null;
@@ -789,10 +843,6 @@ export default async function getOptimizedAmandaResponse({
             .catch(() => { });
     }
 
-
-    const isSchedulingLikeText = GENERIC_SCHEDULE_EVAL_REGEX.test(normalized) || SCHEDULING_REGEX.test(normalized);
-    const wantsScheduling = flags.wantsSchedule || flags.wantsSchedulingNow || isSchedulingLikeText;
-
     // 🦴🍼 Gate osteopata (físio bebê)
     const babyContext =
         /\b\d{1,2}\s*(mes|meses)\b/i.test(text) || /\b(beb[eê]|rec[eé]m[-\s]*nascid[oa]|rn)\b/i.test(text);
@@ -935,34 +985,6 @@ export default async function getOptimizedAmandaResponse({
         );
     }
 
-    const hasComplaintMemory =
-        Boolean(analysis?.extracted?.queixa) ||
-        Boolean(lead?.qualificationData?.extractedInfo?.queixa) ||
-        Boolean(lead?.qualificationData?.extractedInfo?.complaint);
-
-    const hasComplaintNow =
-        /\b(fala|linguagem|troca\s+letra|autismo|tea|tdah|comport|ansied|atenc|aprender|sensorial|coordena|dor|les[aã]o|respira|ronco)\b/i
-            .test(text);
-
-    const hasComplaint = hasComplaintNow || hasComplaintMemory;
-
-    const shouldForceTriage =
-        wantsScheduling &&
-        (!hasArea || !hasProfile || (GENERIC_SCHEDULE_EVAL_REGEX.test(text) && !hasComplaint)) &&
-        !enrichedContext?.pendingSchedulingSlots &&
-        !lead?.pendingPatientInfoForScheduling;
-
-    if (shouldForceTriage) {
-        return ensureSingleHeart(
-            buildTriageSchedulingMessage({
-                flags,
-                bookingProduct,
-                ctx: enrichedContext, // ✅ aqui
-                conversationHistory: enrichedContext.conversationHistory,
-                lead,
-            })
-        );
-    }
 
     if (shouldUseVisitFunnel) {
         const visitAnswer = await callVisitFunnelAI({
@@ -1019,9 +1041,6 @@ export default async function getOptimizedAmandaResponse({
         lead?.autoBookingContext?.mappedSpecialties ||
         [];
 
-    const profileCheck = hasAgeOrProfileNow(text, flags, enrichedContext);
-    const hasProfileNow = profileCheck.hasProfile;
-
     if (profileCheck.inferred?.mentionsChild) flags.mentionsChild = true;
     if (profileCheck.inferred?.ageGroup && !enrichedContext.ageGroup) enrichedContext.ageGroup = profileCheck.inferred.ageGroup;
 
@@ -1053,12 +1072,12 @@ export default async function getOptimizedAmandaResponse({
         }
     }
     const shouldFetchSlots =
-        Boolean(lead?._id) &&
         wantsScheduling &&
+        lead?.triageStep === "done" &&
         therapyAreaForSlots &&
-        hasProfileNow &&
         !alreadyHasSlots &&
         !lead?.pendingPatientInfoForScheduling;
+
 
     if (shouldFetchSlots) {
         if (!therapyAreaForSlots) {
@@ -1080,6 +1099,7 @@ export default async function getOptimizedAmandaResponse({
         else if (/\b(noite)\b/i.test(text)) preferredPeriod = "noite";
 
         let preferredDay = null;
+
         const dayMatch = text.toLowerCase().match(/\b(segunda|ter[çc]a|quarta|quinta|sexta|s[aá]bado|domingo)\b/);
         if (dayMatch) {
             const dayMap = {
