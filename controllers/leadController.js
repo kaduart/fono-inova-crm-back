@@ -788,7 +788,7 @@ export const getHistoryMetrics = async (req, res) => {
 };
 
 
-async function resolveLeadByPhone(phone, defaults = {}) {
+export async function resolveLeadByPhone(phone, defaults = {}) {
     const phoneE164 = normalizeE164BR(phone);
 
     return await Lead.findOneAndUpdate(
