@@ -12,15 +12,15 @@ const interactionSchema = new mongoose.Schema({
   acceptedPrivateCare: { type: Boolean, default: null },
   insuranceHardNo: { type: Boolean, default: false },
   triageStep: {
-  type: String,
-  enum: [
-    'ask_profile',     // idade
-    'ask_complaint',   // queixa/motivo
-    'ask_period',      // dia/período
-    'done'
-  ],
-  default: null,
-},
+    type: String,
+    enum: [
+      'ask_profile',     // idade
+      'ask_complaint',   // queixa/motivo
+      'ask_period',      // dia/período
+      'done'
+    ],
+    default: null,
+  },
 });
 
 const leadSchema = new mongoose.Schema({
@@ -169,10 +169,14 @@ const leadSchema = new mongoose.Schema({
     phone: String,
     email: String,
   },
+  // ✅ Commit 2: anti-corrida (trava no Mongo)
+  isProcessing: { type: Boolean, default: false },
+  processingStartedAt: { type: Date, default: null },
+
   pendingPatientInfoForScheduling: { type: Boolean, default: false },
   pendingSchedulingSlots: { type: mongoose.Schema.Types.Mixed, default: null },
   pendingChosenSlot: { type: mongoose.Schema.Types.Mixed, default: null },
-
+  pendingPatientInfoStep: { type: String, default: null },
 
 }, {
   timestamps: true,
