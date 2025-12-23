@@ -14,6 +14,7 @@ import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../servic
 import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
 import { normalizeE164BR } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
+import Patient from '../models/Patient.js';
 
 const AUTO_TEST_NUMBERS = [
     "5561981694922", "5561981694922", "556292013573", "5562992013573"
@@ -353,128 +354,128 @@ export const whatsappController = {
         }
     },
 
-   async listContacts(req, res) {
-    try {
-        const page = Math.max(parseInt(req.query.page || "1", 10), 1);
-        const limit = Math.min(parseInt(req.query.limit || "50", 10), 100);
-        const search = (req.query.search || "").trim();
-        const skip = (page - 1) * limit;
+    async listContacts(req, res) {
+        try {
+            const page = Math.max(parseInt(req.query.page || "1", 10), 1);
+            const limit = Math.min(parseInt(req.query.limit || "50", 10), 100);
+            const search = (req.query.search || "").trim();
+            const skip = (page - 1) * limit;
 
-        const filter = {};
-        if (search) {
-            filter.$or = [
-                { name: { $regex: search, $options: "i" } },
-                { phone: { $regex: search } }
-            ];
-        }
+            const filter = {};
+            if (search) {
+                filter.$or = [
+                    { name: { $regex: search, $options: "i" } },
+                    { phone: { $regex: search } }
+                ];
+            }
 
-        const pipeline = [
-            {
-                $match: {
-                    ...filter,
-                    phone: { $regex: /^\d+$/ }
-                }
-            },
-            
-            { $sort: { lastMessageAt: -1, name: 1 } },
-            { $skip: skip },
-            { $limit: limit },
+            const pipeline = [
+                {
+                    $match: {
+                        ...filter,
+                        phone: { $regex: /^\d+$/ }
+                    }
+                },
 
-            {
-                $lookup: {
-                    from: "leads",
-                    let: { contactPhone: "$phone" },
-                    pipeline: [
-                        {
-                            $match: {
-                                $expr: {
-                                    $and: [
-                                        { $ne: ["$contact.phone", null] },
-                                        { $ne: ["$contact.phone", ""] },
-                                        { $eq: ["$contact.phone", "$$contactPhone"] }
-                                    ]
+                { $sort: { lastMessageAt: -1, name: 1 } },
+                { $skip: skip },
+                { $limit: limit },
+
+                {
+                    $lookup: {
+                        from: "leads",
+                        let: { contactPhone: "$phone" },
+                        pipeline: [
+                            {
+                                $match: {
+                                    $expr: {
+                                        $and: [
+                                            { $ne: ["$contact.phone", null] },
+                                            { $ne: ["$contact.phone", ""] },
+                                            { $eq: ["$contact.phone", "$$contactPhone"] }
+                                        ]
+                                    }
                                 }
+                            },
+                            { $sort: { updatedAt: -1 } },
+                            { $limit: 1 },
+                            { $project: { _id: 1 } }
+                        ],
+                        as: "leadMatches"
+                    }
+                },
+
+                {
+                    $addFields: {
+                        leadId: {
+                            $cond: {
+                                if: { $gt: [{ $size: "$leadMatches" }, 0] },
+                                then: { $arrayElemAt: ["$leadMatches._id", 0] },
+                                else: null
                             }
-                        },
-                        { $sort: { updatedAt: -1 } },
-                        { $limit: 1 },
-                        { $project: { _id: 1 } }
-                    ],
-                    as: "leadMatches"
-                }
-            },
-            
-            {
-                $addFields: {
-                    leadId: {
-                        $cond: {
-                            if: { $gt: [{ $size: "$leadMatches" }, 0] },
-                            then: { $arrayElemAt: ["$leadMatches._id", 0] },
-                            else: null
                         }
                     }
+                },
+
+                {
+                    $project: {
+                        leadMatches: 0
+                    }
                 }
-            },
-            
-            {
-                $project: {
-                    leadMatches: 0
-                }
+            ];
+
+            const [rawData, total] = await Promise.all([
+                Contacts.aggregate(pipeline),
+                Contacts.countDocuments({
+                    ...filter,
+                    phone: { $regex: /^\d+$/ }
+                })
+            ]);
+
+            // ✅ SERIALIZA ObjectIds pra STRING
+            const data = rawData.map(contact => ({
+                _id: String(contact._id),
+                phone: contact.phone,
+                name: contact.name,
+                lastMessageAt: contact.lastMessageAt,
+                leadId: contact.leadId ? String(contact.leadId) : null,
+                // ✅ inclua outros campos que você precisa
+                tags: contact.tags || [],
+                phoneE164: contact.phoneE164,
+                phoneRaw: contact.phoneRaw,
+                avatar: contact.avatar,
+                unreadCount: contact.unreadCount || 0,
+                hasNewMessage: contact.hasNewMessage || false
+            }));
+
+            console.log(`✅ [CONTACTS] Retornando ${data.length} de ${total} contacts`);
+            console.log(`📊 [CONTACTS] ${data.filter(c => c.leadId).length}/${data.length} têm leadId`);
+
+            // ✅ LOG DO PRIMEIRO
+            if (data.length > 0) {
+                console.log("🔍 [FIRST CONTACT]", {
+                    phone: data[0].phone,
+                    leadId: data[0].leadId,
+                    type: typeof data[0].leadId
+                });
             }
-        ];
 
-        const [rawData, total] = await Promise.all([
-            Contacts.aggregate(pipeline),
-            Contacts.countDocuments({
-                ...filter,
-                phone: { $regex: /^\d+$/ }
-            })
-        ]);
-
-        // ✅ SERIALIZA ObjectIds pra STRING
-        const data = rawData.map(contact => ({
-            _id: String(contact._id),
-            phone: contact.phone,
-            name: contact.name,
-            lastMessageAt: contact.lastMessageAt,
-            leadId: contact.leadId ? String(contact.leadId) : null,
-            // ✅ inclua outros campos que você precisa
-            tags: contact.tags || [],
-            phoneE164: contact.phoneE164,
-            phoneRaw: contact.phoneRaw,
-            avatar: contact.avatar,
-            unreadCount: contact.unreadCount || 0,
-            hasNewMessage: contact.hasNewMessage || false
-        }));
-
-        console.log(`✅ [CONTACTS] Retornando ${data.length} de ${total} contacts`);
-        console.log(`📊 [CONTACTS] ${data.filter(c => c.leadId).length}/${data.length} têm leadId`);
-
-        // ✅ LOG DO PRIMEIRO
-        if (data.length > 0) {
-            console.log("🔍 [FIRST CONTACT]", {
-                phone: data[0].phone,
-                leadId: data[0].leadId,
-                type: typeof data[0].leadId
+            res.json({
+                success: true,
+                data,
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    hasMore: skip + data.length < total
+                }
             });
+
+        } catch (err) {
+            console.error("❌ Erro ao listar contatos:", err);
+            res.status(500).json({ success: false, error: err.message });
         }
-
-        res.json({
-            success: true,
-            data,
-            pagination: {
-                page,
-                limit,
-                total,
-                hasMore: skip + data.length < total
-            }
-        });
-
-    } catch (err) {
-        console.error("❌ Erro ao listar contatos:", err);
-        res.status(500).json({ success: false, error: err.message });
-    }
-},
+    },
     async getChat(req, res) {
         try {
             const { phone } = req.params;
@@ -981,38 +982,42 @@ async function processInboundMessage(msg, value) {
 
 
         // ✅ BUSCA UNIFICADA INTELIGENTE
-        console.log("🔍 Buscando contact para:", from);
         let contact = await Contacts.findOne({ phone: from });
         if (!contact) {
-            if (!contact) {
-                contact = await Contacts.create({
-                    phone: from,
-                    name: msg.profile?.name || `WhatsApp ${from.slice(-4)}`
-                });
-            }
+            contact = await Contacts.create({
+                phone: from,
+                name: msg.profile?.name || `WhatsApp ${from.slice(-4)}`
+            });
         }
 
-        const lead = await resolveLeadByPhone(from, patient ? {
-            name: patient.fullName,
-            status: "virou_paciente",
-            convertedToPatient: patient._id,
-            conversionScore: 100
-        } : {
-            status: "novo",
-            conversionScore: 0
-        });
-
-
-        // ✅ VERIFICA SE EXISTE PATIENT COM ESTE TELEFONE
+        // ✅ VERIFICA SE EXISTE PATIENT COM ESTE TELEFONE (ANTES de usar)
         let patient = null;
         try {
-            patient = await mongoose.model('Patient').findOne({ phone: from });
+            patient = await Patient.findOne({ phone: from }).lean();
             console.log("🔍 Patient encontrado:", patient ? patient._id : "Nenhum");
         } catch (e) {
             console.log("ℹ️ Model Patient não disponível");
         }
 
+        const lead = await resolveLeadByPhone(
+            from,
+            patient
+                ? {
+                    name: patient.fullName,
+                    status: "virou_paciente",
+                    convertedToPatient: patient._id,
+                    conversionScore: 100
+                }
+                : {
+                    status: "novo",
+                    conversionScore: 0
+                }
+        );
 
+        if (!lead?._id) {
+            console.error("❌ resolveLeadByPhone retornou lead inválido", { from, patientId: patient?._id });
+            return; // ou cria um lead fallback aqui
+        }
 
         // 🧪 Se for número de teste, sempre garantir que NÃO esteja em manual
         if (isTestNumber && lead) {

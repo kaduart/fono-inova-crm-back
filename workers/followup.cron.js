@@ -46,34 +46,37 @@ async function dispatchPendingFollowups() {
     }
 
     // filtra followups que NÃO devem ser enviados
-    // filtra followups que NÃO devem ser enviados (PRECISA ser sequencial/await)
-    const filtered = [];
+    const checks = await Promise.all(
+      pend.map(async (f) => {
+        const lead = f.lead;
 
-    for (const f of pend) {
-      // ✅ guard: lead pode vir null no populate
-      if (!f?.lead?._id) continue;
+        // se populate falhou ou lead nulo -> joga fora (evita crash)
+        if (!lead?._id) return null;
 
-      const lead = f.lead;
-      const contact = lead.contact || {};
+        // regras de exclusão
+        if (lead.status === "agendado") return null;
+        if (lead.status === "converted") return null;
+        if (lead.convertedToPatient) return null;
 
-      // rejeita leads que já marcaram/foram convertidos
-      if (lead.status === "agendado") continue;
-      if (lead.status === "converted") continue;
-      if (lead.convertedToPatient) continue;
+        // ⚠️ se stopAutomation é do LEAD, usa lead.stopAutomation
+        // se for do contact embedado, usa lead.contact?.stopAutomation
+        if (lead.stopAutomation === true) return null;
+        if (lead.contact?.stopAutomation === true) return null;
 
-      // rejeita contatos com flag para parar automações
-      if (contact.stopAutomation === true) continue;
+        const recentInbound = await Message.findOne({
+          lead: lead._id,
+          direction: "inbound",
+          timestamp: { $gte: new Date(Date.now() - 1000 * 60 * 60 * 12) }
+        }).lean();
 
-      const recentInbound = await Message.findOne({
-        lead: f.lead._id,
-        direction: "inbound",
-        timestamp: { $gte: new Date(Date.now() - 1000 * 60 * 60 * 12) } // últimas 12h
-      }).select({ _id: 1 }).lean();
+        if (recentInbound) return null;
 
-      if (recentInbound) continue;
+        return f;
+      })
+    );
 
-      filtered.push(f);
-    }
+    const filtered = checks.filter(Boolean);
+
 
     if (!filtered.length) {
       console.log(chalk.gray("⏳ Após filtro, nenhum follow-up válido."));
