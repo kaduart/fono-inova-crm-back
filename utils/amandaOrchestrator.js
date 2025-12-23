@@ -20,10 +20,12 @@ import { callOpenAIFallback } from "../services/aiAmandaService.js";
 import {
     autoBookAppointment,
     buildSlotMenuMessage,
+    buildSlotMenuMessageForPeriod,
     findAvailableSlots,
     formatDatePtBr,
     formatSlot,
-    pickSlotFromUserReply
+    pickSlotFromUserReply,
+    validateSlotStillAvailable
 } from "../services/amandaBookingService.js";
 
 import Appointment from "../models/Appointment.js";
@@ -175,7 +177,50 @@ function hasAnySlot(raw) {
     return all.length > 0;
 }
 
+
+function hasDayAndTimePattern(msg = "") {
+    const normalized = String(msg).toLowerCase();
+    const hasDay =
+        /\b(segunda|ter[çc]a|quarta|quinta|sexta|s[áa]bado|sabado|domingo)\b/i.test(normalized);
+    const hasTime = /\b(\d{1,2}:\d{2})\b|\b(\d{1,2})\s*h\b/i.test(normalized);
+    return hasDay && hasTime;
+}
+
+function isPeriodOnlyAnswer(msg = "") {
+    const normalized = String(msg).toLowerCase().trim();
+    const hasPeriod = /\b(manh[ãa]|cedo|tarde|noite)\b/i.test(normalized);
+    const hasLetterOrNum = /(?:^|\s)([a-f]|[1-6])(?:\s|$|[).,;!?])/i.test(normalized);
+    const hasDayTime = hasDayAndTimePattern(normalized);
+    return hasPeriod && !hasLetterOrNum && !hasDayTime;
+}
+
+function isRejectingOptions(msg = "") {
+    const normalized = String(msg).toLowerCase();
+    return /\b(n[aã]o|nao|nenhum|nenhuma|outro\s+dia|outros\s+hor[aá]rios|outras\s+op[çc][aã]es|prefiro\s+outro|n[aã]o\s+quero|n[aã]o\s+d[aá])\b/i.test(normalized);
+}
+
+function normalizeChoiceForOptions(raw = "") {
+    const text = String(raw);
+    const hasOptionKeyword = /\b(op(?:c|ç)[aã]o|alternativa)\b/i.test(text);
+    let out = text;
+
+    out = out.replace(/\b(primeira|primeiro)\b/i, "A");
+
+    if (hasOptionKeyword) {
+        out = out
+            .replace(/\b(segunda|segundo)\b/i, "B")
+            .replace(/\b(terceira|terceiro)\b/i, "C")
+            .replace(/\b(quarta|quarto)\b/i, "D")
+            .replace(/\b(quinta|quinto)\b/i, "E")
+            .replace(/\b(sexta|sexto)\b/i, "F");
+    }
+
+    return out;
+}
+
 function getCurrentSlots(lead, context) {
+    // ✅ Fonte da verdade (COMMIT 1): pendingSchedulingSlots
+    // Compat mode (read-only por 1 semana): lastOfferedSlots apenas como fallback.
     return (
         lead?.pendingSchedulingSlots ||
         context?.pendingSchedulingSlots ||
@@ -187,6 +232,28 @@ function getCurrentSlots(lead, context) {
 function isSimpleYes(text = "") {
     return /\b(sim|s\b|ok|okay|pode|pode\s+ser|beleza|fechado|confirmo|perfeito)\b/i.test(text);
 }
+function slotKey(s) {
+    const d = s?.date ? String(s.date) : "";
+    const t = s?.time ? String(s.time) : "";
+    if (!d || !t) return null;
+    return `${d}__${t}`;
+}
+
+function menuContainsSlot(chosen, rawMenu) {
+    if (!chosen || !rawMenu) return false;
+    const menu = normalizeSlots(rawMenu);
+    const key = slotKey(chosen);
+    if (!key) return false;
+
+    const all = [
+        menu.primary,
+        ...menu.alternativesSamePeriod,
+        ...menu.alternativesOtherPeriod,
+    ].filter(Boolean);
+
+    return all.some((s) => slotKey(s) === key);
+}
+
 
 /**
  * 🎯 ORQUESTRADOR COM CONTEXTO INTELIGENTE
@@ -211,8 +278,73 @@ export default async function getOptimizedAmandaResponse({
 
     lead = freshLead || lead;
 
+    // ======================================================
+    // 🧩 COMMIT 1 (Compat mode): migrar lastOfferedSlots -> pendingSchedulingSlots
+    // Regra: persistir slots somente em pendingSchedulingSlots.
+    // lastOfferedSlots fica read-only por ~1 semana.
+    // ======================================================
+    if (
+        lead?._id &&
+        (!lead?.pendingSchedulingSlots || !lead?.pendingSchedulingSlots?.primary) &&
+        lead?.autoBookingContext?.lastOfferedSlots?.primary
+    ) {
+        try {
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: { pendingSchedulingSlots: lead.autoBookingContext.lastOfferedSlots },
+            }).catch(() => { });
+            lead = {
+                ...lead,
+                pendingSchedulingSlots: lead.autoBookingContext.lastOfferedSlots,
+            };
+        } catch (e) {
+            // compat-only: não falhar fluxo por migração
+        }
+    }
+
+    if (lead?._id) {
+        const chosenSlot =
+            lead?.pendingChosenSlot ||
+            lead?.autoBookingContext?.pendingChosenSlot ||
+            null;
+
+        const collecting = lead?.pendingPatientInfoForScheduling === true;
+
+        const rawMenu =
+            lead?.pendingSchedulingSlots ||
+            lead?.autoBookingContext?.lastOfferedSlots ||
+            null;
+
+        const hasChosen = Boolean(chosenSlot);
+        const chosenInMenu = hasChosen ? menuContainsSlot(chosenSlot, rawMenu) : true;
+
+        const shouldClear = hasChosen && (!collecting || !chosenInMenu);
+
+        if (shouldClear) {
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: {
+                    pendingChosenSlot: null,
+                    pendingPatientInfoForScheduling: false,
+                    pendingPatientInfoStep: null,
+                    "autoBookingContext.pendingChosenSlot": null, // compat
+                },
+            }).catch(() => { });
+
+            lead = {
+                ...lead,
+                pendingChosenSlot: null,
+                pendingPatientInfoForScheduling: false,
+                pendingPatientInfoStep: null,
+                autoBookingContext: {
+                    ...(lead.autoBookingContext || {}),
+                    pendingChosenSlot: null,
+                },
+            };
+        }
+    }
+
     const SCHEDULING_REGEX =
         /\b(agendar|marcar|consulta|atendimento|avalia[cç][aã]o)\b|\b(qual\s+dia|qual\s+hor[áa]rio|tem\s+hor[áa]rio|dispon[ií]vel|disponivel|essa\s+semana)\b/i;
+
 
     function hasAgeOrProfileNow(txt = "", flags = {}, ctx = {}) {
         const t = String(txt || "");
@@ -478,22 +610,46 @@ export default async function getOptimizedAmandaResponse({
         flags.wantsSchedule ||
         flags.wantsSchedulingNow ||
         isSchedulingLikeText;
-    // 🚦 INÍCIO ÚNICO DA TRIAGEM
-    if (
-        wantsScheduling &&
-        lead?._id &&
-        !lead.triageStep
-    ) {
-        await Leads.findByIdAndUpdate(lead._id, {
-            $set: {
-                stage: "triagem_agendamento",
-                triageStep: "ask_profile"
-            }
-        }).catch(() => { });
+    // 🚦 INÍCIO + PROGRESSÃO DA TRIAGEM (SEM STALE LEAD)
+    if (lead?._id && wantsScheduling && !lead?.pendingPatientInfoForScheduling) {
+        const hasProfileNow = hasAgeOrProfileNow(text, flags, enrichedContext)?.hasProfile;
 
-        // ⚠️ Recarrega o lead imediatamente
-        lead = await Leads.findById(lead._id).lean().catch(() => lead);
+        const hasComplaintNow =
+            /\b(fala|linguagem|troca\s+letra|autismo|tea|tdah|comport|ansied|aten[cç][aã]o|aprend|sensorial|coordena|dor|les[aã]o|respira|ronco)\b/i
+                .test(text);
+
+        const hasPeriodNow =
+            /\b(manh[ãa]|tarde|noite|segunda|ter[çc]a|quarta|quinta|sexta|s[áa]bado|sabado|domingo)\b/i
+                .test(text);
+
+        // step atual (memória > lead)
+        let step = lead?.triageStep || null;
+
+        // se ainda não iniciou, já inicia no step “mais avançado” possível
+        if (!step) step = "ask_profile";
+
+        // avança o máximo possível NA MESMA MENSAGEM
+        if (step === "ask_profile" && hasProfileNow) step = "ask_complaint";
+        if (step === "ask_complaint" && hasComplaintNow) step = "ask_period";
+        if (step === "ask_period" && hasPeriodNow) step = "done";
+
+        // persiste uma vez só
+        if (step !== lead?.triageStep) {
+            const update = { triageStep: step };
+            if (!lead?.triageStep) update.stage = "triagem_agendamento";
+            if (step === "done") update.stage = "interessado_agendamento";
+
+            await Leads.findByIdAndUpdate(lead._id, { $set: update }).catch(() => { });
+            // ✅ atualiza o lead em memória (ponto crítico)
+            lead = { ...lead, ...update };
+        }
+
+        // bloqueio forte (agora com lead atualizado)
+        if (lead.triageStep && lead.triageStep !== "done") {
+            return ensureSingleHeart(buildTriageSchedulingMessage({ lead }));
+        }
     }
+
     // ===============================
     // 🔁 TRIAGEM DE AGENDAMENTO (STATE MACHINE)
     // ===============================
@@ -570,11 +726,7 @@ export default async function getOptimizedAmandaResponse({
     }
 
     // ✅ Se já tem slots pendentes e o lead respondeu escolhendo
-    const rawPending =
-        lead?.pendingSchedulingSlots ||
-        enrichedContext?.pendingSchedulingSlots ||
-        lead?.autoBookingContext?.lastOfferedSlots ||
-        null;
+    const rawPending = getCurrentSlots(lead, enrichedContext);
 
     const hasPendingSlots = hasAnySlot(rawPending);
 
@@ -593,10 +745,60 @@ export default async function getOptimizedAmandaResponse({
         const isNo = /\b(n[aã]o|nao|prefiro\s+outro|outro\s+hor[aá]rio)\b/i.test(text);
 
         if (onlyOne && isYes) {
+            // ✅ COMMIT 4: revalidar slot antes de pedir dados
+            const refreshMeta =
+                rawPending?._meta ||
+                lead?.pendingSchedulingSlots?._meta ||
+                null;
+
+            const validation = await validateSlotStillAvailable(onlyOne, refreshMeta);
+
+            if (!validation?.isValid) {
+                const fresh = validation?.freshSlots || null;
+
+                if (hasAnySlot(fresh)) {
+                    // Atualiza menu e limpa escolha antiga
+                    await Leads.findByIdAndUpdate(lead._id, {
+                        $set: {
+                            pendingSchedulingSlots: fresh,
+                            pendingChosenSlot: null,
+                            pendingPatientInfoForScheduling: false,
+                            pendingPatientInfoStep: null,
+                        }
+                    }).catch(() => { });
+
+                    const normalizedFresh = normalizeSlots(fresh);
+                    const { optionsText } = buildSlotMenuMessage(normalizedFresh);
+
+                    const msg =
+                        `Ops! Esse horário acabou de ser preenchido 😕\n\n` +
+                        `Tenho essas outras opções no momento:\n\n${optionsText}\n\n` +
+                        `Me responde só com a **letra** (A, B, C...) ou **número** (1 a 6) 💚`;
+
+                    return ensureSingleHeart(msg);
+                }
+
+                // Se nem freshSlots vieram, volta a perguntar preferências sem avançar estado
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: {
+                        pendingChosenSlot: null,
+                        pendingPatientInfoForScheduling: false,
+                        pendingPatientInfoStep: null,
+                    }
+                }).catch(() => { });
+
+                return "Ops! Esse horário acabou de ser preenchido 😕 Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor? 💚";
+            }
+
             await Leads.findByIdAndUpdate(lead._id, {
-                $set: { pendingChosenSlot: onlyOne, pendingPatientInfoForScheduling: true },
+                $set: {
+                    pendingChosenSlot: onlyOne,
+                    pendingPatientInfoForScheduling: true,
+                    pendingPatientInfoStep: "name",
+                },
             }).catch(() => { });
-            return "Perfeito! Pra eu confirmar, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚";
+
+            return "Perfeito! Me manda só o **nome completo** do paciente 💚";
         }
 
         if (onlyOne && isNo) {
@@ -607,57 +809,125 @@ export default async function getOptimizedAmandaResponse({
             /(?:^|\s)([A-F])(?:\s|$|[).,;!?])/i.test(text) ||
             /\bop[çc][aã]o\s*([A-F])\b/i.test(text);
 
-        const looksLikeChoice =
-            hasLetterChoice ||
-            /\b(\d{1,2}:\d{2})\b/.test(text) ||
-            /\b(segunda|ter[çc]a|quarta|quinta|sexta|s[aá]bado|domingo)\b/i.test(text) ||
-            /\b(manh[ãa]|cedo|tarde|noite)\b/i.test(text);
+        const hasNumberChoice =
+            /(?:^|\s)([1-6])(?:\s|$|[).,;!?])/i.test(text) ||
+            /\bop[çc][aã]o\s*([1-6])\b/i.test(text);
+
+        const hasDayAndTime = hasDayAndTimePattern(text);
 
         const { message: menuMsg, optionsText } = buildSlotMenuMessage(slotsCtx);
 
         if (!menuMsg) {
             return ensureSingleHeart(
-                `${optionsText || ""}\n\nMe responde com a **letra** (A, B, C...) ou com o **dia/horário** pra eu confirmar 💚`
+                `${optionsText || ""}\n\nMe responde com a **letra** (A, B, C...) ou com **dia + horário** (ex.: “quinta 14h”) pra eu confirmar 💚`
             );
         }
 
+        // ✅ Adendo: quando a pessoa responde só "manhã/tarde/noite", a gente NÃO escolhe por ela.
+        // Em vez disso, mostramos até 2 opções daquele período e pedimos a letra.
+        if (isPeriodOnlyAnswer(text)) {
+            const desired =
+                /\b(manh[ãa]|cedo)\b/i.test(text)
+                    ? "manha"
+                    : /\b(tarde)\b/i.test(text)
+                        ? "tarde"
+                        : "noite";
+
+            const pretty =
+                desired === "manha" ? "manhã" : desired === "tarde" ? "tarde" : "noite";
+
+            const periodMenu = buildSlotMenuMessageForPeriod(slotsCtx, desired, { max: 2 });
+
+            if (periodMenu?.optionsText) {
+                const lettersHint = (periodMenu.letters || []).join(", ");
+                return ensureSingleHeart(
+                    `Perfeito! Pra **${pretty}**, tenho essas opções:\n\n${periodMenu.optionsText}\n\nMe responde só com a letra (${lettersHint}). Se não servir, pode dizer **outro dia/período** 💚`
+                );
+            }
+
+            // Não tem naquele período → mostra o menu completo sem chutar
+            return ensureSingleHeart(
+                `Entendi! Pra **${pretty}** eu não encontrei horários agora 😕\n\n${menuMsg}`
+            );
+        }
+
+        // Se o lead disse "não/nenhuma/outro dia", oferecemos outras opções (menu completo)
+        if (isRejectingOptions(text) && !hasLetterChoice && !hasNumberChoice && !hasDayAndTime) {
+            return ensureSingleHeart(
+                `${menuMsg}\n\nSe preferir, me diga um **dia + horário** (ex.: “quinta 14h”) que eu tento encaixar 💚`
+            );
+        }
+
+        // Escolha explícita (sem chute): letra/número sempre; strict:false apenas quando houver dia+hora.
+        const looksLikeChoice = hasLetterChoice || hasNumberChoice || hasDayAndTime;
 
         if (!looksLikeChoice) {
             return ensureSingleHeart(menuMsg);
         }
 
-        if (looksLikeChoice) {
-            const normalizedChoice = text
-                .replace(/\b(primeira|primeiro)\b/i, "A")
-                .replace(/\b(segunda|segundo)\b/i, "B")
-                .replace(/\b(terceira|terceiro)\b/i, "C")
-                .replace(/\b(quarta|quarto)\b/i, "D")
-                .replace(/\b(quinta|quinto)\b/i, "E")
-                .replace(/\b(sexta|sexto)\b/i, "F");
+        {
+            const normalizedChoice = normalizeChoiceForOptions(text);
 
             let chosen = pickSlotFromUserReply(normalizedChoice, slotsCtx, { strict: true });
 
-            if (!chosen) {
-                chosen = pickSlotFromUserReply(normalizedChoice, slotsCtx, { strict: false });
+            // strict:false só quando houver padrão claro dia+hora, e SEM fallback silencioso
+            if (!chosen && hasDayAndTime) {
+                chosen = pickSlotFromUserReply(normalizedChoice, slotsCtx, { strict: false, noFallback: true });
             }
 
             if (!chosen) {
-                // aqui você NÃO perde o “humano”: pede confirmação objetiva
                 return ensureSingleHeart(
-                    `${optionsText}\n\nSó pra eu não errar: me responde com o **dia** (ex.: “segunda”) ou com a **letra** (A, B, C...) 💚`
+                    `${optionsText}\n\nNão consegui identificar sua escolha 😅 Me responde só com a **letra** (A, B, C...) ou **número** (1 a 6) 💚`
                 );
             }
 
             if (chosen) {
+                // ✅ COMMIT 4: revalidar slot antes de pedir dados
+                const refreshMeta =
+                    rawPending?._meta ||
+                    lead?.pendingSchedulingSlots?._meta ||
+                    null;
+
+                const validation = await validateSlotStillAvailable(chosen, refreshMeta);
+
+                if (!validation?.isValid) {
+                    const fresh = validation?.freshSlots || null;
+
+                    if (hasAnySlot(fresh)) {
+                        await Leads.findByIdAndUpdate(lead._id, {
+                            $set: {
+                                pendingSchedulingSlots: fresh,
+                                pendingChosenSlot: null,
+                                pendingPatientInfoForScheduling: false,
+                                pendingPatientInfoStep: null,
+                            }
+                        }).catch(() => { });
+
+                        const normalizedFresh = normalizeSlots(fresh);
+                        const { optionsText } = buildSlotMenuMessage(normalizedFresh);
+
+                        const msg =
+                            `Ops! Esse horário acabou de ser preenchido 😕\n\n` +
+                            `Tenho essas outras opções no momento:\n\n${optionsText}\n\n` +
+                            `Me responde só com a **letra** (A, B, C...) ou **número** (1 a 6) 💚`;
+
+                        return ensureSingleHeart(msg);
+                    }
+
+                    return "Ops! Esse horário acabou de ser preenchido 😕 Quer que eu te envie outras opções? 💚";
+                }
+
                 await Leads.findByIdAndUpdate(lead._id, {
                     $set: {
                         pendingChosenSlot: chosen,
-                        pendingPatientInfoForScheduling: true
+                        pendingPatientInfoForScheduling: true,
+                        pendingPatientInfoStep: "name",
                     }
                 }).catch(() => { });
 
-                return "Perfeito! Pra eu confirmar esse horário, me manda **nome completo** e **data de nascimento** (ex: João Silva, 12/03/2015) 💚";
+                return "Perfeito! Me manda só o **nome completo** do paciente 💚";
             }
+
         }
     }
 
@@ -730,7 +1000,6 @@ export default async function getOptimizedAmandaResponse({
         !flags.wantsSchedule &&
         !flags.wantsSchedulingNow;
 
-    // ✅ prioridade máxima pra preço
     // ✅ prioridade máxima pra preço (mas usando o builder + Claude)
     if (isPurePriceQuestion) {
         // tenta inferir a terapia pra ajudar o topic/priceLine
@@ -1191,17 +1460,39 @@ export default async function getOptimizedAmandaResponse({
                 }
             }
 
+
+            // ✅ COMMIT 4: guarda contexto de busca dentro do pendingSchedulingSlots (schema é Mixed)
+            try {
+                if (availableSlots && typeof availableSlots === "object") {
+                    availableSlots._meta = {
+                        therapyArea: therapyAreaForSlots,
+                        specialties: specialtiesForSlots,
+                        preferredDay,
+                        preferredPeriod,
+                        preferredDate: preferredSpecificDate,
+                        daysAhead: 30,
+                        createdAt: new Date().toISOString(),
+                    };
+                }
+            } catch (_) { }
+
             await Leads.findByIdAndUpdate(lead._id, {
                 $set: {
                     pendingSchedulingSlots: availableSlots,
+
+                    // 🧼 COMMIT 4.1: sempre que eu gero um NOVO menu, eu zero a escolha antiga
+                    pendingChosenSlot: null,
+                    pendingPatientInfoForScheduling: false,
+                    pendingPatientInfoStep: null,
+
                     urgencyApplied: urgencyLevel,
                     "autoBookingContext.active": true,
                     "autoBookingContext.therapyArea": therapyAreaForSlots,
                     "autoBookingContext.mappedSpecialties": specialtiesForSlots,
                     "autoBookingContext.mappedProduct": bookingProduct?.product,
-                    "autoBookingContext.lastOfferedSlots": availableSlots,
                 },
             }).catch(() => { });
+
 
             enrichedContext.pendingSchedulingSlots = availableSlots;
 

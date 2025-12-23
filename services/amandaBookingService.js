@@ -354,6 +354,70 @@ export async function findAvailableSlots({
 
 
 // ============================================================================
+
+/**
+ * ✅ COMMIT 4: Revalida o slot escolhido antes de pedir dados do paciente.
+ * - Checa se o horário ainda está disponível no endpoint /available-slots
+ * - Se NÃO estiver, tenta buscar um novo menu usando o mesmo contexto (quando fornecido)
+ *
+ * @param {object} chosenSlot {doctorId, date, time}
+ * @param {object|null} refreshCtx {_meta} opcional (therapyArea, specialties, preferredDay, preferredPeriod, preferredDate, daysAhead)
+ */
+export async function validateSlotStillAvailable(chosenSlot, refreshCtx = null) {
+    try {
+        if (!chosenSlot?.doctorId || !chosenSlot?.date || !chosenSlot?.time) {
+            return { isValid: false, freshSlots: null, reason: "MISSING_FIELDS" };
+        }
+
+        const availableTimes = await fetchAvailableSlotsForDoctor({
+            doctorId: String(chosenSlot.doctorId),
+            date: String(chosenSlot.date),
+        });
+
+        const wanted = String(chosenSlot.time).slice(0, 5);
+        const stillOk = Array.isArray(availableTimes)
+            ? availableTimes.some((t) => String(t).slice(0, 5) === wanted)
+            : false;
+
+        if (stillOk) {
+            return { isValid: true, freshSlots: null };
+        }
+
+        // Se não existe mais, tenta buscar novas opções (se tivermos contexto)
+        let freshSlots = null;
+
+        const meta = refreshCtx && typeof refreshCtx === "object" ? refreshCtx : null;
+        if (meta?.therapyArea) {
+            freshSlots = await findAvailableSlots({
+                therapyArea: meta.therapyArea,
+                specialties: meta.specialties || [],
+                preferredDay: meta.preferredDay || null,
+                preferredPeriod: meta.preferredPeriod || null,
+                preferredDate: meta.preferredDate || null,
+                daysAhead: meta.daysAhead || 30,
+            });
+
+            // anexa meta para o fluxo continuar consistente
+            if (freshSlots && typeof freshSlots === "object") {
+                freshSlots._meta = {
+                    therapyArea: meta.therapyArea,
+                    specialties: meta.specialties || [],
+                    preferredDay: meta.preferredDay || null,
+                    preferredPeriod: meta.preferredPeriod || null,
+                    preferredDate: meta.preferredDate || null,
+                    daysAhead: meta.daysAhead || 30,
+                    createdAt: new Date().toISOString(),
+                };
+            }
+        }
+
+        return { isValid: false, freshSlots, reason: "SLOT_GONE" };
+    } catch (error) {
+        console.error("Erro ao revalidar slot:", error?.message || error);
+        return { isValid: false, freshSlots: null, reason: "ERROR" };
+    }
+}
+
 // 📅 PASSO 2 + 3: CRIAR PACIENTE + AGENDAR (FLUXO COMPLETO)
 // ============================================================================
 
@@ -519,6 +583,7 @@ export function pickSlotFromUserReply(text, availableSlots, opts = {}) {
 
     const normalized = (text || "").toLowerCase().trim();
     const strict = Boolean(opts?.strict);
+    const noFallback = Boolean(opts?.noFallback);
 
     // Monta a lista A..F (ordem: primary, samePeriod..., otherPeriod...)
     const primary = availableSlots.primary || null;
@@ -607,7 +672,7 @@ export function pickSlotFromUserReply(text, availableSlots, opts = {}) {
     // 5) Fallback
     // - modo padrão: se não entendeu, devolve a primary (A)
     // - modo strict: se não entendeu, devolve null (pra você re-perguntar sem “chutar”)
-    return strict ? null : primary;
+    return (strict || noFallback) ? null : primary;
 }
 
 
@@ -773,6 +838,32 @@ export function buildOrderedSlotOptions(slotsCtx = {}) {
 }
 
 // ✅ Monta a mensagem A/B/C/D/E/F com o mesmo padrão em TODO lugar
+
+export function buildSlotMenuMessageForPeriod(
+    slotsCtx,
+    period,
+    {
+        title = "Tenho esses horários no momento:",
+        question = "Qual você prefere? (responda com a letra)",
+        max = 2,
+    } = {}
+) {
+    if (!slotsCtx) return { message: null, optionsText: "", ordered: [], letters: [] };
+
+    const desired = String(period || "").toLowerCase();
+    const opts = buildSlotOptions(slotsCtx).filter((o) => getTimePeriod(o.slot?.time) === desired).slice(0, max);
+
+    if (!opts.length) return { message: null, optionsText: "", ordered: [], letters: [] };
+
+    const letters = opts.map(o => o.letter);
+    const ordered = opts.map(o => o.slot);
+    const optionsText = opts.map(o => o.text).join("\n");
+
+    const message = `${title}\n\n${optionsText}\n\n${question} 💚`;
+
+    return { message, optionsText, ordered, letters };
+}
+
 export function buildSlotMenuMessage(
     slotsCtx,
     {

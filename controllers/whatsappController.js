@@ -7,6 +7,7 @@ import Contacts from '../models/Contacts.js';
 import Followup from "../models/Followup.js";
 import Lead from '../models/Leads.js';
 import Message from "../models/Message.js";
+import Patient from '../models/Patient.js';
 import { describeWaImage, transcribeWaAudio } from "../services/aiAmandaService.js";
 import { createSmartFollowupForLead } from "../services/followupOrchestrator.js";
 import { checkFollowupResponse } from "../services/responseTrackingService.js";
@@ -14,7 +15,6 @@ import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../servic
 import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
 import { normalizeE164BR } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
-import Patient from '../models/Patient.js';
 
 const AUTO_TEST_NUMBERS = [
     "5561981694922", "5561981694922", "556292013573", "5562992013573"
@@ -1193,6 +1193,13 @@ async function handleResponseTracking(leadId, content) {
 
 // ✅ FUNÇÃO CORRIGIDA COM CONTROLE MANUAL
 async function handleAutoReply(from, to, content, lead) {
+    // ✅ Commit 2: anti-corrida (Redis 30s + trava no Mongo)
+    let lockKey = null;
+    let lockAcquired = false;
+    let debounceKey = null;
+    let debounceAcquired = false;
+    let mongoLockAcquired = false;
+    let mongoLockedLeadId = null;
     try {
         console.log('🤖 [AUTO-REPLY] Iniciando para', { from, to, leadId: lead?._id, content });
 
@@ -1205,9 +1212,11 @@ async function handleAutoReply(from, to, content, lead) {
         let canProceed = true;
         try {
             if (redis?.set) {
-                const lockKey = `ai:lock:${from}`;
-                const ok = await redis.set(lockKey, "1", "EX", 10, "NX");
-                if (ok !== "OK") {
+                lockKey = `ai:lock:${from}`;
+                const ok = await redis.set(lockKey, "1", "EX", 30, "NX");
+                if (ok === "OK") {
+                    lockAcquired = true;
+                } else {
                     console.log("⏭️ AI lock ativo; evitando corrida", lockKey);
                     canProceed = false;
                 }
@@ -1239,9 +1248,11 @@ async function handleAutoReply(from, to, content, lead) {
         // ================================
         try {
             if (redis?.set) {
-                const key = `ai:debounce:${from}`;
-                const ok = await redis.set(key, "1", "EX", 10, "NX");
-                if (ok !== "OK") {
+                debounceKey = `ai:debounce:${from}`;
+                const ok = await redis.set(debounceKey, "1", "EX", 30, "NX");
+                if (ok === "OK") {
+                    debounceAcquired = true;
+                } else {
                     console.log("⏭️ Debounce ativo (3s); pulando auto-reply");
                     return;
                 }
@@ -1251,13 +1262,35 @@ async function handleAutoReply(from, to, content, lead) {
         }
 
         // ================================
-        // 4. Busca lead completo do banco
+        // 4. Busca lead completo do banco + trava no Mongo (anti-corrida)
         // ================================
-        const leadDoc = await Lead.findById(lead._id).lean();
+        const twoMinutesAgo = new Date(Date.now() - 120000);
+
+        const leadDoc = await Lead.findOneAndUpdate(
+            {
+                _id: lead._id,
+                $or: [
+                    { isProcessing: { $ne: true } },
+                    { processingStartedAt: { $exists: false } },
+                    { processingStartedAt: { $lt: twoMinutesAgo } },
+                ],
+            },
+            {
+                $set: {
+                    isProcessing: true,
+                    processingStartedAt: new Date(),
+                },
+            },
+            { new: true }
+        ).lean();
+
         if (!leadDoc) {
-            console.log("⚠️ Lead não encontrado em handleAutoReply:", lead?._id);
+            console.log("⏭️ Lead já está processando; ignorando mensagem", lead?._id);
             return;
         }
+
+        mongoLockedLeadId = leadDoc._id;
+        mongoLockAcquired = true;
 
         // ================================
         // 5. Controle manual (human takeover)
@@ -1405,6 +1438,25 @@ async function handleAutoReply(from, to, content, lead) {
         }
     } catch (error) {
         console.error('❌ Erro no auto-reply (não crítico):', error);
+    } finally {
+        // ✅ Libera trava no Mongo (best-effort)
+        if (mongoLockAcquired && mongoLockedLeadId) {
+            try {
+                await Lead.updateOne({ _id: mongoLockedLeadId }, { $set: { isProcessing: false } });
+            } catch (unlockErr) {
+                console.warn('⚠️ Falha ao liberar isProcessing:', unlockErr.message);
+            }
+        }
+
+        // ✅ Libera locks no Redis (best-effort)
+        try {
+            if (redis?.del) {
+                if (lockAcquired && lockKey) await redis.del(lockKey);
+                if (debounceAcquired && debounceKey) await redis.del(debounceKey);
+            }
+        } catch (redisDelErr) {
+            console.warn('⚠️ Falha ao liberar locks Redis:', redisDelErr.message);
+        }
     }
 }
 
