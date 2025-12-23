@@ -931,26 +931,48 @@ export default async function getOptimizedAmandaResponse({
         !lead?.pendingPatientInfoForScheduling;
 
     const profileCheck = hasAgeOrProfileNow(text, flags, enrichedContext);
-    const hasProfile =
-        profileCheck.hasProfile ||
-        /\b(meu|minha)\s+(filh[oa]|crian[çc]a)\b/i.test(text);
+    // ===============================
+    // 🚨 GATE REAL: perfil / área antes de IA
+    // ===============================
+    if (
+        wantsScheduling &&
+        lead?.triageStep === "done" &&
+        !lead?.pendingPatientInfoForScheduling
+    ) {
+        // força child flag
+        if (/\b(meu|minha)\s+(filh[oa]|crian[çc]a)\b/i.test(text)) {
+            flags.mentionsChild = true;
+        }
 
-    if (/\b(meu|minha)\s+(filh[oa]|crian[çc]a)\b/i.test(text)) {
-        flags.mentionsChild = true;
+        const hasProfile =
+            flags.mentionsChild ||
+            flags.mentionsTeen ||
+            flags.mentionsAdult ||
+            profileCheck?.hasProfile ||
+            lead?.ageGroup;
+
+        const hasArea = !!(
+            bookingProduct?.therapyArea ||
+            flags?.therapyArea ||
+            lead?.autoBookingContext?.therapyArea ||
+            lead?.therapyArea
+        );
+
+        // ❌ SEM PERFIL
+        if (!hasProfile) {
+            return ensureSingleHeart(
+                "Pra eu te orientar certinho, a avaliação é pra **criança, adolescente ou adulto**? 💚"
+            );
+        }
+
+        // ❌ SEM ÁREA
+        if (!hasArea) {
+            return ensureSingleHeart(
+                "Qual atendimento você está buscando? (Fono, Psicologia, TO, Fisioterapia ou Neuropsicológica) 💚"
+            );
+        }
     }
 
-    const GENERIC_NO_COMPLAINT_REGEX =
-        /\b(avalia[çc][aã]o)\b/i.test(text) &&
-        !/\b(fala|linguagem|troca\s+letra|autismo|tea|tdah|comport|ansied|atenc|aprender|sensorial|coordena|dor|les[aã]o|respira|ronco)\b/i.test(text);
-
-    const hasArea = !!(
-        bookingProduct?.therapyArea ||
-        flags?.therapyArea ||
-        lead?.autoBookingContext?.therapyArea ||
-        lead?.therapyArea
-    );
-
-    
     if (bookingProduct?.product === "multi_servico") {
         const combined = `${text}`.toLowerCase();
         const wantsLinguinha = /\b(teste\s+da\s+linguinha|linguinha|freio\s+lingual|fr[eê]nulo)\b/i.test(combined);
