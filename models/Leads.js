@@ -47,6 +47,7 @@ const leadSchema = new mongoose.Schema({
     enum: [
       'novo',
       'pesquisando_preco',
+      'triagem_agendamento',
       'engajado',
       'interessado_agendamento',
       'paciente'
