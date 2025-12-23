@@ -930,9 +930,10 @@ export default async function getOptimizedAmandaResponse({
         !enrichedContext.pendingSchedulingSlots &&
         !lead?.pendingPatientInfoForScheduling;
 
-    const profileCheck2 = hasAgeOrProfileNow(text, flags, enrichedContext);
-    const hasProfile = profileCheck2.hasProfile || /\b(meu|minha)\s+(filh[oa]|crian[çc]a)\b/i.test(text);
-
+    const profileCheck = hasAgeOrProfileNow(text, flags, enrichedContext);
+    const hasProfile =
+        profileCheck.hasProfile ||
+        /\b(meu|minha)\s+(filh[oa]|crian[çc]a)\b/i.test(text);
 
     if (/\b(meu|minha)\s+(filh[oa]|crian[çc]a)\b/i.test(text)) {
         flags.mentionsChild = true;
@@ -949,6 +950,7 @@ export default async function getOptimizedAmandaResponse({
         lead?.therapyArea
     );
 
+    
     if (bookingProduct?.product === "multi_servico") {
         const combined = `${text}`.toLowerCase();
         const wantsLinguinha = /\b(teste\s+da\s+linguinha|linguinha|freio\s+lingual|fr[eê]nulo)\b/i.test(combined);
