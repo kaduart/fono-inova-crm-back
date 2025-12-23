@@ -46,26 +46,34 @@ async function dispatchPendingFollowups() {
     }
 
     // filtra followups que NÃO devem ser enviados
-    const filtered = pend.filter(async f => {
-      const lead = f.lead || {};
+    // filtra followups que NÃO devem ser enviados (PRECISA ser sequencial/await)
+    const filtered = [];
+
+    for (const f of pend) {
+      // ✅ guard: lead pode vir null no populate
+      if (!f?.lead?._id) continue;
+
+      const lead = f.lead;
       const contact = lead.contact || {};
+
       // rejeita leads que já marcaram/foram convertidos
-      if (lead.status === "agendado") return false;
-      if (lead.status === "converted") return false;
-      if (lead.convertedToPatient) return false;
+      if (lead.status === "agendado") continue;
+      if (lead.status === "converted") continue;
+      if (lead.convertedToPatient) continue;
+
       // rejeita contatos com flag para parar automações
-      if (contact.stopAutomation === true) return false;
+      if (contact.stopAutomation === true) continue;
 
       const recentInbound = await Message.findOne({
         lead: f.lead._id,
         direction: "inbound",
         timestamp: { $gte: new Date(Date.now() - 1000 * 60 * 60 * 12) } // últimas 12h
-      });
-      if (recentInbound) return false;
+      }).select({ _id: 1 }).lean();
 
+      if (recentInbound) continue;
 
-      return true;
-    });
+      filtered.push(f);
+    }
 
     if (!filtered.length) {
       console.log(chalk.gray("⏳ Após filtro, nenhum follow-up válido."));
