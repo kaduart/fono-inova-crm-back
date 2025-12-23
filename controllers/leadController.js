@@ -50,6 +50,7 @@ export const createLeadFromAd = async (req, res) => {
         const phoneE164 = normalizeE164BR(phone);
 
         const existing = await Lead.findOne({ "contact.phone": phoneE164 });
+        
         if (existing) {
             console.log(`⚠️ Lead duplicado: ${safeName} (${phoneE164})`);
             return res.status(409).json({
@@ -58,6 +59,9 @@ export const createLeadFromAd = async (req, res) => {
                 leadId: existing._id,
             });
         }
+
+        await Lead.insertMany([leadData]);
+
 
         let initialScore = 60;
         if (origin?.toLowerCase().includes("google")) initialScore = 70;
@@ -782,3 +786,27 @@ export const getHistoryMetrics = async (req, res) => {
         });
     }
 };
+
+
+async function resolveLeadByPhone(phone, defaults = {}) {
+    const phoneE164 = normalizeE164BR(phone);
+
+    return await Lead.findOneAndUpdate(
+        { "contact.phone": phoneE164 },
+        {
+            $setOnInsert: {
+                contact: { phone: phoneE164 },
+                origin: defaults.origin || "WhatsApp",
+                status: defaults.status || "novo",
+                appointment: defaults.appointment || {},
+                autoReplyEnabled: true,
+                manualControl: { active: false, autoResumeAfter: 30 },
+                createdAt: new Date()
+            },
+            $set: {
+                lastInteractionAt: new Date()
+            }
+        },
+        { upsert: true, new: true }
+    );
+}
