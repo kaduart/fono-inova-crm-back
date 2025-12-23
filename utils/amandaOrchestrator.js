@@ -126,14 +126,7 @@ function nextStage(
             extracted?.age
         );
 
-    if (
-        flags.wantsSchedulingNow ||
-        flags.wantsSchedule ||
-        intent.primary === "agendar_urgente" ||
-        intent.primary === "agendar_avaliacao"
-    ) {
-        // Se ainda não sabemos área e/ou perfil, primeiro TRIAR
-        if (!hasArea || !hasProfile) return "triagem_agendamento";
+    if (flags.wantsSchedule || intent.primary === "agendar_avaliacao") {
         return "interessado_agendamento";
     }
 
@@ -268,7 +261,7 @@ export default async function getOptimizedAmandaResponse({
             return "Ótimo! Qual dia da semana e período (manhã ou tarde) fica melhor pra vocês? 💚";
         }
 
-        return null;
+        return "Me conta só mais um pouquinho pra eu te ajudar certinho, o que tem percebido? 💚";
     }
 
 
