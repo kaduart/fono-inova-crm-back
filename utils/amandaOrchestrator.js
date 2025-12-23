@@ -15,7 +15,6 @@ import {
     isTDAHQuestion
 } from "./therapyDetector.js";
 
-import Followup from "../models/Followup.js";
 import Leads from "../models/Leads.js";
 import { callOpenAIFallback } from "../services/aiAmandaService.js";
 import {
@@ -27,6 +26,8 @@ import {
     pickSlotFromUserReply
 } from "../services/amandaBookingService.js";
 
+import Appointment from "../models/Appointment.js";
+import { getLatestInsights } from "../services/amandaLearningService.js";
 import { buildContextPack } from "../services/intelligence/ContextPack.js";
 import { handleInboundMessageForFollowups } from "../services/responseTrackingService.js";
 import {
@@ -37,8 +38,6 @@ import {
 } from "./amandaPrompt.js";
 import { logBookingGate, mapFlagsToBookingProduct } from "./bookingProductMapper.js";
 import { extractPreferredDateFromText } from "./dateParser.js";
-import { getLatestInsights } from "../services/amandaLearningService.js";
-import Appointment from "../models/Appointment.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
@@ -208,7 +207,9 @@ export default async function getOptimizedAmandaResponse({
 }) {
     const raw = userText ?? content;
     const text = typeof raw === "string" ? raw : "";
-
+    if (!lead?._id && context?.leadId) {
+        lead = await Leads.findById(context.leadId).lean().catch(() => lead);
+    }
     const normalized = text.toLowerCase().trim();
     // ✅ Fonte da verdade: sempre preferir o lead do banco para flags "pending"
     const freshLead = lead?._id
