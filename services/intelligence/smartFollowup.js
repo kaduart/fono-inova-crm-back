@@ -147,6 +147,7 @@ function ensureSingleHeart(text = "") {
  */
 export function generateContextualFollowup({ lead, analysis, attempt = 1, history = [], sameDay = false, summaryText = null }) {
     const { extracted = {}, intent = {}, score = lead.conversionScore || 50 } = analysis || {};
+    const opener = analysis?.contextOpener || "";
 
     // nome sanitizado
     let firstName = ((lead?.name || "").trim().split(/\s+/)[0]) || "";
