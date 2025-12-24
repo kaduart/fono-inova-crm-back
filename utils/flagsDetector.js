@@ -237,6 +237,11 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
         /\b(manh[ãa]|tarde|noite|qualquer|tanto faz)\b/.test(t) ||
         /\b(seg(unda)?|ter(ça|ca)?|qua(rta)?|qui(nta)?|sex(ta)?|s[áa]bado|sabado|dom(ingo)?)\b/.test(t);
 
+    // respostas curtas de tempo relativo (ex.: "próxima", "semana que vem")
+    const answersRelativeTime =
+        /\b(pr[oó]xim[ao]s?|pr[oó]xima\s+semana|semana\s+que\s+vem|nos\s+pr[oó]ximos?\s+dias)\b/.test(t);
+
+
     // confirmação
     const isAffirmative =
         /\b(sim|isso mesmo|ta|isso|ok|pode ser|fechado|combinado|t[áa]\s*bom|ta bom|beleza|blz|uhum|aham)\b/.test(t);
@@ -263,9 +268,8 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
 
     const wantsSchedulingNow =
         baseFlags.wantsSchedule ||
-        (answersPeriodOrDay && inSchedulingFlow) ||
+        ((answersPeriodOrDay || answersRelativeTime) && inSchedulingFlow) ||
         (isAffirmative && inSchedulingFlow);
-
     const topic = resolveTopicFromFlags(baseFlags, rawText);
     const teaStatus = computeTeaStatus(baseFlags, rawText);
 
@@ -291,6 +295,7 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
 
         // agendamento
         answersPeriodOrDay,
+        answersRelativeTime,
         isAffirmative,
         inSchedulingFlow,
         wantsSchedulingNow,

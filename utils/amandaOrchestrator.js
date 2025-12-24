@@ -359,11 +359,26 @@ export default async function getOptimizedAmandaResponse({
     lead = {},
     context = {},
     messageId = null,
+    // ✅ compat: alguns chamadores passam leadId/from fora de `context`
+    leadId = null,
+    from = null,
+    phone = null,
 }) {
     const raw = userText ?? content;
     const text = typeof raw === "string" ? raw : "";
-    if (!lead?._id && context?.leadId) {
-        lead = await Leads.findById(context.leadId).lean().catch(() => lead);
+    // ✅ Sempre tentar resolver o lead do banco (sem depender do chamador)
+    const resolvedLeadId = context?.leadId || leadId || null;
+    if (!lead?._id && resolvedLeadId) {
+        lead = await Leads.findById(resolvedLeadId).lean().catch(() => lead);
+    }
+
+    // fallback: tenta resolver por telefone quando leadId não veio
+    const resolvedPhone = context?.from || context?.phone || from || phone || null;
+    if (!lead?._id && resolvedPhone) {
+        lead = await Leads.findOne({ phone: String(resolvedPhone) })
+            .sort({ lastMessageAt: -1 })
+            .lean()
+            .catch(() => lead);
     }
     const normalized = text.toLowerCase().trim();
     // ✅ Fonte da verdade: sempre preferir o lead do banco para flags "pending"
@@ -714,7 +729,9 @@ export default async function getOptimizedAmandaResponse({
     const schedulingConversation =
         wantsScheduling ||
         Boolean(lead?.triageStep) ||
-        lead?.stage === "interessado_agendamento";
+        lead?.stage === "interessado_agendamento" ||
+        enrichedContext?.stage === "interessado_agendamento" ||
+        enrichedContext?.stage === "triagem_agendamento";
 
     if (lead?._id && schedulingConversation && !lead?.pendingPatientInfoForScheduling) {
         const { hasProfile: hasProfileNow } = hasAgeOrProfileNow(text, flags, enrichedContext);
