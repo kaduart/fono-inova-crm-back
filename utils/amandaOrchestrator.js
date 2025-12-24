@@ -479,38 +479,44 @@ export default async function getOptimizedAmandaResponse({
         /\b(agendar|marcar|consulta|atendimento|avalia[cç][aã]o)\b|\b(qual\s+dia|qual\s+hor[áa]rio|tem\s+hor[áa]rio|dispon[ií]vel|disponivel|essa\s+semana)\b/i;
 
 
-    function hasAgeOrProfileNow(txt = "", flags = {}, ctx = {}) {
+    function hasAgeOrProfileNow(txt = "", flags = {}, ctx = {}, lead = {}) {
         const t = String(txt || "");
         const hasYears = /\b\d{1,2}\s*anos?\b/i.test(t);
         const hasMonths = /\b\d{1,2}\s*(mes|meses)\b/i.test(t);
-        const mentionsBaby =
-            /\b(beb[eê]|rec[eé]m[-\s]*nascid[oa]|rn)\b/i.test(t) || hasMonths;
+        const mentionsChildWord = /\b(filh[oa]|crianç|crianca|beb[eê]|bebe|menino|menina)\b/i.test(t);
+        const mentionsBaby = /\b(beb[eê]|rec[eé]m[-\s]*nascid[oa]|rn)\b/i.test(t) || hasMonths;
 
+        // 🔥 inferência única
         const inferred = {
-            mentionsChild: false,
-            ageGroup: null
+            mentionsChild: mentionsBaby || mentionsChildWord || hasYears || hasMonths,
+            ageGroup: hasYears || hasMonths || mentionsChildWord ? "crianca" : null,
         };
 
-        if (mentionsBaby) {
-            inferred.mentionsChild = true;
-            inferred.ageGroup = "crianca";
+        // 🔥 já salva no lead se for a 1ª msg
+        if (lead?._id && inferred.ageGroup && !lead.ageGroup) {
+            Leads.findByIdAndUpdate(lead._id, {
+                $set: {
+                    ageGroup: inferred.ageGroup,
+                    "contextMemory.hasAge": true,
+                    "contextMemory.lastAgeDetected": new Date(),
+                },
+            }).catch(() => { });
         }
 
-        const hasProfile =
-            !!(
-                flags.mentionsChild ||
-                flags.mentionsTeen ||
-                flags.mentionsAdult ||
-                ctx.ageGroup ||
-                lead?.patientInfo?.birthDate ||
-                lead?.patientInfo?.fullName ||
-                hasYears ||
-                hasMonths ||
-                inferred.mentionsChild
-            );
+        const hasProfile = !!(
+            flags.mentionsChild ||
+            flags.mentionsTeen ||
+            flags.mentionsAdult ||
+            ctx.ageGroup ||
+            lead?.ageGroup ||
+            hasYears ||
+            hasMonths ||
+            inferred.mentionsChild
+        );
 
         return { hasProfile, inferred };
     }
+
 
     function buildTriageSchedulingMessage({ lead }) {
         if (lead.triageStep === "ask_profile") {
@@ -819,8 +825,39 @@ export default async function getOptimizedAmandaResponse({
         enrichedContext.ageGroup = lead.ageGroup;
     }
 
+    const quick = extractQuickFactsFromText(text);
+
+    // 1) Joga pro contexto
+    if (quick.ageGroup && !enrichedContext.ageGroup) {
+        enrichedContext.ageGroup = quick.ageGroup;
+    }
+
+    if (quick.preferredPeriod && !enrichedContext.preferredPeriod) {
+        enrichedContext.preferredPeriod = quick.preferredPeriod;
+    }
+
+    if (quick.isChild) {
+        flags.mentionsChild = true;
+    }
+
+    // 2) Persiste no lead (memória longa)
+    if (lead?._id) {
+        const update = {};
+
+        if (quick.ageGroup && lead.ageGroup !== quick.ageGroup) {
+            update.ageGroup = quick.ageGroup;
+            update["contextMemory.hasAge"] = true;
+            update["contextMemory.lastAgeDetected"] = new Date();
+        }
+
+        if (Object.keys(update).length) {
+            await Leads.findByIdAndUpdate(lead._id, { $set: update }).catch(() => { });
+            Object.assign(lead, update);
+        }
+    }
+
+
     // 4) flags já enxergam mode/urgency
-    let flags = detectAllFlags(text, lead, enrichedContext);
     const bookingProduct = mapFlagsToBookingProduct({ ...flags, text }, lead);
     const areaSource = bookingProduct?._areaSource || "none";
 
@@ -845,7 +882,7 @@ export default async function getOptimizedAmandaResponse({
         enrichedContext?.stage === "triagem_agendamento";
 
     if (lead?._id && schedulingConversation && !lead?.pendingPatientInfoForScheduling) {
-        const { hasProfile: hasProfileNow } = hasAgeOrProfileNow(text, flags, enrichedContext);
+        const { hasProfile: hasProfileNow } = hasAgeOrProfileNow(text, flags, enrichedContext, lead);
         const hasAreaNow = Boolean(
             flags?.therapyArea ||
             bookingProduct?.therapyArea ||
@@ -1258,6 +1295,8 @@ export default async function getOptimizedAmandaResponse({
                 $set: { insuranceGatePending: true },
             }).catch(() => { });
         }
+
+        let flags = detectAllFlags(text, lead, enrichedContext);
 
         return ensureSingleHeart(
             "Atendemos no particular e emitimos recibo/nota pra você tentar reembolso no plano. Quer que eu já te mostre os horários disponíveis? 💚"
@@ -1840,6 +1879,53 @@ function pickTwoSlots(slots) {
     };
 }
 
+
+function extractQuickFactsFromText(text = "") {
+    const t = String(text || "");
+    const lower = t.toLowerCase();
+
+    // idade
+    const yearsMatch = t.match(/\b(\d{1,2})\s*anos?\b/i);
+    const monthsMatch = t.match(/\b(\d{1,2})\s*(mes|meses)\b/i);
+
+    let ageNumber = null;
+    let ageUnit = null;
+    let ageGroup = null;
+
+    if (monthsMatch) {
+        ageNumber = parseInt(monthsMatch[1], 10);
+        ageUnit = "meses";
+        ageGroup = "crianca";
+    } else if (yearsMatch) {
+        ageNumber = parseInt(yearsMatch[1], 10);
+        ageUnit = "anos";
+        if (!Number.isNaN(ageNumber)) {
+            if (ageNumber <= 12) ageGroup = "crianca";
+            else if (ageNumber <= 17) ageGroup = "adolescente";
+            else ageGroup = "adulto";
+        }
+    }
+
+    // filho/filha = criança
+    const isChildByWords = /\b(filh[oa]|crianç|bebê|bebe|menino|menina)\b/i.test(t);
+
+    if (isChildByWords && !ageGroup) {
+        ageGroup = "crianca";
+    }
+
+    // período
+    let preferredPeriod = null;
+    if (/\bmanh[ãa]\b/i.test(lower)) preferredPeriod = "manha";
+    if (/\btarde\b/i.test(lower)) preferredPeriod = "tarde";
+
+    return {
+        ageNumber,
+        ageUnit,
+        ageGroup,
+        isChild: isChildByWords || ageGroup === "crianca",
+        preferredPeriod,
+    };
+}
 
 /**
  * Extrai nome + data de nascimento do lead ou da mensagem atual
