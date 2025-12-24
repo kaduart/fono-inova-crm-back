@@ -853,11 +853,20 @@ export default async function getOptimizedAmandaResponse({
     if (lead?._id) {
         const update = {};
 
-        if (quick.ageGroup && lead.ageGroup !== quick.ageGroup) {
-            update.ageGroup = quick.ageGroup;
-            update["contextMemory.hasAge"] = true;
-            update["contextMemory.lastAgeDetected"] = new Date();
+        if ((quick.ageGroup || quick.ageValue) && lead?._id) {
+            const update = {
+                ageGroup: quick.ageGroup || lead.ageGroup || "crianca",
+                "contextMemory.hasAge": true,
+                "contextMemory.lastAgeDetected": new Date(),
+            };
+
+            if (quick.ageValue) update["contextMemory.ageValue"] = quick.ageValue;
+
+            await Leads.findByIdAndUpdate(lead._id, { $set: update }).catch(() => { });
+            Object.assign(lead, update);
+            enrichedContext.ageGroup = update.ageGroup;
         }
+
 
         if (Object.keys(update).length) {
             await Leads.findByIdAndUpdate(lead._id, { $set: update }).catch(() => { });
@@ -1305,7 +1314,13 @@ export default async function getOptimizedAmandaResponse({
             }).catch(() => { });
         }
 
-        flags = detectAllFlags(text, lead, enrichedContext);
+        try {
+            const extraFlags = detectAllFlags(text, lead, enrichedContext) || {};
+            flags = { ...flags, ...extraFlags };
+        } catch (err) {
+            console.warn("[ORCHESTRATOR] detectAllFlags (plano) falhou:", err.message);
+        }
+
 
         return ensureSingleHeart(
             "Atendemos no particular e emitimos recibo/nota pra você tentar reembolso no plano. Quer que eu já te mostre os horários disponíveis? 💚"
