@@ -15,6 +15,7 @@ import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../servic
 import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
 import { normalizeE164BR } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
+import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js';
 
 const AUTO_TEST_NUMBERS = [
     "5561981694922", "5561981694922", "556292013573", "5562992013573"
@@ -1094,6 +1095,37 @@ async function processInboundMessage(msg, value) {
             });
             await lead.save();
             console.log("📅 Interação atualizada no lead");
+
+            // 🧠 Amanda 2.0: atualizar "memória" estruturada a cada inbound
+            try {
+                const analysis = await analyzeLeadMessage({
+                    text: contentToSave,
+                    lead,
+                    history: (lead.interactions || []).map(i => i.message).filter(Boolean),
+                });
+
+                lead.qualificationData = lead.qualificationData || {};
+                lead.qualificationData.extractedInfo = mergeNonNull(
+                    lead.qualificationData.extractedInfo || {},
+                    analysis.extracted
+                );
+
+                lead.qualificationData.intent = analysis.intent.primary;
+                lead.qualificationData.sentiment = analysis.intent.sentiment;
+                lead.conversionScore = analysis.score;
+                lead.lastScoreUpdate = new Date();
+
+                await lead.save();
+
+                console.log("🧠 qualificationData atualizado:", {
+                    idade: lead.qualificationData?.extractedInfo?.idade,
+                    idadeRange: lead.qualificationData?.extractedInfo?.idadeRange,
+                    disponibilidade: lead.qualificationData?.extractedInfo?.disponibilidade,
+                });
+            } catch (e) {
+                console.warn("⚠️ Falha ao atualizar intelligence (não crítico):", e.message);
+            }
+
         } catch (updateError) {
             console.error("⚠️ Erro ao atualizar interação:", updateError.message);
         }
@@ -1458,6 +1490,18 @@ async function handleAutoReply(from, to, content, lead) {
             console.warn('⚠️ Falha ao liberar locks Redis:', redisDelErr.message);
         }
     }
+}
+
+
+function mergeNonNull(base = {}, incoming = {}) {
+    const out = { ...(base || {}) };
+    for (const [k, v] of Object.entries(incoming || {})) {
+        if (v === null || v === undefined || v === "") continue;
+        if (Array.isArray(v)) { if (v.length) out[k] = v; continue; }
+        if (typeof v === "object") out[k] = mergeNonNull(out[k], v);
+        else out[k] = v;
+    }
+    return out;
 }
 
 
