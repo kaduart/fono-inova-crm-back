@@ -1377,15 +1377,17 @@ export default async function getOptimizedAmandaResponse({
         !lead?.pendingPatientInfoForScheduling;
 
     const profileCheck = hasAgeOrProfileNow(text, flags, enrichedContext);
+
     // ===============================
-    // 🚨 GATE REAL: perfil / área antes de IA
+    // 🚨 GATE REAL: perfil / área antes de IA (LEGADO)
+    // Agora só roda pra leads que ainda NÃO usam a triagem nova (sem triageStep)
     // ===============================
     if (
         wantsScheduling &&
-        lead?.triageStep === "done" &&
-        !lead?.pendingPatientInfoForScheduling
+        !lead?.pendingPatientInfoForScheduling &&
+        !lead?.triageStep // <- se já existe triageStep (ask_profile/ask_area/ask_period/done), usamos só a triagem nova
     ) {
-        // força child flag
+        // força child flag (continua valendo)
         if (/\b(meu|minha)\s+(filh[oa]|crian[çc]a)\b/i.test(text)) {
             flags.mentionsChild = true;
         }
@@ -1404,20 +1406,21 @@ export default async function getOptimizedAmandaResponse({
             lead?.therapyArea
         );
 
-        // ❌ SEM PERFIL
+        // ❌ SEM PERFIL (apenas em leads legado, sem triagem nova)
         if (!hasProfile) {
             return ensureSingleHeart(
                 "Pra eu te orientar certinho, a avaliação é pra **criança, adolescente ou adulto**? 💚"
             );
         }
 
-        // ❌ SEM ÁREA
+        // ❌ SEM ÁREA (apenas em leads legado, sem triagem nova)
         if (!hasArea) {
             return ensureSingleHeart(
                 "Qual atendimento você está buscando? (Fono, Psicologia, TO, Fisioterapia ou Neuropsicológica) 💚"
             );
         }
     }
+
 
     if (bookingProduct?.product === "multi_servico") {
         const combined = `${text}`.toLowerCase();
