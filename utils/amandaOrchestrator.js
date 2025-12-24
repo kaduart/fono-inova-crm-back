@@ -396,13 +396,16 @@ export default async function getOptimizedAmandaResponse({
     }
 
     // fallback: tenta resolver por telefone quando leadId não veio
+    // fallback: tenta resolver por telefone quando leadId não veio
     const resolvedPhone = context?.from || context?.phone || from || phone || null;
+
     if (!lead?._id && resolvedPhone) {
-        lead = await Leads.findOne({ phone: String(resolvedPhone) })
+        lead = await Leads.findOne({ "contact.phone": String(resolvedPhone) })
             .sort({ lastMessageAt: -1 })
             .lean()
             .catch(() => lead);
     }
+
     const normalized = text.toLowerCase().trim();
     // ✅ Fonte da verdade: sempre preferir o lead do banco para flags "pending"
     const freshLead = lead?._id
@@ -938,12 +941,16 @@ export default async function getOptimizedAmandaResponse({
         if (freshLead) {
             lead = { ...lead, ...freshLead }; // merge
         }
+        const extractedInfo = lead?.qualificationData?.extractedInfo || {};
+        console.log("[TRIAGEM] idade:", extractedInfo?.idade, "esp:", extractedInfo?.especialidade, "disp:", extractedInfo?.disponibilidade);
 
         // 🔥 CHECAGEM INTELIGENTE: só entra na triagem se REALMENTE faltar algo
         const hasProfileNow = Boolean(
             lead.ageGroup ||
             enrichedContext.ageGroup ||
             quick.ageGroup ||
+            extractedInfo?.idade ||                 // ✅ AQUI
+            extractedInfo?.idadeRange ||            // ✅ AQUI
             /\b\d{1,2}\s*(anos?|m[eê]s|meses)\b/i.test(text)
         );
 
@@ -951,14 +958,16 @@ export default async function getOptimizedAmandaResponse({
             bookingProduct?.therapyArea ||
             lead?.autoBookingContext?.therapyArea ||
             lead?.therapyArea ||
-            enrichedContext?.therapyArea
+            enrichedContext?.therapyArea ||
+            extractedInfo?.especialidade            // ✅ AQUI (ex: "fonoaudiologia")
         );
 
         const hasPeriodNow = Boolean(
             lead?.pendingPreferredPeriod ||
             enrichedContext?.preferredPeriod ||
             quick.preferredPeriod ||
-            detectPeriod(text)
+            detectPeriod(text) ||
+            extractedInfo?.disponibilidade          // ✅ AQUI (ex: "manha")
         );
 
         // ✅ Se já tem TUDO, pula triagem (avança direto pra slots)
