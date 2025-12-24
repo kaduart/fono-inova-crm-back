@@ -268,6 +268,15 @@ db.messages.deleteMany({
 });
 
 
+db.leads.findOne(
+  { phone: "556181694922" },
+  {
+    name: 1,
+    "qualificationData.extractedInfo": 1,
+    "qualificationData.intent": 1,
+    conversionScore: 1,
+  }
+);
 
 
 db.followups.deleteMany({}); // se quiser zerar todos followups de teste

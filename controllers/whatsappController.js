@@ -10,12 +10,12 @@ import Message from "../models/Message.js";
 import Patient from '../models/Patient.js';
 import { describeWaImage, transcribeWaAudio } from "../services/aiAmandaService.js";
 import { createSmartFollowupForLead } from "../services/followupOrchestrator.js";
+import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js';
 import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
 import { normalizeE164BR } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
-import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js';
 
 const AUTO_TEST_NUMBERS = [
     "5561981694922", "5561981694922", "556292013573", "5562992013573"
@@ -1386,17 +1386,22 @@ async function handleAutoReply(from, to, content, lead) {
         // 8. Gera resposta da Amanda (orquestrador já usa enrichLeadContext)
         // ================================
         console.log('🤖 Gerando resposta da Amanda...');
+        const leadIdStr = String(leadDoc._id);
 
         const aiText = await getOptimizedAmandaResponse({
             content,
             userText: content,
+
+            // 🔥 garante que o orquestrador consegue carregar do Mongo
+            leadId: leadIdStr,
+
             lead: {
-                _id: leadDoc._id,
+                _id: leadIdStr, // ⚠️ string
                 name: leadDoc?.name || "",
                 reason: leadDoc?.reason || "avaliação/terapia",
                 origin: leadDoc?.origin || "WhatsApp",
             },
-            // context hoje não é usado, mas deixa se quiser evoluir depois
+
             context: { lastMessages, isFirstContact },
         });
 
