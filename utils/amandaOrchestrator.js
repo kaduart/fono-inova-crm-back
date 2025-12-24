@@ -517,435 +517,497 @@ export default async function getOptimizedAmandaResponse({
         return { hasProfile, inferred };
     }
 
+    const step = lead.triageStep;
 
-    function buildTriageSchedulingMessage({ lead }) {
-        if (lead.triageStep === "ask_profile") {
-            return "Perfeito 😊 Pra eu te orientar certinho, qual a idade do paciente? 💚";
+    if (step === "ask_profile") {
+        return "Perfeito 😊 Qual a idade do paciente? (pode mandar em anos ou meses) 💚";
+    }
+
+    if (step === "ask_area") {
+        return "Qual atendimento você está buscando? (Fono, Psicologia, TO, Fisioterapia ou Neuropsico) 💚";
+    }
+
+    if (step === "ask_period") {
+        return "Qual período fica melhor: **manhã ou tarde**? 💚";
+    }
+
+    // fallback (não deveria chegar aqui se step=done)
+    return "Me diz só mais um detalhe pra eu organizar certinho, por favor 💚";
+}
+
+// ✅ Wrappers defensivos (pra não quebrar se helpers não estiverem no arquivo/import)
+function safeCalculateUrgency(flags, txt) {
+    try {
+        if (typeof calculateUrgency === "function") return calculateUrgency(flags, txt);
+    } catch (_) { }
+    return { pitch: "" };
+}
+function safeGetPriceLinesForDetectedTherapies(detectedTherapies, opts = {}) {
+    try {
+        if (typeof getPriceLinesForDetectedTherapies === "function") {
+            return getPriceLinesForDetectedTherapies(detectedTherapies, opts) || [];
+        }
+    } catch (_) { }
+    return [];
+}
+
+console.log(`🎯 [ORCHESTRATOR] Processando: "${text}"`);
+
+// ➕ integrar inbound do chat com followups
+if (lead?._id) {
+    handleInboundMessageForFollowups(lead._id).catch((err) =>
+        console.warn("[FOLLOWUP-REALTIME] erro:", err.message),
+    );
+}
+
+// 🔁 Fluxo: pendência de dados do paciente (pós-escolha de horário)
+if (lead?.pendingPatientInfoForScheduling && lead?._id) {
+    const freshLead = await Leads.findById(lead._id).lean().catch(() => null);
+    const leadForInfo = freshLead || lead;
+
+
+    const patientInfo = extractPatientInfoFromLead(leadForInfo, text);
+    const chosenSlot =
+        leadForInfo?.pendingChosenSlot ||
+        leadForInfo?.autoBookingContext?.pendingChosenSlot ||
+        null;
+
+    const step = leadForInfo.pendingPatientInfoStep || "name";
+
+    // helpers simples
+    const extractName = (msg) => {
+        const t = String(msg || "").trim();
+        // aceita "Nome: X" ou só "X" (desde que tenha 2 palavras)
+        const m1 = t.match(/\b(nome|paciente)\s*[:\-]\s*([a-zÀ-úA-ZÀ-Ú\s]{3,80})/i);
+        if (m1) return m1[2].trim();
+        if (/^[a-zÀ-úA-ZÀ-Ú]{2,}\s+[a-zÀ-úA-ZÀ-Ú]{2,}/.test(t)) return t;
+        return null;
+    };
+
+    const extractBirth = (msg) => {
+        const t = String(msg || "").trim();
+        const m = t.match(/\b(\d{2})[\/\-](\d{2})[\/\-](\d{4})\b/);
+        if (!m) return null;
+        return `${m[3]}-${m[2]}-${m[1]}`;
+    };
+
+    // PASSO 1: NOME
+    if (step === "name") {
+        const name = extractName(text);
+        if (!name) return "Pra eu confirmar certinho: qual o **nome completo** do paciente? 💚";
+
+        await Leads.findByIdAndUpdate(lead._id, {
+            $set: { "patientInfo.fullName": name, pendingPatientInfoStep: "birth" }
+        }).catch(() => { });
+
+        return "Obrigada! Agora me manda a **data de nascimento** (dd/mm/aaaa) 💚";
+    }
+
+    // PASSO 2: NASCIMENTO
+    if (step === "birth") {
+        const birthDate = extractBirth(text);
+        if (!birthDate) return "Me manda a **data de nascimento** no formato **dd/mm/aaaa** 💚";
+
+        await Leads.findByIdAndUpdate(lead._id, {
+            $set: { "patientInfo.birthDate": birthDate }
+        }).catch(() => { });
+
+        // pega os dados completos do lead (com nome salvo)
+        const updated = await Leads.findById(lead._id).lean().catch(() => null);
+        const fullName = updated?.patientInfo?.fullName || null;
+
+        if (!fullName || !chosenSlot) {
+            // fallback bem seguro
+            return "Perfeito! Só mais um detalhe: confirma pra mim o **nome completo** do paciente? 💚";
         }
 
-        if (lead.triageStep === "ask_area") {
-            return "Qual atendimento você está buscando? (Fono, Psicologia, TO, Fisioterapia ou Neuropsico) 💚";
-        }
-
-        if (lead.triageStep === "ask_period") {
-            return "Qual período fica melhor pra vocês: manhã ou tarde? 💚";
-        }
-
-        return "Me diz só mais um detalhe pra eu te ajudar certinho: é pra qual atendimento? 💚";
-    }
-
-
-
-    // ✅ Wrappers defensivos (pra não quebrar se helpers não estiverem no arquivo/import)
-    function safeCalculateUrgency(flags, txt) {
-        try {
-            if (typeof calculateUrgency === "function") return calculateUrgency(flags, txt);
-        } catch (_) { }
-        return { pitch: "" };
-    }
-    function safeGetPriceLinesForDetectedTherapies(detectedTherapies, opts = {}) {
-        try {
-            if (typeof getPriceLinesForDetectedTherapies === "function") {
-                return getPriceLinesForDetectedTherapies(detectedTherapies, opts) || [];
-            }
-        } catch (_) { }
-        return [];
-    }
-
-    console.log(`🎯 [ORCHESTRATOR] Processando: "${text}"`);
-
-    // ➕ integrar inbound do chat com followups
-    if (lead?._id) {
-        handleInboundMessageForFollowups(lead._id).catch((err) =>
-            console.warn("[FOLLOWUP-REALTIME] erro:", err.message),
-        );
-    }
-
-    // 🔁 Fluxo: pendência de dados do paciente (pós-escolha de horário)
-    if (lead?.pendingPatientInfoForScheduling && lead?._id) {
-        const freshLead = await Leads.findById(lead._id).lean().catch(() => null);
-        const leadForInfo = freshLead || lead;
-
-
-        const patientInfo = extractPatientInfoFromLead(leadForInfo, text);
-        const chosenSlot =
-            leadForInfo?.pendingChosenSlot ||
-            leadForInfo?.autoBookingContext?.pendingChosenSlot ||
+        const phone =
+            updated?.contact?.phone ||
+            leadForInfo?.contact?.phone ||
             null;
 
-        const step = leadForInfo.pendingPatientInfoStep || "name";
+        const email =
+            updated?.contact?.email ||
+            leadForInfo?.contact?.email ||
+            null;
 
-        // helpers simples
-        const extractName = (msg) => {
-            const t = String(msg || "").trim();
-            // aceita "Nome: X" ou só "X" (desde que tenha 2 palavras)
-            const m1 = t.match(/\b(nome|paciente)\s*[:\-]\s*([a-zÀ-úA-ZÀ-Ú\s]{3,80})/i);
-            if (m1) return m1[2].trim();
-            if (/^[a-zÀ-úA-ZÀ-Ú]{2,}\s+[a-zÀ-úA-ZÀ-Ú]{2,}/.test(t)) return t;
-            return null;
-        };
+        await Leads.findByIdAndUpdate(lead._id, {
+            $set: {
+                "patientInfo.birthDate": birthDate,
+                "patientInfo.phone": phone,
+                "patientInfo.email": email,
+            }
+        }).catch(() => { });
 
-        const extractBirth = (msg) => {
-            const t = String(msg || "").trim();
-            const m = t.match(/\b(\d{2})[\/\-](\d{2})[\/\-](\d{4})\b/);
-            if (!m) return null;
-            return `${m[3]}-${m[2]}-${m[1]}`;
-        };
+        const bookingResult = await autoBookAppointment({
+            lead: updated || leadForInfo,
+            chosenSlot,
+            patientInfo: { fullName, birthDate, phone, email }
+        });
 
-        // PASSO 1: NOME
-        if (step === "name") {
-            const name = extractName(text);
-            if (!name) return "Pra eu confirmar certinho: qual o **nome completo** do paciente? 💚";
+        if (bookingResult.success) {
+            const appointmentId =
+                bookingResult?.appointment?._id ||
+                bookingResult?.appointmentId ||
+                bookingResult?.appointment;
 
-            await Leads.findByIdAndUpdate(lead._id, {
-                $set: { "patientInfo.fullName": name, pendingPatientInfoStep: "birth" }
-            }).catch(() => { });
-
-            return "Obrigada! Agora me manda a **data de nascimento** (dd/mm/aaaa) 💚";
-        }
-
-        // PASSO 2: NASCIMENTO
-        if (step === "birth") {
-            const birthDate = extractBirth(text);
-            if (!birthDate) return "Me manda a **data de nascimento** no formato **dd/mm/aaaa** 💚";
-
-            await Leads.findByIdAndUpdate(lead._id, {
-                $set: { "patientInfo.birthDate": birthDate }
-            }).catch(() => { });
-
-            // pega os dados completos do lead (com nome salvo)
-            const updated = await Leads.findById(lead._id).lean().catch(() => null);
-            const fullName = updated?.patientInfo?.fullName || null;
-
-            if (!fullName || !chosenSlot) {
-                // fallback bem seguro
-                return "Perfeito! Só mais um detalhe: confirma pra mim o **nome completo** do paciente? 💚";
+            if (!appointmentId) {
+                console.error("[BOOKING] success=true mas sem appointmentId");
+                return "Tive um problema ao confirmar. Vou pedir pra equipe te ajudar 💚";
             }
 
-            const phone =
-                updated?.contact?.phone ||
-                leadForInfo?.contact?.phone ||
-                null;
+            let appointment = null;
+            try {
+                appointment = await Appointment.findById(appointmentId).lean();
+            } catch (e) { }
 
-            const email =
-                updated?.contact?.email ||
-                leadForInfo?.contact?.email ||
-                null;
+            if (!appointment) {
+                console.error("[BOOKING] Appointment success mas não está no BD:", appointmentId);
+                return "Tive um problema ao confirmar. Vou pedir pra equipe te ajudar 💚";
+            }
 
             await Leads.findByIdAndUpdate(lead._id, {
                 $set: {
-                    "patientInfo.birthDate": birthDate,
-                    "patientInfo.phone": phone,
-                    "patientInfo.email": email,
+                    stage: "paciente",
+                    pendingPatientInfoForScheduling: false,
+                    pendingPatientInfoStep: null,
+                    pendingChosenSlot: null,
+                    pendingSchedulingSlots: null,
                 }
             }).catch(() => { });
 
-            const bookingResult = await autoBookAppointment({
-                lead: updated || leadForInfo,
-                chosenSlot,
-                patientInfo: { fullName, birthDate, phone, email }
-            });
+            // ✅ Mensagem final de confirmação (usa chosenSlot se quiser; aqui uso appointment se tiver)
+            const when =
+                (appointment?.date && appointment?.time)
+                    ? `${formatDatePtBr(appointment.date)} às ${appointment.time}`
+                    : (chosenSlot ? formatSlot(chosenSlot) : "o horário combinado");
 
-            if (bookingResult.success) {
-                const appointmentId =
-                    bookingResult?.appointment?._id ||
-                    bookingResult?.appointmentId ||
-                    bookingResult?.appointment;
-
-                if (!appointmentId) {
-                    console.error("[BOOKING] success=true mas sem appointmentId");
-                    return "Tive um problema ao confirmar. Vou pedir pra equipe te ajudar 💚";
-                }
-
-                let appointment = null;
-                try {
-                    appointment = await Appointment.findById(appointmentId).lean();
-                } catch (e) { }
-
-                if (!appointment) {
-                    console.error("[BOOKING] Appointment success mas não está no BD:", appointmentId);
-                    return "Tive um problema ao confirmar. Vou pedir pra equipe te ajudar 💚";
-                }
-
-                await Leads.findByIdAndUpdate(lead._id, {
-                    $set: {
-                        stage: "paciente",
-                        pendingPatientInfoForScheduling: false,
-                        pendingPatientInfoStep: null,
-                        pendingChosenSlot: null,
-                        pendingSchedulingSlots: null,
-                    }
-                }).catch(() => { });
-
-                // ✅ Mensagem final de confirmação (usa chosenSlot se quiser; aqui uso appointment se tiver)
-                const when =
-                    (appointment?.date && appointment?.time)
-                        ? `${formatDatePtBr(appointment.date)} às ${appointment.time}`
-                        : (chosenSlot ? formatSlot(chosenSlot) : "o horário combinado");
-
-                return `Perfeito! Agendamento confirmado para **${when}**. Qualquer coisa, estou por aqui 💚`;
-            }
-
-
-            if (bookingResult.code === "TIME_CONFLICT") {
-                return "Esse horário acabou de ser preenchido 😕 Quer que eu te envie outras opções? 💚";
-            }
-
-            return "Tive um probleminha ao confirmar. Já vou pedir pra equipe te ajudar por aqui 💚";
+            return `Perfeito! Agendamento confirmado para **${when}**. Qualquer coisa, estou por aqui 💚`;
         }
+
+
+        if (bookingResult.code === "TIME_CONFLICT") {
+            return "Esse horário acabou de ser preenchido 😕 Quer que eu te envie outras opções? 💚";
+        }
+
+        return "Tive um probleminha ao confirmar. Já vou pedir pra equipe te ajudar por aqui 💚";
     }
+}
 
 
-    // 🔁 Anti-resposta duplicada por messageId
-    if (messageId) {
-        const lastResponse = recentResponses.get(messageId);
-        if (lastResponse && Date.now() - lastResponse < 5000) {
-            console.warn(`[ORCHESTRATOR] Resposta duplicada bloqueada para ${messageId}`);
-            return null;
-        }
-        recentResponses.set(messageId, Date.now());
-
-        if (recentResponses.size > 100) {
-            const oldest = [...recentResponses.entries()].sort((a, b) => a[1] - b[1])[0];
-            recentResponses.delete(oldest[0]);
-        }
+// 🔁 Anti-resposta duplicada por messageId
+if (messageId) {
+    const lastResponse = recentResponses.get(messageId);
+    if (lastResponse && Date.now() - lastResponse < 5000) {
+        console.warn(`[ORCHESTRATOR] Resposta duplicada bloqueada para ${messageId}`);
+        return null;
     }
+    recentResponses.set(messageId, Date.now());
 
-    const baseContext = lead?._id
-        ? await enrichLeadContext(lead._id)
-        : {
-            stage: "novo",
-            isFirstContact: true,
-            messageCount: 0,
-            conversationHistory: [],
-            conversationSummary: null,
-            shouldGreet: true,
-        };
+    if (recentResponses.size > 100) {
+        const oldest = [...recentResponses.entries()].sort((a, b) => a[1] - b[1])[0];
+        recentResponses.delete(oldest[0]);
+    }
+}
 
-    // 1) ContextPack (com guard)
-    const contextPack = lead?._id ? await buildContextPack(lead._id).catch(() => null) : null;
-
-    // 2) Merge final do contexto (ContextPack entra ANTES das flags)
-    const enrichedContext = {
-        ...baseContext,
-        ...context,
-        ...(contextPack ? { mode: contextPack.mode, urgency: contextPack.urgency } : {}),
+const baseContext = lead?._id
+    ? await enrichLeadContext(lead._id)
+    : {
+        stage: "novo",
+        isFirstContact: true,
+        messageCount: 0,
+        conversationHistory: [],
+        conversationSummary: null,
+        shouldGreet: true,
     };
 
-    // ✅ set correto (pra triagem e pro LLM)
-    enrichedContext.lastUserText = text;
-    enrichedContext.currentUserText = text;
+// 1) ContextPack (com guard)
+const contextPack = lead?._id ? await buildContextPack(lead._id).catch(() => null) : null;
+
+// 2) Merge final do contexto (ContextPack entra ANTES das flags)
+const enrichedContext = {
+    ...baseContext,
+    ...context,
+    ...(contextPack ? { mode: contextPack.mode, urgency: contextPack.urgency } : {}),
+};
+
+// ✅ set correto (pra triagem e pro LLM)
+enrichedContext.lastUserText = text;
+enrichedContext.currentUserText = text;
 
 
-    if (contextPack?.mode) console.log("[AmandaAI] ContextPack mode:", contextPack.mode);
+if (contextPack?.mode) console.log("[AmandaAI] ContextPack mode:", contextPack.mode);
 
-    // 🧠 Análise inteligente (uma vez) — ANTES dos flags, pra alimentar triagem/idade
-    let analysis = null;
-    try {
-        analysis = await analyzeLeadMessage({
-            text,
-            lead,
-            history: enrichedContext.conversationHistory || [],
-        });
-    } catch (err) {
-        console.warn("[ORCHESTRATOR] leadIntelligence falhou no orquestrador:", err.message);
+// 🧠 Análise inteligente (uma vez) — ANTES dos flags, pra alimentar triagem/idade
+let analysis = null;
+try {
+    analysis = await analyzeLeadMessage({
+        text,
+        lead,
+        history: enrichedContext.conversationHistory || [],
+    });
+} catch (err) {
+    console.warn("[ORCHESTRATOR] leadIntelligence falhou no orquestrador:", err.message);
+}
+
+// 🔗 Integra idade/perfil detectados pela inteligência ao contexto (pra não perguntar de novo)
+if (analysis?.extracted) {
+    const extracted = analysis.extracted || {};
+    let detectedAgeGroup = null;
+
+    const idade = typeof extracted.idade === "number" ? extracted.idade : null;
+    const idadeRangeRaw =
+        extracted.idadeRange ||
+        extracted.faixaEtaria ||
+        extracted.faixa_etaria ||
+        extracted.ageRange ||
+        extracted.age_group ||
+        null;
+
+    if (idadeRangeRaw) {
+        const r = String(idadeRangeRaw).toLowerCase();
+        if (/(bebe|bebê|1a3|4a6|7a12|crianc|crianç|infantil|escolar)/.test(r)) {
+            detectedAgeGroup = "crianca";
+        } else if (/(adolescente|13a17)/.test(r)) {
+            detectedAgeGroup = "adolescente";
+        } else if (/(adulto|18\+|maior)/.test(r)) {
+            detectedAgeGroup = "adulto";
+        }
     }
 
-    // 🔗 Integra idade/perfil detectados pela inteligência ao contexto (pra não perguntar de novo)
-    if (analysis?.extracted) {
-        const extracted = analysis.extracted || {};
-        let detectedAgeGroup = null;
+    if (!detectedAgeGroup && Number.isFinite(idade)) {
+        if (idade <= 12) detectedAgeGroup = "crianca";
+        else if (idade <= 17) detectedAgeGroup = "adolescente";
+        else detectedAgeGroup = "adulto";
+    }
 
-        const idade = typeof extracted.idade === "number" ? extracted.idade : null;
-        const idadeRangeRaw =
-            extracted.idadeRange ||
-            extracted.faixaEtaria ||
-            extracted.faixa_etaria ||
-            extracted.ageRange ||
-            extracted.age_group ||
-            null;
+    const perfilRaw =
+        extracted.perfil ||
+        extracted.perfilPaciente ||
+        extracted.profile ||
+        extracted.patientProfile ||
+        null;
 
-        if (idadeRangeRaw) {
-            const r = String(idadeRangeRaw).toLowerCase();
-            if (/(bebe|bebê|1a3|4a6|7a12|crianc|crianç|infantil|escolar)/.test(r)) {
-                detectedAgeGroup = "crianca";
-            } else if (/(adolescente|13a17)/.test(r)) {
-                detectedAgeGroup = "adolescente";
-            } else if (/(adulto|18\+|maior)/.test(r)) {
-                detectedAgeGroup = "adulto";
+    if (!detectedAgeGroup && perfilRaw) {
+        const p = String(perfilRaw).toLowerCase();
+        if (/crianc|crianç|infantil|escolar|bebe|bebê/.test(p)) detectedAgeGroup = "crianca";
+        else if (/adolesc/.test(p)) detectedAgeGroup = "adolescente";
+        else if (/adult/.test(p)) detectedAgeGroup = "adulto";
+    }
+
+    if (detectedAgeGroup) {
+        // joga pro contexto da conversa (pra triagem não perguntar de novo)
+        if (!enrichedContext.ageGroup) {
+            enrichedContext.ageGroup = detectedAgeGroup;
+        }
+
+        // persiste no lead se ainda não tiver salvo
+        if (lead?._id && !lead?.ageGroup) {
+            try {
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: {
+                        ageGroup: detectedAgeGroup,
+                        "contextMemory.hasAge": true,
+                        "contextMemory.lastAgeDetected": new Date(),
+                    },
+                }).catch(() => { });
+                lead.ageGroup = detectedAgeGroup;
+            } catch (e) {
+                // não quebra o fluxo se der erro de persistência
             }
         }
+    }
+}
 
-        if (!detectedAgeGroup && Number.isFinite(idade)) {
-            if (idade <= 12) detectedAgeGroup = "crianca";
-            else if (idade <= 17) detectedAgeGroup = "adolescente";
-            else detectedAgeGroup = "adulto";
-        }
+// 🔄 Se o lead já tem ageGroup salvo, garante que o contexto enxerga
+if (!enrichedContext.ageGroup && lead?.ageGroup) {
+    enrichedContext.ageGroup = lead.ageGroup;
+}
 
-        const perfilRaw =
-            extracted.perfil ||
-            extracted.perfilPaciente ||
-            extracted.profile ||
-            extracted.patientProfile ||
-            null;
+// 3) Calcula FLAGS uma vez pro fluxo todo
+let flags = {};
+try {
+    flags = detectAllFlags(text, lead, enrichedContext) || {};
+} catch (err) {
+    console.warn("[ORCHESTRATOR] detectAllFlags falhou:", err.message);
+    flags = {};
+}
 
-        if (!detectedAgeGroup && perfilRaw) {
-            const p = String(perfilRaw).toLowerCase();
-            if (/crianc|crianç|infantil|escolar|bebe|bebê/.test(p)) detectedAgeGroup = "crianca";
-            else if (/adolesc/.test(p)) detectedAgeGroup = "adolescente";
-            else if (/adult/.test(p)) detectedAgeGroup = "adulto";
-        }
+const quick = extractQuickFactsFromText(text);
 
-        if (detectedAgeGroup) {
-            // joga pro contexto da conversa (pra triagem não perguntar de novo)
-            if (!enrichedContext.ageGroup) {
-                enrichedContext.ageGroup = detectedAgeGroup;
-            }
+if (lead?._id && quick.ageGroup) {
+    const update = {
+        ageGroup: quick.ageGroup,
+        "contextMemory.hasAge": true,
+        "contextMemory.lastAgeDetected": new Date(),
+    };
 
-            // persiste no lead se ainda não tiver salvo
-            if (lead?._id && !lead?.ageGroup) {
-                try {
-                    await Leads.findByIdAndUpdate(lead._id, {
-                        $set: {
-                            ageGroup: detectedAgeGroup,
-                            "contextMemory.hasAge": true,
-                            "contextMemory.lastAgeDetected": new Date(),
-                        },
-                    }).catch(() => { });
-                    lead.ageGroup = detectedAgeGroup;
-                } catch (e) {
-                    // não quebra o fluxo se der erro de persistência
-                }
-            }
-        }
+    if (quick.ageValue) {
+        update["contextMemory.ageValue"] = quick.ageValue; // ex: "7 meses"
     }
 
-    // 🔄 Se o lead já tem ageGroup salvo, garante que o contexto enxerga
-    if (!enrichedContext.ageGroup && lead?.ageGroup) {
-        enrichedContext.ageGroup = lead.ageGroup;
-    }
+    await Leads.findByIdAndUpdate(lead._id, { $set: update }).catch(() => { });
 
-    // 3) Calcula FLAGS uma vez pro fluxo todo
-    let flags = {};
-    try {
-        flags = detectAllFlags(text, lead, enrichedContext) || {};
-    } catch (err) {
-        console.warn("[ORCHESTRATOR] detectAllFlags falhou:", err.message);
-        flags = {};
-    }
+    // ✅ Atualiza objeto local também
+    lead.ageGroup = quick.ageGroup;
+    lead.contextMemory = { ...lead.contextMemory, hasAge: true, ageValue: quick.ageValue };
 
-    const quick = extractQuickFactsFromText(text);
+    // ✅ Propaga pro contexto
+    enrichedContext.ageGroup = quick.ageGroup;
+}
 
-    // 1) Joga pro contexto
-    if (quick.ageGroup && !enrichedContext.ageGroup) {
-        enrichedContext.ageGroup = quick.ageGroup;
-    }
+// 🔥 Mesma lógica pro período preferido
+if (lead?._id && quick.preferredPeriod && !lead.pendingPreferredPeriod) {
+    await Leads.findByIdAndUpdate(lead._id, {
+        $set: { pendingPreferredPeriod: quick.preferredPeriod }
+    }).catch(() => { });
 
-    if (quick.preferredPeriod && !enrichedContext.preferredPeriod) {
-        enrichedContext.preferredPeriod = quick.preferredPeriod;
-    }
+    lead.pendingPreferredPeriod = quick.preferredPeriod;
+    enrichedContext.preferredPeriod = quick.preferredPeriod;
+}
 
-    if (quick.isChild) {
-        flags.mentionsChild = true;
-    }
+// 1) Joga pro contexto
+if (quick.ageGroup && !enrichedContext.ageGroup) {
+    enrichedContext.ageGroup = quick.ageGroup;
+}
 
-    // 2) Persiste no lead (memória longa)
-    if (lead?._id) {
-        const update = {};
+if (quick.preferredPeriod && !enrichedContext.preferredPeriod) {
+    enrichedContext.preferredPeriod = quick.preferredPeriod;
+}
 
-        if ((quick.ageGroup || quick.ageValue) && lead?._id) {
-            const update = {
-                ageGroup: quick.ageGroup || lead.ageGroup || "crianca",
-                "contextMemory.hasAge": true,
-                "contextMemory.lastAgeDetected": new Date(),
-            };
+if (quick.isChild) {
+    flags.mentionsChild = true;
+}
 
-            if (quick.ageValue) update["contextMemory.ageValue"] = quick.ageValue;
+// 2) Persiste no lead (memória longa)
+if (lead?._id) {
+    const update = {};
 
-            await Leads.findByIdAndUpdate(lead._id, { $set: update }).catch(() => { });
-            Object.assign(lead, update);
-            enrichedContext.ageGroup = update.ageGroup;
-        }
+    if ((quick.ageGroup || quick.ageValue) && lead?._id) {
+        const update = {
+            ageGroup: quick.ageGroup || lead.ageGroup || "crianca",
+            "contextMemory.hasAge": true,
+            "contextMemory.lastAgeDetected": new Date(),
+        };
 
+        if (quick.ageValue) update["contextMemory.ageValue"] = quick.ageValue;
 
-        if (Object.keys(update).length) {
-            await Leads.findByIdAndUpdate(lead._id, { $set: update }).catch(() => { });
-            Object.assign(lead, update);
-        }
+        await Leads.findByIdAndUpdate(lead._id, { $set: update }).catch(() => { });
+        Object.assign(lead, update);
+        enrichedContext.ageGroup = update.ageGroup;
     }
 
 
-    // 4) flags já enxergam mode/urgency
-    const bookingProduct = mapFlagsToBookingProduct({ ...flags, text }, lead);
-    const areaSource = bookingProduct?._areaSource || "none";
+    if (Object.keys(update).length) {
+        await Leads.findByIdAndUpdate(lead._id, { $set: update }).catch(() => { });
+        Object.assign(lead, update);
+    }
+}
 
-    const isSchedulingLikeText =
-        GENERIC_SCHEDULE_EVAL_REGEX.test(normalized) ||
-        SCHEDULING_REGEX.test(normalized);
 
-    // ❗ NÃO trata “quanto custa a avaliação” como agendamento
-    const wantsScheduling =
-        flags.wantsSchedule ||
-        flags.wantsSchedulingNow ||
-        (isSchedulingLikeText && !flags.asksPrice);
+// 4) flags já enxergam mode/urgency
+const bookingProduct = mapFlagsToBookingProduct({ ...flags, text }, lead);
+const areaSource = bookingProduct?._areaSource || "none";
 
-    // 🚦 INÍCIO + PROGRESSÃO DA TRIAGEM (SEM STALE LEAD)
-    // Regra: 1 pergunta por vez.
-    // Fluxo: ask_profile -> ask_area -> ask_period -> done (SEM ask_complaint, SEM pedir dia)
-    const schedulingConversation =
-        wantsScheduling ||
-        Boolean(lead?.triageStep) ||
-        lead?.stage === "interessado_agendamento" ||
-        enrichedContext?.stage === "interessado_agendamento" ||
-        enrichedContext?.stage === "triagem_agendamento";
+const isSchedulingLikeText =
+    GENERIC_SCHEDULE_EVAL_REGEX.test(normalized) ||
+    SCHEDULING_REGEX.test(normalized);
 
-    if (lead?._id && schedulingConversation && !lead?.pendingPatientInfoForScheduling) {
-        const { hasProfile: hasProfileNow } = hasAgeOrProfileNow(text, flags, enrichedContext, lead);
-        const hasAreaNow = Boolean(
-            flags?.therapyArea ||
-            bookingProduct?.therapyArea ||
-            lead?.autoBookingContext?.therapyArea ||
-            lead?.therapyArea
-        );
-        const periodNow = detectPeriod(text);
+// ❗ NÃO trata “quanto custa a avaliação” como agendamento
+const wantsScheduling =
+    flags.wantsSchedule ||
+    flags.wantsSchedulingNow ||
+    (isSchedulingLikeText && !flags.asksPrice);
 
-        let step = lead?.triageStep || "ask_profile";
+// 🚦 INÍCIO + PROGRESSÃO DA TRIAGEM (SEM STALE LEAD)
+// Regra: 1 pergunta por vez.
+// Fluxo: ask_profile -> ask_area -> ask_period -> done (SEM ask_complaint, SEM pedir dia)
+const schedulingConversation =
+    wantsScheduling ||
+    Boolean(lead?.triageStep) ||
+    lead?.stage === "interessado_agendamento" ||
+    enrichedContext?.stage === "interessado_agendamento" ||
+    enrichedContext?.stage === "triagem_agendamento";
 
-        // Avança no máximo 1 step por mensagem (1 pergunta por vez)
-        if (step === "ask_profile" && hasProfileNow) step = hasAreaNow ? "ask_period" : "ask_area";
-        else if (step === "ask_area" && hasAreaNow) step = "ask_period";
-        else if (step === "ask_period" && periodNow) step = "done";
+if (lead?._id && schedulingConversation && !lead?.pendingPatientInfoForScheduling) {
+    // ✅ REFRESH: pega lead atualizado do banco (com dados salvos acima)
+    const freshLead = await Leads.findById(lead._id).lean().catch(() => null);
+    if (freshLead) {
+        lead = { ...lead, ...freshLead }; // merge
+    }
 
-        if (step !== lead?.triageStep) {
-            const update = { triageStep: step };
+    // 🔥 CHECAGEM INTELIGENTE: só entra na triagem se REALMENTE faltar algo
+    const hasProfileNow = Boolean(
+        lead.ageGroup ||
+        enrichedContext.ageGroup ||
+        quick.ageGroup ||
+        /\b\d{1,2}\s*(anos?|m[eê]s|meses)\b/i.test(text)
+    );
 
-            if (!lead?.triageStep) update.stage = "triagem_agendamento";
-            if (step === "done") {
-                update.stage = "interessado_agendamento";
-                update.pendingPreferredPeriod = periodNow || lead?.pendingPreferredPeriod || null;
-            }
+    const hasAreaNow = Boolean(
+        bookingProduct?.therapyArea ||
+        lead?.autoBookingContext?.therapyArea ||
+        lead?.therapyArea ||
+        enrichedContext?.therapyArea
+    );
 
-            await Leads.findByIdAndUpdate(lead._id, { $set: update }).catch(() => { });
-            lead = { ...lead, ...update };
-        }
+    const hasPeriodNow = Boolean(
+        lead?.pendingPreferredPeriod ||
+        enrichedContext?.preferredPeriod ||
+        quick.preferredPeriod ||
+        detectPeriod(text)
+    );
 
-        // bloqueio forte: se não terminou triagem, só pergunta o próximo passo
+    // ✅ Se já tem TUDO, pula triagem (avança direto pra slots)
+    if (hasProfileNow && hasAreaNow && hasPeriodNow) {
+        // Força step=done pra sair da triagem
         if (lead.triageStep && lead.triageStep !== "done") {
-            return ensureSingleHeart(buildTriageSchedulingMessage({ lead }));
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: { triageStep: "done", stage: "interessado_agendamento" }
+            }).catch(() => { });
+
+            lead.triageStep = "done";
+            lead.stage = "interessado_agendamento";
         }
     }
 
+    // ✅ Se ainda falta algo, avança 1 step
+    let step = lead?.triageStep || "ask_profile";
 
-    // 🚧 BLOQUEIO FORTE: triagem tem prioridade absoluta
-    if (
-        lead?.triageStep &&
-        lead.triageStep !== "done" &&
-        !lead?.pendingPatientInfoForScheduling
-    ) {
-        return ensureSingleHeart(
-            buildTriageSchedulingMessage({ lead })
-        );
+    if (step === "ask_profile" && hasProfileNow) {
+        step = hasAreaNow ? "ask_period" : "ask_area";
+    } else if (step === "ask_area" && hasAreaNow) {
+        step = "ask_period";
+    } else if (step === "ask_period" && hasPeriodNow) {
+        step = "done";
     }
+
+    // ✅ Só atualiza se mudou
+    if (step !== lead?.triageStep) {
+        const update = { triageStep: step };
+
+        if (!lead?.triageStep) update.stage = "triagem_agendamento";
+
+        if (step === "done") {
+            update.stage = "interessado_agendamento";
+            update.pendingPreferredPeriod = hasPeriodNow || lead?.pendingPreferredPeriod || null;
+        }
+
+        await Leads.findByIdAndUpdate(lead._id, { $set: update }).catch(() => { });
+        lead = { ...lead, ...update };
+    }
+
+    // 🚨 BLOQUEIO: se ainda não terminou, só pergunta o próximo
+    if (lead.triageStep && lead.triageStep !== "done") {
+        return ensureSingleHeart(buildTriageSchedulingMessage({ lead }));
+    }
+
+
+    // bloqueio forte: se não terminou triagem, só pergunta o próximo passo
+    if (lead.triageStep && lead.triageStep !== "done") {
+        return ensureSingleHeart(buildTriageSchedulingMessage({ lead }));
+    }
+
 
     // 🧮 Normaliza contagem de mensagens
     const historyLen = Array.isArray(enrichedContext.conversationHistory)
@@ -1850,6 +1912,7 @@ export default async function getOptimizedAmandaResponse({
     const finalScoped = enforceClinicScope(genericAnswer, text);
     return ensureSingleHeart(finalScoped);
 }
+
 function safeHour(slot) {
     const t = slot?.time;
     if (typeof t !== "string") return null;
@@ -1908,9 +1971,9 @@ function extractQuickFactsFromText(text = "") {
     const t = String(text || "");
     const lower = t.toLowerCase();
 
-    // idade
+    // 🔥 REGEX ROBUSTA - captura "7 mês", "3 anos", "18 meses", etc
     const yearsMatch = t.match(/\b(\d{1,2})\s*anos?\b/i);
-    const monthsMatch = t.match(/\b(\d{1,2})\s*(mes|meses)\b/i);
+    const monthsMatch = t.match(/\b(\d{1,2})\s*(m[eê]s|meses)\b/i); // ← FIX: aceita "mês" com acento
 
     let ageNumber = null;
     let ageUnit = null;
@@ -1919,7 +1982,7 @@ function extractQuickFactsFromText(text = "") {
     if (monthsMatch) {
         ageNumber = parseInt(monthsMatch[1], 10);
         ageUnit = "meses";
-        ageGroup = "crianca";
+        ageGroup = "crianca"; // ← bebê sempre é criança
     } else if (yearsMatch) {
         ageNumber = parseInt(yearsMatch[1], 10);
         ageUnit = "anos";
@@ -1930,9 +1993,8 @@ function extractQuickFactsFromText(text = "") {
         }
     }
 
-    // filho/filha = criança
+    // 🔥 FALLBACK: palavras-chave
     const isChildByWords = /\b(filh[oa]|crianç|bebê|bebe|menino|menina)\b/i.test(t);
-
     if (isChildByWords && !ageGroup) {
         ageGroup = "crianca";
     }
@@ -1943,6 +2005,7 @@ function extractQuickFactsFromText(text = "") {
     if (/\btarde\b/i.test(lower)) preferredPeriod = "tarde";
 
     return {
+        ageValue: ageNumber ? `${ageNumber} ${ageUnit}` : null, // ← NOVO: guarda valor bruto
         ageNumber,
         ageUnit,
         ageGroup,
@@ -2506,6 +2569,27 @@ async function callAmandaAIWithContext(
             scheduleInfoNote +=
                 " Ainda falta deixar claro se é criança, adolescente ou adulto.";
         }
+    }
+
+    // 🧠 Checa se já tem tudo pra não ficar perguntando o que já sabemos
+    const extracted = lead?.qualificationData?.extractedInfo || {};
+    const missing = [];
+
+    if (!extracted.idade) missing.push("idade");
+    if (!extracted.especialidade && !lead?.therapyArea) missing.push("especialidade");
+    if (!extracted.disponibilidade && !lead?.pendingPatientInfoForScheduling) missing.push("período");
+
+    if (missing.length > 0) {
+        const prompt = buildDynamicPromptForMissing(missing, extracted);
+        console.log("⚙️ [AmandaFlow] Gerando prompt dinâmico:", prompt);
+
+        return {
+            thought_process: "Faltam informações básicas para o agendamento. Gerando pergunta contextual.",
+            reply_to_user: prompt,
+            update_lead_state: {
+                triageStep: "ask_missing_info"
+            }
+        };
     }
 
     const systemContext = buildSystemContext(flags, userText, stage);

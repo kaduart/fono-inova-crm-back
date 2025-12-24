@@ -150,3 +150,33 @@ export function getUrgencyTrigger(stage, daysSinceLastContact) {
 
     return triggers[stage] || null;
 }
+
+export function buildDynamicPromptForMissing(missing, extracted = {}) {
+    const partes = [];
+
+    if (missing.includes("idade")) {
+        partes.push("a idade do paciente (em anos ou meses)");
+    }
+
+    if (missing.includes("especialidade")) {
+        partes.push("se é Psicologia, Fonoaudiologia, Terapia Ocupacional ou outra área");
+    }
+
+    if (missing.includes("período")) {
+        partes.push("se vocês preferem atendimento de manhã ou à tarde");
+    }
+
+    if (partes.length === 0) {
+        // nada faltando, não deveria ter caído aqui
+        return "Perfeito! Me conta só mais um detalhe pra eu organizar certinho aqui, por favor. 💚";
+    }
+
+    const lista = partes.join(" e ");
+    const dor = extracted.queixa || extracted.motivo || null;
+
+    const inicio = dor
+        ? `Perfeito, entendi a dificuldade que você comentou (${dor}). `
+        : `Perfeito, entendi. `;
+
+    return `${inicio}Pra eu organizar certinho aqui e já deixar tudo alinhado com a equipe, me conta só ${lista}? 💚`;
+}
