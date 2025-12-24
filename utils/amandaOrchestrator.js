@@ -166,6 +166,95 @@ function normalizeSlots(raw) {
     return { primary, alternativesSamePeriod: same, alternativesOtherPeriod: other };
 }
 
+
+// -----------------------------------------------------------------------------
+// Slots menu compat layer (do NOT remove existing builder; this only normalizes)
+// -----------------------------------------------------------------------------
+// buildSlotMenuMessage historically returned different shapes across refactors:
+//   - string (full message)
+//   - { message, optionsText, ordered, letters }
+//   - { message } only
+//   - { optionsText, ordered, letters } without message
+// This helper guarantees: { menuMsg, optionsText, ordered, letters }.
+const SLOT_LETTERS = ["A", "B", "C", "D", "E", "F"];
+
+function flattenNormalizedSlots(slotsNorm) {
+    return [
+        slotsNorm?.primary,
+        ...(slotsNorm?.alternativesSamePeriod || []),
+        ...(slotsNorm?.alternativesOtherPeriod || []),
+    ].filter(Boolean);
+}
+
+function buildOptionsTextFromSlots(rawSlots) {
+    const norm = normalizeSlots(rawSlots);
+    const flat = flattenNormalizedSlots(norm).slice(0, 6);
+    if (!flat.length) return "";
+    return flat.map((s, i) => `${SLOT_LETTERS[i]}) ${formatSlot(s)}`).join("\n");
+}
+
+function buildSlotMenuCompat(rawSlots) {
+    const norm = normalizeSlots(rawSlots);
+
+    // defaults computed locally (never depend on builder)
+    const orderedDefault = flattenNormalizedSlots(norm).slice(0, 6);
+    const lettersDefault = SLOT_LETTERS.slice(0, orderedDefault.length);
+    const optionsDefault = buildOptionsTextFromSlots(norm);
+
+    let res = null;
+    try {
+        res = buildSlotMenuMessage(norm);
+    } catch (_) {
+        res = null;
+    }
+
+    if (typeof res === "string") {
+        const menuMsg = res;
+        return {
+            menuMsg,
+            optionsText: optionsDefault || menuMsg,
+            ordered: orderedDefault,
+            letters: lettersDefault,
+        };
+    }
+
+    if (res && typeof res === "object") {
+        const menuMsg = res.message || res.menuMsg || null;
+        const ordered = Array.isArray(res.ordered) && res.ordered.length ? res.ordered : orderedDefault;
+        const letters = Array.isArray(res.letters) && res.letters.length ? res.letters : SLOT_LETTERS.slice(0, ordered.length);
+        const optionsText = res.optionsText || optionsDefault || (typeof menuMsg === "string" ? menuMsg : "");
+        return { menuMsg, optionsText, ordered, letters };
+    }
+
+    return { menuMsg: null, optionsText: optionsDefault, ordered: orderedDefault, letters: lettersDefault };
+}
+
+function buildSlotMenuForPeriodCompat(rawSlots, desiredPeriod, opts = {}) {
+    const norm = normalizeSlots(rawSlots);
+    let res = null;
+    try {
+        res = buildSlotMenuMessageForPeriod(norm, desiredPeriod, opts);
+    } catch (_) {
+        res = null;
+    }
+
+    if (typeof res === "string") {
+        return { message: res, optionsText: res, ordered: [], letters: SLOT_LETTERS };
+    }
+
+    if (res && typeof res === "object") {
+        return {
+            message: res.message || res.menuMsg || null,
+            optionsText: res.optionsText || "",
+            ordered: Array.isArray(res.ordered) ? res.ordered : [],
+            letters: Array.isArray(res.letters) ? res.letters : SLOT_LETTERS,
+        };
+    }
+
+    return { message: null, optionsText: "", ordered: [], letters: SLOT_LETTERS };
+}
+
+
 function hasAnySlot(raw) {
     if (!raw) return false;
     const s = normalizeSlots(raw);
@@ -254,7 +343,13 @@ function menuContainsSlot(chosen, rawMenu) {
     return all.some((s) => slotKey(s) === key);
 }
 
-
+function detectPeriod(txt = "") {
+    const t = String(txt).toLowerCase();
+    if (/\b(manh[ãa]|cedo)\b/i.test(t)) return "manha";
+    if (/\b(tarde)\b/i.test(t)) return "tarde";
+    if (/\b(noite)\b/i.test(t)) return "noite";
+    return null;
+}
 /**
  * 🎯 ORQUESTRADOR COM CONTEXTO INTELIGENTE
  */
@@ -379,22 +474,22 @@ export default async function getOptimizedAmandaResponse({
         return { hasProfile, inferred };
     }
 
-    // ✅ ADICIONAR parâmetro conversationHistory
     function buildTriageSchedulingMessage({ lead }) {
         if (lead.triageStep === "ask_profile") {
             return "Perfeito 😊 Pra eu te orientar certinho, qual a idade do paciente? 💚";
         }
 
-        if (lead.triageStep === "ask_complaint") {
-            return "E me conta: o que vocês têm notado no dia a dia que motivou procurar a avaliação? 💚";
+        if (lead.triageStep === "ask_area") {
+            return "Qual atendimento você está buscando? (Fono, Psicologia, TO, Fisioterapia ou Neuropsico) 💚";
         }
 
         if (lead.triageStep === "ask_period") {
-            return "Ótimo! Qual dia da semana e período (manhã ou tarde) fica melhor pra vocês? 💚";
+            return "Qual período fica melhor pra vocês: manhã ou tarde? 💚";
         }
 
-        return "Me conta só mais um pouquinho pra eu te ajudar certinho, o que tem percebido? 💚";
+        return "Me diz só mais um detalhe pra eu te ajudar certinho: é pra qual atendimento? 💚";
     }
+
 
 
     // ✅ Wrappers defensivos (pra não quebrar se helpers não estiverem no arquivo/import)
@@ -602,6 +697,9 @@ export default async function getOptimizedAmandaResponse({
 
     // 4) flags já enxergam mode/urgency
     let flags = detectAllFlags(text, lead, enrichedContext);
+    const bookingProduct = mapFlagsToBookingProduct({ ...flags, text }, lead);
+    const areaSource = bookingProduct?._areaSource || "none";
+
     const isSchedulingLikeText =
         GENERIC_SCHEDULE_EVAL_REGEX.test(normalized) ||
         SCHEDULING_REGEX.test(normalized);
@@ -611,81 +709,46 @@ export default async function getOptimizedAmandaResponse({
         flags.wantsSchedulingNow ||
         isSchedulingLikeText;
     // 🚦 INÍCIO + PROGRESSÃO DA TRIAGEM (SEM STALE LEAD)
-    if (lead?._id && wantsScheduling && !lead?.pendingPatientInfoForScheduling) {
-        const hasProfileNow = hasAgeOrProfileNow(text, flags, enrichedContext)?.hasProfile;
+    // Regra: 1 pergunta por vez.
+    // Fluxo: ask_profile -> ask_area -> ask_period -> done (SEM ask_complaint, SEM pedir dia)
+    const schedulingConversation =
+        wantsScheduling ||
+        Boolean(lead?.triageStep) ||
+        lead?.stage === "interessado_agendamento";
 
-        const hasComplaintNow =
-            /\b(fala|linguagem|troca\s+letra|autismo|tea|tdah|comport|ansied|aten[cç][aã]o|aprend|sensorial|coordena|dor|les[aã]o|respira|ronco)\b/i
-                .test(text);
+    if (lead?._id && schedulingConversation && !lead?.pendingPatientInfoForScheduling) {
+        const { hasProfile: hasProfileNow } = hasAgeOrProfileNow(text, flags, enrichedContext);
+        const hasAreaNow = Boolean(
+            flags?.therapyArea ||
+            bookingProduct?.therapyArea ||
+            lead?.autoBookingContext?.therapyArea ||
+            lead?.therapyArea
+        );
+        const periodNow = detectPeriod(text);
 
-        const hasPeriodNow =
-            /\b(manh[ãa]|tarde|noite|segunda|ter[çc]a|quarta|quinta|sexta|s[áa]bado|sabado|domingo)\b/i
-                .test(text);
+        let step = lead?.triageStep || "ask_profile";
 
-        // step atual (memória > lead)
-        let step = lead?.triageStep || null;
+        // Avança no máximo 1 step por mensagem (1 pergunta por vez)
+        if (step === "ask_profile" && hasProfileNow) step = hasAreaNow ? "ask_period" : "ask_area";
+        else if (step === "ask_area" && hasAreaNow) step = "ask_period";
+        else if (step === "ask_period" && periodNow) step = "done";
 
-        // se ainda não iniciou, já inicia no step “mais avançado” possível
-        if (!step) step = "ask_profile";
-
-        // avança o máximo possível NA MESMA MENSAGEM
-        if (step === "ask_profile" && hasProfileNow) step = "ask_complaint";
-        if (step === "ask_complaint" && hasComplaintNow) step = "ask_period";
-        if (step === "ask_period" && hasPeriodNow) step = "done";
-
-        // persiste uma vez só
         if (step !== lead?.triageStep) {
             const update = { triageStep: step };
+
             if (!lead?.triageStep) update.stage = "triagem_agendamento";
-            if (step === "done") update.stage = "interessado_agendamento";
+            if (step === "done") {
+                update.stage = "interessado_agendamento";
+                update.pendingPreferredPeriod = periodNow || lead?.pendingPreferredPeriod || null;
+            }
 
             await Leads.findByIdAndUpdate(lead._id, { $set: update }).catch(() => { });
-            // ✅ atualiza o lead em memória (ponto crítico)
             lead = { ...lead, ...update };
         }
 
-        // bloqueio forte (agora com lead atualizado)
+        // bloqueio forte: se não terminou triagem, só pergunta o próximo passo
         if (lead.triageStep && lead.triageStep !== "done") {
             return ensureSingleHeart(buildTriageSchedulingMessage({ lead }));
-        }
-    }
-
-    // ===============================
-    // 🔁 TRIAGEM DE AGENDAMENTO (STATE MACHINE)
-    // ===============================
-    if (lead?._id && lead.triageStep && lead.triageStep !== "done") {
-
-        const profileCheck = hasAgeOrProfileNow(text, flags, enrichedContext);
-
-        // 1️⃣ PERFIL (idade / criança-adulto)
-        if (lead.triageStep === "ask_profile" && profileCheck.hasProfile) {
-            await Leads.findByIdAndUpdate(lead._id, {
-                $set: { triageStep: "ask_complaint" }
-            }).catch(() => { });
-        }
-
-        // 2️⃣ QUEIXA
-        const hasComplaintNow =
-            /\b(fala|linguagem|troca\s+letra|autismo|tea|tdah|comport|ansied|aten[cç][aã]o|aprend|sensorial|coordena|dor|les[aã]o|respira|ronco)\b/i
-                .test(text);
-
-        if (lead.triageStep === "ask_complaint" && hasComplaintNow) {
-            await Leads.findByIdAndUpdate(lead._id, {
-                $set: { triageStep: "ask_period" }
-            }).catch(() => { });
-        }
-
-        // 3️⃣ PERÍODO
-        if (
-            lead.triageStep === "ask_period" &&
-            (/\b(manh[ãa]|tarde|segunda|terça|quarta|quinta|sexta|sábado|domingo)\b/i.test(text))
-        ) {
-            await Leads.findByIdAndUpdate(lead._id, {
-                $set: {
-                    triageStep: "done",
-                    stage: "interessado_agendamento"
-                }
-            }).catch(() => { });
         }
     }
 
@@ -741,8 +804,9 @@ export default async function getOptimizedAmandaResponse({
 
 
         const onlyOne = slotsCtx.all.length === 1 ? slotsCtx.all[0] : null;
-        const isYes = /\b(sim|confirmo|pode|ok|pode\s+ser|fechado|beleza)\b/i.test(text);
         const isNo = /\b(n[aã]o|nao|prefiro\s+outro|outro\s+hor[aá]rio)\b/i.test(text);
+        let isYes = /\b(sim|confirmo|ok|okay|pode\s+ser|fechado|beleza)\b/i.test(text);
+        isYes = isYes && !isNo;
 
         if (onlyOne && isYes) {
             // ✅ COMMIT 4: revalidar slot antes de pedir dados
@@ -768,7 +832,7 @@ export default async function getOptimizedAmandaResponse({
                     }).catch(() => { });
 
                     const normalizedFresh = normalizeSlots(fresh);
-                    const { optionsText } = buildSlotMenuMessage(normalizedFresh);
+                    const { optionsText } = buildSlotMenuCompat(normalizedFresh);
 
                     const msg =
                         `Ops! Esse horário acabou de ser preenchido 😕\n\n` +
@@ -787,7 +851,7 @@ export default async function getOptimizedAmandaResponse({
                     }
                 }).catch(() => { });
 
-                return "Ops! Esse horário acabou de ser preenchido 😕 Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor? 💚";
+                return "Ops! Esse horário acabou de ser preenchido 😕 Você prefere **manhã ou tarde** fica melhor? 💚";
             }
 
             await Leads.findByIdAndUpdate(lead._id, {
@@ -802,7 +866,7 @@ export default async function getOptimizedAmandaResponse({
         }
 
         if (onlyOne && isNo) {
-            return "Sem problema! Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor? 💚";
+            return "Sem problema! Você prefere **manhã ou tarde** fica melhor? 💚";
         }
 
         const hasLetterChoice =
@@ -815,7 +879,7 @@ export default async function getOptimizedAmandaResponse({
 
         const hasDayAndTime = hasDayAndTimePattern(text);
 
-        const { message: menuMsg, optionsText } = buildSlotMenuMessage(slotsCtx);
+        const { menuMsg, optionsText, ordered, letters } = buildSlotMenuCompat(slotsCtx);
 
         if (!menuMsg) {
             return ensureSingleHeart(
@@ -836,7 +900,7 @@ export default async function getOptimizedAmandaResponse({
             const pretty =
                 desired === "manha" ? "manhã" : desired === "tarde" ? "tarde" : "noite";
 
-            const periodMenu = buildSlotMenuMessageForPeriod(slotsCtx, desired, { max: 2 });
+            const periodMenu = buildSlotMenuForPeriodCompat(slotsCtx, desired, { max: 2 });
 
             if (periodMenu?.optionsText) {
                 const lettersHint = (periodMenu.letters || []).join(", ");
@@ -904,7 +968,7 @@ export default async function getOptimizedAmandaResponse({
                         }).catch(() => { });
 
                         const normalizedFresh = normalizeSlots(fresh);
-                        const { optionsText } = buildSlotMenuMessage(normalizedFresh);
+                        const { optionsText } = buildSlotMenuCompat(normalizedFresh);
 
                         const msg =
                             `Ops! Esse horário acabou de ser preenchido 😕\n\n` +
@@ -948,9 +1012,6 @@ export default async function getOptimizedAmandaResponse({
         lead?.stage === "interessado_agendamento"
     );
 
-
-    const bookingProduct = mapFlagsToBookingProduct({ ...flags, text }, lead);
-    const areaSource = bookingProduct?._areaSource || "none";
     // ✅ Persistir explicitArea escolhida (somente quando mapper pediu)
     // (garante que “Quero agendar com a fono” não fique preso em psicologia)
     if (
@@ -1267,7 +1328,7 @@ export default async function getOptimizedAmandaResponse({
 
     if (RESCHEDULE_REGEX.test(normalized)) {
         return ensureSingleHeart(
-            "Claro! Vamos remarcar 😊 Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor pra você? 💚"
+            "Claro! Vamos remarcar 😊 Você prefere **manhã ou tarde** fica melhor pra você? 💚"
         );
     }
 
@@ -1357,25 +1418,25 @@ export default async function getOptimizedAmandaResponse({
             enrichedContext.pendingSchedulingSlots = lead.pendingSchedulingSlots;
         }
     }
+
+    const schedulingActive =
+        wantsScheduling ||
+        lead?.stage === "interessado_agendamento" ||
+        lead?.triageStep === "done" ||
+        Boolean(lead?.pendingPreferredPeriod);
+
     const shouldFetchSlots =
-        wantsScheduling &&
+        schedulingActive &&
         lead?.triageStep === "done" &&
         therapyAreaForSlots &&
         !alreadyHasSlots &&
         !lead?.pendingPatientInfoForScheduling;
 
-
     if (shouldFetchSlots) {
         if (!therapyAreaForSlots) {
             console.log("⚠️ [ORCHESTRATOR] quer agendar mas sem therapyArea (triagem faltando)");
             return ensureSingleHeart(
-                buildTriageSchedulingMessage({
-                    flags,
-                    bookingProduct,
-                    ctx: enrichedContext, // ✅ aqui
-                    conversationHistory: enrichedContext.conversationHistory,
-                    lead,
-                })
+                buildTriageSchedulingMessage({ lead })
             );
         }
 
@@ -1421,10 +1482,40 @@ export default async function getOptimizedAmandaResponse({
                 preferredDate: preferredSpecificDate,
                 daysAhead: 30,
             });
-
             if (!hasAnySlot(availableSlots)) {
-                return ensureSingleHeart("No momento não encontrei horários disponíveis pra esse perfil 😕 Você prefere **manhã ou tarde**?");
+                // fallback: tenta sem filtro de período e mostra o que tem (sem chutar)
+                if (preferredPeriod) {
+                    const fallbackSlots = await findAvailableSlots({
+                        therapyArea: therapyAreaForSlots,
+                        specialties: specialtiesForSlots,
+                        preferredDay: null,
+                        preferredPeriod: null,
+                        preferredDate: preferredSpecificDate,
+                        daysAhead: 30,
+                    });
+
+                    if (hasAnySlot(fallbackSlots)) {
+                        await Leads.findByIdAndUpdate(lead._id, {
+                            $set: { pendingSchedulingSlots: fallbackSlots },
+                        }).catch(() => { });
+
+                        const normalizedFallback = normalizeSlots(fallbackSlots);
+                        const { optionsText, ordered, letters } = buildSlotMenuCompat(normalizedFallback);
+                        const allowed = (Array.isArray(letters) ? letters : SLOT_LETTERS).slice(0, Math.max(1, (ordered?.length || 0))).join(", ");
+
+                        const pretty =
+                            preferredPeriod === "manha" ? "manhã" :
+                                preferredPeriod === "tarde" ? "tarde" : "noite";
+
+                        return ensureSingleHeart(
+                            `Pra **${pretty}** não encontrei vaga agora 😕\n\nTenho essas opções no momento:\n\n${optionsText}\n\nQual você prefere? (${allowed})`
+                        );
+                    }
+                }
+
+                return ensureSingleHeart("No momento não encontrei horários disponíveis 😕 Qual período fica melhor: **manhã ou tarde**?");
             }
+
 
             // ======================================================
             // 🎯 Urgência (Amanda 2.0)
@@ -1498,7 +1589,7 @@ export default async function getOptimizedAmandaResponse({
 
             // ✅ Fonte única de menu A..F
             const normalizedSlots = normalizeSlots(availableSlots);
-            const { message: menuMsg, optionsText, ordered, letters } = buildSlotMenuMessage(normalizedSlots);
+            const { menuMsg, optionsText, ordered, letters } = buildSlotMenuCompat(normalizedSlots);
 
             if (!menuMsg) {
                 // se o builder falhar, pelo menos entrega o optionsText ou um menu simples
@@ -1515,7 +1606,7 @@ export default async function getOptimizedAmandaResponse({
 
 
             // ✅ allowed baseado no que realmente existe
-            const allowed = letters.slice(0, ordered.length).join(", ");
+            const allowed = (Array.isArray(letters) ? letters : SLOT_LETTERS).slice(0, Math.max(1, (ordered?.length || 0))).join(", ");
 
             // (Opcional) se você usa isso em alguma instrução pro LLM depois, deixa
             enrichedContext.bookingSlotsForLLM = {
@@ -1544,7 +1635,7 @@ export default async function getOptimizedAmandaResponse({
 
         } catch (err) {
             console.error("❌ [ORCHESTRATOR] Erro ao buscar slots:", err?.message || err);
-            return "Tive um probleminha ao checar os horários agora 😕 Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor? 💚";
+            return "Tive um probleminha ao checar os horários agora 😕 Você prefere **manhã ou tarde** fica melhor? 💚";
         }
     }
 

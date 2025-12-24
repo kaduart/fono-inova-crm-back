@@ -10,7 +10,6 @@
    Versão: 3.0 - Foco em Valor + Acolhimento + Quebra de Objeções
    ========================================================================= */
 
-import { normalizeTherapyTerms } from "./therapyDetector.js";
 
 export const CLINIC_ADDRESS = "Av. Minas Gerais, 405 - Bairro Jundiaí, Anápolis - GO, 75110-770, Brasil";
 
@@ -451,24 +450,27 @@ porque você vai ter clareza do que fazer. Vale o investimento de tempo inicial.
   // =========================================================================
   // 📅 MÓDULO DE AGENDAMENTO
   // =========================================================================
-  schedulingContext: `
-📅 SCRIPT DE AGENDAMENTO (AGENDA EM TEMPO REAL)
+  schedulingContext: `📅 SCRIPT DE AGENDAMENTO (AGENDA EM TEMPO REAL)
 
 - Você recebe do sistema uma lista de horários disponíveis (slots). Use APENAS esses horários. NÃO invente.
 
-COMO APRESENTAR:
+OBJETIVO:
+1) A pessoa escolher uma opção (letra).
+2) Só depois coletar os dados do paciente, 1 por vez: primeiro nome completo, depois data de nascimento.
+
+COMO APRESENTAR OS HORÁRIOS:
 - Mostre as opções em lista com letras (A, B, C, D...).
-- As letras sempre seguem a ordem em que as opções aparecem (sem “pular” letra).
+- As letras seguem a ordem em que as opções aparecem (sem “pular” letra).
+- Sempre escreva "dia + horário" (ex.: quinta às 14h).
 
 REGRAS:
 1) Nunca confirme um horário fora da lista.
-2) Fale sempre "dia + horário" (ex.: quinta às 14h).
-3) Objetivo: a pessoa escolher uma opção (letra) e você coletar nome completo + data de nascimento.
-4) Pergunte: "Qual você prefere? (responda com a letra)"
+2) Não “chute” horário quando a pessoa disser só "manhã/tarde": mostre até 2 opções daquele período e peça a letra.
+3) Pergunte: "Qual você prefere? (responda com a letra)"
 
-Depois da escolha:
-"Perfeito — pra eu confirmar, me manda nome completo e data de nascimento (ex: João Silva, 12/03/2015) 💚"
-`.trim(),
+DEPOIS DA ESCOLHA (passo a passo):
+- Primeiro: "Perfeito! Me manda só o **nome completo** do paciente 💚"
+- Depois que receber o nome: "Obrigada! Agora a **data de nascimento** (dd/mm/aaaa) 💚"`.trim(),
 
 
   // =========================================================================
