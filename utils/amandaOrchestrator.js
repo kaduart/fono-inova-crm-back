@@ -159,10 +159,33 @@ function nextStage(
 }
 
 function normalizeSlots(raw) {
-    const s = raw && typeof raw === "object" ? raw : {};
-    const primary = s.primary || null;
-    const same = Array.isArray(s.alternativesSamePeriod) ? s.alternativesSamePeriod : [];
-    const other = Array.isArray(s.alternativesOtherPeriod) ? s.alternativesOtherPeriod : [];
+    if (!raw) {
+        return {
+            primary: null,
+            alternativesSamePeriod: [],
+            alternativesOtherPeriod: [],
+        };
+    }
+
+    // ✅ Compat com versão antiga: array de slots
+    if (Array.isArray(raw)) {
+        const [first, ...rest] = raw;
+        return {
+            primary: first || null,
+            alternativesSamePeriod: rest || [],
+            alternativesOtherPeriod: [],
+        };
+    }
+
+    // ✅ Versão nova: objeto { primary, alternativesSamePeriod, alternativesOtherPeriod }
+    const primary = raw.primary || null;
+    const same = Array.isArray(raw.alternativesSamePeriod)
+        ? raw.alternativesSamePeriod
+        : [];
+    const other = Array.isArray(raw.alternativesOtherPeriod)
+        ? raw.alternativesOtherPeriod
+        : [];
+
     return { primary, alternativesSamePeriod: same, alternativesOtherPeriod: other };
 }
 
@@ -710,6 +733,92 @@ export default async function getOptimizedAmandaResponse({
 
     if (contextPack?.mode) console.log("[AmandaAI] ContextPack mode:", contextPack.mode);
 
+    // 🧠 Análise inteligente (uma vez) — ANTES dos flags, pra alimentar triagem/idade
+    let analysis = null;
+    try {
+        analysis = await analyzeLeadMessage({
+            text,
+            lead,
+            history: enrichedContext.conversationHistory || [],
+        });
+    } catch (err) {
+        console.warn("[ORCHESTRATOR] leadIntelligence falhou no orquestrador:", err.message);
+    }
+
+    // 🔗 Integra idade/perfil detectados pela inteligência ao contexto (pra não perguntar de novo)
+    if (analysis?.extracted) {
+        const extracted = analysis.extracted || {};
+        let detectedAgeGroup = null;
+
+        const idade = typeof extracted.idade === "number" ? extracted.idade : null;
+        const idadeRangeRaw =
+            extracted.idadeRange ||
+            extracted.faixaEtaria ||
+            extracted.faixa_etaria ||
+            extracted.ageRange ||
+            extracted.age_group ||
+            null;
+
+        if (idadeRangeRaw) {
+            const r = String(idadeRangeRaw).toLowerCase();
+            if (/(bebe|bebê|1a3|4a6|7a12|crianc|crianç|infantil|escolar)/.test(r)) {
+                detectedAgeGroup = "crianca";
+            } else if (/(adolescente|13a17)/.test(r)) {
+                detectedAgeGroup = "adolescente";
+            } else if (/(adulto|18\+|maior)/.test(r)) {
+                detectedAgeGroup = "adulto";
+            }
+        }
+
+        if (!detectedAgeGroup && Number.isFinite(idade)) {
+            if (idade <= 12) detectedAgeGroup = "crianca";
+            else if (idade <= 17) detectedAgeGroup = "adolescente";
+            else detectedAgeGroup = "adulto";
+        }
+
+        const perfilRaw =
+            extracted.perfil ||
+            extracted.perfilPaciente ||
+            extracted.profile ||
+            extracted.patientProfile ||
+            null;
+
+        if (!detectedAgeGroup && perfilRaw) {
+            const p = String(perfilRaw).toLowerCase();
+            if (/crianc|crianç|infantil|escolar|bebe|bebê/.test(p)) detectedAgeGroup = "crianca";
+            else if (/adolesc/.test(p)) detectedAgeGroup = "adolescente";
+            else if (/adult/.test(p)) detectedAgeGroup = "adulto";
+        }
+
+        if (detectedAgeGroup) {
+            // joga pro contexto da conversa (pra triagem não perguntar de novo)
+            if (!enrichedContext.ageGroup) {
+                enrichedContext.ageGroup = detectedAgeGroup;
+            }
+
+            // persiste no lead se ainda não tiver salvo
+            if (lead?._id && !lead?.ageGroup) {
+                try {
+                    await Leads.findByIdAndUpdate(lead._id, {
+                        $set: {
+                            ageGroup: detectedAgeGroup,
+                            "contextMemory.hasAge": true,
+                            "contextMemory.lastAgeDetected": new Date(),
+                        },
+                    }).catch(() => { });
+                    lead.ageGroup = detectedAgeGroup;
+                } catch (e) {
+                    // não quebra o fluxo se der erro de persistência
+                }
+            }
+        }
+    }
+
+    // 🔄 Se o lead já tem ageGroup salvo, garante que o contexto enxerga
+    if (!enrichedContext.ageGroup && lead?.ageGroup) {
+        enrichedContext.ageGroup = lead.ageGroup;
+    }
+
     // 4) flags já enxergam mode/urgency
     let flags = detectAllFlags(text, lead, enrichedContext);
     const bookingProduct = mapFlagsToBookingProduct({ ...flags, text }, lead);
@@ -719,10 +828,12 @@ export default async function getOptimizedAmandaResponse({
         GENERIC_SCHEDULE_EVAL_REGEX.test(normalized) ||
         SCHEDULING_REGEX.test(normalized);
 
+    // ❗ NÃO trata “quanto custa a avaliação” como agendamento
     const wantsScheduling =
         flags.wantsSchedule ||
         flags.wantsSchedulingNow ||
-        isSchedulingLikeText;
+        (isSchedulingLikeText && !flags.asksPrice);
+
     // 🚦 INÍCIO + PROGRESSÃO DA TRIAGEM (SEM STALE LEAD)
     // Regra: 1 pergunta por vez.
     // Fluxo: ask_profile -> ask_area -> ask_period -> done (SEM ask_complaint, SEM pedir dia)
@@ -779,18 +890,6 @@ export default async function getOptimizedAmandaResponse({
         return ensureSingleHeart(
             buildTriageSchedulingMessage({ lead })
         );
-    }
-
-    // 🧠 Análise inteligente (uma vez)
-    let analysis = null;
-    try {
-        analysis = await analyzeLeadMessage({
-            text,
-            lead,
-            history: enrichedContext.conversationHistory || [],
-        });
-    } catch (err) {
-        console.warn("[ORCHESTRATOR] leadIntelligence falhou no orquestrador:", err.message);
     }
 
     // 🧮 Normaliza contagem de mensagens
