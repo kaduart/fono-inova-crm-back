@@ -1305,6 +1305,8 @@ export default async function getOptimizedAmandaResponse({
             }).catch(() => { });
         }
 
+        flags = detectAllFlags(text, lead, enrichedContext);
+
         return ensureSingleHeart(
             "Atendemos no particular e emitimos recibo/nota pra você tentar reembolso no plano. Quer que eu já te mostre os horários disponíveis? 💚"
         );
