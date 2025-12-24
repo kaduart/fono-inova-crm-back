@@ -825,6 +825,15 @@ export default async function getOptimizedAmandaResponse({
         enrichedContext.ageGroup = lead.ageGroup;
     }
 
+    // 3) Calcula FLAGS uma vez pro fluxo todo
+    let flags = {};
+    try {
+        flags = detectAllFlags(text, lead, enrichedContext) || {};
+    } catch (err) {
+        console.warn("[ORCHESTRATOR] detectAllFlags falhou:", err.message);
+        flags = {};
+    }
+
     const quick = extractQuickFactsFromText(text);
 
     // 1) Joga pro contexto
@@ -1295,8 +1304,6 @@ export default async function getOptimizedAmandaResponse({
                 $set: { insuranceGatePending: true },
             }).catch(() => { });
         }
-
-        let flags = detectAllFlags(text, lead, enrichedContext);
 
         return ensureSingleHeart(
             "Atendemos no particular e emitimos recibo/nota pra você tentar reembolso no plano. Quer que eu já te mostre os horários disponíveis? 💚"
