@@ -40,6 +40,7 @@ import {
 } from "./amandaPrompt.js";
 import { logBookingGate, mapFlagsToBookingProduct } from "./bookingProductMapper.js";
 import { extractPreferredDateFromText } from "./dateParser.js";
+import { buildDynamicPromptForMissing } from "./stagePrompts.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
@@ -373,6 +374,30 @@ function detectPeriod(txt = "") {
     if (/\b(noite)\b/i.test(t)) return "noite";
     return null;
 }
+
+function normalizePeriodValue(v) {
+    if (!v) return null;
+    const s = String(v).toLowerCase().trim();
+    if (/\b(manh[aã]|cedo)\b/.test(s)) return "manha";
+    if (/\b(tarde)\b/.test(s)) return "tarde";
+    if (/\b(noite)\b/.test(s)) return "noite";
+    return null;
+}
+
+function normalizeTherapyAreaValue(v) {
+    if (!v) return null;
+    const s = String(v).toLowerCase().trim();
+
+    if (/\b(fono|fonoaudiolog)/.test(s)) return "fonoaudiologia";
+    if (/\b(neuropsic)/.test(s)) return "neuropsicologia";
+    if (/\b(terapia\s*ocupacional|\bto\b|t\.?o\.?)\b/.test(s)) return "terapia_ocupacional";
+    if (/\b(fisio|fisioterap)/.test(s)) return "fisioterapia";
+    // psicologia (evita confundir com psicopedagogia)
+    if (/\b(psicolog)(?!.*pedagog)/.test(s)) return "psicologia";
+
+    return null;
+}
+
 /**
  * 🎯 ORQUESTRADOR COM CONTEXTO INTELIGENTE
  */
@@ -887,24 +912,22 @@ export default async function getOptimizedAmandaResponse({
     if (lead?._id) {
         const update = {};
 
-        if ((quick.ageGroup || quick.ageValue) && lead?._id) {
-            const update = {
-                ageGroup: quick.ageGroup || lead.ageGroup || "crianca",
-                "contextMemory.hasAge": true,
-                "contextMemory.lastAgeDetected": new Date(),
-            };
-
+        if (quick.ageGroup || quick.ageValue) {
+            update.ageGroup = quick.ageGroup || lead.ageGroup || "crianca";
+            update["contextMemory.hasAge"] = true;
+            update["contextMemory.lastAgeDetected"] = new Date();
             if (quick.ageValue) update["contextMemory.ageValue"] = quick.ageValue;
-
-            await Leads.findByIdAndUpdate(lead._id, { $set: update }).catch(() => { });
-            Object.assign(lead, update);
-            enrichedContext.ageGroup = update.ageGroup;
         }
 
+        if (quick.preferredPeriod && lead.pendingPreferredPeriod !== quick.preferredPeriod) {
+            update.pendingPreferredPeriod = quick.preferredPeriod;
+        }
 
         if (Object.keys(update).length) {
             await Leads.findByIdAndUpdate(lead._id, { $set: update }).catch(() => { });
             Object.assign(lead, update);
+            if (update.ageGroup) enrichedContext.ageGroup = update.ageGroup;
+            if (update.pendingPreferredPeriod) enrichedContext.preferredPeriod = update.pendingPreferredPeriod;
         }
     }
 
@@ -941,34 +964,65 @@ export default async function getOptimizedAmandaResponse({
         if (freshLead) {
             lead = { ...lead, ...freshLead }; // merge
         }
-        const extractedInfo = lead?.qualificationData?.extractedInfo || {};
+        const extractedInfo =
+            lead?.qualificationData?.extractedInfo ||
+            lead?.qualificationData || // ✅ fallback (se você salvar direto em qualificationData)
+            {};
+
         console.log("[TRIAGEM] idade:", extractedInfo?.idade, "esp:", extractedInfo?.especialidade, "disp:", extractedInfo?.disponibilidade);
 
-        // 🔥 CHECAGEM INTELIGENTE: só entra na triagem se REALMENTE faltar algo
-        const hasProfileNow = Boolean(
-            lead.ageGroup ||
-            enrichedContext.ageGroup ||
-            quick.ageGroup ||
-            extractedInfo?.idade ||                 // ✅ AQUI
-            extractedInfo?.idadeRange ||            // ✅ AQUI
-            /\b\d{1,2}\s*(anos?|m[eê]s|meses)\b/i.test(text)
+        // ✅ período/área como STRING (não boolean)
+        const periodValue = normalizePeriodValue(
+            (lead?.pendingPreferredPeriod === true ? null : lead?.pendingPreferredPeriod) ||
+            enrichedContext?.preferredPeriod ||
+            quick?.preferredPeriod ||
+            detectPeriod(text) ||
+            extractedInfo?.disponibilidade
         );
 
-        const hasAreaNow = Boolean(
+        const areaValue = normalizeTherapyAreaValue(
             bookingProduct?.therapyArea ||
             lead?.autoBookingContext?.therapyArea ||
             lead?.therapyArea ||
             enrichedContext?.therapyArea ||
-            extractedInfo?.especialidade            // ✅ AQUI (ex: "fonoaudiologia")
+            extractedInfo?.especialidade
         );
 
-        const hasPeriodNow = Boolean(
-            lead?.pendingPreferredPeriod ||
-            enrichedContext?.preferredPeriod ||
-            quick.preferredPeriod ||
-            detectPeriod(text) ||
-            extractedInfo?.disponibilidade          // ✅ AQUI (ex: "manha")
+        const hasProfileNow = Boolean(
+            lead?.ageGroup ||
+            enrichedContext?.ageGroup ||
+            quick?.ageGroup ||
+            extractedInfo?.idade ||
+            extractedInfo?.idadeRange ||
+            /\b\d{1,2}\s*(anos?|m[eê]s|meses)\b/i.test(text)
         );
+
+        const hasAreaNow = Boolean(areaValue);
+        const hasPeriodNow = Boolean(periodValue);
+
+        // ✅ “promove” pro lead o que já foi detectado (pra não depender do texto atual)
+        if (lead?._id) {
+            const promote = {};
+
+            if (areaValue && lead?.therapyArea !== areaValue) {
+                promote.therapyArea = areaValue;
+                promote["autoBookingContext.therapyArea"] = areaValue;
+            }
+
+            // corrige caso antigo que você já gravou boolean true
+            if (lead?.pendingPreferredPeriod === true) {
+                promote.pendingPreferredPeriod = periodValue || null;
+            } else if (periodValue && lead?.pendingPreferredPeriod !== periodValue) {
+                promote.pendingPreferredPeriod = periodValue;
+            }
+
+            if (Object.keys(promote).length) {
+                await Leads.findByIdAndUpdate(lead._id, { $set: promote }).catch(() => { });
+                lead = { ...lead, ...promote };
+                if (promote.therapyArea) enrichedContext.therapyArea = promote.therapyArea;
+                if (promote.pendingPreferredPeriod) enrichedContext.preferredPeriod = promote.pendingPreferredPeriod;
+            }
+        }
 
         // ✅ Se já tem TUDO, pula triagem (avança direto pra slots)
         if (hasProfileNow && hasAreaNow && hasPeriodNow) {
@@ -1002,7 +1056,7 @@ export default async function getOptimizedAmandaResponse({
 
             if (step === "done") {
                 update.stage = "interessado_agendamento";
-                update.pendingPreferredPeriod = hasPeriodNow || lead?.pendingPreferredPeriod || null;
+                update.pendingPreferredPeriod = periodValue || lead?.pendingPreferredPeriod || null;
             }
 
             await Leads.findByIdAndUpdate(lead._id, { $set: update }).catch(() => { });
@@ -1690,10 +1744,16 @@ export default async function getOptimizedAmandaResponse({
             );
         }
 
-        let preferredPeriod = null;
-        if (/\b(manh[ãa]|cedo)\b/i.test(text)) preferredPeriod = "manha";
-        else if (/\b(tarde)\b/i.test(text)) preferredPeriod = "tarde";
-        else if (/\b(noite)\b/i.test(text)) preferredPeriod = "noite";
+        let preferredPeriod =
+            normalizePeriodValue(lead?.pendingPreferredPeriod) ||
+            normalizePeriodValue(enrichedContext?.preferredPeriod) ||
+            null;
+
+        if (!preferredPeriod) {
+            if (/\b(manh[ãa]|cedo)\b/i.test(text)) preferredPeriod = "manha";
+            else if (/\b(tarde)\b/i.test(text)) preferredPeriod = "tarde";
+            else if (/\b(noite)\b/i.test(text)) preferredPeriod = "noite";
+        }
 
         let preferredDay = null;
 
@@ -1976,9 +2036,8 @@ function extractQuickFactsFromText(text = "") {
     const t = String(text || "");
     const lower = t.toLowerCase();
 
-    // 🔥 REGEX ROBUSTA - captura "7 mês", "3 anos", "18 meses", etc
     const yearsMatch = t.match(/\b(\d{1,2})\s*anos?\b/i);
-    const monthsMatch = t.match(/\b(\d{1,2})\s*(m[eê]s|meses)\b/i); // ← FIX: aceita "mês" com acento
+    const monthsMatch = t.match(/\b(\d{1,2})\s*(m[eê]s|meses)\b/i);
 
     let ageNumber = null;
     let ageUnit = null;
@@ -1987,7 +2046,7 @@ function extractQuickFactsFromText(text = "") {
     if (monthsMatch) {
         ageNumber = parseInt(monthsMatch[1], 10);
         ageUnit = "meses";
-        ageGroup = "crianca"; // ← bebê sempre é criança
+        ageGroup = "crianca";
     } else if (yearsMatch) {
         ageNumber = parseInt(yearsMatch[1], 10);
         ageUnit = "anos";
@@ -1998,19 +2057,17 @@ function extractQuickFactsFromText(text = "") {
         }
     }
 
-    // 🔥 FALLBACK: palavras-chave
-    const isChildByWords = /\b(filh[oa]|crianç|bebê|bebe|menino|menina)\b/i.test(t);
-    if (isChildByWords && !ageGroup) {
-        ageGroup = "crianca";
-    }
+    const isChildByWords = /\b(filh[oa]|crianç|crianca|beb[eê]|bebe|menino|menina)\b/i.test(t);
+    if (isChildByWords && !ageGroup) ageGroup = "crianca";
 
-    // período
+    // ✅ define preferredPeriod
     let preferredPeriod = null;
-    if (/\bmanh[ãa]\b/i.test(lower)) preferredPeriod = "manha";
-    if (/\btarde\b/i.test(lower)) preferredPeriod = "tarde";
+    if (/\b(manh[ãa]|cedo)\b/i.test(lower)) preferredPeriod = "manha";
+    else if (/\b(tarde)\b/i.test(lower)) preferredPeriod = "tarde";
+    else if (/\b(noite)\b/i.test(lower)) preferredPeriod = "noite";
 
     return {
-        ageValue: ageNumber ? `${ageNumber} ${ageUnit}` : null, // ← NOVO: guarda valor bruto
+        ageValue: ageNumber ? `${ageNumber} ${ageUnit}` : null,
         ageNumber,
         ageUnit,
         ageGroup,
@@ -2586,15 +2643,13 @@ async function callAmandaAIWithContext(
 
     if (missing.length > 0) {
         const prompt = buildDynamicPromptForMissing(missing, extracted);
-        console.log("⚙️ [AmandaFlow] Gerando prompt dinâmico:", prompt);
 
-        return {
-            thought_process: "Faltam informações básicas para o agendamento. Gerando pergunta contextual.",
-            reply_to_user: prompt,
-            update_lead_state: {
-                triageStep: "ask_missing_info"
-            }
-        };
+        if (lead?._id) {
+            Leads.findByIdAndUpdate(lead._id, { $set: { triageStep: "ask_missing_info" } })
+                .catch(() => { });
+        }
+
+        return prompt; // ✅ string
     }
 
     const systemContext = buildSystemContext(flags, userText, stage);
