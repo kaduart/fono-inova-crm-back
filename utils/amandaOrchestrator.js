@@ -1,18 +1,18 @@
 import Anthropic from "@anthropic-ai/sdk";
 import "dotenv/config";
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
-import { urgencyScheduler } from "../services/intelligence/UrgencyScheduler.js";
 import enrichLeadContext from "../services/leadContext.js";
-import { deriveFlagsFromText, detectAllFlags, resolveTopicFromFlags } from "./flagsDetector.js";
+import { detectAllFlags, deriveFlagsFromText, resolveTopicFromFlags } from "./flagsDetector.js";
 import { buildEquivalenceResponse } from "./responseBuilder.js";
 import {
     detectAllTherapies,
-    detectNegativeScopes,
-    getPriceLinesForDetectedTherapies,
     getTDAHResponse,
     isAskingAboutEquivalence,
-    isTDAHQuestion
+    isTDAHQuestion,
+    detectNegativeScopes,
+    getPriceLinesForDetectedTherapies
 } from "./therapyDetector.js";
+import { urgencyScheduler } from "../services/intelligence/UrgencyScheduler.js";
 
 import Followup from "../models/Followup.js";
 import Leads from "../models/Leads.js";
@@ -25,7 +25,6 @@ import {
     pickSlotFromUserReply
 } from "../services/amandaBookingService.js";
 
-import { buildContextPack } from "../services/intelligence/ContextPack.js";
 import { handleInboundMessageForFollowups } from "../services/responseTrackingService.js";
 import {
     buildDynamicSystemPrompt,
@@ -35,6 +34,7 @@ import {
 } from "./amandaPrompt.js";
 import { logBookingGate, mapFlagsToBookingProduct } from "./bookingProductMapper.js";
 import { extractPreferredDateFromText } from "./dateParser.js";
+import { buildContextPack } from "../services/intelligence/ContextPack.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
@@ -527,7 +527,8 @@ export async function getOptimizedAmandaResponse({
                 const humanDate = formatDatePtBr(chosenSlot.date);
                 const humanTime = String(chosenSlot.time || "").slice(0, 5);
 
-                return ensureSingleHeart(`Perfeito! ✅ Agendado para ${humanDate} às ${humanTime} com ${chosenSlot.doctorName}. Qualquer coisa é só me avisar`);
+                // ✅ Mensagem de confirmação acolhedora
+                return ensureSingleHeart(`Que maravilha! 🎉 Tudo certo!\n\n📅 **${humanDate}** às **${humanTime}**\n👩‍⚕️ Com **${chosenSlot.doctorName}**\n\nVocês vão adorar conhecer a clínica! Qualquer dúvida, é só me chamar 💚`);
             } else if (bookingResult.code === "TIME_CONFLICT") {
                 await Leads.findByIdAndUpdate(lead._id, {
                     $set: { pendingChosenSlot: null, pendingPatientInfoForScheduling: false }
@@ -583,6 +584,115 @@ export async function getOptimizedAmandaResponse({
 
     const msgCount = historyLen + 1;
     enrichedContext.messageCount = msgCount;
+
+    // =========================================================================
+    // 🆕 PASSO 0: DETECTA ESCOLHA A/B/C QUANDO AMANDA JÁ OFERECEU SLOTS
+    // =========================================================================
+    const isSlotChoice = /^[A-F]$/i.test(text.trim()) || /\bop[çc][aã]o\s*([A-F])\b/i.test(text);
+    const hasQualificationComplete = !!(
+        getValidQualificationArea(lead) &&
+        lead?.qualificationData?.extractedInfo?.idade &&
+        lead?.qualificationData?.extractedInfo?.disponibilidade
+    );
+
+    // Se lead responde só "A" ou "a" e tem triagem completa mas sem slots salvos
+    if (isSlotChoice && hasQualificationComplete && !lead?.pendingSchedulingSlots?.primary) {
+        console.log("[PASSO 0] ✅ Detectou escolha de slot sem pendingSchedulingSlots - buscando slots...");
+
+        const therapyArea = getValidQualificationArea(lead);
+        const period = lead?.qualificationData?.extractedInfo?.disponibilidade;
+
+        try {
+            const slots = await findAvailableSlots({
+                therapyArea,
+                preferredPeriod: period,
+                daysAhead: 30,
+            });
+
+            if (slots?.primary) {
+                // Processa a escolha
+                const allSlots = [
+                    slots.primary,
+                    ...(slots.alternativesSamePeriod || []),
+                    ...(slots.alternativesOtherPeriod || []),
+                ].filter(Boolean);
+
+                const letterMatch = text.trim().toUpperCase().match(/^([A-F])$/);
+                const chosenLetter = letterMatch ? letterMatch[1] : null;
+                const letterIndex = chosenLetter ? "ABCDEF".indexOf(chosenLetter) : -1;
+                const chosenSlot = letterIndex >= 0 && letterIndex < allSlots.length ? allSlots[letterIndex] : null;
+
+                if (chosenSlot) {
+                    // Salva slot escolhido e ativa coleta de nome
+                    await Leads.findByIdAndUpdate(lead._id, {
+                        $set: {
+                            pendingSchedulingSlots: slots,
+                            pendingChosenSlot: chosenSlot,
+                            pendingPatientInfoForScheduling: true,
+                            pendingPatientInfoStep: "name",
+                            therapyArea: therapyArea,
+                            stage: "interessado_agendamento",
+                            "autoBookingContext.active": true,
+                            "autoBookingContext.lastOfferedSlots": slots,
+                        },
+                    }).catch(() => { });
+
+                    // Atualiza contexto local para IA gerar resposta
+                    enrichedContext.pendingSchedulingSlots = slots;
+                    enrichedContext.pendingChosenSlot = chosenSlot;
+                    enrichedContext.stage = "interessado_agendamento";
+
+                    // 🤖 Deixa a IA gerar resposta acolhedora pedindo nome do paciente
+                    const aiResponse = await callAmandaAIWithContext(
+                        `O cliente escolheu a opção ${chosenLetter} (${formatSlot(chosenSlot)}). Agora preciso do nome completo do paciente para confirmar.`,
+                        lead,
+                        {
+                            ...enrichedContext,
+                            customInstruction: `O cliente ACABOU DE ESCOLHER o horário "${formatSlot(chosenSlot)}". 
+                            Confirme a escolha de forma acolhedora e peça o NOME COMPLETO do paciente para finalizar.
+                            Seja breve (2-3 frases), calorosa e use emojis com moderação.
+                            NÃO repita horários, NÃO ofereça outras opções - ele já escolheu!`
+                        },
+                        flags,
+                        null
+                    );
+                    return ensureSingleHeart(aiResponse);
+                } else {
+                    // Não entendeu a escolha - salva slots e pede pra escolher
+                    await Leads.findByIdAndUpdate(lead._id, {
+                        $set: {
+                            pendingSchedulingSlots: slots,
+                            therapyArea: therapyArea,
+                            stage: "interessado_agendamento",
+                            "autoBookingContext.active": true,
+                            "autoBookingContext.lastOfferedSlots": slots,
+                        }
+                    }).catch(() => { });
+
+                    enrichedContext.pendingSchedulingSlots = slots;
+                    enrichedContext.stage = "interessado_agendamento";
+
+                    // 🤖 Deixa a IA explicar as opções novamente
+                    const aiResponse = await callAmandaAIWithContext(
+                        `O cliente respondeu "${text}" mas não entendi qual opção ele quer.`,
+                        lead,
+                        {
+                            ...enrichedContext,
+                            customInstruction: `Não entendi qual opção o cliente escolheu.
+                            Mostre as opções de horário disponíveis de forma clara e acolhedora.
+                            Peça para ele escolher A, B, C conforme preferência.
+                            Seja breve e simpática.`
+                        },
+                        flags,
+                        null
+                    );
+                    return ensureSingleHeart(aiResponse);
+                }
+            }
+        } catch (err) {
+            console.error("[PASSO 0] Erro ao buscar slots:", err.message);
+        }
+    }
 
     // 🔹 Captura a resposta ao período (quando Amanda perguntou "manhã ou tarde?")
     // 🔹 Captura a resposta ao período (quando Amanda perguntou "manhã ou tarde?")
@@ -963,10 +1073,11 @@ export async function getOptimizedAmandaResponse({
             lead?.ageGroup ||
             lead?.qualificationData?.extractedInfo?.idade;
 
-        // ✅ FIX: Verifica período
+        // ✅ FIX: Verifica período em TODAS as fontes (incluindo qualificationData)
         const hasPeriod = extractPeriodFromText(text) ||
             lead?.pendingPreferredPeriod ||
-            lead?.autoBookingContext?.preferredPeriod;
+            lead?.autoBookingContext?.preferredPeriod ||
+            lead?.qualificationData?.extractedInfo?.disponibilidade;
 
         console.log("[BLOCO_INICIAL] hasArea:", hasArea, "| hasAge:", hasAge, "| hasPeriod:", hasPeriod, "| hasValidLeadArea:", hasValidLeadArea);
 
@@ -977,8 +1088,22 @@ export async function getOptimizedAmandaResponse({
         }
         // 1️⃣ Nenhuma queixa/área detectada ainda (com ou sem idade)
         else if (!hasArea) {
-            // ✅ FIX: Pergunta queixa MESMO se já tem idade
-            return ensureSingleHeart("Pra eu te orientar direitinho: o que você tem notado ou qual a principal queixa do(a) paciente?");
+            // 🤖 IA gera pergunta de queixa de forma acolhedora
+            const aiResponse = await callAmandaAIWithContext(
+                text,
+                lead,
+                {
+                    ...enrichedContext,
+                    customInstruction: `O cliente quer agendar mas AINDA NÃO disse qual a queixa/necessidade.
+                    Acolha brevemente e pergunte de forma gentil qual a principal preocupação ou queixa do paciente.
+                    NÃO ofereça horários ainda. NÃO fale de preços.
+                    Seja breve (1-2 frases), empática e acolhedora.
+                    Use linguagem de mãe/pai preocupado com filho.`
+                },
+                flags,
+                null
+            );
+            return ensureSingleHeart(aiResponse);
         }
         // 2️⃣ Queixa/área detectada → pedir idade se ainda não tem
         else if (hasArea && !hasAge) {
@@ -986,10 +1111,23 @@ export async function getOptimizedAmandaResponse({
                 getValidQualificationArea(lead) ||
                 (hasValidLeadArea ? lead?.therapyArea : null) ||
                 "área ideal";
-            return ensureSingleHeart(
-                `Entendi 💚 É super comum nessa fase! Nesse tipo de caso, o ideal é começar pela **${areaName}**, que ajuda bastante no desenvolvimento e acompanhamento.  
-Pra eu te orientar direitinho: qual a idade do(a) paciente (em meses ou anos)?`
+
+            // 🤖 IA gera confirmação de área + pedido de idade
+            const aiResponse = await callAmandaAIWithContext(
+                text,
+                lead,
+                {
+                    ...enrichedContext,
+                    customInstruction: `O cliente mencionou uma queixa que indica ${areaName}.
+                    Valide a preocupação dele de forma EMPÁTICA e acolhedora.
+                    Explique brevemente que a clínica pode ajudar.
+                    Pergunte a idade do paciente (em anos ou meses) para direcionar melhor.
+                    Seja breve (2-3 frases), calorosa, como uma recepcionista experiente.`
+                },
+                flags,
+                null
             );
+            return ensureSingleHeart(aiResponse);
         }
         // 3️⃣ Já tem área e idade, falta período → perguntar período
         else if (hasArea && hasAge && !hasPeriod) {
@@ -1008,13 +1146,26 @@ Pra eu te orientar direitinho: qual a idade do(a) paciente (em meses ou anos)?`
                 }).catch(() => { });
             }
 
-            return ensureSingleHeart(
-                `Perfeito 💚 ${areaName} é realmente a área certa pra esse tipo de caso.  
-Podemos ver juntos um horário pra avaliação? Você prefere **de manhã** ou **à tarde**?`
+            // 🤖 IA gera transição para agendamento + pedido de período
+            const aiResponse = await callAmandaAIWithContext(
+                text,
+                lead,
+                {
+                    ...enrichedContext,
+                    customInstruction: `O cliente já disse a queixa (${areaName}) e idade. 
+                    Agora precisamos do período preferido (manhã ou tarde).
+                    Confirme de forma acolhedora que vamos ajudar.
+                    Pergunte se prefere de MANHÃ ou à TARDE para a avaliação.
+                    Seja breve (2 frases), empática e animada.`
+                },
+                flags,
+                null
             );
+            return ensureSingleHeart(aiResponse);
         }
-        // ✅ Se tem tudo, continua pro PASSO 3/4
     }
+    // ✅ Se tem tudo, continua pro PASSO 3/4
+
 
     // 🦴🍼 Gate osteopata (físio bebê)
     const babyContext =
@@ -1222,6 +1373,7 @@ Podemos ver juntos um horário pra avaliação? Você prefere **de manhã** ou *
             getValidQualificationArea(lead));
         const hasPeriodNow = !!(lead?.pendingPreferredPeriod ||
             lead?.autoBookingContext?.preferredPeriod ||
+            lead?.qualificationData?.extractedInfo?.disponibilidade ||
             periodDetected);
 
         console.log("[TRIAGEM] Estado após salvar:", {
@@ -1249,6 +1401,7 @@ Podemos ver juntos um horário pra avaliação? Você prefere **de manhã** ou *
             getValidQualificationArea(lead);
         const preferredPeriod = lead?.pendingPreferredPeriod ||
             lead?.autoBookingContext?.preferredPeriod ||
+            lead?.qualificationData?.extractedInfo?.disponibilidade ||
             periodDetected;
 
         console.log("[ORCHESTRATOR] Buscando slots para:", { therapyAreaForSlots, preferredPeriod });
@@ -1922,6 +2075,7 @@ async function callAmandaAIWithContext(
         conversationHistory = [],
         conversationSummary = null,
         shouldGreet = true,
+        customInstruction = null,  // ✅ NOVO: Instrução customizada para casos específicos
     } = context;
 
     const flags = flagsFromOrchestrator || detectAllFlags(userText, lead, context);
@@ -2165,6 +2319,7 @@ REGRAS CRÍTICAS:
                                     INSTRUÇÕES:
                                     - ${stageInstruction}
                                     ${slotsInstruction ? `- ${slotsInstruction}` : ""}
+                                    ${customInstruction ? `\n🎯 INSTRUÇÃO ESPECÍFICA:\n${customInstruction}` : ""}
 
                                     REGRAS:
                                     - ${shouldGreet ? "Pode cumprimentar" : "🚨 NÃO use Oi/Olá - conversa ativa"}
