@@ -116,11 +116,12 @@ function extractAgeFromText(text) {
 }
 
 /**
- * Extrai período da mensagem
+ * Extrai período da mensagem (normaliza para evitar problemas de encoding)
  */
 function extractPeriodFromText(text) {
-    const t = (text || "").toLowerCase();
-    if (/\b(manh[ãa]|cedo)\b/.test(t)) return "manha";
+    // Normaliza removendo acentos para evitar problemas de encoding
+    const t = (text || "").toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (/\b(manha|cedo)\b/.test(t)) return "manha";
     if (/\b(tarde)\b/.test(t)) return "tarde";
     if (/\b(noite)\b/.test(t)) return "noite";
     return null;
@@ -569,22 +570,41 @@ export async function getOptimizedAmandaResponse({
     enrichedContext.messageCount = msgCount;
 
     // 🔹 Captura a resposta ao período (quando Amanda perguntou "manhã ou tarde?")
-    if (lead?.pendingPreferredPeriod && !lead?.pendingSchedulingSlots?.primary) {
+    // 🔹 Captura a resposta ao período (quando Amanda perguntou "manhã ou tarde?")
+    if (
+        lead?._id &&
+        lead?.autoBookingContext?.awaitingPeriodChoice &&
+        !lead?.pendingSchedulingSlots?.primary
+    ) {
         const preferredPeriod = extractPeriodFromText(text);
+
         if (preferredPeriod) {
             console.log("🎯 [ORCHESTRATOR] Usuário escolheu período:", preferredPeriod);
 
-            await Leads.findByIdAndUpdate(lead._id, {
-                $set: {
-                    pendingPreferredPeriod: false,
-                    "autoBookingContext.preferredPeriod": preferredPeriod,
-                },
-            }).catch(() => { });
-
+            // pega área do lead (sem inventar)
             const therapyArea =
                 lead?.therapyArea ||
                 lead?.autoBookingContext?.mappedTherapyArea ||
-                flags?.therapyArea;
+                flags?.therapyArea ||
+                null;
+
+            // se não tem área ainda, não dá pra buscar slots
+            if (!therapyArea) {
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: { "autoBookingContext.awaitingPeriodChoice": false },
+                }).catch(() => { });
+                return ensureSingleHeart(
+                    "Pra eu puxar os horários certinho: é pra qual área (Fono, Psicologia, TO, Fisio ou Neuropsico)?"
+                );
+            }
+
+            // desarma “aguardando período” e salva o período real
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: {
+                    "autoBookingContext.awaitingPeriodChoice": false,
+                    "autoBookingContext.preferredPeriod": preferredPeriod,
+                },
+            }).catch(() => { });
 
             try {
                 const slots = await findAvailableSlots({
@@ -593,16 +613,28 @@ export async function getOptimizedAmandaResponse({
                     daysAhead: 30,
                 });
 
-                const { message } = buildSlotMenuMessage(slots);
-                if (message) return ensureSingleHeart(message);
+                // se achou slots, salva no lead pra ativar o PASSO 2
+                if (slots?.primary) {
+                    await Leads.findByIdAndUpdate(lead._id, {
+                        $set: {
+                            pendingSchedulingSlots: slots,
+                            stage: "interessado_agendamento",
+                            "autoBookingContext.lastOfferedSlots": slots,
+                        },
+                    }).catch(() => { });
+
+                    const { message } = buildSlotMenuMessage(slots);
+                    return ensureSingleHeart(message);
+                }
 
                 return ensureSingleHeart(
-                    `Pra **${preferredPeriod}** não encontrei vaga agora 😕  
-Mas posso te mostrar outras opções próximas, pode ser?`
+                    `Pra **${preferredPeriod === "manha" ? "manhã" : preferredPeriod === "tarde" ? "tarde" : "noite"}** não encontrei vaga agora 😕 Quer me dizer qual dia da semana fica melhor?`
                 );
             } catch (err) {
                 console.error("[ORCHESTRATOR] Erro ao buscar slots do período:", err.message);
-                return ensureSingleHeart("Tive um probleminha ao checar os horários 😅 Pode me confirmar se prefere **manhã** ou **tarde**?");
+                return ensureSingleHeart(
+                    "Tive um probleminha ao checar os horários 😅 Você prefere **manhã** ou **tarde**?"
+                );
             }
         }
     }
@@ -636,7 +668,7 @@ Mas posso te mostrar outras opções próximas, pode ser?`
 
         // 🆕 Usuário pediu outro período?
         const wantsDifferentPeriod = extractPeriodFromText(text);
-        const currentPeriod = lead?.pendingPreferredPeriod;
+        const currentPeriod = lead?.autoBookingContext?.preferredPeriod || null;
 
         if (wantsDifferentPeriod && wantsDifferentPeriod !== currentPeriod) {
             console.log(`🔄 [ORCHESTRATOR] Usuário quer período diferente: ${wantsDifferentPeriod}`);
@@ -726,14 +758,13 @@ Mas posso te mostrar outras opções próximas, pode ser?`
             if (preferPeriod && earliest) {
                 const hasPreferred = slotsCtx.all.some((s) => matchesPeriod(s, preferPeriod));
                 if (!hasPreferred) {
-                    await Leads.findByIdAndUpdate(lead._id, {
-                        $set: { pendingChosenSlot: earliest, pendingPatientInfoForScheduling: true, pendingPatientInfoStep: "name" },
-                    }).catch(() => { });
-
+                    // ✅ PATCH: Não chuta, oferece as opções disponíveis
                     const prefLabel =
                         preferPeriod === "manha" ? "de manhã" : preferPeriod === "tarde" ? "à tarde" : "à noite";
 
-                    return ensureSingleHeart(`Entendi que você prefere ${prefLabel}. Hoje não tenho vaga ${prefLabel}; o mais cedo disponível é **${formatSlot(earliest)}**.\n\nPra eu confirmar, me manda o **nome completo** do paciente`);
+                    return ensureSingleHeart(
+                        `Entendi que você prefere ${prefLabel} 😊 No momento não tenho vaga ${prefLabel}.\n\nTenho essas opções disponíveis:\n\n${optionsText}\n\nQual você prefere? (A, B, C...)`
+                    );
                 }
             }
 
@@ -862,47 +893,57 @@ Mas posso te mostrar outras opções próximas, pode ser?`
     enrichedContext.stage = newStage;
 
     const isSchedulingLikeText = GENERIC_SCHEDULE_EVAL_REGEX.test(normalized) || SCHEDULING_REGEX.test(normalized);
-    const wantsScheduling = flags.wantsSchedule || flags.wantsSchedulingNow || isSchedulingLikeText;
+
+    // ✅ PATCH: Se lead já tem dados parciais, está em fluxo de agendamento
+    const isInSchedulingFlow = !!(
+        lead?.patientInfo?.age ||
+        lead?.ageGroup ||
+        lead?.therapyArea ||
+        lead?.autoBookingContext?.mappedTherapyArea ||
+        lead?.pendingPreferredPeriod ||
+        lead?.autoBookingContext?.awaitingPeriodChoice
+    );
+
+    const wantsScheduling = flags.wantsSchedule || flags.wantsSchedulingNow || isSchedulingLikeText || isInSchedulingFlow;
+
+    console.log("[ORCHESTRATOR] wantsScheduling:", wantsScheduling, "| isInSchedulingFlow:", isInSchedulingFlow);
 
     if (wantsScheduling) {
         const detectedTherapies = detectAllTherapies(text);
-        const hasArea = detectedTherapies.length > 0 || flags.therapyArea;
-        const hasAge = /\b\d{1,2}\s*(anos?|mes(es)?)\b/i.test(text);
 
-        // 1️⃣ Nenhuma queixa detectada ainda
-        if (!hasArea && !hasAge) {
+        // ✅ PATCH: Considera dados JÁ SALVOS no lead + mensagem atual
+        const hasAreaNow = detectedTherapies.length > 0 || flags.therapyArea || lead?.therapyArea || lead?.autoBookingContext?.mappedTherapyArea;
+        const hasAgeNow = /\b\d{1,2}\s*(anos?|mes(es)?)\b/i.test(text) || lead?.patientInfo?.age || lead?.ageGroup;
+        const hasPeriodNow = extractPeriodFromText(text) || lead?.pendingPreferredPeriod;
+
+        console.log("[TRIAGEM INICIAL]", { hasAreaNow, hasAgeNow, hasPeriodNow, isInSchedulingFlow });
+
+        // ✅ Se já tem período (mensagem atual ou salvo), vai direto pro PASSO 3 buscar slots
+        if (hasPeriodNow && hasAreaNow && hasAgeNow) {
+            console.log("[ORCHESTRATOR] ✅ Triagem completa no bloco inicial, delegando pro PASSO 3...");
+            // Não retorna, deixa continuar pro PASSO 3 que busca slots
+        }
+        // 1️⃣ Nenhuma queixa detectada ainda E não está em fluxo
+        else if (!hasAreaNow && !hasAgeNow && !isInSchedulingFlow) {
             return ensureSingleHeart("Claro! Pra eu entender direitinho, o que você tem notado ou qual a principal queixa do(a) paciente? 💚");
         }
-
         // 2️⃣ Queixa detectada → responder com empatia + área + pedir idade
-        if (hasArea && !hasAge) {
-            const areaName = detectedTherapies[0]?.name || "área ideal";
+        else if (hasAreaNow && !hasAgeNow) {
+            const areaName = detectedTherapies[0]?.name || lead?.therapyArea || "área ideal";
             return ensureSingleHeart(
                 `Entendi 💚 É super comum nessa fase! Nesse tipo de caso, o ideal é começar pela **${areaName}**, que ajuda bastante no desenvolvimento e acompanhamento.  
 Pra eu te orientar direitinho: qual a idade do(a) paciente (em meses ou anos)?`
             );
         }
-
-        // 3️⃣ Já tem área e idade → transição natural pro agendamento
-        if (hasArea && hasAge) {
-            const areaName = detectedTherapies[0]?.name || flags.therapyArea || "área indicada";
-
-            // 🧠 Ativa estado de espera pelo período (manhã/tarde)
-            if (lead?._id) {
-                await Leads.findByIdAndUpdate(lead._id, {
-                    $set: {
-                        pendingPreferredPeriod: true,
-                        "autoBookingContext.awaitingPeriodChoice": true,
-                    },
-                }).catch(() => { });
-            }
-
+        // 3️⃣ Já tem área e idade, falta período → perguntar período
+        else if (hasAreaNow && hasAgeNow && !hasPeriodNow) {
+            const areaName = detectedTherapies[0]?.name || lead?.therapyArea || flags.therapyArea || "área indicada";
             return ensureSingleHeart(
                 `Perfeito 💚 ${areaName} é realmente a área certa pra esse tipo de caso.  
 Podemos ver juntos um horário pra avaliação? Você prefere **de manhã** ou **à tarde**?`
             );
         }
-
+        // ✅ Se tem tudo, continua pro PASSO 3
     }
 
     // 🦴🍼 Gate osteopata (físio bebê)
@@ -1036,11 +1077,10 @@ Podemos ver juntos um horário pra avaliação? Você prefere **de manhã** ou *
         // 🆕 SALVA DADOS DETECTADOS IMEDIATAMENTE
         const updateData = {};
 
-        // Detecta e salva período
+        // ✅ PATCH: Salva período em pendingPreferredPeriod (FONTE ÚNICA)
         const periodDetected = extractPeriodFromText(text);
         if (periodDetected && !lead?.pendingPreferredPeriod) {
             updateData.pendingPreferredPeriod = periodDetected;
-            updateData["autoBookingContext.preferredPeriod"] = periodDetected;
             console.log("[TRIAGEM] ✅ Período detectado e salvo:", periodDetected);
         }
 
