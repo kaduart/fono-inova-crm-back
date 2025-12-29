@@ -855,7 +855,18 @@ export default async function getOptimizedAmandaResponse({
                 promote.pendingPreferredPeriod = periodValue;
             }
             if (Object.keys(promote).length) {
-                await Leads.findByIdAndUpdate(lead._id, { $set: promote }).catch((err) => {
+                // ✅ Fix: Se autoBookingContext for null, não podemos usar dot notation para "autoBookingContext.therapyArea"
+                // Resolvemos garantindo que o objeto pai exista ou enviando o objeto completo.
+                const finalUpdate = { $set: promote };
+                // Se estamos tentando setar algo dentro do autoBookingContext mas ele é nulo no lead local,
+                // vamos garantir a inicialização segura enviando o objeto inteiro se necessário, 
+                // ou simplesmente deixando o MongoDB lidar se o promote já for inteligente.
+                // No caso do erro reportado, o problema é "autoBookingContext.therapyArea" em "{autoBookingContext: null}"
+                if (lead?.autoBookingContext === null && promote["autoBookingContext.therapyArea"]) {
+                    delete promote["autoBookingContext.therapyArea"];
+                    promote.autoBookingContext = { therapyArea: areaValue };
+                }
+                await Leads.findByIdAndUpdate(lead._id, finalUpdate).catch((err) => {
                     console.error(`[TRIAGEM-ERROR] Falha ao promover dados do lead ${lead._id}:`, err.message);
                 });
                 lead = { ...lead, ...promote };
