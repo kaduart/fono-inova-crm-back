@@ -127,6 +127,10 @@ export async function enrichLeadContext(leadId) {
             conversationHistory,      // Array [{role, content, timestamp}]
             conversationSummary: summaryContext, // String com resumo ou null
             shouldGreet,              // Boolean
+            autoBookingContext: lead.autoBookingContext || null,
+            pendingSchedulingSlots: lead.pendingSchedulingSlots || null,
+            pendingChosenSlot: lead.pendingChosenSlot || null,
+            therapyArea: lead.therapyArea || lead.autoBookingContext?.therapyArea || null,
 
             // Intenções (mantém pra flags)
             mentionedTherapies: extractMentionedTherapies(messages),

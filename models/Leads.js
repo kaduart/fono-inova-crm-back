@@ -74,6 +74,7 @@ const leadSchema = new mongoose.Schema({
         primary: { type: Object, default: null },
         alternativesSamePeriod: { type: Array, default: [] },
       },
+      preferredPeriod: { type: String, enum: ['manhã', 'tarde', 'noite', null], default: null },
       patientInfo: {
         fullName: String,
         birthDate: String,
@@ -168,6 +169,8 @@ const leadSchema = new mongoose.Schema({
     birthDate: String,   // "YYYY-MM-DD"
     phone: String,
     email: String,
+    age: Number,           // ← NOVO: 4 (anos)
+    ageUnit: String,
   },
   // ✅ Commit 2: anti-corrida (trava no Mongo)
   isProcessing: { type: Boolean, default: false },
