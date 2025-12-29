@@ -116,12 +116,11 @@ function extractAgeFromText(text) {
 }
 
 /**
- * Extrai período da mensagem (normaliza para evitar problemas de encoding)
+ * Extrai período da mensagem
  */
 function extractPeriodFromText(text) {
-    // Normaliza removendo acentos para evitar problemas de encoding
-    const t = (text || "").toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    if (/\b(manha|cedo)\b/.test(t)) return "manha";
+    const t = (text || "").toLowerCase();
+    if (/\b(manh[ãa]|cedo)\b/.test(t)) return "manha";
     if (/\b(tarde)\b/.test(t)) return "tarde";
     if (/\b(noite)\b/.test(t)) return "noite";
     return null;
@@ -197,7 +196,8 @@ function nextStage(
             extracted?.idade ||
             extracted?.age ||
             lead?.patientInfo?.age ||
-            lead?.ageGroup
+            lead?.ageGroup ||
+            lead?.qualificationData?.extractedInfo?.idade  // ✅ FIX
         );
 
     if (
@@ -253,10 +253,11 @@ function hasAgeOrProfileNow(txt = "", flags = {}, ctx = {}, lead = {}) {
         if (!ctx.ageGroup) ctx.ageGroup = "crianca";
     }
 
-    // 🆕 VERIFICA TAMBÉM O LEAD (dados já salvos)
+    // 🆕 VERIFICA TAMBÉM O LEAD (dados já salvos) + qualificationData
     return !!(
         lead?.patientInfo?.age ||
         lead?.ageGroup ||
+        lead?.qualificationData?.extractedInfo?.idade ||  // ✅ FIX: verifica onde o sistema de qualificação salva
         flags.mentionsChild ||
         flags.mentionsTeen ||
         flags.mentionsAdult ||
@@ -283,6 +284,7 @@ function buildTriageSchedulingMessage({
     const knownProfile = !!(
         lead?.patientInfo?.age ||
         lead?.ageGroup ||
+        lead?.qualificationData?.extractedInfo?.idade ||  // ✅ FIX
         flags.mentionsChild ||
         flags.mentionsTeen ||
         flags.mentionsAdult ||
@@ -758,13 +760,14 @@ export async function getOptimizedAmandaResponse({
             if (preferPeriod && earliest) {
                 const hasPreferred = slotsCtx.all.some((s) => matchesPeriod(s, preferPeriod));
                 if (!hasPreferred) {
-                    // ✅ PATCH: Não chuta, oferece as opções disponíveis
+                    await Leads.findByIdAndUpdate(lead._id, {
+                        $set: { pendingChosenSlot: earliest, pendingPatientInfoForScheduling: true, pendingPatientInfoStep: "name" },
+                    }).catch(() => { });
+
                     const prefLabel =
                         preferPeriod === "manha" ? "de manhã" : preferPeriod === "tarde" ? "à tarde" : "à noite";
 
-                    return ensureSingleHeart(
-                        `Entendi que você prefere ${prefLabel} 😊 No momento não tenho vaga ${prefLabel}.\n\nTenho essas opções disponíveis:\n\n${optionsText}\n\nQual você prefere? (A, B, C...)`
-                    );
+                    return ensureSingleHeart(`Entendi que você prefere ${prefLabel}. Hoje não tenho vaga ${prefLabel}; o mais cedo disponível é **${formatSlot(earliest)}**.\n\nPra eu confirmar, me manda o **nome completo** do paciente`);
                 }
             }
 
@@ -893,57 +896,45 @@ export async function getOptimizedAmandaResponse({
     enrichedContext.stage = newStage;
 
     const isSchedulingLikeText = GENERIC_SCHEDULE_EVAL_REGEX.test(normalized) || SCHEDULING_REGEX.test(normalized);
-
-    // ✅ PATCH: Se lead já tem dados parciais, está em fluxo de agendamento
-    const isInSchedulingFlow = !!(
-        lead?.patientInfo?.age ||
-        lead?.ageGroup ||
-        lead?.therapyArea ||
-        lead?.autoBookingContext?.mappedTherapyArea ||
-        lead?.pendingPreferredPeriod ||
-        lead?.autoBookingContext?.awaitingPeriodChoice
-    );
-
-    const wantsScheduling = flags.wantsSchedule || flags.wantsSchedulingNow || isSchedulingLikeText || isInSchedulingFlow;
-
-    console.log("[ORCHESTRATOR] wantsScheduling:", wantsScheduling, "| isInSchedulingFlow:", isInSchedulingFlow);
+    const wantsScheduling = flags.wantsSchedule || flags.wantsSchedulingNow || isSchedulingLikeText;
 
     if (wantsScheduling) {
         const detectedTherapies = detectAllTherapies(text);
+        const hasArea = detectedTherapies.length > 0 || flags.therapyArea;
+        const hasAge = /\b\d{1,2}\s*(anos?|mes(es)?)\b/i.test(text);
 
-        // ✅ PATCH: Considera dados JÁ SALVOS no lead + mensagem atual
-        const hasAreaNow = detectedTherapies.length > 0 || flags.therapyArea || lead?.therapyArea || lead?.autoBookingContext?.mappedTherapyArea;
-        const hasAgeNow = /\b\d{1,2}\s*(anos?|mes(es)?)\b/i.test(text) || lead?.patientInfo?.age || lead?.ageGroup;
-        const hasPeriodNow = extractPeriodFromText(text) || lead?.pendingPreferredPeriod;
-
-        console.log("[TRIAGEM INICIAL]", { hasAreaNow, hasAgeNow, hasPeriodNow, isInSchedulingFlow });
-
-        // ✅ Se já tem período (mensagem atual ou salvo), vai direto pro PASSO 3 buscar slots
-        if (hasPeriodNow && hasAreaNow && hasAgeNow) {
-            console.log("[ORCHESTRATOR] ✅ Triagem completa no bloco inicial, delegando pro PASSO 3...");
-            // Não retorna, deixa continuar pro PASSO 3 que busca slots
-        }
-        // 1️⃣ Nenhuma queixa detectada ainda E não está em fluxo
-        else if (!hasAreaNow && !hasAgeNow && !isInSchedulingFlow) {
+        // 1️⃣ Nenhuma queixa detectada ainda
+        if (!hasArea && !hasAge) {
             return ensureSingleHeart("Claro! Pra eu entender direitinho, o que você tem notado ou qual a principal queixa do(a) paciente? 💚");
         }
+
         // 2️⃣ Queixa detectada → responder com empatia + área + pedir idade
-        else if (hasAreaNow && !hasAgeNow) {
-            const areaName = detectedTherapies[0]?.name || lead?.therapyArea || "área ideal";
+        if (hasArea && !hasAge) {
+            const areaName = detectedTherapies[0]?.name || "área ideal";
             return ensureSingleHeart(
                 `Entendi 💚 É super comum nessa fase! Nesse tipo de caso, o ideal é começar pela **${areaName}**, que ajuda bastante no desenvolvimento e acompanhamento.  
 Pra eu te orientar direitinho: qual a idade do(a) paciente (em meses ou anos)?`
             );
         }
-        // 3️⃣ Já tem área e idade, falta período → perguntar período
-        else if (hasAreaNow && hasAgeNow && !hasPeriodNow) {
-            const areaName = detectedTherapies[0]?.name || lead?.therapyArea || flags.therapyArea || "área indicada";
+
+        // 3️⃣ Já tem área e idade → transição natural pro agendamento
+        if (hasArea && hasAge) {
+            const areaName = detectedTherapies[0]?.name || flags.therapyArea || "área indicada";
+
+            // 🧠 Ativa estado aguardando resposta de período
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: {
+                    "autoBookingContext.awaitingPeriodChoice": true,
+                    "autoBookingContext.preferredPeriod": null,
+                },
+            }).catch(() => { });
+
             return ensureSingleHeart(
                 `Perfeito 💚 ${areaName} é realmente a área certa pra esse tipo de caso.  
 Podemos ver juntos um horário pra avaliação? Você prefere **de manhã** ou **à tarde**?`
             );
         }
-        // ✅ Se tem tudo, continua pro PASSO 3
+
     }
 
     // 🦴🍼 Gate osteopata (físio bebê)
@@ -1077,11 +1068,10 @@ Podemos ver juntos um horário pra avaliação? Você prefere **de manhã** ou *
         // 🆕 SALVA DADOS DETECTADOS IMEDIATAMENTE
         const updateData = {};
 
-        // ✅ PATCH: Salva período em pendingPreferredPeriod (FONTE ÚNICA)
+        // Detecta e salva período
         const periodDetected = extractPeriodFromText(text);
-        if (periodDetected && !lead?.pendingPreferredPeriod) {
-            updateData.pendingPreferredPeriod = periodDetected;
-            console.log("[TRIAGEM] ✅ Período detectado e salvo:", periodDetected);
+        if (periodDetected && !lead?.autoBookingContext?.preferredPeriod) {
+            updateData["autoBookingContext.preferredPeriod"] = periodDetected;
         }
 
         // Detecta e salva idade
@@ -1847,6 +1837,7 @@ async function callAmandaAIWithContext(
         context.ageGroup ||
         lead?.ageGroup ||
         lead?.patientInfo?.age ||
+        lead?.qualificationData?.extractedInfo?.idade ||  // ✅ FIX
         /\d+\s*anos?\b/i.test(userText);
 
     let scheduleInfoNote = "";
