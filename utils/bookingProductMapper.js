@@ -224,11 +224,12 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
     };
   }
 
-  // Fallback genérico: psicologia / avaliação inicial
+  // ✅ FIX: Se não detectou área, retorna null para forçar triagem
+  // NÃO usar fallback de "psicologia" - isso pula a pergunta de queixa!
   return {
-    therapyArea: "psicologia",
+    therapyArea: null,
     specialties: [],
-    product: "avaliacao_inicial",
+    product: null,
   };
 }
 

@@ -91,6 +91,19 @@ const GENERIC_SCHEDULE_EVAL_REGEX =
 // ============================================================================
 
 /**
+ * ✅ FIX: Retorna área do qualificationData APENAS se tiver queixa registrada
+ * Se não tem queixa, a área foi detectada do nome da clínica (errado!)
+ */
+function getValidQualificationArea(lead) {
+    const extractedInfo = lead?.qualificationData?.extractedInfo;
+    // Só considera a especialidade válida se tiver queixa explícita
+    if (extractedInfo?.queixa || extractedInfo?.queixaDetalhada?.length > 0) {
+        return extractedInfo?.especialidade || null;
+    }
+    return null; // Ignora área se não tem queixa
+}
+
+/**
  * Extrai idade da mensagem (aceita "4", "4 anos", "tem 4", "fez 4", "4 aninhos")
  */
 function extractAgeFromText(text) {
@@ -583,12 +596,15 @@ export async function getOptimizedAmandaResponse({
         if (preferredPeriod) {
             console.log("🎯 [ORCHESTRATOR] Usuário escolheu período:", preferredPeriod);
 
-            // pega área do lead (sem inventar)
+            // ✅ FIX: pega área do lead - PRIORIZA qualificationData.extractedInfo.especialidade
             const therapyArea =
+                getValidQualificationArea(lead) ||  // ✅ PRIORIDADE!
                 lead?.therapyArea ||
                 lead?.autoBookingContext?.mappedTherapyArea ||
                 flags?.therapyArea ||
                 null;
+
+            console.log("🎯 [ORCHESTRATOR] Área para buscar slots:", therapyArea);
 
             // se não tem área ainda, não dá pra buscar slots
             if (!therapyArea) {
@@ -600,11 +616,20 @@ export async function getOptimizedAmandaResponse({
                 );
             }
 
+
+            // ✅ FIX: Sincroniza therapyArea se qualificationData tem área diferente
+            const qualificationArea = getValidQualificationArea(lead);
+            if (qualificationArea && lead?.therapyArea !== qualificationArea) {
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: { therapyArea: qualificationArea }
+                }).catch(() => { });
+            }
             // desarma “aguardando período” e salva o período real
             await Leads.findByIdAndUpdate(lead._id, {
                 $set: {
                     "autoBookingContext.awaitingPeriodChoice": false,
                     "autoBookingContext.preferredPeriod": preferredPeriod,
+                    pendingPreferredPeriod: preferredPeriod,  // ✅ FIX: fonte única
                 },
             }).catch(() => { });
 
@@ -896,45 +921,99 @@ export async function getOptimizedAmandaResponse({
     enrichedContext.stage = newStage;
 
     const isSchedulingLikeText = GENERIC_SCHEDULE_EVAL_REGEX.test(normalized) || SCHEDULING_REGEX.test(normalized);
-    const wantsScheduling = flags.wantsSchedule || flags.wantsSchedulingNow || isSchedulingLikeText;
+
+    // ✅ FIX: Detecta se está em fluxo de agendamento (tem dados parciais salvos)
+    // NÃO inclui lead?.therapyArea porque pode ser fallback errado sem queixa
+    const isInSchedulingFlow = !!(
+        lead?.patientInfo?.age ||
+        lead?.ageGroup ||
+        lead?.qualificationData?.extractedInfo?.idade ||
+        getValidQualificationArea(lead) ||  // Só conta se tiver queixa
+        lead?.autoBookingContext?.mappedTherapyArea ||
+        lead?.pendingPreferredPeriod ||
+        lead?.autoBookingContext?.awaitingPeriodChoice ||
+        lead?.patientInfo?.complaint ||
+        lead?.autoBookingContext?.complaint
+    );
+
+    const wantsScheduling = flags.wantsSchedule || flags.wantsSchedulingNow || isSchedulingLikeText || isInSchedulingFlow;
+
+    console.log("[ORCHESTRATOR] wantsScheduling:", wantsScheduling, "| isInSchedulingFlow:", isInSchedulingFlow);
 
     if (wantsScheduling) {
         const detectedTherapies = detectAllTherapies(text);
-        const hasArea = detectedTherapies.length > 0 || flags.therapyArea;
-        const hasAge = /\b\d{1,2}\s*(anos?|mes(es)?)\b/i.test(text);
 
-        // 1️⃣ Nenhuma queixa detectada ainda
-        if (!hasArea && !hasAge) {
-            return ensureSingleHeart("Claro! Pra eu entender direitinho, o que você tem notado ou qual a principal queixa do(a) paciente? 💚");
+        // ✅ FIX: Só considera área do lead se tiver queixa registrada
+        const hasValidLeadArea = lead?.therapyArea &&
+            (lead?.qualificationData?.extractedInfo?.queixa ||
+                lead?.qualificationData?.extractedInfo?.queixaDetalhada?.length > 0 ||
+                lead?.patientInfo?.complaint ||
+                lead?.autoBookingContext?.complaint);
+
+        // ✅ FIX: Verifica área em TODAS as fontes (mensagem atual + lead COM queixa + qualificationData COM queixa)
+        const hasArea = detectedTherapies.length > 0 ||
+            flags.therapyArea ||
+            hasValidLeadArea ||
+            getValidQualificationArea(lead) ||
+            lead?.autoBookingContext?.mappedTherapyArea;
+
+        // ✅ FIX: Verifica idade em TODAS as fontes
+        const hasAge = /\b\d{1,2}\s*(anos?|mes(es)?)\b/i.test(text) ||
+            lead?.patientInfo?.age ||
+            lead?.ageGroup ||
+            lead?.qualificationData?.extractedInfo?.idade;
+
+        // ✅ FIX: Verifica período
+        const hasPeriod = extractPeriodFromText(text) ||
+            lead?.pendingPreferredPeriod ||
+            lead?.autoBookingContext?.preferredPeriod;
+
+        console.log("[BLOCO_INICIAL] hasArea:", hasArea, "| hasAge:", hasAge, "| hasPeriod:", hasPeriod, "| hasValidLeadArea:", hasValidLeadArea);
+
+        // ✅ FIX: Se tem TUDO, delega pro PASSO 3/4 (não retorna aqui)
+        if (hasArea && hasAge && hasPeriod) {
+            console.log("[BLOCO_INICIAL] ✅ Triagem completa, delegando pro PASSO 3...");
+            // Não retorna, deixa continuar pro PASSO 3/4
         }
-
-        // 2️⃣ Queixa detectada → responder com empatia + área + pedir idade
-        if (hasArea && !hasAge) {
-            const areaName = detectedTherapies[0]?.name || "área ideal";
+        // 1️⃣ Nenhuma queixa/área detectada ainda (com ou sem idade)
+        else if (!hasArea) {
+            // ✅ FIX: Pergunta queixa MESMO se já tem idade
+            return ensureSingleHeart("Pra eu te orientar direitinho: o que você tem notado ou qual a principal queixa do(a) paciente?");
+        }
+        // 2️⃣ Queixa/área detectada → pedir idade se ainda não tem
+        else if (hasArea && !hasAge) {
+            const areaName = detectedTherapies[0]?.name ||
+                getValidQualificationArea(lead) ||
+                (hasValidLeadArea ? lead?.therapyArea : null) ||
+                "área ideal";
             return ensureSingleHeart(
                 `Entendi 💚 É super comum nessa fase! Nesse tipo de caso, o ideal é começar pela **${areaName}**, que ajuda bastante no desenvolvimento e acompanhamento.  
 Pra eu te orientar direitinho: qual a idade do(a) paciente (em meses ou anos)?`
             );
         }
-
-        // 3️⃣ Já tem área e idade → transição natural pro agendamento
-        if (hasArea && hasAge) {
-            const areaName = detectedTherapies[0]?.name || flags.therapyArea || "área indicada";
+        // 3️⃣ Já tem área e idade, falta período → perguntar período
+        else if (hasArea && hasAge && !hasPeriod) {
+            const areaName = detectedTherapies[0]?.name ||
+                getValidQualificationArea(lead) ||
+                (hasValidLeadArea ? lead?.therapyArea : null) ||
+                flags.therapyArea ||
+                "área indicada";
 
             // 🧠 Ativa estado aguardando resposta de período
-            await Leads.findByIdAndUpdate(lead._id, {
-                $set: {
-                    "autoBookingContext.awaitingPeriodChoice": true,
-                    "autoBookingContext.preferredPeriod": null,
-                },
-            }).catch(() => { });
+            if (lead?._id) {
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: {
+                        "autoBookingContext.awaitingPeriodChoice": true,
+                    },
+                }).catch(() => { });
+            }
 
             return ensureSingleHeart(
                 `Perfeito 💚 ${areaName} é realmente a área certa pra esse tipo de caso.  
 Podemos ver juntos um horário pra avaliação? Você prefere **de manhã** ou **à tarde**?`
             );
         }
-
+        // ✅ Se tem tudo, continua pro PASSO 3/4
     }
 
     // 🦴🍼 Gate osteopata (físio bebê)
@@ -1068,36 +1147,44 @@ Podemos ver juntos um horário pra avaliação? Você prefere **de manhã** ou *
         // 🆕 SALVA DADOS DETECTADOS IMEDIATAMENTE
         const updateData = {};
 
-        // Detecta e salva período
+        // ✅ FIX: Detecta período e salva em pendingPreferredPeriod (FONTE ÚNICA)
         const periodDetected = extractPeriodFromText(text);
-        if (periodDetected && !lead?.autoBookingContext?.preferredPeriod) {
+        if (periodDetected && !lead?.pendingPreferredPeriod) {
+            updateData.pendingPreferredPeriod = periodDetected;
             updateData["autoBookingContext.preferredPeriod"] = periodDetected;
+            console.log("[TRIAGEM] ✅ Período detectado e salvo:", periodDetected);
         }
 
         // Detecta e salva idade
         const ageDetected = extractAgeFromText(text);
-        if (ageDetected && !lead?.patientInfo?.age) {
+        if (ageDetected && !lead?.patientInfo?.age && !lead?.qualificationData?.extractedInfo?.idade) {
             updateData["patientInfo.age"] = ageDetected.age;
             updateData["patientInfo.ageUnit"] = ageDetected.unit;
             updateData.ageGroup = getAgeGroup(ageDetected.age, ageDetected.unit);
             console.log("[TRIAGEM] ✅ Idade detectada e salva:", ageDetected.age, ageDetected.unit);
         }
 
-        // 🆕 Detecta área pelo bookingProduct OU mapeia da queixa
-        let areaDetected = bookingProduct?.therapyArea;
+        // ✅ FIX: Detecta área - PRIORIZA qualificationData.extractedInfo.especialidade
+        const qualificationArea = getValidQualificationArea(lead);
+        let areaDetected = qualificationArea || bookingProduct?.therapyArea;
 
-        // Se não veio do bookingProduct, tenta mapear da queixa na mensagem
+        // Se não veio de nenhum lugar, tenta mapear da queixa na mensagem
         if (!areaDetected && !lead?.therapyArea) {
             areaDetected = mapComplaintToTherapyArea(text);
             if (areaDetected) {
                 console.log("[TRIAGEM] ✅ Área mapeada da queixa:", areaDetected);
-                // Salva a queixa também
                 updateData["patientInfo.complaint"] = text;
                 updateData["autoBookingContext.complaint"] = text;
             }
         }
 
-        if (areaDetected && !lead?.therapyArea) {
+        // ✅ FIX: Sincroniza therapyArea se qualificationData tem área diferente
+        if (qualificationArea && lead?.therapyArea !== qualificationArea) {
+            updateData.therapyArea = qualificationArea;
+            updateData["autoBookingContext.mappedTherapyArea"] = qualificationArea;
+            areaDetected = qualificationArea;
+            console.log("[TRIAGEM] ✅ Sincronizando área do qualificationData:", qualificationArea);
+        } else if (areaDetected && !lead?.therapyArea) {
             updateData.therapyArea = areaDetected;
             updateData["autoBookingContext.mappedTherapyArea"] = areaDetected;
             console.log("[TRIAGEM] ✅ Área salva:", areaDetected);
@@ -1125,14 +1212,22 @@ Podemos ver juntos um horário pra avaliação? Você prefere **de manhã** ou *
             if (updateData.pendingPreferredPeriod) lead.pendingPreferredPeriod = updateData.pendingPreferredPeriod;
         }
 
-        // Verifica o que ainda falta (DEPOIS de salvar)
-        const hasProfileNow = hasAgeOrProfileNow(text, flags, enrichedContext, lead) || ageDetected;
-        const hasAreaNow = !!(lead?.therapyArea || areaDetected || bookingProduct?.therapyArea);
-        const hasPeriodNow = !!(lead?.pendingPreferredPeriod || periodDetected);
+        // ✅ FIX: Verifica o que ainda falta - INCLUI qualificationData como fonte
+        const hasProfileNow = hasAgeOrProfileNow(text, flags, enrichedContext, lead) ||
+            ageDetected ||
+            lead?.qualificationData?.extractedInfo?.idade;
+        const hasAreaNow = !!(lead?.therapyArea ||
+            areaDetected ||
+            bookingProduct?.therapyArea ||
+            getValidQualificationArea(lead));
+        const hasPeriodNow = !!(lead?.pendingPreferredPeriod ||
+            lead?.autoBookingContext?.preferredPeriod ||
+            periodDetected);
 
         console.log("[TRIAGEM] Estado após salvar:", {
             hasProfile: hasProfileNow,
             hasArea: hasAreaNow,
+            hasPeriod: hasPeriodNow
             hasPeriod: hasPeriodNow
         });
 
@@ -1148,8 +1243,16 @@ Podemos ver juntos um horário pra avaliação? Você prefere **de manhã** ou *
         // =========================================================================
         console.log("[ORCHESTRATOR] ✅ Triagem completa! Buscando slots...");
 
-        const therapyAreaForSlots = lead?.therapyArea || areaDetected || bookingProduct?.therapyArea;
-        const preferredPeriod = lead?.pendingPreferredPeriod || periodDetected;
+        // ✅ FIX: Inclui qualificationData.extractedInfo.especialidade como fonte
+        const therapyAreaForSlots = lead?.therapyArea ||
+            areaDetected ||
+            bookingProduct?.therapyArea ||
+            getValidQualificationArea(lead);
+        const preferredPeriod = lead?.pendingPreferredPeriod ||
+            lead?.autoBookingContext?.preferredPeriod ||
+            periodDetected;
+
+        console.log("[ORCHESTRATOR] Buscando slots para:", { therapyAreaForSlots, preferredPeriod });
 
         try {
             const availableSlots = await findAvailableSlots({
