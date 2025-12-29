@@ -568,6 +568,45 @@ export async function getOptimizedAmandaResponse({
     const msgCount = historyLen + 1;
     enrichedContext.messageCount = msgCount;
 
+    // 🔹 Captura a resposta ao período (quando Amanda perguntou "manhã ou tarde?")
+    if (lead?.pendingPreferredPeriod && !lead?.pendingSchedulingSlots?.primary) {
+        const preferredPeriod = extractPeriodFromText(text);
+        if (preferredPeriod) {
+            console.log("🎯 [ORCHESTRATOR] Usuário escolheu período:", preferredPeriod);
+
+            await Leads.findByIdAndUpdate(lead._id, {
+                $set: {
+                    pendingPreferredPeriod: false,
+                    "autoBookingContext.preferredPeriod": preferredPeriod,
+                },
+            }).catch(() => { });
+
+            const therapyArea =
+                lead?.therapyArea ||
+                lead?.autoBookingContext?.mappedTherapyArea ||
+                flags?.therapyArea;
+
+            try {
+                const slots = await findAvailableSlots({
+                    therapyArea,
+                    preferredPeriod,
+                    daysAhead: 30,
+                });
+
+                const { message } = buildSlotMenuMessage(slots);
+                if (message) return ensureSingleHeart(message);
+
+                return ensureSingleHeart(
+                    `Pra **${preferredPeriod}** não encontrei vaga agora 😕  
+Mas posso te mostrar outras opções próximas, pode ser?`
+                );
+            } catch (err) {
+                console.error("[ORCHESTRATOR] Erro ao buscar slots do período:", err.message);
+                return ensureSingleHeart("Tive um probleminha ao checar os horários 😅 Pode me confirmar se prefere **manhã** ou **tarde**?");
+            }
+        }
+    }
+
     // =========================================================================
     // 🆕 PASSO 2: PROCESSAMENTO DE ESCOLHA DE SLOT (QUANDO JÁ TEM SLOTS PENDENTES)
     // =========================================================================
@@ -825,6 +864,47 @@ export async function getOptimizedAmandaResponse({
     const isSchedulingLikeText = GENERIC_SCHEDULE_EVAL_REGEX.test(normalized) || SCHEDULING_REGEX.test(normalized);
     const wantsScheduling = flags.wantsSchedule || flags.wantsSchedulingNow || isSchedulingLikeText;
 
+    if (wantsScheduling) {
+        const detectedTherapies = detectAllTherapies(text);
+        const hasArea = detectedTherapies.length > 0 || flags.therapyArea;
+        const hasAge = /\b\d{1,2}\s*(anos?|mes(es)?)\b/i.test(text);
+
+        // 1️⃣ Nenhuma queixa detectada ainda
+        if (!hasArea && !hasAge) {
+            return ensureSingleHeart("Claro! Pra eu entender direitinho, o que você tem notado ou qual a principal queixa do(a) paciente? 💚");
+        }
+
+        // 2️⃣ Queixa detectada → responder com empatia + área + pedir idade
+        if (hasArea && !hasAge) {
+            const areaName = detectedTherapies[0]?.name || "área ideal";
+            return ensureSingleHeart(
+                `Entendi 💚 É super comum nessa fase! Nesse tipo de caso, o ideal é começar pela **${areaName}**, que ajuda bastante no desenvolvimento e acompanhamento.  
+Pra eu te orientar direitinho: qual a idade do(a) paciente (em meses ou anos)?`
+            );
+        }
+
+        // 3️⃣ Já tem área e idade → transição natural pro agendamento
+        if (hasArea && hasAge) {
+            const areaName = detectedTherapies[0]?.name || flags.therapyArea || "área indicada";
+
+            // 🧠 Ativa estado de espera pelo período (manhã/tarde)
+            if (lead?._id) {
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: {
+                        pendingPreferredPeriod: true,
+                        "autoBookingContext.awaitingPeriodChoice": true,
+                    },
+                }).catch(() => { });
+            }
+
+            return ensureSingleHeart(
+                `Perfeito 💚 ${areaName} é realmente a área certa pra esse tipo de caso.  
+Podemos ver juntos um horário pra avaliação? Você prefere **de manhã** ou **à tarde**?`
+            );
+        }
+
+    }
+
     // 🦴🍼 Gate osteopata (físio bebê)
     const babyContext =
         /\b\d{1,2}\s*(mes|meses)\b/i.test(text) || /\b(beb[eê]|rec[eé]m[-\s]*nascid[oa]|rn)\b/i.test(text);
@@ -933,12 +1013,6 @@ export async function getOptimizedAmandaResponse({
         flags?.therapyArea ||
         lead?.autoBookingContext?.mappedTherapyArea ||
         lead?.therapyArea
-    );
-
-    const hasPeriod = !!(
-        lead?.pendingPreferredPeriod ||
-        lead?.autoBookingContext?.preferredPeriod ||
-        enrichedContext.preferredPeriod
     );
 
     if (bookingProduct?.product === "multi_servico") {
