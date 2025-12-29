@@ -1,18 +1,18 @@
 import Anthropic from "@anthropic-ai/sdk";
 import "dotenv/config";
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
+import { urgencyScheduler } from "../services/intelligence/UrgencyScheduler.js";
 import enrichLeadContext from "../services/leadContext.js";
-import { detectAllFlags, deriveFlagsFromText, resolveTopicFromFlags } from "./flagsDetector.js";
+import { deriveFlagsFromText, detectAllFlags, resolveTopicFromFlags } from "./flagsDetector.js";
 import { buildEquivalenceResponse } from "./responseBuilder.js";
 import {
     detectAllTherapies,
+    detectNegativeScopes,
+    getPriceLinesForDetectedTherapies,
     getTDAHResponse,
     isAskingAboutEquivalence,
-    isTDAHQuestion,
-    detectNegativeScopes,
-    getPriceLinesForDetectedTherapies
+    isTDAHQuestion
 } from "./therapyDetector.js";
-import { urgencyScheduler } from "../services/intelligence/UrgencyScheduler.js";
 
 import Followup from "../models/Followup.js";
 import Leads from "../models/Leads.js";
@@ -25,6 +25,7 @@ import {
     pickSlotFromUserReply
 } from "../services/amandaBookingService.js";
 
+import { buildContextPack } from "../services/intelligence/ContextPack.js";
 import { handleInboundMessageForFollowups } from "../services/responseTrackingService.js";
 import {
     buildDynamicSystemPrompt,
@@ -34,7 +35,6 @@ import {
 } from "./amandaPrompt.js";
 import { logBookingGate, mapFlagsToBookingProduct } from "./bookingProductMapper.js";
 import { extractPreferredDateFromText } from "./dateParser.js";
-import { buildContextPack } from "../services/intelligence/ContextPack.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
@@ -1227,7 +1227,6 @@ Podemos ver juntos um horário pra avaliação? Você prefere **de manhã** ou *
         console.log("[TRIAGEM] Estado após salvar:", {
             hasProfile: hasProfileNow,
             hasArea: hasAreaNow,
-            hasPeriod: hasPeriodNow
             hasPeriod: hasPeriodNow
         });
 
