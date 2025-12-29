@@ -7,7 +7,12 @@ import { resolveTopicFromFlags } from "./flagsDetector.js";
  *  - product: rótulo lógico do tipo de atendimento
  */
 export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
-  const text = (flags.text || "").toLowerCase();
+  // ✅ FIX: Limpa nome da clínica ANTES de detectar área (DENTRO da função)
+  const text = (flags.text || "")
+    .toLowerCase()
+    .replace(/cl[ií]nica\s+fono\s+inova/gi, '')
+    .replace(/fono\s+inova/gi, '');
+
   const rawText = flags.rawText ?? flags.text ?? "";
   const topic = flags.topic || resolveTopicFromFlags(flags, rawText);
 
@@ -240,4 +245,3 @@ export function logBookingGate(flags = {}, mapped = null) {
     topic: flags.topic || null,
   });
 }
-
