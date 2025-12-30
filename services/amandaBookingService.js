@@ -115,12 +115,19 @@ export async function findAvailableSlots({
 }) {
     const doctorFilter = {
         active: true,
-        specialty: therapyArea,
+        $or: [
+            { specialty: { $regex: new RegExp(therapyArea, "i") } },
+            { specialties: { $regex: new RegExp(therapyArea, "i") } },
+        ],
     };
 
+    // 🔎 se vierem especialidades específicas (ex: ['teste_linguinha'])
     if (Array.isArray(specialties) && specialties.length) {
-        doctorFilter.specialties = { $in: specialties };
+        doctorFilter.$or.push({ specialties: { $in: specialties.map(s => new RegExp(s, "i")) } });
     }
+
+    console.log("🩺 [BOOKING] Filtro de médicos aplicado:", doctorFilter);
+
 
     console.log("🔍 [BOOKING] Buscando slots:", {
         therapyArea,

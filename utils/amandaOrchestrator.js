@@ -538,7 +538,12 @@ export async function getOptimizedAmandaResponse({
                 }).catch(() => { });
                 return ensureSingleHeart("Esse horário acabou de ser preenchido 😕 A equipe vai te enviar novas opções em instantes");
             } else {
-                return ensureSingleHeart("Tive um probleminha ao confirmar. A equipe vai te responder por aqui em instantes");
+                console.warn("⚠️ [ORCHESTRATOR] Falha no autoBookAppointment:", bookingResult?.error);
+
+                return ensureSingleHeart(
+                    "Tive um probleminha ao confirmar o agendamento 😕\n" +
+                    "Mas fique tranquila(o), nossa equipe vai entrar em contato pra confirmar tudo certinho 💚"
+                );
             }
         }
     }
