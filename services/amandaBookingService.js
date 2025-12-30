@@ -112,22 +112,16 @@ export async function findAvailableSlots({
     preferredPeriod,
     preferredDate,
     daysAhead = 30,
+    maxOptions = 2,  // ✅ NOVO: parar quando tiver o suficiente
 }) {
     const doctorFilter = {
         active: true,
-        $or: [
-            { specialty: { $regex: new RegExp(therapyArea, "i") } },
-            { specialties: { $regex: new RegExp(therapyArea, "i") } },
-        ],
+        specialty: therapyArea,
     };
 
-    // 🔎 se vierem especialidades específicas (ex: ['teste_linguinha'])
     if (Array.isArray(specialties) && specialties.length) {
-        doctorFilter.$or.push({ specialties: { $in: specialties.map(s => new RegExp(s, "i")) } });
+        doctorFilter.specialties = { $in: specialties };
     }
-
-    console.log("🩺 [BOOKING] Filtro de médicos aplicado:", doctorFilter);
-
 
     console.log("🔍 [BOOKING] Buscando slots:", {
         therapyArea,
@@ -136,15 +130,9 @@ export async function findAvailableSlots({
         preferredDate,
     });
 
-    const doctors = await Doctor.find(
-        therapyArea
-            ? { active: true, $or: [{ specialty: new RegExp(therapyArea, "i") }, { specialties: new RegExp(therapyArea, "i") }] }
-            : { active: true }
-    );
-
-    if (!therapyArea) {
-        console.warn("⚠️ [BOOKING] Nenhuma área detectada, abortando busca massiva");
-        return [];
+    const doctors = await Doctor.find(doctorFilter).lean();
+    if (!doctors.length) {
+        return null;
     }
 
     const now = new Date();
@@ -172,17 +160,20 @@ export async function findAvailableSlots({
     let validDaysChecked = 0;
     let offset = 0;
 
-    while (validDaysChecked < daysAhead) {
-        if (offset > daysAhead * 2) {
-            console.warn("⚠️ [BOOKING] Loop excessivo detectado — interrompendo busca de horários.");
+    // ✅ Margem para filtrar período depois (busca um pouco mais que maxOptions)
+    const targetCandidates = Math.max(maxOptions * 4, 8);
 
-            // 💬 Envia resposta de fallback para o orquestrador
-            return {
-                error: true,
-                message:
-                    "Tive um probleminha técnico pra confirmar o agendamento agora 😕\nMas nossa equipe vai entrar em contato pra confirmar tudo certinho 💚",
-                slots: [],
-            };
+    while (validDaysChecked < daysAhead) {
+        // ✅ Guard anti-loop excessivo
+        if (offset > daysAhead * 2) {
+            console.warn("⚠️ [BOOKING] Loop excessivo detectado — interrompendo busca.");
+            break;
+        }
+
+        // ✅ EARLY-BREAK: já tem candidatos suficientes
+        if (allCandidates.length >= targetCandidates) {
+            console.log(`✅ [BOOKING] Early-break: ${allCandidates.length} candidatos encontrados`);
+            break;
         }
 
         const dateObj = addDays(searchStart, offset);
@@ -196,6 +187,9 @@ export async function findAvailableSlots({
 
         // ✅ percorre todos os médicos elegíveis
         for (const doctor of doctors) {
+            // ✅ EARLY-BREAK interno
+            if (allCandidates.length >= targetCandidates) break;
+
             const slots = await fetchAvailableSlotsForDoctor({
                 doctorId: String(doctor._id),
                 date,
@@ -219,6 +213,9 @@ export async function findAvailableSlots({
                     specialty: therapyArea,
                     requestedSpecialties: specialties,
                 });
+
+                // ✅ EARLY-BREAK: já tem o suficiente
+                if (allCandidates.length >= targetCandidates) break;
             }
         }
 
@@ -235,22 +232,15 @@ export async function findAvailableSlots({
     // Ou seja: se o paciente pedir "29/12", a busca começa em 29/12, mas os dias de recesso são ignorados,
     // então o primeiro horário vai ser logo DEPOIS do recesso (ex.: 06/01).
 
-    // substitui weekdayIndex atual
     const weekdayIndex = {
-        // pt-BR
-        domingo: 0, segunda: 1, terca: 2, terça: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6, sábado: 6,
-        // en-US
-        sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
+        sunday: 0,
+        monday: 1,
+        tuesday: 2,
+        wednesday: 3,
+        thursday: 4,
+        friday: 5,
+        saturday: 6,
     };
-
-    const normalizeDay = (s) =>
-        String(s || "")
-            .toLowerCase()
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, ""); // remove acentos
-
-    const prefDayKey = normalizeDay(preferredDay);
-
 
     const getDow = (dateStr) =>
         new Date(dateStr + "T12:00:00-03:00").getDay();
@@ -263,9 +253,8 @@ export async function findAvailableSlots({
     // 1️⃣ Tenta escolher o primary no dia da semana preferido (segunda, quinta etc.)
     let primary = null;
 
-
-    if (preferredDay && weekdayIndex[prefDayKey] !== undefined) {
-        const targetDow = weekdayIndex[prefDayKey];
+    if (preferredDay && weekdayIndex[preferredDay] !== undefined) {
+        const targetDow = weekdayIndex[preferredDay];
 
         const preferredDaySlots = allCandidates
             .filter(
@@ -304,6 +293,9 @@ export async function findAvailableSlots({
     // 3️⃣ Monta alternativas no MESMO período, tentando outro dia
     const primaryPeriod = getTimePeriod(primary.time);
 
+    // ✅ Calcula quantas alternativas precisamos (maxOptions - 1, pois 1 é o primary)
+    const maxAlternatives = Math.max(maxOptions - 1, 1);
+
     const samePeriodSlots = allCandidates
         .filter(
             (slot) =>
@@ -320,16 +312,16 @@ export async function findAvailableSlots({
 
     // primeiro tenta dias diferentes
     for (const slot of samePeriodSlots) {
-        if (alternativesSamePeriod.length >= 3) break;
+        if (alternativesSamePeriod.length >= maxAlternatives) break;
         if (slot.date !== primary.date) {
             alternativesSamePeriod.push(slot);
         }
     }
 
     // se ainda tiver espaço, preenche com outros horários no mesmo dia
-    if (alternativesSamePeriod.length < 3) {
+    if (alternativesSamePeriod.length < maxAlternatives) {
         for (const slot of samePeriodSlots) {
-            if (alternativesSamePeriod.length >= 3) break;
+            if (alternativesSamePeriod.length >= maxAlternatives) break;
             if (
                 slot.date === primary.date &&
                 !alternativesSamePeriod.some(
@@ -341,37 +333,40 @@ export async function findAvailableSlots({
         }
     }
 
+    // ✅ alternativesOtherPeriod: só se maxOptions > 2
     const alternativesOtherPeriod = [];
 
-    const otherPeriodSlots = allCandidates
-        .filter(
-            (slot) =>
-                !(slot.date === primary.date && slot.time === primary.time) &&
-                getTimePeriod(slot.time) !== primaryPeriod
-        )
-        .sort(
-            (a, b) =>
-                a.date.localeCompare(b.date) ||
-                a.time.localeCompare(b.time)
-        );
+    if (maxOptions > 2) {
+        const otherPeriodSlots = allCandidates
+            .filter(
+                (slot) =>
+                    !(slot.date === primary.date && slot.time === primary.time) &&
+                    getTimePeriod(slot.time) !== primaryPeriod
+            )
+            .sort(
+                (a, b) =>
+                    a.date.localeCompare(b.date) ||
+                    a.time.localeCompare(b.time)
+            );
 
-    // tenta pegar 2 de períodos diferentes primeiro (ex.: manhã e tarde)
-    const seenPeriods = new Set();
-    for (const slot of otherPeriodSlots) {
-        if (alternativesOtherPeriod.length >= 2) break;
-        const p = getTimePeriod(slot.time);
-        if (!seenPeriods.has(p)) {
-            seenPeriods.add(p);
-            alternativesOtherPeriod.push(slot);
-        }
-    }
-
-    // se não deu 2 ainda, completa com os próximos melhores
-    if (alternativesOtherPeriod.length < 2) {
+        // tenta pegar 2 de períodos diferentes primeiro (ex.: manhã e tarde)
+        const seenPeriods = new Set();
         for (const slot of otherPeriodSlots) {
             if (alternativesOtherPeriod.length >= 2) break;
-            if (!alternativesOtherPeriod.some(s => s.date === slot.date && s.time === slot.time)) {
+            const p = getTimePeriod(slot.time);
+            if (!seenPeriods.has(p)) {
+                seenPeriods.add(p);
                 alternativesOtherPeriod.push(slot);
+            }
+        }
+
+        // se não deu 2 ainda, completa com os próximos melhores
+        if (alternativesOtherPeriod.length < 2) {
+            for (const slot of otherPeriodSlots) {
+                if (alternativesOtherPeriod.length >= 2) break;
+                if (!alternativesOtherPeriod.some(s => s.date === slot.date && s.time === slot.time)) {
+                    alternativesOtherPeriod.push(slot);
+                }
             }
         }
     }
@@ -382,6 +377,7 @@ export async function findAvailableSlots({
         alternativesSamePeriod,
         alternativesOtherPeriod,
         all: allCandidates,
+        maxOptions,  // ✅ retorna pra o orchestrator saber
     };
 }
 
@@ -901,19 +897,27 @@ export function buildSlotMenuMessage(
     slotsCtx,
     {
         title = "Tenho esses horários no momento:",
-        question = "Qual você prefere? (A, B, C, D, E ou F)",
-        max = 6,
+        question = null,  // ✅ agora é dinâmico
+        max = null,  // ✅ usa slotsCtx.maxOptions se não fornecido
     } = {}
 ) {
-    const opts = buildSlotOptions(slotsCtx).slice(0, max);
+    // ✅ Usa maxOptions do contexto se disponível
+    const effectiveMax = max ?? slotsCtx?.maxOptions ?? 2;
+    const opts = buildSlotOptions(slotsCtx).slice(0, effectiveMax);
     if (!opts.length) return { message: null, optionsText: "", ordered: [], letters: [] };
 
     const letters = opts.map(o => o.letter);
     const ordered = opts.map(o => o.slot);
     const optionsText = opts.map(o => o.text).join("\n");
 
-    const message = `${title}\n\n${optionsText}\n\n${question} 💚`;
+    // ✅ Question dinâmico baseado no número de opções
+    const effectiveQuestion = question ?? (
+        letters.length === 2
+            ? "Qual você prefere? (A ou B)"
+            : `Qual você prefere? (${letters.join(", ")})`
+    );
+
+    const message = `${title}\n\n${optionsText}\n\n${effectiveQuestion} 💚`;
 
     return { message, optionsText, ordered, letters };
 }
-
