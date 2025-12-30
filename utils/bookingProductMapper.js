@@ -1,4 +1,5 @@
 import { resolveTopicFromFlags } from "./flagsDetector.js";
+import { detectAllTherapies, pickPrimaryTherapy } from "./therapyDetector.js";
 
 /**
  * Normaliza em algo que a camada de agenda entende:
@@ -15,6 +16,32 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
 
   const rawText = flags.rawText ?? flags.text ?? "";
   const topic = flags.topic || resolveTopicFromFlags(flags, rawText);
+  // 🧠 DETECÇÃO AUTOMÁTICA DE TERAPIA
+  const detectedTherapies = detectAllTherapies(text);
+  const primaryTherapy = pickPrimaryTherapy(detectedTherapies);
+
+  if (primaryTherapy) {
+    // Faz o mapeamento automático
+    const therapyMap = {
+      speech: "fonoaudiologia",
+      tongue_tie: "fonoaudiologia",
+      psychology: "psicologia",
+      occupational: "terapia_ocupacional",
+      physiotherapy: "fisioterapia",
+      music: "musicoterapia",
+      neuropsychological: "psicologia",
+      neuropsychopedagogy: "psicologia",
+      psychopedagogy: "psicologia"
+    };
+
+    const therapyArea = therapyMap[primaryTherapy] || "fonoaudiologia";
+
+    return {
+      therapyArea,
+      specialties: [primaryTherapy],
+      product: primaryTherapy,
+    };
+  }
 
   const wantsLinguinha = /linguinha|fr[eê]nulo/i.test(text);
   const wantsFisio = /fisioterap|fisio\b/i.test(text);
