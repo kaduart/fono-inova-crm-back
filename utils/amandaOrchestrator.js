@@ -33,8 +33,9 @@ import {
     getManual,
 } from "./amandaPrompt.js";
 import { logBookingGate, mapFlagsToBookingProduct } from "./bookingProductMapper.js";
-import { extractPreferredDateFromText } from "./dateParser.js";
+import { extractPreferredDateFromText, parsePtBrDate } from "./dateParser.js";
 import { buildContextPack } from "../services/intelligence/ContextPack.js";
+import { format } from "date-fns";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
@@ -471,10 +472,12 @@ export async function getOptimizedAmandaResponse({
         }
 
         if (step === "birth") {
-            const birthDate = extractBirth(text);
-            if (!birthDate) {
-                return ensureSingleHeart("Me manda a **data de nascimento** no formato **dd/mm/aaaa**");
+            const parsedDate = parsePtBrDate(text);
+            if (!parsedDate) {
+                return ensureSingleHeart("Me manda a **data de nascimento** no formato **dd/mm/aaaa** 💚");
             }
+
+            const birthDate = format(parsedDate, "yyyy-MM-dd");
 
             // Busca dados atualizados
             const updated = await Leads.findById(lead._id).lean().catch(() => null);
