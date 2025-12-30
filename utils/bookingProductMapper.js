@@ -37,12 +37,18 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
             : null;
 
   if (explicitArea) {
+    const savedArea = lead?.autoBookingContext?.mappedTherapyArea || lead?.therapyArea;
+    const canReuse = savedArea && savedArea === explicitArea;
+
     return {
       therapyArea: explicitArea,
-      specialties: lead?.autoBookingContext?.mappedSpecialties || [],
-      product: lead?.autoBookingContext?.mappedProduct || explicitArea,
+      specialties: canReuse ? (lead?.autoBookingContext?.mappedSpecialties || []) : [],
+      product: canReuse ? (lead?.autoBookingContext?.mappedProduct || explicitArea) : explicitArea,
+      // opcional: marcador pra orquestrador saber que foi dito explicitamente
+      _explicitArea: true,
     };
   }
+
   // ✅ Se estamos no fluxo de agendamento e já existe área salva, NÃO remapear
   // ...a menos que o usuário tenha dito explicitamente outra área agora
   if (flags.inSchedulingFlow || flags.wantsSchedulingNow) {

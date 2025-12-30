@@ -210,15 +210,22 @@ export async function findAvailableSlots({
     // Ou seja: se o paciente pedir "29/12", a busca começa em 29/12, mas os dias de recesso são ignorados,
     // então o primeiro horário vai ser logo DEPOIS do recesso (ex.: 06/01).
 
+    // substitui weekdayIndex atual
     const weekdayIndex = {
-        sunday: 0,
-        monday: 1,
-        tuesday: 2,
-        wednesday: 3,
-        thursday: 4,
-        friday: 5,
-        saturday: 6,
+        // pt-BR
+        domingo: 0, segunda: 1, terca: 2, terça: 2, quarta: 3, quinta: 4, sexta: 5, sabado: 6, sábado: 6,
+        // en-US
+        sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
     };
+
+    const normalizeDay = (s) =>
+        String(s || "")
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, ""); // remove acentos
+
+    const prefDayKey = normalizeDay(preferredDay);
+
 
     const getDow = (dateStr) =>
         new Date(dateStr + "T12:00:00-03:00").getDay();
@@ -231,8 +238,9 @@ export async function findAvailableSlots({
     // 1️⃣ Tenta escolher o primary no dia da semana preferido (segunda, quinta etc.)
     let primary = null;
 
-    if (preferredDay && weekdayIndex[preferredDay] !== undefined) {
-        const targetDow = weekdayIndex[preferredDay];
+
+    if (preferredDay && weekdayIndex[prefDayKey] !== undefined) {
+        const targetDow = weekdayIndex[prefDayKey];
 
         const preferredDaySlots = allCandidates
             .filter(
