@@ -136,9 +136,15 @@ export async function findAvailableSlots({
         preferredDate,
     });
 
-    const doctors = await Doctor.find(doctorFilter).lean();
-    if (!doctors.length) {
-        return null;
+    const doctors = await Doctor.find(
+        therapyArea
+            ? { active: true, $or: [{ specialty: new RegExp(therapyArea, "i") }, { specialties: new RegExp(therapyArea, "i") }] }
+            : { active: true }
+    );
+
+    if (!therapyArea) {
+        console.warn("⚠️ [BOOKING] Nenhuma área detectada, abortando busca massiva");
+        return [];
     }
 
     const now = new Date();
@@ -167,6 +173,18 @@ export async function findAvailableSlots({
     let offset = 0;
 
     while (validDaysChecked < daysAhead) {
+        if (offset > daysAhead * 2) {
+            console.warn("⚠️ [BOOKING] Loop excessivo detectado — interrompendo busca de horários.");
+
+            // 💬 Envia resposta de fallback para o orquestrador
+            return {
+                error: true,
+                message:
+                    "Tive um probleminha técnico pra confirmar o agendamento agora 😕\nMas nossa equipe vai entrar em contato pra confirmar tudo certinho 💚",
+                slots: [],
+            };
+        }
+
         const dateObj = addDays(searchStart, offset);
         const date = format(dateObj, "yyyy-MM-dd");
         offset++;

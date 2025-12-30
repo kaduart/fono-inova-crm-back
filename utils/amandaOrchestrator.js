@@ -617,6 +617,10 @@ export async function getOptimizedAmandaResponse({
                 daysAhead: 30,
             });
 
+            if (slots?.error) {
+                return ensureSingleHeart(slots.message);
+            }
+
             if (slots?.primary) {
                 // Processa a escolha
                 const allSlots = [
@@ -757,6 +761,10 @@ export async function getOptimizedAmandaResponse({
                     preferredPeriod,
                     daysAhead: 30,
                 });
+
+                if (slots?.error) {
+                    return ensureSingleHeart(slots.message);
+                }
 
                 // se achou slots, salva no lead pra ativar o PASSO 2
                 if (slots?.primary) {
