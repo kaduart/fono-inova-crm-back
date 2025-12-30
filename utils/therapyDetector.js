@@ -14,6 +14,7 @@ export const THERAPY_SPECIALTIES = {
         patterns: [
             /fono(audi(o|ó)log(a|ia|o))?/i,
             /\bfala\b|\blinguagem\b/i,
+            /fala\s+pouco|nao\s+fala|fala\s+errado|dificuldade\s+(de\s+)?falar/i,
             /pron(ú|u)ncia|troca\s+letras|gagueira/i,
             /atraso\s+(de\s+)?fala/i
         ]
