@@ -1,18 +1,18 @@
 import Anthropic from "@anthropic-ai/sdk";
 import "dotenv/config";
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
+import { urgencyScheduler } from "../services/intelligence/UrgencyScheduler.js";
 import enrichLeadContext from "../services/leadContext.js";
-import { detectAllFlags, deriveFlagsFromText, resolveTopicFromFlags } from "./flagsDetector.js";
+import { deriveFlagsFromText, detectAllFlags, resolveTopicFromFlags } from "./flagsDetector.js";
 import { buildEquivalenceResponse } from "./responseBuilder.js";
 import {
     detectAllTherapies,
+    detectNegativeScopes,
+    getPriceLinesForDetectedTherapies,
     getTDAHResponse,
     isAskingAboutEquivalence,
-    isTDAHQuestion,
-    detectNegativeScopes,
-    getPriceLinesForDetectedTherapies
+    isTDAHQuestion
 } from "./therapyDetector.js";
-import { urgencyScheduler } from "../services/intelligence/UrgencyScheduler.js";
 
 import Followup from "../models/Followup.js";
 import Leads from "../models/Leads.js";
@@ -25,6 +25,7 @@ import {
     pickSlotFromUserReply
 } from "../services/amandaBookingService.js";
 
+import { buildContextPack } from "../services/intelligence/ContextPack.js";
 import { handleInboundMessageForFollowups } from "../services/responseTrackingService.js";
 import {
     buildDynamicSystemPrompt,
@@ -34,7 +35,6 @@ import {
 } from "./amandaPrompt.js";
 import { logBookingGate, mapFlagsToBookingProduct } from "./bookingProductMapper.js";
 import { extractPreferredDateFromText } from "./dateParser.js";
-import { buildContextPack } from "../services/intelligence/ContextPack.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
@@ -1302,417 +1302,416 @@ export async function getOptimizedAmandaResponse({
         }
     }
     // ✅ Se tem tudo, continua pro PASSO 3/4
-}
 
-// 🦴🍼 Gate osteopata (físio bebê)
-const babyContext =
-    /\b\d{1,2}\s*(mes|meses)\b/i.test(text) || /\b(beb[eê]|rec[eé]m[-\s]*nascid[oa]|rn)\b/i.test(text);
+    // 🦴🍼 Gate osteopata (físio bebê)
+    const babyContext =
+        /\b\d{1,2}\s*(mes|meses)\b/i.test(text) || /\b(beb[eê]|rec[eé]m[-\s]*nascid[oa]|rn)\b/i.test(text);
 
-const therapyAreaForGate =
-    enrichedContext.therapyArea ||
-    flags.therapyArea ||
-    bookingProduct?.therapyArea ||
-    lead?.autoBookingContext?.mappedTherapyArea ||
-    lead?.therapyArea ||
-    null;
-
-const shouldOsteoGate =
-    Boolean(lead?._id) &&
-    wantsScheduling &&
-    babyContext &&
-    therapyAreaForGate === "fisioterapia" &&
-    !lead?.autoBookingContext?.osteopathyOk;
-
-if (shouldOsteoGate) {
-    const mentionsOsteo = /\b(osteopata|osteopatia|osteo)\b/i.test(text);
-
-    const saidYes =
-        (/\b(sim|s\b|ja|j[aá]|passou|consultou|avaliou|foi)\b/i.test(text) && mentionsOsteo) ||
-        /\b(osteop)\w*\s+(indicou|encaminhou|orientou)\b/i.test(text) ||
-        /\bfoi\s+o\s+osteop\w*\s+que\s+indicou\b/i.test(text);
-
-    const saidNo =
-        (/\b(n[aã]o|nao|ainda\s+n[aã]o|ainda\s+nao|nunca)\b/i.test(text) &&
-            (mentionsOsteo || /\bpassou\b/i.test(text))) ||
-        /\b(n[aã]o|nao)\s+passou\b/i.test(text);
-
-    const gatePending = Boolean(lead?.autoBookingContext?.osteopathyGatePending);
-
-    if (gatePending) {
-        if (saidYes) {
-            await safeLeadUpdate(lead._id, {
-                $set: { "autoBookingContext.osteopathyOk": true },
-                $unset: { "autoBookingContext.osteopathyGatePending": "" },
-            }).catch(() => { });
-        } else if (saidNo) {
-            await safeLeadUpdate(lead._id, {
-                $set: { "autoBookingContext.osteopathyOk": false },
-                $unset: { "autoBookingContext.osteopathyGatePending": "" },
-            }).catch(() => { });
-
-            return ensureSingleHeart(
-                "Perfeito 😊 Só pra alinhar: no caso de bebê, a triagem inicial precisa ser com nosso **Osteopata**. Depois da avaliação dele (e se ele indicar), a gente já encaminha pra Fisioterapia certinho. Você quer agendar a avaliação com o Osteopata essa semana ou na próxima?",
-            );
-        } else {
-            return ensureSingleHeart(
-                "Só pra eu te direcionar certinho: o bebê **já passou pelo Osteopata** e foi ele quem indicou a Fisioterapia?",
-            );
-        }
-    } else {
-        if (!mentionsOsteo) {
-            await safeLeadUpdate(lead._id, {
-                $set: { "autoBookingContext.osteopathyGatePending": true },
-            }).catch(() => { });
-
-            return ensureSingleHeart(
-                "Só pra eu te direcionar certinho: o bebê **já passou pelo Osteopata** e foi ele quem indicou a Fisioterapia?",
-            );
-        }
-
-        if (saidYes) {
-            await safeLeadUpdate(lead._id, {
-                $set: { "autoBookingContext.osteopathyOk": true },
-                $unset: { "autoBookingContext.osteopathyGatePending": "" },
-            }).catch(() => { });
-        }
-    }
-}
-
-const RESCHEDULE_REGEX =
-    /\b(remarcar|reagendar|novo\s+hor[aá]rio|trocar\s+hor[aá]rio)\b/i;
-
-const RESISTS_SCHEDULING_REGEX =
-    /\b(s[oó]\s+pesquisando|s[oó]\s+estou\s+pesquisando|mais\s+pra\s+frente|depois\s+eu\s+vejo|agora\s+n[aã]o\s+consigo|por\s+enquanto\s+n[aã]o|s[oó]\s+queria\s+saber\s+os\s+valores?)\b/i;
-
-const isResistingScheduling =
-    flags.visitLeadCold ||
-    RESISTS_SCHEDULING_REGEX.test(normalized) ||
-    analysis?.intent?.primary === "apenas_informacao" ||
-    analysis?.intent?.primary === "pesquisa_preco";
-
-const shouldUseVisitFunnel =
-    msgCount >= 4 &&
-    isResistingScheduling &&
-    !flags.wantsSchedule &&
-    !flags.wantsSchedulingNow &&
-    (newStage === "novo" || newStage === "pesquisando_preco" || newStage === "engajado") &&
-    !enrichedContext.pendingSchedulingSlots &&
-    !lead?.pendingPatientInfoForScheduling;
-
-const hasProfile =
-    hasAgeOrProfileNow(text, flags, enrichedContext, lead) ||
-    /\b(meu|minha)\s+(filh[oa]|crian[çc]a)\b/i.test(text);
-
-if (/\b(meu|minha)\s+(filh[oa]|crian[çc]a)\b/i.test(text)) {
-    flags.mentionsChild = true;
-}
-
-const hasArea = !!(
-    bookingProduct?.therapyArea ||
-    flags?.therapyArea ||
-    lead?.autoBookingContext?.mappedTherapyArea ||
-    lead?.therapyArea
-);
-
-if (bookingProduct?.product === "multi_servico") {
-    return ensureSingleHeart(
-        "Perfeito! Só confirmando: você quer **Fisioterapia** e **Teste da Linguinha**, certo? Quer agendar **primeiro qual dos dois**?",
-    );
-}
-
-if (RESCHEDULE_REGEX.test(normalized)) {
-    return ensureSingleHeart(
-        "Claro! Vamos remarcar 😊 Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor pra você?"
-    );
-}
-
-// =========================================================================
-// 🆕 PASSO 3: TRIAGEM - SALVA DADOS IMEDIATAMENTE E VERIFICA O QUE FALTA
-// =========================================================================
-if (wantsScheduling && lead?._id && !lead?.pendingPatientInfoForScheduling) {
-    console.log("[TRIAGEM] Verificando dados necessários...");
-
-    // 🆕 SALVA DADOS DETECTADOS IMEDIATAMENTE
-    const updateData = {};
-
-    // ✅ FIX: Detecta período e salva em pendingPreferredPeriod (FONTE ÚNICA)
-    const periodDetected = extractPeriodFromText(text);
-    if (periodDetected && !lead?.pendingPreferredPeriod) {
-        updateData.pendingPreferredPeriod = periodDetected;
-        updateData["autoBookingContext.preferredPeriod"] = periodDetected;
-        console.log("[TRIAGEM] ✅ Período detectado e salvo:", periodDetected);
-    }
-
-    // Detecta e salva idade
-    const ageDetected = extractAgeFromText(text);
-    if (ageDetected && !lead?.patientInfo?.age && !lead?.qualificationData?.extractedInfo?.idade) {
-        updateData["patientInfo.age"] = ageDetected.age;
-        updateData["patientInfo.ageUnit"] = ageDetected.unit;
-        updateData.ageGroup = getAgeGroup(ageDetected.age, ageDetected.unit);
-        console.log("[TRIAGEM] ✅ Idade detectada e salva:", ageDetected.age, ageDetected.unit);
-    }
-
-    // ✅ FIX: Detecta área - PRIORIZA qualificationData.extractedInfo.especialidade
-    const qualificationArea = getValidQualificationArea(lead);
-    let areaDetected = qualificationArea || bookingProduct?.therapyArea;
-
-    // Se não veio de nenhum lugar, tenta mapear da queixa na mensagem
-    if (!areaDetected && !lead?.therapyArea) {
-        areaDetected = mapComplaintToTherapyArea(text);
-        if (areaDetected) {
-            console.log("[TRIAGEM] ✅ Área mapeada da queixa:", areaDetected);
-            updateData["patientInfo.complaint"] = text;
-            updateData["autoBookingContext.complaint"] = text;
-        }
-    }
-
-    // ✅ FIX: Sincroniza therapyArea se qualificationData tem área diferente
-    if (qualificationArea && lead?.therapyArea !== qualificationArea) {
-        updateData.therapyArea = qualificationArea;
-        updateData["autoBookingContext.mappedTherapyArea"] = qualificationArea;
-        areaDetected = qualificationArea;
-        console.log("[TRIAGEM] ✅ Sincronizando área do qualificationData:", qualificationArea);
-    } else if (areaDetected && !lead?.therapyArea) {
-        updateData.therapyArea = areaDetected;
-        updateData["autoBookingContext.mappedTherapyArea"] = areaDetected;
-        console.log("[TRIAGEM] ✅ Área salva:", areaDetected);
-    }
-
-    // Detecta menção de criança
-    if (/\b(filh[oa]|crian[çc]a|beb[êe]|menin[oa])\b/i.test(text) && !lead?.ageGroup) {
-        updateData.ageGroup = "crianca";
-        flags.mentionsChild = true;
-        console.log("[TRIAGEM] ✅ Menção de criança detectada");
-    }
-
-    // Salva no banco se tiver algo pra salvar
-    if (Object.keys(updateData).length > 0) {
-        await safeLeadUpdate(lead._id, { $set: updateData }).catch((err) => {
-            console.error("[TRIAGEM] Erro ao salvar:", err.message);
-        });
-        // Atualiza objeto local
-        if (updateData["patientInfo.age"]) {
-            lead.patientInfo = lead.patientInfo || {};
-            lead.patientInfo.age = updateData["patientInfo.age"];
-        }
-        if (updateData.ageGroup) lead.ageGroup = updateData.ageGroup;
-        if (updateData.therapyArea) lead.therapyArea = updateData.therapyArea;
-        if (updateData.pendingPreferredPeriod) lead.pendingPreferredPeriod = updateData.pendingPreferredPeriod;
-    }
-
-    // ✅ FIX: Verifica o que ainda falta - INCLUI qualificationData como fonte
-    const hasProfileNow = hasAgeOrProfileNow(text, flags, enrichedContext, lead) ||
-        ageDetected ||
-        lead?.qualificationData?.extractedInfo?.idade;
-    const hasAreaNow = !!(lead?.therapyArea ||
-        areaDetected ||
+    const therapyAreaForGate =
+        enrichedContext.therapyArea ||
+        flags.therapyArea ||
         bookingProduct?.therapyArea ||
-        getValidQualificationArea(lead));
-    const hasPeriodNow = !!(lead?.pendingPreferredPeriod ||
-        lead?.autoBookingContext?.preferredPeriod ||
-        lead?.qualificationData?.extractedInfo?.disponibilidade ||
-        periodDetected);
+        lead?.autoBookingContext?.mappedTherapyArea ||
+        lead?.therapyArea ||
+        null;
 
-    console.log("[TRIAGEM] Estado após salvar:", {
-        hasProfile: hasProfileNow,
-        hasArea: hasAreaNow,
-        hasPeriod: hasPeriodNow
-    });
+    const shouldOsteoGate =
+        Boolean(lead?._id) &&
+        wantsScheduling &&
+        babyContext &&
+        therapyAreaForGate === "fisioterapia" &&
+        !lead?.autoBookingContext?.osteopathyOk;
 
-    // Se ainda falta algo, pergunta (1 pergunta por vez)
-    if (!hasProfileNow || !hasAreaNow || !hasPeriodNow) {
+    if (shouldOsteoGate) {
+        const mentionsOsteo = /\b(osteopata|osteopatia|osteo)\b/i.test(text);
+
+        const saidYes =
+            (/\b(sim|s\b|ja|j[aá]|passou|consultou|avaliou|foi)\b/i.test(text) && mentionsOsteo) ||
+            /\b(osteop)\w*\s+(indicou|encaminhou|orientou)\b/i.test(text) ||
+            /\bfoi\s+o\s+osteop\w*\s+que\s+indicou\b/i.test(text);
+
+        const saidNo =
+            (/\b(n[aã]o|nao|ainda\s+n[aã]o|ainda\s+nao|nunca)\b/i.test(text) &&
+                (mentionsOsteo || /\bpassou\b/i.test(text))) ||
+            /\b(n[aã]o|nao)\s+passou\b/i.test(text);
+
+        const gatePending = Boolean(lead?.autoBookingContext?.osteopathyGatePending);
+
+        if (gatePending) {
+            if (saidYes) {
+                await safeLeadUpdate(lead._id, {
+                    $set: { "autoBookingContext.osteopathyOk": true },
+                    $unset: { "autoBookingContext.osteopathyGatePending": "" },
+                }).catch(() => { });
+            } else if (saidNo) {
+                await safeLeadUpdate(lead._id, {
+                    $set: { "autoBookingContext.osteopathyOk": false },
+                    $unset: { "autoBookingContext.osteopathyGatePending": "" },
+                }).catch(() => { });
+
+                return ensureSingleHeart(
+                    "Perfeito 😊 Só pra alinhar: no caso de bebê, a triagem inicial precisa ser com nosso **Osteopata**. Depois da avaliação dele (e se ele indicar), a gente já encaminha pra Fisioterapia certinho. Você quer agendar a avaliação com o Osteopata essa semana ou na próxima?",
+                );
+            } else {
+                return ensureSingleHeart(
+                    "Só pra eu te direcionar certinho: o bebê **já passou pelo Osteopata** e foi ele quem indicou a Fisioterapia?",
+                );
+            }
+        } else {
+            if (!mentionsOsteo) {
+                await safeLeadUpdate(lead._id, {
+                    $set: { "autoBookingContext.osteopathyGatePending": true },
+                }).catch(() => { });
+
+                return ensureSingleHeart(
+                    "Só pra eu te direcionar certinho: o bebê **já passou pelo Osteopata** e foi ele quem indicou a Fisioterapia?",
+                );
+            }
+
+            if (saidYes) {
+                await safeLeadUpdate(lead._id, {
+                    $set: { "autoBookingContext.osteopathyOk": true },
+                    $unset: { "autoBookingContext.osteopathyGatePending": "" },
+                }).catch(() => { });
+            }
+        }
+    }
+
+    const RESCHEDULE_REGEX =
+        /\b(remarcar|reagendar|novo\s+hor[aá]rio|trocar\s+hor[aá]rio)\b/i;
+
+    const RESISTS_SCHEDULING_REGEX =
+        /\b(s[oó]\s+pesquisando|s[oó]\s+estou\s+pesquisando|mais\s+pra\s+frente|depois\s+eu\s+vejo|agora\s+n[aã]o\s+consigo|por\s+enquanto\s+n[aã]o|s[oó]\s+queria\s+saber\s+os\s+valores?)\b/i;
+
+    const isResistingScheduling =
+        flags.visitLeadCold ||
+        RESISTS_SCHEDULING_REGEX.test(normalized) ||
+        analysis?.intent?.primary === "apenas_informacao" ||
+        analysis?.intent?.primary === "pesquisa_preco";
+
+    const shouldUseVisitFunnel =
+        msgCount >= 4 &&
+        isResistingScheduling &&
+        !flags.wantsSchedule &&
+        !flags.wantsSchedulingNow &&
+        (newStage === "novo" || newStage === "pesquisando_preco" || newStage === "engajado") &&
+        !enrichedContext.pendingSchedulingSlots &&
+        !lead?.pendingPatientInfoForScheduling;
+
+    const hasProfile =
+        hasAgeOrProfileNow(text, flags, enrichedContext, lead) ||
+        /\b(meu|minha)\s+(filh[oa]|crian[çc]a)\b/i.test(text);
+
+    if (/\b(meu|minha)\s+(filh[oa]|crian[çc]a)\b/i.test(text)) {
+        flags.mentionsChild = true;
+    }
+
+    const hasArea = !!(
+        bookingProduct?.therapyArea ||
+        flags?.therapyArea ||
+        lead?.autoBookingContext?.mappedTherapyArea ||
+        lead?.therapyArea
+    );
+
+    if (bookingProduct?.product === "multi_servico") {
         return ensureSingleHeart(
-            buildTriageSchedulingMessage({ flags, bookingProduct, ctx: enrichedContext, lead }),
+            "Perfeito! Só confirmando: você quer **Fisioterapia** e **Teste da Linguinha**, certo? Quer agendar **primeiro qual dos dois**?",
+        );
+    }
+
+    if (RESCHEDULE_REGEX.test(normalized)) {
+        return ensureSingleHeart(
+            "Claro! Vamos remarcar 😊 Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor pra você?"
         );
     }
 
     // =========================================================================
-    // 🆕 PASSO 4: TRIAGEM COMPLETA - BUSCA SLOTS
+    // 🆕 PASSO 3: TRIAGEM - SALVA DADOS IMEDIATAMENTE E VERIFICA O QUE FALTA
     // =========================================================================
-    console.log("[ORCHESTRATOR] ✅ Triagem completa! Buscando slots...");
+    if (wantsScheduling && lead?._id && !lead?.pendingPatientInfoForScheduling) {
+        console.log("[TRIAGEM] Verificando dados necessários...");
 
-    // ✅ FIX: Inclui qualificationData.extractedInfo.especialidade como fonte
-    const therapyAreaForSlots = lead?.therapyArea ||
-        areaDetected ||
-        bookingProduct?.therapyArea ||
-        getValidQualificationArea(lead);
-    const preferredPeriod = lead?.pendingPreferredPeriod ||
-        lead?.autoBookingContext?.preferredPeriod ||
-        lead?.qualificationData?.extractedInfo?.disponibilidade ||
-        periodDetected;
+        // 🆕 SALVA DADOS DETECTADOS IMEDIATAMENTE
+        const updateData = {};
 
-    console.log("[ORCHESTRATOR] Buscando slots para:", { therapyAreaForSlots, preferredPeriod });
+        // ✅ FIX: Detecta período e salva em pendingPreferredPeriod (FONTE ÚNICA)
+        const periodDetected = extractPeriodFromText(text);
+        if (periodDetected && !lead?.pendingPreferredPeriod) {
+            updateData.pendingPreferredPeriod = periodDetected;
+            updateData["autoBookingContext.preferredPeriod"] = periodDetected;
+            console.log("[TRIAGEM] ✅ Período detectado e salvo:", periodDetected);
+        }
 
-    try {
-        const availableSlots = await findAvailableSlots({
-            therapyArea: therapyAreaForSlots,
-            preferredPeriod,
-            daysAhead: 30,
-            maxOptions: 2,
+        // Detecta e salva idade
+        const ageDetected = extractAgeFromText(text);
+        if (ageDetected && !lead?.patientInfo?.age && !lead?.qualificationData?.extractedInfo?.idade) {
+            updateData["patientInfo.age"] = ageDetected.age;
+            updateData["patientInfo.ageUnit"] = ageDetected.unit;
+            updateData.ageGroup = getAgeGroup(ageDetected.age, ageDetected.unit);
+            console.log("[TRIAGEM] ✅ Idade detectada e salva:", ageDetected.age, ageDetected.unit);
+        }
+
+        // ✅ FIX: Detecta área - PRIORIZA qualificationData.extractedInfo.especialidade
+        const qualificationArea = getValidQualificationArea(lead);
+        let areaDetected = qualificationArea || bookingProduct?.therapyArea;
+
+        // Se não veio de nenhum lugar, tenta mapear da queixa na mensagem
+        if (!areaDetected && !lead?.therapyArea) {
+            areaDetected = mapComplaintToTherapyArea(text);
+            if (areaDetected) {
+                console.log("[TRIAGEM] ✅ Área mapeada da queixa:", areaDetected);
+                updateData["patientInfo.complaint"] = text;
+                updateData["autoBookingContext.complaint"] = text;
+            }
+        }
+
+        // ✅ FIX: Sincroniza therapyArea se qualificationData tem área diferente
+        if (qualificationArea && lead?.therapyArea !== qualificationArea) {
+            updateData.therapyArea = qualificationArea;
+            updateData["autoBookingContext.mappedTherapyArea"] = qualificationArea;
+            areaDetected = qualificationArea;
+            console.log("[TRIAGEM] ✅ Sincronizando área do qualificationData:", qualificationArea);
+        } else if (areaDetected && !lead?.therapyArea) {
+            updateData.therapyArea = areaDetected;
+            updateData["autoBookingContext.mappedTherapyArea"] = areaDetected;
+            console.log("[TRIAGEM] ✅ Área salva:", areaDetected);
+        }
+
+        // Detecta menção de criança
+        if (/\b(filh[oa]|crian[çc]a|beb[êe]|menin[oa])\b/i.test(text) && !lead?.ageGroup) {
+            updateData.ageGroup = "crianca";
+            flags.mentionsChild = true;
+            console.log("[TRIAGEM] ✅ Menção de criança detectada");
+        }
+
+        // Salva no banco se tiver algo pra salvar
+        if (Object.keys(updateData).length > 0) {
+            await safeLeadUpdate(lead._id, { $set: updateData }).catch((err) => {
+                console.error("[TRIAGEM] Erro ao salvar:", err.message);
+            });
+            // Atualiza objeto local
+            if (updateData["patientInfo.age"]) {
+                lead.patientInfo = lead.patientInfo || {};
+                lead.patientInfo.age = updateData["patientInfo.age"];
+            }
+            if (updateData.ageGroup) lead.ageGroup = updateData.ageGroup;
+            if (updateData.therapyArea) lead.therapyArea = updateData.therapyArea;
+            if (updateData.pendingPreferredPeriod) lead.pendingPreferredPeriod = updateData.pendingPreferredPeriod;
+        }
+
+        // ✅ FIX: Verifica o que ainda falta - INCLUI qualificationData como fonte
+        const hasProfileNow = hasAgeOrProfileNow(text, flags, enrichedContext, lead) ||
+            ageDetected ||
+            lead?.qualificationData?.extractedInfo?.idade;
+        const hasAreaNow = !!(lead?.therapyArea ||
+            areaDetected ||
+            bookingProduct?.therapyArea ||
+            getValidQualificationArea(lead));
+        const hasPeriodNow = !!(lead?.pendingPreferredPeriod ||
+            lead?.autoBookingContext?.preferredPeriod ||
+            lead?.qualificationData?.extractedInfo?.disponibilidade ||
+            periodDetected);
+
+        console.log("[TRIAGEM] Estado após salvar:", {
+            hasProfile: hasProfileNow,
+            hasArea: hasAreaNow,
+            hasPeriod: hasPeriodNow
         });
 
-        if (!availableSlots?.primary) {
-            // Tenta sem filtro de período
-            const fallbackSlots = await findAvailableSlots({
+        // Se ainda falta algo, pergunta (1 pergunta por vez)
+        if (!hasProfileNow || !hasAreaNow || !hasPeriodNow) {
+            return ensureSingleHeart(
+                buildTriageSchedulingMessage({ flags, bookingProduct, ctx: enrichedContext, lead }),
+            );
+        }
+
+        // =========================================================================
+        // 🆕 PASSO 4: TRIAGEM COMPLETA - BUSCA SLOTS
+        // =========================================================================
+        console.log("[ORCHESTRATOR] ✅ Triagem completa! Buscando slots...");
+
+        // ✅ FIX: Inclui qualificationData.extractedInfo.especialidade como fonte
+        const therapyAreaForSlots = lead?.therapyArea ||
+            areaDetected ||
+            bookingProduct?.therapyArea ||
+            getValidQualificationArea(lead);
+        const preferredPeriod = lead?.pendingPreferredPeriod ||
+            lead?.autoBookingContext?.preferredPeriod ||
+            lead?.qualificationData?.extractedInfo?.disponibilidade ||
+            periodDetected;
+
+        console.log("[ORCHESTRATOR] Buscando slots para:", { therapyAreaForSlots, preferredPeriod });
+
+        try {
+            const availableSlots = await findAvailableSlots({
                 therapyArea: therapyAreaForSlots,
-                preferredPeriod: null,
+                preferredPeriod,
                 daysAhead: 30,
                 maxOptions: 2,
             });
 
-            if (fallbackSlots?.primary) {
-                await safeLeadUpdate(lead._id, {
-                    $set: {
-                        pendingSchedulingSlots: fallbackSlots,
-                        "autoBookingContext.active": true,
-                        stage: "interessado_agendamento"
-                    }
-                }).catch(() => { });
+            if (!availableSlots?.primary) {
+                // Tenta sem filtro de período
+                const fallbackSlots = await findAvailableSlots({
+                    therapyArea: therapyAreaForSlots,
+                    preferredPeriod: null,
+                    daysAhead: 30,
+                    maxOptions: 2,
+                });
 
-                const periodLabel = preferredPeriod === "manha" ? "manhã" : preferredPeriod === "tarde" ? "tarde" : "noite";
-                const { optionsText, letters } = buildSlotMenuMessage(fallbackSlots);
-                return ensureSingleHeart(`Pra **${periodLabel}** não encontrei vaga agora 😕\n\nTenho essas opções em outros horários:\n\n${optionsText}\n\nQual você prefere? (${letters.join(" ou ")})`);
-            }
+                if (fallbackSlots?.primary) {
+                    await safeLeadUpdate(lead._id, {
+                        $set: {
+                            pendingSchedulingSlots: fallbackSlots,
+                            "autoBookingContext.active": true,
+                            stage: "interessado_agendamento"
+                        }
+                    }).catch(() => { });
 
-            return ensureSingleHeart("No momento não achei horários certinhos pra essa área. Me diga: prefere manhã ou tarde, e qual dia da semana fica melhor?");
-        }
-
-        // Urgência
-        const urgencyLevel =
-            contextPack?.urgency?.level || enrichedContext?.urgency?.level || "NORMAL";
-
-        if (urgencyLevel && availableSlots) {
-            try {
-                const flatSlots = [
-                    availableSlots.primary,
-                    ...(availableSlots.alternativesSamePeriod || []),
-                    ...(availableSlots.alternativesOtherPeriod || []),
-                ].filter(Boolean);
-
-                const prioritized = urgencyScheduler(flatSlots, urgencyLevel).slice(0, 6);
-
-                if (prioritized.length) {
-                    availableSlots.primary = prioritized[0];
-                    availableSlots.alternativesSamePeriod = prioritized.slice(1, 4);
-                    availableSlots.alternativesOtherPeriod = prioritized.slice(4, 6);
+                    const periodLabel = preferredPeriod === "manha" ? "manhã" : preferredPeriod === "tarde" ? "tarde" : "noite";
+                    const { optionsText, letters } = buildSlotMenuMessage(fallbackSlots);
+                    return ensureSingleHeart(`Pra **${periodLabel}** não encontrei vaga agora 😕\n\nTenho essas opções em outros horários:\n\n${optionsText}\n\nQual você prefere? (${letters.join(" ou ")})`);
                 }
 
-                console.log(`🔎 Urgência aplicada (${urgencyLevel}) → ${prioritized.length} slots priorizados`);
-            } catch (err) {
-                console.error("Erro ao aplicar urgência:", err);
+                return ensureSingleHeart("No momento não achei horários certinhos pra essa área. Me diga: prefere manhã ou tarde, e qual dia da semana fica melhor?");
             }
-        }
 
-        await safeLeadUpdate(lead._id, {
-            $set: {
-                pendingSchedulingSlots: availableSlots,
-                urgencyApplied: urgencyLevel,
-                "autoBookingContext.active": true,
-                "autoBookingContext.mappedTherapyArea": therapyAreaForSlots,
-                "autoBookingContext.mappedProduct": bookingProduct?.product,
-                "autoBookingContext.lastOfferedSlots": availableSlots,
-            },
-        }).catch(() => { });
+            // Urgência
+            const urgencyLevel =
+                contextPack?.urgency?.level || enrichedContext?.urgency?.level || "NORMAL";
 
-        enrichedContext.pendingSchedulingSlots = availableSlots;
+            if (urgencyLevel && availableSlots) {
+                try {
+                    const flatSlots = [
+                        availableSlots.primary,
+                        ...(availableSlots.alternativesSamePeriod || []),
+                        ...(availableSlots.alternativesOtherPeriod || []),
+                    ].filter(Boolean);
 
-        const { message: menuMsg, optionsText, ordered, letters } = buildSlotMenuMessage(availableSlots);
+                    const prioritized = urgencyScheduler(flatSlots, urgencyLevel).slice(0, 6);
 
-        if (!menuMsg || !ordered?.length) {
+                    if (prioritized.length) {
+                        availableSlots.primary = prioritized[0];
+                        availableSlots.alternativesSamePeriod = prioritized.slice(1, 4);
+                        availableSlots.alternativesOtherPeriod = prioritized.slice(4, 6);
+                    }
+
+                    console.log(`🔎 Urgência aplicada (${urgencyLevel}) → ${prioritized.length} slots priorizados`);
+                } catch (err) {
+                    console.error("Erro ao aplicar urgência:", err);
+                }
+            }
+
+            await safeLeadUpdate(lead._id, {
+                $set: {
+                    pendingSchedulingSlots: availableSlots,
+                    urgencyApplied: urgencyLevel,
+                    "autoBookingContext.active": true,
+                    "autoBookingContext.mappedTherapyArea": therapyAreaForSlots,
+                    "autoBookingContext.mappedProduct": bookingProduct?.product,
+                    "autoBookingContext.lastOfferedSlots": availableSlots,
+                },
+            }).catch(() => { });
+
+            enrichedContext.pendingSchedulingSlots = availableSlots;
+
+            const { message: menuMsg, optionsText, ordered, letters } = buildSlotMenuMessage(availableSlots);
+
+            if (!menuMsg || !ordered?.length) {
+                return ensureSingleHeart(
+                    "No momento não encontrei horários disponíveis. Quer me dizer se prefere manhã ou tarde, e qual dia da semana fica melhor?"
+                );
+            }
+
+            const allowed = letters.slice(0, ordered.length).join(", ");
+
+            console.log("✅ [ORCHESTRATOR] Slots encontrados:", {
+                primary: availableSlots?.primary ? formatSlot(availableSlots.primary) : null,
+                alternatives: availableSlots?.alternativesSamePeriod?.length || 0,
+            });
+
+            const urgencyPrefix =
+                urgencyLevel === "ALTA"
+                    ? "Entendo a urgência do caso. Separei os horários mais próximos pra você 👇\n\n"
+                    : urgencyLevel === "MEDIA"
+                        ? "Pra não atrasar o cuidado, organizei boas opções de horário 👇\n\n"
+                        : "";
+
             return ensureSingleHeart(
-                "No momento não encontrei horários disponíveis. Quer me dizer se prefere manhã ou tarde, e qual dia da semana fica melhor?"
+                `${urgencyPrefix}Tenho esses horários no momento:\n\n${optionsText}\n\nQual você prefere? (${allowed})`
             );
+
+        } catch (err) {
+            console.error("❌ [ORCHESTRATOR] Erro ao buscar slots:", err?.message || err);
+            return ensureSingleHeart("Tive um probleminha ao checar os horários agora 😕 Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor?");
         }
-
-        const allowed = letters.slice(0, ordered.length).join(", ");
-
-        console.log("✅ [ORCHESTRATOR] Slots encontrados:", {
-            primary: availableSlots?.primary ? formatSlot(availableSlots.primary) : null,
-            alternatives: availableSlots?.alternativesSamePeriod?.length || 0,
-        });
-
-        const urgencyPrefix =
-            urgencyLevel === "ALTA"
-                ? "Entendo a urgência do caso. Separei os horários mais próximos pra você 👇\n\n"
-                : urgencyLevel === "MEDIA"
-                    ? "Pra não atrasar o cuidado, organizei boas opções de horário 👇\n\n"
-                    : "";
-
-        return ensureSingleHeart(
-            `${urgencyPrefix}Tenho esses horários no momento:\n\n${optionsText}\n\nQual você prefere? (${allowed})`
-        );
-
-    } catch (err) {
-        console.error("❌ [ORCHESTRATOR] Erro ao buscar slots:", err?.message || err);
-        return ensureSingleHeart("Tive um probleminha ao checar os horários agora 😕 Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor?");
     }
-}
 
-if (shouldUseVisitFunnel) {
-    const visitAnswer = await callVisitFunnelAI({
-        text,
-        lead,
-        context: enrichedContext,
-        flags,
-    });
-
-    const scopedVisit = enforceClinicScope(visitAnswer, text);
-    return ensureSingleHeart(scopedVisit);
-}
-
-// 1) Manual
-const manualAnswer = tryManualResponse(normalized, enrichedContext, flags);
-if (manualAnswer) return ensureSingleHeart(manualAnswer);
-
-// 2) TDAH
-if (isTDAHQuestion(text)) {
-    try {
-        const tdahAnswer = await getTDAHResponse(text);
-        if (tdahAnswer) return ensureSingleHeart(tdahAnswer);
-    } catch (err) {
-        console.warn("[ORCHESTRATOR] Erro em getTDAHResponse, seguindo fluxo normal:", err.message);
-    }
-}
-
-// 3) Equivalência
-if (isAskingAboutEquivalence(text)) {
-    const equivalenceAnswer = buildEquivalenceResponse();
-    return ensureSingleHeart(equivalenceAnswer);
-}
-
-// 4) Detecção de terapias
-let therapies = [];
-try {
-    therapies = detectAllTherapies(text) || [];
-} catch (err) {
-    console.warn("[ORCHESTRATOR] Erro em detectAllTherapies:", err.message);
-    therapies = [];
-}
-
-// IA com terapias
-if (Array.isArray(therapies) && therapies.length > 0) {
-    try {
-        const therapyAnswer = await callClaudeWithTherapyData({
-            therapies,
-            flags,
-            userText: text,
+    if (shouldUseVisitFunnel) {
+        const visitAnswer = await callVisitFunnelAI({
+            text,
             lead,
             context: enrichedContext,
-            analysis,
+            flags,
         });
 
-        const scoped = enforceClinicScope(therapyAnswer, text);
-        return ensureSingleHeart(scoped);
-    } catch (err) {
-        console.error("[ORCHESTRATOR] Erro em callClaudeWithTherapyData, caindo no fluxo geral:", err);
+        const scopedVisit = enforceClinicScope(visitAnswer, text);
+        return ensureSingleHeart(scopedVisit);
     }
-}
 
-// Fluxo geral
-const genericAnswer = await callAmandaAIWithContext(text, lead, enrichedContext, flags, analysis);
+    // 1) Manual
+    const manualAnswer = tryManualResponse(normalized, enrichedContext, flags);
+    if (manualAnswer) return ensureSingleHeart(manualAnswer);
 
-const finalScoped = enforceClinicScope(genericAnswer, text);
-return ensureSingleHeart(finalScoped);
+    // 2) TDAH
+    if (isTDAHQuestion(text)) {
+        try {
+            const tdahAnswer = await getTDAHResponse(text);
+            if (tdahAnswer) return ensureSingleHeart(tdahAnswer);
+        } catch (err) {
+            console.warn("[ORCHESTRATOR] Erro em getTDAHResponse, seguindo fluxo normal:", err.message);
+        }
+    }
+
+    // 3) Equivalência
+    if (isAskingAboutEquivalence(text)) {
+        const equivalenceAnswer = buildEquivalenceResponse();
+        return ensureSingleHeart(equivalenceAnswer);
+    }
+
+    // 4) Detecção de terapias
+    let therapies = [];
+    try {
+        therapies = detectAllTherapies(text) || [];
+    } catch (err) {
+        console.warn("[ORCHESTRATOR] Erro em detectAllTherapies:", err.message);
+        therapies = [];
+    }
+
+    // IA com terapias
+    if (Array.isArray(therapies) && therapies.length > 0) {
+        try {
+            const therapyAnswer = await callClaudeWithTherapyData({
+                therapies,
+                flags,
+                userText: text,
+                lead,
+                context: enrichedContext,
+                analysis,
+            });
+
+            const scoped = enforceClinicScope(therapyAnswer, text);
+            return ensureSingleHeart(scoped);
+        } catch (err) {
+            console.error("[ORCHESTRATOR] Erro em callClaudeWithTherapyData, caindo no fluxo geral:", err);
+        }
+    }
+
+    // Fluxo geral
+    const genericAnswer = await callAmandaAIWithContext(text, lead, enrichedContext, flags, analysis);
+
+    const finalScoped = enforceClinicScope(genericAnswer, text);
+    return ensureSingleHeart(finalScoped);
 }
 
 
