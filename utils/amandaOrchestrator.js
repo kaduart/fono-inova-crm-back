@@ -1,18 +1,18 @@
 import Anthropic from "@anthropic-ai/sdk";
 import "dotenv/config";
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
+import { urgencyScheduler } from "../services/intelligence/UrgencyScheduler.js";
 import enrichLeadContext from "../services/leadContext.js";
-import { detectAllFlags, deriveFlagsFromText, resolveTopicFromFlags } from "./flagsDetector.js";
+import { deriveFlagsFromText, detectAllFlags, resolveTopicFromFlags } from "./flagsDetector.js";
 import { buildEquivalenceResponse } from "./responseBuilder.js";
 import {
     detectAllTherapies,
+    detectNegativeScopes,
+    getPriceLinesForDetectedTherapies,
     getTDAHResponse,
     isAskingAboutEquivalence,
-    isTDAHQuestion,
-    detectNegativeScopes,
-    getPriceLinesForDetectedTherapies
+    isTDAHQuestion
 } from "./therapyDetector.js";
-import { urgencyScheduler } from "../services/intelligence/UrgencyScheduler.js";
 
 import Followup from "../models/Followup.js";
 import Leads from "../models/Leads.js";
@@ -25,6 +25,7 @@ import {
     pickSlotFromUserReply
 } from "../services/amandaBookingService.js";
 
+import { buildContextPack } from "../services/intelligence/ContextPack.js";
 import { handleInboundMessageForFollowups } from "../services/responseTrackingService.js";
 import {
     buildDynamicSystemPrompt,
@@ -33,9 +34,7 @@ import {
     getManual,
 } from "./amandaPrompt.js";
 import { logBookingGate, mapFlagsToBookingProduct } from "./bookingProductMapper.js";
-import { extractPreferredDateFromText, parsePtBrDate } from "./dateParser.js";
-import { buildContextPack } from "../services/intelligence/ContextPack.js";
-import { format } from "date-fns";
+import { extractPreferredDateFromText } from "./dateParser.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
@@ -472,12 +471,10 @@ export async function getOptimizedAmandaResponse({
         }
 
         if (step === "birth") {
-            const parsedDate = parsePtBrDate(text);
-            if (!parsedDate) {
-                return ensureSingleHeart("Me manda a **data de nascimento** no formato **dd/mm/aaaa** 💚");
+            const birthDate = extractBirth(text);
+            if (!birthDate) {
+                return ensureSingleHeart("Me manda a **data de nascimento** no formato **dd/mm/aaaa**");
             }
-
-            const birthDate = format(parsedDate, "yyyy-MM-dd");
 
             // Busca dados atualizados
             const updated = await Leads.findById(lead._id).lean().catch(() => null);
@@ -538,12 +535,7 @@ export async function getOptimizedAmandaResponse({
                 }).catch(() => { });
                 return ensureSingleHeart("Esse horário acabou de ser preenchido 😕 A equipe vai te enviar novas opções em instantes");
             } else {
-                console.warn("⚠️ [ORCHESTRATOR] Falha no autoBookAppointment:", bookingResult?.error);
-
-                return ensureSingleHeart(
-                    "Tive um probleminha ao confirmar o agendamento 😕\n" +
-                    "Mas fique tranquila(o), nossa equipe vai entrar em contato pra confirmar tudo certinho 💚"
-                );
+                return ensureSingleHeart("Tive um probleminha ao confirmar. A equipe vai te responder por aqui em instantes");
             }
         }
     }
@@ -615,11 +607,8 @@ export async function getOptimizedAmandaResponse({
                 therapyArea,
                 preferredPeriod: period,
                 daysAhead: 30,
+                maxOptions: 2,
             });
-
-            if (slots?.error) {
-                return ensureSingleHeart(slots.message);
-            }
 
             if (slots?.primary) {
                 // Processa a escolha
@@ -707,7 +696,6 @@ export async function getOptimizedAmandaResponse({
     }
 
     // 🔹 Captura a resposta ao período (quando Amanda perguntou "manhã ou tarde?")
-    // 🔹 Captura a resposta ao período (quando Amanda perguntou "manhã ou tarde?")
     if (
         lead?._id &&
         lead?.autoBookingContext?.awaitingPeriodChoice &&
@@ -760,11 +748,8 @@ export async function getOptimizedAmandaResponse({
                     therapyArea,
                     preferredPeriod,
                     daysAhead: 30,
+                    maxOptions: 2,
                 });
-
-                if (slots?.error) {
-                    return ensureSingleHeart(slots.message);
-                }
 
                 // se achou slots, salva no lead pra ativar o PASSO 2
                 if (slots?.primary) {
@@ -833,6 +818,7 @@ export async function getOptimizedAmandaResponse({
                     therapyArea,
                     preferredPeriod: wantsDifferentPeriod,
                     daysAhead: 30,
+                    maxOptions: 2,
                 });
 
                 if (newSlots?.primary) {
@@ -844,12 +830,12 @@ export async function getOptimizedAmandaResponse({
                         }
                     }).catch(() => { });
 
-                    const { optionsText } = buildSlotMenuMessage(newSlots);
+                    const { optionsText, letters } = buildSlotMenuMessage(newSlots);
                     const periodLabel = wantsDifferentPeriod === "manha" ? "manhã" : wantsDifferentPeriod === "tarde" ? "tarde" : "noite";
-                    return ensureSingleHeart(`Perfeito! Pra **${periodLabel}**, tenho essas opções:\n\n${optionsText}\n\nQual você prefere? (A, B, C...)`);
+                    return ensureSingleHeart(`Perfeito! Pra **${periodLabel}**, tenho essas opções:\n\n${optionsText}\n\nQual você prefere? (${letters.join(" ou ")})`);
                 } else {
                     const periodLabel = wantsDifferentPeriod === "manha" ? "manhã" : wantsDifferentPeriod === "tarde" ? "tarde" : "noite";
-                    const { optionsText } = buildSlotMenuMessage(rawSlots);
+                    const { optionsText, letters } = buildSlotMenuMessage(rawSlots);
                     return ensureSingleHeart(`Pra **${periodLabel}** não encontrei vaga agora 😕 Tenho essas outras opções:\n\n${optionsText}\n\nAlguma serve pra você?`);
                 }
             } catch (err) {
@@ -866,6 +852,62 @@ export async function getOptimizedAmandaResponse({
 
         if (onlyOne && isNo) {
             return ensureSingleHeart("Sem problema! Você prefere **manhã ou tarde**?");
+        }
+
+        // ✅ NOVO: Lead não quer nenhuma das opções oferecidas
+        const wantsOtherOptions = /\b(nenhum(a)?|outr[oa]s?\s+(hor[aá]rio|op[çc][aã]o)|n[aã]o\s+gostei|n[aã]o\s+serve|n[aã]o\s+d[aá]|diferente)\b/i.test(text);
+
+        if (isNo || wantsOtherOptions) {
+            console.log("[PASSO 2] 🔄 Lead quer outras opções...");
+
+            const therapyArea = lead?.therapyArea || lead?.autoBookingContext?.mappedTherapyArea;
+            const currentPeriod = lead?.autoBookingContext?.preferredPeriod || lead?.pendingPreferredPeriod;
+
+            try {
+                // Busca com maxOptions=6 para dar mais alternativas
+                const moreSlots = await findAvailableSlots({
+                    therapyArea,
+                    preferredPeriod: currentPeriod,
+                    daysAhead: 30,
+                    maxOptions: 6,  // ✅ Mais opções quando pede "outro"
+                });
+
+                if (moreSlots?.primary) {
+                    // Filtra os que já foram oferecidos
+                    const previouslyOffered = slotsCtx.all.map(s => `${s.date}-${s.time}`);
+                    const newOptions = [
+                        moreSlots.primary,
+                        ...(moreSlots.alternativesSamePeriod || []),
+                        ...(moreSlots.alternativesOtherPeriod || []),
+                    ].filter(s => !previouslyOffered.includes(`${s.date}-${s.time}`)).slice(0, 4);
+
+                    if (newOptions.length > 0) {
+                        const newSlotsCtx = {
+                            primary: newOptions[0],
+                            alternativesSamePeriod: newOptions.slice(1, 3),
+                            alternativesOtherPeriod: newOptions.slice(3),
+                            all: newOptions,
+                            maxOptions: newOptions.length,
+                        };
+
+                        await Leads.findByIdAndUpdate(lead._id, {
+                            $set: {
+                                pendingSchedulingSlots: newSlotsCtx,
+                                pendingChosenSlot: null,
+                            }
+                        }).catch(() => { });
+
+                        const { optionsText, letters } = buildSlotMenuMessage(newSlotsCtx);
+                        return ensureSingleHeart(`Sem problema! Tenho mais essas opções:\n\n${optionsText}\n\nQual você prefere? (${letters.join(", ")})`);
+                    }
+                }
+
+                // Não tem mais opções disponíveis
+                return ensureSingleHeart("No momento são só essas opções que tenho 😕 Você prefere mudar de **período** (manhã/tarde) ou **dia da semana**?");
+            } catch (err) {
+                console.error("[PASSO 2] Erro ao buscar mais slots:", err.message);
+                return ensureSingleHeart("Tive um probleminha. Você prefere de **manhã ou tarde**?");
+            }
         }
 
         const hasLetterChoice =
@@ -1182,7 +1224,6 @@ export async function getOptimizedAmandaResponse({
     }
     // ✅ Se tem tudo, continua pro PASSO 3/4
 
-
     // 🦴🍼 Gate osteopata (físio bebê)
     const babyContext =
         /\b\d{1,2}\s*(mes|meses)\b/i.test(text) || /\b(beb[eê]|rec[eé]m[-\s]*nascid[oa]|rn)\b/i.test(text);
@@ -1427,6 +1468,7 @@ export async function getOptimizedAmandaResponse({
                 therapyArea: therapyAreaForSlots,
                 preferredPeriod,
                 daysAhead: 30,
+                maxOptions: 2,
             });
 
             if (!availableSlots?.primary) {
@@ -1435,6 +1477,7 @@ export async function getOptimizedAmandaResponse({
                     therapyArea: therapyAreaForSlots,
                     preferredPeriod: null,
                     daysAhead: 30,
+                    maxOptions: 2,
                 });
 
                 if (fallbackSlots?.primary) {
@@ -1447,8 +1490,8 @@ export async function getOptimizedAmandaResponse({
                     }).catch(() => { });
 
                     const periodLabel = preferredPeriod === "manha" ? "manhã" : preferredPeriod === "tarde" ? "tarde" : "noite";
-                    const { optionsText } = buildSlotMenuMessage(fallbackSlots);
-                    return ensureSingleHeart(`Pra **${periodLabel}** não encontrei vaga agora 😕\n\nTenho essas opções em outros horários:\n\n${optionsText}\n\nQual você prefere? (A, B, C...)`);
+                    const { optionsText, letters } = buildSlotMenuMessage(fallbackSlots);
+                    return ensureSingleHeart(`Pra **${periodLabel}** não encontrei vaga agora 😕\n\nTenho essas opções em outros horários:\n\n${optionsText}\n\nQual você prefere? (${letters.join(" ou ")})`);
                 }
 
                 return ensureSingleHeart("No momento não achei horários certinhos pra essa área. Me diga: prefere manhã ou tarde, e qual dia da semana fica melhor?");
