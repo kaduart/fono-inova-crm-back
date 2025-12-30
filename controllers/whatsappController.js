@@ -1085,6 +1085,15 @@ async function processInboundMessage(msg, value) {
 
         // ✅ ATUALIZAR ÚLTIMA INTERAÇÃO DO LEAD
         try {
+            // 🔍 DEBUG: Estado do lead ANTES do save
+            console.log("🔍 [DEBUG PRE-SAVE #1] Estado do lead ANTES do save:", {
+                leadId: lead._id,
+                pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
+                pendingPatientInfoStep: lead.pendingPatientInfoStep,
+                pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
+                pendingSchedulingSlots: lead.pendingSchedulingSlots?.primary ? "SIM" : "NÃO",
+            });
+
             lead.lastInteractionAt = new Date();
             lead.interactions.push({
                 date: new Date(),
@@ -1117,6 +1126,13 @@ async function processInboundMessage(msg, value) {
 
                 await lead.save();
 
+                // 🔍 DEBUG: Estado do lead DEPOIS do save #2
+                console.log("🔍 [DEBUG POST-SAVE #2] Estado do lead DEPOIS do save:", {
+                    leadId: lead._id,
+                    pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
+                    pendingPatientInfoStep: lead.pendingPatientInfoStep,
+                });
+
                 console.log("🧠 qualificationData atualizado:", {
                     idade: lead.qualificationData?.extractedInfo?.idade,
                     idadeRange: lead.qualificationData?.extractedInfo?.idadeRange,
@@ -1140,6 +1156,14 @@ async function processInboundMessage(msg, value) {
 
         // ✅ RESPOSTA AUTOMÁTICA (Amanda) para texto, áudio transcrito ou imagem descrita
         if ((type === "text" || type === "audio" || type === "image") && isRealText) {
+            // 🔍 DEBUG: Estado do lead ANTES de passar pro orchestrator
+            console.log("🔍 [DEBUG PRE-ORCHESTRATOR] Lead sendo passado pro handleAutoReply:", {
+                leadId: lead._id,
+                pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
+                pendingPatientInfoStep: lead.pendingPatientInfoStep,
+                pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
+            });
+
             handleAutoReply(from, to, contentToSave, lead)
                 .catch(err => console.error("⚠️ Auto-reply não crítico falhou:", err));
         }
@@ -1315,6 +1339,15 @@ async function handleAutoReply(from, to, content, lead) {
             },
             { new: true }
         ).lean();
+
+        // 🔍 DEBUG: Lead carregado do banco no handleAutoReply
+        console.log("🔍 [DEBUG HANDLE-AUTO-REPLY] Lead carregado do banco:", {
+            leadId: leadDoc?._id,
+            pendingPatientInfoForScheduling: leadDoc?.pendingPatientInfoForScheduling,
+            pendingPatientInfoStep: leadDoc?.pendingPatientInfoStep,
+            pendingChosenSlot: leadDoc?.pendingChosenSlot ? "SIM" : "NÃO",
+            pendingSchedulingSlots: leadDoc?.pendingSchedulingSlots?.primary ? "SIM" : "NÃO",
+        });
 
         if (!leadDoc) {
             console.log("⏭️ Lead já está processando; ignorando mensagem", lead?._id);
@@ -1508,5 +1541,3 @@ function mergeNonNull(base = {}, incoming = {}) {
     }
     return out;
 }
-
-
