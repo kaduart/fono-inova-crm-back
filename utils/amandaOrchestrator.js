@@ -430,13 +430,34 @@ export async function getOptimizedAmandaResponse({
     // 🆕 PASSO 0: REFRESH DO LEAD (SEMPRE BUSCA DADOS ATUALIZADOS)
     // =========================================================================
     if (lead?._id) {
-        const freshLead = await Leads.findById(lead._id).lean().catch(() => null);
-        if (freshLead) lead = freshLead;
+        try {
+            const freshLead = await Leads.findById(lead._id).lean();
+            if (freshLead) {
+                lead = freshLead;
+                console.log("🔄 [REFRESH] Lead atualizado:", {
+                    pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
+                    pendingPatientInfoStep: lead.pendingPatientInfoStep,
+                    pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
+                    pendingSchedulingSlots: lead.pendingSchedulingSlots?.primary ? "SIM" : "NÃO",
+                });
+            } else {
+                console.warn("⚠️ [REFRESH] Lead não encontrado no banco:", lead._id);
+            }
+        } catch (err) {
+            console.error("❌ [REFRESH] Erro ao buscar lead:", err.message);
+        }
+    } else {
+        console.warn("⚠️ [REFRESH] Lead sem _id:", lead);
     }
 
     // =========================================================================
     // 🆕 PASSO 1: FLUXO DE COLETA DE DADOS DO PACIENTE (PÓS-ESCOLHA DE SLOT)
     // =========================================================================
+    console.log("🔍 [PASSO 1 CHECK]", {
+        pendingPatientInfoForScheduling: lead?.pendingPatientInfoForScheduling,
+        hasLeadId: !!lead?._id,
+    });
+
     if (lead?.pendingPatientInfoForScheduling && lead?._id) {
         console.log("📝 [ORCHESTRATOR] Lead está pendente de dados do paciente");
 
@@ -625,7 +646,9 @@ export async function getOptimizedAmandaResponse({
 
                 if (chosenSlot) {
                     // Salva slot escolhido e ativa coleta de nome
-                    await Leads.findByIdAndUpdate(lead._id, {
+                    console.log("💾 [PASSO 0] Salvando pendingPatientInfoForScheduling: true");
+
+                    const updateResult = await Leads.findByIdAndUpdate(lead._id, {
                         $set: {
                             pendingSchedulingSlots: slots,
                             pendingChosenSlot: chosenSlot,
@@ -636,7 +659,17 @@ export async function getOptimizedAmandaResponse({
                             "autoBookingContext.active": true,
                             "autoBookingContext.lastOfferedSlots": slots,
                         },
-                    }).catch(() => { });
+                    }, { new: true }).catch((err) => {
+                        console.error("❌ [PASSO 0] Erro ao salvar:", err.message);
+                        return null;
+                    });
+
+                    if (updateResult) {
+                        console.log("✅ [PASSO 0] Salvo com sucesso:", {
+                            pendingPatientInfoForScheduling: updateResult.pendingPatientInfoForScheduling,
+                            pendingPatientInfoStep: updateResult.pendingPatientInfoStep,
+                        });
+                    }
 
                     // Atualiza contexto local para IA gerar resposta
                     enrichedContext.pendingSchedulingSlots = slots;
@@ -695,6 +728,7 @@ export async function getOptimizedAmandaResponse({
         }
     }
 
+    // 🔹 Captura a resposta ao período (quando Amanda perguntou "manhã ou tarde?")
     // 🔹 Captura a resposta ao período (quando Amanda perguntou "manhã ou tarde?")
     if (
         lead?._id &&
@@ -780,7 +814,11 @@ export async function getOptimizedAmandaResponse({
     // =========================================================================
     // 🆕 PASSO 2: PROCESSAMENTO DE ESCOLHA DE SLOT (QUANDO JÁ TEM SLOTS PENDENTES)
     // =========================================================================
-    if (
+    // ⚠️ IMPORTANTE: Se já está coletando dados do paciente, NÃO processar aqui
+    if (lead?.pendingPatientInfoForScheduling) {
+        console.log("⏭️ [PASSO 2] Pulando - já está coletando dados do paciente");
+        // Deixa o fluxo continuar para o PASSO 1 processar
+    } else if (
         lead?._id &&
         (lead?.pendingSchedulingSlots?.primary || enrichedContext?.pendingSchedulingSlots?.primary)
     ) {
@@ -1223,6 +1261,7 @@ export async function getOptimizedAmandaResponse({
         }
     }
     // ✅ Se tem tudo, continua pro PASSO 3/4
+
 
     // 🦴🍼 Gate osteopata (físio bebê)
     const babyContext =
