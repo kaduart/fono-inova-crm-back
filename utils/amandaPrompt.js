@@ -644,7 +644,7 @@ o acolhimento faz muita diferença.Muitos pais que vieram comparar acabaram fica
 💰 VALORES(só informe DEPOIS de agregar valor):
 - Avaliação inicial: a partir de R$ 200(a maioria das áreas infantis)
   - Avaliação CDL: R$ 200
-    - Sessão avulsa: em torno de R$ 220
+    - Sessão avulsa: em torno de R$ 200
       - Pacote mensal(1x / semana): em torno de R$ 180 / sessão(≈ R$ 640–720 / mês, conforme área)
         - Avaliação neuropsicológica: R$ 2.000(até 6x)
           - Teste da Linguinha: R$ 150
@@ -968,7 +968,7 @@ function priceLineForTopic(topic) {
     case "terapia_ocupacional":
     case "fisioterapia":
     case "musicoterapia":
-      return "Avaliação inicial: R$ 220 (primeiro passo pra entender a queixa e definir o plano).";
+      return "Avaliação inicial: R$ 200 (primeiro passo pra entender a queixa e definir o plano).";
     default:
       return null;
   }
@@ -1037,10 +1037,10 @@ export const MANUAL_AMANDA = {
   },
 
   "valores": {
-    "avaliacao": "A avaliação inicial é R$ 220; é o primeiro passo para entender a queixa e traçar o plano ideal. Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚",
+    "avaliacao": "A avaliação inicial é R$ 200; é o primeiro passo para entender a queixa e traçar o plano ideal. Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚",
     "neuropsico": "Avaliação Neuropsicológica completa (10 sessões): R$ 2.000 em até 6x 💚",
     "teste_linguinha": "Teste da Linguinha: R$ 150. Avaliamos o frênulo lingual de forma rápida e segura 💚",
-    "sessao": "Sessão avulsa R$ 220 | Pacote mensal (1x/semana): R$ 180/sessão (~R$ 720/mês) 💚",
+    "sessao": "Sessão avulsa R$ 200 | Pacote mensal (1x/semana): R$ 180/sessão (~R$ 720/mês) 💚",
     "psicopedagogia": "Psicopedagogia: Anamnese R$ 200 | Pacote mensal R$ 160/sessão (~R$ 640/mês) 💚"
   },
 

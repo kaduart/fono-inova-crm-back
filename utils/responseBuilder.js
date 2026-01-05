@@ -8,7 +8,7 @@ import { getTherapyData } from './therapyDetector.js';
 export function buildTherapyResponse(therapy, flags = {}) {
     const data = getTherapyData(therapy.id);
     if (!data) {
-        return `Temos especialistas em ${therapy.name}! A avaliação inicial é R$ 220. Posso te explicar como funciona? 💚`;
+        return `Temos especialistas em ${therapy.name}! A avaliação inicial é R$ 200. Posso te explicar como funciona? 💚`;
     }
 
     const { asksPrice, wantsSchedule, userProfile } = flags;

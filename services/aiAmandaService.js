@@ -8,6 +8,7 @@ import getOptimizedAmandaResponse from "../utils/amandaOrchestrator.js";
 import { CLINIC_ADDRESS, SYSTEM_PROMPT_AMANDA } from "../utils/amandaPrompt.js";
 
 // ⚠️ novos imports para mídia baseada em mediaId
+import ensureSingleHeart from "../utils/helpers.js";
 import { analyzeLeadMessage } from "./intelligence/leadIntelligence.js";
 import { getMediaBuffer } from "./whatsappMediaService.js";
 
@@ -386,15 +387,6 @@ export async function describeWaImageFromGraph({ imageUrl, caption = "" } = {}) 
         );
         return "";
     }
-}
-
-/* =========================================================================
-   🛠️ HELPERS
-   ========================================================================= */
-function ensureSingleHeart(text) {
-    if (!text) return "Como posso te ajudar? 💚";
-    const clean = text.replace(/💚/g, "").trim();
-    return `${clean} 💚`;
 }
 
 // Exporta CLINIC_ADDRESS e SYSTEM_PROMPT_AMANDA para compatibilidade

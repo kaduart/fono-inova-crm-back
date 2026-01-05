@@ -1,3 +1,5 @@
+import ensureSingleHeart from "../../utils/helpers.js";
+
 /**
  * ⏰ Calcula tempo ideal para follow-up
  */
@@ -133,15 +135,6 @@ function extractChildNameFromHistory(history = []) {
     return null;
 }
 
-
-function ensureSingleHeart(text = "") {
-    const cleaned = String(text)
-        .replace(/💚/g, "")          // remove todos
-        .replace(/\s+/g, " ")
-        .trim();
-    return `${cleaned} 💚`;
-}
-
 /**
  * 💬 Gera mensagem contextualizada
  */
@@ -204,7 +197,7 @@ export function generateContextualFollowup({ lead, analysis, attempt = 1, histor
     }
 
     if (intentPrimary === "informacao_preco") {
-        const preco = extracted.precoAvaliacao || extracted.preco || "a avaliação inicial é R$ 220,00";
+        const preco = extracted.precoAvaliacao || extracted.preco || "a avaliação inicial é R$ 200,00";
         return ensureSingleHeart(
             `${opener} Sobre os valores: ${preco}. Se fizer sentido pra você, posso já te ajudar a escolher um horário pra começar.`
         );

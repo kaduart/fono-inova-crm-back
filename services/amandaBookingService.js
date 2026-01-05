@@ -13,6 +13,7 @@ import {
     startOfDay,
 } from "date-fns";
 import Doctor from "../models/Doctor.js";
+import { RECESSO, isInRecesso, getFirstAvailableDate } from '../config/clinic.js';
 
 // 🔗 Base interna: primeiro INTERNAL_BASE_URL, depois BACKEND_URL_PRD, depois localhost
 const API_BASE =
@@ -58,14 +59,9 @@ const bookingStats = {
     errors: 0,
 };
 
-
-const RECESSO_START = parseISO("2025-12-19");
-const RECESSO_END = parseISO("2026-01-04");
-
 export function isDateBlocked(dateStr) {
     try {
-        const d = parseISO(dateStr); // "yyyy-MM-dd"
-        return isWithinInterval(d, { start: RECESSO_START, end: RECESSO_END });
+        return isInRecesso(dateStr);  // ✅ Já importada na linha 16
     } catch {
         return false;
     }
@@ -123,6 +119,13 @@ export async function findAvailableSlots({
         doctorFilter.specialties = { $in: specialties };
     }
 
+    const slotsOptions = {
+        therapyArea,
+        preferredPeriod,
+        daysAhead: leadAnalysis?.score >= 80 ? 14 : 30,  // Hot lead = slots próximos
+        maxOptions: leadAnalysis?.score >= 80 ? 4 : 2,   // Mais opções para hot
+    };
+
     console.log("🔍 [BOOKING] Buscando slots:", {
         therapyArea,
         preferredDay,
@@ -140,18 +143,19 @@ export async function findAvailableSlots({
     const todayStr = format(today, "yyyy-MM-dd");
 
     // 👉 Se o cliente pediu uma data e ela é no futuro, começamos A PARTIR DELA
-    let searchStart = today;
+    let searchStart = getFirstAvailableDate();  // ✅ Já pula o recesso automaticamente
 
     if (preferredDate) {
         try {
             const pref = startOfDay(parseISO(preferredDate));
+            const firstAvailable = getFirstAvailableDate();
 
-            // Se a data pedida é depois de hoje, começamos dali
-            if (isAfter(pref, today)) {
+            // Se a data pedida é depois da primeira disponível, usa ela
+            if (isAfter(pref, firstAvailable)) {
                 searchStart = pref;
             }
         } catch {
-            // se der erro, ignora e segue com hoje
+            // se der erro, ignora e segue com firstAvailable
         }
     }
 
@@ -515,10 +519,10 @@ export async function autoBookAppointment({
                 chosenSlot.specialty || lead?.therapyArea || "fonoaudiologia",
             date: chosenSlot.date, // string yyyy-MM-dd
             time: chosenSlot.time, // string HH:mm
-            serviceType: "individual_session",
+            serviceType: "evaluation",
             sessionType: "avaliacao",
             paymentMethod: "pix",
-            paymentAmount: 0,
+            paymentAmount: 200,
             status: "scheduled",
             notes: "[AGENDADO AUTOMATICAMENTE VIA AMANDA/WHATSAPP]",
             isAdvancePayment: false,
@@ -866,58 +870,3 @@ export function buildOrderedSlotOptions(slotsCtx = {}) {
     ].filter(Boolean);
 }
 
-// ✅ Monta a mensagem A/B/C/D/E/F com o mesmo padrão em TODO lugar
-
-export function buildSlotMenuMessageForPeriod(
-    slotsCtx,
-    period,
-    {
-        title = "Tenho esses horários no momento:",
-        question = "Qual você prefere? (responda com a letra)",
-        max = 2,
-    } = {}
-) {
-    if (!slotsCtx) return { message: null, optionsText: "", ordered: [], letters: [] };
-
-    const desired = String(period || "").toLowerCase();
-    const opts = buildSlotOptions(slotsCtx).filter((o) => getTimePeriod(o.slot?.time) === desired).slice(0, max);
-
-    if (!opts.length) return { message: null, optionsText: "", ordered: [], letters: [] };
-
-    const letters = opts.map(o => o.letter);
-    const ordered = opts.map(o => o.slot);
-    const optionsText = opts.map(o => o.text).join("\n");
-
-    const message = `${title}\n\n${optionsText}\n\n${question} 💚`;
-
-    return { message, optionsText, ordered, letters };
-}
-
-export function buildSlotMenuMessage(
-    slotsCtx,
-    {
-        title = "Tenho esses horários no momento:",
-        question = null,  // ✅ agora é dinâmico
-        max = null,  // ✅ usa slotsCtx.maxOptions se não fornecido
-    } = {}
-) {
-    // ✅ Usa maxOptions do contexto se disponível
-    const effectiveMax = max ?? slotsCtx?.maxOptions ?? 2;
-    const opts = buildSlotOptions(slotsCtx).slice(0, effectiveMax);
-    if (!opts.length) return { message: null, optionsText: "", ordered: [], letters: [] };
-
-    const letters = opts.map(o => o.letter);
-    const ordered = opts.map(o => o.slot);
-    const optionsText = opts.map(o => o.text).join("\n");
-
-    // ✅ Question dinâmico baseado no número de opções
-    const effectiveQuestion = question ?? (
-        letters.length === 2
-            ? "Qual você prefere? (A ou B)"
-            : `Qual você prefere? (${letters.join(", ")})`
-    );
-
-    const message = `${title}\n\n${optionsText}\n\n${effectiveQuestion} 💚`;
-
-    return { message, optionsText, ordered, letters };
-}

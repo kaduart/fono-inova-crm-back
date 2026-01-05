@@ -1,13 +1,12 @@
-// services/leadCircuitService.js
+// services/leadCircuitService.js - VERSÃO CORRIGIDA
+import { followupQueue } from '../config/bullConfig.js';
 import Followup from '../models/Followup.js';
 import Lead from '../models/Leads.js';
-import { enqueueFollowup } from "./followupQueueService.js";
 
 export const manageLeadCircuit = async (leadId, stage = 'initial') => {
     const lead = await Lead.findById(leadId);
     if (!lead) throw new Error('Lead não encontrado');
 
-    // Idempotência: evita duplicar follow-ups do mesmo stage nas últimas 24h
     const now = Date.now();
     const stageWindowMs = 24 * 60 * 60 * 1000;
     const dup = await Followup.findOne({
@@ -16,28 +15,45 @@ export const manageLeadCircuit = async (leadId, stage = 'initial') => {
         status: { $in: ['scheduled', 'processing'] },
         scheduledAt: { $gte: new Date(now - stageWindowMs) }
     }).lean();
-    if (dup) return dup;
 
+    if (dup) {
+        console.log(`[CIRCUIT] Follow-up ${stage} já existe para lead ${leadId}`);  // ✅ FIX 1
+        return dup;
+    }
+
+    const firstName = (name) => {
+        if (!name) return '';
+        const first = name.trim().split(/\s+/)[0];
+        const blacklist = ['contato', 'cliente', 'lead', 'paciente'];
+        return blacklist.includes(first.toLowerCase()) ? '' : first;
+    };
 
     const circuitConfig = {
         initial: {
-            delay: 2 * 60 * 60 * 1000,
-            message: `Olá ${firstName(lead.name)}! 👋 Vimos seu interesse na Fono Inova. Posso ajudar com ${lead.appointment?.seekingFor || 'nossos serviços'}?`
+            hot: { delay: 1 * 60 * 60 * 1000 },    // 1h para hot
+            warm: { delay: 2 * 60 * 60 * 1000 },   // 2h para warm
+            cold: { delay: 4 * 60 * 60 * 1000 },   // 4h para cold
         },
         follow_up: {
-            delay: 24 * 60 * 60 * 1000,
-            message: `Oi ${firstName(lead.name)}! 😊 Passando para saber se conseguiu ver nossas opções de ${lead.appointment?.healthPlan || 'planos'}. Tem alguma dúvida?`
-        }
+            hot: { delay: 12 * 60 * 60 * 1000 },   // 12h
+            warm: { delay: 24 * 60 * 60 * 1000 },  // 24h
+            cold: { delay: 48 * 60 * 60 * 1000 },  // 48h
+        },
     };
 
-    const config = circuitConfig[stage];
-    if (!config) return null;
+    const segment = lead.segment || "warm";
+    const config = circuitConfig[stage][segment];
+    if (!config) {
+        console.warn(`[CIRCUIT] Stage desconhecido: ${stage}`);  // ✅ FIX 4
+        return null;
+    }
+
     const scheduledAt = new Date(now + (config.delay || 0));
     const initialStatus = scheduledAt.getTime() <= now ? 'processing' : 'scheduled';
 
     const f = await Followup.create({
         lead: leadId,
-        stage, // 'initial' | 'follow_up'
+        stage,
         message: config.message,
         scheduledAt,
         status: initialStatus,
@@ -47,12 +63,19 @@ export const manageLeadCircuit = async (leadId, stage = 'initial') => {
         leadPhoneE164: lead.contact?.phone || null,
     });
 
+    const delayMs = scheduledAt.getTime() - Date.now();
 
-    // Enfileira apenas se ficou scheduled (futuro). Se já está "processing", sua
-    // rotina de dispatcher imediato deve pegar e enviar (ou enfileire aqui também).
-    await enqueueFollowup(f);
+    await followupQueue.add(
+        'followup',
+        { followupId: String(f._id) },
+        {
+            jobId: `fu-${f._id}`,
+            ...(delayMs > 0 ? { delay: delayMs } : {})
+        }
+    );
 
-    // interação no lead (update atômico, evita race)
+    console.log(`[CIRCUIT] Follow-up ${stage} agendado para ${scheduledAt.toLocaleString('pt-BR')}`);  // ✅ FIX 5
+
     await Lead.findByIdAndUpdate(
         leadId,
         {
@@ -72,3 +95,5 @@ export const manageLeadCircuit = async (leadId, stage = 'initial') => {
 
     return f;
 };
+
+export default manageLeadCircuit;

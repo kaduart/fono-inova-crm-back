@@ -134,7 +134,7 @@ export const THERAPY_DATA = {
     },
     speech: {
         explanation: "Avaliação especializada em desenvolvimento da fala e linguagem",
-        price: "R$ 220 a avaliação inicial",
+        price: "R$ 200 a avaliação inicial",
         details: "40min com fono experiente",
         //engagement: "É para bebê ou criança maior?"
     },
@@ -216,7 +216,7 @@ export function getPriceLinesForDetectedTherapies(detected = [], { max = 2 } = {
         const data = getTherapyData(t.id);
         if (!data?.price) continue;
 
-        // forma curta: "Fono: R$ 220..."
+        // forma curta: "Fono: R$ 200..."
         lines.push(`${t.name}: ${data.price}.`);
         if (lines.length >= max) break;
     }
