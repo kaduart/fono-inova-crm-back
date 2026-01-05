@@ -321,6 +321,69 @@ REGRAS:
 - Manter sempre a porta aberta.
 `.trim(),
 
+  // ✅ TRIAGEM / ANTI-LOOP (ordem e comportamento)
+  schedulingTriageRules: `
+🧭 TRIAGEM DE AGENDAMENTO (ANTI-LOOP) - REGRA OBRIGATÓRIA
+
+OBJETIVO: coletar só o necessário, 1 pergunta por vez, sem repetir.
+
+ORDEM:
+1) PERFIL/IDADE (anos ou meses)
+2) QUEIXA (apenas se a área ainda não estiver clara)
+3) PERÍODO (manhã/tarde/noite)
+
+REGRAS:
+- Se já estiver claro no histórico/lead, NÃO pergunte de novo.
+- Se a área apareceu “por acidente” (sem queixa clara), IGNORE e pergunte a queixa.
+- Não fale de preço nessa fase.
+- Não invente horários.
+`.trim(),
+
+  // ✅ Quando usuário escolhe uma opção (A/B/C) -> pedir nome
+  slotChosenAskName: (slotText) => `
+O cliente escolheu o horário "${slotText}".
+- Confirme a escolha de forma acolhedora.
+- Peça SOMENTE o NOME COMPLETO do paciente (não peça mais nada agora).
+- Não repita lista de horários e não ofereça novas opções.
+- 2–3 frases, 1 pergunta binária/objetiva.
+`.trim(),
+
+  // ✅ Depois do nome -> pedir nascimento
+  slotChosenAskBirth: `
+Você já tem o nome completo do paciente.
+- Peça SOMENTE a data de nascimento (dd/mm/aaaa).
+- Seja breve, acolhedora e direta.
+`.trim(),
+
+  // ✅ Não entendeu a escolha do slot
+  slotChoiceNotUnderstood: `
+Não ficou claro qual opção o cliente escolheu.
+- Reapresente as opções (sem inventar horários) e peça para responder com a LETRA (A-F).
+- Seja breve e simpática.
+`.trim(),
+
+  // ✅ Quando falta queixa (pra mapear área)
+  triageAskComplaint: `
+O cliente quer agendar, mas ainda não disse a queixa.
+- Valide a preocupação brevemente.
+- Pergunte qual a principal preocupação/queixa observada no dia a dia.
+- Não fale de preço e não ofereça horários ainda.
+`.trim(),
+
+  // ✅ Quando falta idade
+  triageAskAge: (areaName = "a área ideal") => `
+A queixa indica ${areaName}.
+- Valide e diga que a clínica pode ajudar.
+- Pergunte a idade do paciente (anos ou meses).
+- 2–3 frases, 1 pergunta.
+`.trim(),
+
+  // ✅ Quando falta período
+  triageAskPeriod: `
+Agora falta só o período preferido.
+- Pergunte se prefere MANHÃ ou TARDE (ou NOITE se vocês usam).
+- Não invente horários e não ofereça opções ainda.
+`.trim(),
 
   // =========================================================================
   // 🛡️ MÓDULOS DE QUEBRA DE OBJEÇÃO (CRÍTICOS!)
@@ -855,15 +918,6 @@ export function buildUserPromptWithValuePitch(flags = {}) {
 
   // 🔴 TRIAGEM TEA:
   // - SUSPEITA / SEM INFO → laudo x terapias (teaTriageContext)
-  // - LAUDO CONFIRMADO → triagem de foco terapêutico (teaPostDiagnosisContext)
-  if (mentionsTEA_TDAH) {
-    if (teaStatus === "laudo_confirmado") {
-      activeModules.push(DYNAMIC_MODULES.teaPostDiagnosisContext);
-    } else {
-      activeModules.push(DYNAMIC_MODULES.teaTriageContext);
-    }
-  }
-
   if (mentionsTOD) {
     activeModules.push(DYNAMIC_MODULES.todContext);
   }

@@ -34,6 +34,7 @@ import {
     buildDynamicSystemPrompt,
     buildUserPromptWithValuePitch,
     calculateUrgency,
+    DYNAMIC_MODULES,
     getManual,
 } from "./amandaPrompt.js";
 import { logBookingGate, mapFlagsToBookingProduct } from "./bookingProductMapper.js";
@@ -126,6 +127,13 @@ const GENERIC_SCHEDULE_EVAL_REGEX =
 // ============================================================================
 // 🆕 HELPERS DE EXTRAÇÃO (ADICIONADOS PARA CORRIGIR O LOOP)
 // ============================================================================
+
+function useModule(key, ...args) {
+    const mod = DYNAMIC_MODULES?.[key];
+    if (!mod) return "";
+    return typeof mod === "function" ? mod(...args) : mod;
+}
+const ci = (...parts) => parts.filter(Boolean).join("\n\n");
 
 /**
  * ✅ FIX: Retorna área do qualificationData APENAS se tiver queixa registrada
@@ -230,14 +238,13 @@ function buildTriageSchedulingMessage({
 
     // Ordem: perfil → queixa (para mapear área) → período
     if (needsProfile) {
-        return "Perfeito 😊 Pra eu te orientar certinho, qual a idade do paciente?";
+        return "Claro 😊 Só pra eu te orientar direitinho: qual a idade do paciente (anos ou meses)?";
     }
     if (needsComplaint) {
-        // 🆕 Pergunta a QUEIXA ao invés da área diretamente
-        return "E o que você tem observado? Me conta um pouquinho o que te trouxe aqui 😊";
+        return "Entendi 💚 Me conta um pouquinho: o que você tem observado no dia a dia que te preocupou?";
     }
     if (needsPeriod) {
-        return "Qual período fica melhor pra vocês: manhã ou tarde?";
+        return "Perfeito! Pra eu ver as melhores opções: vocês preferem manhã ou tarde?";
     }
 
     return "Me conta mais um detalhe pra eu te ajudar certinho 💚";
@@ -726,14 +733,11 @@ export async function getOptimizedAmandaResponse({
 
                     // 🤖 Deixa a IA gerar resposta acolhedora pedindo nome do paciente
                     const aiResponse = await callAmandaAIWithContext(
-                        `O cliente escolheu a opção ${chosenLetter} (${formatSlot(chosenSlot)}). Agora preciso do nome completo do paciente para confirmar.`,
+                        `O cliente escolheu a opção ${chosenLetter} (${formatSlot(chosenSlot)}).`,
                         lead,
                         {
                             ...enrichedContext,
-                            customInstruction: `O cliente ACABOU DE ESCOLHER o horário "${formatSlot(chosenSlot)}". 
-                            Confirme a escolha de forma acolhedora e peça o NOME COMPLETO do paciente para finalizar.
-                            Seja breve (2-3 frases), calorosa e use emojis com moderação.
-                            NÃO repita horários, NÃO ofereça outras opções - ele já escolheu!`
+                            customInstruction: useModule("slotChosenAskName", formatSlot(chosenSlot)),
                         },
                         flags,
                         null
@@ -763,10 +767,7 @@ export async function getOptimizedAmandaResponse({
                         lead,
                         {
                             ...enrichedContext,
-                            customInstruction: `Não entendi qual opção o cliente escolheu.
-                            Mostre as opções de horário disponíveis de forma clara e acolhedora.
-                            Peça para ele escolher A, B, C conforme preferência.
-                            Seja breve e simpática.`
+                            customInstruction: useModule("slotChoiceNotUnderstood")
                         },
                         flags,
                         null
@@ -1246,7 +1247,7 @@ export async function getOptimizedAmandaResponse({
             "Entendi! Vou te passar certinho 😊";
 
         return ensureSingleHeart(
-            `${urgencyPitch} ${priceText} Prefere agendar essa semana ou na próxima? 💚`
+            `${urgencyPitch} ${priceText} Se você quiser, eu posso ver horários pra você quando fizer sentido 💚`
         );
     }
 
@@ -1312,11 +1313,63 @@ export async function getOptimizedAmandaResponse({
         lead?.autoBookingContext?.complaint
     );
 
+    const inActiveSchedulingState = !!(
+        lead?.pendingSchedulingSlots?.primary ||
+        lead?.pendingChosenSlot ||
+        lead?.pendingPatientInfoForScheduling ||
+        lead?.autoBookingContext?.awaitingPeriodChoice ||
+        lead?.stage === "interessado_agendamento" ||
+        enrichedContext?.stage === "interessado_agendamento"
+    );
+
+    // “sinal AGORA” (não depende de dados salvos)
+    const schedulingSignalNow = !!(
+        flags.wantsSchedule ||
+        flags.wantsSchedulingNow ||
+        isSchedulingLikeText ||
+        /\b(agenda|agendar|marcar|hor[aá]rio|data|vaga|dispon[ií]vel|essa\s+semana|semana\s+que\s+vem)\b/i.test(text)
+    );
+
+    const shouldRunSchedulingFlow = inActiveSchedulingState || schedulingSignalNow;
+
+
     const wantsScheduling = flags.wantsSchedule || flags.wantsSchedulingNow || isSchedulingLikeText || isInSchedulingFlow;
 
     console.log("[ORCHESTRATOR] wantsScheduling:", wantsScheduling, "| isInSchedulingFlow:", isInSchedulingFlow);
 
-    if (wantsScheduling) {
+    const primaryIntent = analysis?.intent?.primary;
+
+    // só desvia se NÃO estiver em agendamento ativo e o texto não parece de agendamento
+    const isInfoIntent =
+        primaryIntent === "apenas_informacao" ||
+        primaryIntent === "pesquisa_preco";
+
+    if (
+        isInfoIntent &&
+        !inActiveSchedulingState &&
+        !flags.wantsSchedule &&
+        !flags.wantsSchedulingNow &&
+        !isSchedulingLikeText
+    ) {
+        const aiResponse = await callAmandaAIWithContext(
+            text,
+            lead,
+            {
+                ...enrichedContext,
+                customInstruction:
+                    "A pessoa quer só orientação/informação agora. " +
+                    "Responda de forma humana e acolhedora (1 frase validando). " +
+                    "NÃO puxe triagem (idade/queixa/período) e NÃO pressione avaliação. " +
+                    "No final, ofereça uma opção leve: 'se você quiser, eu vejo horários depois' ou 'posso te orientar no próximo passo'.",
+            },
+            flags,
+            analysis
+        );
+
+        return ensureSingleHeart(enforceClinicScope(aiResponse, text));
+    }
+
+    if (wantsScheduling && shouldRunSchedulingFlow) {
         const detectedTherapies = detectAllTherapies(text);
 
         // ✅ FIX: Só considera área do lead se tiver queixa registrada
@@ -1347,6 +1400,24 @@ export async function getOptimizedAmandaResponse({
 
         console.log("[BLOCO_INICIAL] hasArea:", hasArea, "| hasAge:", hasAge, "| hasPeriod:", hasPeriod, "| hasValidLeadArea:", hasValidLeadArea);
 
+        // 1) falta área/queixa
+        const instrComplaint = ci(
+            useModule("schedulingTriageRules"),
+            useModule("triageAskComplaint")
+        );
+
+        // 2) tem área mas falta idade
+        const instrAge = (areaName) => ci(
+            useModule("schedulingTriageRules"),
+            useModule("triageAskAge", areaName)
+        );
+
+        // 3) tem área+idade mas falta período
+        const instrPeriod = ci(
+            useModule("schedulingTriageRules"),
+            useModule("triageAskPeriod")
+        );
+
         // ✅ FIX: Se tem TUDO, delega pro PASSO 3/4 (não retorna aqui)
         if (hasArea && hasAge && hasPeriod) {
             console.log("[BLOCO_INICIAL] ✅ Triagem completa, delegando pro PASSO 3...");
@@ -1360,11 +1431,7 @@ export async function getOptimizedAmandaResponse({
                 lead,
                 {
                     ...enrichedContext,
-                    customInstruction: `O cliente quer agendar mas AINDA NÃO disse qual a queixa/necessidade.
-                    Acolha brevemente e pergunte de forma gentil qual a principal preocupação ou queixa do paciente.
-                    NÃO ofereça horários ainda. NÃO fale de preços.
-                    Seja breve (1-2 frases), empática e acolhedora.
-                    Use linguagem de mãe/pai preocupado com filho.`
+                    customInstruction: instrComplaint
                 },
                 flags,
                 null
@@ -1384,11 +1451,7 @@ export async function getOptimizedAmandaResponse({
                 lead,
                 {
                     ...enrichedContext,
-                    customInstruction: `O cliente mencionou uma queixa que indica ${areaName}.
-                    Valide a preocupação dele de forma EMPÁTICA e acolhedora.
-                    Explique brevemente que a clínica pode ajudar.
-                    Pergunte a idade do paciente (em anos ou meses) para direcionar melhor.
-                    Seja breve (2-3 frases), calorosa, como uma recepcionista experiente.`
+                    customInstruction: instrAge(areaName)
                 },
                 flags,
                 null
@@ -1418,11 +1481,7 @@ export async function getOptimizedAmandaResponse({
                 lead,
                 {
                     ...enrichedContext,
-                    customInstruction: `O cliente já disse a queixa (${areaName}) e idade. 
-                    Agora precisamos do período preferido (manhã ou tarde).
-                    Confirme de forma acolhedora que vamos ajudar.
-                    Pergunte se prefere de MANHÃ ou à TARDE para a avaliação.
-                    Seja breve (2 frases), empática e animada.`
+                    customInstruction: instrPeriod
                 },
                 flags,
                 null
@@ -1448,6 +1507,7 @@ export async function getOptimizedAmandaResponse({
         Boolean(lead?._id) &&
         wantsScheduling &&
         babyContext &&
+        (wantsScheduling && shouldRunSchedulingFlow) &&
         therapyAreaForGate === "fisioterapia" &&
         !lead?.autoBookingContext?.osteopathyOk;
 
@@ -1557,7 +1617,7 @@ export async function getOptimizedAmandaResponse({
     // =========================================================================
     // 🆕 PASSO 3: TRIAGEM - SALVA DADOS IMEDIATAMENTE E VERIFICA O QUE FALTA
     // =========================================================================
-    if (wantsScheduling && lead?._id && !lead?.pendingPatientInfoForScheduling) {
+    if (wantsScheduling && shouldRunSchedulingFlow && lead?._id && !lead?.pendingPatientInfoForScheduling) {
         console.log("[TRIAGEM] Verificando dados necessários...");
 
         // 🆕 SALVA DADOS DETECTADOS IMEDIATAMENTE
@@ -1913,39 +1973,36 @@ async function callVisitFunnelAI({ text, lead, context = {}, flags = {} }) {
     }
 
     const visitPrompt = `
-${text}
+        ${text}
 
-🎯 MODO AVALIAÇÃO + VISITA ATIVO
+        🎯 MODO ACOLHIMENTO + PRÓXIMO PASSO (SEM PRESSÃO)
 
-REGRAS DO FUNIL INICIAL:
+        OBJETIVO:
+        - Apoiar a mãe/pai com linguagem humana.
+        - Não “empurrar” avaliação. Ofereça como opção quando houver abertura.
 
-1) PRIMEIRA OPÇÃO: AVALIAÇÃO INICIAL
-- Sempre tente primeiro AGENDAR UMA AVALIAÇÃO INICIAL presencial.
-- Explique que a avaliação serve pra entender o desenvolvimento, organizar o caso e definir quais terapias são indicadas.
-- Fale em DIA + PERÍODO (manhã/tarde), nunca invente horário exato.
+        ROTEIRO:
+        1) ACOLHIMENTO (1 frase)
+        - Valide a preocupação: "Entendo como isso preocupa" / "Você fez certo em buscar ajuda".
 
-2) SEGUNDA OPÇÃO: VISITA LEVE (QUANDO AVALIAÇÃO NÃO FOR ACEITA)
-- Se a pessoa disser que:
-  • "ainda está só pesquisando",
-  • "ainda não quer se comprometer",
-  • "por enquanto só quer conhecer o espaço" ou algo parecido,
-  então ofereça uma VISITA PRESENCIAL leve, sem compromisso.
-- Deixe claro que a visita é só pra conhecer a clínica e tirar dúvidas.
+        2) PERMISSÃO (1 frase)
+        - "Posso te fazer 2 perguntinhas rápidas pra te orientar melhor?"
 
-3) COMO FALAR NA PRÁTICA:
-- Primeiro: convide para AVALIAÇÃO INICIAL.
-- Se recusar ou enrolar muito: ofereça VISITA como alternativa mais leve.
-- Exemplo:
-  "Podemos agendar uma avaliação inicial pra entender direitinho o desenvolvimento."
-  → Se recusar:
-  "Sem problema! Se você preferir, podemos combinar só uma visita rápida pra vocês conhecerem o espaço e tirarem dúvidas pessoalmente."
+        3) CLAREZA (1 pergunta por vez)
+        - Pergunte a principal queixa OU idade (o que fizer mais sentido pelo texto).
 
-4) LEMBRETE:
-- Nunca prometa horário exato, só [dia/período].
-- Só diga que vai encaminhar pra equipe confirmar depois que tiver: nome completo + telefone + dia/período.
+        4) PRÓXIMO PASSO COM DUAS OPÇÕES (SEM PRESSÃO)
+        - Opção leve: "Se quiser, você pode vir conhecer a clínica / tirar dúvidas rapidinho."
+        - Opção completa: "E se você preferir, a avaliação inicial já direciona o melhor caminho."
 
-Use sempre o tom acolhedor, simples e profissional da Amanda 💚
-`.trim();
+        REGRAS:
+        - Não inventar horários.
+        - Não falar de preço a menos que perguntem.
+        - validar + pedir permissão + oferecer 2 opções (visita leve OU avaliação).
+        - não insistir se a pessoa sinalizar que só quer entender.
+        - Tom: humano, calmo, acolhedor. 2–4 frases no máximo.
+        `.trim();
+
 
     messages.push({ role: "user", content: visitPrompt });
 
@@ -2345,7 +2402,10 @@ async function callAmandaAIWithContext(
         customInstruction = null,  // ✅ NOVO: Instrução customizada para casos específicos
     } = context;
 
-    const flags = flagsFromOrchestrator || detectAllFlags(userText, lead, context);
+    const flags =
+        flagsFromOrchestrator && Object.keys(flagsFromOrchestrator).length
+            ? flagsFromOrchestrator
+            : detectAllFlags(userText, lead, context);
 
     const therapyAreaForScheduling =
         context.therapyArea ||
