@@ -14,6 +14,7 @@ import { followupQueue } from "../config/bullConfig.js";
 import { getIo } from "../config/socket.js";
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import enrichLeadContext from "../services/leadContext.js";
+import ensureSingleHeart from "../utils/helpers.js";
 import { normalizeE164BR } from "../utils/phone.js";
 
 // Amanda 2.0
@@ -24,8 +25,8 @@ import {
 
 // Amanda 1.0 (fallback)
 import { generateFollowupMessage } from "../services/aiAmandaService.js";
-import { sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 import { buildContextPack } from "../services/intelligence/ContextPack.js";
+import { sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 
 await mongoose.connect(process.env.MONGO_URI);
 
@@ -538,12 +539,6 @@ const worker = new Worker(
     concurrency: 5
   }
 );
-
-function ensureSingleHeart(text) {
-  if (!text) return "Como posso te ajudar? 💚";
-  const clean = String(text).replace(/💚/g, "").trim();
-  return `${clean} 💚`;
-}
 
 // =====================================================
 // ⚠️ 6. TRATAMENTO DE ERROS / RETENTATIVAS

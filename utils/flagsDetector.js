@@ -23,8 +23,26 @@ export function deriveFlagsFromText(text = "") {
         wantsSchedule:
             /\b(agendar|marcar|agendamento|remarcar|consultar)\b/i.test(normalizedText) ||
             /\b(teria\s+vaga|tem\s+vaga|tem\s+hor[áa]rio|conseguir\s+um\s+hor[áa]rio)\b/i.test(normalizedText) ||
-            /\b(hor[áa]rio\s+pra\s+(consulta|avalia[çc][aã]o))\b/i.test(normalizedText),
+            /\b(hor[áa]rio\s+pra\s+(consulta|avalia[çc][aã]o))\b/i.test(normalizedText) ||
+            /\b(quero\s+(uma?\s+)?consult|preciso\s+marc|posso\s+(agendar|marc)|quando\s+posso\s+(ir|marc))\b/i.test(normalizedText) ||
+            /\b(tem\s+disponibilidade|dispon[ií]vel\s+(essa|pr[oó]xima)\s+semana)\b/i.test(normalizedText),
 
+        mentionsUrgency:
+            /\b(urgente|urg[êe]ncia|o\s+quanto\s+antes|logo|r[aá]pido|n[aã]o\s+pode\s+esperar|muito\s+tempo\s+esperando)\b/i.test(normalizedText) ||
+            /\b(preciso\s+(muito|urgente)|caso\s+urgente|emerg[êe]ncia)\b/i.test(normalizedText),
+        confirmsData:
+            /\b(isso|isso\s+mesmo|exato|correto|certo|confirmo|pode\s+ser|ta\s+bom|beleza)\b/i.test(normalizedText) &&
+            normalizedText.length < 30,
+        refusesOrDenies:
+            /\b(n[aã]o\s+(quero|preciso|vou)|deixa\s+pra\s+l[aá]|depois\s+eu\s+vejo|agora\s+n[aã]o|mais\s+tarde)\b/i.test(normalizedText) ||
+            /\b(vou\s+pensar|deixa\s+quieto|n[aã]o\s+tenho\s+interesse)\b/i.test(normalizedText),
+        wantsMoreOptions:
+            /\b(outr[oa]s?\s+(hor[aá]rio|op[çc][aã]o)|nenhum[a]?\s+dessas?|n[aã]o\s+serve|diferente|mais\s+opções?)\b/i.test(normalizedText) ||
+            /\b(outro\s+dia|outra\s+data|semana\s+que\s+vem)\b/i.test(normalizedText),
+        mentionsCDL:
+            /\b(cdl|desconto|promo[çc][aã]o|cupom|c[oó]digo)\b/i.test(normalizedText),
+        wantsReschedule: /\b(reagendar|remarcar|mudar\s+hor[aá]rio|trocar\s+hor[aá]rio|alterar\s+data)\b/i.test(normalizedText),
+        wantsCancel: /\b(cancelar|desmarcar|n[aã]o\s+vou\s+poder|n[aã]o\s+consigo\s+ir)\b/i.test(normalizedText),
         asksAddress: /(onde|endere[cç]o|local|mapa|como\s*chegar)/i.test(normalizedText),
         asksPayment: /(pagamento|pix|cart[aã]o|dinheiro|parcel)/i.test(normalizedText),
         asksPlans: /(ipasgo|unimed|amil|plano|conv[eê]nio)/i.test(normalizedText),

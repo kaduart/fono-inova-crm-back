@@ -8,7 +8,7 @@ function priceLineForTopic(topic, userText, conversationSummary = '') {
         case "teste_linguinha":
             return "O Teste da Linguinha custa R$ 150,00.";
         case "sessao":
-            return "Sessão avulsa R$ 220; no pacote mensal sai por R$ 180/sessão (~R$ 720/mês).";
+            return "Sessão avulsa R$ 200; no pacote mensal sai por R$ 180/sessão (~R$ 720/mês).";
         case "psicopedagogia":
             return "Psicopedagogia: anamnese R$ 200; pacote mensal R$ 160/sessão (~R$ 640/mês).";
     }
@@ -26,19 +26,19 @@ function priceLineForTopic(topic, userText, conversationSummary = '') {
     }
 
     if (/\b(psic[oó]log|ansiedade|emocional|comportamento)\b/.test(combined)) {
-        return "Avaliação inicial R$ 220; pacote mensal R$ 640 (1x/semana, R$ 160/sessão).";
+        return "Avaliação inicial R$ 200; pacote mensal R$ 640 (1x/semana, R$ 160/sessão).";
     }
 
     if (/\b(terapia\s+ocupacional|to\b|integra[çc][aã]o\s+sensorial)\b/.test(combined)) {
-        return "Avaliação inicial R$ 220; pacote mensal R$ 720 (1x/semana, R$ 180/sessão).";
+        return "Avaliação inicial R$ 200; pacote mensal R$ 720 (1x/semana, R$ 180/sessão).";
     }
 
     if (/\b(fisioterap|fisio\b|reabilita[çc][aã]o)\b/.test(combined)) {
-        return "Avaliação inicial R$ 220; pacote mensal R$ 640 (1x/semana, R$ 160/sessão).";
+        return "Avaliação inicial R$ 200; pacote mensal R$ 640 (1x/semana, R$ 160/sessão).";
     }
 
     if (/\b(fono|fala|linguagem|crian[çc]a|beb[eê]|atraso)\b/.test(combined)) {
-        return "Avaliação inicial R$ 220; pacote mensal R$ 720 (1x/semana, R$ 180/sessão).";
+        return "Avaliação inicial R$ 200; pacote mensal R$ 720 (1x/semana, R$ 180/sessão).";
     }
 
     if (mentionsCDL) {
@@ -62,21 +62,21 @@ const tests = [
         topic: 'avaliacao_inicial',
         text: 'Quanto custa?',
         summary: 'Criança 2 anos e 11 meses. Fala poucas palavras.',
-        expect: r => r?.includes('220') && r?.includes('720')
+        expect: r => r?.includes('200') && r?.includes('720')
     },
     {
         name: 'Psicologia',
         topic: 'avaliacao_inicial',
         text: 'Qual o valor?',
         summary: 'Lead interessado em psicologia para ansiedade.',
-        expect: r => r?.includes('220') && r?.includes('640')
+        expect: r => r?.includes('200') && r?.includes('640')
     },
     {
         name: 'TO',
         topic: 'avaliacao_inicial',
         text: 'Me fala o preço',
         summary: 'Criança 5 anos coordenação motora. Mãe perguntou TO.',
-        expect: r => r?.includes('220') && r?.includes('720')
+        expect: r => r?.includes('200') && r?.includes('720')
     },
     {
         name: 'Sem Contexto',
@@ -90,7 +90,7 @@ const tests = [
         topic: 'avaliacao_inicial',
         text: 'Valor da fisioterapia?',
         summary: 'Adulto com dor crônica, reabilitação funcional.',
-        expect: r => r?.includes('220') && r?.includes('640')
+        expect: r => r?.includes('200') && r?.includes('640')
     },
     {
         name: 'Psicopedagogia',

@@ -122,7 +122,7 @@ async function testShortConversation() {
     // Simula 10 mensagens de histórico
     await insertMessages(lead._id, contact._id, [
         { direction: 'inbound', content: 'Oi, quanto custa fono?' },
-        { direction: 'outbound', content: 'Avaliação R$ 220, sessão R$ 180. É pra criança?' },
+        { direction: 'outbound', content: 'Avaliação R$ 200, sessão R$ 180. É pra criança?' },
         { direction: 'inbound', content: 'Sim, meu filho de 5 anos' },
         { direction: 'outbound', content: 'Legal! Qual a dificuldade?' },
         { direction: 'inbound', content: 'Ele não fala direito' },
@@ -161,7 +161,7 @@ async function testLongConversation() {
         { direction: 'inbound', content: 'Oi' },
         { direction: 'outbound', content: 'Oi! Como posso ajudar?' },
         { direction: 'inbound', content: 'Quanto custa fono?' },
-        { direction: 'outbound', content: 'Avaliação R$ 220' },
+        { direction: 'outbound', content: 'Avaliação R$ 200' },
         { direction: 'inbound', content: 'É para meu filho de 6 anos com TEA' },
         { direction: 'outbound', content: 'Entendi, temos especialistas em TEA' },
     ];
@@ -255,7 +255,7 @@ async function testNoDuplicateQuestions() {
         { direction: 'inbound', content: 'Tenho 2 filhos de 6 e 8 anos com TEA e TDAH' },
         { direction: 'outbound', content: 'Entendi! Posso ajudar com fono e psico' },
         { direction: 'inbound', content: 'Quanto custa?' },
-        { direction: 'outbound', content: 'R$ 220 avaliação, R$ 180/sessão mensal' }
+        { direction: 'outbound', content: 'R$ 200 avaliação, R$ 180/sessão mensal' }
     ]);
 
     const result = await testAmandaResponse(

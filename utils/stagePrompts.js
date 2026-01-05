@@ -29,7 +29,7 @@ export function getPromptByStage(stage, context = {}) {
 • Primeiro: Reforce o VALOR (o que ele ganha)
 • Depois: Informe o PREÇO
 • Finalize: Pergunta de ENGAJAMENTO
-• Exemplo: "A avaliação é completa e personalizada. Valor: R$ 220. É para criança ou adulto?"
+• Exemplo: "A avaliação é completa e personalizada. Valor: R$ 200. É para criança ou adulto?"
 ${context.mentionedTherapies?.length > 0 ? `\n• Lembre que ele já perguntou sobre: ${context.mentionedTherapies.join(', ')}` : ''}
 `,
 
