@@ -438,6 +438,43 @@ export async function getOptimizedAmandaResponse({
         hasLeadId: !!lead?._id,
     });
 
+    const asksLocation = /(endere[çc]o|onde\s+fica|localiza(?:ç|c)(?:a|ã)o)/i.test(text.normalize('NFC'));
+    if (asksLocation) {
+        const coords = {
+            latitude: -16.3334217,
+            longitude: -48.9488967,
+            name: "Clínica Fono Inova",
+            address: "Av. Minas Gerais, 405 - Jundiaí, Anápolis - GO, 75110-770",
+            url: "https://www.google.com/maps/dir//Av.+Minas+Gerais,+405+-+Jundiaí,+Anápolis+-+GO,+75110-770/@-16.3315712,-48.9488384,14z"
+        };
+
+        // 1️⃣ envia o pin real (mensagem type: "location")
+        await sendLocationMessage({
+            to: lead.contact.phone,
+            lead: lead._id,
+            contactId: lead.contact._id,
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            name: coords.name,
+            address: coords.address,
+            url: coords.url,
+            sentBy: "amanda",
+        });
+
+        await new Promise(res => setTimeout(res, 800));
+
+        // 2️⃣ envia a mensagem de texto complementar
+        await sendTextMessage({
+            to: lead.contact.phone,
+            text: `Claro! 📍 Aqui está nossa localização:\n\n**${name}**\n${address}\n\n🗺️ ${url}`,
+            lead: lead._id,
+            contactId: lead.contact._id,
+            sentBy: "amanda",
+        });
+
+        return null; // evita que o fluxo da IA gere texto duplicado
+    }
+
     if (lead?.pendingPatientInfoForScheduling && lead?._id) {
         console.log("📝 [ORCHESTRATOR] Lead está pendente de dados do paciente");
 
@@ -447,7 +484,6 @@ export async function getOptimizedAmandaResponse({
 
         // 🛡️ ESCAPE: Detecta perguntas importantes durante coleta
         const asksPrice = /(pre[çc]o|valor|quanto\s*(custa|[eé]))/i.test(text);
-        const asksLocation = /(endere[çc]o|onde\s+fica|localiza[çc][aã]o)/i.test(text);
 
         if (asksPrice) {
             const area = lead?.therapyArea || "avaliacao";
@@ -459,42 +495,6 @@ export async function getOptimizedAmandaResponse({
             const price = prices[area] || "R$ 200";
             const nextStep = step === "name" ? "nome completo" : "data de nascimento";
             return ensureSingleHeart(`A avaliação é **${price}**. Pra confirmar o horário, preciso só do **${nextStep}** 💚`);
-        }
-
-        if (asksLocation) {
-            const coords = {
-                latitude: -16.3334217,
-                longitude: -48.9488967,
-                name: "Clínica Fono Inova",
-                address: "Av. Minas Gerais, 405 - Jundiaí, Anápolis - GO, 75110-770",
-                url: "https://www.google.com/maps/dir//Av.+Minas+Gerais,+405+-+Jundiaí,+Anápolis+-+GO,+75110-770/@-16.3315712,-48.9488384,14z"
-            };
-
-            // 1️⃣ envia o pin real (mensagem type: "location")
-            await sendLocationMessage({
-                to: lead.contact.phone,
-                lead: lead._id,
-                contactId: lead.contact._id,
-                latitude: coords.latitude,
-                longitude: coords.longitude,
-                name: coords.name,
-                address: coords.address,
-                url: coords.url,
-                sentBy: "amanda",
-            });
-
-            await new Promise(res => setTimeout(res, 800));
-
-            // 2️⃣ envia a mensagem de texto complementar
-            await sendTextMessage({
-                to: lead.contact.phone,
-                text: `Claro! 📍 Aqui está nossa localização:\n\n**${name}**\n${address}\n\n🗺️ ${url}`,
-                lead: lead._id,
-                contactId: lead.contact._id,
-                sentBy: "amanda",
-            });
-
-            return null; // evita que o fluxo da IA gere texto duplicado
         }
 
         if (step === "name") {
