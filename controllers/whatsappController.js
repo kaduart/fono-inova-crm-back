@@ -1042,7 +1042,7 @@ async function processInboundMessage(msg, value) {
         }
 
         // ✅ SALVAR MENSAGEM NO CRM
-        const savedMessage = await Message.create({
+        const messageData = {
             wamid,
             from,
             to,
@@ -1053,15 +1053,19 @@ async function processInboundMessage(msg, value) {
             mediaId,
             caption,
             status: "received",
-            location: msg.location || null,
-            // 🔹 Só marca como "precisa revisão" se NÃO for texto, áudio transcrito ou imagem descrita
             needs_human_review: !(type === "text" || type === "audio" || type === "image"),
             timestamp,
             contact: contact._id,
             lead: lead._id,
             raw: msg,
-        });
+        };
 
+        // 🧭 Só adiciona o campo location se for mensagem de localização
+        if (type === "location" && msg.location) {
+            messageData.location = msg.location;
+        }
+
+        const savedMessage = await Message.create(messageData);
 
         try {
             contact.lastMessageAt = timestamp;
