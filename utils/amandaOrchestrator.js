@@ -461,7 +461,7 @@ export async function getOptimizedAmandaResponse({
             return ensureSingleHeart(`A avaliação é **${price}**. Pra confirmar o horário, preciso só do **${nextStep}** 💚`);
         }
 
-        if (askedLocation) {
+        if (asksLocation) {
             const coords = {
                 latitude: -16.3334217,
                 longitude: -48.9488967,
@@ -483,10 +483,12 @@ export async function getOptimizedAmandaResponse({
                 sentBy: "amanda",
             });
 
+            await new Promise(res => setTimeout(res, 800));
+
             // 2️⃣ envia a mensagem de texto complementar
             await sendTextMessage({
                 to: lead.contact.phone,
-                text: "Claro! Aqui está nossa localização 📍",
+                text: `Claro! 📍 Aqui está nossa localização:\n\n**${name}**\n${address}\n\n🗺️ ${url}`,
                 lead: lead._id,
                 contactId: lead.contact._id,
                 sentBy: "amanda",
@@ -1989,40 +1991,6 @@ export async function getOptimizedAmandaResponse({
     return ensureSingleHeart(finalScoped);
 }
 
-
-/**
- * Extrai nome + data de nascimento do lead ou da mensagem atual
- */
-function extractPatientInfoFromLead(lead, lastMessage) {
-    let fullName = lead.patientInfo?.fullName || lead.name;
-    let birthDate = lead.patientInfo?.birthDate;
-    const phone = lead.contact?.phone || lead.phone;
-    const email = lead.contact?.email || lead.email;
-
-    if (!fullName || !birthDate) {
-        const nameMatch = lastMessage.match(
-            /(?:meu nome [eé]|me chamo|sou)\s+([a-zà-úA-ZÀ-Ú\s]+)/i,
-        );
-        if (nameMatch) {
-            fullName = nameMatch[1].trim();
-        }
-
-        const dateMatch = lastMessage.match(
-            /\b(\d{2})[\/\-](\d{2})[\/\-](\d{4})\b/,
-        );
-        if (dateMatch) {
-            const [, day, month, year] = dateMatch;
-            birthDate = `${year}-${month}-${day}`;
-        }
-    }
-
-    return {
-        fullName: fullName || null,
-        birthDate: birthDate || null,
-        phone: phone || null,
-        email: email || null,
-    };
-}
 
 /**
  * 🔥 FUNIL INICIAL: AVALIAÇÃO → VISITA (se recusar)
