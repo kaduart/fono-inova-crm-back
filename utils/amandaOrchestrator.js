@@ -2125,17 +2125,16 @@ function tryManualResponse(normalizedText, context = {}, flags = {}) {
 
         // Se o cliente pediu só o local, envia o pin de localização real
         if (coords?.latitude && coords?.longitude) {
-            sendWhatsAppMessage({
-                type: "location",
+            sendLocationMessage({
                 to: lead.contact.phone,
-                location: {
-                    latitude: coords.latitude,
-                    longitude: coords.longitude,
-                    name: coords.name,
-                    address: coords.address,
-                    url: coords.url,
-                },
-                metadata: { sentBy: "amanda" },
+                lead: lead._id,
+                contactId: lead.contact._id,
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+                name: coords.name,
+                address: coords.address,
+                url: coords.url,
+                sentBy: "amanda"
             });
         }
 
