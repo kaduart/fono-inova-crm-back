@@ -470,6 +470,7 @@ export async function getOptimizedAmandaResponse({
                 url: "https://www.google.com/maps/dir//Av.+Minas+Gerais,+405+-+Jundiaí,+Anápolis+-+GO,+75110-770/@-16.3315712,-48.9488384,14z"
             };
 
+            // 1️⃣ envia o pin real (mensagem type: "location")
             await sendLocationMessage({
                 to: lead.contact.phone,
                 lead: lead._id,
@@ -479,9 +480,10 @@ export async function getOptimizedAmandaResponse({
                 name: coords.name,
                 address: coords.address,
                 url: coords.url,
-                sentBy: "amanda"
+                sentBy: "amanda",
             });
 
+            // 2️⃣ envia a mensagem de texto complementar
             await sendTextMessage({
                 to: lead.contact.phone,
                 text: "Claro! Aqui está nossa localização 📍",
@@ -490,9 +492,8 @@ export async function getOptimizedAmandaResponse({
                 sentBy: "amanda",
             });
 
-            return null; // evita duplicar resposta textual da IA
+            return null; // evita que o fluxo da IA gere texto duplicado
         }
-
 
         if (step === "name") {
             const name = extractName(text);
