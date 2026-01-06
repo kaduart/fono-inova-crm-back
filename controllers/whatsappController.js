@@ -145,12 +145,23 @@ export const whatsappController = {
 
             // 3ª tentativa: última mensagem outbound para este telefone
             if (!saved) {
-                saved = await Message.findOne({
+                saved = await Message.create({
+                    waMessageId,
+                    from: process.env.CLINIC_PHONE_E164,
                     to,
-                    direction: 'outbound',
-                    type: 'text'
-                }).sort({ timestamp: -1 }).lean();
+                    direction: "outbound",
+                    type: "text",
+                    content: text,
+                    status: "sent",
+                    timestamp: new Date(),
+                    lead,
+                    contact: contactId,
+                    patient: patientId,
+                    metadata: { sentBy, userId },
+                });
                 console.log('🔍 Busca por to + outbound:', saved ? 'ENCONTROU' : 'NÃO ACHOU');
+
+                return { ...result, savedMessage: saved };
             }
 
             console.log('📡 Mensagem encontrada para emitir?', saved ? 'SIM' : 'NÃO');
@@ -1043,6 +1054,7 @@ async function processInboundMessage(msg, value) {
 
         // ✅ SALVAR MENSAGEM NO CRM
         const messageData = {
+            waMessageId: wamid,
             wamid,
             from,
             to,
