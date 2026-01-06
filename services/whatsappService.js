@@ -137,6 +137,8 @@ export async function sendLocationMessage({
     const phone = normalizeE164BR(to);
     const metaUrl = `${META_URL}/${PHONE_ID}/messages`;
 
+    console.log("📍 Enviando localização via WhatsApp...");
+
     const body = {
         messaging_product: "whatsapp",
         to: phone,
@@ -145,24 +147,23 @@ export async function sendLocationMessage({
             latitude,
             longitude,
             name,
-            address,
-        },
+            address
+        }
     };
 
     const res = await fetch(metaUrl, {
         method: "POST",
         headers: {
             Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
+            "Content-Type": "application/json"
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(body)
     });
 
     const data = await res.json();
     const waMessageId = data?.messages?.[0]?.id || null;
     const now = new Date();
 
-    // 💾 Registra no histórico, igual aos outros
     await registerMessage({
         leadId: lead,
         contactId,
@@ -183,8 +184,10 @@ export async function sendLocationMessage({
         throw new Error(data.error?.message || "Erro ao enviar localização WhatsApp");
     }
 
+    console.log("✅ Localização enviada com sucesso:", { waMessageId, phone });
     return { ...data, waMessageId };
 }
+
 
 /** 🔎 Resolve a URL lookaside a partir de um mediaId do WhatsApp */
 export async function resolveMediaUrl(mediaId) {
