@@ -950,7 +950,12 @@ async function processInboundMessage(msg, value) {
                 // fallback: pelo menos algo textual
                 content = caption || "Imagem recebida.";
             }
-        } else {
+        } // 📍 LOCALIZAÇÃO (mensagens de localização do WhatsApp)
+        else if (type === 'location' && msg.location) {
+            content = msg.location.name || msg.location.address || 'Localização enviada';
+        }
+
+        else {
             // 🎥 📄 😀 VÍDEO / DOCUMENTO / STICKER (mantém como marcador)
             try {
                 if (type === "video" && msg.video?.id) {
@@ -976,10 +981,9 @@ async function processInboundMessage(msg, value) {
 
         // 🔹 Agora: TEXT, AUDIO e IMAGE usam `content` (texto "de verdade")
         const contentToSave =
-            (type === "text" || type === "audio" || type === "image")
+            (type === "text" || type === "audio" || type === "image" || type === "location")
                 ? content
                 : (caption || `[${type.toUpperCase()}]`);
-
 
 
         // ✅ BUSCA UNIFICADA INTELIGENTE
@@ -1049,6 +1053,7 @@ async function processInboundMessage(msg, value) {
             mediaId,
             caption,
             status: "received",
+            location: msg.location || null,
             // 🔹 Só marca como "precisa revisão" se NÃO for texto, áudio transcrito ou imagem descrita
             needs_human_review: !(type === "text" || type === "audio" || type === "image"),
             timestamp,

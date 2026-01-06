@@ -77,7 +77,7 @@ export const createMonthlyPlanning = async (month, year, userId) => {
         targets: {
             totalSessions: 160,      // exemplo: 160 sessões/mês
             workHours: 107,          // 160 * 40min
-            availableSlots: 180,
+            availableSlots: 160,
             expectedRevenue: 32000   // R$ 32k esperado
         },
         createdBy: userId
