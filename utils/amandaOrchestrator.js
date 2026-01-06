@@ -42,7 +42,7 @@ import { extractPreferredDateFromText } from "./dateParser.js";
 import ensureSingleHeart from "./helpers.js";
 import { extractAgeFromText, extractBirth, extractName, extractPeriodFromText } from "./patientDataExtractor.js";
 import { buildSlotMenuMessage } from "./slotMenuBuilder.js";
-import { sendLocationMessage } from "../services/whatsappService.js";
+import { sendLocationMessage, sendTextMessage } from "../services/whatsappService.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
@@ -463,24 +463,35 @@ export async function getOptimizedAmandaResponse({
 
         if (askedLocation) {
             const coords = {
-                latitude: -16.333950,
-                longitude: -48.953560,
+                latitude: -16.3334217,
+                longitude: -48.9488967,
                 name: "Clínica Fono Inova",
-                address: "Av. Minas Gerais, 405 - Jundiaí, Anápolis - GO",
+                address: "Av. Minas Gerais, 405 - Jundiaí, Anápolis - GO, 75110-770",
+                url: "https://www.google.com/maps/dir//Av.+Minas+Gerais,+405+-+Jundiaí,+Anápolis+-+GO,+75110-770/@-16.3315712,-48.9488384,14z"
             };
 
-            // Envia o pin
             await sendLocationMessage({
                 to: lead.contact.phone,
                 lead: lead._id,
                 contactId: lead.contact._id,
-                ...coords,
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+                name: coords.name,
+                address: coords.address,
+                url: coords.url,
+                sentBy: "amanda"
             });
 
-            // E responde texto junto
-            return "Claro! Nossa clínica fica na **Av. Minas Gerais, 405 - Bairro Jundiaí, Anápolis-GO** 💚";
-        }
+            await sendTextMessage({
+                to: lead.contact.phone,
+                text: "Claro! Aqui está nossa localização 📍",
+                lead: lead._id,
+                contactId: lead.contact._id,
+                sentBy: "amanda",
+            });
 
+            return null; // evita duplicar resposta textual da IA
+        }
 
 
         if (step === "name") {
