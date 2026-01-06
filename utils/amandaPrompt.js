@@ -339,6 +339,30 @@ REGRAS:
 - Não invente horários.
 `.trim(),
 
+  // ✅ NOVO: NÃO PEDIR NOME ANTES DE SLOT
+  noNameBeforeSlotRule: `
+🚫 REGRA: NÃO PEDIR NOME ANTES DE SLOT ESCOLHIDO
+- Só peça o nome completo após o cliente escolher um horário (A, B, C...).
+- Se ele só disser "manhã" ou "tarde", primeiro mostre as opções disponíveis.
+- Não diga "vou encaminhar pra equipe" sem confirmar um horário específico.
+`.trim(),
+
+  // ✅ NOVO: EVITAR REPETIÇÃO DE CONFIRMAÇÃO (HANDOFF SPAM)
+  handoffNoSpamRule: `
+⚠️ REGRA: EVITAR REPETIÇÃO DE "ENCAMINHEI PRA EQUIPE"
+- Se a pessoa já respondeu "ok", "obrigado" ou "aguardo", não repita a mesma frase.
+- Se precisar, responda uma única vez com algo curto: "Perfeito 💚, qualquer dúvida é só me chamar."
+- Depois disso, silencie (não reabra conversa).
+`.trim(),
+
+  // ✅ NOVO: PRIORIDADE DE PERGUNTA DE PREÇO
+  pricePriorityAfterBooking: `
+💰 REGRA: PERGUNTA DE PREÇO TEM PRIORIDADE
+- Mesmo após o agendamento, se o cliente perguntar "valor", "quanto", "preço" etc, responda com o preço da área.
+- Use o tom leve e explicativo: "A avaliação é R$200 e é o primeiro passo pra entender o que a Aysla precisa 💚"
+- Não repita "agendamento realizado" antes de responder o preço.
+`.trim(),
+
   // ✅ Quando usuário escolhe uma opção (A/B/C) -> pedir nome
   slotChosenAskName: (slotText) => `
 O cliente escolheu o horário "${slotText}".
@@ -360,6 +384,15 @@ Você já tem o nome completo do paciente.
 Não ficou claro qual opção o cliente escolheu.
 - Reapresente as opções (sem inventar horários) e peça para responder com a LETRA (A-F).
 - Seja breve e simpática.
+`.trim(),
+
+  multiTeamContext: `
+🤝 CONTEXTO MULTIPROFISSIONAL
+- Quando o responsável diz "precisa de tudo" ou cita mais de uma área (fono, psico, TO, ABA, etc.), trate como caso multiprofissional.
+- Explique que a Fono Inova tem equipe integrada: fonoaudióloga, psicóloga e terapeuta ocupacional trabalham juntas no plano da criança.
+- A avaliação inicial serve pra montar o plano conjunto.
+- Frase sugerida:
+  "Perfeito! Aqui na Fono Inova temos psicólogo (ABA), fono e terapeuta ocupacional que trabalham juntos no mesmo plano. Posso te explicar como funciona a avaliação inicial pra montar esse plano multiprofissional? 💚"
 `.trim(),
 
   // ✅ Quando falta queixa (pra mapear área)
@@ -707,8 +740,8 @@ o acolhimento faz muita diferença.Muitos pais que vieram comparar acabaram fica
 💰 VALORES(só informe DEPOIS de agregar valor):
 - Avaliação inicial: a partir de R$ 200(a maioria das áreas infantis)
   - Avaliação CDL: R$ 200
-    - Sessão avulsa: em torno de R$ 200
-      - Pacote mensal(1x / semana): em torno de R$ 180 / sessão(≈ R$ 640–720 / mês, conforme área)
+    - Sessão avulsa: em torno de R$ 160
+      - Pacote mensal(1x / semana): em torno de R$ 160 / sessão(≈ R$ 640 / mês, conforme área)
         - Avaliação neuropsicológica: R$ 2.000(até 6x)
           - Teste da Linguinha: R$ 150
             - Psicopedagogia: Anamnese R$ 200 | Pacote R$ 160 / sessão(~R$ 640 / mês)
@@ -961,6 +994,17 @@ export function buildUserPromptWithValuePitch(flags = {}) {
     activeModules.push(`📍 ENDEREÇO: ${CLINIC_ADDRESS} `);
   }
 
+  // 🔎 NOVO: Detecção de caso multiprofissional (criança precisa de tudo)
+  if (
+    /precisa\s+de\s+tudo/i.test(text) ||
+    /(fono.*psico|psico.*fono)/i.test(text) ||
+    /aba/i.test(text)
+  ) {
+    flags.multidisciplinary = true;
+    flags.therapyArea = "multiprofissional";
+    activeModules.push(DYNAMIC_MODULES.multiTeamContext);
+  }
+
   // 💰 MÓDULO: PREÇO (COM VALOR)
   if (asksPrice && !mentionsPriceObjection) {
     const priceInfo = priceLineForTopic(topic, text, flags.conversationSummary || '');
@@ -1021,6 +1065,9 @@ function priceLineForTopic(topic) {
     case "psicologia":
     case "terapia_ocupacional":
     case "fisioterapia":
+    case "multiprofissional":
+      return "Avaliação multiprofissional (Psicologia + Fono + Terapia Ocupacional): R$ 300 o conjunto inicial.";
+
     case "musicoterapia":
       return "Avaliação inicial: R$ 200 (primeiro passo pra entender a queixa e definir o plano).";
     default:
@@ -1094,8 +1141,8 @@ export const MANUAL_AMANDA = {
     "avaliacao": "A avaliação inicial é R$ 200; é o primeiro passo para entender a queixa e traçar o plano ideal. Prefere agendar essa avaliação pra essa semana ou pra próxima? 💚",
     "neuropsico": "Avaliação Neuropsicológica completa (10 sessões): R$ 2.000 em até 6x 💚",
     "teste_linguinha": "Teste da Linguinha: R$ 150. Avaliamos o frênulo lingual de forma rápida e segura 💚",
-    "sessao": "Sessão avulsa R$ 200 | Pacote mensal (1x/semana): R$ 180/sessão (~R$ 720/mês) 💚",
-    "psicopedagogia": "Psicopedagogia: Anamnese R$ 200 | Pacote mensal R$ 160/sessão (~R$ 640/mês) 💚"
+    "sessao": "Sessão avulsa R$ 200 | Pacote mensal (1x/semana): R$ 160/sessão (~R$ 640/mês) 💚",
+    "psicopedagogia": "Psicopedagogia: Anamnese R$ 200 | Pacote mensal R$ 130/sessão (~R$ 520/mês) 💚"
   },
 
   "planos_saude": {

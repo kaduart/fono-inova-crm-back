@@ -85,7 +85,7 @@ Para pacotes mensais, também temos condições especiais 💚`,
 
         "valor_pacote_mensal": {
             question: "Qual o valor do pacote mensal?",
-            answer: "O pacote mensal (4 sessões de 40min) sai por R$ 720. Isso dá R$ 180 por sessão, ao invés de R$ 200 avulsa. Você economiza R$ 160 por mês! 💚",
+            answer: "O pacote mensal (4 sessões de 40min) sai por R$ 640. Isso dá R$ 160 por sessão, ao invés de R$ 160 avulsa. Você economiza R$ 160 por mês! 💚",
             keywords: ["pacote", "mensal", "sessão", "desconto"],
             relatedQuestions: ["formas_pagamento"]
         }

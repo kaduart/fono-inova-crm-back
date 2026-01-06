@@ -14,7 +14,7 @@ const messageSchema = new mongoose.Schema({
     // Tipos suportados
     type: {
         type: String,
-        enum: ['text', 'template', 'image', 'audio', 'video', 'document', 'sticker'],
+        enum: ['text', 'template', 'image', 'audio', 'video', 'document', 'sticker', 'location'],
         default: 'text'
     },
 
@@ -25,6 +25,14 @@ const messageSchema = new mongoose.Schema({
     caption: String,        // legenda/filename
     mediaUrl: String,       // link lookaside
     mediaId: String,        // id da mídia no Graph
+    // Localização (WhatsApp)
+    location: {
+        latitude: Number,
+        longitude: Number,
+        name: String,
+        address: String,
+        url: String,
+    },
 
     // Template (saída outbound)
     templateName: String,

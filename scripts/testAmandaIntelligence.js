@@ -122,13 +122,13 @@ async function testShortConversation() {
     // Simula 10 mensagens de histórico
     await insertMessages(lead._id, contact._id, [
         { direction: 'inbound', content: 'Oi, quanto custa fono?' },
-        { direction: 'outbound', content: 'Avaliação R$ 200, sessão R$ 180. É pra criança?' },
+        { direction: 'outbound', content: 'Avaliação R$ 200, sessão R$ 160. É pra criança?' },
         { direction: 'inbound', content: 'Sim, meu filho de 5 anos' },
         { direction: 'outbound', content: 'Legal! Qual a dificuldade?' },
         { direction: 'inbound', content: 'Ele não fala direito' },
         { direction: 'outbound', content: 'Entendi. Quer agendar avaliação?' },
         { direction: 'inbound', content: 'Quanto custa o pacote mensal?' },
-        { direction: 'outbound', content: 'R$ 720/mês (4 sessões). Quer agendar?' },
+        { direction: 'outbound', content: 'R$ 640/mês (4 sessões). Quer agendar?' },
         { direction: 'inbound', content: 'Sim' },
         { direction: 'outbound', content: 'Ótimo! Prefere manhã ou tarde?' }
     ]);

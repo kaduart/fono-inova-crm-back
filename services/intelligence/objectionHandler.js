@@ -18,7 +18,7 @@ export const OBJECTIONS = {
                 response += "O valor reflete nossa equipe especializada. ";
             }
 
-            response += "Temos o pacote mensal que sai mais em conta: R$ 180/sessão vs R$ 200 avulsa. Posso te explicar? 💚";
+            response += "Temos o pacote mensal que sai mais em conta: R$ 160/sessão vs R$ 180 avulsa. Posso te explicar? 💚";
 
             return response;
         }

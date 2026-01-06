@@ -40,13 +40,13 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
         isAdvancePayment = false,
         advanceSessions = [],
     } = req.body;
-console.log("DEBUG IDS", {
-  patientId, doctorId, packageId, sessionId,
-  t_patientId: typeof patientId,
-  t_doctorId: typeof doctorId,
-  t_packageId: typeof packageId,
-  t_sessionId: typeof sessionId,
-});
+    console.log("DEBUG IDS", {
+        patientId, doctorId, packageId, sessionId,
+        t_patientId: typeof patientId,
+        t_doctorId: typeof doctorId,
+        t_packageId: typeof packageId,
+        t_sessionId: typeof sessionId,
+    });
     const amount = parseFloat(req.body.paymentAmount) || 0;
     const currentDate = new Date();
     const safeId = (v) => {
@@ -1556,7 +1556,7 @@ router.get('/stats', auth, async (req, res) => {
                 icon: 'AudioLines',
                 color: '#FF9800',
                 sessionDuration: 40,
-                price: 180.00
+                price: 160.00
             }
         };
 

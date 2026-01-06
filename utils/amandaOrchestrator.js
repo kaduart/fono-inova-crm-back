@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import "dotenv/config";
+import { claudeCircuit, openaiCircuit } from "../services/circuitBreaker.js";
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import { urgencyScheduler } from "../services/intelligence/UrgencyScheduler.js";
 import enrichLeadContext from "../services/leadContext.js";
@@ -13,7 +14,6 @@ import {
     isAskingAboutEquivalence,
     isTDAHQuestion
 } from "./therapyDetector.js";
-import { claudeCircuit, openaiCircuit } from "../services/circuitBreaker.js";
 
 import Followup from "../models/Followup.js";
 import Leads from "../models/Leads.js";
@@ -399,6 +399,37 @@ export async function getOptimizedAmandaResponse({
     }
 
     // =========================================================================
+    // 🛡️ GUARD: Anti-spam "encaminhei pra equipe"
+    // =========================================================================
+    if (
+        lead?.autoBookingContext?.handoffSentAt &&
+        /^(ok|obrigad[oa]?|aguardo|t[aá]\s*bom|blz|certo|perfeito|valeu|show)$/i.test(text.trim())
+    ) {
+        console.log("[GUARD] Anti-spam: cliente confirmou, silenciando");
+        return ensureSingleHeart("Perfeito! Qualquer dúvida, é só chamar 💚");
+    }
+
+    // =========================================================================
+    // 🛡️ GUARD: Preço tem prioridade SEMPRE
+    // =========================================================================
+    const asksPrice = /(pre[çc]o|valor|quanto\s*(custa|[eé]))/i.test(text);
+    if (asksPrice && lead?.status === "agendado") {
+        console.log("[GUARD] Cliente perguntou preço PÓS-agendamento");
+        const knownArea = lead?.therapyArea || "avaliacao";
+        const PRICE_AREA = {
+            fonoaudiologia: "A avaliação de fonoaudiologia é **R$ 200**.",
+            psicologia: "A avaliação de psicologia é **R$ 200**.",
+            terapia_ocupacional: "A avaliação de terapia ocupacional é **R$ 200**.",
+            fisioterapia: "A avaliação de fisioterapia é **R$ 200**.",
+            musicoterapia: "A avaliação de musicoterapia é **R$ 200**.",
+            psicopedagogia: "A avaliação psicopedagógica é **R$ 200**.",
+            neuropsicologia: "A avaliação neuropsicológica completa é **R$ 2.000** (até 6x).",
+        };
+        const priceText = PRICE_AREA[knownArea] || "A avaliação inicial é **R$ 200**.";
+        return ensureSingleHeart(priceText);
+    }
+
+    // =========================================================================
     // 🆕 PASSO 1: FLUXO DE COLETA DE DADOS DO PACIENTE (PÓS-ESCOLHA DE SLOT)
     // =========================================================================
     console.log("🔍 [PASSO 1 CHECK]", {
@@ -412,6 +443,27 @@ export async function getOptimizedAmandaResponse({
         const step = lead.pendingPatientInfoStep || "name";
         const chosenSlot = lead.pendingChosenSlot;
 
+
+        // 🛡️ ESCAPE: Detecta perguntas importantes durante coleta
+        const asksPrice = /(pre[çc]o|valor|quanto\s*(custa|[eé]))/i.test(text);
+        const asksLocation = /(endere[çc]o|onde\s+fica|localiza[çc][aã]o)/i.test(text);
+
+        if (asksPrice) {
+            const area = lead?.therapyArea || "avaliacao";
+            const prices = {
+                fonoaudiologia: "R$ 200",
+                psicologia: "R$ 200",
+                neuropsicologia: "R$ 2.000 (até 6x)",
+            };
+            const price = prices[area] || "R$ 200";
+            const nextStep = step === "name" ? "nome completo" : "data de nascimento";
+            return ensureSingleHeart(`A avaliação é **${price}**. Pra confirmar o horário, preciso só do **${nextStep}** 💚`);
+        }
+
+        if (asksLocation) {
+            const nextStep = step === "name" ? "nome completo" : "data de nascimento";
+            return ensureSingleHeart(`Ficamos na **Av. Minas Gerais, 405 - Jundiaí, Anápolis**. Pra confirmar, me passa o **${nextStep}** 💚`);
+        }
 
 
         if (step === "name") {
@@ -737,7 +789,7 @@ export async function getOptimizedAmandaResponse({
                         lead,
                         {
                             ...enrichedContext,
-                            customInstruction: useModule("slotChosenAskName", formatSlot(chosenSlot)),
+                            customInstruction: ci(useModule("slotChosenAskName", formatSlot(chosenSlot))),
                         },
                         flags,
                         null
@@ -767,7 +819,7 @@ export async function getOptimizedAmandaResponse({
                         lead,
                         {
                             ...enrichedContext,
-                            customInstruction: useModule("slotChoiceNotUnderstood")
+                            customInstruction: ci(useModule("slotChoiceNotUnderstood"))
                         },
                         flags,
                         null
@@ -1606,6 +1658,11 @@ export async function getOptimizedAmandaResponse({
         return ensureSingleHeart(
             "Perfeito! Só confirmando: você quer **Fisioterapia** e **Teste da Linguinha**, certo? Quer agendar **primeiro qual dos dois**?",
         );
+    }
+
+    if (/precisa\s+de\s+tudo|fono.*psico|psico.*fono/i.test(text)) {
+        flags.multidisciplinary = true;
+        flags.therapyArea = "multiprofissional";
     }
 
     if (RESCHEDULE_REGEX.test(normalized)) {
@@ -2630,9 +2687,10 @@ REGRAS CRÍTICAS:
     } else if (stage === "interessado_agendamento") {
         slotsInstruction = `
 ⚠️ Ainda não conseguimos buscar horários disponíveis.
-- Se o usuário escolher um período (manhã/tarde), use isso
-- Diga que vai verificar com a equipe os melhores horários
-- NÃO invente horário específico
+${useModule("noNameBeforeSlotRule")}
+- NÃO peça nome do paciente ainda.
+- Pergunte qual DIA DA SEMANA fica melhor.
+- NÃO diga "vou encaminhar pra equipe".
 `;
     }
 
@@ -2697,6 +2755,11 @@ REGRAS CRÍTICAS:
         temperature: 0.6,
     });
 
+    if (/encaminh(ar|ei|o).*equipe/i.test(textResp)) {
+        await safeLeadUpdate(lead._id, {
+            $set: { "autoBookingContext.handoffSentAt": new Date().toISOString() }
+        });
+    }
     return textResp || "Como posso te ajudar? 💚";
 }
 
