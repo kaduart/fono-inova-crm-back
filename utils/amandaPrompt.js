@@ -1134,7 +1134,13 @@ export const MANUAL_AMANDA = {
 
   "localizacao": {
     "endereco": "Ficamos na Av. Minas Gerais, 405 - Bairro Jundiaí, Anápolis-GO! 💚",
-    "como_chegar": "Estamos em frente ao SESI no Jundiaí! Precisa do link do Google Maps? 💚"
+    "coords": {
+      latitude: -16.333950,
+      longitude: -48.953560,
+      name: "Clínica Fono Inova",
+      address: "Av. Minas Gerais, 405 - Jundiaí, Anápolis - GO",
+      url: "https://goo.gl/maps/Yg1mYajdMZK2"
+    }
   },
 
   "valores": {

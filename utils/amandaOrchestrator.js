@@ -42,6 +42,7 @@ import { extractPreferredDateFromText } from "./dateParser.js";
 import ensureSingleHeart from "./helpers.js";
 import { extractAgeFromText, extractBirth, extractName, extractPeriodFromText } from "./patientDataExtractor.js";
 import { buildSlotMenuMessage } from "./slotMenuBuilder.js";
+import { sendLocationMessage } from "../services/whatsappService.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
@@ -460,10 +461,26 @@ export async function getOptimizedAmandaResponse({
             return ensureSingleHeart(`A avaliação é **${price}**. Pra confirmar o horário, preciso só do **${nextStep}** 💚`);
         }
 
-        if (asksLocation) {
-            const nextStep = step === "name" ? "nome completo" : "data de nascimento";
-            return ensureSingleHeart(`Ficamos na **Av. Minas Gerais, 405 - Jundiaí, Anápolis**. Pra confirmar, me passa o **${nextStep}** 💚`);
+        if (askedLocation) {
+            const coords = {
+                latitude: -16.333950,
+                longitude: -48.953560,
+                name: "Clínica Fono Inova",
+                address: "Av. Minas Gerais, 405 - Jundiaí, Anápolis - GO",
+            };
+
+            // Envia o pin
+            await sendLocationMessage({
+                to: lead.contact.phone,
+                lead: lead._id,
+                contactId: lead.contact._id,
+                ...coords,
+            });
+
+            // E responde texto junto
+            return "Claro! Nossa clínica fica na **Av. Minas Gerais, 405 - Bairro Jundiaí, Anápolis-GO** 💚";
         }
+
 
 
         if (step === "name") {
@@ -2103,7 +2120,27 @@ function tryManualResponse(normalizedText, context = {}, flags = {}) {
     }
 
     if (askedLocation) {
-        return getManual("localizacao", "endereco");
+        const coords = getManual("localizacao", "coords");
+        const addrText = getManual("localizacao", "endereco");
+
+        // Se o cliente pediu só o local, envia o pin de localização real
+        if (coords?.latitude && coords?.longitude) {
+            sendWhatsAppMessage({
+                type: "location",
+                to: lead.contact.phone,
+                location: {
+                    latitude: coords.latitude,
+                    longitude: coords.longitude,
+                    name: coords.name,
+                    address: coords.address,
+                    url: coords.url,
+                },
+                metadata: { sentBy: "amanda" },
+            });
+        }
+
+        // E ainda retorna texto normal no chat
+        return addrText;
     }
 
     // 💳 "queria/queria pelo plano"

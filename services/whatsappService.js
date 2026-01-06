@@ -116,6 +116,76 @@ export async function registerMessage({
     return msg;
 }
 
+
+/** 📍 Envia localização (pin) */
+export async function sendLocationMessage({
+    to,
+    latitude,
+    longitude,
+    name,
+    address,
+    url = null,
+    lead,
+    contactId = null,
+    patientId = null,
+    sentBy = "amanda",
+    userId = null
+}) {
+    const token = await requireToken();
+    if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
+
+    const phone = normalizeE164BR(to);
+    const metaUrl = `${META_URL}/${PHONE_ID}/messages`;
+
+    const body = {
+        messaging_product: "whatsapp",
+        to: phone,
+        type: "location",
+        location: {
+            latitude,
+            longitude,
+            name,
+            address,
+        },
+    };
+
+    const res = await fetch(metaUrl, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+    const waMessageId = data?.messages?.[0]?.id || null;
+    const now = new Date();
+
+    // 💾 Registra no histórico, igual aos outros
+    await registerMessage({
+        leadId: lead,
+        contactId,
+        patientId,
+        direction: "outbound",
+        text: `${name} - ${address}`,
+        type: "location",
+        status: res.ok ? "sent" : "failed",
+        waMessageId,
+        timestamp: now,
+        to: phone,
+        from: PHONE_ID,
+        metadata: { sentBy, userId },
+    });
+
+    if (!res.ok) {
+        console.error("❌ Erro WhatsApp (location):", data.error);
+        throw new Error(data.error?.message || "Erro ao enviar localização WhatsApp");
+    }
+
+    return { ...data, waMessageId };
+}
+
 /** 🔎 Resolve a URL lookaside a partir de um mediaId do WhatsApp */
 export async function resolveMediaUrl(mediaId) {
     const token = await requireToken();
