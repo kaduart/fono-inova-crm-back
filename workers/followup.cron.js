@@ -1,10 +1,11 @@
 // crons/followup.cron.js
-import mongoose from "mongoose";
 import chalk from "chalk";
+import mongoose from "mongoose";
 import { followupQueue } from "../config/bullConfig.js";
 import { redisConnection } from "../config/redisConnection.js";
 import Followup from "../models/Followup.js";
 import Message from "../models/Message.js";
+import { buildContextPack } from "../services/intelligence/ContextPack.js";
 
 await mongoose.connect(process.env.MONGO_URI);
 
@@ -105,17 +106,32 @@ async function dispatchPendingFollowups() {
 
     // enfileira
     for (const f of sorted) {
+      const lead = f.lead;
+      if (!lead?._id) continue;
+
+      // ============================================================
+      // 🔹 Verificação de contexto antes de enfileirar follow-up
+      // Evita mensagens frias ou genéricas em leads sem tom definido
+      // ============================================================
+      const contextPack = await buildContextPack(lead._id);
+
+      if (!contextPack?.toneMode || !contextPack?.mode) {
+        console.log(`[FOLLOWUP-CRON] Lead ${lead._id} ignorado (sem contexto válido)`);
+        continue;
+      }
+
       await followupQueue.add(
         "followup",
         { followupId: String(f._id) },
         {
           jobId: `fu-${f._id}`, // idempotência
-          priority: getPriority(f.lead?.conversionScore || 0)
+          priority: getPriority(f.lead?.conversionScore || 0),
         }
       );
     }
 
-    console.log(chalk.green(`✅ ${sorted.length} follow-ups enfileirados!`));
+    console.log(chalk.green(`✅ ${sorted.length} follow-ups processados!`));
+
   });
 }
 

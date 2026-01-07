@@ -147,6 +147,16 @@ export function extractStructuredData(text) {
         data.proximaAcaoDeclarada = 'pensar_melhor';
     }
 
+    // ============================================================
+    // 🚫 FORA DE ESCOPO (exames que a clínica não realiza)
+    // ============================================================
+    const outOfScopePatterns = /\baudiometria\b|\blimiar\b|\bbera\b|\bpeate\b|\bteste\s+da\s+orelhinha\b|\btriagem\s+auditiva\b|\blaudo\b|\bhiperacusia\b/i;
+
+    if (outOfScopePatterns.test(t)) {
+        data.foraEscopo = true;
+        data.reason = "nao_oferecemos_exame";
+    }
+
 
     return data;
 }
