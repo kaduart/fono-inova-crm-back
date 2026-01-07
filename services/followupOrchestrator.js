@@ -12,8 +12,8 @@ import {
 } from "../services/intelligence/smartFollowup.js";
 
 // ✅ NOVO: “memória”/contexto persistido (resumo + histórico)
-import enrichLeadContext from "../services/leadContext.js";
 import { buildContextPack } from "../services/intelligence/ContextPack.js";
+import enrichLeadContext from "../services/leadContext.js";
 
 const TZ_SP = "America/Sao_Paulo";
 
@@ -83,10 +83,14 @@ export async function createSmartFollowupForLead(leadId, options = {}) {
       lead,
       analysis,
       attempt,
-      history: recentMessages, // pode manter invertido (desc) se sua função espera assim; worker também passa desc
+      history: recentMessages,
       sameDay,
       summaryText,
-      context: fullContext,
+      context: {
+        ...fullContext,
+        toneMode: contextPack?.toneMode,
+        urgencyLevel: contextPack?.urgencyLevel,
+      },
     });
 
     score = analysis?.score ?? score;
@@ -107,11 +111,11 @@ export async function createSmartFollowupForLead(leadId, options = {}) {
   const scheduledAt = explicitScheduledAt
     ? new Date(explicitScheduledAt)
     : calculateOptimalFollowupTime({
-        lead,
-        score,
-        lastInteraction: new Date(),
-        attempt,
-      });
+      lead,
+      score,
+      lastInteraction: new Date(),
+      attempt,
+    });
 
   // 3) criar followup
   const followup = await Followup.create({

@@ -442,6 +442,11 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 appointment: safeId(createdAppointmentId)
             });
 
+            // 🔹 VINCULA O PAYMENT AO APPOINTMENT (BIDIRECIONAL)
+            await Appointment.findByIdAndUpdate(createdAppointmentId, {
+                payment: createdPaymentId
+            });
+
             console.log('✅ [POST] Sessão individual criada:', {
                 appointmentId: createdAppointmentId,
                 paymentId: createdPaymentId,
@@ -1253,24 +1258,44 @@ router.patch('/:id/complete', auth, async (req, res) => {
             });
         }
 
-        // 2️⃣ ATUALIZAR PAYMENT (SE EXISTIR)
-        if (appointment.payment) {
+        // 2️⃣ ATUALIZAR PAYMENT (BUSCA ÓRFÃO SE NÃO ESTIVER VINCULADO)
+        let paymentId = appointment.payment?._id || appointment.payment;
+
+        // ✅ FIX: Se não tem payment vinculado, busca pelo appointment ID
+        if (!paymentId && !appointment.package) {
+            const orphanPayment = await Payment.findOne({
+                appointment: appointment._id
+            }).session(session);
+
+            if (orphanPayment) {
+                paymentId = orphanPayment._id;
+                console.log('🔗 Payment órfão encontrado:', paymentId);
+
+                // Vincula de volta ao appointment
+                await Appointment.updateOne(
+                    { _id: appointment._id },
+                    { $set: { payment: paymentId } }
+                ).session(session);
+            }
+        }
+
+        if (paymentId) {
             const paymentResult = await Payment.updateOne(
-                { _id: appointment.payment._id },
+                { _id: paymentId },
                 {
                     status: 'paid',
-                    paymentDate: moment()
-                        .tz("America/Sao_Paulo")
-                        .format("YYYY-MM-DD"),
+                    paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"),
                     updatedAt: new Date()
                 }
             ).session(session);
 
             console.log('✅ Payment update:', {
-                id: appointment.payment._id,
+                id: paymentId,
                 matched: paymentResult.matchedCount,
                 modified: paymentResult.modifiedCount
             });
+        } else if (!appointment.package) {
+            console.log('⚠️ Nenhum payment encontrado para este appointment');
         }
 
         // 3️⃣ ATUALIZAR PACOTE (SE NECESSÁRIO)

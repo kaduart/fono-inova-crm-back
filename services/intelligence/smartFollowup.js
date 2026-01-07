@@ -142,6 +142,18 @@ export function generateContextualFollowup({ lead, analysis, attempt = 1, histor
     const { extracted = {}, intent = {}, score = lead.conversionScore || 50 } = analysis || {};
     const opener = analysis?.contextOpener || "";
 
+    const isOutOfScope =
+        analysis?.extracted?.foraEscopo ||
+        lead?.reason === "nao_oferecemos_exame" ||
+        lead?.flags?.includes("fora_escopo");
+
+    if (isOutOfScope) {
+        const greeting = firstName ? `Oi ${firstName}!` : "Oi!";
+        return ensureSingleHeart(
+            `${greeting} Vi sua mensagem e só pra alinhar: esse tipo de procedimento específico a gente não realiza aqui porque nosso foco é terapia. Se você quiser, posso te orientar sobre como funciona o acompanhamento/terapia e próximos passos.`
+        );
+    }
+
     // nome sanitizado
     let firstName = ((lead?.name || "").trim().split(/\s+/)[0]) || "";
     const blacklist = ["contato", "cliente", "lead", "paciente"];
@@ -168,6 +180,23 @@ export function generateContextualFollowup({ lead, analysis, attempt = 1, histor
 
     const intentPrimary = (intent.primary || "").toLowerCase();
     const topic = inferTopic({ extracted, intentPrimary, history: historyWithSummary });
+
+    // 🚫 Casos fora de escopo — exames, laudos, audiometrias
+    const textBlob = [
+        lastInboundText,
+        lastOutboundText,
+        (extracted.queixa || ""),
+        (intentPrimary || "")
+    ].join(" ").toLowerCase();
+
+    if (
+        /\baudiometria\b|\bexame\b|\blimiar\b|\bhperacusia\b|\bhiperacusia\b|\blaudo\b/.test(textBlob)
+    ) {
+        return ensureSingleHeart(
+            `${greeting} Entendo perfeitamente — esse tipo de exame (como limiar auditivo ou audiometria) não realizamos aqui, pois nossa clínica é focada em terapias.  
+                Mas posso te explicar como funciona o tratamento para sensibilidade auditiva e reabilitação, se quiser 💚`
+        );
+    }
 
     // === TENTATIVA 3+ → despedida gentil, sem empurrar ===
     if (attempt >= 3) {
@@ -218,5 +247,115 @@ export function generateContextualFollowup({ lead, analysis, attempt = 1, histor
     return ensureSingleHeart(
         `${opener} Notei que você entrou em contato sobre ${topic}. Se ainda fizer sentido pra você, fico à disposição pra te ajudar por aqui.`
     );
+}
+
+
+// ============================================================
+// 🎯 CONDUÇÃO PSICOLÓGICA PROGRESSIVA — ETAPA 2
+// ============================================================
+
+export function determinePsychologicalFollowup({ toneMode, stage, flags }) {
+    const responses = [];
+
+    // ============================================================
+    // 🧠 1. PERFIL PREMIUM → DIRECIONAMENTO ASSERTIVO
+    // ============================================================
+    if (toneMode === "premium") {
+        if (stage === "curioso" || stage === "contato_inicial") {
+            responses.push(`
+✅ Mostre autoridade e movimento:
+"Ótimo você ter buscado isso agora — nosso protocolo entrega resultados rápidos e mensuráveis. Vamos agendar a avaliação para definir sua estratégia personalizada?"`);
+        } else if (stage === "avaliacao_agendada") {
+            responses.push(`
+📅 Reforce valor e comprometimento:
+"Avaliação confirmada — é nela que definimos o plano ideal e metas de avanço. Te aguardo pra gente começar certo."`);
+        } else {
+            responses.push(`
+🎯 Direcione para fechamento de pacote:
+"Podemos iniciar seu protocolo premium ainda esta semana. Prefere mensal ou trimestral?"`);
+        }
+    }
+
+    // ============================================================
+    // 💚 2. PERFIL ACOLHIMENTO → SEGURANÇA E VALIDAÇÃO
+    // ============================================================
+    else {
+        if (stage === "curioso" || stage === "contato_inicial") {
+            responses.push(`
+                    💬 Valide e acolha antes de agir:
+                    "Entendo perfeitamente sua dúvida — isso é super comum. O primeiro passo tranquilo é uma avaliação leve, sem compromisso, pra gente entender direitinho o caso."`);
+        } else if (stage === "avaliacao_agendada") {
+            responses.push(`
+                    🌱 Reforce confiança:
+                    "Fico feliz que deu esse passo — a avaliação é o momento de entender tudo com calma e clareza. Você vai sair dela sabendo exatamente o que fazer."`);
+        } else {
+            responses.push(`
+                    🤝 Conduza suavemente ao pacote:
+                    "Quando quiser, posso te mostrar como o acompanhamento funciona — é o próximo passo natural após a avaliação."`);
+        }
+    }
+
+    // ============================================================
+    // 🚦 3. AJUSTES POR FLAGS (opcional)
+    // ============================================================
+    if (flags?.priceObjectionTriggered) {
+        responses.push("💡 Se houver dúvida sobre valores, mostre flexibilidade: 'Podemos ajustar o formato do protocolo pra caber no seu momento.'");
+    }
+    if (flags?.timeObjectionTriggered) {
+        responses.push("🕐 Se o tempo for objeção, use tranquilização: 'As sessões são curtas e adaptáveis, cabem na sua rotina.'");
+    }
+
+    return responses.join("\n\n");
+}
+
+
+// ============================================================
+// 💰 ETAPA 3 - FECHAMENTO COM VALOR AGREGADO
+// ============================================================
+
+export function buildValueAnchoredClosure({ toneMode, stage, urgencyLevel, therapyArea }) {
+    const closureLines = [];
+
+    // 1️⃣ Ancoragem de valor (antes do preço)
+    const valuePitch = {
+        fono: "A avaliação fonoaudiológica é o primeiro passo pra entender a fala e já começar a estimulação certa.",
+        psicologia: "Na psicologia, a avaliação inicial ajuda a mapear emoções e comportamento, pra montar um plano personalizado.",
+        terapia_ocupacional: "Na TO, o foco é autonomia — entender como ele(a) se organiza nas tarefas do dia a dia e ajustar isso.",
+        neuropsicologia: "A avaliação neuropsicológica investiga atenção, memória e linguagem pra orientar condutas com precisão.",
+        multiprofissional: "A equipe multiprofissional trabalha junto (fono, psico, TO) — a avaliação serve pra montar o plano completo.",
+        default: "A avaliação é o primeiro passo pra entender a queixa e traçar o melhor caminho de evolução."
+    };
+
+    // Seleciona pitch conforme área
+    const anchor = valuePitch[therapyArea] || valuePitch.default;
+
+    // 2️⃣ Fechamento adaptativo por tom
+    if (toneMode === "premium") {
+        closureLines.push(`
+${anchor}
+Hoje temos agenda flexível, e quanto antes avaliar, mais rápido conseguimos estruturar o plano.  
+Posso reservar um horário essa semana pra iniciar seu protocolo? 💚`);
+    } else {
+        closureLines.push(`
+${anchor}
+É uma avaliação leve, presencial, feita com muito acolhimento — sem compromisso de continuidade.  
+Quer que eu veja um horário tranquilo pra vocês essa semana? 💚`);
+    }
+
+    // 3️⃣ Ajuste de urgência
+    if (urgencyLevel === "ALTA") {
+        closureLines.push("⚠️ Casos assim se beneficiam muito de começar logo — cada semana de estímulo faz diferença.");
+    } else if (urgencyLevel === "MÉDIA") {
+        closureLines.push("Quanto antes avaliarmos, mais fácil planejar o acompanhamento com calma.");
+    }
+
+    // 4️⃣ Tom de convite (respeito ao estágio)
+    if (stage === "contato_inicial" || stage === "curioso") {
+        closureLines.push("Prefere que eu te mostre as opções de avaliação ou de visita leve pra conhecer o espaço?");
+    } else {
+        closureLines.push("Posso te ajudar a escolher o melhor dia e período pra avaliação?");
+    }
+
+    return closureLines.join("\n\n");
 }
 

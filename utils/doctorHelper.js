@@ -1,12 +1,7 @@
 // utils/doctorHelper.js - VERSÃO COM CACHE
 import Doctor from "../models/Doctor.js";
-import Redis from "ioredis";
 
-const redis = new Redis({
-    host: process.env.REDIS_HOST,
-    port: process.env.REDIS_PORT,
-    password: process.env.REDIS_PASSWORD,
-});
+import { redisConnection as redis } from "../config/redisConnection.js";
 
 const CACHE_TTL = 300; // 5 minutos
 const CACHE_PREFIX = "doctor:";

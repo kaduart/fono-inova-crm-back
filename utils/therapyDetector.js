@@ -119,6 +119,30 @@ export function detectAllTherapies(text = "") {
         }
     }
 
+    // 🚫 Fora de escopo clínico (exames, triagens, laudos)
+    const outOfScopeKeywords = [
+        /\baudiometria\b/i,
+        /\blimiar\b/i,
+        /\bbera\b/i,
+        /\bpeate\b/i,
+        /\bteste\s+da\s+orelhinha\b/i,
+        /\btriagem\s+auditiva\b/i,
+        /\blaudo\b/i,
+        /\bhiperacusia\b/i
+    ];
+
+    const isOutOfScope = outOfScopeKeywords.some(r => r.test(normalized));
+
+    // Se for fora de escopo, adiciona pseudo-terapia para sinalizar
+    if (isOutOfScope) {
+        detected.push({
+            id: "fora_escopo",
+            name: "fora_escopo",
+            allNames: ["exame", "audiometria", "hiperacusia"]
+        });
+    }
+
+
     return detected;
 }
 

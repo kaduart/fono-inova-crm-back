@@ -80,6 +80,9 @@ const worker = new Worker(
     function shouldSuppressByState(lead) {
       const stage = (lead?.stage || lead?.status || "").toString().toLowerCase();
 
+      if (lead?.convertedToPatient) return true;
+      if ((lead?.status || "").toLowerCase() === "converted") return true;
+
       // SOMENTE estados realmente terminais
       const terminalStages = [
         "visit_scheduled",
@@ -129,6 +132,39 @@ const worker = new Worker(
       const summaryText = enrichedContext?.conversationSummary || lead.conversationSummary || null;
       const contextPack = await buildContextPack(lead._id).catch(() => null);
       const fullContext = { ...(enrichedContext || {}), ...(contextPack || {}) };
+
+      // ============================================================
+      // 🚫 EXCEÇÃO: LEADS FORA DE ESCOPO CLÍNICO (exames / laudos)
+      // ============================================================
+      if (
+        lead.reason === "nao_oferecemos_exame" ||
+        lead.flags?.includes("fora_escopo")
+      ) {
+        console.log(chalk.yellow(`[FOLLOWUP] Lead ${lead._id} é fora de escopo — criando followup de redirecionamento.`));
+
+        const to = lead.contact?.phone;
+        if (to) {
+          const redirectMsg =
+            "Entendo perfeitamente! Esse tipo de procedimento específico não é feito aqui, porque nosso foco é terapia. " +
+            "Mas posso te explicar como funciona o tratamento e reabilitação auditiva, se quiser 💚";
+
+          await sendTextMessage({
+            to,
+            text: redirectMsg,
+            lead: lead._id,
+            sentBy: "amanda_followup",
+          });
+
+          await Followup.findByIdAndUpdate(followupId, {
+            status: "sent",
+            sentAt: new Date(),
+            specialCase: "fora_escopo_redirecionado",
+          });
+        }
+
+        // Cancela o restante do pipeline normal
+        return;
+      }
 
       // 🇧🇷 mesmo-dia (SP) → follow-up deve referenciar a conversa de hoje
       const now = new Date();
@@ -192,12 +228,20 @@ const worker = new Worker(
             lead,
             history: historyForModel
           });
+
         } catch (e) {
           console.warn(
             chalk.yellow("⚠️ Erro ao rodar leadIntelligence no worker:"),
             e.message
           );
         }
+      }
+
+      if (analysis?.extracted?.foraEscopo) {
+        await Lead.findByIdAndUpdate(leadId, {
+          reason: analysis.extracted.reason || "nao_oferecemos_exame",
+          $addToSet: { flags: "fora_escopo" },
+        });
       }
 
       if (analysis) {

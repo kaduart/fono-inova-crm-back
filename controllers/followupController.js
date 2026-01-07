@@ -90,45 +90,45 @@ export const scheduleFollowup = async (req, res) => {
 
                     amandaVersion = "2.0";
 
-            } else {
-                // Fallback Amanda 1.0
-                finalMessage = await generateFollowupMessage(lead);
-                console.log(`🤖 Amanda 1.0 gerou mensagem para lead ${lead.name}`);
-            }
-        } catch (aiError) {
-            console.warn("⚠️ Erro na Amanda AI, usando fallback:", aiError.message);
-            if (!message?.trim()) {
-                finalMessage = `Olá ${lead.name?.split(' ')[0] || ''}! Passando para saber se posso te ajudar com ${lead.reason || 'nossos serviços'}. Posso te ajudar? 💚`;
+                } else {
+                    // Fallback Amanda 1.0
+                    finalMessage = await generateFollowupMessage(lead);
+                    console.log(`🤖 Amanda 1.0 gerou mensagem para lead ${lead.name}`);
+                }
+            } catch (aiError) {
+                console.warn("⚠️ Erro na Amanda AI, usando fallback:", aiError.message);
+                if (!message?.trim()) {
+                    finalMessage = `Olá ${lead.name?.split(' ')[0] || ''}! Passando para saber se posso te ajudar com ${lead.reason || 'nossos serviços'}. Posso te ajudar? 💚`;
+                }
             }
         }
-    }
 
         const followup = await Followup.create({
-        lead: leadId,
-        message: finalMessage,
-        scheduledAt,
-        status: 'scheduled',
-        aiOptimized: aiOptimized || !message?.trim(),
-        origin: lead.origin,
-        note: `Amanda ${amandaVersion} - Agendado manualmente`
-    });
+            lead: leadId,
+            message: finalMessage,
+            scheduledAt,
+            status: 'scheduled',
+            aiOptimized: aiOptimized || !message?.trim(),
+            origin: lead.origin,
+            note: `Amanda ${amandaVersion} - Agendado manualmente`
+        });
 
-    // ✅ ADICIONAR NA FILA
-    await followupQueue.add('followup', { followupId: followup._id }, {
-        delay,
-        jobId: `fu-${followup._id}`
-    });
+        // ✅ ADICIONAR NA FILA
+        await followupQueue.add('followup', { followupId: followup._id }, {
+            delay,
+            jobId: `fu-${followup._id}`
+        });
 
-    res.status(201).json({
-        success: true,
-        message: 'Follow-up agendado com sucesso!',
-        data: followup,
-        meta: { amandaVersion }
-    });
-} catch (err) {
-    console.error("❌ Erro ao agendar follow-up:", err);
-    res.status(500).json({ error: err.message });
-}
+        res.status(201).json({
+            success: true,
+            message: 'Follow-up agendado com sucesso!',
+            data: followup,
+            meta: { amandaVersion }
+        });
+    } catch (err) {
+        console.error("❌ Erro ao agendar follow-up:", err);
+        res.status(500).json({ error: err.message });
+    }
 };
 
 /**
@@ -168,7 +168,15 @@ export const createFollowup = async (req, res) => {
                     message = generateContextualFollowup({
                         lead,
                         analysis,
-                        attempt: 1
+                        attempt,
+                        history: recentMessages,
+                        sameDay,
+                        summaryText,
+                        context: {
+                            ...fullContext,
+                            toneMode: contextPack?.toneMode,
+                            urgencyLevel: contextPack?.urgencyLevel,
+                        },
                     });
                     amandaVersion = '2.0';
                 } else {

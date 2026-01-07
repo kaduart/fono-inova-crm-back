@@ -43,6 +43,7 @@ import ensureSingleHeart from "./helpers.js";
 import { extractAgeFromText, extractBirth, extractName, extractPeriodFromText } from "./patientDataExtractor.js";
 import { buildSlotMenuMessage } from "./slotMenuBuilder.js";
 import { sendLocationMessage, sendTextMessage } from "../services/whatsappService.js";
+import { buildValueAnchoredClosure, determinePsychologicalFollowup } from "../services/intelligence/smartFollowup.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
@@ -472,7 +473,7 @@ export async function getOptimizedAmandaResponse({
             sentBy: "amanda",
         });
 
-        return null; // evita que o fluxo da IA gere texto duplicado
+        return null;
     }
 
     if (lead?.pendingPatientInfoForScheduling && lead?._id) {
@@ -609,7 +610,13 @@ export async function getOptimizedAmandaResponse({
     const enrichedContext = {
         ...baseContext,
         ...context,
-        ...(contextPack ? { mode: contextPack.mode, urgency: contextPack.urgency } : {}),
+        ...(contextPack
+            ? {
+                mode: contextPack.mode,
+                toneMode: contextPack.toneMode,
+                urgency: contextPack.urgency
+            }
+            : {}),
     };
 
     if (enrichedContext.isFirstContact && lead?._id) {
@@ -618,7 +625,50 @@ export async function getOptimizedAmandaResponse({
         );
     }
 
-    if (contextPack?.mode) console.log("[AmandaAI] ContextPack mode:", contextPack.mode);
+    const psychologicalCue = determinePsychologicalFollowup({
+        toneMode: enrichedContext.toneMode,
+        stage: lead.stage,
+        flags,
+    });
+
+    if (psychologicalCue) {
+        enrichedContext.customInstruction = [
+            psychologicalCue,
+            enrichedContext.customInstruction,
+        ].filter(Boolean).join("\n\n");
+    }
+
+
+    const closureBlock = buildValueAnchoredClosure({
+        toneMode: enrichedContext.toneMode,
+        stage: lead.stage,
+        urgencyLevel: enrichedContext.urgencyLevel,
+        therapyArea: lead.therapyArea,
+    });
+
+    if (closureBlock) {
+        enrichedContext.customInstruction = [
+            enrichedContext.customInstruction,
+            closureBlock
+        ].filter(Boolean).join("\n\n");
+    }
+
+    // ============================================================
+    // 🔹 INTEGRAÇÃO DO TONE MODE (PREMIUM / ACOLHIMENTO)
+    // ============================================================
+    if (enrichedContext?.toneMode) {
+        console.log("[AmandaAI] Aplicando toneMode →", enrichedContext.toneMode);
+
+        // Injeta no systemPrompt dinâmico
+        enrichedContext.customInstruction = [
+            enrichedContext.toneMode === "premium"
+                ? DYNAMIC_MODULES.premiumModeContext
+                : DYNAMIC_MODULES.acolhimentoModeContext,
+            enrichedContext.customInstruction,
+        ]
+            .filter(Boolean)
+            .join("\n\n");
+    }
 
     const flags = detectAllFlags(text, lead, enrichedContext);
 
@@ -2472,8 +2522,18 @@ async function callAmandaAIWithContext(
         conversationHistory = [],
         conversationSummary = null,
         shouldGreet = true,
-        customInstruction = null,  // ✅ NOVO: Instrução customizada para casos específicos
+        customInstruction = null,
+        toneMode = "acolhimento",
     } = context;
+
+    let toneInstruction = "";
+
+    if (toneMode === "premium") {
+        toneInstruction = DYNAMIC_MODULES.premiumModeContext;
+    } else {
+        toneInstruction = DYNAMIC_MODULES.acolhimentoModeContext;
+    }
+
 
     const flags =
         flagsFromOrchestrator && Object.keys(flagsFromOrchestrator).length
@@ -2720,7 +2780,10 @@ ${useModule("noNameBeforeSlotRule")}
                                     INSTRUÇÕES:
                                     - ${stageInstruction}
                                     ${slotsInstruction ? `- ${slotsInstruction}` : ""}
+                                    ${toneInstruction ? `\n🎭 TOM DE CONDUÇÃO (OBRIGATÓRIO):\n${toneInstruction}` : ""}
+
                                     ${customInstruction ? `\n🎯 INSTRUÇÃO ESPECÍFICA:\n${customInstruction}` : ""}
+
 
                                     REGRAS:
                                     - ${shouldGreet ? "Pode cumprimentar" : "🚨 NÃO use Oi/Olá - conversa ativa"}
