@@ -2,6 +2,7 @@ db.payments.deleteMany({
   patient: ObjectId("6897dc360683ca3788ae815d")
 });
 
+
 db.appointments.deleteMany({
   patient: ObjectId("6897dc360683ca3788ae815d")
 });
@@ -284,7 +285,7 @@ db.followups.deleteMany({}); // se quiser zerar todos followups de teste
 
 // cancelar followup
 db.contacts.updateOne(
-  { phone: "556293541663" },
+  { phone: "557491475074" },
   {
     $set: {
       status: "agendado",          // ou "encerrado", como vocês usam

@@ -99,7 +99,8 @@ const leadSchema = new mongoose.Schema({
       'sem_cobertura',
       'virou_paciente',
       'lead_quente',
-      'lead_frio'
+      'lead_frio',
+      'agendado'
     ],
     default: 'novo',
     index: true

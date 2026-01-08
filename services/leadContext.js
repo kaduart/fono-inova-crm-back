@@ -62,7 +62,6 @@ export async function enrichLeadContext(leadId) {
             let leadDoc = await Lead.findById(leadId); // Busca versão mutável
 
             if (needsNewSummary(lead, totalMessages)) {
-                console.log(`🧠 [CONTEXTO] Gerando resumo (${totalMessages} msgs)`);
 
                 // Mensagens antigas (todas menos últimas 20)
                 const oldMessages = messages.slice(0, -20);
@@ -79,12 +78,10 @@ export async function enrichLeadContext(leadId) {
                     });
 
                     summaryContext = summary;
-                    console.log(`💾 [CONTEXTO] Resumo salvo (cobre ${oldMessages.length} msgs antigas)`);
                 }
             } else {
                 // Reusa resumo existente
                 summaryContext = lead.conversationSummary;
-                console.log(`♻️ [CONTEXTO] Reutilizando resumo existente`);
             }
 
             // 2. Últimas 20 mensagens completas
@@ -144,12 +141,9 @@ export async function enrichLeadContext(leadId) {
             needsUrgency: calculateDaysSince(lead.lastInteractionAt) > 7
         };
 
-        console.log(`📊 [CONTEXTO] Lead: ${context.name} | Stage: ${context.stage} | Msgs: ${context.messageCount} | Resumo: ${summaryContext ? 'SIM' : 'NÃO'} | Saudação: ${shouldGreet ? 'SIM' : 'NÃO'}`);
-
         return context;
 
     } catch (error) {
-        console.error('❌ [CONTEXTO] Erro:', error);
         return getDefaultContext();
     }
 }

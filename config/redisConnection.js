@@ -25,12 +25,6 @@ try {
       reconnectOnError: () => true,
     });
   }
-
-  redisConnection.on("connect", () =>
-    console.log(
-      chalk.green(`✅ Redis conectado (${isUpstash ? "Upstash" : "Local"})`)
-    )
-  );
 } catch (err) {
   console.error(chalk.red("❌ Falha ao conectar Redis:"), err.message);
   process.exit(1);

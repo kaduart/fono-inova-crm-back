@@ -12,6 +12,7 @@ import {
     getPendingFollowups,
     resendFollowup,
     scheduleFollowup,
+    cancelFollowup
 } from '../controllers/followupController.js';
 
 const router = express.Router();
@@ -29,5 +30,6 @@ router.get('/analytics', getFollowupAnalytics);
 router.get('/trend', getFollowupTrend);
 router.get('/conversion-by-origin', getFollowupConversionByOrigin);
 router.get('/avg-response-time', getAvgResponseTime);
+router.post('/cancel-followup/:leadId', cancelFollowup);
 
 export default router;
