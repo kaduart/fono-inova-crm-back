@@ -31,6 +31,14 @@ export async function enrichLeadContext(leadId) {
             date: { $gte: today }
         }).lean();
 
+        // ✅ ADD LOG 1
+        console.log("🔍 [LEAD-CONTEXT] Appointments query:", {
+            patient: lead.convertedToPatient,
+            today,
+            found: appointments.length,
+            appointments: appointments.map(a => ({ id: a._id, date: a.date }))
+        });
+
         // 🧠 LÓGICA DE CONTEXTO INTELIGENTE
         let conversationHistory = [];
         let shouldGreet = true;
@@ -63,7 +71,13 @@ export async function enrichLeadContext(leadId) {
             // 1. Verifica se precisa gerar novo resumo
             let leadDoc = await Lead.findById(leadId); // Busca versão mutável
 
-            if (needsNewSummary(lead, totalMessages)) {
+            console.log("🔍 [LEAD-CONTEXT] needsNewSummary check:", {
+                hasSummary: !!lead.conversationSummary,
+                summaryPreview: lead.conversationSummary?.substring(0, 100),
+                totalMessages,
+                futureAppointments: appointments.length
+            });
+            if (needsNewSummary(lead, totalMessages, appointments)) {
 
                 // Mensagens antigas (todas menos últimas 20)
                 const oldMessages = messages.slice(0, -20);
