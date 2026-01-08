@@ -25,7 +25,7 @@ import {
     formatSlot,
     pickSlotFromUserReply
 } from "../services/amandaBookingService.js";
-
+import { getLatestInsights } from "../services/amandaLearningService.js"
 import { buildContextPack } from "../services/intelligence/ContextPack.js";
 import { nextStage } from "../services/intelligence/stageEngine.js";
 import manageLeadCircuit from "../services/leadCircuitService.js";
@@ -2303,9 +2303,7 @@ async function callClaudeWithTherapyData({
     analysis: passedAnalysis = null,
 }) {
     const { getTherapyData } = await import("./therapyDetector.js");
-    const { getLatestInsights } = await import(
-        "../services/amandaLearningService.js"
-    );
+
 
     const therapiesInfo = therapies
         .map((t) => {
@@ -2504,14 +2502,13 @@ ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${
 async function callAmandaAIWithContext(
     userText,
     lead,
-    context,
+    context = {},
     flagsFromOrchestrator = {},
     analysisFromOrchestrator = null,
 ) {
-    const { getLatestInsights } = await import(
-        "../services/amandaLearningService.js"
-    );
 
+
+    const safeContext = context || {};
     const {
         stage = "novo",
         messageCount = 0,
@@ -2524,7 +2521,7 @@ async function callAmandaAIWithContext(
         shouldGreet = true,
         customInstruction = null,
         toneMode = "acolhimento",
-    } = context;
+    } = safeContext;
 
     let toneInstruction = "";
 
