@@ -24,9 +24,11 @@ export async function enrichLeadContext(leadId) {
 
         const totalMessages = messages.length;
 
-        // ✅ Busca agendamentos
+        // ✅ FIX - Busca agendamentos FUTUROS (date é string "YYYY-MM-DD")
+        const today = new Date().toISOString().split('T')[0]; // "2026-01-08"
         const appointments = await Appointment.find({
-            patient: lead.convertedToPatient
+            patient: lead.convertedToPatient,
+            date: { $gte: today }
         }).lean();
 
         // 🧠 LÓGICA DE CONTEXTO INTELIGENTE
