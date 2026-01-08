@@ -2770,10 +2770,8 @@ ${useModule("noNameBeforeSlotRule")}
 `;
     }
 
-    const appointmentWarning = enrichedContext?.appointmentWarning || "";
     const currentPrompt = `${userText}
 
-    ${appointmentWarning ? `\n🚨 ${appointmentWarning}\n` : ""}
                                     CONTEXTO:
                                     LEAD: ${lead?.name || "Desconhecido"} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}
                                     ${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ""}${historyAgeNote}
