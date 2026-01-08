@@ -625,6 +625,8 @@ export async function getOptimizedAmandaResponse({
         );
     }
 
+    const flags = detectAllFlags(text, lead, enrichedContext);
+
     const psychologicalCue = determinePsychologicalFollowup({
         toneMode: enrichedContext.toneMode,
         stage: lead.stage,
@@ -669,8 +671,6 @@ export async function getOptimizedAmandaResponse({
             .filter(Boolean)
             .join("\n\n");
     }
-
-    const flags = detectAllFlags(text, lead, enrichedContext);
 
     const historyLen = Array.isArray(enrichedContext.conversationHistory)
         ? enrichedContext.conversationHistory.length

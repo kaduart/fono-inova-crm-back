@@ -6,6 +6,7 @@ import Contact from "../models/Contacts.js";
 import Message from "../models/Message.js";
 import { getMetaToken } from "../utils/metaToken.js";
 import { normalizeE164BR } from "../utils/phone.js";
+import Lead from "../models/Leads.js"; // ajuste o path
 
 dotenv.config();
 
@@ -347,6 +348,7 @@ export async function sendTemplateMessage({
     return { ...data, waMessageId };
 }
 
+
 /** 💬 Envia texto */
 export async function sendTextMessage({
     to,
@@ -354,10 +356,27 @@ export async function sendTextMessage({
     lead,
     contactId = null,         // ← passa o contact._id quando tiver
     patientId = null,         // ← se estiver vinculado a um paciente
-    sentBy = "amanda",   // default: Amanda respondeu sozinha
+    sentBy = "amanda",        // default: Amanda respondeu sozinha
     userId = null,            // quando vier de usuário humano, passa o id aqui
     formatMode = "auto",      // "auto" | "preserve" | "bullets"
 }) {
+    // 🔒 TRAVA CENTRAL: se lead está em manual, bloqueia qualquer coisa que não seja "manual"
+    // (isso impede Amanda/automação de enviar enquanto manual estiver ativo)
+    if (lead && sentBy !== "manual") {
+        const leadDoc = await Lead.findById(lead)
+            .select("manualControl.active")
+            .lean();
+
+        if (leadDoc?.manualControl?.active) {
+            console.log(`⏸️ Envio bloqueado (manual ativo). sentBy=${sentBy} lead=${lead}`);
+
+            // opcional: registrar tentativa bloqueada (se você quiser rastrear)
+            // await registerMessage({ ... status: "skipped" ... })
+
+            return { skipped: true, reason: "manual_control_active" };
+        }
+    }
+
     const token = await requireToken();
     if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
 
@@ -407,10 +426,10 @@ export async function sendTextMessage({
 
     if (!res.ok) {
         console.error("❌ Erro WhatsApp:", data.error);
-        throw new Error(
-            data.error?.message || "Erro ao enviar mensagem WhatsApp"
-        );
+        throw new Error(data.error?.message || "Erro ao enviar mensagem WhatsApp");
     }
 
     return data;
 }
+
+

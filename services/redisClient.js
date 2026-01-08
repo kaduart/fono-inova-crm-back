@@ -23,15 +23,6 @@ const redisClient = createClient({
 });
 
 // ===================================================
-// 🧠 EVENTOS E LOGS
-// ===================================================
-redisClient.on("connect", () => console.log("✅ Redis conectado (Local)"));
-redisClient.on("ready", () => console.log("🧠 Redis pronto para uso!"));
-redisClient.on("end", () => console.warn("⚠️ Conexão Redis encerrada."));
-redisClient.on("reconnecting", () => console.log("🔁 Tentando reconexão ao Redis..."));
-redisClient.on("error", (err) => console.error("❌ Erro Redis:", err.message));
-
-// ===================================================
 // 🚀 INICIALIZAÇÃO + HEALTH CHECK
 // ===================================================
 export async function startRedis() {

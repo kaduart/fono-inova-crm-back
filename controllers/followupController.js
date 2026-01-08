@@ -16,6 +16,8 @@ import {
 import { generateFollowupMessage } from "../services/aiAmandaService.js";
 import { createSmartFollowupForLead } from "../services/followupOrchestrator.js";
 
+import Contacts from "../models/Contacts.js";
+import { normalizeE164BR } from "../utils/phone.js";
 /**
  * 🧩 Agendar novo follow-up (com Amanda 2.0)
  * POST /api/followups/schedule
@@ -603,7 +605,6 @@ export const getAvgResponseTime = async (req, res) => {
     }
 };
 
-
 export const backfillAllUnconverted = async (req, res) => {
     try {
         const objective = req.body.objective || "reengajamento";
@@ -722,3 +723,68 @@ export const backfillAllUnconverted = async (req, res) => {
         });
     }
 };
+
+export const cancelFollowup = async (req, res) => {
+    try {
+        const { leadId } = req.params;
+        if (!leadId) return res.status(400).json({ success: false, error: "leadId é obrigatório" });
+
+        const lead = await Lead.findById(leadId).select("contact.phone");
+        if (!lead) return res.status(404).json({ success: false, error: "Lead não encontrado" });
+
+        const now = new Date();
+
+        // 🔹 1. Atualiza LEAD
+        await Lead.updateOne(
+            { _id: leadId },
+            { $set: { stopAutomation: true, updatedAt: now } }
+        );
+
+        // 🔹 2. Atualiza CONTACT vinculado
+        const phoneE164 = normalizeE164BR(lead.contact.phone);
+        const phoneNum = phoneE164.replace(/\D/g, "");
+
+        await Contacts.updateOne(
+            { phone: { $in: [phoneE164, phoneNum] } },
+            { $set: { status: "agendado", stopAutomation: true, updatedAt: now } }
+        );
+
+        // 🔹 3. Remove jobs pendentes do Bull e marca followups como cancelados
+        const pendentes = await Followup.find({
+            lead: leadId,
+            status: { $in: ["scheduled", "processing"] },
+        }).select("_id");
+
+        let removed = 0;
+
+        for (const f of pendentes) {
+            const job = await followupQueue.getJob(`fu-${f._id}`);
+            if (job) {
+                await job.remove();
+                removed++;
+            }
+        }
+
+        await Followup.updateMany(
+            { _id: { $in: pendentes.map(f => f._id) } },
+            {
+                $set: {
+                    status: "cancelled",
+                    note: `Cancelado manualmente via painel em ${now.toISOString()}`,
+                    updatedAt: now,
+                },
+            }
+        );
+
+        return res.json({
+            success: true,
+            message: "Follow-up cancelado e automação travada ✅",
+            cancelled: pendentes.length,
+            removedJobs: removed,
+        });
+    } catch (err) {
+        console.error("❌ cancelFollowup error:", err);
+        return res.status(500).json({ success: false, error: err.message });
+    }
+};
+

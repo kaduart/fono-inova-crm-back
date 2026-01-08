@@ -33,17 +33,66 @@ export function deriveFlagsFromText(text = "") {
         confirmsData:
             /\b(isso|isso\s+mesmo|exato|correto|certo|confirmo|pode\s+ser|ta\s+bom|beleza)\b/i.test(normalizedText) &&
             normalizedText.length < 30,
-        refusesOrDenies:
-            /\b(n[aã]o\s+(quero|preciso|vou)|deixa\s+pra\s+l[aá]|depois\s+eu\s+vejo|agora\s+n[aã]o|mais\s+tarde)\b/i.test(normalizedText) ||
-            /\b(vou\s+pensar|deixa\s+quieto|n[aã]o\s+tenho\s+interesse)\b/i.test(normalizedText),
+        refusesOrDenies: [
+            // Recusa direta
+            /n[aã]o\s+(quero|preciso|vou|obrigad[oa]?)/i,
+            /n[aã]o,?\s+obrigad[oa]/i,
+            /(obrigad[oa]|valeu|agrade[çc]o),?\s+(mas\s+)?n[aã]o/i,
+            // Adiamento
+            /deixa\s+(pra\s+l[aá]|quieto)/i,
+            /depois\s+(eu\s+vejo|a\s+gente\s+v[eê]|conversamos|falamos|te\s+(chamo|procuro))/i,
+            /(agora|no\s+momento|por\s+enquanto)\s+n[aã]o(\s+d[aá])?/i,
+            /mais\s+tarde/i,
+            /(talvez|quem\s+sabe)\s+depois/i,
+            // Indecisão
+            /(vou|preciso|deixa\s+eu)\s+pensar/i,
+            /(vou|ainda\s+vou)\s+ver\s+(ainda|isso)?/i,
+            /(ainda\s+)?n[aã]o\s+sei(\s+ainda)?/i,
+            /n[aã]o\s+tenho\s+(certeza|interesse)/i,
+            // Rejeição indireta
+            /n[aã]o\s+[eé]\s+(pra\s+mim|o\s+que\s+(procuro|preciso)|bem\s+isso)/i,
+            /(mudei|mudar)\s+de\s+ideia/i,
+            /(resolvi|decidi|prefiro|melhor|acho\s+(que|melhor))\s+n[aã]o/i,
+            /sem\s+interesse/i,
+            /n[aã]o\s+me\s+interessa/i,
+            // Objeção financeira suave
+            /(t[aá]|ficou|est[aá])\s+(caro|puxado|dif[ií]cil|complicado)/i,
+            /(fora|n[aã]o\s+cabe)\s+(d?o\s+)?(meu\s+)?or[çc]amento/i,
+            /n[aã]o\s+tenho\s+condi[çc][õo]es/i,
+            // Frases curtas de recusa
+            /^n[aã]o\.?$/i,
+            /^agora\s+n[aã]o\.?$/i,
+            /^depois\.?$/i,
+        ].some(r => r.test(normalizedText)),
+
         wantsMoreOptions:
             /\b(outr[oa]s?\s+(hor[aá]rio|op[çc][aã]o)|nenhum[a]?\s+dessas?|n[aã]o\s+serve|diferente|mais\s+opções?)\b/i.test(normalizedText) ||
             /\b(outro\s+dia|outra\s+data|semana\s+que\s+vem)\b/i.test(normalizedText),
         mentionsCDL:
             /\b(cdl|desconto|promo[çc][aã]o|cupom|c[oó]digo)\b/i.test(normalizedText),
         wantsReschedule: /\b(reagendar|remarcar|mudar\s+hor[aá]rio|trocar\s+hor[aá]rio|alterar\s+data)\b/i.test(normalizedText),
-        wantsCancel: /\b(cancelar|desmarcar|n[aã]o\s+vou\s+poder|n[aã]o\s+consigo\s+ir)\b/i.test(normalizedText),
-        asksAddress: /(onde|endere[cç]o|local|mapa|como\s*chegar)/i.test(normalizedText),
+        wantsCancel: [
+            // Pedidos diretos
+            /(quero|preciso|pode|tem\s+como|d[aá]\s+pra)\s+(cancelar|desmarcar)/i,
+            /cancela\s+(pra\s+mim|por\s+favor|a[ií])?/i,
+            /(vou\s+ter\s+que|tenho\s+que|preciso)\s+(cancelar|desmarcar)/i,
+            // Impossibilidade
+            /n[aã]o\s+vou\s+(poder|mais|conseguir)\s*(ir)?/i,
+            /n[aã]o\s+(consigo|posso|tenho\s+como)\s+ir/i,
+            /n[aã]o\s+(vai|tem\s+como)\s+(dar|rolar)/i,
+            /n[aã]o\s+(d[aá]|rola)\s+mais/i,
+            /(impossivel|imposs[ií]vel)\s+(ir|comparecer)/i,
+            /n[aã]o\s+vai\s+ser\s+poss[ií]vel/i,
+            // Imprevistos
+            /(surgiu|tive|aconteceu|deu)\s+(um\s+)?(imprevisto|problema|pepino)/i,
+            /infelizmente\s+(n[aã]o\s+vou|tenho\s+que\s+cancelar)/i,
+            // Saúde
+            /(estou|t[oô]|fiquei)\s+(doente|mal|ruim)/i,
+            /(meu\s+filho|minha\s+filha|a\s+crian[çc]a)\s+(ficou|est[aá]|t[aá])\s+(doente|mal)/i,
+            /passei\s+mal/i,
+            /n[aã]o\s+(estou|t[oô])\s+bem/i,
+        ].some(r => r.test(normalizedText)),
+
         asksPayment: /(pagamento|pix|cart[aã]o|dinheiro|parcel)/i.test(normalizedText),
         asksPlans: /(ipasgo|unimed|amil|plano|conv[eê]nio)/i.test(normalizedText),
         asksDuration: /(quanto\s*tempo|dura[çc][aã]o|dura\s*quanto)/i.test(normalizedText),
@@ -54,19 +103,75 @@ export function deriveFlagsFromText(text = "") {
         asksAgeMinimum: /(idade.*m[ií]nima|a\s*partir|beb[eê])/i.test(normalizedText),
         asksRescheduling: /(cancelar|reagendar|remarcar|adiar)/i.test(normalizedText),
 
-        givingUp:
-            /\b(n[aã]o\s+vou\s+esperar|desist|vou\s+deixar\s+pra\s+l[aá]|depois\s+eu\s+vejo|vou\s+pensar|deixa\s+quieto)\b/i.test(normalizedText),
-
+        givingUp: [
+            // Desistência explícita
+            /desist(i|o|ir|imos|iu)?/i,
+            /(vou|quero)\s+desistir/i,
+            /cansei(\s+de\s+esperar)?/i,
+            /cansad[oa]\s+de\s+esperar/i,
+            /n[aã]o\s+(vou|quero)\s+esperar(\s+mais)?/i,
+            /n[aã]o\s+(aguento|suporto)\s+mais/i,
+            // Abandono
+            /(esquece|deixa\s+pra\s+l[aá]|deixa\s+quieto)/i,
+            /n[aã]o\s+(vale|compensa|preciso\s+mais)/i,
+            /(muito|demais)\s+(complicado|dif[ií]cil|demorado)/i,
+            /(complicou|dificultou)(\s+demais)?/i,
+            /(demora|demorado)\s+(muito|demais)/i,
+            /perd(i|eu|emos)\s+(o\s+interesse|a\s+paci[eê]ncia)/i,
+            // Foi pra concorrência
+            /(encontrei|achei|fui\s+em|vou\s+em)\s+(outr[oa]|outro\s+lugar)/i,
+            /(marquei|agendei|fechei)\s+(em\s+)?outr[oa]/i,
+            /j[aá]\s+(resolvi|consegui)\s+em\s+outro/i,
+            /vou\s+procurar\s+outr[oa]/i,
+            // Irritação/saturação
+            /(t[oô]|estou)\s+de\s+saco\s+cheio/i,
+            /chega|para|basta/i,
+            /n[aã]o\s+tenho\s+paci[eê]ncia/i,
+            // Pedido pra parar contato
+            /parem?\s+de\s+(me\s+)?(ligar|chamar|mandar)/i,
+            /n[aã]o\s+(me\s+)?(mand|envi)(em?|a)\s+mais/i,
+            /(tire|remove|tira)\s+(meu\s+)?(n[uú]mero|contato)/i,
+            /n[aã]o\s+quero\s+mais\s+receber/i,
+            /me\s+(tire|remove)\s+da\s+lista/i,
+        ].some(r => r.test(normalizedText)),
+        
         talksAboutTypeOfAssessment: /(avalia[çc][aã]o|teste|laudo|relat[oó]rio)/i.test(normalizedText),
         hasMedicalReferral: /(pedido|encaminhamento|requisi[çc][aã]o)\s+m[eé]dic/i.test(normalizedText),
 
         wantsHumanAgent:
             /(falar\s+com\s+atendente|falar\s+com\s+uma\s+pessoa|falar\s+com\s+humano|quero\s+atendente|quero\s+falar\s+com\s+algu[eé]m|quero\s+falar\s+com\s+a\s+secret[aá]ria)/i.test(normalizedText),
 
-        alreadyScheduled:
-            /\b(já\s+est[aá]\s+(agendado|marcado)|já\s+agendei|já\s+marquei|consegui(u|mos)\s+agendar|minha\s+esposa\s+conseguiu\s+agendar|minha\s+mulher\s+conseguiu\s+agendar)\b/i.test(normalizedText),
+        alreadyScheduled: [
+            // Confirmações diretas
+            /j[aá]\s+(est[aá]|t[aá]|ta|foi)\s+(agendad[oa]|marcad[oa]|confirmad[oa])/i,
+            /j[aá]\s+(agendei|marquei|agendamos|marcamos|confirmei|confirmamos)/i,
+            /j[aá]\s+tenho\s+(agendamento|consulta|hor[aá]rio|data|vaga)/i,
+            /j[aá]\s+(temos|tenho)\s+(tudo\s+)?(certo|confirmado|marcado)/i,
+            // Terceiros agendando
+            /consegui(u|mos|ram)?\s+(agendar|marcar)/i,
+            /(minha?|meu)\s+(esposa|mulher|m[aã]e|irm[aã]|marido|pai|filho|filha)\s+(j[aá]\s+)?(conseguiu|agendou|marcou)/i,
+            /a\s+gente\s+j[aá]\s+(agendou|marcou|confirmou)/i,
+            // Confirmações pós-agendamento
+            /agendamento\s+(confirmado|feito|realizado|ok)/i,
+            /tudo\s+(certo|confirmado|ok|certinho)\s*,?\s*j[aá]?/i,
+            /j[aá]\s+est[aá]\s+tudo\s+(certo|confirmado|ok|certinho)/i,
+            /(fechado|fechou|combinado|beleza),?\s*(t[aá]|est[aá])?\s*(agendad|marcad)?/i,
+            // Expectativa de comparecer
+            /nos\s+vemos\s+(dia|amanh[aã]|l[aá]|segunda|ter[çc]a|quarta|quinta|sexta|s[aá]bado)/i,
+            /te\s+vejo\s+(dia|amanh[aã]|l[aá]|segunda|ter[çc]a|quarta|quinta|sexta|s[aá]bado)/i,
+            /a\s+gente\s+se\s+v[eê]\s+(dia|amanh[aã]|l[aá])/i,
+            /vou\s+(dia|amanh[aã]|segunda|ter[çc]a|quarta|quinta|sexta|s[aá]bado)/i,
+            /estarei\s+(a[ií]|l[aá])\s+(dia|amanh[aã])/i,
+            // Variações coloquiais
+            /(pronto|ok|beleza),?\s*(j[aá]\s+)?(agendei|marquei|confirmei)/i,
+            /deu\s+certo\s+(agendar|marcar)/i,
+            /j[aá]\s+(resolvi|resolvemos|resolvido)/i,
+            /recebi\s+(a\s+)?confirma[çc][aã]o/i,
+            /t[aá]\s+(agendadinho|marcadinho|certinho)/i,
+            /(vaga|hor[aá]rio)\s+(garantid[oa]|confirmad[oa])/i,
+            /j[aá]\s+(me\s+)?confirmaram/i,
+        ].some(r => r.test(normalizedText)),
 
-        asksAreas: /(quais\s+as?\s+áreas\??|atua\s+em\s+quais\s+áreas|áreas\s+de\s+atendimento)/i.test(normalizedText),
         asksDays: /(quais\s+os\s+dias\s+de\s+atendimento|dias\s+de\s+atendimento|atende\s+quais\s+dias)/i.test(normalizedText),
         asksTimes: /(quais\s+os\s+hor[aá]rios|e\s+hor[aá]rios|tem\s+hor[aá]rio|quais\s+hor[aá]rios\s+de\s+atendimento)/i.test(normalizedText),
 

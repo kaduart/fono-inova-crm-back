@@ -367,6 +367,7 @@ export const whatsappController = {
     },
 
     async listContacts(req, res) {
+        console.log('chamoiu contactssss')
         try {
             const page = Math.max(parseInt(req.query.page || "1", 10), 1);
             const limit = Math.min(parseInt(req.query.limit || "50", 10), 100);
@@ -411,7 +412,13 @@ export const whatsappController = {
                             },
                             { $sort: { updatedAt: -1 } },
                             { $limit: 1 },
-                            { $project: { _id: 1 } }
+                            {
+                                $project: {
+                                    _id: 1,
+                                    manualActive: "$manualControl.active",
+                                    autoReplyEnabled: 1
+                                }
+                            }
                         ],
                         as: "leadMatches"
                     }
@@ -425,10 +432,23 @@ export const whatsappController = {
                                 then: { $arrayElemAt: ["$leadMatches._id", 0] },
                                 else: null
                             }
+                        },
+                        manualActive: {
+                            $cond: {
+                                if: { $gt: [{ $size: "$leadMatches" }, 0] },
+                                then: { $ifNull: [{ $arrayElemAt: ["$leadMatches.manualActive", 0] }, false] },
+                                else: false
+                            }
+                        },
+                        autoReplyEnabled: {
+                            $cond: {
+                                if: { $gt: [{ $size: "$leadMatches" }, 0] },
+                                then: { $ifNull: [{ $arrayElemAt: ["$leadMatches.autoReplyEnabled", 0] }, true] },
+                                else: true
+                            }
                         }
                     }
                 },
-
                 {
                     $project: {
                         leadMatches: 0
@@ -457,6 +477,8 @@ export const whatsappController = {
                 phoneRaw: contact.phoneRaw,
                 avatar: contact.avatar,
                 unreadCount: contact.unreadCount || 0,
+                manualActive: !!contact.manualActive,
+                autoReplyEnabled: contact.autoReplyEnabled !== false,
                 hasNewMessage: contact.hasNewMessage || false
             }));
 
@@ -619,6 +641,14 @@ export const whatsappController = {
             const contact = await Contacts.findOne({ phone: chatPhone }).lean();
             const patientId = lead.convertedToPatient || null;
 
+            // 🧠 Ativa controle manual (Amanda PAUSADA) — FAÇA ANTES DO ENVIO
+            await Lead.findByIdAndUpdate(lead._id, {
+                'manualControl.active': true,
+                'manualControl.takenOverAt': new Date(),
+                'manualControl.takenOverBy': userId
+            });
+            console.log(`✅ Mensagem manual enviada - Amanda pausada para o lead ${lead._id}`);
+
             // 📤 Envia mensagem via service centralizado
             const result = await sendTextMessage({
                 to: chatPhone,
@@ -655,14 +685,8 @@ export const whatsappController = {
                 }
             }
 
-            // 🧠 Ativa controle manual (Amanda PAUSADA)
-            await Lead.findByIdAndUpdate(lead._id, {
-                'manualControl.active': true,
-                'manualControl.takenOverAt': new Date(),
-                'manualControl.takenOverBy': userId
-            });
 
-            console.log(`✅ Mensagem manual enviada - Amanda pausada para o lead ${lead._id}`);
+
 
             res.json({
                 success: true,
@@ -678,6 +702,7 @@ export const whatsappController = {
             });
         }
     },
+
     async amandaResume(req, res) {
         try {
             const { leadId: rawId } = req.params;
@@ -1388,22 +1413,12 @@ async function handleAutoReply(from, to, content, lead) {
                 ? new Date(leadDoc.manualControl.takenOverAt)
                 : null;
 
-            const timeout = leadDoc.manualControl.autoResumeAfter || 30; // minutos
             let aindaPausada = true;
-
-            if (takenAt) {
+            const timeout = leadDoc.manualControl?.autoResumeAfter;
+            if (takenAt && typeof timeout === "number" && timeout > 0) {
                 const minutesSince = (Date.now() - takenAt.getTime()) / (1000 * 60);
-                console.log(`⏱️ Tempo desde takeover: ${minutesSince.toFixed(1)}min / Timeout: ${timeout}min`);
-
                 if (minutesSince > timeout) {
-                    console.log(`⏰ Timeout de ${timeout}min atingido - RETOMANDO Amanda`);
-
-                    await Lead.findByIdAndUpdate(leadDoc._id, {
-                        'manualControl.active': false
-                    });
-
-                    console.log('✅ Amanda retomou atendimento automaticamente');
-                    aindaPausada = false;
+                    await Lead.findByIdAndUpdate(lead._id, { 'manualControl.active': false });
                 }
             }
 

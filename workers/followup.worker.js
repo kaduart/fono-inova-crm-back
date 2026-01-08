@@ -14,6 +14,7 @@ import { followupQueue } from "../config/bullConfig.js";
 import { getIo } from "../config/socket.js";
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import enrichLeadContext from "../services/leadContext.js";
+import { detectAllFlags } from "../utils/flagsDetector.js";
 import ensureSingleHeart from "../utils/helpers.js";
 import { normalizeE164BR } from "../utils/phone.js";
 
@@ -102,14 +103,12 @@ const worker = new Worker(
     }
 
 
-    // ✅ GATE: se já está agendado/visita, cancela o follow-up atual e sai
+    // ✅ GATE 1: se já está agendado/visita no DB, cancela e sai
     if (shouldSuppressByState(lead)) {
       await Followup.findByIdAndUpdate(followupId, {
         status: "canceled",
         canceledAt: new Date(),
-        cancelReason: "gate_blocked_already_scheduled",
-        cancelReason: "gate_blocked_already_scheduled",
-
+        cancelReason: "gate_blocked_already_scheduled"
       });
       return;
     }
@@ -216,9 +215,15 @@ const worker = new Worker(
       }
 
       let analysis = null;
-      let shouldStopByIntent = false;
-
       const lastInboundText = (lastInbound?.content || "").toLowerCase();
+
+      // ════════════════════════════════════════════════════════════════
+      // 🔍 DETECTAR FLAGS DA ÚLTIMA MENSAGEM (ESCOPO CORRETO!)
+      // ════════════════════════════════════════════════════════════════
+      const flags = detectAllFlags(lastInbound?.content || "", lead, {
+        stage: lead.stage,
+        messageCount: recentMessages.length
+      });
 
       // tenta usar Amanda 2.0 se tiver mensagem recente do lead
       if (lastInbound?.content) {
@@ -228,7 +233,6 @@ const worker = new Worker(
             lead,
             history: historyForModel
           });
-
         } catch (e) {
           console.warn(
             chalk.yellow("⚠️ Erro ao rodar leadIntelligence no worker:"),
@@ -237,8 +241,57 @@ const worker = new Worker(
         }
       }
 
+      // ════════════════════════════════════════════════════════════════
+      // 🚫 GATE 2: CANCELAMENTO VIA FLAGS (antes de gerar mensagem!)
+      // ════════════════════════════════════════════════════════════════
+      if (flags.alreadyScheduled || flags.wantsCancel || flags.refusesOrDenies || flags.givingUp) {
+        console.log(chalk.yellow(`[FOLLOWUP] Lead ${lead._id} sinalizou encerramento via flags: ${flags.alreadyScheduled ? 'já_agendou' :
+          flags.wantsCancel ? 'quer_cancelar' :
+            flags.refusesOrDenies ? 'recusou' : 'desistiu'
+          }`));
+
+        const newStatus = flags.alreadyScheduled ? "agendado" : "sem_interesse";
+
+        await Lead.findByIdAndUpdate(lead._id, {
+          status: newStatus,
+          alreadyScheduled: flags.alreadyScheduled || undefined,
+          $addToSet: { flags: `followup_blocked_${newStatus}` }
+        }).catch(() => { });
+
+        await Followup.findByIdAndUpdate(followupId, {
+          status: "canceled",
+          cancelReason: flags.alreadyScheduled ? "ja_agendou_flag" : "sem_interesse_flag",
+          canceledAt: new Date(),
+        });
+
+        // Cancela outros follow-ups pendentes deste lead (cascata)
+        await Followup.updateMany(
+          {
+            lead: lead._id,
+            status: "scheduled",
+            _id: { $ne: followupId }
+          },
+          {
+            status: "canceled",
+            canceledAt: new Date(),
+            cancelReason: "cascade_lead_encerrado"
+          }
+        );
+
+        return; // sai do worker
+      }
+
+      // ════════════════════════════════════════════════════════════════
+      // 💾 SALVAR TÓPICO DETECTADO (opcional mas útil)
+      // ════════════════════════════════════════════════════════════════
+      if (flags.topic) {
+        await Lead.findByIdAndUpdate(lead._id, {
+          topic: flags.topic
+        }).catch(() => { });
+      }
+
       if (analysis?.extracted?.foraEscopo) {
-        await Lead.findByIdAndUpdate(leadId, {
+        await Lead.findByIdAndUpdate(lead._id, {
           reason: analysis.extracted.reason || "nao_oferecemos_exame",
           $addToSet: { flags: "fora_escopo" },
         });
@@ -254,7 +307,7 @@ const worker = new Worker(
         }).catch(() => { });
       }
 
-      // heurística simples, independente da IA
+      // heurística simples adicional (backup do hardStopRegexes)
       const hardStopRegexes = [
         /\b(n[aã]o\s+quero\s+mais|n[aã]o\s+tenho\s+interesse|parem\s+de\s+me\s+chamar|n[aã]o\s+me\s+chame)\b/i,
         /\b(j[aá]\s+(agendei|marquei)|j[aá]\s+est[aá]\s+(agendad[oa]|marcad[oa]))\b/i,
@@ -262,16 +315,13 @@ const worker = new Worker(
       ];
 
       if (lastInboundText && hardStopRegexes.some(r => r.test(lastInboundText))) {
-        shouldStopByIntent = true;
+        console.log(chalk.yellow(`[FOLLOWUP] Lead ${lead._id} detectado por hardStopRegexes`));
         await Lead.findByIdAndUpdate(lead._id, { status: "sem_interesse" }).catch(() => { });
-      }
 
-      // Se a pessoa já sinalizou desinteresse, não envia nada e não agenda próximo
-      if (shouldStopByIntent) {
         await Followup.findByIdAndUpdate(followupId, {
-          status: "failed",
-          error: "Lead sinalizou desinteresse (Amanda 2.0)",
-          failedAt: new Date()
+          status: "canceled",
+          cancelReason: "hardstop_regex",
+          canceledAt: new Date()
         });
 
         return;
@@ -561,7 +611,7 @@ const worker = new Worker(
         await followupQueue.add(
           "followup",
           { followupId: nextFollowup._id },
-          { delay: delayMsNext, jobId: `followup:${nextFollowup._id}` }
+          { delay: delayMsNext, jobId: `fu-${nextFollowup._id}` }
         );
 
       } else {
