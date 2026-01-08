@@ -76,7 +76,7 @@ RESPONDA APENAS COM O RESUMO ESTRUTURADO (sem introdução ou conclusão).
 /**
  * 🔍 VERIFICA SE PRECISA GERAR NOVO RESUMO
  */
-export function needsNewSummary(lead, totalMessages) {
+export function needsNewSummary(lead, totalMessages, futureAppointments = []) {
     // Caso 1: Nunca gerou resumo e tem >20 msgs
     if (!lead.conversationSummary && totalMessages > 20) {
         return true;
@@ -94,6 +94,24 @@ export function needsNewSummary(lead, totalMessages) {
     if (lead.summaryCoversUntilMessage &&
         totalMessages > (lead.summaryCoversUntilMessage + 20)) {
         return true;
+    }
+
+    // ✅ Caso 4: Resumo menciona agendamento mas não tem mais nenhum futuro
+    if (lead.conversationSummary && futureAppointments.length === 0) {
+        const mentionsAppointment = /agendamento|avalia[çc][aã]o.*(confirmad|marcad)|confirmad[oa].*para|marcad[oa].*dia/i
+            .test(lead.conversationSummary);
+
+        // ✅ ADD LOG 3
+        console.log("🔍 [NEEDS-SUMMARY] Caso 4 check:", {
+            futureAppointments: futureAppointments.length,
+            mentionsAppointment,
+            summarySnippet: lead.conversationSummary?.substring(0, 150)
+        });
+
+        if (mentionsAppointment) {
+            console.log("🔄 [RESUMO] Invalidando - menciona agendamento mas não há futuros");
+            return true;
+        }
     }
 
     return false;
