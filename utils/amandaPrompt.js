@@ -651,7 +651,7 @@ DEPOIS DA ESCOLHA (passo a passo):
                         3. CONVÊNIOS:
                           - Todos os atendimentos são PARTICULARES.
 
-                      4. REABILITAÇÃO VOCAL PÓS-CIRÚRGICA:  // ← NOVO
+                      4. REABILITAÇÃO VOCAL PÓS-CIRÚRGICA:  
                       - "Não trabalhamos com reabilitação de voz pós-cirurgia."
                       - Rouquidão COMUM (uso excessivo da voz, gritar muito, etc.) → ATENDEMOS
                       - Rouquidão PÓS-CIRURGIA (intubação, cirurgia de tireoide, etc.) → NÃO ATENDEMOS

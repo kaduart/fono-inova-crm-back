@@ -470,7 +470,8 @@ export const whatsappController = {
                 phone: contact.phone,
                 name: contact.name,
                 lastMessageAt: contact.lastMessageAt,
-                leadId: contact.leadId ? String(contact.leadId) : null,
+                lastMessagePreview: contact.lastMessagePreview || null,
+                lastMessage: contact.lastMessagePreview || null, leadId: contact.leadId ? String(contact.leadId) : null,
                 // ✅ inclua outros campos que você precisa
                 tags: contact.tags || [],
                 phoneE164: contact.phoneE164,
@@ -1106,6 +1107,7 @@ async function processInboundMessage(msg, value) {
 
         try {
             contact.lastMessageAt = timestamp;
+            contact.lastMessagePreview = contentToSave?.substring(0, 100) || `[${type.toUpperCase()}]`;
             await contact.save();
         } catch (e) {
             console.error("⚠️ Erro ao atualizar lastMessageAt no Contact:", e.message);
