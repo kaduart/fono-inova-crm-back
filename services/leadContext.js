@@ -31,14 +31,6 @@ export async function enrichLeadContext(leadId) {
             date: { $gte: today }
         }).lean();
 
-        // ✅ ADD LOG 1
-        console.log("🔍 [LEAD-CONTEXT] Appointments query:", {
-            patient: lead.convertedToPatient,
-            today,
-            found: appointments.length,
-            appointments: appointments.map(a => ({ id: a._id, date: a.date }))
-        });
-
         // 🧠 LÓGICA DE CONTEXTO INTELIGENTE
         let conversationHistory = [];
         let shouldGreet = true;
@@ -71,12 +63,6 @@ export async function enrichLeadContext(leadId) {
             // 1. Verifica se precisa gerar novo resumo
             let leadDoc = await Lead.findById(leadId); // Busca versão mutável
 
-            console.log("🔍 [LEAD-CONTEXT] needsNewSummary check:", {
-                hasSummary: !!lead.conversationSummary,
-                summaryPreview: lead.conversationSummary?.substring(0, 100),
-                totalMessages,
-                futureAppointments: appointments.length
-            });
             if (needsNewSummary(lead, totalMessages, appointments)) {
 
                 // Mensagens antigas (todas menos últimas 20)
@@ -154,7 +140,17 @@ export async function enrichLeadContext(leadId) {
             // Flags úteis
             isFirstContact: totalMessages <= 1,
             isReturning: totalMessages > 3,
-            needsUrgency: calculateDaysSince(lead.lastInteractionAt) > 7
+            needsUrgency: calculateDaysSince(lead.lastInteractionAt) > 7,
+            hasAppointments: appointments?.length > 0,
+            futureAppointmentsCount: appointments?.length || 0,
+            appointmentsInfo: appointments?.length > 0
+                ? appointments.map(a => ({ date: a.date, time: a.time, type: a.type }))
+                : null,
+
+            // ✅ ADD: Instrução explícita para Amanda
+            appointmentWarning: appointments?.length === 0
+                ? "⚠️ ATENÇÃO: Este lead NÃO possui agendamentos futuros. NÃO mencione consultas marcadas ou confirmadas."
+                : null,
         };
 
         return context;
