@@ -59,7 +59,7 @@ Objetivo: posicionar a clínica como referência.
 - Traga segurança antes da decisão.
 
 Use frases como:
-- "Entendo sua preocupação, isso é mais comum do que parece."
+- "Entendo 💚 Isso é algo que preocupa muitos pais, e você fez muito bem em buscar orientação cedo."
 - "Vocês não estão sozinhos, a gente caminha junto."
 - "A avaliação ajuda a trazer clareza com tranquilidade."
 
