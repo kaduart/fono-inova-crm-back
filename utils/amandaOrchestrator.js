@@ -500,6 +500,12 @@ export async function getOptimizedAmandaResponse({
 
         if (step === "name") {
             const name = extractName(text);
+            // 📌 Salva como info clínica inferida (não operacional)
+            if (name && !lead?.patientInfo?.fullName) {
+                await safeLeadUpdate(lead._id, {
+                    $set: { "autoBookingContext.inferredName": name }
+                }).catch(err => logSuppressedError("inferredName", err));
+            }
             if (!name) {
                 return ensureSingleHeart("Pra eu confirmar certinho: qual o **nome completo** do paciente?");
             }
@@ -626,6 +632,29 @@ export async function getOptimizedAmandaResponse({
     }
 
     const flags = detectAllFlags(text, lead, enrichedContext);
+    if (lead?._id) {
+        const $set = {};
+        if (flags.topic) $set.topic = flags.topic; // ou "qualificationData.topic"
+        if (flags.teaStatus) $set["qualificationData.teaStatus"] = flags.teaStatus;
+
+        if (Object.keys($set).length) {
+            await safeLeadUpdate(lead._id, { $set });
+        }
+    }
+    if (flags.wantsPartnershipOrResume) {
+        await safeLeadUpdate(lead._id, {
+            $set: {
+                reason: "parceria_profissional",
+                stage: "parceria_profissional",
+                "qualificationData.intent": "parceria_profissional",
+            },
+            $addToSet: { flags: "parceria_profissional" },
+        });
+
+        return ensureSingleHeart(
+            "Que bom! 😊\n\nParcerias e currículos nós recebemos **exclusivamente por e-mail**.\nPode enviar para **contato@clinicafonoinova.com.br** (no assunto, coloque sua área).\n\nSe quiser, já me diga também sua cidade e disponibilidade 🙂 💚"
+        );
+    }
 
     const psychologicalCue = determinePsychologicalFollowup({
         toneMode: enrichedContext.toneMode,
@@ -1240,6 +1269,17 @@ export async function getOptimizedAmandaResponse({
             if (preferPeriod && earliest) {
                 const hasPreferred = slotsCtx.all.some((s) => matchesPeriod(s, preferPeriod));
                 if (!hasPreferred) {
+                    // 🛡️ GUARD PREMIUM — só ativa coleta operacional se houve escolha por LETRA
+                    const choseByLetter = /^[A-Fa-f]$/.test(normalized.trim());
+
+                    if (!choseByLetter) {
+                        console.log("🛡️ [GUARD] Usuário não escolheu por letra, bloqueando ativação precoce");
+
+                        return ensureSingleHeart(
+                            "Perfeito 💚 Vou te mostrar as opções certinhas pra você escolher, tá bom?"
+                        );
+                    }
+
                     await safeLeadUpdate(lead._id, {
                         $set: { pendingChosenSlot: earliest, pendingPatientInfoForScheduling: true, pendingPatientInfoStep: "name" },
                     }).catch(err => logSuppressedError('safeLeadUpdate', err));

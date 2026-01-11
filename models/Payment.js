@@ -64,12 +64,15 @@ const paymentSchema = new mongoose.Schema({
 
     paymentMethod: {
         type: String,
-        enum: ['dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'cartão', 'transferencia_bancaria', 'plano-unimed', 'outro'],
+        enum: [
+            'dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'cartão',
+            'transferencia_bancaria', 'plano-unimed', 'convenio', 'outro'
+        ],
         required: true
     },
     status: {
         type: String,
-        enum: ['pending', 'paid', 'partial', 'canceled', 'advanced', 'package_paid'],
+        enum: ['pending', 'attended', 'billed', 'paid', 'partial', 'canceled', 'advanced', 'package_paid'],
         default: 'pending'
     },
     notes: {
@@ -112,6 +115,29 @@ const paymentSchema = new mongoose.Schema({
     }],
 
     createdAt: { type: Date, default: Date.now, index: true },
+    billingType: {
+        type: String,
+        enum: ['particular', 'convenio'],
+        default: 'particular'
+    },
+
+    // Campos específicos de convênio
+    insurance: {
+        provider: { type: String },           // Ex: 'Unimed', 'Bradesco Saúde', 'SulAmérica'
+        planCode: { type: String },           // Código do plano (se necessário)
+        authorizationCode: { type: String },  // Código de autorização/guia
+        status: {
+            type: String,
+            enum: ['pending_billing', 'billed', 'received', 'partial', 'glosa'],
+            default: 'pending_billing'
+        },
+        grossAmount: { type: Number },        // Valor "cheio" da tabela do convênio
+        billedAt: { type: Date },             // Quando foi faturado
+        receivedAt: { type: Date },           // Quando recebeu
+        expectedReceiptDate: { type: Date },  // Previsão (mês seguinte)
+        receivedAmount: { type: Number },     // Valor efetivamente recebido
+        glosaReason: { type: String }         // Motivo se glosado
+    },
 }, {
     timestamps: true,
     toObject: { virtuals: true },
