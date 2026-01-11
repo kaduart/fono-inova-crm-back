@@ -285,3 +285,14 @@ export async function analyzeLeadMessage({ text, lead, history = [] }) {
 
     return { extracted, intent, score, segment };
 }
+
+// 🔐 PRIORIDADE DA FALA ATUAL
+export function mergeLiveExtractionOverDB(live, db) {
+    return {
+        ...db,
+        ...Object.fromEntries(
+            Object.entries(live || {}).filter(([_, v]) => v !== null && v !== undefined)
+        ),
+        _sourcePriority: "live"
+    };
+}

@@ -359,3 +359,9 @@ Quer que eu veja um horário tranquilo pra vocês essa semana? 💚`);
     return closureLines.join("\n\n");
 }
 
+export default {
+    calculateOptimalFollowupTime,
+    generateContextualFollowup,
+    determinePsychologicalFollowup,
+    buildValueAnchoredClosure
+};

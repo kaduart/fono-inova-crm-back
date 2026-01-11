@@ -9,6 +9,8 @@ import Session from '../models/Session.js';
 import { distributePayments } from '../services/distributePayments.js';
 
 import { syncEvent } from '../services/syncService.js';
+import { runJourneyFollowups } from '../services/journeyFollowupEngine.js';
+import Leads from '../models/Leads.js';
 
 const APPOINTMENTS_API_BASE_URL = 'http://167.234.249.6:5000/api';
 const validateInputs = {
@@ -506,6 +508,13 @@ export const packageOperations = {
                 .populate('sessions appointments payments')
                 .lean();
 
+            await Leads.findByIdAndUpdate(leadId, {
+                patientJourneyStage: "renovacao"
+            });
+
+            runJourneyFollowups(leadId, {
+                patientName: patient.name
+            });
 
             res.status(201).json({
                 success: true,
