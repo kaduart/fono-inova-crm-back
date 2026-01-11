@@ -517,20 +517,20 @@ router.patch('/:id', auth, async (req, res) => {
             ].filter(id => id);
 
             if (appointmentIds.length > 0) {
-    console.log('📅 Atualizando agendamentos vinculados:', appointmentIds.length);
-    await executeCriticalOperation(
-        Appointment,
-        { _id: { $in: appointmentIds } },
-        {
-            $set: {
-                paymentStatus: status === 'paid' ? 'paid' : 'pending',
-                operationalStatus: status === 'paid' ? 'confirmed' : 'pending',
-                updatedAt: currentDate
+                console.log('📅 Atualizando agendamentos vinculados:', appointmentIds.length);
+                await executeCriticalOperation(
+                    Appointment,
+                    { _id: { $in: appointmentIds } },
+                    {
+                        $set: {
+                            paymentStatus: status === 'paid' ? 'paid' : 'pending',
+                            operationalStatus: status === 'paid' ? 'confirmed' : 'pending',
+                            updatedAt: currentDate
+                        }
+                    },
+                    mongoSession
+                );
             }
-        },
-        mongoSession
-    );
-}
 
             // 4. 🔥 LÓGICA advanceServices: CRIAR NOVOS PAGAMENTOS SEPARADOS
             if (advanceServices.length > 0) {
@@ -1354,6 +1354,7 @@ router.get("/daily-closing", async (req, res) => {
                 .lean()
         ]);
 
+
         console.timeEnd("⏱️ Parallel Queries");
 
         // ======================================================
@@ -1394,15 +1395,12 @@ router.get("/daily-closing", async (req, res) => {
             const payDate = getPaymentDate(p);
             const isTargetDate = payDate === targetDate;
 
-            // 🐛 DEBUG LOG
-            if (isTargetDate) {
-                console.log(`💰 Pagamento do dia: ${p.patient?.fullName} - R$${p.amount} (${p.paymentMethod})`);
-                console.log(`   ID: ${p._id}`);
-                console.log(`   paymentDate: ${p.paymentDate}`);
-                console.log(`   createdAt: ${moment(p.createdAt).format('YYYY-MM-DD HH:mm')}`);
-                console.log(`   status: ${p.status}`);
-                console.log(`   appointment: ${p.appointment?._id || 'SEM VÍNCULO'}`);
-                console.log(`   package: ${p.package?._id || 'SEM PACOTE'}`);
+            // 🏥 Convênio só entra no caixa quando recebido
+            if (p.billingType === 'convenio') {
+                const isReceived = p.insurance?.status === 'received';
+                const receivedToday = p.insurance?.receivedAt &&
+                    moment(p.insurance.receivedAt).format('YYYY-MM-DD') === targetDate;
+                return receivedToday && isReceived;
             }
 
             return isTargetDate;
@@ -2136,7 +2134,228 @@ router.post('/add', async (req, res) => {
     }
 });
 
+// ============================================================
+// 🏥 CONVÊNIOS - Endpoints
+// ============================================================
 
+/**
+ * POST /api/payments/insurance
+ * Registra atendimento de convênio (amount = 0 no dia)
+ */
+router.post('/insurance', auth, async (req, res) => {
+    try {
+        const {
+            patientId,
+            doctorId,
+            sessionId,
+            packageId,
+            serviceType = 'session',
+            insuranceProvider,
+            grossAmount,
+            authorizationCode,
+            paymentDate,
+            notes
+        } = req.body;
+
+        // Validação
+        if (!patientId || !doctorId || !insuranceProvider || !grossAmount) {
+            return res.status(400).json({
+                success: false,
+                message: 'Campos obrigatórios: patientId, doctorId, insuranceProvider, grossAmount'
+            });
+        }
+
+        const payment = await Payment.create({
+            patient: patientId,
+            doctor: doctorId,
+            session: sessionId || null,
+            package: packageId || null,
+            serviceType,
+            amount: 0, // ← Zerado no dia!
+            paymentMethod: 'convenio',
+            billingType: 'convenio',
+            status: 'pending',
+            paymentDate: paymentDate || moment().tz('America/Sao_Paulo').format('YYYY-MM-DD'),
+            notes,
+            insurance: {
+                provider: insuranceProvider,
+                grossAmount,
+                authorizationCode: authorizationCode || null,
+                status: 'pending_billing',
+                expectedReceiptDate: moment().add(1, 'month').endOf('month').toDate()
+            }
+        });
+
+        // Atualiza sessão como realizada (mas não paga)
+        if (sessionId) {
+            await Session.findByIdAndUpdate(sessionId, {
+                status: 'completed',
+                isPaid: false,
+                paymentStatus: 'pending',
+                billingType: 'convenio'
+            });
+        }
+
+        const populated = await Payment.findById(payment._id)
+            .populate('patient', 'fullName')
+            .populate('doctor', 'fullName');
+
+        res.status(201).json({
+            success: true,
+            message: 'Atendimento convênio registrado (aguardando faturamento)',
+            data: populated
+        });
+    } catch (error) {
+        console.error('❌ Erro ao registrar convênio:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+/**
+ * GET /api/payments/insurance/receivables
+ * Lista contas a receber de convênios
+ */
+router.get('/insurance/receivables', auth, async (req, res) => {
+    try {
+        const { provider, status } = req.query;
+
+        const match = {
+            billingType: 'convenio',
+            'insurance.status': { $in: status ? [status] : ['pending_billing', 'billed'] }
+        };
+
+        if (provider) match['insurance.provider'] = provider;
+
+        const receivables = await Payment.aggregate([
+            { $match: match },
+            {
+                $group: {
+                    _id: '$insurance.provider',
+                    totalPending: { $sum: '$insurance.grossAmount' },
+                    count: { $sum: 1 },
+                    payments: {
+                        $push: {
+                            paymentId: '$_id',
+                            patient: '$patient',
+                            grossAmount: '$insurance.grossAmount',
+                            status: '$insurance.status',
+                            paymentDate: '$paymentDate',
+                            authorizationCode: '$insurance.authorizationCode'
+                        }
+                    }
+                }
+            },
+            { $sort: { totalPending: -1 } }
+        ]);
+
+        // Populate patients
+        for (const group of receivables) {
+            for (const p of group.payments) {
+                const patient = await mongoose.model('Patient').findById(p.patient).select('fullName').lean();
+                p.patientName = patient?.fullName || 'N/A';
+            }
+        }
+
+        const grandTotal = receivables.reduce((sum, r) => sum + r.totalPending, 0);
+
+        res.json({
+            success: true,
+            data: receivables,
+            summary: {
+                totalProviders: receivables.length,
+                grandTotal
+            }
+        });
+    } catch (error) {
+        console.error('❌ Erro ao buscar recebíveis:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+/**
+ * PATCH /api/payments/insurance/:id/receive
+ * Marca convênio como recebido (entra no caixa)
+ */
+router.patch('/insurance/:id/receive', auth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { receivedAmount, receivedDate, notes } = req.body;
+
+        const payment = await Payment.findById(id);
+
+        if (!payment || payment.billingType !== 'convenio') {
+            return res.status(404).json({
+                success: false,
+                message: 'Pagamento de convênio não encontrado'
+            });
+        }
+
+        const finalAmount = receivedAmount ?? payment.insurance.grossAmount;
+        const isGlosa = receivedAmount !== undefined && receivedAmount < payment.insurance.grossAmount;
+
+        payment.amount = finalAmount; // ← Agora entra no caixa!
+        payment.status = 'paid';
+        payment.insurance.status = isGlosa ? 'partial' : 'received';
+        payment.insurance.receivedAt = receivedDate ? new Date(receivedDate) : new Date();
+        payment.insurance.receivedAmount = finalAmount;
+
+        if (isGlosa && notes) {
+            payment.insurance.glosaReason = notes;
+        }
+
+        await payment.save();
+
+        // Atualiza sessão como paga
+        if (payment.session) {
+            await Session.findByIdAndUpdate(payment.session, {
+                isPaid: true,
+                paymentStatus: 'paid'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: isGlosa
+                ? `Convênio recebido com glosa (R$${finalAmount} de R$${payment.insurance.grossAmount})`
+                : 'Convênio recebido integralmente',
+            data: payment
+        });
+    } catch (error) {
+        console.error('❌ Erro ao registrar recebimento:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+/**
+ * PATCH /api/payments/insurance/:id/bill
+ * Marca como faturado (enviado pro convênio)
+ */
+router.patch('/insurance/:id/bill', auth, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const payment = await Payment.findByIdAndUpdate(
+            id,
+            {
+                'insurance.status': 'billed',
+                'insurance.billedAt': new Date()
+            },
+            { new: true }
+        );
+
+        if (!payment) {
+            return res.status(404).json({ success: false, message: 'Não encontrado' });
+        }
+
+        res.json({
+            success: true,
+            message: 'Marcado como faturado',
+            data: payment
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
 
 export default router;
 

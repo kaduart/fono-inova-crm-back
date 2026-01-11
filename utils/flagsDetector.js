@@ -10,6 +10,12 @@ export function deriveFlagsFromText(text = "") {
     const mentionsLinguinha =
         /\b(linguinha|fr[eê]nulo\s+lingual|freio\s+da\s+l[ií]ngua|freio\s+lingual)\b/i.test(normalizedText);
 
+    const wantsPartnershipOrResume =
+        /\b(curr[ií]cul|curriculo|curriculum|cv)\b/i.test(normalizedText) ||
+        /\b(parceria|parcerias|credenciamento|prestador|vaga|trabalhar\s+com\s+voc[eê]s)\b/i.test(normalizedText) ||
+        /\b(sou|me\s+chamo)\b.*\b(musicoterap|psicopedagog|fonoaudi[oó]log|psic[oó]log|fisioterap|terapeuta\s+ocupacional|\bto\b|neuropsic)\b/i.test(normalizedText);
+
+
     const ageGroup = extractAgeGroup(normalizedText);
 
     return {
@@ -134,7 +140,7 @@ export function deriveFlagsFromText(text = "") {
             /n[aã]o\s+quero\s+mais\s+receber/i,
             /me\s+(tire|remove)\s+da\s+lista/i,
         ].some(r => r.test(normalizedText)),
-        
+
         talksAboutTypeOfAssessment: /(avalia[çc][aã]o|teste|laudo|relat[oó]rio)/i.test(normalizedText),
         hasMedicalReferral: /(pedido|encaminhamento|requisi[çc][aã]o)\s+m[eé]dic/i.test(normalizedText),
 
@@ -224,6 +230,7 @@ export function deriveFlagsFromText(text = "") {
 
         // úteis pro funil
         mentionsBaby: /\b(beb[eê]|rec[ée]m[-\s]?nascid[oa]|rn\b|meses)\b/i.test(normalizedText),
+        wantsPartnershipOrResume
     };
 }
 
@@ -389,10 +396,19 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
         !!lead?.autoBookingContext?.active ||
         lastBotAskedSchedule;
 
+    const hasMenu =
+        !!lead?.pendingSchedulingSlots?.primary;
+
     const wantsSchedulingNow =
         baseFlags.wantsSchedule ||
-        ((answersPeriodOrDay || answersRelativeTime) && inSchedulingFlow) ||
-        (isAffirmative && inSchedulingFlow);
+        (
+            hasMenu &&
+            (
+                (answersPeriodOrDay || answersRelativeTime) ||
+                isAffirmative
+            )
+        );
+
     const topic = resolveTopicFromFlags(baseFlags, rawText);
     const teaStatus = computeTeaStatus(baseFlags, rawText);
 

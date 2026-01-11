@@ -3,8 +3,16 @@
 import Followup from "../../models/Followup.js";
 import Leads from "../../models/Leads.js";
 import { autoBookAppointment, formatDatePtBr } from "../../services/amandaBookingService.js";
-import { default as ensureSingleHeart, default as safeLeadUpdate } from "../helpers.js";
+import ensureSingleHeart from "../helpers.js";
+import { safeLeadUpdate } from "../amanda/helpers.js";
 import { extractBirth, extractName } from "../patientDataExtractor.js";
+
+function canAskField(field, lead, extractedNow = {}) {
+    if (extractedNow?.[field]) return false;
+    if (lead?.patientInfo?.[field]) return false;
+    if (lead?.autoBookingContext?.[`inferred${field}`]) return false;
+    return true;
+}
 
 /**
  * Processa fluxo de coleta de dados do paciente (nome → nascimento → booking)
@@ -19,6 +27,15 @@ export async function handlePatientDataFlow({ text, lead }) {
 
     const step = lead.pendingPatientInfoStep || "name";
     const chosenSlot = lead.pendingChosenSlot;
+
+    // 🛡️ Blindagem: nunca coletar dados sem slot confirmado
+    if (!chosenSlot) {
+        console.log("🛡️ [PATIENT-DATA] Bloqueado — sem slot escolhido");
+
+        return ensureSingleHeart(
+            "Vou te mostrar primeiro as opções certinhas de horário, tudo bem? 💚"
+        );
+    }
 
     // STEP: NAME
     if (step === "name") {
@@ -77,6 +94,17 @@ export async function handlePatientDataFlow({ text, lead }) {
                 { $set: { status: "canceled", canceledReason: "agendamento_confirmado_amanda" } }
             );
 
+            // 👇 NOVO – Etapa C
+            await Leads.findByIdAndUpdate(lead._id, {
+                patientJourneyStage: "onboarding"
+            });
+
+            runJourneyFollowups(lead._id, {
+                appointment: {
+                    date: chosenSlot.date,
+                    time: chosenSlot.time
+                }
+            });
             const humanDate = formatDatePtBr(chosenSlot.date);
             const humanTime = String(chosenSlot.time || "").slice(0, 5);
 
@@ -95,7 +123,10 @@ export async function handlePatientDataFlow({ text, lead }) {
             return ensureSingleHeart("Esse horário acabou de ser preenchido 😕 A equipe vai te enviar novas opções em instantes");
         }
 
-        return ensureSingleHeart("Tive um probleminha ao confirmar. A equipe vai te responder por aqui em instantes");
+        return ensureSingleHeart(
+            "Estamos confirmando seu horário em tempo real 💚\n" +
+            "Nossa equipe já está finalizando pra você, já te retorno aqui."
+        );
     }
 
     return null;

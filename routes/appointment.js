@@ -17,6 +17,8 @@ import Session from '../models/Session.js';
 import { handlePackageSessionUpdate, syncEvent } from '../services/syncService.js';
 import { updateAppointmentFromSession, updatePatientAppointments } from '../utils/appointmentUpdater.js';
 import { runTransactionWithRetry } from '../utils/transactionRetry.js';
+import { runJourneyFollowups } from '../services/journeyFollowupEngine.js';
+import Leads from '../models/Leads.js';
 
 dotenv.config();
 const router = express.Router();
@@ -29,24 +31,27 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
     const {
         patientId,
         doctorId,
-        serviceType,
-        paymentMethod,
-        status = 'scheduled',
-        notes,
         packageId,
         sessionId,
+        date,
+        time,
         specialty,
         sessionType,
-        isAdvancePayment = false,
-        advanceSessions = [],
+        serviceType,
+        notes,
+        paymentAmount,
+        paymentMethod,
+        clinicalStatus,
+        operationalStatus,
+        billingType,      // ✅ <– ADICIONE ESTA LINHA
+        insuranceProvider, // ✅ (se o front envia)
+        insuranceValue,
+        authorizationCode,
+        isAdvancePayment,
+        advanceSessions,
     } = req.body;
-    console.log("DEBUG IDS", {
-        patientId, doctorId, packageId, sessionId,
-        t_patientId: typeof patientId,
-        t_doctorId: typeof doctorId,
-        t_packageId: typeof packageId,
-        t_sessionId: typeof sessionId,
-    });
+
+    console.log("DEBUG IDSsssssssssss", req.body);
     const amount = parseFloat(req.body.paymentAmount) || 0;
     const currentDate = new Date();
     const safeId = (v) => {
@@ -368,7 +373,14 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 mongoSession.endSession();
             }
         } else {
-            // 🔹 PRIMEIRO cria a sessão (fluxo AVULSO — permanece exatamente como já estava)
+            let insurance = req.body.insurance || null;
+
+            const amount = parseFloat(req.body.paymentAmount) || 0;
+            const sessionValue = (paymentMethod === 'convenio')
+                ? (req.body.insurance?.grossAmount || 0)
+                : amount;
+
+            // 🔹  cria a sessão (fluxo AVULSO — permanece exatamente como já estava)
             const newSession = await Session.create({
                 patient: safeId(patientId),
                 doctor: safeId(doctorId),
@@ -384,8 +396,21 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 sessionValue: amount,
                 createdAt: currentDate,
                 updatedAt: currentDate,
+                billingType,
+                insurance,
             });
             individualSessionId = newSession._id;
+
+            const totalDone = await Session.countDocuments({ patientId });
+
+            await Leads.findByIdAndUpdate(leadId, {
+                patientJourneyStage: "ativo"
+            });
+
+            runJourneyFollowups(leadId, {
+                sessionNumber: totalDone,
+                patientName: patient.name
+            });
 
             const appointment = await Appointment.create({
                 patient: safeId(patientId),
@@ -405,6 +430,10 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
             });
             createdAppointmentId = appointment._id;
 
+            await Session.findByIdAndUpdate(individualSessionId, {
+                appointmentId: createdAppointmentId
+            });
+
             // 🔹 SEGUNDO cria o PAGAMENTO INDIVIDUAL (PENDENTE)
             const paymentData = {
                 patient: safeId(patientId),
@@ -416,6 +445,8 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 amount,
                 paymentMethod,
                 notes,
+                billingType,
+                insurance,
                 status: 'pending',
                 paymentDate: req.body.date,
                 serviceDate: req.body.date,
@@ -426,9 +457,6 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
 
             const payment = await Payment.create(paymentData);
             createdPaymentId = payment._id;
-
-
-
 
             // após criar o appointment:
             await Patient.findByIdAndUpdate(
@@ -544,21 +572,49 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
             hasAppointmentField: !!populatedPayment.appointment
         });
 
+        await Leads.findByIdAndUpdate(leadId, {
+            patientJourneyStage: "onboarding"
+        });
+
+        runJourneyFollowups(leadId, {
+            appointment: {
+                date: req.body.date,
+                time: req.body.time
+            }
+        });
+
         return res.status(201).json({
             success: true,
             message: 'Agendamento criado (pagamento pendente)',
-            data: populatedPayment,
+            data: {
+                ...populatedPayment.toObject(),
+                billingType: billingType || 'particular'
+            }
         });
+
     } catch (err) {
         console.error("ERR:", err?.message);
-        console.error("MODEL:", err?.model?.modelName);     // às vezes existe
-        console.error("PATH:", err?.path);                  // MUITO importante
+        console.error("MODEL:", err?.model?.modelName);
+        console.error("PATH:", err?.path);
         console.error("VALUE:", err?.value);
         console.error("KIND:", err?.kind);
-        console.error(err?.errors);                         // se tiver ValidationError
+        console.error(err?.errors);
         console.error(err?.stack);
-        throw err;
+
+        // se for validação, devolve 400 com detalhes
+        if (err?.name === "ValidationError") {
+            return res.status(400).json({
+                success: false,
+                message: "ValidationError",
+                errors: Object.fromEntries(
+                    Object.entries(err.errors || {}).map(([k, v]) => [k, v.message])
+                ),
+            });
+        }
+
+        return res.status(500).json({ success: false, message: err.message });
     }
+
 });
 
 // Busca agendamentos com filtros
