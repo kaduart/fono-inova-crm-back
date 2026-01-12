@@ -10,15 +10,15 @@ import { checkAppointmentConflicts, getAvailableTimeSlots } from '../middleware/
 import validateId from '../middleware/validateId.js';
 import { validateIndividualPayment } from '../middleware/validateIndividualPayment.js';
 import Appointment from '../models/Appointment.js';
+import Leads from '../models/Leads.js';
 import Package from '../models/Package.js';
 import Patient from '../models/Patient.js';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
+import { runJourneyFollowups } from '../services/journeyFollowupEngine.js';
 import { handlePackageSessionUpdate, syncEvent } from '../services/syncService.js';
 import { updateAppointmentFromSession, updatePatientAppointments } from '../utils/appointmentUpdater.js';
 import { runTransactionWithRetry } from '../utils/transactionRetry.js';
-import { runJourneyFollowups } from '../services/journeyFollowupEngine.js';
-import Leads from '../models/Leads.js';
 
 dotenv.config();
 const router = express.Router();
@@ -50,6 +50,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
         isAdvancePayment,
         advanceSessions,
     } = req.body;
+    const leadId = req.body?.leadId || null;
 
     console.log("DEBUG IDSsssssssssss", req.body);
     const amount = parseFloat(req.body.paymentAmount) || 0;
@@ -401,16 +402,19 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
             });
             individualSessionId = newSession._id;
 
-            const totalDone = await Session.countDocuments({ patientId });
+            const totalDone = await Session.countDocuments({ patient: safeId(patientId) });
 
-            await Leads.findByIdAndUpdate(leadId, {
-                patientJourneyStage: "ativo"
-            });
+            if (leadId) {
+                await Leads.findByIdAndUpdate(leadId, { patientJourneyStage: "ativo" });
 
-            runJourneyFollowups(leadId, {
-                sessionNumber: totalDone,
-                patientName: patient.name
-            });
+                // se quiser mandar nome, busca do banco (senão pode remover patientName)
+                const patientDoc = await Patient.findById(patientId).select('fullName name').lean().catch(() => null);
+
+                runJourneyFollowups(leadId, {
+                    sessionNumber: totalDone,
+                    patientName: patientDoc?.fullName || patientDoc?.name || ""
+                });
+            }
 
             const appointment = await Appointment.create({
                 patient: safeId(patientId),
@@ -572,16 +576,13 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
             hasAppointmentField: !!populatedPayment.appointment
         });
 
-        await Leads.findByIdAndUpdate(leadId, {
-            patientJourneyStage: "onboarding"
-        });
+        if (leadId) {
+            await Leads.findByIdAndUpdate(leadId, { patientJourneyStage: "onboarding" });
 
-        runJourneyFollowups(leadId, {
-            appointment: {
-                date: req.body.date,
-                time: req.body.time
-            }
-        });
+            runJourneyFollowups(leadId, {
+                appointment: { date: req.body.date, time: req.body.time }
+            });
+        }
 
         return res.status(201).json({
             success: true,
@@ -1763,7 +1764,8 @@ router.patch('/:id/clinical-status', validateId, auth, async (req, res) => {
 // controllers/appointmentController.js
 export const bookFromAmanda = async (req, res) => {
     try {
-        const { leadId, doctorId, date, time, source = 'amanda' } = req.body;
+        const { doctorId, date, time, source = 'amanda' } = req.body;
+        const leadId = req.body?.leadId || null;
 
         if (!leadId || !doctorId || !date || !time) {
             return res.status(400).json({ error: 'Campos obrigatórios: leadId, doctorId, date, time' });
