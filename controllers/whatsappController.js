@@ -945,6 +945,15 @@ export const whatsappController = {
 // ✅ FUNÇÃO SEPARADA (não depende do this)
 async function processInboundMessage(msg, value) {
     try {
+
+
+        // 🔹 Agora: TEXT, AUDIO e IMAGE usam `content` (texto "de verdade")
+        const contentToSave =
+            (type === "text" || type === "audio" || type === "image" || type === "location")
+                ? content
+                : (caption || `[${type.toUpperCase()}]`);
+
+
         const quickFlags = deriveFlagsFromText(contentToSave || "");
 
         const suppressAutoFollowup =
@@ -1085,13 +1094,6 @@ async function processInboundMessage(msg, value) {
                     console.error("⚠️ Falha ao resolver mídia:", e.message);
                 }
             }
-
-            // 🔹 Agora: TEXT, AUDIO e IMAGE usam `content` (texto "de verdade")
-            const contentToSave =
-                (type === "text" || type === "audio" || type === "image" || type === "location")
-                    ? content
-                    : (caption || `[${type.toUpperCase()}]`);
-
 
             // ✅ BUSCA UNIFICADA INTELIGENTE
             let contact = await Contacts.findOne({ phone: from });
