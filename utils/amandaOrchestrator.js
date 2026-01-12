@@ -639,6 +639,62 @@ export async function getOptimizedAmandaResponse({
     const flags = detectAllFlags(text, lead, enrichedContext);
     console.log("🚩 FLAGS DETECTADAS:", flags);
 
+    // ===============================
+    // 🔒 CONTEXTO SALVO NO LEAD
+    // ===============================
+    const savedIntent = lead?.qualificationData?.intent || null;
+    const savedArea = lead?.therapyArea || null;
+    const savedStage = lead?.stage || null;
+
+    console.log("[CTX] intent:", savedIntent);
+    console.log("[CTX] area:", savedArea);
+    console.log("[CTX] stage:", savedStage);
+
+    // ===============================
+    // 💰 FLUXO COMERCIAL (NÃO RESETAR)
+    // ===============================
+    if (
+        savedIntent === "informacao_preco" &&
+        savedArea &&
+        !flags.wantsSchedule &&
+        !flags.wantsSchedulingNow
+    ) {
+        console.log("[FLOW] Comercial ativo (persistido)");
+
+        const PRICE_BY_AREA = {
+            fonoaudiologia: "A avaliação inicial de fonoaudiologia é **R$ 200**.",
+            psicologia: "A avaliação inicial de psicologia é **R$ 200**.",
+            terapia_ocupacional: "A avaliação inicial de terapia ocupacional é **R$ 200**.",
+            fisioterapia: "A avaliação inicial de fisioterapia é **R$ 200**.",
+            musicoterapia: "A avaliação inicial de musicoterapia é **R$ 200**.",
+            psicopedagogia: "A avaliação psicopedagógica é **R$ 200**.",
+            neuropsicologia: "A avaliação neuropsicológica é **R$ 2.000 (até 6x)**.",
+        };
+
+        const priceText =
+            PRICE_BY_AREA[savedArea] ||
+            "A avaliação inicial é **R$ 200**.";
+
+        return ensureSingleHeart(
+            `Perfeito! 😊\n\n${priceText}\n\n` +
+            `Sim, trabalhamos com **pacotes mensais** sim 💚 ` +
+            `Quer que eu te explique as opções?`
+        );
+    }
+
+    // ===============================
+    // 🚫 NÃO PERGUNTAR O QUE JÁ SABEMOS
+    // ===============================
+    if (savedArea && flags.askTherapyArea) {
+        console.log("[BLOCK] área já definida");
+        flags.askTherapyArea = false;
+    }
+
+    if (savedIntent && flags.askIntent) {
+        console.log("[BLOCK] intenção já definida");
+        flags.askIntent = false;
+    }
+
     // 🔥 PRIORIDADE: PARCERIA / CURRÍCULO
     if (flags.partnership) {
         console.log("🤝 [PARTNERSHIP FLOW] Ativado");
@@ -668,10 +724,10 @@ Em breve nossa equipe entra em contato 😊`
         flags?.hasPain ||
         /não anda|não fala|atraso|preocupado|preocupação|dificuldade/i.test(text);
 
-    if (userExpressedPain && !lead?.meta?.painAcknowledged) {
+    if (userExpressedPain && !lead?.qualificationData?.painAcknowledged) {
 
         await safeLeadUpdate(lead._id, {
-            $set: { "meta.painAcknowledged": true }
+            $set: { "qualificationData.painAcknowledged": true }
         }).catch(() => { });
 
         return ensureSingleHeart(
