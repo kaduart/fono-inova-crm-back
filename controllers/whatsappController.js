@@ -15,6 +15,7 @@ import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
 import { normalizeE164BR } from "../utils/phone.js";
+import { deriveFlagsFromText } from "../utils/flagsDetector.js";
 import { resolveLeadByPhone } from './leadController.js';
 
 const AUTO_TEST_NUMBERS = [
