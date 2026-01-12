@@ -945,17 +945,129 @@ export const whatsappController = {
 // ✅ FUNÇÃO SEPARADA (não depende do this)
 async function processInboundMessage(msg, value) {
     try {
+        const io = getIo();
 
+        const wamid = msg.id;
+        const fromRaw = msg.from || "";
+        const toRaw =
+            value?.metadata?.display_phone_number ||
+            process.env.CLINIC_PHONE_E164 ||
+            "";
 
-        // 🔹 Agora: TEXT, AUDIO e IMAGE usam `content` (texto "de verdade")
+        const from = normalizeE164BR(fromRaw);
+        const to = normalizeE164BR(toRaw);
+
+        // ✅ FIX: define `type` logo no início (antes de qualquer uso)
+        const type = msg.type;
+
+        const fromNumeric = from.replace(/\D/g, "");
+        const isTestNumber = AUTO_TEST_NUMBERS.includes(fromNumeric);
+
+        console.log("🔎 isTestNumber?", fromNumeric, isTestNumber);
+
+        const timestamp = new Date(
+            (parseInt(msg.timestamp, 10) || Date.now() / 1000) * 1000
+        );
+
+        console.log("🔄 Processando mensagem:", { from, type, wamid });
+
+        // EXTRAÇÃO DE CONTEÚDO
+        let content = "";
+        let mediaUrl = null;
+        let caption = null;
+        let mediaId = null;
+
+        if (type === "text") {
+            // 💬 Texto normal
+            content = msg.text?.body || "";
+        } else if (type === "audio" && msg.audio?.id) {
+            // 🎙️ ÁUDIO → transcrever
+            mediaId = msg.audio.id;
+            caption = "[AUDIO]";
+
+            try {
+                // Opcional: ainda resolve URL para uso no front/proxy
+                const { url } = await resolveMediaUrl(mediaId);
+                mediaUrl = url;
+            } catch (e) {
+                console.error("⚠️ Falha ao resolver mídia (audio):", e.message);
+            }
+
+            console.log(`🎙️ Processando áudio para transcrição: ${mediaId}`);
+
+            // 🔹 TRANSCRIÇÃO
+            content = await transcribeWaAudio(mediaId, `audio_${wamid}.ogg`);
+
+            if (!content || content.length < 3) {
+                content = "[Áudio não pôde ser transcrito]";
+            }
+        } else if (type === "image" && msg.image?.id) {
+            // 🖼️ IMAGEM → descrição + legenda
+            mediaId = msg.image.id;
+            caption = (msg.image.caption || "").trim();
+
+            // URL para o front / proxy
+            try {
+                const { url } = await resolveMediaUrl(mediaId);
+                mediaUrl = url;
+            } catch (e) {
+                console.error("⚠️ Falha ao resolver mídia (image):", e.message);
+            }
+
+            try {
+                console.log(`🖼️ Gerando descrição para imagem: ${mediaId}`);
+                const description = await describeWaImage(mediaId, caption);
+
+                if (caption) {
+                    // legenda + descrição → vira texto rico pra Amanda
+                    content = `${caption}\n[Detalhe da imagem: ${description}]`;
+                } else {
+                    content = `Imagem enviada: ${description}`;
+                }
+            } catch (e) {
+                console.error("⚠️ Falha ao descrever imagem:", e.message);
+                // fallback: pelo menos algo textual
+                content = caption || "Imagem recebida.";
+            }
+        }
+        // 📍 LOCALIZAÇÃO (mensagens de localização do WhatsApp)
+        else if (type === "location" && msg.location) {
+            content =
+                msg.location.name ||
+                msg.location.address ||
+                "Localização enviada";
+        } else {
+            // 🎥 📄 😀 VÍDEO / DOCUMENTO / STICKER (mantém como marcador)
+            try {
+                if (type === "video" && msg.video?.id) {
+                    mediaId = msg.video.id;
+                    caption = msg.video.caption || "[VIDEO]";
+                    const { url } = await resolveMediaUrl(mediaId);
+                    mediaUrl = url;
+                } else if (type === "document" && msg.document?.id) {
+                    mediaId = msg.document.id;
+                    caption = msg.document.filename || "[DOCUMENT]";
+                    const { url } = await resolveMediaUrl(mediaId);
+                    mediaUrl = url;
+                } else if (type === "sticker" && msg.sticker?.id) {
+                    mediaId = msg.sticker.id;
+                    caption = "[STICKER]";
+                    const { url } = await resolveMediaUrl(mediaId);
+                    mediaUrl = url;
+                }
+            } catch (e) {
+                console.error("⚠️ Falha ao resolver mídia:", e.message);
+            }
+        }
+
+        // ✅ FIX: agora sim calcula contentToSave (depois de definir type/content/caption)
         const contentToSave =
-            (type === "text" || type === "audio" || type === "image" || type === "location")
+            type === "text" || type === "audio" || type === "image" || type === "location"
                 ? content
-                : (caption || `[${type.toUpperCase()}]`);
+                : (caption || `[${String(type || "unknown").toUpperCase()}]`);
 
-
+        // ✅ flags rápidas agora com texto real
         const quickFlags = deriveFlagsFromText(contentToSave || "");
-
         const suppressAutoFollowup =
             quickFlags.alreadyScheduled ||
             quickFlags.wantsCancel ||
@@ -965,13 +1077,74 @@ async function processInboundMessage(msg, value) {
             quickFlags.saysThanks ||
             quickFlags.saysBye;
 
+        // ✅ BUSCA UNIFICADA INTELIGENTE
+        let contact = await Contacts.findOne({ phone: from });
+        if (!contact) {
+            contact = await Contacts.create({
+                phone: from,
+                name: msg.profile?.name || `WhatsApp ${from.slice(-4)}`
+            });
+        }
+
+        // ✅ VERIFICA SE EXISTE PATIENT COM ESTE TELEFONE (ANTES de usar)
+        let patient = null;
+        try {
+            patient = await Patient.findOne({ phone: from }).lean();
+            console.log("🔍 Patient encontrado:", patient ? patient._id : "Nenhum");
+        } catch (e) {
+            console.log("ℹ️ Model Patient não disponível");
+        }
+
+        const lead = await resolveLeadByPhone(
+            from,
+            patient
+                ? {
+                    name: patient.fullName,
+                    status: "virou_paciente",
+                    convertedToPatient: patient._id,
+                    conversionScore: 100
+                }
+                : {
+                    status: "novo",
+                    conversionScore: 0
+                }
+        );
+
+        if (!lead?._id) {
+            console.error("❌ resolveLeadByPhone retornou lead inválido", { from, patientId: patient?._id });
+            return;
+        }
+
+        // 🧪 Se for número de teste, sempre garantir que NÃO esteja em manual
+        if (isTestNumber && lead) {
+            await Lead.findByIdAndUpdate(lead._id, {
+                $set: {
+                    "manualControl.active": false,
+                    "manualControl.takenOverAt": null,
+                    "manualControl.takenOverBy": null,
+                    "manualControl.autoResumeAfter": 0,
+                    autoReplyEnabled: true,
+                }
+            });
+            lead.manualControl = { active: false, autoResumeAfter: 0 };
+            lead.autoReplyEnabled = true;
+
+            console.log("🧪 Lead de teste destravado de controle manual:", String(lead._id));
+        }
+
+        // ✅ Se tiver flags que impactam o lead, atualiza (agora lead existe)
         if (suppressAutoFollowup) {
-            // opcional: persistir “alreadyScheduled / parceria” aqui, pq é fluxo síncrono
             const $set = {};
             const $addToSet = {};
 
-            if (quickFlags.alreadyScheduled) $set.alreadyScheduled = true, ($addToSet.flags = "already_scheduled");
-            if (quickFlags.wantsPartnershipOrResume) $set.reason = "parceria_profissional", ($addToSet.flags = "parceria_profissional");
+            if (quickFlags.alreadyScheduled) {
+                $set.alreadyScheduled = true;
+                $addToSet.flags = "already_scheduled";
+            }
+            if (quickFlags.wantsPartnershipOrResume) {
+                $set.reason = "parceria_profissional";
+                $addToSet.flags = "parceria_profissional";
+            }
 
             if (Object.keys($set).length || Object.keys($addToSet).length) {
                 await Lead.findByIdAndUpdate(lead._id, {
@@ -986,317 +1159,156 @@ async function processInboundMessage(msg, value) {
                 quickFlags: {
                     alreadyScheduled: quickFlags.alreadyScheduled,
                     partnership: quickFlags.wantsPartnershipOrResume,
-                    saysThanks: quickFlags.saysThanks
+                    saysThanks: quickFlags.saysThanks,
                 }
             });
-        } else {
-            const io = getIo();
-            const wamid = msg.id;
-            const fromRaw = msg.from || "";
-            const toRaw = value?.metadata?.display_phone_number || process.env.CLINIC_PHONE_E164 || "";
+        }
 
-            const from = normalizeE164BR(fromRaw);
-            const to = normalizeE164BR(toRaw);
-            const type = msg.type;
-            const fromNumeric = from.replace(/\D/g, '');
-            const isTestNumber = AUTO_TEST_NUMBERS.includes(fromNumeric);
+        // ✅ SALVAR MENSAGEM NO CRM
+        const messageData = {
+            waMessageId: wamid,
+            wamid,
+            from,
+            to,
+            direction: "inbound",
+            type,
+            content: contentToSave,
+            mediaUrl,
+            mediaId,
+            caption,
+            status: "received",
+            needs_human_review: !(type === "text" || type === "audio" || type === "image"),
+            timestamp,
+            contact: contact._id,
+            lead: lead._id,
+            raw: msg,
+        };
 
-            console.log("🔎 isTestNumber?", fromNumeric, isTestNumber);
+        // 🧭 Só adiciona o campo location se for mensagem de localização
+        if (type === "location" && msg.location) {
+            messageData.location = msg.location;
+        }
 
+        const savedMessage = await Message.create(messageData);
 
-            const timestamp = new Date((parseInt(msg.timestamp, 10) || Date.now() / 1000) * 1000);
+        try {
+            contact.lastMessageAt = timestamp;
+            contact.lastMessagePreview =
+                contentToSave?.substring(0, 100) || `[${String(type).toUpperCase()}]`;
+            await contact.save();
+        } catch (e) {
+            console.error("⚠️ Erro ao atualizar lastMessageAt no Contact:", e.message);
+        }
 
-            console.log("🔄 Processando mensagem:", { from, type, wamid });
+        // ✅ NOTIFICAR FRONTEND
+        io.emit("message:new", {
+            id: String(savedMessage._id),
+            from,
+            to,
+            direction: "inbound",
+            type,
+            content: contentToSave,
+            text: contentToSave,
+            mediaUrl,
+            mediaId,
+            caption,
+            status: "received",
+            timestamp,
+            leadId: lead._id,
+            contactId: contact._id
+        });
 
-            // EXTRAÇÃO DE CONTEÚDO
-            let content = "";
-            let mediaUrl = null;
-            let caption = null;
-            let mediaId = null;
-
-            if (type === "text") {
-                // 💬 Texto normal
-                content = msg.text?.body || "";
-            } else if (type === "audio" && msg.audio?.id) {
-                // 🎙️ ÁUDIO → transcrever
-                mediaId = msg.audio.id;
-                caption = "[AUDIO]";
-
-                try {
-                    // Opcional: ainda resolve URL para uso no front/proxy
-                    const { url } = await resolveMediaUrl(mediaId);
-                    mediaUrl = url;
-                } catch (e) {
-                    console.error("⚠️ Falha ao resolver mídia (audio):", e.message);
-                }
-
-                console.log(`🎙️ Processando áudio para transcrição: ${mediaId}`);
-
-                // 🔹 TRANSCRIÇÃO
-                content = await transcribeWaAudio(mediaId, `audio_${wamid}.ogg`);
-
-                if (!content || content.length < 3) {
-                    content = "[Áudio não pôde ser transcrito]";
-                }
-            } else if (type === "image" && msg.image?.id) {
-                // 🖼️ IMAGEM → descrição + legenda
-                mediaId = msg.image.id;
-                caption = (msg.image.caption || "").trim();
-
-                // URL para o front / proxy
-                try {
-                    const { url } = await resolveMediaUrl(mediaId);
-                    mediaUrl = url;
-                } catch (e) {
-                    console.error("⚠️ Falha ao resolver mídia (image):", e.message);
-                }
-
-                try {
-                    console.log(`🖼️ Gerando descrição para imagem: ${mediaId}`);
-                    const description = await describeWaImage(mediaId, caption);
-
-                    if (caption) {
-                        // legenda + descrição → vira texto rico pra Amanda
-                        content = `${caption}\n[Detalhe da imagem: ${description}]`;
-                    } else {
-                        content = `Imagem enviada: ${description}`;
-                    }
-                } catch (e) {
-                    console.error("⚠️ Falha ao descrever imagem:", e.message);
-                    // fallback: pelo menos algo textual
-                    content = caption || "Imagem recebida.";
-                }
-            } // 📍 LOCALIZAÇÃO (mensagens de localização do WhatsApp)
-            else if (type === 'location' && msg.location) {
-                content = msg.location.name || msg.location.address || 'Localização enviada';
-            }
-
-            else {
-                // 🎥 📄 😀 VÍDEO / DOCUMENTO / STICKER (mantém como marcador)
-                try {
-                    if (type === "video" && msg.video?.id) {
-                        mediaId = msg.video.id;
-                        caption = msg.video.caption || "[VIDEO]";
-                        const { url } = await resolveMediaUrl(mediaId);
-                        mediaUrl = url;
-                    } else if (type === "document" && msg.document?.id) {
-                        mediaId = msg.document.id;
-                        caption = msg.document.filename || "[DOCUMENT]";
-                        const { url } = await resolveMediaUrl(mediaId);
-                        mediaUrl = url;
-                    } else if (type === "sticker" && msg.sticker?.id) {
-                        mediaId = msg.sticker.id;
-                        caption = "[STICKER]";
-                        const { url } = await resolveMediaUrl(mediaId);
-                        mediaUrl = url;
-                    }
-                } catch (e) {
-                    console.error("⚠️ Falha ao resolver mídia:", e.message);
-                }
-            }
-
-            // ✅ BUSCA UNIFICADA INTELIGENTE
-            let contact = await Contacts.findOne({ phone: from });
-            if (!contact) {
-                contact = await Contacts.create({
-                    phone: from,
-                    name: msg.profile?.name || `WhatsApp ${from.slice(-4)}`
-                });
-            }
-
-            // ✅ VERIFICA SE EXISTE PATIENT COM ESTE TELEFONE (ANTES de usar)
-            let patient = null;
-            try {
-                patient = await Patient.findOne({ phone: from }).lean();
-                console.log("🔍 Patient encontrado:", patient ? patient._id : "Nenhum");
-            } catch (e) {
-                console.log("ℹ️ Model Patient não disponível");
-            }
-
-            const lead = await resolveLeadByPhone(
-                from,
-                patient
-                    ? {
-                        name: patient.fullName,
-                        status: "virou_paciente",
-                        convertedToPatient: patient._id,
-                        conversionScore: 100
-                    }
-                    : {
-                        status: "novo",
-                        conversionScore: 0
-                    }
-            );
-
-            if (!lead?._id) {
-                console.error("❌ resolveLeadByPhone retornou lead inválido", { from, patientId: patient?._id });
-                return; // ou cria um lead fallback aqui
-            }
-
-            // 🧪 Se for número de teste, sempre garantir que NÃO esteja em manual
-            if (isTestNumber && lead) {
-                await Lead.findByIdAndUpdate(lead._id, {
-                    $set: {
-                        'manualControl.active': false,
-                        'manualControl.takenOverAt': null,
-                        'manualControl.takenOverBy': null,
-                        'manualControl.autoResumeAfter': 0,
-                        autoReplyEnabled: true,
-                    }
-                });
-                lead.manualControl = { active: false, autoResumeAfter: 0 };
-                lead.autoReplyEnabled = true;
-
-                console.log("🧪 Lead de teste destravado de controle manual:", String(lead._id));
-            }
-
-            // ✅ SALVAR MENSAGEM NO CRM
-            const messageData = {
-                waMessageId: wamid,
-                wamid,
-                from,
-                to,
-                direction: "inbound",
-                type,
-                content: contentToSave,
-                mediaUrl,
-                mediaId,
-                caption,
-                status: "received",
-                needs_human_review: !(type === "text" || type === "audio" || type === "image"),
-                timestamp,
-                contact: contact._id,
-                lead: lead._id,
-                raw: msg,
-            };
-
-            // 🧭 Só adiciona o campo location se for mensagem de localização
-            if (type === "location" && msg.location) {
-                messageData.location = msg.location;
-            }
-
-            const savedMessage = await Message.create(messageData);
-
-            try {
-                contact.lastMessageAt = timestamp;
-                contact.lastMessagePreview = contentToSave?.substring(0, 100) || `[${type.toUpperCase()}]`;
-                await contact.save();
-            } catch (e) {
-                console.error("⚠️ Erro ao atualizar lastMessageAt no Contact:", e.message);
-            }
-
-            // ✅ NOTIFICAR FRONTEND
-            io.emit("message:new", {
-                id: String(savedMessage._id),
-                from,
-                to,
-                direction: "inbound",
-                type,
-                content: contentToSave,
-                text: contentToSave,
-                mediaUrl,
-                mediaId,
-                caption,
-                status: "received",
-                timestamp,
+        // ✅ ATUALIZAR ÚLTIMA INTERAÇÃO DO LEAD
+        try {
+            console.log("🔍 [DEBUG PRE-SAVE #1] Estado do lead ANTES do save:", {
                 leadId: lead._id,
-                contactId: contact._id
+                pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
+                pendingPatientInfoStep: lead.pendingPatientInfoStep,
+                pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
+                pendingSchedulingSlots: lead.pendingSchedulingSlots?.primary ? "SIM" : "NÃO",
             });
 
-            // ✅ ATUALIZAR ÚLTIMA INTERAÇÃO DO LEAD
+            lead.lastInteractionAt = new Date();
+            lead.interactions.push({
+                date: new Date(),
+                channel: "whatsapp",
+                direction: "inbound",
+                message: contentToSave,
+                status: "received"
+            });
+            await lead.save();
+            console.log("📅 Interação atualizada no lead");
+
+            // 🧠 Amanda 2.0: atualizar "memória" estruturada a cada inbound
             try {
-                // 🔍 DEBUG: Estado do lead ANTES do save
-                console.log("🔍 [DEBUG PRE-SAVE #1] Estado do lead ANTES do save:", {
-                    leadId: lead._id,
-                    pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
-                    pendingPatientInfoStep: lead.pendingPatientInfoStep,
-                    pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
-                    pendingSchedulingSlots: lead.pendingSchedulingSlots?.primary ? "SIM" : "NÃO",
+                const analysis = await analyzeLeadMessage({
+                    text: contentToSave,
+                    lead,
+                    history: (lead.interactions || []).map(i => i.message).filter(Boolean),
                 });
 
-                lead.lastInteractionAt = new Date();
-                lead.interactions.push({
-                    date: new Date(),
-                    channel: 'whatsapp',
-                    direction: 'inbound',
-                    message: contentToSave,
-                    status: 'received'
-                });
+                lead.qualificationData = lead.qualificationData || {};
+                lead.qualificationData.extractedInfo = mergeNonNull(
+                    lead.qualificationData.extractedInfo || {},
+                    analysis.extracted
+                );
+
+                lead.qualificationData.intent = analysis.intent.primary;
+                lead.qualificationData.sentiment = analysis.intent.sentiment;
+                lead.conversionScore = analysis.score;
+                lead.lastScoreUpdate = new Date();
+
                 await lead.save();
-                console.log("📅 Interação atualizada no lead");
 
-                // 🧠 Amanda 2.0: atualizar "memória" estruturada a cada inbound
-                try {
-                    const analysis = await analyzeLeadMessage({
-                        text: contentToSave,
-                        lead,
-                        history: (lead.interactions || []).map(i => i.message).filter(Boolean),
-                    });
-
-                    lead.qualificationData = lead.qualificationData || {};
-                    lead.qualificationData.extractedInfo = mergeNonNull(
-                        lead.qualificationData.extractedInfo || {},
-                        analysis.extracted
-                    );
-
-                    lead.qualificationData.intent = analysis.intent.primary;
-                    lead.qualificationData.sentiment = analysis.intent.sentiment;
-                    lead.conversionScore = analysis.score;
-                    lead.lastScoreUpdate = new Date();
-
-                    await lead.save();
-
-                    // 🔍 DEBUG: Estado do lead DEPOIS do save #2
-                    console.log("🔍 [DEBUG POST-SAVE #2] Estado do lead DEPOIS do save:", {
-                        leadId: lead._id,
-                        pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
-                        pendingPatientInfoStep: lead.pendingPatientInfoStep,
-                    });
-
-                    console.log("🧠 qualificationData atualizado:", {
-                        idade: lead.qualificationData?.extractedInfo?.idade,
-                        idadeRange: lead.qualificationData?.extractedInfo?.idadeRange,
-                        disponibilidade: lead.qualificationData?.extractedInfo?.disponibilidade,
-                    });
-                } catch (e) {
-                    console.warn("⚠️ Falha ao atualizar intelligence (não crítico):", e.message);
-                }
-
-            } catch (updateError) {
-                console.error("⚠️ Erro ao atualizar interação:", updateError.message);
-            }
-
-            const isRealText = contentToSave?.trim() && !contentToSave.startsWith("[");
-
-            // ✅ AMANDA 2.0 TRACKING (texto, áudio transcrito ou imagem descrita)
-            if ((type === 'text' || type === 'audio' || type === 'image') && isRealText) {
-                handleResponseTracking(lead._id, contentToSave)
-                    .catch(err => console.error("⚠️ Tracking não crítico falhou:", err));
-            }
-
-            // ✅ RESPOSTA AUTOMÁTICA (Amanda) para texto, áudio transcrito ou imagem descrita
-            if ((type === "text" || type === "audio" || type === "image") && isRealText) {
-                // 🔍 DEBUG: Estado do lead ANTES de passar pro orchestrator
-                console.log("🔍 [DEBUG PRE-ORCHESTRATOR] Lead sendo passado pro handleAutoReply:", {
+                console.log("🔍 [DEBUG POST-SAVE #2] Estado do lead DEPOIS do save:", {
                     leadId: lead._id,
                     pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
                     pendingPatientInfoStep: lead.pendingPatientInfoStep,
-                    pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
                 });
 
-                handleAutoReply(from, to, contentToSave, lead)
-                    .catch(err => console.error("⚠️ Auto-reply não crítico falhou:", err));
+                console.log("🧠 qualificationData atualizado:", {
+                    idade: lead.qualificationData?.extractedInfo?.idade,
+                    idadeRange: lead.qualificationData?.extractedInfo?.idadeRange,
+                    disponibilidade: lead.qualificationData?.extractedInfo?.disponibilidade,
+                });
+            } catch (e) {
+                console.warn("⚠️ Falha ao atualizar intelligence (não crítico):", e.message);
             }
+        } catch (updateError) {
+            console.error("⚠️ Erro ao atualizar interação:", updateError.message);
+        }
 
-            // 🔥 AUTO-AGENDADOR DE FOLLOW-UP (Amanda 2.0)
-            try {
+        const isRealText = contentToSave?.trim() && !contentToSave.startsWith("[");
+
+        // ✅ AMANDA 2.0 TRACKING (texto, áudio transcrito ou imagem descrita)
+        if ((type === "text" || type === "audio" || type === "image") && isRealText) {
+            handleResponseTracking(lead._id, contentToSave)
+                .catch(err => console.error("⚠️ Tracking não crítico falhou:", err));
+        }
+
+        // ✅ RESPOSTA AUTOMÁTICA (Amanda)
+        if ((type === "text" || type === "audio" || type === "image") && isRealText) {
+            console.log("🔍 [DEBUG PRE-ORCHESTRATOR] Lead sendo passado pro handleAutoReply:", {
+                leadId: lead._id,
+                pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
+                pendingPatientInfoStep: lead.pendingPatientInfoStep,
+                pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
+            });
+
+            handleAutoReply(from, to, contentToSave, lead)
+                .catch(err => console.error("⚠️ Auto-reply não crítico falhou:", err));
+        }
+
+        // 🔥 AUTO-AGENDADOR DE FOLLOW-UP (Amanda 2.0)
+        // ✅ FIX: agora a supressão só impede o auto-followup, sem quebrar o processamento da mensagem
+        try {
+            if (!suppressAutoFollowup) {
                 const freshLead = await Lead.findById(lead._id).lean();
 
                 const autoReplyOn = freshLead?.autoReplyEnabled !== false;
                 const manualActive = freshLead?.manualControl?.active === true;
 
                 if (autoReplyOn && !manualActive) {
-                    // Evita duplicar: follow-up futuro já agendado
                     const existing = await Followup.findOne({
                         lead: freshLead._id,
                         status: { $in: ["scheduled", "processing"] },
@@ -1305,7 +1317,7 @@ async function processInboundMessage(msg, value) {
 
                     if (!existing) {
                         await createSmartFollowupForLead(freshLead._id, {
-                            explicitScheduledAt: null, // deixa a Amanda decidir o melhor horário
+                            explicitScheduledAt: null,
                             objective: "reengajamento_inbound",
                             attempt: 1,
                         });
@@ -1314,36 +1326,27 @@ async function processInboundMessage(msg, value) {
                             leadId: String(freshLead._id),
                         });
                     } else {
-                        console.log(
-                            "ℹ️ Já existe follow-up futuro para este lead, não vou duplicar:",
-                            {
-                                leadId: String(freshLead._id),
-                                followupId: String(existing._id),
-                                status: existing.status,
-                                scheduledAt: existing.scheduledAt,
-                            }
-                        );
+                        console.log("ℹ️ Já existe follow-up futuro para este lead, não vou duplicar:", {
+                            leadId: String(freshLead._id),
+                            followupId: String(existing._id),
+                            status: existing.status,
+                            scheduledAt: existing.scheduledAt,
+                        });
                     }
                 } else {
-                    console.log(
-                        "ℹ️ Auto follow-up ignorado (manualControl ativo ou autoReply desativado)."
-                    );
+                    console.log("ℹ️ Auto follow-up ignorado (manualControl ativo ou autoReply desativado).");
                 }
-            } catch (autoFuError) {
-                console.error(
-                    "⚠️ Erro ao auto-agendar follow-up via inbound WhatsApp (não crítico):",
-                    autoFuError.message
-                );
             }
-
-
-            console.log("✅ Mensagem processada com sucesso:", wamid);
+        } catch (autoFuError) {
+            console.error("⚠️ Erro ao auto-agendar follow-up via inbound WhatsApp (não crítico):", autoFuError.message);
         }
+
+        console.log("✅ Mensagem processada com sucesso:", wamid);
     } catch (error) {
         console.error("❌ Erro CRÍTICO no processInboundMessage:", error);
     }
-
 }
+
 
 // ✅ FUNÇÕES AUXILIARES SEPARADAS
 async function handleResponseTracking(leadId, content) {
