@@ -637,6 +637,24 @@ export async function getOptimizedAmandaResponse({
     }
 
     const flags = detectAllFlags(text, lead, enrichedContext);
+    console.log("🚩 FLAGS DETECTADAS:", flags);
+
+    // 🔥 PRIORIDADE: PARCERIA / CURRÍCULO
+    if (flags.partnership) {
+        console.log("🤝 [PARTNERSHIP FLOW] Ativado");
+
+        return {
+            text: `Que bom seu interesse! 💚  
+
+Os currículos são recebidos exclusivamente por e-mail:
+📩 contato@clinicafonoinova.com.br  
+
+No assunto, coloque sua área de atuação (ex: Terapeuta Ocupacional).
+
+Em breve nossa equipe entra em contato 😊`
+        };
+    }
+
     // ===============================
     // ETAPA A - VALIDAÇÃO EMOCIONAL
     // ===============================
