@@ -666,7 +666,6 @@ Em breve nossa equipe entra em contato 😊`
 
     const userExpressedPain =
         flags?.hasPain ||
-        leadAnalysis?.extracted?.queixa ||
         /não anda|não fala|atraso|preocupado|preocupação|dificuldade/i.test(text);
 
     if (userExpressedPain && !lead?.meta?.painAcknowledged) {
