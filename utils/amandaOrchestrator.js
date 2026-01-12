@@ -407,6 +407,11 @@ export async function getOptimizedAmandaResponse({
         lead?.autoBookingContext?.handoffSentAt &&
         /^(ok|obrigad[oa]?|aguardo|t[aá]\s*bom|blz|certo|perfeito|valeu|show)$/i.test(text.trim())
     ) {
+        console.log("🤝 [HANDOFF]", {
+            reason: "sem_slot | erro | fluxo",
+            lead: lead._id
+        });
+
         console.log("[GUARD] Anti-spam: cliente confirmou, silenciando");
         return ensureSingleHeart("Perfeito! Qualquer dúvida, é só chamar 💚");
     }
@@ -467,7 +472,7 @@ export async function getOptimizedAmandaResponse({
         // 2️⃣ envia a mensagem de texto complementar
         await sendTextMessage({
             to: lead.contact.phone,
-            text: `Claro! 📍 Aqui está nossa localização:\n\n**${name}**\n${address}\n\n🗺️ ${url}`,
+            text: `Claro! 📍 Aqui está nossa localização:\n\n**${coords.name}**\n${coords.address}\n\n🗺️ ${coords.url}`,
             lead: lead._id,
             contactId: lead.contact._id,
             sentBy: "amanda",
@@ -632,6 +637,43 @@ export async function getOptimizedAmandaResponse({
     }
 
     const flags = detectAllFlags(text, lead, enrichedContext);
+    // ===============================
+    // ETAPA A - VALIDAÇÃO EMOCIONAL
+    // ===============================
+    const hasComplaint =
+        lead?.complaint ||
+        lead?.patientInfo?.complaint ||
+        lead?.autoBookingContext?.complaint ||
+        lead?.qualificationData?.extractedInfo?.queixa;
+
+    const userExpressedPain =
+        flags?.hasPain ||
+        leadAnalysis?.extracted?.queixa ||
+        /não anda|não fala|atraso|preocupado|preocupação|dificuldade/i.test(text);
+
+    if (userExpressedPain && !lead?.meta?.painAcknowledged) {
+
+        await safeLeadUpdate(lead._id, {
+            $set: { "meta.painAcknowledged": true }
+        }).catch(() => { });
+
+        return ensureSingleHeart(
+            "Entendo sua preocupação 💚\n\n" +
+            "Quando envolve desenvolvimento infantil isso realmente deixa a gente apreensivo.\n" +
+            "Você fez muito bem em buscar orientação cedo."
+        );
+    }
+
+    if (
+        /^[sS]im$/.test(text.trim()) &&
+        !lead?.autoBookingContext?.active &&
+        !SCHEDULING_REGEX.test(text)
+    ) {
+        return ensureSingleHeart(
+            "Perfeito 💚\n\n" +
+            "Me conta só mais um pouquinho pra eu te orientar certinho."
+        );
+    }
     if (lead?._id) {
         const $set = {};
         if (flags.topic) $set.topic = flags.topic; // ou "qualificationData.topic"
@@ -1269,6 +1311,23 @@ export async function getOptimizedAmandaResponse({
             if (preferPeriod && earliest) {
                 const hasPreferred = slotsCtx.all.some((s) => matchesPeriod(s, preferPeriod));
                 if (!hasPreferred) {
+                    // ===============================
+                    // PATCH 3 - NÃO CHUTAR HORÁRIO
+                    // ===============================
+                    if (
+                        !/^[A-Fa-f]$/.test(normalized.trim()) &&
+                        !/\b\d{1,2}:\d{2}\b/.test(text) &&
+                        !/\b(segunda|ter[çc]a|quarta|quinta|sexta|s[aá]bado|domingo)\b/i.test(text)
+                    ) {
+                        console.log("🛡️ [PATCH 3] Bloqueando chute de horário");
+
+                        return ensureSingleHeart(
+                            "Me diz certinho qual opção você prefere 😊\n" +
+                            "Pode responder com **A, B, C...**"
+                        );
+                    }
+
+
                     // 🛡️ GUARD PREMIUM — só ativa coleta operacional se houve escolha por LETRA
                     const choseByLetter = /^[A-Fa-f]$/.test(normalized.trim());
 
@@ -1508,6 +1567,20 @@ export async function getOptimizedAmandaResponse({
 
     const wantsScheduling = flags.wantsSchedule || flags.wantsSchedulingNow || isSchedulingLikeText || isInSchedulingFlow;
 
+    if (
+        flags.inSchedulingFlow &&
+        /^(sim|pode|ok|claro|fechado)$/i.test(text.trim())
+    ) {
+        flags.wantsSchedule = true;
+    }
+
+    console.log("🧠 [YES-CONTEXT]", {
+        text,
+        inSchedulingFlow: flags.inSchedulingFlow,
+        lastStage: lead?.stage,
+        hasPendingSlots: !!lead?.pendingSchedulingSlots,
+    });
+
     console.log("[ORCHESTRATOR] wantsScheduling:", wantsScheduling, "| isInSchedulingFlow:", isInSchedulingFlow);
 
     const primaryIntent = analysis?.intent?.primary;
@@ -1541,6 +1614,13 @@ export async function getOptimizedAmandaResponse({
 
         return ensureSingleHeart(enforceClinicScope(aiResponse, text));
     }
+
+    console.log("🚦 [SCHEDULING-GATE]", {
+        wantsScheduling,
+        shouldRunSchedulingFlow,
+        stage: lead?.stage,
+        flags,
+    });
 
     if (wantsScheduling && shouldRunSchedulingFlow) {
         const detectedTherapies = detectAllTherapies(text);
