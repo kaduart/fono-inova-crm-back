@@ -70,6 +70,9 @@ const leadSchema = new mongoose.Schema({
     type: {
       active: { type: Boolean, default: false },
       therapyArea: { type: String, default: null },
+      mappedTherapyArea: { type: String, default: null },
+      mappedSpecialties: { type: [String], default: [] },
+      mappedProduct: { type: String, default: null },
       lastOfferedSlots: {
         primary: { type: Object, default: null },
         alternativesSamePeriod: { type: Array, default: [] },
