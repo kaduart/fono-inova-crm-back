@@ -1306,6 +1306,15 @@ export const MANUAL_AMANDA = {
       "conforme as regras do contrato e a legislação de planos de saúde. " +
       "Muitas famílias fazem assim e conseguem reembolso parcial ou total. " +
       "Se quiser, posso te explicar rapidinho como funciona esse processo. 💚"
+    ),
+    "bradesco_reembolso": (
+      "Entendi 💚 Hoje a Fono Inova é **particular** (sem credenciamento), " +
+      "mas a gente emite **nota/recibo completo** para você pedir **reembolso no Bradesco Saúde**.\n\n" +
+      "✅ Normalmente é assim:\n" +
+      "1) Você solicita pelo **app Bradesco Saúde/Bradesco Seguros** (Serviços de Reembolso → Solicitar reembolso)\n" +
+      "2) Anexa **nota fiscal/recibo** + a **documentação médica necessária** (quando o plano pedir)\n" +
+      "3) O valor depende do seu contrato/tabela do plano.\n\n" +
+      "Se você quiser, me diga se é **Bradesco Saúde** mesmo e eu te oriento no que precisamos colocar na nota/recibo pra facilitar o reembolso 💚"
     )
   },
 

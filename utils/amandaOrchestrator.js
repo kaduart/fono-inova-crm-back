@@ -233,6 +233,23 @@ function buildTriageSchedulingMessage({
         ctx.complaint
     );
 
+
+    // 🧠 Também verifica dados da avaliação/encaminhamento
+    const extractedInfo = lead?.qualificationData?.extractedInfo || {};
+    if (extractedInfo.especialidade && !knownArea) {
+        knownArea = extractedInfo.especialidade;
+    }
+    if (extractedInfo.queixa && !knownComplaint) {
+        knownComplaint = true;
+    }
+    if (extractedInfo.idade && !knownProfile) {
+        knownProfile = true;
+    }
+    if (extractedInfo.disponibilidade && !knownPeriod) {
+        knownPeriod = true;
+    }
+
+
     const needsArea = !knownArea;
     const needsProfile = !knownProfile;
     const needsPeriod = !knownPeriod;
@@ -1457,12 +1474,37 @@ Em breve nossa equipe entra em contato 😊`
     const resolvedTherapyArea =
         flags.therapyArea || lead?.autoBookingContext?.mappedTherapyArea || lead?.therapyArea || null;
 
+    // -------------------------------------------------------------------
+    // 🔄 Sincronização de áreas (clínica vs. agenda)
+    // -------------------------------------------------------------------
     if (resolvedTherapyArea) {
+        // Define no contexto o que a IA vai usar pra conversa
         enrichedContext.therapyArea = resolvedTherapyArea;
-        if (lead?._id && lead?.therapyArea !== resolvedTherapyArea) {
-            Leads.findByIdAndUpdate(lead._id, { $set: { therapyArea: resolvedTherapyArea } }).catch(
-                () => { },
-            );
+
+        if (lead?._id) {
+            // 1️⃣ Área de agenda (usada pra slots)
+            Leads.findByIdAndUpdate(
+                lead._id,
+                {
+                    $set: {
+                        "autoBookingContext.mappedTherapyArea": resolvedTherapyArea,
+                        "autoBookingContext.therapyArea": resolvedTherapyArea,
+                        "autoBookingContext.active": true,
+                    },
+                },
+            ).catch(() => { });
+
+            // 2️⃣ Área clínica (só grava se vier de fonte explícita)
+            const canPersistClinical =
+                bookingProduct?._explicitArea === true ||
+                Boolean(getValidQualificationArea(lead));
+
+            if (canPersistClinical && lead?.therapyArea !== resolvedTherapyArea) {
+                Leads.findByIdAndUpdate(
+                    lead._id,
+                    { $set: { therapyArea: resolvedTherapyArea } },
+                ).catch(() => { });
+            }
         }
     }
 
@@ -1570,11 +1612,11 @@ Em breve nossa equipe entra em contato 😊`
         console.warn("[ORCHESTRATOR] leadIntelligence falhou no orquestrador:", err.message);
     }
 
-    const wantsPlan = /\b(unimed|plano|conv[eê]nio|ipasgo|amil)\b/i.test(text);
+    const wantsPlan = /\b(unimed|plano|conv[eê]nio|ipasgo|amil|bradesco)\b/i.test(text);
+
     const isHardPlanCondition =
-        /\b(s[oó]\s*se|apenas\s*se|somente\s*se|quero\s+continuar\s+se)\b.*\b(unimed|plano|conv[eê]nio)\b/i.test(
-            text,
-        );
+        /\b(s[oó]\s*se|apenas\s*se|somente\s*se|quero\s+continuar\s+se)\b.*\b(unimed|plano|conv[eê]nio|ipasgo|amil|bradesco)\b/i.test(text);
+
 
     if (wantsPlan && lead?.acceptedPrivateCare !== true) {
         if (isHardPlanCondition) {
@@ -1584,9 +1626,13 @@ Em breve nossa equipe entra em contato 😊`
                 }).catch(err => logSuppressedError('safeLeadUpdate', err));
         }
 
-        return ensureSingleHeart(
-            "Atendemos no particular e emitimos recibo/nota pra você tentar reembolso no plano. Quer que eu já te mostre os horários disponíveis?",
-        );
+        // 🩺 Bradesco — retorna texto específico de reembolso
+        if (/\bbradesco\s*(sa[úu]de)?\b/i.test(text)) {
+            return ensureSingleHeart(getManual("planos_saude", "bradesco_reembolso"));
+        }
+
+        // Demais convênios → resposta padrão
+        return ensureSingleHeart(getManual("planos_saude", "credenciamento"));
     }
 
     // 🔀 Atualiza estágio
@@ -1970,6 +2016,20 @@ Em breve nossa equipe entra em contato 😊`
             updateData.ageGroup = getAgeGroup(ageDetected.age, ageDetected.unit);
             console.log("[TRIAGEM] ✅ Idade detectada e salva:", ageDetected.age, ageDetected.unit);
         }
+
+        // ✅ Se veio "Imagem enviada: ... solicitação para avaliação neuropsicológica"
+        if (/imagem enviada:/i.test(text) && /(avalia[çc][aã]o\s+neuro|neuropsico)/i.test(text)) {
+            updateData["qualificationData.extractedInfo.especialidade"] = "avaliacao_neuropsicologica";
+            updateData["qualificationData.extractedInfo.queixa"] = "Encaminhamento para avaliação neuropsicológica.";
+            updateData["qualificationData.extractedInfo.hasMedicalReferral"] = true;
+
+            // e já seta a área coerente com seu mapper (neuropsico → psicologia)
+            updateData.therapyArea = "psicologia";
+            updateData["autoBookingContext.mappedTherapyArea"] = "psicologia";
+            updateData["autoBookingContext.therapyArea"] = "psicologia";
+            updateData["autoBookingContext.active"] = true;
+        }
+
 
         // ✅ FIX: Detecta área - PRIORIZA qualificationData.extractedInfo.especialidade
         const qualificationArea = getValidQualificationArea(lead);
@@ -2365,17 +2425,11 @@ function tryManualResponse(normalizedText, context = {}, flags = {}) {
         return addrText;
     }
 
-    // 💳 "queria/queria pelo plano"
-    if (
-        /\b(queria|preferia|quero)\b.*\b(plano|conv[eê]nio|unimed|ipasgo|amil)\b/i.test(
-            normalizedText,
-        )
-    ) {
-        return getManual("planos_saude", "credenciamento");
-    }
-
-    // 🩺 PERGUNTA GERAL SOBRE PLANO/CONVÊNIO
-    if (/\b(plano|conv[eê]nio|unimed|ipasgo|amil)\b/.test(normalizedText)) {
+    // 💳🩺 PLANO / CONVÊNIO (inclui Bradesco)
+    if (/\b(plano|conv[eê]nio|unimed|ipasgo|amil|bradesco)\b/i.test(normalizedText)) {
+        if (/\bbradesco\b/i.test(normalizedText)) {
+            return getManual("planos_saude", "bradesco_reembolso");
+        }
         return getManual("planos_saude", "credenciamento");
     }
 
