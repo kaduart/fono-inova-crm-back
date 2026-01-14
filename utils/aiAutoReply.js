@@ -4,7 +4,7 @@ import { redisConnection as redis } from "../config/redisConnection.js";
 // evita responder 2x para o mesmo número em poucos segundos (latência/socket/etc.)
 export async function aiShouldReply(phone, ttlSeconds = 3) { // ✅ Era 20, agora é 3
     if (!phone) return false;
-    const key = `ai:auto:${phone}`;
+    const key = `ai:msg:${messageId || phone}`;
     const ok = await redis.set(key, "1", "NX", "EX", ttlSeconds);
     return !!ok;
 }

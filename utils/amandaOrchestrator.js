@@ -462,6 +462,13 @@ export async function getOptimizedAmandaResponse({
         hasLeadId: !!lead?._id,
     });
 
+    // ----------------------------------------------------------
+    // 🎯 MELHORIA: evita mostrar menu 2× se slot já foi escolhido
+    // ----------------------------------------------------------
+    if (lead?.pendingChosenSlot && !lead?.pendingPatientInfoForScheduling) {
+        return ensureSingleHeart("Já tenho seu horário reservado! Só falta o nome completo do paciente 💚");
+    }
+
     const asksLocation = /(endere[çc]o|onde\s+fica|localiza(?:ç|c)(?:a|ã)o)/i.test(text.normalize('NFC'));
     if (asksLocation) {
         const coords = {
@@ -2113,6 +2120,11 @@ Em breve nossa equipe entra em contato 😊`
 
         // Se ainda falta algo, pergunta (1 pergunta por vez)
         if (!hasProfileNow || !hasAreaNow || !hasPeriodNow) {
+            if (lead?.qualificationData?.extractedInfo?.idade) {
+                flags.mentionsChild = true;
+                enrichedContext.ageGroup = getAgeGroup(lead.qualificationData.extractedInfo.idade);
+            }
+
             return ensureSingleHeart(
                 buildTriageSchedulingMessage({ flags, bookingProduct, ctx: enrichedContext, lead }),
             );
@@ -2304,6 +2316,14 @@ Em breve nossa equipe entra em contato 😊`
     const genericAnswer = await callAmandaAIWithContext(text, lead, enrichedContext, flags, analysis);
 
     const finalScoped = enforceClinicScope(genericAnswer, text);
+
+    // ----------------------------------------------------------
+    // 🎯 MELHORIA: nunca fica sem resposta
+    // ----------------------------------------------------------
+    if (!textResp || textResp.trim() === "") {
+        textResp = "Entendi! 💚 Se quiser, posso te mostrar como funciona a avaliação ou marcar uma visita — o que faz mais sentido pra você?";
+    }
+
     return ensureSingleHeart(finalScoped);
 }
 
