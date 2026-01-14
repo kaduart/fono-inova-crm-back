@@ -39,13 +39,15 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
     // ======================================================
     // 🧩 PATCH: Neuropsico e TDAH enriquecidos
     // ======================================================
+    const primaryArea = flags.therapyArea || flags.topic || lead?.therapyArea;
+
     if (!primaryArea && text?.match(/(encaminhament|solicita(ç|c)(a|ã)o).{0,40}neuropsic/i)) {
       primaryArea = "neuropsicologia";
     }
 
     if (text?.match(/\b(foco|aten[çc][aã]o|concentra[çc][aã]o)\b/i)) {
       if (!primaryArea) primaryArea = "psicologia";
-      flags.push("tdah");
+      flags.tdah = true; // ✅ CORRETO
     }
 
     if (text?.match(/refor[çc]o\s+escolar/i)) {
