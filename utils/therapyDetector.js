@@ -6,6 +6,8 @@ export const THERAPY_SPECIALTIES = {
         patterns: [
             /neuropsic(o|ó)log(a|ia|ica)/i,
             /avalia(ç|c)(a|ã)o\s+(completa|cognitiva|conhecimento)/i,
+            /avalia(ç|c)(a|ã)o\s+neuropsic(o|ó)log/i,
+            /(solicita(ç|c)(a|ã)o|encaminhament(o|a)).{0,40}neuropsic/i,
             /laudo\s+psicol(ó|o)gico/i
         ]
     },
@@ -86,6 +88,7 @@ export function normalizeTherapyTerms(text = "") {
         .replace(/fono\s+inova/gi, '')
         .replace(/neuropsic(o|ó)log(a|ia|ica)/gi, 'neuropsicologia')
         .replace(/neuropsi/gi, 'neuropsicologia')
+        .replace(/neuro[\s-]*psico/gi, 'neuropsicologia')
         .replace(/fonoaudi(o|ó)log(a|o)/gi, 'fonoaudiologia');
 }
 
@@ -127,7 +130,6 @@ export function detectAllTherapies(text = "") {
         /\bpeate\b/i,
         /\bteste\s+da\s+orelhinha\b/i,
         /\btriagem\s+auditiva\b/i,
-        /\blaudo\b/i,
         /\bhiperacusia\b/i
     ];
 
@@ -193,7 +195,7 @@ export function isAskingAboutEquivalence(text = "") {
 export function isTDAHQuestion(text) {
     const normalized = text.toLowerCase();
 
-    const tdahKeywords = /\b(tdah|tdha|hiperativ|deficit.*aten[çc][aã]o|desaten[çc][aã]o|impulsiv)\b/i;
+    const tdahKeywords = /\b(t\s*d\s*a\s*h|tdah|tdha|tdh|hiperativ|deficit.*aten[çc][aã]o|desaten[çc][aã]o|impulsiv)\b/i;
     const treatmentKeywords = /\b(trata|ajud|fazer|como.*funciona|atend|consult|terap)\b/i;
 
     return tdahKeywords.test(normalized) && treatmentKeywords.test(normalized);

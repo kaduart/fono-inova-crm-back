@@ -25,11 +25,13 @@ import {
     formatSlot,
     pickSlotFromUserReply
 } from "../services/amandaBookingService.js";
-import { getLatestInsights } from "../services/amandaLearningService.js"
+import { getLatestInsights } from "../services/amandaLearningService.js";
 import { buildContextPack } from "../services/intelligence/ContextPack.js";
+import { buildValueAnchoredClosure, determinePsychologicalFollowup } from "../services/intelligence/smartFollowup.js";
 import { nextStage } from "../services/intelligence/stageEngine.js";
 import manageLeadCircuit from "../services/leadCircuitService.js";
 import { handleInboundMessageForFollowups } from "../services/responseTrackingService.js";
+import { sendLocationMessage, sendTextMessage } from "../services/whatsappService.js";
 import {
     buildDynamicSystemPrompt,
     buildUserPromptWithValuePitch,
@@ -42,8 +44,6 @@ import { extractPreferredDateFromText } from "./dateParser.js";
 import ensureSingleHeart from "./helpers.js";
 import { extractAgeFromText, extractBirth, extractName, extractPeriodFromText } from "./patientDataExtractor.js";
 import { buildSlotMenuMessage } from "./slotMenuBuilder.js";
-import { sendLocationMessage, sendTextMessage } from "../services/whatsappService.js";
-import { buildValueAnchoredClosure, determinePsychologicalFollowup } from "../services/intelligence/smartFollowup.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
@@ -159,6 +159,7 @@ function getAgeGroup(age, unit) {
     if (age <= 17) return "adolescente";
     return "adulto";
 }
+
 
 // ============================================================================
 // 🧭 STATE MACHINE DE FUNIL
@@ -656,6 +657,18 @@ export async function getOptimizedAmandaResponse({
     const flags = detectAllFlags(text, lead, enrichedContext);
     console.log("🚩 FLAGS DETECTADAS:", flags);
 
+    // dentro de getOptimizedAmandaResponse(), depois de detectar área terapêutica:
+    if (
+        (lead?.therapyArea === "psicologia" || flags?.therapyArea === "psicologia") &&
+        (lead?.patientInfo?.age > 16 ||
+            lead?.qualificationData?.extractedInfo?.idade > 16)
+    ) {
+        return ensureSingleHeart(
+            "Atualmente atendemos **psicologia apenas infantil e adolescentes até 16 anos** 💚.\n" +
+            "Mas temos outras áreas que podem ajudar, como **fonoaudiologia** ou **terapia ocupacional**. Quer que eu te explique mais?"
+        );
+    }
+
     // ===============================
     // 🔒 CONTEXTO SALVO NO LEAD
     // ===============================
@@ -825,7 +838,7 @@ Em breve nossa equipe entra em contato 😊`
         // Injeta no systemPrompt dinâmico
         enrichedContext.customInstruction = [
             enrichedContext.toneMode === "premium"
-                ? DYNAMIC_MODULES.premiumModeContext
+                ? DYNAMIC_MODULES.consultoriaModeContext
                 : DYNAMIC_MODULES.acolhimentoModeContext,
             enrichedContext.customInstruction,
         ]
@@ -2773,7 +2786,7 @@ async function callAmandaAIWithContext(
     let toneInstruction = "";
 
     if (toneMode === "premium") {
-        toneInstruction = DYNAMIC_MODULES.premiumModeContext;
+        toneInstruction = DYNAMIC_MODULES.consultoriaModeContext;
     } else {
         toneInstruction = DYNAMIC_MODULES.acolhimentoModeContext;
     }
