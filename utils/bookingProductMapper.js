@@ -36,6 +36,23 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
 
     const therapyArea = therapyMap[primaryTherapy] || "fonoaudiologia";
 
+    // ======================================================
+    // 🧩 PATCH: Neuropsico e TDAH enriquecidos
+    // ======================================================
+    if (!primaryArea && text?.match(/(encaminhament|solicita(ç|c)(a|ã)o).{0,40}neuropsic/i)) {
+      primaryArea = "neuropsicologia";
+    }
+
+    if (text?.match(/\b(foco|aten[çc][aã]o|concentra[çc][aã]o)\b/i)) {
+      if (!primaryArea) primaryArea = "psicologia";
+      flags.push("tdah");
+    }
+
+    if (text?.match(/refor[çc]o\s+escolar/i)) {
+      if (!primaryArea) primaryArea = "psicopedagogia";
+    }
+
+
     return {
       therapyArea,
       specialties: [primaryTherapy],

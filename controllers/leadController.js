@@ -50,7 +50,7 @@ export const createLeadFromAd = async (req, res) => {
         const phoneE164 = normalizeE164BR(phone);
 
         const existing = await Lead.findOne({ "contact.phone": phoneE164 });
-        
+
         if (existing) {
             console.log(`⚠️ Lead duplicado: ${safeName} (${phoneE164})`);
             return res.status(409).json({
@@ -59,9 +59,6 @@ export const createLeadFromAd = async (req, res) => {
                 leadId: existing._id,
             });
         }
-
-        await Lead.insertMany([leadData]);
-
 
         let initialScore = 60;
         if (origin?.toLowerCase().includes("google")) initialScore = 70;
