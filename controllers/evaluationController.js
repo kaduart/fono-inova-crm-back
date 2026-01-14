@@ -28,7 +28,7 @@ const saveEvolutionHistory = async (evolutionId, userId, action, previousData = 
 const calculateFieldChanges = (oldData, newData) => {
   const changes = [];
   const fields = ['treatmentStatus', 'plan', 'therapeuticPlan', 'observations'];
-  
+
   fields.forEach(field => {
     if (JSON.stringify(oldData[field]) !== JSON.stringify(newData[field])) {
       changes.push({
@@ -38,7 +38,7 @@ const calculateFieldChanges = (oldData, newData) => {
       });
     }
   });
-  
+
   return changes;
 };
 
@@ -114,9 +114,7 @@ export const createEvaluation = async (req, res) => {
     // Derivar types dos sliders
     const derivedTypes = normalizedAreas.filter(a => a.score >= 1).map(a => a.id);
     const finalEvaluationTypes = Array.isArray(evaluationTypes) && evaluationTypes.length
-      ? evaluationTypes.filter(type =>
-        ['language', 'motor', 'cognitive', 'behavior', 'social'].includes(type)
-      )
+      ? evaluationTypes.map(type => String(type).trim()).filter(Boolean)
       : derivedTypes;
 
     // ========== PROCESSAR PLANO TERAPÊUTICO ==========
@@ -140,7 +138,7 @@ export const createEvaluation = async (req, res) => {
           name: protocolData.name,
           customNotes: therapeuticPlan?.protocol?.customNotes || ''
         } : (therapeuticPlan?.protocol || {}),
-        
+
         objectives: Array.isArray(therapeuticPlan?.objectives)
           ? therapeuticPlan.objectives.map(obj => ({
             area: obj.area,
@@ -153,7 +151,7 @@ export const createEvaluation = async (req, res) => {
             notes: obj.notes || ''
           }))
           : [],
-        
+
         interventions: Array.isArray(therapeuticPlan?.interventions)
           ? therapeuticPlan.interventions.map(int => ({
             description: int.description,
@@ -164,11 +162,11 @@ export const createEvaluation = async (req, res) => {
             notes: int.notes || ''
           }))
           : [],
-        
-        reviewDate: therapeuticPlan?.reviewDate 
+
+        reviewDate: therapeuticPlan?.reviewDate
           ? new Date(therapeuticPlan.reviewDate)
           : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // +30 dias
-        
+
         planVersion: 1,
         versionHistory: []
       };
@@ -200,19 +198,19 @@ export const createEvaluation = async (req, res) => {
       activeProtocols: activeProtocolCodes
     };
 
-    console.log('💾 Criando avaliação:', { 
-      patient, 
+    console.log('💾 Criando avaliação:', {
+      patient,
       hasTherapeuticPlan: !!processedTherapeuticPlan,
-      protocolCode: activeProtocolCodes[0] 
+      protocolCode: activeProtocolCodes[0]
     });
 
     const evolution = new Evolution(evaluationData);
-    
+
     // Calcular progresso dos objetivos
     if (evolution.therapeuticPlan?.objectives) {
       evolution.calculateObjectivesProgress();
     }
-    
+
     await evolution.save();
 
     // Salvar histórico
@@ -355,7 +353,7 @@ export const updateEvaluation = async (req, res) => {
 
     // Detectar mudança de plano terapêutico
     const planChanged = JSON.stringify(previousData.therapeuticPlan) !== JSON.stringify(updatedData.therapeuticPlan);
-    
+
     if (planChanged && updatedData.therapeuticPlan) {
       evolution.incrementPlanVersion(
         req.user.id,
@@ -428,12 +426,12 @@ export const getPatientProgress = async (req, res) => {
   const { patientId } = req.params;
 
   try {
-    const evolutions = await Evolution.find({ 
+    const evolutions = await Evolution.find({
       patient: patientId,
       'therapeuticPlan.objectives': { $exists: true, $not: { $size: 0 } }
     })
-    .populate('doctor', 'fullName specialty')
-    .sort({ date: 1 });
+      .populate('doctor', 'fullName specialty')
+      .sort({ date: 1 });
 
     if (!evolutions.length) {
       return res.status(200).json({
@@ -470,7 +468,7 @@ export const getPatientProgress = async (req, res) => {
         const lastScore = areaHistory[areaHistory.length - 1].score;
         const progress = lastScore - firstScore;
         const remaining = objective.targetScore - lastScore;
-        
+
         if (progress > 0) {
           const daysElapsed = (areaHistory[areaHistory.length - 1].date - areaHistory[0].date) / (1000 * 60 * 60 * 24);
           const daysPerPoint = daysElapsed / progress;
@@ -525,9 +523,9 @@ export const getPatientProgress = async (req, res) => {
 
   } catch (error) {
     console.error('Erro ao buscar progresso:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Erro ao buscar progresso do paciente',
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -545,12 +543,12 @@ export const getPatientEvolutionHistory = async (req, res) => {
 
     const evolutionIds = evolutions.map(ev => ev._id);
 
-    const history = await EvolutionHistory.find({ 
-      evolutionId: { $in: evolutionIds } 
+    const history = await EvolutionHistory.find({
+      evolutionId: { $in: evolutionIds }
     })
-    .populate('changedBy', 'fullName email')
-    .populate('evolutionId', 'date specialty')
-    .sort({ createdAt: -1 });
+      .populate('changedBy', 'fullName email')
+      .populate('evolutionId', 'date specialty')
+      .sort({ createdAt: -1 });
 
     res.status(200).json(history);
   } catch (error) {

@@ -44,7 +44,7 @@ const evolutionSchema = new mongoose.Schema({
     },
     evaluationTypes: [{
         type: String,
-        enum: ['language', 'motor', 'cognitive', 'behavior', 'social']
+        trim: true
     }],
     metrics: [{
         name: String,
@@ -94,8 +94,8 @@ const evolutionSchema = new mongoose.Schema({
         objectives: [{
             area: {
                 type: String,
-                enum: ['language', 'motor', 'cognitive', 'behavior', 'social'],
-                required: true
+                required: true,
+                trim: true
             },
             description: {
                 type: String,
