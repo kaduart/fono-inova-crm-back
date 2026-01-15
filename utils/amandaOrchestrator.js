@@ -429,6 +429,31 @@ export async function getOptimizedAmandaResponse({
                     schedulingIntentActive: lead.autoBookingContext?.schedulingIntentActive || false,
                     stage: lead.stage
                 });
+
+                // =========================================================================
+                // 🆕 ETAPA 0: VALIDAÇÃO EMOCIONAL (após refresh, lead atualizado)
+                // =========================================================================
+                const userExpressedPain =
+                    /não anda|não fala|atraso|preocupado|preocupação|dificuldade|problema|tento|tentamos|demora|atrasado/i.test(text);
+
+                const hasComplaint =
+                    lead?.complaint ||
+                    lead?.patientInfo?.complaint ||
+                    lead?.autoBookingContext?.complaint ||
+                    lead?.qualificationData?.extractedInfo?.queixa;
+
+                if ((userExpressedPain || hasComplaint) && lead?._id && !lead?.qualificationData?.painAcknowledged) {
+                    await safeLeadUpdate(lead._id, {
+                        $set: { "qualificationData.painAcknowledged": true }
+                    }).catch(() => { });
+
+                    return ensureSingleHeart(
+                        "Entendo sua preocupação 💚\n\n" +
+                        "Quando envolve desenvolvimento infantil isso realmente deixa a gente apreensivo.\n" +
+                        "Você fez muito bem em buscar orientação cedo."
+                    );
+                }
+
             } else {
                 console.warn("⚠️ [REFRESH] Lead não encontrado no banco:", lead._id);
             }
