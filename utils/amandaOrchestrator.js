@@ -387,6 +387,25 @@ export async function getOptimizedAmandaResponse({
 
     console.log(`🎯 [ORCHESTRATOR] Processando: "${text}"`);
 
+    // =========================================================================
+    // 🆕 ETAPA 0: VALIDAÇÃO EMOCIONAL SEMPRE PRIMEIRO
+    // =========================================================================
+    const userExpressedPain =
+        /não anda|não fala|atraso|preocupado|preocupação|dificuldade|problema|tento|tentamos|demora|atrasado/i.test(text);
+
+    if (userExpressedPain && lead?._id && !lead?.qualificationData?.painAcknowledged) {
+        await safeLeadUpdate(lead._id, {
+            $set: { "qualificationData.painAcknowledged": true }
+        }).catch(() => { });
+
+        return ensureSingleHeart(
+            "Entendo sua preocupação 💚\n\n" +
+            "Quando envolve desenvolvimento infantil isso realmente deixa a gente apreensivo.\n" +
+            "Você fez muito bem em buscar orientação cedo."
+        );
+    }
+
+
     // ➕ integrar inbound do chat com followups
     if (lead?._id) {
         handleInboundMessageForFollowups(lead._id).catch((err) =>
@@ -762,11 +781,8 @@ Em breve nossa equipe entra em contato 😊`
         lead?.autoBookingContext?.complaint ||
         lead?.qualificationData?.extractedInfo?.queixa;
 
-    const userExpressedPain =
-        flags?.hasPain ||
-        /não anda|não fala|atraso|preocupado|preocupação|dificuldade/i.test(text);
 
-    if (userExpressedPain && !lead?.qualificationData?.painAcknowledged) {
+    if ((userExpressedPain || hasComplaint) && !lead?.qualificationData?.painAcknowledged) {
 
         await safeLeadUpdate(lead._id, {
             $set: { "qualificationData.painAcknowledged": true }
