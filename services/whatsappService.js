@@ -3,10 +3,10 @@ import dotenv from "dotenv";
 import fetch from "node-fetch";
 import ChatContext from "../models/ChatContext.js";
 import Contact from "../models/Contacts.js";
+import Lead from "../models/Leads.js"; // ajuste o path
 import Message from "../models/Message.js";
 import { getMetaToken } from "../utils/metaToken.js";
 import { normalizeE164BR } from "../utils/phone.js";
-import Lead from "../models/Leads.js"; // ajuste o path
 
 dotenv.config();
 
@@ -350,29 +350,24 @@ export async function sendTemplateMessage({
 
 
 /** 💬 Envia texto */
+/** 💬 Envia texto COM TIMEOUT E RETRY */
 export async function sendTextMessage({
     to,
     text,
     lead,
-    contactId = null,         // ← passa o contact._id quando tiver
-    patientId = null,         // ← se estiver vinculado a um paciente
-    sentBy = "amanda",        // default: Amanda respondeu sozinha
-    userId = null,            // quando vier de usuário humano, passa o id aqui
-    formatMode = "auto",      // "auto" | "preserve" | "bullets"
+    contactId = null,
+    patientId = null,
+    sentBy = "amanda",
+    userId = null,
+    formatMode = "auto",
 }) {
-    // 🔒 TRAVA CENTRAL: se lead está em manual, bloqueia qualquer coisa que não seja "manual"
-    // (isso impede Amanda/automação de enviar enquanto manual estiver ativo)
+    // 🔒 Validação de controle manual (já existe, mantenha)
     if (lead && sentBy !== "manual") {
         const leadDoc = await Lead.findById(lead)
             .select("manualControl.active")
             .lean();
-
         if (leadDoc?.manualControl?.active) {
             console.log(`⏸️ Envio bloqueado (manual ativo). sentBy=${sentBy} lead=${lead}`);
-
-            // opcional: registrar tentativa bloqueada (se você quiser rastrear)
-            // await registerMessage({ ... status: "skipped" ... })
-
             return { skipped: true, reason: "manual_control_active" };
         }
     }
@@ -382,7 +377,6 @@ export async function sendTextMessage({
 
     const phone = normalizeE164BR(to);
     const url = `${META_URL}/${PHONE_ID}/messages`;
-
     const formattedText = formatWhatsAppText(text, { mode: formatMode });
 
     const body = {
@@ -392,44 +386,122 @@ export async function sendTextMessage({
         text: { body: formattedText },
     };
 
-    const res = await fetch(url, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-    });
-    const data = await res.json();
+    // ✅ NOVO: Timeout de 5 segundos + Retry 3 vezes
+    const MAX_RETRIES = 3;
+    const TIMEOUT_MS = 5000;
 
-    const waMessageId = data?.messages?.[0]?.id || null;
-    const now = new Date();
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    // 🔁 Usa SEMPRE o registro centralizado
-    await registerMessage({
-        leadId: lead,
-        contactId,
-        patientId,
-        direction: "outbound",
-        text,
-        type: "text",
-        status: res.ok ? "sent" : "failed",
-        waMessageId,
-        timestamp: now,
-        to: phone,
-        from: PHONE_ID,
-        metadata: {
-            sentBy,
-            userId,
-        },
-    });
+        try {
+            console.log(`📤 [WhatsApp] Tentativa ${attempt}/${MAX_RETRIES} para ${phone}`);
 
-    if (!res.ok) {
-        console.error("❌ Erro WhatsApp:", data.error);
-        throw new Error(data.error?.message || "Erro ao enviar mensagem WhatsApp");
+            const res = await fetch(url, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(body),
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+
+            const data = await res.json();
+            const waMessageId = data?.messages?.[0]?.id || null;
+
+            // ✅ SUCESSO: Registra e retorna
+            if (res.ok) {
+                await registerMessage({
+                    leadId: lead,
+                    contactId,
+                    patientId,
+                    direction: "outbound",
+                    text,
+                    type: "text",
+                    status: "sent",
+                    waMessageId,
+                    timestamp: new Date(),
+                    to: phone,
+                    from: PHONE_ID,
+                    metadata: { sentBy, userId },
+                });
+
+                console.log(`✅ Mensagem enviada com sucesso (tentativa ${attempt})`);
+                return data;
+            }
+
+            // ❌ ERRO RECUPERÁVEL: Rate limit, servidor ocupado
+            const isRetryable = [429, 500, 503, 504].includes(res.status);
+            if (isRetryable && attempt < MAX_RETRIES) {
+                console.warn(`⚠️ Erro ${res.status} (recuperável). Tentando novamente...`);
+                await new Promise(resolve => setTimeout(resolve, attempt * 1000)); // Backoff
+                continue;
+            }
+
+            // ❌ ERRO FATAL: Registra falha e lança
+            await registerMessage({
+                leadId: lead,
+                contactId,
+                patientId,
+                direction: "outbound",
+                text,
+                type: "text",
+                status: "failed",
+                waMessageId: null,
+                timestamp: new Date(),
+                to: phone,
+                from: PHONE_ID,
+                metadata: {
+                    sentBy,
+                    userId,
+                    error: data.error,
+                    attempt
+                },
+            });
+
+            throw new Error(`WhatsApp API error: ${res.status} - ${JSON.stringify(data.error)}`);
+
+        } catch (error) {
+            clearTimeout(timeoutId);
+
+            // Timeout ou erro de rede
+            if (error.name === 'AbortError') {
+                console.error(`⏱️ Timeout na tentativa ${attempt}`);
+            } else {
+                console.error(`❌ Erro na tentativa ${attempt}:`, error.message);
+            }
+
+            // Última tentativa: registra falha e re-lança
+            if (attempt === MAX_RETRIES) {
+                await registerMessage({
+                    leadId: lead,
+                    contactId,
+                    patientId,
+                    direction: "outbound",
+                    text,
+                    type: "text",
+                    status: "failed",
+                    waMessageId: null,
+                    timestamp: new Date(),
+                    to: phone,
+                    from: PHONE_ID,
+                    metadata: {
+                        sentBy,
+                        userId,
+                        error: error.message,
+                        attempt: MAX_RETRIES
+                    },
+                });
+
+                throw error;
+            }
+
+            // Aguarda antes de tentar novamente (backoff exponencial)
+            await new Promise(resolve => setTimeout(resolve, attempt * 1500));
+        }
     }
-
-    return data;
 }
-
 
