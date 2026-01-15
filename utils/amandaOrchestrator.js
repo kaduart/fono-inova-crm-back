@@ -633,12 +633,7 @@ export async function getOptimizedAmandaResponse({
     }
 
     // Normaliza fonte única de dados do paciente
-    const patientAge = patientAge || null;
-
-    const patientAgeGroup = lead?.ageGroup ||
-        (patientAge ? (patientAge < 12 ? "crianca" : patientAge < 18 ? "adolescente" : "adulto") : null);
-
-    const therapyAreaUnified = therapyAreaUnified;
+    const patientAge = lead?.patientInfo?.age || null;
 
     const baseContext = lead?._id
         ? await enrichLeadContext(lead._id)
@@ -2177,12 +2172,18 @@ Em breve nossa equipe entra em contato 😊`
         console.log("[ORCHESTRATOR] Buscando slots para:", { therapyAreaForSlots, preferredPeriod });
 
         try {
-            const availableSlots = await findAvailableSlots({
+            const slotsPromise = findAvailableSlots({
                 therapyArea: therapyAreaForSlots,
                 preferredPeriod,
                 daysAhead: 30,
                 maxOptions: 2,
             });
+
+            const timeout = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Timeout')), 5000)
+            );
+
+            const availableSlots = await Promise.race([slotsPromise, timeout]);
 
             if (!availableSlots?.primary) {
                 // Tenta sem filtro de período
@@ -2276,7 +2277,15 @@ Em breve nossa equipe entra em contato 😊`
             );
 
         } catch (err) {
-            console.error("❌ [ORCHESTRATOR] Erro ao buscar slots:", err?.message || err);
+            console.error("❌ [CRITICAL] Falha ao buscar slots:", {
+                error: err.message,
+                stack: err.stack,
+                leadId: lead?._id,
+                therapyArea: therapyAreaForSlots,
+                timestamp: new Date().toISOString()
+            });
+
+            // Fallback que não quebra o fluxo
             return ensureSingleHeart("Tive um probleminha ao checar os horários agora 😕 Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor?");
         }
     }
