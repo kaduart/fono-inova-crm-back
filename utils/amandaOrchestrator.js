@@ -407,6 +407,8 @@ export async function getOptimizedAmandaResponse({
                     pendingPatientInfoStep: lead.pendingPatientInfoStep,
                     pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
                     pendingSchedulingSlots: lead.pendingSchedulingSlots?.primary ? "SIM" : "NÃO",
+                    schedulingIntentActive: lead.autoBookingContext?.schedulingIntentActive || false,
+                    stage: lead.stage
                 });
             } else {
                 console.warn("⚠️ [REFRESH] Lead não encontrado no banco:", lead._id);
@@ -629,6 +631,14 @@ export async function getOptimizedAmandaResponse({
             recentResponses.delete(oldest[0]);
         }
     }
+
+    // Normaliza fonte única de dados do paciente
+    const patientAge = patientAge || null;
+
+    const patientAgeGroup = lead?.ageGroup ||
+        (patientAge ? (patientAge < 12 ? "crianca" : patientAge < 18 ? "adolescente" : "adulto") : null);
+
+    const therapyAreaUnified = therapyAreaUnified;
 
     const baseContext = lead?._id
         ? await enrichLeadContext(lead._id)
@@ -1681,7 +1691,9 @@ Em breve nossa equipe entra em contato 😊`
         lead?.pendingPreferredPeriod ||
         lead?.autoBookingContext?.awaitingPeriodChoice ||
         lead?.patientInfo?.complaint ||
-        lead?.autoBookingContext?.complaint
+        lead?.autoBookingContext?.complaint ||
+        lead?.autoBookingContext?.schedulingIntentActive ||
+        lead?.stage === "interessado_agendamento"
     );
 
     const inActiveSchedulingState = !!(
@@ -1701,11 +1713,10 @@ Em breve nossa equipe entra em contato 😊`
         /\b(agenda|agendar|marcar|hor[aá]rio|data|vaga|dispon[ií]vel|essa\s+semana|semana\s+que\s+vem)\b/i.test(text)
     );
 
-    const shouldRunSchedulingFlow = inActiveSchedulingState || schedulingSignalNow;
+    const shouldRunSchedulingFlow = inActiveSchedulingState || schedulingSignalNow || isInSchedulingFlow;
 
-
-    const wantsScheduling = flags.wantsSchedule || flags.wantsSchedulingNow || isSchedulingLikeText || isInSchedulingFlow;
-
+    const persistedIntent = lead?.autoBookingContext?.schedulingIntentActive === true;
+    const wantsScheduling = flags.wantsSchedule || flags.wantsSchedulingNow || persistedIntent || isSchedulingLikeText || isInSchedulingFlow;
     if (
         flags.inSchedulingFlow &&
         /^(sim|pode|ok|claro|fechado)$/i.test(text.trim())
@@ -1791,6 +1802,25 @@ Em breve nossa equipe entra em contato 😊`
             lead?.qualificationData?.extractedInfo?.disponibilidade;
 
         console.log("[BLOCO_INICIAL] hasArea:", hasArea, "| hasAge:", hasAge, "| hasPeriod:", hasPeriod, "| hasValidLeadArea:", hasValidLeadArea);
+
+        // 🆕 Salva que o fluxo de agendamento foi iniciado
+        if (lead?._id && !lead?.autoBookingContext?.schedulingIntentActive) {
+            const saveResult = await safeLeadUpdate(lead._id, {
+                $set: {
+                    "autoBookingContext.schedulingIntentActive": true,
+                    stage: "interessado_agendamento"
+                }
+            }).catch(err => {
+                console.error("❌ [SCHEDULING-INIT] Erro ao salvar:", err.message);
+                return null;
+            });
+            if (saveResult) {
+                console.log("✅ [SCHEDULING-INIT] Intenção persistida:", {
+                    stage: saveResult.stage,
+                    schedulingIntentActive: saveResult.autoBookingContext?.schedulingIntentActive
+                });
+            }
+        }
 
         // 1) falta área/queixa
         const instrComplaint = ci(
@@ -2085,18 +2115,17 @@ Em breve nossa equipe entra em contato 😊`
         }
 
         // Salva no banco se tiver algo pra salvar
+        // Salva no banco e recarrega lead imediatamente
         if (Object.keys(updateData).length > 0) {
             await safeLeadUpdate(lead._id, { $set: updateData }).catch((err) => {
                 console.error("[TRIAGEM] Erro ao salvar:", err.message);
             });
-            // Atualiza objeto local
-            if (updateData["patientInfo.age"]) {
-                lead.patientInfo = lead.patientInfo || {};
-                lead.patientInfo.age = updateData["patientInfo.age"];
+            // Recarrega lead para garantir dados frescos
+            const freshLead = await Leads.findById(lead._id).lean().catch(() => null);
+            if (freshLead) {
+                lead = freshLead;
+                console.log("🔄 [TRIAGEM] Lead recarregado após save");
             }
-            if (updateData.ageGroup) lead.ageGroup = updateData.ageGroup;
-            if (updateData.therapyArea) lead.therapyArea = updateData.therapyArea;
-            if (updateData.pendingPreferredPeriod) lead.pendingPreferredPeriod = updateData.pendingPreferredPeriod;
         }
 
         // ✅ FIX: Verifica o que ainda falta - INCLUI qualificationData como fonte
@@ -2315,13 +2344,20 @@ Em breve nossa equipe entra em contato 😊`
     // Fluxo geral
     const genericAnswer = await callAmandaAIWithContext(text, lead, enrichedContext, flags, analysis);
 
-    const finalScoped = enforceClinicScope(genericAnswer, text);
+    let finalScoped = enforceClinicScope(genericAnswer, text);
 
-    // ----------------------------------------------------------
-    // 🎯 MELHORIA: nunca fica sem resposta
-    // ----------------------------------------------------------
-    if (!textResp || textResp.trim() === "") {
-        textResp = "Entendi! 💚 Se quiser, posso te mostrar como funciona a avaliação ou marcar uma visita — o que faz mais sentido pra você?";
+    if (!finalScoped || finalScoped.trim() === "") {
+        finalScoped = "Entendi! 💚 Se quiser, posso te mostrar como funciona a avaliação ou marcar uma visita — o que faz mais sentido pra você?";
+    }
+
+    // Persiste intenção de agendamento se detectada
+    if ((flags.wantsSchedule || flags.wantsSchedulingNow) && lead?._id) {
+        await safeLeadUpdate(lead._id, {
+            $set: {
+                "autoBookingContext.schedulingIntentActive": true,
+                "autoBookingContext.intentLastActive": new Date()
+            }
+        }).catch(() => { });
     }
 
     return ensureSingleHeart(finalScoped);
