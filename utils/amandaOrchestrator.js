@@ -368,6 +368,100 @@ function safeGetPriceLinesForDetectedTherapies(detectedTherapies, opts = {}) {
     return [];
 }
 
+function isAskingPrice(text) {
+    return /pre[çc]o|valor|quanto|r\$/i.test(text);
+}
+
+function handlePurePriceFlow({ text, flags, lead, enrichedContext }) {
+    const isPurePriceQuestion =
+        flags.asksPrice &&
+        !flags.mentionsPriceObjection &&
+        !flags.wantsSchedule &&
+        !flags.wantsSchedulingNow;
+
+    if (isPurePriceQuestion) {
+        // 0) tenta detectar terapias pela mensagem atual
+        let detectedTherapies = [];
+        try {
+            detectedTherapies = detectAllTherapies(text) || [];
+        } catch (_) {
+            detectedTherapies = [];
+        }
+
+        // 1) se não detectou nada na mensagem, tenta pelo histórico/resumo/queixas salvas
+        if (!detectedTherapies.length) {
+            detectedTherapies = inferTherapiesFromHistory(enrichedContext, lead) || [];
+        }
+
+        // 2) tenta montar preço usando o detector (fonte mais confiável quando existe)
+        let priceText = "";
+        if (detectedTherapies.length) {
+            const priceLines = safeGetPriceLinesForDetectedTherapies(detectedTherapies);
+            priceText = (priceLines || []).join(" ").trim();
+        }
+
+        // 3) fallback por área conhecida (lead/context), mas SEM pegar qualificationData “solto”
+        // (usa getValidQualificationArea que você já fez pra não pegar área errada quando não tem queixa)
+        const knownArea =
+            lead?.therapyArea ||
+            lead?.autoBookingContext?.mappedTherapyArea ||
+            getValidQualificationArea(lead) ||
+            flags?.therapyArea ||
+            enrichedContext?.therapyArea ||
+            null;
+
+        const PRICE_BY_AREA = {
+            fonoaudiologia: "A avaliação inicial de fonoaudiologia é **R$ 200**.",
+            psicologia: "A avaliação inicial de psicologia é **R$ 200**.",
+            terapia_ocupacional: "A avaliação inicial de terapia ocupacional é **R$ 200**.",
+            fisioterapia: "A avaliação inicial de fisioterapia é **R$ 200**.",
+            musicoterapia: "A avaliação inicial de musicoterapia é **R$ 200**.",
+            psicopedagogia: "A avaliação psicopedagógica (anamnese inicial) é **R$ 200**.",
+            neuropsicologia: "A avaliação neuropsicológica completa (pacote) é **R$ 2.000 (até 6x)**.",
+        };
+
+        if (!priceText && knownArea && PRICE_BY_AREA[knownArea]) {
+            priceText = PRICE_BY_AREA[knownArea];
+        }
+
+        // 4) fallback por ID de terapia detectada (quando detectAllTherapies achou algo mas priceLines veio vazio)
+        const PRICE_BY_THERAPY_ID = {
+            speech: "A avaliação inicial de fonoaudiologia é **R$ 200**.",
+            tongue_tie: "O **Teste da Linguinha** custa **R$ 150**.",
+            psychology: "A avaliação inicial de psicologia é **R$ 200**.",
+            occupational: "A avaliação inicial de terapia ocupacional é **R$ 200**.",
+            physiotherapy: "A avaliação inicial de fisioterapia é **R$ 200**.",
+            music: "A avaliação inicial de musicoterapia é **R$ 200**.",
+            psychopedagogy: "A avaliação psicopedagógica (anamnese inicial) é **R$ 200**.",
+            neuropsychological: "A avaliação neuropsicológica completa (pacote) é **R$ 2.000 (até 6x)**.",
+            neuropsychopedagogy: "A avaliação inicial é **R$ 200**.",
+        };
+
+        if (!priceText && detectedTherapies.length) {
+            const t0 = detectedTherapies[0]?.id;
+            if (t0 && PRICE_BY_THERAPY_ID[t0]) {
+                priceText = PRICE_BY_THERAPY_ID[t0];
+            }
+        }
+
+        // 5) fallback final (nunca devolve vazio)
+        if (!priceText) {
+            priceText =
+                "A avaliação inicial é **R$ 200**. Se você me disser se é pra **Fono**, **Psicologia**, **TO**, **Fisio** ou **Neuropsico**, eu te passo o certinho 💚";
+            return ensureSingleHeart(priceText);
+        }
+
+        const urgency = safeCalculateUrgency(flags, text);
+        const urgencyPitch =
+            (urgency && urgency.pitch && String(urgency.pitch).trim()) ||
+            "Entendi! Vou te passar certinho 😊";
+
+        return ensureSingleHeart(
+            `${urgencyPitch} ${priceText} Se você quiser, eu posso ver horários pra você quando fizer sentido 💚`
+        );
+    }
+}
+
 // ============================================================================
 // 🎯 ORQUESTRADOR PRINCIPAL
 // ============================================================================
@@ -393,7 +487,19 @@ export async function getOptimizedAmandaResponse({
     const userExpressedPain =
         /não anda|não fala|atraso|preocupado|preocupação|dificuldade|problema|tento|tentamos|demora|atrasado/i.test(text);
 
-    if (userExpressedPain && lead?._id && !lead?.qualificationData?.painAcknowledged) {
+    const asksExplicitPrice = isAskingPrice(text);
+
+    const isSchedulingLike =
+        /\b(agendar|marcar|agendamento|consulta|avalia[cç][aã]o|vaga|dispon[ií]vel)\b/i.test(text);
+
+    if (
+        userExpressedPain &&
+        !asksExplicitPrice &&
+        !isSchedulingLike &&
+        lead?._id &&
+        !lead?.qualificationData?.painAcknowledged
+    ) {
+
         await safeLeadUpdate(lead._id, {
             $set: { "qualificationData.painAcknowledged": true }
         }).catch(() => { });
@@ -416,6 +522,10 @@ export async function getOptimizedAmandaResponse({
     // =========================================================================
     // 🆕 PASSO 0: REFRESH DO LEAD (SEMPRE BUSCA DADOS ATUALIZADOS)
     // =========================================================================
+    // ==========================================
+    // 🔴 PRIORIDADE GLOBAL: PREÇO
+    // ==========================================
+
     if (lead?._id) {
         try {
             const freshLead = await Leads.findById(lead._id).lean();
@@ -431,22 +541,38 @@ export async function getOptimizedAmandaResponse({
                 });
 
                 // =========================================================================
-                // 🆕 ETAPA 0: VALIDAÇÃO EMOCIONAL (após refresh, lead atualizado)
+                // 🆕 ETAPA 0: VALIDAÇÃO EMOCIONAL (SÓ SE NÃO HOUVER PERGUNTA DIRETA)
                 // =========================================================================
-                const userExpressedPain =
+
+                // 🛡️ GUARD: NÃO bloqueia resposta de preço/agendamento
+                const asksExplicitPrice = isAskingPrice(text);
+                const isSchedulingLike = /\b(agendar|marcar|agendamento|consulta|avalia[cç][aã]o|vaga|dispon[ií]vel)\b/i.test(text);
+
+                const userExpressedPain = !asksExplicitPrice && !isSchedulingLike &&
                     /não anda|não fala|atraso|preocupado|preocupação|dificuldade|problema|tento|tentamos|demora|atrasado/i.test(text);
 
-                const hasComplaint =
-                    lead?.complaint ||
-                    lead?.patientInfo?.complaint ||
-                    lead?.autoBookingContext?.complaint ||
-                    lead?.qualificationData?.extractedInfo?.queixa;
-
-                if ((userExpressedPain || hasComplaint) && lead?._id && !lead?.qualificationData?.painAcknowledged) {
+                if (
+                    (userExpressedPain || hasComplaint) &&
+                    !asksExplicitPrice &&
+                    !isSchedulingLike &&
+                    !lead?.qualificationData?.painAcknowledged
+                ) {
                     await safeLeadUpdate(lead._id, {
                         $set: { "qualificationData.painAcknowledged": true }
                     }).catch(() => { });
 
+                    // Se também perguntou preço, responde ambos
+                    if (asksExplicitPrice) {
+                        const priceText = "A avaliação de fonoaudiologia é **R$ 200**.";
+                        return ensureSingleHeart(
+                            "Entendo sua preocupação 💚\n\n" +
+                            "Quando envolve desenvolvimento infantil isso realmente deixa a gente apreensivo.\n" +
+                            "Você fez muito bem em buscar orientação cedo.\n\n" +
+                            `${priceText}\n\nQuer que eu já te ajude a agendar?`
+                        );
+                    }
+
+                    // Se não perguntou nada específico, só valida
                     return ensureSingleHeart(
                         "Entendo sua preocupação 💚\n\n" +
                         "Quando envolve desenvolvimento infantil isso realmente deixa a gente apreensivo.\n" +
@@ -483,22 +609,6 @@ export async function getOptimizedAmandaResponse({
     // =========================================================================
     // 🛡️ GUARD: Preço tem prioridade SEMPRE
     // =========================================================================
-    const asksPrice = /(pre[çc]o|valor|quanto\s*(custa|[eé]))/i.test(text);
-    if (asksPrice && lead?.status === "agendado") {
-        console.log("[GUARD] Cliente perguntou preço PÓS-agendamento");
-        const knownArea = lead?.therapyArea || "avaliacao";
-        const PRICE_AREA = {
-            fonoaudiologia: "A avaliação de fonoaudiologia é **R$ 200**.",
-            psicologia: "A avaliação de psicologia é **R$ 200**.",
-            terapia_ocupacional: "A avaliação de terapia ocupacional é **R$ 200**.",
-            fisioterapia: "A avaliação de fisioterapia é **R$ 200**.",
-            musicoterapia: "A avaliação de musicoterapia é **R$ 200**.",
-            psicopedagogia: "A avaliação psicopedagógica é **R$ 200**.",
-            neuropsicologia: "A avaliação neuropsicológica completa é **R$ 2.000** (até 6x).",
-        };
-        const priceText = PRICE_AREA[knownArea] || "A avaliação inicial é **R$ 200**.";
-        return ensureSingleHeart(priceText);
-    }
 
     // =========================================================================
     // 🆕 PASSO 1: FLUXO DE COLETA DE DADOS DO PACIENTE (PÓS-ESCOLHA DE SLOT)
@@ -557,22 +667,6 @@ export async function getOptimizedAmandaResponse({
 
         const step = lead.pendingPatientInfoStep || "name";
         const chosenSlot = lead.pendingChosenSlot;
-
-
-        // 🛡️ ESCAPE: Detecta perguntas importantes durante coleta
-        const asksPrice = /(pre[çc]o|valor|quanto\s*(custa|[eé]))/i.test(text);
-
-        if (asksPrice) {
-            const area = lead?.therapyArea || "avaliacao";
-            const prices = {
-                fonoaudiologia: "R$ 200",
-                psicologia: "R$ 200",
-                neuropsicologia: "R$ 2.000 (até 6x)",
-            };
-            const price = prices[area] || "R$ 200";
-            const nextStep = step === "name" ? "nome completo" : "data de nascimento";
-            return ensureSingleHeart(`A avaliação é **${price}**. Pra confirmar o horário, preciso só do **${nextStep}** 💚`);
-        }
 
         if (step === "name") {
             const name = extractName(text);
@@ -712,6 +806,29 @@ export async function getOptimizedAmandaResponse({
 
     const flags = detectAllFlags(text, lead, enrichedContext);
     console.log("🚩 FLAGS DETECTADAS:", flags);
+    const priceResp = handlePurePriceFlow({ text, flags, lead, enrichedContext });
+    if (priceResp) return priceResp;
+
+    if (flags.asksPrice) {
+        const priceText = buildPriceText({ text, lead, flags, enrichedContext }); // reaproveita teu bloco gigante
+
+        // se está no agendamento ou pediu agendar junto, não perde o passo:
+        const shouldContinueScheduling =
+            flags.wantsSchedule ||
+            flags.wantsSchedulingNow ||
+            lead?.pendingSchedulingSlots ||
+            lead?.pendingPatientInfoForScheduling;
+
+        if (shouldContinueScheduling) {
+            return ensureSingleHeart(
+                `${priceText}\n\nPra eu continuar o agendamento: você prefere **manhã** ou **tarde**? 💚`
+            );
+        }
+
+        return ensureSingleHeart(
+            `${priceText}\n\nSe quiser, já te ajudo a agendar 😊💚`
+        );
+    }
 
     // dentro de getOptimizedAmandaResponse(), depois de detectar área terapêutica:
     if (
@@ -813,11 +930,17 @@ Em breve nossa equipe entra em contato 😊`
             $set: { "qualificationData.painAcknowledged": true }
         }).catch(() => { });
 
-        return ensureSingleHeart(
-            "Entendo sua preocupação 💚\n\n" +
-            "Quando envolve desenvolvimento infantil isso realmente deixa a gente apreensivo.\n" +
-            "Você fez muito bem em buscar orientação cedo."
-        );
+        if (asksExplicitPrice) {
+            return ensureSingleHeart(
+                "Entendo sua preocupação 💚\n\n" +
+                "Quando envolve desenvolvimento infantil isso realmente deixa a gente apreensivo.\n" +
+                "Você fez muito bem em buscar orientação cedo.\n\n" +
+                "A avaliação de fonoaudiologia é **R$ 200**.\n\n" +
+                "Quer que eu já te ajude a agendar?"
+            );
+        }
+
+        return ensureSingleHeart("Entendo sua preocupação 💚 ...");
     }
 
     if (
@@ -1002,9 +1125,13 @@ Em breve nossa equipe entra em contato 😊`
         // Se vai avaliar preço → reforçar valor
         if (bloqueio === "avaliar_preco") {
             enrichedContext.customInstruction =
-                "O lead está avaliando o preço. Reforce o VALOR do serviço " +
-                "(não o preço), mencione que a avaliação inicial já direciona " +
-                "o tratamento, e que emitimos nota para reembolso.";
+                "O lead está avaliando preço. Foque em reforçar o VALOR (não o preço): " +
+                "explique que a avaliação inicial é o primeiro passo para entender a queixa, " +
+                "direcionar o melhor plano e evitar perda de tempo com abordagens genéricas. " +
+                "Informe que o atendimento é particular com opção de reembolso: emitimos nota/recibo " +
+                "e a documentação necessária para solicitar ao convênio. " +
+                "Diga que temos vagas disponíveis e convide a pessoa a garantir um horário, " +
+                "perguntando apenas se prefere manhã ou tarde.";
         }
 
         // Se vai ajustar rotina → oferecer flexibilidade
@@ -1576,93 +1703,6 @@ Em breve nossa equipe entra em contato 😊`
 
     const stageFromContext = enrichedContext.stage || lead?.stage || "novo";
 
-    const isPurePriceQuestion =
-        flags.asksPrice &&
-        !flags.mentionsPriceObjection &&
-        !flags.wantsSchedule &&
-        !flags.wantsSchedulingNow;
-
-    if (isPurePriceQuestion) {
-        // 0) tenta detectar terapias pela mensagem atual
-        let detectedTherapies = [];
-        try {
-            detectedTherapies = detectAllTherapies(text) || [];
-        } catch (_) {
-            detectedTherapies = [];
-        }
-
-        // 1) se não detectou nada na mensagem, tenta pelo histórico/resumo/queixas salvas
-        if (!detectedTherapies.length) {
-            detectedTherapies = inferTherapiesFromHistory(enrichedContext, lead) || [];
-        }
-
-        // 2) tenta montar preço usando o detector (fonte mais confiável quando existe)
-        let priceText = "";
-        if (detectedTherapies.length) {
-            const priceLines = safeGetPriceLinesForDetectedTherapies(detectedTherapies);
-            priceText = (priceLines || []).join(" ").trim();
-        }
-
-        // 3) fallback por área conhecida (lead/context), mas SEM pegar qualificationData “solto”
-        // (usa getValidQualificationArea que você já fez pra não pegar área errada quando não tem queixa)
-        const knownArea =
-            lead?.therapyArea ||
-            lead?.autoBookingContext?.mappedTherapyArea ||
-            getValidQualificationArea(lead) ||
-            flags?.therapyArea ||
-            enrichedContext?.therapyArea ||
-            null;
-
-        const PRICE_BY_AREA = {
-            fonoaudiologia: "A avaliação inicial de fonoaudiologia é **R$ 200**.",
-            psicologia: "A avaliação inicial de psicologia é **R$ 200**.",
-            terapia_ocupacional: "A avaliação inicial de terapia ocupacional é **R$ 200**.",
-            fisioterapia: "A avaliação inicial de fisioterapia é **R$ 200**.",
-            musicoterapia: "A avaliação inicial de musicoterapia é **R$ 200**.",
-            psicopedagogia: "A avaliação psicopedagógica (anamnese inicial) é **R$ 200**.",
-            neuropsicologia: "A avaliação neuropsicológica completa (pacote) é **R$ 2.000 (até 6x)**.",
-        };
-
-        if (!priceText && knownArea && PRICE_BY_AREA[knownArea]) {
-            priceText = PRICE_BY_AREA[knownArea];
-        }
-
-        // 4) fallback por ID de terapia detectada (quando detectAllTherapies achou algo mas priceLines veio vazio)
-        const PRICE_BY_THERAPY_ID = {
-            speech: "A avaliação inicial de fonoaudiologia é **R$ 200**.",
-            tongue_tie: "O **Teste da Linguinha** custa **R$ 150**.",
-            psychology: "A avaliação inicial de psicologia é **R$ 200**.",
-            occupational: "A avaliação inicial de terapia ocupacional é **R$ 200**.",
-            physiotherapy: "A avaliação inicial de fisioterapia é **R$ 200**.",
-            music: "A avaliação inicial de musicoterapia é **R$ 200**.",
-            psychopedagogy: "A avaliação psicopedagógica (anamnese inicial) é **R$ 200**.",
-            neuropsychological: "A avaliação neuropsicológica completa (pacote) é **R$ 2.000 (até 6x)**.",
-            neuropsychopedagogy: "A avaliação inicial é **R$ 200**.",
-        };
-
-        if (!priceText && detectedTherapies.length) {
-            const t0 = detectedTherapies[0]?.id;
-            if (t0 && PRICE_BY_THERAPY_ID[t0]) {
-                priceText = PRICE_BY_THERAPY_ID[t0];
-            }
-        }
-
-        // 5) fallback final (nunca devolve vazio)
-        if (!priceText) {
-            priceText =
-                "A avaliação inicial é **R$ 200**. Se você me disser se é pra **Fono**, **Psicologia**, **TO**, **Fisio** ou **Neuropsico**, eu te passo o certinho 💚";
-            return ensureSingleHeart(priceText);
-        }
-
-        const urgency = safeCalculateUrgency(flags, text);
-        const urgencyPitch =
-            (urgency && urgency.pitch && String(urgency.pitch).trim()) ||
-            "Entendi! Vou te passar certinho 😊";
-
-        return ensureSingleHeart(
-            `${urgencyPitch} ${priceText} Se você quiser, eu posso ver horários pra você quando fizer sentido 💚`
-        );
-    }
 
     logBookingGate(flags, bookingProduct);
 

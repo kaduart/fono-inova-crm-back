@@ -14,8 +14,8 @@ import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js
 import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
-import { normalizeE164BR } from "../utils/phone.js";
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
+import { normalizeE164BR } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
 
 const AUTO_TEST_NUMBERS = [
@@ -1398,6 +1398,17 @@ async function handleAutoReply(from, to, content, lead) {
                     lockAcquired = true;
                 } else {
                     console.log("⏭️ AI lock ativo; evitando corrida", lockKey);
+                    // ✅ FIX: Guarda mensagem pendente pra processar depois
+                    try {
+                        const pendingKey = `ai:pending:${from}`;
+                        const existing = await redis.get(pendingKey);
+                        const pendingList = existing ? JSON.parse(existing) : [];
+                        pendingList.push({ content, timestamp: Date.now() });
+                        await redis.set(pendingKey, JSON.stringify(pendingList), "EX", 300); // 5min TTL
+                        console.log("📝 Mensagem guardada para processar depois:", content.substring(0, 50));
+                    } catch (e) {
+                        console.warn("⚠️ Falha ao guardar mensagem pendente:", e.message);
+                    }
                     canProceed = false;
                 }
             }
@@ -1445,6 +1456,24 @@ async function handleAutoReply(from, to, content, lead) {
         // 4. Busca lead completo do banco + trava no Mongo (anti-corrida)
         // ================================
         const twoMinutesAgo = new Date(Date.now() - 120000);
+
+        // ✅ FIX: Recupera mensagens pendentes e agrega ao contexto
+        let aggregatedContent = content;
+        try {
+            const pendingKey = `ai:pending:${from}`;
+            const pending = await redis.get(pendingKey);
+            if (pending) {
+                const pendingList = JSON.parse(pending);
+                if (pendingList.length > 0) {
+                    const pendingTexts = pendingList.map(p => p.content).join("\n");
+                    aggregatedContent = `${pendingTexts}\n${content}`;
+                    await redis.del(pendingKey);
+                    console.log("📥 Mensagens pendentes agregadas:", pendingList.length);
+                }
+            }
+        } catch (e) {
+            console.warn("⚠️ Falha ao recuperar msgs pendentes:", e.message);
+        }
 
         const leadDoc = await Lead.findOneAndUpdate(
             {
@@ -1536,8 +1565,8 @@ async function handleAutoReply(from, to, content, lead) {
         const leadIdStr = String(leadDoc._id);
 
         const aiText = await getOptimizedAmandaResponse({
-            content,
-            userText: content,
+            content: aggregatedContent,
+            userText: aggregatedContent,
 
             // 🔥 garante que o orquestrador consegue carregar do Mongo
             leadId: leadIdStr,
