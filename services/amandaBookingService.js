@@ -119,13 +119,6 @@ export async function findAvailableSlots({
         doctorFilter.specialties = { $in: specialties };
     }
 
-    const slotsOptions = {
-        therapyArea,
-        preferredPeriod,
-        daysAhead: leadAnalysis?.score >= 80 ? 14 : 30,  // Hot lead = slots próximos
-        maxOptions: leadAnalysis?.score >= 80 ? 4 : 2,   // Mais opções para hot
-    };
-
     console.log("🔍 [BOOKING] Buscando slots:", {
         therapyArea,
         preferredDay,

@@ -18,20 +18,36 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 /* =========================================================================
    🎯 RESPOSTA PRINCIPAL - USA ORCHESTRATOR (MANTIDO)
    ========================================================================= */
+
 export async function generateAmandaReply({ userText, lead = {}, context = {} }) {
+
     try {
-        const response = await getOptimizedAmandaResponse({
+        return await getOptimizedAmandaResponse({
             content: userText,
             userText,
             lead,
             context,
         });
 
-        console.log("[AmandaReply] Resposta gerada:", response);
-        return response;
-    } catch (error) {
-        console.error("❌ Erro em generateAmandaReply:", error);
-        return "Vou verificar e já te retorno, por favor um momento 💚";
+    } catch (err) {
+
+        console.warn("⚠️ Orchestrator falhou, usando OpenAI FREE");
+
+        try {
+            const fallback = await callOpenAIFallback({
+                systemPrompt: SYSTEM_PROMPT_AMANDA,
+                messages: [
+                    { role: "user", content: userText }
+                ]
+            });
+
+            if (fallback) return fallback;
+
+        } catch (e) {
+            console.error("❌ Fallback OpenAI falhou:", e.message);
+        }
+
+        return "Tive um probleminha técnico 😕 Já te ajudo 💚";
     }
 }
 
@@ -320,7 +336,7 @@ export async function describeWaImage(mediaId, caption = "") {
 
         // 3️⃣ Envia para o GPT-4o-mini usando image_url com data URL
         const resp = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: "gpt-3.5-turbo",
             temperature: 0.4,
             max_tokens: 120,
             messages: [

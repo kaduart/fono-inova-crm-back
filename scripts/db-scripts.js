@@ -285,7 +285,7 @@ db.followups.deleteMany({}); // se quiser zerar todos followups de teste
 
 // cancelar followup
 db.contacts.updateOne(
-  { phone: "557491475074" },
+  { phone: "5561981694922" },
   {
     $set: {
       status: "agendado",          // ou "encerrado", como vocês usam
