@@ -492,6 +492,15 @@ export async function getOptimizedAmandaResponse({
     const isSchedulingLike =
         /\b(agendar|marcar|agendamento|consulta|avalia[cç][aã]o|vaga|dispon[ií]vel)\b/i.test(text);
 
+    // ===============================
+    // ETAPA A - VALIDAÇÃO EMOCIONAL
+    // ===============================
+    const hasComplaint =
+        lead?.complaint ||
+        lead?.patientInfo?.complaint ||
+        lead?.autoBookingContext?.complaint ||
+        lead?.qualificationData?.extractedInfo?.queixa;
+
     if (
         userExpressedPain &&
         !asksExplicitPrice &&
@@ -499,7 +508,6 @@ export async function getOptimizedAmandaResponse({
         lead?._id &&
         !lead?.qualificationData?.painAcknowledged
     ) {
-
         await safeLeadUpdate(lead._id, {
             $set: { "qualificationData.painAcknowledged": true }
         }).catch(() => { });
@@ -511,7 +519,6 @@ export async function getOptimizedAmandaResponse({
         );
     }
 
-
     // ➕ integrar inbound do chat com followups
     if (lead?._id) {
         handleInboundMessageForFollowups(lead._id).catch((err) =>
@@ -522,9 +529,6 @@ export async function getOptimizedAmandaResponse({
     // =========================================================================
     // 🆕 PASSO 0: REFRESH DO LEAD (SEMPRE BUSCA DADOS ATUALIZADOS)
     // =========================================================================
-    // ==========================================
-    // 🔴 PRIORIDADE GLOBAL: PREÇO
-    // ==========================================
 
     if (lead?._id) {
         try {
@@ -533,10 +537,6 @@ export async function getOptimizedAmandaResponse({
                 lead = freshLead;
                 console.log("🔄 [REFRESH] Lead atualizado:", {
                     pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
-                    pendingPatientInfoStep: lead.pendingPatientInfoStep,
-                    pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
-                    pendingSchedulingSlots: lead.pendingSchedulingSlots?.primary ? "SIM" : "NÃO",
-                    schedulingIntentActive: lead.autoBookingContext?.schedulingIntentActive || false,
                     stage: lead.stage
                 });
 
@@ -544,15 +544,20 @@ export async function getOptimizedAmandaResponse({
                 // 🆕 ETAPA 0: VALIDAÇÃO EMOCIONAL (SÓ SE NÃO HOUVER PERGUNTA DIRETA)
                 // =========================================================================
 
-                // 🛡️ GUARD: NÃO bloqueia resposta de preço/agendamento
+                // 1. Recalcula variáveis com base no texto atual
                 const asksExplicitPrice = isAskingPrice(text);
                 const isSchedulingLike = /\b(agendar|marcar|agendamento|consulta|avalia[cç][aã]o|vaga|dispon[ií]vel)\b/i.test(text);
 
-                const userExpressedPain = !asksExplicitPrice && !isSchedulingLike &&
-                    /não anda|não fala|atraso|preocupado|preocupação|dificuldade|problema|tento|tentamos|demora|atrasado/i.test(text);
+                // 2. CORREÇÃO: Define hasComplaint baseada no LEAD ATUALIZADO (freshLead/lead)
+                const currentComplaint =
+                    lead?.complaint ||
+                    lead?.patientInfo?.complaint ||
+                    lead?.autoBookingContext?.complaint ||
+                    lead?.qualificationData?.extractedInfo?.queixa;
 
+                // 3. Usa a variável local 'currentComplaint'
                 if (
-                    (userExpressedPain || hasComplaint) &&
+                    (userExpressedPain || currentComplaint) &&
                     !asksExplicitPrice &&
                     !isSchedulingLike &&
                     !lead?.qualificationData?.painAcknowledged
@@ -586,8 +591,6 @@ export async function getOptimizedAmandaResponse({
         } catch (err) {
             console.error("❌ [REFRESH] Erro ao buscar lead:", err.message);
         }
-    } else {
-        console.warn("⚠️ [REFRESH] Lead sem _id:", lead);
     }
 
     // =========================================================================
@@ -905,23 +908,14 @@ export async function getOptimizedAmandaResponse({
         return {
             text: `Que bom seu interesse! 💚  
 
-Os currículos são recebidos exclusivamente por e-mail:
-📩 contato@clinicafonoinova.com.br  
+                    Os currículos são recebidos exclusivamente por e-mail:
+                    📩 contato@clinicafonoinova.com.br  
 
-No assunto, coloque sua área de atuação (ex: Terapeuta Ocupacional).
+                    No assunto, coloque sua área de atuação (ex: Terapeuta Ocupacional).
 
-Em breve nossa equipe entra em contato 😊`
+                    Em breve nossa equipe entra em contato 😊`
         };
     }
-
-    // ===============================
-    // ETAPA A - VALIDAÇÃO EMOCIONAL
-    // ===============================
-    const hasComplaint =
-        lead?.complaint ||
-        lead?.patientInfo?.complaint ||
-        lead?.autoBookingContext?.complaint ||
-        lead?.qualificationData?.extractedInfo?.queixa;
 
 
     if ((userExpressedPain || hasComplaint) && !lead?.qualificationData?.painAcknowledged) {
