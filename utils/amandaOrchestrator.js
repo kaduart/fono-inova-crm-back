@@ -809,6 +809,49 @@ export async function getOptimizedAmandaResponse({
 
     const flags = detectAllFlags(text, lead, enrichedContext);
     console.log("🚩 FLAGS DETECTADAS:", flags);
+    // =========================================================================
+    // 🛡️ PATCH DE ESTABILIDADE (SENIOR FIX) - TRAVA DE CONTEXTO
+    // =========================================================================
+
+    // 1. FORÇAR "STICKY MODE" (MODO ADESIVO)
+    // Se o lead já está validado para agendamento, qualquer resposta que não seja cancelamento
+    // deve ser interpretada como continuidade do fluxo, impedindo o loop de acolhimento.
+    if (lead.stage === 'interessado_agendamento' || lead.pendingPatientInfoForScheduling) {
+
+        // Verifica se NÃO é uma objeção clara ou pedido de cancelamento
+        const isCancellation = flags.wantsCancel || flags.mentionsPriceObjection || flags.mentionsInsuranceObjection;
+
+        if (!isCancellation) {
+            console.log("🔒 [ORCHESTRATOR] Lead em estágio avançado. Forçando flag 'wantsSchedule' para evitar loop.");
+            flags.wantsSchedule = true;     // Obriga a entrar no Booking Gate
+            flags.inSchedulingFlow = true;  // Sinaliza fluxo ativo
+
+            // Se o detector marcou como dúvida geral (ex: texto longo ou "Sim"), forçamos para agendamento
+            if (flags.intent === 'duvida_geral' || flags.intent === 'generic') {
+                flags.intent = 'agendamento';
+            }
+        }
+    }
+
+    // 2. RECUPERAÇÃO DE MEMÓRIA (TÓPICO/ESPECIALIDADE)
+    // Se o cliente respondeu "Manhã" (topic=null), mas o lead já tem 'psicologia', restauramos.
+    if (!flags.topic && lead.therapyArea) {
+        flags.topic = lead.therapyArea;
+        console.log(`🧠 [MEMORY] Restaurando área de terapia do contexto: ${lead.therapyArea}`);
+    }
+
+    // 3. GUARDIÃO DE DADOS (IDADE)
+    // Impede que uma inferência errada (ex: "há 3 anos") sobrescreva um dado confirmado (ex: 7 anos)
+    if (lead.patientInfo?.age && flags.extractedAge) {
+        if (lead.patientInfo.age !== flags.extractedAge) {
+            console.log(`🛡️ [DATA GUARD] Ignorando idade nova (${flags.extractedAge}) em favor da existente (${lead.patientInfo.age})`);
+            // Remove a flag de idade para não acionar lógica de mudança de faixa etária
+            flags.ageGroup = lead.ageGroup;
+            delete flags.extractedAge;
+        }
+    }
+    // =========================================================================
+
     const priceResp = handlePurePriceFlow({ text, flags, lead, enrichedContext });
     if (priceResp) return priceResp;
 
@@ -2740,7 +2783,7 @@ async function callClaudeWithTherapyData({
             .join(" \n ")
             .toLowerCase();
 
-        const ageMatch = historyText.match(/(\d{1,2})\s*anos\b/);
+        const ageMatch = historyText.match(/(?<!h[aá]\s+|faz\s+|desde\s+)(\b\d{1,2}\b)\s*anos/i);
         if (ageMatch) {
             const detectedAge = parseInt(ageMatch[1], 10);
             if (!isNaN(detectedAge)) {
