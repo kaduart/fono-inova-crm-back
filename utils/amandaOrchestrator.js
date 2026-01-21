@@ -976,6 +976,16 @@ export async function getOptimizedAmandaResponse({
     }
 
 
+    // 🔒 BLOQUEIO FORTE: vaga ≠ emprego quando for agendamento
+    if (
+        (flags.wantsPartnershipOrResume || flags.partnership) &&
+        flags.inSchedulingFlow
+    ) {
+        console.log("🛡️ [FIX] Bloqueando falso positivo de parceria");
+        flags.wantsPartnershipOrResume = false;
+        flags.partnership = false;
+    }
+
 
     // 🔥 PRIORIDADE: PARCERIA / CURRÍCULO
     if (flags.partnership) {
