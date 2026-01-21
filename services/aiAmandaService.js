@@ -328,7 +328,7 @@ export async function describeWaImage(mediaId, caption = "") {
 
         // 3️⃣ Envia para o GPT-4o-mini usando image_url com data URL
         const resp = await openai.chat.completions.create({
-            model: "gpt-3.5-turbo",
+            model: "gpt-4o-mini",
             temperature: 0.4,
             max_tokens: 120,
             messages: [

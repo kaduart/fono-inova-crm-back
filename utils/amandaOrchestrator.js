@@ -344,6 +344,20 @@ function isAskingPrice(text) {
     return /pre[çc]o|valor|quanto|r\$/i.test(text);
 }
 
+function buildPriceText(therapyArea = null) {
+    const prices = {
+        default: "A avaliação custa R$220 e a sessão avulsa também R$220. No pacote semanal fica R$180 por sessão (R$720/mês).",
+        fono: "A avaliação fonoaudiológica custa R$220, e as sessões ficam R$220 (avulsa) ou R$180 no pacote semanal.",
+        psico: "A avaliação psicológica custa R$220, e as sessões ficam R$220 (avulsa) ou R$180 no pacote semanal.",
+        neuropsi: "A avaliação neuropsicológica tem valor diferenciado. Posso passar mais detalhes se quiser!",
+        fisio: "A avaliação de fisioterapia custa R$220, e as sessões ficam R$220 (avulsa) ou R$180 no pacote semanal.",
+        to: "A avaliação de terapia ocupacional custa R$220, e as sessões ficam R$220 (avulsa) ou R$180 no pacote semanal.",
+        musico: "A avaliação de musicoterapia custa R$220, e as sessões ficam R$220 (avulsa) ou R$180 no pacote semanal.",
+    };
+
+    return prices[therapyArea] || prices.default;
+}
+
 function handlePurePriceFlow({ text, flags, lead, enrichedContext }) {
     const isPurePriceQuestion =
         flags.asksPrice &&
