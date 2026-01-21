@@ -779,6 +779,16 @@ export async function getOptimizedAmandaResponse({
     const flags = detectAllFlags(text, lead, enrichedContext);
     console.log("🚩 FLAGS DETECTADAS:", flags);
 
+    const jobCue = /\b(curr[ií]culo|cv|resume|emprego|trabalhar|contrata[cç][aã]o|recrutamento|est[aá]gio)\b/i.test(text);
+    const scheduleCue = /\b(agendar|avalia[cç][aã]o|consulta|hor[aá]rio|data|para quando|pela manh[ãa]|à tarde|essa semana)\b/i.test(text);
+
+    // se for claramente agenda → NUNCA parceria
+    if ((flags.wantsPartnershipOrResume || flags.partnership) && scheduleCue && !jobCue) {
+        flags.wantsPartnershipOrResume = false;
+        flags.partnership = false;
+    }
+
+
     // =========================================================================
     // 🛡️ PATCH DE ESTABILIDADE (SENIOR FIX) - TRAVA DE CONTEXTO
     // =========================================================================
@@ -1022,28 +1032,28 @@ export async function getOptimizedAmandaResponse({
             await safeLeadUpdate(lead._id, { $set });
         }
     }
+
     if (flags.wantsPartnershipOrResume) {
-        // Só roda se for de fato emprego/currículo
-        const jobCue = /\b(curr[ií]culo|cv|resume|trabalhar|emprego|vaga\s+de\s+emprego|contrata[cç][aã]o|processo\s+seletivo|recrutamento|est[aá]gio)\b/i.test(text);
+        const jobCue = /\b(curr[ií]culo|cv|resume|emprego|trabalhar|vaga de emprego|recrutamento|est[aá]gio)\b/i.test(text);
+
         if (!jobCue) {
-            // não é parceria real, deixa o fluxo seguir
+            flags.wantsPartnershipOrResume = false; // ignora falso positivo
         } else {
             await safeLeadUpdate(lead._id, {
                 $set: {
                     reason: "parceria_profissional",
-                    "qualificationData.intent": "parceria_profissional",
-                    // ❌ NÃO setar stage aqui (se quiser stage, tem que entrar no enum)
-                },
-                $addToSet: { flags: "parceria_profissional" },
+                    "qualificationData.intent": "parceria_profissional"
+                }
             });
 
             return ensureSingleHeart(
-                "Que bom! 😊\n\nParcerias e currículos nós recebemos **exclusivamente por e-mail**.\n" +
-                "Pode enviar para **contato@clinicafonoinova.com.br** (no assunto, coloque sua área).\n\n" +
-                "Se quiser, me diga também sua cidade e disponibilidade 💚"
+                "Que bom! 😊\n\nParcerias e currículos recebemos por e-mail:\n" +
+                "📩 contato@clinicafonoinova.com.br\n\n" +
+                "No assunto coloque sua área 💚"
             );
         }
     }
+
 
     const psychologicalCue = determinePsychologicalFollowup({
         toneMode: enrichedContext.toneMode,
