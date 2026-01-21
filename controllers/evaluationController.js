@@ -5,6 +5,14 @@ import EvolutionHistory from "../models/EvolutionHistory.js";
 import mongoose from 'mongoose';
 
 // ========== FUNÇÕES AUXILIARES ==========
+const isAdmin = (user) => ['admin', 'superadmin'].includes(String(user?.role || '').toLowerCase());
+
+const getEvolutionScope = (req) => {
+  // admin enxerga tudo
+  if (isAdmin(req.user)) return {};
+  // terapeuta/doutor enxerga apenas o que é dele
+  return { doctor: new mongoose.Types.ObjectId(req.user.id) };
+};
 
 const clampNumber = (num, min, max) => Math.min(Math.max(num, min), max);
 
@@ -48,7 +56,7 @@ export const createEvaluation = async (req, res) => {
   try {
     const {
       patient,
-      doctor,
+      // doctor,  // ❌ não confiar no body
       specialty,
       date,
       time,
@@ -58,23 +66,26 @@ export const createEvaluation = async (req, res) => {
       evaluationTypes = [],
       plan = "",
       treatmentStatus = 'in_progress',
-      // NOVOS CAMPOS
       therapeuticPlan = null,
       protocolCode = null
     } = req.body || {};
 
-    // Validações básicas (mantidas)
+    // ✅ patient ok
     if (!patient || !mongoose.Types.ObjectId.isValid(patient)) {
       return res.status(400).json({ message: 'Paciente inválido' });
     }
-    if (!doctor || !mongoose.Types.ObjectId.isValid(doctor)) {
-      return res.status(400).json({ message: 'Médico inválido' });
+
+    // ✅ doctor SEMPRE do usuário autenticado (exceto admin, se você quiser permitir criar para outro)
+    const doctorId = req.user.id;
+
+    // ✅ specialty: se quiser, padronize pelo usuário logado (melhor consistência)
+    const finalSpecialty = String(specialty || req.user.specialty || '').trim();
+    if (!finalSpecialty) {
+      return res.status(400).json({ message: 'Especialidade é obrigatória' });
     }
+
     if (!date) {
       return res.status(400).json({ message: 'Data é obrigatória' });
-    }
-    if (!specialty) {
-      return res.status(400).json({ message: 'Especialidade é obrigatória' });
     }
 
     // Converter date string para Date object
@@ -183,8 +194,8 @@ export const createEvaluation = async (req, res) => {
     // Montar objeto final
     const evaluationData = {
       patient: new mongoose.Types.ObjectId(patient),
-      doctor: new mongoose.Types.ObjectId(doctor),
-      specialty: String(specialty).trim(),
+      doctor: new mongoose.Types.ObjectId(doctorId),
+      specialty: finalSpecialty,
       date: dateObj,
       time: time ? String(time).trim() : undefined,
       content: String(content || '').trim(),
@@ -260,10 +271,21 @@ export const createEvaluation = async (req, res) => {
 
 export const getEvaluationsByPatient = async (req, res) => {
   const { patientId } = req.params;
+
   try {
-    const evaluations = await Evolution.find({ patient: patientId })
+    if (!mongoose.Types.ObjectId.isValid(patientId)) {
+      return res.status(400).json({ message: "Paciente inválido." });
+    }
+
+    const scope = getEvolutionScope(req);
+
+    const evaluations = await Evolution.find({
+      patient: patientId,
+      ...scope
+    })
       .populate("doctor", "fullName specialty")
       .sort({ date: -1 });
+
     res.status(200).json(evaluations);
   } catch (error) {
     console.error("Erro ao buscar avaliações:", error);
@@ -271,14 +293,18 @@ export const getEvaluationsByPatient = async (req, res) => {
   }
 };
 
+
 // ========== GET CHART DATA (MANTIDO) ==========
 
 export const getEvaluationChartData = async (req, res) => {
   const { patientId } = req.params;
 
   try {
+    const scope = getEvolutionScope(req);
+
     const evaluations = await Evolution.find({
       patient: patientId,
+      ...scope,
       metrics: { $exists: true, $not: { $size: 0 } }
     }).sort({ date: 1 });
 
@@ -344,7 +370,8 @@ export const updateEvaluation = async (req, res) => {
     }
 
     // Verificar permissão
-    if (evolution.createdBy.toString() !== req.user.id && req.user.role !== 'admin') {
+    const isOwnerDoctor = evolution.doctor?.toString() === req.user.id;
+    if (!isAdmin(req.user) && !isOwnerDoctor) {
       return res.status(403).json({ error: 'Sem permissão para editar' });
     }
 
@@ -393,23 +420,31 @@ export const updateEvaluation = async (req, res) => {
 };
 
 // ========== DELETE EVALUATION (MANTIDO) ==========
-
 export const deleteEvaluation = async (req, res) => {
   const { id } = req.params;
+
   try {
-    const deleted = await Evolution.findByIdAndDelete(id);
-    if (!deleted) {
+    const evolution = await Evolution.findById(id);
+    if (!evolution) {
       return res.status(404).json({ message: "Avaliação não encontrada." });
     }
 
+    const isOwnerDoctor = evolution.doctor?.toString() === String(req.user.id || req.user._id);
+    if (!isAdmin(req.user) && !isOwnerDoctor) {
+      return res.status(403).json({ error: "Sem permissão para excluir" });
+    }
+
+    const deletedObj = evolution.toObject();
+    await evolution.deleteOne();
+
     await saveEvolutionHistory(
       id,
-      req.user.id,
-      'DELETE',
-      deleted.toObject(),
+      req.user.id || req.user._id,
+      "DELETE",
+      deletedObj,
       null,
       [],
-      req.body.deleteReason || 'Exclusão de avaliação'
+      req.body.deleteReason || "Exclusão de avaliação"
     );
 
     return res.status(200).json({ message: "Avaliação excluída com sucesso." });
@@ -419,6 +454,7 @@ export const deleteEvaluation = async (req, res) => {
   }
 };
 
+
 // ========== NOVOS ENDPOINTS ==========
 
 // GET /evolutions/patient/:patientId/progress
@@ -426,8 +462,11 @@ export const getPatientProgress = async (req, res) => {
   const { patientId } = req.params;
 
   try {
+    const scope = getEvolutionScope(req);
+
     const evolutions = await Evolution.find({
       patient: patientId,
+      ...scope,
       'therapeuticPlan.objectives': { $exists: true, $not: { $size: 0 } }
     })
       .populate('doctor', 'fullName specialty')
@@ -536,7 +575,9 @@ export const getPatientEvolutionHistory = async (req, res) => {
   const { limit = 50 } = req.query;
 
   try {
-    const evolutions = await Evolution.find({ patient: patientId })
+    const scope = getEvolutionScope(req);
+
+    const evolutions = await Evolution.find({ patient: patientId, ...scope })
       .select('_id date')
       .sort({ date: -1 })
       .limit(parseInt(limit));
