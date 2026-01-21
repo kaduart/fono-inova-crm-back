@@ -56,6 +56,7 @@ export const whatsappController = {
                 direction: "outbound",
                 type: "template",
                 content: saved.content,
+                text: saved.content,
                 status: saved.status,
                 timestamp: saved.timestamp,
             });
@@ -675,6 +676,7 @@ export const whatsappController = {
                         direction: saved.direction,
                         type: saved.type,
                         content: saved.content,
+                        text: saved.content,
                         status: saved.status,
                         timestamp: saved.timestamp,
                         leadId: saved.lead || lead._id,

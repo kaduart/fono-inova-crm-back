@@ -1,6 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
 import "dotenv/config";
-import { claudeCircuit, openaiCircuit } from "../services/circuitBreaker.js";
+
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import { urgencyScheduler } from "../services/intelligence/UrgencyScheduler.js";
 import enrichLeadContext from "../services/leadContext.js";
@@ -17,7 +16,6 @@ import {
 
 import Followup from "../models/Followup.js";
 import Leads from "../models/Leads.js";
-import { callOpenAIFallback } from "../services/aiAmandaService.js";
 import {
     autoBookAppointment,
     findAvailableSlots,
@@ -44,8 +42,8 @@ import { extractPreferredDateFromText } from "./dateParser.js";
 import ensureSingleHeart from "./helpers.js";
 import { extractAgeFromText, extractBirth, extractName, extractPeriodFromText } from "./patientDataExtractor.js";
 import { buildSlotMenuMessage } from "./slotMenuBuilder.js";
+import callAI from "../services/IA/Aiproviderservice.js";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
 
 // ============================================================================
@@ -84,40 +82,14 @@ async function safeLeadUpdate(leadId, updateData, options = {}) {
 const AI_MODEL = "claude-sonnet-4-20250514";
 
 async function runAnthropicWithFallback({ systemPrompt, messages, maxTokens, temperature }) {
-    return claudeCircuit.execute(
-        // Função principal (Claude)
-        async () => {
-            const resp = await anthropic.messages.create({
-                model: AI_MODEL,
-                max_tokens: maxTokens,
-                temperature,
-                system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
-                messages: normalizeClaudeMessages(messages),
-            });
-
-            const text = resp?.content
-                ?.filter((b) => b?.type === "text" && typeof b?.text === "string")
-                ?.map((b) => b.text)
-                ?.join("")
-                ?.trim() || null;
-
-            if (!text) throw new Error("Resposta vazia do Claude");
-            return text;
-        },
-        // Fallback (OpenAI)
-        async (originalError) => {
-            console.warn("[CIRCUIT] Claude falhou, tentando OpenAI:", originalError?.message);
-
-            return openaiCircuit.execute(
-                () => callOpenAIFallback({ systemPrompt, messages, maxTokens, temperature }),
-                () => {
-                    // Fallback do fallback: resposta genérica
-                    console.error("[CIRCUIT] Ambos falharam!");
-                    return "Tive um probleminha técnico. A equipe vai te responder em instantes 💚";
-                }
-            );
-        }
-    );
+    try {
+        const text = await callAI({ systemPrompt, messages, maxTokens, temperature });
+        if (!text) throw new Error("Resposta vazia");
+        return text;
+    } catch (err) {
+        console.error("[AI] Todos providers falharam:", err.message);
+        return "Tive um probleminha técnico. A equipe vai te responder em instantes 💚";
+    }
 }
 
 const PURE_GREETING_REGEX =
