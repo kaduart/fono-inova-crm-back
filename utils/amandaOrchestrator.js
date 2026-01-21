@@ -3,7 +3,7 @@ import "dotenv/config";
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import { urgencyScheduler } from "../services/intelligence/UrgencyScheduler.js";
 import enrichLeadContext from "../services/leadContext.js";
-import { deriveFlagsFromText, detectAllFlags, resolveTopicFromFlags } from "./flagsDetector.js";
+import { deriveFlagsFromText, detectAllFlags, resolveTopicFromFlags, detectManualIntent } from "./flagsDetector.js";
 import { buildEquivalenceResponse } from "./responseBuilder.js";
 import {
     detectAllTherapies,
@@ -487,23 +487,6 @@ export async function getOptimizedAmandaResponse({
         lead?.autoBookingContext?.complaint ||
         lead?.qualificationData?.extractedInfo?.queixa;
 
-    if (
-        userExpressedPain &&
-        !asksExplicitPrice &&
-        !isSchedulingLike &&
-        lead?._id &&
-        !lead?.qualificationData?.painAcknowledged
-    ) {
-        await safeLeadUpdate(lead._id, {
-            $set: { "qualificationData.painAcknowledged": true }
-        }).catch(() => { });
-
-        return ensureSingleHeart(
-            "Entendo sua preocupação 💚\n\n" +
-            "Quando envolve desenvolvimento infantil isso realmente deixa a gente apreensivo.\n" +
-            "Você fez muito bem em buscar orientação cedo."
-        );
-    }
 
     // ➕ integrar inbound do chat com followups
     if (lead?._id) {
@@ -795,26 +778,64 @@ export async function getOptimizedAmandaResponse({
 
     const flags = detectAllFlags(text, lead, enrichedContext);
     console.log("🚩 FLAGS DETECTADAS:", flags);
+
     // =========================================================================
     // 🛡️ PATCH DE ESTABILIDADE (SENIOR FIX) - TRAVA DE CONTEXTO
     // =========================================================================
 
-    // 1. FORÇAR "STICKY MODE" (MODO ADESIVO)
-    // Se o lead já está validado para agendamento, qualquer resposta que não seja cancelamento
-    // deve ser interpretada como continuidade do fluxo, impedindo o loop de acolhimento.
-    if (lead.stage === 'interessado_agendamento' || lead.pendingPatientInfoForScheduling) {
+    // 1. STICKY CONTEXT (SEM FORÇAR INTENÇÃO)
+    // Se o lead já está em contexto de agendamento, mantemos o "sim/ok" como continuidade,
+    // mas NÃO forçamos wantsSchedule quando a mensagem atual é só dúvida/saudação.
+    const isSchedulingContext =
+        lead.stage === 'interessado_agendamento' || lead.pendingPatientInfoForScheduling;
+
+    if (isSchedulingContext) {
 
         // Verifica se NÃO é uma objeção clara ou pedido de cancelamento
-        const isCancellation = flags.wantsCancel || flags.mentionsPriceObjection || flags.mentionsInsuranceObjection;
+        const isCancellation =
+            flags.wantsCancel ||
+            flags.mentionsPriceObjection ||
+            flags.mentionsInsuranceObjection;
+
+        // “Hard state”: existe passo de agendamento pendente salvo (slots, escolha, dados, período)
+        const inHardSchedulingState = !!(
+            lead?.pendingSchedulingSlots?.primary ||
+            lead?.pendingChosenSlot ||
+            lead?.pendingPatientInfoForScheduling ||
+            lead?.pendingPreferredPeriod ||
+            lead?.autoBookingContext?.awaitingPeriodChoice === true
+        );
+
+
+        console.log("🔄 [RETURN TO SCHEDULING CHECK]", {
+            text: text?.trim(),
+            normalized,
+            stage: lead?.stage,
+            inHardSchedulingState,
+            wantsSchedule: flags.wantsSchedule,
+            hasSlots: !!lead?.pendingSchedulingSlots?.primary,
+            hasPendingPatientInfo: !!lead?.pendingPatientInfoForScheduling,
+        });
+
+        // Interrupção muito comum: saudação curta (“boa tarde”, “oi”, etc.)
+        const isPureGreeting =
+            /^(oi|ol[áa]|tudo bem|tudo bom|boa (tarde|noite|dia))[!,.]?$/i.test(normalized);
 
         if (!isCancellation) {
-            console.log("🔒 [ORCHESTRATOR] Lead em estágio avançado. Forçando flag 'wantsSchedule' para evitar loop.");
-            flags.wantsSchedule = true;     // Obriga a entrar no Booking Gate
-            flags.inSchedulingFlow = true;  // Sinaliza fluxo ativo
+            // Mantém o contexto (para interpretar "sim/ok" como continuidade)
+            flags.inSchedulingFlow = true;
 
-            // Se o detector marcou como dúvida geral (ex: texto longo ou "Sim"), forçamos para agendamento
-            if (flags.intent === 'duvida_geral' || flags.intent === 'generic') {
-                flags.intent = 'agendamento';
+            // Só “puxa” para o Booking Gate se houver estado pendente real e NÃO for só saudação
+            if (inHardSchedulingState && !isPureGreeting) {
+                console.log("🔒 [ORCHESTRATOR] Agendamento com estado pendente detectado. Mantendo fluxo ativo.");
+                flags.wantsSchedule = true;
+
+                // Se o detector marcou como dúvida geral (ex: texto longo ou "Sim"), reclassifica para agendamento
+                if (flags.intent === 'duvida_geral' || flags.intent === 'generic') {
+                    flags.intent = 'agendamento';
+                }
+            } else {
+                console.log("🧠 [ORCHESTRATOR] Contexto de agendamento (soft). Não forçando wantsSchedule nesta mensagem.");
             }
         }
     }
@@ -1240,6 +1261,28 @@ export async function getOptimizedAmandaResponse({
                     enrichedContext.pendingSchedulingSlots = slots;
                     enrichedContext.pendingChosenSlot = chosenSlot;
                     enrichedContext.stage = "interessado_agendamento";
+
+                    // ✅ Manual intent (resposta rápida) - só quando NÃO estiver em hard scheduling
+                    try {
+                        const manualIntent = detectManualIntent(normalized);
+
+                        if (
+                            manualIntent &&
+                            !inHardSchedulingState &&
+                            !flags.wantsSchedule &&
+                            !flags.inSchedulingFlow
+                        ) {
+                            const quick = tryManualResponse(normalized, enrichedContext, flags);
+
+                            if (quick) {
+                                console.log("⚡ [MANUAL_INTENT] Respondendo sem IA:", { manualIntent });
+                                return ensureSingleHeart(quick);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("⚠️ [MANUAL_INTENT] Falha (ignorado):", e?.message);
+                    }
+
 
                     // 🤖 Deixa a IA gerar resposta acolhedora pedindo nome do paciente
                     const aiResponse = await callAmandaAIWithContext(
@@ -1777,7 +1820,7 @@ export async function getOptimizedAmandaResponse({
     const isSchedulingLikeText = GENERIC_SCHEDULE_EVAL_REGEX.test(normalized) || SCHEDULING_REGEX.test(normalized);
 
     // ✅ FIX: Detecta se está em fluxo de agendamento (tem dados parciais salvos)
-    // NÃO inclui lead?.therapyArea porque pode ser fallback errado sem queixa
+    // NÃO inclui lead.stage aqui (stage é "contexto", não "intenção")
     const isInSchedulingFlow = !!(
         lead?.patientInfo?.age ||
         lead?.ageGroup ||
@@ -1788,17 +1831,16 @@ export async function getOptimizedAmandaResponse({
         lead?.autoBookingContext?.awaitingPeriodChoice ||
         lead?.patientInfo?.complaint ||
         lead?.autoBookingContext?.complaint ||
-        lead?.autoBookingContext?.schedulingIntentActive ||
-        lead?.stage === "interessado_agendamento"
+        lead?.autoBookingContext?.schedulingIntentActive
     );
 
+    // ✅ "Hard state": existe passo de agendamento pendente salvo (não depende de stage)
     const inActiveSchedulingState = !!(
         lead?.pendingSchedulingSlots?.primary ||
         lead?.pendingChosenSlot ||
         lead?.pendingPatientInfoForScheduling ||
         lead?.autoBookingContext?.awaitingPeriodChoice ||
-        lead?.stage === "interessado_agendamento" ||
-        enrichedContext?.stage === "interessado_agendamento"
+        lead?.pendingPreferredPeriod
     );
 
     // “sinal AGORA” (não depende de dados salvos)
@@ -1812,7 +1854,14 @@ export async function getOptimizedAmandaResponse({
     const shouldRunSchedulingFlow = inActiveSchedulingState || schedulingSignalNow || isInSchedulingFlow;
 
     const persistedIntent = lead?.autoBookingContext?.schedulingIntentActive === true;
-    const wantsScheduling = flags.wantsSchedule || flags.wantsSchedulingNow || persistedIntent || isSchedulingLikeText || isInSchedulingFlow;
+    // ⚠️ wantsScheduling = intenção real + estado pendente (não usa isInSchedulingFlow)
+    const wantsScheduling =
+        flags.wantsSchedule ||
+        flags.wantsSchedulingNow ||
+        persistedIntent ||
+        isSchedulingLikeText ||
+        inActiveSchedulingState;
+
     if (
         flags.inSchedulingFlow &&
         /^(sim|pode|ok|claro|fechado)$/i.test(text.trim())
