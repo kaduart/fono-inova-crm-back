@@ -1,5 +1,5 @@
-// services/aiAmandaService.js - VERSÃO UNIFICADA (Amanda 1.0 + mídia nova)
-import Anthropic from "@anthropic-ai/sdk";
+
+
 import axios from "axios";
 import OpenAI from "openai";
 import { Readable } from "stream";
@@ -9,11 +9,11 @@ import { CLINIC_ADDRESS, SYSTEM_PROMPT_AMANDA } from "../utils/amandaPrompt.js";
 
 // ⚠️ novos imports para mídia baseada em mediaId
 import ensureSingleHeart from "../utils/helpers.js";
+import callAI from "./IA/Aiproviderservice.js";
 import { analyzeLeadMessage } from "./intelligence/leadIntelligence.js";
 import { getMediaBuffer } from "./whatsappMediaService.js";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 /* =========================================================================
    🎯 RESPOSTA PRINCIPAL - USA ORCHESTRATOR (MANTIDO)
@@ -208,20 +208,12 @@ export async function generateFollowupMessage(lead) {
     Gere APENAS o texto da mensagem pronta para ser enviada no WhatsApp, em português do Brasil.`.trim();
 
     try {
-        const resp = await anthropic.messages.create({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 220,
-            temperature: 0.7,
-            system: SYSTEM_PROMPT_AMANDA,
-            messages: [
-                {
-                    role: "user",
-                    content: userPrompt,
-                },
-            ],
+        const text = await callAI({
+            systemPrompt: SYSTEM_PROMPT_AMANDA,
+            messages: [{ role: "user", content: userPrompt }],
+            maxTokens: 220,
+            temperature: 0.7
         });
-
-        const text = (resp.content?.[0]?.text || "").trim();
 
         // Se por algum motivo vier vazio, usa o template base
         const final = text || baseTemplate;

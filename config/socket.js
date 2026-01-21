@@ -24,9 +24,16 @@ export const initializeSocket = (server) => {
   io.on("connection", (socket) => {
     console.log("⚡ Novo cliente conectado:", socket.id);
 
-    // ✅ aqui sim o 'socket' existe
+    // ✅ Debug de eventos
     socket.onAny((event, data) => {
-      console.log("📨 [EVENTO VINDO DO CLIENTE]", event, data);
+      if (event !== "ping") { // Evita spam de log
+        console.log("📨 [EVENTO VINDO DO CLIENTE]", event, data);
+      }
+    });
+
+    // ✅ HEARTBEAT - responde ping com pong
+    socket.on("ping", () => {
+      socket.emit("pong");
     });
 
     socket.on("disconnect", (reason) => {

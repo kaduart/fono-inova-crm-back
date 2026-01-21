@@ -343,6 +343,7 @@ router.post("/test", async (req, res) => {
 router.get("/status", async (req, res) => {
     try {
         const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
+        const hasGroqKey = !!process.env.GROQ_API_KEY;
 
         const stats = await Followup.aggregate([
             {
@@ -366,17 +367,23 @@ router.get("/status", async (req, res) => {
             success: true,
             status: "operational",
             api: {
+                // 🆕 Groq como primário
+                groq: hasGroqKey ? "configured" : "not_configured",
+                groqModel: "llama-3.1-8b-instant",
+                groqTier: "free (6K req/dia)",
+                // Claude como fallback
                 anthropic: hasAnthropicKey ? "configured" : "not_configured",
-                keyPreview: hasAnthropicKey
-                    ? `${process.env.ANTHROPIC_API_KEY.substring(0, 20)}...`
-                    : null,
+                anthropicRole: "fallback",
+                // Provider ativo
+                primaryProvider: hasGroqKey ? "groq" : (hasAnthropicKey ? "anthropic" : "none"),
             },
             stats: amandaStats,
             features: {
                 amanda2: true,
-                amanda1_api: hasAnthropicKey,
+                amanda1_api: hasGroqKey || hasAnthropicKey,
                 contextAnalysis: true,
                 errorTolerance: true,
+                freeAI: hasGroqKey, // 🆕 indica se tá usando IA grátis
             },
         });
     } catch (err) {

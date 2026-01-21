@@ -1,9 +1,6 @@
 import dotenv from 'dotenv';
+import callAI from './IA/Aiproviderservice.js';
 dotenv.config();
-
-import Anthropic from "@anthropic-ai/sdk";
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 /**
  * 🧠 GERA RESUMO INTELIGENTE DE CONVERSAS ANTIGAS
@@ -50,18 +47,13 @@ ${conversationText}
 RESPONDA APENAS COM O RESUMO ESTRUTURADO (sem introdução ou conclusão).
 `.trim();
 
-        const response = await anthropic.messages.create({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 500,
-            temperature: 0.3, // Baixa pra ser mais factual
-            system: "Você é um analista especializado em extrair contexto de conversas de atendimento. Seja preciso, factual e estruturado.",
-            messages: [{
-                role: "user",
-                content: prompt
-            }]
+        const summary = await callAI({
+            systemPrompt: "Você é um analista especializado em extrair contexto de conversas de atendimento. Seja preciso, factual e estruturado. Responda SEMPRE em português brasileiro.",
+            messages: [{ role: "user", content: prompt }],
+            maxTokens: 500,
+            temperature: 0.3,
+            usePremiumModel: true // Usa Llama 70B pra resumos mais elaborados
         });
-
-        const summary = response.content[0]?.text?.trim();
 
         console.log(`✅ [RESUMO] Gerado com sucesso (${messages.length} msgs antigas)`);
 
