@@ -294,3 +294,29 @@ db.contacts.updateOne(
     }
   }
 );
+
+db.packages.insertOne({
+  patient: ObjectId("6917116c5d4d8bdb65edd506"),
+  doctor: ObjectId("684072213830f473da1b0b0b"),
+  paymentType: "full",
+  sessionType: "fonoaudiologia",
+  sessionValue: 160,
+
+  totalSessions: 3,
+  sessionsDone: 0,
+
+  origin: "transfer",
+  sourcePackage: ObjectId("69453f66a132f0049cbc77f5"),
+
+  status: "active",
+  specialty: "fonoaudiologia",
+  financialStatus: "paid",
+
+  totalPaid: 480,
+  totalValue: 480,
+
+  createdAt: new Date(),
+  updatedAt: new Date(),
+
+  notes: "Pacote gerado por transferência do irmão Benjamim"
+})

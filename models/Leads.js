@@ -4,11 +4,10 @@ import { normalizeE164BR } from '../utils/phone.js';
 
 const interactionSchema = new mongoose.Schema({
   date: { type: Date, default: Date.now },
-  channel: { type: String, enum: ['whatsapp', 'telefone', 'email', 'manual'], default: 'manual' },
-  direction: { type: String, enum: ['inbound', 'outbound'], default: 'outbound' },
+  channel: { type: String, enum: ['whatsapp', 'WhatsApp', 'telefone', 'email', 'manual'], default: 'manual' }, direction: { type: String, enum: ['inbound', 'outbound'], default: 'outbound' },
   message: String,
   note: String,
-  status: { type: String, enum: ['sent', 'received', 'failed', 'read'], default: 'sent' },
+  status: { type: String, enum: ['sent', 'received', 'failed', 'read', 'completed'], default: 'sent' },
   acceptedPrivateCare: { type: Boolean, default: null },
   insuranceHardNo: { type: Boolean, default: false },
   triageStep: {
@@ -93,6 +92,7 @@ const leadSchema = new mongoose.Schema({
     type: String,
     enum: [
       'novo',
+      'engajado',
       'atendimento',
       'convertido',
       'perdido',

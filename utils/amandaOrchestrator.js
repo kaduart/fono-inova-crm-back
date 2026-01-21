@@ -1713,16 +1713,13 @@ export async function getOptimizedAmandaResponse({
 
         if (lead?._id) {
             // 1️⃣ Área de agenda (usada pra slots)
-            Leads.findByIdAndUpdate(
-                lead._id,
-                {
-                    $set: {
-                        "autoBookingContext.mappedTherapyArea": resolvedTherapyArea,
-                        "autoBookingContext.therapyArea": resolvedTherapyArea,
-                        "autoBookingContext.active": true,
-                    },
+            await safeLeadUpdate(lead._id, {
+                $set: {
+                    "autoBookingContext.mappedTherapyArea": resolvedTherapyArea,
+                    "autoBookingContext.therapyArea": resolvedTherapyArea,
+                    "autoBookingContext.active": true,
                 },
-            ).catch(() => { });
+            }).catch(err => console.warn("[SYNC-AREA] Falha ao persistir área:", err.message));
 
             // 2️⃣ Área clínica (só grava se vier de fonte explícita)
             const canPersistClinical =

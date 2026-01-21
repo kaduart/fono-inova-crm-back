@@ -160,7 +160,7 @@ router.post("/reply", async (req, res) => {
         let leadData = {
             name: "Cliente",
             reason: "atendimento",
-            origin: "WhatsApp",
+            origin: "whatsApp",
         };
 
         if (leadId) {
@@ -169,7 +169,7 @@ router.post("/reply", async (req, res) => {
                 leadData = {
                     name: lead.name,
                     reason: lead.reason || lead.appointment?.seekingFor || "atendimento",
-                    origin: lead.origin || "WhatsApp",
+                    origin: lead.origin || "whatsApp",
                     lastInteraction: lead.updatedAt || lead.createdAt,
                 };
             }

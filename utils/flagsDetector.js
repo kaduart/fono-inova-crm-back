@@ -15,8 +15,7 @@ export function deriveFlagsFromText(text = "") {
     const wantsPartnershipOrResume =
         /\b(curr[ií]cul|curriculo|curriculum|cv)\b/i.test(normalizedText) ||
         /\b(parceria|parcerias|credenciamento|prestador|vaga|trabalhar\s+com\s+voc[eê]s)\b/i.test(normalizedText) ||
-        /\b(sou|me\s+chamo)\b.*\b(musicoterap|psicopedagog|fonoaudi[oó]log|psic[oó]log|fisioterap|terapeuta\s+ocupacional|\bto\b|neuropsic)\b/i.test(normalizedText);
-
+        /\b(sou|me\s+chamo)\b.*\b(musicoterap|psicopedagog|fonoaudi[oó]log[oa]?|psic[oó]log[oa]?|fisioterap|terapeuta\s+ocupacional|\bto\b|neuropsic)/i.test(normalizedText);
 
     const ageGroup = extractAgeGroup(normalizedText);
 
@@ -366,8 +365,8 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
 
     // respostas curtas de período/dia
     const answersPeriodOrDay =
-        /\b(manh[ãa]|tarde|noite|qualquer|tanto faz)\b/.test(t) ||
-        /\b(seg(unda)?|ter(ça|ca)?|qua(rta)?|qui(nta)?|sex(ta)?|s[áa]bado|sabado|dom(ingo)?)\b/.test(t);
+        /(?:^|\s)(manh[ãa]|tarde|noite|qualquer|tanto faz)(?:\s|$|[.,!?])/i.test(t) ||
+        /(?:^|\s)(seg(unda)?|ter([çc]a)?|qua(rta)?|qui(nta)?|sex(ta)?|s[aá]bado|dom(ingo)?)(?:\s|$|[.,!?])/i.test(t);
 
     // respostas curtas de tempo relativo (ex.: "próxima", "semana que vem")
     const answersRelativeTime =
