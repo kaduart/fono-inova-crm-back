@@ -558,9 +558,6 @@ export async function getOptimizedAmandaResponse({
                 $set: { "patientInfo.birthDate": birthDate }
             }).catch(err => logSuppressedError('safeLeadUpdate', err));
 
-            if (!wantsScheduling && !inActiveSchedulingState) {
-                return null;
-            }
 
             // 🆕 TENTA AGENDAR
             console.log("🚀 [ORCHESTRATOR] Tentando agendar após coletar dados do paciente");
@@ -781,8 +778,7 @@ export async function getOptimizedAmandaResponse({
     if (
         savedIntent === "informacao_preco" &&
         savedArea &&
-        !flags.wantsSchedule &&
-        !flags.wantsSchedulingNow
+        !flags.wantsSchedule
     ) {
         console.log("[FLOW] Comercial ativo (persistido)");
 
@@ -1605,8 +1601,7 @@ Em breve nossa equipe entra em contato 😊`
     const isPurePriceQuestion =
         flags.asksPrice &&
         !flags.mentionsPriceObjection &&
-        !flags.wantsSchedule &&
-        !flags.wantsSchedulingNow;
+        !flags.wantsSchedule;
 
     if (isPurePriceQuestion) {
         // 0) tenta detectar terapias pela mensagem atual
@@ -1760,17 +1755,14 @@ Em breve nossa equipe entra em contato 😊`
     // “sinal AGORA” (não depende de dados salvos)
     const schedulingSignalNow = !!(
         flags.wantsSchedule ||
-        flags.wantsSchedulingNow ||
         isSchedulingLikeText ||
         /\b(agenda|agendar|marcar|hor[aá]rio|data|vaga|dispon[ií]vel|essa\s+semana|semana\s+que\s+vem)\b/i.test(text)
     );
 
-    const shouldRunSchedulingFlow = inActiveSchedulingState || schedulingSignalNow;
 
 
     const wantsScheduling =
         flags.wantsSchedule ||
-        flags.wantsSchedulingNow ||
         isSchedulingLikeText;
 
     if (
