@@ -20,6 +20,7 @@ import { default as getOptimizedAmandaResponse } from '../utils/amandaOrchestrat
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
 import { normalizeE164BR } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
+import { mapFlagsToBookingProduct } from '../utils/bookingProductMapper.js';
 
 const USE_NEW_ORCHESTRATOR =
     process.env.NEW_ORCHESTRATOR === 'true';
@@ -1664,7 +1665,7 @@ async function handleAutoReply(from, to, content, lead) {
                 },
                 services: {
                     bookingService,
-                    productService: bookingProductMapper
+                    productService: mapFlagsToBookingProduct
                 }
             });
 
