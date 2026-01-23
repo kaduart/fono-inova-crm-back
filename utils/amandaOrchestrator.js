@@ -1779,8 +1779,6 @@ Em breve nossa equipe entra em contato 😊`
         hasPendingSlots: !!lead?.pendingSchedulingSlots,
     });
 
-    console.log("[ORCHESTRATOR] wantsScheduling:", wantsScheduling, "| isInSchedulingFlow:", isInSchedulingFlow);
-
     const primaryIntent = analysis?.intent?.primary;
 
     // só desvia se NÃO estiver em agendamento ativo e o texto não parece de agendamento
