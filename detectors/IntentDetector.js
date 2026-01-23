@@ -6,19 +6,23 @@ export default class IntentDetector {
         this.therapyDetector = new TherapyDetector();
     }
 
-    detect(message) {
-        const text = message?.content?.toLowerCase() || '';
+    detect(message, lead = {}, context = {}) {
+        const text = message?.content || message || '';
 
-        const intentType = this.detectIntentType(text);
-        const therapy = this.therapyDetector.detect(text);
-        const flags = detectAllFlags.detect(text);
+        const flags = detectAllFlags(text, lead, context); // ✅ função direta
 
         return {
-            type: intentType,
-            therapy,
+            type: this.resolveType(flags),
             flags,
-            confidence: this.calculateConfidence({ intentType, therapy, flags })
+            confidence: 0.8
         };
+    }
+
+    resolveType(flags) {
+        if (flags.wantsSchedule) return 'booking';
+        if (flags.asksPrice) return 'product_inquiry';
+        if (flags.mentionsSpeechTherapy) return 'therapy_question';
+        return 'fallback';
     }
 
     detectIntentType(text) {
