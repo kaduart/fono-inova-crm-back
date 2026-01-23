@@ -807,7 +807,7 @@ export const whatsappController = {
                 });
             }
 
-            const useNewForThisLead = USE_NEW_ORCHESTRATOR && isCanaryLead(lead._id);
+            const useNewForThisLead = USE_NEW_ORCHESTRATOR && isCanaryLead(lead);
 
             const message = {
                 content: lastInbound.content,
@@ -1043,6 +1043,8 @@ async function processInboundMessage(msg, value) {
         const type = msg.type;
 
         const fromNumeric = from.replace(/\D/g, "");
+        console.log('[DEBUG CANARY ENV]', process.env.AMANDA_CANARY_PHONES);
+
         const isTestNumber = AUTO_TEST_NUMBERS.includes(fromNumeric);
 
         console.log("🔎 isTestNumber?", fromNumeric, isTestNumber);
@@ -1786,13 +1788,6 @@ export async function handleIncomingMessage(req, res) {
             from: message.from,
             useNew: USE_NEW_ORCHESTRATOR
         });
-
-        if (USE_NEW_ORCHESTRATOR) {
-            await WhatsAppOrchestrator.process(message);
-        } else {
-            // ⚠️ fluxo antigo intacto (fallback seguro)
-            await oldAmandaOrchestrator.process(message);
-        }
 
         return res.status(200).json({ ok: true });
 
