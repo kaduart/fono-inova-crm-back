@@ -832,7 +832,7 @@ export const whatsappController = {
                     message,
                     context,
                     services: {
-                        bookingService: amandaBookingService,
+                        bookingService,
                         productService,
                         leadIntelligence,
                         intentDetector,
@@ -1662,7 +1662,7 @@ async function handleAutoReply(from, to, content, lead) {
                 message: { content: aggregatedContent },
                 context: { source: 'whatsapp-inbound' },
                 services: {
-                    bookingService: amandaBookingService,
+                    bookingService,
                     productService,
                     leadIntelligence,
                     intentDetector,
