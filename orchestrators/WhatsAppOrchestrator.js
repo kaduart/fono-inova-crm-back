@@ -1,8 +1,7 @@
 // orchestrators/WhatsAppOrchestrator.js
+
 import { IntentDetector } from '../detectors/index.js';
 import * as handlers from '../handlers/index.js';
-import * as leadCircuitService from '../services/intelligence/leadIntelligence.js';
-
 import Logger from '../services/utils/Logger.js';
 
 export class WhatsAppOrchestrator {
@@ -12,31 +11,26 @@ export class WhatsAppOrchestrator {
     }
 
     async process({ lead, message, context, services }) {
-        let lock;
-
         try {
-            // 🔒 1. Lock do lead (mantido)
-            lock = await leadCircuitService.lock(lead._id);
-
-            // 🧠 2. Detectar intenção
+            // 🧠 1. Detectar intenção
             const intent = this.intentDetector.detect(message);
 
-            // 🎯 3. Selecionar handler
+            // 🎯 2. Selecionar handler
             const handler = this.selectHandler(intent);
 
-            // ▶️ 4. Executar handler (CONTRATO NOVO)
+            // ▶️ 3. Executar handler
             const result = await handler.execute({
                 lead,
                 message,
                 context: {
                     ...context,
-                    therapy: intent.therapy,
-                    intentConfidence: intent.confidence
+                    therapy: intent?.therapy || null,
+                    intentConfidence: intent?.confidence || 0
                 },
                 services
             });
 
-            // 🧭 5. Decidir próximo passo (AQUI é o cérebro)
+            // 🧭 4. Decidir próximo comando
             return this.decideCommand({
                 lead,
                 intent,
@@ -54,16 +48,12 @@ export class WhatsAppOrchestrator {
                 },
                 meta: { error: true }
             };
-
-        } finally {
-            if (lock) {
-                await leadCircuitService.unlock(lead._id);
-            }
         }
     }
 
     selectHandler(intent) {
-        if (intent.flags?.some(f => f.level === 'high')) {
+        // prioridade clínica
+        if (intent?.flags?.some(f => f.level === 'high')) {
             return handlers.LeadQualificationHandler;
         }
 
@@ -73,13 +63,13 @@ export class WhatsAppOrchestrator {
             product_inquiry: handlers.ProductHandler
         };
 
-        return map[intent.type] || handlers.FallbackHandler;
+        return map[intent?.type] || handlers.FallbackHandler;
     }
 
-    decideCommand({ handlerResult, intent }) {
-        const { events = [], data } = handlerResult;
+    decideCommand({ handlerResult }) {
+        const { events = [], data } = handlerResult || {};
 
-        // 🟢 Caso: slots disponíveis
+        // 🟢 slots disponíveis
         if (events.includes('SLOTS_AVAILABLE')) {
             return {
                 command: 'SEND_MESSAGE',
@@ -90,7 +80,7 @@ export class WhatsAppOrchestrator {
             };
         }
 
-        // 🟡 Fallback
+        // 🟡 fallback
         if (data?.fallback) {
             return {
                 command: 'SEND_MESSAGE',
@@ -100,7 +90,7 @@ export class WhatsAppOrchestrator {
             };
         }
 
-        // 🔵 Default seguro
+        // 🔵 default seguro
         return {
             command: 'NO_REPLY',
             meta: { reason: 'no_action_required' }
