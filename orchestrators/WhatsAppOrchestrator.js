@@ -51,19 +51,22 @@ export class WhatsAppOrchestrator {
         }
     }
 
-    selectHandler(intent) {
-        // prioridade clínica
-        if (intent?.flags?.some(f => f.level === 'high')) {
-            return handlers.LeadQualificationHandler;
+    selectHandler(intent = {}) {
+        const flags = intent.flags || {};
+
+        if (flags.wantsSchedule) {
+            return handlers.BookingHandler;
         }
 
-        const map = {
-            booking: handlers.BookingHandler,
-            therapy_question: handlers.TherapyHandler,
-            product_inquiry: handlers.ProductHandler
-        };
+        if (flags.asksPrice) {
+            return handlers.ProductHandler;
+        }
 
-        return map[intent?.type] || handlers.FallbackHandler;
+        if (flags.mentionsSpeechTherapy) {
+            return handlers.TherapyHandler;
+        }
+
+        return handlers.FallbackHandler;
     }
 
     decideCommand({ handlerResult }) {
