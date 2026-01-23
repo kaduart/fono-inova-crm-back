@@ -206,7 +206,7 @@ function buildTriageSchedulingMessage({
     const knownArea =
         bookingProduct?.therapyArea ||
         flags?.therapyArea ||
-        lead?.autoBookingContext?.mappedTherapyArea ||
+
         lead?.therapyArea;
 
     // Verifica também dados já salvos no lead
@@ -558,6 +558,10 @@ export async function getOptimizedAmandaResponse({
                 $set: { "patientInfo.birthDate": birthDate }
             }).catch(err => logSuppressedError('safeLeadUpdate', err));
 
+            if (!wantsScheduling && !inActiveSchedulingState) {
+                return null;
+            }
+
             // 🆕 TENTA AGENDAR
             console.log("🚀 [ORCHESTRATOR] Tentando agendar após coletar dados do paciente");
             const bookingResult = await autoBookAppointment({
@@ -656,6 +660,97 @@ export async function getOptimizedAmandaResponse({
 
     const flags = detectAllFlags(text, lead, enrichedContext);
     console.log("🚩 FLAGS DETECTADAS:", flags);
+
+    // ============================================================
+    // 🧭 TRIAGEM AMANDA 2.0 — USANDO triageStep DO SCHEMA
+    // ============================================================
+
+    const hasImplicitInterest =
+        flags.hasPain ||
+        flags.mentionsChild ||
+        /consulta|avalia[cç][aã]o|atendimento/i.test(text) ||
+        extractAgeFromText(text);
+
+    if (
+        lead?._id &&
+        hasImplicitInterest &&
+        !lead.triageStep &&
+        !lead.pendingSchedulingSlots &&
+        !lead.pendingPatientInfoForScheduling &&
+        lead.stage !== "paciente"
+    ) {
+        await safeLeadUpdate(lead._id, {
+            $set: {
+                triageStep: "ask_period",
+                stage: "triagem_agendamento"
+            }
+        });
+        lead.triageStep = "ask_period"; // mantém em memória
+    }
+
+    // ============================================================
+    // ▶️ CONDUÇÃO DA TRIAGEM (ANTI-LIMBO)
+    // ============================================================
+
+    if (lead?.triageStep === "ask_period") {
+        const period = extractPeriodFromText(text);
+        if (!period) {
+            return ensureSingleHeart(
+                "Perfeito 😊 Pra eu organizar certinho, vocês preferem **manhã ou tarde**?"
+            );
+        }
+
+        await safeLeadUpdate(lead._id, {
+            $set: {
+                pendingPreferredPeriod: period,
+                triageStep: "ask_profile"
+            }
+        });
+
+        return ensureSingleHeart("Ótimo! 💚 Qual o **nome do paciente**?");
+    }
+
+    if (lead?.triageStep === "ask_profile") {
+        const name = extractName(text);
+        if (!name) {
+            return ensureSingleHeart(
+                "Pode me dizer, por favor, o **nome do paciente**? 😊"
+            );
+        }
+
+        await safeLeadUpdate(lead._id, {
+            $set: {
+                "patientInfo.fullName": name,
+                triageStep: "ask_complaint"
+            }
+        });
+
+        return ensureSingleHeart(
+            "Obrigada! 💚 E qual a **idade** dele(a)? (anos ou meses)"
+        );
+    }
+
+    if (lead?.triageStep === "ask_complaint") {
+        const age = extractAgeFromText(text);
+        if (!age) {
+            return ensureSingleHeart(
+                "Me conta a **idade** dele(a), por favor 😊 (anos ou meses)"
+            );
+        }
+
+        await safeLeadUpdate(lead._id, {
+            $set: {
+                "patientInfo.age": age,
+                triageStep: "done",
+                stage: "engajado"
+            }
+        });
+
+        return ensureSingleHeart(
+            "Perfeito 😊 Já repassei essas informações pra nossa equipe.\n" +
+            "Em breve entramos em contato com os **horários disponíveis** 💚"
+        );
+    }
 
     // dentro de getOptimizedAmandaResponse(), depois de detectar área terapêutica:
     if (
@@ -769,7 +864,6 @@ Em breve nossa equipe entra em contato 😊`
 
     if (
         /^[sS]im$/.test(text.trim()) &&
-        !lead?.autoBookingContext?.active &&
         !SCHEDULING_REGEX.test(text)
     ) {
         return ensureSingleHeart(
@@ -1091,7 +1185,6 @@ Em breve nossa equipe entra em contato 😊`
     // 🔹 Captura a resposta ao período (quando Amanda perguntou "manhã ou tarde?")
     if (
         lead?._id &&
-        lead?.autoBookingContext?.awaitingPeriodChoice &&
         !lead?.pendingSchedulingSlots?.primary
     ) {
         const preferredPeriod = extractPeriodFromText(text);
@@ -1103,7 +1196,7 @@ Em breve nossa equipe entra em contato 😊`
             const therapyArea =
                 getValidQualificationArea(lead) ||  // ✅ PRIORIDADE!
                 lead?.therapyArea ||
-                lead?.autoBookingContext?.mappedTherapyArea ||
+
                 flags?.therapyArea ||
                 null;
 
@@ -1131,7 +1224,6 @@ Em breve nossa equipe entra em contato 😊`
             await safeLeadUpdate(lead._id, {
                 $set: {
                     "autoBookingContext.awaitingPeriodChoice": false,
-                    "autoBookingContext.preferredPeriod": preferredPeriod,
                     pendingPreferredPeriod: preferredPeriod,  // ✅ FIX: fonte única
                 },
             }).catch(err => logSuppressedError('safeLeadUpdate', err));
@@ -1150,7 +1242,6 @@ Em breve nossa equipe entra em contato 😊`
                         $set: {
                             pendingSchedulingSlots: slots,
                             stage: "interessado_agendamento",
-                            "autoBookingContext.lastOfferedSlots": slots,
                         },
                     }).catch(err => logSuppressedError('safeLeadUpdate', err));
 
@@ -1184,8 +1275,8 @@ Em breve nossa equipe entra em contato 😊`
         const rawSlots =
             lead?.pendingSchedulingSlots ||
             enrichedContext?.pendingSchedulingSlots ||
-            lead?.autoBookingContext?.lastOfferedSlots ||
             null;
+
 
         const safeRawSlots = rawSlots && typeof rawSlots === "object" ? rawSlots : {};
         const slotsCtx = {
@@ -1208,7 +1299,7 @@ Em breve nossa equipe entra em contato 😊`
         if (wantsDifferentPeriod && wantsDifferentPeriod !== currentPeriod) {
             console.log(`🔄 [ORCHESTRATOR] Usuário quer período diferente: ${wantsDifferentPeriod}`);
 
-            const therapyArea = lead?.therapyArea || lead?.autoBookingContext?.mappedTherapyArea;
+            const therapyArea = lead?.therapyArea;
 
             try {
                 const newSlots = await findAvailableSlots({
@@ -1257,7 +1348,7 @@ Em breve nossa equipe entra em contato 😊`
         if (isNo || wantsOtherOptions) {
             console.log("[PASSO 2] 🔄 Lead quer outras opções...");
 
-            const therapyArea = lead?.therapyArea || lead?.autoBookingContext?.mappedTherapyArea;
+            const therapyArea = lead?.therapyArea;
             const currentPeriod = lead?.autoBookingContext?.preferredPeriod || lead?.pendingPreferredPeriod;
 
             try {
@@ -1334,7 +1425,7 @@ Em breve nossa equipe entra em contato 😊`
         const wantsFromDate = preferredDateStr && /\b(a\s+partir|depois|ap[oó]s)\b/i.test(text);
 
         if (wantsFromDate) {
-            const therapyArea = lead?.therapyArea || lead?.autoBookingContext?.mappedTherapyArea;
+            const therapyArea = lead?.therapyArea;
             const currentPeriod = lead?.autoBookingContext?.preferredPeriod || lead?.pendingPreferredPeriod || null;
 
             try {
@@ -1467,17 +1558,6 @@ Em breve nossa equipe entra em contato 😊`
     const parsedDateStr = extractPreferredDateFromText(text);
     if (parsedDateStr) flags.preferredDate = parsedDateStr;
 
-    flags.inSchedulingFlow = Boolean(
-        lead?.pendingSchedulingSlots?.primary ||
-        enrichedContext?.pendingSchedulingSlots?.primary ||
-        lead?.pendingChosenSlot ||
-        lead?.pendingPatientInfoForScheduling ||
-        lead?.autoBookingContext?.lastOfferedSlots?.primary ||
-        lead?.autoBookingContext?.mappedTherapyArea ||
-        enrichedContext?.stage === "interessado_agendamento" ||
-        lead?.stage === "interessado_agendamento",
-    );
-
     const bookingProduct = mapFlagsToBookingProduct({ ...flags, text }, lead);
 
     if (!flags.therapyArea && bookingProduct?.therapyArea) {
@@ -1485,7 +1565,7 @@ Em breve nossa equipe entra em contato 😊`
     }
 
     const resolvedTherapyArea =
-        flags.therapyArea || lead?.autoBookingContext?.mappedTherapyArea || lead?.therapyArea || null;
+        flags.therapyArea | lead?.therapyArea || null;
 
     // -------------------------------------------------------------------
     // 🔄 Sincronização de áreas (clínica vs. agenda)
@@ -1500,7 +1580,6 @@ Em breve nossa equipe entra em contato 😊`
                 lead._id,
                 {
                     $set: {
-                        "autoBookingContext.mappedTherapyArea": resolvedTherapyArea,
                         "autoBookingContext.therapyArea": resolvedTherapyArea,
                         "autoBookingContext.active": true,
                     },
@@ -1554,7 +1633,7 @@ Em breve nossa equipe entra em contato 😊`
         // (usa getValidQualificationArea que você já fez pra não pegar área errada quando não tem queixa)
         const knownArea =
             lead?.therapyArea ||
-            lead?.autoBookingContext?.mappedTherapyArea ||
+
             getValidQualificationArea(lead) ||
             flags?.therapyArea ||
             enrichedContext?.therapyArea ||
@@ -1663,25 +1742,17 @@ Em breve nossa equipe entra em contato 😊`
 
     const isSchedulingLikeText = GENERIC_SCHEDULE_EVAL_REGEX.test(normalized) || SCHEDULING_REGEX.test(normalized);
 
-    // ✅ FIX: Detecta se está em fluxo de agendamento (tem dados parciais salvos)
-    // NÃO inclui lead?.therapyArea porque pode ser fallback errado sem queixa
-    const isInSchedulingFlow = !!(
-        lead?.patientInfo?.age ||
-        lead?.ageGroup ||
-        lead?.qualificationData?.extractedInfo?.idade ||
-        getValidQualificationArea(lead) ||  // Só conta se tiver queixa
-        lead?.autoBookingContext?.mappedTherapyArea ||
-        lead?.pendingPreferredPeriod ||
-        lead?.autoBookingContext?.awaitingPeriodChoice ||
-        lead?.patientInfo?.complaint ||
-        lead?.autoBookingContext?.complaint
-    );
+
+    // 🛡️ BLOQUEIO: se triagem ainda não terminou, NÃO entra em fluxo antigo
+    if (lead?.triageStep && lead.triageStep !== "done") {
+        console.log("🛑 [GUARD] Triagem ativa, bloqueando fluxo antigo");
+        return null;
+    }
 
     const inActiveSchedulingState = !!(
         lead?.pendingSchedulingSlots?.primary ||
         lead?.pendingChosenSlot ||
         lead?.pendingPatientInfoForScheduling ||
-        lead?.autoBookingContext?.awaitingPeriodChoice ||
         lead?.stage === "interessado_agendamento" ||
         enrichedContext?.stage === "interessado_agendamento"
     );
@@ -1697,7 +1768,10 @@ Em breve nossa equipe entra em contato 😊`
     const shouldRunSchedulingFlow = inActiveSchedulingState || schedulingSignalNow;
 
 
-    const wantsScheduling = flags.wantsSchedule || flags.wantsSchedulingNow || isSchedulingLikeText || inActiveSchedulingState;
+    const wantsScheduling =
+        flags.wantsSchedule ||
+        flags.wantsSchedulingNow ||
+        isSchedulingLikeText;
 
     if (
         flags.inSchedulingFlow &&
@@ -1768,8 +1842,7 @@ Em breve nossa equipe entra em contato 😊`
         const hasArea = detectedTherapies.length > 0 ||
             flags.therapyArea ||
             hasValidLeadArea ||
-            getValidQualificationArea(lead) ||
-            lead?.autoBookingContext?.mappedTherapyArea;
+            getValidQualificationArea(lead);
 
         // ✅ FIX: Verifica idade em TODAS as fontes
         const hasAge = /\b\d{1,2}\s*(anos?|mes(es)?)\b/i.test(text) ||
@@ -1884,7 +1957,7 @@ Em breve nossa equipe entra em contato 😊`
         enrichedContext.therapyArea ||
         flags.therapyArea ||
         bookingProduct?.therapyArea ||
-        lead?.autoBookingContext?.mappedTherapyArea ||
+
         lead?.therapyArea ||
         null;
 
@@ -1983,7 +2056,7 @@ Em breve nossa equipe entra em contato 😊`
     const hasArea = !!(
         bookingProduct?.therapyArea ||
         flags?.therapyArea ||
-        lead?.autoBookingContext?.mappedTherapyArea ||
+
         lead?.therapyArea
     );
 
@@ -2017,7 +2090,6 @@ Em breve nossa equipe entra em contato 😊`
         const periodDetected = extractPeriodFromText(text);
         if (periodDetected && !lead?.pendingPreferredPeriod) {
             updateData.pendingPreferredPeriod = periodDetected;
-            updateData["autoBookingContext.preferredPeriod"] = periodDetected;
             console.log("[TRIAGEM] ✅ Período detectado e salvo:", periodDetected);
         }
 
@@ -2202,7 +2274,6 @@ Em breve nossa equipe entra em contato 😊`
                     "autoBookingContext.active": true,
                     "autoBookingContext.mappedTherapyArea": therapyAreaForSlots,
                     "autoBookingContext.mappedProduct": bookingProduct?.product,
-                    "autoBookingContext.lastOfferedSlots": availableSlots,
                 },
             }).catch(err => logSuppressedError('safeLeadUpdate', err));
 
@@ -2800,7 +2871,7 @@ async function callAmandaAIWithContext(
     const therapyAreaForScheduling =
         context.therapyArea ||
         flags.therapyArea ||
-        lead?.autoBookingContext?.mappedTherapyArea ||
+
         lead?.therapyArea;
 
     const hasAgeOrProfile =
