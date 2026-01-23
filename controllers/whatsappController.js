@@ -809,6 +809,18 @@ export const whatsappController = {
 
             const useNewForThisLead = USE_NEW_ORCHESTRATOR && isCanaryLead(lead._id);
 
+            const message = {
+                content: lastInbound.content,
+                from: lastInbound.from,
+                waMessageId: lastInbound.waMessageId,
+                timestamp: lastInbound.timestamp
+            };
+
+            const context = {
+                source: 'amanda-resume',
+                resumedAt: new Date()
+            };
+
             // 5. Gera resposta da Amanda
             console.log(`🤖 [AMANDA-RESUME] Gerando resposta para: "${lastInbound.content?.substring(0, 50)}..."`);
 
