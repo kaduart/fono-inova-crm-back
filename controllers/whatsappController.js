@@ -29,6 +29,7 @@ const AUTO_TEST_NUMBERS = [
 ];
 
 const logger = new Logger('whatsappController');
+const orchestrator = new WhatsAppOrchestrator();
 
 function isCanaryLead(lead) {
     if (!process.env.AMANDA_CANARY_PHONES) return false;
@@ -825,7 +826,7 @@ export const whatsappController = {
             console.log(`🤖 [AMANDA-RESUME] Gerando resposta para: "${lastInbound.content?.substring(0, 50)}..."`);
 
             if (useNewForThisLead) {
-                result = await WhatsAppOrchestrator.process({
+                result = await orchestrator.process({
                     lead,
                     message,
                     context,
@@ -1648,7 +1649,6 @@ async function handleAutoReply(from, to, content, lead) {
         // ================================
         console.log('🤖 Gerando resposta da Amanda...');
         const leadIdStr = String(leadDoc._id);
-
         let aiText = null;
 
         const useNew =
@@ -1656,10 +1656,17 @@ async function handleAutoReply(from, to, content, lead) {
             isCanaryLead(leadDoc);
 
         if (useNew) {
-            const result = await WhatsAppOrchestrator.process({
+            const result = await orchestrator.process({
                 lead: leadDoc,
                 message: { content: aggregatedContent },
-                context: { source: 'whatsapp-inbound' }
+                context: { source: 'whatsapp-inbound' },
+                services: {
+                    bookingService: amandaBookingService,
+                    productService,
+                    leadIntelligence,
+                    intentDetector,
+                    flagsDetector
+                }
             });
 
             if (result?.command === 'SEND_MESSAGE') {
@@ -1674,7 +1681,6 @@ async function handleAutoReply(from, to, content, lead) {
                 context
             });
         }
-
 
         console.log("[AmandaReply] Texto gerado:", aiText ? aiText.substring(0, 80) + '...' : 'vazio');
 
