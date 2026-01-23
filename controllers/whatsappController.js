@@ -10,16 +10,16 @@ import Message from "../models/Message.js";
 import Patient from '../models/Patient.js';
 import { WhatsAppOrchestrator } from '../orchestrators/WhatsAppOrchestrator.js';
 import { describeWaImage, transcribeWaAudio } from "../services/aiAmandaService.js";
+import * as bookingService from '../services/amandaBookingService.js';
 import { createSmartFollowupForLead } from "../services/followupOrchestrator.js";
-import Logger from '../services/utils/Logger.js';
 import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js';
 import { checkFollowupResponse } from "../services/responseTrackingService.js";
+import Logger from '../services/utils/Logger.js';
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
-import { default as getOptimizedAmandaResponse, default as oldAmandaOrchestrator } from '../utils/amandaOrchestrator.js';
+import { default as getOptimizedAmandaResponse } from '../utils/amandaOrchestrator.js';
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
 import { normalizeE164BR } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
-import * as bookingService from '../services/amandaBookingService.js';
 
 const USE_NEW_ORCHESTRATOR =
     process.env.NEW_ORCHESTRATOR === 'true';
@@ -832,11 +832,7 @@ export const whatsappController = {
                     message,
                     context,
                     services: {
-                        bookingService,
-                        productService,
-                        leadIntelligence,
-                        intentDetector,
-                        flagsDetector
+                        bookingService
                     }
                 });
             } else {
@@ -1662,11 +1658,7 @@ async function handleAutoReply(from, to, content, lead) {
                 message: { content: aggregatedContent },
                 context: { source: 'whatsapp-inbound' },
                 services: {
-                    bookingService,
-                    productService,
-                    leadIntelligence,
-                    intentDetector,
-                    flagsDetector
+                    bookingService
                 }
             });
 
