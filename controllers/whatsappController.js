@@ -1364,11 +1364,6 @@ async function processInboundMessage(msg, value) {
 
         const isRealText = contentToSave?.trim() && !contentToSave.startsWith("[");
 
-        // ✅ RESPOSTA AUTOMÁTICA (Amanda)
-        if ((type === "text" || type === "audio" || type === "image") && isRealText) {
-            handleAutoReply(from, to, contentToSave, lead)
-                .catch(err => console.error("⚠️ Auto-reply não crítico falhou:", err));
-        }
 
         // ✅ AMANDA 2.0 TRACKING (texto, áudio transcrito ou imagem descrita)
         if ((type === "text" || type === "audio" || type === "image") && isRealText) {
@@ -1654,22 +1649,32 @@ async function handleAutoReply(from, to, content, lead) {
         console.log('🤖 Gerando resposta da Amanda...');
         const leadIdStr = String(leadDoc._id);
 
-        const aiText = await getOptimizedAmandaResponse({
-            content: aggregatedContent,
-            userText: aggregatedContent,
+        let aiText = null;
 
-            // 🔥 garante que o orquestrador consegue carregar do Mongo
-            leadId: leadIdStr,
+        const useNew =
+            USE_NEW_ORCHESTRATOR &&
+            isCanaryLead(leadDoc);
 
-            lead: {
-                _id: leadIdStr, // ⚠️ string
-                name: leadDoc?.name || "",
-                reason: leadDoc?.reason || "avaliação/terapia",
-                origin: leadDoc?.origin || "WhatsApp",
-            },
+        if (useNew) {
+            const result = await WhatsAppOrchestrator.process({
+                lead: leadDoc,
+                message: { content: aggregatedContent },
+                context: { source: 'whatsapp-inbound' }
+            });
 
-            context: { lastMessages, isFirstContact },
-        });
+            if (result?.command === 'SEND_MESSAGE') {
+                aiText = result.payload.text;
+            }
+        } else {
+            aiText = await getOptimizedAmandaResponse({
+                content: aggregatedContent,
+                userText: aggregatedContent,
+                leadId: String(leadDoc._id),
+                lead: { _id: String(leadDoc._id) },
+                context
+            });
+        }
+
 
         console.log("[AmandaReply] Texto gerado:", aiText ? aiText.substring(0, 80) + '...' : 'vazio');
 
