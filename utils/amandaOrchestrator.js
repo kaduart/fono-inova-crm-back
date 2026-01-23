@@ -1813,12 +1813,11 @@ Em breve nossa equipe entra em contato 😊`
 
     console.log("🚦 [SCHEDULING-GATE]", {
         wantsScheduling,
-        shouldRunSchedulingFlow,
         stage: lead?.stage,
         flags,
     });
 
-    if (wantsScheduling && shouldRunSchedulingFlow) {
+    if (wantsScheduling) {
         const detectedTherapies = detectAllTherapies(text);
 
         // ✅ FIX: Só considera área do lead se tiver queixa registrada
@@ -1955,7 +1954,7 @@ Em breve nossa equipe entra em contato 😊`
         Boolean(lead?._id) &&
         wantsScheduling &&
         babyContext &&
-        (wantsScheduling && shouldRunSchedulingFlow) &&
+        wantsScheduling &&
         therapyAreaForGate === "fisioterapia" &&
         !lead?.autoBookingContext?.osteopathyOk;
 
