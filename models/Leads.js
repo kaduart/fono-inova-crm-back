@@ -173,6 +173,7 @@ const leadSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+
   patientInfo: {
     fullName: String,
     birthDate: String,   // "YYYY-MM-DD"

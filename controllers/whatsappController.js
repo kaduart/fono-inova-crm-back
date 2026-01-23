@@ -8,19 +8,47 @@ import Followup from "../models/Followup.js";
 import Lead from '../models/Leads.js';
 import Message from "../models/Message.js";
 import Patient from '../models/Patient.js';
+import { WhatsAppOrchestrator } from '../orchestrators/WhatsAppOrchestrator.js';
 import { describeWaImage, transcribeWaAudio } from "../services/aiAmandaService.js";
 import { createSmartFollowupForLead } from "../services/followupOrchestrator.js";
+import Logger from '../services/utils/Logger.js';
 import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js';
 import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
-import getOptimizedAmandaResponse from '../utils/amandaOrchestrator.js';
+import { default as getOptimizedAmandaResponse, default as oldAmandaOrchestrator } from '../utils/amandaOrchestrator.js';
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
 import { normalizeE164BR } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
 
+const USE_NEW_ORCHESTRATOR =
+    process.env.NEW_ORCHESTRATOR === 'true' &&
+    isCanaryLead(lead);
+
+
 const AUTO_TEST_NUMBERS = [
     "5561981694922", "5561981694922", "556292013573", "5562992013573"
 ];
+
+const logger = new Logger('whatsappController');
+
+function isCanaryLead(lead) {
+    if (!process.env.AMANDA_CANARY_PHONES) return false;
+
+    const allowedPhones = process.env.AMANDA_CANARY_PHONES
+        .split(',')
+        .map(p => p.trim());
+
+    const leadPhone =
+        lead?.contact?.phone ||
+        lead?.contact?.phoneWhatsapp ||
+        lead?.phone ||
+        '';
+
+    const normalized = leadPhone.replace(/\D/g, '');
+
+    return allowedPhones.includes(normalized);
+}
+
 
 export const whatsappController = {
 
@@ -783,16 +811,55 @@ export const whatsappController = {
             // 5. Gera resposta da Amanda
             console.log(`🤖 [AMANDA-RESUME] Gerando resposta para: "${lastInbound.content?.substring(0, 50)}..."`);
 
-            const aiText = await getOptimizedAmandaResponse({
-                content: lastInbound.content,
-                userText: lastInbound.content,
-                lead: {
-                    _id: lead._id,
-                    name: lead.name || '',
-                    origin: lead.origin || 'WhatsApp'
-                },
-                context: {}
-            });
+            if (USE_NEW_ORCHESTRATOR) {
+                result = await WhatsAppOrchestrator.process({
+                    lead,
+                    message,
+                    context,
+                    services: {
+                        bookingService: amandaBookingService,
+                        productService,
+                        leadIntelligence,
+                        intentDetector,
+                        flagsDetector
+                    }
+                });
+            } else {
+                result = {
+                    command: 'SEND_MESSAGE',
+                    payload: {
+                        text: await getOptimizedAmandaResponse({
+                            lead,
+                            message,
+                            context
+                        })
+                    }
+                };
+            }
+
+            switch (result.command) {
+                case 'SEND_MESSAGE':
+                    await whatsappService.sendTextMessage(
+                        lead.phone,
+                        result.payload.text,
+                        result.payload.options // se existir
+                    );
+                    break;
+
+                case 'NO_REPLY':
+                    // Não faz nada
+                    break;
+
+                case 'ESCALATE':
+                    await notifyHumanOperator({
+                        lead,
+                        reason: result.meta?.reason
+                    });
+                    break;
+
+                default:
+                    logger.warn('Comando desconhecido', result);
+            }
 
             if (!aiText || !aiText.trim()) {
                 return res.json({
@@ -1282,6 +1349,12 @@ async function processInboundMessage(msg, value) {
 
         const isRealText = contentToSave?.trim() && !contentToSave.startsWith("[");
 
+        // ✅ RESPOSTA AUTOMÁTICA (Amanda)
+        if ((type === "text" || type === "audio" || type === "image") && isRealText) {
+            handleAutoReply(from, to, contentToSave, lead)
+                .catch(err => console.error("⚠️ Auto-reply não crítico falhou:", err));
+        }
+
         // ✅ AMANDA 2.0 TRACKING (texto, áudio transcrito ou imagem descrita)
         if ((type === "text" || type === "audio" || type === "image") && isRealText) {
             handleResponseTracking(lead._id, contentToSave)
@@ -1685,4 +1758,33 @@ function mergeNonNull(base = {}, incoming = {}) {
         else out[k] = v;
     }
     return out;
+}
+
+
+export async function handleIncomingMessage(req, res) {
+    try {
+        const message = req.body;
+
+        if (!message?.from || !message?.content) {
+            return res.status(200).json({ ok: true });
+        }
+
+        logger.info('Mensagem recebida', {
+            from: message.from,
+            useNew: USE_NEW_ORCHESTRATOR
+        });
+
+        if (USE_NEW_ORCHESTRATOR) {
+            await WhatsAppOrchestrator.process(message);
+        } else {
+            // ⚠️ fluxo antigo intacto (fallback seguro)
+            await oldAmandaOrchestrator.process(message);
+        }
+
+        return res.status(200).json({ ok: true });
+
+    } catch (error) {
+        logger.error('Erro no whatsappController', error);
+        return res.status(500).json({ ok: false });
+    }
 }
