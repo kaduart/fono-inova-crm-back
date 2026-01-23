@@ -1,4 +1,3 @@
-// handlers/FallbackHandler.js
 export class FallbackHandler {
     async execute() {
         return {
