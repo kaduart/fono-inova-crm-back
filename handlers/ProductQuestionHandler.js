@@ -1,6 +1,6 @@
-import bookingProductMapper from '../bookingProductMapper.js';
-import aiAmandaService from '../aiAmandaService.js';
+import { generateAmandaReply } from '../services/aiAmandaService.js';
 import Logger from '../services/utils/Logger.js';
+import { mapFlagsToBookingProduct } from '../utils/bookingProductMapper.js';
 
 class ProductQuestionHandler {
     constructor() {
@@ -13,12 +13,12 @@ class ProductQuestionHandler {
                 leadId: context.leadId
             });
 
-            const product = await bookingProductMapper.map({
+            const product = await mapFlagsToBookingProduct.map({
                 message: message.content,
                 therapy: context.therapy
             });
 
-            const details = await aiAmandaService.getProductInfo({
+            const details = await generateAmandaReply.getProductInfo({
                 productId: product.id
             });
 

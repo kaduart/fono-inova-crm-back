@@ -1654,11 +1654,17 @@ async function handleAutoReply(from, to, content, lead) {
 
         if (useNew) {
             const result = await orchestrator.process({
-                lead: leadDoc,
-                message: { content: aggregatedContent },
-                context: { source: 'whatsapp-inbound' },
+                lead: lead,
+                message: { content: messageText },
+                context: {
+                    preferredPeriod: lead.preferredPeriod,
+                    preferredDate: lead.preferredDate,
+                    therapy: lead.therapy
+                },
                 services: {
-                    bookingService
+                    bookingService: amandaBookingService, // ou o nome correto do seu serviço
+                    productService: bookingProductMapper, // ou seu serviço real de produtos
+                    aiService: aiAmandaService
                 }
             });
 

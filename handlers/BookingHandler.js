@@ -1,6 +1,10 @@
-// handlers/BookingHandler.js
 export class BookingHandler {
     async execute({ lead, message, context, services }) {
+        // Validação defensiva
+        if (!services?.bookingService) {
+            throw new Error('bookingService não fornecido');
+        }
+
         const { bookingService } = services;
 
         // 1. Extrair preferências (se existirem)
@@ -10,7 +14,7 @@ export class BookingHandler {
         // 2. Buscar slots — FONTE ÚNICA
         const availability = await bookingService.findAvailableSlots({
             therapy: context.therapy,
-            leadId: lead._id,
+            leadId: lead?._id,
             preferredDate: date,
             preferredPeriod: period
         });
@@ -19,9 +23,9 @@ export class BookingHandler {
         return {
             data: {
                 therapy: context.therapy,
-                slots: availability.slots,
-                period: availability.period,
-                doctorId: availability.doctorId
+                slots: availability?.slots || [],
+                period: availability?.period,
+                doctorId: availability?.doctorId
             },
             events: ['SLOTS_AVAILABLE']
         };
