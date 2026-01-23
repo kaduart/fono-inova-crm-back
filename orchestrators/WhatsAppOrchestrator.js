@@ -12,7 +12,6 @@ export class WhatsAppOrchestrator {
     }
 
     async process({ lead, message, context, services }) {
-        n
         let lock;
 
         try {
