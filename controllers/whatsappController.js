@@ -19,6 +19,7 @@ import { default as getOptimizedAmandaResponse, default as oldAmandaOrchestrator
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
 import { normalizeE164BR } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
+import { bookingService } from '../services/amandaBookingService.js';
 
 const USE_NEW_ORCHESTRATOR =
     process.env.NEW_ORCHESTRATOR === 'true';
