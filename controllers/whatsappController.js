@@ -21,8 +21,7 @@ import { normalizeE164BR } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
 
 const USE_NEW_ORCHESTRATOR =
-    process.env.NEW_ORCHESTRATOR === 'true' &&
-    isCanaryLead(lead);
+    process.env.NEW_ORCHESTRATOR === 'true';
 
 
 const AUTO_TEST_NUMBERS = [
@@ -808,10 +807,12 @@ export const whatsappController = {
                 });
             }
 
+            const useNewForThisLead = USE_NEW_ORCHESTRATOR && isCanaryLead(lead._id);
+
             // 5. Gera resposta da Amanda
             console.log(`🤖 [AMANDA-RESUME] Gerando resposta para: "${lastInbound.content?.substring(0, 50)}..."`);
 
-            if (USE_NEW_ORCHESTRATOR) {
+            if (useNewForThisLead) {
                 result = await WhatsAppOrchestrator.process({
                     lead,
                     message,
