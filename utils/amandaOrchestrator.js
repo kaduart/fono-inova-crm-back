@@ -2070,7 +2070,7 @@ Em breve nossa equipe entra em contato 😊`
     // =========================================================================
     // 🆕 PASSO 3: TRIAGEM - SALVA DADOS IMEDIATAMENTE E VERIFICA O QUE FALTA
     // =========================================================================
-    if (wantsScheduling && shouldRunSchedulingFlow && lead?._id && !lead?.pendingPatientInfoForScheduling) {
+    if (wantsScheduling && lead?._id && !lead?.pendingPatientInfoForScheduling) {
         console.log("[TRIAGEM] Verificando dados necessários...");
 
         // 🆕 SALVA DADOS DETECTADOS IMEDIATAMENTE
