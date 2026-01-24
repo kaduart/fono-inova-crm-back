@@ -19,7 +19,6 @@ import {
     validateSlotStillAvailable
 } from '../services/amandaBookingService.js';
 
-import { detectAllTherapies, pickPrimaryTherapy } from '../utils/therapyDetector.js';
 
 // Clinical rules
 import { clinicalRulesEngine } from '../services/intelligence/clinicalRulesEngine.js';
@@ -31,6 +30,8 @@ import { decisionEngine } from '../services/intelligence/DecisionEngine.js';
 export class WhatsAppOrchestrator {
     constructor() {
         this.logger = new Logger('WhatsAppOrchestrator');
+        this.intentDetector = new IntentDetector();
+
     }
 
     normalizeHandler(handler) {
@@ -52,7 +53,7 @@ export class WhatsAppOrchestrator {
 
     async process({ lead, message, services }) {
         try {
-            const text = message?.content || message || '';
+            const text = message?.content || message?.text || '';
 
             // =========================
             // 1️⃣ MEMÓRIA & CONTEXTO
@@ -70,22 +71,15 @@ export class WhatsAppOrchestrator {
             }).catch(() => null);
 
 
-            const detectedTherapies = detectAllTherapies(text);
-            const primaryTherapy = pickPrimaryTherapy(detectedTherapies);
-
-            memoryContext.therapyArea = primaryTherapy;
-            memoryContext.detectedTherapies = detectedTherapies;
-
+            const intentResult = this.intentDetector.detect(message, memoryContext);
 
             const analysis = {
                 ...llmAnalysis,
-                flags,
-                therapyArea: primaryTherapy,
-                detectedTherapies,
-                intent: llmAnalysis?.intent || this.resolveIntentFromFlags(flags),
-                confidence: llmAnalysis?.confidence || 0.5
+                flags: intentResult.flags,
+                therapyArea: intentResult.therapy,
+                intent: intentResult.type,
+                confidence: intentResult.confidence || 0.5
             };
-
 
             // =========================
             // 3️⃣ ESTRATÉGIA

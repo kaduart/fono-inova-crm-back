@@ -12,9 +12,8 @@ export default class IntentDetector {
 
         // Detecta flags usando contexto
         const flags = detectAllFlags(text, {}, enrichedContext);
-
-        // Detecta terapia
-        const therapy = this.therapyDetector.detect(text);
+        const detectedTherapies = detectAllTherapies(text);
+        const therapy = pickPrimaryTherapy(detectedTherapies);
 
         // USA CONTEXTO PARA MELHORAR DECISÃO
         const hasTherapyInContext = !!enrichedContext.therapyArea;
