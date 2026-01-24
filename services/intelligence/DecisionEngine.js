@@ -67,13 +67,8 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
     // 4️⃣ PARCERIA
     // =========================
     if (analysis.intent === 'partnership') {
-        return {
-            action: 'partnership',
-            handler: 'partnershipHandler',
-            reason: 'business_partnership'
-        };
+        return { handler: 'fallbackHandler', reason: 'partnership_fallback' };
     }
-
     // =========================
     // 5️⃣ EMPREGO
     // =========================

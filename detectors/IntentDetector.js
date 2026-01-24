@@ -13,7 +13,7 @@ export default class IntentDetector {
 
         // Detecta terapias
         const detectedTherapies = detectAllTherapies(text);
-        const therapy = detectedTherapies?.[0] || null; // ✅ FIX: pega primeira terapia
+        const therapy = detectedTherapies?.[0]?.name || detectedTherapies?.[0]?.id || null;
 
         // USA CONTEXTO PARA MELHORAR DECISÃO
         const hasTherapyInContext = !!enrichedContext.therapyArea;
