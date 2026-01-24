@@ -82,13 +82,17 @@ export class WhatsAppOrchestrator {
             // =========================
             // 4️⃣ MISSING INFO
             // =========================
+            // =========================
+            // 4️⃣ MISSING INFO
+            // =========================
             const missing = {
                 needsName: !memoryContext?.name,
-                needsAge: !memoryContext?.patientAge,
-                needsTherapy: !memoryContext?.therapyArea,
+                needsAge: !memoryContext?.patientAge && !analysis?.extractedInfo?.age,
+                needsTherapy: !memoryContext?.therapyArea && !analysis?.therapyArea,
                 needsPeriod: !memoryContext?.preferredTime,
                 needsSlot: !memoryContext?.chosenSlot
             };
+
 
             // =========================
             // 5️⃣ REGRAS CLÍNICAS
