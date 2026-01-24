@@ -1,3 +1,5 @@
+// services/leadContext.js
+
 import Appointment from '../models/Appointment.js';
 import Lead from '../models/Leads.js';
 import Message from '../models/Message.js';
@@ -5,39 +7,38 @@ import { generateConversationSummary, needsNewSummary } from './conversationSumm
 
 export async function enrichLeadContext(leadId) {
     try {
-        const lead = await Lead.findById(leadId)
-            .populate('contact')
-            .lean();
+        // ✅ NÃO usa populate('contact') porque no seu schema contact é objeto embutido
+        const lead = await Lead.findById(leadId).lean();
 
         if (!lead) {
             return getDefaultContext();
         }
 
-        // ✅ Busca TODAS as mensagens (não limita mais)
+        // ✅ Busca TODAS as mensagens (não limita)
         const messages = await Message.find({
             lead: leadId,
-            // inclui template/mídia também (mantém contexto e evita 'esquecimento')
             type: { $in: ['text', 'template', 'image', 'audio', 'video', 'document'] }
         })
-            .sort({ timestamp: 1 }) // Ordem cronológica
+            .sort({ timestamp: 1 })
             .lean();
 
         const totalMessages = messages.length;
 
-        // ✅ FIX - Busca agendamentos FUTUROS (date é string "YYYY-MM-DD")
-        const today = new Date().toISOString().split('T')[0]; // "2026-01-08"
-        const appointments = await Appointment.find({
-            patient: lead.convertedToPatient,
-            date: { $gte: today }
-        }).lean();
+        // ✅ Busca agendamentos FUTUROS (só se já virou paciente)
+        const today = new Date().toISOString().split('T')[0];
+        const appointments = lead.convertedToPatient
+            ? await Appointment.find({
+                patient: lead.convertedToPatient,
+                date: { $gte: today }
+            }).lean()
+            : [];
 
-        // 🧠 LÓGICA DE CONTEXTO INTELIGENTE
+        // 🧠 CONTEXTO INTELIGENTE
         let conversationHistory = [];
         let shouldGreet = true;
         let summaryContext = null;
 
         if (totalMessages === 0) {
-            // Primeira mensagem ever
             conversationHistory = [];
             shouldGreet = true;
         }
@@ -52,27 +53,22 @@ export async function enrichLeadContext(leadId) {
                     type: msg.type
                 }));
 
-            // Checa se deve cumprimentar (última msg >24h atrás)
-            const lastMsgTime = messages[messages.length - 1].timestamp;
-            const hoursSince = (Date.now() - new Date(lastMsgTime)) / (1000 * 60 * 60);
-            shouldGreet = hoursSince > 24;
+            // Checa saudação
+            const lastMsgTime = messages[messages.length - 1]?.timestamp;
+            if (lastMsgTime) {
+                const hoursSince = (Date.now() - new Date(lastMsgTime)) / (1000 * 60 * 60);
+                shouldGreet = hoursSince > 24;
+            }
         }
         else {
-            // Conversa longa (>20): resumo + últimas 20
-
-            // 1. Verifica se precisa gerar novo resumo
-            let leadDoc = await Lead.findById(leadId); // Busca versão mutável
+            // Conversa longa: resumo + últimas 20
+            let leadDoc = await Lead.findById(leadId); // versão mutável
 
             if (needsNewSummary(lead, totalMessages, appointments)) {
-
-                // Mensagens antigas (todas menos últimas 20)
                 const oldMessages = messages.slice(0, -20);
-
-                // Gera resumo
                 const summary = await generateConversationSummary(oldMessages);
 
                 if (summary) {
-                    // Salva resumo no lead
                     await leadDoc.updateOne({
                         conversationSummary: summary,
                         summaryGeneratedAt: new Date(),
@@ -82,11 +78,9 @@ export async function enrichLeadContext(leadId) {
                     summaryContext = summary;
                 }
             } else {
-                // Reusa resumo existente
                 summaryContext = lead.conversationSummary;
             }
 
-            // 2. Últimas 20 mensagens completas
             const recentMessages = messages.slice(-20);
             conversationHistory = recentMessages
                 .filter(msg => (msg.content || '').toString().trim().length > 0)
@@ -97,18 +91,46 @@ export async function enrichLeadContext(leadId) {
                     type: msg.type
                 }));
 
-            // 3. Checa saudação
-            const lastMsgTime = recentMessages[recentMessages.length - 1].timestamp;
-            const hoursSince = (Date.now() - new Date(lastMsgTime)) / (1000 * 60 * 60);
-            shouldGreet = hoursSince > 24;
+            const lastMsgTime = recentMessages[recentMessages.length - 1]?.timestamp;
+            if (lastMsgTime) {
+                const hoursSince = (Date.now() - new Date(lastMsgTime)) / (1000 * 60 * 60);
+                shouldGreet = hoursSince > 24;
+            }
         }
+
+        // ✅ Normalizações alinhadas ao schema
+        const patientAge =
+            lead.patientInfo?.age ??
+            lead.qualificationData?.extractedInfo?.idade ??
+            lead.qualificationData?.extractedInfo?.age ??
+            null;
+
+        const ageGroup =
+            lead.qualificationData?.extractedInfo?.idadeRange ??
+            null;
+
+        const preferredTime =
+            lead.pendingPreferredPeriod ?? // ✅ campo real no schema
+            lead.autoBookingContext?.preferredPeriod ??
+            lead.qualificationData?.extractedInfo?.disponibilidade ??
+            lead.qualificationData?.extractedInfo?.preferredPeriod ??
+            null;
+
+        const therapyArea =
+            lead.therapyArea ??
+            lead.autoBookingContext?.therapyArea ??
+            lead.qualificationData?.extractedInfo?.therapyArea ??
+            lead.qualificationData?.extractedInfo?.areaTerapia ??
+            null;
 
         // ✅ Monta contexto final
         const context = {
             // Dados básicos
             leadId: lead._id,
-            name: lead.name,
-            phone: lead.contact?.phone,
+            name: lead.name || null,
+            // alias p/ compat com versões do Orchestrator que usam leadName
+            leadName: lead.name || null,
+            phone: lead.contact?.phone || lead.phone || null,
             origin: lead.origin,
 
             // Status
@@ -121,21 +143,28 @@ export async function enrichLeadContext(leadId) {
             messageCount: totalMessages,
             lastInteraction: lead.lastInteractionAt,
             daysSinceLastContact: calculateDaysSince(lead.lastInteractionAt),
-            patientAge: lead.patientAge || lead.qualificationData?.extractedInfo?.idade || null,
-            ageGroup: lead.ageGroup || lead.qualificationData?.extractedInfo?.idadeRange || null,
-            preferredTime: lead.preferredTime || lead.qualificationData?.extractedInfo?.disponibilidade || null,
-            chosenSlot: lead.pendingChosenSlot || null,
-            patientRelationship: lead.patientRelationship || null,
-            // 🆕 CONTEXTO INTELIGENTE
-            conversationHistory,      // Array [{role, content, timestamp}]
-            conversationSummary: summaryContext, // String com resumo ou null
-            shouldGreet,              // Boolean
-            autoBookingContext: lead.autoBookingContext || null,
-            pendingSchedulingSlots: lead.pendingSchedulingSlots || null,
-            pendingChosenSlot: lead.pendingChosenSlot || null,
-            therapyArea: lead.therapyArea || lead.autoBookingContext?.therapyArea || null,
 
-            // Intenções (mantém pra flags)
+            patientAge,
+            ageGroup,
+            preferredTime,
+
+            // Slots / agendamento
+            chosenSlot: lead.pendingChosenSlot || null,
+            pendingChosenSlot: lead.pendingChosenSlot || null,
+
+            pendingSchedulingSlots: lead.pendingSchedulingSlots || null,
+            // alias p/ compat com versões do Orchestrator que usam pendingSlots
+            pendingSlots: lead.pendingSchedulingSlots || null,
+
+            autoBookingContext: lead.autoBookingContext || null,
+            therapyArea,
+
+            // Contexto inteligente
+            conversationHistory,
+            conversationSummary: summaryContext,
+            shouldGreet,
+
+            // Intenções (flags)
             mentionedTherapies: extractMentionedTherapies(messages),
 
             // Estágio
@@ -145,66 +174,118 @@ export async function enrichLeadContext(leadId) {
             isFirstContact: totalMessages <= 1,
             isReturning: totalMessages > 3,
             needsUrgency: calculateDaysSince(lead.lastInteractionAt) > 7,
-            hasAppointments: appointments?.length > 0,
+
             futureAppointmentsCount: appointments?.length || 0,
             appointmentsInfo: appointments?.length > 0
                 ? appointments.map(a => ({ date: a.date, time: a.time, type: a.type }))
                 : null,
 
-            // ✅ ADD: Instrução explícita para Amanda
             appointmentWarning: appointments?.length === 0
-                ? "⚠️ ATENÇÃO: Este lead NÃO possui agendamentos futuros. NÃO mencione consultas marcadas ou confirmadas."
+                ? '⚠️ ATENÇÃO: Este lead NÃO possui agendamentos futuros. NÃO mencione consultas marcadas ou confirmadas.'
                 : null,
         };
 
         return context;
 
     } catch (error) {
+        console.error('Erro ao montar contexto do lead:', error);
         return getDefaultContext();
     }
 }
 
-// Funções auxiliares permanecem iguais
 function determineLeadStage(lead, messages, appointments) {
-    if (lead.convertedToPatient || appointments?.length > 0) return 'paciente';
-    if (lead.status === 'agendado') return 'agendado';
-    if (messages.some(m => /agend|marcar|quero.*consulta/i.test(m.content))) return 'interessado_agendamento';
-    if (messages.some(m => /pre[cç]o|valor|quanto.*custa/i.test(m.content))) return 'pesquisando_preco';
-    if (messages.length >= 3) return 'engajado';
-    if (messages.length > 0) return 'primeiro_contato';
+    if (!lead) return 'unknown';
+
+    // se já virou paciente
+    if (lead.convertedToPatient) return 'paciente';
+
+    // se tem agendamento futuro
+    if (appointments && appointments.length > 0) return 'interessado_agendamento';
+
+    // heurística simples por status/stage
+    if (lead.stage) return lead.stage;
+    if (lead.status === 'engajado') return 'engajado';
+    if (lead.status === 'agendado') return 'interessado_agendamento';
+
+    // fallback por volume de mensagens
+    if ((messages?.length || 0) > 3) return 'engajado';
+
     return 'novo';
 }
 
 function extractMentionedTherapies(messages) {
-    const therapies = new Set();
-    messages.forEach(msg => {
-        const content = msg.content?.toLowerCase() || '';
-        if (/neuropsic/i.test(content)) therapies.add('neuropsicológica');
-        if (/fono/i.test(content)) therapies.add('fonoaudiologia');
-        if (/psic[oó]log(?!.*neuro)/i.test(content)) therapies.add('psicologia');
-        if (/terapia.*ocupacional|to\b/i.test(content)) therapies.add('terapia ocupacional');
-        if (/fisio/i.test(content)) therapies.add('fisioterapia');
-        if (/musico/i.test(content)) therapies.add('musicoterapia');
-        if (/psicopedagog/i.test(content)) therapies.add('psicopedagogia');
-    });
-    return Array.from(therapies);
+    const text = (messages || [])
+        .map(m => m.content || '')
+        .join(' ')
+        .toLowerCase();
+
+    const therapies = [];
+
+    const map = [
+        { key: 'fonoaudiologia', patterns: ['fono', 'fonoaudiolog'] },
+        { key: 'psicologia', patterns: ['psico', 'psicolog'] },
+        { key: 'terapia ocupacional', patterns: ['to', 'terapia ocup'] },
+        { key: 'fisioterapia', patterns: ['fisio'] },
+        { key: 'neuropsicologia', patterns: ['neuropsic'] },
+    ];
+
+    for (const item of map) {
+        if (item.patterns.some(p => text.includes(p))) therapies.push(item.key);
+    }
+
+    return therapies;
 }
 
 function calculateDaysSince(date) {
     if (!date) return 999;
-    return Math.floor((Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24));
+    const diff = Date.now() - new Date(date).getTime();
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
 }
 
 function getDefaultContext() {
     return {
-        stage: 'novo',
-        isFirstContact: true,
+        leadId: null,
+        name: null,
+        leadName: null,
+        phone: null,
+        origin: null,
+
+        hasAppointments: false,
+        isPatient: false,
+        conversionScore: 0,
+        status: 'novo',
+
         messageCount: 0,
-        mentionedTherapies: [],
+        lastInteraction: null,
+        daysSinceLastContact: 999,
+
+        patientAge: null,
+        ageGroup: null,
+        preferredTime: null,
+
+        chosenSlot: null,
+        pendingChosenSlot: null,
+        pendingSchedulingSlots: null,
+        pendingSlots: null,
+
+        autoBookingContext: null,
+        therapyArea: null,
+
         conversationHistory: [],
         conversationSummary: null,
         shouldGreet: true,
-        needsUrgency: false
+
+        mentionedTherapies: [],
+        stage: 'novo',
+
+        isFirstContact: true,
+        isReturning: false,
+        needsUrgency: false,
+
+        futureAppointmentsCount: 0,
+        appointmentsInfo: null,
+
+        appointmentWarning: '⚠️ ATENÇÃO: Este lead NÃO possui agendamentos futuros. NÃO mencione consultas marcadas ou confirmadas.',
     };
 }
 
