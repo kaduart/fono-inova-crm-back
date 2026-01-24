@@ -1,15 +1,12 @@
-// handlers/index.js
-import { BookingHandler } from './BookingHandler.js';
-import { FallbackHandler } from './FallbackHandler.js';
+import bookingHandler from './BookingHandler.js';
+import fallbackHandler from './FallbackHandler.js';
 import LeadQualificationHandler from './LeadQualificationHandler.js';
-import { ProductHandler } from './ProductHandler.js';
+import productHandler from './ProductHandler.js';
 import ProductQuestionHandler from './ProductQuestionHandler.js';
-import { TherapyHandler } from './TherapyHandler.js';
+import therapyHandler from './TherapyHandler.js';
 
-// Crie instâncias (singletons) - use NEW aqui
-export const bookingHandler = new BookingHandler();
-export const fallbackHandler = new FallbackHandler();
-export const leadQualificationHandler = LeadQualificationHandler; // já é instância
-export const productHandler = new ProductHandler();
-export const therapyHandler = new TherapyHandler();
-export const productQuestionHandler = ProductQuestionHandler; // já é instância
+export { fallbackHandler };
+export { productHandler, therapyHandler };
+export { bookingHandler };
+export const leadQualificationHandler = LeadQualificationHandler;
+export const productQuestionHandler = ProductQuestionHandler;
