@@ -24,6 +24,7 @@ import {
 import { clinicalRulesEngine } from '../services/intelligence/clinicalRulesEngine.js';
 
 // Handlers
+import IntentDetector from '../detectors/IntentDetector.js';
 import * as handlers from '../handlers/index.js';
 import { decisionEngine } from '../services/intelligence/DecisionEngine.js';
 
