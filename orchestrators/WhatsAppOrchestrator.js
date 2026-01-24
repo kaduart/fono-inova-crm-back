@@ -1,7 +1,6 @@
 import Logger from '../services/utils/Logger.js';
 
 // Memory & Context
-import * as ConversationSummary from '../services/conversationSummary.js';
 import * as ContextMemory from '../services/intelligence/contextMemory.js';
 import { buildContextPack } from '../services/intelligence/ContextPack.js';
 import enrichLeadContext from '../services/leadContext.js';
@@ -186,7 +185,6 @@ export class WhatsAppOrchestrator {
                 await ContextMemory.update(lead._id, result.extractedInfo);
             }
 
-            await ConversationSummary.update(lead._id, text);
 
             // =========================
             // 11️⃣ RETORNO
