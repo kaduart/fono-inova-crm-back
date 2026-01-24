@@ -18,7 +18,7 @@ class LeadQualificationHandler {
             // 1️⃣ MONTA CONTEXTO
             // ===========================
             const leadName = memory?.name?.split(' ')[0] || null;
-            const patientAge = memory?.patientAge || analysis?.extractedInfo?.age || null;
+            const patientAge = analysis?.extractedInfo?.age || memory?.patientAge;
             const therapyArea = memory?.therapyArea || analysis?.therapyArea || null;
             const isFirstContact = memory?.isFirstContact || false;
             const history = memory?.conversationHistory || [];

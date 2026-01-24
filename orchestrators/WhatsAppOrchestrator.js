@@ -9,14 +9,12 @@ import enrichLeadContext from '../services/leadContext.js';
 import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js';
 import { nextStage } from '../services/intelligence/stageEngine.js';
 
-// Utils
-
+// Booking utils
 import {
     findAvailableSlots,
     pickSlotFromUserReply,
     validateSlotStillAvailable
 } from '../services/amandaBookingService.js';
-
 
 // Clinical rules
 import { clinicalRulesEngine } from '../services/intelligence/clinicalRulesEngine.js';
@@ -32,7 +30,6 @@ export class WhatsAppOrchestrator {
     constructor() {
         this.logger = new Logger('WhatsAppOrchestrator');
         this.intentDetector = new IntentDetector();
-
     }
 
     normalizeHandler(handler) {
@@ -43,19 +40,22 @@ export class WhatsAppOrchestrator {
         return null;
     }
 
-
     async process({ lead, message, services }) {
         try {
             const text = message?.content || message?.text || '';
+            const normalizedText = (text || '').trim().toLowerCase();
 
             // =========================
-            // 1️⃣ MEMÓRIA & CONTEXTO
+            // 1) MEMÓRIA & CONTEXTO
             // =========================
             const memoryContext = await enrichLeadContext(lead._id);
             const contextPack = await buildContextPack(lead._id);
 
+            // Só reaproveita memória como "verdade" quando a conversa NÃO esfriou
+            const allowMemoryCarryOver = memoryContext?.shouldGreet === false;
+
             // =========================
-            // 2️⃣ INTELIGÊNCIA
+            // 2) INTELIGÊNCIA (LLM + INTENT)
             // =========================
             const llmAnalysis = await analyzeLeadMessage({
                 text,
@@ -73,6 +73,7 @@ export class WhatsAppOrchestrator {
                 confidence: intentResult.confidence || 0.5
             };
 
+            // Normaliza extractedInfo
             analysis.extractedInfo = analysis.extractedInfo || analysis.extracted || {};
             if (analysis.extractedInfo.idade && !analysis.extractedInfo.age) {
                 analysis.extractedInfo.age = analysis.extractedInfo.idade;
@@ -81,79 +82,169 @@ export class WhatsAppOrchestrator {
                 analysis.extractedInfo.preferredPeriod = analysis.extractedInfo.disponibilidade;
             }
 
-            // ✅ Continuidade natural: se o lead respondeu "tarde", mantém a terapia anterior
+            // =========================
+            // 3) INFERRIDOS (SEM "ADIVINHAR" EM CONVERSA FRIA)
+            // =========================
             const inferredTherapy =
                 analysis.therapyArea ||
-                memoryContext?.therapyArea ||
-                memoryContext?.mentionedTherapies?.[0] ||
-                analysis.extractedInfo.therapyArea ||
-                analysis.extractedInfo.areaTerapia ||
+                (allowMemoryCarryOver ? memoryContext?.therapyArea : null) ||
                 null;
 
             if (!analysis.therapyArea && inferredTherapy) analysis.therapyArea = inferredTherapy;
 
+            const inferredAge =
+                analysis.extractedInfo?.age ||
+                (allowMemoryCarryOver ? memoryContext?.patientAge : null) ||
+                null;
+
+            const inferredPeriod =
+                analysis.extractedInfo?.preferredPeriod ||
+                (allowMemoryCarryOver ? memoryContext?.preferredTime : null) ||
+                null;
+
+            const inferredComplaint =
+                analysis.extractedInfo?.queixa ||
+                analysis.extractedInfo?.sintomas ||
+                analysis.extractedInfo?.motivoConsulta ||
+                (allowMemoryCarryOver ? memoryContext?.primaryComplaint : null) ||
+                null;
+
             // =========================
-            // 3️⃣ ESTRATÉGIA
+            // 4) ESTRATÉGIA
             // =========================
             const predictedStage = nextStage(lead, analysis);
             const urgency = calculateUrgency(analysis, memoryContext);
 
-            const inferredAge =
-                memoryContext?.patientAge ||
-                analysis.extractedInfo.age ||
-                null;
-
-            const inferredPeriod =
-                memoryContext?.preferredTime ||
-                analysis.extractedInfo.preferredPeriod ||
-                null;
-
-            const missing = {
-                needsName: !memoryContext?.leadName,
-                needsAge: !inferredAge,
-                needsTherapy: !inferredTherapy,
-                needsPeriod: !inferredPeriod,
-                needsSlot: !memoryContext?.chosenSlot,
-            };
-
-
             // =========================
-            // 5️⃣ REGRAS CLÍNICAS
+            // 5) BOOKING (STATE > INTENT)
             // =========================
-            const clinicalRules = clinicalRulesEngine({
-                memoryContext,
-                analysis
-            });
+            const bookingContext = {};
 
-            // =========================
-            // 6️⃣ BOOKING INTELIGENTE
-            // =========================
-            let bookingContext = {};
+            const pendingSlots = memoryContext?.pendingSchedulingSlots || null;
 
-            if (analysis.intent === 'scheduling' && memoryContext?.pendingSlots) {
-                const chosenSlot = pickSlotFromUserReply(text, memoryContext.pendingSlots);
 
-                if (chosenSlot) {
-                    const stillAvailable = await validateSlotStillAvailable(chosenSlot);
+            const hasPendingSlots = !!pendingSlots?.primary?.length;
+            if (hasPendingSlots) bookingContext.slots = pendingSlots;
 
-                    if (!stillAvailable) {
-                        const freshSlots = await findAvailableSlots({
-                            therapy: memoryContext.therapyArea,
-                            period: memoryContext.preferredTime
+            const existingChosenSlot = memoryContext?.chosenSlot || null;
+
+            const hasBasicProfile = !!(inferredTherapy && inferredAge && inferredPeriod);
+            const hasCompleteProfile = !!(hasBasicProfile && inferredComplaint);
+
+            // Se acabou de responder dado básico, avançamos o estado para scheduling
+            const justAnsweredBasic =
+                !!(
+                    analysis.extractedInfo?.age ||
+                    analysis.extractedInfo?.preferredPeriod ||
+                    analysis.therapyArea
+                );
+
+            if ((analysis.intent !== 'price') && (hasBasicProfile && (justAnsweredBasic || hasPendingSlots || existingChosenSlot))) {
+                analysis.intent = 'scheduling';
+            }
+
+            // Busca slots só quando tem perfil completo + queixa
+            if (analysis.intent === 'scheduling' && hasCompleteProfile && !hasPendingSlots && !existingChosenSlot) {
+                try {
+                    const slots = await findAvailableSlots({
+                        therapyArea: inferredTherapy,
+                        preferredPeriod: inferredPeriod,
+                        maxOptions: 2,
+                        daysAhead: 30
+                    });
+
+                    if (slots?.primary?.length) {
+                        await Leads.findByIdAndUpdate(lead._id, {
+                            $set: {
+                                pendingSchedulingSlots: {
+                                    primary: slots.primary,
+                                    alternativesSamePeriod: slots.alternativesSamePeriod || [],
+                                    alternativesOtherPeriod: slots.alternativesOtherPeriod || [],
+                                    generatedAt: new Date()
+                                }
+                            }
                         });
 
-                        bookingContext = {
-                            alternatives: freshSlots || []
+                        bookingContext.slots = {
+                            primary: slots.primary,
+                            alternativesSamePeriod: slots.alternativesSamePeriod || [],
+                            alternativesOtherPeriod: slots.alternativesOtherPeriod || []
                         };
+                    }
+                } catch (err) {
+                    this.logger.error('Erro ao buscar slots', err);
+                }
+            }
+
+            // Escolha do slot (A/B/1/2...) com strict=true
+            if (analysis.intent === 'scheduling' && bookingContext?.slots) {
+                const chosenSlot = pickSlotFromUserReply(text, bookingContext.slots, { strict: true });
+
+                if (chosenSlot) {
+                    const validation = await validateSlotStillAvailable(chosenSlot, {
+                        therapyArea: inferredTherapy,
+                        preferredPeriod: inferredPeriod
+                    });
+
+                    if (!validation?.isValid) {
+                        bookingContext.slotGone = true;
+                        bookingContext.alternatives = validation?.freshSlots || null;
+
+                        if (validation?.freshSlots) {
+                            await Leads.findByIdAndUpdate(lead._id, {
+                                $set: { pendingSchedulingSlots: validation.freshSlots }
+                            });
+                            bookingContext.slots = validation.freshSlots;
+                        }
                     } else {
                         bookingContext.chosenSlot = chosenSlot;
+
+                        await Leads.findByIdAndUpdate(lead._id, {
+                            $set: { pendingChosenSlot: chosenSlot },
+                            $unset: { pendingSchedulingSlots: "" }
+                        });
                     }
                 }
-
             }
 
             // =========================
-            // 7️⃣ DECISION ENGINE
+            // 6) MISSING (SEMÂNTICA CORRETA)
+            // =========================
+            const hasSlotsToShow = !!bookingContext?.slots?.primary?.length;
+            const hasChosenSlotNow = !!(bookingContext?.chosenSlot || existingChosenSlot);
+
+            const missing = {
+                needsTherapy: !inferredTherapy,
+                needsAge: !inferredAge,
+                needsPeriod: !inferredPeriod,
+
+
+                // Queixa só vira obrigatória quando já tem o básico
+                needsComplaint: hasBasicProfile && !inferredComplaint,
+
+                // Só precisa slot quando já tem queixa e ainda não tem slots nem slot escolhido
+                needsSlot: hasCompleteProfile && !hasSlotsToShow && !hasChosenSlotNow,
+
+                // Nome só depois de slot escolhido
+                needsName: hasChosenSlotNow && !memoryContext?.leadName && !analysis.extractedInfo?.nome
+            };
+
+            if (hasBasicProfile && missing.needsComplaint) {
+                analysis.intent = 'scheduling';
+            }
+
+            // Se tem slots para mostrar (ou slot escolhido), força intent scheduling
+            if (analysis.intent !== 'price' && (hasSlotsToShow || hasChosenSlotNow)) {
+                analysis.intent = 'scheduling';
+            }
+
+            // =========================
+            // 7) REGRAS CLÍNICAS
+            // =========================
+            const clinicalRules = clinicalRulesEngine({ memoryContext, analysis });
+
+            // =========================
+            // 8) DECISION ENGINE
             // =========================
             const decision = await decisionEngine({
                 analysis,
@@ -168,13 +259,11 @@ export class WhatsAppOrchestrator {
                 handler: decision.handler,
                 action: decision.action,
                 reason: decision.reason,
-                missing,
-                urgency
+                missing
             });
 
-
             // =========================
-            // 8️⃣ DECISION CONTEXT
+            // 9) EXECUTA HANDLER
             // =========================
             const decisionContext = {
                 message: { text, raw: message },
@@ -189,70 +278,40 @@ export class WhatsAppOrchestrator {
                 contextPack
             };
 
-            // =========================
-            // 9️⃣ EXECUTA HANDLER
-            // =========================
             const rawHandler = handlers[decision.handler];
             const handler = this.normalizeHandler(rawHandler) || handlers.fallbackHandler;
-            if (!rawHandler) {
-                this.logger.warn('Handler não encontrado, usando fallback', {
-                    decision
-                });
-            }
 
-            const result = await handler.execute({
-                decisionContext,
-                services
-            });
+            const result = await handler.execute({ decisionContext, services });
 
-            const extracted = analysis.extractedInfo || {};
-
+            // =========================
+            // 10) PERSISTÊNCIA DOS EXTRAÍDOS
+            // =========================
             const set = {};
+
             if (inferredTherapy) set.therapyArea = inferredTherapy;
             if (inferredAge) set["patientInfo.age"] = inferredAge;
             if (inferredPeriod) set.pendingPreferredPeriod = inferredPeriod;
+            if (inferredComplaint) set.primaryComplaint = inferredComplaint;
 
-            // espelha no qualificationData pra histórico (não quebra nada)
+            // Espelha no qualificationData
             if (inferredTherapy) set["qualificationData.extractedInfo.therapyArea"] = inferredTherapy;
             if (inferredAge) set["qualificationData.extractedInfo.idade"] = inferredAge;
             if (inferredPeriod) set["qualificationData.extractedInfo.disponibilidade"] = inferredPeriod;
-
-            // autoBookingContext pode ser null no schema → setar objeto inteiro evita erro de dot-notation
-            const currentAuto =
-                lead.autoBookingContext && typeof lead.autoBookingContext === "object"
-                    ? lead.autoBookingContext
-                    : {};
-
-            const auto = { ...currentAuto };
-            let autoChanged = false;
-
-            if (inferredTherapy) {
-                auto.therapyArea = inferredTherapy;
-                auto.mappedTherapyArea = inferredTherapy;
-                autoChanged = true;
-            }
-            if (inferredPeriod) {
-                auto.preferredPeriod = inferredPeriod;
-                autoChanged = true;
-            }
-            if (autoChanged) {
-                set.autoBookingContext = auto;
-            }
+            if (inferredComplaint) set["qualificationData.extractedInfo.queixa"] = inferredComplaint;
 
             if (Object.keys(set).length) {
                 await Leads.findByIdAndUpdate(lead._id, { $set: set });
             }
 
-
             // =========================
-            // 🔟 APRENDIZADO (ÚNICO)
+            // 11) APRENDIZADO (ÚNICO PONTO)
             // =========================
             if (result?.extractedInfo && Object.keys(result.extractedInfo).length > 0) {
                 await ContextMemory.update(lead._id, result.extractedInfo);
             }
 
             // =========================
-            // 11️⃣ RETORNO
+            // 12) RETORNO
             // =========================
             return {
                 command: 'SEND_MESSAGE',

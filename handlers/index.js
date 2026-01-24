@@ -10,3 +10,4 @@ export { productHandler, therapyHandler };
 export { bookingHandler };
 export const leadQualificationHandler = LeadQualificationHandler;
 export const productQuestionHandler = ProductQuestionHandler;
+export { complaintCollectionHandler } from './complaintCollectionHandler.js';
