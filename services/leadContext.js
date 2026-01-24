@@ -98,11 +98,12 @@ export async function enrichLeadContext(leadId) {
             }
         }
 
-        // ✅ Normalizações alinhadas ao schema
+        // ✅ Normalizações alinhadas ao schema (COM ALIASES E QUEIXA)
         const patientAge =
             lead.patientInfo?.age ??
-            lead.qualificationData?.extractedInfo?.idade ??
+            lead.patientAge ??
             lead.qualificationData?.extractedInfo?.age ??
+            lead.qualificationData?.extractedInfo?.idade ??
             null;
 
         const ageGroup =
@@ -111,6 +112,7 @@ export async function enrichLeadContext(leadId) {
 
         const preferredTime =
             lead.pendingPreferredPeriod ?? // ✅ campo real no schema
+            lead.preferredTime ??
             lead.autoBookingContext?.preferredPeriod ??
             lead.qualificationData?.extractedInfo?.disponibilidade ??
             lead.qualificationData?.extractedInfo?.preferredPeriod ??
@@ -123,13 +125,25 @@ export async function enrichLeadContext(leadId) {
             lead.qualificationData?.extractedInfo?.areaTerapia ??
             null;
 
-        // ✅ Monta contexto final
+        // 🆕 QUEIXA PRINCIPAL (Primary Complaint) - ESSENCIAL PARA O ACOLHIMENTO
+        const primaryComplaint =
+            lead.primaryComplaint ??
+            lead.qualificationData?.extractedInfo?.queixa ??
+            lead.qualificationData?.extractedInfo?.sintomas ??
+            lead.qualificationData?.extractedInfo?.motivoConsulta ??
+            lead.qualificationData?.extractedInfo?.complaint ??
+            null;
+
+        // ✅ Monta contexto final (COMPLETO)
         const context = {
             // Dados básicos
             leadId: lead._id,
             name: lead.name || null,
-            // alias p/ compat com versões do Orchestrator que usam leadName
-            leadName: lead.name || null,
+            // 🆕 ALIAS: leadName (usado por alguns handlers antigos)
+            leadName: lead.name || lead.patientName || null,
+            // 🆕 PRIMEIRO NOME (para saudações personalizadas)
+            leadFirstName: lead.name ? lead.name.split(' ')[0] : null,
+
             phone: lead.contact?.phone || lead.phone || null,
             origin: lead.origin,
 
@@ -144,17 +158,22 @@ export async function enrichLeadContext(leadId) {
             lastInteraction: lead.lastInteractionAt,
             daysSinceLastContact: calculateDaysSince(lead.lastInteractionAt),
 
+            // Dados do paciente
             patientAge,
             ageGroup,
             preferredTime,
 
+            // 🆕 QUEIXA (para o fluxo de acolhimento obrigatório)
+            primaryComplaint,
+            complaint: primaryComplaint, // alias
+
             // Slots / agendamento
-            chosenSlot: lead.pendingChosenSlot || null,
+            chosenSlot: lead.pendingChosenSlot || lead.autoBookingContext?.chosenSlot || null,
             pendingChosenSlot: lead.pendingChosenSlot || null,
 
             pendingSchedulingSlots: lead.pendingSchedulingSlots || null,
-            // alias p/ compat com versões do Orchestrator que usam pendingSlots
-            pendingSlots: lead.pendingSchedulingSlots || null,
+            // 🆕 ALIAS: pendingSlots (busca em várias fontes)
+            pendingSlots: lead.pendingSchedulingSlots ?? lead.autoBookingContext?.pendingSchedulingSlots ?? lead.autoBookingContext?.lastOfferedSlots ?? null,
 
             autoBookingContext: lead.autoBookingContext || null,
             therapyArea,
@@ -162,7 +181,7 @@ export async function enrichLeadContext(leadId) {
             // Contexto inteligente
             conversationHistory,
             conversationSummary: summaryContext,
-            shouldGreet,
+            shouldGreet, // 🆕 ESSENCIAL: controla se pode usar memória ou não
 
             // Intenções (flags)
             mentionedTherapies: extractMentionedTherapies(messages),
@@ -183,6 +202,15 @@ export async function enrichLeadContext(leadId) {
             appointmentWarning: appointments?.length === 0
                 ? '⚠️ ATENÇÃO: Este lead NÃO possui agendamentos futuros. NÃO mencione consultas marcadas ou confirmadas.'
                 : null,
+
+            // 🆕 DEBUG: campos brutos para facilitar troubleshooting
+            _debug: {
+                rootTherapy: lead.therapyArea,
+                autoBookingTherapy: lead.autoBookingContext?.therapyArea,
+                qualificationTherapy: lead.qualificationData?.extractedInfo?.therapyArea,
+                hasComplaint: !!primaryComplaint,
+                hasSlots: !!(lead.pendingSchedulingSlots || lead.autoBookingContext?.pendingSchedulingSlots)
+            }
         };
 
         return context;
@@ -247,6 +275,7 @@ function getDefaultContext() {
         leadId: null,
         name: null,
         leadName: null,
+        leadFirstName: null,
         phone: null,
         origin: null,
 
@@ -262,6 +291,10 @@ function getDefaultContext() {
         patientAge: null,
         ageGroup: null,
         preferredTime: null,
+
+        // 🆕 Campos novos no default
+        primaryComplaint: null,
+        complaint: null,
 
         chosenSlot: null,
         pendingChosenSlot: null,
@@ -286,6 +319,8 @@ function getDefaultContext() {
         appointmentsInfo: null,
 
         appointmentWarning: '⚠️ ATENÇÃO: Este lead NÃO possui agendamentos futuros. NÃO mencione consultas marcadas ou confirmadas.',
+
+        _debug: null
     };
 }
 

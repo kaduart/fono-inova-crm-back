@@ -12,21 +12,49 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
     }
 
     // =========================
-    // 1️⃣ AGENDAMENTO
+    // 1️⃣ AGENDAMENTO (COM ACOLHIMENTO OBRIGATÓRIO)
     // =========================
     if (analysis.intent === 'scheduling') {
-
         const missingKeys = Object.keys(missing).filter(k => missing[k]);
 
+        // Se falta dados básicos (terapia, idade, período)
         if (missingKeys.length > 0) {
+            // NÃO tratar 'needsComplaint', 'needsSlot' nem 'needsName' como "básico"
+            // - needsComplaint = etapa do meio (queixa)
+            // - needsSlot = tarefa do booking handler (buscar/mostrar slots)
+            // - needsName = só depois que houver slot escolhido
+            const basicDataMissing = missingKeys.filter(k =>
+                !['needsComplaint', 'needsSlot', 'needsName'].includes(k)
+            );
+
+            if (basicDataMissing.length > 0) {
+                return {
+                    action: 'ask_missing',
+                    handler: 'leadQualificationHandler',
+                    reason: basicDataMissing[0]
+                };
+            }
+        }
+
+        // 🆕 ETAPA DO MEIO: Queixa antes de mostrar horários
+        if (missing.needsComplaint) {
             return {
-                action: 'ask_missing',
-                handler: 'leadQualificationHandler',
-                reason: missingKeys[0]
+                action: 'collect_complaint',
+                handler: 'complaintCollectionHandler',
+                reason: 'needs_clinical_context_before_scheduling'
             };
         }
 
+        // Se já escolheu slot → coleta dados do paciente (passo a passo) / confirma
         if (bookingContext?.chosenSlot) {
+            if (missing.needsName) {
+                return {
+                    action: 'collect_patient_data',
+                    handler: 'bookingHandler',
+                    reason: 'needsName'
+                };
+            }
+
             return {
                 action: 'confirm_booking',
                 handler: 'bookingHandler',
@@ -34,6 +62,7 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
             };
         }
 
+        // Se tem tudo (dados + queixa) → mostra/busca slots
         return {
             action: 'booking',
             handler: 'bookingHandler',
@@ -69,6 +98,7 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
     if (analysis.intent === 'partnership') {
         return { handler: 'fallbackHandler', reason: 'partnership_fallback' };
     }
+
     // =========================
     // 5️⃣ EMPREGO
     // =========================
@@ -81,7 +111,29 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
     }
 
     // =========================
-    // 6️⃣ QUALIFICAÇÃO PADRÃO
+    // 6️⃣ QUEIXA (FORA DO SCHEDULING)
+    // =========================
+    if (!missing.needsTherapy && !missing.needsAge && !missing.needsPeriod && missing.needsComplaint) {
+        return {
+            action: 'collect_complaint',
+            handler: 'complaintCollectionHandler',
+            reason: 'awaiting_clinical_context'
+        };
+    }
+
+    // =========================
+    // 7️⃣ SLOT ESCOLHIDO, MAS INTENT NÃO ESTÁ "scheduling"
+    // =========================
+    if (bookingContext?.chosenSlot && missing.needsName) {
+        return {
+            action: 'collect_patient_data',
+            handler: 'bookingHandler',
+            reason: 'needsName'
+        };
+    }
+
+    // =========================
+    // 8️⃣ QUALIFICAÇÃO PADRÃO
     // =========================
     return {
         action: 'qualification',
