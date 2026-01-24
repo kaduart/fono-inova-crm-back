@@ -69,7 +69,7 @@ export class WhatsAppOrchestrator {
             }).catch(() => null);
 
             const flags = text ? detectAllFlags(text, lead, memoryContext) : {};
-            const detectedTherapies = detectAllTherapies(content || "");
+            const detectedTherapies = detectAllTherapies(text);
             const primaryTherapy = pickPrimaryTherapy(detectedTherapies);
 
             memoryContext.therapyArea = primaryTherapy;
