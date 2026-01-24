@@ -14,12 +14,11 @@ import * as UrgencyScheduler from '../services/intelligence/UrgencyScheduler.js'
 // Utils
 import {
     pickSlotFromUserReply,
-    validateSlotStillAvailable,
-    findAvailableSlots
+    validateSlotStillAvailable
 } from '../services/amandaBookingService.js';
 
 import { detectAllFlags } from '../utils/flagsDetector.js';
-import * as TherapyDetector from '../utils/therapyDetector.js';
+import { detectAllTherapies, pickPrimaryTherapy } from '../utils/therapyDetector.js';
 
 // Clinical rules
 import { clinicalRulesEngine } from '../services/intelligence/clinicalRulesEngine.js';
@@ -70,7 +69,12 @@ export class WhatsAppOrchestrator {
             }).catch(() => null);
 
             const flags = text ? detectAllFlags(text, lead, memoryContext) : {};
-            const detectedTherapy = text ? TherapyDetector.detect(text) : null;
+            const detectedTherapies = detectAllTherapies(content || "");
+            const primaryTherapy = pickPrimaryTherapy(detectedTherapies);
+
+            memoryContext.therapyArea = primaryTherapy;
+            memoryContext.detectedTherapies = detectedTherapies;
+
 
             const analysis = {
                 ...llmAnalysis,
