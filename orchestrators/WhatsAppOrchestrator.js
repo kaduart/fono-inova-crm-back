@@ -79,10 +79,6 @@ export class WhatsAppOrchestrator {
             const predictedStage = nextStage(lead, analysis);
             const urgency = calculateUrgency(analysis, memoryContext);
 
-            // =========================
-            // 4️⃣ MISSING INFO
-            // =========================
-            // =========================
             // 4️⃣ MISSING INFO
             // =========================
             const missing = {
