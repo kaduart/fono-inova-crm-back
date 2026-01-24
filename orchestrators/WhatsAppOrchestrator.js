@@ -12,12 +12,13 @@ import { nextStage } from '../services/intelligence/stageEngine.js';
 import * as UrgencyScheduler from '../services/intelligence/UrgencyScheduler.js';
 
 // Utils
+
 import {
+    findAvailableSlots,
     pickSlotFromUserReply,
     validateSlotStillAvailable
 } from '../services/amandaBookingService.js';
 
-import { detectAllFlags } from '../utils/flagsDetector.js';
 import { detectAllTherapies, pickPrimaryTherapy } from '../utils/therapyDetector.js';
 
 // Clinical rules
@@ -68,7 +69,7 @@ export class WhatsAppOrchestrator {
                 history: memoryContext?.conversationHistory || []
             }).catch(() => null);
 
-            const flags = text ? detectAllFlags(text, lead, memoryContext) : {};
+
             const detectedTherapies = detectAllTherapies(text);
             const primaryTherapy = pickPrimaryTherapy(detectedTherapies);
 
@@ -79,10 +80,12 @@ export class WhatsAppOrchestrator {
             const analysis = {
                 ...llmAnalysis,
                 flags,
-                detectedTherapy,
+                therapyArea: primaryTherapy,
+                detectedTherapies,
                 intent: llmAnalysis?.intent || this.resolveIntentFromFlags(flags),
                 confidence: llmAnalysis?.confidence || 0.5
             };
+
 
             // =========================
             // 3️⃣ ESTRATÉGIA
@@ -121,14 +124,19 @@ export class WhatsAppOrchestrator {
                     const stillAvailable = await validateSlotStillAvailable(chosenSlot);
 
                     if (!stillAvailable) {
-                        bookingContext = alternativesOtherPeriod({
+                        const freshSlots = await findAvailableSlots({
                             therapy: memoryContext.therapyArea,
                             period: memoryContext.preferredTime
                         });
+
+                        bookingContext = {
+                            alternatives: freshSlots || []
+                        };
                     } else {
                         bookingContext.chosenSlot = chosenSlot;
                     }
                 }
+
             }
 
             // =========================
