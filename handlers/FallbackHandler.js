@@ -1,9 +1,10 @@
-export class FallbackHandler {
-    async execute() {
+// handlers/FallbackHandler.js
+class FallbackHandler {
+    async execute({ decisionContext }) {
         return {
-            data: {
-                fallback: true
-            }
+            text: 'Desculpe, não entendi muito bem 😅 Pode me explicar de outra forma? 💚'
         };
     }
 }
+
+export default new FallbackHandler();

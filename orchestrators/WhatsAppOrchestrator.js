@@ -1,53 +1,206 @@
-// orchestrators/WhatsAppOrchestrator.js
-import { IntentDetector } from '../detectors/index.js';
-import * as handlers from '../handlers/index.js'; // agora vem instâncias
 import Logger from '../services/utils/Logger.js';
+
+// Memory & Context
+import * as ConversationSummary from '../services/conversationSummary.js';
+import * as ContextMemory from '../services/intelligence/contextMemory.js';
+import { buildContextPack } from '../services/intelligence/ContextPack.js';
+import enrichLeadContext from '../services/leadContext.js';
+
+// Intelligence
+import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js';
+import { nextStage } from '../services/intelligence/stageEngine.js';
+import * as UrgencyScheduler from '../services/intelligence/UrgencyScheduler.js';
+
+// Utils
+import {
+    pickSlotFromUserReply,
+    validateSlotStillAvailable,
+    findAvailableSlots
+} from '../services/amandaBookingService.js';
+
+import { detectAllFlags } from '../utils/flagsDetector.js';
+import * as TherapyDetector from '../utils/therapyDetector.js';
+
+// Clinical rules
+import { clinicalRulesEngine } from '../services/intelligence/clinicalRulesEngine.js';
+
+// Handlers
+import * as handlers from '../handlers/index.js';
+import { decisionEngine } from '../services/intelligence/DecisionEngine.js';
 
 export class WhatsAppOrchestrator {
     constructor() {
-        this.intentDetector = new IntentDetector();
         this.logger = new Logger('WhatsAppOrchestrator');
     }
 
-    async process({ lead, message, context, services }) {
+    normalizeHandler(handler) {
+        if (!handler) return null;
+        if (typeof handler.execute === 'function') return handler;
+        if (typeof handler === 'function') return { execute: handler };
+        if (handler.default) return this.normalizeHandler(handler.default);
+        return null;
+    }
+
+    resolveIntentFromFlags(flags) {
+        if (flags.wantsSchedule) return 'scheduling';
+        if (flags.asksPrice) return 'price';
+        if (flags.mentionsSpeechTherapy) return 'therapy_info';
+        if (flags.partnership) return 'partnership';
+        if (flags.jobContext) return 'job';
+        return 'qualification';
+    }
+
+    async process({ lead, message, services }) {
         try {
-            if (!services) {
-                throw new Error('Services não fornecidos');
-            }
+            const text = message?.content || message || '';
 
-            // 1. Detectar intenção
-            const intent = this.intentDetector.detect(message);
-            this.logger.info('Intenção detectada', { type: intent.type });
+            // =========================
+            // 1️⃣ MEMÓRIA & CONTEXTO
+            // =========================
+            const memoryContext = await enrichLeadContext(lead._id);
+            const contextPack = await buildContextPack(lead._id);
 
-            // 2. Selecionar handler (agora retorna instância)
-            const handler = this.selectHandler(intent);
-
-            if (!handler || typeof handler.execute !== 'function') {
-                this.logger.error('Handler inválido', {
-                    handler: handler?.constructor?.name,
-                    type: typeof handler
-                });
-                throw new Error('Handler não encontrado ou inválido');
-            }
-
-            // 3. Executar handler
-            const result = await handler.execute({
+            // =========================
+            // 2️⃣ INTELIGÊNCIA
+            // =========================
+            const llmAnalysis = await analyzeLeadMessage({
+                text,
                 lead,
-                message,
-                context: {
-                    ...context,
-                    therapy: intent?.therapy || null,
-                    intentConfidence: intent?.confidence || 0,
-                    flags: intent?.flags || {}
-                },
+                history: memoryContext?.conversationHistory || []
+            }).catch(() => null);
+
+            const flags = text ? detectAllFlags(text, lead, memoryContext) : {};
+            const detectedTherapy = text ? TherapyDetector.detect(text) : null;
+
+            const analysis = {
+                ...llmAnalysis,
+                flags,
+                detectedTherapy,
+                intent: llmAnalysis?.intent || this.resolveIntentFromFlags(flags),
+                confidence: llmAnalysis?.confidence || 0.5
+            };
+
+            // =========================
+            // 3️⃣ ESTRATÉGIA
+            // =========================
+            const predictedStage = nextStage(lead, analysis);
+            const urgency = UrgencyScheduler(analysis, memoryContext);
+
+            // =========================
+            // 4️⃣ MISSING INFO
+            // =========================
+            const missing = {
+                needsName: !memoryContext?.name,
+                needsAge: !memoryContext?.patientAge,
+                needsTherapy: !memoryContext?.therapyArea,
+                needsPeriod: !memoryContext?.preferredTime,
+                needsSlot: !memoryContext?.chosenSlot
+            };
+
+            // =========================
+            // 5️⃣ REGRAS CLÍNICAS
+            // =========================
+            const clinicalRules = clinicalRulesEngine({
+                memoryContext,
+                analysis
+            });
+
+            // =========================
+            // 6️⃣ BOOKING INTELIGENTE
+            // =========================
+            let bookingContext = {};
+
+            if (analysis.intent === 'scheduling' && memoryContext?.pendingSlots) {
+                const chosenSlot = pickSlotFromUserReply(text, memoryContext.pendingSlots);
+
+                if (chosenSlot) {
+                    const stillAvailable = await validateSlotStillAvailable(chosenSlot);
+
+                    if (!stillAvailable) {
+                        bookingContext = alternativesOtherPeriod({
+                            therapy: memoryContext.therapyArea,
+                            period: memoryContext.preferredTime
+                        });
+                    } else {
+                        bookingContext.chosenSlot = chosenSlot;
+                    }
+                }
+            }
+
+            // =========================
+            // 7️⃣ DECISION ENGINE
+            // =========================
+            const decision = await decisionEngine({
+                analysis,
+                missing,
+                urgency,
+                bookingContext,
+                clinicalRules
+            });
+
+            this.logger.info('DECISION_ENGINE', {
+                intent: analysis.intent,
+                handler: decision.handler,
+                action: decision.action,
+                reason: decision.reason,
+                missing,
+                urgency
+            });
+
+
+            // =========================
+            // 8️⃣ DECISION CONTEXT
+            // =========================
+            const decisionContext = {
+                message: { text, raw: message },
+                lead,
+                memory: memoryContext,
+                analysis,
+                strategy: { predictedStage, urgency },
+                missing,
+                clinicalRules,
+                booking: bookingContext,
+                decision,
+                contextPack
+            };
+
+            // =========================
+            // 9️⃣ EXECUTA HANDLER
+            // =========================
+            const rawHandler = handlers[decision.handler];
+            const handler = this.normalizeHandler(rawHandler) || handlers.fallbackHandler;
+            if (!rawHandler) {
+                this.logger.warn('Handler não encontrado, usando fallback', {
+                    decision
+                });
+            }
+
+            const result = await handler.execute({
+                decisionContext,
                 services
             });
 
-            // 4. Decidir comando
-            return this.decideCommand({ handlerResult: result });
+            // =========================
+            // 🔟 APRENDIZADO
+            // =========================
+            if (result?.extractedInfo) {
+                await ContextMemory.update(lead._id, result.extractedInfo);
+            }
+
+            await ConversationSummary.update(lead._id, text);
+
+            // =========================
+            // 11️⃣ RETORNO
+            // =========================
+            return {
+                command: 'SEND_MESSAGE',
+                payload: {
+                    text: result?.text || 'Posso te ajudar com mais alguma coisa? 💚'
+                }
+            };
 
         } catch (error) {
-            this.logger.error('Erro no Orchestrator', error);
+            this.logger.error('Erro no WhatsAppOrchestrator', error);
             return {
                 command: 'SEND_MESSAGE',
                 payload: {
@@ -57,78 +210,6 @@ export class WhatsAppOrchestrator {
             };
         }
     }
-
-    selectHandler(intent = {}) {
-        const flags = intent.flags || {};
-
-        // Agora retorna as instâncias importadas, não as classes
-        if (flags.wantsSchedule) {
-            return handlers.bookingHandler; // ✅ instância criada no index.js
-        }
-
-        if (flags.asksPrice) {
-            return handlers.productHandler; // ✅ instância
-        }
-
-        if (flags.mentionsSpeechTherapy || intent.type === 'therapy_question') {
-            return handlers.therapyHandler; // ✅ instância
-        }
-
-        return handlers.fallbackHandler; // ✅ instância
-    }
-
-    decideCommand({ handlerResult }) {
-        const { events = [], data } = handlerResult || {};
-
-        // 🟢 1. Slots disponíveis (Booking) - PRIORIDADE 1
-        if (events?.includes('SLOTS_AVAILABLE')) {
-            return {
-                command: 'SEND_MESSAGE',
-                payload: {
-                    type: 'SLOT_OPTIONS',
-                    data
-                }
-            };
-        }
-
-        // 🟡 2. Informações de produto (Preço) - PRIORIDADE 2
-        if (events?.includes('PRODUCT_INFO_PROVIDED')) {
-            return {
-                command: 'SEND_MESSAGE',
-                payload: {
-                    type: 'PRODUCT_INFO',
-                    text: data?.aiResponse || `Sobre ${data?.product?.product || 'consulta'}: consulte valores`,
-                    data: data?.product
-                }
-            };
-        }
-
-        // 🔵 3. Informações de terapia - PRIORIDADE 3
-        if (events?.includes('THERAPY_INFO_PROVIDED')) {
-            return {
-                command: 'SEND_MESSAGE',
-                payload: {
-                    type: 'THERAPY_INFO',
-                    text: data?.aiResponse || `Sobre ${data?.therapy}: ...`,
-                    data
-                }
-            };
-        }
-
-        // 🟠 4. Fallback (não entendeu)
-        if (data?.fallback) {
-            return {
-                command: 'SEND_MESSAGE',
-                payload: {
-                    text: 'Pode me explicar um pouquinho melhor o que você precisa?'
-                }
-            };
-        }
-
-        // ⚪ 5. Default - Nenhuma ação
-        return {
-            command: 'NO_REPLY',
-            meta: { reason: 'no_action_required' }
-        };
-    }
 }
+
+export default WhatsAppOrchestrator;

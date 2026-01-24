@@ -1,51 +1,69 @@
-import { generateAmandaReply } from '../services/aiAmandaService.js';
-import { mapFlagsToBookingProduct } from '../utils/bookingProductMapper.js'; // ✅ Importe a função direta
-import Logger from '../services/utils/Logger.js';
+// handlers/ProductHandler.js
 
-export class ProductHandler {
-    constructor() {
-        this.logger = new Logger('ProductHandler');
-    }
+import { getPriceLinesForDetectedTherapies } from '../services/intelligence/getPriceLinesForDetectedTherapies.js';
+import { buildValueAnchoredClosure } from '../services/intelligence/buildValueAnchoredClosure.js';
 
-    async execute({ message, context, services }) {
-        try {
-            this.logger.info('Processando pergunta de produto', {
-                leadId: context.lead?._id
-            });
+class ProductHandler {
+    async execute({ decisionContext }) {
+        const { memory, analysis, strategy, missing } = decisionContext;
 
-            // ✅ Use a função diretamente (não é .map())
-            const flags = context.flags || {};
-            const product = mapFlagsToBookingProduct(flags, context.lead);
-
-            // Se precisar do texto da mensagem nos flags:
-            if (!flags.text && message.content) {
-                flags.text = message.content;
-                flags.rawText = message.content;
-            }
-
-            const response = await generateAmandaReply({
-                userText: message.content,
-                lead: { _id: context.lead?._id },
-                context: {
-                    product,
-                    intent: 'price_inquiry'
-                }
-            });
-
+        // =========================
+        // 1️⃣ SE NÃO SABE A TERAPIA
+        // =========================
+        if (missing.needsTherapy) {
             return {
-                data: {
-                    product,
-                    aiResponse: response
-                },
-                events: ['PRODUCT_INFO_PROVIDED']
-            };
-
-        } catch (error) {
-            this.logger.error('Erro no ProductHandler', error);
-            return {
-                data: { fallback: true },
-                events: []
+                text: 'Para te informar o valor certinho, é para qual área você está procurando atendimento? (fono, psicologia, fisio ou TO) 💚'
             };
         }
+
+        const therapy = memory.therapyArea || analysis.detectedTherapy;
+
+        // =========================
+        // 2️⃣ BUSCA LINHAS DE PREÇO
+        // =========================
+        const priceLines = getPriceLinesForDetectedTherapies([therapy]);
+
+        if (!priceLines || priceLines.length === 0) {
+            return {
+                text: 'Posso verificar os valores para você sim 😊 Você poderia me dizer qual área de atendimento está procurando? 💚'
+            };
+        }
+
+        const priceText = priceLines.join('\n');
+
+        // =========================
+        // 3️⃣ TEXTO BASE (VALOR + BENEFÍCIO)
+        // =========================
+        let responseText = `Perfeito! Vou te explicar direitinho 😊\n\n${priceText}`;
+
+        // =========================
+        // 4️⃣ VALUE ANCHORING (URGÊNCIA)
+        // =========================
+        if (strategy?.urgency >= 2) {
+            const closure = buildValueAnchoredClosure({
+                therapy,
+                age: memory.patientAge,
+                complaint: memory.complaint
+            });
+
+            if (closure) {
+                responseText += `\n\n${closure}`;
+            }
+        }
+
+        // =========================
+        // 5️⃣ CTA FLEXÍVEL
+        // =========================
+        if (!missing.needsAge && !missing.needsTherapy) {
+            responseText += `\n\nSe quiser, posso verificar horários disponíveis para você ainda hoje 💚`;
+        } else {
+            responseText += `\n\nQuer que eu te ajude a verificar horários? 💚`;
+        }
+
+        return {
+            text: responseText
+        };
     }
 }
+
+export default new ProductHandler();

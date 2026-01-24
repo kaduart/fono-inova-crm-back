@@ -7,27 +7,45 @@ export default class IntentDetector {
         this.therapyDetector = new TherapyDetector();
     }
 
-    detect(message) {
+    detect(message, enrichedContext = {}) {
         const text = message?.content || message || '';
 
-        // Detecta flags usando sua função existente
-        const flags = detectAllFlags(text); // ou deriveFlagsFromText
+        // Detecta flags usando contexto
+        const flags = detectAllFlags(text, {}, enrichedContext);
 
         // Detecta terapia
         const therapy = this.therapyDetector.detect(text);
 
+        // USA CONTEXTO PARA MELHORAR DECISÃO
+        const hasTherapyInContext = !!enrichedContext.therapyArea;
+        const hasAgeInContext = !!enrichedContext.patientAge;
+
         return {
-            type: this.resolveType(flags),
-            flags, // ✅ importante: passar as flags
+            type: this.resolveType(flags, { hasTherapyInContext, hasAgeInContext }),
+            flags,
             therapy,
-            confidence: 0.8
+            confidence: this.calculateConfidence(flags, enrichedContext)
         };
     }
 
-    resolveType(flags) {
+    resolveType(flags, ctx = {}) {
+        // Se já tem terapia + idade e quer agendar → booking direto
+        if (flags.wantsSchedule && ctx.hasTherapyInContext && ctx.hasAgeInContext) {
+            return 'booking_ready';
+        }
+
         if (flags.wantsSchedule) return 'booking';
         if (flags.asksPrice) return 'product_inquiry';
         if (flags.mentionsSpeechTherapy) return 'therapy_question';
-        return 'fallback';
+        return 'qualification'; // fallback mais inteligente
     }
+
+    calculateConfidence(flags, context) {
+        let confidence = 0.5;
+        if (context.conversationHistory?.length > 3) confidence += 0.2;
+        if (context.therapyArea) confidence += 0.15;
+        if (Object.values(flags).filter(Boolean).length > 2) confidence += 0.15;
+        return Math.min(confidence, 1);
+    }
+
 }
