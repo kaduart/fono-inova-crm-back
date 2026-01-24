@@ -98,3 +98,28 @@ export async function detectBehaviorPatterns({ leadId }) {
 
     return patterns;
 }
+
+/**
+ * 🔄 SALVA INFORMAÇÕES EXTRAÍDAS NO CONTEXTO
+ */
+export async function update(leadId, extractedInfo) {
+    if (!extractedInfo || Object.keys(extractedInfo).length === 0) return null;
+
+    try {
+        const updateData = {
+            lastExtractedInfo: extractedInfo,
+            lastUpdatedAt: new Date()
+        };
+
+        await ChatContext.findOneAndUpdate(
+            { lead: leadId },
+            { $set: updateData },
+            { upsert: true }
+        );
+
+        return true;
+    } catch (error) {
+        console.error("❌ [ContextMemory] Erro ao atualizar:", error);
+        return null;
+    }
+}

@@ -108,5 +108,13 @@ export function needsNewSummary(lead, totalMessages, futureAppointments = []) {
 
     return false;
 }
+/**
+ * 🔄 PLACEHOLDER - Resumo é gerado em enrichLeadContext
+ */
+export async function update(leadId, newMessageText) {
+    // Resumo é regenerado automaticamente quando needsNewSummary() = true
+    // Chamado por enrichLeadContext
+    return null;
+}
 
 export default generateConversationSummary;
