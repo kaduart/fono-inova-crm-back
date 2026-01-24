@@ -121,7 +121,11 @@ export async function enrichLeadContext(leadId) {
             messageCount: totalMessages,
             lastInteraction: lead.lastInteractionAt,
             daysSinceLastContact: calculateDaysSince(lead.lastInteractionAt),
-
+            patientAge: lead.patientAge || lead.qualificationData?.extractedInfo?.idade || null,
+            ageGroup: lead.ageGroup || lead.qualificationData?.extractedInfo?.idadeRange || null,
+            preferredTime: lead.preferredTime || lead.qualificationData?.extractedInfo?.disponibilidade || null,
+            chosenSlot: lead.pendingChosenSlot || null,
+            patientRelationship: lead.patientRelationship || null,
             // 🆕 CONTEXTO INTELIGENTE
             conversationHistory,      // Array [{role, content, timestamp}]
             conversationSummary: summaryContext, // String com resumo ou null
