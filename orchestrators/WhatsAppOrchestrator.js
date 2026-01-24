@@ -25,6 +25,7 @@ import { calculateUrgency } from '../services/intelligence/UrgencyScheduler.js';
 // Handlers
 import IntentDetector from '../detectors/IntentDetector.js';
 import * as handlers from '../handlers/index.js';
+import Leads from '../models/Leads.js';
 import { decisionEngine } from '../services/intelligence/DecisionEngine.js';
 
 export class WhatsAppOrchestrator {
@@ -60,8 +61,7 @@ export class WhatsAppOrchestrator {
                 text,
                 lead,
                 history: memoryContext?.conversationHistory || []
-            }).catch(() => null);
-
+            }).catch(() => ({}));
 
             const intentResult = this.intentDetector.detect(message, memoryContext);
 
@@ -73,20 +73,47 @@ export class WhatsAppOrchestrator {
                 confidence: intentResult.confidence || 0.5
             };
 
+            analysis.extractedInfo = analysis.extractedInfo || analysis.extracted || {};
+            if (analysis.extractedInfo.idade && !analysis.extractedInfo.age) {
+                analysis.extractedInfo.age = analysis.extractedInfo.idade;
+            }
+            if (analysis.extractedInfo.disponibilidade && !analysis.extractedInfo.preferredPeriod) {
+                analysis.extractedInfo.preferredPeriod = analysis.extractedInfo.disponibilidade;
+            }
+
+            // ✅ Continuidade natural: se o lead respondeu "tarde", mantém a terapia anterior
+            const inferredTherapy =
+                analysis.therapyArea ||
+                memoryContext?.therapyArea ||
+                memoryContext?.mentionedTherapies?.[0] ||
+                analysis.extractedInfo.therapyArea ||
+                analysis.extractedInfo.areaTerapia ||
+                null;
+
+            if (!analysis.therapyArea && inferredTherapy) analysis.therapyArea = inferredTherapy;
+
             // =========================
             // 3️⃣ ESTRATÉGIA
             // =========================
             const predictedStage = nextStage(lead, analysis);
             const urgency = calculateUrgency(analysis, memoryContext);
 
-            // 4️⃣ MISSING INFO
-            // =========================
+            const inferredAge =
+                memoryContext?.patientAge ||
+                analysis.extractedInfo.age ||
+                null;
+
+            const inferredPeriod =
+                memoryContext?.preferredTime ||
+                analysis.extractedInfo.preferredPeriod ||
+                null;
+
             const missing = {
-                needsName: !memoryContext?.name,
-                needsAge: !memoryContext?.patientAge && !analysis?.extractedInfo?.age,
-                needsTherapy: !memoryContext?.therapyArea && !analysis?.therapyArea,
-                needsPeriod: !memoryContext?.preferredTime,
-                needsSlot: !memoryContext?.chosenSlot
+                needsName: !memoryContext?.leadName,
+                needsAge: !inferredAge,
+                needsTherapy: !inferredTherapy,
+                needsPeriod: !inferredPeriod,
+                needsSlot: !memoryContext?.chosenSlot,
             };
 
 
@@ -178,13 +205,51 @@ export class WhatsAppOrchestrator {
                 services
             });
 
-            // =========================
-            // 🔟 APRENDIZADO
-            // =========================
-            if (result?.extractedInfo) {
-                await ContextMemory.update(lead._id, result.extractedInfo);
+            const extracted = analysis.extractedInfo || {};
+
+            const set = {};
+            if (inferredTherapy) set.therapyArea = inferredTherapy;
+            if (inferredAge) set["patientInfo.age"] = inferredAge;
+            if (inferredPeriod) set.pendingPreferredPeriod = inferredPeriod;
+
+            // espelha no qualificationData pra histórico (não quebra nada)
+            if (inferredTherapy) set["qualificationData.extractedInfo.therapyArea"] = inferredTherapy;
+            if (inferredAge) set["qualificationData.extractedInfo.idade"] = inferredAge;
+            if (inferredPeriod) set["qualificationData.extractedInfo.disponibilidade"] = inferredPeriod;
+
+            // autoBookingContext pode ser null no schema → setar objeto inteiro evita erro de dot-notation
+            const currentAuto =
+                lead.autoBookingContext && typeof lead.autoBookingContext === "object"
+                    ? lead.autoBookingContext
+                    : {};
+
+            const auto = { ...currentAuto };
+            let autoChanged = false;
+
+            if (inferredTherapy) {
+                auto.therapyArea = inferredTherapy;
+                auto.mappedTherapyArea = inferredTherapy;
+                autoChanged = true;
+            }
+            if (inferredPeriod) {
+                auto.preferredPeriod = inferredPeriod;
+                autoChanged = true;
+            }
+            if (autoChanged) {
+                set.autoBookingContext = auto;
             }
 
+            if (Object.keys(set).length) {
+                await Leads.findByIdAndUpdate(lead._id, { $set: set });
+            }
+
+
+            // =========================
+            // 🔟 APRENDIZADO (ÚNICO)
+            // =========================
+            if (result?.extractedInfo && Object.keys(result.extractedInfo).length > 0) {
+                await ContextMemory.update(lead._id, result.extractedInfo);
+            }
 
             // =========================
             // 11️⃣ RETORNO
