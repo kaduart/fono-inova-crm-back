@@ -9,7 +9,6 @@ import enrichLeadContext from '../services/leadContext.js';
 // Intelligence
 import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js';
 import { nextStage } from '../services/intelligence/stageEngine.js';
-import * as UrgencyScheduler from '../services/intelligence/UrgencyScheduler.js';
 
 // Utils
 
@@ -22,6 +21,7 @@ import {
 
 // Clinical rules
 import { clinicalRulesEngine } from '../services/intelligence/clinicalRulesEngine.js';
+import { calculateUrgency } from '../services/intelligence/UrgencyScheduler.js';
 
 // Handlers
 import IntentDetector from '../detectors/IntentDetector.js';
@@ -43,14 +43,6 @@ export class WhatsAppOrchestrator {
         return null;
     }
 
-    resolveIntentFromFlags(flags) {
-        if (flags.wantsSchedule) return 'scheduling';
-        if (flags.asksPrice) return 'price';
-        if (flags.mentionsSpeechTherapy) return 'therapy_info';
-        if (flags.partnership) return 'partnership';
-        if (flags.jobContext) return 'job';
-        return 'qualification';
-    }
 
     async process({ lead, message, services }) {
         try {
@@ -86,7 +78,7 @@ export class WhatsAppOrchestrator {
             // 3️⃣ ESTRATÉGIA
             // =========================
             const predictedStage = nextStage(lead, analysis);
-            const urgency = UrgencyScheduler(analysis, memoryContext);
+            const urgency = calculateUrgency(analysis, memoryContext);
 
             // =========================
             // 4️⃣ MISSING INFO

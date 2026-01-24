@@ -39,4 +39,36 @@ export function applyUrgencyRules(slots, urgencyLevel = "NORMAL") {
     return sliced.map(({ _dt, ...s }) => s);
 }
 
+// =============================================
+// CALCULAR NÍVEL DE URGÊNCIA (0-3)
+// =============================================
+export function calculateUrgency(analysis, memoryContext) {
+    let level = 0;
+
+    // Flags de urgência explícita
+    if (analysis?.flags?.mentionsUrgency) level += 2;
+
+    // Bebê + atraso de fala = urgente
+    const age = memoryContext?.patientAge;
+    const therapy = memoryContext?.therapyArea || analysis?.therapyArea;
+
+    if (age && age <= 3 && therapy === 'fonoaudiologia') {
+        level += 2;
+    }
+
+    // Queixa clínica sensível
+    const complaint = analysis?.extracted?.queixa;
+    if (['tea', 'tdah', 'atraso_fala'].includes(complaint)) {
+        level += 1;
+    }
+
+    // Contexto externo (escola/médico pediu)
+    if (analysis?.extracted?.contextoExterno) {
+        level += 1;
+    }
+
+    // Clamp entre 0-3
+    return Math.min(level, 3);
+}
+
 export const urgencyScheduler = applyUrgencyRules;
