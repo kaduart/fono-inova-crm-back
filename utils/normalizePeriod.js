@@ -4,7 +4,7 @@ const strip = (s) =>
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "");
 
-const normalizePeriod = (p) => {
+export const normalizePeriod = (p) => {
     const n = strip(p);
     if (n.includes("manh")) return "manha";
     if (n.includes("tard")) return "tarde";

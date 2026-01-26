@@ -1,17 +1,14 @@
+import Leads from '../models/Leads.js';
 import {
-    pickSlotFromUserReply,
-    validateSlotStillAvailable,
     buildSlotOptions,
     formatSlot
 } from '../services/amandaBookingService.js';
-import Leads from '../models/Leads.js';
+
 import {
-    MANUAL_AMANDA,
     DYNAMIC_MODULES,
     getManual
-} from '../prompts/amandaPrompt.js';
-import { detectAllFlags } from '../detectors/flagsDetector.js';
-
+} from '../utils/amandaPrompt.js';
+import { detectAllFlags } from '../utils/flagsDetector.js';
 class BookingHandler {
     async execute({ decisionContext, services }) {
         const { message, lead, memory, missing, booking, analysis } = decisionContext;
