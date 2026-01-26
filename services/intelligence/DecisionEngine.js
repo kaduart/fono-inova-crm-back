@@ -12,31 +12,20 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
     }
 
     // =========================
-    // 1️⃣ AGENDAMENTO (COM ACOLHIMENTO OBRIGATÓRIO)
+    // 1️⃣ AGENDAMENTO (ORDEM CORRETA: Terapia → Queixa → Idade → Período → Slots)
     // =========================
     if (analysis.intent === 'scheduling') {
-        const missingKeys = Object.keys(missing).filter(k => missing[k]);
 
-        // Se falta dados básicos (terapia, idade, período)
-        if (missingKeys.length > 0) {
-            // NÃO tratar 'needsComplaint', 'needsSlot' nem 'needsName' como "básico"
-            // - needsComplaint = etapa do meio (queixa)
-            // - needsSlot = tarefa do booking handler (buscar/mostrar slots)
-            // - needsName = só depois que houver slot escolhido
-            const basicDataMissing = missingKeys.filter(k =>
-                !['needsComplaint', 'needsSlot', 'needsName'].includes(k)
-            );
-
-            if (basicDataMissing.length > 0) {
-                return {
-                    action: 'ask_missing',
-                    handler: 'leadQualificationHandler',
-                    reason: basicDataMissing[0]
-                };
-            }
+        // 1️⃣ TERAPIA (primeiro - sem isso não prossegue)
+        if (missing.needsTherapy) {
+            return {
+                action: 'ask_therapy',
+                handler: 'leadQualificationHandler',
+                reason: 'needsTherapy'
+            };
         }
 
-        // 🆕 ETAPA DO MEIO: Queixa antes de mostrar horários
+        // 2️⃣ QUEIXA (acolhimento clínico - vem ANTES de idade/período!)
         if (missing.needsComplaint) {
             return {
                 action: 'collect_complaint',
@@ -45,7 +34,25 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
             };
         }
 
-        // Se já escolheu slot → coleta dados do paciente (passo a passo) / confirma
+        // 3️⃣ IDADE (depois da queixa)
+        if (missing.needsAge) {
+            return {
+                action: 'ask_age',
+                handler: 'leadQualificationHandler',
+                reason: 'needsAge'
+            };
+        }
+
+        // 4️⃣ PERÍODO (depois da idade)
+        if (missing.needsPeriod) {
+            return {
+                action: 'ask_period',
+                handler: 'leadQualificationHandler',
+                reason: 'needsPeriod'
+            };
+        }
+
+        // 5️⃣ SLOT ESCOLHIDO → Coleta nome / confirma
         if (bookingContext?.chosenSlot) {
             if (missing.needsName) {
                 return {
@@ -62,7 +69,7 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
             };
         }
 
-        // Se tem tudo (dados + queixa) → mostra/busca slots
+        // 6️⃣ TEM TUDO (terapia + queixa + idade + período) → Busca/Mostra slots
         return {
             action: 'booking',
             handler: 'bookingHandler',
@@ -111,9 +118,10 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
     }
 
     // =========================
-    // 6️⃣ QUEIXA (FORA DO SCHEDULING)
+    // 6️⃣ FORÇAR SCHEDULING SE TEM TERAPIA MAS FALTA QUEIXA
     // =========================
-    if (!missing.needsTherapy && !missing.needsAge && !missing.needsPeriod && missing.needsComplaint) {
+    // Se não está em 'scheduling' mas tem terapia e falta queixa, força coleta
+    if (!missing.needsTherapy && missing.needsComplaint) {
         return {
             action: 'collect_complaint',
             handler: 'complaintCollectionHandler',
@@ -122,7 +130,7 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
     }
 
     // =========================
-    // 7️⃣ SLOT ESCOLHIDO, MAS INTENT NÃO ESTÁ "scheduling"
+    // 7️⃣ SLOT ESCOLHIDO (FORA DO SCHEDULING)
     // =========================
     if (bookingContext?.chosenSlot && missing.needsName) {
         return {
