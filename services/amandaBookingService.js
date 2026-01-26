@@ -98,6 +98,17 @@ export async function fetchAvailableSlotsForDoctor({ doctorId, date }) {
     }
 }
 
+function extractTime(slot) {
+    if (!slot) return null;
+
+    if (typeof slot === "string") return slot;
+
+    if (typeof slot === "object" && slot.time) return slot.time;
+
+    return null;
+}
+
+
 /**
  * Encontra candidatos de horários para a área de terapia
  */
@@ -178,13 +189,17 @@ export async function findAvailableSlots({
         return null;
     };
 
-    const matchesPeriod = (time) => {
+    const matchesPeriod = (slot) => {
         const want = normalizePeriod(preferredPeriod);
         if (!want) return true;
+
+        const time = extractTime(slot);
+        if (!time) return false;
 
         const slotPeriod = normalizePeriod(getTimePeriod(time));
         return slotPeriod === want;
     };
+
 
     // ✅ Contador separado (O(1) em vez de O(n) por iteração)
     let validPeriodCount = 0;
@@ -318,8 +333,7 @@ export async function findAvailableSlots({
 
     // 2️⃣ Se não achar por dia da semana, pega o primeiro compatível com o período
     if (!primary) {
-        const filtered = allCandidates
-            .filter(slotMatchesPeriod)  // ✅ slotMatchesPeriod extrai slot.time
+        const filtered = allCandidates.filter(slot => matchesPeriod(slot));
 
         primary = filtered[0] || null;
     }
@@ -633,11 +647,15 @@ export async function autoBookAppointment({
  * Determina se é manhã ou tarde baseado na hora
  */
 export function getTimePeriod(time) {
+    if (!time || typeof time !== "string") return null;
+
     const hour = parseInt(time.split(":")[0], 10);
-    if (hour < 12) return "manha";   // ✅ canonical
+
+    if (hour < 12) return "manha";
     if (hour < 18) return "tarde";
     return "noite";
 }
+
 
 /**
  * Formata data yyyy-MM-dd para dd/MM/yyyy
