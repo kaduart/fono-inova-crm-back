@@ -25,6 +25,7 @@ import IntentDetector from '../detectors/IntentDetector.js';
 import * as handlers from '../handlers/index.js';
 import Leads from '../models/Leads.js';
 import { decisionEngine } from '../services/intelligence/DecisionEngine.js';
+import { normalizePeriod } from '../utils/normalizePeriod.js';
 
 export class WhatsAppOrchestrator {
     constructor() {
@@ -110,19 +111,34 @@ export class WhatsAppOrchestrator {
                 (allowMemoryCarryOver ? memoryContext?.patientAge : null) ||
                 null;
 
-            const inferredPeriod =
+            const inferredPeriodRaw =
                 intelligent?.disponibilidade ||
                 analysis.extractedInfo?.preferredPeriod ||
                 (allowMemoryCarryOver ? memoryContext?.preferredTime : null) ||
                 null;
 
-            const inferredComplaint =
+            const inferredPeriod = normalizePeriod(inferredPeriodRaw);
+
+            const isMeaningfulComplaint = (c) => {
+                if (!c) return false;
+                const n = String(c).toLowerCase();
+                if (n.length < 4) return false;
+                if (/(inform|saber|d[uú]vida|valor|pre[cç]o|geral)/i.test(n)) return false;
+                return true;
+            };
+
+            const inferredComplaintRaw =
                 intelligent?.queixa ||
                 analysis.extractedInfo?.queixa ||
                 analysis.extractedInfo?.sintomas ||
                 analysis.extractedInfo?.motivoConsulta ||
                 (allowMemoryCarryOver ? memoryContext?.primaryComplaint : null) ||
                 null;
+
+            const inferredComplaint = isMeaningfulComplaint(inferredComplaintRaw)
+                ? inferredComplaintRaw
+                : null;
+
 
             // =========================
             // 4) ESTRATÉGIA
