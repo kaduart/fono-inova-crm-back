@@ -185,7 +185,7 @@ const leadSchema = new mongoose.Schema({
   // ✅ Commit 2: anti-corrida (trava no Mongo)
   isProcessing: { type: Boolean, default: false },
   processingStartedAt: { type: Date, default: null },
-  pendingPreferredPeriod: { type: String, enum: ['manhã', 'tarde', 'noite', null], default: null },
+  pendingPreferredPeriod: { type: String, enum: ['manha', 'tarde', 'noite', null], default: null },
   pendingPatientInfoForScheduling: { type: Boolean, default: false },
   pendingSchedulingSlots: { type: mongoose.Schema.Types.Mixed, default: null },
   pendingChosenSlot: { type: mongoose.Schema.Types.Mixed, default: null },

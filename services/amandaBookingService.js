@@ -281,27 +281,24 @@ export async function findAvailableSlots({
         }
     }
 
+
     // 2️⃣ Se não achar por dia da semana, pega o primeiro compatível com o período
     if (!primary) {
         const filtered = allCandidates
-            .filter(matchesPeriod)
-            .sort(
-                (a, b) =>
-                    a.date.localeCompare(b.date) ||
-                    a.time.localeCompare(b.time)
-            );
+            .filter(slotMatchesPeriod)  // ✅ slotMatchesPeriod extrai slot.time
 
         primary = filtered[0] || null;
     }
 
     if (!primary) {
-        console.log("ℹ️ [BOOKING] Nenhum slot sobrando após filtros");
+        if (allCandidates.length > 0) {
+            console.warn(`⚠️ [BOOKING] ${allCandidates.length} candidatos encontrados, mas NENHUM no período "${preferredPeriod}"`);
+        } else {
+            console.log("ℹ️ [BOOKING] Nenhum slot sobrando após filtros");
+        }
         return null;
     }
 
-    if (!primary && allCandidates.length > 0) {
-        console.warn(`⚠️ [BOOKING] ${allCandidates.length} candidatos encontrados, mas NENHUM no período "${preferredPeriod}"`);
-    }
     // 3️⃣ Monta alternativas no MESMO período, tentando outro dia
     const primaryPeriod = getTimePeriod(primary.time);
 
@@ -603,7 +600,7 @@ export async function autoBookAppointment({
  */
 export function getTimePeriod(time) {
     const hour = parseInt(time.split(":")[0], 10);
-    if (hour < 12) return "manha";
+    if (hour < 12) return "manhã";  // com til
     if (hour < 18) return "tarde";
     return "noite";
 }

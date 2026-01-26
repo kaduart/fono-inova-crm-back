@@ -53,7 +53,6 @@ export class WhatsAppOrchestrator {
 
         try {
             const text = message?.content || message?.text || '';
-            const normalizedText = (text || '').trim().toLowerCase();
 
             // =========================
             // 1) MEMÓRIA & CONTEXTO
@@ -72,7 +71,7 @@ export class WhatsAppOrchestrator {
                 lead,
                 history: memoryContext?.conversationHistory || []
             }).catch(() => ({}));
-
+            const intelligent = llmAnalysis?.extracted || {};
             const intentResult = this.intentDetector.detect(message, memoryContext);
 
             const analysis = {
@@ -83,6 +82,16 @@ export class WhatsAppOrchestrator {
                 confidence: intentResult.confidence || 0.5
             };
 
+            // =========================
+            // 3) INFERRIDOS (SEM "ADIVINHAR" EM CONVERSA FRIA)
+            // =========================
+            const inferredTherapy =
+                analysis.therapyArea ||
+                intelligent?.especialidade ||
+                (allowMemoryCarryOver ? memoryContext?.therapyArea : null) ||
+                null;
+
+            if (!analysis.therapyArea && inferredTherapy) analysis.therapyArea = inferredTherapy;
             // Normaliza extractedInfo
             analysis.extractedInfo = analysis.extractedInfo || analysis.extracted || {};
             if (analysis.extractedInfo.idade && !analysis.extractedInfo.age) {
@@ -92,27 +101,21 @@ export class WhatsAppOrchestrator {
                 analysis.extractedInfo.preferredPeriod = analysis.extractedInfo.disponibilidade;
             }
 
-            // =========================
-            // 3) INFERRIDOS (SEM "ADIVINHAR" EM CONVERSA FRIA)
-            // =========================
-            const inferredTherapy =
-                analysis.therapyArea ||
-                (allowMemoryCarryOver ? memoryContext?.therapyArea : null) ||
-                null;
-
-            if (!analysis.therapyArea && inferredTherapy) analysis.therapyArea = inferredTherapy;
-
             const inferredAge =
+                intelligent?.idade ||
+                intelligent?.idadeRange ||
                 analysis.extractedInfo?.age ||
                 (allowMemoryCarryOver ? memoryContext?.patientAge : null) ||
                 null;
 
             const inferredPeriod =
+                intelligent?.disponibilidade ||
                 analysis.extractedInfo?.preferredPeriod ||
                 (allowMemoryCarryOver ? memoryContext?.preferredTime : null) ||
                 null;
 
             const inferredComplaint =
+                intelligent?.queixa ||
                 analysis.extractedInfo?.queixa ||
                 analysis.extractedInfo?.sintomas ||
                 analysis.extractedInfo?.motivoConsulta ||
@@ -158,6 +161,17 @@ export class WhatsAppOrchestrator {
             const hasPeriod = !!inferredPeriod;
 
             const readyForSlots = hasTherapy && hasComplaint && hasAge && hasPeriod;
+
+            const isSmartLead =
+                intelligent?.especialidade &&
+                intelligent?.queixa &&
+                (intelligent?.idade || intelligent?.idadeRange) &&
+                intelligent?.disponibilidade;
+
+            if (isSmartLead) {
+                analysis.intent = 'scheduling';
+            }
+
 
             // ✅ CAPTURA SOMENTE O QUE VEIO DESTA MENSAGEM (antes do espelhamento)
             const freshFromThisMessage = {

@@ -1,17 +1,24 @@
 import {
     pickSlotFromUserReply,
     validateSlotStillAvailable,
-    findAvailableSlots
+    findAvailableSlots,
+    buildSlotOptions
 } from '../services/amandaBookingService.js';
-
 
 class BookingHandler {
     async execute({ decisionContext, services }) {
-        const { message, lead, memory, missing } = decisionContext;
+        const { message, lead, memory, missing, booking, analysis } = decisionContext;
         const text = message?.text || '';
 
+        // =========================
+        // 1) MISSING: COLETA PROGRESSIVA
+        // =========================
         if (missing.needsTherapy) {
             return { text: 'Para qual área você gostaria de agendar? (fono, psicologia, fisio, TO) 💚' };
+        }
+
+        if (missing.needsComplaint) {
+            return { text: 'Me conta um pouquinho sobre o que está acontecendo? Qual a queixa principal? 💚' };
         }
 
         if (missing.needsAge) {
@@ -23,76 +30,59 @@ class BookingHandler {
         }
 
         // =========================
-        // SLOT JÁ OFERECIDO
+        // 2) SLOT JÁ ESCOLHIDO (confirmar agendamento)
         // =========================
-        if (memory.pendingSlots?.length) {
-            const chosenSlot = pickSlotFromUserReply(text, memory.pendingSlots);
-
-            if (chosenSlot) {
-                const stillAvailable = await validateSlotStillAvailable(chosenSlot);
-
-                if (!stillAvailable) {
-                    const freshSlots = await findAvailableSlots({
-                        therapyArea: memory.therapyArea,
-                        preferredPeriod: memory.preferredTime,
-                        maxOptions: 3
-                    });
-
-                    if (!freshSlots) {
-                        return {
-                            text: 'Não encontrei horários no outro período também 😔 Quer tentar outro dia? 💚'
-                        };
-                    }
-
-                    const altText = freshSlots.alternativesOtherPeriod
-                        .map((s, i) => `${String.fromCharCode(65 + i)}) ${s.date} às ${s.time}`)
-                        .join('\n');
-
-                    return {
-                        text: `Esse horário acabou de ser preenchido 😔\n\nPosso te oferecer estas outras opções:\n\n${altText}`,
-                        extractedInfo: { pendingSlots: freshSlots }
-                    };
-
-                }
-
-                await services.bookingService.confirmBooking({
-                    leadId: lead._id,
-                    slot: chosenSlot,
-                    therapy: memory.therapyArea
-                });
-
-                return {
-                    text: `Perfeito! Agendei a avaliação para ${chosenSlot.date} às ${chosenSlot.time}. 💚`,
-                    extractedInfo: { chosenSlot }
-                };
+        if (booking?.chosenSlot) {
+            // Slot já foi validado no Orchestrator, só confirmar
+            if (missing.needsName) {
+                return { text: 'Qual o nome completo do paciente? 💚' };
             }
 
+            // Aqui você pode pedir mais dados (nascimento, etc) ou confirmar direto
             return {
-                text: 'Não consegui identificar qual horário você escolheu 😅 Você pode responder com a letra (A, B ou C) ou dizendo o dia e horário, por exemplo: "terça às 14h"? 💚'
+                text: `Perfeito! Vou agendar a avaliação para ${booking.chosenSlot.date} às ${booking.chosenSlot.time} com ${booking.chosenSlot.doctorName}. 💚`,
+                extractedInfo: { confirmedSlot: booking.chosenSlot }
             };
         }
 
         // =========================
-        // BUSCAR NOVOS SLOTS
+        // 3) SLOT FOI EMBORA (slotGone)
         // =========================
-        const slots = await services.bookingService.findAvailableSlots({
-            therapy: memory.therapyArea,
-            period: memory.preferredTime
-        });
+        if (booking?.slotGone) {
+            if (booking.alternatives?.primary) {
+                const options = buildSlotOptions(booking.alternatives);
+                const optionsText = options.map(o => o.text).join('\n');
 
-        if (!slots?.length) {
-            return { text: 'Não encontrei horários nesse período 😔 Quer tentar outro? (manhã/tarde) 💚' };
+                return {
+                    text: `Esse horário acabou de ser preenchido 😔\n\nMas encontrei outras opções:\n\n${optionsText}\n\nQual prefere? 💚`
+                };
+            }
+
+            return {
+                text: 'Esse horário não está mais disponível e não encontrei alternativas próximas 😔 Quer tentar outro período? (manhã/tarde) 💚'
+            };
         }
 
-        await services.leadService.savePendingSlots(lead._id, slots);
+        // =========================
+        // 4) SLOTS DISPONÍVEIS (apresentar opções)
+        // =========================
+        if (booking?.slots?.primary) {
+            const options = buildSlotOptions(booking.slots);
+            const optionsText = options.map(o => o.text).join('\n');
 
-        const slotsText = slots
-            .map((s, i) => `${String.fromCharCode(65 + i)}) ${s.date} às ${s.time}`)
-            .join('\n');
+            return {
+                text: `Encontrei esses horários:\n\n${optionsText}\n\nQual prefere? (pode responder com a letra) 💚`
+            };
+        }
+
+        // =========================
+        // 5) SEM SLOTS (Orchestrator não encontrou)
+        // =========================
+        // Se chegou aqui, o Orchestrator tentou buscar mas não achou nada
+        const period = analysis?.extractedInfo?.preferredPeriod || memory?.preferredTime;
 
         return {
-            text: `Encontrei esses horários:\n\n${slotsText}\n\nQual prefere? (A, B ou C) 💚`,
-            extractedInfo: { pendingSlots: slots }
+            text: `Não encontrei horários ${period ? `no período da ${period}` : 'disponíveis'} 😔 Quer tentar outro período? (manhã/tarde) 💚`
         };
     }
 }
