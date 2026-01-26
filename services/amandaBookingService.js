@@ -288,8 +288,11 @@ export async function findAvailableSlots({
 
     const getDow = (dateStr) =>
         new Date(dateStr + "T12:00:00-03:00").getDay();
-    const slotMatchesPeriod = (slot) => matchesPeriod(slot.time);
+    console.log("[DEBUG SLOT SAMPLE]", allCandidates[0], typeof allCandidates[0]);
 
+    const slotMatchesPeriod = (slot) => {
+        return matchesPeriod(slot); // slot já é "13:20"
+    };
     // 1️⃣ Tenta escolher o primary no dia da semana preferido (segunda, quinta etc.)
     let primary = null;
 
