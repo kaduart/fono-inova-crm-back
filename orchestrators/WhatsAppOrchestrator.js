@@ -71,7 +71,8 @@ export class WhatsAppOrchestrator {
                 lead,
                 history: memoryContext?.conversationHistory || []
             }).catch(() => ({}));
-            const intelligent = llmAnalysis?.extracted || {};
+
+            const intelligent = llmAnalysis?.extractedInfo || {};
             const intentResult = this.intentDetector.detect(message, memoryContext);
 
             const analysis = {
@@ -81,6 +82,7 @@ export class WhatsAppOrchestrator {
                 intent: intentResult.type,
                 confidence: intentResult.confidence || 0.5
             };
+            analysis.extractedInfo = intelligent;
 
             // =========================
             // 3) INFERRIDOS (SEM "ADIVINHAR" EM CONVERSA FRIA)
@@ -175,20 +177,10 @@ export class WhatsAppOrchestrator {
 
             // ✅ CAPTURA SOMENTE O QUE VEIO DESTA MENSAGEM (antes do espelhamento)
             const freshFromThisMessage = {
-                age:
-                    llmAnalysis?.extractedInfo?.age ||
-                    llmAnalysis?.extractedInfo?.idade,
-
-                period:
-                    llmAnalysis?.extractedInfo?.preferredPeriod ||
-                    llmAnalysis?.extractedInfo?.disponibilidade,
-
-                therapy: intentResult?.therapy,
-
-                complaint:
-                    llmAnalysis?.extractedInfo?.queixa ||
-                    llmAnalysis?.extractedInfo?.sintomas ||
-                    llmAnalysis?.extractedInfo?.motivoConsulta
+                age: intelligent?.idade,
+                period: intelligent?.disponibilidade,
+                therapy: intelligent?.especialidade || intentResult?.therapy,
+                complaint: intelligent?.queixa
             };
 
             // ✅ AGORA sim espelha inferidos para os handlers
