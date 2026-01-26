@@ -41,6 +41,16 @@ export class WhatsAppOrchestrator {
     }
 
     async process({ lead, message, services }) {
+        // helper (perto do topo do process)
+        const normalizeSentinel = (v) => {
+            if (v == null) return null;
+            if (typeof v === 'string') {
+                const s = v.trim().toLowerCase();
+                if (s === 'não' || s === 'nao' || s === 'n/a' || s === 'no') return null;
+            }
+            return v;
+        };
+
         try {
             const text = message?.content || message?.text || '';
             const normalizedText = (text || '').trim().toLowerCase();
@@ -120,31 +130,76 @@ export class WhatsAppOrchestrator {
             // =========================
             const bookingContext = {};
 
-            const pendingSlots = memoryContext?.pendingSchedulingSlots || null;
+            const normalizeSlots = (v) => {
+                v = normalizeSentinel(v);
+                if (!v) return null;
+                if (Array.isArray(v)) return { primary: v, alternativesSamePeriod: [], alternativesOtherPeriod: [] };
+                if (typeof v === 'object' && Array.isArray(v.primary)) return v;
+                return null;
+            };
 
-
+            // Slots pendentes
+            const pendingSlots = normalizeSlots(memoryContext?.pendingSchedulingSlots);
             const hasPendingSlots = !!pendingSlots?.primary?.length;
             if (hasPendingSlots) bookingContext.slots = pendingSlots;
 
-            const existingChosenSlot = memoryContext?.chosenSlot || null;
+            // Slot escolhido na memória
+            const existingChosenSlotRaw = normalizeSentinel(memoryContext?.chosenSlot);
+            const existingChosenSlot =
+                existingChosenSlotRaw && typeof existingChosenSlotRaw === 'object' ? existingChosenSlotRaw : null;
 
-            const hasBasicProfile = !!(inferredTherapy && inferredAge && inferredPeriod);
-            const hasCompleteProfile = !!(hasBasicProfile && inferredComplaint);
+            // ✅ espelha pro bookingContext (DecisionEngine enxerga)
+            if (existingChosenSlot) bookingContext.chosenSlot = existingChosenSlot;
 
-            // Se acabou de responder dado básico, avançamos o estado para scheduling
-            const justAnsweredBasic =
-                !!(
-                    analysis.extractedInfo?.age ||
-                    analysis.extractedInfo?.preferredPeriod ||
-                    analysis.therapyArea
-                );
+            // Flags de prontidão
+            const hasTherapy = !!inferredTherapy;
+            const hasComplaint = !!inferredComplaint;
+            const hasAge = !!inferredAge;
+            const hasPeriod = !!inferredPeriod;
 
-            if ((analysis.intent !== 'price') && (hasBasicProfile && (justAnsweredBasic || hasPendingSlots || existingChosenSlot))) {
+            const readyForSlots = hasTherapy && hasComplaint && hasAge && hasPeriod;
+
+            // ✅ CAPTURA SOMENTE O QUE VEIO DESTA MENSAGEM (antes do espelhamento)
+            const freshFromThisMessage = {
+                age:
+                    llmAnalysis?.extractedInfo?.age ||
+                    llmAnalysis?.extractedInfo?.idade,
+
+                period:
+                    llmAnalysis?.extractedInfo?.preferredPeriod ||
+                    llmAnalysis?.extractedInfo?.disponibilidade,
+
+                therapy: intentResult?.therapy,
+
+                complaint:
+                    llmAnalysis?.extractedInfo?.queixa ||
+                    llmAnalysis?.extractedInfo?.sintomas ||
+                    llmAnalysis?.extractedInfo?.motivoConsulta
+            };
+
+            // ✅ AGORA sim espelha inferidos para os handlers
+            analysis.extractedInfo = {
+                ...analysis.extractedInfo,
+                therapyArea: analysis.extractedInfo?.therapyArea || inferredTherapy || null,
+                preferredPeriod: analysis.extractedInfo?.preferredPeriod || inferredPeriod || null,
+                age: analysis.extractedInfo?.age || inferredAge || null,
+                queixa: analysis.extractedInfo?.queixa || inferredComplaint || null
+            };
+
+            // ✅ justAnsweredBasic só com dados FRESCOS
+            const justAnsweredBasic = !!(
+                freshFromThisMessage.age ||
+                freshFromThisMessage.period ||
+                freshFromThisMessage.therapy ||
+                freshFromThisMessage.complaint
+            );
+
+            if (analysis.intent !== 'price' && (justAnsweredBasic || hasPendingSlots || !!existingChosenSlot)) {
                 analysis.intent = 'scheduling';
             }
 
-            // Busca slots só quando tem perfil completo + queixa
-            if (analysis.intent === 'scheduling' && hasCompleteProfile && !hasPendingSlots && !existingChosenSlot) {
+            // Busca slots só quando está realmente pronto
+            if (analysis.intent === 'scheduling' && readyForSlots && !hasPendingSlots && !existingChosenSlot) {
                 try {
                     const slots = await findAvailableSlots({
                         therapyArea: inferredTherapy,
@@ -194,7 +249,7 @@ export class WhatsAppOrchestrator {
                             await Leads.findByIdAndUpdate(lead._id, {
                                 $set: { pendingSchedulingSlots: validation.freshSlots }
                             });
-                            bookingContext.slots = validation.freshSlots;
+                            bookingContext.slots = normalizeSlots(validation.freshSlots) || validation.freshSlots;
                         }
                     } else {
                         bookingContext.chosenSlot = chosenSlot;
@@ -214,22 +269,25 @@ export class WhatsAppOrchestrator {
             const hasChosenSlotNow = !!(bookingContext?.chosenSlot || existingChosenSlot);
 
             const missing = {
-                needsTherapy: !inferredTherapy,
-                needsAge: !inferredAge,
-                needsPeriod: !inferredPeriod,
+                needsTherapy: !hasTherapy,
 
+                // ✅ queixa imediatamente após terapia
+                needsComplaint: hasTherapy && !hasComplaint,
 
-                // Queixa só vira obrigatória quando já tem o básico
-                needsComplaint: hasBasicProfile && !inferredComplaint,
+                // ✅ idade depois da queixa
+                needsAge: hasTherapy && hasComplaint && !hasAge,
 
-                // Só precisa slot quando já tem queixa e ainda não tem slots nem slot escolhido
-                needsSlot: hasCompleteProfile && !hasSlotsToShow && !hasChosenSlotNow,
+                // ✅ período depois da idade
+                needsPeriod: hasTherapy && hasComplaint && hasAge && !hasPeriod,
 
-                // Nome só depois de slot escolhido
+                // ✅ slots só depois de tudo acima
+                needsSlot: readyForSlots && !hasSlotsToShow && !hasChosenSlotNow,
+
+                // ✅ nome só depois de escolher slot
                 needsName: hasChosenSlotNow && !memoryContext?.leadName && !analysis.extractedInfo?.nome
             };
 
-            if (hasBasicProfile && missing.needsComplaint) {
+            if (hasTherapy && missing.needsComplaint) {
                 analysis.intent = 'scheduling';
             }
 
