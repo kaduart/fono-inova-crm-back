@@ -35,7 +35,6 @@ const api = axios.create({
     timeout: 8000,
 });
 
-
 api.interceptors.request.use((config) => {
     config.headers = config.headers || {};
 
@@ -60,9 +59,34 @@ const bookingStats = {
     errors: 0,
 };
 
+// ============================================================================
+// 🛠️ HELPERS DEFENSIVOS (ANTI-BUG)
+// ============================================================================
+
+function extractTime(slot) {
+    if (!slot) return null;
+    if (typeof slot === "string") return slot;
+    if (typeof slot === "object" && slot.time) return slot.time;
+    return null;
+}
+
+function normalizePeriodCanonical(p) {
+    if (!p) return null;
+    const n = String(p)
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z]/g, "");
+
+    if (n.includes("manh")) return "manha";
+    if (n.includes("tard")) return "tarde";
+    if (n.includes("noit")) return "noite";
+    return null;
+}
+
 export function isDateBlocked(dateStr) {
     try {
-        return isInRecesso(dateStr);  // ✅ Já importada na linha 16
+        return isInRecesso(dateStr);
     } catch {
         return false;
     }
@@ -82,9 +106,6 @@ export async function fetchAvailableSlotsForDoctor({ doctorId, date }) {
             doctorId,
             date
         });
-
-        // sua rota já retorna um array de strings:
-        // [ "08:00", "08:40", ... ]
         return res.data;
     } catch (err) {
         console.error("[AMANDA-BOOKING] available-slots falhou", {
@@ -98,21 +119,9 @@ export async function fetchAvailableSlotsForDoctor({ doctorId, date }) {
     }
 }
 
-function extractTime(slot) {
-    if (!slot) return null;
-
-    if (typeof slot === "string") return slot;
-
-    if (typeof slot === "object" && slot.time) return slot.time;
-
-    return null;
-}
-
-
 /**
  * Encontra candidatos de horários para a área de terapia
  */
-
 export async function findAvailableSlots({
     therapyArea,
     specialties = [],
@@ -120,7 +129,7 @@ export async function findAvailableSlots({
     preferredPeriod,
     preferredDate,
     daysAhead = 30,
-    maxOptions = 2,  // ✅ NOVO: parar quando tiver o suficiente
+    maxOptions = 2,
 }) {
     const MAX_REQUESTS = 25;
     let requestCount = 0;
@@ -150,58 +159,36 @@ export async function findAvailableSlots({
     const today = startOfDay(now);
     const todayStr = format(today, "yyyy-MM-dd");
 
-    // 👉 Se o cliente pediu uma data e ela é no futuro, começamos A PARTIR DELA
-    let searchStart = getFirstAvailableDate();  // ✅ Já pula o recesso automaticamente
+    let searchStart = getFirstAvailableDate();
 
     if (preferredDate) {
         try {
             const pref = startOfDay(parseISO(preferredDate));
             const firstAvailable = getFirstAvailableDate();
-
-            // Se a data pedida é depois da primeira disponível, usa ela
             if (isAfter(pref, firstAvailable)) {
                 searchStart = pref;
             }
         } catch {
-            // se der erro, ignora e segue com firstAvailable
+            // ignora erro
         }
     }
 
     const allCandidates = [];
-
     let validDaysChecked = 0;
     let offset = 0;
-
-    // ✅ Margem para filtrar período depois (busca um pouco mais que maxOptions)
     const targetCandidates = Math.max(maxOptions * 4, 8);
 
-    const strip = (s) =>
-        String(s || "")
-            .toLowerCase()
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "");
-
-    const normalizePeriod = (p) => {
-        const n = strip(p);
-        if (n.includes("manh")) return "manha";
-        if (n.includes("tard")) return "tarde";
-        if (n.includes("noit")) return "noite";
-        return null;
-    };
-
     const matchesPeriod = (slot) => {
-        const want = normalizePeriod(preferredPeriod);
+        const want = normalizePeriodCanonical(preferredPeriod);
         if (!want) return true;
 
         const time = extractTime(slot);
         if (!time) return false;
 
-        const slotPeriod = normalizePeriod(getTimePeriod(time));
+        const slotPeriod = normalizePeriodCanonical(getTimePeriod(time));
         return slotPeriod === want;
     };
 
-
-    // ✅ Contador separado (O(1) em vez de O(n) por iteração)
     let validPeriodCount = 0;
 
     while (validDaysChecked < daysAhead) {
@@ -210,13 +197,11 @@ export async function findAvailableSlots({
             break;
         }
 
-        // ✅ Guard anti-loop excessivo
         if (offset > daysAhead * 2) {
             console.warn("⚠️ [BOOKING] Loop excessivo detectado — interrompendo busca.");
             break;
         }
 
-        // ✅ EARLY-BREAK: conta só candidatos QUE BATEM COM O PERÍODO
         if (validPeriodCount >= targetCandidates) {
             console.log(`✅ [BOOKING] Early-break: ${validPeriodCount} candidatos válidos para período "${preferredPeriod || 'qualquer'}"`);
             break;
@@ -226,20 +211,16 @@ export async function findAvailableSlots({
         const date = format(dateObj, "yyyy-MM-dd");
         offset++;
 
-        // 🔴 ignora recesso SEM consumir daysAhead
         if (isDateBlocked(date)) {
             continue;
         }
 
-        // ✅ percorre todos os médicos elegíveis
         for (const doctor of doctors) {
-
             if (++requestCount > MAX_REQUESTS) {
                 console.warn("⚠️ [BOOKING] Limite de requisições atingido — abortando busca.");
                 break;
             }
 
-            // ✅ EARLY-BREAK interno (usa contador)
             if (validPeriodCount >= targetCandidates) break;
 
             const slots = await fetchAvailableSlotsForDoctor({
@@ -268,12 +249,10 @@ export async function findAvailableSlots({
 
                 allCandidates.push(candidate);
 
-                // ✅ Incrementa contador só se bate com período
                 if (matchesPeriod(time)) {
                     validPeriodCount++;
                 }
 
-                // ✅ EARLY-BREAK: usa contador de válidos
                 if (validPeriodCount >= targetCandidates) break;
             }
         }
@@ -285,11 +264,6 @@ export async function findAvailableSlots({
         console.log("ℹ️ [BOOKING] Nenhum slot disponível encontrado");
         return null;
     }
-
-    // se preferredDate caiu dentro do recesso, aqui já não terá nada entre 19/12 e 05/01,
-    // porque estamos pulando no laço acima.
-    // Ou seja: se o paciente pedir "29/12", a busca começa em 29/12, mas os dias de recesso são ignorados,
-    // então o primeiro horário vai ser logo DEPOIS do recesso (ex.: 06/01).
 
     const weekdayIndex = {
         sunday: 0,
@@ -303,26 +277,17 @@ export async function findAvailableSlots({
 
     const getDow = (dateStr) =>
         new Date(dateStr + "T12:00:00-03:00").getDay();
-    console.log("[DEBUG SLOT SAMPLE]", allCandidates[0], typeof allCandidates[0]);
 
-    const slotMatchesPeriod = (slot) => {
-        return matchesPeriod(slot); // slot já é "13:20"
-    };
-    // 1️⃣ Tenta escolher o primary no dia da semana preferido (segunda, quinta etc.)
     let primary = null;
 
     if (preferredDay && weekdayIndex[preferredDay] !== undefined) {
         const targetDow = weekdayIndex[preferredDay];
-
         const preferredDaySlots = allCandidates
-            .filter(
-                (slot) =>
-                    getDow(slot.date) === targetDow && slotMatchesPeriod(slot)
+            .filter((slot) =>
+                getDow(slot.date) === targetDow && matchesPeriod(slot)
             )
-            .sort(
-                (a, b) =>
-                    a.date.localeCompare(b.date) ||
-                    a.time.localeCompare(b.time)
+            .sort((a, b) =>
+                a.date.localeCompare(b.date) || a.time.localeCompare(b.time)
             );
 
         if (preferredDaySlots.length) {
@@ -330,11 +295,8 @@ export async function findAvailableSlots({
         }
     }
 
-
-    // 2️⃣ Se não achar por dia da semana, pega o primeiro compatível com o período
     if (!primary) {
         const filtered = allCandidates.filter(slot => matchesPeriod(slot));
-
         primary = filtered[0] || null;
     }
 
@@ -347,27 +309,20 @@ export async function findAvailableSlots({
         return null;
     }
 
-    // 3️⃣ Monta alternativas no MESMO período, tentando outro dia
     const primaryPeriod = getTimePeriod(primary.time);
-
-    // ✅ Calcula quantas alternativas precisamos (maxOptions - 1, pois 1 é o primary)
     const maxAlternatives = Math.max(maxOptions - 1, 1);
 
     const samePeriodSlots = allCandidates
-        .filter(
-            (slot) =>
-                !(slot.date === primary.date && slot.time === primary.time) &&
-                getTimePeriod(slot.time) === primaryPeriod
+        .filter((slot) =>
+            !(slot.date === primary.date && slot.time === primary.time) &&
+            getTimePeriod(slot.time) === primaryPeriod
         )
-        .sort(
-            (a, b) =>
-                a.date.localeCompare(b.date) ||
-                a.time.localeCompare(b.time)
+        .sort((a, b) =>
+            a.date.localeCompare(b.date) || a.time.localeCompare(b.time)
         );
 
     const alternativesSamePeriod = [];
 
-    // primeiro tenta dias diferentes
     for (const slot of samePeriodSlots) {
         if (alternativesSamePeriod.length >= maxAlternatives) break;
         if (slot.date !== primary.date) {
@@ -375,7 +330,6 @@ export async function findAvailableSlots({
         }
     }
 
-    // se ainda tiver espaço, preenche com outros horários no mesmo dia
     if (alternativesSamePeriod.length < maxAlternatives) {
         for (const slot of samePeriodSlots) {
             if (alternativesSamePeriod.length >= maxAlternatives) break;
@@ -390,23 +344,18 @@ export async function findAvailableSlots({
         }
     }
 
-    // ✅ alternativesOtherPeriod: só se maxOptions > 2
     const alternativesOtherPeriod = [];
 
     if (maxOptions > 2) {
         const otherPeriodSlots = allCandidates
-            .filter(
-                (slot) =>
-                    !(slot.date === primary.date && slot.time === primary.time) &&
-                    getTimePeriod(slot.time) !== primaryPeriod
+            .filter((slot) =>
+                !(slot.date === primary.date && slot.time === primary.time) &&
+                getTimePeriod(slot.time) !== primaryPeriod
             )
-            .sort(
-                (a, b) =>
-                    a.date.localeCompare(b.date) ||
-                    a.time.localeCompare(b.time)
+            .sort((a, b) =>
+                a.date.localeCompare(b.date) || a.time.localeCompare(b.time)
             );
 
-        // tenta pegar 2 de períodos diferentes primeiro (ex.: manhã e tarde)
         const seenPeriods = new Set();
         for (const slot of otherPeriodSlots) {
             if (alternativesOtherPeriod.length >= 2) break;
@@ -417,7 +366,6 @@ export async function findAvailableSlots({
             }
         }
 
-        // se não deu 2 ainda, completa com os próximos melhores
         if (alternativesOtherPeriod.length < 2) {
             for (const slot of otherPeriodSlots) {
                 if (alternativesOtherPeriod.length >= 2) break;
@@ -428,27 +376,15 @@ export async function findAvailableSlots({
         }
     }
 
-
     return {
         primary,
         alternativesSamePeriod,
         alternativesOtherPeriod,
         all: allCandidates,
-        maxOptions,  // ✅ retorna pra o orchestrator saber
+        maxOptions,
     };
 }
 
-
-// ============================================================================
-
-/**
- * ✅ COMMIT 4: Revalida o slot escolhido antes de pedir dados do paciente.
- * - Checa se o horário ainda está disponível no endpoint /available-slots
- * - Se NÃO estiver, tenta buscar um novo menu usando o mesmo contexto (quando fornecido)
- *
- * @param {object} chosenSlot {doctorId, date, time}
- * @param {object|null} refreshCtx {_meta} opcional (therapyArea, specialties, preferredDay, preferredPeriod, preferredDate, daysAhead)
- */
 export async function validateSlotStillAvailable(chosenSlot, refreshCtx = null) {
     try {
         if (!chosenSlot?.doctorId || !chosenSlot?.date || !chosenSlot?.time) {
@@ -469,10 +405,9 @@ export async function validateSlotStillAvailable(chosenSlot, refreshCtx = null) 
             return { isValid: true, freshSlots: null };
         }
 
-        // Se não existe mais, tenta buscar novas opções (se tivermos contexto)
         let freshSlots = null;
-
         const meta = refreshCtx && typeof refreshCtx === "object" ? refreshCtx : null;
+
         if (meta?.therapyArea) {
             freshSlots = await findAvailableSlots({
                 therapyArea: meta.therapyArea,
@@ -483,7 +418,6 @@ export async function validateSlotStillAvailable(chosenSlot, refreshCtx = null) 
                 daysAhead: meta.daysAhead || 30,
             });
 
-            // anexa meta para o fluxo continuar consistente
             if (freshSlots && typeof freshSlots === "object") {
                 freshSlots._meta = {
                     therapyArea: meta.therapyArea,
@@ -504,13 +438,10 @@ export async function validateSlotStillAvailable(chosenSlot, refreshCtx = null) 
     }
 }
 
-// 📅 PASSO 2 + 3: CRIAR PACIENTE + AGENDAR (FLUXO COMPLETO)
-// ============================================================================
-
 export async function autoBookAppointment({
     lead,
     chosenSlot,
-    patientInfo, // { fullName, birthDate, phone, email }
+    patientInfo,
 }) {
     bookingStats.totalAttempts++;
 
@@ -519,9 +450,6 @@ export async function autoBookAppointment({
 
         const { fullName, birthDate, phone, email } = patientInfo;
 
-        // ====================================================================
-        // 1️⃣ Criar / encontrar paciente via POST /api/patients/add
-        // ====================================================================
         console.log("👤 [BOOKING] Criando/buscando paciente...");
 
         let patientId = null;
@@ -539,7 +467,6 @@ export async function autoBookAppointment({
                 console.log("✅ [BOOKING] Paciente criado:", patientId);
             }
         } catch (patientError) {
-            // Se retornar 409 (duplicado), pega o ID existente
             if (
                 patientError.response?.status === 409 &&
                 patientError.response.data?.existingId
@@ -559,19 +486,14 @@ export async function autoBookAppointment({
             throw new Error("Não foi possível criar/encontrar o paciente");
         }
 
-        // ====================================================================
-        // 2️⃣ Criar agendamento via POST /api/appointments
-        //    (sua rota já cuida de Payment + Session + Appointment)
-        // ====================================================================
         console.log("📅 [BOOKING] Criando agendamento...");
 
         const appointmentPayload = {
             patientId,
             doctorId: chosenSlot.doctorId,
-            specialty:
-                chosenSlot.specialty || lead?.therapyArea || "fonoaudiologia",
-            date: chosenSlot.date, // string yyyy-MM-dd
-            time: chosenSlot.time, // string HH:mm
+            specialty: chosenSlot.specialty || lead?.therapyArea || "fonoaudiologia",
+            date: chosenSlot.date,
+            time: chosenSlot.time,
             serviceType: "evaluation",
             sessionType: "avaliacao",
             paymentMethod: "pix",
@@ -639,35 +561,23 @@ export async function autoBookAppointment({
     }
 }
 
-// ============================================================================
-// 🛠️ FUNÇÕES AUXILIARES
-// ============================================================================
-
-/**
- * Determina se é manhã ou tarde baseado na hora
- */
 export function getTimePeriod(time) {
     if (!time || typeof time !== "string") return null;
 
     const hour = parseInt(time.split(":")[0], 10);
+
+    if (isNaN(hour)) return null;
 
     if (hour < 12) return "manha";
     if (hour < 18) return "tarde";
     return "noite";
 }
 
-
-/**
- * Formata data yyyy-MM-dd para dd/MM/yyyy
- */
 export function formatDatePtBr(dateStr) {
     const [year, month, day] = dateStr.split("-");
     return `${day}/${month}/${year}`;
 }
 
-/**
- * Extrai slot escolhido da mensagem do usuário
- */
 export function pickSlotFromUserReply(text, availableSlots, opts = {}) {
     if (!availableSlots) return null;
 
@@ -675,7 +585,6 @@ export function pickSlotFromUserReply(text, availableSlots, opts = {}) {
     const strict = Boolean(opts?.strict);
     const noFallback = Boolean(opts?.noFallback);
 
-    // Monta a lista A..F (ordem: primary, samePeriod..., otherPeriod...)
     const primary = availableSlots.primary || null;
     const same = availableSlots.alternativesSamePeriod || [];
     const other = availableSlots.alternativesOtherPeriod || [];
@@ -684,7 +593,6 @@ export function pickSlotFromUserReply(text, availableSlots, opts = {}) {
 
     if (allSlots.length === 0) return null;
 
-    // Helper: pega slot por letra A-F
     const pickByLetter = (letter) => {
         const L = (letter || "").toUpperCase();
 
@@ -698,7 +606,6 @@ export function pickSlotFromUserReply(text, availableSlots, opts = {}) {
         return null;
     };
 
-    // 1) Letra A-F (aceita "A", "A)", "opção B", "alternativa c", "letra d")
     const letterMatch = normalized.match(
         /(?:^|\b)(?:op(?:c|ç)[aã]o|alternativa|letra)?\s*([a-f])(?:\b|[\)\.\:\-]|$)/i
     );
@@ -707,7 +614,6 @@ export function pickSlotFromUserReply(text, availableSlots, opts = {}) {
         if (picked) return picked;
     }
 
-    // 2) Número 1-6 (mapeia para A-F na mesma ordem)
     const numMatch = normalized.match(
         /(?:^|\b)(?:op(?:c|ç)[aã]o|alternativa)?\s*([1-6])(?:\b|[\)\.\:\-]|$)/
     );
@@ -716,8 +622,6 @@ export function pickSlotFromUserReply(text, availableSlots, opts = {}) {
         return allSlots[idx] || null;
     }
 
-    // 3) Filtro por período (se a pessoa falar "de manhã/tarde/noite",
-    // tenta retornar o PRIMEIRO slot daquele período)
     const wantsMorning = /\b(manh[ãa]|cedo)\b/.test(normalized);
     const wantsAfternoon = /\b(tarde)\b/.test(normalized);
     const wantsNight = /\b(noite)\b/.test(normalized);
@@ -729,11 +633,9 @@ export function pickSlotFromUserReply(text, availableSlots, opts = {}) {
         const slotByPeriod = allSlots.find((s) => getTimePeriod(s.time) === desired);
         if (slotByPeriod) return slotByPeriod;
 
-        // falou período mas não tem nenhum slot nele
         return null;
     }
 
-    // 4) Dia da semana + horário ("quinta 14:00" ou "quinta 14h")
     const weekdayMatch = normalized.match(
         /\b(segunda|ter[cç]a|quarta|quinta|sexta|s[aá]bado|domingo)\b/
     );
@@ -759,16 +661,11 @@ export function pickSlotFromUserReply(text, availableSlots, opts = {}) {
         }
     }
 
-    // 5) Fallback
-    // - modo padrão: se não entendeu, devolve a primary (A)
-    // - modo strict: se não entendeu, devolve null (pra você re-perguntar sem “chutar”)
     return (strict || noFallback) ? null : primary;
 }
 
-
-
 export async function bookFixedSlot({
-    patientId: providedPatientId = null, // 👈 novo
+    patientId: providedPatientId = null,
     patientInfo,
     doctorId,
     specialty,
@@ -778,14 +675,13 @@ export async function bookFixedSlot({
     sessionType = "avaliacao",
     serviceType = "individual_session",
     paymentMethod = "pix",
-    sessionValue = 0,                    // 👈 novo (valor real)
+    sessionValue = 0,
     status = "scheduled",
-    packageId = null,                    // 👈 novo
+    packageId = null,
 }) {
     bookingStats.totalAttempts++;
 
     try {
-        // 1) resolve patientId (usa o que veio, senão cria/busca)
         let patientId = providedPatientId;
 
         if (!patientId) {
@@ -822,7 +718,6 @@ export async function bookFixedSlot({
             }
         }
 
-        // 2) calcula paymentAmount correto
         const isPackage = serviceType === "package_session";
         const paymentAmount = isPackage ? 0 : Number(sessionValue) || 0;
 
@@ -830,7 +725,6 @@ export async function bookFixedSlot({
             return { success: false, code: "INVALID_VALUE", error: "sessionValue deve ser > 0 para atendimentos avulsos" };
         }
 
-        // 3) cria agendamento no CRM
         const appointmentPayload = {
             patientId,
             doctorId,
@@ -882,10 +776,6 @@ export async function bookFixedSlot({
     }
 }
 
-
-/**
- * Formata slot para exibição humana
- */
 export function formatSlot(slot) {
     const date = formatDatePtBr(slot.date);
     const time = slot.time.slice(0, 5);
@@ -897,10 +787,6 @@ export function formatSlot(slot) {
     return `${weekday.charAt(0).toUpperCase() + weekday.slice(1)}, ${date} às ${time} - ${slot.doctorName}`;
 }
 
-
-// ============================================================================
-// 🧷 Helper único: montar opções A..F (para NÃO duplicar em orquestrador/controller)
-// ============================================================================
 export function buildSlotOptions(availableSlots) {
     const letters = ["A", "B", "C", "D", "E", "F"];
     if (!availableSlots) return [];
@@ -918,7 +804,6 @@ export function buildSlotOptions(availableSlots) {
     }));
 }
 
-// ✅ Ordena os slots na ordem do menu (primary + samePeriod + otherPeriod)
 export function buildOrderedSlotOptions(slotsCtx = {}) {
     return [
         slotsCtx.primary,
@@ -926,4 +811,3 @@ export function buildOrderedSlotOptions(slotsCtx = {}) {
         ...(slotsCtx.alternativesOtherPeriod || []),
     ].filter(Boolean);
 }
-
