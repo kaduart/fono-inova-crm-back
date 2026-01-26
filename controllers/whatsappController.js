@@ -17,10 +17,10 @@ import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import Logger from '../services/utils/Logger.js';
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 import { default as getOptimizedAmandaResponse } from '../utils/amandaOrchestrator.js';
+import { mapFlagsToBookingProduct } from '../utils/bookingProductMapper.js';
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
 import { normalizeE164BR } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
-import { mapFlagsToBookingProduct } from '../utils/bookingProductMapper.js';
 
 const USE_NEW_ORCHESTRATOR =
     process.env.NEW_ORCHESTRATOR === 'true';
@@ -824,6 +824,10 @@ export const whatsappController = {
                 resumedAt: new Date()
             };
 
+            // ✅ DECLARAÇÃO DA VARIÁVEL AQUI (antes do uso)
+            let result;
+            let aiText = null; // Inicializa aiText
+
             // 5. Gera resposta da Amanda
             console.log(`🤖 [AMANDA-RESUME] Gerando resposta para: "${lastInbound.content?.substring(0, 50)}..."`);
 
@@ -849,30 +853,27 @@ export const whatsappController = {
                 };
             }
 
-            switch (result.command) {
-                case 'SEND_MESSAGE':
-                    await whatsappService.sendTextMessage(
-                        lead.phone,
-                        result.payload.text,
-                        result.payload.options // se existir
-                    );
-                    break;
-
-                case 'NO_REPLY':
-                    // Não faz nada
-                    break;
-
-                case 'ESCALATE':
-                    await notifyHumanOperator({
-                        lead,
-                        reason: result.meta?.reason
-                    });
-                    break;
-
-                default:
-                    logger.warn('Comando desconhecido', result);
+            // ✅ EXTRAI O TEXTO DA RESPOSTA baseado no resultado
+            if (result?.command === 'SEND_MESSAGE' && result.payload?.text) {
+                aiText = result.payload.text;
+            } else if (result?.command === 'NO_REPLY') {
+                return res.json({
+                    success: true,
+                    message: 'Amanda reativada, mas optou por não responder (NO_REPLY)',
+                    responded: false
+                });
+            } else if (result?.command === 'ESCALATE') {
+                // Se tiver função de notificação humana, use aqui
+                console.log(`🚨 [AMANDA-RESUME] Escalando para humano: ${result.meta?.reason}`);
+                return res.json({
+                    success: true,
+                    message: 'Amanda reativada, mas escalou para atendimento humano',
+                    responded: false,
+                    escalated: true
+                });
             }
 
+            // ✅ VERIFICA SE TEM TEXTO PARA ENVIAR
             if (!aiText || !aiText.trim()) {
                 return res.json({
                     success: true,
@@ -881,7 +882,7 @@ export const whatsappController = {
                 });
             }
 
-            // 6. Envia via WhatsApp (NORMALIZANDO IGUAL AO sendText)
+            // 6. Envia via WhatsApp
             const rawPhone = lead.contact?.phone;
             if (!rawPhone) {
                 return res.status(400).json({ success: false, error: 'Lead sem telefone' });
@@ -890,7 +891,8 @@ export const whatsappController = {
             const to = normalizeE164BR(rawPhone);
             const contact = await Contacts.findOne({ phone: to }).lean();
 
-            const result = await sendTextMessage({
+            // ✅ USA RESULTADO DO ENVIO (não redeclara 'result', já declarada acima)
+            const sendResult = await sendTextMessage({
                 to,
                 text: aiText.trim(),
                 lead: lead._id,
@@ -899,9 +901,9 @@ export const whatsappController = {
                 sentBy: 'amanda'
             });
 
-            const waMessageId = result?.messages?.[0]?.id || null;
+            const waMessageId = sendResult?.messages?.[0]?.id || null;
 
-            // Dá um tempinho pro Mongo gravar (se o sendTextMessage já salva)
+            // Dá um tempinho pro Mongo gravar
             await new Promise(resolve => setTimeout(resolve, 200));
 
             let savedMsg = null;
@@ -929,7 +931,7 @@ export const whatsappController = {
                 }).sort({ timestamp: -1 }).lean();
             }
 
-            // 🔥 4ª: se MESMO ASSIM não achou, cria manualmente pra garantir que apareça no chat
+            // 4ª: cria manualmente se não achou
             if (!savedMsg) {
                 savedMsg = await Message.create({
                     waMessageId,
@@ -946,15 +948,8 @@ export const whatsappController = {
                 });
             }
 
-            // Agora **sempre** temos uma mensagem pra mandar pro socket
+            // Emite via socket
             const io = getIo();
-            console.log('📡 [AMANDA-RESUME] Emitindo message:new para chat:', {
-                id: String(savedMsg._id),
-                from: savedMsg.from,
-                to: savedMsg.to
-            });
-
-            // Se no resto do sistema você emite pra um room (ex: tenant), adapta aqui:
             io.emit("message:new", {
                 id: String(savedMsg._id),
                 from: savedMsg.from,
@@ -978,7 +973,6 @@ export const whatsappController = {
                 responded: true,
                 response: aiText.substring(0, 100) + '...'
             });
-
 
         } catch (error) {
             console.error('❌ [AMANDA-RESUME] Erro:', error);
