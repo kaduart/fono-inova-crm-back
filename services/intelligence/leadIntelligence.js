@@ -283,7 +283,7 @@ export async function analyzeLeadMessage({ text, lead, history = [] }) {
     const score = calculateLeadScore({ extracted, intent, history, responseTime });
     const segment = segmentLead(score);
 
-    return { extracted, intent, score, segment };
+    return { extractedInfo: extracted, intent, score, segment };
 }
 
 // 🔐 PRIORIDADE DA FALA ATUAL
