@@ -160,6 +160,15 @@ export async function findAvailableSlots({
     // ✅ Margem para filtrar período depois (busca um pouco mais que maxOptions)
     const targetCandidates = Math.max(maxOptions * 4, 8);
 
+    // ✅ Helper para checar período (movido pra cá, ANTES do loop)
+    const matchesPeriod = (time) => {
+        if (!preferredPeriod) return true;
+        return getTimePeriod(time) === preferredPeriod;
+    };
+
+    // ✅ Contador separado (O(1) em vez de O(n) por iteração)
+    let validPeriodCount = 0;
+
     while (validDaysChecked < daysAhead) {
         // ✅ Guard anti-loop excessivo
         if (offset > daysAhead * 2) {
@@ -167,9 +176,9 @@ export async function findAvailableSlots({
             break;
         }
 
-        // ✅ EARLY-BREAK: já tem candidatos suficientes
-        if (allCandidates.length >= targetCandidates) {
-            console.log(`✅ [BOOKING] Early-break: ${allCandidates.length} candidatos encontrados`);
+        // ✅ EARLY-BREAK: conta só candidatos QUE BATEM COM O PERÍODO
+        if (validPeriodCount >= targetCandidates) {
+            console.log(`✅ [BOOKING] Early-break: ${validPeriodCount} candidatos válidos para período "${preferredPeriod || 'qualquer'}"`);
             break;
         }
 
@@ -179,13 +188,13 @@ export async function findAvailableSlots({
 
         // 🔴 ignora recesso SEM consumir daysAhead
         if (isDateBlocked(date)) {
-            continue; // ✅ só pode existir aqui dentro do while
+            continue;
         }
 
         // ✅ percorre todos os médicos elegíveis
         for (const doctor of doctors) {
-            // ✅ EARLY-BREAK interno
-            if (allCandidates.length >= targetCandidates) break;
+            // ✅ EARLY-BREAK interno (usa contador)
+            if (validPeriodCount >= targetCandidates) break;
 
             const slots = await fetchAvailableSlotsForDoctor({
                 doctorId: String(doctor._id),
@@ -202,17 +211,24 @@ export async function findAvailableSlots({
                     if (slotDate <= now) continue;
                 }
 
-                allCandidates.push({
+                const candidate = {
                     doctorId: String(doctor._id),
                     doctorName: doctor.fullName,
                     date,
                     time,
                     specialty: therapyArea,
                     requestedSpecialties: specialties,
-                });
+                };
 
-                // ✅ EARLY-BREAK: já tem o suficiente
-                if (allCandidates.length >= targetCandidates) break;
+                allCandidates.push(candidate);
+
+                // ✅ Incrementa contador só se bate com período
+                if (matchesPeriod(time)) {
+                    validPeriodCount++;
+                }
+
+                // ✅ EARLY-BREAK: usa contador de válidos
+                if (validPeriodCount >= targetCandidates) break;
             }
         }
 
@@ -241,11 +257,7 @@ export async function findAvailableSlots({
 
     const getDow = (dateStr) =>
         new Date(dateStr + "T12:00:00-03:00").getDay();
-
-    const matchesPeriod = (slot) => {
-        if (!preferredPeriod) return true;
-        return getTimePeriod(slot.time) === preferredPeriod;
-    };
+    const slotMatchesPeriod = (slot) => matchesPeriod(slot.time);
 
     // 1️⃣ Tenta escolher o primary no dia da semana preferido (segunda, quinta etc.)
     let primary = null;
@@ -256,7 +268,7 @@ export async function findAvailableSlots({
         const preferredDaySlots = allCandidates
             .filter(
                 (slot) =>
-                    getDow(slot.date) === targetDow && matchesPeriod(slot)
+                    getDow(slot.date) === targetDow && slotMatchesPeriod(slot)
             )
             .sort(
                 (a, b) =>
@@ -279,7 +291,7 @@ export async function findAvailableSlots({
                     a.time.localeCompare(b.time)
             );
 
-        primary = filtered[0] || allCandidates[0];
+        primary = filtered[0] || null;
     }
 
     if (!primary) {
@@ -287,6 +299,9 @@ export async function findAvailableSlots({
         return null;
     }
 
+    if (!primary && allCandidates.length > 0) {
+        console.warn(`⚠️ [BOOKING] ${allCandidates.length} candidatos encontrados, mas NENHUM no período "${preferredPeriod}"`);
+    }
     // 3️⃣ Monta alternativas no MESMO período, tentando outro dia
     const primaryPeriod = getTimePeriod(primary.time);
 
