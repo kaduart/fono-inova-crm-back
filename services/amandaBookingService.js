@@ -35,6 +35,7 @@ const api = axios.create({
     timeout: 8000,
 });
 
+
 api.interceptors.request.use((config) => {
     config.headers = config.headers || {};
 
@@ -110,6 +111,9 @@ export async function findAvailableSlots({
     daysAhead = 30,
     maxOptions = 2,  // ✅ NOVO: parar quando tiver o suficiente
 }) {
+    const MAX_REQUESTS = 25;
+    let requestCount = 0;
+
     const doctorFilter = {
         active: true,
         specialty: therapyArea,
@@ -160,16 +164,37 @@ export async function findAvailableSlots({
     // ✅ Margem para filtrar período depois (busca um pouco mais que maxOptions)
     const targetCandidates = Math.max(maxOptions * 4, 8);
 
-    // ✅ Helper para checar período (movido pra cá, ANTES do loop)
+    const strip = (s) =>
+        String(s || "")
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "");
+
+    const normalizePeriod = (p) => {
+        const n = strip(p);
+        if (n.includes("manh")) return "manha";
+        if (n.includes("tard")) return "tarde";
+        if (n.includes("noit")) return "noite";
+        return null;
+    };
+
     const matchesPeriod = (time) => {
-        if (!preferredPeriod) return true;
-        return getTimePeriod(time) === preferredPeriod;
+        const want = normalizePeriod(preferredPeriod);
+        if (!want) return true;
+
+        const slotPeriod = normalizePeriod(getTimePeriod(time));
+        return slotPeriod === want;
     };
 
     // ✅ Contador separado (O(1) em vez de O(n) por iteração)
     let validPeriodCount = 0;
 
     while (validDaysChecked < daysAhead) {
+        if (requestCount >= MAX_REQUESTS) {
+            console.warn("⚠️ [BOOKING] Busca abortada por excesso de requisições");
+            break;
+        }
+
         // ✅ Guard anti-loop excessivo
         if (offset > daysAhead * 2) {
             console.warn("⚠️ [BOOKING] Loop excessivo detectado — interrompendo busca.");
@@ -193,6 +218,12 @@ export async function findAvailableSlots({
 
         // ✅ percorre todos os médicos elegíveis
         for (const doctor of doctors) {
+
+            if (++requestCount > MAX_REQUESTS) {
+                console.warn("⚠️ [BOOKING] Limite de requisições atingido — abortando busca.");
+                break;
+            }
+
             // ✅ EARLY-BREAK interno (usa contador)
             if (validPeriodCount >= targetCandidates) break;
 
@@ -600,7 +631,7 @@ export async function autoBookAppointment({
  */
 export function getTimePeriod(time) {
     const hour = parseInt(time.split(":")[0], 10);
-    if (hour < 12) return "manhã";  // com til
+    if (hour < 12) return "manha";   // ✅ canonical
     if (hour < 18) return "tarde";
     return "noite";
 }
