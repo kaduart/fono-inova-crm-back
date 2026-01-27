@@ -71,29 +71,33 @@ class BookingHandler {
                 extractedInfo: { confirmedSlot: booking.chosenSlot }
             };
         }
-
         // =========================
-        // 3) SLOT FOI EMBORA (indisponível) - usa OBJECTION_SCRIPTS
+        // 3) SLOT FOI EMBORA (indisponível)
         // =========================
         if (booking?.slotGone) {
+            // Tem alternativas? Oferece direto
             if (booking.alternatives?.primary) {
                 const options = buildSlotOptions(booking.alternatives);
                 const optionsText = options.map(o => o.text).join('\n');
 
-                // Tom de objeção "otherClinic" adaptado para slot indisponível
                 return {
-                    text: `Ah, que pena! Esse horário acabou de ser reservado 😔\n\nMas consegui outras opções pra você:\n\n${optionsText}\n\nAlguma dessas funciona? 💚`
+                    text: `Poxa, esse horário acabou de ser reservado! 😅\n\nMas separei outras opções pra você:\n\n${optionsText}\n\nAlguma funciona? Se não, me fala que busco mais 💚`
                 };
             }
 
-            // Escalonamento usando lógica do coldLeadContext
+            // Sem alternativas → escalonamento humano
             await this.escalateToHuman(lead._id, memory, 'slot_indisponivel');
 
             return {
-                text: `Esse horário não está mais disponível e estamos com alta demanda no momento 💚\n\nPara não deixar você esperando, vou pedir para nossa equipe de agendamento entrar em contato ainda hoje com as melhores opções.\n\nVocê prefere que liguem ou mandem mensagem no WhatsApp?`,
+                text: `Esse horário acabou de ser preenchido e estamos com agenda apertada esses dias 😔\n\nVou pedir pra nossa equipe te retornar ainda hoje com opções de encaixe.\n\nVocê prefere ligação ou continuar por aqui no WhatsApp?`,
                 extractedInfo: { awaitingHumanContact: true }
             };
         }
+        console.log('🔍 [BOOKING-DEBUG] Tentando buscar slots:', {
+            therapyArea: analysis?.extractedInfo?.therapyArea,
+            preferredPeriod: analysis?.extractedInfo?.preferredPeriod,
+            preferredDate: analysis?.extractedInfo?.preferredDate
+        });
 
         // =========================
         // 4) APRESENTAR SLOTS 
@@ -107,24 +111,33 @@ class BookingHandler {
                 text: `Encontrei essas opções para você:\n\n${optionsText}\n\nQual delas fica melhor? É só responder com a letra (A, B...) 💚`
             };
         }
-
         // =========================
-        // 5) SEM SLOTS (Escalonamento humano elegante)
+        // 5) SEM SLOTS - Escalonamento humano
         // =========================
         const period = analysis?.extractedInfo?.preferredPeriod || memory?.preferredTime;
 
-        // Marca para atenção humana (modo coldLead do amandaPrompt)
         await this.escalateToHuman(lead._id, memory, 'sem_vagas_disponiveis');
 
-        // Usa o tom de "coldLeadContext" para não parecer robótico
+        const periodMessages = {
+            manha: `Entendi que você prefere de manhã! 😊\n\nNo momento a agenda da manhã está bem cheia, mas não quero te deixar esperando.\n\nVou pedir pra nossa equipe te retornar ainda hoje com as melhores opções.\n\nVocê prefere ligação ou WhatsApp?`,
+
+            tarde: `Anotado que prefere à tarde! 😊\n\nEsse período está com poucas vagas agora, mas vou pedir pra equipe te retornar ainda hoje com as opções disponíveis.\n\nPrefere ligação ou continuar por aqui?`,
+
+            default: `No momento os horários estão bem apertados 😔\n\nPra não te deixar esperando, vou pedir pra nossa equipe te retornar ainda hoje com as melhores opções.\n\nVocê prefere ligação ou WhatsApp? 💚`
+        };
+
+        const responseText = periodMessages[period] || periodMessages.default;
+
         return {
-            text: `Nossos horários ${period ? `para ${period === 'manha' ? 'manhã' : period}` : ''} estão em alta demanda no momento 💚\n\nPara garantir seu atendimento, vou pedir para nossa equipe de agendamento entrar em contato ainda hoje com as melhores opções disponíveis.\n\nVocê prefere que liguem ou mandem mensagem no WhatsApp?`,
+            text: responseText.endsWith('💚') ? responseText : responseText + ' 💚',
             extractedInfo: {
                 awaitingHumanContact: true,
                 reason: 'no_slots_available',
-                escalatedAt: new Date()
+                escalatedAt: new Date(),
+                preferredPeriod: period || 'flexivel'
             }
         };
+
     }
 
     // Helper para extrair texto dos módulos dinâmicos (que podem ser strings ou funções)

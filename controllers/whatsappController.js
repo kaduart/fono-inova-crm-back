@@ -1604,9 +1604,9 @@ async function handleAutoReply(from, to, content, lead) {
                 lead: leadDoc,  // use leadDoc (o lead atualizado do banco)
                 message: { content: aggregatedContent },  // use aggregatedContent
                 context: {
-                    preferredPeriod: leadDoc.preferredPeriod,
-                    preferredDate: leadDoc.preferredDate,
-                    therapy: leadDoc.therapy,
+                    preferredPeriod: leadDoc.preferredPeriod || leadDoc.qualificationData?.extractedInfo?.disponibilidade,
+                    preferredDate: leadDoc.preferredDate || leadDoc.qualificationData?.extractedInfo?.dataPreferida,
+                    therapy: leadDoc.therapy || leadDoc.qualificationData?.extractedInfo?.especialidade,
                     source: 'whatsapp-inbound'
                 },
                 services: {
