@@ -434,6 +434,15 @@ export class WhatsAppOrchestrator {
             const rawHandler = handlers[decision.handler];
             const handler = this.normalizeHandler(rawHandler) || handlers.fallbackHandler;
 
+            const decisionContext = {
+                message,
+                lead,
+                memory: memoryContext,
+                missing,
+                booking: bookingContext,
+                analysis
+            };
+
             let result = await handler.execute({ decisionContext, services });
             // =========================
             // 9.5) SE HANDLER PEDIU GERAÇÃO VIA IA
