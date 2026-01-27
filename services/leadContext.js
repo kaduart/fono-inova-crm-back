@@ -273,11 +273,11 @@ function calculateDaysSince(date) {
 function getDefaultContext() {
     return {
         leadId: null,
-        name: null,
         leadName: null,
         leadFirstName: null,
         phone: null,
         origin: null,
+        patientName: lead.patientInfo?.name || null,
 
         hasAppointments: false,
         isPatient: false,

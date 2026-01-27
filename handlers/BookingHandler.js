@@ -93,8 +93,9 @@ class BookingHandler {
 
                 // Retorna confirmação direto (sem needsAIGeneration)
                 return {
-                    text: `Perfeito, ${possibleName.split(' ')[0]}! Vou reservar: ${slotText}. Agora me passa a data de nascimento (dd/mm/aaaa)? 💚`,
+                    text: `Perfeito, ${possibleName.split(' ')[0]}! 💚 Agora me informe a data de nascimento (dd/mm/aaaa).`,
                     extractedInfo: {
+                        nome: possibleName,   // 👈 chave padrão
                         patientName: possibleName,
                         nomeColetado: true
                     }
