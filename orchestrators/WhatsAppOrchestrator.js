@@ -27,6 +27,7 @@ import Leads from '../models/Leads.js';
 import { decisionEngine } from '../services/intelligence/DecisionEngine.js';
 import { normalizePeriod } from '../utils/normalizePeriod.js';
 import { generateHandlerResponse } from '../services/aiAmandaService.js';
+import { needsNewSummary } from '../services/conversationSummary.js';
 
 export class WhatsAppOrchestrator {
     constructor() {
