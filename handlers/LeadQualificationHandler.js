@@ -11,6 +11,7 @@ class LeadQualificationHandler {
     }
 
     async execute({ decisionContext, services }) {
+
         try {
             const { memory, analysis, missing, message } = decisionContext;
 
