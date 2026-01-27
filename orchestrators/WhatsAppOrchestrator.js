@@ -234,6 +234,11 @@ export class WhatsAppOrchestrator {
                 existingChosenSlotRaw.doctorId &&  // <-- CRÍTICO
                 existingChosenSlotRaw.date &&
                 existingChosenSlotRaw.time) ? existingChosenSlotRaw : null;
+            // 🛠️ CORREÇÃO: Copia slot do banco para o contexto se válido
+            if (existingChosenSlot) {
+                bookingContext.chosenSlot = existingChosenSlot;
+                console.log('📦 [CONTEXT] Slot do banco carregado:', existingChosenSlot.doctorId);
+            }
 
             // Também limpar o campo se vier string errada do banco
             if (existingChosenSlotRaw && typeof existingChosenSlotRaw === 'string') {
@@ -382,7 +387,10 @@ export class WhatsAppOrchestrator {
             // 6) MISSING (SEMÂNTICA CORRETA)
             // =========================
             const hasSlotsToShow = !!bookingContext?.slots?.primary;
-            const hasChosenSlotNow = !!(bookingContext?.chosenSlot || existingChosenSlot);
+            const hasChosenSlotNow = !!(
+                bookingContext?.chosenSlot?.doctorId ||
+                existingChosenSlot?.doctorId
+            );
 
             const missing = {
                 needsTherapy: !hasTherapy,
