@@ -745,69 +745,73 @@ export const whatsappController = {
                 return res.status(400).json({ success: false, error: 'leadId obrigatório' });
             }
 
-            let lead = null;
+            let leadId = null;
 
-            // 1) Tenta como ID de Lead
+            // 1) Resolve leadId (Lead > Contact > Phone)
             if (mongoose.Types.ObjectId.isValid(rawId)) {
-                lead = await Lead.findById(rawId);
-            }
-
-            // 2) Se não achou, tenta como ID de Contact
-            if (!lead && mongoose.Types.ObjectId.isValid(rawId)) {
-                const contactDoc = await Contacts.findById(rawId).lean();
-                if (contactDoc?.phone) {
-                    const phoneNorm = normalizeE164BR(contactDoc.phone);
-                    lead = await Lead.findOne({ 'contact.phone': phoneNorm });
+                const lead = await Lead.findById(rawId).lean();
+                if (lead) leadId = lead._id;
+                else {
+                    const contactDoc = await Contacts.findById(rawId).lean();
+                    if (contactDoc?.phone) {
+                        const phoneNorm = normalizeE164BR(contactDoc.phone);
+                        const leadByPhone = await Lead.findOne({ 'contact.phone': phoneNorm }).lean();
+                        if (leadByPhone) leadId = leadByPhone._id;
+                    }
                 }
             }
 
-            // 3) Se ainda não achou, tenta tratar como telefone
-            if (!lead) {
+            if (!leadId) {
                 const phoneNorm = normalizeE164BR(rawId);
-                lead = await Lead.findOne({ 'contact.phone': phoneNorm });
+                const leadByPhone = await Lead.findOne({ 'contact.phone': phoneNorm }).lean();
+                if (leadByPhone) leadId = leadByPhone._id;
             }
 
-            if (!lead) {
+            if (!leadId) {
                 return res.status(404).json({ success: false, error: 'Lead não encontrado' });
             }
 
-            console.log(`🔄 [AMANDA-RESUME] Reativando para lead ${lead._id}`);
+            console.log(`🔄 [AMANDA-RESUME] Reativando para lead ${leadId}`);
 
-            // 2. Desativa controle manual
-            lead.manualControl = lead.manualControl || {};
-            lead.manualControl.active = false;
-            lead.manualControl.takenOverAt = null;
-            lead.manualControl.takenOverBy = null;
-            lead.autoReplyEnabled = true;
-            await lead.save();
+            // 🔥 LIMPA ESTADO QUE ESTÁ TRAVANDO A AMANDA
+            await Lead.findByIdAndUpdate(leadId, {
+                $set: {
+                    'manualControl.active': false,
+                    autoReplyEnabled: true,
+                    lastAmandaInteraction: new Date()
+                },
+                $unset: {
+                    'manualControl.takenOverAt': "",
+                    'manualControl.takenOverBy': "",
+                    pendingChosenSlot: "",
+                    pendingSchedulingSlots: "",
+                    pendingPatientInfoForScheduling: "",
+                    pendingPatientInfoStep: ""
+                }
+            });
 
-            // 3. Busca última mensagem inbound sem resposta
+            // Recarrega lead LIMPO
+            const lead = await Lead.findById(leadId).lean();
+
+            // 3. Busca última inbound
             const lastInbound = await Message.findOne({
-                lead: lead._id,
+                lead: leadId,
                 direction: 'inbound'
             }).sort({ timestamp: -1 }).lean();
 
             if (!lastInbound) {
-                return res.json({
-                    success: true,
-                    message: 'Amanda reativada, mas não há mensagem pendente',
-                    responded: false
-                });
+                return res.json({ success: true, message: 'Sem mensagem pendente', responded: false });
             }
 
-            // 4. Verifica se já foi respondida
+            // 4. Já respondeu?
             const alreadyReplied = await Message.findOne({
-                lead: lead._id,
+                lead: leadId,
                 direction: 'outbound',
-                timestamp: { $gt: lastInbound.timestamp }
+                timestamp: { $gte: lastInbound.timestamp }
             }).lean();
 
             if (alreadyReplied) {
-                return res.json({
-                    success: true,
-                    message: 'Amanda reativada, última mensagem já foi respondida',
-                    responded: false
-                });
+                return res.json({ success: true, message: 'Já respondida', responded: false });
             }
 
             const useNewForThisLead = USE_NEW_ORCHESTRATOR && isCanaryLead(lead);
@@ -821,121 +825,63 @@ export const whatsappController = {
 
             const context = {
                 source: 'amanda-resume',
-                resumedAt: new Date()
+                resumedAt: new Date(),
+                forceSend: true
             };
 
-            // ✅ DECLARAÇÃO DA VARIÁVEL AQUI (antes do uso)
             let result;
-            let aiText = null; // Inicializa aiText
+            let aiText = null;
 
-            // 5. Gera resposta da Amanda
-            console.log(`🤖 [AMANDA-RESUME] Gerando resposta para: "${lastInbound.content?.substring(0, 50)}..."`);
+            console.log(`🤖 [AMANDA-RESUME] Gerando resposta`);
 
             if (useNewForThisLead) {
                 result = await orchestrator.process({
                     lead,
                     message,
                     context,
-                    services: {
-                        bookingService
-                    }
+                    services: { bookingService }
                 });
             } else {
                 result = {
                     command: 'SEND_MESSAGE',
                     payload: {
-                        text: await getOptimizedAmandaResponse({
-                            lead,
-                            message,
-                            context
-                        })
+                        text: await getOptimizedAmandaResponse({ lead, message, context })
                     }
                 };
             }
 
-            // ✅ EXTRAI O TEXTO DA RESPOSTA baseado no resultado
-            if (result?.command === 'SEND_MESSAGE' && result.payload?.text) {
-                aiText = result.payload.text;
-            } else if (result?.command === 'NO_REPLY') {
-                return res.json({
-                    success: true,
-                    message: 'Amanda reativada, mas optou por não responder (NO_REPLY)',
-                    responded: false
-                });
-            } else if (result?.command === 'ESCALATE') {
-                // Se tiver função de notificação humana, use aqui
-                console.log(`🚨 [AMANDA-RESUME] Escalando para humano: ${result.meta?.reason}`);
-                return res.json({
-                    success: true,
-                    message: 'Amanda reativada, mas escalou para atendimento humano',
-                    responded: false,
-                    escalated: true
-                });
+            if (result?.command === 'SEND_MESSAGE') aiText = result.payload.text;
+            else return res.json({ success: true, responded: false });
+
+            if (!aiText?.trim()) {
+                return res.json({ success: true, responded: false });
             }
 
-            // ✅ VERIFICA SE TEM TEXTO PARA ENVIAR
-            if (!aiText || !aiText.trim()) {
-                return res.json({
-                    success: true,
-                    message: 'Amanda reativada, mas não gerou resposta',
-                    responded: false
-                });
-            }
-
-            // 6. Envia via WhatsApp
+            // 6. Envia WhatsApp
             const rawPhone = lead.contact?.phone;
-            if (!rawPhone) {
-                return res.status(400).json({ success: false, error: 'Lead sem telefone' });
-            }
-
             const to = normalizeE164BR(rawPhone);
             const contact = await Contacts.findOne({ phone: to }).lean();
 
-            // ✅ USA RESULTADO DO ENVIO (não redeclara 'result', já declarada acima)
             const sendResult = await sendTextMessage({
                 to,
                 text: aiText.trim(),
-                lead: lead._id,
+                lead: leadId,
                 contactId: contact?._id || null,
                 patientId: lead.convertedToPatient || null,
-                sentBy: 'amanda'
+                sentBy: 'amanda',
+                forceSend: true
             });
 
             const waMessageId = sendResult?.messages?.[0]?.id || null;
 
-            // Dá um tempinho pro Mongo gravar
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise(r => setTimeout(r, 200));
 
-            let savedMsg = null;
+            let savedMsg = await Message.findOne({ waMessageId }).lean();
 
-            // 1ª tentativa: pelo waMessageId
-            if (waMessageId) {
-                savedMsg = await Message.findOne({ waMessageId }).lean();
-            }
-
-            // 2ª: última outbound desse lead
-            if (!savedMsg) {
-                savedMsg = await Message.findOne({
-                    lead: lead._id,
-                    direction: 'outbound',
-                    type: 'text'
-                }).sort({ timestamp: -1 }).lean();
-            }
-
-            // 3ª: última outbound pra esse telefone
-            if (!savedMsg) {
-                savedMsg = await Message.findOne({
-                    to,
-                    direction: 'outbound',
-                    type: 'text'
-                }).sort({ timestamp: -1 }).lean();
-            }
-
-            // 4ª: cria manualmente se não achou
             if (!savedMsg) {
                 savedMsg = await Message.create({
                     waMessageId,
-                    lead: lead._id,
+                    lead: leadId,
                     contact: contact?._id || null,
                     from: process.env.WHATSAPP_PHONE_NUMBER_ID || 'whatsapp:amanda',
                     to,
@@ -948,7 +894,6 @@ export const whatsappController = {
                 });
             }
 
-            // Emite via socket
             const io = getIo();
             io.emit("message:new", {
                 id: String(savedMsg._id),
@@ -960,23 +905,22 @@ export const whatsappController = {
                 text: savedMsg.content,
                 status: savedMsg.status,
                 timestamp: savedMsg.timestamp,
-                leadId: String(savedMsg.lead || lead._id),
-                contactId: String(savedMsg.contact || contact?._id || ''),
-                metadata: { ...(savedMsg.metadata || {}), sentBy: 'amanda' }
+                leadId: String(leadId),
+                contactId: String(savedMsg.contact || ''),
+                metadata: savedMsg.metadata
             });
 
-            console.log(`✅ [AMANDA-RESUME] Respondido com sucesso!`);
+            console.log(`✅ [AMANDA-RESUME] Respondido`);
 
-            res.json({
+            return res.json({
                 success: true,
-                message: 'Amanda reativada e respondeu!',
                 responded: true,
                 response: aiText.substring(0, 100) + '...'
             });
 
         } catch (error) {
             console.error('❌ [AMANDA-RESUME] Erro:', error);
-            res.status(500).json({ success: false, error: error.message });
+            return res.status(500).json({ success: false, error: error.message });
         }
     },
 
