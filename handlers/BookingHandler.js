@@ -84,7 +84,40 @@ class BookingHandler {
         }
 
         // ==========================================
-        // 2) APRESENTAR SLOTS (QUANDO TUDO PRONTO)
+        // 2) SLOT INDISPONÍVEL (FOI EMBORA)
+        // ==========================================
+        if (booking?.slotGone) {
+            // Tem alternativas? Oferece direto
+            if (booking.alternatives?.primary) {
+                const options = buildSlotOptions(booking.alternatives);
+                const optionsText = options.map(o => o.text).join('\n');
+
+                // Atualiza no lead as novas opções
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: { pendingSchedulingSlots: booking.alternatives },
+                    $unset: { pendingChosenSlot: 1 }
+                });
+
+                return {
+                    text: `Poxa, esse horário acabou de ser reservado! 😅\n\nMas separei outras opções pra você:\n\n${optionsText}\n\nAlguma funciona? Se não, me fala que busco mais 💚`
+                };
+            }
+
+            // Sem alternativas → escalonamento humano
+            await this.escalateToHuman(lead._id, memory, 'slot_indisponivel');
+
+            return {
+                text: `Esse horário acabou de ser preenchido e estamos com agenda apertada esses dias 😔\n\nVou pedir pra nossa equipe te retornar ainda hoje com opções de encaixe.\n\nVocê prefere ligação ou continuar por aqui no WhatsApp?`,
+                extractedInfo: {
+                    awaitingHumanContact: true,
+                    reason: 'slot_gone',
+                    escalatedAt: new Date()
+                }
+            };
+        }
+
+        // ==========================================
+        // 3) APRESENTAR SLOTS (QUANDO TUDO PRONTO)
         // ==========================================
         if (missing.needsSlot && booking?.slots?.primary) {
             const options = buildSlotOptions(booking.slots);
@@ -116,23 +149,12 @@ class BookingHandler {
             };
         }
 
-        // Se precisa de slot mas não temos slots ainda, busca (fallback de segurança)
-        // ==========================================
-        // 2.1) FALHA AO BUSCAR SLOTS (ANTI-LOOP)
-        // ==========================================
+        // Se precisa de slot mas não temos slots ainda
         if (missing.needsSlot && !booking?.slots?.primary) {
-
             const attempts = memory?.slotFetchAttempts || 0;
 
-            // Incrementa tentativa
-            await Leads.findByIdAndUpdate(lead._id, {
-                $set: { slotFetchAttempts: attempts + 1 }
-            });
-
-            // Se já tentou mais de 1 vez → escala humano
             if (attempts >= 1) {
                 await this.escalateToHuman(lead._id, memory, 'falha_busca_slots');
-
                 return {
                     text: 'Tive uma dificuldade técnica ao buscar os horários agora 😔\n\nVou pedir para nossa equipe te retornar rapidinho com opções, tudo bem? 💚',
                     extractedInfo: {
@@ -142,73 +164,46 @@ class BookingHandler {
                 };
             }
 
-            // Primeira tentativa: espera
             return {
                 text: 'Só um minutinho que estou verificando os melhores horários para você... 💚'
             };
         }
 
         // ==========================================
-        // 3) SLOT INDISPONÍVEL (FOI EMBORA)
+        // 4) SLOT ESCOLHIDO → COLETAR NOME
         // ==========================================
-        if (booking?.slotGone) {
-            // Tem alternativas? Oferece direto
-            if (booking.alternatives?.primary) {
-                const options = buildSlotOptions(booking.alternatives);
-                const optionsText = options.map(o => o.text).join('\n');
+        if (missing.needsName) {
+            // 🛡️ DEFESA: Verifica se slot é válido ANTES de coletar nome
+            if (!booking?.chosenSlot?.doctorId) {
+                console.warn('[BookingHandler] Slot inválido para needsName:', booking?.chosenSlot);
 
-                // Atualiza no lead as novas opções
-                await Leads.findByIdAndUpdate(lead._id, {
-                    $set: { pendingSchedulingSlots: booking.alternatives },
-                    $unset: {
-                        pendingChosenSlot: 1,
-                        slotFetchAttempts: 1
-                    }
-                });
-
+                // Volta para escolha de slots
                 return {
-                    text: `Poxa, esse horário acabou de ser reservado! 😅\n\nMas separei outras opções pra você:\n\n${optionsText}\n\nAlguma funciona? Se não, me fala que busco mais 💚`
+                    text: 'Desculpe, não consegui guardar o horário escolhido. Pode me confirmar novamente qual opção prefere (A, B ou C)? 💚',
+                    extractedInfo: { slotLost: true }
                 };
             }
 
-            // Sem alternativas → escalonamento humano
-            await this.escalateToHuman(lead._id, memory, 'slot_indisponivel');
-
-            return {
-                text: `Esse horário acabou de ser preenchido e estamos com agenda apertada esses dias 😔\n\nVou pedir pra nossa equipe te retornar ainda hoje com opções de encaixe.\n\nVocê prefere ligação ou continuar por aqui no WhatsApp?`,
-                extractedInfo: {
-                    awaitingHumanContact: true,
-                    reason: 'slot_gone',
-                    escalatedAt: new Date()
-                }
-            };
-        }
-
-        // ==========================================
-        // 4) SLOT ESCOLHIDO → COLETAR NOME
-        // ==========================================
-        if (missing.needsName && booking?.chosenSlot?.doctorId) {
             const slotText = formatSlot(booking.chosenSlot);
             const possibleName = text?.trim();
 
-            // Valida se é realmente um nome ou uma confirmação (Sim, A, ok, etc)
+            // Valida se é realmente um nome
             const isGenericResponse = /^(sim|s|não|nao|n|ok|beleza|a|b|c|d|e|f|\d+|yes|no)$/i.test(possibleName);
-            const isValidName =
-                possibleName &&
-                possibleName.length >= 4 &&
-                possibleName.split(' ').length >= 1 &&
+            const isValidName = possibleName &&
+                possibleName.length >= 3 &&
                 !isGenericResponse;
 
             if (isValidName) {
                 const firstName = possibleName.split(' ')[0];
 
-                // Salva no lead e confirma o slot definitivamente
+                // Salva no lead
                 await Leads.findByIdAndUpdate(lead._id, {
                     $set: {
                         'patientInfo.name': possibleName,
                         'qualificationData.extractedInfo.nome': possibleName,
                         'autoBookingContext.patientName': possibleName,
-                        pendingChosenSlot: booking.chosenSlot // Fixa o slot escolhido
+                        // Limpa slots pendentes pois já escolheu
+                        pendingSchedulingSlots: null
                     }
                 });
 
@@ -222,7 +217,7 @@ class BookingHandler {
                 };
             }
 
-            // Se não detectou nome válido ainda (ou veio "Sim", "A", etc), pergunta novamente
+            // Nome ainda não detectado ou é inválido
             return {
                 needsAIGeneration: true,
                 promptContext: DYNAMIC_MODULES.slotChosenAskName ?
@@ -233,20 +228,12 @@ class BookingHandler {
         }
 
         // ==========================================
-        // 5) NOME JÁ TEMOS, MAS FALTA NASCIMENTO (ETAPA EXTRA)
+        // 5) NOME JÁ TEMOS, MAS FALTA NASCIMENTO
         // ==========================================
-        // Se já temos nome mas estamos esperando nascimento (detectado via step ou contexto)
-        const patientName =
-            memory?.patientName ||
-            lead?.patientInfo?.name ||
-            memory?.nome;
-
-        if (patientName && !memory?.patientBirthDate && !missing.needsName) {
-
+        if (memory?.patientName && !memory?.patientBirthDate && !missing.needsName) {
             const birthDateMatch = text?.match(/(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})/);
 
             if (birthDateMatch) {
-                // Salvou nascimento, pode partir para finalização ou confirmação
                 const birthDate = `${birthDateMatch[1]}/${birthDateMatch[2]}/${birthDateMatch[3]}`;
 
                 await Leads.findByIdAndUpdate(lead._id, {
@@ -264,7 +251,6 @@ class BookingHandler {
                     }
                 };
             } else {
-                // Ainda não recebeu data válida
                 return {
                     text: 'Por favor, me informe a data de nascimento no formato dd/mm/aaaa 💚'
                 };
@@ -272,7 +258,7 @@ class BookingHandler {
         }
 
         // ==========================================
-        // 6) FALLBACK DE SEGURANÇA (NUNCA RETORNA UNDEFINED)
+        // 6) FALLBACK DE SEGURANÇA
         // ==========================================
         console.warn('[BookingHandler] Fluxo caiu em fallback. Missing:', missing, 'Booking:', !!booking);
 
@@ -286,7 +272,6 @@ class BookingHandler {
     extractDynamicText(moduleContent) {
         if (!moduleContent) return null;
         if (typeof moduleContent === 'function') {
-            // Se for função (como slotChosenAskName), retorna null para usar fallback
             return null;
         }
         return moduleContent.trim();

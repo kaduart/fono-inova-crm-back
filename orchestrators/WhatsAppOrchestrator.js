@@ -24,10 +24,10 @@ import { calculateUrgency } from '../services/intelligence/UrgencyScheduler.js';
 import IntentDetector from '../detectors/IntentDetector.js';
 import * as handlers from '../handlers/index.js';
 import Leads from '../models/Leads.js';
-import { decisionEngine } from '../services/intelligence/DecisionEngine.js';
-import { normalizePeriod } from '../utils/normalizePeriod.js';
 import { generateHandlerResponse } from '../services/aiAmandaService.js';
 import generateConversationSummary, { needsNewSummary } from '../services/conversationSummary.js';
+import { decisionEngine } from '../services/intelligence/DecisionEngine.js';
+import { normalizePeriod } from '../utils/normalizePeriod.js';
 
 export class WhatsAppOrchestrator {
     constructor() {
@@ -49,8 +49,13 @@ export class WhatsAppOrchestrator {
             if (v == null) return null;
             if (typeof v === 'string') {
                 const s = v.trim().toLowerCase();
-                if (s === 'não' || s === 'nao' || s === 'n/a' || s === 'no') return null;
+                // Bloqueia strings genéricas
+                if (['não', 'nao', 'n/a', 'no', 'sim', 'yes', 'true', 'false'].includes(s)) {
+                    return null;
+                }
             }
+            // Se não for objeto válido, retorna null
+            if (v && typeof v !== 'object') return null;
             return v;
         };
 
@@ -319,7 +324,21 @@ export class WhatsAppOrchestrator {
 
             // Escolha do slot (A/B/1/2...) com strict=true
             if (analysis.intent === 'scheduling' && bookingContext?.slots) {
+                // 🐛 DEBUG: Antes de tentar pegar o slot
+                console.log('🎯 [SLOT CHOICE] Texto recebido:', text);
+                console.log('🎯 [SLOT CHOICE] Slots disponíveis:', {
+                    primary: bookingContext.slots.primary?.time,
+                    alternatives: bookingContext.slots.alternativesSamePeriod?.length
+                });
+
                 const chosenSlot = pickSlotFromUserReply(text, bookingContext.slots, { strict: true });
+
+                // 🐛 DEBUG: Depois de tentar pegar
+                console.log('🎯 [SLOT CHOICE] Resultado:', chosenSlot ? {
+                    doctorId: chosenSlot.doctorId,
+                    date: chosenSlot.date,
+                    time: chosenSlot.time
+                } : 'NULL');
 
                 if (chosenSlot) {
                     const validation = await validateSlotStillAvailable(chosenSlot, {
@@ -340,10 +359,21 @@ export class WhatsAppOrchestrator {
                     } else {
                         bookingContext.chosenSlot = chosenSlot;
 
+                        // 🐛 DEBUG: Antes de salvar no banco
+                        console.log('💾 [SLOT SAVE] Salvando slot:', {
+                            doctorId: chosenSlot.doctorId,
+                            date: chosenSlot.date,
+                            time: chosenSlot.time,
+                            doctorName: chosenSlot.doctorName
+                        });
+
                         await Leads.findByIdAndUpdate(lead._id, {
                             $set: { pendingChosenSlot: chosenSlot },
                             $unset: { pendingSchedulingSlots: "" }
                         });
+
+                        // 🐛 DEBUG: Confirmação
+                        console.log('✅ [SLOT SAVED] Slot salvo no lead ID:', lead._id);
                     }
                 }
             }
