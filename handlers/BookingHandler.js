@@ -14,6 +14,9 @@ class BookingHandler {
         const { message, lead, memory, missing, booking, analysis } = decisionContext;
         const text = message?.text || '';
 
+        const patientName = memory?.patientName || lead?.patientInfo?.name || lead?.autoBookingContext?.patientName;
+        const patientBirthDate = memory?.patientBirthDate || lead?.patientInfo?.birthDate;
+
         // Re-detecta flags locais para nuances específicas de booking
         const flags = detectAllFlags(text, lead, {
             stage: lead.stage,
@@ -203,7 +206,10 @@ class BookingHandler {
                         'qualificationData.extractedInfo.nome': possibleName,
                         'autoBookingContext.patientName': possibleName,
                         // Limpa slots pendentes pois já escolheu
-                        pendingSchedulingSlots: null
+                        pendingSchedulingSlots: null,
+                        // Guardar o slot escolhido definitivamente se ainda não estiver salvo
+                        pendingChosenSlot: booking?.chosenSlot || lead.pendingChosenSlot
+
                     }
                 });
 
@@ -230,7 +236,7 @@ class BookingHandler {
         // ==========================================
         // 5) NOME JÁ TEMOS, MAS FALTA NASCIMENTO
         // ==========================================
-        if (memory?.patientName && !memory?.patientBirthDate && !missing.needsName) {
+        if (patientName && !patientBirthDate && !missing.needsName) {
             const birthDateMatch = text?.match(/(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})/);
 
             if (birthDateMatch) {
@@ -244,7 +250,10 @@ class BookingHandler {
                 });
 
                 return {
-                    text: `Show! 👏 Agora é só confirmar:\n\n✅ Nome: ${memory.patientName}\n✅ Nascimento: ${birthDate}\n✅ Horário: ${formatSlot(booking.chosenSlot)}\n\nTudo certo?`,
+                    text: `Show! 👏 Agora é só confirmar:\n\n✅ 
+                        Nome: ${patientName}\n✅ 
+                        Nascimento: ${birthDate}\n✅ 
+                        Horário: ${formatSlot(booking.chosenSlot)}\n\nTudo certo?`,
                     extractedInfo: {
                         birthDateCollected: true,
                         readyToConfirm: true
