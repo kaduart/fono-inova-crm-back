@@ -90,7 +90,18 @@ export class WhatsAppOrchestrator {
             // =========================
             // 3) INFERRIDOS (SEM "ADIVINHAR" EM CONVERSA FRIA)
             // =========================
+            // 🧠 DETECÇÃO RÁPIDA DE TERAPIA (fallback quando LLM não pegou)
+            const textLower = text.toLowerCase();
+            let quickTherapy = null;
+
+            if (textLower.match(/\bpsico(log|l[oó]gica)?\b/)) quickTherapy = 'psicologia';
+            else if (textLower.match(/\bfono\b/)) quickTherapy = 'fonoaudiologia';
+            else if (textLower.match(/\bto\b|\bterapia ocupacional\b/)) quickTherapy = 'terapia ocupacional';
+            else if (textLower.match(/\bfisio\b/)) quickTherapy = 'fisioterapia';
+
+            // Agora usa o quickTherapy como fallback
             const inferredTherapy =
+                quickTherapy ||  // ← ADICIONAR ISSO
                 analysis.therapyArea ||
                 intelligent?.especialidade ||
                 (allowMemoryCarryOver ? memoryContext?.therapyArea : null) ||
@@ -143,6 +154,14 @@ export class WhatsAppOrchestrator {
                 ? inferredComplaintRaw
                 : null;
 
+            // 🧠  Contexto familiar
+            if (!inferredComplaint && text.toLowerCase().match(/\b(filho|filha|meu filho|minha filha)\b/)) {
+                analysis.extractedInfo = {
+                    ...analysis.extractedInfo,
+                    parentesco: 'filho',
+                    queixaContexto: 'consulta_pediatrica'
+                };
+            }
 
             // =========================
             // 4) ESTRATÉGIA
@@ -398,7 +417,7 @@ export class WhatsAppOrchestrator {
                 const decisionContext = {
                     message,
                     lead,
-                    memory,
+                    memory: memoryContext,
                     missing,
                     booking: bookingContext,
                     analysis

@@ -75,31 +75,37 @@ class BookingHandler {
         // =========================
         // 2) SLOT JÁ ESCOLHIDO → Confirmação final
         // =========================
-        if (booking?.chosenSlot) {
-            if (missing.needsName) {
-                const slotText = formatSlot(booking.chosenSlot);
-
-                return {
-                    needsAIGeneration: true,
-                    promptContext: DYNAMIC_MODULES.slotChosenAskName(slotText),
-                    fallbackText: `Perfeito! Vou reservar: ${slotText}. Me confirma o nome completo do paciente? 💚`
-                };
-            }
-
-            if (missing.needsBirthDate) {
-                return {
-                    needsAIGeneration: true,
-                    promptContext: DYNAMIC_MODULES.slotChosenAskBirth,
-                    fallbackText: `Obrigada! Agora me passa a data de nascimento (dd/mm/aaaa) 💚`,
-                    extractedInfo: { pendingStep: 'awaiting_birthdate' }
-                };
-            }
-
-            // Confirmação final
+        if (missing.needsName) {
             const slotText = formatSlot(booking.chosenSlot);
+            const possibleName = message?.text?.trim();
+
+            // 🧠 SE JÁ RECEBEU O NOME (não é vazio, tem mais de 3 caracteres, não é número)
+            if (possibleName && possibleName.length > 3 &&
+                !possibleName.match(/^(\d+|sim|não|nao|ok|beleza)$/i)) {
+
+                // Salva no lead
+                await Leads.findByIdAndUpdate(lead._id, {
+                    $set: {
+                        'patientInfo.name': possibleName,
+                        'qualificationData.extractedInfo.nome': possibleName
+                    }
+                });
+
+                // Retorna confirmação direto (sem needsAIGeneration)
+                return {
+                    text: `Perfeito, ${possibleName.split(' ')[0]}! Vou reservar: ${slotText}. Agora me passa a data de nascimento (dd/mm/aaaa)? 💚`,
+                    extractedInfo: {
+                        patientName: possibleName,
+                        nomeColetado: true
+                    }
+                };
+            }
+
+            // Se não detectou nome ainda, pergunta via IA
             return {
-                text: `Agendamento confirmado! ✨\n\n📅 ${slotText}\n\nVou te enviar os detalhes por aqui. Estamos ansiosos pra cuidar de vocês! 💚`,
-                extractedInfo: { confirmedSlot: booking.chosenSlot }
+                needsAIGeneration: true,
+                promptContext: DYNAMIC_MODULES.slotChosenAskName(slotText),
+                fallbackText: `Perfeito! Vou reservar: ${slotText}. Me confirma o nome completo do paciente? 💚`
             };
         }
 
