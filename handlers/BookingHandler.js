@@ -21,6 +21,26 @@ class BookingHandler {
         });
 
         // =========================
+        // 0) SEM SLOTS (PRIORIDADE MÁXIMA)
+        // =========================
+        if (booking?.noSlotsAvailable || booking?.flow === 'no_slots') {
+            const period = analysis?.extractedInfo?.preferredPeriod || memory?.preferredTime;
+
+            await this.escalateToHuman(lead._id, memory, 'sem_vagas_disponiveis');
+
+            return {
+                needsAIGeneration: true,
+                promptContext: DYNAMIC_MODULES.noSlotsAvailable(period),
+                fallbackText: 'Nossa equipe vai entrar em contato ainda hoje 💚',
+                extractedInfo: {
+                    awaitingHumanContact: true,
+                    reason: 'no_slots_available',
+                    preferredPeriod: period || 'flexivel'
+                }
+            };
+        }
+
+        // =========================
         // 1) COLETA PROGRESSIVA (usa flagsDetector + MANUAL_AMANDA)
         // =========================
         if (missing.needsTherapy) {
@@ -57,20 +77,32 @@ class BookingHandler {
         // =========================
         if (booking?.chosenSlot) {
             if (missing.needsName) {
-                // Usa o slotChosenAskName do amandaPrompt
                 const slotText = formatSlot(booking.chosenSlot);
+
                 return {
-                    text: this.extractDynamicText(DYNAMIC_MODULES.slotChosenAskName(slotText)) ||
-                        `Perfeito — vou reservar a opção escolhida. Só confirma o nome completo do paciente? 💚`
+                    needsAIGeneration: true,
+                    promptContext: DYNAMIC_MODULES.slotChosenAskName(slotText),
+                    fallbackText: `Perfeito! Vou reservar: ${slotText}. Me confirma o nome completo do paciente? 💚`
                 };
             }
 
-            // Confirmação final usando tom premium do amandaPrompt
+            if (missing.needsBirthDate) {
+                return {
+                    needsAIGeneration: true,
+                    promptContext: DYNAMIC_MODULES.slotChosenAskBirth,
+                    fallbackText: `Obrigada! Agora me passa a data de nascimento (dd/mm/aaaa) 💚`,
+                    extractedInfo: { pendingStep: 'awaiting_birthdate' }
+                };
+            }
+
+            // Confirmação final
+            const slotText = formatSlot(booking.chosenSlot);
             return {
-                text: `Agendamento confirmado! ✨\n\n${formatSlot(booking.chosenSlot)}\n\n${getManual('duvidas_frequentes', 'pagamento') || 'Vou te enviar todos os detalhes por aqui. Estamos ansiosos para cuidar de vocês! 💚'}`,
+                text: `Agendamento confirmado! ✨\n\n📅 ${slotText}\n\nVou te enviar os detalhes por aqui. Estamos ansiosos pra cuidar de vocês! 💚`,
                 extractedInfo: { confirmedSlot: booking.chosenSlot }
             };
         }
+
         // =========================
         // 3) SLOT FOI EMBORA (indisponível)
         // =========================
@@ -103,73 +135,29 @@ class BookingHandler {
             preferredDate: analysis?.extractedInfo?.preferredDate
         });
 
-        // =========================
-        // 3.5) SEM SLOTS (forçado pelo Orchestrator)
-        // =========================
-        if (booking?.noSlotsAvailable || booking?.flow === 'no_slots') {
-            const period = analysis?.extractedInfo?.preferredPeriod || memory?.preferredTime;
-
-            await this.escalateToHuman(lead._id, memory, 'sem_vagas_disponiveis');
-
-            const periodMessages = {
-                manha: `Entendi que você prefere de manhã 😊\n\nNo momento nossa agenda da manhã está bem cheia.\n\nMas vou pedir pra nossa equipe te chamar ainda hoje com as melhores opções.\n\nVocê prefere ligação ou WhatsApp? 💚`,
-
-                tarde: `Entendi que você prefere à tarde 😊\n\nEsse período está com poucas vagas agora.\n\nVou pedir pra nossa equipe te chamar ainda hoje com as opções disponíveis.\n\nPrefere ligação ou WhatsApp? 💚`,
-
-                default: `No momento os horários estão bem apertados 😔\n\nPra não te deixar esperando, vou pedir pra nossa equipe te chamar ainda hoje com as melhores opções.\n\nVocê prefere ligação ou WhatsApp? 💚`
-            };
-
-            const responseText = periodMessages[period] || periodMessages.default;
-
-            return {
-                text: responseText,
-                extractedInfo: {
-                    awaitingHumanContact: true,
-                    reason: 'no_slots_available',
-                    escalatedAt: new Date(),
-                    preferredPeriod: period || 'flexivel'
-                }
-            };
-        }
 
         // =========================
         // 4) APRESENTAR SLOTS 
         // =========================
         if (booking?.slots?.primary) {
             const options = buildSlotOptions(booking.slots);
-            const optionsText = options.map(o => o.text).join('\n');
 
-            // Usa schedulingContext do amandaPrompt
+            if (!options.length) {
+                return {
+                    needsAIGeneration: true,
+                    promptContext: DYNAMIC_MODULES.noSlotsAvailable(
+                        analysis?.extractedInfo?.preferredPeriod || memory?.preferredTime
+                    ),
+                    fallbackText: 'Nossa equipe vai entrar em contato ainda hoje 💚'
+                };
+            }
+
+            const optionsText = options.map(o => o.text).join('\n');
             return {
-                text: `Encontrei essas opções para você:\n\n${optionsText}\n\nQual delas fica melhor? É só responder com a letra (A, B...) 💚`
+                text: `Encontrei essas opções para você:\n\n${optionsText}\n\nQual delas fica melhor? (A, B, C...) 💚`
             };
         }
-        // =========================
-        // 5) SEM SLOTS - Escalonamento humano
-        // =========================
-        const period = analysis?.extractedInfo?.preferredPeriod || memory?.preferredTime;
 
-        await this.escalateToHuman(lead._id, memory, 'sem_vagas_disponiveis');
-
-        const periodMessages = {
-            manha: `Entendi que você prefere de manhã! 😊\n\nNo momento a agenda da manhã está bem cheia, mas não quero te deixar esperando.\n\nVou pedir pra nossa equipe te retornar ainda hoje com as melhores opções.\n\nVocê prefere ligação ou WhatsApp?`,
-
-            tarde: `Anotado que prefere à tarde! 😊\n\nEsse período está com poucas vagas agora, mas vou pedir pra equipe te retornar ainda hoje com as opções disponíveis.\n\nPrefere ligação ou continuar por aqui?`,
-
-            default: `No momento os horários estão bem apertados 😔\n\nPra não te deixar esperando, vou pedir pra nossa equipe te retornar ainda hoje com as melhores opções.\n\nVocê prefere ligação ou WhatsApp? 💚`
-        };
-
-        const responseText = periodMessages[period] || periodMessages.default;
-
-        return {
-            text: responseText.endsWith('💚') ? responseText : responseText + ' 💚',
-            extractedInfo: {
-                awaitingHumanContact: true,
-                reason: 'no_slots_available',
-                escalatedAt: new Date(),
-                preferredPeriod: period || 'flexivel'
-            }
-        };
 
     }
 
