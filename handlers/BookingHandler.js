@@ -90,7 +90,11 @@ class BookingHandler {
 
             return {
                 text: `Esse horário acabou de ser preenchido e estamos com agenda apertada esses dias 😔\n\nVou pedir pra nossa equipe te retornar ainda hoje com opções de encaixe.\n\nVocê prefere ligação ou continuar por aqui no WhatsApp?`,
-                extractedInfo: { awaitingHumanContact: true }
+                extractedInfo: {
+                    awaitingHumanContact: true,
+                    reason: 'slot_gone',
+                    escalatedAt: new Date()
+                }
             };
         }
         console.log('🔍 [BOOKING-DEBUG] Tentando buscar slots:', {
@@ -98,6 +102,35 @@ class BookingHandler {
             preferredPeriod: analysis?.extractedInfo?.preferredPeriod,
             preferredDate: analysis?.extractedInfo?.preferredDate
         });
+
+        // =========================
+        // 3.5) SEM SLOTS (forçado pelo Orchestrator)
+        // =========================
+        if (booking?.noSlotsAvailable || booking?.flow === 'no_slots') {
+            const period = analysis?.extractedInfo?.preferredPeriod || memory?.preferredTime;
+
+            await this.escalateToHuman(lead._id, memory, 'sem_vagas_disponiveis');
+
+            const periodMessages = {
+                manha: `Entendi que você prefere de manhã 😊\n\nNo momento nossa agenda da manhã está bem cheia.\n\nMas vou pedir pra nossa equipe te chamar ainda hoje com as melhores opções.\n\nVocê prefere ligação ou WhatsApp? 💚`,
+
+                tarde: `Entendi que você prefere à tarde 😊\n\nEsse período está com poucas vagas agora.\n\nVou pedir pra nossa equipe te chamar ainda hoje com as opções disponíveis.\n\nPrefere ligação ou WhatsApp? 💚`,
+
+                default: `No momento os horários estão bem apertados 😔\n\nPra não te deixar esperando, vou pedir pra nossa equipe te chamar ainda hoje com as melhores opções.\n\nVocê prefere ligação ou WhatsApp? 💚`
+            };
+
+            const responseText = periodMessages[period] || periodMessages.default;
+
+            return {
+                text: responseText,
+                extractedInfo: {
+                    awaitingHumanContact: true,
+                    reason: 'no_slots_available',
+                    escalatedAt: new Date(),
+                    preferredPeriod: period || 'flexivel'
+                }
+            };
+        }
 
         // =========================
         // 4) APRESENTAR SLOTS 
