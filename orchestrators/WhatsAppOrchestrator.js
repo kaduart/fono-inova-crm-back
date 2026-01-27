@@ -383,6 +383,7 @@ export class WhatsAppOrchestrator {
                 }
             }
 
+            const patientNameFromLead = lead?.patientInfo?.name || lead?.autoBookingContext?.patientName;
             // =========================
             // 6) MISSING (SEMÂNTICA CORRETA)
             // =========================
@@ -411,8 +412,8 @@ export class WhatsAppOrchestrator {
                 needsName:
                     hasChosenSlotNow &&
                     !memoryContext?.patientName &&
-                    !analysis.extractedInfo?.patientName
-
+                    !analysis.extractedInfo?.patientName &&
+                    !patientNameFromLead
             };
 
             if (hasTherapy && missing.needsComplaint) {

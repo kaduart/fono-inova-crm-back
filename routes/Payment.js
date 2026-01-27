@@ -272,10 +272,23 @@ router.get('/', async (req, res) => {
 
         // 🔄 IMPORTANTE: fechamento financeiro usa paymentDate, não createdAt
         if (startDate && endDate) {
-            filters.paymentDate = {
-                $gte: startDate, // já está no formato "2025-11-14"
-                $lte: endDate,
-            };
+            // Busca por paymentDate OU createdAt (fallback para registros antigos)
+            filters.$or = [
+                {
+                    paymentDate: {
+                        $gte: startDate,
+                        $lte: endDate,
+                    }
+                },
+                {
+                    // Fallback: se não tiver paymentDate, usa createdAt
+                    paymentDate: { $exists: false },
+                    createdAt: {
+                        $gte: new Date(startDate + 'T00:00:00'),
+                        $lte: new Date(endDate + 'T23:59:59')
+                    }
+                }
+            ];
         }
 
         // 🧾 Busca dos pagamentos com todos os populates que você tinha antes
@@ -551,6 +564,7 @@ router.patch('/:id', auth, async (req, res) => {
                         sessionType: sessionData.sessionType,
                         isAdvance: true,
                         serviceDate: sessionData.date,
+                        paymentDate: moment.tz(currentDate, "America/Sao_Paulo").format("YYYY-MM-DD"),
                         createdAt: currentDate, // DATA DA CRIAÇÃO DO PAGAMENTO
                         updatedAt: currentDate,
                         notes: `Pagamento adiantado - ${sessionData.date} ${sessionData.time}`
@@ -724,9 +738,16 @@ router.patch('/:id/mark-as-paid', auth, authorize(['admin', 'secretary']), async
 
             // 1) Atualiza Payment de forma atômica
             const paidAt = new Date();
+            const today = moment.tz(paidAt, "America/Sao_Paulo").format("YYYY-MM-DD"); // ⬅️ Adicionar
             const payment = await Payment.findOneAndUpdate(
                 { _id: id, status: { $ne: 'paid' } },
-                { $set: { status: 'paid', paidAt } },
+                {
+                    $set: {
+                        status: 'paid',
+                        paidAt,
+                        paymentDate: today
+                    }
+                },
                 { new: true, session, runValidators: true }
             );
 
