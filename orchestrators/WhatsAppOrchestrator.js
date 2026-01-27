@@ -102,6 +102,7 @@ export class WhatsAppOrchestrator {
             else if (textLower.match(/\btarde\b/)) quickPeriod = 'tarde';
             else if (textLower.match(/\bnoit[eé]\b/)) quickPeriod = 'noite';
 
+            let quickTherapy = null;
             if (textLower.match(/\bpsico(log|l[oó]gica)?\b/)) quickTherapy = 'psicologia';
             else if (textLower.match(/\bfono\b/)) quickTherapy = 'fonoaudiologia';
             else if (textLower.match(/\bto\b|\bterapia ocupacional\b/)) quickTherapy = 'terapia ocupacional';
