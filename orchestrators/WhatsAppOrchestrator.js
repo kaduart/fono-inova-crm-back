@@ -97,7 +97,10 @@ export class WhatsAppOrchestrator {
             // =========================
             // 🧠 DETECÇÃO RÁPIDA DE TERAPIA (fallback quando LLM não pegou)
             const textLower = text.toLowerCase();
-            let quickTherapy = null;
+            let quickPeriod = null;
+            if (textLower.match(/\bmanh[aã]\b/)) quickPeriod = 'manha';
+            else if (textLower.match(/\btarde\b/)) quickPeriod = 'tarde';
+            else if (textLower.match(/\bnoit[eé]\b/)) quickPeriod = 'noite';
 
             if (textLower.match(/\bpsico(log|l[oó]gica)?\b/)) quickTherapy = 'psicologia';
             else if (textLower.match(/\bfono\b/)) quickTherapy = 'fonoaudiologia';
@@ -130,10 +133,11 @@ export class WhatsAppOrchestrator {
                 null;
 
             const inferredPeriodRaw =
+                quickPeriod ||  // <-- ADICIONAR PRIMEIRO
                 intelligent?.disponibilidade ||
                 analysis.extractedInfo?.preferredPeriod ||
-                lead?.qualificationData?.extractedInfo?.disponibilidade ||  // ← ADICIONAR ISSO
-                lead?.pendingPreferredPeriod ||  // ← E ISSO (fallback)
+                lead?.qualificationData?.extractedInfo?.disponibilidade ||
+                lead?.pendingPreferredPeriod ||
                 (allowMemoryCarryOver ? memoryContext?.preferredTime : null) ||
                 null;
 
