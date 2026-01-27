@@ -440,11 +440,16 @@ REGRAS:
 
   // ✅ Quando usuário escolhe uma opção (A/B/C) -> pedir nome
   slotChosenAskName: (slotText) => `
-O cliente escolheu o horário "${slotText}".
-- Confirme a escolha de forma acolhedora.
-- Peça SOMENTE o NOME COMPLETO do paciente (não peça mais nada agora).
-- Não repita lista de horários e não ofereça novas opções.
-- 2–3 frases, 1 pergunta binária/objetiva.
+⚠️ INSTRUÇÃO INTERNA (NÃO REPRODUZA ESTE TEXTO):
+O cliente escolheu: "${slotText}"
+
+SUA TAREFA:
+- Confirme a escolha de forma acolhedora (2-3 frases)
+- Peça SOMENTE o nome completo do paciente
+- Termine com 💚
+
+EXEMPLO DE RESPOSTA BOA:
+"Ótima escolha! Vou reservar esse horário pra vocês 😊 Me confirma o nome completo do paciente?"
 `.trim(),
 
   // ✅ Depois do nome -> pedir nascimento

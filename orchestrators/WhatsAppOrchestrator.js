@@ -26,6 +26,7 @@ import * as handlers from '../handlers/index.js';
 import Leads from '../models/Leads.js';
 import { decisionEngine } from '../services/intelligence/DecisionEngine.js';
 import { normalizePeriod } from '../utils/normalizePeriod.js';
+import { generateHandlerResponse } from '../services/aiAmandaService.js';
 
 export class WhatsAppOrchestrator {
     constructor() {
@@ -388,6 +389,26 @@ export class WhatsAppOrchestrator {
             // =========================
             const clinicalRules = clinicalRulesEngine({ memoryContext, analysis });
 
+            if (bookingContext?.noSlotsAvailable || bookingContext?.flow === 'no_slots') {
+                console.log('🛑 [ORCHESTRATOR] Forçando BookingHandler por falta de slots');
+
+                const handler = this.normalizeHandler(handlers.bookingHandler);
+
+                const decisionContext = {
+                    message,
+                    lead,
+                    memory,
+                    missing,
+                    booking: bookingContext,
+                    analysis
+                };
+
+                const reply = await handler.execute({ decisionContext, services });
+
+                return reply;
+            }
+
+
             // =========================
             // 8) DECISION ENGINE
             // =========================
@@ -410,23 +431,32 @@ export class WhatsAppOrchestrator {
             // =========================
             // 9) EXECUTA HANDLER
             // =========================
-            const decisionContext = {
-                message: { text, raw: message },
-                lead,
-                memory: memoryContext,
-                analysis,
-                strategy: { predictedStage, urgency },
-                missing,
-                clinicalRules,
-                booking: bookingContext,
-                decision,
-                contextPack
-            };
-
             const rawHandler = handlers[decision.handler];
             const handler = this.normalizeHandler(rawHandler) || handlers.fallbackHandler;
 
-            const result = await handler.execute({ decisionContext, services });
+            let result = await handler.execute({ decisionContext, services });
+            // =========================
+            // 9.5) SE HANDLER PEDIU GERAÇÃO VIA IA
+            // =========================
+            if (result?.needsAIGeneration && result?.promptContext) {
+                try {
+                    const aiText = await generateHandlerResponse({
+                        promptContext: result.promptContext,
+                        systemPrompt: contextPack?.systemPrompt,
+                        lead,
+                        memory: memoryContext
+                    });
+
+                    if (aiText) {
+                        result = { ...result, text: aiText };
+                    } else {
+                        result = { ...result, text: result.fallbackText || 'Como posso te ajudar? 💚' };
+                    }
+                } catch (err) {
+                    this.logger.error('Erro na geração IA do handler', err);
+                    result = { ...result, text: result.fallbackText || 'Como posso te ajudar? 💚' };
+                }
+            }
 
             // =========================
             // 10) PERSISTÊNCIA DOS EXTRAÍDOS
@@ -446,6 +476,29 @@ export class WhatsAppOrchestrator {
 
             if (Object.keys(set).length) {
                 await Leads.findByIdAndUpdate(lead._id, { $set: set });
+            }
+
+            // 🧠 GERAR RESUMO SE NECESSÁRIO
+            try {
+                const totalMessages = memoryContext?.conversationHistory?.length || 0;
+
+                if (needsNewSummary(lead, totalMessages, [])) {
+                    const messagesForSummary = memoryContext?.conversationHistory?.slice(-30) || [];
+                    const summary = await generateConversationSummary(messagesForSummary);
+
+                    if (summary) {
+                        await Leads.findByIdAndUpdate(lead._id, {
+                            $set: {
+                                conversationSummary: summary,
+                                summaryGeneratedAt: new Date(),
+                                summaryCoversUntilMessage: totalMessages
+                            }
+                        });
+                        console.log('✅ [RESUMO] Salvo no lead com sucesso');
+                    }
+                }
+            } catch (e) {
+                console.error('⚠️ [RESUMO] Erro ao gerar/salvar:', e.message);
             }
 
             // =========================

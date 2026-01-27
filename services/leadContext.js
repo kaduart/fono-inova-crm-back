@@ -36,7 +36,7 @@ export async function enrichLeadContext(leadId) {
         // 🧠 CONTEXTO INTELIGENTE
         let conversationHistory = [];
         let shouldGreet = true;
-        let summaryContext = null;
+        let summaryContext = lead.conversationSummary || null;
 
         if (totalMessages === 0) {
             conversationHistory = [];

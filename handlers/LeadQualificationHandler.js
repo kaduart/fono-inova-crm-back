@@ -14,7 +14,6 @@ class LeadQualificationHandler {
 
         try {
             const { memory, analysis, missing, message } = decisionContext;
-
             // ===========================
             // 1️⃣ MONTA CONTEXTO
             // ===========================
@@ -23,6 +22,15 @@ class LeadQualificationHandler {
             const therapyArea = memory?.therapyArea || analysis?.therapyArea || null;
             const isFirstContact = memory?.isFirstContact || false;
             const history = memory?.conversationHistory || [];
+
+            // 🧠 RECONEXÃO - VERIFICA SE VOLTOU DEPOIS DE TEMPO
+            const conversationSummary = memory?.conversationSummary || null;
+            const daysSinceLastContact = memory?.daysSinceLastContact || 0;
+            const isReconnection = daysSinceLastContact > 7 && !isFirstContact;
+
+            // Detecta se é saudação inicial (oi, olá, bom dia...)
+            const isGreeting = /^\s*(oi|ol[aá]|bom dia|boa tarde|boa noite|e a[ií]|tudo bem|oi amanda)/i.test(message?.text?.trim());
+            const shouldAcknowledgeHistory = isGreeting && isReconnection && conversationSummary;
 
             // ===========================
             // 2️⃣ SELECIONA MÓDULOS
@@ -58,7 +66,10 @@ class LeadQualificationHandler {
             // 3️⃣ DEFINE OBJETIVO
             // ===========================
             let objetivo = '';
-            if (missing.needsTherapy) {
+
+            if (shouldAcknowledgeHistory) {
+                objetivo = `Reconhecer que o lead voltou após ${daysSinceLastContact} dias. Mencione brevemente o contexto anterior (${therapyArea || 'a terapia'} para situação de ${memory?.primaryComplaint || 'saúde'} de ${patientAge || 'a criança'}) e pergunte se quer continuar de onde parou ou tem algo novo. Seja acolhedora e natural.`;
+            } else if (missing.needsTherapy) {
                 objetivo = 'Descobrir qual área de terapia o lead procura (fono, psicologia, TO, fisio, etc).';
             } else if (missing.needsAge) {
                 objetivo = 'Descobrir a idade do paciente de forma natural e acolhedora.';
@@ -80,35 +91,40 @@ class LeadQualificationHandler {
             // ===========================
             const systemPrompt = `Você é a Amanda, assistente virtual da Clínica Fono Inova.
 
-${modules.join('\n\n')}
+            ${modules.join('\n\n')}
 
-REGRAS DE ESTILO:
-- Seja acolhedora, humana, nunca robótica
-- Use no MÁXIMO 2-3 frases curtas
-- Exatamente 1 💚 no final
-- Pode usar 1 emoji leve (😊, ✨) se fizer sentido
-- NUNCA repita perguntas já feitas no histórico
-- Se o lead já informou algo, reconheça e avance
-`.trim();
+            REGRAS DE ESTILO:
+            - Seja acolhedora, humana, nunca robótica
+            - Use no MÁXIMO 2-3 frases curtas
+            - Exatamente 1 💚 no final
+            - Pode usar 1 emoji leve (😊, ✨) se fizer sentido
+            - NUNCA repita perguntas já feitas no histórico
+            - Se o lead já informou algo, reconheça e avance
+            `.trim();
 
             const userPrompt = `
-CONTEXTO DO LEAD:
-- Nome: ${leadName || 'não informado'}
-- Idade do paciente: ${patientAge || 'não informada'}
-- Área de interesse: ${therapyArea || 'não informada'}
-- Primeiro contato: ${isFirstContact ? 'SIM' : 'NÃO'}
+            CONTEXTO DO LEAD:
+            - Nome: ${leadName || 'não informado'}
+            - Idade do paciente: ${patientAge || 'não informada'}
+            - Área de interesse: ${therapyArea || 'não informada'}
+            - Primeiro contato: ${isFirstContact ? 'SIM' : 'NÃO'}
+           ${shouldAcknowledgeHistory ? `CONTEXTO HISTÓRICO (lead retornou depois de ${daysSinceLastContact} dias):\n${conversationSummary.substring(0, 150)}...\n` : ''}
 
-HISTÓRICO RECENTE:
-${historyText || '(primeira mensagem)'}
+            ${shouldAcknowledgeHistory ? 'OBS: O lead voltou após algum tempo. Reconheça brevemente o contexto anterior antes de continuar.' : ''}
 
-ÚLTIMA MENSAGEM DO LEAD:
-"${message.text}"
+            HISTÓRICO RECENTE:
+            ${historyText || '(primeira mensagem)'}
 
-SEU OBJETIVO AGORA:
-${objetivo}
+            ÚLTIMA MENSAGEM DO LEAD:
+            "${message.text}"
 
-Gere APENAS o texto da resposta (sem explicações, sem "Amanda:").
-`.trim();
+           SEU OBJETIVO AGORA:
+            ${shouldAcknowledgeHistory
+                    ? `Reconhecer o retorno do lead mencionando brevemente o contexto anterior (${therapyArea || 'a terapia'} para ${patientAge || 'a criança'}) e perguntar se quer continuar de onde parou ou tem algo novo.`
+                    : objetivo}
+
+            Gere APENAS o texto da resposta (sem explicações, sem "Amanda:").
+            `.trim();
 
             // ===========================
             // 6️⃣ CHAMA A LLM

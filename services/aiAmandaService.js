@@ -397,5 +397,38 @@ export async function describeWaImageFromGraph({ imageUrl, caption = "" } = {}) 
     }
 }
 
+/* =========================================================================
+   🤖 GERAÇÃO VIA PROMPT DO HANDLER (para BookingHandler etc.)
+   ========================================================================= */
+export async function generateHandlerResponse({ promptContext, systemPrompt, lead = {}, memory = {} }) {
+    if (!promptContext) return null;
+
+    // Monta contexto adicional se tiver histórico
+    const historyBlock = memory?.conversationHistory?.length
+        ? `\n\nÚLTIMAS MENSAGENS:\n${memory.conversationHistory.slice(-5).map(m => `- ${m.role}: ${m.content}`).join('\n')}`
+        : '';
+
+    const fullPrompt = `${promptContext}${historyBlock}`;
+
+    try {
+        const text = await callAI({
+            systemPrompt: systemPrompt || SYSTEM_PROMPT_AMANDA,
+            messages: [{ role: 'user', content: fullPrompt }],
+            maxTokens: 200,
+            temperature: 0.7
+        });
+
+        if (text) {
+            console.log('[AmandaReply] Handler prompt gerado:', text.substring(0, 80) + '...');
+            return ensureSingleHeart(text);
+        }
+
+        return null;
+    } catch (err) {
+        console.error('❌ Erro em generateHandlerResponse:', err.message);
+        return null;
+    }
+}
+
 // Exporta CLINIC_ADDRESS e SYSTEM_PROMPT_AMANDA para compatibilidade
 export { CLINIC_ADDRESS, SYSTEM_PROMPT_AMANDA };
