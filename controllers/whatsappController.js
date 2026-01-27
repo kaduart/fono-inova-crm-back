@@ -1515,6 +1515,14 @@ async function handleAutoReply(from, to, content, lead) {
             { new: true }
         ).lean();
 
+        // No handleAutoReply, após carregar o lead:
+        if (leadDoc.pendingChosenSlot === 'NÃO' || leadDoc.pendingSchedulingSlots === 'NÃO') {
+            await Lead.findByIdAndUpdate(leadDoc._id, {
+                $unset: { pendingChosenSlot: "", pendingSchedulingSlots: "" }
+            });
+            // Recarrega limpo
+            leadDoc = await Lead.findById(leadDoc._id).lean();
+        }
         // 🔍 DEBUG: Lead carregado do banco no handleAutoReply
         console.log("🔍 [DEBUG HANDLE-AUTO-REPLY] Lead carregado do banco:", {
             leadId: leadDoc?._id,

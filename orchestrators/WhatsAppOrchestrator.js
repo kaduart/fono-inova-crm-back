@@ -114,6 +114,8 @@ export class WhatsAppOrchestrator {
             const inferredPeriodRaw =
                 intelligent?.disponibilidade ||
                 analysis.extractedInfo?.preferredPeriod ||
+                lead?.qualificationData?.extractedInfo?.disponibilidade ||  // ← ADICIONAR ISSO
+                lead?.pendingPreferredPeriod ||  // ← E ISSO (fallback)
                 (allowMemoryCarryOver ? memoryContext?.preferredTime : null) ||
                 null;
 
@@ -221,7 +223,7 @@ export class WhatsAppOrchestrator {
             }
 
             // Busca slots só quando está realmente pronto
-            if (analysis.intent === 'scheduling' && readyForSlots && !hasPendingSlots && !existingChosenSlot) {
+            /* if (analysis.intent === 'scheduling' && readyForSlots && !hasPendingSlots && !existingChosenSlot) {
                 try {
                     const slots = await findAvailableSlots({
                         therapyArea: inferredTherapy,
@@ -251,7 +253,7 @@ export class WhatsAppOrchestrator {
                 } catch (err) {
                     this.logger.error('Erro ao buscar slots', err);
                 }
-            }
+            } */
 
             // Escolha do slot (A/B/1/2...) com strict=true
             if (analysis.intent === 'scheduling' && bookingContext?.slots) {
@@ -318,6 +320,51 @@ export class WhatsAppOrchestrator {
                 analysis.intent = 'scheduling';
             }
 
+            // Se temos dados suficientes mas não temos slots buscados ainda, 
+            // FORÇA o intent para scheduling e busca slots
+            if (readyForSlots && !hasPendingSlots && !existingChosenSlot) {
+                analysis.intent = 'scheduling';
+
+                // Busca slots imediatamente
+                try {
+                    const slots = await findAvailableSlots({
+                        therapyArea: inferredTherapy,
+                        preferredPeriod: inferredPeriod || lead?.qualificationData?.extractedInfo?.disponibilidade,
+                        maxOptions: 2,
+                        daysAhead: 30
+                    });
+
+                    if (slots?.primary?.length) {
+                        await Leads.findByIdAndUpdate(lead._id, {
+                            $set: {
+                                pendingSchedulingSlots: {
+                                    primary: slots.primary,
+                                    alternativesSamePeriod: slots.alternativesSamePeriod || [],
+                                    alternativesOtherPeriod: slots.alternativesOtherPeriod || [],
+                                    generatedAt: new Date()
+                                }
+                            }
+                        });
+                        bookingContext.slots = slots;
+                    } else {
+                        // 🚨 CRÍTICO: Se não achou slots, não pode oferecer horário!
+                        bookingContext.noSlotsAvailable = true;
+                    }
+                } catch (err) {
+                    this.logger.error('Erro ao buscar slots', err);
+                    bookingContext.noSlotsAvailable = true;
+                }
+            }
+
+            // 🚨 SE NÃO ACHOU SLOTS, NÃO CHAMA HANDLER
+            if (bookingContext.noSlotsAvailable) {
+                return {
+                    command: 'SEND_MESSAGE',
+                    payload: {
+                        text: 'Não encontrei horários disponíveis para este período. Pode ser outro (manhã/tarde/noite)? 💚'
+                    }
+                };
+            }
             // =========================
             // 7) REGRAS CLÍNICAS
             // =========================
