@@ -136,9 +136,21 @@ export class WhatsAppOrchestrator {
 
             const isMeaningfulComplaint = (c) => {
                 if (!c) return false;
-                const n = String(c).toLowerCase();
+                const n = String(c).toLowerCase().trim();
                 if (n.length < 4) return false;
-                if (/(inform|saber|d[uú]vida|valor|pre[cç]o|geral)/i.test(n)) return false;
+
+                // Só bloqueia se for EXPLICITAMENTE sobre preço/info geral, não se for "saber sobre terapia"
+                const pricePatterns = /\b(valor|pre[cç]o|custo|quanto custa|dinheiro|pix)\b/i;
+                const genericOnly = /^(saber|informa[çc][aã]o|d[uú]vida|oi|ol[aá])$/i;
+
+                // Se for só "saber" ou "informação" sem contexto, rejeita
+                if (genericOnly.test(n)) return false;
+
+                // Se for só sobre preço, rejeita como queixa clínica
+                if (pricePatterns.test(n) && !/\b(filho|filha|meu|minha|crian[çc]a|comportamento|ansiedade|depress[ãa]o|tdah|autismo)\b/i.test(n)) {
+                    return false;
+                }
+
                 return true;
             };
 
@@ -211,11 +223,18 @@ export class WhatsAppOrchestrator {
 
             // Slot escolhido na memória
             const existingChosenSlotRaw = normalizeSentinel(memoryContext?.chosenSlot);
-            const existingChosenSlot =
-                existingChosenSlotRaw && typeof existingChosenSlotRaw === 'object' ? existingChosenSlotRaw : null;
+            // ADICIONAR VALIDAÇÃO: só aceita se for objeto válido com doctorId
+            const existingChosenSlot = (existingChosenSlotRaw &&
+                typeof existingChosenSlotRaw === 'object' &&
+                existingChosenSlotRaw.doctorId &&  // <-- CRÍTICO
+                existingChosenSlotRaw.date &&
+                existingChosenSlotRaw.time) ? existingChosenSlotRaw : null;
 
-            // ✅ espelha pro bookingContext (DecisionEngine enxerga)
-            if (existingChosenSlot) bookingContext.chosenSlot = existingChosenSlot;
+            // Também limpar o campo se vier string errada do banco
+            if (existingChosenSlotRaw && typeof existingChosenSlotRaw === 'string') {
+                // Limpa sujeira do banco
+                await Leads.findByIdAndUpdate(lead._id, { $unset: { pendingChosenSlot: 1 } });
+            }
 
             // Flags de prontidão
             const hasTherapy = !!inferredTherapy;
