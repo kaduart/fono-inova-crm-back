@@ -49,7 +49,7 @@ router.post('/', async (req, res) => {
                 package: null,
                 sessionType,
                 createdAt: currentDate,
-                updatedAt: currentDa
+                updatedAt: currentDate
             });
             individualSessionId = newSession._id;
         }
@@ -157,7 +157,7 @@ router.post('/', async (req, res) => {
 
         return res.status(201).json({
             success: true,
-            data: populatedPayment,
+            data: payment,
             message: advanceSessions.length > 0
                 ? `Pagamento registrado com ${advanceSessions.length} sessões futuras`
                 : 'Pagamento registrado com sucesso',
