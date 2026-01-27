@@ -156,14 +156,36 @@ export class WhatsAppOrchestrator {
             const normalizeSlots = (v) => {
                 v = normalizeSentinel(v);
                 if (!v) return null;
-                if (Array.isArray(v)) return { primary: v, alternativesSamePeriod: [], alternativesOtherPeriod: [] };
-                if (typeof v === 'object' && Array.isArray(v.primary)) return v;
+
+                // legacy: array de slots
+                if (Array.isArray(v)) {
+                    const [primary, ...rest] = v;
+                    return { primary: primary || null, alternativesSamePeriod: rest, alternativesOtherPeriod: [] };
+                }
+
+                // formato atual: primary = objeto
+                if (typeof v === 'object') {
+                    const primary = v.primary && !Array.isArray(v.primary) ? v.primary : null;
+
+                    // se vier array por algum motivo
+                    if (!primary && Array.isArray(v.primary)) {
+                        const [p, ...rest] = v.primary;
+                        return { primary: p || null, alternativesSamePeriod: rest, alternativesOtherPeriod: [] };
+                    }
+
+                    return {
+                        primary,
+                        alternativesSamePeriod: Array.isArray(v.alternativesSamePeriod) ? v.alternativesSamePeriod : [],
+                        alternativesOtherPeriod: Array.isArray(v.alternativesOtherPeriod) ? v.alternativesOtherPeriod : [],
+                    };
+                }
+
                 return null;
             };
 
             // Slots pendentes
             const pendingSlots = normalizeSlots(memoryContext?.pendingSchedulingSlots);
-            const hasPendingSlots = !!pendingSlots?.primary?.length;
+            const hasPendingSlots = !!pendingSlots?.primary;
             if (hasPendingSlots) bookingContext.slots = pendingSlots;
 
             // Slot escolhido na memória
@@ -232,7 +254,7 @@ export class WhatsAppOrchestrator {
                         daysAhead: 30
                     });
 
-                    if (slots?.primary?.length) {
+                    if (slots?.primary) {
                         await Leads.findByIdAndUpdate(lead._id, {
                             $set: {
                                 pendingSchedulingSlots: {
@@ -289,7 +311,7 @@ export class WhatsAppOrchestrator {
             // =========================
             // 6) MISSING (SEMÂNTICA CORRETA)
             // =========================
-            const hasSlotsToShow = !!bookingContext?.slots?.primary?.length;
+            const hasSlotsToShow = !!bookingContext?.slots?.primary;
             const hasChosenSlotNow = !!(bookingContext?.chosenSlot || existingChosenSlot);
 
             const missing = {
@@ -334,7 +356,7 @@ export class WhatsAppOrchestrator {
                         daysAhead: 30
                     });
 
-                    if (slots?.primary?.length) {
+                    if (slots?.primary) {
                         await Leads.findByIdAndUpdate(lead._id, {
                             $set: {
                                 pendingSchedulingSlots: {
@@ -356,15 +378,11 @@ export class WhatsAppOrchestrator {
                 }
             }
 
-            // 🚨 SE NÃO ACHOU SLOTS, NÃO CHAMA HANDLER
+            // 🚨 SE NÃO ACHOU SLOTS, NÃO CHAMA HANDLER/// apenas marca o contexto e deixa o handler resolver
             if (bookingContext.noSlotsAvailable) {
-                return {
-                    command: 'SEND_MESSAGE',
-                    payload: {
-                        text: 'Não encontrei horários disponíveis para este período. Pode ser outro (manhã/tarde/noite)? 💚'
-                    }
-                };
+                bookingContext.flow = 'no_slots';
             }
+
             // =========================
             // 7) REGRAS CLÍNICAS
             // =========================
