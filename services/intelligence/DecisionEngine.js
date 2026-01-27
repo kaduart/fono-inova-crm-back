@@ -130,6 +130,19 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
     }
 
     // =========================
+    // 🆕 REGRA 6.5: TEM TODOS OS DADOS MAS INTENT NÃO É SCHEDULING
+    // Se já coletou terapia + queixa + idade + período, vai pro booking mesmo 
+    // que o intent seja "duvida_geral" ou outro
+    // =========================
+    if (!missing.needsTherapy && !missing.needsComplaint && !missing.needsAge && !missing.needsPeriod) {
+        return {
+            action: 'booking',
+            handler: 'bookingHandler',
+            reason: 'all_data_collected_implicit'
+        };
+    }
+
+    // =========================
     // 7️⃣ SLOT ESCOLHIDO (FORA DO SCHEDULING)
     // =========================
     if (bookingContext?.chosenSlot && missing.needsName) {
