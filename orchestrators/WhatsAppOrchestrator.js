@@ -351,7 +351,11 @@ export class WhatsAppOrchestrator {
                 needsSlot: readyForSlots && !hasSlotsToShow && !hasChosenSlotNow,
 
                 // ✅ nome só depois de escolher slot
-                needsName: hasChosenSlotNow && !memoryContext?.leadName && !analysis.extractedInfo?.nome
+                needsName:
+                    hasChosenSlotNow &&
+                    !memoryContext?.patientName &&
+                    !analysis.extractedInfo?.patientName
+
             };
 
             if (hasTherapy && missing.needsComplaint) {
