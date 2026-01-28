@@ -34,6 +34,13 @@ export function extractStructuredData(text) {
 
     if (/\b(beb[eê]|rec[eé]m\s*nascido|meses?)\b/.test(t)) {
         data.idadeRange = 'bebe_1a3';
+
+        // ✅ NOVO: Extrai idade em meses se mencionado
+        const mesesMatch = t.match(/(\d+)\s*meses?/);
+        if (mesesMatch) {
+            data.idadeEmMeses = parseInt(mesesMatch[1]);
+            data.idade = 0; // Marca como < 1 ano
+        }
     }
 
     // PARENTESCO

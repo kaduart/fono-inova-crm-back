@@ -1271,7 +1271,7 @@ async function processInboundMessage(msg, value) {
                 lead.qualificationData = lead.qualificationData || {};
                 lead.qualificationData.extractedInfo = mergeNonNull(
                     lead.qualificationData.extractedInfo || {},
-                    analysis.extracted
+                    analysis.extractedInfo  // ✅
                 );
 
                 lead.qualificationData.intent = analysis.intent.primary;

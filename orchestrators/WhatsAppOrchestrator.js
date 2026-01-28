@@ -153,13 +153,23 @@ export class WhatsAppOrchestrator {
                 analysis.extractedInfo.preferredPeriod = analysis.extractedInfo.disponibilidade;
             }
 
-            const inferredAge =
+            const inferredAgeRaw =
                 intelligent?.idade ||
-                intelligent?.idadeRange ||
                 analysis.extractedInfo?.age ||
-                lead?.patientInfo?.age ||  // ✅ ADICIONAR
-                lead?.qualificationData?.extractedInfo?.idade ||  // ✅ ADICIONAR
+                lead?.patientInfo?.age ||
+                lead?.qualificationData?.extractedInfo?.idade ||
                 (allowMemoryCarryOver ? memoryContext?.patientAge : null) ||
+                null;
+
+            // ✅ Só aceita se for número válido
+            const inferredAge = (typeof inferredAgeRaw === 'number' && !isNaN(inferredAgeRaw))
+                ? inferredAgeRaw
+                : null;
+
+            // ✅ idadeRange separado (para lógica de perfil, não para salvar)
+            const inferredAgeRange =
+                intelligent?.idadeRange ||
+                lead?.qualificationData?.extractedInfo?.idadeRange ||
                 null;
 
             const inferredPeriodRaw =
@@ -617,35 +627,53 @@ export class WhatsAppOrchestrator {
             // =========================
             // 10) PERSISTÊNCIA DOS EXTRAÍDOS
             // =========================
-            // 🆕 DEFESA: Se handler pediu skip, não salva nada agora (preserva estado para retomada)
             if (result?.skipValidation) {
                 console.log('⏸️ [PERSISTENCE] Pulando persistência - aguardando retomada do fluxo');
             } else {
                 const set = {};
 
-                if (inferredTherapy) set.therapyArea = inferredTherapy;
-                if (inferredAge) set["patientInfo.age"] = inferredAge;
-                if (inferredPeriod) set.pendingPreferredPeriod = inferredPeriod;
-                if (inferredComplaint) set.primaryComplaint = inferredComplaint;
+                // 🔍 DEBUG: Mostrar valores no momento da construção
+                console.log('🔍 [PRE-SET DEBUG]', {
+                    inferredTherapy,
+                    inferredComplaint,
+                    inferredAge,
+                    inferredPeriod
+                });
 
+                if (inferredTherapy) set.therapyArea = inferredTherapy;
+                if (inferredAge && typeof inferredAge === 'number') {
+                    set["patientInfo.age"] = inferredAge;
+                }
+                // ✅ Salva idadeRange separado se existir
+                if (inferredAgeRange) {
+                    set["qualificationData.extractedInfo.idadeRange"] = inferredAgeRange;
+                }
+                if (inferredComplaint) set.primaryComplaint = inferredComplaint;
 
                 // ✅ ADICIONAR: Se handler retornou nome, salva
                 if (result?.extractedInfo?.patientName) {
                     set["patientInfo.name"] = result.extractedInfo.patientName;
                     set["autoBookingContext.patientName"] = result.extractedInfo.patientName;
                 }
-                if (Object.keys(set).length) {
-                    await Leads.findByIdAndUpdate(lead._id, { $set: set });
-                }
 
-                // Espelha no qualificationData
+                // ✅ MOVER PRA CÁ: Espelha no qualificationData ANTES do save
                 if (inferredTherapy) set["qualificationData.extractedInfo.therapyArea"] = inferredTherapy;
                 if (inferredAge) set["qualificationData.extractedInfo.idade"] = inferredAge;
                 if (inferredPeriod) set["qualificationData.extractedInfo.disponibilidade"] = inferredPeriod;
                 if (inferredComplaint) set["qualificationData.extractedInfo.queixa"] = inferredComplaint;
 
+                // 🔍 DEBUG: Mostrar set completo ANTES do save
+                console.log('💾 [PRE-SAVE SET]', {
+                    setKeys: Object.keys(set),
+                    fullSet: set
+                });
 
-                console.log('💾 [PERIOD SAVE]', {
+                // 🔴 AGORA SIM O SAVE INCLUI TUDO
+                if (Object.keys(set).length) {
+                    await Leads.findByIdAndUpdate(lead._id, { $set: set });
+                }
+
+                console.log('💾 [POS SAVE]', {
                     inferredPeriod,
                     willSave: !!inferredPeriod,
                     setKeys: Object.keys(set),
