@@ -8,12 +8,11 @@ import {
     addDays,
     format,
     isAfter,
-    isWithinInterval,
     parseISO,
-    startOfDay,
+    startOfDay
 } from "date-fns";
+import { getFirstAvailableDate, isInRecesso } from '../config/clinic.js';
 import Doctor from "../models/Doctor.js";
-import { RECESSO, isInRecesso, getFirstAvailableDate } from '../config/clinic.js';
 
 // 🔗 Base interna: primeiro INTERNAL_BASE_URL, depois BACKEND_URL_PRD, depois localhost
 const API_BASE =
@@ -777,14 +776,20 @@ export async function bookFixedSlot({
 }
 
 export function formatSlot(slot) {
-    const date = formatDatePtBr(slot.date);
-    const time = slot.time.slice(0, 5);
-    const weekday = new Date(slot.date + "T12:00:00-03:00").toLocaleDateString(
-        "pt-BR",
-        { weekday: "long" }
-    );
+    if (!slot?.doctorId) return 'horário pendente';
 
-    return `${weekday.charAt(0).toUpperCase() + weekday.slice(1)}, ${date} às ${time} - ${slot.doctorName}`;
+    const date = slot.date ? new Date(slot.date + 'T00:00:00').toLocaleDateString('pt-BR', {
+        weekday: 'long',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    }) : 'data pendente';
+
+    const time = slot.time || 'horário pendente';
+    const doctorName = slot.doctorName || 'profissional';
+
+    // ✅ CORREÇÃO: "com a Dra." ao invés de "para você e a"
+    return `${date} às ${time} com ${doctorName}`;
 }
 
 export function buildSlotOptions(availableSlots) {
