@@ -12,6 +12,30 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
     }
 
     // =========================
+    // 🆕 REGRA 0: INTERRUPIÇÃO (Side Intent com agendamento pendente)
+    // Se usuário perguntou preço/info mas tem slots pendentes, responde e preserva estado
+    // =========================
+    const isSideIntent = ['price', 'therapy_info', 'general_info'].includes(analysis.intent);
+    const hasPendingSlots = bookingContext?.slots?.primary || bookingContext?.chosenSlot;
+
+    if (isSideIntent && hasPendingSlots) {
+        // Mapeia qual handler usar
+        const handlerMap = {
+            'price': 'productHandler',
+            'therapy_info': 'therapyHandler',
+            'general_info': 'fallbackHandler'
+        };
+
+        return {
+            action: 'answer_and_preserve_state',
+            handler: handlerMap[analysis.intent] || 'fallbackHandler',
+            reason: 'interruption_while_booking',
+            preserveBookingState: true // flag importante!
+        };
+    }
+
+
+    // =========================
     // 1️⃣ AGENDAMENTO (ORDEM CORRETA: Terapia → Queixa → Idade → Período → Slots)
     // =========================
     if (analysis.intent === 'scheduling') {
