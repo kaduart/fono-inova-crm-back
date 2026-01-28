@@ -96,6 +96,8 @@ export class WhatsAppOrchestrator {
             // 3) INFERRIDOS (SEM "ADIVINHAR" EM CONVERSA FRIA)
             // =========================
             // 🧠 DETECÇÃO RÁPIDA DE TERAPIA (fallback quando LLM não pegou)
+            // 🧠 Normalização para diferentes propósitos
+            const textLower = text.toLowerCase();
             const normalizeText = (t) => String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
             const textNormalized = normalizeText(text);
 
@@ -118,7 +120,7 @@ export class WhatsAppOrchestrator {
 
             // Agora usa o quickTherapy como fallback
             const inferredTherapy =
-                quickTherapy ||  // ← ADICIONAR ISSO
+                quickTherapy ||
                 analysis.therapyArea ||
                 intelligent?.especialidade ||
                 (allowMemoryCarryOver ? memoryContext?.therapyArea : null) ||
