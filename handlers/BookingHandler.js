@@ -172,10 +172,29 @@ class BookingHandler {
             };
         }
 
+        // 🆕 NOVO BLOCO (antes de needsName)
+        if (missing.needsSlotSelection && booking?.slots?.primary) {
+            const optionsText = buildSlotOptions(booking.slots).map(o => o.text).join('\n');
+            return {
+                text: `Encontrei essas opções:\n\n${optionsText}\n\nQual delas fica melhor? (A, B, C...) 💚`
+            };
+        }
+
         // ==========================================
         // 4) SLOT ESCOLHIDO → COLETAR NOME
         // ==========================================
         if (missing.needsName) {
+            // 🆕 DEFESA: Se parece pergunta (interrupção), não trava no nome
+            const looksLikeSideQuestion = /(\?|quanto|custo|valor|onde fica|endereço|convenio|plano|sabado|domingo)/i.test(text);
+
+            if (looksLikeSideQuestion && text.length < 50) {
+                // Deixa o orquestrador lidar com esta intent
+                return {
+                    text: 'Só um instante que já respondo! 💚',
+                    skipValidation: true
+                };
+            }
+
             // 🛡️ DEFESA: Verifica se slot é válido ANTES de coletar nome
             if (!booking?.chosenSlot?.doctorId) {
                 console.warn('[BookingHandler] Slot inválido para needsName:', booking?.chosenSlot);
