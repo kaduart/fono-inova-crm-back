@@ -584,15 +584,21 @@ export class WhatsAppOrchestrator {
             if (inferredPeriod) set.pendingPreferredPeriod = inferredPeriod;
             if (inferredComplaint) set.primaryComplaint = inferredComplaint;
 
+            // ✅ ADICIONAR: Se handler retornou nome, salva
+            if (result?.extractedInfo?.patientName) {
+                set["patientInfo.name"] = result.extractedInfo.patientName;
+                set["autoBookingContext.patientName"] = result.extractedInfo.patientName;
+            }
+            if (Object.keys(set).length) {
+                await Leads.findByIdAndUpdate(lead._id, { $set: set });
+            }
+
             // Espelha no qualificationData
             if (inferredTherapy) set["qualificationData.extractedInfo.therapyArea"] = inferredTherapy;
             if (inferredAge) set["qualificationData.extractedInfo.idade"] = inferredAge;
             if (inferredPeriod) set["qualificationData.extractedInfo.disponibilidade"] = inferredPeriod;
             if (inferredComplaint) set["qualificationData.extractedInfo.queixa"] = inferredComplaint;
 
-            if (Object.keys(set).length) {
-                await Leads.findByIdAndUpdate(lead._id, { $set: set });
-            }
 
             console.log('💾 [PERIOD SAVE]', {
                 inferredPeriod,

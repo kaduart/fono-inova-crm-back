@@ -218,7 +218,10 @@ class BookingHandler {
                     extractedInfo: {
                         nome: possibleName,
                         patientName: possibleName,
-                        nomeColetado: true
+                        nomeColetado: true,
+                        _updateMemory: {
+                            patientName: possibleName
+                        }
                     }
                 };
             }
