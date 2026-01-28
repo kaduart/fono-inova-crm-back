@@ -633,33 +633,25 @@ export class WhatsAppOrchestrator {
             // =========================
             // RETOMADA INTELIGENTE (FUNCIONA EM QUALQUER ESTÁGIO)
             // =========================
-            if (decision.preserveBookingState && decision.pendingField) {
-                let retomadaText = '';
+            const shouldResume = (decision.preserveBookingState && decision.pendingField) ||
+                (result.needsResumption && result.nextField);
 
-                switch (decision.pendingField) {
-                    case 'complaint':
-                        retomadaText = '\n\nVoltando ao agendamento: qual é a situação principal que gostaria de tratar? 💚';
-                        break;
-                    case 'age':
-                        retomadaText = '\n\nPara buscar os horários certinhos, qual a idade do paciente? 💚';
-                        break;
-                    case 'period':
-                        retomadaText = '\n\nPreferes manhã ou tarde para o atendimento? ☀️🌙';
-                        break;
-                    case 'slot_selection':
-                        retomadaText = '\n\nQuando quiser continuar, é só escolher A, B ou C 💚';
-                        break;
-                    case 'patient_name':
-                        retomadaText = '\n\nSó falta o nome completo para confirmarmos! 💚';
-                        break;
-                    default:
-                        retomadaText = '\n\nQuer continuar o agendamento? 💚';
-                }
+            if (shouldResume) {
+                const fieldToResume = decision.pendingField || result.nextField;
 
-                // Só adiciona se o handler não já tiver incluído algo similar
-                if (!result.text.includes('agendamento') && !result.text.includes('horário')) {
-                    result.text += retomadaText;
-                }
+                const retomadaMap = {
+                    'therapy': '\n\nPara te ajudar melhor, qual é a especialidade que procura? 💚',
+                    'complaint': '\n\nVoltando ao agendamento: qual é a situação principal que gostaria de tratar? 💚',
+                    'age': '\n\nPara buscar os horários certinhos, qual a idade do paciente? 💚',
+                    'period': '\n\nPrefere manhã ou tarde para o atendimento? ☀️🌙',
+                    'slot_selection': '\n\nQuando quiser continuar, é só escolher A, B ou C 💚',
+                    'patient_name': '\n\nSó falta o nome completo para confirmarmos! 💚'
+                };
+
+                const retomadaText = retomadaMap[fieldToResume] || '\n\nQuer continuar o agendamento? 💚';
+
+                // Adiciona retomada (handler já removeu CTA genérico se era interrupção)
+                result.text += retomadaText;
             }
 
             // =========================

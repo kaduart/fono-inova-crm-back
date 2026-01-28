@@ -1,7 +1,7 @@
 // handlers/ProductHandler.js
 
-import { getPriceLinesForDetectedTherapies } from '../services/intelligence/getPriceLinesForDetectedTherapies.js';
 import { buildValueAnchoredClosure } from '../services/intelligence/buildValueAnchoredClosure.js';
+import { getPriceLinesForDetectedTherapies } from '../services/intelligence/getPriceLinesForDetectedTherapies.js';
 
 class ProductHandler {
     async execute({ decisionContext }) {
@@ -52,28 +52,32 @@ class ProductHandler {
         }
 
         // =========================
-        // 5️⃣ CTA FLEXÍVEL
+        // 5️⃣ CTA FLEXÍVEL (só se não for interrupção)
         // =========================
-        if (!missing.needsAge && !missing.needsTherapy) {
-            responseText += `\n\nSe quiser, posso verificar horários disponíveis para você ainda hoje 💚`;
-        } else {
-            responseText += `\n\nQuer que eu te ajude a verificar horários? 💚`;
-        }
+        const isInterruption = missing?.currentAwaiting &&
+            !missing.needsSlot &&
+            !missing.needsSlotSelection;
 
-        // Se vier do contexto de interrupção, sinaliza que precisa de retomada
-        if (decisionContext?.analysis?.intent === 'price' &&
-            decisionContext?.missing &&
-            (!decisionContext.missing.needsSlot && !decisionContext.missing.needsSlotSelection)) {
-            // Estamos no meio da qualificação (antes de buscar slots)
+        if (!isInterruption) {
+            // ✅ MANTÉM: CTA normal quando NÃO é interrupção
+            if (!missing.needsAge && !missing.needsTherapy) {
+                responseText += `\n\nSe quiser, posso verificar horários disponíveis para você ainda hoje 💚`;
+            } else {
+                responseText += `\n\nQuer que eu te ajude a verificar horários? 💚`;
+            }
+        }
+        // ⬆️ Se FOR interrupção, não adiciona nada aqui - Orchestrator cuida
+
+        // Retorna com flag se for interrupção
+        if (isInterruption) {
             return {
                 text: responseText,
-                needsResumption: true,  // Flag para o orchestrator
-                nextField: decisionContext.missing.currentAwaiting
+                needsResumption: true,
+                nextField: missing.currentAwaiting
             };
         }
-        return {
-            text: responseText
-        };
+
+        return { text: responseText };
     }
 }
 
