@@ -83,6 +83,12 @@ export class WhatsAppOrchestrator {
             const intelligent = llmAnalysis?.extractedInfo || {};
             const intentResult = this.intentDetector.detect(message, memoryContext);
 
+            const isSideIntent = (i) => ['price', 'therapy_info', 'general_info'].includes(i);
+
+            if (intentResult.type === 'product_inquiry' || intentResult.flags?.asksPrice) {
+                intentResult.type = 'price';
+            }
+
             const analysis = {
                 ...llmAnalysis,
                 flags: intentResult.flags,
@@ -91,6 +97,7 @@ export class WhatsAppOrchestrator {
                 confidence: intentResult.confidence || 0.5
             };
             analysis.extractedInfo = intelligent;
+
 
             // =========================
             // 3) INFERRIDOS (SEM "ADIVINHAR" EM CONVERSA FRIA)
@@ -321,7 +328,7 @@ export class WhatsAppOrchestrator {
                 freshFromThisMessage.complaint
             );
 
-            if (analysis.intent !== 'price' && (justAnsweredBasic || hasPendingSlots || !!existingChosenSlot)) {
+            if (!isSideIntent(analysis.intent) && (justAnsweredBasic || hasPendingSlots || !!existingChosenSlot)) {
                 analysis.intent = 'scheduling';
             }
 
@@ -439,26 +446,25 @@ export class WhatsAppOrchestrator {
                 // ✅ slots só depois de tudo acima
                 needsSlot: readyForSlots && !hasSlotsToShow && !hasChosenSlotNow,
 
-                // ✅ nome só depois de escolher slot
-                needsName:
-                    hasChosenSlotNow &&
-                    !memoryContext?.patientName &&
-                    !analysis.extractedInfo?.patientName &&
-                    !patientNameFromLead
+                needsSlotSelection: hasSlotsToShow && !hasChosenSlotNow,
+
+                needsName: hasChosenSlotNow && !memoryContext?.patientName && !analysis.extractedInfo?.patientName && !patientNameFromLead
+
             };
 
-            if (hasTherapy && missing.needsComplaint) {
+            if (!isSideIntent(analysis.intent) && hasTherapy && missing.needsComplaint) {
                 analysis.intent = 'scheduling';
             }
 
-            // Se tem slots para mostrar (ou slot escolhido), força intent scheduling
-            if (analysis.intent !== 'price' && (hasSlotsToShow || hasChosenSlotNow)) {
+
+            // Se tem slots para mostrar (ou slot escolhido), força intent schedulingÆÆÆ
+            if (!isSideIntent(analysis.intent) && (hasSlotsToShow || hasChosenSlotNow)) {
                 analysis.intent = 'scheduling';
             }
 
             // Se temos dados suficientes mas não temos slots buscados ainda, 
             // FORÇA o intent para scheduling e busca slots
-            if (readyForSlots && !hasPendingSlots && !existingChosenSlot) {
+            if (!isSideIntent(analysis.intent) && readyForSlots && !hasPendingSlots && !existingChosenSlot) {
                 analysis.intent = 'scheduling';
 
                 // Busca slots imediatamente
