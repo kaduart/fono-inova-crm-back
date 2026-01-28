@@ -562,10 +562,25 @@ export class WhatsAppOrchestrator {
                 analysis
             };
 
-            let result = await handler.execute({ decisionContext, services });
             // =========================
-            // 9.5) SE HANDLER PEDIU GERAÇÃO VIA IA
+            // 9.5) EXECUTA HANDLER + TRATA INTERRUPIÇÃO / GERAÇÃO IA
             // =========================
+            let result;
+
+            // Se é interrupção (side intent com agendamento pendente), executa handler correto primeiro
+            if (decision.preserveBookingState && isSideIntent(analysis.intent)) {
+                const sideHandler = handlers[
+                    analysis.intent === 'price' ? 'productHandler' :
+                        analysis.intent === 'therapy_info' ? 'therapyHandler' :
+                            'fallbackHandler'
+                ];
+                result = await sideHandler.execute({ decisionContext, services });
+            } else {
+                // Fluxo normal
+                result = await handler.execute({ decisionContext, services });
+            }
+
+            // Se precisa de geração IA, gera o texto base
             if (result?.needsAIGeneration && result?.promptContext) {
                 try {
                     const aiText = await generateHandlerResponse({
@@ -576,70 +591,81 @@ export class WhatsAppOrchestrator {
                     });
 
                     if (aiText) {
-                        result = { ...result, text: aiText };
+                        result.text = aiText;
                     } else {
-                        result = { ...result, text: result.fallbackText || 'Como posso te ajudar? 💚' };
+                        result.text = result.fallbackText || 'Como posso te ajudar? 💚';
                     }
                 } catch (err) {
                     this.logger.error('Erro na geração IA do handler', err);
-                    result = { ...result, text: result.fallbackText || 'Como posso te ajudar? 💚' };
+                    result.text = result.fallbackText || 'Como posso te ajudar? 💚';
                 }
+            }
+
+            // Adiciona retomada NO FINAL (depois de toda a geração de texto)
+            if (decision.preserveBookingState && missing.needsSlotSelection) {
+                result.text += `\n\nQuando quiser continuar, é só escolher A, B ou C 💚`;
             }
 
             // =========================
             // 10) PERSISTÊNCIA DOS EXTRAÍDOS
             // =========================
-            const set = {};
+            // 🆕 DEFESA: Se handler pediu skip, não salva nada agora (preserva estado para retomada)
+            if (result?.skipValidation) {
+                console.log('⏸️ [PERSISTENCE] Pulando persistência - aguardando retomada do fluxo');
+            } else {
+                const set = {};
 
-            if (inferredTherapy) set.therapyArea = inferredTherapy;
-            if (inferredAge) set["patientInfo.age"] = inferredAge;
-            if (inferredPeriod) set.pendingPreferredPeriod = inferredPeriod;
-            if (inferredComplaint) set.primaryComplaint = inferredComplaint;
-
-            // ✅ ADICIONAR: Se handler retornou nome, salva
-            if (result?.extractedInfo?.patientName) {
-                set["patientInfo.name"] = result.extractedInfo.patientName;
-                set["autoBookingContext.patientName"] = result.extractedInfo.patientName;
-            }
-            if (Object.keys(set).length) {
-                await Leads.findByIdAndUpdate(lead._id, { $set: set });
-            }
-
-            // Espelha no qualificationData
-            if (inferredTherapy) set["qualificationData.extractedInfo.therapyArea"] = inferredTherapy;
-            if (inferredAge) set["qualificationData.extractedInfo.idade"] = inferredAge;
-            if (inferredPeriod) set["qualificationData.extractedInfo.disponibilidade"] = inferredPeriod;
-            if (inferredComplaint) set["qualificationData.extractedInfo.queixa"] = inferredComplaint;
+                if (inferredTherapy) set.therapyArea = inferredTherapy;
+                if (inferredAge) set["patientInfo.age"] = inferredAge;
+                if (inferredPeriod) set.pendingPreferredPeriod = inferredPeriod;
+                if (inferredComplaint) set.primaryComplaint = inferredComplaint;
 
 
-            console.log('💾 [PERIOD SAVE]', {
-                inferredPeriod,
-                willSave: !!inferredPeriod,
-                setKeys: Object.keys(set),
-                fullSet: set
-            });
-
-            // 🧠 GERAR RESUMO SE NECESSÁRIO
-            try {
-                const totalMessages = memoryContext?.conversationHistory?.length || 0;
-
-                if (needsNewSummary(lead, totalMessages, [])) {
-                    const messagesForSummary = memoryContext?.conversationHistory?.slice(-30) || [];
-                    const summary = await generateConversationSummary(messagesForSummary);
-
-                    if (summary) {
-                        await Leads.findByIdAndUpdate(lead._id, {
-                            $set: {
-                                conversationSummary: summary,
-                                summaryGeneratedAt: new Date(),
-                                summaryCoversUntilMessage: totalMessages
-                            }
-                        });
-                        console.log('✅ [RESUMO] Salvo no lead com sucesso');
-                    }
+                // ✅ ADICIONAR: Se handler retornou nome, salva
+                if (result?.extractedInfo?.patientName) {
+                    set["patientInfo.name"] = result.extractedInfo.patientName;
+                    set["autoBookingContext.patientName"] = result.extractedInfo.patientName;
                 }
-            } catch (e) {
-                console.error('⚠️ [RESUMO] Erro ao gerar/salvar:', e.message);
+                if (Object.keys(set).length) {
+                    await Leads.findByIdAndUpdate(lead._id, { $set: set });
+                }
+
+                // Espelha no qualificationData
+                if (inferredTherapy) set["qualificationData.extractedInfo.therapyArea"] = inferredTherapy;
+                if (inferredAge) set["qualificationData.extractedInfo.idade"] = inferredAge;
+                if (inferredPeriod) set["qualificationData.extractedInfo.disponibilidade"] = inferredPeriod;
+                if (inferredComplaint) set["qualificationData.extractedInfo.queixa"] = inferredComplaint;
+
+
+                console.log('💾 [PERIOD SAVE]', {
+                    inferredPeriod,
+                    willSave: !!inferredPeriod,
+                    setKeys: Object.keys(set),
+                    fullSet: set
+                });
+
+                // 🧠 GERAR RESUMO SE NECESSÁRIO
+                try {
+                    const totalMessages = memoryContext?.conversationHistory?.length || 0;
+
+                    if (needsNewSummary(lead, totalMessages, [])) {
+                        const messagesForSummary = memoryContext?.conversationHistory?.slice(-30) || [];
+                        const summary = await generateConversationSummary(messagesForSummary);
+
+                        if (summary) {
+                            await Leads.findByIdAndUpdate(lead._id, {
+                                $set: {
+                                    conversationSummary: summary,
+                                    summaryGeneratedAt: new Date(),
+                                    summaryCoversUntilMessage: totalMessages
+                                }
+                            });
+                            console.log('✅ [RESUMO] Salvo no lead com sucesso');
+                        }
+                    }
+                } catch (e) {
+                    console.error('⚠️ [RESUMO] Erro ao gerar/salvar:', e.message);
+                }
             }
 
             // =========================
