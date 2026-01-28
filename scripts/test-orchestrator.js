@@ -1,62 +1,39 @@
-import { WhatsAppOrchestrator } from '../orchestrators/WhatsAppOrchestrator.js';
+// scripts/test-orchestrator.js
 
-const orch = new WhatsAppOrchestrator();
+import dotenv from "dotenv";
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-// Mock services
-const services = {
-    bookingService: {
-        findAvailableSlots: async () => ({
-            slots: [{ date: '2026-01-25', time: '14:00' }],
-            period: 'afternoon',
-            doctorId: 'doc123'
-        })
-    },
-    productService: {
-        resolve: async () => ({
-            name: 'Consulta Psicologia',
-            price: 150,
-            duration: '50 min'
-        })
-    }
-};
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+dotenv.config({ path: join(__dirname, '../.env') });
 
-// Teste
-const result = await orch.process({
-    lead: { _id: '123', name: 'Test' },
-    message: { content: 'quero agendar' },
-    context: {},
-    services
+const mongoose = (await import('mongoose')).default;
+const Leads = (await import('../models/Leads.js')).default;
+const { WhatsAppOrchestrator } = await import('../orchestrators/WhatsAppOrchestrator.js');
+
+await mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI);
+console.log("✅ Conectado ao MongoDB");
+
+const leadId = '697a4896e0a21156a0c0cf81';
+const lead = await Leads.findById(leadId);
+
+// ✅ Instancia a classe
+const orchestrator = new WhatsAppOrchestrator();
+
+// ✅ Usa o método certo: process({ lead, message, services })
+const result = await orchestrator.process({
+    lead,
+    message: { text: 'ele não presta atenção nas aulas e tem ansiedade', type: 'text' },
+    services: {}
 });
 
-// Teste 2: Pergunta sobre terapia
-const result2 = await orch.process({
-    lead: { _id: '124', name: 'Maria' },
-    message: { content: 'tenho ansiedade, qual terapia preciso?' },
-    context: {},
-    services
+console.log('RESULTADO:', result);
+
+const updated = await Leads.findById(leadId);
+console.log('LEAD APÓS:', {
+    primaryComplaint: updated.primaryComplaint,
+    qualificationData: updated.qualificationData
 });
-console.log('Terapia:', result2.command);
 
-// Teste 3: Pergunta sobre preço
-const result3 = await orch.process({
-    lead: { _id: '125', name: 'João' },
-    message: { content: 'quanto custa a consulta?' },
-    context: {},
-    services: {
-        productService: { resolve: async () => ({ name: 'Consulta', price: 150 }) }
-    }
-});
-console.log('Preço:', result3.command);
-
-// Teste 4: Fallback (não entendeu)
-const result4 = await orch.process({
-    lead: { _id: '126', name: 'Ana' },
-    message: { content: 'asdfgh' },
-    context: {},
-    services
-});
-console.log('Fallback:', result4.command);
-
-
-
-console.log('Resultado:', JSON.stringify(result, null, 2));
+process.exit(0);

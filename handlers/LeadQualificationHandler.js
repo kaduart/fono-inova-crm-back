@@ -1,8 +1,8 @@
 // handlers/LeadQualificationHandler.js
 
 import callAI from '../services/IA/Aiproviderservice.js';
-import { DYNAMIC_MODULES } from '../utils/amandaPrompt.js';
 import Logger from '../services/utils/Logger.js';
+import { DYNAMIC_MODULES } from '../utils/amandaPrompt.js';
 import ensureSingleHeart from '../utils/helpers.js';
 
 class LeadQualificationHandler {

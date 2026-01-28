@@ -438,6 +438,11 @@ REGRAS:
 - Não repita "agendamento realizado" antes de responder o preço.
 `.trim(),
 
+  noSlotsAvailable: (period) => `
+Infelizmente não encontrei horários disponíveis ${period ? `no período da ${period}` : 'nesse momento'}.
+Vou verificar com a equipe e te retorno com opções, tudo bem? 💚
+`.trim(),
+
   // ✅ Quando usuário escolhe uma opção (A/B/C) -> pedir nome
   slotChosenAskName: (slotText) => `
 ⚠️ INSTRUÇÃO INTERNA (NÃO REPRODUZA ESTE TEXTO):
