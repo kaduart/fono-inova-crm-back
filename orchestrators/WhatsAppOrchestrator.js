@@ -96,11 +96,19 @@ export class WhatsAppOrchestrator {
             // 3) INFERRIDOS (SEM "ADIVINHAR" EM CONVERSA FRIA)
             // =========================
             // 🧠 DETECÇÃO RÁPIDA DE TERAPIA (fallback quando LLM não pegou)
-            const textLower = text.toLowerCase();
+            const normalizeText = (t) => String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const textNormalized = normalizeText(text);
+
             let quickPeriod = null;
-            if (textLower.match(/\bmanh[aã]\b/)) quickPeriod = 'manha';
-            else if (textLower.match(/\btarde\b/)) quickPeriod = 'tarde';
-            else if (textLower.match(/\bnoit[eé]\b/)) quickPeriod = 'noite';
+            if (textNormalized.includes("manh")) quickPeriod = 'manha';
+            else if (textNormalized.includes("tard")) quickPeriod = 'tarde';
+            else if (textNormalized.includes("noit")) quickPeriod = 'noite';
+
+            console.log('🧪 [QUICK PERIOD TEST]', {
+                original: text.substring(0, 50),
+                normalized: textNormalized.substring(0, 50),
+                quickPeriod
+            });
 
             let quickTherapy = null;
             if (textLower.match(/\bpsico(log|l[oó]gica)?\b/)) quickTherapy = 'psicologia';
