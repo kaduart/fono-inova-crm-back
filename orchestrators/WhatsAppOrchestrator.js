@@ -123,6 +123,8 @@ export class WhatsAppOrchestrator {
                 quickTherapy ||
                 analysis.therapyArea ||
                 intelligent?.especialidade ||
+                lead?.therapyArea ||  // ✅ ADICIONAR
+                lead?.qualificationData?.extractedInfo?.therapyArea ||  // ✅ ADICIONAR
                 (allowMemoryCarryOver ? memoryContext?.therapyArea : null) ||
                 null;
 
@@ -140,6 +142,8 @@ export class WhatsAppOrchestrator {
                 intelligent?.idade ||
                 intelligent?.idadeRange ||
                 analysis.extractedInfo?.age ||
+                lead?.patientInfo?.age ||  // ✅ ADICIONAR
+                lead?.qualificationData?.extractedInfo?.idade ||  // ✅ ADICIONAR
                 (allowMemoryCarryOver ? memoryContext?.patientAge : null) ||
                 null;
 
@@ -189,6 +193,8 @@ export class WhatsAppOrchestrator {
                 analysis.extractedInfo?.queixa ||
                 analysis.extractedInfo?.sintomas ||
                 analysis.extractedInfo?.motivoConsulta ||
+                lead?.primaryComplaint ||  // ✅ ADICIONAR
+                lead?.qualificationData?.extractedInfo?.queixa ||  // ✅ ADICIONAR
                 (allowMemoryCarryOver ? memoryContext?.primaryComplaint : null) ||
                 null;
 
