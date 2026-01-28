@@ -53,6 +53,13 @@ export function extractStructuredData(text) {
         'ansiedade': /\b(ansiedade|ansiosa)\b/,
         'comportamento': /\b(birra|agressiv)\b/,
         'freio_lingual': /\b(fr[eê]nulo|freio\s+lingual|fr[eê]nulo\s+lingual|teste\s+da\s+linguinha|linguinha)\b/,
+        'desatencao': /\b(n[aã]o\s+presta\s+aten[cç][aã]o|desaten[cç][aã]o|distra[ií]do|n[aã]o\s+consegue\s+(focar|concentrar)|disperso)\b/,
+        'dificuldade_escola': /\b(dificuldade\s+na\s+(escola|aula)|problema\s+na\s+escola|vai\s+mal\s+na\s+escola)\b/,
+        'agitacao': /\b(muito\s+agitado|agita[cç][aã]o|n[aã]o\s+para\s+quieto|inquieto)\b/,
+        'medo': /\b(medo|medos|fobia|p[aâ]nico)\b/,
+        'sono': /\b(n[aã]o\s+dorme|dificuldade\s+pra\s+dormir|ins[oô]nia|pesadelo)\b/,
+        'alimentacao': /\b(n[aã]o\s+come|seletivo|recusa\s+comida|dificuldade\s+alimentar)\b/,
+
     };
 
     for (const [key, regex] of Object.entries(queixas)) {

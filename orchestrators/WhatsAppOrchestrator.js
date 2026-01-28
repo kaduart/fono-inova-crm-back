@@ -78,11 +78,19 @@ export class WhatsAppOrchestrator {
                 text,
                 lead,
                 history: memoryContext?.conversationHistory || []
-            }).catch(() => ({}));
+            }).catch((err) => {
+                console.error('❌ [LLM ANALYSIS ERROR]', err.message);
+                return {};
+            });
 
             const intelligent = llmAnalysis?.extractedInfo || {};
             const intentResult = this.intentDetector.detect(message, memoryContext);
-
+            console.log('🧠 [LLM EXTRACTION DEBUG]', {
+                text: text.substring(0, 60),
+                queixa: intelligent?.queixa,
+                especialidade: intelligent?.especialidade,
+                fullExtracted: JSON.stringify(intelligent)
+            });
             const isSideIntent = (i) => ['price', 'therapy_info', 'general_info'].includes(i);
 
             if (intentResult.type === 'product_inquiry' || intentResult.flags?.asksPrice) {
