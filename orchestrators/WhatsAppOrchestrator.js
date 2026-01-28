@@ -144,6 +144,16 @@ export class WhatsAppOrchestrator {
 
             const inferredPeriod = normalizePeriod(inferredPeriodRaw);
 
+            console.log('🕐 [PERIOD CAPTURED]', {
+                text: text.substring(0, 100),
+                textLower: textLower.substring(0, 100),
+                quickPeriod,
+                intelligent_disponibilidade: intelligent?.disponibilidade,
+                inferredPeriodRaw,
+                inferredPeriod,
+                hasPeriod: !!inferredPeriod
+            });
+
             const isMeaningfulComplaint = (c) => {
                 if (!c) return false;
                 const n = String(c).toLowerCase().trim();
@@ -573,6 +583,13 @@ export class WhatsAppOrchestrator {
             if (Object.keys(set).length) {
                 await Leads.findByIdAndUpdate(lead._id, { $set: set });
             }
+
+            console.log('💾 [PERIOD SAVE]', {
+                inferredPeriod,
+                willSave: !!inferredPeriod,
+                setKeys: Object.keys(set),
+                fullSet: set
+            });
 
             // 🧠 GERAR RESUMO SE NECESSÁRIO
             try {
