@@ -2,21 +2,22 @@
 
 const PRICE_TABLE = {
     fono: [
-        '💚 Sessão de fonoaudiologia: R$ 180',
-        '📦 Pacote mensal (4 sessões): R$ 680 (desconto por pontualidade)'
+        '💚 Atendimento em fonoaudiologia com foco em evolução, cuidado individual e acompanhamento próximo.',
+        '📦 Acompanhamento mensal (4 sessões): R$ 680 • Sessão avulsa: R$ 180'
     ],
     psicologia: [
-        '💚 Sessão de psicologia: R$ 200',
-        '📦 Pacote mensal (4 sessões): R$ 720'
+        '💚 Atendimento psicológico em espaço seguro, acolhedor e com escuta profissional qualificada.',
+        '📦 Acompanhamento mensal (4 sessões): R$ 520 • Sessão avulsa: R$ 130'
     ],
     fisio: [
-        '💚 Sessão de fisioterapia: R$ 180',
-        '📦 Pacote mensal (4 sessões): R$ 680'
+        '💚 Fisioterapia com abordagem individual, foco em desenvolvimento motor e qualidade de vida.',
+        '📦 Acompanhamento mensal (4 sessões): R$ 640 • Sessão avulsa: R$ 160'
     ],
     to: [
-        '💚 Sessão de terapia ocupacional: R$ 180',
-        '📦 Pacote mensal (4 sessões): R$ 680'
+        '💚 Terapia ocupacional voltada à autonomia, funcionalidade e desenvolvimento no dia a dia.',
+        '📦 Acompanhamento mensal (4 sessões): R$ 680 • Sessão avulsa: R$ 180'
     ]
+
 };
 
 export function getPriceLinesForDetectedTherapies(therapies = []) {
