@@ -15,11 +15,20 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
     // 🆕 REGRA 0: INTERRUPIÇÃO (Side Intent com agendamento pendente)
     // Se usuário perguntou preço/info mas tem slots pendentes, responde e preserva estado
     // =========================
-    const isSideIntent = ['price', 'therapy_info', 'general_info'].includes(analysis.intent);
+    // 🆕 REGRA 0: INTERRUPIÇÃO (Side Intent com agendamento EM QUALQUER ESTÁGIO)
     const hasPendingSlots = bookingContext?.slots?.primary || bookingContext?.chosenSlot;
 
-    if (isSideIntent && hasPendingSlots) {
-        // Mapeia qual handler usar
+    // Protege se já temos dados de agendamento em andamento (não precisa ter slots ainda)
+    // 🆕 REGRA 0: INTERRUPIÇÃO (Side Intent com agendamento em QUALQUER estágio)
+    const isSideIntent = ['price', 'therapy_info', 'general_info'].includes(analysis.intent);
+
+    // Usa lógica do helper: protege se já tem contexto de agendamento (não precisa ter slots ainda)
+    const hasSchedulingContext =
+        bookingContext?.slots?.primary ||
+        bookingContext?.chosenSlot ||
+        (!missing.needsTherapy && !missing.needsComplaint); // Já passou das etapas iniciais
+
+    if (isSideIntent && hasSchedulingContext) {
         const handlerMap = {
             'price': 'productHandler',
             'therapy_info': 'therapyHandler',
@@ -29,11 +38,11 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
         return {
             action: 'answer_and_preserve_state',
             handler: handlerMap[analysis.intent] || 'fallbackHandler',
-            reason: 'interruption_while_booking',
-            preserveBookingState: true // flag importante!
+            reason: 'interruption_while_qualifying',
+            preserveBookingState: true,
+            pendingField: missing.currentAwaiting // 🆕 AGORA SIM! Alimenta o Orchestrator
         };
     }
-
 
     // =========================
     // 1️⃣ AGENDAMENTO (ORDEM CORRETA: Terapia → Queixa → Idade → Período → Slots)

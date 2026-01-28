@@ -23,6 +23,7 @@ import { calculateUrgency } from '../services/intelligence/UrgencyScheduler.js';
 // Handlers
 import IntentDetector from '../detectors/IntentDetector.js';
 import * as handlers from '../handlers/index.js';
+import { detectTopicShift } from '../helpers/flowStateHelper.js';
 import Leads from '../models/Leads.js';
 import { generateHandlerResponse } from '../services/aiAmandaService.js';
 import generateConversationSummary, { needsNewSummary } from '../services/conversationSummary.js';
@@ -449,25 +450,23 @@ export class WhatsAppOrchestrator {
                 existingChosenSlot?.doctorId
             );
 
+            // Usando o helper - mantém mesma lógica mas com currentAwaiting automático
             const missing = {
                 needsTherapy: !hasTherapy,
-
-                // ✅ queixa imediatamente após terapia
                 needsComplaint: hasTherapy && !hasComplaint,
-
-                // ✅ idade depois da queixa
                 needsAge: hasTherapy && hasComplaint && !hasAge,
-
-                // ✅ período depois da idade
                 needsPeriod: hasTherapy && hasComplaint && hasAge && !hasPeriod,
-
-                // ✅ slots só depois de tudo acima
                 needsSlot: readyForSlots && !hasSlotsToShow && !hasChosenSlotNow,
-
                 needsSlotSelection: hasSlotsToShow && !hasChosenSlotNow,
+                needsName: hasChosenSlotNow && !memoryContext?.patientName && !analysis.extractedInfo?.patientName && !patientNameFromLead,
 
-                needsName: hasChosenSlotNow && !memoryContext?.patientName && !analysis.extractedInfo?.patientName && !patientNameFromLead
-
+                // 🆕 ADICIONAR: Para os helpers e DecisionEngine saberem o que perguntar na retomada
+                currentAwaiting: !hasTherapy ? 'therapy' :
+                    !hasComplaint ? 'complaint' :
+                        !hasAge ? 'age' :
+                            !hasPeriod ? 'period' :
+                                !hasChosenSlotNow && hasSlotsToShow ? 'slot_selection' :
+                                    !patientNameFromLead && hasChosenSlotNow ? 'patient_name' : null
             };
 
             if (!isSideIntent(analysis.intent) && hasTherapy && missing.needsComplaint) {
@@ -585,14 +584,26 @@ export class WhatsAppOrchestrator {
             // =========================
             let result;
 
-            // Se é interrupção (side intent com agendamento pendente), executa handler correto primeiro
-            if (decision.preserveBookingState && isSideIntent(analysis.intent)) {
+            // Usando helper para detectar interrupção de forma inteligente
+            const topicShift = detectTopicShift({
+                currentIntent: analysis.intent,
+                messageText: text,
+                lead,
+                bookingContext,
+                missing
+            });
+
+            if ((decision.preserveBookingState || topicShift.isInterruption) && isSideIntent(analysis.intent)) {
                 const sideHandler = handlers[
                     analysis.intent === 'price' ? 'productHandler' :
                         analysis.intent === 'therapy_info' ? 'therapyHandler' :
                             'fallbackHandler'
                 ];
                 result = await sideHandler.execute({ decisionContext, services });
+
+                // Marca que precisa de retomada após responder a interrupção
+                result.needsResumption = true;
+                result.interruptedField = topicShift.interruptedField;
             } else {
                 // Fluxo normal
                 result = await handler.execute({ decisionContext, services });
@@ -619,9 +630,36 @@ export class WhatsAppOrchestrator {
                 }
             }
 
-            // Adiciona retomada NO FINAL (depois de toda a geração de texto)
-            if (decision.preserveBookingState && missing.needsSlotSelection) {
-                result.text += `\n\nQuando quiser continuar, é só escolher A, B ou C 💚`;
+            // =========================
+            // RETOMADA INTELIGENTE (FUNCIONA EM QUALQUER ESTÁGIO)
+            // =========================
+            if (decision.preserveBookingState && decision.pendingField) {
+                let retomadaText = '';
+
+                switch (decision.pendingField) {
+                    case 'complaint':
+                        retomadaText = '\n\nVoltando ao agendamento: qual é a situação principal que gostaria de tratar? 💚';
+                        break;
+                    case 'age':
+                        retomadaText = '\n\nPara buscar os horários certinhos, qual a idade do paciente? 💚';
+                        break;
+                    case 'period':
+                        retomadaText = '\n\nPreferes manhã ou tarde para o atendimento? ☀️🌙';
+                        break;
+                    case 'slot_selection':
+                        retomadaText = '\n\nQuando quiser continuar, é só escolher A, B ou C 💚';
+                        break;
+                    case 'patient_name':
+                        retomadaText = '\n\nSó falta o nome completo para confirmarmos! 💚';
+                        break;
+                    default:
+                        retomadaText = '\n\nQuer continuar o agendamento? 💚';
+                }
+
+                // Só adiciona se o handler não já tiver incluído algo similar
+                if (!result.text.includes('agendamento') && !result.text.includes('horário')) {
+                    result.text += retomadaText;
+                }
             }
 
             // =========================

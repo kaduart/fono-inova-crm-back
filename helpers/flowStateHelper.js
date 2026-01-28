@@ -1,38 +1,45 @@
+import { isSideIntent } from './intentHelper.js';
+import { messageAnswersAwaiting } from './missingFieldsHelper.js';
+
 /**
  * Detecta interrupções naturais e retomadas
  * Usa checkpoint derivado dos pending* existentes no Lead
  */
 
-import { messageAnswersAwaiting } from './missingFieldsHelper.js';
-
 export function detectTopicShift({
     currentIntent,
-    currentAwaiting,
     messageText,
-    hasPendingScheduling,
-    extractedInfo
+    lead,
+    bookingContext,
+    missing
 }) {
-    // Se não estamos esperando nada específico, não é interrupção
-    if (!currentAwaiting || !hasPendingScheduling) {
+    // Determina se estamos em meio a um agendamento
+    const hasSchedulingContext =
+        lead?.therapyArea ||
+        lead?.primaryComplaint ||
+        bookingContext?.slots?.primary ||
+        bookingContext?.chosenSlot ||
+        (!missing?.needsTherapy && !missing?.needsComplaint);
+
+    // Se não estamos em agendamento, não é interrupção
+    if (!hasSchedulingContext) {
         return { isInterruption: false };
     }
 
-    // Se a mensagem responde o que estamos esperando, é retomada (não interrupção)
-    const answersPending = messageAnswersAwaiting(messageText, extractedInfo, currentAwaiting);
-    if (answersPending) {
+    // Se a mensagem responde o que estamos esperando, é retomada
+    if (missing?.currentAwaiting && messageAnswersAwaiting(messageText, {}, missing.currentAwaiting)) {
         return {
             isInterruption: false,
             isNaturalResume: true,
-            resumedField: currentAwaiting
+            resumedField: missing.currentAwaiting
         };
     }
 
-    // Se é intent lateral (preço, info) enquanto esperávamos algo = INTERRUPIÇÃO
-    const sideIntents = ['price', 'therapy_info', 'general_info'];
-    if (sideIntents.includes(currentIntent)) {
+    // Se é intent lateral enquanto aguardamos algo = INTERRUPIÇÃO
+    if (isSideIntent(currentIntent)) {
         return {
             isInterruption: true,
-            interruptedField: currentAwaiting, // O que estávamos esperando antes
+            interruptedField: missing?.currentAwaiting || 'unknown',
             sideIntent: currentIntent
         };
     }
@@ -42,11 +49,12 @@ export function detectTopicShift({
 
 export function buildResumptionMessage(missing) {
     const messages = {
-        complaint: 'Me conta rapidinho a queixa principal? 💚',
-        age: 'Qual a idade do paciente? 💚',
-        period: 'Prefere manhã ou tarde? 💚',
+        therapy: 'Para te ajudar melhor, qual é a especialidade que procura?',
+        complaint: 'Voltando ao agendamento: qual é a situação principal que gostaria de tratar? 💚',
+        age: 'Para buscar os horários certinhos, qual a idade do paciente? 💚',
+        period: 'Prefere manhã ou tarde para o atendimento? ☀️🌙',
         slot_selection: 'Quando quiser continuar, é só escolher A, B ou C 💚',
-        patient_name: 'Me confirma o nome completo? 💚'
+        patient_name: 'Só falta o nome completo para confirmarmos! 💚'
     };
 
     return missing.currentAwaiting ? messages[missing.currentAwaiting] : null;

@@ -60,6 +60,17 @@ class ProductHandler {
             responseText += `\n\nQuer que eu te ajude a verificar horários? 💚`;
         }
 
+        // Se vier do contexto de interrupção, sinaliza que precisa de retomada
+        if (decisionContext?.analysis?.intent === 'price' &&
+            decisionContext?.missing &&
+            (!decisionContext.missing.needsSlot && !decisionContext.missing.needsSlotSelection)) {
+            // Estamos no meio da qualificação (antes de buscar slots)
+            return {
+                text: responseText,
+                needsResumption: true,  // Flag para o orchestrator
+                nextField: decisionContext.missing.currentAwaiting
+            };
+        }
         return {
             text: responseText
         };
