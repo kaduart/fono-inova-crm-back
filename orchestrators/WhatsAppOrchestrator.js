@@ -1,34 +1,36 @@
 import Logger from '../services/utils/Logger.js';
 
-// Memory & Context
+// ✅ INFRAESTRUTURA EXISTENTE (do usuário)
 import * as ContextMemory from '../services/intelligence/contextMemory.js';
 import { buildContextPack } from '../services/intelligence/ContextPack.js';
 import enrichLeadContext from '../services/leadContext.js';
-
-// Intelligence
 import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js';
 import { nextStage } from '../services/intelligence/stageEngine.js';
+import { clinicalRulesEngine } from '../services/intelligence/clinicalRulesEngine.js';
+import { calculateUrgency } from '../services/intelligence/UrgencyScheduler.js';
+import { decisionEngine } from '../services/intelligence/DecisionEngine.js';
 
-// Booking utils
+// ✅ UTILITÁRIOS EXISTENTES
+import { normalizePeriod } from '../utils/normalizePeriod.js';
+import { detectAllFlags } from '../utils/flagsDetector.js';
+import { detectAllTherapies } from '../utils/therapyDetector.js';
+import { extractPreferredDateFromText } from '../utils/extractPreferredDateFromText.js';
+
+// ✅ SERVIÇOS DE AGENDAMENTO
 import {
     findAvailableSlots,
     pickSlotFromUserReply,
     validateSlotStillAvailable
 } from '../services/amandaBookingService.js';
 
-// Clinical rules
-import { clinicalRulesEngine } from '../services/intelligence/clinicalRulesEngine.js';
-import { calculateUrgency } from '../services/intelligence/UrgencyScheduler.js';
-
-// Handlers
-import IntentDetector from '../detectors/IntentDetector.js';
+// ✅ HANDLERS EXISTENTES
 import * as handlers from '../handlers/index.js';
-import { detectTopicShift } from '../helpers/flowStateHelper.js';
 import Leads from '../models/Leads.js';
 import { generateHandlerResponse } from '../services/aiAmandaService.js';
 import generateConversationSummary, { needsNewSummary } from '../services/conversationSummary.js';
-import { decisionEngine } from '../services/intelligence/DecisionEngine.js';
-import { normalizePeriod } from '../utils/normalizePeriod.js';
+
+// ✅ DETECTOR EXISTENTE
+import IntentDetector from '../detectors/IntentDetector.js';
 
 export class WhatsAppOrchestrator {
     constructor() {
@@ -45,510 +47,103 @@ export class WhatsAppOrchestrator {
     }
 
     async process({ lead, message, services }) {
-        // helper (perto do topo do process)
-        const normalizeSentinel = (v) => {
-            if (v == null) return null;
-            if (typeof v === 'string') {
-                const s = v.trim().toLowerCase();
-                // Bloqueia strings genéricas
-                if (['não', 'nao', 'n/a', 'no', 'sim', 'yes', 'true', 'false'].includes(s)) {
-                    return null;
-                }
-            }
-            // Se não for objeto válido, retorna null
-            if (v && typeof v !== 'object') return null;
-            return v;
-        };
-
         try {
             const text = message?.content || message?.text || '';
 
             // =========================
-            // 1) MEMÓRIA & CONTEXTO
+            // 1️⃣ CONTEXTO (USANDO SEUS SERVIÇOS)
             // =========================
             const memoryContext = await enrichLeadContext(lead._id);
             const contextPack = await buildContextPack(lead._id);
-
-            // Só reaproveita memória como "verdade" quando a conversa NÃO esfriou
-            const allowMemoryCarryOver = memoryContext?.shouldGreet === false;
-
-            // =========================
-            // 2) INTELIGÊNCIA (LLM + INTENT)
-            // =========================
-            const llmAnalysis = await analyzeLeadMessage({
-                text,
-                lead,
-                history: memoryContext?.conversationHistory || []
-            }).catch((err) => {
-                console.error('❌ [LLM ANALYSIS ERROR]', err.message);
-                return {};
+            
+            // Flags usando SEU detector
+            const flags = detectAllFlags(text, lead, {
+                stage: lead?.stage,
+                messageCount: memoryContext?.conversationHistory?.length || 0,
+                conversationHistory: memoryContext?.conversationHistory || []
             });
+
+            // Terapias usando SEU detector
+            const detectedTherapies = detectAllTherapies(text);
+
+            // =========================
+            // 2️⃣ ANÁLISE INTELIGÊNCIA (SEUS SERVIÇOS)
+            // =========================
+            const [llmAnalysis, intentResult] = await Promise.all([
+                analyzeLeadMessage({
+                    text,
+                    lead,
+                    history: memoryContext?.conversationHistory || []
+                }).catch(() => ({})),
+                this.intentDetector.detect(message, memoryContext)
+            ]);
 
             const intelligent = llmAnalysis?.extractedInfo || {};
-            const intentResult = this.intentDetector.detect(message, memoryContext);
-            console.log('🧠 [LLM EXTRACTION DEBUG]', {
-                text: text.substring(0, 60),
-                queixa: intelligent?.queixa,
-                especialidade: intelligent?.especialidade,
-                fullExtracted: JSON.stringify(intelligent)
-            });
-            const isSideIntent = (i) => ['price', 'therapy_info', 'general_info'].includes(i);
 
-            if (intentResult.type === 'product_inquiry' || intentResult.flags?.asksPrice) {
-                intentResult.type = 'price';
-            }
-
+            // Monta analysis no formato que DecisionEngine espera
             const analysis = {
                 ...llmAnalysis,
-                flags: intentResult.flags,
-                therapyArea: intentResult.therapy,
-                intent: intentResult.type,
-                confidence: intentResult.confidence || 0.5
-            };
-            analysis.extractedInfo = intelligent;
-
-            // 🆕 GUARDAR INTENT ORIGINAL ANTES DAS FORÇAGENS
-            const originalIntent = analysis.intent;
-
-            // =========================
-            // 3) INFERRIDOS (SEM "ADIVINHAR" EM CONVERSA FRIA)
-            // =========================
-            // 🧠 DETECÇÃO RÁPIDA DE TERAPIA (fallback quando LLM não pegou)
-            // 🧠 Normalização para diferentes propósitos
-            const textLower = text.toLowerCase();
-            const normalizeText = (t) => String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            const textNormalized = normalizeText(text);
-
-            let quickPeriod = null;
-            if (textNormalized.includes("manh")) quickPeriod = 'manha';
-            else if (textNormalized.includes("tard")) quickPeriod = 'tarde';
-            else if (textNormalized.includes("noit")) quickPeriod = 'noite';
-
-            console.log('🧪 [QUICK PERIOD TEST]', {
-                original: text.substring(0, 50),
-                normalized: textNormalized.substring(0, 50),
-                quickPeriod
-            });
-
-            let quickTherapy = null;
-            if (textLower.match(/\bpsico(log|l[oó]gica)?\b/)) quickTherapy = 'psicologia';
-            else if (textLower.match(/\bfono\b/)) quickTherapy = 'fonoaudiologia';
-            else if (textLower.match(/\bto\b|\bterapia ocupacional\b/)) quickTherapy = 'terapia ocupacional';
-            else if (textLower.match(/\bfisio\b/)) quickTherapy = 'fisioterapia';
-
-            // Agora usa o quickTherapy como fallback
-            const inferredTherapy =
-                quickTherapy ||
-                analysis.therapyArea ||
-                intelligent?.especialidade ||
-                lead?.therapyArea ||  // ✅ ADICIONAR
-                lead?.qualificationData?.extractedInfo?.therapyArea ||  // ✅ ADICIONAR
-                (allowMemoryCarryOver ? memoryContext?.therapyArea : null) ||
-                null;
-
-            if (!analysis.therapyArea && inferredTherapy) analysis.therapyArea = inferredTherapy;
-            // Normaliza extractedInfo
-            analysis.extractedInfo = analysis.extractedInfo || analysis.extracted || {};
-            if (analysis.extractedInfo.idade && !analysis.extractedInfo.age) {
-                analysis.extractedInfo.age = analysis.extractedInfo.idade;
-            }
-            if (analysis.extractedInfo.disponibilidade && !analysis.extractedInfo.preferredPeriod) {
-                analysis.extractedInfo.preferredPeriod = analysis.extractedInfo.disponibilidade;
-            }
-
-            const inferredAgeRaw =
-                intelligent?.idade ||
-                analysis.extractedInfo?.age ||
-                lead?.patientInfo?.age ||
-                lead?.qualificationData?.extractedInfo?.idade ||
-                (allowMemoryCarryOver ? memoryContext?.patientAge : null) ||
-                null;
-
-            // ✅ Só aceita se for número válido
-            const inferredAge = (typeof inferredAgeRaw === 'number' && !isNaN(inferredAgeRaw))
-                ? inferredAgeRaw
-                : null;
-
-            // ✅ idadeRange separado (para lógica de perfil, não para salvar)
-            const inferredAgeRange =
-                intelligent?.idadeRange ||
-                lead?.qualificationData?.extractedInfo?.idadeRange ||
-                null;
-
-            const inferredPeriodRaw =
-                quickPeriod ||  // <-- ADICIONAR PRIMEIRO
-                intelligent?.disponibilidade ||
-                analysis.extractedInfo?.preferredPeriod ||
-                lead?.qualificationData?.extractedInfo?.disponibilidade ||
-                lead?.pendingPreferredPeriod ||
-                (allowMemoryCarryOver ? memoryContext?.preferredTime : null) ||
-                null;
-
-            const inferredPeriod = normalizePeriod(inferredPeriodRaw);
-
-            console.log('🕐 [PERIOD CAPTURED]', {
-                text: text.substring(0, 100),
-                textLower: textLower.substring(0, 100),
-                quickPeriod,
-                intelligent_disponibilidade: intelligent?.disponibilidade,
-                inferredPeriodRaw,
-                inferredPeriod,
-                hasPeriod: !!inferredPeriod
-            });
-
-            const isMeaningfulComplaint = (c) => {
-                if (!c) return false;
-                const n = String(c).toLowerCase().trim();
-                if (n.length < 4) return false;
-
-                // Só bloqueia se for EXPLICITAMENTE sobre preço/info geral, não se for "saber sobre terapia"
-                const pricePatterns = /\b(valor|pre[cç]o|custo|quanto custa|dinheiro|pix)\b/i;
-                const genericOnly = /^(saber|informa[çc][aã]o|d[uú]vida|oi|ol[aá])$/i;
-
-                // Se for só "saber" ou "informação" sem contexto, rejeita
-                if (genericOnly.test(n)) return false;
-
-                // Se for só sobre preço, rejeita como queixa clínica
-                if (pricePatterns.test(n) && !/\b(filho|filha|meu|minha|crian[çc]a|comportamento|ansiedade|depress[ãa]o|tdah|autismo)\b/i.test(n)) {
-                    return false;
-                }
-
-                return true;
+                flags: { ...flags, ...intentResult.flags },
+                therapyArea: intentResult.therapy || intelligent?.especialidade,
+                intent: this.determinePrimaryIntent(flags, intentResult, detectedTherapies),
+                confidence: intentResult.confidence || 0.5,
+                extractedInfo: intelligent
             };
 
-            const inferredComplaintRaw =
-                intelligent?.queixa ||
-                analysis.extractedInfo?.queixa ||
-                analysis.extractedInfo?.sintomas ||
-                analysis.extractedInfo?.motivoConsulta ||
-                lead?.primaryComplaint ||  // ✅ ADICIONAR
-                lead?.qualificationData?.extractedInfo?.queixa ||  // ✅ ADICIONAR
-                (allowMemoryCarryOver ? memoryContext?.primaryComplaint : null) ||
-                null;
-
-            const inferredComplaint = isMeaningfulComplaint(inferredComplaintRaw)
-                ? inferredComplaintRaw
-                : null;
-
-            // 🧠  Contexto familiar
-            if (!inferredComplaint && text.toLowerCase().match(/\b(filho|filha|meu filho|minha filha)\b/)) {
-                analysis.extractedInfo = {
-                    ...analysis.extractedInfo,
-                    parentesco: 'filho',
-                    queixaContexto: 'consulta_pediatrica'
-                };
-            }
+            this.logger.debug('ANALYSIS_COMPLETE', {
+                intent: analysis.intent,
+                therapy: analysis.therapyArea,
+                hasFlags: Object.keys(flags).filter(k => flags[k]).join(',')
+            });
 
             // =========================
-            // 4) ESTRATÉGIA
+            // 3️⃣ INFERRIDOS (EXTRAÇÃO DE DADOS)
             // =========================
-            const predictedStage = nextStage(lead, analysis);
+            const inferred = this.extractInferredData({
+                text,
+                flags,
+                detectedTherapies,
+                intelligent,
+                lead,
+                memoryContext
+            });
+
+            // =========================
+            // 4️⃣ BOOKING CONTEXT (ESTADO DO AGENDAMENTO)
+            // =========================
+            const bookingContext = await this.buildBookingContext({
+                lead,
+                memoryContext,
+                text,
+                inferred
+            });
+
+            // =========================
+            // 5️⃣ MISSING FIELDS (O QUE FALTA?)
+            // =========================
+            const missing = this.calculateMissing({
+                lead,
+                inferred,
+                bookingContext,
+                flags
+            });
+
+            // =========================
+            // 6️⃣ REGRAS CLÍNICAS (SEU SERVIÇO)
+            // =========================
+            const clinicalRules = clinicalRulesEngine({ 
+                memoryContext, 
+                analysis,
+                lead
+            });
+
+            // =========================
+            // 7️⃣ URGÊNCIA (SEU SERVIÇO)
+            // =========================
             const urgency = calculateUrgency(analysis, memoryContext);
 
             // =========================
-            // 5) BOOKING (STATE > INTENT)
-            // =========================
-            const bookingContext = {};
-
-            const normalizeSlots = (v) => {
-                v = normalizeSentinel(v);
-                if (!v) return null;
-
-                // legacy: array de slots
-                if (Array.isArray(v)) {
-                    const [primary, ...rest] = v;
-                    return { primary: primary || null, alternativesSamePeriod: rest, alternativesOtherPeriod: [] };
-                }
-
-                // formato atual: primary = objeto
-                if (typeof v === 'object') {
-                    const primary = v.primary && !Array.isArray(v.primary) ? v.primary : null;
-
-                    // se vier array por algum motivo
-                    if (!primary && Array.isArray(v.primary)) {
-                        const [p, ...rest] = v.primary;
-                        return { primary: p || null, alternativesSamePeriod: rest, alternativesOtherPeriod: [] };
-                    }
-
-                    return {
-                        primary,
-                        alternativesSamePeriod: Array.isArray(v.alternativesSamePeriod) ? v.alternativesSamePeriod : [],
-                        alternativesOtherPeriod: Array.isArray(v.alternativesOtherPeriod) ? v.alternativesOtherPeriod : [],
-                    };
-                }
-
-                return null;
-            };
-
-            // Slots pendentes
-            const pendingSlots = normalizeSlots(memoryContext?.pendingSchedulingSlots);
-            const hasPendingSlots = !!pendingSlots?.primary;
-            if (hasPendingSlots) bookingContext.slots = pendingSlots;
-
-            // Slot escolhido na memória
-            const existingChosenSlotRaw = normalizeSentinel(memoryContext?.chosenSlot);
-            // ADICIONAR VALIDAÇÃO: só aceita se for objeto válido com doctorId
-            const existingChosenSlot = (existingChosenSlotRaw &&
-                typeof existingChosenSlotRaw === 'object' &&
-                existingChosenSlotRaw.doctorId &&  // <-- CRÍTICO
-                existingChosenSlotRaw.date &&
-                existingChosenSlotRaw.time) ? existingChosenSlotRaw : null;
-            // 🛠️ CORREÇÃO: Copia slot do banco para o contexto se válido
-            if (existingChosenSlot) {
-                bookingContext.chosenSlot = existingChosenSlot;
-                console.log('📦 [CONTEXT] Slot do banco carregado:', existingChosenSlot.doctorId);
-            }
-
-            // Também limpar o campo se vier string errada do banco
-            if (existingChosenSlotRaw && typeof existingChosenSlotRaw === 'string') {
-                // Limpa sujeira do banco
-                await Leads.findByIdAndUpdate(lead._id, { $unset: { pendingChosenSlot: 1 } });
-            }
-
-            // Flags de prontidão
-            const hasTherapy = !!inferredTherapy;
-            const hasComplaint = !!inferredComplaint;
-            const hasAge = !!inferredAge;
-            const hasPeriod = !!inferredPeriod;
-
-            const readyForSlots = hasTherapy && hasComplaint && hasAge && hasPeriod;
-
-            const isSmartLead =
-                intelligent?.especialidade &&
-                intelligent?.queixa &&
-                (intelligent?.idade || intelligent?.idadeRange) &&
-                intelligent?.disponibilidade;
-
-            if (isSmartLead) {
-                analysis.intent = 'scheduling';
-            }
-
-
-            // ✅ CAPTURA SOMENTE O QUE VEIO DESTA MENSAGEM (antes do espelhamento)
-            const freshFromThisMessage = {
-                age: intelligent?.idade,
-                period: intelligent?.disponibilidade,
-                therapy: intelligent?.especialidade || intentResult?.therapy,
-                complaint: intelligent?.queixa
-            };
-
-            // ✅ AGORA sim espelha inferidos para os handlers
-            analysis.extractedInfo = {
-                ...analysis.extractedInfo,
-                therapyArea: analysis.extractedInfo?.therapyArea || inferredTherapy || null,
-                preferredPeriod: analysis.extractedInfo?.preferredPeriod || inferredPeriod || null,
-                age: analysis.extractedInfo?.age || inferredAge || null,
-                queixa: analysis.extractedInfo?.queixa || inferredComplaint || null
-            };
-
-            // ✅ justAnsweredBasic só com dados FRESCOS
-            const justAnsweredBasic = !!(
-                freshFromThisMessage.age ||
-                freshFromThisMessage.period ||
-                freshFromThisMessage.therapy ||
-                freshFromThisMessage.complaint
-            );
-
-            if (!isSideIntent(analysis.intent) && (justAnsweredBasic || hasPendingSlots || !!existingChosenSlot)) {
-                analysis.intent = 'scheduling';
-            }
-
-            // Busca slots só quando está realmente pronto
-            /* if (analysis.intent === 'scheduling' && readyForSlots && !hasPendingSlots && !existingChosenSlot) {
-                try {
-                    const slots = await findAvailableSlots({
-                        therapyArea: inferredTherapy,
-                        preferredPeriod: inferredPeriod,
-                        maxOptions: 2,
-                        daysAhead: 30
-                    });
-
-                    if (slots?.primary) {
-                        await Leads.findByIdAndUpdate(lead._id, {
-                            $set: {
-                                pendingSchedulingSlots: {
-                                    primary: slots.primary,
-                                    alternativesSamePeriod: slots.alternativesSamePeriod || [],
-                                    alternativesOtherPeriod: slots.alternativesOtherPeriod || [],
-                                    generatedAt: new Date()
-                                }
-                            }
-                        });
-
-                        bookingContext.slots = {
-                            primary: slots.primary,
-                            alternativesSamePeriod: slots.alternativesSamePeriod || [],
-                            alternativesOtherPeriod: slots.alternativesOtherPeriod || []
-                        };
-                    }
-                } catch (err) {
-                    this.logger.error('Erro ao buscar slots', err);
-                }
-            } */
-
-            // Escolha do slot (A/B/1/2...) com strict=true
-            if (analysis.intent === 'scheduling' && bookingContext?.slots) {
-                // 🐛 DEBUG: Antes de tentar pegar o slot
-                console.log('🎯 [SLOT CHOICE] Texto recebido:', text);
-                console.log('🎯 [SLOT CHOICE] Slots disponíveis:', {
-                    primary: bookingContext.slots.primary?.time,
-                    alternatives: bookingContext.slots.alternativesSamePeriod?.length
-                });
-
-                const chosenSlot = pickSlotFromUserReply(text, bookingContext.slots, { strict: true });
-
-                // 🐛 DEBUG: Depois de tentar pegar
-                console.log('🎯 [SLOT CHOICE] Resultado:', chosenSlot ? {
-                    doctorId: chosenSlot.doctorId,
-                    date: chosenSlot.date,
-                    time: chosenSlot.time
-                } : 'NULL');
-
-                if (chosenSlot) {
-                    const validation = await validateSlotStillAvailable(chosenSlot, {
-                        therapyArea: inferredTherapy,
-                        preferredPeriod: inferredPeriod
-                    });
-
-                    if (!validation?.isValid) {
-                        bookingContext.slotGone = true;
-                        bookingContext.alternatives = validation?.freshSlots || null;
-
-                        if (validation?.freshSlots) {
-                            await Leads.findByIdAndUpdate(lead._id, {
-                                $set: { pendingSchedulingSlots: validation.freshSlots }
-                            });
-                            bookingContext.slots = normalizeSlots(validation.freshSlots) || validation.freshSlots;
-                        }
-                    } else {
-                        bookingContext.chosenSlot = chosenSlot;
-
-                        // 🐛 DEBUG: Antes de salvar no banco
-                        console.log('💾 [SLOT SAVE] Salvando slot:', {
-                            doctorId: chosenSlot.doctorId,
-                            date: chosenSlot.date,
-                            time: chosenSlot.time,
-                            doctorName: chosenSlot.doctorName
-                        });
-
-                        await Leads.findByIdAndUpdate(lead._id, {
-                            $set: { pendingChosenSlot: chosenSlot },
-                            $unset: { pendingSchedulingSlots: "" }
-                        });
-
-                        // 🐛 DEBUG: Confirmação
-                        console.log('✅ [SLOT SAVED] Slot salvo no lead ID:', lead._id);
-                    }
-                }
-            }
-
-            const patientNameFromLead = lead?.patientInfo?.name || lead?.autoBookingContext?.patientName;
-            // =========================
-            // 6) MISSING (SEMÂNTICA CORRETA)
-            // =========================
-            const hasSlotsToShow = !!bookingContext?.slots?.primary;
-            const hasChosenSlotNow = !!(
-                bookingContext?.chosenSlot?.doctorId ||
-                existingChosenSlot?.doctorId
-            );
-
-            // Usando o helper - mantém mesma lógica mas com currentAwaiting automático
-            const missing = {
-                needsTherapy: !hasTherapy,
-                needsComplaint: hasTherapy && !hasComplaint,
-                needsAge: hasTherapy && hasComplaint && !hasAge,
-                needsPeriod: hasTherapy && hasComplaint && hasAge && !hasPeriod,
-                needsSlot: readyForSlots && !hasSlotsToShow && !hasChosenSlotNow,
-                needsSlotSelection: hasSlotsToShow && !hasChosenSlotNow,
-                needsName: hasChosenSlotNow && !memoryContext?.patientName && !analysis.extractedInfo?.patientName && !patientNameFromLead,
-
-                // 🆕 ADICIONAR: Para os helpers e DecisionEngine saberem o que perguntar na retomada
-                currentAwaiting: !hasTherapy ? 'therapy' :
-                    !hasComplaint ? 'complaint' :
-                        !hasAge ? 'age' :
-                            !hasPeriod ? 'period' :
-                                !hasChosenSlotNow && hasSlotsToShow ? 'slot_selection' :
-                                    !patientNameFromLead && hasChosenSlotNow ? 'patient_name' : null
-            };
-
-            if (!isSideIntent(analysis.intent) && hasTherapy && missing.needsComplaint) {
-                analysis.intent = 'scheduling';
-            }
-
-
-            // Se tem slots para mostrar (ou slot escolhido), força intent schedulingÆÆÆ
-            if (!isSideIntent(analysis.intent) && (hasSlotsToShow || hasChosenSlotNow)) {
-                analysis.intent = 'scheduling';
-            }
-
-            // Se temos dados suficientes mas não temos slots buscados ainda, 
-            // FORÇA o intent para scheduling e busca slots
-            if (!isSideIntent(analysis.intent) && readyForSlots && !hasPendingSlots && !existingChosenSlot) {
-                analysis.intent = 'scheduling';
-
-                // Busca slots imediatamente
-                try {
-                    const slots = await findAvailableSlots({
-                        therapyArea: inferredTherapy,
-                        preferredPeriod: inferredPeriod || lead?.qualificationData?.extractedInfo?.disponibilidade,
-                        maxOptions: 2,
-                        daysAhead: 30
-                    });
-
-                    if (slots?.primary) {
-                        await Leads.findByIdAndUpdate(lead._id, {
-                            $set: {
-                                pendingSchedulingSlots: {
-                                    primary: slots.primary,
-                                    alternativesSamePeriod: slots.alternativesSamePeriod || [],
-                                    alternativesOtherPeriod: slots.alternativesOtherPeriod || [],
-                                    generatedAt: new Date()
-                                }
-                            }
-                        });
-                        bookingContext.slots = slots;
-                    } else {
-                        // 🚨 CRÍTICO: Se não achou slots, não pode oferecer horário!
-                        bookingContext.noSlotsAvailable = true;
-                    }
-                } catch (err) {
-                    this.logger.error('Erro ao buscar slots', err);
-                    bookingContext.noSlotsAvailable = true;
-                }
-            }
-
-            // 🚨 SE NÃO ACHOU SLOTS, NÃO CHAMA HANDLER/// apenas marca o contexto e deixa o handler resolver
-            if (bookingContext.noSlotsAvailable) {
-                bookingContext.flow = 'no_slots';
-            }
-
-            // =========================
-            // 7) REGRAS CLÍNICAS
-            // =========================
-            const clinicalRules = clinicalRulesEngine({ memoryContext, analysis });
-
-            if (bookingContext?.noSlotsAvailable || bookingContext?.flow === 'no_slots') {
-                console.log('🛑 [ORCHESTRATOR] Forçando BookingHandler por falta de slots');
-
-                const handler = this.normalizeHandler(handlers.bookingHandler);
-
-                const decisionContext = {
-                    message,
-                    lead,
-                    memory: memoryContext,
-                    missing,
-                    booking: bookingContext,
-                    analysis
-                };
-
-                const reply = await handler.execute({ decisionContext, services });
-
-                return reply;
-            }
-
-
-            // =========================
-            // 8) DECISION ENGINE
+            // 8️⃣ DECISION ENGINE (USA O SEU!)
             // =========================
             const decision = await decisionEngine({
                 analysis,
@@ -558,19 +153,18 @@ export class WhatsAppOrchestrator {
                 clinicalRules
             });
 
-            this.logger.info('DECISION_ENGINE', {
-                intent: analysis.intent,
+            this.logger.info('DECISION', {
                 handler: decision.handler,
                 action: decision.action,
                 reason: decision.reason,
-                missing
+                preserveState: decision.preserveBookingState
             });
 
             // =========================
-            // 9) EXECUTA HANDLER
+            // 9️⃣ EXECUTA HANDLER DECIDIDO
             // =========================
-            const rawHandler = handlers[decision.handler];
-            const handler = this.normalizeHandler(rawHandler) || handlers.fallbackHandler;
+            const rawHandler = handlers[decision.handler] || handlers.fallbackHandler;
+            const handler = this.normalizeHandler(rawHandler);
 
             const decisionContext = {
                 message,
@@ -578,40 +172,22 @@ export class WhatsAppOrchestrator {
                 memory: memoryContext,
                 missing,
                 booking: bookingContext,
-                analysis
+                analysis,
+                services,
+                // Passa inferidos para handlers usarem
+                inferredTherapy: inferred.therapy,
+                inferredComplaint: inferred.complaint,
+                inferredAge: inferred.age,
+                inferredPeriod: inferred.period,
+                detectedTherapies,
+                flags
             };
 
+            let result = await handler.execute({ decisionContext, services });
+
             // =========================
-            // 9.5) EXECUTA HANDLER + TRATA INTERRUPIÇÃO / GERAÇÃO IA
+            // 🔟 GERA RESPOSTA IA SE NECESSÁRIO
             // =========================
-            let result;
-
-            // Usando helper para detectar interrupção de forma inteligente
-            const topicShift = detectTopicShift({
-                currentIntent: originalIntent,
-                messageText: text,
-                lead,
-                bookingContext,
-                missing
-            });
-
-            if ((decision.preserveBookingState || topicShift.isInterruption) && isSideIntent(originalIntent)) {
-                const sideHandler = handlers[
-                    originalIntent === 'price' ? 'productHandler' :
-                        originalIntent === 'therapy_info' ? 'therapyHandler' :
-                            'fallbackHandler'
-                ];
-                result = await sideHandler.execute({ decisionContext, services });
-
-                // Marca que precisa de retomada após responder a interrupção
-                result.needsResumption = true;
-                result.nextField = missing.currentAwaiting; // 🆕 Usa direto do missing
-            } else {
-                // Fluxo normal
-                result = await handler.execute({ decisionContext, services });
-            }
-
-            // Se precisa de geração IA, gera o texto base
             if (result?.needsAIGeneration && result?.promptContext) {
                 try {
                     const aiText = await generateHandlerResponse({
@@ -621,130 +197,35 @@ export class WhatsAppOrchestrator {
                         memory: memoryContext
                     });
 
-                    if (aiText) {
-                        result.text = aiText;
-                    } else {
-                        result.text = result.fallbackText || 'Como posso te ajudar? 💚';
-                    }
+                    result.text = aiText || result.fallbackText || result.text;
                 } catch (err) {
-                    this.logger.error('Erro na geração IA do handler', err);
+                    this.logger.error('AI_GENERATION_ERROR', err);
                     result.text = result.fallbackText || 'Como posso te ajudar? 💚';
                 }
             }
 
             // =========================
-            // RETOMADA INTELIGENTE (FUNCIONA EM QUALQUER ESTÁGIO)
+            // 1️⃣1️⃣ RETOMADA SE NECESSÁRIO
             // =========================
-            const shouldResume = (decision.preserveBookingState && decision.pendingField) ||
-                (result.needsResumption && result.nextField);
-
-            if (shouldResume) {
-                const fieldToResume = decision.pendingField || result.nextField;
-
-                const retomadaMap = {
-                    'therapy': '\n\nPara te ajudar melhor, qual é a especialidade que procura? 💚',
-                    'complaint': '\n\nVoltando ao agendamento: qual é a situação principal que gostaria de tratar? 💚',
-                    'age': '\n\nPara buscar os horários certinhos, qual a idade do paciente? 💚',
-                    'period': '\n\nPrefere manhã ou tarde para o atendimento? ☀️🌙',
-                    'slot_selection': '\n\nQuando quiser continuar, é só escolher A, B ou C 💚',
-                    'patient_name': '\n\nSó falta o nome completo para confirmarmos! 💚'
-                };
-
-                const retomadaText = retomadaMap[fieldToResume] || '\n\nQuer continuar o agendamento? 💚';
-
-                // Adiciona retomada (handler já removeu CTA genérico se era interrupção)
-                result.text += retomadaText;
-            }
-
-            // =========================
-            // 10) PERSISTÊNCIA DOS EXTRAÍDOS
-            // =========================
-            if (result?.skipValidation) {
-                console.log('⏸️ [PERSISTENCE] Pulando persistência - aguardando retomada do fluxo');
-            } else {
-                const set = {};
-
-                // 🔍 DEBUG: Mostrar valores no momento da construção
-                console.log('🔍 [PRE-SET DEBUG]', {
-                    inferredTherapy,
-                    inferredComplaint,
-                    inferredAge,
-                    inferredPeriod
-                });
-
-                if (inferredTherapy) set.therapyArea = inferredTherapy;
-                if (inferredAge && typeof inferredAge === 'number') {
-                    set["patientInfo.age"] = inferredAge;
-                }
-                // ✅ Salva idadeRange separado se existir
-                if (inferredAgeRange) {
-                    set["qualificationData.extractedInfo.idadeRange"] = inferredAgeRange;
-                }
-                if (inferredComplaint) set.primaryComplaint = inferredComplaint;
-
-                // ✅ ADICIONAR: Se handler retornou nome, salva
-                if (result?.extractedInfo?.patientName) {
-                    set["patientInfo.name"] = result.extractedInfo.patientName;
-                    set["autoBookingContext.patientName"] = result.extractedInfo.patientName;
-                }
-
-                // ✅ MOVER PRA CÁ: Espelha no qualificationData ANTES do save
-                if (inferredTherapy) set["qualificationData.extractedInfo.therapyArea"] = inferredTherapy;
-                if (inferredAge) set["qualificationData.extractedInfo.idade"] = inferredAge;
-                if (inferredPeriod) set["qualificationData.extractedInfo.disponibilidade"] = inferredPeriod;
-                if (inferredComplaint) set["qualificationData.extractedInfo.queixa"] = inferredComplaint;
-
-                // 🔍 DEBUG: Mostrar set completo ANTES do save
-                console.log('💾 [PRE-SAVE SET]', {
-                    setKeys: Object.keys(set),
-                    fullSet: set
-                });
-
-                // 🔴 AGORA SIM O SAVE INCLUI TUDO
-                if (Object.keys(set).length) {
-                    await Leads.findByIdAndUpdate(lead._id, { $set: set });
-                }
-
-                console.log('💾 [POS SAVE]', {
-                    inferredPeriod,
-                    willSave: !!inferredPeriod,
-                    setKeys: Object.keys(set),
-                    fullSet: set
-                });
-
-                // 🧠 GERAR RESUMO SE NECESSÁRIO
-                try {
-                    const totalMessages = memoryContext?.conversationHistory?.length || 0;
-
-                    if (needsNewSummary(lead, totalMessages, [])) {
-                        const messagesForSummary = memoryContext?.conversationHistory?.slice(-30) || [];
-                        const summary = await generateConversationSummary(messagesForSummary);
-
-                        if (summary) {
-                            await Leads.findByIdAndUpdate(lead._id, {
-                                $set: {
-                                    conversationSummary: summary,
-                                    summaryGeneratedAt: new Date(),
-                                    summaryCoversUntilMessage: totalMessages
-                                }
-                            });
-                            console.log('✅ [RESUMO] Salvo no lead com sucesso');
-                        }
-                    }
-                } catch (e) {
-                    console.error('⚠️ [RESUMO] Erro ao gerar/salvar:', e.message);
+            if (decision.preserveBookingState && decision.pendingField && result.text) {
+                const resumptionText = this.buildResumptionText(missing, decision.pendingField);
+                if (resumptionText) {
+                    result.text += '\n\n' + resumptionText;
                 }
             }
 
             // =========================
-            // 11) APRENDIZADO (ÚNICO PONTO)
+            // 1️⃣2️⃣ PERSISTÊNCIA
             // =========================
-            if (result?.extractedInfo && Object.keys(result.extractedInfo).length > 0) {
-                await ContextMemory.update(lead._id, result.extractedInfo);
-            }
+            await this.persistData({
+                lead,
+                inferred,
+                result,
+                memoryContext
+            });
 
             // =========================
-            // 12) RETORNO
+            // 1️⃣3️⃣ RETORNO
             // =========================
             return {
                 command: 'SEND_MESSAGE',
@@ -754,14 +235,209 @@ export class WhatsAppOrchestrator {
             };
 
         } catch (error) {
-            this.logger.error('Erro no WhatsAppOrchestrator', error);
+            this.logger.error('ORCHESTRATOR_ERROR', error);
             return {
                 command: 'SEND_MESSAGE',
                 payload: {
-                    text: 'Tive um problema técnico aqui 😔 Pode tentar novamente?'
+                    text: 'Desculpe, tive um problema técnico aqui 😔 Pode tentar novamente?'
                 },
                 meta: { error: true }
             };
+        }
+    }
+
+    // =========================
+    // MÉTODOS AUXILIARES
+    // =========================
+
+    determinePrimaryIntent(flags, intentResult, detectedTherapies) {
+        // Prioriza baseado em flags
+        if (flags.asksPrice) return 'price';
+        if (flags.wantsSchedule) return 'scheduling';
+        if (flags.asksPlans) return 'plan_info';
+        if (flags.asksAddress) return 'address_info';
+        if (flags.asksTherapyInfo) return 'therapy_info';
+        if (flags.partnership) return 'partnership';
+        if (flags.wantsHumanAgent) return 'human_handoff';
+        
+        // Usa intent do detector
+        return intentResult.type || 'general_info';
+    }
+
+    extractInferredData({ text, flags, detectedTherapies, intelligent, lead, memoryContext }) {
+        const textLower = text.toLowerCase();
+        const textNormalized = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+        // TERAPIA (cascata)
+        let therapy = null;
+        if (detectedTherapies.length > 0) {
+            therapy = detectedTherapies[0].name;
+        } else if (intelligent?.especialidade) {
+            therapy = intelligent.especialidade;
+        } else if (lead?.therapyArea) {
+            therapy = lead.therapyArea;
+        } else if (memoryContext?.therapyArea) {
+            therapy = memoryContext.therapyArea;
+        }
+
+        // IDADE
+        let age = intelligent?.idade || intelligent?.age || lead?.patientInfo?.age;
+        if (typeof age === 'string') age = parseInt(age, 10);
+        if (isNaN(age)) age = null;
+
+        // PERÍODO
+        let period = intelligent?.disponibilidade || intelligent?.preferredPeriod;
+        if (!period) {
+            if (textNormalized.includes("manh")) period = 'manha';
+            else if (textNormalized.includes("tard")) period = 'tarde';
+            else if (textNormalized.includes("noit")) period = 'noite';
+        }
+        period = normalizePeriod(period);
+
+        // QUEIXA
+        let complaint = intelligent?.queixa || lead?.primaryComplaint;
+        
+        // Data preferida
+        const preferredDate = extractPreferredDateFromText(text);
+
+        return {
+            therapy,
+            age,
+            period,
+            complaint,
+            preferredDate,
+            detectedTherapies: detectedTherapies.map(t => t.id)
+        };
+    }
+
+    async buildBookingContext({ lead, memoryContext, text, inferred }) {
+        const bookingContext = {};
+
+        // Slots pendentes
+        if (memoryContext?.pendingSchedulingSlots?.primary) {
+            bookingContext.slots = memoryContext.pendingSchedulingSlots;
+        }
+
+        // Slot escolhido
+        if (memoryContext?.chosenSlot?.doctorId) {
+            bookingContext.chosenSlot = memoryContext.chosenSlot;
+        }
+
+        // Verifica se há escolha de slot na mensagem
+        if (bookingContext.slots) {
+            const chosen = pickSlotFromUserReply(text, bookingContext.slots, { strict: true });
+            if (chosen) {
+                const validation = await validateSlotStillAvailable(chosen, {
+                    therapyArea: inferred.therapy,
+                    preferredPeriod: inferred.period
+                });
+
+                if (validation?.isValid) {
+                    bookingContext.chosenSlot = chosen;
+                    await Leads.findByIdAndUpdate(lead._id, {
+                        $set: { pendingChosenSlot: chosen },
+                        $unset: { pendingSchedulingSlots: "" }
+                    });
+                } else {
+                    bookingContext.slotGone = true;
+                    bookingContext.alternatives = validation?.freshSlots;
+                }
+            }
+        }
+
+        // Data preferida
+        if (inferred.preferredDate) {
+            bookingContext.preferredDate = inferred.preferredDate;
+        }
+
+        return bookingContext;
+    }
+
+    calculateMissing({ lead, inferred, bookingContext, flags }) {
+        const patientName = lead?.patientInfo?.name || lead?.autoBookingContext?.patientName;
+
+        return {
+            needsTherapy: !inferred.therapy,
+            needsComplaint: !inferred.complaint && !flags.asksPrice, // Não exige queixa se só quer preço
+            needsAge: !inferred.age,
+            needsPeriod: !inferred.period,
+            needsSlot: !bookingContext?.slots?.primary && !bookingContext?.chosenSlot,
+            needsSlotSelection: bookingContext?.slots?.primary && !bookingContext?.chosenSlot,
+            needsName: bookingContext?.chosenSlot && !patientName,
+            currentAwaiting: this.determineCurrentAwaiting({ inferred, bookingContext, patientName })
+        };
+    }
+
+    determineCurrentAwaiting({ inferred, bookingContext, patientName }) {
+        if (!inferred.therapy) return 'therapy';
+        if (!inferred.complaint) return 'complaint';
+        if (!inferred.age) return 'age';
+        if (!inferred.period) return 'period';
+        if (bookingContext?.slots?.primary && !bookingContext?.chosenSlot) return 'slot_selection';
+        if (bookingContext?.chosenSlot && !patientName) return 'name';
+        return null;
+    }
+
+    buildResumptionText(missing, pendingField) {
+        const messages = {
+            therapy: 'Voltando ao agendamento: qual área você procura?',
+            complaint: 'Sobre o agendamento: me conta rapidinho a situação principal?',
+            age: 'Para o agendamento: qual a idade?',
+            period: 'Para verificar horários: prefere manhã ou tarde?',
+            slot_selection: 'Qual dos horários funciona melhor pra você?',
+            name: 'Só preciso do nome completo para confirmar:'
+        };
+        return messages[pendingField] || 'Voltando ao que estávamos falando...';
+    }
+
+    async persistData({ lead, inferred, result, memoryContext }) {
+        const set = {};
+        const unset = {};
+
+        // Dados inferidos
+        if (inferred.therapy) set.therapyArea = inferred.therapy;
+        if (inferred.age) set["patientInfo.age"] = inferred.age;
+        if (inferred.complaint) set.primaryComplaint = inferred.complaint;
+        if (inferred.period) set.pendingPreferredPeriod = inferred.period;
+
+        // Dados do resultado do handler
+        if (result?.extractedInfo?.patientName) {
+            set["patientInfo.name"] = result.extractedInfo.patientName;
+        }
+
+        // Espelha no qualificationData
+        if (inferred.therapy) set["qualificationData.extractedInfo.therapyArea"] = inferred.therapy;
+        if (inferred.age) set["qualificationData.extractedInfo.idade"] = inferred.age;
+        if (inferred.period) set["qualificationData.extractedInfo.disponibilidade"] = inferred.period;
+        if (inferred.complaint) set["qualificationData.extractedInfo.queixa"] = inferred.complaint;
+
+        // Salva no lead
+        if (Object.keys(set).length > 0) {
+            await Leads.findByIdAndUpdate(lead._id, { $set: set });
+        }
+
+        // Atualiza contexto
+        if (result?.extractedInfo && Object.keys(result.extractedInfo).length > 0) {
+            await ContextMemory.update(lead._id, result.extractedInfo);
+        }
+
+        // Gera resumo se necessário
+        try {
+            const totalMessages = memoryContext?.conversationHistory?.length || 0;
+            if (needsNewSummary(lead, totalMessages, [])) {
+                const messages = memoryContext?.conversationHistory?.slice(-30) || [];
+                const summary = await generateConversationSummary(messages);
+                if (summary) {
+                    await Leads.findByIdAndUpdate(lead._id, {
+                        $set: {
+                            conversationSummary: summary,
+                            summaryGeneratedAt: new Date()
+                        }
+                    });
+                }
+            }
+        } catch (e) {
+            this.logger.warn('SUMMARY_ERROR', e.message);
         }
     }
 }
