@@ -158,7 +158,6 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
     // =========================
     // Se não está em 'scheduling' mas tem terapia e falta queixa, força coleta
     // 🔥 EXCEÇÃO: Não força coleta se for side intent (price, therapy_info) - permite responder direto
-
     if (!isSideIntent && !missing.needsTherapy && missing.needsComplaint) {
         return {
             action: 'collect_complaint',
