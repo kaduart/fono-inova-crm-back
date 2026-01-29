@@ -1,7 +1,7 @@
 // handlers/ProductHandler.js
 
 import { detectAllTherapies, getTherapyData, THERAPY_DATA } from '../utils/therapyDetector.js';
-import { detectAllFlags } from '../detectors/flagsDetector.js';
+import { detectAllFlags } from '../utils/flagsDetector.js';
 
 class ProductHandler {
     async execute({ decisionContext }) {
