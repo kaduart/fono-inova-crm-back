@@ -1,72 +1,99 @@
 // handlers/ProductHandler.js
 
-import { buildValueAnchoredClosure } from '../services/intelligence/buildValueAnchoredClosure.js';
-import { getPriceLinesForDetectedTherapies } from '../services/intelligence/getPriceLinesForDetectedTherapies.js';
+import { detectAllTherapies, getTherapyData, THERAPY_DATA } from '../utils/therapyDetector.js';
+import { detectAllFlags } from '../detectors/flagsDetector.js';
 
 class ProductHandler {
     async execute({ decisionContext }) {
-        const { memory, analysis, strategy, missing } = decisionContext;
+        const { memory, analysis, message, missing, lead, inferredTherapy } = decisionContext;
+        const text = message?.content || message?.text || '';
 
         // =========================
-        // 1️⃣ SE NÃO SABE A TERAPIA
+        // 1️⃣ USA INFRAESTRUTURA EXISTENTE!
         // =========================
-        if (missing.needsTherapy) {
+        const flags = detectAllFlags(text, lead, { stage: lead?.stage });
+        const detectedTherapies = detectAllTherapies(text);
+
+        // =========================
+        // 2️⃣ CASCATA INTELIGENTE DE TERAPIA
+        // =========================
+        let therapyId = null;
+        let therapyName = null;
+
+        // Prioridade 0: inferredTherapy do Orchestrator (mais confiável)
+        if (inferredTherapy) {
+            therapyName = inferredTherapy;
+            therapyId = this.mapTherapyNameToId(therapyName);
+        }
+        // Prioridade 1: Detectou no texto atual
+        else if (detectedTherapies.length > 0) {
+            therapyId = detectedTherapies[0].id;
+            therapyName = detectedTherapies[0].name;
+        }
+        // Prioridade 2: Já temos no contexto (Orchestrator inferiu)
+        else if (analysis.therapyArea) {
+            therapyName = analysis.therapyArea;
+            therapyId = this.mapTherapyNameToId(therapyName);
+        }
+        // Prioridade 3: Já temos na memória
+        else if (memory?.therapyArea) {
+            therapyName = memory.therapyArea;
+            therapyId = this.mapTherapyNameToId(therapyName);
+        }
+        // Prioridade 4: Já temos no lead
+        else if (lead?.therapyArea) {
+            therapyName = lead.therapyArea;
+            therapyId = this.mapTherapyNameToId(therapyName);
+        }
+
+        console.log('🔍 [ProductHandler] Terapia detectada:', { therapyId, therapyName, fromText: detectedTherapies.length > 0 });
+
+        // =========================
+        // 3️⃣ SE NÃO SABE A TERAPIA
+        // =========================
+        if (!therapyId && !therapyName) {
             return {
                 text: 'Para te informar o valor certinho, é para qual área você está procurando atendimento? (fono, psicologia, fisio ou TO) 💚'
             };
         }
 
-        const therapy = memory.therapyArea || analysis.therapyArea || analysis.detectedTherapy;
-
         // =========================
-        // 2️⃣ BUSCA LINHAS DE PREÇO
+        // 4️⃣ BUSCA PREÇO (USA THERAPY_DATA)
         // =========================
-        const priceLines = getPriceLinesForDetectedTherapies([therapy]);
+        const therapyData = therapyId ? getTherapyData(therapyId) : null;
 
-        if (!priceLines || priceLines.length === 0) {
-            return {
-                text: 'Posso verificar os valores para você sim 😊 Você poderia me dizer qual área de atendimento está procurando? 💚'
-            };
+        let priceText = '';
+        if (therapyData?.price) {
+            priceText = `💚 ${this.formatTherapyDisplay(therapyId, therapyName)}: ${therapyData.price}`;
+        } else {
+            // Fallback: preço padrão
+            priceText = `💚 ${therapyName || 'Atendimento'}: Avaliação R$ 220 · Sessão R$ 220 · Pacote mensal R$ 180/sessão`;
         }
 
-        const priceText = priceLines.join('\n');
-
         // =========================
-        // 3️⃣ TEXTO BASE (VALOR + BENEFÍCIO)
+        // 5️⃣ MONTA RESPOSTA
         // =========================
         let responseText = `Perfeito! Vou te explicar direitinho 😊\n\n${priceText}`;
 
-        // =========================
-        // 4️⃣ VALUE ANCHORING (URGÊNCIA)
-        // =========================
-        if (strategy?.urgency >= 2) {
-            const closure = buildValueAnchoredClosure({
-                therapy,
-                age: memory.patientAge,
-                complaint: memory.complaint
-            });
-
-            if (closure) {
-                responseText += `\n\n${closure}`;
-            }
+        // Adiciona explicação se tiver
+        if (therapyData?.explanation) {
+            responseText += `\n\n${therapyData.explanation}`;
         }
 
         // =========================
-        // 5️⃣ CTA FLEXÍVEL (só se não for interrupção)
+        // 6️⃣ CTA FLEXÍVEL (só se não for interrupção)
         // =========================
         const isInterruption = missing?.currentAwaiting &&
             !missing.needsSlot &&
             !missing.needsSlotSelection;
 
         if (!isInterruption) {
-            // ✅ MANTÉM: CTA normal quando NÃO é interrupção
-            if (!missing.needsAge && !missing.needsTherapy) {
+            if (!missing?.needsAge && !missing?.needsTherapy) {
                 responseText += `\n\nSe quiser, posso verificar horários disponíveis para você ainda hoje 💚`;
             } else {
                 responseText += `\n\nQuer que eu te ajude a verificar horários? 💚`;
             }
         }
-        // ⬆️ Se FOR interrupção, não adiciona nada aqui - Orchestrator cuida
 
         // Retorna com flag se for interrupção
         if (isInterruption) {
@@ -78,6 +105,54 @@ class ProductHandler {
         }
 
         return { text: responseText };
+    }
+
+    // =========================
+    // HELPERS
+    // =========================
+
+    mapTherapyNameToId(name) {
+        if (!name) return null;
+        const n = name.toLowerCase().trim();
+
+        const map = {
+            'psicologia': 'psychology',
+            'psicólogo': 'psychology',
+            'psicologo': 'psychology',
+            'psicológico': 'psychology',
+            'fonoaudiologia': 'speech',
+            'fono': 'speech',
+            'fonoaudiólogo': 'speech',
+            'terapia ocupacional': 'occupational',
+            'to': 'occupational',
+            'fisioterapia': 'physiotherapy',
+            'fisio': 'physiotherapy',
+            'musicoterapia': 'music',
+            'neuropsicologia': 'neuropsychological',
+            'neuropsicológica': 'neuropsychological',
+            'avaliação neuropsicológica': 'neuropsychological',
+            'psicopedagogia': 'psychopedagogy',
+            'neuropsicopedagogia': 'neuropsychopedagogy',
+            'teste da linguinha': 'tongue_tie',
+            'linguinha': 'tongue_tie'
+        };
+
+        return map[n] || null;
+    }
+
+    formatTherapyDisplay(therapyId, therapyName) {
+        const displayMap = {
+            'psychology': 'Atendimento psicológico em espaço sensorial exclusivo',
+            'speech': 'Avaliação fonoaudiológica completa',
+            'occupational': 'Terapia ocupacional com integração sensorial',
+            'physiotherapy': 'Fisioterapia especializada',
+            'neuropsychological': 'Avaliação neuropsicológica completa',
+            'psychopedagogy': 'Psicopedagogia',
+            'music': 'Musicoterapia',
+            'tongue_tie': 'Teste da linguinha'
+        };
+
+        return displayMap[therapyId] || therapyName || 'Atendimento';
     }
 }
 

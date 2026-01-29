@@ -28,7 +28,10 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
         bookingContext?.chosenSlot ||
         (!missing.needsTherapy && !missing.needsComplaint); // Já passou das etapas iniciais
 
-    if (isSideIntent && hasSchedulingContext) {
+    const isFirstMessage = !bookingContext?.slots &&
+        analysis.missing?.needsTherapy !== false;
+
+    if (isSideIntent && hasSchedulingContext && !isFirstMessage) {
         const handlerMap = {
             'price': 'productHandler',
             'therapy_info': 'therapyHandler',
@@ -154,7 +157,9 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
     // 6️⃣ FORÇAR SCHEDULING SE TEM TERAPIA MAS FALTA QUEIXA
     // =========================
     // Se não está em 'scheduling' mas tem terapia e falta queixa, força coleta
-    if (!missing.needsTherapy && missing.needsComplaint) {
+    // 🔥 EXCEÇÃO: Não força coleta se for side intent (price, therapy_info) - permite responder direto
+
+    if (!isSideIntent && !missing.needsTherapy && missing.needsComplaint) {
         return {
             action: 'collect_complaint',
             handler: 'complaintCollectionHandler',

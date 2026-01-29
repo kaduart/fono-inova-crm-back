@@ -20,16 +20,22 @@ const PRICE_TABLE = {
 
 };
 
+const THERAPY_KEY_MAP = {
+    'fonoaudiologia': 'fono',
+    'psicologia': 'psicologia',
+    'fisioterapia': 'fisio',
+    'terapia ocupacional': 'to'
+};
+
 export function getPriceLinesForDetectedTherapies(therapies = []) {
     const lines = [];
-
     therapies.forEach((therapy) => {
-        const key = therapy?.toLowerCase();
+        const raw = therapy?.toLowerCase();
+        const key = THERAPY_KEY_MAP[raw] || raw;  // ✅ Normaliza!
 
         if (PRICE_TABLE[key]) {
             lines.push(...PRICE_TABLE[key]);
         }
     });
-
     return lines;
 }
