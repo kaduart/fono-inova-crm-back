@@ -16,7 +16,7 @@ class ProductHandler {
             };
         }
 
-        const therapy = memory.therapyArea || analysis.detectedTherapy;
+        const therapy = memory.therapyArea || analysis.therapyArea || analysis.detectedTherapy;
 
         // =========================
         // 2️⃣ BUSCA LINHAS DE PREÇO

@@ -1358,13 +1358,18 @@ router.get("/daily-closing", async (req, res) => {
                 .populate("doctor patient package")
                 .lean(),
 
-            await Payment.find({
+            Payment.find({
                 status: { $in: ["paid", "package_paid"] },
                 $or: [
-                    // ✅ Pagamentos com paymentDate string exata do dia (modelo novo)
+                    // ✅ NOVO: paymentDate como Date
+                    {
+                        paymentDate: { $gte: startOfDay, $lte: endOfDay }
+                    },
+
+                    // ✅ paymentDate string (modelo atual)
                     { paymentDate: targetDate },
 
-                    // ✅ Legado: sem paymentDate → usa createdAt como aproximado do dia do pagamento
+                    // ✅ legado: sem paymentDate → usa createdAt
                     {
                         paymentDate: { $exists: false },
                         createdAt: { $gte: startOfDay, $lte: endOfDay },
@@ -1374,7 +1379,6 @@ router.get("/daily-closing", async (req, res) => {
                 .populate("patient doctor package appointment")
                 .lean()
         ]);
-
 
         console.timeEnd("⏱️ Parallel Queries");
 

@@ -107,6 +107,8 @@ export class WhatsAppOrchestrator {
             };
             analysis.extractedInfo = intelligent;
 
+            // 🆕 GUARDAR INTENT ORIGINAL ANTES DAS FORÇAGENS
+            const originalIntent = analysis.intent;
 
             // =========================
             // 3) INFERRIDOS (SEM "ADIVINHAR" EM CONVERSA FRIA)
@@ -586,24 +588,24 @@ export class WhatsAppOrchestrator {
 
             // Usando helper para detectar interrupção de forma inteligente
             const topicShift = detectTopicShift({
-                currentIntent: analysis.intent,
+                currentIntent: originalIntent,
                 messageText: text,
                 lead,
                 bookingContext,
                 missing
             });
 
-            if ((decision.preserveBookingState || topicShift.isInterruption) && isSideIntent(analysis.intent)) {
+            if ((decision.preserveBookingState || topicShift.isInterruption) && isSideIntent(originalIntent)) {
                 const sideHandler = handlers[
-                    analysis.intent === 'price' ? 'productHandler' :
-                        analysis.intent === 'therapy_info' ? 'therapyHandler' :
+                    originalIntent === 'price' ? 'productHandler' :
+                        originalIntent === 'therapy_info' ? 'therapyHandler' :
                             'fallbackHandler'
                 ];
                 result = await sideHandler.execute({ decisionContext, services });
 
                 // Marca que precisa de retomada após responder a interrupção
                 result.needsResumption = true;
-                result.interruptedField = topicShift.interruptedField;
+                result.nextField = missing.currentAwaiting; // 🆕 Usa direto do missing
             } else {
                 // Fluxo normal
                 result = await handler.execute({ decisionContext, services });
