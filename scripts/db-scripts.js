@@ -49,7 +49,7 @@ db.sessions.find({
 
 //consulta pagamento por id patient
 db.payments.find({
-  patient: ObjectId("68f0ecb22de6dcb26c88a8e8"),
+  patient: ObjectId("6979026c4b46e3fee85dc521"),
 });
 
 //consulta agendamento por  patient
@@ -64,8 +64,8 @@ db.appointments.find({
 // consultar pagamentos do dia
 db.payments.find({
   createdAt: {
-    $gte: ISODate("2026-01-27T00:00:00.000Z"),
-    $lt: ISODate("2026-01-28T00:00:00.000Z")
+    $gte: ISODate("2026-01-29T00:00:00.000Z"),
+    $lt: ISODate("2026-01-30T00:00:00.000Z")
   }
 })
 /// atualizar pagamaneto por id
