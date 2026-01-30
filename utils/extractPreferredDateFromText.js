@@ -21,4 +21,4 @@ export function extractPreferredDateFromText(text = "", tz = "America/Sao_Paulo"
     if (candidateNum < todayNum) y += 1;
 
     return `${y}-${pad2(mo)}-${pad2(d)}`;
-} s
+}
