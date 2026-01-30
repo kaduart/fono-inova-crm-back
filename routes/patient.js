@@ -171,16 +171,19 @@ router.put('/:id', validateId, auth, async (req, res) => {
   }
 });
 
-// 🔥 List all patients - MANTENDO TODA LÓGICA ORIGINAL + CORREÇÃO
+// 🔥 List all patients - OTIMIZADO
 router.get('/', auth, async (req, res) => {
   try {
-    // Configurações de população - MANTIDAS
+    // 🔹 Configurações de paginação
+    const limit = parseInt(req.query.limit) || 200;
+    const skip = parseInt(req.query.skip) || 0;
+    
+    // 🔹 Configurações de população - OTIMIZADAS
     const basePopulate = [
       {
         path: 'packages',
         populate: [
           { path: 'doctor', select: 'fullName specialty' },
-          { path: 'patient', select: 'fullName' },
           { path: 'sessions', select: 'date status' }
         ]
       },
@@ -201,10 +204,13 @@ router.get('/', auth, async (req, res) => {
       }
     ];
 
-    // População de agendamentos com pacotes - MANTIDA
+    // População de agendamentos com pacotes - OTIMIZADA
     const appointmentsPopulate = {
       path: 'appointments',
-      options: { sort: { date: 1 } },
+      options: { 
+        sort: { date: -1 }, // Mais recentes primeiro
+        limit: 50 // Limita agendamentos por paciente
+      },
       populate: [
         { path: 'doctor', select: 'fullName specialty' },
         {
@@ -212,20 +218,12 @@ router.get('/', auth, async (req, res) => {
           select: 'status amount paymentMethod',
           populate: {
             path: 'package',
-            select: 'sessionType sessionsPerWeek durationMonths totalSessions',
-            populate: {
-              path: 'sessions',
-              select: 'date status'
-            }
+            select: 'sessionType sessionsPerWeek durationMonths totalSessions'
           }
         },
         {
           path: 'package',
-          select: 'sessionType sessionsPerWeek durationMonths totalSessions sessionsDone',
-          populate: {
-            path: 'sessions',
-            select: 'date status'
-          }
+          select: 'sessionType sessionsPerWeek durationMonths totalSessions sessionsDone'
         }
       ]
     };
@@ -233,11 +231,14 @@ router.get('/', auth, async (req, res) => {
     let patients;
 
     try {
-      // Consulta principal - MANTIDA
+      // Consulta principal - OTIMIZADA com limite
       patients = await Patient.find()
+        .select('fullName dateOfBirth gender phone email cpf rg address doctor packages appointments lastAppointment nextAppointment')
         .populate(basePopulate)
         .populate(appointmentsPopulate)
         .sort({ fullName: 1 })
+        .limit(limit)
+        .skip(skip)
         .lean();
 
     } catch (error) {
