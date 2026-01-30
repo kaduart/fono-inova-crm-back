@@ -72,6 +72,18 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
                 reason: 'needsTherapy'
             };
         }
+        
+        // 🆕 SELEÇÃO DE TERAPIA (quando há múltiplas terapias detectadas)
+        if (missing.needsTherapySelection && analysis.allDetectedTherapies?.length > 1) {
+            return {
+                action: 'select_therapy',
+                handler: 'leadQualificationHandler',
+                reason: 'multiple_therapies_detected',
+                context: {
+                    detectedTherapies: analysis.allDetectedTherapies
+                }
+            };
+        }
 
         // 2️⃣ QUEIXA (acolhimento clínico - vem ANTES de idade/período!)
         if (missing.needsComplaint) {

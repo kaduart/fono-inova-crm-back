@@ -237,6 +237,9 @@ export class WhatsAppOrchestrator {
                 inferredAge: inferred.age,
                 inferredPeriod: inferred.period,
                 detectedTherapies,
+                // 🆕 MÚLTIPLAS TERAPIAS
+                allDetectedTherapies: inferred.allDetectedTherapies,
+                hasMultipleTherapies: inferred.hasMultipleTherapies,
                 flags
             };
 
@@ -356,8 +359,22 @@ export class WhatsAppOrchestrator {
         }
         
         // Fallbacks cascata
+        // 🆕 DETECTA MÚLTIPLAS TERAPIAS
+        const allDetectedTherapies = detectedTherapies.map(t => t.name);
+        const hasMultipleTherapies = detectedTherapies.length > 1;
+        
         if (!therapy && detectedTherapies.length > 0) {
             therapy = detectedTherapies[0].name;
+        }
+        
+        // 🆕 LOG de múltiplas terapias
+        if (hasMultipleTherapies) {
+            this.logger.info('MULTIPLE_THERAPIES_DETECTED', {
+                leadId: lead._id?.toString(),
+                therapies: allDetectedTherapies,
+                count: detectedTherapies.length,
+                selected: therapy
+            });
         }
         if (!therapy && intelligent?.especialidade) {
             therapy = intelligent.especialidade;
@@ -560,7 +577,11 @@ export class WhatsAppOrchestrator {
             period,
             complaint,
             preferredDate,
-            detectedTherapies: detectedTherapies.map(t => t.id)
+            detectedTherapies: detectedTherapies.map(t => t.id),
+            // 🆕 MÚLTIPLAS TERAPIAS
+            allDetectedTherapies,
+            hasMultipleTherapies,
+            needsTherapySelection: hasMultipleTherapies && !chatContext?.lastExtractedInfo?.selectedTherapy
         };
     }
 
@@ -612,6 +633,7 @@ export class WhatsAppOrchestrator {
 
         return {
             needsTherapy: !inferred.therapy,
+            needsTherapySelection: inferred.hasMultipleTherapies || inferred.needsTherapySelection,
             needsComplaint: !inferred.complaint && !flags.asksPrice, // Não exige queixa se só quer preço
             needsAge: !inferred.age,
             needsPeriod: !inferred.period,
