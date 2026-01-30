@@ -1,6 +1,7 @@
 // handlers/complaintCollectionHandler.js
 import { generateHandlerResponse } from '../services/aiAmandaService.js';
 import Logger from '../services/utils/Logger.js';
+import { buildResponse } from '../services/intelligence/naturalResponseBuilder.js';
 
 const logger = new Logger('ComplaintCollectionHandler');
 
@@ -74,50 +75,15 @@ export const complaintCollectionHandler = {
         });
 
         try {
-            // 🔥 GERA RESPOSTA DINÂMICA VIA IA
-            const promptContext = `
-Você é Amanda, pré-consultora da Clínica Fono Inova.
-
-CONTEXTO DO LEAD:
-- Terapia identificada: ${therapy}
-- Foco: ${context.focus}
-- Tom: ${context.tone}
-- Exemplos relevantes: ${context.examples}
-
-MISSÃO:
-Acolher brevemente (1 frase) e pedir a queixa principal de forma natural.
-
-REGRAS:
-1. Máximo 2-3 frases curtas
-2. NÃO seja robótica - varie a estrutura
-3. Mencione a terapia específica
-4. Sugira exemplos relevantes mas deixe aberto
-5. Exatamente 1 💚 no final
-6. Termine com pergunta que avança
-
-ESTRUTURA SUGERIDA (varie!):
-- Acolhimento: "Entendi que você busca ${therapy} 💚"
-- Pergunta: "${baseQuestion}"
-- Contexto: "Pode ser sobre ${context.examples}... o que você observa?"
-
-Exemplos BOAS (não copie, use como referência de tom):
-"Entendi que é para fonoaudiologia 💚 Me conta: o que você tem notado sobre a fala dela? Troca letras? Tem dificuldade com algum som?"
-
-"Perfeito, psicologia 💚 O que tem motivado essa busca? Pode ser algo com comportamento, ansiedade ou socialização..."
-
-Agora gere uma resposta ÚNICA e NATURAL:
-`;
-
-            const aiResponse = await generateHandlerResponse({
-                promptContext,
-                systemPrompt: null, // Usa prompt padrão do Amanda
-                lead,
-                memory
+            // 🆕 RESPOSTA NATURAL (rápida) - evita chamada de IA
+            const naturalResponse = buildResponse('ask_complaint', { 
+                therapy: therapy,
+                leadId: lead?._id 
             });
-
-            if (aiResponse && aiResponse.length > 20) {
+            
+            if (naturalResponse) {
                 return {
-                    text: aiResponse,
+                    text: naturalResponse,
                     extractedInfo: {
                         awaitingComplaint: true,
                         lastQuestion: 'primary_complaint'
@@ -125,8 +91,8 @@ Agora gere uma resposta ÚNICA e NATURAL:
                 };
             }
 
-            // Fallback se IA falhar
-            throw new Error('AI response too short');
+            // Fallback: Gera via IA se não tiver resposta natural
+            throw new Error('No natural response available');
 
         } catch (err) {
             logger.warn('AI generation failed, using fallback', err.message);

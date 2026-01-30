@@ -3,12 +3,13 @@ import {
     buildSlotOptions,
     formatSlot
 } from '../services/amandaBookingService.js';
-import {
-    DYNAMIC_MODULES,
-    getManual
-} from '../utils/amandaPrompt.js';
-import { detectAllFlags } from '../utils/flagsDetector.js';
+import { buildResponse } from '../services/intelligence/naturalResponseBuilder.js';
 
+/**
+ * 🎯 BookingHandler SIMPLIFICADO
+ * Responsabilidade ÚNICA: Gerenciar slots e confirmação de agendamento
+ * NÃO faz coleta de dados (therapy, complaint, age, period) - isso é do DecisionEngine
+ */
 class BookingHandler {
     async execute({ decisionContext, services }) {
         const { message, lead, memory, missing, booking, analysis } = decisionContext;
@@ -17,117 +18,50 @@ class BookingHandler {
         const patientName = memory?.patientName || lead?.patientInfo?.name || lead?.autoBookingContext?.patientName;
         const patientBirthDate = memory?.patientBirthDate || lead?.patientInfo?.birthDate;
 
-        // Re-detecta flags locais para nuances específicas de booking
-        const flags = detectAllFlags(text, lead, {
-            stage: lead.stage,
-            messageCount: memory?.conversationHistory?.length || 0
-        });
-
         // ==========================================
-        // 0) SEM SLOTS DISPONÍVEIS (PRIORIDADE MÁXIMA)
-        // ==========================================
-        if (booking?.noSlotsAvailable || booking?.flow === 'no_slots') {
-            const period = analysis?.extractedInfo?.preferredPeriod || memory?.preferredTime;
-
-            await this.escalateToHuman(lead._id, memory, 'sem_vagas_disponiveis');
-
-            return {
-                needsAIGeneration: true,
-                promptContext: DYNAMIC_MODULES.noSlotsAvailable(period),
-                fallbackText: 'Nossa equipe vai entrar em contato ainda hoje com opções de horário 💚',
-                extractedInfo: {
-                    awaitingHumanContact: true,
-                    reason: 'no_slots_available',
-                    preferredPeriod: period || 'flexivel'
-                }
-            };
-        }
-
-        // ==========================================
-        // 1) COLETA PROGRESSIVA (ORDEM ESTRITA)
-        // ==========================================
-
-        // 1.1 Especialidade/Terapia
-        if (missing.needsTherapy) {
-            return {
-                text: getManual('especialidades', 'fono') ||
-                    'Qual especialidade você está procurando? Temos Fono, Psicologia, Fisio e Terapia Ocupacional 💚'
-            };
-        }
-
-        // 1.2 Queixa/Contexto clínico
-        if (missing.needsComplaint) {
-            return {
-                needsAIGeneration: true,
-                promptContext: DYNAMIC_MODULES.triageAskComplaint ||
-                    'Para indicarmos o profissional ideal, me conta um pouquinho: o que está te preocupando? (fala, comportamento, aprendizagem...) 💚',
-                fallbackText: 'Para indicarmos o profissional ideal, me conta um pouquinho: o que está te preocupando? 💚'
-            };
-        }
-
-        // 1.3 Idade do paciente
-        if (missing.needsAge) {
-            const therapy = analysis?.extractedInfo?.therapyArea || memory?.therapyArea;
-
-            return {
-                needsAIGeneration: true,
-                promptContext: DYNAMIC_MODULES.triageAskAge ?
-                    DYNAMIC_MODULES.triageAskAge(therapy) :
-                    'Qual a idade do paciente? (Isso ajuda a encontrarmos o melhor horário e profissional) 💚',
-                fallbackText: 'Qual a idade do paciente? 💚'
-            };
-        }
-
-        // 1.4 Período preferido
-        if (missing.needsPeriod) {
-            return {
-                text: this.extractDynamicText(DYNAMIC_MODULES.triageAskPeriod) ||
-                    'Você tem preferência por algum período? Manhã ou tarde funcionam melhor pra você? 💚'
-            };
-        }
-
-        // ==========================================
-        // 2) SLOT INDISPONÍVEL (FOI EMBORA)
+        // 1) SLOT INDISPONÍVEL (FOI EMBORA)
         // ==========================================
         if (booking?.slotGone) {
-            // Tem alternativas? Oferece direto
             if (booking.alternatives?.primary) {
                 const options = buildSlotOptions(booking.alternatives);
                 const optionsText = options.map(o => o.text).join('\n');
 
-                // Atualiza no lead as novas opções
                 await Leads.findByIdAndUpdate(lead._id, {
                     $set: { pendingSchedulingSlots: booking.alternatives },
                     $unset: { pendingChosenSlot: 1 }
                 });
 
                 return {
-                    text: `Poxa, esse horário acabou de ser reservado! 😅\n\nMas separei outras opções pra você:\n\n${optionsText}\n\nAlguma funciona? Se não, me fala que busco mais 💚`
+                    text: `Poxa, esse horário acabou de ser reservado! 😅\n\nMas separei outras opções:\n\n${optionsText}\n\nAlguma funciona? 💚`
                 };
             }
 
-            // Sem alternativas → escalonamento humano
             await this.escalateToHuman(lead._id, memory, 'slot_indisponivel');
-
             return {
-                text: `Esse horário acabou de ser preenchido e estamos com agenda apertada esses dias 😔\n\nVou pedir pra nossa equipe te retornar ainda hoje com opções de encaixe.\n\nVocê prefere ligação ou continuar por aqui no WhatsApp?`,
-                extractedInfo: {
-                    awaitingHumanContact: true,
-                    reason: 'slot_gone',
-                    escalatedAt: new Date()
-                }
+                text: `Esse horário acabou de ser preenchido 😔\n\nVou pedir pra nossa equipe te retornar ainda hoje com opções.`,
+                extractedInfo: { awaitingHumanContact: true, reason: 'slot_gone' }
             };
         }
 
         // ==========================================
-        // 3) APRESENTAR SLOTS (QUANDO TUDO PRONTO)
+        // 2) SEM SLOTS DISPONÍVEIS
+        // ==========================================
+        if (booking?.noSlotsAvailable) {
+            await this.escalateToHuman(lead._id, memory, 'sem_vagas');
+            return {
+                text: 'Nossa agenda está bem apertada esses dias 😔\n\nVou pedir pra nossa equipe te retornar ainda hoje com opções de encaixe. Tudo bem? 💚',
+                extractedInfo: { awaitingHumanContact: true, reason: 'no_slots' }
+            };
+        }
+
+        // ==========================================
+        // 3) APRESENTAR SLOTS (TEM DADOS SUFICIENTES)
         // ==========================================
         if (missing.needsSlot && booking?.slots?.primary) {
             const options = buildSlotOptions(booking.slots);
-
+            
             if (!options.length) {
-                // Slots vieram vazios por algum motivo, escala
-                await this.escalateToHuman(lead._id, memory, 'slots_vazios_inesperado');
+                await this.escalateToHuman(lead._id, memory, 'slots_vazios');
                 return {
                     text: 'Estou com dificuldade para buscar os horários no momento. Vou pedir para nossa equipe te retornar rapidinho 💚'
                 };
@@ -135,7 +69,6 @@ class BookingHandler {
 
             const optionsText = options.map(o => o.text).join('\n');
 
-            // Persiste os slots oferecidos no lead
             await Leads.findByIdAndUpdate(lead._id, {
                 $set: {
                     pendingSchedulingSlots: {
@@ -148,60 +81,27 @@ class BookingHandler {
             });
 
             return {
-                text: `Encontrei essas opções para você:\n\n${optionsText}\n\nQual delas fica melhor? (A, B, C...) 💚`
+                text: buildResponse('show_slots', { slotsText: optionsText, leadId: lead?._id }) ||
+                      `Encontrei essas opções:\n\n${optionsText}\n\nQual funciona? 💚`
             };
         }
 
-        // Se precisa de slot mas não temos slots ainda
-        if (missing.needsSlot && !booking?.slots?.primary) {
-            const attempts = memory?.slotFetchAttempts || 0;
-
-            if (attempts >= 1) {
-                await this.escalateToHuman(lead._id, memory, 'falha_busca_slots');
-                return {
-                    text: 'Tive uma dificuldade técnica ao buscar os horários agora 😔\n\nVou pedir para nossa equipe te retornar rapidinho com opções, tudo bem? 💚',
-                    extractedInfo: {
-                        awaitingHumanContact: true,
-                        reason: 'slot_fetch_failed'
-                    }
-                };
-            }
-
-            return {
-                text: 'Só um minutinho que estou verificando os melhores horários para você... 💚'
-            };
-        }
-
-        // 🆕 NOVO BLOCO (antes de needsName)
+        // Aguardando usuário escolher slot
         if (missing.needsSlotSelection && booking?.slots?.primary) {
             const optionsText = buildSlotOptions(booking.slots).map(o => o.text).join('\n');
             return {
-                text: `Encontrei essas opções:\n\n${optionsText}\n\nQual delas fica melhor? (A, B, C...) 💚`
+                text: `Opções disponíveis:\n\n${optionsText}\n\nQual funciona melhor? 💚`
             };
         }
 
         // ==========================================
-        // 4) SLOT ESCOLHIDO → COLETAR NOME
+        // 4) SLOT ESCOLHIDO → COLETAR DADOS DO PACIENTE
         // ==========================================
         if (missing.needsName) {
-            // 🆕 DEFESA: Se parece pergunta (interrupção), não trava no nome
-            const looksLikeSideQuestion = /(\?|quanto|custo|valor|onde fica|endereço|convenio|plano|sabado|domingo)/i.test(text);
-
-            if (looksLikeSideQuestion && text.length < 50) {
-                // Deixa o orquestrador lidar com esta intent
-                return {
-                    text: 'Só um instante que já respondo! 💚',
-                    skipValidation: true
-                };
-            }
-
-            // 🛡️ DEFESA: Verifica se slot é válido ANTES de coletar nome
+            // Verifica se slot é válido
             if (!booking?.chosenSlot?.doctorId) {
-                console.warn('[BookingHandler] Slot inválido para needsName:', booking?.chosenSlot);
-
-                // Volta para escolha de slots
                 return {
-                    text: 'Desculpe, não consegui guardar o horário escolhido. Pode me confirmar novamente qual opção prefere (A, B ou C)? 💚',
+                    text: 'Desculpe, não consegui guardar o horário. Pode confirmar novamente qual opção prefere (A, B ou C)? 💚',
                     extractedInfo: { slotLost: true }
                 };
             }
@@ -209,60 +109,46 @@ class BookingHandler {
             const slotText = formatSlot(booking.chosenSlot);
             const possibleName = text?.trim();
 
-            // Valida se é realmente um nome
-            const isGenericResponse = /^(sim|s|não|nao|n|ok|beleza|a|b|c|d|e|f|\d+|yes|no)$/i.test(possibleName);
-            const isValidName = possibleName &&
-                possibleName.length >= 3 &&
-                !isGenericResponse;
+            // Valida se é um nome válido
+            const isGeneric = /^(sim|s|não|nao|n|ok|beleza|a|b|c|d|\d+)$/i.test(possibleName);
+            const isValidName = possibleName && possibleName.length >= 3 && !isGeneric;
 
             if (isValidName) {
                 const firstName = possibleName.split(' ')[0];
 
-                // Salva no lead
                 await Leads.findByIdAndUpdate(lead._id, {
                     $set: {
                         'patientInfo.name': possibleName,
                         'qualificationData.extractedInfo.nome': possibleName,
                         'autoBookingContext.patientName': possibleName,
-                        // Limpa slots pendentes pois já escolheu
                         pendingSchedulingSlots: null,
-                        // Guardar o slot escolhido definitivamente se ainda não estiver salvo
                         pendingChosenSlot: booking?.chosenSlot || lead.pendingChosenSlot
-
                     }
                 });
 
                 return {
-                    text: `Perfeito, ${firstName}! 💚 Agora me informe a data de nascimento (dd/mm/aaaa) pra finalizarmos.`,
+                    text: `Perfeito, ${firstName}! 💚 Agora a data de nascimento (dd/mm/aaaa):`,
                     extractedInfo: {
-                        nome: possibleName,
                         patientName: possibleName,
-                        nomeColetado: true,
-                        _updateMemory: {
-                            patientName: possibleName
-                        }
+                        nomeColetado: true
                     }
                 };
             }
 
-            // Nome ainda não detectado ou é inválido
+            // Pede o nome
             return {
-                needsAIGeneration: true,
-                promptContext: DYNAMIC_MODULES.slotChosenAskName ?
-                    DYNAMIC_MODULES.slotChosenAskName(slotText) :
-                    `Confirmando: vou reservar ${slotText}. Qual o nome completo do paciente?`,
-                fallbackText: `Perfeito! Vou reservar: ${slotText}.\n\nMe confirma o nome completo do paciente? 💚`
+                text: `Confirmando: ${slotText}\n\nQual o nome completo do paciente? 💚`
             };
         }
 
         // ==========================================
-        // 5) NOME JÁ TEMOS, MAS FALTA NASCIMENTO
+        // 5) COLETAR DATA DE NASCIMENTO
         // ==========================================
-        if (patientName && !patientBirthDate && !missing.needsName) {
-            const birthDateMatch = text?.match(/(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})/);
+        if (patientName && !patientBirthDate) {
+            const birthMatch = text?.match(/(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})/);
 
-            if (birthDateMatch) {
-                const birthDate = `${birthDateMatch[1]}/${birthDateMatch[2]}/${birthDateMatch[3]}`;
+            if (birthMatch) {
+                const birthDate = `${birthMatch[1]}/${birthMatch[2]}/${birthMatch[3]}`;
 
                 await Leads.findByIdAndUpdate(lead._id, {
                     $set: {
@@ -272,43 +158,40 @@ class BookingHandler {
                 });
 
                 return {
-                    text: `Show! 👏 Agora é só confirmar:\n\n✅ 
-                        Nome: ${patientName}\n✅ 
-                        Nascimento: ${birthDate}\n✅ 
-                        Horário: ${formatSlot(booking.chosenSlot)}\n\nTudo certo?`,
-                    extractedInfo: {
-                        birthDateCollected: true,
-                        readyToConfirm: true
-                    }
-                };
-            } else {
-                return {
-                    text: 'Por favor, me informe a data de nascimento no formato dd/mm/aaaa 💚'
+                    text: buildResponse('confirm_booking', { 
+                        slotText: formatSlot(booking.chosenSlot), 
+                        patientName,
+                        leadId: lead?._id 
+                    }) || `Show! 👏\n\n✅ ${patientName}\n✅ ${birthDate}\n✅ ${formatSlot(booking.chosenSlot)}\n\nTudo certo?`,
+                    extractedInfo: { birthDateCollected: true, readyToConfirm: true }
                 };
             }
+
+            return {
+                text: 'Por favor, a data de nascimento no formato dd/mm/aaaa 💚'
+            };
         }
 
         // ==========================================
-        // 6) FALLBACK DE SEGURANÇA
+        // 6) CONFIRMAÇÃO FINAL
         // ==========================================
-        console.warn('[BookingHandler] Fluxo caiu em fallback. Missing:', missing, 'Booking:', !!booking);
+        if (patientName && patientBirthDate && booking?.chosenSlot) {
+            return {
+                text: `Perfeito! 🎉 Agendamento confirmado:\n\n📅 ${formatSlot(booking.chosenSlot)}\n👤 ${patientName}\n\nVocês vão adorar! Qualquer dúvida é só chamar 💚`,
+                extractedInfo: { bookingConfirmed: true }
+            };
+        }
 
+        // ==========================================
+        // 7) FALLBACK
+        // ==========================================
+        console.warn('[BookingHandler] Fallback. Missing:', missing, 'Booking:', !!booking);
         return {
-            text: 'Só um instante que já vou te ajudar certinho 💚',
+            text: 'Só um instante que já vou te ajudar 💚',
             fallback: true
         };
     }
 
-    // Helper para extrair texto dos módulos dinâmicos
-    extractDynamicText(moduleContent) {
-        if (!moduleContent) return null;
-        if (typeof moduleContent === 'function') {
-            return null;
-        }
-        return moduleContent.trim();
-    }
-
-    // Escalação para atendimento humano
     async escalateToHuman(leadId, memory, reason) {
         try {
             await Leads.findByIdAndUpdate(leadId, {
@@ -316,10 +199,7 @@ class BookingHandler {
                     'manualControl.active': true,
                     'manualControl.takenOverAt': new Date(),
                     'manualControl.reason': reason,
-                    'flags.needsHumanContact': true,
-                    'flags.preferredPeriod': memory?.preferredTime,
-                    'flags.preferredTherapy': memory?.therapyArea,
-                    'flags.primaryComplaint': memory?.primaryComplaint
+                    'flags.needsHumanContact': true
                 }
             });
         } catch (err) {

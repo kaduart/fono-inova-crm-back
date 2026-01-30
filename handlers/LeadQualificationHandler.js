@@ -4,6 +4,7 @@ import callAI from '../services/IA/Aiproviderservice.js';
 import Logger from '../services/utils/Logger.js';
 import { DYNAMIC_MODULES } from '../utils/amandaPrompt.js';
 import ensureSingleHeart from '../utils/helpers.js';
+import { buildResponse } from '../services/intelligence/naturalResponseBuilder.js';
 
 class LeadQualificationHandler {
     constructor() {
@@ -66,15 +67,32 @@ class LeadQualificationHandler {
             // 3️⃣ DEFINE OBJETIVO
             // ===========================
             let objetivo = '';
+            let extractedInfo = {}; // 🆕 Para salvar estado de aguardo
+
+            // 🆕 RESPOSTAS NATURAIS (rápidas, sem IA) para casos simples
+            if (!shouldAcknowledgeHistory && missing.needsTherapy) {
+                return {
+                    text: buildResponse('ask_therapy', { leadId: lead?._id }),
+                    extractedInfo: {}
+                };
+            }
+            
+            if (missing.needsAge) {
+                return {
+                    text: buildResponse('ask_age', { leadId: lead?._id }),
+                    extractedInfo: { awaitingAge: true, lastQuestion: 'age' }
+                };
+            }
+            
+            if (missing.needsPeriod) {
+                return {
+                    text: buildResponse('ask_period', { leadId: lead?._id }),
+                    extractedInfo: { awaitingPeriod: true, lastQuestion: 'period' }
+                };
+            }
 
             if (shouldAcknowledgeHistory) {
                 objetivo = `Reconhecer que o lead voltou após ${daysSinceLastContact} dias. Mencione brevemente o contexto anterior (${therapyArea || 'a terapia'} para situação de ${memory?.primaryComplaint || 'saúde'} de ${patientAge || 'a criança'}) e pergunte se quer continuar de onde parou ou tem algo novo. Seja acolhedora e natural.`;
-            } else if (missing.needsTherapy) {
-                objetivo = 'Descobrir qual área de terapia o lead procura (fono, psicologia, TO, fisio, etc).';
-            } else if (missing.needsAge) {
-                objetivo = 'Descobrir a idade do paciente de forma natural e acolhedora.';
-            } else if (missing.needsPeriod) {
-                objetivo = 'Descobrir qual período prefere (manhã ou tarde) para o atendimento.';
             } else {
                 objetivo = 'Todas as informações foram coletadas. Agradecer e informar que vai verificar horários.';
             }
@@ -140,7 +158,7 @@ class LeadQualificationHandler {
 
             return {
                 text: finalText,
-                extractedInfo: {}
+                extractedInfo // 🆕 Retorna o estado de aguardo (awaitingAge/awaitingPeriod) se aplicável
             };
 
         } catch (error) {
