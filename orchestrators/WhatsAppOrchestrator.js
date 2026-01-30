@@ -484,18 +484,29 @@ export class WhatsAppOrchestrator {
         // QUEIXA - Verifica se há queixa salva ou se estamos aguardando uma
         let complaint = intelligent?.queixa || lead?.primaryComplaint;
         
+        // 🆕 PROTEÇÃO: Se o último handler foi complaintCollectionHandler, 
+        // assume que estamos aguardando queixa mesmo se o estado não carregou
+        const lastHandlerFromMemory = memoryContext?.lastHandler;
+        const lastHandlerFromChat = chatContext?.lastExtractedInfo?.lastHandler;
+        const lastHandlerWasComplaint = lastHandlerFromMemory === 'complaintCollectionHandler' || 
+                                        lastHandlerFromChat === 'complaintCollectionHandler';
+        const shouldExtractComplaint = isAwaitingComplaint || lastHandlerWasComplaint;
+        
         // 🐛 DEBUG: Estado antes da extração
         this.logger.debug('COMPLAINT_EXTRACTION_START', {
             hasIntelligent: !!intelligent?.queixa,
             hasLeadComplaint: !!lead?.primaryComplaint,
             isAwaitingComplaint,
-            awaitingField,
-            willTryExtract: !complaint && isAwaitingComplaint && awaitingField === 'complaint'
+            lastHandlerFromMemory,
+            lastHandlerFromChat,
+            lastHandlerWasComplaint,
+            shouldExtractComplaint,
+            awaitingField
         });
         
         // 🔥 EXPERTISE: Se estamos aguardando uma queixa e o usuário enviou uma mensagem descritiva,
         // usar o texto como queixa mesmo se não casar com regex
-        if (!complaint && isAwaitingComplaint && awaitingField === 'complaint') {
+        if (!complaint && shouldExtractComplaint && awaitingField === 'complaint') {
             const isQuestion = /\?$/.test(text.trim()) || /^(qual|quanto|onde|como|por que|pq|quando)\b/i.test(text);
             const isTooShort = text.trim().length < 5;
             const isGenericResponse = /^(sim|n[aã]o|ok|beleza|tudo bem|n sei|não sei|nao sei|nao|não)$/i.test(text.trim());
@@ -680,6 +691,11 @@ export class WhatsAppOrchestrator {
         // Atualiza contexto
         if (result?.extractedInfo && Object.keys(result.extractedInfo).length > 0) {
             await ContextMemory.update(lead._id, result.extractedInfo);
+        }
+        
+        // 🆕 Salva o último handler usado para proteção de estado
+        if (decision?.handler) {
+            await ContextMemory.update(lead._id, { lastHandler: decision.handler });
         }
         
         // 🆕 Limpa os estados de aguardo quando os dados são extraídos com sucesso
