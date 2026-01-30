@@ -647,14 +647,21 @@ router.get('/', auth, async (req, res) => {
 
         console.time('appointments.query');
 
-        // 🔹 Buscar agendamentos com relacionamentos importantes
+        // 🔹 Buscar agendamentos com relacionamentos importantes (otimizado)
+        // 🔸 Adiciona limite padrão para evitar carregar muitos dados
+        const limit = parseInt(req.query.limit) || 500;
+        const skip = parseInt(req.query.skip) || 0;
+        
         const appointments = await Appointment.find(filter)
+            .select('date time duration specialty reason operationalStatus clinicalStatus paymentStatus visualFlag patient doctor package session payment')
             .populate({ path: 'doctor', select: 'fullName specialty' })
-            .populate({ path: 'patient', select: 'fullName dateOfBirth gender phone email address cpf rg' })
+            .populate({ path: 'patient', select: 'fullName dateOfBirth gender phone email cpf' })
             .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue' })
             .populate({ path: 'session', select: 'isPaid paymentStatus partialAmount' })
-            .populate({ path: 'payment', select: 'status amount paymentMethod' }) // ✅ ADICIONE ESTA LINHA
-            .sort({ date: 1 })
+            .populate({ path: 'payment', select: 'status amount paymentMethod' })
+            .sort({ date: -1 }) // Mais recentes primeiro
+            .limit(limit)
+            .skip(skip)
             .lean();
 
         console.log('📦 Total appointments encontrados:', appointments.length);
@@ -1337,17 +1344,33 @@ router.patch('/:id/complete', auth, async (req, res) => {
         }
 
         if (paymentId) {
-            const paymentResult = await Payment.updateOne(
-                { _id: paymentId },
-                {
+            // 🔒 TRAVA ANTI-DUPLICAÇÃO: Verificar se já existe pagamento pago
+            const existingPayment = await Payment.findById(paymentId).session(session);
+            
+            // Se já está pago, NÃO alterar a data do pagamento (mantém data original)
+            // Se está pendente, atualiza para pago com data de hoje
+            const updateData = existingPayment?.status === 'paid' 
+                ? { 
+                    // Pagamento já existe - mantém a data original, apenas garante que está pago
+                    status: 'paid',
+                    updatedAt: new Date()
+                  }
+                : {
+                    // Pagamento pendente - confirma com data de hoje
                     status: 'paid',
                     paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"),
                     updatedAt: new Date()
-                }
+                  };
+            
+            const paymentResult = await Payment.updateOne(
+                { _id: paymentId },
+                { $set: updateData }
             ).session(session);
 
             console.log('✅ Payment update:', {
                 id: paymentId,
+                wasAlreadyPaid: existingPayment?.status === 'paid',
+                originalPaymentDate: existingPayment?.paymentDate,
                 matched: paymentResult.matchedCount,
                 modified: paymentResult.modifiedCount
             });
