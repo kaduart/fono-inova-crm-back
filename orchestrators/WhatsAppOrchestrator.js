@@ -22,15 +22,22 @@ import {
     pickSlotFromUserReply,
     validateSlotStillAvailable
 } from '../services/amandaBookingService.js';
+import { mapFlagsToBookingProduct } from '../utils/bookingProductMapper.js';
 
 // ✅ HANDLERS EXISTENTES
 import * as handlers from '../handlers/index.js';
 import Leads from '../models/Leads.js';
+import ChatContext from '../models/ChatContext.js';
 import { generateHandlerResponse } from '../services/aiAmandaService.js';
 import generateConversationSummary, { needsNewSummary } from '../services/conversationSummary.js';
 
 // ✅ DETECTOR EXISTENTE
 import IntentDetector from '../detectors/IntentDetector.js';
+
+// 🧠 EXTRATOR SEMÂNTICO (fallback inteligente quando regex falham)
+import { smartExtract } from '../services/intelligence/semanticExtractor.js';
+import { buildResponse } from '../services/intelligence/naturalResponseBuilder.js';
+import { getCachedContext, setCachedContext } from '../services/intelligence/contextCache.js';
 
 export class WhatsAppOrchestrator {
     constructor() {
@@ -51,10 +58,24 @@ export class WhatsAppOrchestrator {
             const text = message?.content || message?.text || '';
 
             // =========================
-            // 1️⃣ CONTEXTO (USANDO SEUS SERVIÇOS)
+            // 1️⃣ CONTEXTO (COM CACHE)
             // =========================
-            const memoryContext = await enrichLeadContext(lead._id);
-            const contextPack = await buildContextPack(lead._id);
+            let memoryContext = getCachedContext(lead._id);
+            let contextPack = null;
+            
+            if (!memoryContext) {
+                // Cache miss - busca do banco
+                [memoryContext, contextPack] = await Promise.all([
+                    enrichLeadContext(lead._id),
+                    buildContextPack(lead._id)
+                ]);
+                
+                // Salva no cache
+                setCachedContext(lead._id, { memoryContext, contextPack });
+            } else {
+                // Cache hit - usa dados em memória
+                contextPack = memoryContext._contextPack;
+            }
             
             // Flags usando SEU detector
             const flags = detectAllFlags(text, lead, {
@@ -99,13 +120,17 @@ export class WhatsAppOrchestrator {
             // =========================
             // 3️⃣ INFERRIDOS (EXTRAÇÃO DE DADOS)
             // =========================
-            const inferred = this.extractInferredData({
+            // Carrega contexto do chat para verificar estados pendentes (awaitingComplaint, etc)
+            const chatContext = await ChatContext.findOne({ lead: lead._id }).lean();
+            
+            const inferred = await this.extractInferredData({
                 text,
                 flags,
                 detectedTherapies,
                 intelligent,
                 lead,
-                memoryContext
+                memoryContext,
+                chatContext
             });
 
             // =========================
@@ -264,38 +289,171 @@ export class WhatsAppOrchestrator {
         return intentResult.type || 'general_info';
     }
 
-    extractInferredData({ text, flags, detectedTherapies, intelligent, lead, memoryContext }) {
+    async extractInferredData({ text, flags, detectedTherapies, intelligent, lead, memoryContext, chatContext }) {
         const textLower = text.toLowerCase();
         const textNormalized = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-        // TERAPIA (cascata)
+        // TERAPIA (cascata + mapper inteligente)
         let therapy = null;
-        if (detectedTherapies.length > 0) {
+        
+        // 🆕 Usa o mapper robusto do legado se disponível
+        if (!therapy && flags) {
+            const mapped = mapFlagsToBookingProduct(flags, lead);
+            if (mapped?.therapyArea) {
+                therapy = mapped.therapyArea;
+                this.logger.debug('THERAPY_FROM_MAPPER', { therapy, source: 'bookingProductMapper' });
+            }
+        }
+        
+        // Fallbacks cascata
+        if (!therapy && detectedTherapies.length > 0) {
             therapy = detectedTherapies[0].name;
-        } else if (intelligent?.especialidade) {
+        }
+        if (!therapy && intelligent?.especialidade) {
             therapy = intelligent.especialidade;
-        } else if (lead?.therapyArea) {
+        }
+        if (!therapy && lead?.therapyArea) {
             therapy = lead.therapyArea;
-        } else if (memoryContext?.therapyArea) {
+        }
+        if (!therapy && memoryContext?.therapyArea) {
             therapy = memoryContext.therapyArea;
         }
 
-        // IDADE
+        // Verifica estados de aguardo do contexto
+        const isAwaitingComplaint = chatContext?.lastExtractedInfo?.awaitingComplaint === true;
+        const isAwaitingAge = chatContext?.lastExtractedInfo?.awaitingAge === true;
+        const isAwaitingPeriod = chatContext?.lastExtractedInfo?.awaitingPeriod === true;
+        const lastQuestion = chatContext?.lastExtractedInfo?.lastQuestion;
+        
+        // 🧠 Determina qual campo estamos aguardando para extração semântica
+        const awaitingField = isAwaitingAge ? 'age' 
+            : isAwaitingComplaint ? 'complaint' 
+            : isAwaitingPeriod ? 'period' 
+            : !therapy ? 'therapy'
+            : null;
+
+        // IDADE - Extrai de formas naturais
         let age = intelligent?.idade || intelligent?.age || lead?.patientInfo?.age;
         if (typeof age === 'string') age = parseInt(age, 10);
         if (isNaN(age)) age = null;
+        
+        // 🔥 EXPERTISE: Se não achou idade via regex padrão, tenta padrões mais naturais
+        if (!age) {
+            // "ele tem 2 anos", "minha filha tem 5", "tem 3 aninhos", "2 anos de idade"
+            const agePatterns = [
+                /(?:ele|ela|crian[çc]a|filho|filha|paciente|bebe?)?\s*(?:tem|tem\s+aproximadamente)?\s*(\d+)\s*(?:anos?|aninhos?|a)(?:\s*de\s*idade)?/i,
+                /(\d+)\s*(?:anos?|aninhos?)(?:\s*de\s*idade)?/i,
+                /(?:idade|anos?)\s*(?:de)?\s*(\d+)/i
+            ];
+            
+            for (const pattern of agePatterns) {
+                const match = text.match(pattern);
+                if (match) {
+                    age = parseInt(match[1], 10);
+                    if (!isNaN(age) && age > 0 && age < 120) {
+                        this.logger.debug('AGE_EXTRACTED_NATURALLY', { age, pattern: pattern.toString() });
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Se estava aguardando idade e não achou, tenta extração semântica
+        if (!age && isAwaitingAge && awaitingField === 'age') {
+            // Primeiro tenta número isolado (rápido)
+            const isolatedNumber = text.match(/\b(\d{1,2})\b/);
+            if (isolatedNumber) {
+                const possibleAge = parseInt(isolatedNumber[1], 10);
+                if (possibleAge > 0 && possibleAge < 120) {
+                    age = possibleAge;
+                    this.logger.debug('AGE_EXTRACTED_FROM_CONTEXT', { age, reason: 'awaiting_age_state' });
+                }
+            }
+            
+            // 🧠 Se ainda não achou, usa IA (Groq grátis) para interpretar
+            if (!age) {
+                const semanticResult = await smartExtract(text, 'age', {
+                    lastAmandaMessage: chatContext?.lastAmandaMessage || memoryContext?.lastAmandaMessage
+                });
+                if (semanticResult?.age) {
+                    age = semanticResult.age;
+                    this.logger.debug('AGE_EXTRACTED_SEMANTICALLY', { 
+                        age, 
+                        text,
+                        source: 'smartExtract' 
+                    });
+                }
+            }
+        }
 
-        // PERÍODO
+        // PERÍODO - Extrai de formas variadas
         let period = intelligent?.disponibilidade || intelligent?.preferredPeriod;
         if (!period) {
-            if (textNormalized.includes("manh")) period = 'manha';
-            else if (textNormalized.includes("tard")) period = 'tarde';
-            else if (textNormalized.includes("noit")) period = 'noite';
+            if (/\b(manh[aã]|manhacinho|cedo|in[ií]cio\s+dia|parte\s+da\s+manh[aã])\b/i.test(textNormalized)) period = 'manha';
+            else if (/\b(tard|tarde|depois\s+do\s+almo[çc]o|inicio\s+tarde|fim\s+tarde)\b/i.test(textNormalized)) period = 'tarde';
+            else if (/\b(noit|noite|final\s+dia|depois\s+das?\s*\d+)\b/i.test(textNormalized)) period = 'noite';
         }
         period = normalizePeriod(period);
+        
+        // Se estava aguardando período e não achou, tenta interpretar mais flexivelmente
+        if (!period && isAwaitingPeriod && awaitingField === 'period') {
+            if (/\b(manh[aã]|manhacinho|cedo|antes\s+do\s+almo[çc]o|pela\s+manh[aã])\b/i.test(textLower)) period = 'manha';
+            else if (/\b(tard|tarde|depois\s+do\s+almo[çc]o|pela\s+tarde)\b/i.test(textLower)) period = 'tarde';
+            else if (/\b(noit|noite|pela\s+noite)\b/i.test(textLower)) period = 'noite';
+            
+            if (period) {
+                this.logger.debug('PERIOD_EXTRACTED_FROM_CONTEXT', { period, reason: 'awaiting_period_state' });
+            }
+            
+            // 🧠 Fallback semântico para período
+            if (!period) {
+                const semanticResult = await smartExtract(text, 'period', {
+                    lastAmandaMessage: chatContext?.lastAmandaMessage || memoryContext?.lastAmandaMessage
+                });
+                if (semanticResult?.period) {
+                    period = semanticResult.period;
+                    this.logger.debug('PERIOD_EXTRACTED_SEMANTICALLY', { 
+                        period, 
+                        text,
+                        source: 'smartExtract' 
+                    });
+                }
+            }
+        }
 
-        // QUEIXA
+        // QUEIXA - Verifica se há queixa salva ou se estamos aguardando uma
         let complaint = intelligent?.queixa || lead?.primaryComplaint;
+        
+        // 🔥 EXPERTISE: Se estamos aguardando uma queixa e o usuário enviou uma mensagem descritiva,
+        // usar o texto como queixa mesmo se não casar com regex
+        if (!complaint && isAwaitingComplaint && awaitingField === 'complaint') {
+            const isQuestion = /\?$/.test(text.trim()) || /^(qual|quanto|onde|como|por que|pq|quando)\b/i.test(text);
+            const isTooShort = text.trim().length < 5;
+            const isGenericResponse = /^(sim|n[aã]o|ok|beleza|tudo bem|n sei|não sei|nao sei|nao|não)$/i.test(text.trim());
+            
+            if (!isQuestion && !isTooShort && !isGenericResponse) {
+                complaint = text.trim().substring(0, 200);
+                this.logger.debug('COMPLAINT_EXTRACTED_FROM_CONTEXT', { 
+                    text: complaint,
+                    reason: 'awaiting_complaint_state'
+                });
+            }
+            
+            // 🧠 Se ainda não extraiu, usa IA para interpretar a queixa
+            if (!complaint) {
+                const semanticResult = await smartExtract(text, 'complaint', {
+                    lastAmandaMessage: chatContext?.lastAmandaMessage || memoryContext?.lastAmandaMessage
+                });
+                if (semanticResult?.complaint) {
+                    complaint = semanticResult.complaint;
+                    this.logger.debug('COMPLAINT_EXTRACTED_SEMANTICALLY', { 
+                        complaint, 
+                        text,
+                        source: 'smartExtract' 
+                    });
+                }
+            }
+        }
         
         // Data preferida
         const preferredDate = extractPreferredDateFromText(text);
@@ -419,6 +577,29 @@ export class WhatsAppOrchestrator {
         // Atualiza contexto
         if (result?.extractedInfo && Object.keys(result.extractedInfo).length > 0) {
             await ContextMemory.update(lead._id, result.extractedInfo);
+        }
+        
+        // 🆕 Limpa os estados de aguardo quando os dados são extraídos com sucesso
+        // para evitar que mensagens futuras sejam tratadas indevidamente
+        const unsetStates = {};
+        if (inferred.complaint) {
+            unsetStates["lastExtractedInfo.awaitingComplaint"] = "";
+            unsetStates["lastExtractedInfo.lastQuestion"] = "";
+        }
+        if (inferred.age) {
+            unsetStates["lastExtractedInfo.awaitingAge"] = "";
+            if (!inferred.complaint) unsetStates["lastExtractedInfo.lastQuestion"] = "";
+        }
+        if (inferred.period) {
+            unsetStates["lastExtractedInfo.awaitingPeriod"] = "";
+            if (!inferred.complaint && !inferred.age) unsetStates["lastExtractedInfo.lastQuestion"] = "";
+        }
+        
+        if (Object.keys(unsetStates).length > 0) {
+            await ChatContext.findOneAndUpdate(
+                { lead: lead._id },
+                { $unset: unsetStates }
+            );
         }
 
         // Gera resumo se necessário

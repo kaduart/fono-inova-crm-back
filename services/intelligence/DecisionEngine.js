@@ -1,4 +1,4 @@
-export async function decisionEngine({ analysis, missing, urgency, bookingContext, clinicalRules }) {
+export async function decisionEngine({ analysis, missing, urgency, bookingContext, clinicalRules, context = {} }) {
 
     // =========================
     // 0️⃣ REGRA CLÍNICA BLOQUEIA
@@ -111,6 +111,50 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
             handler: 'bookingHandler',
             reason: 'ready_to_book'
         };
+    }
+
+    // =========================
+    // 🆕 REGRA 1.5: DRIVE PARA AGENDAMENTO (Interesse Implícito)
+    // Se tem TERAPIA + QUEIXA, direciona para agendamento mesmo sem intent explícita
+    // =========================
+    const hasTherapy = !missing.needsTherapy;
+    const hasComplaint = !missing.needsComplaint;
+    const hasAge = !missing.needsAge;
+    const hasPeriod = !missing.needsPeriod;
+    
+    // Detecta sinais de interesse mesmo sem dizer "quero agendar"
+    const implicitInterest = 
+        analysis.extractedInfo?.queixa || 
+        analysis.extractedInfo?.sintomas ||
+        analysis.flags?.mentionsChild ||
+        analysis.flags?.mentionsUrgency;
+    
+    if (hasTherapy && hasComplaint && implicitInterest && analysis.intent !== 'scheduling') {
+        // Se já tem terapia+queixa+idade+período → mostra slots direto
+        if (hasAge && hasPeriod) {
+            return {
+                action: 'booking',
+                handler: 'bookingHandler',
+                reason: 'implicit_interest_complete'
+            };
+        }
+        
+        // Se falta idade/período → coleta o que falta
+        if (!hasAge) {
+            return {
+                action: 'ask_age',
+                handler: 'leadQualificationHandler',
+                reason: 'implicit_interest_needs_age'
+            };
+        }
+        
+        if (!hasPeriod) {
+            return {
+                action: 'ask_period',
+                handler: 'leadQualificationHandler',
+                reason: 'implicit_interest_needs_period'
+            };
+        }
     }
 
     // =========================
