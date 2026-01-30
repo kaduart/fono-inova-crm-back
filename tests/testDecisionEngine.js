@@ -5,23 +5,7 @@
 
 import { decisionEngine } from '../services/intelligence/DecisionEngine.js';
 
-// Test helper
-function test(name, fn) {
-    try {
-        const result = fn();
-        if (result.success) {
-            console.log(`✅ ${name}`);
-        } else {
-            console.log(`❌ ${name}: ${result.error}`);
-        }
-        return result.success;
-    } catch (err) {
-        console.log(`❌ ${name}: ${err.message}`);
-        return false;
-    }
-}
-
-// Assert helpers
+// Assert helper
 function assertEquals(actual, expected, field) {
     if (actual !== expected) {
         return { 
@@ -32,17 +16,17 @@ function assertEquals(actual, expected, field) {
     return { success: true };
 }
 
-// Run all tests
-function runTests() {
+// Run all tests async
+async function runTests() {
     console.log('🧪 TESTES DO DECISION ENGINE\n');
     
     let passed = 0;
     let total = 0;
 
-    // Test 1: Fluxo completo - vai para booking quando tem tudo
+    // Test 1: Fluxo completo
     total++;
-    if (test('Deve ir para booking quando tem todos os dados', () => {
-        const result = decisionEngine({
+    try {
+        const result = await decisionEngine({
             analysis: { intent: 'scheduling' },
             missing: {
                 needsTherapy: false,
@@ -55,13 +39,21 @@ function runTests() {
             bookingContext: {},
             clinicalRules: {}
         });
-        return assertEquals(result.handler, 'bookingHandler', 'handler');
-    })) passed++;
+        const check = assertEquals(result.handler, 'bookingHandler', 'handler');
+        if (check.success) {
+            console.log('✅ Deve ir para booking quando tem todos os dados');
+            passed++;
+        } else {
+            console.log(`❌ Deve ir para booking: ${check.error}`);
+        }
+    } catch (err) {
+        console.log(`❌ Deve ir para booking: ${err.message}`);
+    }
 
-    // Test 2: Precisa de terapia primeiro
+    // Test 2: Precisa de terapia
     total++;
-    if (test('Deve pedir terapia quando não tem', () => {
-        const result = decisionEngine({
+    try {
+        const result = await decisionEngine({
             analysis: { intent: 'scheduling' },
             missing: {
                 needsTherapy: true,
@@ -73,21 +65,29 @@ function runTests() {
             bookingContext: {},
             clinicalRules: {}
         });
-        return assertEquals(result.action, 'ask_therapy', 'action');
-    })) passed++;
+        const check = assertEquals(result.action, 'ask_therapy', 'action');
+        if (check.success) {
+            console.log('✅ Deve pedir terapia quando não tem');
+            passed++;
+        } else {
+            console.log(`❌ Deve pedir terapia: ${check.error}`);
+        }
+    } catch (err) {
+        console.log(`❌ Deve pedir terapia: ${err.message}`);
+    }
 
-    // Test 3: Drive para agendamento (interesse implícito)
+    // Test 3: Drive para agendamento
     total++;
-    if (test('Deve detectar interesse implícito e ir para booking', () => {
-        const result = decisionEngine({
+    try {
+        const result = await decisionEngine({
             analysis: {
-                intent: 'general_info', // não é scheduling
+                intent: 'general_info',
                 extractedInfo: { queixa: 'fala pouco' }
             },
             missing: {
-                needsTherapy: false,  // tem terapia
-                needsComplaint: false, // tem queixa
-                needsAge: true,        // falta idade
+                needsTherapy: false,
+                needsComplaint: false,
+                needsAge: true,
                 needsPeriod: true
             },
             urgency: 1,
@@ -95,19 +95,29 @@ function runTests() {
             clinicalRules: {},
             context: {}
         });
-        // Deve ir para ask_age (coletar o que falta)
-        return assertEquals(result.action, 'ask_age', 'action');
-    })) passed++;
+        const check = assertEquals(result.action, 'ask_age', 'action');
+        if (check.success) {
+            console.log('✅ Deve detectar interesse implícito');
+            passed++;
+        } else {
+            console.log(`❌ Deve detectar interesse: ${check.error}`);
+        }
+    } catch (err) {
+        console.log(`❌ Deve detectar interesse: ${err.message}`);
+    }
 
-    // Test 4: Interrupção - preço durante agendamento
+    // Test 4: Interrupção (pergunta preço durante coleta de dados)
     total++;
-    if (test('Deve preservar estado em interrupção de preço', () => {
-        const result = decisionEngine({
-            analysis: { intent: 'price' },
+    try {
+        const result = await decisionEngine({
+            analysis: { 
+                intent: 'price',
+                missing: { needsTherapy: false } // já passou da terapia
+            },
             missing: {
-                needsTherapy: false,
-                needsComplaint: false,
-                needsAge: true, // estava esperando idade
+                needsTherapy: false,  // já tem terapia
+                needsComplaint: false, // já tem queixa
+                needsAge: true,        // está esperando idade
                 currentAwaiting: 'age'
             },
             urgency: 1,
@@ -116,15 +126,23 @@ function runTests() {
                 chosenSlot: null
             },
             clinicalRules: {},
-            context: { messageCount: 5 }
+            context: { messageCount: 5 } // não é primeira mensagem
         });
-        return assertEquals(result.preserveBookingState, true, 'preserveBookingState');
-    })) passed++;
+        const check = assertEquals(result.preserveBookingState, true, 'preserveBookingState');
+        if (check.success) {
+            console.log('✅ Deve preservar estado em interrupção');
+            passed++;
+        } else {
+            console.log(`❌ Deve preservar estado: ${check.error} (handler: ${result.handler}, action: ${result.action})`);
+        }
+    } catch (err) {
+        console.log(`❌ Deve preservar estado: ${err.message}`);
+    }
 
     // Test 5: Coleta de queixa
     total++;
-    if (test('Deve coletar queixa quando tem terapia mas falta queixa', () => {
-        const result = decisionEngine({
+    try {
+        const result = await decisionEngine({
             analysis: { intent: 'scheduling' },
             missing: {
                 needsTherapy: false,
@@ -135,21 +153,37 @@ function runTests() {
             bookingContext: {},
             clinicalRules: {}
         });
-        return assertEquals(result.handler, 'complaintCollectionHandler', 'handler');
-    })) passed++;
+        const check = assertEquals(result.handler, 'complaintCollectionHandler', 'handler');
+        if (check.success) {
+            console.log('✅ Deve coletar queixa');
+            passed++;
+        } else {
+            console.log(`❌ Deve coletar queixa: ${check.error}`);
+        }
+    } catch (err) {
+        console.log(`❌ Deve coletar queixa: ${err.message}`);
+    }
 
     // Test 6: Preço
     total++;
-    if (test('Deve ir para productHandler quando pergunta preço', () => {
-        const result = decisionEngine({
+    try {
+        const result = await decisionEngine({
             analysis: { intent: 'price' },
             missing: { needsTherapy: true },
             urgency: 1,
             bookingContext: {},
             clinicalRules: {}
         });
-        return assertEquals(result.handler, 'productHandler', 'handler');
-    })) passed++;
+        const check = assertEquals(result.handler, 'productHandler', 'handler');
+        if (check.success) {
+            console.log('✅ Deve ir para productHandler');
+            passed++;
+        } else {
+            console.log(`❌ Deve ir para productHandler: ${check.error}`);
+        }
+    } catch (err) {
+        console.log(`❌ Deve ir para productHandler: ${err.message}`);
+    }
 
     // Summary
     console.log(`\n${'='.repeat(40)}`);
@@ -160,5 +194,6 @@ function runTests() {
 }
 
 // Run
-const success = runTests();
-process.exit(success ? 0 : 1);
+runTests().then(success => {
+    process.exit(success ? 0 : 1);
+});

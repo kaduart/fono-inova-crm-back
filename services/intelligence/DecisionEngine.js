@@ -1,5 +1,17 @@
 export async function decisionEngine({ analysis, missing, urgency, bookingContext, clinicalRules, context = {} }) {
 
+    // 🐛 DEBUG: Log de entrada
+    console.log('[DecisionEngine] INPUT:', {
+        intent: analysis?.intent,
+        missing: {
+            needsTherapy: missing?.needsTherapy,
+            needsComplaint: missing?.needsComplaint,
+            needsAge: missing?.needsAge,
+            needsPeriod: missing?.needsPeriod
+        },
+        hasSchedulingContext: bookingContext?.slots?.primary || bookingContext?.chosenSlot || (!missing?.needsTherapy && !missing?.needsComplaint)
+    });
+
     // =========================
     // 0️⃣ REGRA CLÍNICA BLOQUEIA
     // =========================
@@ -202,7 +214,16 @@ export async function decisionEngine({ analysis, missing, urgency, bookingContex
     // =========================
     // Se não está em 'scheduling' mas tem terapia e falta queixa, força coleta
     // 🔥 EXCEÇÃO: Não força coleta se for side intent (price, therapy_info) - permite responder direto
-    if (!isSideIntent && !missing.needsTherapy && missing.needsComplaint) {
+    const shouldForceComplaint = !isSideIntent && !missing.needsTherapy && missing.needsComplaint;
+    console.log('[DecisionEngine] CHECK_FORCE_COMPLAINT:', {
+        isSideIntent,
+        needsTherapy: missing.needsTherapy,
+        needsComplaint: missing.needsComplaint,
+        shouldForceComplaint
+    });
+    
+    if (shouldForceComplaint) {
+        console.log('[DecisionEngine] FORCING complaintCollectionHandler');
         return {
             action: 'collect_complaint',
             handler: 'complaintCollectionHandler',

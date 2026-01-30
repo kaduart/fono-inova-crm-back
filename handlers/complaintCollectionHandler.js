@@ -50,6 +50,7 @@ const QUESTION_VARIATIONS = [
 
 export const complaintCollectionHandler = {
     async execute({ decisionContext }) {
+        const startTime = Date.now();
         const { memory, analysis, lead } = decisionContext;
         
         // Terapia detectada (cascata completa)
@@ -68,7 +69,8 @@ export const complaintCollectionHandler = {
         const variationIndex = parseInt(leadHash, 16) % QUESTION_VARIATIONS.length;
         const baseQuestion = QUESTION_VARIATIONS[variationIndex];
 
-        logger.debug('Generating dynamic complaint request', { 
+        logger.info('ComplaintHandler START', { 
+            leadId: lead?._id?.toString(),
             therapy, 
             variationIndex,
             hasHistory: !!memory?.conversationHistory?.length 
@@ -76,12 +78,26 @@ export const complaintCollectionHandler = {
 
         try {
             // 🆕 RESPOSTA NATURAL (rápida) - evita chamada de IA
+            const buildStart = Date.now();
             const naturalResponse = buildResponse('ask_complaint', { 
                 therapy: therapy,
                 leadId: lead?._id 
             });
+            const buildTime = Date.now() - buildStart;
+            
+            logger.info('ComplaintHandler buildResponse', {
+                leadId: lead?._id?.toString(),
+                buildTimeMs: buildTime,
+                hasResponse: !!naturalResponse,
+                response: naturalResponse?.substring(0, 50)
+            });
             
             if (naturalResponse) {
+                const totalTime = Date.now() - startTime;
+                logger.info('ComplaintHandler FAST_RETURN', {
+                    leadId: lead?._id?.toString(),
+                    totalTimeMs: totalTime
+                });
                 return {
                     text: naturalResponse,
                     extractedInfo: {
