@@ -123,6 +123,15 @@ export class WhatsAppOrchestrator {
             // Carrega contexto do chat para verificar estados pendentes (awaitingComplaint, etc)
             const chatContext = await ChatContext.findOne({ lead: lead._id }).lean();
             
+            // 🐛 DEBUG: Log do contexto carregado
+            this.logger.info('CHAT_CONTEXT_LOADED', {
+                leadId: lead._id?.toString(),
+                hasContext: !!chatContext,
+                lastExtractedInfo: chatContext?.lastExtractedInfo,
+                awaitingComplaint: chatContext?.lastExtractedInfo?.awaitingComplaint,
+                awaitingAge: chatContext?.lastExtractedInfo?.awaitingAge
+            });
+            
             const inferred = await this.extractInferredData({
                 text,
                 flags,
@@ -170,6 +179,28 @@ export class WhatsAppOrchestrator {
             // =========================
             // 8️⃣ DECISION ENGINE (USA O SEU!)
             // =========================
+            
+            // 🐛 DEBUG: Estado antes da decisão
+            this.logger.info('DECISION_ENGINE_INPUT', {
+                intent: analysis?.intent,
+                missing: {
+                    needsTherapy: missing.needsTherapy,
+                    needsComplaint: missing.needsComplaint,
+                    needsAge: missing.needsAge,
+                    needsPeriod: missing.needsPeriod,
+                    needsSlot: missing.needsSlot
+                },
+                inferred: {
+                    therapy: inferred.therapy,
+                    complaint: inferred.complaint?.substring(0, 30),
+                    age: inferred.age
+                },
+                flags: {
+                    asksPrice: flags.asksPrice,
+                    wantsSchedule: flags.wantsSchedule
+                }
+            });
+            
             const decision = await decisionEngine({
                 analysis,
                 missing,
@@ -182,7 +213,8 @@ export class WhatsAppOrchestrator {
                 handler: decision.handler,
                 action: decision.action,
                 reason: decision.reason,
-                preserveState: decision.preserveBookingState
+                preserveState: decision.preserveBookingState,
+                pendingField: decision.pendingField
             });
 
             // =========================
@@ -208,7 +240,18 @@ export class WhatsAppOrchestrator {
                 flags
             };
 
+            const handlerStart = Date.now();
             let result = await handler.execute({ decisionContext, services });
+            const handlerTime = Date.now() - handlerStart;
+            
+            this.logger.info('HANDLER_EXECUTED', {
+                leadId: lead._id?.toString(),
+                handler: decision.handler,
+                handlerTimeMs: handlerTime,
+                hasText: !!result?.text,
+                textLength: result?.text?.length,
+                extractedInfo: result?.extractedInfo
+            });
 
             // =========================
             // 🔟 GERA RESPOSTA IA SE NECESSÁRIO
@@ -242,11 +285,17 @@ export class WhatsAppOrchestrator {
             // =========================
             // 1️⃣2️⃣ PERSISTÊNCIA
             // =========================
+            const persistStart = Date.now();
             await this.persistData({
                 lead,
                 inferred,
                 result,
                 memoryContext
+            });
+            const persistTime = Date.now() - persistStart;
+            this.logger.info('PERSIST_DATA_COMPLETE', {
+                leadId: lead._id?.toString(),
+                persistTimeMs: persistTime
             });
 
             // =========================
@@ -324,6 +373,17 @@ export class WhatsAppOrchestrator {
         const isAwaitingAge = chatContext?.lastExtractedInfo?.awaitingAge === true;
         const isAwaitingPeriod = chatContext?.lastExtractedInfo?.awaitingPeriod === true;
         const lastQuestion = chatContext?.lastExtractedInfo?.lastQuestion;
+        
+        // 🐛 DEBUG: Log detalhado do estado de aguardo
+        this.logger.debug('EXTRACT_INFERRED_CONTEXT_STATE', {
+            leadId: lead._id?.toString(),
+            isAwaitingComplaint,
+            isAwaitingAge,
+            isAwaitingPeriod,
+            lastQuestion,
+            chatContextLastExtracted: chatContext?.lastExtractedInfo,
+            text: text?.substring(0, 100)
+        });
         
         // 🧠 Determina qual campo estamos aguardando para extração semântica
         const awaitingField = isAwaitingAge ? 'age' 
@@ -424,6 +484,15 @@ export class WhatsAppOrchestrator {
         // QUEIXA - Verifica se há queixa salva ou se estamos aguardando uma
         let complaint = intelligent?.queixa || lead?.primaryComplaint;
         
+        // 🐛 DEBUG: Estado antes da extração
+        this.logger.debug('COMPLAINT_EXTRACTION_START', {
+            hasIntelligent: !!intelligent?.queixa,
+            hasLeadComplaint: !!lead?.primaryComplaint,
+            isAwaitingComplaint,
+            awaitingField,
+            willTryExtract: !complaint && isAwaitingComplaint && awaitingField === 'complaint'
+        });
+        
         // 🔥 EXPERTISE: Se estamos aguardando uma queixa e o usuário enviou uma mensagem descritiva,
         // usar o texto como queixa mesmo se não casar com regex
         if (!complaint && isAwaitingComplaint && awaitingField === 'complaint') {
@@ -431,9 +500,17 @@ export class WhatsAppOrchestrator {
             const isTooShort = text.trim().length < 5;
             const isGenericResponse = /^(sim|n[aã]o|ok|beleza|tudo bem|n sei|não sei|nao sei|nao|não)$/i.test(text.trim());
             
+            this.logger.debug('COMPLAINT_VALIDATION', {
+                isQuestion,
+                isTooShort,
+                isGenericResponse,
+                textLength: text.trim().length,
+                text: text.trim().substring(0, 50)
+            });
+            
             if (!isQuestion && !isTooShort && !isGenericResponse) {
                 complaint = text.trim().substring(0, 200);
-                this.logger.debug('COMPLAINT_EXTRACTED_FROM_CONTEXT', { 
+                this.logger.info('COMPLAINT_EXTRACTED_FROM_CONTEXT', { 
                     text: complaint,
                     reason: 'awaiting_complaint_state'
                 });
@@ -441,12 +518,13 @@ export class WhatsAppOrchestrator {
             
             // 🧠 Se ainda não extraiu, usa IA para interpretar a queixa
             if (!complaint) {
+                this.logger.debug('COMPLAINT_TRYING_SEMANTIC', { reason: 'no_regex_match' });
                 const semanticResult = await smartExtract(text, 'complaint', {
                     lastAmandaMessage: chatContext?.lastAmandaMessage || memoryContext?.lastAmandaMessage
                 });
                 if (semanticResult?.complaint) {
                     complaint = semanticResult.complaint;
-                    this.logger.debug('COMPLAINT_EXTRACTED_SEMANTICALLY', { 
+                    this.logger.info('COMPLAINT_EXTRACTED_SEMANTICALLY', { 
                         complaint, 
                         text,
                         source: 'smartExtract' 
@@ -454,6 +532,12 @@ export class WhatsAppOrchestrator {
                 }
             }
         }
+        
+        // 🐛 DEBUG: Resultado final
+        this.logger.debug('COMPLAINT_EXTRACTION_RESULT', {
+            extracted: !!complaint,
+            complaint: complaint?.substring(0, 50)
+        });
         
         // Data preferida
         const preferredDate = extractPreferredDateFromText(text);
@@ -552,6 +636,18 @@ export class WhatsAppOrchestrator {
         const set = {};
         const unset = {};
 
+        // 🐛 DEBUG: Log dos dados a serem persistidos
+        this.logger.info('PERSIST_DATA_START', {
+            leadId: lead._id?.toString(),
+            inferred: {
+                therapy: inferred.therapy,
+                age: inferred.age,
+                complaint: inferred.complaint?.substring(0, 50),
+                period: inferred.period
+            },
+            extractedInfo: result?.extractedInfo
+        });
+
         // Dados inferidos
         if (inferred.therapy) set.therapyArea = inferred.therapy;
         if (inferred.age) set["patientInfo.age"] = inferred.age;
@@ -571,7 +667,14 @@ export class WhatsAppOrchestrator {
 
         // Salva no lead
         if (Object.keys(set).length > 0) {
+            this.logger.info('PERSIST_DATA_SAVING_LEAD', { 
+                leadId: lead._id?.toString(),
+                fields: Object.keys(set)
+            });
             await Leads.findByIdAndUpdate(lead._id, { $set: set });
+            this.logger.info('PERSIST_DATA_SAVED_LEAD', { leadId: lead._id?.toString() });
+        } else {
+            this.logger.info('PERSIST_DATA_NO_FIELDS_TO_SAVE', { leadId: lead._id?.toString() });
         }
 
         // Atualiza contexto

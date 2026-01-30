@@ -111,11 +111,23 @@ export async function update(leadId, extractedInfo) {
             lastUpdatedAt: new Date()
         };
 
-        await ChatContext.findOneAndUpdate(
+        console.log('[ContextMemory] Salvando extractedInfo:', {
+            leadId: leadId?.toString?.() || leadId,
+            extractedInfo,
+            awaitingComplaint: extractedInfo?.awaitingComplaint,
+            awaitingAge: extractedInfo?.awaitingAge
+        });
+
+        const result = await ChatContext.findOneAndUpdate(
             { lead: leadId },
             { $set: updateData },
-            { upsert: true }
+            { upsert: true, new: true }
         );
+
+        console.log('[ContextMemory] Salvo com sucesso:', {
+            leadId: leadId?.toString?.() || leadId,
+            resultId: result?._id?.toString?.()
+        });
 
         return true;
     } catch (error) {
