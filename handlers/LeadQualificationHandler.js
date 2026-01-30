@@ -88,21 +88,21 @@ class LeadQualificationHandler {
             
             if (!shouldAcknowledgeHistory && missing.needsTherapy) {
                 return {
-                    text: buildResponse('ask_therapy', { leadId: lead?._id }),
+                    text: buildResponse('ask_therapy', { leadId: memory?.leadId }),
                     extractedInfo: {}
                 };
             }
             
             if (missing.needsAge) {
                 return {
-                    text: buildResponse('ask_age', { leadId: lead?._id }),
+                    text: buildResponse('ask_age', { leadId: memory?.leadId }),
                     extractedInfo: { awaitingAge: true, lastQuestion: 'age' }
                 };
             }
             
             if (missing.needsPeriod) {
                 return {
-                    text: buildResponse('ask_period', { leadId: lead?._id }),
+                    text: buildResponse('ask_period', { leadId: memory?.leadId }),
                     extractedInfo: { awaitingPeriod: true, lastQuestion: 'period' }
                 };
             }
