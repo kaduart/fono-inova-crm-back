@@ -290,7 +290,8 @@ export class WhatsAppOrchestrator {
                 lead,
                 inferred,
                 result,
-                memoryContext
+                memoryContext,
+                decision
             });
             const persistTime = Date.now() - persistStart;
             this.logger.info('PERSIST_DATA_COMPLETE', {
@@ -643,7 +644,7 @@ export class WhatsAppOrchestrator {
         return messages[pendingField] || 'Voltando ao que estávamos falando...';
     }
 
-    async persistData({ lead, inferred, result, memoryContext }) {
+    async persistData({ lead, inferred, result, memoryContext, decision }) {
         const set = {};
         const unset = {};
 
