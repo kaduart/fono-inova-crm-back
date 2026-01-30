@@ -70,6 +70,22 @@ class LeadQualificationHandler {
             let extractedInfo = {}; // 🆕 Para salvar estado de aguardo
 
             // 🆕 RESPOSTAS NATURAIS (rápidas, sem IA) para casos simples
+            
+            // 🆕 SELEÇÃO DE TERAPIA (quando há múltiplas detectadas)
+            if (missing.needsTherapySelection && decisionContext?.detectedTherapies?.length > 1) {
+                const therapies = decisionContext.detectedTherapies;
+                const therapyList = therapies.map((t, i) => `${String.fromCharCode(65 + i)}) ${t.charAt(0).toUpperCase() + t.slice(1)}`).join('\n');
+                
+                return {
+                    text: `Vi que você tem autorização para várias terapias 💚\n\n${therapyList}\n\nQual delas você gostaria de agendar?`,
+                    extractedInfo: { 
+                        awaitingTherapySelection: true, 
+                        lastQuestion: 'therapy_selection',
+                        detectedTherapies: therapies
+                    }
+                };
+            }
+            
             if (!shouldAcknowledgeHistory && missing.needsTherapy) {
                 return {
                     text: buildResponse('ask_therapy', { leadId: lead?._id }),
