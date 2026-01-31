@@ -137,6 +137,7 @@ function extractChildNameFromHistory(history = []) {
 
 /**
  * 💬 Gera mensagem contextualizada
+ * 🆕 INTEGRAÇÃO: Urgência desenvolvimental sutil para ≤6 anos (consultiva, não ameaçadora)
  */
 export function generateContextualFollowup({ lead, analysis, attempt = 1, history = [], sameDay = false, summaryText = null }) {
     const { extracted = {}, intent = {}, score = lead.conversionScore || 50 } = analysis || {};
@@ -147,17 +148,17 @@ export function generateContextualFollowup({ lead, analysis, attempt = 1, histor
         lead?.reason === "nao_oferecemos_exame" ||
         lead?.flags?.includes("fora_escopo");
 
+    // nome sanitizado
+    let firstName = ((lead?.name || "").trim().split(/\s+/)[0]) || "";
+    const blacklist = ["contato", "cliente", "lead", "paciente"];
+    if (firstName && blacklist.includes(firstName.toLowerCase())) firstName = "";
+
     if (isOutOfScope) {
         const greeting = firstName ? `Oi ${firstName}!` : "Oi!";
         return ensureSingleHeart(
             `${greeting} Vi sua mensagem e só pra alinhar: esse tipo de procedimento específico a gente não realiza aqui porque nosso foco é terapia. Se você quiser, posso te orientar sobre como funciona o acompanhamento/terapia e próximos passos.`
         );
     }
-
-    // nome sanitizado
-    let firstName = ((lead?.name || "").trim().split(/\s+/)[0]) || "";
-    const blacklist = ["contato", "cliente", "lead", "paciente"];
-    if (firstName && blacklist.includes(firstName.toLowerCase())) firstName = "";
 
     // ✅ SEM 💚 aqui (o coração vai só no final)
     const greeting = firstName ? `Oi ${firstName}!` : "Oi!";
@@ -180,6 +181,11 @@ export function generateContextualFollowup({ lead, analysis, attempt = 1, histor
 
     const intentPrimary = (intent.primary || "").toLowerCase();
     const topic = inferTopic({ extracted, intentPrimary, history: historyWithSummary });
+    
+    // 🆕 EXTRAI IDADE PARA URGÊNCIA DESENVOLVIMENTAL
+    const childAge = extractChildAge(extracted, lead, historyWithSummary);
+    const isDevelopmentalWindow = childAge !== null && childAge <= 6;
+    const childName = extracted.childName || extractChildNameFromHistory(historyWithSummary);
 
     // 🚫 Casos fora de escopo — exames, laudos, audiometrias
     const textBlob = [
@@ -198,18 +204,40 @@ export function generateContextualFollowup({ lead, analysis, attempt = 1, histor
         );
     }
 
-    // === TENTATIVA 3+ → despedida gentil, sem empurrar ===
+    // === TENTATIVA 3+ → despedida gentil, com urgência desenvolvimental sutil se ≤6 anos ===
     if (attempt >= 3) {
+        // 🆕 URGÊNCIA DESENVOLVIMENTAL SUTIL para ≤6 anos
+        if (isDevelopmentalWindow) {
+            const devUrgency = `Não quero pressionar, mas preciso ser honesta: com ${childAge} anos, cada mês faz diferença real no desenvolvimento de ${childName || "seu filho"}. É matemática, não ameaça.`;
+            return ensureSingleHeart(
+                `${greeting} Esta é a minha última mensagem por aqui. ${devUrgency}\n\nSe você decidir seguir com ${topic}, a Fono Inova fica à disposição. Pode chamar quando for um bom momento — mas quanto antes, mais leve será o caminho dele. 🤗`
+            );
+        }
+        
         return ensureSingleHeart(
             `${greeting} Esta é a minha última mensagem por aqui, só pra reforçar que, se você decidir seguir com ${topic}, a Fono Inova fica à disposição. Pode chamar quando for um bom momento pra você.`
         );
     }
 
-    // === TENTATIVA 2 → reforço leve, sem pressão ===
+    // === TENTATIVA 2 → reforço leve, com urgência desenvolvimental sutil se ≤6 anos ===
     if (attempt === 2) {
         if (score >= 80) {
+            // 🆕 URGÊNCIA DESENVOLVIMENTAL SUTIL para ≤6 anos (hot lead)
+            if (isDevelopmentalWindow) {
+                return ensureSingleHeart(
+                    `${greeting} Vi que a gente ainda não finalizou ${topic} 💚\n\nSei que está corrido, mas nessa idade (${childAge} anos), cada semana é uma oportunidade de desenvolvimento que não volta da mesma forma. Quanto antes iniciarmos, mais leve será o caminho de ${childName || "seu filho"}.\n\nPosso te passar alguns horários disponíveis?`
+                );
+            }
+            
             return ensureSingleHeart(
                 `${greeting} Vi que a gente ainda não finalizou ${topic}. Se quiser, posso te passar agora alguns horários disponíveis pra facilitar.`
+            );
+        }
+
+        // 🆕 URGÊNCIA DESENVOLVIMENTAL SUTIL para ≤6 anos (warm lead)
+        if (isDevelopmentalWindow) {
+            return ensureSingleHeart(
+                `${greeting} Passando só pra saber se ficou alguma dúvida sobre ${topic} 💚\n\nSei que está avaliando opções. Só queria te lembrar que com ${childAge} anos, cada mês de estímulo faz diferença. Não é pressão — é ciência. Estou aqui quando quiser continuar. 🤗`
             );
         }
 
@@ -220,33 +248,95 @@ export function generateContextualFollowup({ lead, analysis, attempt = 1, histor
 
     // === TENTATIVA 1 → mais direta, mas ainda humana ===
     if (intentPrimary === "agendar_avaliacao" || intentPrimary === "agendar_urgente") {
+        // 🆕 URGÊNCIA DESENVOLVIMENTAL SUTIL para ≤6 anos
+        if (isDevelopmentalWindow) {
+            return ensureSingleHeart(
+                `${opener} Sobre ${topic}, tenho alguns horários livres 💚\n\nCom ${childAge} anos, quanto antes iniciarmos, mais leve será o caminho. Você prefere período da manhã ou da tarde?`
+            );
+        }
+        
         return ensureSingleHeart(
             `${opener} Sobre ${topic}, tenho alguns horários livres nos próximos dias. Você prefere período da manhã ou da tarde pra gente tentar encaixar?`
         );
     }
 
     if (intentPrimary === "informacao_preco") {
-        const preco = extracted.precoAvaliacao || extracted.preco || "a avaliação inicial é R$ 200,00";
+        const preco = extracted.precoAvaliacao || extracted.preco || "a avaliação inicial é R$ 220,00";
+        
+        // 🆕 VALOR → URGÊNCIA → PREÇO para ≤6 anos
+        if (isDevelopmentalWindow) {
+            return ensureSingleHeart(
+                `${opener} Entendo sua questão sobre valores 💚\n\nAvaliação mapeia exatamente onde ${childName || "seu filho"} precisa de estímulo. Com ${childAge} anos, cada mês faz diferença pro desenvolvimento! ${preco}\n\nSe fizer sentido, posso ver horários?`
+            );
+        }
+        
         return ensureSingleHeart(
             `${opener} Sobre os valores: ${preco}. Se fizer sentido pra você, posso já te ajudar a escolher um horário pra começar.`
         );
     }
 
     if (score >= 70) {
+        // 🆕 URGÊNCIA DESENVOLVIMENTAL SUTIL para ≤6 anos
+        if (isDevelopmentalWindow) {
+            return ensureSingleHeart(
+                `${opener} Só passando pra saber se ficou alguma dúvida sobre ${topic} 💚\n\nNessa fase (${childAge} anos), quanto antes iniciarmos, mais leve é o caminho. Posso te mandar opções de horários?`
+            );
+        }
+        
         return ensureSingleHeart(
             `${opener} Só passando pra saber se ficou alguma dúvida sobre ${topic}. Se quiser, posso te mandar opções de horários ou explicar melhor como funciona o processo.`
         );
     }
 
     if (score >= 40) {
+        // 🆕 URGÊNCIA DESENVOLVIMENTAL SUTIL para ≤6 anos
+        if (isDevelopmentalWindow) {
+            return ensureSingleHeart(
+                `${opener} Vi seu contato sobre ${topic} 💚\n\nCom ${childAge} anos, as janelas de desenvolvimento são mais receptivas agora. Não quero pressionar — só quero que saiba das opções. Posso te ajudar com alguma informação?`
+            );
+        }
+        
         return ensureSingleHeart(
             `${opener} Vi seu contato sobre ${topic} e queria saber se ainda posso te ajudar com alguma informação ou orientação.`
+        );
+    }
+
+    // 🆕 Fallback com urgência desenvolvimental se ≤6 anos
+    if (isDevelopmentalWindow) {
+        return ensureSingleHeart(
+            `${opener} Notei que você entrou em contato sobre ${topic} 💚\n\nNão sei se te contaram, mas trabalho com uma clínica que realmente se importa com o tempo das crianças. Com ${childAge} anos, cada semana é uma oportunidade. Estou aqui quando quiser. 🤗`
         );
     }
 
     return ensureSingleHeart(
         `${opener} Notei que você entrou em contato sobre ${topic}. Se ainda fizer sentido pra você, fico à disposição pra te ajudar por aqui.`
     );
+}
+
+/**
+ * 🆕 Extrai idade da criança de várias fontes
+ */
+function extractChildAge(extracted, lead, history) {
+    // Tenta extracted primeiro
+    if (extracted?.childAge) return parseInt(extracted.childAge);
+    if (extracted?.idade) return parseInt(extracted.idade);
+    
+    // Tenta lead
+    if (lead?.childData?.age) return parseInt(lead.childData.age);
+    if (lead?.knownFacts?.childAge) return parseInt(lead.knownFacts.childAge);
+    if (lead?.qualificationData?.childAge) return parseInt(lead.qualificationData.childAge);
+    if (lead?.patientAge) return parseInt(lead.patientAge);
+    
+    // Tenta extrair de histórico
+    const historyText = history
+        .map(m => (m.content || m.text || ''))
+        .join(' ');
+    
+    // Procura padrões como "5 anos", "3 anos de idade"
+    const ageMatch = historyText.match(/(\d+)\s*(?:anos?|anos de idade)/i);
+    if (ageMatch) return parseInt(ageMatch[1]);
+    
+    return null;
 }
 
 

@@ -6,6 +6,7 @@ import { redisConnection } from "../config/redisConnection.js";
 import Followup from "../models/Followup.js";
 import Message from "../models/Message.js";
 import { buildContextPack } from "../services/intelligence/ContextPack.js";
+import { processInactiveLeads } from "../services/inactiveLeadFollowupService.js";
 
 await mongoose.connect(process.env.MONGO_URI);
 
@@ -147,7 +148,22 @@ function getPriority(score) {
 // ✅ MELHORIA: Intervalo reduzido para 3 minutos (mais responsivo)
 setInterval(dispatchPendingFollowups, 3 * 60 * 1000);
 
+// 🆕 VERIFICAÇÃO DE LEADS INATIVOS (48h/72h) - a cada 6 horas
+async function runInactiveLeadCheck() {
+  console.log(chalk.cyan('[INACTIVE-CHECK] Verificando leads inativos...'));
+  try {
+    const result = await processInactiveLeads();
+    console.log(chalk.green(`[INACTIVE-CHECK] Concluído: ${result.created} follow-ups criados`));
+  } catch (error) {
+    console.error(chalk.red('[INACTIVE-CHECK] Erro:'), error.message);
+  }
+}
+
+// Roda a cada 6 horas
+setInterval(runInactiveLeadCheck, 6 * 60 * 60 * 1000);
+
 // Execução inicial
 dispatchPendingFollowups();
+runInactiveLeadCheck(); // Roda também na inicialização
 
-console.log(chalk.cyan('⏰ Follow-up Cron iniciado (scan a cada 3min)'));
+console.log(chalk.cyan('⏰ Follow-up Cron iniciado (scan a cada 3min + inactive check a cada 6h)'));

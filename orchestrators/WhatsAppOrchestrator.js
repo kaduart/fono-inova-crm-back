@@ -392,20 +392,29 @@ export class WhatsAppOrchestrator {
         const isAwaitingPeriod = chatContext?.lastExtractedInfo?.awaitingPeriod === true;
         const lastQuestion = chatContext?.lastExtractedInfo?.lastQuestion;
         
+        // 🆕 PROTEÇÃO: Verifica último handler para fallback
+        const lastHandlerFromMemory = memoryContext?.lastHandler;
+        const lastHandlerFromChat = chatContext?.lastExtractedInfo?.lastHandler;
+        const lastHandlerWasComplaint = lastHandlerFromMemory === 'complaintCollectionHandler' || 
+                                        lastHandlerFromChat === 'complaintCollectionHandler';
+        
         // 🐛 DEBUG: Log detalhado do estado de aguardo
         this.logger.debug('EXTRACT_INFERRED_CONTEXT_STATE', {
             leadId: lead._id?.toString(),
             isAwaitingComplaint,
             isAwaitingAge,
             isAwaitingPeriod,
-            lastQuestion,
+            lastHandlerFromMemory,
+            lastHandlerFromChat,
+            lastHandlerWasComplaint,
             chatContextLastExtracted: chatContext?.lastExtractedInfo,
             text: text?.substring(0, 100)
         });
         
         // 🧠 Determina qual campo estamos aguardando para extração semântica
+        // 🆕 Também considera o último handler como fallback
         const awaitingField = isAwaitingAge ? 'age' 
-            : isAwaitingComplaint ? 'complaint' 
+            : (isAwaitingComplaint || lastHandlerWasComplaint) ? 'complaint' 
             : isAwaitingPeriod ? 'period' 
             : !therapy ? 'therapy'
             : null;
@@ -502,12 +511,7 @@ export class WhatsAppOrchestrator {
         // QUEIXA - Verifica se há queixa salva ou se estamos aguardando uma
         let complaint = intelligent?.queixa || lead?.primaryComplaint;
         
-        // 🆕 PROTEÇÃO: Se o último handler foi complaintCollectionHandler, 
-        // assume que estamos aguardando queixa mesmo se o estado não carregou
-        const lastHandlerFromMemory = memoryContext?.lastHandler;
-        const lastHandlerFromChat = chatContext?.lastExtractedInfo?.lastHandler;
-        const lastHandlerWasComplaint = lastHandlerFromMemory === 'complaintCollectionHandler' || 
-                                        lastHandlerFromChat === 'complaintCollectionHandler';
+        // 🆕 PROTEÇÃO: já definido acima, reusa a variável
         const shouldExtractComplaint = isAwaitingComplaint || lastHandlerWasComplaint;
         
         // 🐛 DEBUG: Estado antes da extração
@@ -515,8 +519,6 @@ export class WhatsAppOrchestrator {
             hasIntelligent: !!intelligent?.queixa,
             hasLeadComplaint: !!lead?.primaryComplaint,
             isAwaitingComplaint,
-            lastHandlerFromMemory,
-            lastHandlerFromChat,
             lastHandlerWasComplaint,
             shouldExtractComplaint,
             awaitingField
@@ -711,14 +713,20 @@ export class WhatsAppOrchestrator {
             this.logger.info('PERSIST_DATA_NO_FIELDS_TO_SAVE', { leadId: lead._id?.toString() });
         }
 
-        // Atualiza contexto
-        if (result?.extractedInfo && Object.keys(result.extractedInfo).length > 0) {
-            await ContextMemory.update(lead._id, result.extractedInfo);
-        }
+        // 🆕 Atualiza contexto COMBINANDO extractedInfo + lastHandler (evita sobrescrita)
+        const contextUpdate = {
+            ...(result?.extractedInfo || {}),
+            ...(decision?.handler && { lastHandler: decision.handler })
+        };
         
-        // 🆕 Salva o último handler usado para proteção de estado
-        if (decision?.handler) {
-            await ContextMemory.update(lead._id, { lastHandler: decision.handler });
+        if (Object.keys(contextUpdate).length > 0) {
+            this.logger.info('CONTEXT_MEMORY_UPDATE', {
+                leadId: lead._id?.toString(),
+                keys: Object.keys(contextUpdate),
+                awaitingComplaint: contextUpdate.awaitingComplaint,
+                lastHandler: contextUpdate.lastHandler
+            });
+            await ContextMemory.update(lead._id, contextUpdate);
         }
         
         // 🆕 Limpa os estados de aguardo quando os dados são extraídos com sucesso

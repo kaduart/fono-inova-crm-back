@@ -64,8 +64,8 @@ db.appointments.find({
 // consultar pagamentos do dia
 db.payments.find({
   createdAt: {
-    $gte: ISODate("2026-01-29T00:00:00.000Z"),
-    $lt: ISODate("2026-01-30T00:00:00.000Z")
+    $gte: ISODate("2026-01-30T00:00:00.000Z"),
+    $lt: ISODate("2026-02-01T00:00:00.000Z")
   }
 })
 /// atualizar pagamaneto por id
