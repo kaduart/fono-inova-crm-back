@@ -114,6 +114,22 @@ export async function registerMessage({
         }
     }
 
+    // 🆕 Atualiza lastContactAt no Lead quando mensagem é do lead (inbound)
+    if (leadId && direction === "inbound") {
+        try {
+            await Lead.findByIdAndUpdate(
+                leadId,
+                {
+                    lastContactAt: now,
+                },
+                { new: true }
+            );
+            console.log(`[LEAD] lastContactAt atualizado para lead ${leadId}`);
+        } catch (err) {
+            console.error("⚠️ Erro ao atualizar lastContactAt no lead:", err);
+        }
+    }
+
     return msg;
 }
 

@@ -1,8 +1,13 @@
 // handlers/LeadQualificationHandler.js
+// 🧠 Versão 2.0 - Consultora Premium Inteligente
 
 import callAI from '../services/IA/Aiproviderservice.js';
 import Logger from '../services/utils/Logger.js';
-import { DYNAMIC_MODULES } from '../utils/amandaPrompt.js';
+import { 
+    DYNAMIC_MODULES, 
+    OBJECTION_SCRIPTS,
+    getObjectionScript 
+} from '../utils/amandaPrompt.js';
 import ensureSingleHeart from '../utils/helpers.js';
 import { buildResponse } from '../services/intelligence/naturalResponseBuilder.js';
 
@@ -14,7 +19,54 @@ class LeadQualificationHandler {
     async execute({ decisionContext, services }) {
 
         try {
-            const { memory, analysis, missing, message } = decisionContext;
+            const { memory, analysis, missing, message, action, objectionType, attempt, pendingCollection } = decisionContext;
+            
+            // ===========================
+            // 🆕 TRATAMENTO ESPECIAL: OBJEÇÕES
+            // ===========================
+            if (action === 'handle_objection' && objectionType) {
+                return this.handleObjection(objectionType, attempt, pendingCollection, memory);
+            }
+            
+            // ===========================
+            // 🆕 TRATAMENTO ESPECIAL: ACOLHIMENTO EMOCIONAL
+            // ===========================
+            if (action === 'acknowledge_pain') {
+                return this.handleEmotionalAcknowledgment(pendingCollection, memory);
+            }
+            
+            // ===========================
+            // 🆕 TRATAMENTO ESPECIAL: WARM RECALL (lead retornando)
+            // ===========================
+            if (action === 'warm_recall') {
+                // O texto já vem pronto do DecisionEngine
+                return {
+                    text: decisionContext.text || "Oi! Que bom te ver de novo 💚 Como posso te ajudar hoje?",
+                    extractedInfo: decisionContext.extractedInfo || { returningLead: true }
+                };
+            }
+            
+            // ===========================
+            // 🆕 TRATAMENTO ESPECIAL: SMART RESPONSE (responde + retoma)
+            // ===========================
+            if (action === 'smart_response') {
+                // O texto já vem pronto do DecisionEngine (resposta + retomada)
+                return {
+                    text: decisionContext.text || "Como posso te ajudar? 💚",
+                    extractedInfo: decisionContext.extractedInfo || {}
+                };
+            }
+            
+            // ===========================
+            // 🆕 TRATAMENTO ESPECIAL: CONTINUE COLLECTION
+            // ===========================
+            if (action === 'continue_collection') {
+                return {
+                    text: decisionContext.text || "Como posso te ajudar? 💚",
+                    extractedInfo: decisionContext.extractedInfo || {}
+                };
+            }
+            
             // ===========================
             // 1️⃣ MONTA CONTEXTO
             // ===========================
@@ -183,6 +235,181 @@ class LeadQualificationHandler {
                 text: 'Me conta um pouquinho mais sobre o que você precisa? Estou aqui pra te ajudar 💚'
             };
         }
+    }
+
+    // ============================================================================
+    // 🆕 MÉTODOS PARA FLUXO INTELIGENTE CONSULTORA PREMIUM
+    // ============================================================================
+
+    /**
+     * 🛡️ Trata objeção com scripts progressivos (primary → secondary → lastResort)
+     */
+    handleObjection(objectionType, attempt, pendingCollection, memory) {
+        // Busca script apropriado
+        let script;
+        if (attempt === 1) {
+            script = getObjectionScript(objectionType, 'primary');
+        } else if (attempt === 2) {
+            script = getObjectionScript(objectionType, 'secondary');
+        } else {
+            script = getObjectionScript(objectionType, 'lastResort') || getObjectionScript(objectionType, 'secondary');
+        }
+        
+        // 🆕 SEMPRE retomar o flow naturalmente
+        const followUp = this.getSmartFollowUp(pendingCollection, memory);
+        
+        // Montar resposta completa
+        let response = script;
+        if (followUp && attempt < 3) {
+            response = `${script} ${followUp}`;
+        }
+        
+        return {
+            text: ensureSingleHeart(response),
+            extractedInfo: { 
+                objectionHandled: objectionType, 
+                objectionAttempt: attempt,
+                painAcknowledged: true // Marca como "acolhido" para não repetir
+            }
+        };
+    }
+
+    /**
+     * 💚 Acolhimento emocional quando lead expressa dor/preocupação
+     */
+    handleEmotionalAcknowledgment(pendingCollection, memory) {
+        const patientName = memory?.patientInfo?.name || memory?.patientName;
+        const nameRef = patientName ? `o(a) ${patientName.split(' ')[0]}` : 'seu filho';
+        
+        const acknowledgment = `Entendo sua preocupação 💚 Você fez muito bem em buscar orientação cedo — isso faz toda diferença pro desenvolvimento de ${nameRef}.`;
+        
+        // Retomar flow naturalmente
+        const followUp = this.getSmartFollowUp(pendingCollection, memory);
+        
+        return {
+            text: ensureSingleHeart(followUp ? `${acknowledgment} ${followUp}` : acknowledgment),
+            extractedInfo: { 
+                painAcknowledged: true,
+                emotionalSupportProvided: true
+            }
+        };
+    }
+
+    /**
+     * 🎯 Retoma o flow de forma natural baseado no que falta
+     */
+    getSmartFollowUp(pendingCollection, memory) {
+        if (!pendingCollection || pendingCollection.length === 0) {
+            return 'Quer que eu veja os horários disponíveis?';
+        }
+        
+        // Prioridade: complaint > age > period > therapy
+        const has = (item) => pendingCollection.includes(item);
+        
+        if (has('complaint') && memory?.therapyArea) {
+            return 'O que você tem observado que te preocupa?';
+        }
+        
+        if (has('age')) {
+            return 'Qual a idade do paciente?';
+        }
+        
+        if (has('period')) {
+            return 'Prefere manhã ou tarde?';
+        }
+        
+        if (has('therapy')) {
+            return 'É pra qual área: Fono, Psicologia, Terapia Ocupacional, Fisio ou Neuropsico?';
+        }
+        
+        return 'Quer que eu veja os horários disponíveis?';
+    }
+
+    /**
+     * 💰 Constrói resposta de preço: VALOR DO TRABALHO → URGÊNCIA → PREÇO
+     */
+    buildPriceResponse(memory, flags = {}) {
+        const therapy = memory?.therapyArea || 'avaliação';
+        const age = memory?.patientAge || memory?.patientInfo?.age;
+        const complaint = memory?.complaint || memory?.primaryComplaint;
+        
+        // 1️⃣ VALOR DO TRABALHO (explicar o que o lead vai receber)
+        const valuePitch = this.getValuePitch(therapy, age);
+        
+        // 2️⃣ URGÊNCIA CONTEXTUAL (se tiver idade)
+        const urgencyPitch = this.getUrgencyPitch(age, therapy, complaint);
+        
+        // 3️⃣ PREÇO
+        const pricePitch = this.getPricePitch(therapy);
+        
+        // Montar resposta completa
+        let response = valuePitch;
+        if (urgencyPitch) response += ` ${urgencyPitch}`;
+        response += ` ${pricePitch}`;
+        
+        return response.trim();
+    }
+
+    /**
+     * Explica o VALOR do trabalho por especialidade
+     */
+    getValuePitch(therapy, age) {
+        const pitches = {
+            'fonoaudiologia': 'A avaliação fonoaudiológica mapeia exatamente onde seu filho precisa de estímulo — vocês saem com um plano personalizado pro desenvolvimento da fala, não é só uma consulta.',
+            'fono': 'A avaliação fonoaudiológica mapeia exatamente onde seu filho precisa de estímulo — vocês saem com um plano personalizado pro desenvolvimento da fala, não é só uma consulta.',
+            
+            'psicologia': 'A avaliação psicológica entende o que está por trás do comportamento e dá um direcionamento claro pra família — vocês saem com orientações práticas pra aplicar no dia a dia.',
+            'psico': 'A avaliação psicológica entende o que está por trás do comportamento e dá um direcionamento claro pra família — vocês saem com orientações práticas pra aplicar no dia a dia.',
+            
+            'neuropsicologia': 'A avaliação neuropsicológica é completa: mapeamos atenção, memória, raciocínio e comportamento. Vocês recebem um laudo detalhado que serve pra escola, médicos e tratamentos.',
+            'neuropsi': 'A avaliação neuropsicológica é completa: mapeamos atenção, memória, raciocínio e comportamento. Vocês recebem um laudo detalhado que serve pra escola, médicos e tratamentos.',
+            
+            'terapia_ocupacional': 'A avaliação de TO identifica as dificuldades sensoriais e de coordenação, e monta um plano pra ele ganhar mais autonomia nas atividades do dia a dia.',
+            'to': 'A avaliação de TO identifica as dificuldades sensoriais e de coordenação, e monta um plano pra ele ganhar mais autonomia nas atividades do dia a dia.',
+            
+            'fisioterapia': 'A avaliação de fisioterapia analisa postura, equilíbrio e coordenação motora — saímos com um plano específico pro desenvolvimento motor dele.',
+            'fisio': 'A avaliação de fisioterapia analisa postura, equilíbrio e coordenação motora — saímos com um plano específico pro desenvolvimento motor dele.',
+            
+            'musicoterapia': 'A avaliação de musicoterapia identifica como a música pode ajudar no desenvolvimento emocional e social — é uma abordagem lúdica e efetiva.',
+            
+            'psicopedagogia': 'A avaliação psicopedagógica mapeia as dificuldades de aprendizagem e cria estratégias personalizadas pra escola e estudos.',
+            
+            'default': 'A avaliação é completa e personalizada — vocês saem com um plano claro do que fazer, não é só uma consulta.'
+        };
+        
+        return pitches[therapy?.toLowerCase()] || pitches['default'];
+    }
+
+    /**
+     * Frase de urgência contextual por idade
+     */
+    getUrgencyPitch(age, therapy, complaint) {
+        if (!age) return '';
+        
+        const ageNum = parseInt(age, 10);
+        if (isNaN(ageNum)) return '';
+        
+        if (ageNum <= 6) {
+            return 'Nessa fase, cada mês faz diferença pro desenvolvimento!';
+        } else if (ageNum <= 12) {
+            return 'É uma fase importante pra não deixar acumular dificuldades.';
+        } else if (ageNum <= 17) {
+            return 'Esse momento é chave pra recuperar o ritmo antes do vestibular/ENEM.';
+        } else if (complaint?.includes('diagnóstico') || complaint?.includes('laudo') || therapy?.includes('neuro')) {
+            return 'O laudo abre portas pra você entender melhor seus desafios e ter os suportes necessários.';
+        }
+        
+        return '';
+    }
+
+    /**
+     * Preço formatado como "investimento"
+     */
+    getPricePitch(therapy) {
+        if (therapy?.includes('neuropsi') || therapy?.includes('neuropsicologia')) {
+            return 'O investimento é R$ 2.500 (em até 6x) ou R$ 2.300 à vista — inclui todas as sessões e o laudo completo.';
+        }
+        return 'O investimento na avaliação é R$ 220.';
     }
 }
 

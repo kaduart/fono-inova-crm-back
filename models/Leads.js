@@ -139,6 +139,11 @@ const leadSchema = new mongoose.Schema({
 
   // ✅ TRACKING DE RESPOSTA
   responded: { type: Boolean, default: false },
+  
+  // 🆕 TRACKING DE CONTATO PARA WARM RECALL
+  lastContactAt: { type: Date, default: null, index: true },
+  lastFollowUpAt: { type: Date, default: null },
+  
   conversationSummary: {
     type: String,
     default: null,

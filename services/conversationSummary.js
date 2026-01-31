@@ -117,4 +117,129 @@ export async function update(leadId, newMessageText) {
     return null;
 }
 
+// ======================================================
+// 🆕 FOLLOW-UP AUTOMÁTICO - Mensagens 48h/72h
+// Tom consultivo, urgência desenvolvimental sutil para ≤6 anos
+// ======================================================
+
+/**
+ * Gera mensagem de follow-up baseada no tempo desde último contato
+ * REGRA OURO: Nunca "agende agora" | Sempre consultivo | Urgência como cuidado
+ */
+export function generateFollowUpMessage(lead, hoursSinceLastContact = 48) {
+    const childName = extractChildName(lead);
+    const childAge = extractChildAgeForFollowUp(lead);
+    const parentName = lead?.name?.split(' ')[0] || "";
+    const therapyType = lead?.therapyArea || lead?.knownFacts?.therapyType || "avaliação";
+    const hasDevelopmentalUrgency = childAge !== null && childAge <= 6;
+    
+    // Seleciona template baseado no tempo
+    if (hoursSinceLastContact >= 72) {
+        return generate72hFollowUp({ parentName, childName, childAge, hasDevelopmentalUrgency, therapyType });
+    } else {
+        return generate48hFollowUp({ parentName, childName, childAge, hasDevelopmentalUrgency, therapyType });
+    }
+}
+
+/**
+ * Extrai nome da criança de várias fontes
+ */
+function extractChildName(lead) {
+    return lead?.childData?.name || 
+           lead?.knownFacts?.childName || 
+           lead?.qualificationData?.childName ||
+           null;
+}
+
+/**
+ * Extrai idade da criança para follow-up
+ */
+function extractChildAgeForFollowUp(lead) {
+    if (lead?.knownFacts?.childAge) return parseInt(lead.knownFacts.childAge);
+    if (lead?.qualificationData?.childAge) return parseInt(lead.qualificationData.childAge);
+    if (lead?.childData?.age) return parseInt(lead.childData.age);
+    
+    // Tenta extrair do resumo
+    const summary = lead?.conversationSummary || "";
+    const ageMatch = summary.match(/(\d+)\s*(?:anos?|anos de idade)/i);
+    if (ageMatch) return parseInt(ageMatch[1]);
+    
+    return null;
+}
+
+/**
+ * Follow-up 48h - Tom consultivo, urgência explicada como ciência
+ */
+function generate48hFollowUp({ parentName, childName, childAge, hasDevelopmentalUrgency, therapyType }) {
+    if (hasDevelopmentalUrgency && childAge !== null) {
+        // Urgência desenvolvimental SUTIL - consultiva, não ameaçadora
+        return `${parentName ? parentName + ", " : ""}fiquei pensando no que conversamos sobre o${childName ? " " + childName : " seu filho"} 💚
+
+Sei que está corrido, mas nessa idade (${childAge} anos), cada semana que passa é uma oportunidade de desenvolvimento que não volta da mesma forma. Não quero pressionar — só quero que saiba que quanto antes iniciarmos, mais leve será o caminho dele.
+
+Estou aqui quando sentir que é o momento 🤗`;
+    }
+    
+    // >6 anos - Tom afetivo, SEM urgência temporal
+    return `${parentName ? parentName + ", " : ""}como você está? 💚
+
+Sei que passaram alguns dias e a vida não para. Só queria saber se está tudo bem com vocês${childName ? " — e como vai o " + childName : ""}.
+
+Quando quiser retomar nossa conversa sobre a ${therapyType}, estarei aqui. No seu tempo 🤗`;
+}
+
+/**
+ * Follow-up 72h - Último toque, mais direto mas sempre consultivo
+ */
+function generate72hFollowUp({ parentName, childName, childAge, hasDevelopmentalUrgency, therapyType }) {
+    if (hasDevelopmentalUrgency && childAge !== null) {
+        // Urgência consultiva máxima, mas ainda sem pressão
+        return `${parentName ? parentName + ", " : ""}preciso ser honesta com você 💚
+
+Com ${childAge} anos, o ${childName || "seu filho"} está em uma fase onde cada mês faz diferença real no desenvolvimento. Não estou dizendo isso para pressionar — estou dizendo porque me importo.
+
+Se for para fazer, quanto antes, melhor para ele. Se não for agora, também tudo bem. Mas não quero que passe mais tempo sem pelo menos saber das opções.
+
+Posso te ajudar com isso? 🤗`;
+    }
+    
+    // >6 anos - Tom afetivo, convite final sem urgência
+    return `${parentName ? parentName + ", " : ""}passando para um último toque 💚
+
+Sei que a vida é corrida e às vezes a gente acaba deixando as coisas para depois. Mas queria que soubesse que estou aqui se precisar${childName ? " do " + childName : ""}.
+
+Nossa ${therapyType} pode fazer diferença — quando você estiver pront${parentName ? "a" : "o"}, estarei aqui 🤗`;
+}
+
+/**
+ * Verifica se lead precisa de follow-up automático
+ * Retorna { needsFollowUp: boolean, message?: string }
+ */
+export function checkFollowUpNeeded(lead) {
+    if (!lead?.lastContactAt) return { needsFollowUp: false };
+    
+    const hoursSince = (Date.now() - new Date(lead.lastContactAt)) / (1000 * 60 * 60);
+    
+    // Só faz follow-up se:
+    // 1. Passou 48h desde último contato
+    // 2. Lead não está agendado
+    // 3. Lead não foi descartado
+    // 4. Não enviou follow-up nas últimas 48h
+    
+    const hasAppointment = lead?.nextAppointment && new Date(lead.nextAppointment) > new Date();
+    const isDiscarded = lead?.stage === 'descartado' || lead?.stage === 'nao_interessado';
+    const recentFollowUp = lead?.lastFollowUpAt && 
+        ((Date.now() - new Date(lead.lastFollowUpAt)) / (1000 * 60 * 60)) < 48;
+    
+    if (hoursSince >= 48 && !hasAppointment && !isDiscarded && !recentFollowUp) {
+        return {
+            needsFollowUp: true,
+            message: generateFollowUpMessage(lead, hoursSince),
+            hoursSince
+        };
+    }
+    
+    return { needsFollowUp: false };
+}
+
 export default generateConversationSummary;
