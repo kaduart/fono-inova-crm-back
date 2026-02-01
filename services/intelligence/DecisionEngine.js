@@ -64,7 +64,7 @@ export async function decide({ analysis, memory, flags, lead, contextPack, messa
     const directQuestion = detectDirectQuestion(flags);
     if (directQuestion) {
         console.log('[DecisionEngine] P2: Smart Response para', directQuestion);
-        return smartResponse(directQuestion, flags, memory);
+        return smartResponse(directQuestion, flags, memory, analysis);
     }
 
     // ============================================================================
@@ -124,7 +124,7 @@ function acknowledgePain(memory) {
 // ============================================================================
 // 🧠 IMPLEMENTAÇÃO: SMART RESPONSE (Respond + Resume)
 // ============================================================================
-function smartResponse(questionType, flags, memory) {
+function smartResponse(questionType, flags, memory, analysis) {
     let answer = "";
 
     // =====================================================
@@ -132,7 +132,7 @@ function smartResponse(questionType, flags, memory) {
     // =====================================================
     switch (questionType) {
         case 'price':
-            answer = buildPriceAnswer(memory);
+            answer = buildPriceAnswer(memory, analysis);
             break;
 
         case 'address':
@@ -186,9 +186,10 @@ function continueCollection(memory) {
 // ============================================================================
 // 💰 BUILD PRICE ANSWER: Valor do Trabalho → Urgência → Preço
 // ============================================================================
-function buildPriceAnswer(memory) {
-    const therapy = memory?.therapyArea;
-    const age = memory?.patientAge || memory?.patientInfo?.age;
+function buildPriceAnswer(memory, analysis) {
+    // Usa analysis se memory não tiver os dados (dados da mensagem atual)
+    const therapy = memory?.therapyArea || analysis?.therapyArea;
+    const age = memory?.patientAge || memory?.patientInfo?.age || analysis?.extractedInfo?.idade;
 
     // 1️⃣ VALOR DO TRABALHO (explicar o que vai receber)
     let valor = "";

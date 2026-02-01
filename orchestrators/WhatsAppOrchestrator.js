@@ -203,10 +203,13 @@ export class WhatsAppOrchestrator {
 
             const decision = await decisionEngine({
                 analysis,
+                memory: memoryContext,
                 missing,
                 urgency,
                 bookingContext,
-                clinicalRules
+                clinicalRules,
+                lead,
+                message: { text }
             });
 
             this.logger.info('DECISION', {
@@ -240,7 +243,11 @@ export class WhatsAppOrchestrator {
                 // 🆕 MÚLTIPLAS TERAPIAS
                 allDetectedTherapies: inferred.allDetectedTherapies,
                 hasMultipleTherapies: inferred.hasMultipleTherapies,
-                flags
+                flags,
+                // 🆕 PASSAR TEXTO E AÇÃO DO DECISION ENGINE
+                action: decision.action,
+                text: decision.text,
+                extractedInfo: decision.extractedInfo
             };
 
             const handlerStart = Date.now();
