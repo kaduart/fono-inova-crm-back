@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "start": "node -r dotenv/config server.js",
-    "dev": "redis-cli ping >/dev/null 2>&1 || redis-server --daemonize yes; node -r dotenv/config server.js",
+    "dev": "node scripts/start-dev.js",
+    "stop": "node scripts/stop-dev.js",
+    "restart": "npm stop && npm run dev",
     "cron": "node -r dotenv/config ./workers/followup.cron.js",
     "worker": "node -r dotenv/config ./workers/followup.worker.js"
   },
