@@ -168,8 +168,7 @@ const evolutionSchema = new mongoose.Schema({
 
     // Facilita queries por protocolo
     activeProtocols: [{
-        type: String,
-        index: true
+        type: String
     }]
 
 }, {

@@ -37,7 +37,11 @@ export async function findInactiveLeadsForFollowup() {
         status: { 
             $nin: ["agendado", "converted", "sem_interesse", "nao_interessado", "descartado"] 
         },
-        convertedToPatient: { $ne: true },
+        // Lead não convertido (convertedToPatient é null ou não existe)
+        $or: [
+            { convertedToPatient: { $exists: false } },
+            { convertedToPatient: null }
+        ],
         
         // Tem último contato registrado
         lastContactAt: { $exists: true, $lte: fortyEightHoursAgo },

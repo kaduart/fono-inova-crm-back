@@ -70,6 +70,7 @@ import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
 import planningRoutes from './routes/planning.js';
 import compression from 'compression';
 import importFromAgendaRouter from './routes/importFromAgenda.js';
+import dashboardRoutes from './routes/dashboard.js';
 
 // ======================================================
 // 🧭 Inicialização base
@@ -112,7 +113,17 @@ app.use(
   })
 );
 app.use(...sanitizeStack());
-app.use(compression());
+// 🔹 Compressão gzip/brotli para reduzir tamanho das respostas
+app.use(compression({
+  level: 6, // Nível de compressão (1-9, 6 é o equilíbrio ideal)
+  threshold: 1024, // Só comprime respostas > 1KB
+  filter: (req, res) => {
+    // Não comprimir se o cliente não aceitar
+    if (req.headers['x-no-compression']) return false;
+    // Usar filtro padrão para outros casos
+    return compression.filter(req, res);
+  }
+}));
 
 const allowedOrigins = [
   "http://localhost:5174",
@@ -173,6 +184,7 @@ app.use('/api/protocols', protocolRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/cashflow', cashflowRoutes);
 app.use('/api/planning', planningRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);
