@@ -90,7 +90,8 @@ class BookingHandler {
         if (missing.needsSlotSelection && booking?.slots?.primary) {
             const optionsText = buildSlotOptions(booking.slots).map(o => o.text).join('\n');
             return {
-                text: `Opções disponíveis:\n\n${optionsText}\n\nQual funciona melhor? 💚`
+                text: buildResponse('ask_slot_selection', { optionsText, leadId: lead?._id }) ||
+                      `Opções disponíveis:\n\n${optionsText}\n\nQual funciona melhor? 💚`
             };
         }
 
@@ -127,7 +128,8 @@ class BookingHandler {
                 });
 
                 return {
-                    text: `Perfeito, ${firstName}! 💚 Agora a data de nascimento (dd/mm/aaaa):`,
+                    text: buildResponse('ask_birthdate', { patientName: firstName, leadId: lead?._id }) ||
+                          `Perfeito, ${firstName}! 💚 Agora a data de nascimento (dd/mm/aaaa):`,
                     extractedInfo: {
                         patientName: possibleName,
                         nomeColetado: true
@@ -137,7 +139,8 @@ class BookingHandler {
 
             // Pede o nome
             return {
-                text: `Confirmando: ${slotText}\n\nQual o nome completo do paciente? 💚`
+                text: buildResponse('ask_patient_name', { slotText, leadId: lead?._id }) ||
+                      `Confirmando: ${slotText}\n\nQual o nome completo do paciente? 💚`
             };
         }
 
@@ -168,7 +171,8 @@ class BookingHandler {
             }
 
             return {
-                text: 'Por favor, a data de nascimento no formato dd/mm/aaaa 💚'
+                text: buildResponse('ask_birthdate', { patientName, leadId: lead?._id }) ||
+                      'Por favor, a data de nascimento no formato dd/mm/aaaa 💚'
             };
         }
 
@@ -177,7 +181,11 @@ class BookingHandler {
         // ==========================================
         if (patientName && patientBirthDate && booking?.chosenSlot) {
             return {
-                text: `Perfeito! 🎉 Agendamento confirmado:\n\n📅 ${formatSlot(booking.chosenSlot)}\n👤 ${patientName}\n\nVocês vão adorar! Qualquer dúvida é só chamar 💚`,
+                text: buildResponse('confirm_booking_final', { 
+                    slotText: formatSlot(booking.chosenSlot), 
+                    patientName,
+                    leadId: lead?._id 
+                }) || `Perfeito! 🎉 Agendamento confirmado:\n\n📅 ${formatSlot(booking.chosenSlot)}\n👤 ${patientName}\n\nVocês vão adorar! Qualquer dúvida é só chamar 💚`,
                 extractedInfo: { bookingConfirmed: true }
             };
         }

@@ -9,7 +9,7 @@ import {
     getObjectionScript 
 } from '../utils/amandaPrompt.js';
 import ensureSingleHeart from '../utils/helpers.js';
-import { buildResponse } from '../services/intelligence/naturalResponseBuilder.js';
+
 
 class LeadQualificationHandler {
     constructor() {
@@ -61,8 +61,37 @@ class LeadQualificationHandler {
             // 🆕 TRATAMENTO ESPECIAL: CONTINUE COLLECTION
             // ===========================
             if (action === 'continue_collection') {
+                // Se já tem texto pronto do decisionContext, usar
+                if (decisionContext.text && decisionContext.text.length > 10) {
+                    return {
+                        text: decisionContext.text,
+                        extractedInfo: decisionContext.extractedInfo || {}
+                    };
+                }
+                
+                // Se acabou de receber período
+                const userText = message?.text || '';
+                if (memory?.pendingPreferredPeriod || userText.toLowerCase().includes('manhã') || userText.toLowerCase().includes('tarde')) {
+                    const period = memory?.pendingPreferredPeriod || 
+                                   (userText.toLowerCase().includes('manhã') ? 'manhã' : 'tarde');
+                    
+                    return {
+                        text: `Certo! Deixa eu ver os horários de ${period}... 👀`,
+                        extractedInfo: decisionContext.extractedInfo || {}
+                    };
+                }
+                
+                // Se acabou de receber idade
+                const patientAge = memory?.patientInfo?.age || memory?.patientAge;
+                if (patientAge && !memory?.complaint) {
+                    return {
+                        text: 'Me conta: o que você tem observado que te preocupou? 💚',
+                        extractedInfo: decisionContext.extractedInfo || {}
+                    };
+                }
+                
                 return {
-                    text: decisionContext.text || "Como posso te ajudar? 💚",
+                    text: decisionContext.text || 'Me conta um pouquinho mais? 💚',
                     extractedInfo: decisionContext.extractedInfo || {}
                 };
             }
@@ -123,6 +152,54 @@ class LeadQualificationHandler {
 
             // 🆕 RESPOSTAS NATURAIS (rápidas, sem IA) para casos simples
             
+            // 🆕 VERIFICA SE É UMA QUEIXA/RELATO DE DOR PRIMEIRO
+            // Se o usuário está relatando algo que o preocupa, ACOLHER antes de tudo
+            const userText = message?.text || '';
+            const isComplaint = /(não fala|não anda|não obedece|birra|chora|medo|ansioso|hiperativo|agitado|não concentra|dificuldade|problema|atraso|troca letra|gagueira|autismo|tea|tdah|deficit|desobedece|birra|crise)/i.test(userText);
+            const hasEmotionalTone = /(preocupada|desesperada|medo|difícil|sofrimento|sofrimento|triste|não sei o que fazer)/i.test(userText);
+            
+            if ((isComplaint || hasEmotionalTone) && !memory?.painAcknowledged) {
+                // Acolher primeiro, depois perguntar o que falta
+                const patientName = memory?.patientInfo?.name || memory?.patientName;
+                const nameRef = patientName ? patientName.split(' ')[0] : (patientAge ? 'ele(a)' : 'seu filho');
+                
+                let acolhimento = '';
+                if (hasEmotionalTone) {
+                    acolhimento = `Entendo como você deve estar... Deve ser muito difícil ver ${nameRef} passando por isso. Você está fazendo o certo em buscar ajuda.`;
+                } else {
+                    acolhimento = `Sinto muito que ${nameRef} esteja passando por isso. Isso é algo que precisa de uma avaliação sim.`;
+                }
+                
+                // Agora perguntar o que falta de forma suave
+                const context = {
+                    userName: memory?.name,
+                    patientName,
+                    patientAge,
+                    therapyArea,
+                    emotionalState: hasEmotionalTone ? 'ansioso' : 'calmo',
+                    userText,
+                };
+                
+                let pergunta = '';
+                if (missing.needsAge && !patientAge) {
+                    pergunta = 'Qual a idade dele(a)?';
+                } else if (missing.needsPeriod) {
+                    pergunta = 'De manhã ou à tarde funciona melhor pra vocês?';
+                } else if (missing.needsComplaint) {
+                    pergunta = 'Me conta: o que você tem observado que te preocupou?';
+                } else {
+                    pergunta = 'Me conta um pouco mais sobre o que você tem observado?';
+                }
+                
+                return {
+                    text: ensureSingleHeart(`${acolhimento}\n\n${pergunta}`),
+                    extractedInfo: { 
+                        painAcknowledged: true,
+                        emotionalSupportProvided: true 
+                    }
+                };
+            }
+            
             // 🆕 SELEÇÃO DE TERAPIA (quando há múltiplas detectadas)
             if (missing.needsTherapySelection && decisionContext?.detectedTherapies?.length > 1) {
                 const therapies = decisionContext.detectedTherapies;
@@ -140,21 +217,21 @@ class LeadQualificationHandler {
             
             if (!shouldAcknowledgeHistory && missing.needsTherapy) {
                 return {
-                    text: buildResponse('ask_therapy', { leadId: memory?.leadId }),
+                    text: 'É pra qual área: Fono, Psicologia, Terapia Ocupacional ou Fisio? 💚',
                     extractedInfo: {}
                 };
             }
             
             if (missing.needsAge) {
                 return {
-                    text: buildResponse('ask_age', { leadId: memory?.leadId }),
+                    text: 'Qual a idade? 💚',
                     extractedInfo: { awaitingAge: true, lastQuestion: 'age' }
                 };
             }
             
             if (missing.needsPeriod) {
                 return {
-                    text: buildResponse('ask_period', { leadId: memory?.leadId }),
+                    text: 'De manhã ou à tarde? 💚',
                     extractedInfo: { awaitingPeriod: true, lastQuestion: 'period' }
                 };
             }
@@ -255,21 +332,12 @@ class LeadQualificationHandler {
             script = getObjectionScript(objectionType, 'lastResort') || getObjectionScript(objectionType, 'secondary');
         }
         
-        // 🆕 SEMPRE retomar o flow naturalmente
-        const followUp = this.getSmartFollowUp(pendingCollection, memory);
-        
-        // Montar resposta completa
-        let response = script;
-        if (followUp && attempt < 3) {
-            response = `${script} ${followUp}`;
-        }
-        
         return {
-            text: ensureSingleHeart(response),
+            text: ensureSingleHeart(script),
             extractedInfo: { 
                 objectionHandled: objectionType, 
                 objectionAttempt: attempt,
-                painAcknowledged: true // Marca como "acolhido" para não repetir
+                painAcknowledged: true
             }
         };
     }
@@ -283,46 +351,13 @@ class LeadQualificationHandler {
         
         const acknowledgment = `Entendo sua preocupação 💚 Você fez muito bem em buscar orientação cedo — isso faz toda diferença pro desenvolvimento de ${nameRef}.`;
         
-        // Retomar flow naturalmente
-        const followUp = this.getSmartFollowUp(pendingCollection, memory);
-        
         return {
-            text: ensureSingleHeart(followUp ? `${acknowledgment} ${followUp}` : acknowledgment),
+            text: ensureSingleHeart(acknowledgment),
             extractedInfo: { 
                 painAcknowledged: true,
                 emotionalSupportProvided: true
             }
         };
-    }
-
-    /**
-     * 🎯 Retoma o flow de forma natural baseado no que falta
-     */
-    getSmartFollowUp(pendingCollection, memory) {
-        if (!pendingCollection || pendingCollection.length === 0) {
-            return 'Quer que eu veja os horários disponíveis?';
-        }
-        
-        // Prioridade: complaint > age > period > therapy
-        const has = (item) => pendingCollection.includes(item);
-        
-        if (has('complaint') && memory?.therapyArea) {
-            return 'O que você tem observado que te preocupa?';
-        }
-        
-        if (has('age')) {
-            return 'Qual a idade do paciente?';
-        }
-        
-        if (has('period')) {
-            return 'Prefere manhã ou tarde?';
-        }
-        
-        if (has('therapy')) {
-            return 'É pra qual área: Fono, Psicologia, Terapia Ocupacional, Fisio ou Neuropsico?';
-        }
-        
-        return 'Quer que eu veja os horários disponíveis?';
     }
 
     /**

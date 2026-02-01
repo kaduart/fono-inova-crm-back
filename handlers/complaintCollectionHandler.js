@@ -1,7 +1,7 @@
 // handlers/complaintCollectionHandler.js
 import { generateHandlerResponse } from '../services/aiAmandaService.js';
 import Logger from '../services/utils/Logger.js';
-import { buildResponse } from '../services/intelligence/naturalResponseBuilder.js';
+
 
 const logger = new Logger('ComplaintCollectionHandler');
 
@@ -78,26 +78,9 @@ export const complaintCollectionHandler = {
 
         try {
             // 🆕 RESPOSTA NATURAL (rápida) - evita chamada de IA
-            const buildStart = Date.now();
-            const naturalResponse = buildResponse('ask_complaint', { 
-                therapy: therapy,
-                leadId: lead?._id 
-            });
-            const buildTime = Date.now() - buildStart;
-            
-            logger.info('ComplaintHandler buildResponse', {
-                leadId: lead?._id?.toString(),
-                buildTimeMs: buildTime,
-                hasResponse: !!naturalResponse,
-                response: naturalResponse?.substring(0, 50)
-            });
+            const naturalResponse = baseQuestion + ' 💚';
             
             if (naturalResponse) {
-                const totalTime = Date.now() - startTime;
-                logger.info('ComplaintHandler FAST_RETURN', {
-                    leadId: lead?._id?.toString(),
-                    totalTimeMs: totalTime
-                });
                 return {
                     text: naturalResponse,
                     extractedInfo: {
