@@ -8,11 +8,15 @@ const envMode = process.env.NODE_ENV || "development";
 const redisUrl = process.env.REDIS_URL;
 
 console.log(`🌍 Modo detectado: ${envMode}`);
+console.log(`🔍 REDIS_URL existe? ${redisUrl ? 'SIM' : 'NÃO'}`);
+if (redisUrl) {
+    console.log(`🔗 REDIS_URL (mascarada): ${redisUrl.replace(/\/\/.*@/, '//***@')}`);
+}
 
 let redisConfig;
 
 if (redisUrl) {
-    // Usar REDIS_URL (Render, Upstash, etc)
+    // Usar REDIS_URL (Render Native, Upstash, etc)
     console.log("🚀 Conectando ao Redis via REDIS_URL...");
     redisConfig = {
         url: redisUrl,
@@ -22,21 +26,25 @@ if (redisUrl) {
                 return Math.min(retries * 1000, 15000);
             },
             keepAlive: 15000,
-            connectTimeout: 15000,
+            connectTimeout: 30000, // Aumentado para 30s
         },
     };
-    
-    // Se for Upstash (URL contém 'upstash'), adicionar TLS
-    if (redisUrl.includes('upstash') || redisUrl.includes('rediss://')) {
+
+    // Se for Upstash ou qualquer rediss://, adicionar TLS
+    if (redisUrl.startsWith('rediss://')) {
+        console.log("🔒 TLS ativado (rediss://)");
         redisConfig.socket.tls = true;
+        redisConfig.socket.rejectUnauthorized = false; // Necessário para alguns certs
     }
 } else {
     // Usar REDIS_HOST + REDIS_PORT (local/VPS)
-    console.log("🚀 Conectando ao Redis Local (VPS/EasyPanel)...");
+    const host = process.env.REDIS_HOST || "127.0.0.1";
+    const port = Number(process.env.REDIS_PORT) || 6379;
+    console.log(`🚀 Conectando ao Redis Local: ${host}:${port}`);
     redisConfig = {
         socket: {
-            host: process.env.REDIS_HOST || "127.0.0.1",
-            port: Number(process.env.REDIS_PORT) || 6379,
+            host: host,
+            port: port,
             reconnectStrategy: (retries) => {
                 console.warn(`🔁 Tentando reconectar ao Redis (tentativa ${retries})...`);
                 return Math.min(retries * 1000, 15000);
@@ -44,17 +52,31 @@ if (redisUrl) {
             keepAlive: 15000,
             connectTimeout: 15000,
         },
-        password: process.env.REDIS_PASSWORD,
+        password: process.env.REDIS_PASSWORD || undefined,
     };
 }
 
 const redisClient = createClient(redisConfig);
+
+// Eventos de erro e reconexão
+redisClient.on('error', (err) => {
+    console.error('⚠️ Redis Client Error:', err.message);
+});
+
+redisClient.on('connect', () => {
+    console.log('✅ Redis Client conectado!');
+});
+
+redisClient.on('reconnecting', () => {
+    console.log('🔄 Redis Client reconectando...');
+});
 
 // ===================================================
 // 🚀 INICIALIZAÇÃO + HEALTH CHECK
 // ===================================================
 export async function startRedis() {
     try {
+        console.log("🔄 Iniciando conexão Redis...");
         await redisClient.connect();
         console.log("🚀 Redis conectado e validado!");
 
@@ -72,8 +94,8 @@ export async function startRedis() {
         }, 300000);
     } catch (err) {
         console.error("❌ Falha ao conectar Redis:", err.message);
-        // Não sair do processo, apenas logar o erro
-        // para não quebrar o deploy no Render se o Redis não estiver disponível
+        console.error("Stack:", err.stack);
+        // Não lançar erro para não matar o processo, mas logar visivelmente
     }
 }
 
