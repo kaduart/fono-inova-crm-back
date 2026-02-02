@@ -1497,7 +1497,7 @@ async function handleAutoReply(from, to, content, lead) {
             console.warn("⚠️ Falha ao recuperar msgs pendentes:", e.message);
         }
 
-        const leadDoc = await Lead.findOneAndUpdate(
+        let leadDoc = await Lead.findOneAndUpdate(
             {
                 _id: lead._id,
                 $or: [
@@ -1620,12 +1620,25 @@ async function handleAutoReply(from, to, content, lead) {
                 aiText = result.payload.text;
             }
         } else {
+            // 🔧 CORREÇÃO: Criar contexto para o fluxo legado também
+            const legacyContext = {
+                preferredPeriod: leadDoc.preferredPeriod || leadDoc.qualificationData?.extractedInfo?.disponibilidade,
+                preferredDate: leadDoc.preferredDate || leadDoc.qualificationData?.extractedInfo?.dataPreferida,
+                therapy: leadDoc.therapy || leadDoc.qualificationData?.extractedInfo?.especialidade,
+                pendingSchedulingSlots: leadDoc.pendingSchedulingSlots,
+                pendingChosenSlot: leadDoc.pendingChosenSlot,
+                pendingPatientInfoForScheduling: leadDoc.pendingPatientInfoForScheduling,
+                pendingPatientInfoStep: leadDoc.pendingPatientInfoStep,
+                stage: leadDoc.stage,
+                source: 'whatsapp-inbound'
+            };
+            
             aiText = await getOptimizedAmandaResponse({
                 content: aggregatedContent,
                 userText: aggregatedContent,
                 leadId: String(leadDoc._id),
-                lead: { _id: String(leadDoc._id) },
-                context
+                lead: leadDoc,  // Passar o leadDoc completo em vez de só _id
+                context: legacyContext
             });
         }
 
