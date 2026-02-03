@@ -28,11 +28,11 @@ function logDebug(step, data) {
  * P3: Continue Collection (continuar coleta do que falta)
  */
 export async function decide({ analysis, memory, flags, lead, contextPack, message, missing = {}, chatContext = null }) {
-
     logDecision('START', {
         leadId: lead?._id?.toString(),
         messageText: message?.text?.substring(0, 50),
         chatContextFlags: {
+            awaitingField: chatContext?.lastExtractedInfo?.awaitingField,
             awaitingComplaint: chatContext?.lastExtractedInfo?.awaitingComplaint,
             awaitingAge: chatContext?.lastExtractedInfo?.awaitingAge,
             awaitingPeriod: chatContext?.lastExtractedInfo?.awaitingPeriod
@@ -104,7 +104,7 @@ export async function decide({ analysis, memory, flags, lead, contextPack, messa
         ...(analysis?.extractedInfo?.disponibilidade && { preferredPeriod: analysis.extractedInfo.disponibilidade }),
         ...(analysis?.therapyArea && { therapyArea: analysis.therapyArea })
     };
-    return continueCollection(enrichedMemory, chatContext);
+    return continueCollection(enrichedMemory, chatContext, message?.text);
 }
 
 // ============================================================================
@@ -251,15 +251,76 @@ function smartResponse(questionType, flags, memory, analysis, inferred = {}, mis
 }
 
 // ============================================================================
+// ✅ DETECTAR CONFIRMAÇÃO POSITIVA
+// ============================================================================
+function isPositiveConfirmation(message, currentAwaitingField) {
+    if (currentAwaitingField !== 'slot') return false;
+    
+    const positivePatterns = [
+        /\bsim\b/i,
+        /\bok\b/i,
+        /\baceito\b/i,
+        /\bpode\b/i,
+        /\bclaro\b/i,
+        /\bvamos\b/i,
+        /\btop\b/i,
+        /\bshow\b/i,
+        /\bbeleza\b/i,
+        /\bcombinado\b/i,
+        /\bpor favor\b/i,
+        /\bpf\b/i,
+        /\bpfv\b/i
+    ];
+    
+    const messageLower = message?.toLowerCase() || '';
+    const isConfirmation = positivePatterns.some(pattern => pattern.test(messageLower));
+    
+    logDebug('POSITIVE_CONFIRMATION_CHECK', { 
+        currentAwaitingField, 
+        message: message?.substring(0, 30),
+        isConfirmation 
+    });
+    
+    return isConfirmation;
+}
+
+// ============================================================================
 // 🔄 IMPLEMENTAÇÃO: CONTINUE COLLECTION
 // ============================================================================
-function continueCollection(memory, chatContext = null) {
+function continueCollection(memory, chatContext = null, message = null) {
+    const currentAwaitingField = chatContext?.lastExtractedInfo?.awaitingField;
+    
+    // Verificar se temos todos os dados necessários
+    const hasTherapy = !!memory?.therapyArea;
+    const hasComplaint = !!(memory?.complaint || memory?.primaryComplaint);
+    const hasAge = !!(memory?.patientAge || memory?.patientInfo?.age);
+    const hasPeriod = !!(memory?.preferredPeriod || memory?.pendingPreferredPeriod || memory?.period);
+    const hasAllData = hasComplaint && hasTherapy && hasAge && hasPeriod;
+    
     logDebug('CONTINUE_COLLECTION_START', { 
-        hasTherapy: !!memory?.therapyArea,
-        hasComplaint: !!(memory?.complaint || memory?.primaryComplaint),
-        hasAge: !!(memory?.patientAge || memory?.patientInfo?.age),
-        hasPeriod: !!(memory?.preferredPeriod || memory?.pendingPreferredPeriod)
+        hasTherapy,
+        hasComplaint,
+        hasAge,
+        hasPeriod,
+        hasAllData,
+        currentAwaitingField,
+        message: message?.substring(0, 30)
     });
+    
+    // 🔥 CORREÇÃO: Se temos todos os dados e o usuário confirmou com "Sim", mostrar horários
+    // Isso evita repetir "Quer que eu veja os horários?" quando o usuário já disse "Sim"
+    if (hasAllData && isPositiveConfirmation(message, 'slot')) {
+        logDecision('CONTINUE_COLLECTION_CONFIRMATION', { action: 'show_slots', reason: 'has_all_data_and_confirmed' });
+        return {
+            action: 'show_slots',
+            handler: 'leadQualificationHandler',
+            text: "Perfeito! Vou conferir as vagas para você... 💚",
+            extractedInfo: { 
+                awaitingField: 'slot_confirmation',
+                slotRequested: true
+            }
+        };
+    }
     
     const hasAnyData = !!(memory?.therapyArea || memory?.complaint || memory?.patientAge || memory?.lastHandler);
     const acolhimento = !hasAnyData 
