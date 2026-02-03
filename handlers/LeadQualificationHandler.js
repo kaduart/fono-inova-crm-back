@@ -17,14 +17,23 @@ class LeadQualificationHandler {
     }
 
     async execute({ decisionContext, services }) {
-
+        const startTime = Date.now();
+        
         try {
             const { memory, analysis, missing, message, action, objectionType, attempt, pendingCollection } = decisionContext;
+            
+            this.logger.info('HANDLER_EXECUTE_START', {
+                action,
+                objectionType,
+                hasMemory: !!memory,
+                messagePreview: message?.text?.substring(0, 50)
+            });
             
             // ===========================
             // 🆕 TRATAMENTO ESPECIAL: OBJEÇÕES
             // ===========================
             if (action === 'handle_objection' && objectionType) {
+                this.logger.info('HANDLER_HANDLE_OBJECTION', { objectionType, attempt });
                 return this.handleObjection(objectionType, attempt, pendingCollection, memory);
             }
             
@@ -32,6 +41,7 @@ class LeadQualificationHandler {
             // 🆕 TRATAMENTO ESPECIAL: ACOLHIMENTO EMOCIONAL
             // ===========================
             if (action === 'acknowledge_pain') {
+                this.logger.info('HANDLER_ACKNOWLEDGE_PAIN');
                 return this.handleEmotionalAcknowledgment(pendingCollection, memory);
             }
             
@@ -39,6 +49,7 @@ class LeadQualificationHandler {
             // 🆕 TRATAMENTO ESPECIAL: WARM RECALL (lead retornando)
             // ===========================
             if (action === 'warm_recall') {
+                this.logger.info('HANDLER_WARM_RECALL', { hasText: !!decisionContext.text });
                 // O texto já vem pronto do DecisionEngine
                 return {
                     text: decisionContext.text || "Oi! Que bom te ver de novo 💚 Como posso te ajudar hoje?",
@@ -50,6 +61,7 @@ class LeadQualificationHandler {
             // 🆕 TRATAMENTO ESPECIAL: SMART RESPONSE (responde + retoma)
             // ===========================
             if (action === 'smart_response') {
+                this.logger.info('HANDLER_SMART_RESPONSE', { hasText: !!decisionContext.text, textLength: decisionContext.text?.length });
                 // O texto já vem pronto do DecisionEngine (resposta + retomada)
                 return {
                     text: decisionContext.text || "Como posso te ajudar? 💚",
@@ -61,6 +73,10 @@ class LeadQualificationHandler {
             // 🆕 TRATAMENTO ESPECIAL: CONTINUE COLLECTION
             // ===========================
             if (action === 'continue_collection') {
+                this.logger.info('HANDLER_CONTINUE_COLLECTION', { 
+                    hasDecisionText: !!(decisionContext.text && decisionContext.text.length > 10),
+                    awaitingField: decisionContext.extractedInfo?.awaitingField 
+                });
                 // Se já tem texto pronto do decisionContext, usar
                 if (decisionContext.text && decisionContext.text.length > 10) {
                     return {
@@ -300,6 +316,12 @@ class LeadQualificationHandler {
             });
 
             const finalText = ensureSingleHeart(response || 'Posso te ajudar com mais alguma informação? 💚');
+            
+            this.logger.info('HANDLER_EXECUTE_COMPLETE', {
+                durationMs: Date.now() - startTime,
+                textLength: finalText.length,
+                extractedInfoKeys: Object.keys(extractedInfo || {})
+            });
 
             return {
                 text: finalText,
@@ -307,7 +329,12 @@ class LeadQualificationHandler {
             };
 
         } catch (error) {
-            this.logger.error('Erro no LeadQualificationHandler', error);
+            this.logger.error('HANDLER_EXECUTE_ERROR', {
+                error: error.message,
+                stack: error.stack,
+                durationMs: Date.now() - startTime,
+                action: decisionContext?.action
+            });
             return {
                 text: 'Me conta um pouquinho mais sobre o que você precisa? Estou aqui pra te ajudar 💚'
             };

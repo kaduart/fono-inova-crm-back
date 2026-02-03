@@ -201,15 +201,42 @@ export class WhatsAppOrchestrator {
                 }
             });
 
+            // 🐛 DEBUG: Mesclar chatContext com memoryContext para decisão
+            // 🔥 CRÍTICO: Os dados inferidos da MENSAGEM ATUAL têm prioridade sobre o contexto antigo!
+            const mergedMemory = {
+                ...memoryContext,
+                ...(chatContext?.lastExtractedInfo || {}),
+                // Prioridade para dados da MENSAGEM ATUAL (inferred), depois chatContext, depois memoryContext
+                patientAge: inferred?.age || chatContext?.lastExtractedInfo?.age || memoryContext?.patientAge,
+                therapyArea: inferred?.therapy || chatContext?.lastExtractedInfo?.therapy || memoryContext?.therapyArea,
+                complaint: inferred?.complaint || chatContext?.lastExtractedInfo?.complaint || memoryContext?.complaint,
+            };
+            this.logger.info('MERGED_MEMORY', {
+                leadId: lead._id?.toString(),
+                memoryContext: {
+                    patientAge: memoryContext?.patientAge,
+                    therapyArea: memoryContext?.therapyArea,
+                    complaint: memoryContext?.complaint
+                },
+                chatContext: chatContext?.lastExtractedInfo,
+                mergedMemory: {
+                    patientAge: mergedMemory.patientAge,
+                    therapyArea: mergedMemory.therapyArea,
+                    complaint: mergedMemory.complaint
+                }
+            });
+
             const decision = await decisionEngine({
                 analysis,
-                memory: memoryContext,
+                memory: mergedMemory,  // Usar memory mesclado!
+                flags,  // 🔥 FALTAVA ISSO! Passando flags para o DecisionEngine
                 missing,
                 urgency,
                 bookingContext,
                 clinicalRules,
                 lead,
-                message: { text }
+                message: { text },
+                chatContext  // Passar chatContext para acesso a awaitingComplaint etc
             });
 
             this.logger.info('DECISION', {
@@ -370,6 +397,16 @@ export class WhatsAppOrchestrator {
         const allDetectedTherapies = detectedTherapies.map(t => t.name);
         const hasMultipleTherapies = detectedTherapies.length > 1;
 
+        // 🔧 CORREÇÃO: Carrega terapia do contexto se não achou no texto
+        if (!therapy && chatContext?.lastExtractedInfo?.therapy) {
+            therapy = chatContext.lastExtractedInfo.therapy;
+        }
+        
+        // 🔥 NOVO: Carrega info de múltiplas terapias do contexto
+        if (chatContext?.lastExtractedInfo?.hasMultipleTherapies) {
+            detectedTherapies = chatContext.lastExtractedInfo.allDetectedTherapies?.map(name => ({ name })) || detectedTherapies;
+        }
+
         if (!therapy && detectedTherapies.length > 0) {
             therapy = detectedTherapies[0].name;
         }
@@ -394,9 +431,11 @@ export class WhatsAppOrchestrator {
         }
 
         // Verifica estados de aguardo do contexto
-        const isAwaitingComplaint = chatContext?.lastExtractedInfo?.awaitingComplaint === true;
-        const isAwaitingAge = chatContext?.lastExtractedInfo?.awaitingAge === true;
-        const isAwaitingPeriod = chatContext?.lastExtractedInfo?.awaitingPeriod === true;
+        // 🔧 CORREÇÃO: Verifica tanto awaitingField (novo) quanto awaitingComplaint (legado)
+        const awaitingFieldFromContext = chatContext?.lastExtractedInfo?.awaitingField;
+        const isAwaitingComplaint = awaitingFieldFromContext === 'complaint' || chatContext?.lastExtractedInfo?.awaitingComplaint === true;
+        const isAwaitingAge = awaitingFieldFromContext === 'age' || chatContext?.lastExtractedInfo?.awaitingAge === true;
+        const isAwaitingPeriod = awaitingFieldFromContext === 'period' || chatContext?.lastExtractedInfo?.awaitingPeriod === true;
         const lastQuestion = chatContext?.lastExtractedInfo?.lastQuestion;
 
         // 🆕 PROTEÇÃO: Verifica último handler para fallback
@@ -427,7 +466,8 @@ export class WhatsAppOrchestrator {
                         : null;
 
         // IDADE - Extrai de formas naturais
-        let age = intelligent?.idade || intelligent?.age || lead?.patientInfo?.age;
+        // 🔧 CORREÇÃO: Também carrega do chatContext (dados salvos na mensagem anterior)
+        let age = intelligent?.idade || intelligent?.age || lead?.patientInfo?.age || chatContext?.lastExtractedInfo?.age;
         if (typeof age === 'string') age = parseInt(age, 10);
         if (isNaN(age)) age = null;
 
@@ -481,7 +521,8 @@ export class WhatsAppOrchestrator {
         }
 
         // PERÍODO - Extrai de formas variadas
-        let period = intelligent?.disponibilidade || intelligent?.preferredPeriod;
+        // 🔧 CORREÇÃO: Também carrega do chatContext (dados salvos na mensagem anterior)
+        let period = intelligent?.disponibilidade || intelligent?.preferredPeriod || chatContext?.lastExtractedInfo?.period;
         if (!period) {
             if (/\b(manh[aã]|manhacinho|cedo|in[ií]cio\s+dia|parte\s+da\s+manh[aã])\b/i.test(textNormalized)) period = 'manha';
             else if (/\b(tard|tarde|depois\s+do\s+almo[çc]o|inicio\s+tarde|fim\s+tarde)\b/i.test(textNormalized)) period = 'tarde';
@@ -516,7 +557,8 @@ export class WhatsAppOrchestrator {
         }
 
         // QUEIXA - Verifica se há queixa salva ou se estamos aguardando uma
-        let complaint = intelligent?.queixa || lead?.primaryComplaint;
+        // 🔧 CORREÇÃO: Também carrega do chatContext (dados salvos na mensagem anterior)
+        let complaint = intelligent?.queixa || lead?.primaryComplaint || chatContext?.lastExtractedInfo?.complaint;
 
         // 🆕 PROTEÇÃO: já definido acima, reusa a variável
         const shouldExtractComplaint = isAwaitingComplaint || lastHandlerWasComplaint;
@@ -531,17 +573,26 @@ export class WhatsAppOrchestrator {
             awaitingField
         });
 
-        // 🔥 EXPERTISE: Se estamos aguardando uma queixa e o usuário enviou uma mensagem descritiva,
-        // usar o texto como queixa mesmo se não casar com regex
-        if (!complaint && shouldExtractComplaint && awaitingField === 'complaint') {
+        // 🔥 EXPERTISE: Se estamos aguardando uma queixa E/OU o texto parece uma descrição de problema
+        // 🔧 CORREÇÃO: Extrai queixa automaticamente se o texto parece uma descrição de sintoma/queixa
+        // 🔥 IMPORTANTE: Sempre verifica se o texto atual parece uma queixa, mesmo se já tiver uma no contexto
+        const looksLikeComplaint = 
+            text.length > 10 && 
+            text.length < 300 &&
+            !/^\s*(sim|não|não sei|ok|beleza|tudo bem|oi|olá|bom dia|boa tarde)\s*$/i.test(text) &&
+            !text.trim().endsWith('?') &&
+            (/\b(tem|tenho|meu|minha|filho|filha|ele|ela|não|dificuldade|problema|sintoma|queixa|dor|medo|ansiedade|atraso|demora)\b/i.test(text));
+        
+        if (looksLikeComplaint || (!complaint && shouldExtractComplaint && awaitingField === 'complaint')) {
             const isQuestion = /\?$/.test(text.trim()) || /^(qual|quanto|onde|como|por que|pq|quando)\b/i.test(text);
             const isTooShort = text.trim().length < 5;
-            const isGenericResponse = /^(sim|n[aã]o|ok|beleza|tudo bem|n sei|não sei|nao sei|nao|não)$/i.test(text.trim());
+            const isGenericResponse = /^(sim|n[aã]o|ok|beleza|tudo bem|n sei|não sei|nao sei|nao|não|n sei|dunno)$/i.test(text.trim());
 
             this.logger.debug('COMPLAINT_VALIDATION', {
                 isQuestion,
                 isTooShort,
                 isGenericResponse,
+                looksLikeComplaint,
                 textLength: text.trim().length,
                 text: text.trim().substring(0, 50)
             });
@@ -550,12 +601,12 @@ export class WhatsAppOrchestrator {
                 complaint = text.trim().substring(0, 200);
                 this.logger.info('COMPLAINT_EXTRACTED_FROM_CONTEXT', {
                     text: complaint,
-                    reason: 'awaiting_complaint_state'
+                    reason: looksLikeComplaint ? 'looks_like_complaint' : 'awaiting_complaint_state'
                 });
             }
 
             // 🧠 Se ainda não extraiu, usa IA para interpretar a queixa
-            if (!complaint) {
+            if (!complaint && !looksLikeComplaint) {
                 this.logger.debug('COMPLAINT_TRYING_SEMANTIC', { reason: 'no_regex_match' });
                 const semanticResult = await smartExtract(text, 'complaint', {
                     lastAmandaMessage: chatContext?.lastAmandaMessage || memoryContext?.lastAmandaMessage
@@ -643,7 +694,7 @@ export class WhatsAppOrchestrator {
         return {
             needsTherapy: !inferred.therapy,
             needsTherapySelection: inferred.hasMultipleTherapies || inferred.needsTherapySelection,
-            needsComplaint: !inferred.complaint && !flags.asksPrice,
+            needsComplaint: !inferred.complaint,  // 🔥 SEMPRE precisa da queixa!
             needsAge: !inferred.age,
             needsPeriod: !inferred.period,
             needsSlot: !bookingContext?.slots?.primary && !bookingContext?.chosenSlot,
@@ -720,9 +771,20 @@ export class WhatsAppOrchestrator {
             this.logger.info('PERSIST_DATA_NO_FIELDS_TO_SAVE', { leadId: lead._id?.toString() });
         }
 
-        // 🆕 Atualiza contexto COMBINANDO extractedInfo + lastHandler (evita sobrescrita)
+        // 🆕 Atualiza contexto COMBINANDO extractedInfo + dados inferidos + lastHandler
+        // 🔧 CORREÇÃO: Agora incluímos os dados inferidos (idade, terapia, período, queixa)
+        // para que na próxima mensagem o orquestrador saiba que já tem esses dados
         const contextUpdate = {
             ...(result?.extractedInfo || {}),
+            // 🔧 CORREÇÃO: Salvar dados inferidos no contexto para recuperar na próxima mensagem
+            ...(inferred.age && { age: inferred.age }),
+            ...(inferred.therapy && { therapy: inferred.therapy }),
+            ...(inferred.period && { period: inferred.period }),
+            ...(inferred.complaint && { complaint: inferred.complaint }),
+            // 🔥 NOVO: Salvar info de múltiplas terapias
+            ...(inferred.hasMultipleTherapies && { hasMultipleTherapies: inferred.hasMultipleTherapies }),
+            ...(inferred.allDetectedTherapies && { allDetectedTherapies: inferred.allDetectedTherapies }),
+            ...(inferred.detectedTherapies && { detectedTherapies: inferred.detectedTherapies }),
             ...(decision?.handler && { lastHandler: decision.handler })
         };
 

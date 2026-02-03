@@ -9,7 +9,9 @@
     "stop": "node scripts/stop-dev.js",
     "restart": "npm stop && npm run dev",
     "cron": "node -r dotenv/config ./workers/followup.cron.js",
-    "worker": "node -r dotenv/config ./workers/followup.worker.js"
+    "worker": "node -r dotenv/config ./workers/followup.worker.js",
+    "test": "node tests/amanda/bootstrap.js",
+    "test:amanda": "node tests/amanda/bootstrap.js"
   },
   "keywords": [],
   "author": "",

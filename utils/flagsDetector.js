@@ -1,5 +1,23 @@
 // flagsDetector.js
 import { normalizeTherapyTerms } from "./therapyDetector.js";
+import Logger from '../services/utils/Logger.js';
+
+const logger = new Logger('FlagsDetector');
+
+// Helper para log estruturado
+function logFlags(text, flags) {
+    const activeFlags = Object.entries(flags)
+        .filter(([key, value]) => value === true && !['text', 'normalizedText'].includes(key))
+        .map(([key]) => key);
+    
+    if (activeFlags.length > 0) {
+        logger.debug('FLAGS_DETECTED', {
+            textPreview: text?.substring(0, 50),
+            flags: activeFlags,
+            flagCount: activeFlags.length
+        });
+    }
+}
 
 const PRICE_REGEX = /(?:\b(?:pre(?:c|ç)o|val(?:or|ores)|or(?:c|ç)amento|mensal(?:idade)?|pacote|tabela\s+de\s+pre(?:c|ç)os?|investimento|custo|taxa|pre(?:c|ç)o\s+m(?:e|é)dio|me\s+passa\s+o\s+valor|qual\s+(?:(?:o|é)\s+)?valor|quanto(?:\s+(?:custa|é|está|tá|fica|sai|cobra|dá))?)\b|r\$\s*\d+(?:[.,]\d{2})?|\$\$+)/i;
 
@@ -19,6 +37,9 @@ export function deriveFlagsFromText(text = "") {
 
     const ageGroup = extractAgeGroup(normalizedText);
 
+    // 🔥 NOVO: Detecção de endereço/localização
+    const asksAddress = /\b(onde\s+(fica|é|está|ficam|são|é\s+que)\s+(a\s+)?(cl[ií]nica|consult[oó]rio|voc[eê]s))|\b(qual\s+(o\s+)?endere[çc]o|endere[çc]o\s+(de\s+)?voc[eê]s)|\b(como\s+(chego|chegar|chega)|localiza[çc][aã]o|onde\s+est[aã]o)|\b(s[aã]o\s+de\s+an[áa]polis|voc[eê]s\s+(s[aã]o|ficam)\s+onde)|\b(an[áa]polis|goi[aá]nia|bras[ií]lia|endere[çc]o|local)/i.test(normalizedText);
+
     return {
         text,
         normalizedText,
@@ -26,6 +47,8 @@ export function deriveFlagsFromText(text = "") {
         ageGroup,
         asksPrice: PRICE_REGEX.test(normalizedText),
         insistsPrice: /(s[oó]|apenas)\s*o\s*pre[çc]o|fala\s*o\s*valor|me\s*diz\s*o\s*pre[çc]o/i.test(normalizedText),
+        asksAddress,
+        asksLocation: asksAddress, // sinônimo
 
         wantsSchedule:
             /\b(agendar|marcar|agendamento|remarcar|consultar)\b/i.test(normalizedText) ||
@@ -233,6 +256,11 @@ export function deriveFlagsFromText(text = "") {
         mentionsBaby: /\b(beb[eê]|rec[ée]m[-\s]?nascid[oa]|rn\b|meses)\b/i.test(normalizedText),
         wantsPartnershipOrResume
     };
+    
+    // Log dos flags detectados
+    logFlags(text, flags);
+    
+    return flags;
 }
 
 // 1️⃣ Extração de idade e definição de faixa
@@ -324,6 +352,13 @@ export function computeTeaStatus(flags = {}, text = "") {
    ========================================================================= */
 export function detectAllFlags(text = "", lead = {}, context = {}) {
     const rawText = String(text ?? "");
+    logger.debug('DETECT_ALL_FLAGS_START', { 
+        textPreview: rawText?.substring(0, 50),
+        leadId: lead?._id?.toString(),
+        stage: context?.stage,
+        messageCount: context?.messageCount
+    });
+    
     const baseFlags = deriveFlagsFromText(rawText || "");
     const t = baseFlags.normalizedText;
     if (context?.urgency?.level) baseFlags.urgencyLevel = context.urgency.level;
@@ -413,7 +448,7 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
     const topic = resolveTopicFromFlags(baseFlags, rawText);
     const teaStatus = computeTeaStatus(baseFlags, rawText);
 
-    return {
+    const result = {
         ...baseFlags,
         rawText,           // 👈 pro prompt / logs
         normalizedText,
@@ -444,6 +479,26 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
         topic,
         teaStatus,
     };
+    
+    // Log das flags adicionais detectadas
+    const additionalFlags = {
+        userProfile,
+        isNewLead,
+        visitLeadHot,
+        visitLeadCold,
+        inSchedulingFlow,
+        wantsSchedulingNow,
+        topic,
+        teaStatus
+    };
+    
+    logger.debug('DETECT_ALL_FLAGS_RESULT', {
+        textPreview: rawText?.substring(0, 40),
+        ...additionalFlags,
+        totalFlagCount: Object.keys(result).filter(k => result[k] === true).length
+    });
+    
+    return result;
 }
 
 /* =========================================================================
