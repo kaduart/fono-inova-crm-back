@@ -16,15 +16,11 @@ import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js
 import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import Logger from '../services/utils/Logger.js';
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
-import { default as getOptimizedAmandaResponse } from '../utils/amandaOrchestrator.js';
+
 import { mapFlagsToBookingProduct } from '../utils/bookingProductMapper.js';
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
 import { normalizeE164BR } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
-
-const USE_NEW_ORCHESTRATOR =
-    process.env.NEW_ORCHESTRATOR === 'true';
-
 
 const AUTO_TEST_NUMBERS = [
     "5561981694922", "5561981694922", "556292013573", "5562992013573"
@@ -32,25 +28,6 @@ const AUTO_TEST_NUMBERS = [
 
 const logger = new Logger('whatsappController');
 const orchestrator = new WhatsAppOrchestrator();
-
-function isCanaryLead(lead) {
-    if (!process.env.AMANDA_CANARY_PHONES) return false;
-
-    const allowedPhones = process.env.AMANDA_CANARY_PHONES
-        .split(',')
-        .map(p => p.trim());
-
-    const leadPhone =
-        lead?.contact?.phone ||
-        lead?.contact?.phoneWhatsapp ||
-        lead?.phone ||
-        '';
-
-    const normalized = leadPhone.replace(/\D/g, '');
-
-    return allowedPhones.includes(normalized);
-}
-
 
 export const whatsappController = {
 
@@ -675,10 +652,12 @@ export const whatsappController = {
             const patientId = lead.convertedToPatient || null;
 
             // 🧠 Ativa controle manual (Amanda PAUSADA) — FAÇA ANTES DO ENVIO
+            // 🔧 CORREÇÃO: Adicionar autoResumeAfter padrão de 30 minutos
             await Lead.findByIdAndUpdate(lead._id, {
                 'manualControl.active': true,
                 'manualControl.takenOverAt': new Date(),
-                'manualControl.takenOverBy': userId
+                'manualControl.takenOverBy': userId,
+                'manualControl.autoResumeAfter': 30  // 30 minutos padrão
             });
             console.log(`✅ Mensagem manual enviada - Amanda pausada para o lead ${lead._id}`);
 
@@ -814,8 +793,6 @@ export const whatsappController = {
                 return res.json({ success: true, message: 'Já respondida', responded: false });
             }
 
-            const useNewForThisLead = USE_NEW_ORCHESTRATOR && isCanaryLead(lead);
-
             const message = {
                 content: lastInbound.content,
                 from: lastInbound.from,
@@ -832,23 +809,15 @@ export const whatsappController = {
             let result;
             let aiText = null;
 
-            console.log(`🤖 [AMANDA-RESUME] Gerando resposta`);
+            console.log(`🤖 [AMANDA-RESUME] Gerando resposta (Novo Orquestrador)`);
 
-            if (useNewForThisLead) {
-                result = await orchestrator.process({
-                    lead,
-                    message,
-                    context,
-                    services: { bookingService }
-                });
-            } else {
-                result = {
-                    command: 'SEND_MESSAGE',
-                    payload: {
-                        text: await getOptimizedAmandaResponse({ lead, message, context })
-                    }
-                };
-            }
+            // 🚀 NOVO FLOW SEMPRE ATIVO - LEGADO REMOVIDO
+            result = await orchestrator.process({
+                lead,
+                message,
+                context,
+                services: { bookingService }
+            });
 
             if (result?.command === 'SEND_MESSAGE') aiText = result.payload.text;
             else return res.json({ success: true, responded: false });
@@ -1551,12 +1520,18 @@ async function handleAutoReply(from, to, content, lead) {
                 : null;
 
             let aindaPausada = true;
-            const timeout = leadDoc.manualControl?.autoResumeAfter;
+            // 🔧 CORREÇÃO: Usar 30 minutos como padrão se não especificado
+            const timeout = leadDoc.manualControl?.autoResumeAfter ?? 30;
             if (takenAt && typeof timeout === "number" && timeout > 0) {
                 const minutesSince = (Date.now() - takenAt.getTime()) / (1000 * 60);
                 if (minutesSince > timeout) {
                     await Lead.findByIdAndUpdate(lead._id, { 'manualControl.active': false });
+                    aindaPausada = false;  // 🔧 CORREÇÃO: Atualizar a variável local!
                 }
+            } else if (!takenAt) {
+                // 🔧 CORREÇÃO: Se não tem takenAt, desativa manualControl automaticamente
+                await Lead.findByIdAndUpdate(lead._id, { 'manualControl.active': false });
+                aindaPausada = false;
             }
 
             if (aindaPausada) {
@@ -1589,57 +1564,30 @@ async function handleAutoReply(from, to, content, lead) {
         const isFirstContact = lastMessages.length <= 1 || greetings.test(content.trim());
 
         // ================================
-        // 8. Gera resposta da Amanda (orquestrador já usa enrichLeadContext)
+        // 8. Gera resposta da Amanda (NOVO ORQUESTRADOR 100%)
         // ================================
-        console.log('🤖 Gerando resposta da Amanda...');
+        console.log('🤖 Gerando resposta da Amanda (Novo Orquestrador)...');
         const leadIdStr = String(leadDoc._id);
         let aiText = null;
 
-        const useNew =
-            USE_NEW_ORCHESTRATOR &&
-            isCanaryLead(leadDoc);
-
-        if (useNew) {
-            const result = await orchestrator.process({
-                lead: leadDoc,  // use leadDoc (o lead atualizado do banco)
-                message: { content: aggregatedContent },  // use aggregatedContent
-                context: {
-                    preferredPeriod: leadDoc.preferredPeriod || leadDoc.qualificationData?.extractedInfo?.disponibilidade,
-                    preferredDate: leadDoc.preferredDate || leadDoc.qualificationData?.extractedInfo?.dataPreferida,
-                    therapy: leadDoc.therapy || leadDoc.qualificationData?.extractedInfo?.especialidade,
-                    source: 'whatsapp-inbound'
-                },
-                services: {
-                    bookingService,
-                    productService: mapFlagsToBookingProduct
-                }
-            });
-
-
-            if (result?.command === 'SEND_MESSAGE') {
-                aiText = result.payload.text;
-            }
-        } else {
-            // 🔧 CORREÇÃO: Criar contexto para o fluxo legado também
-            const legacyContext = {
+        // 🚀 NOVO FLOW SEMPRE ATIVO - LEGADO REMOVIDO
+        const result = await orchestrator.process({
+            lead: leadDoc,
+            message: { content: aggregatedContent },
+            context: {
                 preferredPeriod: leadDoc.preferredPeriod || leadDoc.qualificationData?.extractedInfo?.disponibilidade,
                 preferredDate: leadDoc.preferredDate || leadDoc.qualificationData?.extractedInfo?.dataPreferida,
                 therapy: leadDoc.therapy || leadDoc.qualificationData?.extractedInfo?.especialidade,
-                pendingSchedulingSlots: leadDoc.pendingSchedulingSlots,
-                pendingChosenSlot: leadDoc.pendingChosenSlot,
-                pendingPatientInfoForScheduling: leadDoc.pendingPatientInfoForScheduling,
-                pendingPatientInfoStep: leadDoc.pendingPatientInfoStep,
-                stage: leadDoc.stage,
                 source: 'whatsapp-inbound'
-            };
-            
-            aiText = await getOptimizedAmandaResponse({
-                content: aggregatedContent,
-                userText: aggregatedContent,
-                leadId: String(leadDoc._id),
-                lead: leadDoc,  // Passar o leadDoc completo em vez de só _id
-                context: legacyContext
-            });
+            },
+            services: {
+                bookingService,
+                productService: mapFlagsToBookingProduct
+            }
+        });
+
+        if (result?.command === 'SEND_MESSAGE') {
+            aiText = result.payload.text;
         }
 
         console.log("[AmandaReply] Texto gerado:", aiText ? aiText.substring(0, 80) + '...' : 'vazio');
