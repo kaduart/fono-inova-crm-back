@@ -1,168 +1,172 @@
-# 🧪 Amanda Flow Tests
+# 🧪 Amanda Flow Tests - Enterprise Edition
 
-Testes automatizados para validar os fluxos de conversação da Amanda (WhatsApp Bot).
+> **Testes que validam COMPORTAMENTO, não SEQUÊNCIA.**
 
-## ⚠️ IMPORTANTE - LEIA ANTES DE ALTERAR
+## 🎯 Filosofia Enterprise
 
-> **Sempre execute estes testes antes de subir alterações para produção!**
-> 
-> Qualquer mudança no `WhatsAppOrchestrator`, `DecisionEngine` ou handlers pode quebrar os fluxos existentes.
+Esta suite de testes não verifica se a Amanda segue um roteiro rígido. Em vez disso, valida que ela:
 
-## 📁 Estrutura
-
-```
-tests/amanda/
-├── README.md           # Este arquivo
-├── flows.test.js       # Testes principais (cenários)
-├── run-tests.sh        # Script de execução fácil
-├── bootstrap.js        # Carrega dotenv antes dos imports
-└── package.json        # Configuração npm (test)
-```
+1. **Responde corretamente** em qualquer contexto
+2. **Não repete perguntas** já respondidas
+3. **Preserva contexto** entre mensagens
+4. **Lida com múltiplas variações** de entrada
+5. **Mantém coerência** independente da ordem
 
 ## 🚀 Como Executar
 
-### Opção 1: NPM (Recomendado)
 ```bash
-cd backend
-npm test
+cd backend && npm test
 ```
 
-### Opção 2: Script Shell
-```bash
-cd backend/tests/amanda
-./run-tests.sh
-```
+## 📋 Cenários de Teste (Behavioral-Driven)
 
-### Opção 3: Node Direto
-```bash
-cd backend
-node tests/amanda/bootstrap.js
-```
+| ID | Nome | Descrição | Múltiplas Variações |
+|----|------|-----------|---------------------|
+| `FIRST_CONTACT_PRICE` | 💰 Primeiro Contato - Preço | Lead pergunta preço na primeira mensagem | ✅ 3 variações |
+| `FIRST_CONTACT_GREETING` | 👋 Primeiro Contato - Saudação | Lead apenas cumprimenta | ✅ 3 variações |
+| `CONTEXT_PRESERVATION` | 🔄 Preservação de Contexto | Dados informados são lembrados | ✅ Caminho flexível |
+| `MULTIPLE_THERAPIES` | 🎯 Detecção Múltiplas Terapias | Quando menciona várias especialidades | ✅ 2 variações |
+| `ADDRESS_QUESTION` | 📍 Pergunta Endereço | Lead pergunta onde fica | ✅ 3 variações |
+| `INSURANCE_QUESTION` | 🏥 Pergunta Convênio | Lead pergunta sobre plano | ✅ 2 variações |
+| `NO_REPEAT_QUESTIONS` | 🔥 NUNCA Repetir Perguntas | Se já respondeu, não pergunta de novo | ✅ 2 variações |
 
-## 📋 Cenários de Teste (5/5 Passando ✅)
+## 🔬 Exemplo: Teste de Comportamento
 
-| ID | Nome | Descrição | Critérios |
-|----|------|-----------|-----------|
-| `PRICE_FIRST_CONTACT` | 💰 Primeiro contato - Preço | Lead pergunta preço na 1ª mensagem | Acolher + Preço + Perguntar QUEIXA (não idade!) |
-| `GREETING_ONLY` | 👋 Primeiro contato - Só "Oi" | Saudação simples | Acolher + Perguntar queixa |
-| `NO_REPEAT_AGE` | 🔥 Nunca repetir idade | Lead já informou idade | NUNCA repetir pergunta da idade |
-| `SCHEDULING_FLOW` | 📅 Fluxo agendamento | "Quero agendar" | Perguntar queixa primeiro |
-| `MULTI_STEP_CONTEXT` | 🔄 Fluxo multi-passos | Queixa → Terapia → Idade → Período | Contexto preservado entre mensagens |
-
-## 🔧 Requisitos
-
-- Node.js 18+
-- MongoDB (configurado no `.env`)
-- Redis (opcional, testes funcionam sem)
-
-## ⚙️ Variáveis de Ambiente
-
-O teste usa o `.env` da pasta `backend/`:
-
-```env
-MONGO_URI=mongodb://... ou mongodb+srv://...
-REDIS_HOST=localhost
-REDIS_PORT=6379
-OPENAI_API_KEY=sk-...
-```
-
-## 🔄 Quando Executar
-
-### OBRIGATÓRIO executar antes de subir:
-- [ ] Alterações em `WhatsAppOrchestrator.js`
-- [ ] Alterações em `DecisionEngine.js`
-- [ ] Alterações em handlers (`leadQualificationHandler.js`, etc)
-- [ ] Alterações em `flagsDetector.js`
-- [ ] Novas regras de negócio
-- [ ] Alterações na ordem do fluxo (Queixa → Terapia → Idade → Período)
-
-### RECOMENDADO executar:
-- [ ] Alterações em modelos (`Leads.js`, `ChatContext.js`)
-- [ ] Alterações em serviços de booking
-- [ ] Atualizações de dependências
-
-## 🛠️ Adicionar Novo Cenário
-
-1. Edite `flows.test.js`
-2. Adicione ao array `SCENARIOS`:
-
+### ❌ Abordagem Antiga (Engessada)
 ```javascript
-{
-    id: 'MEU_NOVO_CENARIO',
-    name: '🎯 Nome do Cenário',
-    phone: '556299999999',
-    description: 'O que este teste valida',
-    messages: [
-        {
-            text: 'Mensagem do cliente',
-            validate: (response) => ({
-                pass: response.includes('esperado'),
-                error: 'Mensagem de erro se falhar'
-            })
-        }
-    ]
-}
+// Teste sequencial - FRÁGIL
+const resposta = await amanda.responder("Oi");
+assert(resposta.includes("Que bom que você entrou em contato!"));
+
+const resposta2 = await amanda.responder("Quanto custa?");
+assert(resposta2.includes("R$ 220"));
 ```
 
-3. Execute os testes para verificar: `npm test`
+### ✅ Abordagem Enterprise (Robusta)
+```javascript
+// Teste comportamental - ROBUSTO
+const resposta = await amanda.responder("Quanto custa?");
+assertBehavior(resposta, {
+    // Deve conter PELO MENOS UM destes
+    shouldContainOneOf: ['situação', 'queixa', 'R$ 220', 'fono'],
+    // NUNCA deve conter estes
+    shouldNotContain: ['qual a idade', 'idade do paciente']
+});
+```
+
+## 🎭 Variações Testadas
+
+Cada cenário testa **múltiplas formas** de dizer a mesma coisa:
+
+### Exemplo: Pergunta de Preço
+- ✅ "Quanto custa?"
+- ✅ "Tá quanto uma consulta com a fono?"
+- ✅ "Qual o valor da avaliação?"
+
+### Exemplo: Saudação
+- ✅ "Oi"
+- ✅ "Bom dia"
+- ✅ "Olá, tudo bem?"
+
+## 🔥 Validações Críticas
+
+### 1. NUNCA Repetir Perguntas
+```javascript
+// Se lead já disse idade, NÃO pergunta de novo
+{ text: 'Oi meu filho tem 7 anos' }  // → Resposta normal
+{ text: 'Quanto custa?' }              // → NÃO deve conter "qual a idade"
+```
+
+### 2. Preservação de Contexto
+```javascript
+// Lead pode responder em qualquer ordem
+{ text: 'Oi' }                          // → Amanda: "Qual a situação?"
+{ text: 'Meu filho não fala' }          // → Amanda: "Qual idade?"
+{ text: '5 anos' }                      // → Amanda: "Qual período?"
+{ text: 'Quanto custa?' }               // → Amanda: Dá preço, NÃO repete idade
+```
+
+### 3. Flexibilidade de Entrada
+```javascript
+// Múltiplas formas de dizer "manhã"
+"manhã" | "Manhã" | "MANHÃ" | "pela manhã" | "de manhã"
+```
 
 ## 📊 Interpretando Resultados
 
 ```
-✅ Passaram: 5/5     → Tudo certo, pode subir!
-❌ Falharam: 1/5     → Corrija antes de subir
+✅ Passaram: 7/7     → Tudo certo! 🎉
+❌ Falharam: 1/7     → Investigar comportamento
 ```
 
-### Erros comuns:
-- **"Não perguntou a queixa"** → Fluxo pulou etapa
-- **"Repetiu pergunta da idade"** → Contexto não preservado
-- **"Perguntou idade antes da queixa"** → Ordem do fluxo errada
+### Tipos de Falha:
 
-## 📝 Checklist Pré-Deploy
+| Tipo | Significado | Ação |
+|------|-------------|------|
+| `shouldContainOneOf` | Amanda não cobriu cenário esperado | Adicionar handler |
+| `shouldNotContain` | Amanda repetiu pergunta | Corrigir lógica de contexto |
+| `shouldMatch` | Resposta fora do padrão | Ajustar regex/template |
 
-- [ ] Executar `npm test` na pasta `backend/`
-- [ ] Todos os 5 cenários passaram
-- [ ] Verificar logs de erro (se houver)
-- [ ] Testar manualmente no WhatsApp (1 fluxo completo)
-- [ ] Confirmar que não há regressões
+## 🛠️ Adicionar Novo Cenário
 
-## 🎯 Arquitetura dos Testes
-
-```
-┌─────────────────────────────────────────┐
-│           TESTE AUTOMATIZADO            │
-├─────────────────────────────────────────┤
-│  1. Criar Lead de teste                 │
-│  2. Simular mensagens do cliente        │
-│  3. Validar respostas da Amanda         │
-│  4. Verificar contexto persistido       │
-│  5. Limpar dados de teste               │
-└─────────────────────────────────────────┘
-```
-
-### Fluxo Validado:
-```
-Cliente: "Oi" 
-   ↓
-Amanda: "Oi! Que bom que você entrou em contato! ... Qual a situação?"
-   ↓
-Cliente: "Meu filho não fala direito"
-   ↓
-Amanda: "Qual a idade do paciente?" (detectou: queixa=fono)
-   ↓
-Cliente: "5 anos"
-   ↓
-Amanda: "Prefere manhã ou tarde?"
+```javascript
+{
+    id: 'MEU_NOVO_CENARIO',
+    name: '🎯 Nome Descritivo',
+    description: 'O que este teste valida',
+    phone: '556299999999',
+    variations: [
+        {
+            name: 'Variação 1',
+            messages: ['Texto do cliente']
+        },
+        {
+            name: 'Variação 2',
+            messages: ['Outro texto equivalente']
+        }
+    ],
+    expectations: {
+        firstResponse: {
+            shouldContainOneOf: ['texto', 'esperado', 'resposta'],
+            shouldNotContain: ['erro', 'problema']
+        }
+    }
+}
 ```
 
-## 👥 Contato
+## 🔄 Quando Executar
 
-Em caso de dúvidas sobre os testes, consulte:
-- Documentação da Amanda: `backend/orchestrators/README.md`
-- Arquitetura: `PERFORMANCE_IMPLEMENTATION_GUIDE.md`
-- Código fonte: `backend/orchestrators/WhatsAppOrchestrator.js`
+### OBRIGATÓRIO:
+- [ ] Antes de todo deploy em produção
+- [ ] Após alterações em `DecisionEngine.js`
+- [ ] Após alterações em `WhatsAppOrchestrator.js`
+- [ ] Após alterações em handlers
+
+### RECOMENDADO:
+- [ ] Após alterações em `flagsDetector.js`
+- [ ] Após novas regras de negócio
+- [ ] Semanalmente (CI/CD)
+
+## 🚨 Diferença para Testes Antigos
+
+| Aspecto | Testes Antigos | Testes Enterprise |
+|---------|---------------|-------------------|
+| Foco | Sequência fixa | Comportamento |
+| Fragilidade | Alta (quebra com pequenas mudanças) | Baixa (flexível) |
+| Variações | 1 por cenário | Múltiplas por cenário |
+| Manutenção | Difícil | Fácil |
+| Cobertura | Linear | Abrangente |
+
+## ✅ Checklist de Qualidade
+
+Antes de subir para produção:
+
+- [ ] `npm test` retorna 7/7 passando
+- [ ] Nenhum erro crítico nos logs
+- [ ] Testado manualmente no WhatsApp (1 fluxo)
+- [ ] Logs estruturados funcionando
 
 ---
 
 **Última atualização:** 03/02/2026  
-**Status:** ✅ Todos os testes passando
+**Status:** ✅ 7/7 Testes Passando

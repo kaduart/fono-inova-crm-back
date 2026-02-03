@@ -355,16 +355,24 @@ function getSmartFollowUp(memory, needsTherapySelection = false, chatContext = n
     const awaitingAge = chatContext?.lastExtractedInfo?.awaitingAge || memory?.awaitingAge;
     const awaitingPeriod = chatContext?.lastExtractedInfo?.awaitingPeriod || memory?.awaitingPeriod;
     
+    // 🔥 CORREÇÃO: Verificar também o awaitingField do contexto atual
+    const currentAwaitingField = chatContext?.lastExtractedInfo?.awaitingField;
+    
     const hasTherapy = !!memory?.therapyArea;
     const hasComplaint = !!(memory?.complaint || memory?.primaryComplaint);
     const hasAge = !!(memory?.patientAge || memory?.patientInfo?.age || memory?.age);
-    const hasPeriod = !!(memory?.preferredPeriod || memory?.pendingPreferredPeriod || memory?.period);
+    // 🔥 CORREÇÃO: Se o contexto está esperando 'period', significa que ainda não temos
+    // Mas se o usuário acabou de responder o período, devemos considerar que temos
+    const hasPeriod = !!(memory?.preferredPeriod || memory?.pendingPreferredPeriod || memory?.period) || 
+                      (currentAwaitingField === 'period' && memory?.period);
     const hasMultipleTherapies = memory?.hasMultipleTherapies || memory?.allDetectedTherapies?.length > 1;
     
     logDebug('GET_SMART_FOLLOWUP_STATE', {
         hasComplaint, hasTherapy, hasAge, hasPeriod,
         awaitingComplaint: !!awaitingComplaint,
         awaitingAge: !!awaitingAge,
+        awaitingPeriod: !!awaitingPeriod,
+        currentAwaitingField,
         hasMultipleTherapies
     });
 
