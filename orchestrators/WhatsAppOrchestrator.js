@@ -123,15 +123,6 @@ export class WhatsAppOrchestrator {
             // Carrega contexto do chat para verificar estados pendentes (awaitingComplaint, etc)
             const chatContext = await ChatContext.findOne({ lead: lead._id }).lean();
 
-            // 🐛 DEBUG: Log do contexto carregado
-            this.logger.info('CHAT_CONTEXT_LOADED', {
-                leadId: lead._id?.toString(),
-                hasContext: !!chatContext,
-                lastExtractedInfo: chatContext?.lastExtractedInfo,
-                awaitingComplaint: chatContext?.lastExtractedInfo?.awaitingComplaint,
-                awaitingAge: chatContext?.lastExtractedInfo?.awaitingAge
-            });
-
             const inferred = await this.extractInferredData({
                 text,
                 flags,
@@ -232,6 +223,15 @@ export class WhatsAppOrchestrator {
                 }
             });
 
+            // 🐛 DEBUG: Verificar chatContext antes de passar para decisionEngine
+            this.logger.info('BEFORE_DECISION_ENGINE', {
+                leadId: lead._id?.toString(),
+                chatContextAwaitingField: chatContext?.lastExtractedInfo?.awaitingField,
+                chatContextObj: chatContext,  // Log completo do objeto
+                hasChatContext: !!chatContext,
+                hasLastExtractedInfo: !!chatContext?.lastExtractedInfo
+            });
+            
             const decision = await decisionEngine({
                 analysis,
                 memory: mergedMemory,  // Usar memory mesclado!
@@ -242,7 +242,7 @@ export class WhatsAppOrchestrator {
                 clinicalRules,
                 lead,
                 message: { text },
-                chatContext  // Passar chatContext para acesso a awaitingComplaint etc
+                chatContext
             });
 
             this.logger.info('DECISION', {

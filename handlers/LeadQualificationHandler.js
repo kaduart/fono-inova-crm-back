@@ -70,6 +70,31 @@ class LeadQualificationHandler {
             }
             
             // ===========================
+            // 🆕 TRATAMENTO ESPECIAL: SHOW SLOTS (Mostrar horários)
+            // ===========================
+            if (action === 'show_slots') {
+                this.logger.info('HANDLER_SHOW_SLOTS', { 
+                    hasDecisionText: !!decisionContext.text,
+                    period: memory?.preferredPeriod || memory?.pendingPreferredPeriod 
+                });
+                
+                // Se já tem texto pronto do decisionContext, usar
+                if (decisionContext.text && decisionContext.text.length > 10) {
+                    return {
+                        text: decisionContext.text,
+                        extractedInfo: decisionContext.extractedInfo || {}
+                    };
+                }
+                
+                // Resposta padrão para mostrar horários
+                const period = memory?.preferredPeriod || memory?.pendingPreferredPeriod || 'esse período';
+                return {
+                    text: `Perfeito! Deixa eu verificar os horários disponíveis de ${period}... 💚`,
+                    extractedInfo: decisionContext.extractedInfo || { awaitingField: 'slot_confirmation' }
+                };
+            }
+            
+            // ===========================
             // 🆕 TRATAMENTO ESPECIAL: CONTINUE COLLECTION
             // ===========================
             if (action === 'continue_collection') {

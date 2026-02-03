@@ -65,6 +65,8 @@ class AmandaTestFramework {
             context: { source: 'whatsapp-inbound' },
             services: {}
         });
+        // 🔥 CRÍTICO: Aguardar MongoDB persistir o contexto antes da próxima mensagem
+        await new Promise(resolve => setTimeout(resolve, 100));
         return result?.payload?.text || result?.text || '';
     }
 
@@ -304,6 +306,49 @@ const BEHAVIORAL_TESTS = [
                 },
                 no_period_repeat: {
                     shouldNotContain: ['manhã ou tarde', 'qual período', 'prefere']
+                }
+            }
+        }
+    },
+    {
+        id: 'NO_REPEAT_SLOT_OFFER',
+        name: '🚫 NÃO Repetir Oferta de Horários',
+        description: 'Quando lead confirma "sim", deve aceitar e não repetir a pergunta',
+        phone: '556299998888',
+        critical: true,
+        variations: [
+            {
+                name: 'Sim após oferta de horários',
+                messages: [
+                    { text: 'Oi', validate: 'any' },
+                    { text: 'Meu filho não fala direito', validate: 'any' },
+                    { text: 'É para fonoaudiologia', validate: 'any' },
+                    { text: 'Tem 4 anos', validate: 'any' },
+                    { text: 'Tarde', validate: 'any' },
+                    { text: 'Sim', validate: 'no_slot_repeat' },
+                    { text: 'Ok', validate: 'no_slot_repeat_again' }
+                ]
+            },
+            {
+                name: 'Sim por favor',
+                messages: [
+                    { text: 'Oi', validate: 'any' },
+                    { text: 'Minha filha tem 6 anos e gagueja', validate: 'any' },
+                    { text: 'Fono', validate: 'any' },
+                    { text: 'Manhã', validate: 'any' },
+                    { text: 'Sim por favor', validate: 'no_slot_repeat' }
+                ]
+            }
+        ],
+        expectations: {
+            validations: {
+                no_slot_repeat: {
+                    shouldNotContain: ['Quer que eu veja', 'horários disponíveis', 'quer que eu'],
+                    shouldContainOneOf: ['Perfeito', 'horários', 'verificar', 'disponíveis', 'agendar', 'vejo', 'confirmado']
+                },
+                no_slot_repeat_again: {
+                    shouldNotContain: ['Quer que eu veja', 'horários disponíveis', 'quer que eu', 'pergunto de novo'],
+                    shouldContainOneOf: ['Perfeito', 'horários', 'verificar', 'entendi', 'ok', 'vejo', 'disponíveis']
                 }
             }
         }
