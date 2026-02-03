@@ -210,19 +210,25 @@ export class WhatsAppOrchestrator {
                 patientAge: inferred?.age || chatContext?.lastExtractedInfo?.age || memoryContext?.patientAge,
                 therapyArea: inferred?.therapy || chatContext?.lastExtractedInfo?.therapy || memoryContext?.therapyArea,
                 complaint: inferred?.complaint || chatContext?.lastExtractedInfo?.complaint || memoryContext?.complaint,
+                // 🔥 CORREÇÃO: Adicionar período extraído da mensagem atual
+                preferredPeriod: inferred?.period || chatContext?.lastExtractedInfo?.period || memoryContext?.preferredPeriod,
+                period: inferred?.period || chatContext?.lastExtractedInfo?.period || memoryContext?.period,
             };
             this.logger.info('MERGED_MEMORY', {
                 leadId: lead._id?.toString(),
                 memoryContext: {
                     patientAge: memoryContext?.patientAge,
                     therapyArea: memoryContext?.therapyArea,
-                    complaint: memoryContext?.complaint
+                    complaint: memoryContext?.complaint,
+                    preferredPeriod: memoryContext?.preferredPeriod
                 },
                 chatContext: chatContext?.lastExtractedInfo,
                 mergedMemory: {
                     patientAge: mergedMemory.patientAge,
                     therapyArea: mergedMemory.therapyArea,
-                    complaint: mergedMemory.complaint
+                    complaint: mergedMemory.complaint,
+                    preferredPeriod: mergedMemory.preferredPeriod,
+                    period: mergedMemory.period
                 }
             });
 
