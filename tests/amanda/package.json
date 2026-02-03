@@ -1,0 +1,18 @@
+{
+  "name": "amanda-flow-tests",
+  "version": "1.0.0",
+  "description": "Testes automatizados para fluxos da Amanda",
+  "type": "module",
+  "scripts": {
+    "test": "node flows.test.js"
+  },
+  "keywords": [
+    "amanda",
+    "whatsapp",
+    "bot",
+    "tests",
+    "flows"
+  ],
+  "author": "Fono Inova",
+  "license": "Private"
+}
