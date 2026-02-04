@@ -508,13 +508,19 @@ export const packageOperations = {
                 .populate('sessions appointments payments')
                 .lean();
 
-            await Leads.findByIdAndUpdate(leadId, {
-                patientJourneyStage: "renovacao"
-            });
+            // 🔹 Busca o paciente para obter o leadId (se existir)
+            const patient = await Patient.findById(patientId).lean();
+            const leadId = patient?.lead;
+            
+            if (leadId) {
+                await Leads.findByIdAndUpdate(leadId, {
+                    patientJourneyStage: "renovacao"
+                });
 
-            runJourneyFollowups(leadId, {
-                patientName: patient.name
-            });
+                runJourneyFollowups(leadId, {
+                    patientName: patient.name
+                });
+            }
 
             res.status(201).json({
                 success: true,
