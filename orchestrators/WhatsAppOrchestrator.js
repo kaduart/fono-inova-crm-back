@@ -204,6 +204,9 @@ export class WhatsAppOrchestrator {
                 // 🔥 CORREÇÃO: Adicionar período extraído da mensagem atual
                 preferredPeriod: inferred?.period || chatContext?.lastExtractedInfo?.period || memoryContext?.preferredPeriod,
                 period: inferred?.period || chatContext?.lastExtractedInfo?.period || memoryContext?.period,
+                // 🔥 CRÍTICO: Adicionar dados de múltiplas terapias
+                hasMultipleTherapies: inferred?.hasMultipleTherapies || chatContext?.lastExtractedInfo?.hasMultipleTherapies || memoryContext?.hasMultipleTherapies,
+                allDetectedTherapies: inferred?.allDetectedTherapies || chatContext?.lastExtractedInfo?.allDetectedTherapies || memoryContext?.allDetectedTherapies,
             };
             this.logger.info('MERGED_MEMORY', {
                 leadId: lead._id?.toString(),
