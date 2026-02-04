@@ -102,7 +102,10 @@ export async function decide({ analysis, memory, flags, lead, contextPack, messa
         ...(analysis?.extractedInfo?.complaint && { complaint: analysis.extractedInfo.complaint }),
         ...(analysis?.extractedInfo?.idade && { patientAge: analysis.extractedInfo.idade }),
         ...(analysis?.extractedInfo?.disponibilidade && { preferredPeriod: analysis.extractedInfo.disponibilidade }),
-        ...(analysis?.therapyArea && { therapyArea: analysis.therapyArea })
+        ...(analysis?.therapyArea && { therapyArea: analysis.therapyArea }),
+        // 🔥 CRÍTICO: Preservar dados de múltiplas terapias
+        ...(memory?.hasMultipleTherapies && { hasMultipleTherapies: memory.hasMultipleTherapies }),
+        ...(memory?.allDetectedTherapies && { allDetectedTherapies: memory.allDetectedTherapies })
     };
     return continueCollection(enrichedMemory, chatContext, message?.text);
 }
@@ -307,6 +310,27 @@ function continueCollection(memory, chatContext = null, message = null) {
         message: message?.substring(0, 30)
     });
     
+    // 🔥 CORREÇÃO: Se estamos oferecendo orçamento e o usuário confirmou, explicar valores
+    if (currentAwaitingField === 'budget_offer' && isPositiveConfirmation(message, 'budget_offer')) {
+        const therapies = memory?.allDetectedTherapies || [];
+        const therapyCount = therapies.length;
+        
+        logDecision('CONTINUE_COLLECTION_BUDGET_CONFIRMED', { therapyCount });
+        
+        // Se tem múltiplas terapias, explicar que são particulares e oferecer valores
+        if (therapyCount > 1) {
+            return {
+                action: 'smart_response',
+                handler: 'leadQualificationHandler',
+                text: "Somos particulares, mas oferecemos valores especiais para pacientes que fazem acompanhamento multidisciplinar 💚 Posso te passar os valores das avaliações?",
+                extractedInfo: { 
+                    awaitingField: 'price_info',
+                    multipleTherapies: true
+                }
+            };
+        }
+    }
+    
     // 🔥 CORREÇÃO: Se temos todos os dados e o usuário confirmou com "Sim", mostrar horários
     // Isso evita repetir "Quer que eu veja os horários?" quando o usuário já disse "Sim"
     if (hasAllData && isPositiveConfirmation(message, 'slot')) {
@@ -458,27 +482,17 @@ function getSmartFollowUp(memory, needsTherapySelection = false, chatContext = n
         };
     }
 
-    // 🔥 DETECÇÃO DE MÚLTIPLAS TERAPIAS: Se mencionou várias, perguntar qual
-    if ((needsTherapySelection || hasMultipleTherapies) && hasComplaint) {
-        const therapies = memory?.allDetectedTherapies || memory?.detectedTherapies || [];
-        const therapyList = therapies.slice(0, 3).join(', ').replace(/, ([^,]*)$/, ' ou $1');
-        logDecision('FOLLOWUP_THERAPY_SELECTION', { therapies: therapyList });
-        return {
-            text: `Entendi 💚 Vi que você mencionou ${therapyList}. É pra qual especialidade você quer agendar?`,
-            awaitingField: 'therapy_selection'
-        };
-    }
-
-    // Se tem queixa mas não tem terapia → perguntar especialidade
+    // Se tem queixa mas não tem terapia definida → perguntar especialidade
+    // 🔥 NOTA: Se hasMultipleTherapies=true, a IA já tem esse contexto e vai acolher apropriadamente
     if (!hasTherapy && hasComplaint) {
-        logDecision('FOLLOWUP_THERAPY', { reason: 'has_complaint_no_therapy' });
+        logDecision('FOLLOWUP_THERAPY', { reason: 'has_complaint_no_therapy', hasMultipleTherapies });
         return {
-            text: "Entendi 💚 É pra qual área você está procurando: Fono, Psicologia, Terapia Ocupacional, Fisio ou Neuropsico?",
+            text: "Entendi 💚 É pra qual área você está procurando?",
             awaitingField: 'therapy'
         };
     }
 
-    // SÓ DEPOIS de ter queixa e terapia → perguntar idade
+    // SÓ DEPOIS de ter queixa E terapia definida → perguntar idade
     if (!hasAge && hasComplaint) {
         logDecision('FOLLOWUP_AGE', { reason: 'has_complaint_no_age' });
         return {

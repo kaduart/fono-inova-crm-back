@@ -256,26 +256,17 @@ class LeadQualificationHandler {
                 };
             }
             
-            if (!shouldAcknowledgeHistory && missing.needsTherapy) {
-                return {
-                    text: 'É pra qual área: Fono, Psicologia, Terapia Ocupacional ou Fisio? 💚',
-                    extractedInfo: {}
-                };
+            // 🔥 CORREÇÃO: Não usar respostas fixas - deixar a IA responder naturalmente
+            // As respostas fixas impedem que a IA contextualize corretamente
+            // Ex: Lead perguntando "vocês são de Formosa?" precisa de resposta sobre localização, não "Qual a idade?"
+            
+            // Apenas casos especiais mantêm resposta direta (seleção de terapia múltipla)
+            if (!shouldAcknowledgeHistory && missing.needsTherapy && !analysis?.flags?.asksAddress && !analysis?.flags?.asksPrice) {
+                // Deixar a IA perguntar naturalmente sobre a terapia
             }
             
-            if (missing.needsAge) {
-                return {
-                    text: 'Qual a idade? 💚',
-                    extractedInfo: { awaitingAge: true, lastQuestion: 'age' }
-                };
-            }
-            
-            if (missing.needsPeriod) {
-                return {
-                    text: 'De manhã ou à tarde? 💚',
-                    extractedInfo: { awaitingPeriod: true, lastQuestion: 'period' }
-                };
-            }
+            // Se precisa de dados mas não é pergunta direta, a IA vai coletar naturalmente
+            // Não retornar respostas fixas aqui - deixar o fluxo continuar para a IA
 
             if (shouldAcknowledgeHistory) {
                 objetivo = `Reconhecer que o lead voltou após ${daysSinceLastContact} dias. Mencione brevemente o contexto anterior (${therapyArea || 'a terapia'} para situação de ${memory?.primaryComplaint || 'saúde'} de ${patientAge || 'a criança'}) e pergunte se quer continuar de onde parou ou tem algo novo. Seja acolhedora e natural.`;
@@ -306,11 +297,18 @@ class LeadQualificationHandler {
             - Se o lead já informou algo, reconheça e avance
             `.trim();
 
+            // 🔥 DETECTAR MÚLTIPLAS TERAPIAS
+            const hasMultipleTherapies = memory?.hasMultipleTherapies || memory?.allDetectedTherapies?.length > 1;
+            const allDetectedTherapies = memory?.allDetectedTherapies || [];
+            const therapyContext = hasMultipleTherapies 
+                ? `MÚLTIPLAS ESPECIALIDADES: O lead mencionou ${allDetectedTherapies.join(', ')}. Acolha positivamente informando que somos uma clínica multidisciplinar e ofereça ajuda com todas elas.`
+                : `Área de interesse: ${therapyArea || 'não informada'}`;
+            
             const userPrompt = `
             CONTEXTO DO LEAD:
             - Nome: ${leadName || 'não informado'}
             - Idade do paciente: ${patientAge || 'não informada'}
-            - Área de interesse: ${therapyArea || 'não informada'}
+            - ${therapyContext}
             - Primeiro contato: ${isFirstContact ? 'SIM' : 'NÃO'}
            ${shouldAcknowledgeHistory ? `CONTEXTO HISTÓRICO (lead retornou depois de ${daysSinceLastContact} dias):\n${conversationSummary.substring(0, 150)}...\n` : ''}
 
