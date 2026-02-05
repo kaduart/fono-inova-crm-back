@@ -72,7 +72,10 @@ const appointmentSchema = new mongoose.Schema({
       'neuropsych_evaluation',
       'fisioterapia',
       'pediatria',
-      'neuroped'
+      'neuroped',
+      'musicoterapia',
+      'psicopedagogia',
+      'psicomotricidade'
     ],
     set: v => typeof v === 'string' ? v.toLowerCase() : v
   },

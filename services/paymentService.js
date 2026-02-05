@@ -1,6 +1,6 @@
 // services/paymentService.js
 export const handleSessionPayment = ({ pkg, amount, paymentMethod }) => {
-  if (!['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia'].includes(pkg.type)) {
+  if (!['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'psicomotricidade', 'musicoterapia'].includes(pkg.type)) {
     throw new Error('Tipo de terapia inválido para pagamento');
   }
 

@@ -10,21 +10,21 @@ router.get('/', (req, res) => {
             name: 'Fonoaudiologia',
             icon: 'mic',
             color: '#4CAF50',
-            sessionDuration: 30
+            sessionDuration: 40
         },
         {
             id: 'neuroped',
             name: 'Neuropediatria',
             icon: 'brain',
             color: '#2196F3',
-            sessionDuration: 45
+            sessionDuration: 40
         },
         {
             id: 'psico',
             name: 'Psicologia',
             icon: 'psychology',
             color: '#FF9800',
-            sessionDuration: 50
+            sessionDuration: 40
         },
         {
             id: 'to',
@@ -46,6 +46,20 @@ router.get('/', (req, res) => {
             icon: 'child_care',
             color: '#00BCD4',
             sessionDuration: 30
+        },
+        {
+            id: 'musicoterapia',
+            name: 'Musicoterapia',
+            icon: 'music_note',
+            color: '#17c041',
+            sessionDuration: 40
+        },
+        {
+            id: 'psicomotricidade',
+            name: 'Psicomotricidade',
+            icon: 'directions_run',
+            color: '#FF5722',
+            sessionDuration: 40
         }
     ]);
 });

@@ -17,7 +17,7 @@ const doctorSchema = new mongoose.Schema({
     select: false,
     set: v => (v === '' ? undefined : v)
   },
-  specialty: { type: String, required: true, enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'pediatria', 'neuroped'] },
+  specialty: { type: String, required: true, enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'pediatria', 'neuroped', 'psicomotricidade', 'musicoterapia'] },
   specialties: { type: [String], default: [] },
 
   licenseNumber: { type: String, required: true, unique: true },

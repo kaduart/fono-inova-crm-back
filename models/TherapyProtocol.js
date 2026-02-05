@@ -17,7 +17,7 @@ const therapyProtocolSchema = new mongoose.Schema({
     specialty: {
         type: String,
         required: true,
-        enum: ['Psicologia', 'Fonoaudiologia', 'Terapia Ocupacional', 'Fisioterapia']
+        enum: ['Psicologia', 'Fonoaudiologia', 'Terapia Ocupacional', 'Fisioterapia', 'Psicomotricidade', 'Musicoterapia']
     },
     applicableAreas: [{
         type: String,
