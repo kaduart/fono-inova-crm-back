@@ -2,11 +2,12 @@
 // 🧠 Versão 2.0 - Consultora Premium Inteligente
 
 import callAI from '../services/IA/Aiproviderservice.js';
+import { buildResponse } from '../services/intelligence/naturalResponseBuilder.js';
 import Logger from '../services/utils/Logger.js';
-import { 
-    DYNAMIC_MODULES, 
+import {
+    DYNAMIC_MODULES,
     OBJECTION_SCRIPTS,
-    getObjectionScript 
+    getObjectionScript
 } from '../utils/amandaPrompt.js';
 import ensureSingleHeart from '../utils/helpers.js';
 
@@ -18,17 +19,17 @@ class LeadQualificationHandler {
 
     async execute({ decisionContext, services }) {
         const startTime = Date.now();
-        
+
         try {
             const { memory, analysis, missing, message, action, objectionType, attempt, pendingCollection } = decisionContext;
-            
+
             this.logger.info('HANDLER_EXECUTE_START', {
                 action,
                 objectionType,
                 hasMemory: !!memory,
                 messagePreview: message?.text?.substring(0, 50)
             });
-            
+
             // ===========================
             // 🆕 TRATAMENTO ESPECIAL: OBJEÇÕES
             // ===========================
@@ -36,7 +37,7 @@ class LeadQualificationHandler {
                 this.logger.info('HANDLER_HANDLE_OBJECTION', { objectionType, attempt });
                 return this.handleObjection(objectionType, attempt, pendingCollection, memory);
             }
-            
+
             // ===========================
             // 🆕 TRATAMENTO ESPECIAL: ACOLHIMENTO EMOCIONAL
             // ===========================
@@ -44,7 +45,7 @@ class LeadQualificationHandler {
                 this.logger.info('HANDLER_ACKNOWLEDGE_PAIN');
                 return this.handleEmotionalAcknowledgment(pendingCollection, memory);
             }
-            
+
             // ===========================
             // 🆕 TRATAMENTO ESPECIAL: WARM RECALL (lead retornando)
             // ===========================
@@ -56,7 +57,7 @@ class LeadQualificationHandler {
                     extractedInfo: decisionContext.extractedInfo || { returningLead: true }
                 };
             }
-            
+
             // ===========================
             // 🆕 TRATAMENTO ESPECIAL: SMART RESPONSE (responde + retoma)
             // ===========================
@@ -68,60 +69,84 @@ class LeadQualificationHandler {
                     extractedInfo: decisionContext.extractedInfo || {}
                 };
             }
-            
+
             // ===========================
             // 🆕 TRATAMENTO ESPECIAL: SHOW SLOTS (Mostrar horários)
             // ===========================
+            // LeadQualificationHandler.js - linha 75
             if (action === 'show_slots') {
-                this.logger.info('HANDLER_SHOW_SLOTS', { 
-                    hasDecisionText: !!decisionContext.text,
-                    period: memory?.preferredPeriod || memory?.pendingPreferredPeriod 
+                const { findAvailableSlots } = await import('../services/amandaBookingService.js');
+                const slots = await findAvailableSlots({
+                    therapyArea: memory?.therapyArea,
+                    preferredPeriod: memory?.preferredPeriod || memory?.pendingPreferredPeriod
                 });
-                
-                // Se já tem texto pronto do decisionContext, usar
-                if (decisionContext.text && decisionContext.text.length > 10) {
+
+                if (slots?.primary) {
                     return {
-                        text: decisionContext.text,
-                        extractedInfo: decisionContext.extractedInfo || {}
+                        text: `Encontrei esses horários: ${formatSlots(slots)}. Qual funciona melhor? 💚`,
+                        extractedInfo: { awaitingField: 'slot_selection', offeredSlots: slots }
                     };
                 }
-                
-                // Resposta padrão para mostrar horários
-                const period = memory?.preferredPeriod || memory?.pendingPreferredPeriod || 'esse período';
+                // fallback se não achar
                 return {
-                    text: `Perfeito! Deixa eu verificar os horários disponíveis de ${period}... 💚`,
-                    extractedInfo: decisionContext.extractedInfo || { awaitingField: 'slot_confirmation' }
+                    text: `Não encontrei horários de ${memory?.preferredPeriod} essa semana. Quer que eu veja outra opção? 💚`,
+                    extractedInfo: { awaitingField: 'period_retry' }
                 };
             }
-            
+
             // ===========================
             // 🆕 TRATAMENTO ESPECIAL: CONTINUE COLLECTION
             // ===========================
             if (action === 'continue_collection') {
-                this.logger.info('HANDLER_CONTINUE_COLLECTION', { 
+                const { message, memory } = decisionContext; // ← ADICIONAR destructuring
+
+                this.logger.info('HANDLER_CONTINUE_COLLECTION', {
                     hasDecisionText: !!(decisionContext.text && decisionContext.text.length > 10),
-                    awaitingField: decisionContext.extractedInfo?.awaitingField 
+                    awaitingField: decisionContext.extractedInfo?.awaitingField
                 });
-                // Se já tem texto pronto do decisionContext, usar
+
+                // 🔥 PRIMEIRO: Tenta humanizar baseado no awaitingField
+                const awaitingField = decisionContext.extractedInfo?.awaitingField;
+                const intentMap = {
+                    'age': 'ask_age',
+                    'period': 'ask_period',
+                    'complaint': 'ask_complaint',
+                    'therapy': 'ask_therapy',
+                    'slot': 'ask_slot_selection'
+                };
+
+                if (awaitingField && intentMap[awaitingField]) {
+                    const humanizedText = buildResponse(intentMap[awaitingField], {
+                        userText: message?.text || '',
+                        patientName: memory?.patientName,
+                        therapyArea: memory?.therapyArea
+                    });
+                    return {
+                        text: humanizedText,
+                        extractedInfo: decisionContext.extractedInfo || {}
+                    };
+                }
+
+                // 🔥 FALLBACK: Se não tem awaitingField mas tem texto do decision, usa ele
                 if (decisionContext.text && decisionContext.text.length > 10) {
                     return {
                         text: decisionContext.text,
                         extractedInfo: decisionContext.extractedInfo || {}
                     };
                 }
-                
+
                 // Se acabou de receber período
                 const userText = message?.text || '';
                 if (memory?.pendingPreferredPeriod || userText.toLowerCase().includes('manhã') || userText.toLowerCase().includes('tarde')) {
-                    const period = memory?.pendingPreferredPeriod || 
-                                   (userText.toLowerCase().includes('manhã') ? 'manhã' : 'tarde');
-                    
+                    const period = memory?.pendingPreferredPeriod ||
+                        (userText.toLowerCase().includes('manhã') ? 'manhã' : 'tarde');
+
                     return {
                         text: `Certo! Deixa eu ver os horários de ${period}... 👀`,
                         extractedInfo: decisionContext.extractedInfo || {}
                     };
                 }
-                
+
                 // Se acabou de receber idade
                 const patientAge = memory?.patientInfo?.age || memory?.patientAge;
                 if (patientAge && !memory?.complaint) {
@@ -130,13 +155,13 @@ class LeadQualificationHandler {
                         extractedInfo: decisionContext.extractedInfo || {}
                     };
                 }
-                
+
                 return {
                     text: decisionContext.text || 'Me conta um pouquinho mais? 💚',
                     extractedInfo: decisionContext.extractedInfo || {}
                 };
             }
-            
+
             // ===========================
             // 1️⃣ MONTA CONTEXTO
             // ===========================
@@ -192,25 +217,25 @@ class LeadQualificationHandler {
             let extractedInfo = {}; // 🆕 Para salvar estado de aguardo
 
             // 🆕 RESPOSTAS NATURAIS (rápidas, sem IA) para casos simples
-            
+
             // 🆕 VERIFICA SE É UMA QUEIXA/RELATO DE DOR PRIMEIRO
             // Se o usuário está relatando algo que o preocupa, ACOLHER antes de tudo
             const userText = message?.text || '';
             const isComplaint = /(não fala|não anda|não obedece|birra|chora|medo|ansioso|hiperativo|agitado|não concentra|dificuldade|problema|atraso|troca letra|gagueira|autismo|tea|tdah|deficit|desobedece|birra|crise)/i.test(userText);
             const hasEmotionalTone = /(preocupada|desesperada|medo|difícil|sofrimento|sofrimento|triste|não sei o que fazer)/i.test(userText);
-            
+
             if ((isComplaint || hasEmotionalTone) && !memory?.painAcknowledged) {
                 // Acolher primeiro, depois perguntar o que falta
                 const patientName = memory?.patientInfo?.name || memory?.patientName;
                 const nameRef = patientName ? patientName.split(' ')[0] : (patientAge ? 'ele(a)' : 'seu filho');
-                
+
                 let acolhimento = '';
                 if (hasEmotionalTone) {
                     acolhimento = `Entendo como você deve estar... Deve ser muito difícil ver ${nameRef} passando por isso. Você está fazendo o certo em buscar ajuda.`;
                 } else {
                     acolhimento = `Sinto muito que ${nameRef} esteja passando por isso. Isso é algo que precisa de uma avaliação sim.`;
                 }
-                
+
                 // Agora perguntar o que falta de forma suave
                 const context = {
                     userName: memory?.name,
@@ -220,7 +245,7 @@ class LeadQualificationHandler {
                     emotionalState: hasEmotionalTone ? 'ansioso' : 'calmo',
                     userText,
                 };
-                
+
                 let pergunta = '';
                 if (missing.needsAge && !patientAge) {
                     pergunta = 'Qual a idade dele(a)?';
@@ -231,40 +256,40 @@ class LeadQualificationHandler {
                 } else {
                     pergunta = 'Me conta um pouco mais sobre o que você tem observado?';
                 }
-                
+
                 return {
                     text: ensureSingleHeart(`${acolhimento}\n\n${pergunta}`),
-                    extractedInfo: { 
+                    extractedInfo: {
                         painAcknowledged: true,
-                        emotionalSupportProvided: true 
+                        emotionalSupportProvided: true
                     }
                 };
             }
-            
+
             // 🆕 SELEÇÃO DE TERAPIA (quando há múltiplas detectadas)
             if (missing.needsTherapySelection && decisionContext?.detectedTherapies?.length > 1) {
                 const therapies = decisionContext.detectedTherapies;
                 const therapyList = therapies.map((t, i) => `${String.fromCharCode(65 + i)}) ${t.charAt(0).toUpperCase() + t.slice(1)}`).join('\n');
-                
+
                 return {
                     text: `Vi que você tem autorização para várias terapias 💚\n\n${therapyList}\n\nQual delas você gostaria de agendar?`,
-                    extractedInfo: { 
-                        awaitingTherapySelection: true, 
+                    extractedInfo: {
+                        awaitingTherapySelection: true,
                         lastQuestion: 'therapy_selection',
                         detectedTherapies: therapies
                     }
                 };
             }
-            
+
             // 🔥 CORREÇÃO: Não usar respostas fixas - deixar a IA responder naturalmente
             // As respostas fixas impedem que a IA contextualize corretamente
             // Ex: Lead perguntando "vocês são de Formosa?" precisa de resposta sobre localização, não "Qual a idade?"
-            
+
             // Apenas casos especiais mantêm resposta direta (seleção de terapia múltipla)
             if (!shouldAcknowledgeHistory && missing.needsTherapy && !analysis?.flags?.asksAddress && !analysis?.flags?.asksPrice) {
                 // Deixar a IA perguntar naturalmente sobre a terapia
             }
-            
+
             // Se precisa de dados mas não é pergunta direta, a IA vai coletar naturalmente
             // Não retornar respostas fixas aqui - deixar o fluxo continuar para a IA
 
@@ -300,10 +325,10 @@ class LeadQualificationHandler {
             // 🔥 DETECTAR MÚLTIPLAS TERAPIAS
             const hasMultipleTherapies = memory?.hasMultipleTherapies || memory?.allDetectedTherapies?.length > 1;
             const allDetectedTherapies = memory?.allDetectedTherapies || [];
-            const therapyContext = hasMultipleTherapies 
+            const therapyContext = hasMultipleTherapies
                 ? `MÚLTIPLAS ESPECIALIDADES: O lead mencionou ${allDetectedTherapies.join(', ')}. Acolha positivamente informando que somos uma clínica multidisciplinar e ofereça ajuda com todas elas.`
                 : `Área de interesse: ${therapyArea || 'não informada'}`;
-            
+
             const userPrompt = `
             CONTEXTO DO LEAD:
             - Nome: ${leadName || 'não informado'}
@@ -339,7 +364,7 @@ class LeadQualificationHandler {
             });
 
             const finalText = ensureSingleHeart(response || 'Posso te ajudar com mais alguma informação? 💚');
-            
+
             this.logger.info('HANDLER_EXECUTE_COMPLETE', {
                 durationMs: Date.now() - startTime,
                 textLength: finalText.length,
@@ -381,11 +406,11 @@ class LeadQualificationHandler {
         } else {
             script = getObjectionScript(objectionType, 'lastResort') || getObjectionScript(objectionType, 'secondary');
         }
-        
+
         return {
             text: ensureSingleHeart(script),
-            extractedInfo: { 
-                objectionHandled: objectionType, 
+            extractedInfo: {
+                objectionHandled: objectionType,
                 objectionAttempt: attempt,
                 painAcknowledged: true
             }
@@ -398,12 +423,12 @@ class LeadQualificationHandler {
     handleEmotionalAcknowledgment(pendingCollection, memory) {
         const patientName = memory?.patientInfo?.name || memory?.patientName;
         const nameRef = patientName ? `o(a) ${patientName.split(' ')[0]}` : 'seu filho';
-        
+
         const acknowledgment = `Entendo sua preocupação 💚 Você fez muito bem em buscar orientação cedo — isso faz toda diferença pro desenvolvimento de ${nameRef}.`;
-        
+
         return {
             text: ensureSingleHeart(acknowledgment),
-            extractedInfo: { 
+            extractedInfo: {
                 painAcknowledged: true,
                 emotionalSupportProvided: true
             }
@@ -417,21 +442,21 @@ class LeadQualificationHandler {
         const therapy = memory?.therapyArea || 'avaliação';
         const age = memory?.patientAge || memory?.patientInfo?.age;
         const complaint = memory?.complaint || memory?.primaryComplaint;
-        
+
         // 1️⃣ VALOR DO TRABALHO (explicar o que o lead vai receber)
         const valuePitch = this.getValuePitch(therapy, age);
-        
+
         // 2️⃣ URGÊNCIA CONTEXTUAL (se tiver idade)
         const urgencyPitch = this.getUrgencyPitch(age, therapy, complaint);
-        
+
         // 3️⃣ PREÇO
         const pricePitch = this.getPricePitch(therapy);
-        
+
         // Montar resposta completa
         let response = valuePitch;
         if (urgencyPitch) response += ` ${urgencyPitch}`;
         response += ` ${pricePitch}`;
-        
+
         return response.trim();
     }
 
@@ -442,26 +467,26 @@ class LeadQualificationHandler {
         const pitches = {
             'fonoaudiologia': 'A avaliação fonoaudiológica mapeia exatamente onde seu filho precisa de estímulo — vocês saem com um plano personalizado pro desenvolvimento da fala, não é só uma consulta.',
             'fono': 'A avaliação fonoaudiológica mapeia exatamente onde seu filho precisa de estímulo — vocês saem com um plano personalizado pro desenvolvimento da fala, não é só uma consulta.',
-            
+
             'psicologia': 'A avaliação psicológica entende o que está por trás do comportamento e dá um direcionamento claro pra família — vocês saem com orientações práticas pra aplicar no dia a dia.',
             'psico': 'A avaliação psicológica entende o que está por trás do comportamento e dá um direcionamento claro pra família — vocês saem com orientações práticas pra aplicar no dia a dia.',
-            
+
             'neuropsicologia': 'A avaliação neuropsicológica é completa: mapeamos atenção, memória, raciocínio e comportamento. Vocês recebem um laudo detalhado que serve pra escola, médicos e tratamentos.',
             'neuropsi': 'A avaliação neuropsicológica é completa: mapeamos atenção, memória, raciocínio e comportamento. Vocês recebem um laudo detalhado que serve pra escola, médicos e tratamentos.',
-            
+
             'terapia_ocupacional': 'A avaliação de TO identifica as dificuldades sensoriais e de coordenação, e monta um plano pra ele ganhar mais autonomia nas atividades do dia a dia.',
             'to': 'A avaliação de TO identifica as dificuldades sensoriais e de coordenação, e monta um plano pra ele ganhar mais autonomia nas atividades do dia a dia.',
-            
+
             'fisioterapia': 'A avaliação de fisioterapia analisa postura, equilíbrio e coordenação motora — saímos com um plano específico pro desenvolvimento motor dele.',
             'fisio': 'A avaliação de fisioterapia analisa postura, equilíbrio e coordenação motora — saímos com um plano específico pro desenvolvimento motor dele.',
-            
+
             'musicoterapia': 'A avaliação de musicoterapia identifica como a música pode ajudar no desenvolvimento emocional e social — é uma abordagem lúdica e efetiva.',
-            
+
             'psicopedagogia': 'A avaliação psicopedagógica mapeia as dificuldades de aprendizagem e cria estratégias personalizadas pra escola e estudos.',
-            
+
             'default': 'A avaliação é completa e personalizada — vocês saem com um plano claro do que fazer, não é só uma consulta.'
         };
-        
+
         return pitches[therapy?.toLowerCase()] || pitches['default'];
     }
 
@@ -470,10 +495,10 @@ class LeadQualificationHandler {
      */
     getUrgencyPitch(age, therapy, complaint) {
         if (!age) return '';
-        
+
         const ageNum = parseInt(age, 10);
         if (isNaN(ageNum)) return '';
-        
+
         if (ageNum <= 6) {
             return 'Nessa fase, cada mês faz diferença pro desenvolvimento!';
         } else if (ageNum <= 12) {
@@ -483,7 +508,7 @@ class LeadQualificationHandler {
         } else if (complaint?.includes('diagnóstico') || complaint?.includes('laudo') || therapy?.includes('neuro')) {
             return 'O laudo abre portas pra você entender melhor seus desafios e ter os suportes necessários.';
         }
-        
+
         return '';
     }
 

@@ -7,6 +7,7 @@
 
 import { generateWarmRecall } from './ContextPack.js';
 import Logger from '../utils/Logger.js';
+import { buildResponse } from './naturalResponseBuilder.js';
 
 const logger = new Logger('DecisionEngine');
 
@@ -115,11 +116,11 @@ export async function decide({ analysis, memory, flags, lead, contextPack, messa
 // ============================================================================
 function warmRecall(contextPack, memory, lead) {
     logDebug('WARM_RECALL_START', { leadId: lead?._id?.toString() });
-    
+
     // Usa generateWarmRecall do ContextPack.js para mensagem personalizada
     const warmRecallText = generateWarmRecall(contextPack, lead);
-    
-    const hoursSince = contextPack?.lastDate 
+
+    const hoursSince = contextPack?.lastDate
         ? Math.round((Date.now() - new Date(contextPack.lastDate).getTime()) / (1000 * 60 * 60))
         : 0;
 
@@ -133,7 +134,7 @@ function warmRecall(contextPack, memory, lead) {
             warmRecallTier: hoursSince > 72 ? '72h' : hoursSince > 48 ? '48h' : '24h'
         }
     };
-    
+
     logDecision('WARM_RECALL_RESULT', { action: result.action, hoursSince });
     return result;
 }
@@ -143,7 +144,7 @@ function warmRecall(contextPack, memory, lead) {
 // ============================================================================
 function acknowledgePain(memory, chatContext = null) {
     logDebug('ACKNOWLEDGE_PAIN_START', { hasPatientName: !!(memory?.patientInfo?.name || memory?.patientName) });
-    
+
     const patientName = memory?.patientInfo?.name || memory?.patientName;
     const nameRef = patientName ? `${patientName.split(' ')[0]}` : 'seu filho';
 
@@ -152,7 +153,7 @@ function acknowledgePain(memory, chatContext = null) {
 
     // Retoma naturalmente baseado no que falta
     const followUp = getSmartFollowUp(memory, false, chatContext);
-    
+
     logDebug('ACKNOWLEDGE_PAIN_FOLLOWUP', { followUpText: followUp?.substring(0, 50) });
 
     const result = {
@@ -164,7 +165,7 @@ function acknowledgePain(memory, chatContext = null) {
             emotionalSupportProvided: true
         }
     };
-    
+
     logDecision('ACKNOWLEDGE_PAIN_RESULT', { action: result.action, textLength: result.text.length });
     return result;
 }
@@ -174,12 +175,12 @@ function acknowledgePain(memory, chatContext = null) {
 // ============================================================================
 function smartResponse(questionType, flags, memory, analysis, inferred = {}, missing = {}, chatContext = null) {
     logDebug('SMART_RESPONSE_START', { questionType, hasAnyData: !!(memory?.therapyArea || memory?.complaint || memory?.patientAge) });
-    
+
     let answer = "";
 
     // 🔥 Detecta primeiro contato
     const hasAnyData = !!(memory?.therapyArea || memory?.complaint || memory?.patientAge || memory?.lastHandler);
-    const acolhimento = !hasAnyData 
+    const acolhimento = !hasAnyData
         ? "Oi! 😊 Que bom que você entrou em contato! Seja bem-vindo(a) à Clínica Fono Inova 💚 "
         : "";
 
@@ -243,12 +244,12 @@ function smartResponse(questionType, flags, memory, analysis, inferred = {}, mis
         },
         questionAnswered: questionType
     };
-    
-    logDecision('SMART_RESPONSE_RESULT', { 
-        questionType, 
-        awaitingField, 
+
+    logDecision('SMART_RESPONSE_RESULT', {
+        questionType,
+        awaitingField,
         hasAcolhimento: !!acolhimento,
-        textLength: result.text.length 
+        textLength: result.text.length
     });
     return result;
 }
@@ -258,7 +259,7 @@ function smartResponse(questionType, flags, memory, analysis, inferred = {}, mis
 // ============================================================================
 function isPositiveConfirmation(message, currentAwaitingField) {
     if (currentAwaitingField !== 'slot') return false;
-    
+
     const positivePatterns = [
         /\bsim\b/i,
         /\bok\b/i,
@@ -274,16 +275,16 @@ function isPositiveConfirmation(message, currentAwaitingField) {
         /\bpf\b/i,
         /\bpfv\b/i
     ];
-    
+
     const messageLower = message?.toLowerCase() || '';
     const isConfirmation = positivePatterns.some(pattern => pattern.test(messageLower));
-    
-    logDebug('POSITIVE_CONFIRMATION_CHECK', { 
-        currentAwaitingField, 
+
+    logDebug('POSITIVE_CONFIRMATION_CHECK', {
+        currentAwaitingField,
         message: message?.substring(0, 30),
-        isConfirmation 
+        isConfirmation
     });
-    
+
     return isConfirmation;
 }
 
@@ -292,15 +293,15 @@ function isPositiveConfirmation(message, currentAwaitingField) {
 // ============================================================================
 function continueCollection(memory, chatContext = null, message = null) {
     const currentAwaitingField = chatContext?.lastExtractedInfo?.awaitingField;
-    
+
     // Verificar se temos todos os dados necessários
     const hasTherapy = !!memory?.therapyArea;
     const hasComplaint = !!(memory?.complaint || memory?.primaryComplaint);
     const hasAge = !!(memory?.patientAge || memory?.patientInfo?.age);
     const hasPeriod = !!(memory?.preferredPeriod || memory?.pendingPreferredPeriod || memory?.period);
     const hasAllData = hasComplaint && hasTherapy && hasAge && hasPeriod;
-    
-    logDebug('CONTINUE_COLLECTION_START', { 
+
+    logDebug('CONTINUE_COLLECTION_START', {
         hasTherapy,
         hasComplaint,
         hasAge,
@@ -309,28 +310,28 @@ function continueCollection(memory, chatContext = null, message = null) {
         currentAwaitingField,
         message: message?.substring(0, 30)
     });
-    
+
     // 🔥 CORREÇÃO: Se estamos oferecendo orçamento e o usuário confirmou, explicar valores
     if (currentAwaitingField === 'budget_offer' && isPositiveConfirmation(message, 'budget_offer')) {
         const therapies = memory?.allDetectedTherapies || [];
         const therapyCount = therapies.length;
-        
+
         logDecision('CONTINUE_COLLECTION_BUDGET_CONFIRMED', { therapyCount });
-        
+
         // Se tem múltiplas terapias, explicar que são particulares e oferecer valores
         if (therapyCount > 1) {
             return {
                 action: 'smart_response',
                 handler: 'leadQualificationHandler',
                 text: "Somos particulares, mas oferecemos valores especiais para pacientes que fazem acompanhamento multidisciplinar 💚 Posso te passar os valores das avaliações?",
-                extractedInfo: { 
+                extractedInfo: {
                     awaitingField: 'price_info',
                     multipleTherapies: true
                 }
             };
         }
     }
-    
+
     // 🔥 CORREÇÃO: Se temos todos os dados e o usuário confirmou com "Sim", mostrar horários
     // Isso evita repetir "Quer que eu veja os horários?" quando o usuário já disse "Sim"
     if (hasAllData && isPositiveConfirmation(message, 'slot')) {
@@ -339,22 +340,22 @@ function continueCollection(memory, chatContext = null, message = null) {
             action: 'show_slots',
             handler: 'leadQualificationHandler',
             text: "Perfeito! Vou conferir as vagas para você... 💚",
-            extractedInfo: { 
+            extractedInfo: {
                 awaitingField: 'slot_confirmation',
                 slotRequested: true
             }
         };
     }
-    
+
     const hasAnyData = !!(memory?.therapyArea || memory?.complaint || memory?.patientAge || memory?.lastHandler);
-    const acolhimento = !hasAnyData 
+    const acolhimento = !hasAnyData
         ? "Oi! 😊 Que bom que você entrou em contato! Seja bem-vindo(a) à Clínica Fono Inova 💚 "
         : "";
-    
+
     const followUpResult = getSmartFollowUp(memory, false, chatContext); // Usar chatContext para flags pendentes
     const followUpText = typeof followUpResult === 'string' ? followUpResult : followUpResult.text;
     const awaitingField = typeof followUpResult === 'object' ? followUpResult.awaitingField : null;
-    
+
     logDebug('CONTINUE_COLLECTION_FOLLOWUP', { awaitingField, hasAcolhimento: !!acolhimento });
 
     const result = {
@@ -363,7 +364,7 @@ function continueCollection(memory, chatContext = null, message = null) {
         text: followUpText ? `${acolhimento}${followUpText} 💚` : `${acolhimento}Como posso te ajudar? 💚`,
         extractedInfo: awaitingField ? { awaitingField } : {}
     };
-    
+
     logDecision('CONTINUE_COLLECTION_RESULT', { awaitingField, textLength: result.text.length });
     return result;
 }
@@ -439,19 +440,19 @@ function getSmartFollowUp(memory, needsTherapySelection = false, chatContext = n
     const awaitingComplaint = chatContext?.lastExtractedInfo?.awaitingComplaint || memory?.awaitingComplaint;
     const awaitingAge = chatContext?.lastExtractedInfo?.awaitingAge || memory?.awaitingAge;
     const awaitingPeriod = chatContext?.lastExtractedInfo?.awaitingPeriod || memory?.awaitingPeriod;
-    
+
     // 🔥 CORREÇÃO: Verificar também o awaitingField do contexto atual
     const currentAwaitingField = chatContext?.lastExtractedInfo?.awaitingField;
-    
+
     const hasTherapy = !!memory?.therapyArea;
     const hasComplaint = !!(memory?.complaint || memory?.primaryComplaint);
     const hasAge = !!(memory?.patientAge || memory?.patientInfo?.age || memory?.age);
     // 🔥 CORREÇÃO: Se o contexto está esperando 'period', significa que ainda não temos
     // Mas se o usuário acabou de responder o período, devemos considerar que temos
-    const hasPeriod = !!(memory?.preferredPeriod || memory?.pendingPreferredPeriod || memory?.period) || 
-                      (currentAwaitingField === 'period' && memory?.period);
+    const hasPeriod = !!(memory?.preferredPeriod || memory?.pendingPreferredPeriod || memory?.period) ||
+        (currentAwaitingField === 'period' && memory?.period);
     const hasMultipleTherapies = memory?.hasMultipleTherapies || memory?.allDetectedTherapies?.length > 1;
-    
+
     logDebug('GET_SMART_FOLLOWUP_STATE', {
         hasComplaint, hasTherapy, hasAge, hasPeriod,
         awaitingComplaint: !!awaitingComplaint,
@@ -494,9 +495,11 @@ function getSmartFollowUp(memory, needsTherapySelection = false, chatContext = n
 
     // SÓ DEPOIS de ter queixa E terapia definida → perguntar idade
     if (!hasAge && hasComplaint) {
-        logDecision('FOLLOWUP_AGE', { reason: 'has_complaint_no_age' });
         return {
-            text: "Qual a idade do paciente? 💚",
+            text: buildResponse('ask_age', {
+                userText: memory?.complaint || '',
+                patientName: memory?.patientName
+            }),
             awaitingField: 'age'
         };
     }
@@ -513,8 +516,9 @@ function getSmartFollowUp(memory, needsTherapySelection = false, chatContext = n
     // Tem tudo → oferece slots
     logDecision('FOLLOWUP_SLOTS', { reason: 'has_all_data' });
     return {
-        text: "Quer que eu veja os horários disponíveis? 💚",
-        awaitingField: 'slot'
+        action: 'show_slots',
+        text: null,  // Handler vai buscar slots reais
+        awaitingField: 'slot_selection'
     };
 }
 
@@ -522,18 +526,18 @@ function getSmartFollowUp(memory, needsTherapySelection = false, chatContext = n
 // 🔍 DETECT DIRECT QUESTION
 // ============================================================================
 function detectDirectQuestion(flags = {}) {
-    const detected = 
+    const detected =
         flags.asksPrice || flags.asksAboutPrice || flags.insistsPrice ? 'price' :
-        flags.asksAddress || flags.asksLocation ? 'address' :
-        flags.asksPlans || flags.mentionsInsurance || flags.asksInsurance ? 'plans' :
-        flags.asksSchedule || flags.asksDays || flags.asksTimes || flags.wantsSchedule ? 'schedule' :
-        flags.asksSpecialtyAvailability || flags.asksTherapyInfo ? 'specialty' :
-        null;
-    
+            flags.asksAddress || flags.asksLocation ? 'address' :
+                flags.asksPlans || flags.mentionsInsurance || flags.asksInsurance ? 'plans' :
+                    flags.asksSchedule || flags.asksDays || flags.asksTimes || flags.wantsSchedule ? 'schedule' :
+                        flags.asksSpecialtyAvailability || flags.asksTherapyInfo ? 'specialty' :
+                            null;
+
     if (detected) {
         logDebug('DIRECT_QUESTION_DETECTED', { questionType: detected, flags: Object.keys(flags).filter(k => flags[k]) });
     }
-    
+
     return detected;
 }
 

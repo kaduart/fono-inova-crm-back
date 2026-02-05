@@ -69,6 +69,7 @@ import cashflowRoutes from './routes/financial/cashflow.js';
 import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
 import planningRoutes from './routes/planning.js';
 import provisionamentoRoutes from './routes/provisionamento.js';
+import preAgendamentoRoutes from './routes/preAgendamento.js';
 import { iniciarJobConfirmacao } from './jobs/confirmacaoJob.js';
 import compression from 'compression';
 import importFromAgendaRouter from './routes/importFromAgenda.js';

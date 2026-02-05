@@ -60,6 +60,13 @@ router.get('/', (req, res) => {
             icon: 'directions_run',
             color: '#FF5722',
             sessionDuration: 40
+        },
+        {
+            id: 'psicopedagogia',
+            name: 'Psicopedagogia',
+            icon: 'school',
+            color: '#9C27B0',
+            sessionDuration: 40
         }
     ]);
 });
