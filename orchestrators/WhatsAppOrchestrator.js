@@ -234,7 +234,7 @@ export class WhatsAppOrchestrator {
                 hasChatContext: !!chatContext,
                 hasLastExtractedInfo: !!chatContext?.lastExtractedInfo
             });
-            
+
             const decision = await decisionEngine({
                 analysis,
                 memory: mergedMemory,  // Usar memory mesclado!
@@ -410,7 +410,7 @@ export class WhatsAppOrchestrator {
         if (!therapy && chatContext?.lastExtractedInfo?.therapy) {
             therapy = chatContext.lastExtractedInfo.therapy;
         }
-        
+
         // 🔥 NOVO: Carrega info de múltiplas terapias do contexto
         if (chatContext?.lastExtractedInfo?.hasMultipleTherapies) {
             detectedTherapies = chatContext.lastExtractedInfo.allDetectedTherapies?.map(name => ({ name })) || detectedTherapies;
@@ -585,13 +585,13 @@ export class WhatsAppOrchestrator {
         // 🔥 EXPERTISE: Se estamos aguardando uma queixa E/OU o texto parece uma descrição de problema
         // 🔧 CORREÇÃO: Extrai queixa automaticamente se o texto parece uma descrição de sintoma/queixa
         // 🔥 IMPORTANTE: Sempre verifica se o texto atual parece uma queixa, mesmo se já tiver uma no contexto
-        const looksLikeComplaint = 
-            text.length > 10 && 
+        const looksLikeComplaint =
+            text.length > 10 &&
             text.length < 300 &&
             !/^\s*(sim|não|não sei|ok|beleza|tudo bem|oi|olá|bom dia|boa tarde)\s*$/i.test(text) &&
             !text.trim().endsWith('?') &&
             (/\b(tem|tenho|meu|minha|filho|filha|ele|ela|não|dificuldade|problema|sintoma|queixa|dor|medo|ansiedade|atraso|demora)\b/i.test(text));
-        
+
         if (looksLikeComplaint || (!complaint && shouldExtractComplaint && awaitingField === 'complaint')) {
             const isQuestion = /\?$/.test(text.trim()) || /^(qual|quanto|onde|como|por que|pq|quando)\b/i.test(text);
             const isTooShort = text.trim().length < 5;
@@ -828,6 +828,11 @@ export class WhatsAppOrchestrator {
                 { lead: lead._id },
                 { $unset: unsetStates }
             );
+        }
+
+        if (inferred.slotConfirmed || text.toLowerCase().match(/^(sim|ok|pode ser|confirmo|isso)/)) {
+            unsetStates["lastExtractedInfo.awaitingField"] = "";
+            unsetStates["lastExtractedInfo.slot_confirmation"] = "";
         }
 
         // Gera resumo se necessário

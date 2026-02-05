@@ -30,7 +30,7 @@ const medicalEventSchema = new mongoose.Schema({
     },
     specialty: {
         type: String,
-        enum: ['fonoaudiologia', 'psicologia', 'terapia_ocupacional', 'fisioterapia', 'pediatria', 'neuroped', 'psicomotricidade', 'musicoterapia'],
+        enum: ['fonoaudiologia', 'psicologia', 'terapia_ocupacional', 'fisioterapia', 'pediatria', 'neuroped', 'psicomotricidade', 'musicoterapia', 'psicopedagogia'],
         required: true
     },
     package: {

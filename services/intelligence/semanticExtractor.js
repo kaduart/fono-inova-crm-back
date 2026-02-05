@@ -111,7 +111,7 @@ Exemplos:
 Usuário respondeu: "${text}"
 
 Extraia a ESPECIALIDADE médica. Responda em JSON:
-{"therapy": "fonoaudiologia|psicologia|terapia_ocupacional|fisioterapia|neuropsicologia|musicoterapia|psicomotricidade", "confidence": 0-1}
+{"therapy": "fonoaudiologia|psicologia|terapia_ocupacional|fisioterapia|neuropsicologia|musicoterapia|psicomotricidade|psicopedagogia", "confidence": 0-1}
 
 Exemplos:
 - "preciso de fono" → {"therapy": "fonoaudiologia", "confidence": 0.95}
@@ -174,7 +174,7 @@ function validateAndTransform(result, field) {
             return null;
 
         case "therapy":
-            const validTherapies = ["fonoaudiologia", "psicologia", "terapia_ocupacional", "fisioterapia", "neuropsicologia", "musicoterapia", "psicomotricidade"];
+            const validTherapies = ["fonoaudiologia", "psicologia", "terapia_ocupacional", "fisioterapia", "neuropsicologia", "musicoterapia", "psicomotricidade", "psicopedagogia"];
             if (validTherapies.includes(result.therapy)) {
                 return { therapy: result.therapy };
             }

@@ -80,7 +80,7 @@ const paymentSchema = new mongoose.Schema({
     },
     sessionType: {
         type: String,
-        enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'tongue_tie_test', 'neuropsych_evaluation', 'psicomotricidade', 'musicoterapia'],
+        enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'tongue_tie_test', 'neuropsych_evaluation', 'psicomotricidade', 'musicoterapia', 'psicopedagogia'],
     },
     serviceDate: {
         type: String,

@@ -3,7 +3,7 @@ import { detectAllTherapies, pickPrimaryTherapy } from "./therapyDetector.js";
 
 /**
  * Normaliza em algo que a camada de agenda entende:
- *  - therapyArea: 'fonoaudiologia' | 'psicologia' | 'fisioterapia' | 'terapia_ocupacional' | 'psicomotricidade' | 'musicoterapia'
+ *  - therapyArea: 'fonoaudiologia' | 'psicologia' | 'fisioterapia' | 'terapia_ocupacional' | 'psicomotricidade' | 'musicoterapia' | 'psicopedagogia'
  *  - specialties: tags para bater com Doctor.specialties
  *  - product: rótulo lógico do tipo de atendimento
  */
@@ -31,7 +31,7 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
       music: "musicoterapia",
       psychomotor: "psicomotricidade",
       neuropsychological: "psicologia",
-      neuropsychopedagogy: "psicologia",
+      neuropsychopedagogy: "psicopedagogia",
       psychopedagogy: "psicologia"
     };
 
