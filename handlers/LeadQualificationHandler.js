@@ -519,7 +519,7 @@ class LeadQualificationHandler {
         if (therapy?.includes('neuropsi') || therapy?.includes('neuropsicologia')) {
             return 'O investimento é R$ 2.500 (em até 6x) ou R$ 2.300 à vista — inclui todas as sessões e o laudo completo.';
         }
-        return 'O investimento na avaliação é R$ 220.';
+        return 'O investimento na avaliação é R$ 200.';
     }
 }
 

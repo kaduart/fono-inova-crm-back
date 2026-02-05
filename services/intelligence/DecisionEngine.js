@@ -424,7 +424,7 @@ function buildPriceAnswer(memory, analysis) {
     if (therapy?.includes('neuropsi') || therapy?.includes('neuropsicologia')) {
         preco = "O investimento é R$ 2.500 (em até 6x) ou R$ 2.300 à vista.";
     } else {
-        preco = "O investimento na avaliação é R$ 220.";
+        preco = "O investimento na avaliação é R$ 200.";
     }
 
     // Montar resposta completa (sem acolhimento - fica no smartResponse)

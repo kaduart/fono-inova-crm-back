@@ -62,7 +62,7 @@ class ProductHandler {
         // 🆕 DETECTAR SE É INTERRUÇÃO (tem coleta pendente)
         // =========================
         const isInterruption = pendingCollection && pendingCollection.length > 0;
-        
+
         // Se for interrupção, usar formato VALOR → URGÊNCIA → PREÇO → RETOMA
         if (isInterruption) {
             return this.buildValueFirstResponse(therapyId, therapyName, memory, pendingCollection);
@@ -78,7 +78,7 @@ class ProductHandler {
             priceText = `💚 ${this.formatTherapyDisplay(therapyId, therapyName)}: ${therapyData.price}`;
         } else {
             // Fallback: preço padrão
-            priceText = `💚 ${therapyName || 'Atendimento'}: Avaliação R$ 220 · Sessão R$ 220 · Pacote mensal R$ 180/sessão`;
+            priceText = `💚 ${therapyName || 'Atendimento'}: Avaliação R$ 200 · Sessão R$ 200 · Pacote mensal R$ 180/sessão`;
         }
 
         // =========================
@@ -109,25 +109,25 @@ class ProductHandler {
     buildValueFirstResponse(therapyId, therapyName, memory, pendingCollection) {
         const age = memory?.patientAge || memory?.patientInfo?.age;
         const complaint = memory?.complaint || memory?.primaryComplaint;
-        
+
         // 1️⃣ VALOR DO TRABALHO
         const valuePitch = this.getValuePitch(therapyName, age);
-        
+
         // 2️⃣ URGÊNCIA CONTEXTUAL
         const urgencyPitch = this.getUrgencyPitch(age, therapyName, complaint);
-        
+
         // 3️⃣ PREÇO
         const pricePitch = this.getPricePitch(therapyName);
-        
+
         // 4️⃣ RETOMADA
         const followUp = this.getSmartFollowUp(pendingCollection);
-        
+
         // Montar resposta
         let response = valuePitch;
         if (urgencyPitch) response += ` ${urgencyPitch}`;
         response += ` ${pricePitch}`;
         if (followUp) response += ` ${followUp}`;
-        
+
         return {
             text: response + ' 💚',
             needsResumption: true,
@@ -142,26 +142,26 @@ class ProductHandler {
         const pitches = {
             'fonoaudiologia': 'A avaliação fonoaudiológica mapeia exatamente onde seu filho precisa de estímulo — vocês saem com um plano personalizado pro desenvolvimento da fala.',
             'fono': 'A avaliação fonoaudiológica mapeia exatamente onde seu filho precisa de estímulo — vocês saem com um plano personalizado pro desenvolvimento da fala.',
-            
+
             'psicologia': 'A avaliação psicológica entende o que está por trás do comportamento e dá um direcionamento claro pra família — vocês saem com orientações práticas.',
             'psico': 'A avaliação psicológica entende o que está por trás do comportamento e dá um direcionamento claro pra família — vocês saem com orientações práticas.',
-            
+
             'neuropsicologia': 'A avaliação neuropsicológica é completa: mapeamos atenção, memória, raciocínio e comportamento. Vocês recebem um laudo detalhado que serve pra escola, médicos e tratamentos.',
             'neuropsi': 'A avaliação neuropsicológica é completa: mapeamos atenção, memória, raciocínio e comportamento. Vocês recebem um laudo detalhado que serve pra escola, médicos e tratamentos.',
-            
+
             'terapia_ocupacional': 'A avaliação de TO identifica as dificuldades sensoriais e de coordenação, e monta um plano pra ele ganhar mais autonomia no dia a dia.',
             'to': 'A avaliação de TO identifica as dificuldades sensoriais e de coordenação, e monta um plano pra ele ganhar mais autonomia no dia a dia.',
-            
+
             'fisioterapia': 'A avaliação de fisioterapia analisa postura, equilíbrio e coordenação motora — saímos com um plano específico pro desenvolvimento.',
             'fisio': 'A avaliação de fisioterapia analisa postura, equilíbrio e coordenação motora — saímos com um plano específico pro desenvolvimento.',
-            
+
             'musicoterapia': 'A avaliação de musicoterapia identifica como a música pode ajudar no desenvolvimento emocional e social.',
-            
+
             'psicopedagogia': 'A avaliação psicopedagógica mapeia as dificuldades de aprendizagem e cria estratégias personalizadas pra escola.',
-            
+
             'default': 'A avaliação é completa e personalizada — vocês saem com um plano claro do que fazer.'
         };
-        
+
         return pitches[therapy?.toLowerCase()] || pitches['default'];
     }
 
@@ -170,10 +170,10 @@ class ProductHandler {
      */
     getUrgencyPitch(age, therapy, complaint) {
         if (!age) return '';
-        
+
         const ageNum = parseInt(age, 10);
         if (isNaN(ageNum)) return '';
-        
+
         if (ageNum <= 6) {
             return 'Nessa fase, cada mês faz diferença pro desenvolvimento!';
         } else if (ageNum <= 12) {
@@ -183,7 +183,7 @@ class ProductHandler {
         } else if (complaint?.includes('diagnóstico') || complaint?.includes('laudo') || therapy?.includes('neuro')) {
             return 'O laudo abre portas pra você entender melhor seus desafios.';
         }
-        
+
         return '';
     }
 
@@ -194,7 +194,7 @@ class ProductHandler {
         if (therapy?.includes('neuropsi') || therapy?.includes('neuropsicologia')) {
             return 'O investimento é R$ 2.500 (em até 6x) ou R$ 2.300 à vista.';
         }
-        return 'O investimento na avaliação é R$ 220.';
+        return 'O investimento na avaliação é R$ 200.';
     }
 
     /**
@@ -204,14 +204,14 @@ class ProductHandler {
         if (!pendingCollection || pendingCollection.length === 0) {
             return 'Quer que eu veja os horários?';
         }
-        
+
         const has = (item) => pendingCollection.includes(item);
-        
+
         if (has('complaint')) return 'O que você tem observado que te preocupa?';
         if (has('age')) return 'Qual a idade do paciente?';
         if (has('period')) return 'Prefere manhã ou tarde?';
         if (has('therapy')) return 'É pra qual área?';
-        
+
         return 'Quer que eu veja os horários?';
     }
 

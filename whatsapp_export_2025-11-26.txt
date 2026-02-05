@@ -58,8 +58,8 @@ Pode ser segunda às 07:00? Se sim, já deixo agendado aqui pra você.
 [Só uma dúvida12:31] +55 62 9441-1004: Só uma dúvida
 [A avaliação e paga12:31] +55 62 9441-1004: A avaliação e paga
 [A avaliação e paga12:31] +55 62 9441-1004: A avaliação e paga
-[Sim 220 cada , mas como você são duas crianças a gente cobrará somente uma , tudo bem ?12:33] +55 62 9441-1004: Sim 220 cada , mas como você são duas crianças a gente cobrará somente uma , tudo bem ?
-[Sim 220 cada , mas como você são duas crianças a gente cobrará somente uma , tudo bem ?12:33] Clínica Fono Inova: Sim 220 cada , mas como você são duas crianças a gente cobrará somente uma , tudo bem ?
+[Sim 200 cada , mas como você são duas crianças a gente cobrará somente uma , tudo bem ?12:33] +55 62 9441-1004: Sim 200 cada , mas como você são duas crianças a gente cobrará somente uma , tudo bem ?
+[Sim 200 cada , mas como você são duas crianças a gente cobrará somente uma , tudo bem ?12:33] Clínica Fono Inova: Sim 200 cada , mas como você são duas crianças a gente cobrará somente uma , tudo bem ?
 [Tá bom12:33] +55 62 9441-1004: Tá bom
 [Tá bom12:33] +55 62 9441-1004: Tá bom
 [Por gentileza, preencha essa pré ficha de cadastro para podermos  agendar !
@@ -72,7 +72,7 @@ Endereço:
 E-mail:
 Terapeuta: Terapeuta Ocupacional  
 Principal Queixa do Paciente:
-Valor da avaliação R$ 22012:34] +55 62 9441-1004: Por gentileza, preencha essa pré ficha de cadastro para podermos  agendar !
+Valor da avaliação R$ 20012:34] +55 62 9441-1004: Por gentileza, preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 Ficha de cadastro do paciente
 Nome da criança:
@@ -82,7 +82,7 @@ Endereço:
 E-mail:
 Terapeuta: Terapeuta Ocupacional  
 Principal Queixa do Paciente:
-Valor da avaliação R$ 220
+Valor da avaliação R$ 200
 [Por gentileza, preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 Ficha de cadastro do paciente
@@ -93,7 +93,7 @@ Endereço:
 E-mail:
 Terapeuta: Terapeuta Ocupacional  
 Principal Queixa do Paciente:
-Valor da avaliação R$ 22012:34] Clínica Fono Inova: Por gentileza, preencha essa pré ficha de cadastro para podermos  agendar !
+Valor da avaliação R$ 20012:34] Clínica Fono Inova: Por gentileza, preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 Ficha de cadastro do paciente
 Nome da criança:
@@ -103,7 +103,7 @@ Endereço:
 E-mail:
 Terapeuta: Terapeuta Ocupacional  
 Principal Queixa do Paciente:
-Valor da avaliação R$ 220
+Valor da avaliação R$ 200
 [Pedro Henrique Silva da Cunha 
 01/09/2017
 Rua 28 Qd 36 LT 35 parque residencial das flores 
@@ -6949,7 +6949,7 @@ Meu nome é  Viviane, vou estar realizando o seu atendimento.
 
  Seja muito bem-vindo(a) a
  Clínica Fono Inova de Anápolis (GO)!
-[+55 62 8220-0049Na unidade atende pela Unimed Ainda estamos em processo de credenciamento com os planos de saúde.
+[+55 62 8200-0049Na unidade atende pela Unimed Ainda estamos em processo de credenciamento com os planos de saúde.
 Assim que estiver liberado, te aviso por aqui mesmo! 
 
 Atualmente, estamos atendendo apenas de forma particular.
@@ -6958,7 +6958,7 @@ Assim que estiver liberado, te aviso por aqui mesmo!
 
 Atualmente, estamos atendendo apenas de forma particular.
 Gostaria que eu te enviasse os valores do nosso atendimento para você conhecer melhor?
-[+55 62 8220-0049Na unidade atende pela Unimed Ainda estamos em processo de credenciamento com os planos de saúde.
+[+55 62 8200-0049Na unidade atende pela Unimed Ainda estamos em processo de credenciamento com os planos de saúde.
 Assim que estiver liberado, te aviso por aqui mesmo! 
 
 Atualmente, estamos atendendo apenas de forma particular.
@@ -9692,8 +9692,8 @@ R$200,00 por especialidade
 A avaliação é importante para entender o histórico, as necessidades e definir o melhor plano terapêutico 
 
  Após a avaliação:
-Psicologia: R$220,00 avulsa ou R$160,00 cada sessão no pacote mensal
-Fonoaudiologia: R$220,00 avulsa ou R$180,00 cada sessão no pacote mensal
+Psicologia: R$200,00 avulsa ou R$160,00 cada sessão no pacote mensal
+Fonoaudiologia: R$200,00 avulsa ou R$180,00 cada sessão no pacote mensal
 
 Gostaria que eu te enviasse os horários disponíveis para fazermos a avaliação? 11:37] +55 62 9477-9889: Barbara, segue os valores 
 
@@ -9703,8 +9703,8 @@ R$200,00 por especialidade
 A avaliação é importante para entender o histórico, as necessidades e definir o melhor plano terapêutico 
 
  Após a avaliação:
-Psicologia: R$220,00 avulsa ou R$160,00 cada sessão no pacote mensal
-Fonoaudiologia: R$220,00 avulsa ou R$180,00 cada sessão no pacote mensal
+Psicologia: R$200,00 avulsa ou R$160,00 cada sessão no pacote mensal
+Fonoaudiologia: R$200,00 avulsa ou R$180,00 cada sessão no pacote mensal
 
 Gostaria que eu te enviasse os horários disponíveis para fazermos a avaliação? 
 [Barbara, segue os valores 
@@ -9715,8 +9715,8 @@ R$200,00 por especialidade
 A avaliação é importante para entender o histórico, as necessidades e definir o melhor plano terapêutico 
 
  Após a avaliação:
-Psicologia: R$220,00 avulsa ou R$160,00 cada sessão no pacote mensal
-Fonoaudiologia: R$220,00 avulsa ou R$180,00 cada sessão no pacote mensal
+Psicologia: R$200,00 avulsa ou R$160,00 cada sessão no pacote mensal
+Fonoaudiologia: R$200,00 avulsa ou R$180,00 cada sessão no pacote mensal
 
 Gostaria que eu te enviasse os horários disponíveis para fazermos a avaliação? 11:37] Clínica Fono Inova: Barbara, segue os valores 
 
@@ -9726,8 +9726,8 @@ R$200,00 por especialidade
 A avaliação é importante para entender o histórico, as necessidades e definir o melhor plano terapêutico 
 
  Após a avaliação:
-Psicologia: R$220,00 avulsa ou R$160,00 cada sessão no pacote mensal
-Fonoaudiologia: R$220,00 avulsa ou R$180,00 cada sessão no pacote mensal
+Psicologia: R$200,00 avulsa ou R$160,00 cada sessão no pacote mensal
+Fonoaudiologia: R$200,00 avulsa ou R$180,00 cada sessão no pacote mensal
 
 Gostaria que eu te enviasse os horários disponíveis para fazermos a avaliação? 
 [Ele já foi passado pela neuropediatra e já teve sessão com a fonoaudióloga e com a psicóloga11:39] +55 62 9477-9889: Ele já foi passado pela neuropediatra e já teve sessão com a fonoaudióloga e com a psicóloga
@@ -15689,8 +15689,8 @@ Para iniciarmos o acompanhamento dos dois, o primeiro passo é a avaliação ini
 R$200,00 por pessoa
 
  Após a avaliação:
-Psicologia: R$220,00 avulsa ou R$160,00 no pacote mensal
-Fonoaudiologia: R$220,00 avulsa ou R$180,00 no pacote mensal
+Psicologia: R$200,00 avulsa ou R$160,00 no pacote mensal
+Fonoaudiologia: R$200,00 avulsa ou R$180,00 no pacote mensal
 
 Assim conseguimos oferecer um acompanhamento completo, com profissionais especializados nas áreas que eles precisam 
 
@@ -15702,8 +15702,8 @@ Para iniciarmos o acompanhamento dos dois, o primeiro passo é a avaliação ini
 R$200,00 por pessoa
 
  Após a avaliação:
-Psicologia: R$220,00 avulsa ou R$160,00 no pacote mensal
-Fonoaudiologia: R$220,00 avulsa ou R$180,00 no pacote mensal
+Psicologia: R$200,00 avulsa ou R$160,00 no pacote mensal
+Fonoaudiologia: R$200,00 avulsa ou R$180,00 no pacote mensal
 
 Assim conseguimos oferecer um acompanhamento completo, com profissionais especializados nas áreas que eles precisam 
 
@@ -15716,8 +15716,8 @@ Para iniciarmos o acompanhamento dos dois, o primeiro passo é a avaliação ini
 R$200,00 por pessoa
 
  Após a avaliação:
-Psicologia: R$220,00 avulsa ou R$160,00 no pacote mensal
-Fonoaudiologia: R$220,00 avulsa ou R$180,00 no pacote mensal
+Psicologia: R$200,00 avulsa ou R$160,00 no pacote mensal
+Fonoaudiologia: R$200,00 avulsa ou R$180,00 no pacote mensal
 
 Assim conseguimos oferecer um acompanhamento completo, com profissionais especializados nas áreas que eles precisam 
 
@@ -15729,8 +15729,8 @@ Para iniciarmos o acompanhamento dos dois, o primeiro passo é a avaliação ini
 R$200,00 por pessoa
 
  Após a avaliação:
-Psicologia: R$220,00 avulsa ou R$160,00 no pacote mensal
-Fonoaudiologia: R$220,00 avulsa ou R$180,00 no pacote mensal
+Psicologia: R$200,00 avulsa ou R$160,00 no pacote mensal
+Fonoaudiologia: R$200,00 avulsa ou R$180,00 no pacote mensal
 
 Assim conseguimos oferecer um acompanhamento completo, com profissionais especializados nas áreas que eles precisam 
 
@@ -15990,7 +15990,7 @@ Você comentou que ele tem 19 anos e busca neuropsicopedagogia voltada para apre
 
 Trabalhamos com profissionais especializados em dificuldades de aprendizagem, atenção, organização, memória, raciocínio e estratégias de estudo — tudo voltado para apoiar jovens e adultos que querem melhorar o desempenho ou iniciar um curso 
 
-O primeiro passo é a avaliação inicial, no valor de R$220,00, onde entendemos as necessidades dele e traçamos o plano terapêutico ideal.
+O primeiro passo é a avaliação inicial, no valor de R$200,00, onde entendemos as necessidades dele e traçamos o plano terapêutico ideal.
 
 Se quiser, posso te enviar os horários disponíveis para agendarmos! 13:39] +55 65 8153-3782: Oi!  Aqui é da Clínica Fono Inova.
 Vi sua última mensagem e quis dar continuidade pra te ajudar direitinho 
@@ -15999,7 +15999,7 @@ Você comentou que ele tem 19 anos e busca neuropsicopedagogia voltada para apre
 
 Trabalhamos com profissionais especializados em dificuldades de aprendizagem, atenção, organização, memória, raciocínio e estratégias de estudo — tudo voltado para apoiar jovens e adultos que querem melhorar o desempenho ou iniciar um curso 
 
-O primeiro passo é a avaliação inicial, no valor de R$220,00, onde entendemos as necessidades dele e traçamos o plano terapêutico ideal.
+O primeiro passo é a avaliação inicial, no valor de R$200,00, onde entendemos as necessidades dele e traçamos o plano terapêutico ideal.
 
 Se quiser, posso te enviar os horários disponíveis para agendarmos! 
 [Oi!  Aqui é da Clínica Fono Inova.
@@ -16009,7 +16009,7 @@ Você comentou que ele tem 19 anos e busca neuropsicopedagogia voltada para apre
 
 Trabalhamos com profissionais especializados em dificuldades de aprendizagem, atenção, organização, memória, raciocínio e estratégias de estudo — tudo voltado para apoiar jovens e adultos que querem melhorar o desempenho ou iniciar um curso 
 
-O primeiro passo é a avaliação inicial, no valor de R$220,00, onde entendemos as necessidades dele e traçamos o plano terapêutico ideal.
+O primeiro passo é a avaliação inicial, no valor de R$200,00, onde entendemos as necessidades dele e traçamos o plano terapêutico ideal.
 
 Se quiser, posso te enviar os horários disponíveis para agendarmos! 13:39] Clínica Fono Inova: Oi!  Aqui é da Clínica Fono Inova.
 Vi sua última mensagem e quis dar continuidade pra te ajudar direitinho 
@@ -16018,7 +16018,7 @@ Você comentou que ele tem 19 anos e busca neuropsicopedagogia voltada para apre
 
 Trabalhamos com profissionais especializados em dificuldades de aprendizagem, atenção, organização, memória, raciocínio e estratégias de estudo — tudo voltado para apoiar jovens e adultos que querem melhorar o desempenho ou iniciar um curso 
 
-O primeiro passo é a avaliação inicial, no valor de R$220,00, onde entendemos as necessidades dele e traçamos o plano terapêutico ideal.
+O primeiro passo é a avaliação inicial, no valor de R$200,00, onde entendemos as necessidades dele e traçamos o plano terapêutico ideal.
 
 Se quiser, posso te enviar os horários disponíveis para agendarmos! 
 [Ok pode me enviar os hoje então14:01] +55 65 8153-3782: Ok pode me enviar os hoje então
@@ -18830,7 +18830,7 @@ O primeiro passo é a avaliação inicial, onde a psicóloga conversa com você 
 O valor da avaliação é R$200,00.
 
 Depois disso, caso seja indicado o acompanhamento, as sessões ficam:
-R$220,00 avulsa
+R$200,00 avulsa
 R$160,00 cada no pacote mensal 13:50] +55 62 9158-0633: Entendi, obrigada por compartilhar tudo isso comigo 
 
 Trabalhamos com psicólogas especializadas em crianças e pré-adolescentes, incluindo casos de ansiedade, timidez, dificuldades de comunicação e regulação emocional 
@@ -18840,7 +18840,7 @@ O primeiro passo é a avaliação inicial, onde a psicóloga conversa com você 
 O valor da avaliação é R$200,00.
 
 Depois disso, caso seja indicado o acompanhamento, as sessões ficam:
-R$220,00 avulsa
+R$200,00 avulsa
 R$160,00 cada no pacote mensal 
 [Entendi, obrigada por compartilhar tudo isso comigo 
 
@@ -18851,7 +18851,7 @@ O primeiro passo é a avaliação inicial, onde a psicóloga conversa com você 
 O valor da avaliação é R$200,00.
 
 Depois disso, caso seja indicado o acompanhamento, as sessões ficam:
-R$220,00 avulsa
+R$200,00 avulsa
 R$160,00 cada no pacote mensal 13:50] Clínica Fono Inova: Entendi, obrigada por compartilhar tudo isso comigo 
 
 Trabalhamos com psicólogas especializadas em crianças e pré-adolescentes, incluindo casos de ansiedade, timidez, dificuldades de comunicação e regulação emocional 
@@ -18861,7 +18861,7 @@ O primeiro passo é a avaliação inicial, onde a psicóloga conversa com você 
 O valor da avaliação é R$200,00.
 
 Depois disso, caso seja indicado o acompanhamento, as sessões ficam:
-R$220,00 avulsa
+R$200,00 avulsa
 R$160,00 cada no pacote mensal 
 
 
@@ -20439,7 +20439,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF13:50] +55 62 9355-0967: Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
 
@@ -20453,7 +20453,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF
 [Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
@@ -20468,7 +20468,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF13:50] Clínica Fono Inova: Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
 
@@ -20482,7 +20482,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF
 [Temos vaga pra próxima semana, gostaria de fazer o agendando ?13:51] +55 62 9355-0967: Temos vaga pra próxima semana, gostaria de fazer o agendando ?
 [Temos vaga pra próxima semana, gostaria de fazer o agendando ?13:51] Clínica Fono Inova: Temos vaga pra próxima semana, gostaria de fazer o agendando ?
@@ -21685,8 +21685,8 @@ Enquanto isso, para agilizar nosso atendimento, por gentileza, me informe:
 [A avaliação consiste em uma anamnese completa, onde realizamos uma entrevista detalhada para conhecer o histórico do paciente, suas queixas, dificuldades e rotina. Esse processo é fundamental para compreendermos melhor as necessidades e traçarmos o plano de tratamento mais adequado.10:32] Clínica Fono Inova: A avaliação consiste em uma anamnese completa, onde realizamos uma entrevista detalhada para conhecer o histórico do paciente, suas queixas, dificuldades e rotina. Esse processo é fundamental para compreendermos melhor as necessidades e traçarmos o plano de tratamento mais adequado.
 [Qual o valor da consulta?10:33] +55 62 9270-5543: Qual o valor da consulta?
 [Qual o valor da consulta?10:33] +55 62 9270-5543: Qual o valor da consulta?
-[Esse mês de R$250,00 está por R$220,0010:34] +55 62 9270-5543: Esse mês de R$250,00 está por R$220,00
-[Esse mês de R$250,00 está por R$220,0010:34] Clínica Fono Inova: Esse mês de R$250,00 está por R$220,00
+[Esse mês de R$250,00 está por R$200,0010:34] +55 62 9270-5543: Esse mês de R$250,00 está por R$200,00
+[Esse mês de R$250,00 está por R$200,0010:34] Clínica Fono Inova: Esse mês de R$250,00 está por R$200,00
 [Gostaria de agendar uma Avaliação?10:35] +55 62 9270-5543: Gostaria de agendar uma Avaliação?
 [Gostaria de agendar uma Avaliação?10:35] Clínica Fono Inova: Gostaria de agendar uma Avaliação?
 [E para o mês de Novembro?10:35] +55 62 9270-5543: E para o mês de Novembro?
@@ -21739,7 +21739,7 @@ E-mail:
 Terapeuta:
 Principal Queixa do Paciente:
 Declaração de comparecimento:
-Valor da avaliação R$220,0011:06] +55 62 9270-5543: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
+Valor da avaliação R$200,0011:06] +55 62 9270-5543: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 
 Ficha de cadastro do paciente
@@ -21751,7 +21751,7 @@ E-mail:
 Terapeuta:
 Principal Queixa do Paciente:
 Declaração de comparecimento:
-Valor da avaliação R$220,00
+Valor da avaliação R$200,00
 [Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 
@@ -21764,7 +21764,7 @@ E-mail:
 Terapeuta:
 Principal Queixa do Paciente:
 Declaração de comparecimento:
-Valor da avaliação R$220,0011:06] Clínica Fono Inova: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
+Valor da avaliação R$200,0011:06] Clínica Fono Inova: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 
 Ficha de cadastro do paciente
@@ -21776,7 +21776,7 @@ E-mail:
 Terapeuta:
 Principal Queixa do Paciente:
 Declaração de comparecimento:
-Valor da avaliação R$220,00
+Valor da avaliação R$200,00
 [Essa declaração de comparecimento e o comprovante de endereço?11:11] +55 62 9270-5543: Essa declaração de comparecimento e o comprovante de endereço?
 [Essa declaração de comparecimento e o comprovante de endereço?11:11] +55 62 9270-5543: Essa declaração de comparecimento e o comprovante de endereço?
 [Ou o dia e a hora que tenho que comparecer ai11:11] +55 62 9270-5543: Ou o dia e a hora que tenho que comparecer ai
@@ -21801,7 +21801,7 @@ E-mail: rd631041@gmail.com
 Terapeuta:
 Principal Queixa do Paciente: Dificuldade no aprendizado de fala 
 Declaração de comparecimento:
-Valor da avaliação R$220,0011:14] +55 62 9270-5543: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
+Valor da avaliação R$200,0011:14] +55 62 9270-5543: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 
 Ficha de cadastro do paciente
@@ -21813,7 +21813,7 @@ E-mail: rd631041@gmail.com
 Terapeuta:
 Principal Queixa do Paciente: Dificuldade no aprendizado de fala 
 Declaração de comparecimento:
-Valor da avaliação R$220,00
+Valor da avaliação R$200,00
 [Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 
@@ -21826,7 +21826,7 @@ E-mail: rd631041@gmail.com
 Terapeuta:
 Principal Queixa do Paciente: Dificuldade no aprendizado de fala 
 Declaração de comparecimento:
-Valor da avaliação R$220,0011:14] +55 62 9270-5543: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
+Valor da avaliação R$200,0011:14] +55 62 9270-5543: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 
 Ficha de cadastro do paciente
@@ -21838,7 +21838,7 @@ E-mail: rd631041@gmail.com
 Terapeuta:
 Principal Queixa do Paciente: Dificuldade no aprendizado de fala 
 Declaração de comparecimento:
-Valor da avaliação R$220,00
+Valor da avaliação R$200,00
 [ Sua Avaliação está agendada
 Local: Clinica Fono Inova 
 Avaliação: Fonoaudióloga
@@ -21846,7 +21846,7 @@ Paciente: Noah peixoto dos santos Dias
 Horário: 15:00
 Dia: 14/11/2025
 Terapeuta: Lorrany Siquera
-Valor: R$220,00
+Valor: R$200,00
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
  Dinheiro
@@ -21860,7 +21860,7 @@ Paciente: Noah peixoto dos santos Dias
 Horário: 15:00
 Dia: 14/11/2025
 Terapeuta: Lorrany Siquera
-Valor: R$220,00
+Valor: R$200,00
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
  Dinheiro
@@ -21875,7 +21875,7 @@ Paciente: Noah peixoto dos santos Dias
 Horário: 15:00
 Dia: 14/11/2025
 Terapeuta: Lorrany Siquera
-Valor: R$220,00
+Valor: R$200,00
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
  Dinheiro
@@ -21889,7 +21889,7 @@ Paciente: Noah peixoto dos santos Dias
 Horário: 15:00
 Dia: 14/11/2025
 Terapeuta: Lorrany Siquera
-Valor: R$220,00
+Valor: R$200,00
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
  Dinheiro
@@ -28275,8 +28275,8 @@ Como posso te ajudar?
 [Ah sim entendi.14:57] Clínica Fono Inova: Ah sim entendi.
 [Primeiro ele vai passar por uma  avaliação, avaliação consiste em uma anamnese completa, onde realizamos uma entrevista detalhada para conhecer o histórico do paciente, suas queixas, dificuldades e rotina. Esse processo é fundamental para compreendermos melhor as necessidades e traçarmos o plano de tratamento mais adequado.14:59] +55 62 9304-4864: Primeiro ele vai passar por uma  avaliação, avaliação consiste em uma anamnese completa, onde realizamos uma entrevista detalhada para conhecer o histórico do paciente, suas queixas, dificuldades e rotina. Esse processo é fundamental para compreendermos melhor as necessidades e traçarmos o plano de tratamento mais adequado.
 [Primeiro ele vai passar por uma  avaliação, avaliação consiste em uma anamnese completa, onde realizamos uma entrevista detalhada para conhecer o histórico do paciente, suas queixas, dificuldades e rotina. Esse processo é fundamental para compreendermos melhor as necessidades e traçarmos o plano de tratamento mais adequado.14:59] Clínica Fono Inova: Primeiro ele vai passar por uma  avaliação, avaliação consiste em uma anamnese completa, onde realizamos uma entrevista detalhada para conhecer o histórico do paciente, suas queixas, dificuldades e rotina. Esse processo é fundamental para compreendermos melhor as necessidades e traçarmos o plano de tratamento mais adequado.
-[Fica no valor de R$220,0015:00] +55 62 9304-4864: Fica no valor de R$220,00
-[Fica no valor de R$220,0015:00] Clínica Fono Inova: Fica no valor de R$220,00
+[Fica no valor de R$200,0015:00] +55 62 9304-4864: Fica no valor de R$200,00
+[Fica no valor de R$200,0015:00] Clínica Fono Inova: Fica no valor de R$200,00
 [Quero pra depois do dia 3 ?15:10] +55 62 9304-4864: Quero pra depois do dia 3 ?
 [Quero pra depois do dia 3 ?15:10] +55 62 9304-4864: Quero pra depois do dia 3 ?
 [Você prefere de manhã ou a tarde?15:11] +55 62 9304-4864: Você prefere de manhã ou a tarde?
@@ -28303,7 +28303,7 @@ E-mail:
 Terapeuta: Lorrany Siqueira
 Principal Queixa do Paciente?
 Declaração de comparecimento?
-Valor da avaliação R$220,0015:29] +55 62 9304-4864: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
+Valor da avaliação R$200,0015:29] +55 62 9304-4864: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
 
      Avaliação 
 Ficha de cadastro do paciente
@@ -28315,7 +28315,7 @@ E-mail:
 Terapeuta: Lorrany Siqueira
 Principal Queixa do Paciente?
 Declaração de comparecimento?
-Valor da avaliação R$220,00
+Valor da avaliação R$200,00
 [Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
 
      Avaliação 
@@ -28328,7 +28328,7 @@ E-mail:
 Terapeuta: Lorrany Siqueira
 Principal Queixa do Paciente?
 Declaração de comparecimento?
-Valor da avaliação R$220,0015:29] Clínica Fono Inova: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
+Valor da avaliação R$200,0015:29] Clínica Fono Inova: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
 
      Avaliação 
 Ficha de cadastro do paciente
@@ -28340,7 +28340,7 @@ E-mail:
 Terapeuta: Lorrany Siqueira
 Principal Queixa do Paciente?
 Declaração de comparecimento?
-Valor da avaliação R$220,00
+Valor da avaliação R$200,00
 [Clínica Fono InovaAv. Minas Gerais, 405 - Jundiaí, Anápolis - GO, 75110-770, Brasil15:3015:30msg-dblcheck] +55 62 9304-4864: Clínica Fono InovaAv. Minas Gerais, 405 - Jundiaí, Anápolis - GO, 75110-770, Brasil15:3015:30msg-dblcheck
 [Clínica Fono InovaAv. Minas Gerais, 405 - Jundiaí, Anápolis - GO, 75110-770, Brasil15:3015:30msg-dblcheck] Clínica Fono Inova: Clínica Fono InovaAv. Minas Gerais, 405 - Jundiaí, Anápolis - GO, 75110-770, Brasil15:3015:30msg-dblcheck
 [Arthur Edson de sousa lima15:44] +55 62 9304-4864: Arthur Edson de sousa lima
@@ -28362,7 +28362,7 @@ Paciente: Arthur Edson de sousa lima
 Horário: 15:00
 Dia: 07/11/2025
 Terapeuta: Lorrany Siqueira
-Valor: R$220,00
+Valor: R$200,00
 
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
@@ -28377,7 +28377,7 @@ Paciente: Arthur Edson de sousa lima
 Horário: 15:00
 Dia: 07/11/2025
 Terapeuta: Lorrany Siqueira
-Valor: R$220,00
+Valor: R$200,00
 
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
@@ -28393,7 +28393,7 @@ Paciente: Arthur Edson de sousa lima
 Horário: 15:00
 Dia: 07/11/2025
 Terapeuta: Lorrany Siqueira
-Valor: R$220,00
+Valor: R$200,00
 
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
@@ -28408,7 +28408,7 @@ Paciente: Arthur Edson de sousa lima
 Horário: 15:00
 Dia: 07/11/2025
 Terapeuta: Lorrany Siqueira
-Valor: R$220,00
+Valor: R$200,00
 
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
@@ -28545,7 +28545,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF08:09] +55 62 9304-4864: Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
 
@@ -28559,7 +28559,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF
 [Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
@@ -28574,7 +28574,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF08:09] Clínica Fono Inova: Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
 
@@ -28588,7 +28588,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF
 [Ficou com alguma dúvida?
 Se quiser, posso agendar uma avaliação para começarmos o quanto antes. 08:56] +55 62 9304-4864: Ficou com alguma dúvida?
@@ -29454,14 +29454,14 @@ Ela tem vergonha de conversar também08:04] +55 62 8177-7994: E está atrapalhan
 Ela tem vergonha de conversar também
 [Inicialmente a criança vai passar por uma avaliação .
 Avaliação e uma anamnese completa do paciente .
-Avaliação de R$250,00 fica por R$220,00 no mês das crianças.08:06] +55 62 8177-7994: Inicialmente a criança vai passar por uma avaliação .
+Avaliação de R$250,00 fica por R$200,00 no mês das crianças.08:06] +55 62 8177-7994: Inicialmente a criança vai passar por uma avaliação .
 Avaliação e uma anamnese completa do paciente .
-Avaliação de R$250,00 fica por R$220,00 no mês das crianças.
+Avaliação de R$250,00 fica por R$200,00 no mês das crianças.
 [Inicialmente a criança vai passar por uma avaliação .
 Avaliação e uma anamnese completa do paciente .
-Avaliação de R$250,00 fica por R$220,00 no mês das crianças.08:06] Clínica Fono Inova: Inicialmente a criança vai passar por uma avaliação .
+Avaliação de R$250,00 fica por R$200,00 no mês das crianças.08:06] Clínica Fono Inova: Inicialmente a criança vai passar por uma avaliação .
 Avaliação e uma anamnese completa do paciente .
-Avaliação de R$250,00 fica por R$220,00 no mês das crianças.
+Avaliação de R$250,00 fica por R$200,00 no mês das crianças.
 [Eu quero marcar08:08] +55 62 8177-7994: Eu quero marcar
 [Eu quero marcar08:08] +55 62 8177-7994: Eu quero marcar
 [Você quer para essa semana ou semana que vem?08:10] +55 62 8177-7994: Você quer para essa semana ou semana que vem?
@@ -29488,7 +29488,7 @@ Terapeuta: Lorrany Siqueira
 
 Principal Queixa do Paciente?
 Declaração de comparecimento:
-Valor da avaliação R$220,0008:16] +55 62 8177-7994: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
+Valor da avaliação R$200,0008:16] +55 62 8177-7994: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 Ficha de cadastro do paciente
 Nome da criança:
@@ -29500,7 +29500,7 @@ Terapeuta: Lorrany Siqueira
 
 Principal Queixa do Paciente?
 Declaração de comparecimento:
-Valor da avaliação R$220,00
+Valor da avaliação R$200,00
 [Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 Ficha de cadastro do paciente
@@ -29513,7 +29513,7 @@ Terapeuta: Lorrany Siqueira
 
 Principal Queixa do Paciente?
 Declaração de comparecimento:
-Valor da avaliação R$220,0008:16] Clínica Fono Inova: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
+Valor da avaliação R$200,0008:16] Clínica Fono Inova: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 Ficha de cadastro do paciente
 Nome da criança:
@@ -29525,7 +29525,7 @@ Terapeuta: Lorrany Siqueira
 
 Principal Queixa do Paciente?
 Declaração de comparecimento:
-Valor da avaliação R$220,00
+Valor da avaliação R$200,00
 [Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 Ficha de cadastro do paciente
@@ -29538,7 +29538,7 @@ Terapeuta: Lorrany Siqueira
 
 Principal Queixa do Paciente?
 Declaração de comparecimento:
-Valor da avaliação R$220,0008:18] +55 62 8177-7994: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
+Valor da avaliação R$200,0008:18] +55 62 8177-7994: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 Ficha de cadastro do paciente
 Nome da criança: Anna Lice Rosa Rodrigues 
@@ -29550,7 +29550,7 @@ Terapeuta: Lorrany Siqueira
 
 Principal Queixa do Paciente?
 Declaração de comparecimento:
-Valor da avaliação R$220,00
+Valor da avaliação R$200,00
 [Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 Ficha de cadastro do paciente
@@ -29563,7 +29563,7 @@ Terapeuta: Lorrany Siqueira
 
 Principal Queixa do Paciente?
 Declaração de comparecimento:
-Valor da avaliação R$220,0008:18] +55 62 8177-7994: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
+Valor da avaliação R$200,0008:18] +55 62 8177-7994: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
      Avaliação 
 Ficha de cadastro do paciente
 Nome da criança: Anna Lice Rosa Rodrigues 
@@ -29575,7 +29575,7 @@ Terapeuta: Lorrany Siqueira
 
 Principal Queixa do Paciente?
 Declaração de comparecimento:
-Valor da avaliação R$220,00
+Valor da avaliação R$200,00
 [ Sua Avaliação está agendada
 
 Local: Clinica Fono Inova 
@@ -29584,7 +29584,7 @@ Paciente: * Anna Lice Rosa Rodrigues*
 Horário: 08:00
 Dia: 10/10/2025
 Terapeuta:  Lorrany Siqueira
-Valor: R$220,00
+Valor: R$200,00
 
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
@@ -29600,7 +29600,7 @@ Paciente: * Anna Lice Rosa Rodrigues*
 Horário: 08:00
 Dia: 10/10/2025
 Terapeuta:  Lorrany Siqueira
-Valor: R$220,00
+Valor: R$200,00
 
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
@@ -29617,7 +29617,7 @@ Paciente: * Anna Lice Rosa Rodrigues*
 Horário: 08:00
 Dia: 10/10/2025
 Terapeuta:  Lorrany Siqueira
-Valor: R$220,00
+Valor: R$200,00
 
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
@@ -29633,7 +29633,7 @@ Paciente: * Anna Lice Rosa Rodrigues*
 Horário: 08:00
 Dia: 10/10/2025
 Terapeuta:  Lorrany Siqueira
-Valor: R$220,00
+Valor: R$200,00
 
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
@@ -29956,11 +29956,11 @@ Como posso ajudar?Bom dia08:03] +55 62 9302-1437: Bom dia
 [Eu quero saber o valor da consulta com fonoaudióloga08:03] +55 62 9302-1437: Eu quero saber o valor da consulta com fonoaudióloga
 [Eu quero saber o valor da consulta com fonoaudióloga08:03] +55 62 9302-1437: Eu quero saber o valor da consulta com fonoaudióloga
 [Inicialmente o paciente passa por uma Avaliação .
-Avaliação no mês das crianças de R$250,00  fica no valore de R$220,00.08:05] +55 62 9302-1437: Inicialmente o paciente passa por uma Avaliação .
-Avaliação no mês das crianças de R$250,00  fica no valore de R$220,00.
+Avaliação no mês das crianças de R$250,00  fica no valore de R$200,00.08:05] +55 62 9302-1437: Inicialmente o paciente passa por uma Avaliação .
+Avaliação no mês das crianças de R$250,00  fica no valore de R$200,00.
 [Inicialmente o paciente passa por uma Avaliação .
-Avaliação no mês das crianças de R$250,00  fica no valore de R$220,00.08:05] Clínica Fono Inova: Inicialmente o paciente passa por uma Avaliação .
-Avaliação no mês das crianças de R$250,00  fica no valore de R$220,00.
+Avaliação no mês das crianças de R$250,00  fica no valore de R$200,00.08:05] Clínica Fono Inova: Inicialmente o paciente passa por uma Avaliação .
+Avaliação no mês das crianças de R$250,00  fica no valore de R$200,00.
 [ Gostaria de agendar uma avaliação?
 Ficaremos felizes em atender você!08:55] +55 62 9302-1437:  Gostaria de agendar uma avaliação?
 Ficaremos felizes em atender você!
@@ -30824,8 +30824,8 @@ Temos uma ótima profissional .
 Gostaria de agendar uma avaliação?
 [Qual valor da consulta por favor10:30] +55 62 8203-4864: Qual valor da consulta por favor
 [Qual valor da consulta por favor10:30] +55 62 8203-4864: Qual valor da consulta por favor
-[Esse mês de R$250,00 está por R$220,0010:30] +55 62 8203-4864: Esse mês de R$250,00 está por R$220,00
-[Esse mês de R$250,00 está por R$220,0010:30] Clínica Fono Inova: Esse mês de R$250,00 está por R$220,00
+[Esse mês de R$250,00 está por R$200,0010:30] +55 62 8203-4864: Esse mês de R$250,00 está por R$200,00
+[Esse mês de R$250,00 está por R$200,0010:30] Clínica Fono Inova: Esse mês de R$250,00 está por R$200,00
 [Ok obrigado10:32] +55 62 8203-4864: Ok obrigado
 [Ok obrigado10:32] +55 62 8203-4864: Ok obrigado
 [Disponha
@@ -31527,7 +31527,7 @@ Após essa avaliação, o profissional indica a quantidade ideal de sessões sem
 
  Sessões (valores por atendimento):
  Terapia Ocupacional (T.O.):
-  • Avulsa: R$220,00
+  • Avulsa: R$200,00
   • Pacote mensal:  R$180,00 por sessão → 18% OFF
 
  Psicologia Infantil:
@@ -31550,7 +31550,7 @@ Após essa avaliação, o profissional indica a quantidade ideal de sessões sem
 
  Sessões (valores por atendimento):
  Terapia Ocupacional (T.O.):
-  • Avulsa: R$220,00
+  • Avulsa: R$200,00
   • Pacote mensal:  R$180,00 por sessão → 18% OFF
 
  Psicologia Infantil:
@@ -31574,7 +31574,7 @@ Após essa avaliação, o profissional indica a quantidade ideal de sessões sem
 
  Sessões (valores por atendimento):
  Terapia Ocupacional (T.O.):
-  • Avulsa: R$220,00
+  • Avulsa: R$200,00
   • Pacote mensal:  R$180,00 por sessão → 18% OFF
 
  Psicologia Infantil:
@@ -31597,7 +31597,7 @@ Após essa avaliação, o profissional indica a quantidade ideal de sessões sem
 
  Sessões (valores por atendimento):
  Terapia Ocupacional (T.O.):
-  • Avulsa: R$220,00
+  • Avulsa: R$200,00
   • Pacote mensal:  R$180,00 por sessão → 18% OFF
 
  Psicologia Infantil:
@@ -32136,11 +32136,11 @@ Qual desses você tem interesse?
 [Pode me informar o valor da Fonoaudióloga?14:29] +55 62 8636-6601: Pode me informar o valor da Fonoaudióloga?
 [Pode me informar o valor da Fonoaudióloga?14:29] +55 62 8636-6601: Pode me informar o valor da Fonoaudióloga?
 [Inicialmente a criança passa por uma avaliação, avaliação e uma anamnese completa do paciente.
-Nesse mês das crianças de R$250,00 fica por R$220,00.Edited14:31] +55 62 8636-6601: Inicialmente a criança passa por uma avaliação, avaliação e uma anamnese completa do paciente.
-Nesse mês das crianças de R$250,00 fica por R$220,00.
+Nesse mês das crianças de R$250,00 fica por R$200,00.Edited14:31] +55 62 8636-6601: Inicialmente a criança passa por uma avaliação, avaliação e uma anamnese completa do paciente.
+Nesse mês das crianças de R$250,00 fica por R$200,00.
 [Inicialmente a criança passa por uma avaliação, avaliação e uma anamnese completa do paciente.
-Nesse mês das crianças de R$250,00 fica por R$220,00.Edited14:31] Clínica Fono Inova: Inicialmente a criança passa por uma avaliação, avaliação e uma anamnese completa do paciente.
-Nesse mês das crianças de R$250,00 fica por R$220,00.
+Nesse mês das crianças de R$250,00 fica por R$200,00.Edited14:31] Clínica Fono Inova: Inicialmente a criança passa por uma avaliação, avaliação e uma anamnese completa do paciente.
+Nesse mês das crianças de R$250,00 fica por R$200,00.
 [Ok14:34] +55 62 8636-6601: Ok
 [Ok14:34] +55 62 8636-6601: Ok
 [Tem vaga quando?14:34] +55 62 8636-6601: Tem vaga quando?
@@ -32164,7 +32164,7 @@ Terapeuta: Lorrany Siqueira
 
 Principal Queixa do Paciente:
 Declaração de comparecimento?
-Valor da avaliação R$220,0014:42] +55 62 8636-6601: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
+Valor da avaliação R$200,0014:42] +55 62 8636-6601: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
 
      Avaliação 
 Ficha de cadastro do paciente
@@ -32177,7 +32177,7 @@ Terapeuta: Lorrany Siqueira
 
 Principal Queixa do Paciente:
 Declaração de comparecimento?
-Valor da avaliação R$220,00
+Valor da avaliação R$200,00
 [Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
 
      Avaliação 
@@ -32191,7 +32191,7 @@ Terapeuta: Lorrany Siqueira
 
 Principal Queixa do Paciente:
 Declaração de comparecimento?
-Valor da avaliação R$220,0014:42] Clínica Fono Inova: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
+Valor da avaliação R$200,0014:42] Clínica Fono Inova: Por gentileza preencha essa pré ficha de cadastro para podermos  agendar !
 
      Avaliação 
 Ficha de cadastro do paciente
@@ -32204,7 +32204,7 @@ Terapeuta: Lorrany Siqueira
 
 Principal Queixa do Paciente:
 Declaração de comparecimento?
-Valor da avaliação R$220,00
+Valor da avaliação R$200,00
 [André Cunha Ferraz
 28/10/2023
 Kelly Souza Pereira
@@ -32232,7 +32232,7 @@ Paciente: André Cunha Ferraz
 Horário: 14:00
 Dia: 10/10/2025
 Terapeuta:  Lorrany Siqueira
-Valor: R$220,00
+Valor: R$200,00
 
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
@@ -32247,7 +32247,7 @@ Paciente: André Cunha Ferraz
 Horário: 14:00
 Dia: 10/10/2025
 Terapeuta:  Lorrany Siqueira
-Valor: R$220,00
+Valor: R$200,00
 
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
@@ -32263,7 +32263,7 @@ Paciente: André Cunha Ferraz
 Horário: 14:00
 Dia: 10/10/2025
 Terapeuta:  Lorrany Siqueira
-Valor: R$220,00
+Valor: R$200,00
 
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
@@ -32278,7 +32278,7 @@ Paciente: André Cunha Ferraz
 Horário: 14:00
 Dia: 10/10/2025
 Terapeuta:  Lorrany Siqueira
-Valor: R$220,00
+Valor: R$200,00
 
 Oferecemos diversas formas de pagamento para sua comodidade! 
  PIX
@@ -32569,7 +32569,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF10:47] +55 61 9946-9733: Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
 
@@ -32583,7 +32583,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF
 [Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
@@ -32598,7 +32598,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF10:47] Clínica Fono Inova: Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
 
@@ -32612,7 +32612,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF
 [Bom dia! Elaine, Tudo bem?
  Gostaria de agendar uma avaliação?
@@ -32822,7 +32822,7 @@ O primeiro passo é a avaliação inicial, que chamamos de anamnese.
 
 Nessa consulta, a fonoaudióloga conversa com você para entender o histórico do bebê, sua rotina, hábitos, desenvolvimento e possíveis sinais que ajudam a identificar a melhor forma de estimular a fala 
 
-O valor da avaliação é R$220,00.
+O valor da avaliação é R$200,00.
 
 Posso te enviar os horários disponíveis para agendarmos essa consulta? 11:26] +55 61 9946-9733: Thais,
 Entendo sua preocupação, e fico feliz que esteja buscando apoio desde cedo — isso faz toda diferença no desenvolvimento da fala do seu bebê 
@@ -32831,7 +32831,7 @@ O primeiro passo é a avaliação inicial, que chamamos de anamnese.
 
 Nessa consulta, a fonoaudióloga conversa com você para entender o histórico do bebê, sua rotina, hábitos, desenvolvimento e possíveis sinais que ajudam a identificar a melhor forma de estimular a fala 
 
-O valor da avaliação é R$220,00.
+O valor da avaliação é R$200,00.
 
 Posso te enviar os horários disponíveis para agendarmos essa consulta? 
 [+55 62 9188-9739Eu gostaria de saber o valor da fonoaudiologia. 
@@ -32842,7 +32842,7 @@ O primeiro passo é a avaliação inicial, que chamamos de anamnese.
 
 Nessa consulta, a fonoaudióloga conversa com você para entender o histórico do bebê, sua rotina, hábitos, desenvolvimento e possíveis sinais que ajudam a identificar a melhor forma de estimular a fala 
 
-O valor da avaliação é R$220,00.
+O valor da avaliação é R$200,00.
 
 Posso te enviar os horários disponíveis para agendarmos essa consulta? 11:26] Clínica Fono Inova: Thais,
 Entendo sua preocupação, e fico feliz que esteja buscando apoio desde cedo — isso faz toda diferença no desenvolvimento da fala do seu bebê 
@@ -32851,22 +32851,22 @@ O primeiro passo é a avaliação inicial, que chamamos de anamnese.
 
 Nessa consulta, a fonoaudióloga conversa com você para entender o histórico do bebê, sua rotina, hábitos, desenvolvimento e possíveis sinais que ajudam a identificar a melhor forma de estimular a fala 
 
-O valor da avaliação é R$220,00.
+O valor da avaliação é R$200,00.
 
 Posso te enviar os horários disponíveis para agendarmos essa consulta? 
-[E após essa avaliação. Se precisar de mais seções custa 220 cada11:31] +55 61 9946-9733: E após essa avaliação. Se precisar de mais seções custa 220 cada
-[E após essa avaliação. Se precisar de mais seções custa 220 cada11:31] +55 61 9946-9733: E após essa avaliação. Se precisar de mais seções custa 220 cada
+[E após essa avaliação. Se precisar de mais seções custa 200 cada11:31] +55 61 9946-9733: E após essa avaliação. Se precisar de mais seções custa 200 cada
+[E após essa avaliação. Se precisar de mais seções custa 200 cada11:31] +55 61 9946-9733: E após essa avaliação. Se precisar de mais seções custa 200 cada
 [Depois da avaliação inicial, a fonoaudióloga vai te orientar caso seja necessário iniciar as sessões de acompanhamento.11:34] +55 61 9946-9733: Depois da avaliação inicial, a fonoaudióloga vai te orientar caso seja necessário iniciar as sessões de acompanhamento.
 [Depois da avaliação inicial, a fonoaudióloga vai te orientar caso seja necessário iniciar as sessões de acompanhamento.11:34] Clínica Fono Inova: Depois da avaliação inicial, a fonoaudióloga vai te orientar caso seja necessário iniciar as sessões de acompanhamento.
 [Trabalhamos de duas formas Thais: 
-Sessão avulsa 220 reais            
+Sessão avulsa 200 reais            
 Pacote mensal sai por 180 reais cada.Edited11:36] +55 61 9946-9733: Trabalhamos de duas formas Thais: 
-Sessão avulsa 220 reais            
+Sessão avulsa 200 reais            
 Pacote mensal sai por 180 reais cada.
 [Trabalhamos de duas formas Thais: 
-Sessão avulsa 220 reais            
+Sessão avulsa 200 reais            
 Pacote mensal sai por 180 reais cada.Edited11:36] Clínica Fono Inova: Trabalhamos de duas formas Thais: 
-Sessão avulsa 220 reais            
+Sessão avulsa 200 reais            
 Pacote mensal sai por 180 reais cada.
 [Gostaria de agendar a avaliação, temos uma vaga para amanhã às 16:4011:42] +55 61 9946-9733: Gostaria de agendar a avaliação, temos uma vaga para amanhã às 16:40
 [Gostaria de agendar a avaliação, temos uma vaga para amanhã às 16:4011:42] Clínica Fono Inova: Gostaria de agendar a avaliação, temos uma vaga para amanhã às 16:40
@@ -33042,13 +33042,13 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
  Atendimento Particular
 
  Avaliação inicial com os pais/responsáveis
- R$220
+ R$200
 
  Após a Avaliação:
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF10:55] +55 61 9946-9733: Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
 
@@ -33056,13 +33056,13 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
  Atendimento Particular
 
  Avaliação inicial com os pais/responsáveis
- R$220
+ R$200
 
  Após a Avaliação:
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF
 [Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
@@ -33071,13 +33071,13 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
  Atendimento Particular
 
  Avaliação inicial com os pais/responsáveis
- R$220
+ R$200
 
  Após a Avaliação:
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF10:55] Clínica Fono Inova: Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
 
@@ -33085,13 +33085,13 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
  Atendimento Particular
 
  Avaliação inicial com os pais/responsáveis
- R$220
+ R$200
 
  Após a Avaliação:
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF
 
 
@@ -33412,48 +33412,48 @@ Como posso ajudar?
  O valor para  avaliação varia conforme o número de especialidades.
 
 -Se for 1 especialidade valor normal R$300,00  
- CDL valor R$220,00
+ CDL valor R$200,00
 
  Após a Avaliação:
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades da criança ou paciente.
 
 Valores das Sessões:
 
-R$ 220,00 reais valor normal   CDL R$160,0011:28] +55 65 8455-9662: O primeiro atendimento é uma avaliação inicial, realizada após o agendamento.
+R$ 200,00 reais valor normal   CDL R$160,0011:28] +55 65 8455-9662: O primeiro atendimento é uma avaliação inicial, realizada após o agendamento.
  O valor para  avaliação varia conforme o número de especialidades.
 
 -Se for 1 especialidade valor normal R$300,00  
- CDL valor R$220,00
+ CDL valor R$200,00
 
  Após a Avaliação:
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades da criança ou paciente.
 
 Valores das Sessões:
 
-R$ 220,00 reais valor normal   CDL R$160,00
+R$ 200,00 reais valor normal   CDL R$160,00
 [+55 62 9813-8513E como funciona o convênio com a CDL ?O primeiro atendimento é uma avaliação inicial, realizada após o agendamento.
  O valor para  avaliação varia conforme o número de especialidades.
 
 -Se for 1 especialidade valor normal R$300,00  
- CDL valor R$220,00
+ CDL valor R$200,00
 
  Após a Avaliação:
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades da criança ou paciente.
 
 Valores das Sessões:
 
-R$ 220,00 reais valor normal   CDL R$160,0011:28] Clínica Fono Inova: O primeiro atendimento é uma avaliação inicial, realizada após o agendamento.
+R$ 200,00 reais valor normal   CDL R$160,0011:28] Clínica Fono Inova: O primeiro atendimento é uma avaliação inicial, realizada após o agendamento.
  O valor para  avaliação varia conforme o número de especialidades.
 
 -Se for 1 especialidade valor normal R$300,00  
- CDL valor R$220,00
+ CDL valor R$200,00
 
  Após a Avaliação:
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades da criança ou paciente.
 
 Valores das Sessões:
 
-R$ 220,00 reais valor normal   CDL R$160,00
+R$ 200,00 reais valor normal   CDL R$160,00
 [ Gostaria de agendar uma avaliação?
 Ficaremos felizes em atender você!11:38] +55 65 8455-9662:  Gostaria de agendar uma avaliação?
 Ficaremos felizes em atender você!
@@ -33582,7 +33582,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF13:47] +55 65 8455-9662: Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
 
@@ -33596,7 +33596,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF
 [Cleudair(Pai) Bento(Paciente) FonoPreciso saber como funciona os atendimentos de fono ai com vcs.Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
@@ -33611,7 +33611,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF13:47] Clínica Fono Inova: Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
 
@@ -33625,7 +33625,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF
 [Cleudair(Pai) Bento(Paciente) FonoSe vcs atende planos .Estamos em fase de credenciamento com os convênios.
 Por enquanto, o atendimento é particular!13:47] +55 65 8455-9662: Estamos em fase de credenciamento com os convênios.
@@ -34605,8 +34605,8 @@ Avaliação e uma anamnese completa do paciente .14:15] Clínica Fono Inova: Pri
 Avaliação e uma anamnese completa do paciente .
 [Primeiro é a consulta?14:15] +55 62 9499-0957: Primeiro é a consulta?
 [Primeiro é a consulta?14:15] +55 62 9499-0957: Primeiro é a consulta?
-[Avaliação fica no valor de R$220,0014:15] +55 62 9499-0957: Avaliação fica no valor de R$220,00
-[Avaliação fica no valor de R$220,0014:15] Clínica Fono Inova: Avaliação fica no valor de R$220,00
+[Avaliação fica no valor de R$200,0014:15] +55 62 9499-0957: Avaliação fica no valor de R$200,00
+[Avaliação fica no valor de R$200,0014:15] Clínica Fono Inova: Avaliação fica no valor de R$200,00
 [Mas aí qual o valor de 1 terapia14:16] +55 62 9499-0957: Mas aí qual o valor de 1 terapia
 [Mas aí qual o valor de 1 terapia14:16] +55 62 9499-0957: Mas aí qual o valor de 1 terapia
 [Pacote mensal:  se você paga o mês fechado por exemplo 1 sessão por semana fica no valor de R$720,00 por mês que sai R$180,00 cada sessão.
@@ -35000,14 +35000,14 @@ Como posso ajudar?
 [Ah sim entendi.09:38] Clínica Fono Inova: Ah sim entendi.
 [Primeiro ela vai passar por uma Avaliação.
 Avaliação e uma Anamnese completa do paciente.
-Anamnese fica no valor de R$220,0009:40] +55 62 9316-4859: Primeiro ela vai passar por uma Avaliação.
+Anamnese fica no valor de R$200,0009:40] +55 62 9316-4859: Primeiro ela vai passar por uma Avaliação.
 Avaliação e uma Anamnese completa do paciente.
-Anamnese fica no valor de R$220,00
+Anamnese fica no valor de R$200,00
 [Primeiro ela vai passar por uma Avaliação.
 Avaliação e uma Anamnese completa do paciente.
-Anamnese fica no valor de R$220,0009:40] Clínica Fono Inova: Primeiro ela vai passar por uma Avaliação.
+Anamnese fica no valor de R$200,0009:40] Clínica Fono Inova: Primeiro ela vai passar por uma Avaliação.
 Avaliação e uma Anamnese completa do paciente.
-Anamnese fica no valor de R$220,00
+Anamnese fica no valor de R$200,00
 [Entendi09:41] +55 62 9316-4859: Entendi
 [Entendi09:41] +55 62 9316-4859: Entendi
 [Você poderia me tirar uma dúvida aí atende pelo plano do Ames ou não09:41] +55 62 9316-4859: Você poderia me tirar uma dúvida aí atende pelo plano do Ames ou não
@@ -35193,8 +35193,8 @@ Quanto é a consulta do com a fonoadiologa?
 [Tenho pedido médico08:10] +55 62 9846-9263: Tenho pedido médico
 [Ah sim, atendi ele solicitou somente Avaliação.08:12] +55 62 9846-9263: Ah sim, atendi ele solicitou somente Avaliação.
 [Ah sim, atendi ele solicitou somente Avaliação.08:12] Clínica Fono Inova: Ah sim, atendi ele solicitou somente Avaliação.
-[Avaliação esta por R$220,0008:12] +55 62 9846-9263: Avaliação esta por R$220,00
-[Avaliação esta por R$220,0008:12] Clínica Fono Inova: Avaliação esta por R$220,00
+[Avaliação esta por R$200,0008:12] +55 62 9846-9263: Avaliação esta por R$200,00
+[Avaliação esta por R$200,0008:12] Clínica Fono Inova: Avaliação esta por R$200,00
 [Ta ok08:12] +55 62 9846-9263: Ta ok
 [Ta ok08:12] +55 62 9846-9263: Ta ok
 [ Gostaria de agendar uma avaliação?
@@ -36229,8 +36229,8 @@ Gostaria de agendar uma Avaliação?Qual valor dá consultar?08:56] +55 98 9196-
 [YouAh sim, entendi.
 Temos uma ótima profissional para melhor lhe atender.
 Gostaria de agendar uma Avaliação?Qual valor dá consultar?08:56] +55 98 9196-2675: Qual valor dá consultar?
-[Fica no valor de R$220,0008:57] +55 98 9196-2675: Fica no valor de R$220,00
-[Fica no valor de R$220,0008:57] Clínica Fono Inova: Fica no valor de R$220,00
+[Fica no valor de R$200,0008:57] +55 98 9196-2675: Fica no valor de R$200,00
+[Fica no valor de R$200,0008:57] Clínica Fono Inova: Fica no valor de R$200,00
 [Ok muito obrigada vou ver o dia que dá certo depois eu entro em contato pra marca!08:58] +55 98 9196-2675: Ok muito obrigada vou ver o dia que dá certo depois eu entro em contato pra marca!
 [Ok muito obrigada vou ver o dia que dá certo depois eu entro em contato pra marca!08:58] +55 98 9196-2675: Ok muito obrigada vou ver o dia que dá certo depois eu entro em contato pra marca!
 [Tranquilo, qualquer duvida estamos a disposição.
@@ -36409,7 +36409,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF12:44] +55 98 9196-2675: Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
 
@@ -36423,7 +36423,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF
 [Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
@@ -36438,7 +36438,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF12:44] Clínica Fono Inova: Trabalhamos com duas opções de atendimento: sessões avulsas ou pacotes mensais personalizados.
 Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garanta os melhores resultados para o(a) paciente.
 
@@ -36452,7 +36452,7 @@ Nosso objetivo é oferecer um plano que se encaixe nas suas necessidades e garan
 O profissional responsável fará suas considerações e indicará a quantidade ideal de sessões semanais, de acordo com as necessidades do paciente.
 
  Sessões:
- Sessão avulsa: R$220,00
+ Sessão avulsa: R$200,00
  Pacote mensal:  R$180,00 cada → 18% OFF
 [Ficou com alguma dúvida?
 Se quiser, posso agendar uma avaliação para começarmos o quanto antes. 18:13] +55 98 9196-2675: Ficou com alguma dúvida?
@@ -36840,17 +36840,17 @@ Psicopedagoga
 Musicoterapia
 [Fono12:52] +55 62 9301-5399: Fono
 [Fono12:52] +55 62 9301-5399: Fono
-[Anamnese inicial: R$220,00
+[Anamnese inicial: R$200,00
 
 Pacote mensal:  se você paga o mês fechado por exemplo 1 sessão por semana fica no valor de R$720,00 por mês que sai R$180,00 cada sessão.
- Sessão avulsa: Toda vez que vier para a sessão você paga  R$200,00 cada sessão.12:53] +55 62 9301-5399: Anamnese inicial: R$220,00
+ Sessão avulsa: Toda vez que vier para a sessão você paga  R$200,00 cada sessão.12:53] +55 62 9301-5399: Anamnese inicial: R$200,00
 
 Pacote mensal:  se você paga o mês fechado por exemplo 1 sessão por semana fica no valor de R$720,00 por mês que sai R$180,00 cada sessão.
  Sessão avulsa: Toda vez que vier para a sessão você paga  R$200,00 cada sessão.
-[Anamnese inicial: R$220,00
+[Anamnese inicial: R$200,00
 
 Pacote mensal:  se você paga o mês fechado por exemplo 1 sessão por semana fica no valor de R$720,00 por mês que sai R$180,00 cada sessão.
- Sessão avulsa: Toda vez que vier para a sessão você paga  R$200,00 cada sessão.12:53] Clínica Fono Inova: Anamnese inicial: R$220,00
+ Sessão avulsa: Toda vez que vier para a sessão você paga  R$200,00 cada sessão.12:53] Clínica Fono Inova: Anamnese inicial: R$200,00
 
 Pacote mensal:  se você paga o mês fechado por exemplo 1 sessão por semana fica no valor de R$720,00 por mês que sai R$180,00 cada sessão.
  Sessão avulsa: Toda vez que vier para a sessão você paga  R$200,00 cada sessão.
@@ -37087,8 +37087,8 @@ Como posso te ajudar?
 [boa tarde bm17:59] +55 62 9465-4790: boa tarde bm
 [queria saber o valor da consulta da fono17:59] +55 62 9465-4790: queria saber o valor da consulta da fono
 [queria saber o valor da consulta da fono17:59] +55 62 9465-4790: queria saber o valor da consulta da fono
-[+55 62 9185-7036Rosaqueria saber o valor da consulta da fonoA primeira consulta fica no valor de R$220,0018:00] +55 62 9465-4790: A primeira consulta fica no valor de R$220,00
-[+55 62 9185-7036Rosaqueria saber o valor da consulta da fonoA primeira consulta fica no valor de R$220,0018:00] Clínica Fono Inova: A primeira consulta fica no valor de R$220,00
+[+55 62 9185-7036Rosaqueria saber o valor da consulta da fonoA primeira consulta fica no valor de R$200,0018:00] +55 62 9465-4790: A primeira consulta fica no valor de R$200,00
+[+55 62 9185-7036Rosaqueria saber o valor da consulta da fonoA primeira consulta fica no valor de R$200,0018:00] Clínica Fono Inova: A primeira consulta fica no valor de R$200,00
 [Há sim18:01] +55 62 9465-4790: Há sim
 [Há sim18:01] +55 62 9465-4790: Há sim
 [ Gostaria de agendar uma avaliação?

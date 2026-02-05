@@ -261,7 +261,7 @@ export function generateContextualFollowup({ lead, analysis, attempt = 1, histor
     }
 
     if (intentPrimary === "informacao_preco") {
-        const preco = extracted.precoAvaliacao || extracted.preco || "a avaliação inicial é R$ 220,00";
+        const preco = extracted.precoAvaliacao || extracted.preco || "a avaliação inicial é R$ 200,00";
         
         // 🆕 VALOR → URGÊNCIA → PREÇO para ≤6 anos
         if (isDevelopmentalWindow) {
