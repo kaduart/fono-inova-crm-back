@@ -68,6 +68,8 @@ import expenseRoutes from './routes/financial/expense.js';
 import cashflowRoutes from './routes/financial/cashflow.js';
 import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
 import planningRoutes from './routes/planning.js';
+import provisionamentoRoutes from './routes/provisionamento.js';
+import { iniciarJobConfirmacao } from './jobs/confirmacaoJob.js';
 import compression from 'compression';
 import importFromAgendaRouter from './routes/importFromAgenda.js';
 import dashboardRoutes from './routes/dashboard.js';
@@ -85,6 +87,7 @@ const io = initializeSocket(server);
 
 // 🔹 Iniciar cron jobs
 scheduleMonthlyCommissions();
+iniciarJobConfirmacao();
 
 const PORT = process.env.PORT || 5000;
 
@@ -184,6 +187,7 @@ app.use('/api/protocols', protocolRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/cashflow', cashflowRoutes);
 app.use('/api/planning', planningRoutes);
+app.use('/api/provisionamento', provisionamentoRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado

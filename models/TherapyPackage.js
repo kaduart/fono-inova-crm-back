@@ -16,7 +16,7 @@ const sessionSchema = new mongoose.Schema({
     },
     sessionType: {
         type: String,
-        enum: ['fonoaudiologia', 'terapeuta ocupacional', 'psicologia', 'fisioterapia'],
+        enum: ['fonoaudiologia', 'terapeuta ocupacional', 'psicologia', 'fisioterapia', 'psicomotricidade', 'musicoterapia'],
         required: true
     },
     notes: {
