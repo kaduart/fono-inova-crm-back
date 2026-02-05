@@ -189,6 +189,7 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/cashflow', cashflowRoutes);
 app.use('/api/planning', planningRoutes);
 app.use('/api/provisionamento', provisionamentoRoutes);
+app.use('/api/pre-agendamento', preAgendamentoRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
