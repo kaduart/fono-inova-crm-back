@@ -1,35 +1,55 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { auth, authorize } from '../middleware/auth.js';
+import { agendaAuth } from '../middleware/agendaAuth.js';
 import PreAgendamento from '../models/PreAgendamento.js';
 import Appointment from '../models/Appointment.js';
 import Patient from '../models/Patient.js';
 import Doctor from '../models/Doctor.js';
 import { bookFixedSlot } from '../services/amandaBookingService.js';
+import { findDoctorByName } from '../utils/doctorHelper.js';
 
 const router = express.Router();
 
-// Todas as rotas protegidas
-router.use(auth);
-
 /**
  * POST /api/pre-agendamento/webhook
- * Recebe da agenda externa (Firebase) - pode ter auth específica
+ * Recebe da agenda externa (Firebase) - usa agendaAuth
  */
-router.post('/webhook', async (req, res) => {
+router.post('/webhook', agendaAuth, async (req, res) => {
   try {
-    const {
-      externalId,
-      patientName,
-      patientPhone,
-      patientEmail,
-      patientBirthDate,
-      specialty,
-      preferredDate,
-      preferredTime,
-      professionalName,
-      source = 'agenda_externa'
-    } = req.body;
+    console.log('[WEBHOOK] Payload recebido:', JSON.stringify(req.body, null, 2));
+    
+    // Suporta dois formatos de payload:
+    // 1. Formato antigo: patientName, patientPhone, preferredDate, etc.
+    // 2. Formato agenda externa: patientInfo { fullName, phone }, date, time, etc.
+    
+    const payload = req.body;
+    
+    // Extrai dados do paciente (ambos os formatos)
+    const patientName = payload.patientName || payload.patientInfo?.fullName;
+    const patientPhone = payload.patientPhone || payload.patientInfo?.phone;
+    const patientEmail = payload.patientEmail || payload.patientInfo?.email;
+    const patientBirthDate = payload.patientBirthDate || payload.patientInfo?.birthDate;
+    
+    // Extrai datas e horários (ambos os formatos)
+    const preferredDate = payload.preferredDate || payload.date;
+    const preferredTime = payload.preferredTime || payload.time;
+    
+    // Outros campos
+    const specialty = payload.specialty;
+    const professionalName = payload.professionalName;
+    const source = payload.source || 'agenda_externa';
+    // Suporta externalId, id, ou firebaseAppointmentId (da agenda externa)
+    const externalId = payload.externalId || payload.id || payload.firebaseAppointmentId || `ext_${Date.now()}`;
+    
+    // Validação
+    if (!patientName || !patientPhone || !preferredDate) {
+      return res.status(400).json({
+        success: false,
+        error: 'Campos obrigatórios faltando: patientName/patientInfo.fullName, patientPhone/patientInfo.phone, preferredDate/date',
+        received: payload
+      });
+    }
 
     // Verificar se já existe
     const existe = await PreAgendamento.findOne({ externalId });
@@ -51,7 +71,7 @@ router.post('/webhook', async (req, res) => {
       externalId,
       patientInfo: {
         fullName: patientName,
-        phone: patientPhone?.replace(/\D/g, ''),
+        phone: String(patientPhone).replace(/\D/g, ''),
         email: patientEmail,
         birthDate: patientBirthDate
       },
@@ -63,6 +83,8 @@ router.post('/webhook', async (req, res) => {
       status: 'novo'
     });
 
+    console.log(`[WEBHOOK] ✅ PreAgendamento criado: ${pre._id} - ${patientName}`);
+    
     res.status(201).json({
       success: true,
       id: pre._id,
@@ -75,6 +97,118 @@ router.post('/webhook', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+/**
+ * POST /api/pre-agendamento/:id/importar-externo
+ * Importar diretamente pela agenda externa (usa agendaAuth, não JWT)
+ * A agenda externa confirma e já converte em Appointment definitivo
+ */
+router.post('/:id/importar-externo', agendaAuth, async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { id } = req.params;
+    const {
+      doctorId,
+      date,
+      time,
+      sessionValue,
+      serviceType = 'evaluation',
+      paymentMethod = 'pix',
+      notes
+    } = req.body;
+
+    console.log(`[IMPORTAR-EXTERNO] Importando pré-agendamento ${id}`);
+
+    // 1. Buscar pré-agendamento
+    const pre = await PreAgendamento.findById(id).session(session);
+    if (!pre) throw new Error('Pré-agendamento não encontrado');
+    if (pre.status === 'importado') {
+      return res.json({ success: true, message: 'Já importado', appointmentId: pre.importedToAppointment });
+    }
+
+    // 2. Buscar doutor (por ID ou por nome)
+    let doctor = null;
+    
+    if (doctorId) {
+      doctor = await Doctor.findById(doctorId).session(session);
+    }
+    
+    // Se não achou por ID, tenta por nome usando o helper existente
+    if (!doctor && pre.professionalName) {
+      const doctorData = await findDoctorByName(pre.professionalName);
+      if (doctorData) {
+        doctor = await Doctor.findById(doctorData._id).session(session);
+      }
+    }
+    
+    if (!doctor) {
+      throw new Error(`Doutor não encontrado. ID: ${doctorId}, Nome: ${pre.professionalName}`);
+    }
+    
+    console.log(`[IMPORTAR-EXTERNO] Doutor encontrado: ${doctor.fullName} (${doctor._id})`);
+
+    // 3. Importar usando bookFixedSlot
+    const bookParams = {
+      patientInfo: {
+        fullName: pre.patientInfo.fullName,
+        birthDate: pre.patientInfo.birthDate,
+        phone: pre.patientInfo.phone,
+        email: pre.patientInfo.email
+      },
+      doctorId: doctor._id.toString(),  // ✅ Usa o ID do doutor encontrado
+      specialty: pre.specialty,
+      date,
+      time,
+      sessionType: serviceType === 'evaluation' ? 'avaliacao' : 'sessao',
+      serviceType,
+      paymentMethod,
+      sessionValue: Number(sessionValue),
+      status: 'scheduled',
+      notes: `[IMPORTADO DA AGENDA EXTERNA] ${notes || ''}\n${pre.secretaryNotes || ''}`
+    };
+    
+    console.log('[IMPORTAR-EXTERNO] bookFixedSlot params:', JSON.stringify(bookParams, null, 2));
+    
+    const result = await bookFixedSlot(bookParams);
+
+    if (!result.success) {
+      console.error('[IMPORTAR-EXTERNO] bookFixedSlot erro:', result);
+      throw new Error(result.error || 'Erro ao criar agendamento');
+    }
+
+    // 4. Atualizar pré-agendamento
+    pre.status = 'importado';
+    pre.importedToAppointment = result.appointment._id;
+    pre.importedAt = new Date();
+    await pre.save({ session });
+
+    await session.commitTransaction();
+
+    console.log(`[IMPORTAR-EXTERNO] ✅ Importado: ${result.appointment._id}`);
+
+    res.json({
+      success: true,
+      message: 'Importado com sucesso!',
+      appointmentId: result.appointment._id,
+      patientId: result.patientId
+    });
+
+  } catch (error) {
+    await session.abortTransaction();
+    console.error('[IMPORTAR-EXTERNO] Erro:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  } finally {
+    session.endSession();
+  }
+});
+
+// Middleware de auth para rotas protegidas (após as rotas públicas)
+router.use(auth);
 
 /**
  * GET /api/pre-agendamento
@@ -95,7 +229,14 @@ router.get('/', authorize(['admin', 'secretary']), async (req, res) => {
 
     const filters = {};
 
-    if (status) filters.status = status;
+    // Se não especificou status, por padrão exclui importados e descartados
+    // (só mostra os que precisam de ação)
+    if (status) {
+      filters.status = status;
+    } else {
+      filters.status = { $nin: ['importado', 'descartado'] };
+    }
+    
     if (specialty) filters.specialty = specialty;
     if (urgency) filters.urgency = urgency;
     if (assignedTo) filters.assignedTo = assignedTo;

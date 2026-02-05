@@ -3,6 +3,9 @@ export function agendaAuth(req, res, next) {
     const header = req.headers.authorization || "";
     const token = header.startsWith("Bearer ") ? header.slice(7) : null;
 
+    console.log("Token recebido:", token);
+    console.log("Token esperado:", process.env.AGENDA_EXPORT_TOKEN);
+    
     if (!token) {
         return res.status(401).json({ success: false, code: "NO_TOKEN", error: "Missing token" });
     }

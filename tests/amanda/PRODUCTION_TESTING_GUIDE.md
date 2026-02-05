@@ -131,7 +131,7 @@ Você: "Oi, quanto custa?"
 
 ✅ ESPERADO:
 - Amanda acolhe ("Oi! Que bom que você entrou em contato...")
-- Dá o preço ("R$ 220" ou similar)
+- Dá o preço ("R$ 200" ou similar)
 - PERGUNTA QUEIXA ("Qual a situação...")
 
 ❌ PROBLEMA SE:
