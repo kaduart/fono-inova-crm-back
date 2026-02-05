@@ -1636,7 +1636,7 @@ router.get('/stats', auth, async (req, res) => {
                 icon: 'accessibility',
                 color: '#9C27B0',
                 sessionDuration: 40,
-                price: 200.00 // Adicionado preço para cálculo de receita
+                price: 200.00
             },
             'Psicologia': {
                 id: 'psicologia',
@@ -1661,6 +1661,30 @@ router.get('/stats', auth, async (req, res) => {
                 color: '#FF9800',
                 sessionDuration: 40,
                 price: 160.00
+            },
+            'Psicomotricidade': {
+                id: 'psicomotricidade',
+                name: 'Psicomotricidade',
+                icon: 'directions_run',
+                color: '#FF5722',
+                sessionDuration: 40,
+                price: 180.00
+            },
+            'Musicoterapia': {
+                id: 'musicoterapia',
+                name: 'Musicoterapia',
+                icon: 'music_note',
+                color: '#17c041',
+                sessionDuration: 40,
+                price: 180.00
+            },
+            'Psicopedagogia': {
+                id: 'psicopedagogia',
+                name: 'Psicopedagogia',
+                icon: 'school',
+                color: '#9C27B0',
+                sessionDuration: 40,
+                price: 180.00
             }
         };
 
