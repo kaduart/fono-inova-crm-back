@@ -401,9 +401,9 @@ export class WhatsAppOrchestrator {
                 originalText,
                 message.text,
                 {
-                    patientName: memory.patientName,
-                    patientAge: memory.patientAge,
-                    therapyArea: memory.therapyArea
+                    patientName: memoryContext?.patientName,
+                    patientAge: memoryContext?.patientAge,
+                    therapyArea: memoryContext?.therapyArea
                 }
             );
 
@@ -902,7 +902,7 @@ export class WhatsAppOrchestrator {
             );
         }
 
-        if (inferred.slotConfirmed || text.toLowerCase().match(/^(sim|ok|pode ser|confirmo|isso)/)) {
+        if (inferred.slotConfirmed) {
             unsetStates["lastExtractedInfo.awaitingField"] = "";
             unsetStates["lastExtractedInfo.slot_confirmation"] = "";
         }
