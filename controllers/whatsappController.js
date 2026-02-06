@@ -927,6 +927,118 @@ export const whatsappController = {
             console.error('Erro na busca:', err);
             res.status(500).json({ success: false, error: err.message });
         }
+    },
+
+    // 🎬 UPLOAD DE MÍDIA
+    async uploadMedia(req, res) {
+        try {
+            if (!req.file) {
+                return res.status(400).json({ 
+                    success: false, 
+                    error: 'Nenhum arquivo enviado' 
+                });
+            }
+
+            const { buffer, originalname, mimetype } = req.file;
+            
+            console.log('📤 Upload de mídia recebido:', {
+                name: originalname,
+                type: mimetype,
+                size: buffer.length
+            });
+
+            // Upload para Meta/WhatsApp
+            const { sendWhatsAppMediaMessage } = await import('../services/whatsappService.js');
+            
+            // Apenas faz upload e retorna o mediaId (não envia mensagem)
+            const token = await getMetaToken();
+            const PHONE_ID = process.env.META_WABA_PHONE_ID;
+            const META_URL = "https://graph.facebook.com/v21.0";
+            
+            const FormData = (await import('form-data')).default;
+            const formData = new FormData();
+            formData.append('file', buffer, originalname);
+            formData.append('type', mimetype.split('/')[0]);
+            formData.append('messaging_product', 'whatsapp');
+
+            const fetch = (await import('node-fetch')).default;
+            const uploadRes = await fetch(`${META_URL}/${PHONE_ID}/media`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: formData
+            });
+
+            const uploadData = await uploadRes.json();
+
+            if (!uploadRes.ok) {
+                throw new Error(uploadData.error?.message || 'Falha no upload');
+            }
+
+            res.json({
+                success: true,
+                mediaId: uploadData.id,
+                mediaUrl: uploadData.url
+            });
+
+        } catch (error) {
+            console.error('❌ Erro no upload de mídia:', error);
+            res.status(500).json({ 
+                success: false, 
+                error: error.message 
+            });
+        }
+    },
+
+    // 🎬 ENVIO DE MÍDIA
+    async sendMedia(req, res) {
+        try {
+            const { phone, type, caption, leadId } = req.body;
+            const file = req.file;
+
+            if (!phone || !file || !type) {
+                return res.status(400).json({ 
+                    success: false, 
+                    error: 'Telefone, arquivo e tipo são obrigatórios' 
+                });
+            }
+
+            const to = normalizeE164BR(phone);
+            
+            console.log('📤 Enviando mídia:', {
+                to,
+                type,
+                filename: file.originalname,
+                size: file.buffer.length,
+                mimetype: file.mimetype
+            });
+
+            const { sendWhatsAppMediaMessage } = await import('../services/whatsappService.js');
+            
+            // Enviar para WhatsApp
+            const result = await sendWhatsAppMediaMessage({
+                to,
+                file: file.buffer,
+                type, // 'image', 'audio', 'video', 'document'
+                caption: caption || undefined,
+                filename: file.originalname,
+                lead: leadId || null
+            });
+
+            res.json({
+                success: true,
+                messageId: result.messages?.[0]?.id,
+                mediaId: result.mediaId
+            });
+
+        } catch (error) {
+            console.error('❌ Erro ao enviar mídia:', error);
+            res.status(500).json({ 
+                success: false, 
+                error: error.message 
+            });
+        }
     }
 };
 
