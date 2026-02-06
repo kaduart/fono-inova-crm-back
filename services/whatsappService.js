@@ -3,6 +3,9 @@
 import dotenv from "dotenv";
 import fetch from "node-fetch";
 import FormData from 'form-data';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegStatic from 'ffmpeg-static';
+import { Readable } from 'stream';
 import ChatContext from "../models/ChatContext.js";
 import Contact from "../models/Contacts.js";
 import Lead from "../models/Leads.js"; // ajuste o path
@@ -11,6 +14,40 @@ import { getMetaToken } from "../utils/metaToken.js";
 import { normalizeE164BR } from "../utils/phone.js";
 
 dotenv.config();
+
+// Configurar ffmpeg static
+if (ffmpegStatic) {
+    ffmpeg.setFfmpegPath(ffmpegStatic);
+}
+
+/**
+ * Converte buffer de áudio webm para mp3 usando ffmpeg
+ * @param {Buffer} buffer - Buffer do arquivo webm
+ * @returns {Promise<Buffer>} - Buffer do arquivo mp3
+ */
+function convertWebmToMp3(buffer) {
+    return new Promise((resolve, reject) => {
+        const inputStream = Readable.from(buffer);
+        const chunks = [];
+        
+        ffmpeg(inputStream)
+            .inputFormat('webm')
+            .audioCodec('libmp3lame')
+            .audioBitrate(128)
+            .format('mp3')
+            .on('error', (err) => {
+                console.error('❌ [FFmpeg] Erro na conversão:', err.message);
+                reject(err);
+            })
+            .on('end', () => {
+                const outputBuffer = Buffer.concat(chunks);
+                console.log(`✅ [FFmpeg] Conversão concluída: ${buffer.length} bytes → ${outputBuffer.length} bytes`);
+                resolve(outputBuffer);
+            })
+            .pipe()
+            .on('data', (chunk) => chunks.push(chunk));
+    });
+}
 
 const META_URL = "https://graph.facebook.com/v21.0";
 const PHONE_ID = process.env.META_WABA_PHONE_ID;
@@ -546,25 +583,40 @@ export async function sendWhatsAppMediaMessage({
     console.log(`📤 [WhatsApp Media] Enviando ${type} para ${phone}`);
     console.log(`📁 [WhatsApp Media] Arquivo: ${filename}, Tamanho: ${file?.length || 0} bytes`);
 
-    // 1. Fazer upload do arquivo para o Meta
-    const formData = new FormData();
+    // 1. Preparar arquivo (converter se necessário)
+    let fileToUpload = file;
+    let uploadFilename = filename;
+    let uploadMimeType = null;
     
-    // ✅ FIX: O Meta NÃO aceita audio/webm diretamente!
-    // Mas aceita audio/ogg e audio/opus. WebM com Opus é similar a OGG.
+    // ✅ FIX: Converter webm para mp3 usando ffmpeg
     const isWebmAudio = filename.endsWith('.webm') && type === 'audio';
     
     if (isWebmAudio) {
-        // Mudar extensão para .ogg e enviar como audio/ogg
-        const oggFilename = filename.replace('.webm', '.ogg');
-        console.log(`🎵 [WhatsApp Media] Detectado webm, enviando como ogg: ${oggFilename}`);
-        console.log(`📊 [WhatsApp Media] Buffer tipo: ${typeof file}, tamanho: ${file.length}`);
-        formData.append('file', file, {
-            filename: oggFilename,
-            contentType: 'audio/ogg'
+        console.log(`🎵 [WhatsApp Media] Detectado webm, convertendo para mp3...`);
+        try {
+            fileToUpload = await convertWebmToMp3(file);
+            uploadFilename = filename.replace('.webm', '.mp3');
+            uploadMimeType = 'audio/mpeg';
+            console.log(`✅ [WhatsApp Media] Conversão concluída: ${uploadFilename}`);
+        } catch (err) {
+            console.error('❌ [WhatsApp Media] Falha na conversão, tentando enviar como ogg:', err.message);
+            // Fallback: enviar como ogg (pode não funcionar, mas tenta)
+            uploadFilename = filename.replace('.webm', '.ogg');
+            uploadMimeType = 'audio/ogg';
+            fileToUpload = file;
+        }
+    }
+    
+    // 2. Fazer upload do arquivo para o Meta
+    const formData = new FormData();
+    
+    if (uploadMimeType) {
+        formData.append('file', fileToUpload, {
+            filename: uploadFilename,
+            contentType: uploadMimeType
         });
-        console.log('🎵 [WhatsApp Media] Convertendo webm → ogg para Meta');
     } else {
-        formData.append('file', file, filename);
+        formData.append('file', fileToUpload, uploadFilename);
     }
     
     formData.append('type', type);
