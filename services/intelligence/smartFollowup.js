@@ -1,4 +1,5 @@
 import ensureSingleHeart from "../../utils/helpers.js";
+import { PRICING, formatPrice } from "../../config/pricing.js";
 
 /**
  * ⏰ Calcula tempo ideal para follow-up
@@ -261,7 +262,8 @@ export function generateContextualFollowup({ lead, analysis, attempt = 1, histor
     }
 
     if (intentPrimary === "informacao_preco") {
-        const preco = extracted.precoAvaliacao || extracted.preco || "a avaliação inicial é R$ 200,00";
+        // Usa pricing centralizado
+        const preco = extracted.precoAvaliacao || extracted.preco || `a avaliação inicial é ${formatPrice(PRICING.AVALIACAO_INICIAL)}`;
         
         // 🆕 VALOR → URGÊNCIA → PREÇO para ≤6 anos
         if (isDevelopmentalWindow) {

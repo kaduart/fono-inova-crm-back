@@ -12,7 +12,7 @@ import {
 } from "../services/intelligence/smartFollowup.js";
 
 // ✅ NOVO: “memória”/contexto persistido (resumo + histórico)
-import { buildContextPack } from "../services/intelligence/ContextPack.js";
+// 🗑️ REMOVIDO: buildContextPack - usar enrichLeadContext abaixo
 import enrichLeadContext from "../services/leadContext.js";
 
 const TZ_SP = "America/Sao_Paulo";
@@ -50,13 +50,10 @@ export async function createSmartFollowupForLead(leadId, options = {}) {
 
   const lastInbound = recentMessages.find((m) => m.direction === "inbound");
 
-  // ✅ Contexto persistido (Resumo + ContextPack) p/ não ficar genérico
+  // ✅ CONTEXTO UNIFICADO (leadContext.js tem tudo)
   const enrichedContext = await enrichLeadContext(leadId).catch(() => null);
-  const summaryText =
-    enrichedContext?.conversationSummary || lead.conversationSummary || null;
-
-  const contextPack = await buildContextPack(leadId).catch(() => null);
-  const fullContext = { ...(enrichedContext || {}), ...(contextPack || {}) };
+  const summaryText = enrichedContext?.conversationSummary || null;
+  const fullContext = enrichedContext || {};
 
   const sameDay = isSameDayInSP(recentMessages);
 
@@ -86,11 +83,7 @@ export async function createSmartFollowupForLead(leadId, options = {}) {
       history: recentMessages,
       sameDay,
       summaryText,
-      context: {
-        ...fullContext,
-        toneMode: contextPack?.toneMode,
-        urgencyLevel: contextPack?.urgencyLevel,
-      },
+      context: fullContext,
     });
 
     score = analysis?.score ?? score;

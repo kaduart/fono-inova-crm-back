@@ -1,14 +1,17 @@
 // services/intelligence/objectionHandler.js
 
+import { getPriceComparison } from '../../config/pricing.js';
+
 export const OBJECTIONS = {
     preco_alto: {
         patterns: [
             /\b(caro|muito\s+caro|achei\s+salgado|pre[cç]o\s+alto)\b/i,
-            /\b(n[aã]o\s+tenho\s+dinheiro|n[aã]o\s+posso\s+pagar)\b/i
+            /\b(n[aã]o\stenho\sdinheiro|n[aã]o\sposso\spagar)\b/i
         ],
         severity: 'high',
         handler: (lead, extracted) => {
             const isChild = extracted.idadeRange && (extracted.idadeRange.includes('infantil') || extracted.idadeRange === 'bebe_1a3');
+            const therapy = extracted.therapyArea || extracted.areaTerapia || 'psicologia';
 
             let response = "Entendo perfeitamente! 💚 ";
 
@@ -18,14 +21,16 @@ export const OBJECTIONS = {
                 response += "O valor reflete nossa equipe especializada. ";
             }
 
-            response += "Temos o pacote mensal que sai mais em conta: R$ 160/sessão vs R$ 180 avulsa. Posso te explicar? 💚";
+            // Usa pricing centralizado para comparação
+            const comparison = getPriceComparison(therapy);
+            response += comparison || "Temos pacotes mensais que saem mais em conta que a sessão avulsa. Posso te explicar? 💚";
 
             return response;
         }
     },
 
     tempo_disponibilidade: {
-        patterns: [/\b(n[aã]o\s+tenho\s+tempo|corrido|agenda\s+cheia)\b/i],
+        patterns: [/\b(n[aã]o\stenho\stempo|corrido|agenda\scheia)\b/i],
         severity: 'medium',
         handler: () => {
             return "Compreendo! 💚 Trabalhamos com horários flexíveis - manhã, tarde e início da noite. Qual período seria mais tranquilo? 💚";
@@ -33,7 +38,7 @@ export const OBJECTIONS = {
     },
 
     duvida_eficacia: {
-        patterns: [/\b(funciona|resolve|vai\s+adiantar|quanto\s+tempo)\b/i],
+        patterns: [/\b(funciona|resolve|vai\s+adiantar|quanto\stempo)\b/i],
         severity: 'medium',
         handler: (lead, extracted) => {
             let response = "Ótima pergunta! 💚 ";

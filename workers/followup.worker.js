@@ -26,7 +26,7 @@ import {
 
 // Amanda 1.0 (fallback)
 import { generateFollowupMessage } from "../services/aiAmandaService.js";
-import { buildContextPack } from "../services/intelligence/ContextPack.js";
+// 🗑️ REMOVIDO: buildContextPack - usar enrichLeadContext acima
 import { sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 
 await mongoose.connect(process.env.MONGO_URI);
@@ -126,11 +126,10 @@ const worker = new Worker(
         .lean();
 
 
-      // 🧠 Contexto persistido (resumo + histórico) para follow-up não ficar genérico
+      // ✅ CONTEXTO UNIFICADO (leadContext.js tem tudo)
       const enrichedContext = await enrichLeadContext(lead._id).catch(() => null);
-      const summaryText = enrichedContext?.conversationSummary || lead.conversationSummary || null;
-      const contextPack = await buildContextPack(lead._id).catch(() => null);
-      const fullContext = { ...(enrichedContext || {}), ...(contextPack || {}) };
+      const summaryText = enrichedContext?.conversationSummary || null;
+      const fullContext = enrichedContext || {};
 
       // ============================================================
       // 🚫 EXCEÇÃO: LEADS FORA DE ESCOPO CLÍNICO (exames / laudos)

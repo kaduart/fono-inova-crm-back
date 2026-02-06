@@ -59,6 +59,8 @@
   },
   "devDependencies": {
     "@types/socket.io": "^3.0.1",
-    "nodemon": "^3.1.10"
+    "@vitest/coverage-v8": "^4.0.18",
+    "nodemon": "^3.1.10",
+    "vitest": "^4.0.18"
   }
 }

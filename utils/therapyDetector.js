@@ -249,3 +249,30 @@ export function getPriceLinesForDetectedTherapies(detected = [], { max = 2 } = {
 
     return lines;
 }
+
+/**
+ * 🆕 Busca dados da terapia com preços atualizados do config/pricing.js
+ * Use esta função em vez de getTherapyData quando precisar de preços
+ * @param {string} therapyId - ID da terapia
+ * @returns {Object|null} - Dados da terapia com preços atualizados
+ */
+export async function getTherapyDataWithPricing(therapyId) {
+    const baseData = getTherapyData(therapyId);
+    if (!baseData) return null;
+    
+    // Import dinâmico para evitar circular dependency
+    const { getTherapyPricing, formatPrice } = await import('../config/pricing.js');
+    
+    const pricing = getTherapyPricing(therapyId);
+    if (pricing) {
+        return {
+            ...baseData,
+            price: pricing.incluiLaudo 
+                ? `${formatPrice(pricing.avaliacao)} (${pricing.parcelamento})`
+                : `${formatPrice(pricing.avaliacao)} a avaliação`,
+            pricing // dados completos do pricing
+        };
+    }
+    
+    return baseData;
+}

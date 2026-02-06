@@ -5,7 +5,6 @@ import Lead from '../models/Leads.js';
 import Message from '../models/Message.js';
 // controllers/followupController.js
 import enrichLeadContext from "../services/leadContext.js";
-import { buildContextPack } from "../services/intelligence/ContextPack.js";
 
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import {
@@ -52,11 +51,10 @@ export const scheduleFollowup = async (req, res) => {
 
                 const lastInbound = recentMessages.find(m => m.direction === "inbound" && m.content);
 
-                // Contexto persistido (resumo + pack)
+                // ✅ CONTEXTO UNIFICADO (leadContext.js tem tudo)
                 const enriched = await enrichLeadContext(leadId).catch(() => null);
-                const summaryText = enriched?.conversationSummary || lead?.conversationSummary || null;
-                const contextPack = await buildContextPack(leadId).catch(() => null);
-                const fullContext = { ...(enriched || {}), ...(contextPack || {}) };
+                const summaryText = enriched?.conversationSummary || null;
+                const fullContext = enriched || {};
 
                 // Histórico cronológico pro modelo
                 const historyForModel = recentMessages

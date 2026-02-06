@@ -5,7 +5,7 @@ import { followupQueue } from "../config/bullConfig.js";
 import { redisConnection } from "../config/redisConnection.js";
 import Followup from "../models/Followup.js";
 import Message from "../models/Message.js";
-import { buildContextPack } from "../services/intelligence/ContextPack.js";
+import enrichLeadContext from "../services/leadContext.js";
 import { processInactiveLeads } from "../services/inactiveLeadFollowupService.js";
 
 await mongoose.connect(process.env.MONGO_URI);
@@ -112,11 +112,10 @@ async function dispatchPendingFollowups() {
 
       // ============================================================
       // 🔹 Verificação de contexto antes de enfileirar follow-up
-      // Evita mensagens frias ou genéricas em leads sem tom definido
       // ============================================================
-      const contextPack = await buildContextPack(lead._id);
+      const leadContext = await enrichLeadContext(lead._id).catch(() => null);
 
-      if (!contextPack?.toneMode || !contextPack?.mode) {
+      if (!leadContext?.toneMode || !leadContext?.mode) {
         console.log(`[FOLLOWUP-CRON] Lead ${lead._id} ignorado (sem contexto válido)`);
         continue;
       }
