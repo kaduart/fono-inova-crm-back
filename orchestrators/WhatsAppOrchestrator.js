@@ -393,23 +393,48 @@ export class WhatsAppOrchestrator {
             });
 
             // =========================
-            // 1️⃣3️⃣ RETORNO
+            // 1️⃣3️⃣ APLICA ANTI-LOOP
+            // =========================
+            const originalText = result?.text || 'Posso te ajudar com mais alguma coisa? 💚';
+            const antiLoopResult = this.applyAntiLoop(
+                lead._id.toString(),
+                originalText,
+                message.text,
+                {
+                    patientName: memory.patientName,
+                    patientAge: memory.patientAge,
+                    therapyArea: memory.therapyArea
+                }
+            );
+
+            // Limpa tracker se agendou ou fez handover
+            if (antiLoopResult.action === 'handover' || flags.bookingConfirmed) {
+                this.clearLoopTracker(lead._id.toString());
+            }
+
+            // =========================
+            // 1️⃣4️⃣ RETORNO
             // =========================
             return {
                 command: 'SEND_MESSAGE',
                 payload: {
-                    text: result?.text || 'Posso te ajudar com mais alguma coisa? 💚'
-                }
+                    text: antiLoopResult.text
+                },
+                meta: antiLoopResult.meta
             };
 
         } catch (error) {
             this.logger.error('ORCHESTRATOR_ERROR', error);
+            
+            // 🛡️ Fallback contextual mesmo em erro
+            const fallbackText = this.generateContextualFallback(message?.text, {});
+            
             return {
                 command: 'SEND_MESSAGE',
                 payload: {
-                    text: 'Oi! Poderia me repetir o que você precisa? Quero ter certeza de entender direito para te ajudar 💚'
+                    text: fallbackText
                 },
-                meta: { error: true }
+                meta: { error: true, fallback: true }
             };
         }
     }
@@ -1002,6 +1027,202 @@ export class WhatsAppOrchestrator {
                 leadId: lead._id?.toString(),
                 error: error.message
             });
+        }
+    }
+
+    // ============================================================================
+    // 🛡️ SISTEMA ANTI-LOOP E FALLBACK CONTEXTUAL (Amanda 4.2.2)
+    // ============================================================================
+
+    /**
+     * 🔄 Verifica se Amanda entrou em loop (mesma resposta repetida)
+     * @param {string} leadId - ID do lead
+     * @param {string} currentText - Texto atual da Amanda
+     * @returns {Object} Status do loop
+     */
+    checkLoopStatus(leadId, currentText) {
+        // Inicializa tracking se não existir
+        if (!this.loopTracker) this.loopTracker = new Map();
+        if (!this.loopTracker.has(leadId)) {
+            this.loopTracker.set(leadId, {
+                lastTexts: [],
+                identicalCount: 0,
+                fallbackAttempts: 0
+            });
+        }
+
+        const tracker = this.loopTracker.get(leadId);
+        const normalizedText = currentText?.toLowerCase()?.trim();
+
+        // Verifica se é idêntica às últimas 2 mensagens
+        const isIdentical = tracker.lastTexts.some(
+            text => text?.toLowerCase()?.trim() === normalizedText
+        );
+
+        if (isIdentical) {
+            tracker.identicalCount++;
+            this.logger.warn('LOOP_DETECTED', {
+                leadId,
+                identicalCount: tracker.identicalCount,
+                text: currentText?.substring(0, 50)
+            });
+        } else {
+            tracker.identicalCount = 0;
+        }
+
+        // Mantém só as últimas 3 mensagens
+        tracker.lastTexts.push(normalizedText);
+        if (tracker.lastTexts.length > 3) tracker.lastTexts.shift();
+
+        return {
+            isLooping: tracker.identicalCount >= 1,
+            loopCount: tracker.identicalCount,
+            needsEscalation: tracker.identicalCount >= 2,
+            tracker
+        };
+    }
+
+    /**
+     * 💡 Gera fallback contextual baseado na mensagem do usuário
+     * @param {string} userMessage - Última mensagem do usuário
+     * @param {Object} context - Contexto do lead
+     * @returns {string} Resposta contextual
+     */
+    generateContextualFallback(userMessage, context = {}) {
+        const text = userMessage?.toLowerCase() || '';
+
+        // Fallback por palavras-chave
+        const fallbackMap = [
+            {
+                keywords: ['exame', 'avaliação', 'teste', 'consulta'],
+                responses: [
+                    'Fazemos sim! Para poder te passar as informações certas, me conta: é para criança ou adulto? E qual a idade? 💚',
+                    'Claro! Realizamos avaliações. Qual seria a faixa etária e o que vocês precisam? 💚',
+                    'Sim! Atendemos várias especialidades. Me conta um pouco sobre quem precisa do atendimento? 💚'
+                ]
+            },
+            {
+                keywords: ['preço', 'valor', 'custa', 'quanto'],
+                responses: [
+                    'Posso te passar os valores! Temos sessão avulsa e pacotes com desconto. Qual área você precisa? Fonoaudiologia, psicologia...? 💚',
+                    'Claro! Os valores dependem da especialidade. Qual terapia você procura? 💚',
+                    'Sessão avulsa é R$ 200, pacote 4x sai R$ 180 cada. Posso verificar disponibilidade pra você! Qual área? 💚'
+                ]
+            },
+            {
+                keywords: ['horário', 'agendar', 'marcar', 'vaga'],
+                responses: [
+                    'Tenho horários disponíveis! Prefere manhã ou tarde? E qual dia da semana funciona melhor? 💚',
+                    'Posso marcar para você! Temos horários de segunda a sábado. Qual seu melhor horário? 💚',
+                    'Vamos encontrar um horário! Você prefere pela manhã ou à tarde? 💚'
+                ]
+            },
+            {
+                keywords: ['plano', 'convênio', 'amil', 'unimed', 'bradesco'],
+                responses: [
+                    'Trabalhamos com reembolso! Você paga e solicita o reembolso na sua operadora. Quer saber mais sobre como funciona? 💚',
+                    'Não temos convênio direto, mas emitimos todos os documentos para reembolso. Funciona bem! Quer conhecer nossos horários? 💚'
+                ]
+            },
+            {
+                keywords: ['não fala', 'atraso', 'autismo', 'tea', 'tdah'],
+                responses: [
+                    'Entendo, isso é mais comum do que parece e tratamos muitos casos assim. Qual a idade? Posso indicar o melhor profissional 💚',
+                    'Muitos pais vêm com essa mesma preocupação. Temos especialistas nessa área! Qual a idade da criança? 💚',
+                    'A gente pode ajudar sim! Atendemos várias crianças com essa característica. Quer marcar uma avaliação? 💚'
+                ]
+            }
+        ];
+
+        // Procura match
+        for (const category of fallbackMap) {
+            if (category.keywords.some(kw => text.includes(kw))) {
+                // Retorna uma resposta aleatória da categoria
+                return category.responses[Math.floor(Math.random() * category.responses.length)];
+            }
+        }
+
+        // Fallback genérico variado (nunca repete igual)
+        const genericResponses = [
+            'Oi! Me conta um pouco sobre o que você precisa? Quero te ajudar da melhor forma 💚',
+            'Claro! Para eu poder te orientar melhor, qual a situação que vocês estão vivendo? 💚',
+            'Posso ajudar com isso! Me conta: é para criança ou adulto? E qual a faixa etária? 💚',
+            'Vou te ajudar! Qual seria o objetivo do atendimento? 💚',
+            'Oi! Para passar as informações certas, me conta um pouco sobre quem precisa 💚'
+        ];
+
+        return genericResponses[Math.floor(Math.random() * genericResponses.length)];
+    }
+
+    /**
+     * 🚨 Mensagem de escalada quando o loop persiste
+     * @param {Object} context - Contexto do lead
+     * @returns {string} Mensagem de handover
+     */
+    generateEscalationMessage(context = {}) {
+        const { patientName, patientAge, therapyArea } = context;
+        
+        const escalationResponses = [
+            'Oi! Acho que talvez não esteja conseguindo te ajudar da melhor forma por aqui. Vou passar para uma de nossas atendentes que vão conseguir te atender melhor, tá bom? 💚',
+            'Percebi que talvez você precise de um atendimento mais específico. Vou pedir para uma de nossas atendentes entrar em contato com você, pode ser? 💚',
+            'Oi! Para poder te ajudar melhor, vou pedir para uma de nossas atendentes te chamar aqui, tá? 💚'
+        ];
+
+        return escalationResponses[Math.floor(Math.random() * escalationResponses.length)];
+    }
+
+    /**
+     * 🎭 Wrapper que aplica anti-loop antes de enviar mensagem
+     * @param {string} leadId - ID do lead
+     * @param {string} proposedText - Texto proposto pela Amanda
+     * @param {string} userMessage - Última mensagem do usuário
+     * @param {Object} context - Contexto
+     * @returns {Object} Texto final e metadata
+     */
+    applyAntiLoop(leadId, proposedText, userMessage, context = {}) {
+        const loopStatus = this.checkLoopStatus(leadId, proposedText);
+
+        // Se está em loop, gera fallback contextual
+        if (loopStatus.isLooping) {
+            this.logger.info('APPLYING_ANTI_LOOP', {
+                leadId,
+                loopCount: loopStatus.loopCount,
+                originalText: proposedText?.substring(0, 50)
+            });
+
+            // Se já tentou 2x, escala para humano
+            if (loopStatus.needsEscalation) {
+                return {
+                    text: this.generateEscalationMessage(context),
+                    action: 'handover',
+                    meta: { loopDetected: true, escalated: true }
+                };
+            }
+
+            // Gera fallback contextual
+            return {
+                text: this.generateContextualFallback(userMessage, context),
+                action: 'fallback',
+                meta: { loopDetected: true, fallback: true }
+            };
+        }
+
+        // Sem loop, retorna texto original
+        return {
+            text: proposedText,
+            action: 'normal',
+            meta: { loopDetected: false }
+        };
+    }
+
+    /**
+     * 🧹 Limpa tracking de loop (chamar quando conversa termina ou agenda)
+     * @param {string} leadId - ID do lead
+     */
+    clearLoopTracker(leadId) {
+        if (this.loopTracker?.has(leadId)) {
+            this.loopTracker.delete(leadId);
+            this.logger.info('LOOP_TRACKER_CLEARED', { leadId });
         }
     }
 }
