@@ -112,7 +112,7 @@ async function runAnthropicWithFallback({ systemPrompt, messages, maxTokens, tem
                 () => {
                     // Fallback do fallback: resposta genérica
                     console.error("[CIRCUIT] Ambos falharam!");
-                    return "Tive um probleminha técnico. A equipe vai te responder em instantes 💚";
+                    return "Oi! Poderia me repetir o que você precisa? Quero ter certeza de entender direito para te ajudar 💚";
                 }
             );
         }
@@ -603,7 +603,7 @@ export async function getOptimizedAmandaResponse({
                 }).catch(err => logSuppressedError('safeLeadUpdate', err));
                 return ensureSingleHeart("Esse horário acabou de ser preenchido 😕 A equipe vai te enviar novas opções em instantes");
             } else {
-                return ensureSingleHeart("Tive um probleminha ao confirmar. A equipe vai te responder por aqui em instantes");
+                return ensureSingleHeart("Deixa eu verificar isso direitinho pra você. Só um instante 💚");
             }
         }
     }
@@ -1241,7 +1241,7 @@ Em breve nossa equipe entra em contato 😊`
             } catch (err) {
                 console.error("[ORCHESTRATOR] Erro ao buscar slots do período:", err.message);
                 return ensureSingleHeart(
-                    "Tive um probleminha ao checar os horários 😅 Você prefere **manhã** ou **tarde**?"
+                    "Vamos ver os horários disponíveis. Você prefere **manhã** ou **tarde**? 💚"
                 );
             }
         }
@@ -1380,7 +1380,7 @@ Em breve nossa equipe entra em contato 😊`
                 return ensureSingleHeart("No momento são só essas opções que tenho 😕 Você prefere mudar de **período** (manhã/tarde) ou **dia da semana**?");
             } catch (err) {
                 console.error("[PASSO 2] Erro ao buscar mais slots:", err.message);
-                return ensureSingleHeart("Tive um probleminha. Você prefere de **manhã ou tarde**?");
+                return ensureSingleHeart("Deixa eu verificar os horários. Você prefere de **manhã ou tarde**? 💚");
             }
         }
 
@@ -2286,7 +2286,7 @@ Em breve nossa equipe entra em contato 😊`
 
         } catch (err) {
             console.error("❌ [ORCHESTRATOR] Erro ao buscar slots:", err?.message || err);
-            return ensureSingleHeart("Tive um probleminha ao checar os horários agora 😕 Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor?");
+            return ensureSingleHeart("Vou verificar os horários disponíveis. Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor? 💚");
         }
     }
 
