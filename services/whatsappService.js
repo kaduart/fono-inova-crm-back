@@ -583,40 +583,23 @@ export async function sendWhatsAppMediaMessage({
     console.log(`📤 [WhatsApp Media] Enviando ${type} para ${phone}`);
     console.log(`📁 [WhatsApp Media] Arquivo: ${filename}, Tamanho: ${file?.length || 0} bytes`);
 
-    // 1. Preparar arquivo (converter se necessário)
-    let fileToUpload = file;
-    let uploadFilename = filename;
-    let uploadMimeType = null;
+    // 1. Fazer upload do arquivo para o Meta
+    const formData = new FormData();
     
-    // ✅ FIX: Converter webm para mp3 usando ffmpeg
+    // ✅ FIX: O Meta NÃO aceita audio/webm diretamente!
+    // Mas aceita audio/ogg. WebM com Opus é similar a OGG.
     const isWebmAudio = filename.endsWith('.webm') && type === 'audio';
     
     if (isWebmAudio) {
-        console.log(`🎵 [WhatsApp Media] Detectado webm, convertendo para mp3...`);
-        try {
-            fileToUpload = await convertWebmToMp3(file);
-            uploadFilename = filename.replace('.webm', '.mp3');
-            uploadMimeType = 'audio/mpeg';
-            console.log(`✅ [WhatsApp Media] Conversão concluída: ${uploadFilename}`);
-        } catch (err) {
-            console.error('❌ [WhatsApp Media] Falha na conversão, tentando enviar como ogg:', err.message);
-            // Fallback: enviar como ogg (pode não funcionar, mas tenta)
-            uploadFilename = filename.replace('.webm', '.ogg');
-            uploadMimeType = 'audio/ogg';
-            fileToUpload = file;
-        }
-    }
-    
-    // 2. Fazer upload do arquivo para o Meta
-    const formData = new FormData();
-    
-    if (uploadMimeType) {
-        formData.append('file', fileToUpload, {
-            filename: uploadFilename,
-            contentType: uploadMimeType
+        // Mudar extensão para .ogg e enviar como audio/ogg
+        const oggFilename = filename.replace('.webm', '.ogg');
+        formData.append('file', file, {
+            filename: oggFilename,
+            contentType: 'audio/ogg'
         });
+        console.log('🎵 [WhatsApp Media] Convertendo webm → ogg para Meta');
     } else {
-        formData.append('file', fileToUpload, uploadFilename);
+        formData.append('file', file, filename);
     }
     
     formData.append('type', type);
