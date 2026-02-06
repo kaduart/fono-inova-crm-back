@@ -544,6 +544,7 @@ export async function sendWhatsAppMediaMessage({
     const phone = normalizeE164BR(to);
     
     console.log(`📤 [WhatsApp Media] Enviando ${type} para ${phone}`);
+    console.log(`📁 [WhatsApp Media] Arquivo: ${filename}, Tamanho: ${file?.length || 0} bytes`);
 
     // 1. Fazer upload do arquivo para o Meta
     const formData = new FormData();
@@ -555,6 +556,8 @@ export async function sendWhatsAppMediaMessage({
     if (isWebmAudio) {
         // Mudar extensão para .ogg e enviar como audio/ogg
         const oggFilename = filename.replace('.webm', '.ogg');
+        console.log(`🎵 [WhatsApp Media] Detectado webm, enviando como ogg: ${oggFilename}`);
+        console.log(`📊 [WhatsApp Media] Buffer tipo: ${typeof file}, tamanho: ${file.length}`);
         formData.append('file', file, {
             filename: oggFilename,
             contentType: 'audio/ogg'
