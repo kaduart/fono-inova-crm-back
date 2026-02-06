@@ -1,6 +1,8 @@
+/* eslint-disable no-unused-vars */
 // services/whatsappService.js
 import dotenv from "dotenv";
 import fetch from "node-fetch";
+import FormData from 'form-data';
 import ChatContext from "../models/ChatContext.js";
 import Contact from "../models/Contacts.js";
 import Lead from "../models/Leads.js"; // ajuste o path
@@ -521,3 +523,119 @@ export async function sendTextMessage({
     }
 }
 
+/**
+ * 🎬 Envia mensagem de mídia (imagem, áudio, vídeo, documento)
+ */
+export async function sendWhatsAppMediaMessage({ 
+    to, 
+    file, 
+    type, 
+    caption, 
+    filename,
+    lead = null,
+    contactId = null,
+    patientId = null,
+    sentBy = "manual",
+    userId = null
+}) {
+    const token = await requireToken();
+    if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
+
+    const phone = normalizeE164BR(to);
+    
+    console.log(`📤 [WhatsApp Media] Enviando ${type} para ${phone}`);
+
+    // 1. Fazer upload do arquivo para o Meta
+    const formData = new FormData();
+    
+    // ✅ FIX: O Meta NÃO aceita audio/webm diretamente!
+    // Mas aceita audio/ogg e audio/opus. WebM com Opus é similar a OGG.
+    const isWebmAudio = filename.endsWith('.webm') && type === 'audio';
+    
+    if (isWebmAudio) {
+        // Mudar extensão para .ogg e enviar como audio/ogg
+        const oggFilename = filename.replace('.webm', '.ogg');
+        formData.append('file', file, {
+            filename: oggFilename,
+            contentType: 'audio/ogg'
+        });
+        console.log('🎵 [WhatsApp Media] Convertendo webm → ogg para Meta');
+    } else {
+        formData.append('file', file, filename);
+    }
+    
+    formData.append('type', type);
+    formData.append('messaging_product', 'whatsapp');
+
+    const uploadRes = await fetch(`${META_URL}/${PHONE_ID}/media`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+        },
+        body: formData
+    });
+
+    const uploadData = await uploadRes.json();
+    console.log('📤 Upload response:', uploadData);
+
+    if (!uploadRes.ok) {
+        throw new Error(`Falha no upload: ${uploadData.error?.message || JSON.stringify(uploadData)}`);
+    }
+
+    const mediaId = uploadData.id;
+
+    // 2. Enviar mensagem com a mídia
+    const body = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: phone,
+        type,
+        [type]: {
+            id: mediaId,
+            ...(caption && { caption }),
+            ...(type === 'document' && { filename })
+        }
+    };
+
+    console.log('📤 Sending message with media:', JSON.stringify(body, null, 2));
+
+    const sendRes = await fetch(`${META_URL}/${PHONE_ID}/messages`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+    });
+
+    const sendData = await sendRes.json();
+    console.log('📤 Send response:', sendData);
+
+    if (!sendRes.ok) {
+        throw new Error(`Falha no envio: ${sendData.error?.message || JSON.stringify(sendData)}`);
+    }
+
+    const waMessageId = sendData?.messages?.[0]?.id || null;
+
+    // 3. Registrar no banco
+    await registerMessage({
+        leadId: lead,
+        contactId,
+        patientId,
+        direction: "outbound",
+        text: caption || `[${type.toUpperCase()}]`,
+        type,
+        status: "sent",
+        waMessageId,
+        timestamp: new Date(),
+        to: phone,
+        from: PHONE_ID,
+        metadata: { sentBy, userId, mediaId, filename },
+    });
+
+    return {
+        ...sendData,
+        mediaId,
+        mediaUrl: uploadData.url
+    };
+}
