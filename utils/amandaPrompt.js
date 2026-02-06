@@ -267,10 +267,18 @@ export function getManual() {
 
 export const SYSTEM_PROMPT_AMANDA = 'Use buildSystemPrompt() para prompt dinâmico.';
 
+// 🛡️ STUBS para compatibilidade - LeadQualificationHandler ainda usa
+export const OBJECTION_SCRIPTS = {};
+export function getObjectionScript(type, level) {
+  return null;
+}
+
 export default {
   CLINIC_ADDRESS,
   buildSystemPrompt,
   buildUserPrompt,
   shouldOfferScheduling,
-  getSpecialHoursResponse
+  getSpecialHoursResponse,
+  OBJECTION_SCRIPTS,
+  getObjectionScript
 };
