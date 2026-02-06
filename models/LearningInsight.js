@@ -5,11 +5,12 @@ const learningInsightSchema = new mongoose.Schema(
     {
         type: {
             type: String,
-            enum: ["conversation_patterns", "successful_responses", "common_objections"],
+            enum: ["conversation_patterns", "successful_responses", "common_objections", "continuous_learning_cycle"],
             required: true,
         },
 
         data: {
+            // Campos legados (conversation_patterns)
             bestOpeningLines: [
                 {
                     text: String,

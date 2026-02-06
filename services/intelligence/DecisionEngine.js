@@ -544,6 +544,22 @@ function continueCollection(memory, chatContext = null, message = null, flags = 
 
     // 🆕 F5: Smart Repetition - verificar se já respondeu antes de perguntar
     const followUpResult = getSmartFollowUp(memory, false, chatContext);
+    
+    // ✅ CORREÇÃO CRÍTICA: Se getSmartFollowUp retornou action específica (ex: show_slots), respeitar
+    if (followUpResult?.action === 'show_slots') {
+        logDecision('CONTINUE_COLLECTION_SHOW_SLOTS', { reason: 'has_all_data', action: followUpResult.action });
+        return {
+            action: 'show_slots',
+            handler: 'leadQualificationHandler',
+            text: followUpResult.text || "Perfeito! Vou conferir as vagas para você... 💚",
+            extractedInfo: {
+                awaitingField: 'slot_selection',
+                hasAllData: true,
+                reason: 'all_fields_collected'
+            }
+        };
+    }
+    
     const followUpText = typeof followUpResult === 'string' ? followUpResult : followUpResult.text;
     const awaitingField = typeof followUpResult === 'object' ? followUpResult.awaitingField : null;
     
@@ -1269,7 +1285,7 @@ function enrichContextForAI(memory, flags, emotionalContext) {
  */
 export async function decisionEngine(params) {
     // Mapear parâmetros antigos para novo formato
-    const { analysis, memory, flags, lead, contextPack, message } = params;
+    const { analysis, memory, flags, lead, contextPack, message, chatContext, missing } = params;
 
     return decide({
         analysis,
@@ -1277,7 +1293,9 @@ export async function decisionEngine(params) {
         flags: flags || analysis?.flags,
         lead,
         contextPack,
-        message
+        message,
+        missing,      // 🆕 FIX BUG 2: chatContext e missing não estavam sendo passados
+        chatContext    // 🆕 Isso quebrava F5 Smart Repetition e getSmartFollowUp
     });
 }
 

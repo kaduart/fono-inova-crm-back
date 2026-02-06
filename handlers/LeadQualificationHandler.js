@@ -112,8 +112,61 @@ class LeadQualificationHandler {
                     'period': 'ask_period',
                     'complaint': 'ask_complaint',
                     'therapy': 'ask_therapy',
-                    'slot': 'ask_slot_selection'
+                    'slot_selection': 'ask_slot_selection'  // ✅ CORRIGIDO: era 'slot'
                 };
+
+                // ✅ NOVO: Se está aguardando slot_selection, buscar slots reais
+                if (awaitingField === 'slot_selection') {
+                    this.logger.info('HANDLER_SLOT_SELECTION_DETECTED', {
+                        therapyArea: memory?.therapyArea,
+                        preferredPeriod: memory?.preferredPeriod || memory?.period
+                    });
+                    
+                    try {
+                        const { findAvailableSlots } = await import('../services/amandaBookingService.js');
+                        const slots = await findAvailableSlots({
+                            therapyArea: memory?.therapyArea,
+                            preferredPeriod: memory?.preferredPeriod || memory?.period
+                        });
+                        
+                        if (slots?.primary?.length > 0) {
+                            const slotsText = slots.primary.slice(0, 4).map(s => 
+                                `• ${s.day} às ${s.time} (${s.doctorName || 'Profissional'})`
+                            ).join('\n');
+                            
+                            this.logger.info('HANDLER_SLOTS_FOUND', {
+                                count: slots.primary.length,
+                                therapy: memory?.therapyArea
+                            });
+                            
+                            return {
+                                text: `Encontrei essas opções:\n\n${slotsText}\n\nQual funciona melhor? 💚`,
+                                extractedInfo: { 
+                                    awaitingField: 'slot_selection', 
+                                    offeredSlots: true,
+                                    slotCount: slots.primary.length,
+                                    hasAllData: true 
+                                }
+                            };
+                        } else {
+                            this.logger.warn('HANDLER_NO_SLOTS_FOUND', {
+                                therapy: memory?.therapyArea,
+                                period: memory?.preferredPeriod || memory?.period
+                            });
+                            return {
+                                text: `Não encontrei horários de ${memory?.preferredPeriod || 'manhã'} essa semana. Quer que eu veja outro período? 💚`,
+                                extractedInfo: { awaitingField: 'period_retry' }
+                            };
+                        }
+                    } catch (err) {
+                        this.logger.error('HANDLER_SLOTS_ERROR', { error: err.message });
+                        // Fallback seguro
+                        return {
+                            text: `Vou conferir as vagas disponíveis para você. Um momento... 💚`,
+                            extractedInfo: { awaitingField: 'slot_selection' }
+                        };
+                    }
+                }
 
                 if (awaitingField && intentMap[awaitingField]) {
                     const humanizedText = buildResponse(intentMap[awaitingField], {

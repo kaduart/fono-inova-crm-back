@@ -119,6 +119,25 @@ const appointmentSchema = new mongoose.Schema({
       'plano-unimed', 'convenio', 'outro'
     ],
     default: 'dinheiro'
+  },
+  // 🆕 NOVO: Campos para controle de pagamento/faturamento
+  billingType: {
+    type: String,
+    enum: ['particular', 'convenio'],
+    default: 'particular'
+  },
+  insuranceProvider: {
+    type: String,
+    default: null
+  },
+  insuranceValue: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
+  authorizationCode: {
+    type: String,
+    default: null
   }
 }, {
   timestamps: true,

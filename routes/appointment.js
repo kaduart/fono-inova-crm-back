@@ -892,8 +892,9 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                 updatePromises.push(sessionUpdate);
             }
 
-            // Atualizar Pagamento se existir
+            // Atualizar ou Criar Pagamento
             if (appointment.payment) {
+                // Pagamento existe - atualiza
                 const paymentUpdate = Payment.findByIdAndUpdate(
                     appointment.payment,
                     {
@@ -903,12 +904,43 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                             paymentMethod: updateData.paymentMethod || appointment.paymentMethod,
                             serviceDate: updateData.date || appointment.date,
                             serviceType: updateData.serviceType || appointment.serviceType,
+                            billingType: updateData.billingType || appointment.billingType || 'particular',
+                            insuranceProvider: updateData.insuranceProvider || appointment.insuranceProvider,
+                            insuranceValue: updateData.insuranceValue || appointment.insuranceValue,
+                            authorizationCode: updateData.authorizationCode || appointment.authorizationCode,
                             updatedAt: currentDate
                         }
                     },
                     { session: mongoSession, new: true }
                 );
                 updatePromises.push(paymentUpdate);
+            } else if (updateData.billingType || updateData.paymentAmount > 0) {
+                // 🆕 Não tem pagamento ainda, mas recebeu dados de pagamento - cria novo!
+                const newPayment = new Payment({
+                    patient: appointment.patient,
+                    doctor: updateData.doctor || appointment.doctor,
+                    appointment: appointment._id,
+                    amount: updateData.paymentAmount || 0,
+                    paymentMethod: updateData.paymentMethod || 'dinheiro',
+                    serviceDate: updateData.date || appointment.date,
+                    serviceType: updateData.serviceType || appointment.serviceType,
+                    billingType: updateData.billingType || 'particular',
+                    insuranceProvider: updateData.billingType === 'convenio' ? updateData.insuranceProvider : null,
+                    insuranceValue: updateData.billingType === 'convenio' ? updateData.insuranceValue : 0,
+                    authorizationCode: updateData.billingType === 'convenio' ? updateData.authorizationCode : null,
+                    status: updateData.billingType === 'convenio' ? 'pending' : 'paid',
+                    kind: 'appointment_payment',
+                    notes: `Pagamento registrado via edição de agendamento - ${new Date().toLocaleString('pt-BR')}`
+                });
+                
+                await newPayment.save({ session: mongoSession });
+                
+                // Vincula o pagamento ao agendamento
+                appointment.payment = newPayment._id;
+                appointment.paymentStatus = updateData.billingType === 'convenio' ? 'pending' : 'paid';
+                await appointment.save({ session: mongoSession });
+                
+                console.log(`✅ Novo pagamento criado: ${newPayment._id} para agendamento ${appointment._id}`);
             }
 
             // Atualizar Pacote se for sessão de pacote
