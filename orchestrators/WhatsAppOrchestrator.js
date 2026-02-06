@@ -36,6 +36,7 @@ import IntentDetector from '../detectors/IntentDetector.js';
 import { smartExtract } from '../services/intelligence/semanticExtractor.js';
 import { buildResponse } from '../services/intelligence/naturalResponseBuilder.js';
 import { getCachedContext, setCachedContext } from '../services/intelligence/contextCache.js';
+import * as ContextMemory from '../services/intelligence/contextMemory.js';
 
 /**
  * 🎯 CONVERSATION OUTCOME DETECTION (Amanda 4.1)
@@ -406,7 +407,7 @@ export class WhatsAppOrchestrator {
             return {
                 command: 'SEND_MESSAGE',
                 payload: {
-                    text: 'Desculpe, tive um problema técnico aqui 😔 Pode tentar novamente?'
+                    text: 'Oi! Poderia me repetir o que você precisa? Quero ter certeza de entender direito para te ajudar 💚'
                 },
                 meta: { error: true }
             };

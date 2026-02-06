@@ -47,7 +47,7 @@ export async function generateAmandaReply({ userText, lead = {}, context = {} })
             console.error("❌ Fallback OpenAI falhou:", e.message);
         }
 
-        return "Tive um probleminha técnico 😕 Já te ajudo 💚";
+        return "Poderia me repetir o que você precisa? Quero ter certeza de entender direito para te ajudar da melhor forma 💚";
     }
 }
 

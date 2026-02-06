@@ -426,7 +426,7 @@ export async function withHardening(params, decisionFn) {
         // Fallback seguro
         return {
             action: 'fallback',
-            text: 'Oi! Desculpe, tive um problema técnico. Pode repetir? 💚',
+            text: 'Oi! Poderia me repetir o que você precisa? Quero ter certeza de entender direito 💚',
             error: true,
             _v42: {
                 intentScore: lead?.qualificationData?.intentScore || 50,
