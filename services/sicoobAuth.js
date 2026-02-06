@@ -20,6 +20,11 @@ export const getSicoobAccessToken = async () => {
     return cachedToken;
   }
 
+  // Verifica se certificado existe
+  if (!process.env.SICOOB_PFX_PATH || !fs.existsSync(process.env.SICOOB_PFX_PATH)) {
+    throw new Error('Certificado Sicoob não configurado. PIX desabilitado.');
+  }
+
   try {
     console.log("🌐 Solicitando token via certificado PFX mTLS...");
 

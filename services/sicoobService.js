@@ -10,17 +10,33 @@ dotenv.config();
 const API_BASE = process.env.SICOOB_API_BASE_URL;
 const PIX_KEY = process.env.SICOOB_PIX_KEY;
 
-// 🔒 Agente HTTPS usando certificado .pfx único
-const httpsAgent = new https.Agent({
-  pfx: fs.readFileSync(process.env.SICOOB_PFX_PATH),
-  passphrase: process.env.SICOOB_PFX_PASSWORD,
-  rejectUnauthorized: false, // deixe false até validar no prod
-});
+// 🔒 Agente HTTPS usando certificado .pfx único (só se existir)
+let httpsAgent = null;
+
+try {
+  if (process.env.SICOOB_PFX_PATH && fs.existsSync(process.env.SICOOB_PFX_PATH)) {
+    httpsAgent = new https.Agent({
+      pfx: fs.readFileSync(process.env.SICOOB_PFX_PATH),
+      passphrase: process.env.SICOOB_PFX_PASSWORD,
+      rejectUnauthorized: false,
+    });
+    console.log('✅ Certificado Sicoob carregado');
+  } else {
+    console.log('⚠️ Certificado Sicoob não encontrado. PIX desabilitado.');
+  }
+} catch (error) {
+  console.log('⚠️ Erro ao carregar certificado Sicoob:', error.message);
+}
 
 /**
  * ✅ Registra o webhook Pix no Sicoob
  */
 export const registerWebhook = async () => {
+  if (!httpsAgent) {
+    console.log('⚠️ PIX Sicoob desabilitado: certificado não configurado');
+    return { disabled: true, message: 'Certificado não configurado' };
+  }
+  
   const token = await getSicoobAccessToken();
   const url = `${API_BASE}/webhook/${PIX_KEY}`;
   const webhookUrl =
@@ -53,6 +69,11 @@ export const registerWebhook = async () => {
  * 📬 Consulta o webhook atual (para debug)
  */
 export const getWebhookInfo = async () => {
+  if (!httpsAgent) {
+    console.log('⚠️ PIX Sicoob desabilitado: certificado não configurado');
+    return { disabled: true, message: 'Certificado não configurado' };
+  }
+  
   const token = await getSicoobAccessToken();
   const url = `${API_BASE}/webhook/${PIX_KEY}`;
 
