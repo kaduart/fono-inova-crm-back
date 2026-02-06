@@ -284,15 +284,21 @@ export class WhatsAppOrchestrator {
 
             const decision = await decisionEngine({
                 analysis,
-                memory: mergedMemory,  // Usar memory mesclado!
-                flags,  // 🔥 FALTAVA ISSO! Passando flags para o DecisionEngine
+                memory: mergedMemory,
+                flags,
                 missing,
                 urgency,
                 bookingContext,
                 clinicalRules,
                 lead,
                 message: { text },
-                chatContext
+                chatContext,
+                // 🆕 FIX BUG 5a: contextPack para warm recall funcionar
+                contextPack: {
+                    lastDate: lead.lastContactAt || lead.updatedAt || null,
+                    messageCount: memoryContext?.conversationHistory?.length || 0,
+                    lastHandler: chatContext?.lastExtractedInfo?.lastHandler
+                }
             });
 
             this.logger.info('DECISION', {
@@ -345,6 +351,131 @@ export class WhatsAppOrchestrator {
                 textLength: result?.text?.length,
                 extractedInfo: result?.extractedInfo
             });
+
+            // =========================
+            // 🎯 FIX BUG 1: INTERCEPTA slot_selection → BUSCA SLOTS REAIS
+            // =========================
+            if (result?.extractedInfo?.awaitingField === 'slot_selection' && inferred.therapy && inferred.period) {
+                try {
+                    this.logger.info('SLOT_FETCH_TRIGGERED', {
+                        leadId: lead._id?.toString(),
+                        therapy: inferred.therapy,
+                        period: inferred.period
+                    });
+
+                    const { findAvailableSlots } = await import('../services/amandaBookingService.js');
+                    
+                    const slots = await findAvailableSlots({
+                        therapyArea: inferred.therapy,
+                        preferredPeriod: inferred.period,
+                        patientAge: inferred.age
+                    });
+
+                    if (slots?.primary?.length > 0) {
+                        // Formata slots para mensagem
+                        const slotsText = slots.primary.slice(0, 4).map(s => 
+                            `• ${s.day} às ${s.time} (${s.doctorName || 'Profissional'})`
+                        ).join('\n');
+                        
+                        result.text = `Encontrei essas opções:\n\n${slotsText}\n\nQual funciona melhor? 💚`;
+                        result.extractedInfo.offeredSlots = true;
+                        result.extractedInfo.slotCount = slots.primary.length;
+
+                        // Salva slots no lead para próximo passo
+                        await Leads.findByIdAndUpdate(lead._id, {
+                            $set: {
+                                pendingSchedulingSlots: slots,
+                                'autoBookingContext.lastOfferedSlots': slots,
+                                'autoBookingContext.active': true,
+                                'autoBookingContext.therapyArea': inferred.therapy,
+                                'autoBookingContext.preferredPeriod': inferred.period
+                            }
+                        });
+
+                        this.logger.info('SLOT_FETCH_SUCCESS', {
+                            leadId: lead._id?.toString(),
+                            count: slots.primary.length,
+                            therapy: inferred.therapy
+                        });
+                    } else {
+                        result.text = `No momento não encontrei vagas pela ${inferred.period} para ${inferred.therapy}. Nossa equipe vai entrar em contato para encontrar o melhor horário pra vocês 💚`;
+                        this.logger.info('SLOT_FETCH_NO_RESULTS', { leadId: lead._id?.toString() });
+                    }
+                } catch (slotErr) {
+                    this.logger.error('SLOT_FETCH_ERROR', { error: slotErr.message });
+                    result.text = 'Vou verificar os horários disponíveis e já te retorno! 💚';
+                }
+            }
+
+            // =========================
+            // 🧠 SMART FALLBACK (Amanda 4.2.5)
+            // =========================
+            const shouldUseSmartFallback = this.shouldTriggerSmartFallback(result, decision);
+            
+            if (shouldUseSmartFallback) {
+                this.logger.info('SMARTFALLBACK_TRIGGERING', {
+                    leadId: lead._id?.toString(),
+                    reason: 'generic_response_detected',
+                    originalText: result?.text?.substring(0, 50),
+                    lastHandler: decision.handler,
+                    action: decision.action
+                });
+
+                try {
+                    const { smartFallback } = await import('../services/intelligence/SmartFallback.js');
+                    const { getEnrichedContext } = await import('../services/intelligence/contextCache.js');
+                    
+                    // 🆕 Busca contexto enriquecido (com cache Redis 5min)
+                    const enrichedContext = await this.buildEnrichedContext(
+                        lead, memoryContext, chatContext, decision
+                    );
+                    
+                    const fallbackResult = await smartFallback({
+                        userMessage: message.text,
+                        history: memoryContext?.conversationHistory || [],
+                        leadData: {
+                            _id: lead._id,
+                            name: lead.name,
+                            therapyArea: lead.therapyArea,
+                            patientInfo: lead.patientInfo,
+                            primaryComplaint: lead.primaryComplaint
+                        },
+                        enrichedContext  // 🆕 Dados enriquecidos para cenários 3,7,8,11,13,14
+                    });
+
+                    if (fallbackResult.used && fallbackResult.confidence > 0.4) {
+                        this.logger.info('SMARTFALLBACK_ACCEPTED', {
+                            leadId: lead._id?.toString(),
+                            action: fallbackResult.action,
+                            confidence: fallbackResult.confidence,
+                            newText: fallbackResult.text?.substring(0, 50)
+                        });
+
+                        result.text = fallbackResult.text;
+                        result.extractedInfo = {
+                            ...result.extractedInfo,
+                            ...fallbackResult.extractedInfo,
+                            smartFallbackMeta: fallbackResult.meta
+                        };
+                        
+                        if (fallbackResult.extractedInfo?.smartFallbackExtracted) {
+                            result.extractedInfo.smartFallbackField = fallbackResult.extractedInfo;
+                        }
+                    } else {
+                        this.logger.info('SMARTFALLBACK_REJECTED', {
+                            leadId: lead._id?.toString(),
+                            confidence: fallbackResult.confidence,
+                            reason: 'low_confidence'
+                        });
+                    }
+                } catch (fallbackErr) {
+                    this.logger.error('SMARTFALLBACK_ERROR', {
+                        leadId: lead._id?.toString(),
+                        error: fallbackErr.message
+                    });
+                    // Continua com resposta original do handler
+                }
+            }
 
             // =========================
             // 🔟 GERA RESPOSTA IA SE NECESSÁRIO
@@ -664,7 +795,12 @@ export class WhatsAppOrchestrator {
             !text.trim().endsWith('?') &&
             (/\b(tem|tenho|meu|minha|filho|filha|ele|ela|não|dificuldade|problema|sintoma|queixa|dor|medo|ansiedade|atraso|demora)\b/i.test(text));
 
-        if (looksLikeComplaint || (!complaint && shouldExtractComplaint && awaitingField === 'complaint')) {
+        // 🆕 FIX BUG 3: Não extrair como queixa se é pergunta direta sobre planos/preço/endereço
+        const isDirectQuestion = flags.asksPlans || flags.asksPrice || flags.asksAddress || 
+                                  flags.asksPayment || flags.wantsHumanAgent ||
+                                  /\b(aceitam?|tem|fazem?|vocês?|vcs)\b.*\b(plano|convênio|unimed|amil|hapvida|sul\s?america)/i.test(text);
+
+        if ((looksLikeComplaint || (!complaint && shouldExtractComplaint && awaitingField === 'complaint')) && !isDirectQuestion) {
             const isQuestion = /\?$/.test(text.trim()) || /^(qual|quanto|onde|como|por que|pq|quando)\b/i.test(text);
             const isTooShort = text.trim().length < 5;
             const isGenericResponse = /^(sim|n[aã]o|ok|beleza|tudo bem|n sei|não sei|nao sei|nao|não|n sei|dunno)$/i.test(text.trim());
@@ -839,6 +975,24 @@ export class WhatsAppOrchestrator {
         if (inferred.age) set["qualificationData.extractedInfo.idade"] = inferred.age;
         if (inferred.period) set["qualificationData.extractedInfo.disponibilidade"] = inferred.period;
         if (inferred.complaint) set["qualificationData.extractedInfo.queixa"] = inferred.complaint;
+
+        // 🆕 FIX BUG 5b: Sempre atualiza lastContactAt para warm recall funcionar
+        set.lastContactAt = new Date();
+
+        // 🆕 FIX BUG 4: Persiste intent score e modo de conversação do DecisionEngine
+        if (decision?._v42?.updates) {
+            const v42Updates = decision._v42.updates;
+            for (const [key, value] of Object.entries(v42Updates)) {
+                if (value !== undefined && value !== null) {
+                    set[key] = value;
+                }
+            }
+            this.logger.info('V42_UPDATES_PERSISTED', {
+                leadId: lead._id?.toString(),
+                keys: Object.keys(v42Updates),
+                intentScore: decision._v42?.intentScore
+            });
+        }
 
         // Salva no lead
         if (Object.keys(set).length > 0) {
@@ -1224,6 +1378,156 @@ export class WhatsAppOrchestrator {
             this.loopTracker.delete(leadId);
             this.logger.info('LOOP_TRACKER_CLEARED', { leadId });
         }
+    }
+
+    /**
+     * 🧠 Detecta quando deve acionar SmartFallback (Amanda 4.2.5)
+     * 
+     * @param {Object} result - Resultado do handler
+     * @param {Object} decision - Decisão do DecisionEngine
+     * @returns {boolean} Se deve usar SmartFallback
+     */
+    shouldTriggerSmartFallback(result, decision) {
+        // Se não tem resultado, não há o que melhorar
+        if (!result?.text) return false;
+
+        const text = result.text.toLowerCase().trim();
+        const action = decision?.action;
+
+        // 🎯 Padrões de resposta genérica que indicam "não sei o que fazer"
+        const genericPatterns = [
+            /^como posso te ajudar\?.*$/,
+            /^como posso ajudar.*$/,
+            /^me conta um pouquinho mais.*$/,
+            /^o que você precisa.*$/,
+            /^posso te ajudar.*$/,
+            /^posso ajudar.*$/,
+            /^em que posso ajudar.*$/,
+            /^como posso te ajudar hoje.*$/,
+            /^me fala mais sobre.*$/
+        ];
+
+        const isGenericResponse = genericPatterns.some(pattern => pattern.test(text));
+
+        // 🎯 Situações específicas que indicam confusão
+        const isConfusedSituation = (
+            // Handler retornou continue_collection mas sem awaitingField definido
+            (action === 'continue_collection' && !result?.extractedInfo?.awaitingField) ||
+            // Resposta muito curta em situação complexa
+            (text.length < 30 && action === 'continue_collection') ||
+            // Repetindo a mesma pergunta genérica
+            (isGenericResponse && action === 'continue_collection')
+        );
+
+        // 🎯 NÃO usar SmartFallback quando:
+        const shouldSkip = (
+            // É uma ação específica (não genérica)
+            ['show_slots', 'schedule', 'warm_recall', 'handle_objection', 'acknowledge_pain'].includes(action) ||
+            // Já tem dados suficientes sendo processados
+            (result?.extractedInfo?.offeredSlots) ||
+            // É smart_response com texto substancial
+            (action === 'smart_response' && text.length > 50) ||
+            // Handler já marcou que usou IA
+            (result?.extractedInfo?.smartFallbackUsed) ||
+            // É warm_recall
+            (action === 'warm_recall')
+        );
+
+        if (shouldSkip) {
+            this.logger.debug('SMARTFALLBACK_SKIPPED', {
+                action,
+                reason: 'specific_action_or_already_processed',
+                text: text.substring(0, 30)
+            });
+            return false;
+        }
+
+        if (isGenericResponse || isConfusedSituation) {
+            this.logger.info('SMARTFALLBACK_DETECTED_GENERIC', {
+                action,
+                text: text.substring(0, 50),
+                isGenericResponse,
+                isConfusedSituation,
+                hasAwaitingField: !!result?.extractedInfo?.awaitingField
+            });
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * 🏗️ Build Enriched Context - Busca dados adicionais para SmartFallback
+     * Com cache Redis 5min para performance
+     */
+    async buildEnrichedContext(lead, memoryContext, chatContext, decision) {
+        const { getEnrichedContext } = await import('../services/intelligence/contextCache.js');
+        
+        return getEnrichedContext(lead._id.toString(), async () => {
+            const enriched = {
+                lastContext: chatContext?.lastExtractedInfo || {},
+                lastAmandaMessage: memoryContext?.lastAmandaMessage,
+                lastHandler: decision.handler,
+                objectionsHistory: lead?.qualificationData?.objections?.map(o => o.type) || [],
+                warmLeadStatus: lead?.qualificationData?.warmLeadScenario || null
+            };
+
+            // 🕐 Calcula tempo desde última interação (para cenário 3: Warm Recall)
+            const lastInteraction = lead?.qualificationData?.lastIntentUpdate || 
+                                   lead?.updatedAt || 
+                                   memoryContext?.lastInteraction;
+            
+            if (lastInteraction) {
+                const hoursSince = (Date.now() - new Date(lastInteraction).getTime()) / (1000 * 60 * 60);
+                enriched.hoursSinceLastContact = Math.round(hoursSince);
+            }
+
+            // 🏥 Busca appointments (para cenários 11, 13: Retorno / Já é paciente)
+            try {
+                const { default: Appointment } = await import('../models/Appointment.js');
+                
+                const appointments = await Appointment.find({
+                    lead: lead._id,
+                    status: { $in: ['completed', 'confirmed', 'scheduled'] }
+                })
+                .select('date therapyArea status doctorName')
+                .sort({ date: -1 })
+                .limit(5)
+                .lean();
+
+                enriched.isExistingPatient = appointments.length > 0;
+                enriched.recentAppointments = appointments.map(a => ({
+                    date: a.date,
+                    therapyArea: a.therapyArea,
+                    status: a.status,
+                    doctorName: a.doctorName
+                }));
+
+                this.logger.debug('ENRICHED_CONTEXT_APPOINTMENTS', {
+                    leadId: lead._id?.toString(),
+                    count: appointments.length,
+                    isExistingPatient: enriched.isExistingPatient
+                });
+
+            } catch (err) {
+                this.logger.warn('ENRICHED_CONTEXT_APPOINTMENTS_ERROR', {
+                    leadId: lead._id?.toString(),
+                    error: err.message
+                });
+                enriched.isExistingPatient = false;
+                enriched.recentAppointments = [];
+            }
+
+            this.logger.info('ENRICHED_CONTEXT_BUILT', {
+                leadId: lead._id?.toString(),
+                hoursSinceLastContact: enriched.hoursSinceLastContact,
+                isExistingPatient: enriched.isExistingPatient,
+                appointmentsCount: enriched.recentAppointments?.length,
+                objectionsCount: enriched.objectionsHistory?.length
+            });
+
+            return enriched;
+        });
     }
 }
 

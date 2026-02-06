@@ -1,0 +1,98 @@
+{
+  "generatedAt": "2026-02-06T19:58:50.658Z",
+  "summary": {
+    "totalConversations": 2,
+    "totalPatterns": 64,
+    "suggestedTestCases": 8
+  },
+  "testCases": [
+    {
+      "id": "MC-1770407930646",
+      "type": "multiple_children",
+      "priority": "HIGH",
+      "examples": [
+        "valiação e paga [Sim 200 cada , mas como você são duas crianças a gente cobrará somente uma , tudo bem ?12:33] +5",
+        "cessidades de cada criança — incluindo o laudo de TEA do pequeno de 6 anos e o de TDAH do de 8.  Essa avaliação é essencial para montar "
+      ],
+      "reason": "Desconto automático não detectado"
+    },
+    {
+      "id": "DC-1770407930646",
+      "type": "cancellation",
+      "priority": "HIGH",
+      "examples": [
+        "ward-refreshedForwardedPode ser que seja possível cancelar e substituir essa nota NFSe de nº61 do dia 05/11 ",
+        "Posso confirmar sua presença?  Qualquer dúvida ou imprevisto, estamos à disposição! 09:52] +55 62 9441-1004: O",
+        "12:17] +55 62 9441-1004: Pra mim as 07:00 [Porque trabalho das 09:00 as 18:0012:17] +55 62 9441-1004: Porque"
+      ],
+      "reason": "Sistema não oferece remarcação automática"
+    },
+    {
+      "id": "CH-1770407930646",
+      "type": "confusion",
+      "priority": "MEDIUM",
+      "examples": [
+        "vo: A mãe ainda não recebeu para pagar.  Larissa Ferreira 10:00  Confirmado  Antônio Luis Lobo 10:40    C",
+        "rio e dias da semana tem [Temos agenda disponível segunda e quarta às 17:2011:08] +55 62 9441-1004: Temos agenda dis",
+        "mos segunda pela manha ou demais dias da semana a tarde. Qual horário ficaria melhor para você?12:03] +55 62 9441-1004: No sábado infelizmente não temos atendimento de terapias, temos segunda pela manha ou demais dias da semana a tarde. Qual horário ficaria melhor para você? [No sábad"
+      ],
+      "reason": "Clarificação de dia/horário necessária"
+    },
+    {
+      "id": "IF-1770407930646",
+      "type": "early_price",
+      "priority": "HIGH",
+      "examples": [
+        "icólogos e Terapeutas Ocupacionais, pois a UN não aceita mais recibos de papelaria08:19] +55 62 9441-1004: Viviane : Acho que a Unimed quer tirar minha paz kkk.  Então dando continuida",
+        "omo funciona é uma clínica pra atendimento normal qual o valor da consulta11:12] +55 62 9242-5816: Oi bom dia tudo bem queria saber como funciona é uma"
+      ],
+      "reason": "Não deve salvar como complaint"
+    },
+    {
+      "id": "MC-1770407930657",
+      "type": "multiple_children",
+      "priority": "HIGH",
+      "examples": [
+        "ar?\r Bom dia, preciso de  fonoaudiólogo para meus dois filhos\r Olá, Juliete! Para podermos direcionar o atendim",
+        ", Acidente Vascular Cerebral (AVC), traumatismos, TDAH(Transtorno de Déficit de Atenção com Hiperatividade), TEA(Transtorno do Espectro Autista) e entre outros.\r "
+      ],
+      "reason": "Desconto automático não detectado"
+    },
+    {
+      "id": "DC-1770407930657",
+      "type": "cancellation",
+      "priority": "HIGH",
+      "examples": [
+        "de tudo bem?\r Estou com um probleminha de saúde e não vou conseguir levar o Igor e não tem outra pessoa que possa, te",
+        "Posso Confirmar ?\r \r 📍Caso houver desistência ou imprevisto nós avisar com antecedência.😊\r [17:41, 19/09/202",
+        "gente fornece caso precise levar para a escola ou trabalho.\r Ah sim\r Por gentileza preencha essa pré ficha d"
+      ],
+      "reason": "Sistema não oferece remarcação automática"
+    },
+    {
+      "id": "CH-1770407930657",
+      "type": "confusion",
+      "priority": "MEDIUM",
+      "examples": [
+        "\r \r Local: Clinica Fono Inova \r Paciente:   Ravi Ferreira Alves de Andrade\r Horário:  08:20\r Dia: 02/10/2",
+        "nto  Clínica Fono Inova Integrar e Transformar\r ⏰ Segunda a sexta-feira, das 08h00 às 18h00\r 🚫 Exceto em feriados.",
+        "ou imprevisto nós avisar com antecedência.😊\r Boa tarde Viviane, peguei um plantão extra pra amanhã. Não tenho quem leva o Igor.\r Obrigada por avisar"
+      ],
+      "reason": "Clarificação de dia/horário necessária"
+    },
+    {
+      "id": "IF-1770407930657",
+      "type": "early_price",
+      "priority": "HIGH",
+      "examples": [
+        "5 62 8401-6182: Ah sim, entendo. Náo, gostaria de fazer pelo plano mesmo. Mas de toda forma, obrigado!\r \r \r \r \r [11:"
+      ],
+      "reason": "Não deve salvar como complaint"
+    }
+  ],
+  "insights": [
+    "Alta taxa de cancelamentos (12 ocorrências). Sugiro implementar fluxo de retenção automática.",
+    "Confusão de horário frequente (16 ocorrências). Implementar confirmação dupla.",
+    "Detectadas 10 conversas com múltiplas crianças. Verificar se desconto automático está funcionando."
+  ]
+}
