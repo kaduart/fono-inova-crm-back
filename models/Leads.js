@@ -157,6 +157,7 @@ const leadSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+
   respondedAt: Date,
   manualControl: {
     active: {

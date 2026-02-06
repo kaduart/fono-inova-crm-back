@@ -513,11 +513,12 @@ class LeadQualificationHandler {
     }
 
     /**
-     * Preço formatado como "investimento"
+     * Preço formatado como "investimento" (valores centralizados em config/pricing.js)
      */
     getPricePitch(therapy) {
+        // NOTA: Usar getInvestmentText(therapy) do config/pricing.js quando migrar completamente
         if (therapy?.includes('neuropsi') || therapy?.includes('neuropsicologia')) {
-            return 'O investimento é R$ 2.500 (em até 6x) ou R$ 2.300 à vista — inclui todas as sessões e o laudo completo.';
+            return 'O investimento é R$ 2.000 (em até 6x) — inclui 10 sessões e o laudo completo.';
         }
         return 'O investimento na avaliação é R$ 200.';
     }

@@ -26,7 +26,6 @@ import {
     pickSlotFromUserReply
 } from "../services/amandaBookingService.js";
 import { getLatestInsights } from "../services/amandaLearningService.js";
-import { buildContextPack } from "../services/intelligence/ContextPack.js";
 import { buildValueAnchoredClosure, determinePsychologicalFollowup } from "../services/intelligence/smartFollowup.js";
 import { nextStage } from "../services/intelligence/stageEngine.js";
 import manageLeadCircuit from "../services/leadCircuitService.js";
@@ -624,7 +623,8 @@ export async function getOptimizedAmandaResponse({
         }
     }
 
-    const baseContext = lead?._id
+    // ✅ CONTEXTO UNIFICADO (leadContext.js tem tudo: mode, toneMode, urgencyLevel)
+    const enrichedContext = lead?._id
         ? await enrichLeadContext(lead._id)
         : {
             stage: "novo",
@@ -633,21 +633,11 @@ export async function getOptimizedAmandaResponse({
             conversationHistory: [],
             conversationSummary: null,
             shouldGreet: true,
+            mode: 'commercial',
+            toneMode: 'acolhimento',
+            urgencyLevel: 'NORMAL',
+            ...context
         };
-
-    const contextPack = lead?._id ? await buildContextPack(lead._id).catch(() => null) : null;
-
-    const enrichedContext = {
-        ...baseContext,
-        ...context,
-        ...(contextPack
-            ? {
-                mode: contextPack.mode,
-                toneMode: contextPack.toneMode,
-                urgency: contextPack.urgency
-            }
-            : {}),
-    };
 
     if (enrichedContext.isFirstContact && lead?._id) {
         manageLeadCircuit(lead._id, 'initial').catch(err =>

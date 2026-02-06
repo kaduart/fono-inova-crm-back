@@ -3,6 +3,7 @@
 
 import { detectAllTherapies, getTherapyData, THERAPY_DATA } from '../utils/therapyDetector.js';
 import { detectAllFlags } from '../utils/flagsDetector.js';
+import { getInvestmentText, buildValueFirstResponse, getTherapyPricing } from '../config/pricing.js';
 
 class ProductHandler {
     async execute({ decisionContext }) {
@@ -77,8 +78,15 @@ class ProductHandler {
         if (therapyData?.price) {
             priceText = `💚 ${this.formatTherapyDisplay(therapyId, therapyName)}: ${therapyData.price}`;
         } else {
-            // Fallback: preço padrão
-            priceText = `💚 ${therapyName || 'Atendimento'}: Avaliação R$ 200 · Sessão R$ 200 · Pacote mensal R$ 180/sessão`;
+            // Fallback: usa pricing centralizado
+            const pricing = getTherapyPricing(therapyId);
+            if (pricing?.incluiLaudo) {
+                priceText = `💚 Avaliação neuropsicológica completa: R$ ${pricing.avaliacao.toLocaleString('pt-BR')} ${pricing.parcelamento ? `em ${pricing.parcelamento}` : ''} (${pricing.sessoesPacote} sessões + laudo)`;
+            } else if (pricing) {
+                priceText = `💚 ${therapyName || 'Atendimento'}: Avaliação R$ ${pricing.avaliacao} · Sessão R$ ${pricing.sessaoAvulsa} · Pacote mensal R$ ${pricing.sessaoPacote}/sessão`;
+            } else {
+                priceText = `💚 Atendimento: Avaliação R$ 200 · Sessão R$ 200 · Pacote mensal a consultar`;
+            }
         }
 
         // =========================
@@ -188,13 +196,11 @@ class ProductHandler {
     }
 
     /**
-     * Preço formatado como "investimento"
+     * Preço formatado como "investimento" (usa pricing centralizado)
      */
     getPricePitch(therapy) {
-        if (therapy?.includes('neuropsi') || therapy?.includes('neuropsicologia')) {
-            return 'O investimento é R$ 2.500 (em até 6x) ou R$ 2.300 à vista.';
-        }
-        return 'O investimento na avaliação é R$ 200.';
+        // Usa pricing.js centralizado
+        return getInvestmentText(therapy);
     }
 
     /**

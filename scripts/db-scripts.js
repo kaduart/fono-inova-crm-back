@@ -25,13 +25,10 @@ db.appointments.deleteMany({
 // atualiza dados do pagamento
 db.payments.updateOne(
   { _id: ObjectId("68e3b5660d8aeeff1af03e3c") },
-  { $set: { amount: 220, status: "paid" } }
-);
-
-db.appointments.deleteMany({
-  patient: ObjectId("685c5617aec14c71635865ec"),
-  operationalStatus: "cancelado"
-});
+  db.appointments.deleteMany({
+    patient: ObjectId("685c5617aec14c71635865ec"),
+    operationalStatus: "cancelado"
+  });
 
 db.payments.deleteMany({
   patient: ObjectId("685c5617aec14c71635865ec"),

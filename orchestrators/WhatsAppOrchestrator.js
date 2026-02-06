@@ -1,9 +1,7 @@
 import Logger from '../services/utils/Logger.js';
 
-// ✅ INFRAESTRUTURA EXISTENTE (do usuário)
-import * as ContextMemory from '../services/intelligence/contextMemory.js';
-import { buildContextPack } from '../services/intelligence/ContextPack.js';
-import enrichLeadContext from '../services/leadContext.js';
+// ✅ INFRAESTRUTURA UNIFICADA (leadContext.js = fonte única de verdade)
+import enrichLeadContext, { updateExtractedInfo } from '../services/leadContext.js';
 import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js';
 import { nextStage } from '../services/intelligence/stageEngine.js';
 import { clinicalRulesEngine } from '../services/intelligence/clinicalRulesEngine.js';
@@ -39,6 +37,62 @@ import { smartExtract } from '../services/intelligence/semanticExtractor.js';
 import { buildResponse } from '../services/intelligence/naturalResponseBuilder.js';
 import { getCachedContext, setCachedContext } from '../services/intelligence/contextCache.js';
 
+/**
+ * 🎯 CONVERSATION OUTCOME DETECTION (Amanda 4.1)
+ * Detecta o resultado da conversa para analytics e otimização
+ * @returns {{type: string, score: number}|null}
+ */
+function determineConversationOutcome({ result, decision, memoryContext, previousOutcome }) {
+    const flags = result?.extractedInfo || {};
+    const action = decision?.action;
+    const intentScore = memoryContext?.intentScore || 0;
+    
+    // 🌟 BOOKING_SCHEDULED - Agendamento confirmado
+    if (action === 'schedule' || flags.preferredDate || flags.bookingScheduled) {
+        return { type: 'booking_scheduled', score: 100 };
+    }
+    
+    // 🔥 HOT_LEAD - Lead quente (quase agendando)
+    if (intentScore >= 70 && (flags.wantsSchedule || flags.asksPrice)) {
+        return { type: 'hot_lead', score: intentScore };
+    }
+    
+    // 🔥 BOOKING_INTENT - Intenção clara de agendar
+    if (flags.wantsSchedule || flags.bookingIntent) {
+        return { type: 'booking_intent', score: 75 };
+    }
+    
+    // 🚧 WARM_LEAD - Lead morno (precisa de follow-up)
+    if (action === 'warm_lead_close' || flags.warmLeadPattern) {
+        return { type: 'warm_lead', score: 60 };
+    }
+    
+    // 📊 DATA_COMPLETE - Dados completos coletados
+    const hasData = flags.patientName && flags.patientAge && flags.primaryComplaint;
+    if (hasData && !previousOutcome) {
+        return { type: 'data_complete', score: 50 };
+    }
+    
+    // 💰 PRICE_CONCERN - Preocupação com preço
+    if (flags.asksPrice || flags.asksInsurance || flags.asksPackage) {
+        return { type: 'price_concern', score: 45 };
+    }
+    
+    // 🤗 ACOLHIMENTO - Apenas acolhimento, sem progresso
+    if (action === 'acknowledge_pain' && !hasData) {
+        return { type: 'acolhimento', score: 20 };
+    }
+    
+    // ❌ NO_PROGRESS - Sem progresso após múltiplas mensagens
+    const msgCount = memoryContext?.conversationHistory?.length || 0;
+    if (msgCount > 5 && intentScore < 30) {
+        return { type: 'no_progress', score: 10 };
+    }
+    
+    // 🕐 IN_PROGRESS - Conversa em andamento
+    return { type: 'in_progress', score: intentScore };
+}
+
 export class WhatsAppOrchestrator {
     constructor() {
         this.logger = new Logger('WhatsAppOrchestrator');
@@ -60,21 +114,13 @@ export class WhatsAppOrchestrator {
             // =========================
             // 1️⃣ CONTEXTO (COM CACHE)
             // =========================
+            // ✅ CONTEXTO UNIFICADO (leadContext.js = fonte única)
             let memoryContext = getCachedContext(lead._id);
-            let contextPack = null;
 
             if (!memoryContext) {
                 // Cache miss - busca do banco
-                [memoryContext, contextPack] = await Promise.all([
-                    enrichLeadContext(lead._id),
-                    buildContextPack(lead._id)
-                ]);
-
-                // Salva no cache
-                setCachedContext(lead._id, { memoryContext, contextPack });
-            } else {
-                // Cache hit - usa dados em memória
-                contextPack = memoryContext._contextPack;
+                memoryContext = await enrichLeadContext(lead._id);
+                setCachedContext(lead._id, memoryContext);
             }
 
             // Flags usando SEU detector
@@ -306,7 +352,7 @@ export class WhatsAppOrchestrator {
                 try {
                     const aiText = await generateHandlerResponse({
                         promptContext: result.promptContext,
-                        systemPrompt: contextPack?.systemPrompt,
+                        systemPrompt: null, // Usa SYSTEM_PROMPT_AMANDA padrão
                         lead,
                         memory: memoryContext
                     });
@@ -835,6 +881,9 @@ export class WhatsAppOrchestrator {
             unsetStates["lastExtractedInfo.slot_confirmation"] = "";
         }
 
+        // 🆕 SALVAR INSIGHTS DO LEAD (painAcknowledged, objections, interests)
+        await this.saveLeadInsights({ lead, result, memoryContext, decision });
+
         // Gera resumo se necessário
         try {
             const totalMessages = memoryContext?.conversationHistory?.length || 0;
@@ -852,6 +901,106 @@ export class WhatsAppOrchestrator {
             }
         } catch (e) {
             this.logger.warn('SUMMARY_ERROR', e.message);
+        }
+    }
+
+    /**
+     * 🆕 SALVAR INSIGHTS DO LEAD
+     * Salva painAcknowledged, objections, interests para personalização futura
+     */
+    async saveLeadInsights({ lead, result, memoryContext, decision }) {
+        try {
+            const insights = {};
+            const pushInsights = {};
+            
+            // Pain Acknowledged
+            if (result?.extractedInfo?.painAcknowledged || 
+                decision?.action === 'acknowledge_pain' ||
+                decision?.action === 'developmental_urgency') {
+                insights["qualificationData.painAcknowledged"] = true;
+                insights["qualificationData.painAcknowledgedAt"] = new Date();
+            }
+            
+            // Objeções detectadas
+            if (result?.extractedInfo?.objections?.length > 0) {
+                // Adiciona objeções ao array sem duplicar
+                for (const objection of result.extractedInfo.objections) {
+                    pushInsights["qualificationData.objections"] = {
+                        type: objection,
+                        detectedAt: new Date()
+                    };
+                }
+            }
+            
+            // Interesses detectados
+            if (result?.extractedInfo?.interests?.length > 0) {
+                for (const interest of result.extractedInfo.interests) {
+                    pushInsights["qualificationData.interests"] = {
+                        type: interest,
+                        detectedAt: new Date()
+                    };
+                }
+            }
+            
+            // Emotional markers
+            const emotionalMarkers = memoryContext?.emotionalMarkers;
+            if (emotionalMarkers) {
+                if (emotionalMarkers.expressedWorry) {
+                    insights["qualificationData.expressedWorry"] = true;
+                }
+                if (emotionalMarkers.expressedUrgency) {
+                    insights["qualificationData.expressedUrgency"] = true;
+                }
+                if (emotionalMarkers.expressedFrustration) {
+                    insights["qualificationData.expressedFrustration"] = true;
+                }
+            }
+            
+            // Warm lead info
+            if (decision?.action === 'warm_lead_close') {
+                insights["qualificationData.warmLeadScenario"] = result?.extractedInfo?.scenario;
+                insights["qualificationData.warmLeadDetectedAt"] = new Date();
+            }
+            
+            // 🆕 CONVERSATION OUTCOME (Analytics inteligente)
+            const outcome = determineConversationOutcome({
+                result, 
+                decision, 
+                memoryContext, 
+                previousOutcome: lead?.qualificationData?.conversationOutcome
+            });
+            
+            if (outcome) {
+                insights["qualificationData.conversationOutcome"] = outcome.type;
+                insights["qualificationData.outcomeDetectedAt"] = new Date();
+                insights["qualificationData.outcomeScore"] = outcome.score || 0;
+                
+                this.logger.info('CONVERSATION_OUTCOME_DETECTED', {
+                    leadId: lead._id?.toString(),
+                    outcome: outcome.type,
+                    score: outcome.score
+                });
+            }
+            
+            // Atualizar lead
+            if (Object.keys(insights).length > 0 || Object.keys(pushInsights).length > 0) {
+                const updateOps = {};
+                if (Object.keys(insights).length > 0) updateOps.$set = insights;
+                if (Object.keys(pushInsights).length > 0) updateOps.$push = pushInsights;
+                
+                await Leads.findByIdAndUpdate(lead._id, updateOps);
+                
+                this.logger.info('LEAD_INSIGHTS_SAVED', {
+                    leadId: lead._id?.toString(),
+                    insights: Object.keys(insights),
+                    pushCount: Object.keys(pushInsights).length
+                });
+            }
+        } catch (error) {
+            this.logger.error('SAVE_INSIGHTS_ERROR', {
+                leadId: lead._id?.toString(),
+                error: error.message
+            });
         }
     }
 }
