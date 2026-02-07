@@ -11,6 +11,13 @@ const ChatContextSchema = new Schema({
         type: Schema.Types.Mixed,
         default: null
     },
+    // 🆕 V5: Estado da conversação (state machine)
+    conversationState: {
+        type: Schema.Types.Mixed,
+        default: null
+    },
+    // 🆕 V5: Último contato
+    lastContactAt: { type: Date, default: null },
     messages: [{
         direction: { type: String, enum: ["inbound", "outbound"], required: true },
         text: String,

@@ -58,23 +58,23 @@ const RECOVERY_MESSAGES = {
  */
 export function detectGhost(lead, lastMessageAt = null) {
     if (!lastMessageAt) return { isGhost: false };
-    
+
     const lastMsg = new Date(lastMessageAt);
     const now = new Date();
     const minutesSinceLastMessage = (now - lastMsg) / (1000 * 60);
-    
+
     const intentScore = lead?.qualificationData?.intentScore || 0;
     const lastIntentScore = lead?.qualificationData?.lastIntentScore || intentScore;
-    
+
     // Só considera ghost se:
     // 1. Passou do timeout
     // 2. Lead estava quente (>= 40)
     // 3. Ainda não recebeu follow-up
-    const isGhost = 
+    const isGhost =
         minutesSinceLastMessage >= GHOST_TIMEOUT_MINUTES &&
         intentScore >= WARM_LEAD_THRESHOLD &&
         !lead?.qualificationData?.ghostRecoverySent;
-    
+
     return {
         isGhost,
         minutesSinceLastMessage: Math.round(minutesSinceLastMessage),
@@ -94,38 +94,38 @@ export function detectGhost(lead, lastMessageAt = null) {
  */
 export function selectRecoveryMessage(ghostData, lead, context = {}) {
     const { isHotGhost, isWarmGhost } = ghostData;
-    
+
     // Determina categoria
     const category = isHotGhost ? 'hot' : isWarmGhost ? 'warm' : 'cold';
     const messages = RECOVERY_MESSAGES[category];
-    
+
     // Procura mensagem que combine com o contexto
     const { memoryWindow = [], awaitingField = null } = context;
-    
+
     // Condições especiais
     const hasPriceConcern = memoryWindow.find(m => m.type === 'price_sensitivity');
     const hasSlotsMentioned = awaitingField === 'slot' || memoryWindow.find(m => m.type === 'schedule_intent');
-    
+
     let selectedMessage;
-    
+
     if (hasPriceConcern && category === 'warm') {
         selectedMessage = messages.find(m => m.condition === 'price_concern');
     } else if (hasSlotsMentioned && category === 'hot') {
         selectedMessage = messages.find(m => m.condition === 'has_slots_mentioned');
     }
-    
+
     // Fallback para default
     if (!selectedMessage) {
         selectedMessage = messages.find(m => m.condition === 'default');
     }
-    
+
     // Personaliza CTA se tiver dados
     let personalizedCTA = selectedMessage.cta;
     if (category === 'hot' && context.availableSlots) {
         const slots = context.availableSlots.slice(0, 2);
         personalizedCTA = `Tenho ${slots.join(' ou ')}. Qual prefere? 💚`;
     }
-    
+
     return {
         text: selectedMessage.text,
         cta: personalizedCTA,
@@ -143,13 +143,13 @@ export function selectRecoveryMessage(ghostData, lead, context = {}) {
  */
 export function prepareGhostRecoverySave(leadId, messageData) {
     const now = new Date();
-    
+
     trackDecision(leadId, 'GHOST_RECOVERY_SENT', {
         category: messageData.category,
         timestamp: now,
         text: messageData.text.substring(0, 100)
     });
-    
+
     return {
         'qualificationData.ghostRecoverySent': true,
         'qualificationData.ghostRecoverySentAt': now,
@@ -158,7 +158,7 @@ export function prepareGhostRecoverySave(leadId, messageData) {
             'qualificationData.ghostHistory': {
                 sentAt: now,
                 category: messageData.category,
-                text: messageData.text.substring(0, 200)
+                text: messageData.text.substring(0, 500)
             }
         }
     };
@@ -172,27 +172,27 @@ export function prepareGhostRecoverySave(leadId, messageData) {
 export function shouldSuppressRecovery(lead) {
     // Já agendou
     if (lead.qualificationData?.bookingScheduled) return true;
-    
+
     // Já marcou horário recentemente
     if (lead.lastInteraction?.includes('horário confirmado')) return true;
-    
+
     // Já respondeu após o ghost (não é mais ghost)
     const lastMsg = lead.lastMessageAt;
     const recoverySent = lead.qualificationData?.ghostRecoverySentAt;
     if (recoverySent && lastMsg && new Date(lastMsg) > new Date(recoverySent)) {
         return true;
     }
-    
+
     // Já enviou recovery nas últimas 24h
     const lastRecovery = lead.qualificationData?.ghostRecoverySentAt;
     if (lastRecovery) {
         const hoursSince = (Date.now() - new Date(lastRecovery)) / (1000 * 60 * 60);
         if (hoursSince < 24) return true;
     }
-    
+
     // Lead pediu para parar
     if (lead.qualificationData?.optedOut) return true;
-    
+
     return false;
 }
 
@@ -204,10 +204,10 @@ export function shouldSuppressRecovery(lead) {
 export function calculateRecoveryStats(ghostHistory = []) {
     const total = ghostHistory.length;
     if (total === 0) return { total: 0, recovered: 0, rate: 0 };
-    
+
     const recovered = ghostHistory.filter(h => h.recoveredAt).length;
     const rate = (recovered / total) * 100;
-    
+
     return {
         total,
         recovered,
@@ -229,7 +229,7 @@ export function markGhostRecovered(leadId, recoveryData = {}) {
         timeToRecover: recoveryData.minutesToRecover,
         convertedToBooking: recoveryData.convertedToBooking || false
     });
-    
+
     return {
         'qualificationData.lastGhostRecoveredAt': new Date(),
         'qualificationData.ghostRecoveryCount': (recoveryData.previousCount || 0) + 1,
