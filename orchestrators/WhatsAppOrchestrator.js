@@ -1,12 +1,12 @@
 import Logger from '../services/utils/Logger.js';
 import { findAvailableSlots } from '../services/amandaBookingService.js';
 import Leads from '../models/Leads.js';
-import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js';
-import { detectAllTherapies } from '../utils/therapyDetector.js';
+import ChatContext from '../models/ChatContext.js';
 import { detectAllFlags } from '../utils/flagsDetector.js';
+import { detectAllTherapies } from '../utils/therapyDetector.js';
 
 // Dados das terapias
-const THERAPY_INFO = {
+const THERAPY_DATA = {
   fonoaudiologia: { name: 'Fonoaudiologia', emoji: '💬', price: 'Sessão: R$ 200 | Pacote 4x: R$ 180 cada' },
   psicologia: { name: 'Psicologia', emoji: '🧠', price: 'Sessão: R$ 200 | Pacote 4x: R$ 180 cada' },
   fisioterapia: { name: 'Fisioterapia', emoji: '🏃', price: 'Sessão: R$ 200 | Pacote 4x: R$ 180 cada' },
@@ -14,12 +14,9 @@ const THERAPY_INFO = {
   psicopedagogia: { name: 'Psicopedagogia', emoji: '📚', price: 'Sessão: R$ 200 | Pacote 4x: R$ 180 cada' },
   neuropsicologia: { name: 'Neuropsicologia', emoji: '🧩', price: 'Avaliação: R$ 400 | Retorno: R$ 250' },
   musicoterapia: { name: 'Musicoterapia', emoji: '🎵', price: 'Sessão: R$ 180 | Pacote 4x: R$ 160 cada' },
-  psicomotricidade: { name: 'Psicomotricidade', emoji: '🤸', price: 'Sessão: R$ 180 | Pacote 4x: R$ 160 cada' },
-  pediatria: { name: 'Pediatria', emoji: '👶', price: 'Consulta: R$ 250 | Retorno: R$ 180' },
-  neuroped: { name: 'Neuropediatria', emoji: '🧠', price: 'Consulta: R$ 300 | Retorno: R$ 200' }
+  psicomotricidade: { name: 'Psicomotricidade', emoji: '🤸', price: 'Sessão: R$ 180 | Pacote 4x: R$ 160 cada' }
 };
 
-// Mapeamento therapyDetector
 const DETECTOR_MAP = {
   'speech': 'fonoaudiologia',
   'tongue_tie': 'fonoaudiologia',
@@ -28,16 +25,7 @@ const DETECTOR_MAP = {
   'occupational': 'terapia_ocupacional',
   'psychopedagogy': 'psicopedagogia',
   'neuropsychological': 'neuropsicologia',
-  'music': 'musicoterapia',
-  'neuropsychopedagogy': 'psicopedagogia'
-};
-
-// Marcadores emocionais para acolhimento
-const EMOTIONAL_MARKERS = {
-  ansiedade: ['ansioso', 'ansiosa', 'nervoso', 'preocupado', 'medo', 'pânico', 'angústia'],
-  tristeza: ['triste', 'choro', 'chorando', 'depressão', 'deprimido', 'sem ânimo'],
-  desespero: ['desesperado', 'não aguento', 'me ajuda', 'urgente', 'preciso de ajuda'],
-  frustração: ['cansado', 'frustrado', 'tentei tudo', 'nada funciona', 'desisti']
+  'music': 'musicoterapia'
 };
 
 export class WhatsAppOrchestrator {
@@ -46,36 +34,29 @@ export class WhatsAppOrchestrator {
   }
 
   async process({ lead, message }) {
-    const startTime = Date.now();
     const leadId = lead?._id?.toString() || 'unknown';
     const text = message?.content || message?.text || '';
     
     this.logger.info('V5_START', { leadId, text: text.substring(0, 80) });
 
     try {
-      // 1. Carrega contexto acumulado
-      const context = await this.loadContext(lead);
+      // 1. Carrega memória acumulada
+      const memory = await this.loadMemory(lead._id);
       
-      // 2. Análise completa usando detectores do projeto
-      const analysis = await this.analyzeComplete(text, lead, context);
-      this.logger.info('V5_ANALYSIS', { 
-        leadId, 
-        therapy: analysis.therapy,
-        flags: Object.keys(analysis.flags).filter(k => analysis.flags[k]),
-        emotionalState: analysis.emotionalState,
-        confidence: analysis.confidence
-      });
-
-      // 3. Acumula contexto (soma, não substitui)
-      const newContext = this.accumulateContext(context, analysis);
+      // 2. Detecta NOVOS dados da mensagem atual
+      const detected = this.detectar(text, lead);
       
-      // 4. Decisão estratégica baseada no contexto completo
-      const response = await this.strategicResponse(text, newContext, analysis);
+      // 3. FUNDE (merge): acumula, nunca apaga
+      const context = this.fundir(memory, detected);
+      this.logger.info('V5_CONTEXT', { leadId, therapy: context.therapy, age: context.age, period: context.period });
+      
+      // 4. Conversa fluida (lógica única)
+      const response = this.conversar(text, context);
       
       // 5. Persiste
-      await this.saveContext(lead._id, newContext);
+      await this.saveMemory(lead._id, context);
       
-      this.logger.info('V5_COMPLETE', { leadId, timeMs: Date.now() - startTime });
+      this.logger.info('V5_COMPLETE', { leadId, responseLength: response.length });
       return { command: 'SEND_MESSAGE', payload: { text: response } };
       
     } catch (error) {
@@ -84,284 +65,170 @@ export class WhatsAppOrchestrator {
     }
   }
 
-  // Análise completa usando TODOS os detectores
-  async analyzeComplete(text, lead, context) {
-    const result = {
-      therapy: null,
-      flags: {},
-      entities: { age: null, period: null, complaint: null },
-      emotionalState: null,
-      confidence: 0,
-      intent: 'general'
-    };
-
-    // 1. THERAPY DETECTOR (robusto)
-    const therapies = detectAllTherapies(text);
-    if (therapies.length > 0 && !therapies[0].id.includes('fora_escopo')) {
-      result.therapy = DETECTOR_MAP[therapies[0].id] || therapies[0].id;
-      result.confidence += 0.4;
-    }
-
-    // 2. FLAGS DETECTOR (completo)
-    result.flags = detectAllFlags(text, lead, {
-      stage: context.therapy ? 'engaged' : 'new',
-      messageCount: context.history?.length || 0,
-      conversationHistory: context.history || []
-    });
-
-    // Detecta intenção pelos flags
-    if (result.flags.asksPrice) result.intent = 'price';
-    else if (result.flags.asksAddress) result.intent = 'address';
-    else if (result.flags.asksPlans) result.intent = 'plans';
-    else if (result.flags.wantsSchedule) result.intent = 'schedule';
-
-    // 3. Extração de entidades
+  // Detecta usando detectores existentes do projeto
+  detectar(text, lead) {
     const lower = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     
-    // Idade
-    const ageMatch = text.match(/(\d{1,2})\s*anos?/i) || text.match(/tem\s*(\d{1,2})/i);
-    if (ageMatch) {
-      result.entities.age = parseInt(ageMatch[1], 10);
-      result.confidence += 0.2;
-    }
+    // TherapyDetector
+    const therapies = detectAllTherapies(text);
+    const therapy = therapies.length > 0 && !therapies[0].id.includes('fora_escopo')
+      ? DETECTOR_MAP[therapies[0].id] || therapies[0].id
+      : null;
     
-    // Período
-    if (/manh[ãa]|cedo|in[ií]cio/i.test(lower)) result.entities.period = 'manha';
-    else if (/tarde/i.test(lower)) result.entities.period = 'tarde';
-    else if (/noite/i.test(lower)) result.entities.period = 'noite';
+    // FlagsDetector
+    const flags = detectAllFlags(text, lead, { messageCount: 0 });
     
-    // Queixa (texto descritivo)
+    // Extrai entidades
+    const ageMatch = text.match(/(\d{1,2})\s*anos?/i);
+    const age = ageMatch ? parseInt(ageMatch[1], 10) : null;
+    
+    let period = null;
+    if (/manh[ãa]|cedo/i.test(lower)) period = 'manha';
+    else if (/tarde/i.test(lower)) period = 'tarde';
+    else if (/noite/i.test(lower)) period = 'noite';
+    
+    // Queixa (se não for pergunta direta)
     const isQuestion = /^(qual|quanto|onde|como|voce|voces|tem|faz|aceita)/i.test(text.trim());
-    if (!isQuestion && text.length > 10 && text.length < 300) {
-      result.entities.complaint = text.replace(/^(oi|ola|bom dia|boa tarde)[,\s]*/i, '').trim();
-    }
-
-    // 4. Análise emocional
-    result.emotionalState = this.detectEmotionalState(lower);
-
-    // 5. LLM para enriquecer (se necessário)
-    if (result.confidence < 0.5) {
-      try {
-        const llm = await analyzeLeadMessage({ text, history: context.history?.slice(-3) || [] });
-        if (llm?.extractedInfo) {
-          if (!result.therapy && llm.extractedInfo.especialidade) {
-            result.therapy = this.normalizeTherapy(llm.extractedInfo.especialidade);
-          }
-          if (!result.entities.complaint && llm.extractedInfo.queixa) {
-            result.entities.complaint = llm.extractedInfo.queixa;
-          }
-          if (!result.entities.age && llm.extractedInfo.idade) {
-            result.entities.age = parseInt(llm.extractedInfo.idade, 10);
-          }
-        }
-      } catch (e) {
-        // ignora
-      }
-    }
-
-    return result;
+    const complaint = !isQuestion && text.length > 10 
+      ? text.replace(/^(oi|ola|bom dia|boa tarde)[,\s]*/i, '').substring(0, 200)
+      : null;
+    
+    return { therapy, flags, age, period, complaint };
   }
 
-  detectEmotionalState(text) {
-    for (const [state, keywords] of Object.entries(EMOTIONAL_MARKERS)) {
-      if (keywords.some(k => text.includes(k))) return state;
-    }
-    return null;
-  }
-
-  accumulateContext(context, analysis) {
+  // FUNDE: acumula, nunca apaga (só sobrescreve se veio novo)
+  fundir(old, detected) {
     return {
-      therapy: analysis.therapy || context.therapy || null,
-      complaint: analysis.entities.complaint || context.complaint || null,
-      age: analysis.entities.age || context.age || null,
-      period: analysis.entities.period || context.period || null,
-      emotionalState: analysis.emotionalState || context.emotionalState || null,
-      flags: { ...context.flags, ...analysis.flags },
-      history: [...(context.history || []), { text: analysis.entities.complaint, timestamp: new Date() }].slice(-10)
+      therapy: detected.therapy || old.therapy || null,
+      complaint: detected.complaint || old.complaint || null,
+      age: detected.age || old.age || null,
+      period: detected.period || old.period || null,
+      flags: { ...old.flags, ...detected.flags }
     };
   }
 
-  // Resposta estratégica com acolhimento psicológico
-  async strategicResponse(text, context, analysis) {
-    const { therapy, complaint, age, period, flags, emotionalState } = context;
+  // LÓGICA ÚNICA de conversa fluida
+  conversar(text, ctx) {
+    const { therapy, complaint, age, period, flags } = ctx;
     
     // O que falta para agendar?
-    const missing = [];
-    if (!therapy) missing.push('therapy');
-    if (therapy && !complaint) missing.push('complaint');
-    if (!age) missing.push('age');
-    if (!period) missing.push('period');
-
-    // ESTRATÉGIA 1: Acolhimento emocional primeiro (se necessário)
-    if (emotionalState && !context.acolhimentoFeito) {
-      context.acolhimentoFeito = true;
-      return this.acolhimentoEmocional(emotionalState, therapy, missing);
-    }
-
-    // ESTRATÉGIA 2: Responder flags imediatos (mas manter contexto!)
+    const faltando = [];
+    if (!therapy) faltando.push('therapy');
+    if (therapy && !complaint) faltando.push('complaint');
+    if (!age) faltando.push('age');
+    if (!period) faltando.push('period');
+    
+    // ESTRATÉGIA 1: Responde interrupção E RETOMA
     if (flags.asksPrice && therapy) {
-      return this.respostaPrecoComContexto(therapy, missing);
+      return this.retomar(ctx, this.responderPreco(therapy));
     }
     if (flags.asksPrice && !therapy) {
-      return this.respostaPrecoSemContexto();
+      return this.retomar(ctx, 'Os valores variam conforme a especialidade 💚\n\nSessões: R$ 180 a R$ 300');
     }
     if (flags.asksAddress) {
-      return this.respostaEnderecoComContexto(therapy, missing);
+      return this.retomar(ctx, '📍 Ficamos na Rua X, 123 - Centro de Anápolis. Estacionamento fácil!');
     }
     if (flags.asksPlans) {
-      return this.respostaPlanoComContexto(therapy, missing);
+      return this.retomar(ctx, '💚 Trabalhamos com reembolso de todos os planos! Você paga e solicita o ressarcimento (geralmente 80-100%).');
     }
-
-    // ESTRATÉGIA 3: Se tem tudo, mostra slots
-    if (missing.length === 0) {
-      return await this.mostrarSlots(therapy, period, age);
+    
+    // ESTRATÉGIA 2: Tem tudo → agendamento
+    if (faltando.length === 0) {
+      return this.mostrarHorarios(therapy, age, period);
     }
-
-    // ESTRATÉGIA 4: Pergunta o que falta com contexto
-    return this.perguntaContextual(missing[0], context);
+    
+    // ESTRATÉGIA 3: Pergunta o que falta (descoberta suave)
+    return this.perguntarNatural(faltando[0], ctx);
   }
 
-  acolhimentoEmocional(estado, therapy, missing) {
-    const acolhimentos = {
-      ansiedade: `Entendo que vocês estão passando por um momento de ansiedade 💚 Isso é mais comum do que parece, e tratado cedo tem resultados excelentes.`,
-      tristeza: `Sinto que vocês estão enfrentando um momento difícil 💚 Estamos aqui para apoiar com muito carinho.`,
-      desespero: `Percebo que vocês precisam de ajuda urgente 💚 Vamos encontrar a melhor solução juntos.`,
-      frustração: `Entendo que já tentaram várias coisas 💚 Às vezes a abordagem certa faz toda a diferença.`
-    };
+  // CRÍTICO: Sempre retoma o fluxo após responder interrupção
+  retomar(ctx, respostaEspecifica) {
+    const { therapy, complaint, age, period } = ctx;
     
-    let response = acolhimentos[estado] || `Estou aqui para ajudar 💚`;
-    
-    if (!therapy) response += `\n\nPara qual especialidade vocês precisam?`;
-    else if (missing.includes('complaint')) response += `\n\nMe conta um pouco sobre a situação para eu entender melhor.`;
-    else if (missing.includes('age')) response += `\n\nQual a idade?`;
-    else if (missing.includes('period')) response += `\n\nQual período funciona melhor?`;
-    
-    return response;
-  }
-
-  respostaPrecoComContexto(therapy, missing) {
-    const info = THERAPY_INFO[therapy];
-    let response = `Para ${info.name} ${info.emoji}:\n${info.price}\n\nTrabalhamos com reembolso de planos também 💚`;
-    
-    if (missing.includes('complaint')) response += `\n\nQual a situação específica?`;
-    else if (missing.includes('age')) response += `\n\nQual a idade?`;
-    else if (missing.includes('period')) response += `\n\nQual período?`;
-    else response += `\n\nPosso verificar os horários!`;
-    
-    return response;
-  }
-
-  respostaPrecoSemContexto() {
-    return `Os valores variam conforme a especialidade 💚\n\n• Sessões: R$ 180 a R$ 300\n• Pacotes: desconto de 10-20%\n\nMe conta qual situação vocês estão enfrentando que aí consigo te passar o valor exato!`;
-  }
-
-  respostaEnderecoComContexto(therapy, missing) {
-    let response = `📍 Ficamos na Rua X, 123 - Centro de Anápolis. Estacionamento fácil!`;
-    if (therapy && missing.length > 0) {
-      response += `\n\nPara continuarmos com ${THERAPY_INFO[therapy].name.toLowerCase()}, `;
-      if (missing.includes('complaint')) response += `qual a situação?`;
-      else if (missing.includes('age')) response += `qual a idade?`;
-      else if (missing.includes('period')) response += `qual período?`;
-    } else if (!therapy) {
-      response += `\n\nQual especialidade você precisa?`;
+    let pergunta = '';
+    if (!therapy) {
+      pergunta = '\n\nMe conta: você está buscando atendimento para fonoaudiologia, psicologia ou fisioterapia?';
+    } else if (!complaint) {
+      pergunta = `\n\nPara ${THERAPY_DATA[therapy]?.name || 'o atendimento'}, qual a situação que está enfrentando?`;
+    } else if (!age) {
+      pergunta = '\n\nE qual a idade? Isso ajuda a verificar os profissionais mais indicados 💚';
+    } else if (!period) {
+      pergunta = '\n\nQual período funciona melhor? Manhã, tarde ou noite?';
+    } else {
+      pergunta = '\n\nQuer que eu verifique a disponibilidade de horários?';
     }
-    return response;
+    
+    return respostaEspecifica + pergunta;
   }
 
-  respostaPlanoComContexto(therapy, missing) {
-    let response = `💚 Trabalhamos com reembolso de todos os planos. Você paga e solicita o ressarcimento (geralmente 80-100%).`;
-    if (therapy && missing.includes('complaint')) {
-      response += `\n\nPara ${THERAPY_INFO[therapy].name}, qual a situação?`;
-    } else if (!therapy) {
-      response += `\n\nQual especialidade?`;
+  responderPreco(therapy) {
+    const info = THERAPY_DATA[therapy];
+    return `Para ${info.name} ${info.emoji}:\n${info.price}\n\nTrabalhamos com reembolso de planos também 💚`;
+  }
+
+  perguntarNatural(falta, ctx) {
+    if (falta === 'therapy') {
+      return 'Oi! Sou a Amanda da Fono Inova 💚\n\nMe conta: você está buscando atendimento para você ou para alguém da família? Qual situação vocês estão enfrentando?';
     }
-    return response;
+    
+    if (falta === 'complaint') {
+      const { therapy } = ctx;
+      if (therapy === 'fonoaudiologia') {
+        return 'Entendi que é para fonoaudiologia 💬\n\nMe conta mais sobre a comunicação: ele fala algumas palavras, não fala ainda, ou tem alguma dificuldade específica?';
+      }
+      if (therapy === 'psicologia') {
+        return 'Sobre psicologia 🧠\n\nMe conta como vocês estão se sentindo - é ansiedade, dificuldade para dormir, ou algo mais? Estou aqui para ouvir 💚';
+      }
+      return `Para ${THERAPY_DATA[therapy]?.name || 'o atendimento'} 💚\n\nMe conta um pouco sobre a situação que está preocupando?`;
+    }
+    
+    if (falta === 'age') {
+      return ctx.therapy === 'fonoaudiologia'
+        ? 'E qual a idade da criança? Isso ajuda a verificar os profissionais mais indicados para essa fase 💚'
+        : 'Qual a idade? Isso ajuda a verificar a disponibilidade dos melhores profissionais 💚';
+    }
+    
+    if (falta === 'period') {
+      return 'Qual período funciona melhor para vocês? Manhã, tarde ou noite?';
+    }
+    
+    return 'Como posso te ajudar? 💚';
   }
 
-  async mostrarSlots(therapy, period, age) {
+  async mostrarHorarios(therapy, age, period) {
     try {
       const slots = await findAvailableSlots({ therapyArea: therapy, preferredPeriod: period, patientAge: age });
-      const info = THERAPY_INFO[therapy];
+      const info = THERAPY_DATA[therapy];
       
       if (slots?.primary?.length > 0) {
         const txt = slots.primary.slice(0, 3).map(s => `• ${s.day} às ${s.time}`).join('\n');
-        return `Encontrei para ${info.name}:\n\n${txt}\n\nQual funciona melhor? 💚`;
+        return `Encontrei essas opções para ${info?.name || therapy}:\n\n${txt}\n\nQual funciona melhor? 💚`;
       }
-      return `No momento não encontrei vagas para ${info.name} no período da ${period}.\n\nPosso pedir para nossa equipe entrar em contato?`;
+      return `No momento não encontrei vagas para ${info?.name || therapy} no período da ${period}.\n\nPosso pedir para nossa equipe entrar em contato?`;
     } catch (e) {
-      return `Vou verificar os horários e te retorno! 💚`;
+      return 'Vou verificar os horários e te retorno! 💚';
     }
   }
 
-  perguntaContextual(field, context) {
-    const { therapy, complaint, age, emotionalState } = context;
-    
-    const templates = {
-      therapy: emotionalState 
-        ? `Para podermos ajudar da melhor forma 💚, qual especialidade vocês procuram? Fonoaudiologia, psicologia ou fisioterapia?`
-        : `Oi! Sou a Amanda da Fono Inova 💚\n\nMe conta: você está buscando atendimento para fonoaudiologia, psicologia ou fisioterapia?`,
-        
-      complaint: therapy === 'fonoaudiologia' 
-        ? `Para fonoaudiologia 💬, me conta mais: é sobre atraso na fala, gagueira, autismo, troca de letras, ou outra situação?`
-        : therapy === 'psicologia'
-        ? `Para psicologia 🧠, me conta como vocês estão se sentindo - é ansiedade, dificuldade para dormir, mudanças de humor, TDAH, ou algo mais?`
-        : therapy === 'fisioterapia'
-        ? `Para fisioterapia 🏃, onde está sentindo dor ou desconforto?`
-        : `Para ${THERAPY_INFO[therapy]?.name || 'o atendimento'}, qual a situação que está preocupando?`,
-        
-      age: therapy === 'fonoaudiologia'
-        ? `Qual a idade da criança? Isso ajuda a verificar os profissionais mais experientes com essa faixa etária 💚`
-        : `Qual a idade? Isso ajuda a verificar a disponibilidade dos melhores profissionais 💚`,
-        
-      period: `Qual período funciona melhor para vocês? Manhã, tarde ou noite?`
-    };
-    
-    return templates[field] || `Como posso te ajudar? 💚`;
-  }
-
-  async loadContext(lead) {
+  async loadMemory(leadId) {
     try {
-      const doc = await Leads.findById(lead._id).lean();
-      return doc?.v5Context || {
-        therapy: doc?.therapyArea || null,
-        complaint: doc?.primaryComplaint || null,
-        age: doc?.patientInfo?.age || null,
-        period: doc?.pendingPreferredPeriod || null,
-        flags: {},
-        emotionalState: null,
-        acolhimentoFeito: false,
-        history: []
-      };
+      const ctx = await ChatContext.findOne({ lead: leadId }).lean();
+      return ctx?.conversationState || { therapy: null, complaint: null, age: null, period: null, flags: {} };
     } catch (e) {
-      return { therapy: null, complaint: null, age: null, period: null, flags: {}, emotionalState: null, acolhimentoFeito: false, history: [] };
+      return { therapy: null, complaint: null, age: null, period: null, flags: {} };
     }
   }
 
-  async saveContext(leadId, context) {
+  async saveMemory(leadId, context) {
     try {
-      await Leads.findByIdAndUpdate(leadId, {
-        $set: {
-          v5Context: context,
-          therapyArea: context.therapy,
-          primaryComplaint: context.complaint,
-          'patientInfo.age': context.age,
-          pendingPreferredPeriod: context.period
-        }
-      });
+      await ChatContext.findOneAndUpdate(
+        { lead: leadId },
+        { $set: { conversationState: context, lastContactAt: new Date() } },
+        { upsert: true }
+      );
     } catch (e) {
       this.logger.error('V5_SAVE_ERROR', { leadId: leadId?.toString(), error: e.message });
     }
-  }
-
-  normalizeTherapy(t) {
-    if (!t) return null;
-    const normalized = t.toLowerCase().trim();
-    const map = {
-      'fonoaudiologia': 'fonoaudiologia', 'fono': 'fonoaudiologia',
-      'psicologia': 'psicologia', 'psico': 'psicologia',
-      'fisioterapia': 'fisioterapia', 'fisio': 'fisioterapia'
-    };
-    return map[normalized] || normalized;
   }
 }
 
