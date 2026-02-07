@@ -2,7 +2,6 @@ import Logger from '../services/utils/Logger.js';
 import { findAvailableSlots } from '../services/amandaBookingService.js';
 import Leads from '../models/Leads.js';
 import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js';
-import { updateExtractedInfo, enrichLeadContext } from '../services/leadContext.js';
 
 const THERAPY_MAP = {
   'ansiedade': 'psicologia', 'depressão': 'psicologia', 'tdah': 'psicologia',
@@ -30,60 +29,89 @@ export class WhatsAppOrchestrator {
     const leadId = lead?._id?.toString() || 'unknown';
     const text = message?.content || message?.text || '';
     
-    this.logger.info('V5_PROCESS_START', { leadId, textLength: text.length, textPreview: text.substring(0, 80).replace(/\n/g, ' ') });
+    this.logger.info('V5_START', { leadId, text: text.substring(0, 60) });
 
     try {
-      // 1. Carrega state do LeadContext
-      let state = await this.loadState(lead._id);
-      this.logger.info('V5_STATE_LOADED', { leadId, currentStage: state.stage, currentTherapy: state.data.therapy, historyLength: state.history.length });
+      // 1. Carrega state do lead
+      let state = await this.loadState(lead);
+      this.logger.info('V5_STATE', { leadId, stage: state.stage, therapy: state.data.therapy, age: state.data.age });
       
       // 2. Classifica mensagem
-      const extracted = await this.classify(text, state);
-      this.logger.info('V5_CLASSIFY_RESULT', { leadId, extractedTherapy: extracted.therapy, extractedAge: extracted.age, extractedPeriod: extracted.period, intent: extracted.intent, source: extracted._source });
+      const extracted = await this.classify(text);
+      this.logger.info('V5_CLASSIFY', { leadId, extractedTherapy: extracted.therapy, intent: extracted.intent });
       
-      // 3. 🛡️ PROTEÇÃO DE CONTEXTO EMOCIONAL
+      // 3. 🛡️ PROTEÇÃO: Se temos dados salvos e o novo não trouxe, preserva
+      if (state.data.therapy && !extracted.therapy) {
+        extracted.therapy = state.data.therapy;
+        this.logger.debug('V5_PRESERVE_THERAPY', { leadId, therapy: state.data.therapy });
+      }
+      if (state.data.age && !extracted.age) {
+        extracted.age = state.data.age;
+        this.logger.debug('V5_PRESERVE_AGE', { leadId, age: state.data.age });
+      }
+      if (state.data.period && !extracted.period) {
+        extracted.period = state.data.period;
+        this.logger.debug('V5_PRESERVE_PERIOD', { leadId, period: state.data.period });
+      }
+      
+      // 4. 🛡️ PROTEÇÃO DE CONTEXTO EMOCIONAL
       const hasEmotionalContent = this.detectEmotionalContent(text);
       
       if (extracted.therapy && state.data.therapy && extracted.therapy !== state.data.therapy) {
-        this.logger.info('V5_THERAPY_CHANGE', { leadId, from: state.data.therapy, to: extracted.therapy, hasEmotional: !!(state.data.complaint && (hasEmotionalContent || state.data.hasEmotionalContext)) });
+        this.logger.info('V5_THERAPY_CHANGE', { leadId, from: state.data.therapy, to: extracted.therapy });
         
         if (state.data.complaint && (hasEmotionalContent || state.data.hasEmotionalContext)) {
           state.data.savedEmotionalContexts = state.data.savedEmotionalContexts || {};
-          state.data.savedEmotionalContexts[state.data.therapy] = { complaint: state.data.complaint, therapy: state.data.therapy, savedAt: new Date(), hasEmotionalContext: true };
-          this.logger.info('V5_CONTEXT_SAVED', { leadId, fromTherapy: state.data.therapy, complaint: state.data.complaint?.substring(0, 60) });
+          state.data.savedEmotionalContexts[state.data.therapy] = { 
+            complaint: state.data.complaint, 
+            savedAt: new Date() 
+          };
+          this.logger.info('V5_CONTEXT_SAVED', { leadId, therapy: state.data.therapy });
         }
-        state.data.complaint = null; state.data.age = null; state.data.period = null; state.data.hasEmotionalContext = false; extracted.contextRestored = false;
+        state.data.complaint = null;
+        state.data.hasEmotionalContext = false;
       } else if (extracted.therapy && state.data.savedEmotionalContexts?.[extracted.therapy]) {
         const saved = state.data.savedEmotionalContexts[extracted.therapy];
         const hoursPassed = (Date.now() - new Date(saved.savedAt).getTime()) / (1000 * 60 * 60);
-        if (hoursPassed < 2 && !state.data.complaint && !extracted.complaint) {
-          state.data.complaint = saved.complaint; state.data.hasEmotionalContext = true; extracted.contextRestored = true; extracted.restoredTherapy = extracted.therapy;
-          this.logger.info('V5_CONTEXT_RESTORED', { leadId, therapy: extracted.therapy, hoursPassed: Math.round(hoursPassed * 10) / 10 });
+        if (hoursPassed < 2 && !extracted.complaint) {
+          extracted.complaint = saved.complaint;
+          extracted.contextRestored = true;
+          this.logger.info('V5_CONTEXT_RESTORED', { leadId, therapy: extracted.therapy });
         }
       }
-      if (hasEmotionalContent && extracted.complaint) state.data.hasEmotionalContext = true;
       
-      // 4. Merge e determina stage
+      if (hasEmotionalContent && extracted.complaint) {
+        state.data.hasEmotionalContext = true;
+      }
+      
+      // 5. Merge entities
       state.data = { ...state.data, ...extracted };
       state.history.push({ role: 'user', text, timestamp: new Date() });
+      
+      // 6. Determina stage
       const previousStage = state.stage;
       state.stage = this.determineStage(state.data);
-      if (previousStage !== state.stage) this.logger.info('V5_STAGE_CHANGE', { leadId, from: previousStage, to: state.stage });
+      if (previousStage !== state.stage) {
+        this.logger.info('V5_STAGE_CHANGE', { leadId, from: previousStage, to: state.stage });
+      }
       
-      // 5. Gera resposta
-      let response = state.stage === 'ready' ? await this.handleBooking(state, lead) : await this.generateResponse(state, extracted);
-      this.logger.info('V5_RESPONSE_READY', { leadId, stage: state.stage, responseLength: response.length });
+      // 7. Gera resposta
+      let response = state.stage === 'ready' 
+        ? await this.handleBooking(state, lead) 
+        : await this.generateResponse(state, extracted);
       
-      // 6. Salva state no LeadContext
+      this.logger.info('V5_RESPONSE', { leadId, stage: state.stage, length: response.length });
+      
+      // 8. Salva
       state.history.push({ role: 'assistant', text: response, timestamp: new Date() });
       await this.saveState(lead._id, state);
       
-      this.logger.info('V5_COMPLETE', { leadId, totalTimeMs: Date.now() - startTime, finalStage: state.stage });
+      this.logger.info('V5_COMPLETE', { leadId, timeMs: Date.now() - startTime });
       return { command: 'SEND_MESSAGE', payload: { text: response } };
       
     } catch (error) {
-      this.logger.error('V5_ERROR', { leadId, error: error.message, stack: error.stack?.split('\n')[0], totalTimeMs: Date.now() - startTime });
-      return { command: 'SEND_MESSAGE', payload: { text: 'Como posso te ajudar? 💚' }, meta: { error: true } };
+      this.logger.error('V5_ERROR', { leadId, error: error.message });
+      return { command: 'SEND_MESSAGE', payload: { text: 'Como posso te ajudar? 💚' } };
     }
   }
 
@@ -92,18 +120,24 @@ export class WhatsAppOrchestrator {
     return EMOTIONAL_MARKERS.some(marker => text.toLowerCase().includes(marker));
   }
 
-  async classify(text, state) {
+  async classify(text) {
+    // Tenta LLM
     try {
-      const result = await analyzeLeadMessage({ text, history: state.history.slice(-5) });
+      const result = await analyzeLeadMessage({ text, history: [] });
       const info = result?.extractedInfo || {};
       const therapy = this.normalizeTherapy(info.especialidade || info.therapy);
       const complaint = info.queixa || info.complaint;
       const age = this.parseAge(info.idade || info.age);
       const period = this.normalizePeriod(info.disponibilidade || info.period);
-      if (therapy || complaint || age || period) return { therapy, complaint, age, period, intent: info.intent || 'general', _source: 'llm' };
+      
+      if (therapy || complaint || age || period) {
+        return { therapy, complaint, age, period, intent: info.intent || 'general', _source: 'llm' };
+      }
     } catch (e) {
-      this.logger.error('V5_LLM_ERROR', { error: e.message });
+      this.logger.error('V5_LLM_FAIL', { error: e.message });
     }
+    
+    // Fallback
     return { ...this.classifyFallback(text), _source: 'fallback' };
   }
 
@@ -113,7 +147,7 @@ export class WhatsAppOrchestrator {
     for (const [k, v] of Object.entries(THERAPY_MAP)) if (lower.includes(k)) { therapy = v; break; }
     let age = null; const m = text.match(/\b(\d{1,2})\s*(?:anos?|a)\b/i); if (m) age = parseInt(m[1], 10);
     let period = /manh[ãa]|cedo/i.test(lower) ? 'manha' : /tarde/i.test(lower) ? 'tarde' : /noite/i.test(lower) ? 'noite' : null;
-    let intent = /pre[çc]o|valor|custa|quanto/i.test(lower) ? 'change_subject' : /endere[çc]o|onde|local|fica/i.test(lower) ? 'change_subject' : /plano|conv[êe]nio/i.test(lower) ? 'change_subject' : 'general';
+    let intent = /pre[çc]o|valor|custa|quanto/i.test(lower) ? 'change_subject' : /endere[çc]o|onde|local/i.test(lower) ? 'change_subject' : /plano|conv[êe]nio/i.test(lower) ? 'change_subject' : 'general';
     return { therapy, age, period, intent };
   }
 
@@ -126,20 +160,31 @@ export class WhatsAppOrchestrator {
   }
 
   async generateResponse(state, extracted) {
-    const { savedEmotionalContexts, contextRestored } = state.data;
-    if (contextRestored && extracted.restoredTherapy && savedEmotionalContexts?.[extracted.restoredTherapy]) {
-      const saved = savedEmotionalContexts[extracted.restoredTherapy];
-      this.logger.info('V5_EMPATHETIC_RESPONSE', { restoredTherapy: extracted.restoredTherapy });
-      return `Entendo, vamos voltar a falar sobre ${extracted.restoredTherapy} 💚\n\nAntes você mencionou: "${saved.complaint}". Isso realmente parece importante. Me conta mais sobre como isso está afetando vocês hoje?`;
+    // 🎭 RETOMADA EMPÁTICA
+    if (extracted.contextRestored && state.data.therapy && state.data.savedEmotionalContexts?.[state.data.therapy]) {
+      const saved = state.data.savedEmotionalContexts[state.data.therapy];
+      return `Entendo, vamos voltar a falar sobre ${state.data.therapy} 💚\n\nAntes você mencionou: "${saved.complaint}". Me conta mais sobre como isso está afetando vocês?`;
     }
-    if (extracted.intent === 'change_subject' && state.stage !== 'ask_therapy') {
-      return `Trabalhamos com reembolso 💚\n• Sessão avulsa: R$ 200\n• Pacote 4x: R$ 180\n\n${this.getStageQuestion(state.stage)}`;
+    
+    // Change subject: responde mas NÃO muda de stage
+    if (extracted.intent === 'change_subject') {
+      const stageQuestion = this.getStageQuestion(state.stage);
+      if (state.stage === 'ask_therapy') {
+        return `Trabalhamos com reembolso 💚\n• Sessão: R$ 200\n• Pacote 4x: R$ 180\n\n${stageQuestion}`;
+      }
+      return `Trabalhamos com reembolso 💚\n• Sessão: R$ 200\n• Pacote 4x: R$ 180\n\n${stageQuestion}`;
     }
+    
     return this.getStageQuestion(state.stage);
   }
 
   getStageQuestion(stage) {
-    const q = { ask_therapy: 'Olá! Bem-vindo à Fono Inova 💚\n\nQual especialidade?\n• Fonoaudiologia\n• Psicologia\n• Fisioterapia', ask_complaint: 'Perfeito! Me conta rapidinho: qual a situação principal?', ask_age: 'Qual a idade do paciente?', ask_period: 'Qual período prefere? Manhã, tarde ou noite?' };
+    const q = { 
+      ask_therapy: 'Olá! Bem-vindo à Fono Inova 💚\n\nQual especialidade?\n• Fonoaudiologia\n• Psicologia\n• Fisioterapia', 
+      ask_complaint: 'Perfeito! Me conta rapidinho: qual a situação principal?', 
+      ask_age: 'Qual a idade do paciente?', 
+      ask_period: 'Qual período prefere? Manhã, tarde ou noite?' 
+    };
     return q[stage] || 'Como posso ajudar? 💚';
   }
 
@@ -147,12 +192,19 @@ export class WhatsAppOrchestrator {
     const { therapy, period, age } = state.data;
     const leadId = lead._id?.toString();
     this.logger.info('V5_BOOKING', { leadId, therapy, period, age });
+    
     try {
       const slots = await findAvailableSlots({ therapyArea: therapy, preferredPeriod: period, patientAge: age });
-      this.logger.info('V5_SLOTS_RESULT', { leadId, count: slots?.primary?.length || 0 });
+      
       if (slots?.primary?.length > 0) {
-        const txt = slots.primary.slice(0, 4).map(s => `• ${s.day} às ${s.time} (${s.doctorName || 'Profissional'})`).join('\n');
-        await Leads.findByIdAndUpdate(lead._id, { $set: { pendingSchedulingSlots: slots, 'autoBookingContext.active': true, 'autoBookingContext.therapyArea': therapy } });
+        const txt = slots.primary.slice(0, 4).map(s => `• ${s.day} às ${s.time} (${s.doctorName || 'Prof.'})`).join('\n');
+        await Leads.findByIdAndUpdate(lead._id, { 
+          $set: { 
+            pendingSchedulingSlots: slots, 
+            'autoBookingContext.active': true, 
+            'autoBookingContext.therapyArea': therapy 
+          } 
+        });
         return `Encontrei essas opções para ${therapy}:\n\n${txt}\n\nQual funciona melhor? 💚`;
       }
       return `No momento não encontrei vagas para ${therapy}. Nossa equipe vai entrar em contato! 💚`;
@@ -162,61 +214,64 @@ export class WhatsAppOrchestrator {
     }
   }
 
-  async loadState(leadId) {
+  async loadState(lead) {
+    const leadId = lead?._id?.toString();
+    
     try {
-      // Carrega do LeadContext (enrichLeadContext retorna contexto completo)
-      const context = await enrichLeadContext(leadId);
-      const lead = await Leads.findById(leadId).lean();
-      
-      // Extrai estado salvo em lastExtractedInfo ou retorna default
+      // Tenta carregar do lead.lastExtractedInfo
       const savedState = lead?.lastExtractedInfo?.conversationState;
       
-      if (savedState) {
-        this.logger.debug('V5_STATE_FROM_LEAD', { leadId: leadId?.toString(), stage: savedState.stage });
-        return savedState;
+      if (savedState && savedState.data) {
+        this.logger.debug('V5_STATE_FROM_LEAD', { leadId, stage: savedState.stage });
+        return {
+          stage: savedState.stage || 'ask_therapy',
+          data: {
+            therapy: savedState.data.therapy || lead?.therapyArea || null,
+            complaint: savedState.data.complaint || lead?.primaryComplaint || null,
+            age: savedState.data.age || lead?.patientInfo?.age || null,
+            period: savedState.data.period || lead?.pendingPreferredPeriod || null,
+            savedEmotionalContexts: savedState.data.savedEmotionalContexts || {},
+            hasEmotionalContext: savedState.data.hasEmotionalContext || false
+          },
+          history: savedState.history || []
+        };
       }
       
-      // Constrói estado inicial a partir do contexto do lead
-      const initialState = {
+      // Estado inicial a partir do lead
+      return {
         stage: 'ask_therapy',
         data: {
           therapy: lead?.therapyArea || null,
           complaint: lead?.primaryComplaint || null,
           age: lead?.patientInfo?.age || null,
           period: lead?.pendingPreferredPeriod || null,
-          savedEmotionalContexts: lead?.lastExtractedInfo?.savedEmotionalContexts || {}
+          savedEmotionalContexts: {},
+          hasEmotionalContext: false
         },
-        history: context?.conversationHistory?.slice(-10) || []
+        history: []
       };
-      
-      this.logger.debug('V5_STATE_INITIAL', { leadId: leadId?.toString() });
-      return initialState;
     } catch (e) {
-      this.logger.error('V5_LOAD_STATE_ERROR', { leadId: leadId?.toString(), error: e.message });
-      return { stage: 'ask_therapy', data: { therapy: null, complaint: null, age: null, period: null, savedEmotionalContexts: {} }, history: [] };
+      this.logger.error('V5_LOAD_ERROR', { leadId, error: e.message });
+      return { stage: 'ask_therapy', data: { therapy: null, complaint: null, age: null, period: null, savedEmotionalContexts: {}, hasEmotionalContext: false }, history: [] };
     }
   }
 
   async saveState(leadId, state) {
     try {
-      // Salva em lastExtractedInfo do Lead via updateExtractedInfo
-      const extractedInfo = {
-        conversationState: state,
-        therapyArea: state.data.therapy,
-        complaint: state.data.complaint,
-        age: state.data.age,
-        period: state.data.period,
-        hasEmotionalContext: state.data.hasEmotionalContext,
-        savedEmotionalContexts: state.data.savedEmotionalContexts,
-        stage: state.stage,
-        updatedAt: new Date()
-      };
-      
-      await updateExtractedInfo(leadId, extractedInfo);
-      this.logger.debug('V5_STATE_SAVED_TO_LEAD', { leadId: leadId?.toString(), stage: state.stage });
+      await Leads.findByIdAndUpdate(leadId, {
+        $set: {
+          'lastExtractedInfo.conversationState': state,
+          'lastExtractedInfo.therapyArea': state.data.therapy,
+          'lastExtractedInfo.complaint': state.data.complaint,
+          'lastExtractedInfo.age': state.data.age,
+          'lastExtractedInfo.period': state.data.period,
+          'lastExtractedInfo.savedEmotionalContexts': state.data.savedEmotionalContexts,
+          'lastExtractedInfo.updatedAt': new Date()
+        }
+      });
+      this.logger.debug('V5_SAVED', { leadId: leadId?.toString(), stage: state.stage });
     } catch (e) {
-      this.logger.error('V5_SAVE_STATE_ERROR', { leadId: leadId?.toString(), error: e.message });
-      throw e;
+      this.logger.error('V5_SAVE_ERROR', { leadId: leadId?.toString(), error: e.message });
     }
   }
 
