@@ -254,8 +254,7 @@ db.patients.find(
 const id = ObjectId("686e7f2bb26f4da03d426e7b");
 db.patients.findOne({ _id: id });
 
-git add backend / orchestrators / WhatsAppOrchestrator.js tests /
-  git commit - m "refactor: Amanda v6 entity-based + testes unitários"
+
 
 // 1️⃣ Deletar todas as mensagens do número
 const phone = "556181694922";

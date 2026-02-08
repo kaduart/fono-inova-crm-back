@@ -23,33 +23,7 @@ function extractEntities(text, context = {}) {
   const words = text.trim().split(/\s+/);
   
   // ========================================================================
-  // 1. EXTRAÇÃO DE NOME (heurística contextual)
-  // ========================================================================
-  // Se é resposta curta (1-3 palavras) e não é número/palavra de noise
-  if (words.length >= 1 && words.length <= 4 && text.length > 1) {
-    const noiseWords = ['nao', 'não', 'sim', 'talvez', 'ok', 'blz', 'beleza', 'opa', 'oi', 'ola', 'tudo'];
-    const firstWord = words[0].toLowerCase().replace(/[^a-z]/g, '');
-    
-    // Se não é palavra de noise e parece nome (começa com maiúscula ou é curto)
-    if (!noiseWords.includes(firstWord) && !text.match(/^\d+$/)) {
-      // Verifica se parece nome próprio (primeira letra maiúscula ou contexto indica)
-      const isLikelyName = words[0][0] === words[0][0]?.toUpperCase() || 
-                           context?.lastQuestion === 'nome' ||
-                           words.length <= 2;
-      
-      if (isLikelyName && text.length >= 2 && text.length <= 40) {
-        // Limpa e valida
-        const cleanedName = text.trim().replace(/[.,!?;:]$/, '');
-        // Evita extrair "não" ou "sim" como nome
-        if (!cleanedName.toLowerCase().match(/^(nao|não|sim|na)$/)) {
-          extracted.patientName = cleanedName;
-        }
-      }
-    }
-  }
-  
-  // ========================================================================
-  // 2. EXTRAÇÃO DE IDADE (múltiplos padrões)
+  // 1. EXTRAÇÃO DE IDADE (múltiplos padrões) - MOVIDO PARA PRIMEIRO
   // ========================================================================
   const idadePatterns = [
     /(\d+)\s*(anos?|a)/i,
@@ -75,7 +49,7 @@ function extractEntities(text, context = {}) {
   }
   
   // ========================================================================
-  // 3. EXTRAÇÃO DE ESPECIALIDADE/TERAPIA
+  // 2. EXTRAÇÃO DE ESPECIALIDADE/TERAPIA
   // ========================================================================
   const especialidadeMap = {
     'psicologia': ['psicolog', 'psi ', 'terapia', 'terapeuta'],
@@ -98,14 +72,14 @@ function extractEntities(text, context = {}) {
   }
   
   // ========================================================================
-  // 4. EXTRAÇÃO DE INTENÇÃO (o usuário quer o quê agora?)
+  // 3. EXTRAÇÃO DE INTENÇÃO (o usuário quer o quê agora?)
   // ========================================================================
   const intencaoPatterns = {
     'preco': /\b(valor|custa|pre[çc]o|preco|quanto|investimento|paga)\b/,
     'agendamento': /\b(agendar|marcar|consulta|vaga|horario|hora|disponibilidade|quando)\b/,
     'plano': /\b(plano|convenio|conv[eê]nio|saude|ipasgo|unimed|amil|reembolso)\b/,
     'endereco': /\b(onde|endere[çc]o|local|fica|chegar|localiza)/,
-    'queixa': /\b(n[ãa]o fala|atraso|atrasado|dificuldade|problema|preocupa|tdah|autismo|tantrum)\b/,
+    'queixa': /\b(n[ãa]o fala|n[ãa]o forma|n[ãa]o consegue|fala pouco|fala pouca|atraso|atrasado|dificuldade|problema|preocupa|tdah|autismo|tantrum|desenvolvimento|atrasada|nao fala)\b/,
     'confirmacao': /\b(sim|quero|pode|claro|ok|tudo bem|vamos|top|beleza|combinado|perfeito|pode ser)\b/,
     'negacao': /\b(n[ãa]o|não quero|depois|outra hora|agora n[ãa]o|nao pode|impossivel)\b/
   };
@@ -129,7 +103,7 @@ function extractEntities(text, context = {}) {
   }
   
   // ========================================================================
-  // 5. TIPO DE PACIENTE (criança vs adulto)
+  // 4. TIPO DE PACIENTE (criança vs adulto)
   // ========================================================================
   const criancaIndicators = /\b(filho|filha|pequeno|pequena|crian[çc]a|bebe|beb[eê]|nene|nen[eê]|baby|filhinho|filhinha)\b/;
   const adultoIndicators = /\b(eu mesmo|pra mim|sou eu|adulto|marido|esposa|mae|pai)\b/;
@@ -141,7 +115,7 @@ function extractEntities(text, context = {}) {
   }
   
   // ========================================================================
-  // 6. PERÍODO (manhã/tarde - SEM NOITE!)
+  // 5. PERÍODO (manhã/tarde - SEM NOITE!)
   // ========================================================================
   if (/manh[ãa]|cedo|8h|9h|10h|11h|08|09|10|11/.test(lowered)) {
     extracted.period = 'manha';
@@ -151,7 +125,7 @@ function extractEntities(text, context = {}) {
   // Ignora "noite" - não oferecemos!
   
   // ========================================================================
-  // 7. QUEIXA/DESCRICAO (extrair se não for pergunta curta)
+  // 6. QUEIXA/DESCRICAO (extrair se não for pergunta curta)
   // ========================================================================
   const isQuestion = /^(qual|quanto|onde|como|voce|voces|tem|faz|aceita|trabalha|pode)/i.test(text.trim());
   const isGreeting = /^(oi|ola|bom dia|boa tarde|boa noite|tudo bem|td bem)[\s!,.]*$/i.test(text.trim());
@@ -161,8 +135,41 @@ function extractEntities(text, context = {}) {
   if (!isQuestion && !isGreeting && !hasActionIntent && text.length > 10 && !extracted.patientName && !extracted.age) {
     // Remove saudações e limpa
     let complaint = text.replace(/^(oi|ola|bom dia|boa tarde|boa noite)[,\s]*/i, '').substring(0, 250);
-    if (complaint.length > 20) {
+    // BUGFIX: Queixas podem ser curtas (ex: "voz", "fala pouco")
+    if (complaint.length >= 5) {
       extracted.complaint = complaint;
+    }
+  }
+  
+  // ========================================================================
+  // 7. EXTRAÇÃO DE NOME (heurística contextual) - MOVIDO PARA ÚLTIMO
+  // ========================================================================
+  // CRITICAL FIX: Só extrai nome se NÃO tiver detectado outras entidades relevantes
+  // Isso evita extrair frases como "Aceita plano Unimed" como nome
+  
+  if (words.length >= 1 && words.length <= 3 && text.length > 1 && text.length <= 40) {
+    const noiseWords = ['nao', 'não', 'sim', 'talvez', 'ok', 'blz', 'beleza', 'opa', 'oi', 'ola', 'tudo',
+      'aceita', 'aceito', 'quero', 'queria', 'preciso', 'gostaria', 'pode', 'como', 'qual',
+      'fono', 'fala', 'falar', 'ainda', 'pouco', 'muito', 'para', 'pra', 'meu', 'minha',
+      'filho', 'filha', 'dele', 'dela', 'aqui', 'valor', 'quanto', 'custa', 'plano',
+      'bom', 'boa', 'dia', 'tarde', 'noite', 'obrigado', 'obrigada', 'tenho', 'tem',
+      'não', 'nao', 'ele', 'ela', 'nos', 'nós', 'você', 'voce', 'vc'];
+    
+    const allWordsClean = words.map(w => w.toLowerCase().replace(/[^a-záàãâéêíóôõúç]/g, ''));
+    const hasNoiseWord = allWordsClean.some(w => noiseWords.includes(w));
+    
+    // Só extrai como nome se:
+    // 1. Nenhuma palavra é noise/verbo/preposição comum
+    // 2. Não detectou outra entidade relevante nesta mensagem
+    // 3. Parece nome próprio (não é frase comum)
+    const hasOtherEntity = extracted.therapy || extracted.age || extracted.period || 
+                           (extracted.intencao && extracted.intencao !== 'informacao');
+    
+    if (!hasNoiseWord && !hasOtherEntity && !text.match(/^\d+$/)) {
+      const cleanedName = text.trim().replace(/[.,!?;:]$/, '');
+      if (!cleanedName.toLowerCase().match(/^(nao|não|sim|na)$/)) {
+        extracted.patientName = cleanedName;
+      }
     }
   }
   
