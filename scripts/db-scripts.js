@@ -255,15 +255,8 @@ const id = ObjectId("686e7f2bb26f4da03d426e7b");
 db.patients.findOne({ _id: id });
 
 
-
 // 1️⃣ Deletar todas as mensagens do número
-const phone = "556181694922";
-
-db.contacts.deleteMany({ phone });
-db.leads.deleteMany({ "contact.phone": phone });
-db.messages.deleteMany({
-  $or: [{ from: phone }, { to: phone }]
-});
+pa
 
 
 db.leads.findOne(
