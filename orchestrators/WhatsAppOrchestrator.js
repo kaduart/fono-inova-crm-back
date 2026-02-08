@@ -86,10 +86,11 @@ const DETECTOR_MAP = {
 
 // 🎯 ESTADOS DO FUNIL (sempre avança, nunca quebra)
 const FLOW_STEPS = {
-  SAUDACAO: 'saudacao',           // Primeiro contato - descobrir queixa
+  SAUDACAO: 'saudacao',           // Primeiro contato - acolhimento
+  NOME: 'nome',                   // Nome do paciente (NOVO!)
   QUEIXA: 'queixa',               // Entender a dor/situação
-  PERFIL: 'perfil',               // Idade/dados do paciente
-  DISPONIBILIDADE: 'disponibilidade', // Período do dia
+  IDADE: 'idade',                 // Idade do paciente
+  DISPONIBILIDADE: 'disponibilidade', // Período do dia (SEM NOITE!)
   AGENDAMENTO: 'agendamento',     // Oferecer horários
   CONFIRMACAO: 'confirmacao'      // Confirmar/aguardar resposta
 };
@@ -246,18 +247,23 @@ export class WhatsAppOrchestrator {
       return FLOW_STEPS.QUEIXA;
     }
     
-    // Se tem terapia e queixa mas não tem idade/nome, está no perfil
-    if (therapy && complaint && (!age && !patientName)) {
-      return FLOW_STEPS.PERFIL;
+    // Se tem terapia e queixa mas não tem nome, pergunta nome primeiro
+    if (therapy && complaint && !patientName) {
+      return FLOW_STEPS.NOME;
     }
     
-    // Se tem tudo menos período, está na disponibilidade
-    if (therapy && complaint && (age || patientName) && !period) {
+    // Se tem nome mas não tem idade, pergunta idade
+    if (therapy && complaint && patientName && !age) {
+      return FLOW_STEPS.IDADE;
+    }
+    
+    // Se tem idade mas não tem período, pergunta período
+    if (therapy && complaint && patientName && age && !period) {
       return FLOW_STEPS.DISPONIBILIDADE;
     }
     
     // Se tem tudo, está no agendamento
-    if (therapy && complaint && (age || patientName) && period) {
+    if (therapy && complaint && patientName && age && period) {
       return FLOW_STEPS.AGENDAMENTO;
     }
     
@@ -292,19 +298,19 @@ export class WhatsAppOrchestrator {
     // FLUXO PRINCIPAL DO FUNIL
     // ==========================================
     
-    // PASSO 1: SAUDAÇÃO (primeiro contato)
+    // PASSO 1: SAUDAÇÃO (primeiro contato com ACOLHIMENTO REAL)
     if (step === FLOW_STEPS.SAUDACAO) {
       // Se o usuário já veio com terapia na primeira mensagem
       if (therapy) {
         const info = THERAPY_DATA[therapy];
-        return `Oi! Que bom que entrou em contato! 😊💚\n\n${info.acolhimento}\n\nMe conta um pouco mais sobre a situação: o que está acontecendo que te preocupa?`;
+        return `Oi! 😊 Que bom que você entrou em contato! 💚\n\n${info.acolhimento}\n\nMe conta: o que está acontecendo que te trouxe até aqui hoje? Estou aqui para te ouvir!`;
       }
       
       // Saudação padrão acolhedora
-      return `Oi! Sou a Amanda da Fono Inova! 😊💚\n\nQue bom que você entrou em contato! Estou aqui para ajudar a encontrar o melhor cuidado para você ou sua família.\n\nMe conta: é para você ou para um pequeno? E qual situação vocês estão enfrentando?`;
+      return `Oi! Sou a Amanda da Fono Inova! 😊💚\n\nQue bom que você entrou em contato! Já vi que você está buscando ajuda, e isso é um passo muito importante! 👏\n\nMe conta: é para você ou para um pequeno da família? E o que está acontecendo que te preocupa?`;
     }
     
-    // PASSO 2: QUEIXA (entender a dor)
+    // PASSO 2: QUEIXA (entender a dor com EMPATIA)
     if (step === FLOW_STEPS.QUEIXA) {
       const info = THERAPY_DATA[therapy];
       
@@ -313,30 +319,43 @@ export class WhatsAppOrchestrator {
         // Validação empática do que entendeu
         let validacao = '';
         if (therapy === 'fonoaudiologia') {
-          validacao = `Ah, entendi! 💬 Então é para acompanhar a comunicação${age ? ` dos ${age} anos` : ''}. `;
+          validacao = `Ah, entendi! 💬 Então é sobre a comunicação. Deve ser preocupante ver essa dificuldade, né? Mas fica tranquila, a gente consegue ajudar muito! 🥰`;
         } else if (therapy === 'psicologia') {
-          validacao = `Compreendo! 🧠 Cuidar da saúde mental é muito importante. `;
+          validacao = `Compreendo! 🧠 Cuidar da saúde mental é fundamental. Você está fazendo o certo em buscar apoio! 💚`;
         } else {
-          validacao = `Entendido! ${info.emoji} Vamos cuidar disso com muito carinho. `;
+          validacao = `Entendido! ${info.emoji} Vamos cuidar disso com muito carinho! 💚`;
         }
         
-        return `${validacao}\n\nPara eu verificar a disponibilidade dos melhores profissionais, preciso saber: qual a idade${patientName ? ` de ${patientName}` : ''}?`;
+        return `${validacao}\n\nPara eu organizar tudo certinho aqui, me conta: como é o nome do pequeno?`;
       }
       
-      // Ainda não entendeu a queixa
+      // Ainda não entendeu a queixa - perguntar com mais calor
       if (therapy === 'fonoaudiologia') {
-        return `Entendi que é para fonoaudiologia! 💬\n\nMe conta um pouquinho mais: a criança ainda não fala, fala poucas palavras, ou tem alguma dificuldade específica que te preocupa? Estou aqui para ouvir! 💚`;
+        return `Entendi que é para fonoaudiologia! 💬\n\nMe conta um pouquinho mais sobre ele: ele ainda não fala nada, fala algumas palavrinhas, ou tem alguma dificuldade específica que você notou? Estou aqui para te ouvir! 💚`;
       }
       
       if (therapy === 'psicologia') {
-        return `Sobre psicologia 🧠💚\n\nMe conta como você está se sentindo... É ansiedade, dificuldade para dormir, ou algo mais que está te incomodando? Estou aqui para te ouvir!`;
+        return `Sobre psicologia 🧠💚\n\nMe conta como você está se sentindo ultimamente... Está com ansiedade, dificuldade para dormir, ou tem algo mais que está te incomodando? Pode desabafar!`;
       }
       
-      return `Perfeito! ${info.emoji}\n\nMe conta um pouco mais sobre a situação que está preocupando para eu entender melhor como podemos ajudar? 💚`;
+      return `Perfeito! ${info.emoji}\n\nMe conta um pouco mais sobre a situação que está preocupando você. Quero entender direitinho para poder ajudar da melhor forma! 💚`;
     }
     
-    // PASSO 3: PERFIL (idade/dados)
-    if (step === FLOW_STEPS.PERFIL) {
+    // PASSO NOVO: NOME (perguntar nome antes da idade!)
+    if (step === FLOW_STEPS.NOME) {
+      const info = THERAPY_DATA[therapy];
+      
+      // Se acabou de dar nome
+      if (patientName) {
+        return `Que nome lindo, ${patientName}! 🥰💚\n\nE quantos anos ${patientName} tem? Isso ajuda a verificar quais profissionais têm mais experiência com essa idade!`;
+      }
+      
+      // Perguntar nome de forma acolhedora
+      return `Para eu organizar tudo certinho aqui, me conta: como é o nome ${therapy === 'psicologia' ? 'da criança' : 'dele/de'}? 💚`;
+    }
+    
+    // PASSO NOVO: IDADE (só pergunta idade depois do nome)
+    if (step === FLOW_STEPS.IDADE) {
       // Se acabou de dar idade
       if (age) {
         let acolhimentoIdade = '';
@@ -345,25 +364,20 @@ export class WhatsAppOrchestrator {
         } else if (age <= 12) {
           acolhimentoIdade = `${age} anos! Uma idade linda para acompanhar o desenvolvimento! 🌟`;
         } else if (age <= 17) {
-          acolhimentoIdade = `Adolescência é uma fase de muitas transformações! 💚`;
+          acolhimentoIdade = `Adolescência é uma fase de muitas transformações, né? 💚`;
         } else {
-          acolhimentoIdade = `Perfeito! Vamos cuidar de você! 💚`;
+          acolhimentoIdade = `Perfeito! Vamos cuidar muito bem de você! 💚`;
         }
         
         const info = THERAPY_DATA[therapy];
-        return `${acolhimentoIdade}\n\nPara ${info.name.toLowerCase()}, temos ótimos profissionais. Qual período funciona melhor para vocês: manhã, tarde ou noite?`;
-      }
-      
-      // Se deu nome mas não idade
-      if (patientName && !age) {
-        return `Que nome lindo, ${patientName}! 🥰\n\nE quantos anos ${patientName} tem? Isso ajuda a verificar os profissionais mais indicados para essa idade! 💚`;
+        return `${acolhimentoIdade}\n\nPara ${info.name.toLowerCase()}, temos ótimos profissionais. Qual período funciona melhor para vocês: **manhã ou tarde**? (Nosso horário de atendimento é das 8h às 18h) ☀️`;
       }
       
       // Insistir na idade de forma gentil
-      return `Só para eu verificar a disponibilidade certinha... Qual a idade${patientName ? ` de ${patientName}` : ''}? 💚`;
+      return `Só para eu verificar a disponibilidade certinha... Quantos anos ${patientName} tem? 💚`;
     }
     
-    // PASSO 4: DISPONIBILIDADE (período)
+    // PASSO: DISPONIBILIDADE (período - SEM NOITE!)
     if (step === FLOW_STEPS.DISPONIBILIDADE) {
       // Se acabou de dar período
       if (period) {
@@ -371,10 +385,11 @@ export class WhatsAppOrchestrator {
         return `Perfeito! Anotado ${periodoTexto}! ✅\n\nDeixa eu verificar os horários disponíveis para você... Só um instante! ⏳`;
       }
       
-      return `Qual período seria melhor para vocês? Manhã, tarde ou noite? 🌅☀️🌙`;
+      // IMPORTANTE: Não oferecer noite se não atende!
+      return `Qual período funciona melhor para vocês: **manhã ou tarde**? ☀️\n\n(Nosso horário de atendimento é de segunda a sexta, das 8h às 18h)`;
     }
     
-    // PASSO 5: AGENDAMENTO (mostrar horários)
+    // PASSO: AGENDAMENTO (mostrar horários)
     if (step === FLOW_STEPS.AGENDAMENTO) {
       // Se usuário confirmou "sim" ou demonstrou interesse
       if (isConfirmation) {
@@ -388,12 +403,11 @@ export class WhatsAppOrchestrator {
       
       // Tudo pronto, oferecer agendamento
       const info = THERAPY_DATA[therapy];
-      const nomePaciente = patientName ? ` do ${patientName}` : '';
-      return `Maravilha! 🎉 Tenho todas as informações aqui:\n\n✅ ${info.name}\n✅ Idade: ${age} anos${nomePaciente}\n✅ Período: ${period === 'manha' ? 'manhã' : period}\n\nVou verificar os horários disponíveis, pode ser?`;
+      return `Maravilha! 🎉 Tenho todas as informações aqui:\n\n✅ ${info.name}\n✅ Nome: ${patientName}\n✅ Idade: ${age} anos\n✅ Período: ${period === 'manha' ? 'manhã' : period}\n\nVou verificar os horários disponíveis agora, pode ser?`;
     }
     
     // Fallback: sempre com pergunta!
-    return `Entendi! 😊💚\n\nMe conta: qual é a principal questão que vocês estão enfrentando para eu poder te ajudar da melhor forma?`;
+    return `Entendi! 😊💚\n\nMe conta: qual é a principal questão que vocês estão enfrentando? Estou aqui para te ajudar!`;
   }
 
   // 🔄 RESPOSTA DE INTERRUPÇÃO + RETOMADA OBRIGATÓRIA
@@ -436,7 +450,8 @@ export class WhatsAppOrchestrator {
     } else if (!age) {
       perguntaRetomada = `\n\nE qual a idade${patientName ? ` de ${patientName}` : ''}? Para eu verificar os melhores profissionais disponíveis!`;
     } else if (!period) {
-      perguntaRetomada = `\n\nQual período funciona melhor para vocês: manhã, tarde ou noite?`;
+      // IMPORTANTE: Não oferecer "noite" se a clínica não atende!
+      perguntaRetomada = `\n\nQual período funciona melhor para vocês: **manhã ou tarde**? (Nosso horário é das 8h às 18h)`;
     } else {
       perguntaRetomada = `\n\nVou verificar os horários disponíveis! Posso buscar para você?`;
     }
