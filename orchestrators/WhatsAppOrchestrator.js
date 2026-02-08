@@ -156,7 +156,9 @@ function extractEntities(text, context = {}) {
   const isQuestion = /^(qual|quanto|onde|como|voce|voces|tem|faz|aceita|trabalha|pode)/i.test(text.trim());
   const isGreeting = /^(oi|ola|bom dia|boa tarde|boa noite|tudo bem|td bem)[\s!,.]*$/i.test(text.trim());
   
-  if (!isQuestion && !isGreeting && text.length > 10 && !extracted.patientName && !extracted.age) {
+  // BUGFIX: Só extrai complaint se NÃO tiver intenção de ação já detectada
+  const hasActionIntent = extracted.intencao && !['informacao', 'queixa'].includes(extracted.intencao);
+  if (!isQuestion && !isGreeting && !hasActionIntent && text.length > 10 && !extracted.patientName && !extracted.age) {
     // Remove saudações e limpa
     let complaint = text.replace(/^(oi|ola|bom dia|boa tarde|boa noite)[,\s]*/i, '').substring(0, 250);
     if (complaint.length > 20) {
@@ -356,8 +358,9 @@ export class WhatsAppOrchestrator {
         patientName: extracted.patientName || memory.patientName || null,
         tipo_paciente: extracted.tipo_paciente || memory.tipo_paciente || null,
         intencao: extracted.intencao || memory.intencao || null,
-        isConfirmation: extracted.isConfirmation || memory.isConfirmation || false,
-        isNegation: extracted.isNegation || memory.isNegation || false,
+        // BUGFIX: isConfirmation/isNegation são POR MENSAGEM, não acumulativos
+        isConfirmation: extracted.isConfirmation || false,
+        isNegation: extracted.isNegation || false,
         flags: { ...memory.flags, ...(extracted.flags || {}) },
         // Metadados para tracking
         lastMessage: text,
@@ -428,7 +431,7 @@ export class WhatsAppOrchestrator {
     let period = null;
     if (/manh[ãa]|cedo/i.test(lower)) period = 'manha';
     else if (/tarde/i.test(lower)) period = 'tarde';
-    else if (/noite/i.test(lower)) period = 'noite';
+    // BUGFIX: Noite removido - clínica não atende à noite
     
     // Detectar nome
     const namePatterns = [
@@ -556,21 +559,7 @@ export class WhatsAppOrchestrator {
       return this.askForSlot(ctx, action.slot, action.questionType, extracted);
     }
     
-    // Se detectou entidade nova (nome/idade), valida e pergunta próxima
-    if (extracted.patientName && !ctx.askedForAge) {
-      ctx.askedForName = true;
-      return this.acknowledgeAndAskNext(ctx, 'name', extracted);
-    }
-    
-    if (extracted.age && ctx.patientName && !ctx.askedForPeriod) {
-      ctx.askedForAge = true;
-      return this.acknowledgeAndAskNext(ctx, 'age', extracted);
-    }
-    
-    if (extracted.period && ctx.age && !ctx.askedForConfirmation) {
-      ctx.askedForPeriod = true;
-      return this.acknowledgeAndAskNext(ctx, 'period', extracted);
-    }
+    // BUGFIX: Código movido para dentro de askForSlot - reconhece entidade nova lá
     
     // Se tudo completo, oferece agendamento
     if (action.type === 'OFFER_AGENDAMENTO' || action.missingCount === 0) {
@@ -613,20 +602,25 @@ export class WhatsAppOrchestrator {
       case 'patientName':
         // Só pergunta nome se não extraiu automaticamente
         if (!extracted?.patientName) {
-          const sujeito = isCrianca ? 'o pequeno' : (therapy === 'psicologia' ? 'a criança' : 'o paciente');
-          return `Para eu organizar tudo certinho aqui, me conta: como é o nome de ${sujeito}? 💚`;
+          // HUMANIZADO: Consultora da clínica, não robô de formulário
+          if (isCrianca) {
+            return `E o pequeno, como se chama? 😊💚`;
+          }
+          return `E você, como posso te chamar? 💚`;
         }
-        // Se extraiu mas ainda está no slot, algo deu errado - valida
-        return `Que nome lindo, ${extracted.patientName}! 🥰💚\n\nE quantos anos ${extracted.patientName} tem?`;
+        // Se extraiu mas ainda está no slot, valida de forma natural
+        return `${extracted.patientName}, anotado! 🥰 E quantos anos ${extracted.patientName} tem?`;
         
       case 'age':
+        // HUMANIZADO: Tom consultora, não formulário
         if (patientName) {
-          return `Que nome lindo, ${patientName}! 🥰\n\nE quantos anos ${patientName} tem? Isso ajuda a verificar quais profissionais têm mais experiência com essa idade! 💚`;
+          return `${patientName} tem quantos anos? Assim eu consigo ver quais profissionais têm mais experiência com essa idade 😊`;
         }
-        return `Só para eu verificar a disponibilidade certinha... Quantos anos ${isCrianca ? 'o pequeno' : 'você'} tem? 💚`;
+        return `E a idade? Só pra eu verificar a disponibilidade certinha 💚`;
         
       case 'period':
-        return `Perfeito! 🌟\n\nPara ${info?.name?.toLowerCase() || 'o atendimento'}, temos ótimos profissionais. Qual período funciona melhor para vocês: **manhã ou tarde**? (Nosso horário é das 8h às 18h) ☀️`;
+        // HUMANIZADO: Período sem parecer burocracia
+        return `Boa! E pra ${info?.name?.toLowerCase() || 'consulta'}, funciona melhor de manhã ou à tarde? ☀️\n\n(A gente atende das 8h às 18h, de segunda a sexta)`;
         
       default:
         return this.fallbackResponse(ctx);
@@ -773,7 +767,8 @@ export class WhatsAppOrchestrator {
       }
       
       // Sem vagas no período desejado
-      return `No momento não encontrei vagas para ${info?.name || therapy} no período da ${period === 'manha' ? 'manhã' : period}. 😔\n\nPosso:\n1️⃣ Verificar outros períodos (manhã/tarde/noite)\n2️⃣ Pedir para nossa equipe entrar em contato quando tiver vaga\n\nO que prefere?`;
+      // BUGFIX: Removido 'noite' - clínica não atende à noite
+      return `No momento não encontrei vagas para ${info?.name || therapy} no período da ${period === 'manha' ? 'manhã' : period}. 😔\n\nPosso:\n1️⃣ Verificar outros períodos (manhã ou tarde)\n2️⃣ Pedir para nossa equipe entrar em contato quando tiver vaga\n\nO que prefere?`;
       
     } catch (e) {
       this.logger.error('BOOKING_ERROR', { error: e.message });
