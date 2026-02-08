@@ -17,13 +17,39 @@ import { buildResponse } from '../services/intelligence/naturalResponseBuilder.j
  */
 function extractEntities(text, context = {}) {
   if (!text || typeof text !== 'string') return {};
-  
+
   const lowered = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const extracted = {};
   const words = text.trim().split(/\s+/);
-  
+
   // ========================================================================
-  // 1. EXTRAÇÃO DE IDADE (múltiplos padrões) - MOVIDO PARA PRIMEIRO
+  // 1. EXTRAÇÃO DE NOME (heurística contextual)
+  // ========================================================================
+  // Se é resposta curta (1-3 palavras) e não é número/palavra de noise
+  if (words.length >= 1 && words.length <= 4 && text.length > 1) {
+    const noiseWords = ['nao', 'não', 'sim', 'talvez', 'ok', 'blz', 'beleza', 'opa', 'oi', 'ola', 'tudo'];
+    const firstWord = words[0].toLowerCase().replace(/[^a-z]/g, '');
+
+    // Se não é palavra de noise e parece nome (começa com maiúscula ou é curto)
+    if (!noiseWords.includes(firstWord) && !text.match(/^\d+$/)) {
+      // Verifica se parece nome próprio (primeira letra maiúscula ou contexto indica)
+      const isLikelyName = words[0][0] === words[0][0]?.toUpperCase() ||
+        context?.lastQuestion === 'nome' ||
+        words.length <= 2;
+
+      if (isLikelyName && text.length >= 2 && text.length <= 40) {
+        // Limpa e valida
+        const cleanedName = text.trim().replace(/[.,!?;:]$/, '');
+        // Evita extrair "não" ou "sim" como nome
+        if (!cleanedName.toLowerCase().match(/^(nao|não|sim|na)$/)) {
+          extracted.patientName = cleanedName;
+        }
+      }
+    }
+  }
+
+  // ========================================================================
+  // 2. EXTRAÇÃO DE IDADE (múltiplos padrões)
   // ========================================================================
   const idadePatterns = [
     /(\d+)\s*(anos?|a)/i,
@@ -33,23 +59,23 @@ function extractEntities(text, context = {}) {
     /(\d+)\s*meses?/i,
     /(\d+)[\s]*a/i  // "7 a" ou "7a"
   ];
-  
+
   for (const pattern of idadePatterns) {
     const match = text.match(pattern);
     if (match && match[1]) {
       const idade = parseInt(match[1]);
       if (idade >= 0 && idade <= 120) {
         extracted.age = idade;
-        extracted.idadeRange = idade < 3 ? 'bebe' : 
-                              idade < 12 ? 'crianca' : 
-                              idade < 18 ? 'adolescente' : 'adulto';
+        extracted.idadeRange = idade < 3 ? 'bebe' :
+          idade < 12 ? 'crianca' :
+            idade < 18 ? 'adolescente' : 'adulto';
         break;
       }
     }
   }
-  
+
   // ========================================================================
-  // 2. EXTRAÇÃO DE ESPECIALIDADE/TERAPIA
+  // 3. EXTRAÇÃO DE ESPECIALIDADE/TERAPIA
   // ========================================================================
   const especialidadeMap = {
     'psicologia': ['psicolog', 'psi ', 'terapia', 'terapeuta'],
@@ -60,7 +86,7 @@ function extractEntities(text, context = {}) {
     'neuropsicologia': ['neuropsicolog', 'avaliacao neuro', 'funcoes cerebrais'],
     'musicoterapia': ['musicoterapia', 'musica', 'musicas']
   };
-  
+
   for (const [key, keywords] of Object.entries(especialidadeMap)) {
     for (const keyword of keywords) {
       if (lowered.includes(keyword)) {
@@ -70,52 +96,52 @@ function extractEntities(text, context = {}) {
     }
     if (extracted.therapy) break;
   }
-  
+
   // ========================================================================
-  // 3. EXTRAÇÃO DE INTENÇÃO (o usuário quer o quê agora?)
+  // 4. EXTRAÇÃO DE INTENÇÃO (o usuário quer o quê agora?)
   // ========================================================================
   const intencaoPatterns = {
     'preco': /\b(valor|custa|pre[çc]o|preco|quanto|investimento|paga)\b/,
     'agendamento': /\b(agendar|marcar|consulta|vaga|horario|hora|disponibilidade|quando)\b/,
     'plano': /\b(plano|convenio|conv[eê]nio|saude|ipasgo|unimed|amil|reembolso)\b/,
     'endereco': /\b(onde|endere[çc]o|local|fica|chegar|localiza)/,
-    'queixa': /\b(n[ãa]o fala|n[ãa]o forma|n[ãa]o consegue|fala pouco|fala pouca|atraso|atrasado|dificuldade|problema|preocupa|tdah|autismo|tantrum|desenvolvimento|atrasada|nao fala)\b/,
+    'queixa': /\b(n[ãa]o fala|atraso|atrasado|dificuldade|problema|preocupa|tdah|autismo|tantrum)\b/,
     'confirmacao': /\b(sim|quero|pode|claro|ok|tudo bem|vamos|top|beleza|combinado|perfeito|pode ser)\b/,
     'negacao': /\b(n[ãa]o|não quero|depois|outra hora|agora n[ãa]o|nao pode|impossivel)\b/
   };
-  
+
   for (const [intencao, pattern] of Object.entries(intencaoPatterns)) {
     if (pattern.test(lowered)) {
       // Se for confirmação/negacao, marcar flags também
       if (intencao === 'confirmacao') extracted.isConfirmation = true;
       if (intencao === 'negacao') extracted.isNegation = true;
-      
+
       // Intenção principal (preço tem prioridade sobre agendamento)
       if (!extracted.intencao || intencao === 'preco') {
         extracted.intencao = intencao;
       }
     }
   }
-  
+
   // Se não detectou intenção específica, é informação geral
   if (!extracted.intencao) {
     extracted.intencao = 'informacao';
   }
-  
+
   // ========================================================================
-  // 4. TIPO DE PACIENTE (criança vs adulto)
+  // 5. TIPO DE PACIENTE (criança vs adulto)
   // ========================================================================
   const criancaIndicators = /\b(filho|filha|pequeno|pequena|crian[çc]a|bebe|beb[eê]|nene|nen[eê]|baby|filhinho|filhinha)\b/;
   const adultoIndicators = /\b(eu mesmo|pra mim|sou eu|adulto|marido|esposa|mae|pai)\b/;
-  
+
   if (criancaIndicators.test(lowered)) {
     extracted.tipo_paciente = 'crianca';
   } else if (adultoIndicators.test(lowered)) {
     extracted.tipo_paciente = 'adulto';
   }
-  
+
   // ========================================================================
-  // 5. PERÍODO (manhã/tarde - SEM NOITE!)
+  // 6. PERÍODO (manhã/tarde - SEM NOITE!)
   // ========================================================================
   if (/manh[ãa]|cedo|8h|9h|10h|11h|08|09|10|11/.test(lowered)) {
     extracted.period = 'manha';
@@ -123,56 +149,21 @@ function extractEntities(text, context = {}) {
     extracted.period = 'tarde';
   }
   // Ignora "noite" - não oferecemos!
-  
+
   // ========================================================================
-  // 6. QUEIXA/DESCRICAO (extrair se não for pergunta curta)
+  // 7. QUEIXA/DESCRICAO (extrair se não for pergunta curta)
   // ========================================================================
   const isQuestion = /^(qual|quanto|onde|como|voce|voces|tem|faz|aceita|trabalha|pode)/i.test(text.trim());
   const isGreeting = /^(oi|ola|bom dia|boa tarde|boa noite|tudo bem|td bem)[\s!,.]*$/i.test(text.trim());
-  
-  // BUGFIX: Só extrai complaint se NÃO tiver intenção de ação já detectada
-  const hasActionIntent = extracted.intencao && !['informacao', 'queixa'].includes(extracted.intencao);
-  if (!isQuestion && !isGreeting && !hasActionIntent && text.length > 10 && !extracted.patientName && !extracted.age) {
+
+  if (!isQuestion && !isGreeting && text.length > 10 && !extracted.patientName && !extracted.age) {
     // Remove saudações e limpa
     let complaint = text.replace(/^(oi|ola|bom dia|boa tarde|boa noite)[,\s]*/i, '').substring(0, 250);
-    // BUGFIX: Queixas podem ser curtas (ex: "voz", "fala pouco")
-    if (complaint.length >= 5) {
+    if (complaint.length > 20) {
       extracted.complaint = complaint;
     }
   }
-  
-  // ========================================================================
-  // 7. EXTRAÇÃO DE NOME (heurística contextual) - MOVIDO PARA ÚLTIMO
-  // ========================================================================
-  // CRITICAL FIX: Só extrai nome se NÃO tiver detectado outras entidades relevantes
-  // Isso evita extrair frases como "Aceita plano Unimed" como nome
-  
-  if (words.length >= 1 && words.length <= 3 && text.length > 1 && text.length <= 40) {
-    const noiseWords = ['nao', 'não', 'sim', 'talvez', 'ok', 'blz', 'beleza', 'opa', 'oi', 'ola', 'tudo',
-      'aceita', 'aceito', 'quero', 'queria', 'preciso', 'gostaria', 'pode', 'como', 'qual',
-      'fono', 'fala', 'falar', 'ainda', 'pouco', 'muito', 'para', 'pra', 'meu', 'minha',
-      'filho', 'filha', 'dele', 'dela', 'aqui', 'valor', 'quanto', 'custa', 'plano',
-      'bom', 'boa', 'dia', 'tarde', 'noite', 'obrigado', 'obrigada', 'tenho', 'tem',
-      'não', 'nao', 'ele', 'ela', 'nos', 'nós', 'você', 'voce', 'vc'];
-    
-    const allWordsClean = words.map(w => w.toLowerCase().replace(/[^a-záàãâéêíóôõúç]/g, ''));
-    const hasNoiseWord = allWordsClean.some(w => noiseWords.includes(w));
-    
-    // Só extrai como nome se:
-    // 1. Nenhuma palavra é noise/verbo/preposição comum
-    // 2. Não detectou outra entidade relevante nesta mensagem
-    // 3. Parece nome próprio (não é frase comum)
-    const hasOtherEntity = extracted.therapy || extracted.age || extracted.period || 
-                           (extracted.intencao && extracted.intencao !== 'informacao');
-    
-    if (!hasNoiseWord && !hasOtherEntity && !text.match(/^\d+$/)) {
-      const cleanedName = text.trim().replace(/[.,!?;:]$/, '');
-      if (!cleanedName.toLowerCase().match(/^(nao|não|sim|na)$/)) {
-        extracted.patientName = cleanedName;
-      }
-    }
-  }
-  
+
   return extracted;
 }
 
@@ -182,28 +173,28 @@ function extractEntities(text, context = {}) {
  */
 function getMissingEntities(context) {
   const required = [];
-  
+
   // Ordem de prioridade para agendamento
   if (!context.therapy && !context.especialidade) {
     required.push({ field: 'therapy', question: 'specialty' });
   }
-  
+
   if (!context.complaint && !context.queixa) {
     required.push({ field: 'complaint', question: 'complaint' });
   }
-  
+
   if (!context.patientName && !context.nome) {
     required.push({ field: 'patientName', question: 'name' });
   }
-  
+
   if (!context.age && !context.idade) {
     required.push({ field: 'age', question: 'age' });
   }
-  
+
   if (!context.period && !context.horario) {
     required.push({ field: 'period', question: 'period' });
   }
-  
+
   return required;
 }
 
@@ -214,43 +205,43 @@ function getMissingEntities(context) {
 function decideNextAction(context, extracted) {
   const missing = getMissingEntities(context);
   const intencao = extracted.intencao || context.lastIntencao || 'informacao';
-  
+
   // Se usuário mudou de assunto (intenção clara), responder isso primeiro
   if (intencao === 'preco' && context.therapy) {
     return { type: 'RESPONSE_PRECO', missingAfter: missing };
   }
-  
+
   if (intencao === 'plano') {
     return { type: 'RESPONSE_PLANO', missingAfter: missing };
   }
-  
+
   if (intencao === 'endereco') {
     return { type: 'RESPONSE_ENDERECO', missingAfter: missing };
   }
-  
+
   if (intencao === 'agendamento' && missing.length === 0) {
     return { type: 'EXECUTE_AGENDAMENTO', missingAfter: [] };
   }
-  
+
   // Fluxo normal: preencher slots faltantes
   if (missing.length > 0) {
-    return { 
-      type: 'ASK_SLOT', 
+    return {
+      type: 'ASK_SLOT',
       slot: missing[0].field,
       questionType: missing[0].question,
       missingCount: missing.length,
       nextMissing: missing[1] || null
     };
   }
-  
+
   // Tudo preenchido, oferecer agendamento
   return { type: 'OFFER_AGENDAMENTO', missingAfter: [] };
 }
 
 // Dados das terapias - VALOR ANTES DO PREÇO! 🎯
 const THERAPY_DATA = {
-  fonoaudiologia: { 
-    name: 'Fonoaudiologia', 
+  fonoaudiologia: {
+    name: 'Fonoaudiologia',
     emoji: '💬',
     // VALOR primeiro: o que resolve, depois o investimento
     valor: 'Na avaliação, vamos entender exatamente como está a comunicação, identificar pontos fortes e desafios, e traçar um plano personalizado para o pequeno evoluir! É um momento super completo e acolhedor 🥰',
@@ -258,57 +249,57 @@ const THERAPY_DATA = {
     duracao: '1h a 1h30',
     acolhimento: 'Fonoaudiologia é maravilhosa para ajudar na comunicação! 💬'
   },
-  psicologia: { 
-    name: 'Psicologia', 
-    emoji: '🧠', 
+  psicologia: {
+    name: 'Psicologia',
+    emoji: '🧠',
     valor: 'A primeira consulta é um espaço seguro para você se sentir ouvido e compreendido. Vamos entender o que está acontecendo e começar a trilhar juntos um caminho de bem-estar emocional 💚',
     investimento: 'R$ 200',
     duracao: '50 minutos',
     acolhimento: 'Cuidar da mente é um ato de amor! 🧠💚'
   },
-  fisioterapia: { 
-    name: 'Fisioterapia', 
-    emoji: '🏃', 
+  fisioterapia: {
+    name: 'Fisioterapia',
+    emoji: '🏃',
     valor: 'Na avaliação, fazemos uma análise completa da postura, movimentos e identificamos o que está causando o desconforto. Você já sai com orientações práticas para melhorar! 💪',
     investimento: 'R$ 200',
     duracao: '1 hora',
     acolhimento: 'Vamos cuidar desse corpinho com carinho! 🏃💚'
   },
-  terapia_ocupacional: { 
-    name: 'Terapia Ocupacional', 
-    emoji: '🤲', 
+  terapia_ocupacional: {
+    name: 'Terapia Ocupacional',
+    emoji: '🤲',
     valor: 'Avaliamos as habilidades do dia a dia, coordenação motora e como a criança interage com o mundo. Identificamos pontos de apoio para ela se desenvolver com mais autonomia! 🌟',
     investimento: 'R$ 200',
     duracao: '1 hora',
     acolhimento: 'A terapia ocupacional ajuda muito no dia a dia! 🤲'
   },
-  psicopedagogia: { 
-    name: 'Psicopedagogia', 
-    emoji: '📚', 
+  psicopedagogia: {
+    name: 'Psicopedagogia',
+    emoji: '📚',
     valor: 'Vamos entender como a criança aprende de forma única! Identificamos estratégias personalizadas para transformar estudos em algo leve e prazeroso, respeitando o ritmo dela 📖✨',
     investimento: 'R$ 200',
     duracao: '50 minutos',
     acolhimento: 'Aprender pode ser leve e prazeroso! 📚✨'
   },
-  neuropsicologia: { 
-    name: 'Neuropsicologia', 
-    emoji: '🧩', 
+  neuropsicologia: {
+    name: 'Neuropsicologia',
+    emoji: '🧩',
     valor: 'Avaliação super completa das funções cerebrais: atenção, memória, raciocínio... Essencial para entender o funcionamento cognitivo e planejar o melhor caminho! 🧠',
     investimento: 'R$ 400',
     duracao: '2 a 3 horas',
     acolhimento: 'A avaliação neuropsicológica é um passo importante! 🧩'
   },
-  musicoterapia: { 
-    name: 'Musicoterapia', 
-    emoji: '🎵', 
+  musicoterapia: {
+    name: 'Musicoterapia',
+    emoji: '🎵',
     valor: 'Usamos a música como ponte para o desenvolvimento emocional, comunicação e coordenação! A avaliação é lúdica, acolhedora e revela muito sobre o potencial da criança 🎶',
     investimento: 'R$ 180',
     duracao: '50 minutos',
     acolhimento: 'A música tem um poder transformador! 🎵💚'
   },
-  psicomotricidade: { 
-    name: 'Psicomotricidade', 
-    emoji: '🤸', 
+  psicomotricidade: {
+    name: 'Psicomotricidade',
+    emoji: '🤸',
     avaliacao: 'Avaliação: R$ 180 (50 minutos)',
     acolhimento: 'O movimento é vida! 🤸💚'
   }
@@ -344,18 +335,17 @@ export class WhatsAppOrchestrator {
   async process({ lead, message }) {
     const leadId = lead?._id?.toString() || 'unknown';
     const text = message?.content || message?.text || '';
-    
+
     this.logger.info('V6_ENTITY_START', { leadId, text: text.substring(0, 80) });
 
     try {
       // 1. Carrega memória acumulada (contexto existente)
       const memory = await this.loadMemory(lead._id);
-      
+
       // 2. EXTRAI ENTIDADES da mensagem atual (entity-based!)
       const extracted = extractEntities(text, memory);
-      
+
       // 3. FUNDE (merge): acumula TUDO, nunca apaga
-      // Agora usamos entities diretamente, mapeando campos antigos também
       const context = {
         ...memory,
         therapy: extracted.therapy || memory.therapy || null,
@@ -365,51 +355,52 @@ export class WhatsAppOrchestrator {
         patientName: extracted.patientName || memory.patientName || null,
         tipo_paciente: extracted.tipo_paciente || memory.tipo_paciente || null,
         intencao: extracted.intencao || memory.intencao || null,
-        // BUGFIX: isConfirmation/isNegation são POR MENSAGEM, não acumulativos
-        isConfirmation: extracted.isConfirmation || false,
-        isNegation: extracted.isNegation || false,
+        isConfirmation: extracted.isConfirmation || memory.isConfirmation || false,
+        isNegation: extracted.isNegation || memory.isNegation || false,
         flags: { ...memory.flags, ...(extracted.flags || {}) },
-        // Metadados para tracking
         lastMessage: text,
         lastExtracted: Object.keys(extracted),
         messageCount: (memory.messageCount || 0) + 1
       };
-      
+
       // 4. DECIDE A PRÓXIMA AÇÃO (entity-based, não step-based!)
       const action = decideNextAction(context, extracted);
       context.lastAction = action.type;
       context.lastIntencao = extracted.intencao;
-      
-      // Para compatibilidade, mantemos currentStep mas não dependemos dele
+
       const missing = getMissingEntities(context);
       context.currentStep = missing.length > 0 ? `missing_${missing[0].field}` : 'complete';
-      
-      this.logger.info('V6_ENTITY_CONTEXT', { 
-        leadId, 
-        therapy: context.therapy, 
+
+      this.logger.info('V6_ENTITY_CONTEXT', {
+        leadId,
+        therapy: context.therapy,
         patientName: context.patientName,
-        age: context.age, 
+        age: context.age,
         period: context.period,
         intencao: context.intencao,
         action: action.type,
         missingSlots: missing.length
       });
-      
-      // 5. Gera resposta baseada na ação decidida (não no step!)
+
+      // 5. Gera resposta baseada em regras (fallback se LLM falhar no service layer)
       const response = await this.generateResponse(text, context, action, extracted);
-      
+
       // 6. Persiste contexto atualizado
       await this.saveMemory(lead._id, context);
-      
-      this.logger.info('V6_ENTITY_COMPLETE', { leadId, action: action.type, responseLength: response?.length });
+
+      this.logger.info('V6_ENTITY_COMPLETE', { 
+        leadId, 
+        action: action.type, 
+        responseLength: response?.length
+      });
       return { command: 'SEND_MESSAGE', payload: { text: response } };
-      
+
     } catch (error) {
       this.logger.error('V6_ENTITY_ERROR', { leadId, error: error.message, stack: error.stack });
       // Fallback humanizado
-      return { 
-        command: 'SEND_MESSAGE', 
-        payload: { text: 'Oi! Sou a Amanda da Fono Inova 💚 Que bom que entrou em contato! 😊\n\nMe conta: é para você ou para um pequeno? Qual situação vocês estão enfrentando?' } 
+      return {
+        command: 'SEND_MESSAGE',
+        payload: { text: 'Oi! Sou a Amanda da Fono Inova 💚 Que bom que entrou em contato! 😊\n\nMe conta: é para você ou para um pequeno? Qual situação vocês estão enfrentando?' }
       };
     }
   }
@@ -417,29 +408,29 @@ export class WhatsAppOrchestrator {
   // Detecta usando detectores existentes do projeto
   detectar(text, lead) {
     const lower = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    
+
     // TherapyDetector
     const therapies = detectAllTherapies(text);
     const therapy = therapies.length > 0 && !therapies[0].id.includes('fora_escopo')
       ? DETECTOR_MAP[therapies[0].id] || therapies[0].id
       : null;
-    
+
     // FlagsDetector
     const flags = detectAllFlags(text, lead, { messageCount: 0 });
-    
+
     // Extrai entidades
     const ageMatch = text.match(/(\d{1,2})\s*anos?/i);
     const age = ageMatch ? parseInt(ageMatch[1], 10) : null;
-    
+
     // Data de nascimento (DD/MM/AAAA ou similar)
     const birthDateMatch = text.match(/(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})/);
     const birthDate = birthDateMatch ? `${birthDateMatch[1]}/${birthDateMatch[2]}/${birthDateMatch[3]}` : null;
-    
+
     let period = null;
     if (/manh[ãa]|cedo/i.test(lower)) period = 'manha';
     else if (/tarde/i.test(lower)) period = 'tarde';
-    // BUGFIX: Noite removido - clínica não atende à noite
-    
+    else if (/noite/i.test(lower)) period = 'noite';
+
     // Detectar nome
     const namePatterns = [
       /meu nome [ée]\s+([A-Za-z\s]{2,30})/i,
@@ -448,7 +439,7 @@ export class WhatsAppOrchestrator {
       /([A-Za-z]{2,20})\s+tem\s+\d+/i,  // "João tem 5 anos"
       /a\s+([A-Za-z]{2,20})\s+tem/i       // "a Maria tem"
     ];
-    
+
     let patientName = null;
     for (const pattern of namePatterns) {
       const match = text.match(pattern);
@@ -457,27 +448,27 @@ export class WhatsAppOrchestrator {
         break;
       }
     }
-    
+
     // Queixa (se não for pergunta direta)
     const isQuestion = /^(qual|quanto|onde|como|voce|voces|tem|faz|aceita|trabalha)/i.test(text.trim());
     const isGreeting = /^(oi|ola|bom dia|boa tarde|boa noite|tudo bem|td bem|oi tudo bem)[\s!,.]*$/i.test(text.trim());
-    
+
     let complaint = null;
     if (!isQuestion && !isGreeting && text.length > 5) {
       // Remove saudações do início
       complaint = text.replace(/^(oi|ola|bom dia|boa tarde|boa noite)[,\s]*/i, '').substring(0, 200);
     }
-    
+
     // Detectar confirmação positiva (sim, quero, pode ser, etc)
     const isConfirmation = /\b(sim|quero|pode|claro|ok|tudo bem|vamos|top|beleza|combinado|perfeito)\b/i.test(lower);
     const isNegation = /\b(n[ãa]o|não quero|depois|outra hora)\b/i.test(lower);
-    
-    return { 
-      therapy, 
-      flags, 
-      age, 
+
+    return {
+      therapy,
+      flags,
+      age,
       birthDate,
-      period, 
+      period,
       complaint,
       patientName,
       isConfirmation,
@@ -503,44 +494,44 @@ export class WhatsAppOrchestrator {
   // Determina em qual passo do funil estamos
   determinarStep(ctx) {
     const { therapy, complaint, age, period, patientName } = ctx;
-    
+
     // Se não tem terapia nem queixa, está na saudação
     if (!therapy && !complaint) {
       return FLOW_STEPS.SAUDACAO;
     }
-    
+
     // Se tem terapia mas não tem queixa detalhada, está na queixa
     if (therapy && !complaint) {
       return FLOW_STEPS.QUEIXA;
     }
-    
+
     // Se tem terapia e queixa mas não tem nome, pergunta nome primeiro
     if (therapy && complaint && !patientName) {
       return FLOW_STEPS.NOME;
     }
-    
+
     // Se tem nome mas não tem idade, pergunta idade
     if (therapy && complaint && patientName && !age) {
       return FLOW_STEPS.IDADE;
     }
-    
+
     // Se tem idade mas não tem período, pergunta período
     if (therapy && complaint && patientName && age && !period) {
       return FLOW_STEPS.DISPONIBILIDADE;
     }
-    
+
     // Se tem tudo, está no agendamento
     if (therapy && complaint && patientName && age && period) {
       return FLOW_STEPS.AGENDAMENTO;
     }
-    
+
     return FLOW_STEPS.SAUDACAO;
   }
 
   // 🎯 NOVO: Gera resposta baseada em ENTITIES + AÇÃO (não steps!)
   async generateResponse(text, ctx, action, extracted) {
     const { therapy, complaint, age, period, patientName, tipo_paciente, flags, isConfirmation, isNegation } = ctx;
-    
+
     // ==========================================
     // 1. TRATAR INTERRUPÇÕES (preço, plano, endereço)
     // SEMPRE responde + retoma com pergunta
@@ -548,26 +539,40 @@ export class WhatsAppOrchestrator {
     if (flags?.asksPrice || action.type === 'RESPONSE_PRECO') {
       return this.responderInterrupcao(ctx, 'preco');
     }
-    
+
     if (flags?.asksPlans || action.type === 'RESPONSE_PLANO') {
       return this.responderInterrupcao(ctx, 'plano');
     }
-    
+
     if (flags?.asksAddress || action.type === 'RESPONSE_ENDERECO') {
       return this.responderInterrupcao(ctx, 'endereco');
     }
-    
+
     // ==========================================
     // 2. FLUXO ENTITY-BASED (slot filling)
     // ==========================================
-    
+
     // Se é primeira mensagem ou não temos nada
     if (action.type === 'ASK_SLOT') {
       return this.askForSlot(ctx, action.slot, action.questionType, extracted);
     }
-    
-    // BUGFIX: Código movido para dentro de askForSlot - reconhece entidade nova lá
-    
+
+    // Se detectou entidade nova (nome/idade), valida e pergunta próxima
+    if (extracted.patientName && !ctx.askedForAge) {
+      ctx.askedForName = true;
+      return this.acknowledgeAndAskNext(ctx, 'name', extracted);
+    }
+
+    if (extracted.age && ctx.patientName && !ctx.askedForPeriod) {
+      ctx.askedForAge = true;
+      return this.acknowledgeAndAskNext(ctx, 'age', extracted);
+    }
+
+    if (extracted.period && ctx.age && !ctx.askedForConfirmation) {
+      ctx.askedForPeriod = true;
+      return this.acknowledgeAndAskNext(ctx, 'period', extracted);
+    }
+
     // Se tudo completo, oferece agendamento
     if (action.type === 'OFFER_AGENDAMENTO' || action.missingCount === 0) {
       if (isConfirmation) {
@@ -576,75 +581,70 @@ export class WhatsAppOrchestrator {
       if (isNegation) {
         return `Tudo bem! Sem problemas! 😊\n\nFico à disposição quando você quiser agendar. Qualquer dúvida, é só me chamar! Estou aqui para ajudar! 💚`;
       }
-      
+
       const info = THERAPY_DATA[therapy];
       return `Maravilha! 🎉 Tenho todas as informações aqui:\n\n✅ ${info?.name || 'Consulta'}\n✅ Nome: ${patientName}\n✅ Idade: ${age} anos\n✅ Período: ${period === 'manha' ? 'manhã' : period}\n\nVou verificar os horários disponíveis agora, pode ser?`;
     }
-    
+
     // Fallback humanizado
     return this.fallbackResponse(ctx);
   }
-  
+
   // 🎭 Pergunta por um slot específico (com empatia!)
   askForSlot(ctx, slot, questionType, extracted) {
     const { therapy, patientName, age, tipo_paciente } = ctx;
     const info = therapy ? THERAPY_DATA[therapy] : null;
     const isCrianca = tipo_paciente === 'crianca' || (age && age < 12);
-    
+
     switch (slot) {
       case 'therapy':
         return `Oi! Sou a Amanda da Fono Inova! 😊💚\n\nQue bom que você entrou em contato! Já vi que você está buscando ajuda, e isso é um passo muito importante! 👏\n\nMe conta: você está buscando atendimento para fonoaudiologia, psicologia, ou qual especialidade?`;
-        
+
       case 'complaint':
         if (therapy === 'fonoaudiologia') {
           return `Entendi que é para fonoaudiologia! 💬\n\nMe conta um pouquinho mais sobre a situação: o pequeno ainda não fala nada, fala algumas palavrinhas, ou tem alguma dificuldade específica que você notou? Estou aqui para te ouvir! 💚`;
         }
         if (therapy === 'psicologia') {
-          return isCrianca 
+          return isCrianca
             ? `Sobre psicologia para crianças 🧠💚\n\nMe conta como está a situação do pequeno... Está com dificuldade de atenção na escola, comportamento, ou algo mais que está te preocupando? Pode desabafar!`
             : `Sobre psicologia 🧠💚\n\nMe conta como você está se sentindo ultimamente... Está com ansiedade, dificuldade para dormir, ou tem algo mais que está te incomodando? Estou aqui para ouvir!`;
         }
         return `Perfeito! ${info?.emoji || '💚'}\n\nMe conta um pouco mais sobre a situação que está preocupando. Quero entender direitinho para poder ajudar da melhor forma!`;
-        
+
       case 'patientName':
         // Só pergunta nome se não extraiu automaticamente
         if (!extracted?.patientName) {
-          // HUMANIZADO: Consultora da clínica, não robô de formulário
-          if (isCrianca) {
-            return `E o pequeno, como se chama? 😊💚`;
-          }
-          return `E você, como posso te chamar? 💚`;
+          const sujeito = isCrianca ? 'o pequeno' : (therapy === 'psicologia' ? 'a criança' : 'o paciente');
+          return `Para eu organizar tudo certinho aqui, me conta: como é o nome de ${sujeito}? 💚`;
         }
-        // Se extraiu mas ainda está no slot, valida de forma natural
-        return `${extracted.patientName}, anotado! 🥰 E quantos anos ${extracted.patientName} tem?`;
-        
+        // Se extraiu mas ainda está no slot, algo deu errado - valida
+        return `Que nome lindo, ${extracted.patientName}! 🥰💚\n\nE quantos anos ${extracted.patientName} tem?`;
+
       case 'age':
-        // HUMANIZADO: Tom consultora, não formulário
         if (patientName) {
-          return `${patientName} tem quantos anos? Assim eu consigo ver quais profissionais têm mais experiência com essa idade 😊`;
+          return `Que nome lindo, ${patientName}! 🥰\n\nE quantos anos ${patientName} tem? Isso ajuda a verificar quais profissionais têm mais experiência com essa idade! 💚`;
         }
-        return `E a idade? Só pra eu verificar a disponibilidade certinha 💚`;
-        
+        return `Só para eu verificar a disponibilidade certinha... Quantos anos ${isCrianca ? 'o pequeno' : 'você'} tem? 💚`;
+
       case 'period':
-        // HUMANIZADO: Período sem parecer burocracia
-        return `Boa! E pra ${info?.name?.toLowerCase() || 'consulta'}, funciona melhor de manhã ou à tarde? ☀️\n\n(A gente atende das 8h às 18h, de segunda a sexta)`;
-        
+        return `Perfeito! 🌟\n\nPara ${info?.name?.toLowerCase() || 'o atendimento'}, temos ótimos profissionais. Qual período funciona melhor para vocês: **manhã ou tarde**? (Nosso horário é das 8h às 18h) ☀️`;
+
       default:
         return this.fallbackResponse(ctx);
     }
   }
-  
+
   // ✅ Valida o que recebeu e pergunta o próximo
   acknowledgeAndAskNext(ctx, receivedField, extracted) {
     const { therapy, patientName, age, period, tipo_paciente } = ctx;
     const info = therapy ? THERAPY_DATA[therapy] : null;
     const isCrianca = tipo_paciente === 'crianca' || (age && age < 12);
-    
+
     // Recebemos NOME → pergunta IDADE
     if (receivedField === 'name' && patientName) {
       return `Que nome lindo, ${patientName}! 🥰💚\n\nE quantos anos ${patientName} tem? Isso ajuda a verificar quais profissionais têm mais experiência com essa idade!`;
     }
-    
+
     // Recebemos IDADE → pergunta PERÍODO
     if (receivedField === 'age' && age) {
       let acolhimento = '';
@@ -652,28 +652,28 @@ export class WhatsAppOrchestrator {
       else if (age <= 12) acolhimento = `${age} anos! Uma idade linda para acompanhar o desenvolvimento! 🌟`;
       else if (age <= 17) acolhimento = `Adolescência é uma fase de muitas transformações, né? 💚`;
       else acolhimento = `Perfeito! Vamos cuidar muito bem de você! 💚`;
-      
+
       return `${acolhimento}\n\nPara ${info?.name?.toLowerCase() || 'o atendimento'}, temos ótimos profissionais. Qual período funciona melhor para vocês: **manhã ou tarde**? (Nosso horário é das 8h às 18h) ☀️`;
     }
-    
+
     // Recebemos PERÍODO → oferece agendamento
     if (receivedField === 'period' && period) {
       const periodoTexto = period === 'manha' ? 'manhã' : period;
       return `Perfeito! Anotado ${periodoTexto}! ✅\n\nDeixa eu verificar os horários disponíveis para você... Só um instante! ⏳`;
     }
-    
+
     // Fallback
     return this.fallbackResponse(ctx);
   }
-  
+
   // 🆘 Resposta fallback humanizada
   fallbackResponse(ctx) {
     const { therapy, patientName } = ctx;
-    
+
     if (!therapy) {
       return `Oi! Sou a Amanda da Fono Inova 💚 Que bom que entrou em contato! 😊\n\nMe conta: você está buscando atendimento para qual especialidade? (Fonoaudiologia, Psicologia, Fisioterapia...)`;
     }
-    
+
     return `Entendi! 😊💚\n\nMe conta: qual é a principal questão que ${patientName || 'vocês'} ${patientName ? 'está' : 'estão'} enfrentando? Estou aqui para te ajudar!`;
   }
 
@@ -681,10 +681,10 @@ export class WhatsAppOrchestrator {
   async conversar(text, ctx, step) {
     // Redireciona para o novo sistema entity-based
     const missing = getMissingEntities(ctx);
-    const action = missing.length > 0 
+    const action = missing.length > 0
       ? { type: 'ASK_SLOT', slot: missing[0].field, questionType: missing[0].question }
       : { type: 'OFFER_AGENDAMENTO', missingCount: 0 };
-    
+
     const extracted = extractEntities(text, ctx);
     return this.generateResponse(text, ctx, action, extracted);
   }
@@ -692,9 +692,9 @@ export class WhatsAppOrchestrator {
   // 🔄 RESPOSTA DE INTERRUPÇÃO + RETOMADA OBRIGATÓRIA (entity-based)
   responderInterrupcao(ctx, tipo) {
     const { therapy, complaint, age, period, patientName } = ctx;
-    
+
     let resposta = '';
-    
+
     // Monta a resposta específica
     switch (tipo) {
       case 'preco':
@@ -705,31 +705,31 @@ export class WhatsAppOrchestrator {
           resposta = `Nossas avaliações são super completas! A gente entende exatamente a necessidade e traça um plano personalizado 💚\n\n💬 Fonoaudiologia: R$ 200\n🧠 Psicologia: R$ 200\n🏃 Fisioterapia: R$ 200\n📚 Psicopedagogia: R$ 200\n🎵 Musicoterapia: R$ 180\n🤸 Psicomotricidade: R$ 180\n🧩 Neuropsicologia: R$ 400\n\nOs valores de tratamento são discutidos após a avaliação! 😊\n\nE trabalhamos com reembolso de planos!`;
         }
         break;
-        
+
       case 'plano':
         resposta = `💚 Trabalhamos com reembolso de todos os planos de saúde! Você paga e solicita o ressarcimento (geralmente entre 80% e 100% do valor). Também aceitamos Pix, cartão de crédito e débito! 😊`;
         break;
-        
+
       case 'endereco':
         resposta = `📍 Ficamos na Av. Brasil, 1234 - Centro de Anápolis/GO. Temos estacionamento fácil na rua e também estacionamento pago bem próximo! 🚗`;
         break;
-        
+
       case 'agendamento_sem_terapia':
         resposta = `Claro! Podemos agendar sim! 😊`;
         break;
     }
-    
+
     // 🎯 RETOMADA INTELIGENTE: pergunta o que falta (entity-based!)
     const missing = getMissingEntities(ctx);
     let perguntaRetomada = '';
-    
+
     if (missing.length === 0) {
       // Tem tudo, oferece agendamento
       perguntaRetomada = `\n\nVou verificar os horários disponíveis! Posso buscar para você?`;
     } else {
       // Pergunta o próximo slot faltante
       const nextSlot = missing[0];
-      
+
       switch (nextSlot.field) {
         case 'therapy':
           perguntaRetomada = `\n\nE me conta: você está buscando atendimento para fonoaudiologia, psicologia, ou qual especialidade?`;
@@ -751,7 +751,7 @@ export class WhatsAppOrchestrator {
           perguntaRetomada = `\n\nTem mais alguma informação que gostaria de me passar?`;
       }
     }
-    
+
     return resposta + perguntaRetomada;
   }
 
@@ -759,24 +759,23 @@ export class WhatsAppOrchestrator {
   async mostrarHorarios(therapy, age, period) {
     try {
       this.logger.info('BOOKING', { therapy, age, period });
-      
-      const slots = await findAvailableSlots({ 
-        therapyArea: therapy, 
-        preferredPeriod: period, 
-        patientAge: age 
+
+      const slots = await findAvailableSlots({
+        therapyArea: therapy,
+        preferredPeriod: period,
+        patientAge: age
       });
-      
+
       const info = THERAPY_DATA[therapy];
-      
+
       if (slots?.primary?.length > 0) {
         const txt = slots.primary.slice(0, 3).map(s => `• ${s.day} às ${s.time}`).join('\n');
         return `Encontrei essas opções para ${info?.name || therapy} ${info?.emoji}:\n\n${txt}\n\nQual desses horários funciona melhor para você? 💚\n\n(Se não der certo nenhum, me avisa que busco outras opções!)`;
       }
-      
+
       // Sem vagas no período desejado
-      // BUGFIX: Removido 'noite' - clínica não atende à noite
-      return `No momento não encontrei vagas para ${info?.name || therapy} no período da ${period === 'manha' ? 'manhã' : period}. 😔\n\nPosso:\n1️⃣ Verificar outros períodos (manhã ou tarde)\n2️⃣ Pedir para nossa equipe entrar em contato quando tiver vaga\n\nO que prefere?`;
-      
+      return `No momento não encontrei vagas para ${info?.name || therapy} no período da ${period === 'manha' ? 'manhã' : period}. 😔\n\nPosso:\n1️⃣ Verificar outros períodos (manhã/tarde/noite)\n2️⃣ Pedir para nossa equipe entrar em contato quando tiver vaga\n\nO que prefere?`;
+
     } catch (e) {
       this.logger.error('BOOKING_ERROR', { error: e.message });
       return `Estou verificando os horários disponíveis! ⏳\n\nEnquanto isso, me confirma: você prefere atendimento presencial ou online? 💚`;
@@ -786,22 +785,22 @@ export class WhatsAppOrchestrator {
   async loadMemory(leadId) {
     try {
       const ctx = await ChatContext.findOne({ lead: leadId }).lean();
-      return ctx?.conversationState || { 
-        therapy: null, 
-        complaint: null, 
-        age: null, 
-        period: null, 
+      return ctx?.conversationState || {
+        therapy: null,
+        complaint: null,
+        age: null,
+        period: null,
         patientName: null,
-        flags: {} 
+        flags: {}
       };
     } catch (e) {
-      return { 
-        therapy: null, 
-        complaint: null, 
-        age: null, 
-        period: null, 
+      return {
+        therapy: null,
+        complaint: null,
+        age: null,
+        period: null,
         patientName: null,
-        flags: {} 
+        flags: {}
       };
     }
   }

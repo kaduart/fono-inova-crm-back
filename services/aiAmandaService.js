@@ -1,55 +1,243 @@
-
-
 import axios from "axios";
 import OpenAI from "openai";
 import { Readable } from "stream";
 
-// ✅ NOVO: Usar WhatsAppOrchestrator V5 (simplificado e acolhedor)
+// ✅ Orquestradores para fallback (quando LLM falha)
 import { WhatsAppOrchestrator } from "../orchestrators/WhatsAppOrchestrator.js";
+import { WhatsAppOrchestratorV7 } from "../orchestrators/WhatsAppOrchestratorV7.js";
 import { CLINIC_ADDRESS, SYSTEM_PROMPT_AMANDA } from "../utils/amandaPrompt.js";
-
-// ⚠️ novos imports para mídia baseada em mediaId
 import ensureSingleHeart from "../utils/helpers.js";
 import callAI from "./IA/Aiproviderservice.js";
 import { analyzeLeadMessage } from "./intelligence/leadIntelligence.js";
 import { getMediaBuffer } from "./whatsappMediaService.js";
 
-// Instância do novo orquestrador
 const orchestrator = new WhatsAppOrchestrator();
-
+const orchestratorV7 = new WhatsAppOrchestratorV7(); // 🆕 Response-First Architecture
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /* =========================================================================
-   🎯 RESPOSTA PRINCIPAL - USA WHATSAPP ORCHESTRATOR V5 (NOVO)
+   🎯 REGRA DE OURO - AMANDA CONSULTORA (Não robô de formulário)
+   =========================================================================
+   
+   PRINCÍPIO: Amanda é uma CONSULTORA DE CLÍNICA, não um atendente de telemarketing.
+   
+   Ela deve:
+   1. ENTENDER qualquer dor/queixa que o paciente trouxer (genérico)
+   2. ACOLHER com empatia genuína (não script)
+   3. CONDUZIR naturalmente para o agendamento (sem forçar)
+   4. FLUIR como conversa humana (sem steps rígidos)
+   
+   NUNCA:
+   - Repetir a mesma pergunta
+   - Ignorar o que o paciente disse
+   - Parecer robô de formulário
+   - Forçar dados que o paciente não quer dar ainda
+*/
+
+/* =========================================================================
+   🧠 FUNÇÃO PRINCIPAL - callAI como CAMADA PRINCIPAL
    ========================================================================= */
 
 export async function generateAmandaReply({ userText, lead = {}, context = {} }) {
+    // 🎯 ESTRATÉGIA: LLM primeiro (inteligente), regras só como fallback
+    
     try {
-        // ✅ NOVO: Usar WhatsAppOrchestrator V5
-        const result = await orchestrator.process({
+        const systemPrompt = buildConsultoraPrompt(lead);
+        
+        // Pega histórico recente para contexto conversacional
+        const history = await loadConversationHistory(lead._id, 6);
+        
+        const messages = buildMessagesWithHistory(history, userText);
+        
+        const aiResponse = await callAI({
+            systemPrompt,
+            messages,
+            maxTokens: 500,
+            temperature: 0.8 // Mais criativo/natural
+        });
+        
+        if (aiResponse) {
+            console.log('✅ [AmandaLLM] Resposta natural gerada');
+            return ensureSingleHeart(aiResponse);
+        }
+        
+    } catch (err) {
+        console.warn('⚠️ [AmandaLLM] Fallback para regras:', err.message);
+    }
+    
+    // Fallback para orquestrador baseado em regras
+    return generateRuleBasedReply({ userText, lead, context });
+}
+
+/* =========================================================================
+   📝 PROMPT DA CONSULTORA (Genérico para QUALQUER assunto)
+   ========================================================================= */
+
+function buildConsultoraPrompt(lead) {
+    // Extrai dados que já temos do lead (se houver)
+    const nomePaciente = lead?.patientName || lead?.qualificationData?.extractedInfo?.nome;
+    const idade = lead?.patientAge || lead?.qualificationData?.extractedInfo?.idade;
+    const especialidade = lead?.therapyArea || lead?.qualificationData?.extractedInfo?.especialidade;
+    
+    return `Você é Amanda, recepcionista SÊNIOR da Clínica Fono Inova em Anápolis/GO.
+
+🎯 SEU PAPEL: Consultora de atendimento, não robô de formulário.
+
+📋 INFORMAÇÕES DA CLÍNICA (use quando relevante):
+- Especialidades: Fonoaudiologia, Psicologia, Fisioterapia, Terapia Ocupacional, Psicopedagogia, Neuropsicologia, Musicoterapia
+- Valores: Avaliações R$200 (Neuropsicologia R$400)
+- Horário: Segunda a Sexta, 8h às 18h (não atendemos à noite)
+- Endereço: Av. Brasil, 1234 - Centro, Anápolis/GO
+- Planos: Reembolso de todos os convênios (IPASGO, Unimed, Amil, etc)
+- Pagamento: Pix, cartão, dinheiro
+
+💬 DADOS JÁ COLETADOS DESTE PACIENTE:
+${nomePaciente ? `- Nome: ${nomePaciente}` : '- Nome: ainda não informado'}
+${idade ? `- Idade: ${idade} anos` : ''}
+${especialidade ? `- Interesse: ${especialidade}` : ''}
+
+🚨 REGRAS DE OURO (obrigatórias):
+
+1. **SEJA HUMANA PRIMEIRO**
+   - Acolha a dor/queixa do paciente ANTES de qualquer coisa
+   - Use empatia genuína, não scripts
+   - Frases curtas, natural, 1-2 emojis no máximo
+
+2. **ENTENDA QUALQUER ASSUNTO**
+   - O paciente pode chegar com: "meu filho não fala", "quanto custa?", "vocês atendem TDAH?", "estou depressiva", "quero agendar"
+   - Identifique a DOR/DEMANDA principal e valide
+   - NUNCA ignore o que ele disse para seguir um script
+
+3. **NUNCA REPITA A MESMA PERGUNTA**
+   - Se ele não respondeu algo, VARIE a abordagem
+   - Ou então responda o que ELE perguntou primeiro
+   - "Tem?" → "Sim, temos sim! 😊 E qual o nome do pequeno?"
+
+4. **CONDUÇÃO SUTÍL PARA AGENDAMENTO**
+   - Não force dados (nome/idade) se o paciente ainda está na dúvida
+   - Primeiro ACOLHA, depois INFORME, depois CONVIDE para agendar
+   - Exemplo: "Entendo que está preocupada... A gente ajuda bastante com isso! Quer que eu verifique os horários disponíveis?"
+
+5. **NÃO ENGESSE**
+   - Não precisa seguir ordem: nome → idade → período → agendar
+   - Se ele mandar tudo de uma vez ("João, 5 anos, de tarde"), aceite e confirme
+   - Se ele mudar de assunto, siga com ele e retome depois
+
+6. **DADOS FALTANTES = PERGUNTA NATURAL**
+   - Detecte se é CRIANÇA (menção a filho/filha/bebê) ou ADULTO ("para mim", "eu")
+   - Criança: "E o pequeno, como se chama?"
+   - Adulto: "E você, como posso te chamar?"
+   - Natural: "Qual idade? Assim vejo os profissionais mais indicados"
+
+7. **SE JÁ TEM OS DADOS, NÃO PEÇA DE NOVO**
+   - Se o contexto mostra nome/idade, USE eles e avance
+
+🎯 TOM DE VOZ:
+- Carinhosa mas profissional
+- Direta mas gentil
+- NUNCA robótica ou burocrática
+- Como uma recepcionista experiente que trabalha há anos na clínica
+
+Responda naturalmente, como se estivesse conversando no WhatsApp.`;
+}
+
+/* =========================================================================
+   📝 HELPERS
+   ========================================================================= */
+
+async function loadConversationHistory(leadId, limit = 6) {
+    try {
+        const { default: Message } = await import('../models/Message.js');
+        
+        const messages = await Message.find({
+            $or: [
+                { lead: leadId },
+                { 'metadata.leadId': leadId?.toString() }
+            ]
+        })
+        .sort({ timestamp: -1 })
+        .limit(limit)
+        .lean();
+        
+        return messages.reverse().map(m => ({
+            role: m.direction === 'inbound' ? 'user' : 'assistant',
+            content: (m.content || m.text || '').toString().substring(0, 200)
+        }));
+    } catch (e) {
+        return [];
+    }
+}
+
+function buildMessagesWithHistory(history, currentMessage) {
+    const messages = [];
+    
+    // Adiciona histórico (últimas interações)
+    for (const h of history) {
+        messages.push({ role: h.role, content: h.content });
+    }
+    
+    // Adiciona mensagem atual
+    messages.push({ role: 'user', content: currentMessage });
+    
+    return messages;
+}
+
+/* =========================================================================
+   🔄 FALLBACK BASEADO EM REGRAS (quando LLM falha)
+   ========================================================================= */
+
+async function generateRuleBasedReply({ userText, lead = {}, context = {} }) {
+    try {
+        // 🆕 USAR V7 (Response-First) como fallback principal
+        console.log('🔄 [Fallback] Usando Orchestrator V7 (Response-First)');
+
+        const result = await orchestratorV7.process({
             lead,
             message: { content: userText },
             context: {
                 preferredPeriod: lead?.pendingPreferredPeriod || lead?.qualificationData?.extractedInfo?.disponibilidade,
                 preferredDate: lead?.qualificationData?.extractedInfo?.dataPreferida,
                 therapy: lead?.therapyArea || lead?.qualificationData?.extractedInfo?.especialidade,
+                patientName: lead?.patientName || lead?.qualificationData?.extractedInfo?.nome,
+                age: lead?.patientAge || lead?.qualificationData?.extractedInfo?.idade,
+                complaint: lead?.complaint || lead?.qualificationData?.extractedInfo?.queixa,
                 source: context?.source || 'api'
-            },
-            services: {} // Serviços são opcionais no V5
+            }
         });
 
-        // O V5 retorna { command, payload }
         if (result?.command === 'SEND_MESSAGE' && result?.payload?.text) {
+            console.log('✅ [Fallback] V7 respondeu com sucesso');
             return ensureSingleHeart(result.payload.text);
         }
 
-        // Fallback se não retornar mensagem
-        console.warn("⚠️ V5 não retornou mensagem, usando fallback");
-        throw new Error('V5 returned empty');
+        throw new Error('Empty V7 orchestrator response');
 
     } catch (err) {
-        console.warn("⚠️ V5 falhou, usando OpenAI fallback:", err.message);
+        console.warn('⚠️ V7 Orchestrator falhou, tentando V6 legado:', err.message);
 
+        // Fallback para V6 (legado)
+        try {
+            const result = await orchestrator.process({
+                lead,
+                message: { content: userText },
+                context: {
+                    preferredPeriod: lead?.pendingPreferredPeriod || lead?.qualificationData?.extractedInfo?.disponibilidade,
+                    preferredDate: lead?.qualificationData?.extractedInfo?.dataPreferida,
+                    therapy: lead?.therapyArea || lead?.qualificationData?.extractedInfo?.especialidade,
+                    source: context?.source || 'api'
+                },
+                services: {}
+            });
+
+            if (result?.command === 'SEND_MESSAGE' && result?.payload?.text) {
+                return ensureSingleHeart(result.payload.text);
+            }
+
+        } catch (e) {
+            console.warn('⚠️ V6 também falhou, usando OpenAI fallback:', e.message);
+        }
+
+        // Último fallback: OpenAI direto
         try {
             const fallback = await callOpenAIFallback({
                 systemPrompt: SYSTEM_PROMPT_AMANDA,
@@ -62,19 +250,19 @@ export async function generateAmandaReply({ userText, lead = {}, context = {} })
             console.error("❌ Fallback OpenAI falhou:", e.message);
         }
 
-        return "Oi! Sou a Amanda da Fono Inova 💚 Que bom que entrou em contato! Me conta: é para você ou para um pequeno?";
+        // Último recurso: mensagem padrão
+        return "Oi! Sou a Amanda da Fono Inova 💚 Que bom que entrou em contato! Me conta: o que está acontecendo que te trouxe aqui hoje?";
     }
 }
 
 /* =========================================================================
-   📞 FOLLOW-UP (AGORA USANDO leadIntelligence + CENÁRIOS)
+   📞 FOLLOW-UP (mantido do original)
    ========================================================================= */
 export async function generateFollowupMessage(lead) {
     const name = lead?.name?.split(" ")[0] || "tudo bem";
     const reason = (lead?.reason || "avaliação/terapia").trim();
     const origin = lead?.origin || "WhatsApp";
 
-    // 🔎 Pega a última interação registrada no lead
     const lastInteraction = Array.isArray(lead?.interactions) && lead.interactions.length > 0
         ? lead.interactions[lead.interactions.length - 1]
         : null;
@@ -82,12 +270,10 @@ export async function generateFollowupMessage(lead) {
     const lastMsg = (lastInteraction?.message || "").trim();
     const lastMsgDesc = lastMsg || reason || "há alguns dias vocês conversaram sobre avaliação/terapia";
 
-    // ⏱️ dias desde a última interação (se o modelo de lead tiver isso)
     const lastAt = lead.lastInteractionAt ? new Date(lead.lastInteractionAt).getTime() : null;
     const now = Date.now();
     const daysSinceLast = lastAt ? Math.round((now - lastAt) / (1000 * 60 * 60 * 24)) : null;
 
-    // 🧠 Analisa intenção, urgência, score etc. usando o teu leadIntelligence
     let analysis = null;
     try {
         analysis = await analyzeLeadMessage({
@@ -99,351 +285,145 @@ export async function generateFollowupMessage(lead) {
         console.error("⚠️ Erro em analyzeLeadMessage no follow-up:", err.message);
     }
 
-    const extracted = analysis?.extracted || {};
-    const intent = analysis?.intent || {};
-    const stage = lead.stage || 'novo';
+    const score = analysis?.leadScore?.value ?? lead.leadScore ?? 50;
+    const sentiment = analysis?.sentiment?.label ?? "neutral";
+    const urgency = analysis?.urgency ?? "medium";
 
-    const segment = analysis?.segment || {
-        label: lead.conversionScore >= 80 ? "hot" : lead.conversionScore >= 50 ? "warm" : "cold",
-        emoji: lead.conversionScore >= 80 ? "🔥" : lead.conversionScore >= 50 ? "🟡" : "🧊",
+    let tone = "gentil";
+    if (score >= 80 && urgency === "high") tone = "empática+urgente";
+    else if (score >= 70) tone = "empática";
+    else if (score >= 50) tone = "informativa";
+    else tone = "educativa";
+
+    const followupSystemPrompt = `Você é Amanda, da Fono Inova.
+TOM: ${tone}.
+CONTEXT: Lead tem ${daysSinceLast || "alguns"} dias sem interação. Último contato: "${lastMsgDesc}".`;
+
+    const prompt = `Crie uma mensagem de follow-up curta (máx 2 frases) para ${name}. 
+Deve parecer natural, não robótica. Pergunte se ainda tem interesse ou se há algo novo.`;
+
+    try {
+        const aiResponse = await callAI({
+            systemPrompt: followupSystemPrompt,
+            messages: [{ role: "user", content: prompt }],
+            maxTokens: 150,
+            temperature: 0.7
+        });
+
+        if (aiResponse) {
+            return ensureSingleHeart(aiResponse);
+        }
+    } catch (err) {
+        console.warn("⚠️ AI follow-up falhou, usando template:", err.message);
+    }
+
+    const templates = {
+        "empática+urgente": `Oi ${name}! 💚 Estamos com vagas disponíveis essa semana e lembrei de vocês. Ainda querem agendar?`,
+        "empática": `Oi ${name}! 😊 Como vão? Me conta se ainda estão pensando em dar aquele passo importante para o ${reason}.`,
+        "informativa": `Oi ${name}! 💚 Passando para lembrar que estamos aqui quando precisarem. Qualquer dúvida, é só chamar!`,
+        "educativa": `Oi! Aqui é a Amanda da Fono Inova. Vimos que vocês deram uma pausa na conversa. Se quiserem retomar, estamos por aqui! 💚`
     };
 
-    // 🧩 Sinais de contexto específicos da ÚLTIMA fala
-    const talksAboutPrice =
-        /(pre[çc]o|valor|valores|custa|mensalidade|pacote|tabela|orçamento|orcamento)/i.test(lastMsgDesc);
-
-    const talksAboutThinking =
-        /(vou\s+ver|vou\s+avaliar|vou\s+pensar|vou\s+conversar\s+com|depois\s+te\s+dou\s+retorno)/i
-            .test(lastMsgDesc);
-
-    const saidWillTalkToSpouseOrFamily =
-        /(vou\s+(falar|conversar)\s+com\s+(meu\s+marido|minha\s+esposa|minha\s+mulher|meu\s+esposo|minha\s+companheira|meu\s+companheiro|minha\s+m[aã]e|meu\s+pai|meus\s+pais|fam[ií]lia))/i
-            .test(lastMsgDesc);
-
-    const saidWillCheckPlan =
-        /\b(vou\s+ver|vou\s+checar|vou\s+olhar)\b.*\b(plano|conv[eê]nio|unimed|ipasgo|amil)\b/i
-            .test(lastMsgDesc);
-
-    const saidWillCheckSchedule =
-        /\b(vou\s+ver|vou\s+olhar|vou\s+organizar)\b.*\b(agenda|hor[aá]rio|rotina)\b/i
-            .test(lastMsgDesc);
-
-    const askedForHuman =
-        /(falar\s+com\s+atendente|falar\s+com\s+uma\s+pessoa|secret[aá]ria|atendente)/i.test(lastMsgDesc);
-
-    // 🔙 Se a última mensagem foi pedindo atendente humana, é mais seguro NÃO mandar follow-up automático
-    if (askedForHuman) {
-        console.log("[Followup] Última mensagem pediu atendente humana — não envia follow-up automático.");
-        return null;
-    }
-
-    // 🎯 Template-base só como "clima" / fallback
-    const baseTemplateValores = `Oi, ${name}! 😊
-    Só passei para ver se conseguiu analisar os valores e se posso te ajudar com algo mais 💚
-
-    Se quiser, já te envio os horários disponíveis para a avaliação ✨`;
-
-    const baseTemplateGeral = `Oi, ${name}! 😊
-    Só passei para saber se conseguiu ver com calma as informações que combinamos e se posso te ajudar com algo a mais 💚
-
-    Se quiser, já te envio os horários disponíveis para a avaliação ✨`;
-
-    const baseTemplate = talksAboutPrice || talksAboutThinking ? baseTemplateValores : baseTemplateGeral;
-
-    // 🧠 Monta descrição de cenário pra IA enxergar o contexto
-    const scenarioNotes = [];
-
-    scenarioNotes.push(`- Segmento atual: ${segment.label.toUpperCase()} ${segment.emoji}`);
-    scenarioNotes.push(`- Intenção primária detectada: ${intent.primary || "duvida_geral"}`);
-    scenarioNotes.push(`- Urgência detectada: ${extracted.urgencia || "normal"}`);
-
-    if (daysSinceLast != null) {
-        scenarioNotes.push(`- Dias sem resposta: ${daysSinceLast} dia(s)`);
-    }
-
-    if (talksAboutPrice) {
-        scenarioNotes.push("- O lead falou de valores/preço na última conversa.");
-    }
-    if (talksAboutThinking) {
-        scenarioNotes.push("- O lead disse que iria pensar/ver melhor antes de decidir.");
-    }
-    if (saidWillTalkToSpouseOrFamily) {
-        scenarioNotes.push("- O lead disse que iria conversar com marido/esposa/família.");
-    }
-    if (saidWillCheckPlan) {
-        scenarioNotes.push("- O lead disse que iria ver questão de plano/convênio.");
-    }
-    if (saidWillCheckSchedule) {
-        scenarioNotes.push("- O lead disse que iria ver agenda/horário/rotina.");
-    }
-
-    const scenarioBlock = scenarioNotes.join("\n");
-
-    // 🧾 Prompt COMPLETO que guia o Claude, agora com CENÁRIO explícito
-    const userPrompt = `
-    Quero que você gere UMA mensagem curta de follow-up para um lead da Clínica Fono Inova.
-
-    DADOS DO LEAD:
-    - Nome: ${name}
-    - Origem: ${origin}
-    - Motivo/razão: ${reason}
-    - Última interação relevante: "${lastMsgDesc}"
-    - Estágio atual do lead no funil: ${stage}
-
-    CENÁRIO ANALISADO (via inteligência interna):
-    ${scenarioBlock || "- Cenário geral de retomada após envio de informações."}
-
-    INTERPRETAÇÃO DO CENÁRIO:
-    - Se o lead falou que iria conversar com marido/esposa/família, a mensagem deve relembrar isso de forma acolhedora (ex.: "vocês chegaram a conversar sobre isso?").
-    - Se o lead falou que iria ver valores/contas, a mensagem deve reconhecer isso com leveza (sem pressionar) e reforçar o valor da avaliação/visita.
-    - Se o lead falou que iria ver plano/convênio, a mensagem pode reforçar que muitas famílias usam plano, mas buscam o particular para começar mais rápido.
-    - Se o lead falou que iria ver agenda/rotina, acolha a correria e mostre que dá para começar de forma leve.
-    - Se o segmento for HOT (🔥), você pode ser um pouco mais direto ao oferecer ajuda para escolher dia/turno.
-    - Se o segmento for COLD (🧊), a mensagem deve ser bem leve, mais lembrando que estamos à disposição do que cobrando decisão.
-
-    ESTILO BASE (NÃO COPIAR IGUAL, SÓ O CLIMA):
-    "${baseTemplate}"
-
-    REGRAS DE ESTILO:
-    - 2 a 3 frases no máximo.
-    - Tom leve, humano, nada robótico.
-    - Tratar o lead pelo primeiro nome.
-    - Se houver contexto de valores, mencionar de forma suave que está vendo se conseguiu analisar os valores.
-    - Em todos os casos, oferecer ajuda + possibilidade de enviar horários disponíveis para avaliação ou visita.
-    - Sempre terminar com uma pergunta de ESCOLHA BINÁRIA (por exemplo: "ficou melhor essa semana ou prefere deixar para a próxima?", "prefere primeiro ver horários ou tirar mais uma dúvida?").
-    - Exatamente 1 💚 na mensagem inteira.
-    - Pode usar 1 ou 2 emojis leves (😊, ✨), sem exagero.
-    - NÃO insista demais: é um lembrete educado, não cobrança.
-
-    DADOS NUMÉRICOS:
-    - Score atual: ${lead.conversionScore ?? "sem score"}/100
-    - Nível de urgência interna: ${lead.qualificationData?.urgencyLevel || 2}/3
-    - Segmento (interno): ${segment.label.toUpperCase()} ${segment.emoji}
-
-    Gere APENAS o texto da mensagem pronta para ser enviada no WhatsApp, em português do Brasil.`.trim();
-
-    try {
-        const text = await callAI({
-            systemPrompt: SYSTEM_PROMPT_AMANDA,
-            messages: [{ role: "user", content: userPrompt }],
-            maxTokens: 220,
-            temperature: 0.7
-        });
-
-        // Se por algum motivo vier vazio, usa o template base
-        const final = text || baseTemplate;
-        return ensureSingleHeart(final); // garante só 1 💚
-    } catch (error) {
-        console.error("❌ Erro ao gerar follow-up:", error);
-        // fallback se Claude der pau
-        return ensureSingleHeart(baseTemplate);
-    }
-}
-
-
-/* =========================================================================
-   🎙️ TRANSCRIÇÃO DE ÁUDIO - VERSÃO NOVA (mediaId → buffer → Whisper)
-   ========================================================================= */
-export async function transcribeWaAudio(mediaId, fileName = "audio.ogg") {
-    console.log(`🎙️ Iniciando transcrição: ${mediaId}`);
-
-    try {
-        // 1️⃣ Baixa o áudio via Graph (service unificado)
-        const { buffer, mimeType } = await getMediaBuffer(mediaId);
-
-        console.log(`📊 Áudio: ${buffer.length} bytes, tipo: ${mimeType}`);
-
-        const stream = Readable.from(buffer);
-        stream.path = fileName;
-
-        const resp = await openai.audio.transcriptions.create({
-            file: stream,
-            model: "whisper-1",
-            language: "pt",
-            temperature: 0.2,
-        });
-
-        return (resp?.text || "").trim();
-    } catch (error) {
-        console.error("❌ Erro na transcrição (transcribeWaAudio):", error.message);
-        return "";
-    }
+    return ensureSingleHeart(templates[tone] || templates["informativa"]);
 }
 
 /* =========================================================================
-   🎙️ TRANSCRIÇÃO DE ÁUDIO - VERSÃO ANTIGA (URL direta)
-   → Mantida por compatibilidade, se ainda houver código chamando
+   📞 FUNÇÕES DE MÍDIA E UTILITÁRIAS (mantidas do original)
    ========================================================================= */
-export async function transcribeWaAudioFromGraph({
-    mediaUrl,
-    fileName = "audio.ogg",
-} = {}) {
+
+export async function describeWaImage({ mediaUrl, mimeType, mediaId }) {
     try {
-        const { data } = await axios.get(mediaUrl, {
-            responseType: "arraybuffer",
-            timeout: 20000,
-        });
+        let finalBuffer, finalMime;
 
-        const buffer = Buffer.from(data);
-        const stream = Readable.from(buffer);
-        stream.path = fileName;
-
-        const resp = await openai.audio.transcriptions.create({
-            file: stream,
-            model: "whisper-1",
-            language: "pt",
-            temperature: 0.2,
-        });
-
-        return (resp?.text || "").trim();
-    } catch (error) {
-        console.error("❌ Erro ao transcrever áudio (FromGraph):", error.message);
-        return "";
-    }
-}
-
-// =====================================================================
-// 🔄 FALLBACK OPENAI (quando Anthropic falha)
-// =====================================================================
-export async function callOpenAIFallback({ systemPrompt, messages, maxTokens = 200, temperature = 0.7 }) {
-    const openaiMessages = [
-        { role: "system", content: systemPrompt },
-        ...messages.map(msg => ({
-            role: msg.role,
-            content: typeof msg.content === 'string'
-                ? msg.content
-                : JSON.stringify(msg.content)
-        }))
-    ];
-
-    const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: openaiMessages,
-        max_tokens: maxTokens,
-        temperature
-    });
-
-    return response.choices[0]?.message?.content?.trim() || null;
-}
-/* =========================================================================
-   🖼️ DESCRIÇÃO DE IMAGEM - NOVA (mediaId → buffer → dataURL → GPT-4o-mini)
-   ========================================================================= */
-export async function describeWaImage(mediaId, caption = "") {
-    console.log(`🖼️ Processando imagem: ${mediaId}`);
-
-    try {
-        // 1️⃣ Baixa o binário da mídia (como já faz com áudio)
-        const { buffer, mimeType } = await getMediaBuffer(mediaId);
-
-        console.log(`🖼️ Imagem carregada: ${buffer.length} bytes, tipo: ${mimeType}`);
-
-        // 2️⃣ Converte para data URL (base64)
-        const base64 = buffer.toString("base64");
-        const dataUrl = `data:${mimeType || "image/jpeg"};base64,${base64}`;
-
-        // 3️⃣ Envia para o GPT-4o-mini usando image_url com data URL
-        const resp = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            temperature: 0.4,
-            max_tokens: 120,
-            messages: [
-                {
-                    role: "system",
-                    content:
-                        "Você é a Amanda da Clínica Fono Inova. Descreva brevemente a imagem em 1-2 frases, em pt-BR.",
-                },
-                {
-                    role: "user",
-                    content: [
-                        {
-                            type: "text",
-                            text: `Legenda: ${caption || "(sem legenda)"}`,
-                        },
-                        {
-                            type: "image_url",
-                            image_url: { url: dataUrl },
-                        },
-                    ],
-                },
-            ],
-        });
-
-        return (resp.choices?.[0]?.message?.content || "").trim();
-    } catch (error) {
-        console.error("❌ Erro ao descrever imagem (describeWaImage):", error.message);
-        return "";
-    }
-}
-
-
-/* =========================================================================
-   🖼️ DESCRIÇÃO DE IMAGEM - ANTIGA (URL direta)
-   → Mantida por compatibilidade
-   ========================================================================= */
-export async function describeWaImageFromGraph({ imageUrl, caption = "" } = {}) {
-    try {
-        const resp = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            temperature: 0.4,
-            max_tokens: 120,
-            messages: [
-                {
-                    role: "system",
-                    content:
-                        "Você é a Amanda da Clínica Fono Inova. Descreva brevemente a imagem em 1-2 frases, em pt-BR.",
-                },
-                {
-                    role: "user",
-                    content: [
-                        { type: "text", text: `Legenda: ${caption || "(sem legenda)"}` },
-                        { type: "image_url", image_url: { url: imageUrl } },
-                    ],
-                },
-            ],
-        });
-
-        return (resp.choices?.[0]?.message?.content || "").trim();
-    } catch (error) {
-        console.error(
-            "❌ Erro ao descrever imagem (FromGraph):",
-            error.message
-        );
-        return "";
-    }
-}
-
-/* =========================================================================
-   🤖 GERAÇÃO VIA PROMPT DO HANDLER (para BookingHandler etc.)
-   ========================================================================= */
-export async function generateHandlerResponse({ promptContext, systemPrompt, lead = {}, memory = {} }) {
-    if (!promptContext) return null;
-
-    // Monta contexto adicional se tiver histórico
-    const historyBlock = memory?.conversationHistory?.length
-        ? `\n\nÚLTIMAS MENSAGENS:\n${memory.conversationHistory.slice(-5).map(m => `- ${m.role}: ${m.content}`).join('\n')}`
-        : '';
-
-    const fullPrompt = `${promptContext}${historyBlock}`;
-
-    try {
-        const text = await callAI({
-            systemPrompt: systemPrompt || SYSTEM_PROMPT_AMANDA,
-            messages: [{ role: 'user', content: fullPrompt }],
-            maxTokens: 200,
-            temperature: 0.7
-        });
-
-        if (text) {
-            console.log('[AmandaReply] Handler prompt gerado:', text.substring(0, 80) + '...');
-            return ensureSingleHeart(text);
+        if (mediaId && !mediaUrl) {
+            console.log("🔍 [describeWaImage] Usando mediaId para buscar mídia");
+            const mediaBuffer = await getMediaBuffer(mediaId);
+            if (!mediaBuffer) throw new Error("Não foi possível obter o buffer da mídia");
+            finalBuffer = mediaBuffer.buffer || mediaBuffer;
+            finalMime = mediaBuffer.mimeType || mimeType;
+        } else if (mediaUrl) {
+            console.log("🔍 [describeWaImage] Usando mediaUrl para download");
+            const response = await axios.get(mediaUrl, { responseType: "arraybuffer", timeout: 10000 });
+            finalBuffer = Buffer.from(response.data, "binary");
+            finalMime = mimeType || response.headers["content-type"] || "image/jpeg";
+        } else {
+            throw new Error("É necessário fornecer mediaUrl ou mediaId");
         }
 
-        return null;
+        const MAX_SIZE = 4.5 * 1024 * 1024;
+        let processedBuffer = finalBuffer;
+        if (finalBuffer.length > MAX_SIZE) {
+            console.log(`⚠️ Imagem muito grande (${(finalBuffer.length / 1024 / 1024).toFixed(2)}MB), truncando...`);
+            processedBuffer = finalBuffer.slice(0, MAX_SIZE);
+        }
+
+        const system = "Descreva brevemente a imagem para uma recepcionista de clínica de saúde. Foque no que pode ser relevante (ex: criança, documento, etc).";
+        const userMessage = { type: "image_url", image_url: { url: `data:${finalMime};base64,${processedBuffer.toString("base64")}` } };
+
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [{ role: "system", content: system }, { role: "user", content: [userMessage, { type: "text", text: "Descreva esta imagem:" }] }],
+            max_tokens: 200,
+        });
+
+        return completion.choices?.[0]?.message?.content?.trim() || "[imagem recebida]";
     } catch (err) {
-        console.error('❌ Erro em generateHandlerResponse:', err.message);
+        console.error("❌ Erro ao descrever imagem:", err.message);
+        return "[imagem recebida]";
+    }
+}
+
+export async function transcribeWaAudio({ mediaUrl, mimeType, mediaId }) {
+    try {
+        let finalBuffer, finalMime;
+
+        if (mediaId && !mediaUrl) {
+            const mediaBuffer = await getMediaBuffer(mediaId);
+            if (!mediaBuffer) throw new Error("Não foi possível obter o buffer do áudio");
+            finalBuffer = mediaBuffer.buffer || mediaBuffer;
+            finalMime = mediaBuffer.mimeType || mimeType || "audio/ogg";
+        } else if (mediaUrl) {
+            const response = await axios.get(mediaUrl, { responseType: "arraybuffer", timeout: 15000 });
+            finalBuffer = Buffer.from(response.data, "binary");
+            finalMime = mimeType || response.headers["content-type"] || "audio/ogg";
+        } else {
+            throw new Error("É necessário fornecer mediaUrl ou mediaId");
+        }
+
+        const extension = finalMime.includes("mp4") ? "m4a" : (finalMime.split("/")[1] || "ogg");
+        const audioFile = new Readable();
+        audioFile.push(finalBuffer);
+        audioFile.push(null);
+
+        const response = await openai.audio.transcriptions.create({
+            file: audioFile,
+            model: "whisper-1",
+        });
+
+        return response.text || "";
+    } catch (err) {
+        console.error("❌ Erro ao transcrever áudio:", err.message);
+        return "";
+    }
+}
+
+export async function callOpenAIFallback({ systemPrompt, messages, maxTokens = 200, temperature = 0.7 }) {
+    try {
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+                { role: "system", content: systemPrompt },
+                ...messages
+            ],
+            max_tokens: maxTokens,
+            temperature: temperature,
+        });
+
+        return completion.choices?.[0]?.message?.content?.trim() || null;
+    } catch (err) {
+        console.error("❌ callOpenAIFallback falhou:", err.message);
         return null;
     }
 }
 
-// Exporta CLINIC_ADDRESS e SYSTEM_PROMPT_AMANDA para compatibilidade
-export { CLINIC_ADDRESS, SYSTEM_PROMPT_AMANDA };
+export default { generateAmandaReply, generateFollowupMessage, describeWaImage, transcribeWaAudio, callOpenAIFallback };
