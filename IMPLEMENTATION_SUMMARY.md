@@ -1,117 +1,130 @@
-# ✅ IMPLEMENTAÇÃO COMPLETA - Amanda 4.0
+# Resumo da Implementação - Consolidando a Amanda V5
 
-## 🎯 FILOSOFIA
-**Foco total no novo flow WhatsAppOrchestrator.**
-Código legado mantido mínimo apenas para não quebrar imports.
+## ✅ O QUE FOI IMPLEMENTADO
 
----
+### 1. WhatsAppOrchestrator V5 (Principal)
+**Arquivo:** `orchestrators/WhatsAppOrchestrator.js`
 
-## 📦 O QUE FOI IMPLEMENTADO
+**Funcionalidades:**
+- ✅ Fluxo de conversa com estados (SAUDACAO → QUEIXA → PERFIL → DISPONIBILIDADE → AGENDAMENTO)
+- ✅ Sempre termina com pergunta (nunca deixa conversa aberta)
+- ✅ Acolhimento empático com emojis
+- ✅ Valor antes do preço (avaliação primeiro, sessões depois)
+- ✅ Resiliência: responde interrupções e retoma fluxo
+- ✅ Integração com flagsDetector e therapyDetector
+- ✅ Persistência de estado no ChatContext
+- ✅ Correção do bug `await` no `mostrarHorarios`
 
-### 1. DecisionEngine.js (Core)
-- ✅ F1: Contextual Memory (variações de perguntas)
-- ✅ F2: Value-before-price 
-- ✅ F3: Insurance Bridge (com laudo/reembolso)
-- ✅ F4: Seamless Handover
-- ✅ F5: Smart Repetition
-- ✅ F6: Emotional Support (acolhimento contextual)
-- ✅ F7: Urgency Prioritization (bebês <6 anos)
-- ✅ Warm Lead Detection (6 padrões)
-- ✅ Detectores de contexto emocional
+**Novos métodos estáticos (migrados do legado):**
+- `safeLeadUpdate()` - Update com tratamento de erro
+- `mapComplaintToTherapyArea()` - Mapeia queixa para área
+- `logSuppressedError()` - Log de erros não críticos
+- `generateNaturalQuestion()` - Variações naturais de perguntas
 
-### 2. amandaPrompt.js (Novo)
-- ✅ `buildSystemPrompt()` - Dinâmico baseado no contexto
-- ✅ `buildUserPrompt()` - Com histórico da conversa
-- ✅ Sem fluxos engessados
-- ✅ Conduz qualquer assunto naturalmente
-- ✅ Instruções claras sobre horários personalizados
+### 2. AIAmandaService Adaptado
+**Arquivo:** `services/aiAmandaService.js`
 
-### 3. leadContext.js (Unificado)
-- ✅ Fonte única de verdade
-- ✅ emotionalMarkers extraídos
-- ✅ ContextPack + contextMemory unificados
+**Mudanças:**
+- ✅ `generateAmandaReply()` agora usa WhatsAppOrchestrator V5
+- ✅ Mantido `generateFollowupMessage()` (usado em followups)
+- ✅ Mantido `transcribeWaAudio()` (usado no WhatsApp)
+- ✅ Mantido `describeWaImage()` (usado no WhatsApp)
+- ✅ Mantido `callOpenAIFallback()` (fallback de IA)
+- ✅ Mantido `generateHandlerResponse()` (para compatibilidade)
 
-### 4. config/pricing.js (Centralizado)
-- ✅ Todos os preços em um lugar
-- ✅ Helpers de formatação
-- ✅ Comparação avulso vs pacote
+### 3. Handlers Simplificados
+**Arquivo:** `handlers/index.js`
 
-### 5. Analytics
-- ✅ decisionTracking.js - Métricas dos gaps
-- ✅ abTesting.js - Testes A/B
+**Mudanças:**
+- ✅ BookingHandler mantido ativo (ainda usado)
+- ✅ Stubs criados para handlers legados (não quebram imports)
+- ⚠️ Handlers legados movidos para `legacy/`:
+  - LeadQualificationHandler.js
+  - ProductHandler.js
+  - TherapyHandler.js
+  - FallbackHandler.js
 
----
+### 4. Arquivos Movidos para Legacy
+**Pasta:** `legacy/`
 
-## 🧪 TESTES
+Arquivos movidos (não deletados, por segurança):
+- `amandaOrchestrator.js` (antigo, 1000+ linhas)
+- `DecisionEngine42.js` (não usado)
+- `amandaPipeline.js` (não usado)
+- `LeadQualificationHandler.js` (substituído)
+- `ProductHandler.js` (substituído)
+- `TherapyHandler.js` (substituído)
+- `FallbackHandler.js` (substituído)
 
-### E2E Tests (decisionEngine.test.js)
+## 🧪 O QUE PRECISA SER TESTADO
+
+### Fluxo Principal
+1. **Primeiro contato:** Cliente diz "Oi" → Amanda deve saudar e perguntar queixa
+2. **Pergunta de preço:** Cliente pergunta valor → Amanda explica valor ANTES do preço
+3. **Coleta de dados:** Amanda deve coletar idade, período, etc com acolhimento
+4. **Interrupções:** Cliente muda de assunto → Amanda responde e retoma fluxo
+5. **Agendamento:** Quando tem todos dados, mostrar horários
+
+### Funcionalidades Específicas
+- [ ] Transcrição de áudio
+- [ ] Descrição de imagem
+- [ ] Follow-up automático
+- [ ] Fallback quando V5 falha
+- [ ] Resiliência a erros
+
+## 📊 ARQUITETURA ATUAL
+
 ```
-✅ 8/8 PASSANDO
-- F2: Value-before-price
-- F3: Insurance Bridge  
-- F4: Seamless Handover
-- F5: Smart Repetition
-- F6: Emotional Support
-- F7: Urgency Prioritization
-- Warm Lead Detection
-- Full Qualification Flow
+┌─────────────────────────────────────┐
+│ WhatsApp Webhook                    │
+│ (whatsappController.js)             │
+└─────────────┬───────────────────────┘
+              │
+              ▼
+┌─────────────────────────────────────┐
+│ AIAmandaService                     │
+│  ├─ generateAmandaReply()           │
+│  │   └─▶ WhatsAppOrchestrator V5   │
+│  ├─ generateFollowupMessage()       │
+│  ├─ transcribeWaAudio()             │
+│  └─ describeWaImage()               │
+└─────────────────────────────────────┘
+
+┌─────────────────────────────────────┐
+│ WhatsAppOrchestrator V5             │
+│  ├─ Estados: SAUDACAO → QUEIXA →   │
+│  │            PERFIL → DISPONIBIL.  │
+│  ├─ flagsDetector (intenções)       │
+│  ├─ therapyDetector (especialidade) │
+│  ├─ naturalResponseBuilder          │
+│  └─ amandaBookingService (slots)    │
+└─────────────────────────────────────┘
 ```
 
-### Cenários Reais (realScenarios.test.js)
-Baseado em 43k conversas:
-- 3/12 passando (cenários críticos)
-- 9/12 dependentes de IA gerar respostas naturais
+## 🚨 ROLLBACK (se necessário)
 
----
-
-## 🚀 COMO USAR
-
-### Exemplo de chamada:
-```javascript
-import { decide } from './services/intelligence/DecisionEngine.js';
-
-const result = await decide({
-    message: { text: 'Quanto custa?' },
-    memory: { therapyArea: 'fonoaudiologia' },
-    flags: { asksPrice: true },
-    lead: { _id: 'lead123' }
-});
-
-// result.action = 'smart_response'
-// result.text = resposta natural da IA
+Se algo quebrar, os arquivos originais estão em `legacy/`:
+```bash
+# Restaurar um arquivo
+mv backend/legacy/amandaOrchestrator.js backend/utils/
+mv backend/legacy/LeadQualificationHandler.js backend/handlers/
+# etc...
 ```
 
-### Prompt dinâmico:
-```javascript
-import { buildSystemPrompt } from './utils/amandaPrompt.js';
+## 📝 PRÓXIMOS PASSOS
 
-const prompt = buildSystemPrompt({
-    therapyArea: 'psicologia',
-    patientAge: 5,
-    patientName: 'Pedro',
-    emotionalContext: { expressedWorry: true }
-});
-// Retorna prompt contextualizado para IA
-```
+1. **Testar fluxo completo** no WhatsApp
+2. **Verificar logs** por erros
+3. **Se tudo ok por 1 semana:** Deletar pasta `legacy/`
+4. **Se problemas:** Restaurar arquivos específicos da `legacy/`
 
----
+## 💚 MELHORIAS IMPLEMENTADAS
 
-## 📋 PRÓXIMOS PASSOS
-
-1. **Deploy gradual**: 10% → 50% → 100%
-2. **Monitorar métricas**: via decisionTracking.js
-3. **Ajustar prompts**: baseado em resultados reais
-4. **Remover código legado**: quando 100% no novo flow
-
----
-
-## 🎉 RESUMO
-
-Amanda agora é **inteligente e natural**:
-- ✅ Sem fluxos engessados
-- ✅ Contexto emocional detectado
-- ✅ Conduz qualquer assunto
-- ✅ Horários personalizados informados
-- ✅ Testes E2E passando
-
-**Pronta para produção!** 🚀
+| Antes | Depois |
+|-------|--------|
+| "Oi, como posso ajudar?" robótico | "Oi! Que bom que entrou em contato! 😊💚" acolhedor |
+| Preço logo de cara (R$ 200/sessão) | Valor primeiro (avaliação completa) |
+| Respostas genéricas | Variações naturais de perguntas |
+| Quebrava em "2 anos" | Retoma fluxo corretamente |
+| 1000+ linhas de código complexo | ~400 linhas, fluxo claro |
+| Múltiplos handlers confusos | Um orquestrador central |

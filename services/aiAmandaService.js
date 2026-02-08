@@ -4,7 +4,8 @@ import axios from "axios";
 import OpenAI from "openai";
 import { Readable } from "stream";
 
-import getOptimizedAmandaResponse from "../utils/amandaOrchestrator.js";
+// ✅ NOVO: Usar WhatsAppOrchestrator V5 (simplificado e acolhedor)
+import { WhatsAppOrchestrator } from "../orchestrators/WhatsAppOrchestrator.js";
 import { CLINIC_ADDRESS, SYSTEM_PROMPT_AMANDA } from "../utils/amandaPrompt.js";
 
 // ⚠️ novos imports para mídia baseada em mediaId
@@ -13,41 +14,55 @@ import callAI from "./IA/Aiproviderservice.js";
 import { analyzeLeadMessage } from "./intelligence/leadIntelligence.js";
 import { getMediaBuffer } from "./whatsappMediaService.js";
 
+// Instância do novo orquestrador
+const orchestrator = new WhatsAppOrchestrator();
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /* =========================================================================
-   🎯 RESPOSTA PRINCIPAL - USA ORCHESTRATOR (MANTIDO)
+   🎯 RESPOSTA PRINCIPAL - USA WHATSAPP ORCHESTRATOR V5 (NOVO)
    ========================================================================= */
 
 export async function generateAmandaReply({ userText, lead = {}, context = {} }) {
-
     try {
-        return await getOptimizedAmandaResponse({
-            content: userText,
-            userText,
+        // ✅ NOVO: Usar WhatsAppOrchestrator V5
+        const result = await orchestrator.process({
             lead,
-            context,
+            message: { content: userText },
+            context: {
+                preferredPeriod: lead?.pendingPreferredPeriod || lead?.qualificationData?.extractedInfo?.disponibilidade,
+                preferredDate: lead?.qualificationData?.extractedInfo?.dataPreferida,
+                therapy: lead?.therapyArea || lead?.qualificationData?.extractedInfo?.especialidade,
+                source: context?.source || 'api'
+            },
+            services: {} // Serviços são opcionais no V5
         });
 
-    } catch (err) {
+        // O V5 retorna { command, payload }
+        if (result?.command === 'SEND_MESSAGE' && result?.payload?.text) {
+            return ensureSingleHeart(result.payload.text);
+        }
 
-        console.warn("⚠️ Orchestrator falhou, usando OpenAI FREE");
+        // Fallback se não retornar mensagem
+        console.warn("⚠️ V5 não retornou mensagem, usando fallback");
+        throw new Error('V5 returned empty');
+
+    } catch (err) {
+        console.warn("⚠️ V5 falhou, usando OpenAI fallback:", err.message);
 
         try {
             const fallback = await callOpenAIFallback({
                 systemPrompt: SYSTEM_PROMPT_AMANDA,
-                messages: [
-                    { role: "user", content: userText }
-                ]
+                messages: [{ role: "user", content: userText }]
             });
 
-            if (fallback) return fallback;
+            if (fallback) return ensureSingleHeart(fallback);
 
         } catch (e) {
             console.error("❌ Fallback OpenAI falhou:", e.message);
         }
 
-        return "Poderia me repetir o que você precisa? Quero ter certeza de entender direito para te ajudar da melhor forma 💚";
+        return "Oi! Sou a Amanda da Fono Inova 💚 Que bom que entrou em contato! Me conta: é para você ou para um pequeno?";
     }
 }
 
