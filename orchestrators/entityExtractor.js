@@ -30,11 +30,13 @@ export function extractEntities(text, context = {}) {
       'fono', 'fonoaudiologa', 'fonoaudiologo', 'fonoaudiologia',
       'fisioterapia', 'fisioterapeuta', 'fisio',
       'terapia', 'terapeuta',
+      'neurologista', 'neurologo', 'neurologa', 'neurologia', // 🔧 FIX: Adicionado neurologista
       'neuropsicologia', 'neuropsicolog', 'neuro',
       'ocupacional',
       'psicopedagogia', 'psicopedagog',
       'musicoterapia',
-      'infantil', 'adulto', 'adolescente'
+      'infantil', 'adulto', 'adolescente',
+      'desenvolvimento', 'desenvolv' // 🔧 FIX: Adicionado desenvolvimento (desenvolvimento neuro)
     ];
 
     const noiseWords = ['nao', 'não', 'sim', 'talvez', 'ok', 'blz', 'beleza', 'opa', 'oi', 'ola', 'tudo'];
