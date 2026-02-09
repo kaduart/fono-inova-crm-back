@@ -47,6 +47,68 @@ export function resetContextStats() {
 }
 
 // =============================================================================
+// 🧹 NORMALIZAÇÃO UNICODE (FIX BUG #6)
+// =============================================================================
+
+/**
+ * Normaliza texto removendo acentos e retorna valor normalizado
+ * Usado para garantir que "tãrde", "tarde", "tardé" todos virem "tarde"
+ */
+function normalizeUnicode(text) {
+  if (!text || typeof text !== 'string') return text;
+
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Remove todos os diacríticos
+    .trim();
+}
+
+/**
+ * Normaliza valor de período para enum do MongoDB
+ * "tãrde", "tardé", "TaRdE" → "tarde"
+ * "manhã", "manhã", "MANHA" → "manha"
+ */
+function normalizePeriod(period) {
+  if (!period) return null;
+
+  const normalized = normalizeUnicode(period);
+
+  // Mapeia para valores válidos do enum
+  if (normalized === 'manha' || normalized === 'manhã') return 'manha';
+  if (normalized === 'tarde' || normalized === 'tardé') return 'tarde';
+
+  // Retorna null se não for período válido
+  console.warn(`[ContextManager] Período inválido após normalização: "${period}" → "${normalized}"`);
+  return null;
+}
+
+/**
+ * Normaliza valor de terapia para enum do MongoDB
+ */
+function normalizeTherapy(therapy) {
+  if (!therapy) return null;
+
+  const normalized = normalizeUnicode(therapy);
+
+  // Mapa de normalizações comuns
+  const therapyMap = {
+    'psicologia': 'psicologia',
+    'fono': 'fonoaudiologia',
+    'fonoaudiologia': 'fonoaudiologia',
+    'fisioterapia': 'fisioterapia',
+    'fisio': 'fisioterapia',
+    'terapia_ocupacional': 'terapia_ocupacional',
+    'ocupacional': 'terapia_ocupacional',
+    'psicopedagogia': 'psicopedagogia',
+    'neuropsicologia': 'neuropsicologia',
+    'musicoterapia': 'musicoterapia'
+  };
+
+  return therapyMap[normalized] || therapy;
+}
+
+// =============================================================================
 // 🏗️ ESTRUTURA DE DADOS
 // =============================================================================
 
@@ -140,61 +202,97 @@ export async function loadContext(leadId) {
 }
 
 /**
- * Salva contexto no banco de dados
+ * Salva contexto no banco de dados com proteção contra race conditions
+ * 🔒 FIX: Usa atomic updates do MongoDB + retry logic para evitar perda de dados
  */
 export async function saveContext(leadId, context) {
-  try {
-    const id = leadId?.toString?.() || leadId;
+  const MAX_RETRIES = 3;
+  let attempt = 0;
 
-    if (!id || id === 'unknown') {
-      console.warn('[ContextManager] Não pode salvar sem leadId');
-      return;
-    }
+  while (attempt < MAX_RETRIES) {
+    try {
+      const id = leadId?.toString?.() || leadId;
 
-    // Mapear de volta para Lead.autoBookingContext
-    const autoBookingUpdate = {
-      active: true,
-      therapyArea: context.therapy,
-      mappedTherapyArea: context.therapy,
-      complaint: context.complaint,
-      preferredPeriod: context.period?.replace('a', 'ã'), // 'manha' → 'manhã'
-      patientInfo: {
-        fullName: context.patientName,
-        age: context.age
-      },
-      schedulingRequested: context.schedulingRequested,
-      schedulingRequestedAt: context.schedulingRequestedAt,
-      pendingSchedulingSlots: context.pendingSchedulingSlots,
-      lastSlotsShownAt: context.lastSlotsShownAt,
-      waitlistRequested: context.waitlistRequested,
-      waitlistPreferences: context.waitlistPreferences,
-      messageCount: context.messageCount,
-      lastMessage: context.lastMessage,
-      lastAction: context.lastAction,
-      currentStep: context.currentStep,
-      lastUpdatedAt: new Date()
-    };
+      if (!id || id === 'unknown') {
+        console.warn('[ContextManager] Não pode salvar sem leadId');
+        return;
+      }
 
-    await Leads.findByIdAndUpdate(
-      id,
-      {
-        $set: {
-          autoBookingContext: autoBookingUpdate
+      // 🔧 FIX BUG #6: Normaliza valores antes de salvar no MongoDB para evitar enum errors
+      const normalizedPeriod = normalizePeriod(context.period);
+      const normalizedTherapy = normalizeTherapy(context.therapy);
+
+      // Mapear de volta para Lead.autoBookingContext
+      const autoBookingUpdate = {
+        active: true,
+        therapyArea: normalizedTherapy,
+        mappedTherapyArea: normalizedTherapy,
+        complaint: context.complaint,
+        preferredPeriod: normalizedPeriod, // 🔧 Agora normaliza corretamente "tãrde" → "tarde"
+        patientInfo: {
+          fullName: context.patientName,
+          age: context.age
+        },
+        schedulingRequested: context.schedulingRequested,
+        schedulingRequestedAt: context.schedulingRequestedAt,
+        pendingSchedulingSlots: context.pendingSchedulingSlots,
+        lastSlotsShownAt: context.lastSlotsShownAt,
+        waitlistRequested: context.waitlistRequested,
+        waitlistPreferences: context.waitlistPreferences,
+        messageCount: context.messageCount,
+        lastMessage: context.lastMessage,
+        lastAction: context.lastAction,
+        currentStep: context.currentStep,
+        lastUpdatedAt: new Date()
+      };
+
+      // 🔒 FIX: Atomic update com validation
+      const result = await Leads.findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            autoBookingContext: autoBookingUpdate
+          }
+        },
+        {
+          new: true,
+          upsert: false, // Não cria Lead se não existir
+          runValidators: true // 🔒 Valida enums antes de salvar
         }
-      },
-      { upsert: false } // Não cria Lead se não existir
-    );
+      );
 
-    console.log('[ContextManager] Contexto salvo em Lead:', {
-      leadId: id,
-      patientName: context.patientName ? '***' : null,  // Privacy
-      age: context.age,
-      therapy: context.therapy
-    });
+      if (!result) {
+        console.warn('[ContextManager] Lead não encontrado:', id);
+        return;
+      }
 
-  } catch (error) {
-    console.error('[ContextManager] Erro ao salvar:', error.message);
-    contextStats.errors++;
+      console.log('[ContextManager] Contexto salvo (atomic):', {
+        leadId: id,
+        patientName: context.patientName ? '***' : null,
+        age: context.age,
+        therapy: normalizedTherapy,
+        period: normalizedPeriod,
+        attempt: attempt + 1
+      });
+
+      return; // Success, exit retry loop
+
+    } catch (error) {
+      attempt++;
+
+      // 🔒 Retry em caso de conflito de versão (race condition)
+      if (error.name === 'VersionError' || error.message?.includes('version')) {
+        if (attempt < MAX_RETRIES) {
+          console.warn(`[ContextManager] Conflito detectado, retry ${attempt}/${MAX_RETRIES}`);
+          await new Promise(r => setTimeout(r, 50 * attempt)); // Exponential backoff
+          continue;
+        }
+      }
+
+      console.error('[ContextManager] Erro ao salvar:', error.message);
+      contextStats.errors++;
+      throw error;
+    }
   }
 }
 

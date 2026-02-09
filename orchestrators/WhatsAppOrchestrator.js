@@ -208,15 +208,25 @@ export class WhatsAppOrchestrator {
 
     // 1. Tratar interrupções (preço, plano, endereço)
     if (flags?.asksPrice || action.type === 'RESPONSE_PRECO') {
-      return this.responderInterrupcao(ctx, 'preco');
+      const response = this.responderInterrupcao(ctx, 'preco');
+      this.logger.info('GENERATE_RESPONSE_PRECO', {
+        therapy: ctx.therapy,
+        responseLength: response?.length,
+        responsePreview: response?.substring(0, 150)
+      });
+      return response;
     }
 
     if (flags?.asksPlans || action.type === 'RESPONSE_PLANO') {
-      return this.responderInterrupcao(ctx, 'plano');
+      const response = this.responderInterrupcao(ctx, 'plano');
+      this.logger.info('GENERATE_RESPONSE_PLANO', { responseLength: response?.length });
+      return response;
     }
 
     if (flags?.asksAddress || action.type === 'RESPONSE_ENDERECO') {
-      return this.responderInterrupcao(ctx, 'endereco');
+      const response = this.responderInterrupcao(ctx, 'endereco');
+      this.logger.info('GENERATE_RESPONSE_ENDERECO', { responseLength: response?.length });
+      return response;
     }
 
     // ✨ NOVO: Responder pergunta sobre disponibilidade ANTES de coletar dados
@@ -417,6 +427,14 @@ export class WhatsAppOrchestrator {
     const missing = getMissingSlots(ctx);
     let perguntaRetomada = '';
 
+    this.logger.info('INTERRUPCAO_RETOMADA', {
+      tipo,
+      therapy: ctx.therapy,
+      missingCount: missing.length,
+      missingFields: missing.map(m => m.field),
+      nextSlot: missing[0]?.field
+    });
+
     if (missing.length === 0) {
       perguntaRetomada = `\n\nVou verificar os horários disponíveis! Posso buscar para você?`;
     } else {
@@ -444,7 +462,17 @@ export class WhatsAppOrchestrator {
       }
     }
 
-    return resposta + perguntaRetomada;
+    const finalResponse = resposta + perguntaRetomada;
+
+    this.logger.info('INTERRUPCAO_RESPONSE', {
+      tipo,
+      respostaLength: resposta.length,
+      perguntaRetomadaLength: perguntaRetomada.length,
+      finalLength: finalResponse.length,
+      hasPergunta: perguntaRetomada.length > 0
+    });
+
+    return finalResponse;
   }
 
   /**

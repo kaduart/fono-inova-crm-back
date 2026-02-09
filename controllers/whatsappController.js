@@ -1522,19 +1522,26 @@ async function handleAutoReply(from, to, content, lead) {
         if (!canProceed) return;
 
         // ================================
-        // 2. Evita resposta duplicada (5s)
+        // 2. Evita mensagem duplicada IDÊNTICA (10s) - FIX BUG #1
         // ================================
-        const fiveSecondsAgo = new Date(Date.now() - 5 * 1000);
-        const veryRecentReply = await Message.findOne({
-            to: from,
-            direction: "outbound",
-            type: "text",
-            timestamp: { $gte: fiveSecondsAgo },
-        }).lean();
+        // 🔧 CORREÇÃO: Usar hash MD5 do conteúdo ao invés de tempo genérico
+        try {
+            if (redis?.set) {
+                const crypto = await import('crypto');
+                const contentHash = crypto.createHash('md5').update(content).digest('hex');
+                const recentKey = `msg:inbound:${from}:${contentHash}`;
 
-        if (veryRecentReply) {
-            console.log("⏭️ Resposta enviada há menos de 5s; evitando duplicação.");
-            return;
+                const exists = await redis.get(recentKey);
+                if (exists) {
+                    console.log("⏭️ Mensagem idêntica recebida recentemente; evitando duplicação:", content.substring(0, 50));
+                    return;
+                }
+
+                // Marca como processada por 10s
+                await redis.setex(recentKey, 10, '1');
+            }
+        } catch (hashError) {
+            console.warn("⚠️ Redis hash indisponível:", hashError.message);
         }
 
         // ================================

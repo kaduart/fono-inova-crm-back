@@ -5,9 +5,12 @@
  * Usado pelo Orchestrator V7 e outros componentes.
  */
 
+import { sanitizeObject } from '../utils/sanitizer.js';
+
 /**
  * Extrai entidades de uma mensagem de forma inteligente e contextual
  * Não depende de "steps" - extrai o que encontrar, quando encontrar
+ * 🔒 FIX: Sanitiza todas as entidades extraídas para prevenir XSS e Prompt Injection
  */
 export function extractEntities(text, context = {}) {
   if (!text || typeof text !== 'string') return {};
@@ -20,18 +23,41 @@ export function extractEntities(text, context = {}) {
   // 1. EXTRAÇÃO DE NOME (heurística contextual)
   // ========================================================================
   if (words.length >= 1 && words.length <= 4 && text.length > 1) {
+    // 🔧 FIX BUG #2: Blacklist de termos médicos para evitar "Psicologia Infantil" ser aceito como nome
+    const MEDICAL_TERMS = [
+      'psicologia', 'psicologa', 'psicologo', 'psico',
+      'pediatra', 'pediatria',
+      'fono', 'fonoaudiologa', 'fonoaudiologo', 'fonoaudiologia',
+      'fisioterapia', 'fisioterapeuta', 'fisio',
+      'terapia', 'terapeuta',
+      'neuropsicologia', 'neuropsicolog', 'neuro',
+      'ocupacional',
+      'psicopedagogia', 'psicopedagog',
+      'musicoterapia',
+      'infantil', 'adulto', 'adolescente'
+    ];
+
     const noiseWords = ['nao', 'não', 'sim', 'talvez', 'ok', 'blz', 'beleza', 'opa', 'oi', 'ola', 'tudo'];
     const firstWord = words[0].toLowerCase().replace(/[^a-z]/g, '');
 
     if (!noiseWords.includes(firstWord) && !text.match(/^\d+$/)) {
-      const isLikelyName = words[0][0] === words[0][0]?.toUpperCase() ||
-        context?.lastQuestion === 'nome' ||
-        words.length <= 2;
+      // 🔧 FIX BUG #2: Verifica se o texto contém termos médicos
+      const textLowered = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const containsMedicalTerm = MEDICAL_TERMS.some(term => textLowered.includes(term));
 
-      if (isLikelyName && text.length >= 2 && text.length <= 40) {
-        const cleanedName = text.trim().replace(/[.,!?;:]$/, '');
-        if (!cleanedName.toLowerCase().match(/^(nao|não|sim|na)$/)) {
-          extracted.patientName = cleanedName;
+      if (containsMedicalTerm) {
+        // Não é um nome, é uma especialidade médica
+        console.log('🚫 Termo médico detectado, não será extraído como nome:', text);
+      } else {
+        const isLikelyName = words[0][0] === words[0][0]?.toUpperCase() ||
+          context?.lastQuestion === 'nome' ||
+          words.length <= 2;
+
+        if (isLikelyName && text.length >= 2 && text.length <= 40) {
+          const cleanedName = text.trim().replace(/[.,!?;:]$/, '');
+          if (!cleanedName.toLowerCase().match(/^(nao|não|sim|na)$/)) {
+            extracted.patientName = cleanedName;
+          }
         }
       }
     }
@@ -120,7 +146,12 @@ export function extractEntities(text, context = {}) {
     }
   }
 
-  return extracted;
+  // 🔒 FIX: Sanitiza todas as entidades extraídas antes de retornar
+  // Previne XSS (ex: patientName = "<script>alert('xss')</script>")
+  // Previne Prompt Injection (ex: complaint = "Ignore previous instructions...")
+  const sanitized = sanitizeObject(extracted, ['patientName', 'complaint', 'therapy']);
+
+  return sanitized;
 }
 
 /**
