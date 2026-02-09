@@ -82,12 +82,35 @@ const leadSchema = new mongoose.Schema({
         birthDate: String,
         phone: String,
         email: String,
+        age: Number, // 🆕 Idade do paciente
       },
       // ✅ flags usados pelo orquestrador (persistência real no Mongo)
       awaitingPeriodChoice: { type: Boolean, default: false },
       schedulingIntentActive: { type: Boolean, default: false },
       handoffSentAt: { type: Date, default: null },
       complaint: { type: String, default: null },
+
+      // 🆕 Novos campos para agendamento robusto
+      schedulingRequested: { type: Boolean, default: false },
+      schedulingRequestedAt: { type: Date, default: null },
+      pendingSchedulingSlots: { type: Object, default: null },
+      lastSlotsShownAt: { type: Date, default: null },
+
+      // 🆕 Waitlist (Lista de Espera)
+      waitlistRequested: { type: Boolean, default: false },
+      waitlistPreferences: {
+        therapyArea: String,
+        period: String,
+        urgency: String,
+        requestedAt: Date
+      },
+
+      // 🆕 Metadados conversacionais
+      messageCount: { type: Number, default: 0 },
+      lastMessage: { type: String, default: null },
+      lastAction: { type: String, default: null },
+      currentStep: { type: String, default: null },
+      lastUpdatedAt: { type: Date, default: null },
     },
     default: null,
   },

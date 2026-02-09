@@ -6,7 +6,7 @@ import FormData from 'form-data';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import { Readable } from 'stream';
-import ChatContext from "../models/ChatContext.js";
+// import ChatContext from "../models/ChatContext.js"; // ❌ DEPRECATED - usando Lead.autoBookingContext
 import Contact from "../models/Contacts.js";
 import Lead from "../models/Leads.js"; // ajuste o path
 import Message from "../models/Message.js";
@@ -58,23 +58,24 @@ async function requireToken() {
     return token;
 }
 
-async function updateChatContext(leadId, direction, text) {
-    if (!leadId || !text) return;
-    const now = new Date();
-    const ctx = await ChatContext.findOneAndUpdate(
-        { lead: leadId },
-        {
-            $push: { messages: { direction, text, ts: now } },
-            $set: { lastUpdatedAt: now },
-            $setOnInsert: { lead: leadId },
-        },
-        { upsert: true, new: true }
-    );
-    if (ctx.messages.length > 10) {
-        ctx.messages = ctx.messages.slice(-10);
-        await ctx.save();
-    }
-}
+// ❌ DEPRECATED - Histórico de mensagens já está em Message model
+// async function updateChatContext(leadId, direction, text) {
+//     if (!leadId || !text) return;
+//     const now = new Date();
+//     const ctx = await ChatContext.findOneAndUpdate(
+//         { lead: leadId },
+//         {
+//             $push: { messages: { direction, text, ts: now } },
+//             $set: { lastUpdatedAt: now },
+//             $setOnInsert: { lead: leadId },
+//         },
+//         { upsert: true, new: true }
+//     );
+//     if (ctx.messages.length > 10) {
+//         ctx.messages = ctx.messages.slice(-10);
+//         await ctx.save();
+//     }
+// }
 
 /**
  * 🧱 Registro centralizado de mensagem (inbound/outbound)
@@ -134,7 +135,7 @@ export async function registerMessage({
     });
 
     // 2) Atualiza contexto de chat
-    await updateChatContext(leadId, direction, text);
+    // await updateChatContext(leadId, direction, text); // ❌ DEPRECATED
 
     // 3) Atualiza contato para ordenação da lista
     if (contactId) {
@@ -369,9 +370,10 @@ export async function sendTemplateMessage({
         (paramsText ? paramsText : `[TEMPLATE:${template}]`);
 
     // 🔁 Mantém contexto de conversa (ChatContext)
-    if (lead) {
-        await updateChatContext(lead, "outbound", contentToSave);
-    }
+    // ❌ DEPRECATED - usando Lead.autoBookingContext via ContextManager
+    // if (lead) {
+    //     await updateChatContext(lead, "outbound", contentToSave);
+    // }
 
     // 💾 Registra a mensagem no CRM (Message)
     if (lead) {

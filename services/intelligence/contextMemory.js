@@ -1,7 +1,7 @@
 // services/intelligence/contextMemory.js
 
 import OpenAI from 'openai';
-import ChatContext from '../../models/ChatContext.js';
+// ❌ DEPRECATED: import ChatContext from '../../models/ChatContext.js';
 import Message from '../../models/Message.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
