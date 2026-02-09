@@ -1,21 +1,24 @@
 import Logger from '../services/utils/Logger.js';
-import { extractEntities, getMissingEntities } from './entityExtractor.js';
-import { detectAllFlags } from '../utils/flagsDetector.js';
 import { CLINIC_KNOWLEDGE } from '../knowledge/clinicKnowledge.js';
 import callAI from '../services/IA/Aiproviderservice.js';
 import { SYSTEM_PROMPT_AMANDA } from '../utils/amandaPrompt.js';
-import ChatContext from '../models/ChatContext.js';
+import { detectAllFlags } from '../utils/flagsDetector.js';
+
+// 🆕 NOVO SISTEMA DE CONTEXT E ENTITIES
+import { extractEntities } from '../services/intelligence/EntityExtractor.js';
+import {
+  loadContext,
+  saveContext,
+  mergeContext,
+  getMissingSlots,
+  hasCompleteInfo
+} from '../services/intelligence/ContextManager.js';
 
 // =============================================================================
-// 🧠 WHATSAPP ORCHESTRATOR V7 - Response-First Architecture
+// 🧠 WHATSAPP ORCHESTRATOR V7.1 - Response-First + ContextManager
 // =============================================================================
-//
-// FILOSOFIA CENTRAL:
-// 1. RESPONDER o que o lead perguntou (sempre primeiro!)
-// 2. ACOLHER o que o lead contou
-// 3. PERGUNTAR apenas 1 coisa (se necessário)
-//
-// Esta ordem inverte o "slot-first thinking" e humaniza a conversa.
+// REFATORAÇÃO: Usa EntityExtractor robusto + ContextManager para merge inteligente
+// Filosofia Response-First mantida, mas com persistência de contexto robusta
 // =============================================================================
 
 export class WhatsAppOrchestratorV7 {
@@ -33,32 +36,46 @@ export class WhatsAppOrchestratorV7 {
     this.logger.info('V7_START', {
       leadId,
       textPreview: userText.substring(0, 60),
-      architecture: 'response-first'
+      architecture: 'response-first-v7.1'
     });
 
     try {
+      // ═══════════════════════════════════════════════════
+      // FASE 0: CARREGA CONTEXTO PERSISTIDO (novo)
+      // ═══════════════════════════════════════════════════
+      const memory = await loadContext(leadId);
+      
+      // Merge com contexto passado (se houver)
+      const baseContext = { ...memory, ...context };
+
       // ═══════════════════════════════════════════════════
       // FASE 1: DETECÇÃO PARALELA (rápido)
       // ═══════════════════════════════════════════════════
       const [questions, entities, flags] = await Promise.all([
         this.extractQuestions(userText),
-        extractEntities(userText, context),
-        Promise.resolve(detectAllFlags(userText, lead, context))
+        Promise.resolve(extractEntities(userText, baseContext)),  // 🆕 novo extractor
+        Promise.resolve(detectAllFlags(userText, lead, baseContext))
       ]);
 
       this.logger.debug('V7_DETECTION', {
         leadId,
         questionsCount: questions.length,
-        entitiesFound: Object.keys(entities).filter(k => entities[k]),
+        entitiesFound: Object.keys(entities).filter(k => entities[k] && !['lastMessage', 'isConfirmation', 'isNegation'].includes(k)),
         flagsActive: Object.keys(flags).filter(k => flags[k] === true).slice(0, 5)
       });
 
       // ═══════════════════════════════════════════════════
-      // FASE 2: CONSTRUIR RESPOSTA (ordem importa!)
+      // FASE 2: MERGE INTELIGENTE (preserva dados válidos)
+      // ═══════════════════════════════════════════════════
+      const mergedContext = mergeContext(baseContext, entities);
+      mergedContext.flags = { ...mergedContext.flags, ...flags };
+
+      // ═══════════════════════════════════════════════════
+      // FASE 3: CONSTRUIR RESPOSTA (ordem importa!)
       // ═══════════════════════════════════════════════════
       let response = "";
 
-      // 2.1 🎯 RESPONDE PERGUNTAS (prioridade máxima)
+      // 3.1 🎯 RESPONDE PERGUNTAS (prioridade máxima)
       if (questions.length > 0) {
         this.logger.info('V7_ANSWERING_QUESTIONS', {
           leadId,
@@ -67,31 +84,31 @@ export class WhatsAppOrchestratorV7 {
 
         const answers = await this.answerQuestions(questions, {
           flags,
-          entities,
-          context,
+          entities: mergedContext,
+          context: mergedContext,
           lead
         });
 
         response += answers + "\n\n";
       }
 
-      // 2.2 💚 ACOLHE DADOS NOVOS
-      const newData = this.getNewData(entities, context);
+      // 3.2 💚 ACOLHE DADOS NOVOS
+      const newData = this.getNewData(entities, baseContext);
       if (newData.length > 0) {
         this.logger.debug('V7_ACKNOWLEDGING', {
           leadId,
           newData
         });
 
-        const acknowledgment = this.acknowledgeData(newData, entities);
+        const acknowledgment = this.acknowledgeData(newData, mergedContext);
         if (acknowledgment) {
           response += acknowledgment + "\n\n";
         }
       }
 
-      // 2.3 ❓ PERGUNTA 1 COISA (só se não fez 2+ perguntas)
+      // 3.3 ❓ PERGUNTA 1 COISA (só se não fez 2+ perguntas)
       if (questions.length < 2) {
-        const nextQuestion = this.decideNextQuestion(context, entities, flags, lead);
+        const nextQuestion = this.decideNextQuestion(mergedContext, flags);
         if (nextQuestion) {
           this.logger.debug('V7_ASKING', {
             leadId,
@@ -107,23 +124,24 @@ export class WhatsAppOrchestratorV7 {
       }
 
       // ═══════════════════════════════════════════════════
-      // FASE 3: PERSISTIR CONTEXTO ATUALIZADO
+      // FASE 4: PERSISTIR CONTEXTO ATUALIZADO
       // ═══════════════════════════════════════════════════
-      const updatedContext = {
-        ...context,
-        ...entities,
-        lastProcessedAt: new Date(),
-        lastArchitecture: 'v7-response-first'
-      };
-
-      await this.saveMemory(lead._id, updatedContext);
+      mergedContext.lastProcessedAt = new Date();
+      mergedContext.lastArchitecture = 'v7.1-response-first';
+      
+      await saveContext(leadId, mergedContext);
 
       this.logger.info('V7_COMPLETE', {
         leadId,
         responseLength: response.length,
         answered: questions.length > 0,
         acknowledged: newData.length > 0,
-        askedNext: questions.length < 2
+        askedNext: questions.length < 2,
+        context: {
+          patientName: mergedContext.patientName,
+          age: mergedContext.age,
+          therapy: mergedContext.therapy
+        }
       });
 
       return {
@@ -138,7 +156,6 @@ export class WhatsAppOrchestratorV7 {
         stack: error.stack
       });
 
-      // Fallback humanizado
       return {
         command: 'SEND_MESSAGE',
         payload: {
@@ -150,13 +167,11 @@ export class WhatsAppOrchestratorV7 {
 
   /**
    * 🔍 Extrai perguntas da mensagem do lead
-   * Não tenta mapear todas as perguntas possíveis - usa categorias amplas
    */
   extractQuestions(text) {
     const questions = [];
     const lower = text.toLowerCase();
 
-    // Padrões de perguntas (categorias amplas, não específicas)
     const patterns = [
       {
         regex: /quanto\s+(custa|é|fica|cobra|custa\s+a|sai)/i,
@@ -204,28 +219,21 @@ export class WhatsAppOrchestratorV7 {
       }
     }
 
-    // Remove duplicatas
-    const unique = questions.filter((q, i, arr) =>
+    return questions.filter((q, i, arr) =>
       arr.findIndex(x => x.type === q.type) === i
     );
-
-    return unique;
   }
 
   /**
    * 💬 Responde perguntas usando LLM + Knowledge Base
-   * NUNCA inventa - só responde com base no conhecimento oficial
    */
   async answerQuestions(questions, { flags, entities, context, lead }) {
-    // Busca conhecimento relevante baseado nas perguntas
     const knowledge = this.getRelevantKnowledge(questions, flags);
 
-    // Se não tem conhecimento, retorna resposta genérica
     if (Object.keys(knowledge).length === 0) {
       return "Que bom que você perguntou isso! 💚 Deixa eu verificar os detalhes certinhos com a equipe e já te respondo. Enquanto isso, me conta: o que mais te preocupa?";
     }
 
-    // Constrói prompt para o LLM
     const questionsText = questions.map(q => `- ${q.text}`).join('\n');
     const knowledgeText = JSON.stringify(knowledge, null, 2);
 
@@ -263,9 +271,6 @@ REGRAS OBRIGATÓRIAS:
    - Máximo 5 frases
    - 1-2 emojis 💚
 
-EXEMPLO DE RESPOSTA BOA:
-"Que bom que perguntou sobre os valores! 💚 Na avaliação, nossa equipe faz uma análise completa e você já sai sabendo exatamente o que fazer. O investimento é R$ 200 (50min). E trabalhamos com reembolso de todos os planos! Quer que eu verifique os horários disponíveis?"
-
 Responda AGORA:`;
 
     try {
@@ -284,34 +289,29 @@ Responda AGORA:`;
   }
 
   /**
-   * 📚 Busca conhecimento relevante da base (com gatilhos de venda)
+   * 📚 Busca conhecimento relevante
    */
   getRelevantKnowledge(questions, flags) {
     const kb = {};
 
-    // Preço (SEMPRE inclui salesTriggers quando perguntar preço)
     if (questions.some(q => q.type === 'pricing')) {
       kb.pricing = CLINIC_KNOWLEDGE.pricing;
-      kb.salesTriggers = CLINIC_KNOWLEDGE.salesTriggers; // 🎯 Gatilhos de venda
+      kb.salesTriggers = CLINIC_KNOWLEDGE.salesTriggers;
     }
 
-    // Planos
     if (questions.some(q => q.type === 'insurance')) {
       kb.insurance = CLINIC_KNOWLEDGE.insurance;
     }
 
-    // Documentação
     if (questions.some(q => q.type === 'documentation')) {
       kb.documentation = CLINIC_KNOWLEDGE.documentation;
     }
 
-    // Horários (inclui escassez sutil)
     if (questions.some(q => q.type === 'schedule')) {
       kb.schedule = CLINIC_KNOWLEDGE.schedule;
       kb.escassez = CLINIC_KNOWLEDGE.salesTriggers.escassez;
     }
 
-    // Métodos específicos (baseado em flags)
     if (flags.mentionsABA) {
       kb.methods = { ...kb.methods, aba: CLINIC_KNOWLEDGE.methods.aba };
     }
@@ -322,19 +322,17 @@ Responda AGORA:`;
       kb.methods = { ...kb.methods, bobath: CLINIC_KNOWLEDGE.methods.bobath };
     }
 
-    // Estrutura (se perguntou sobre formato)
     if (questions.some(q => /individual|grupo|sess[aã]o|dura/.test(q.text))) {
       kb.structure = CLINIC_KNOWLEDGE.structure;
     }
 
-    // SEMPRE inclui diferenciais (prova social)
-    kb.differentials = CLINIC_KNOWLEDGE.differentials.slice(0, 2); // Top 2
+    kb.differentials = CLINIC_KNOWLEDGE.differentials.slice(0, 2);
 
     return kb;
   }
 
   /**
-   * 🆘 Resposta fallback quando LLM falha (acolhedora + persuasiva)
+   * 🆘 Resposta fallback
    */
   fallbackAnswer(questionType, knowledge) {
     const fallbacks = {
@@ -360,7 +358,8 @@ Responda AGORA:`;
   getNewData(entities, context) {
     const newData = [];
 
-    for (const key of Object.keys(entities)) {
+    // Só considera "novo" se não existia antes E é válido
+    for (const key of ['patientName', 'age', 'therapy', 'complaint', 'period']) {
       if (entities[key] && !context[key]) {
         newData.push(key);
       }
@@ -370,18 +369,16 @@ Responda AGORA:`;
   }
 
   /**
-   * 💚 Acolhe dados que o lead forneceu (humaniza + venda sutil)
+   * 💚 Acolhe dados que o lead forneceu
    */
   acknowledgeData(newData, entities) {
     const acks = [];
 
-    // Nome
     if (newData.includes('patientName')) {
       const name = entities.patientName;
       acks.push(`Que nome lindo, ${name}! 🥰 Já anotei aqui!`);
     }
 
-    // Idade com empatia + urgência sutil
     if (newData.includes('age')) {
       const age = entities.age;
       if (age <= 3) {
@@ -397,7 +394,6 @@ Responda AGORA:`;
       }
     }
 
-    // Queixa com validação emocional
     if (newData.includes('complaint') && entities.complaint) {
       acks.push(`Entendo sua preocupação, é muito comum! A boa notícia é que tem solução e a gente trata exatamente isso 💚`);
     }
@@ -406,29 +402,21 @@ Responda AGORA:`;
   }
 
   /**
-   * ❓ Decide próxima pergunta (só 1, contextual)
+   * ❓ Decide próxima pergunta
    */
-  decideNextQuestion(context, entities, flags, lead) {
-    // Merge contexto atualizado
-    const merged = { ...context, ...entities };
+  decideNextQuestion(context, flags) {
+    const { therapy, patientName, age, period } = context;
 
-    // Se tem tudo para agendamento, oferece
-    if (merged.therapy && merged.patientName && merged.age && merged.period) {
+    if (therapy && patientName && age && period) {
       return "Vou verificar os horários disponíveis! Pode ser? 💚";
     }
 
-    // ═══════════════════════════════════════════════════
-    // PRIORIDADE DE PERGUNTAS (ordem inteligente)
-    // ═══════════════════════════════════════════════════
-
-    // 1. Se não sabe o problema, pergunta primeiro (com empatia)
-    if (!merged.therapy && !merged.complaint) {
+    if (!therapy && !context.complaint) {
       return "Fico feliz que entrou em contato! 💚 Me conta: o que está acontecendo que te trouxe até aqui? Estou aqui para te ouvir!";
     }
 
-    // 2. Se tem queixa mas não especialidade → TRIAGEM (com autoridade)
-    if (merged.complaint && !merged.therapy) {
-      const triage = this.performSimpleTriage(merged.complaint, flags);
+    if (context.complaint && !therapy) {
+      const triage = this.performSimpleTriage(context.complaint, flags);
 
       if (triage.specialty && triage.confidence > 0.7) {
         const specialtyName = this.getSpecialtyDisplayName(triage.specialty);
@@ -438,35 +426,30 @@ Responda AGORA:`;
       }
     }
 
-    // 3. Idade (importante para matching de profissional) + urgência sutil
-    if (!merged.age) {
+    if (!age) {
       return "Perfeito! Só pra eu verificar os melhores profissionais: qual a idade? Nossa equipe tem especialistas para cada faixa etária 💚";
     }
 
-    // 4. Nome (menos invasivo depois de entender o caso) + rapport
-    if (!merged.patientName) {
-      const isPediatric = merged.age && merged.age < 18;
+    if (!patientName) {
+      const isPediatric = age && age < 18;
       return isPediatric
         ? "E o pequeno, como se chama? Adoro personalizar o atendimento! 💚"
         : "E você, como posso te chamar? Quero te atender pelo nome! 💚";
     }
 
-    // 5. Período (por último) + escassez sutil
-    if (!merged.period) {
+    if (!period) {
       return "Maravilha! Temos vagas essa semana ainda 🌟 Qual período funciona melhor: manhã ou tarde? (Horário: 8h às 18h)";
     }
 
-    // Não precisa perguntar nada
     return null;
   }
 
   /**
-   * 🏥 Triagem simples multidisciplinar
+   * 🏥 Triagem simples
    */
   performSimpleTriage(complaint, flags) {
     const text = complaint.toLowerCase();
 
-    // Mapa sintoma → especialidade (15 principais)
     const symptomMap = {
       'fonoaudiologia': [
         /não fala|nao fala|atraso\s+(na\s+)?fala|fala\s+pouco|poucas\s+palavras/i,
@@ -502,7 +485,6 @@ Responda AGORA:`;
       ]
     };
 
-    // Pontua cada especialidade
     for (const [specialty, patterns] of Object.entries(symptomMap)) {
       for (const pattern of patterns) {
         if (pattern.test(text)) {
@@ -511,7 +493,6 @@ Responda AGORA:`;
       }
     }
 
-    // Se mencionou condição específica
     if (flags.mentionsTEA_TDAH) {
       return { specialty: 'psicologia', confidence: 0.75 };
     }
@@ -519,9 +500,6 @@ Responda AGORA:`;
     return { specialty: null, confidence: 0 };
   }
 
-  /**
-   * 📝 Nome legível da especialidade
-   */
   getSpecialtyDisplayName(specialty) {
     const names = {
       'fonoaudiologia': 'fonoaudiologia',
@@ -532,30 +510,6 @@ Responda AGORA:`;
       'psicopedagogia': 'psicopedagogia'
     };
     return names[specialty] || specialty;
-  }
-
-  /**
-   * 💾 Salva contexto atualizado
-   */
-  async saveMemory(leadId, context) {
-    try {
-      await ChatContext.findOneAndUpdate(
-        { lead: leadId },
-        {
-          $set: {
-            conversationState: context,
-            lastContactAt: new Date(),
-            architecture: 'v7-response-first'
-          }
-        },
-        { upsert: true }
-      );
-    } catch (error) {
-      this.logger.error('V7_SAVE_ERROR', {
-        leadId: leadId?.toString(),
-        error: error.message
-      });
-    }
   }
 }
 

@@ -1,0 +1,23 @@
+{
+  "_comment": "Whitelist de nomes que contêm palavras que parecem idade/período mas são válidos. Pode ser editado sem deploy.",
+  "lastUpdated": "2026-02-08",
+  "names": [
+    "ana", "analice", "analu", "ananda", "anastácia", "anastacia",
+    "anoar", "anísio", "anisio", "anauê", "anaue", "anael", "anailton", "anísio",
+    "anair", "anaíra", "anaira", "anajú", "anaju", "anajúlia", "anajulia",
+    "mesaque", "messias",
+    "tardeli", "tardê", "tardelly",
+    "décio", "decio", "décia", "decia",
+    "quincas",
+    "sebastião", "sebastiao", "sebastiana",
+    "octávio", "octavio", "octávia", "octavia",
+    "manoel", "manuel", "manuela", "manoela",
+    "manasses", "manoá", "manoa"
+  ],
+  "autoAddedFromProduction": [],
+  "statistics": {
+    "totalNames": 40,
+    "addedBySystem": 0,
+    "addedManually": 40
+  }
+}

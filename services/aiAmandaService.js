@@ -10,6 +10,7 @@ import ensureSingleHeart from "../utils/helpers.js";
 import callAI from "./IA/Aiproviderservice.js";
 import { analyzeLeadMessage } from "./intelligence/leadIntelligence.js";
 import { getMediaBuffer } from "./whatsappMediaService.js";
+import { loadContext } from "./intelligence/ContextManager.js";
 
 const orchestrator = new WhatsAppOrchestrator();
 const orchestratorV7 = new WhatsAppOrchestratorV7(); // 🆕 Response-First Architecture
@@ -191,18 +192,25 @@ async function generateRuleBasedReply({ userText, lead = {}, context = {} }) {
         // 🆕 USAR V7 (Response-First) como fallback principal
         console.log('🔄 [Fallback] Usando Orchestrator V7 (Response-First)');
 
+        // Carrega contexto persistido do banco
+        const persistedContext = await loadContext(lead._id);
+        
+        // Merge com dados do lead
+        const enrichedContext = {
+            ...persistedContext,
+            preferredPeriod: lead?.pendingPreferredPeriod || lead?.qualificationData?.extractedInfo?.disponibilidade,
+            preferredDate: lead?.qualificationData?.extractedInfo?.dataPreferida,
+            therapy: lead?.therapyArea || lead?.qualificationData?.extractedInfo?.especialidade || persistedContext.therapy,
+            patientName: lead?.patientName || lead?.qualificationData?.extractedInfo?.nome || persistedContext.patientName,
+            age: lead?.patientAge || lead?.qualificationData?.extractedInfo?.idade || persistedContext.age,
+            complaint: lead?.complaint || lead?.qualificationData?.extractedInfo?.queixa || persistedContext.complaint,
+            source: context?.source || 'api'
+        };
+
         const result = await orchestratorV7.process({
             lead,
             message: { content: userText },
-            context: {
-                preferredPeriod: lead?.pendingPreferredPeriod || lead?.qualificationData?.extractedInfo?.disponibilidade,
-                preferredDate: lead?.qualificationData?.extractedInfo?.dataPreferida,
-                therapy: lead?.therapyArea || lead?.qualificationData?.extractedInfo?.especialidade,
-                patientName: lead?.patientName || lead?.qualificationData?.extractedInfo?.nome,
-                age: lead?.patientAge || lead?.qualificationData?.extractedInfo?.idade,
-                complaint: lead?.complaint || lead?.qualificationData?.extractedInfo?.queixa,
-                source: context?.source || 'api'
-            }
+            context: enrichedContext
         });
 
         if (result?.command === 'SEND_MESSAGE' && result?.payload?.text) {
@@ -217,16 +225,10 @@ async function generateRuleBasedReply({ userText, lead = {}, context = {} }) {
 
         // Fallback para V6 (legado)
         try {
+            // O V6 agora gerencia seu próprio contexto internamente
             const result = await orchestrator.process({
                 lead,
-                message: { content: userText },
-                context: {
-                    preferredPeriod: lead?.pendingPreferredPeriod || lead?.qualificationData?.extractedInfo?.disponibilidade,
-                    preferredDate: lead?.qualificationData?.extractedInfo?.dataPreferida,
-                    therapy: lead?.therapyArea || lead?.qualificationData?.extractedInfo?.especialidade,
-                    source: context?.source || 'api'
-                },
-                services: {}
+                message: { content: userText }
             });
 
             if (result?.command === 'SEND_MESSAGE' && result?.payload?.text) {
