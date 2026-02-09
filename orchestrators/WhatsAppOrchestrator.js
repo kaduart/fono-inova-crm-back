@@ -113,8 +113,8 @@ export class WhatsAppOrchestrator {
       // 3. 🧠 MERGE INTELIGENTE (preserva dados válidos)
       const context = mergeContext(memory, extracted);
       
-      // 4. 🎯 DECIDE AÇÃO
-      const action = this.decideNextAction(context, extracted);
+      // 4. 🎯 DECIDE AÇÃO (passa text original para detectar especialidades não atendidas)
+      const action = this.decideNextAction(context, extracted, text);
       context.lastAction = action.type;
       
       // Atualiza step atual
@@ -159,9 +159,26 @@ export class WhatsAppOrchestrator {
   /**
    * 🎯 Decide a próxima ação baseada no contexto
    */
-  decideNextAction(context, extracted) {
+  decideNextAction(context, extracted, originalText = '') {
     const missing = getMissingSlots(context);
     const intencao = extracted.intencao || context.lastIntencao || 'informacao';
+
+    // 🔧 FIX BUG #1: Detectar especialidades NÃO atendidas
+    const text = extracted.rawText || originalText || '';
+    const textLower = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const ESPECIALIDADES_NAO_ATENDIDAS = [
+      'neurologista', 'neurologia', 'neurologo',
+      'pediatra', 'pediatria',
+      'cardiologista', 'cardiologia',
+      'ortopedista', 'ortopedia',
+      'dermatologista', 'dermatologia'
+    ];
+
+    for (const esp of ESPECIALIDADES_NAO_ATENDIDAS) {
+      if (textLower.includes(esp)) {
+        return { type: 'RESPONSE_TERAPIA_NAO_ATENDIDA', especialidade: esp, missingAfter: missing };
+      }
+    }
 
     // Se usuário mudou de assunto (intenção clara), responder isso primeiro
     if (intencao === 'preco' && context.therapy) {
@@ -234,6 +251,11 @@ export class WhatsAppOrchestrator {
       return this.responderDisponibilidade(ctx);
     }
 
+    // 🔧 FIX BUG #1: Responder educadamente para especialidades não atendidas
+    if (action.type === 'RESPONSE_TERAPIA_NAO_ATENDIDA') {
+      return this.responderEspecialidadeNaoAtendida(action.especialidade, ctx);
+    }
+
     // 2. Fluxo entity-based
     if (action.type === 'ASK_SLOT') {
       return this.askForSlot(ctx, action.slot, action.questionType, extracted);
@@ -257,15 +279,21 @@ export class WhatsAppOrchestrator {
 
     // Se tudo completo
     if (action.type === 'OFFER_AGENDAMENTO') {
-      if (ctx.isConfirmation) {
-        return await this.mostrarHorarios(therapy, age, period);
-      }
-      if (ctx.isNegation) {
+      // 🔧 FIX BUG #3: Se detectou negação real (usuário desistiu), não força agendamento
+      if (ctx.isNegation && !ctx.complaint) {
         return `Tudo bem! Sem problemas! 😊\n\nFico à disposição quando você quiser agendar. Qualquer dúvida, é só me chamar! Estou aqui para ajudar! 💚`;
       }
 
+      // 🔧 FIX BUG #2: SEMPRE busca horários quando contexto está completo
+      // Antes: só buscava se ctx.isConfirmation, agora busca sempre
+      if (therapy && age && period) {
+        this.logger.info('OFFER_AGENDAMENTO_EXECUTANDO_BUSCA', { therapy, age, period });
+        return await this.mostrarHorarios(therapy, age, period);
+      }
+
+      // Fallback se faltar algum dado (não deveria chegar aqui)
       const info = THERAPY_DATA[therapy];
-      return `Maravilha! 🎉 Tenho todas as informações aqui:\n\n✅ ${info?.name || 'Consulta'}\n✅ Nome: ${patientName}\n✅ Idade: ${age} anos\n✅ Período: ${period === 'manha' ? 'manhã' : period}\n\nVou verificar os horários disponíveis agora, pode ser?`;
+      return `Maravilha! 🎉 Vou verificar os horários disponíveis para ${info?.name || 'a consulta'}...`;
     }
 
     return this.fallbackResponse(ctx);
@@ -473,6 +501,35 @@ export class WhatsAppOrchestrator {
     });
 
     return finalResponse;
+  }
+
+  /**
+   * 🚫 Resposta para especialidades que NÃO atendemos
+   */
+  responderEspecialidadeNaoAtendida(especialidade, ctx) {
+    const missing = getMissingSlots(ctx);
+
+    let resposta = '';
+
+    // Respostas específicas por especialidade
+    if (especialidade.includes('neurolog')) {
+      resposta = `Entendo que você está buscando um **neurologista** 🧠\n\n`;
+      resposta += `Na Fono Inova trabalhamos com **Neuropsicologia** (avaliação das funções cerebrais como atenção, memória, raciocínio), `;
+      resposta += `mas para acompanhamento neurológico médico, você precisará consultar um neurologista clínico.\n\n`;
+      resposta += `✨ Posso ajudar com **Neuropsicologia** ou outras terapias que temos disponíveis:\n`;
+      resposta += `• 💬 Fonoaudiologia\n• 🧠 Psicologia\n• 🏃 Fisioterapia\n• 🤲 Terapia Ocupacional\n• 📚 Psicopedagogia\n• 🎵 Musicoterapia\n\nQual delas te interessa? 💚`;
+    } else if (especialidade.includes('pediatra')) {
+      resposta = `Entendo! Você está buscando um **pediatra** 👶\n\n`;
+      resposta += `Nós somos uma clínica de **terapias e reabilitação**, não atendemos com pediatras.\n\n`;
+      resposta += `Mas temos **terapias infantis** maravilhosas como:\n`;
+      resposta += `• 💬 Fonoaudiologia (fala, linguagem)\n• 🧠 Psicologia Infantil\n• 🤲 Terapia Ocupacional\n• 📚 Psicopedagogia\n\nAlguma delas te interessa? 💚`;
+    } else {
+      resposta = `Entendo! Você está buscando **${especialidade}** 🏥\n\n`;
+      resposta += `Somos especializados em **terapias e reabilitação**. Não atendemos com médicos, mas temos:\n`;
+      resposta += `• 💬 Fonoaudiologia\n• 🧠 Psicologia\n• 🏃 Fisioterapia\n• 🤲 Terapia Ocupacional\n• 📚 Psicopedagogia\n• 🧩 Neuropsicologia\n• 🎵 Musicoterapia\n\nAlguma dessas especialidades te interessa? 💚`;
+    }
+
+    return resposta;
   }
 
   /**

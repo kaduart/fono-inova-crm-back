@@ -140,16 +140,26 @@ function extractTherapy(lowered, extracted) {
 
 function extractIntencao(lowered, extracted) {
   const prioridades = ['preco', 'plano', 'endereco', 'agendamento', 'confirmacao', 'negacao'];
-  
+
+  // 🔧 FIX BUG #3: Palavras que indicam SINTOMA, não negação de intenção
+  // Ex: "não fala", "não anda", "não come" são QUEIXAS, não recusas
+  const SINTOMA_VERBS = /\b(fala|anda|come|dorme|brinca|interage|conversa|responde|reage|olha|sorri|mama|pega)\b/i;
+
   for (const intencao of prioridades) {
     if (INTENCAO_PATTERNS[intencao].test(lowered)) {
+      // Se detectou negação MAS tem verbo de sintoma logo após "não", é queixa, não negação
+      if (intencao === 'negacao' && SINTOMA_VERBS.test(lowered)) {
+        console.log('[EntityExtractor] 🚫 Detectado "não" + verbo de sintoma, não é negação de intenção');
+        continue; // Pula essa intenção, continua procurando outras
+      }
+
       extracted.intencao = intencao;
       if (intencao === 'confirmacao') extracted.isConfirmation = true;
       if (intencao === 'negacao') extracted.isNegation = true;
       return;
     }
   }
-  
+
   extracted.intencao = 'informacao';
 }
 
