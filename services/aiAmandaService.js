@@ -4,7 +4,6 @@ import { Readable } from "stream";
 
 // ✅ Orquestradores para fallback (quando LLM falha)
 import { WhatsAppOrchestrator } from "../orchestrators/WhatsAppOrchestrator.js";
-import { WhatsAppOrchestratorV7 } from "../orchestrators/WhatsAppOrchestratorV7.js";
 import { CLINIC_ADDRESS, SYSTEM_PROMPT_AMANDA } from "../utils/amandaPrompt.js";
 import ensureSingleHeart from "../utils/helpers.js";
 import callAI from "./IA/Aiproviderservice.js";
@@ -13,7 +12,6 @@ import { getMediaBuffer } from "./whatsappMediaService.js";
 import { loadContext } from "./intelligence/ContextManager.js";
 
 const orchestrator = new WhatsAppOrchestrator();
-const orchestratorV7 = new WhatsAppOrchestratorV7(); // 🆕 Response-First Architecture
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /* =========================================================================
@@ -207,7 +205,7 @@ async function generateRuleBasedReply({ userText, lead = {}, context = {} }) {
             source: context?.source || 'api'
         };
 
-        const result = await orchestratorV7.process({
+        const result = await orchestrator.process({
             lead,
             message: { content: userText },
             context: enrichedContext
