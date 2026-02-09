@@ -3,7 +3,7 @@
 
 import Message from '../../models/Message.js';
 import Lead from '../../models/Leads.js';
-import ChatContext from '../../models/ChatContext.js';
+// ❌ DEPRECATED: import ChatContext from '../../models/ChatContext.js';
 import Appointment from '../../models/Appointment.js';
 
 /**

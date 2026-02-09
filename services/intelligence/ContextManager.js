@@ -15,7 +15,7 @@ import {
   getValidationStats,
   calculateNameConfidence
 } from './EntityValidator.js';
-import ChatContext from '../../models/ChatContext.js';
+import Leads from '../../models/Leads.js';
 
 // =============================================================================
 // 📊 ESTATÍSTICAS DE CONTEXTO
@@ -88,29 +88,50 @@ export const DEFAULT_CONTEXT = {
 export async function loadContext(leadId) {
   try {
     const id = leadId?.toString?.() || leadId;
-    
+
     if (!id || id === 'unknown') {
       console.log('[ContextManager] LeadId inválido, retornando contexto vazio');
       return { ...DEFAULT_CONTEXT };
     }
-    
-    const ctx = await ChatContext.findOne({ lead: id }).lean();
-    
-    if (ctx?.conversationState) {
+
+    const lead = await Leads.findById(id).lean();
+
+    if (lead?.autoBookingContext) {
+      const ctx = lead.autoBookingContext;
+
       // Log seguro (sem expor dados sensíveis)
-      console.log('[ContextManager] Contexto carregado:', {
+      console.log('[ContextManager] Contexto carregado de Lead:', {
         leadId: id,
-        hasPatientName: !!ctx.conversationState.patientName,
-        hasAge: !!ctx.conversationState.age,
-        hasTherapy: !!ctx.conversationState.therapy,
-        messageCount: ctx.conversationState.messageCount || 0
+        hasPatientName: !!ctx.patientInfo?.fullName,
+        hasAge: !!ctx.patientInfo?.age,
+        hasTherapy: !!ctx.therapyArea,
+        messageCount: ctx.messageCount || 0
       });
-      return { ...DEFAULT_CONTEXT, ...ctx.conversationState };
+
+      // Mapear campos de Lead.autoBookingContext para formato do ContextManager
+      return {
+        ...DEFAULT_CONTEXT,
+        therapy: ctx.therapyArea || ctx.mappedTherapyArea,
+        complaint: ctx.complaint,
+        patientName: ctx.patientInfo?.fullName,
+        age: ctx.patientInfo?.age,
+        period: ctx.preferredPeriod?.replace('ã', 'a'), // 'manhã' → 'manha'
+        schedulingRequested: ctx.schedulingRequested,
+        schedulingRequestedAt: ctx.schedulingRequestedAt,
+        pendingSchedulingSlots: ctx.pendingSchedulingSlots || ctx.lastOfferedSlots,
+        waitlistRequested: ctx.waitlistRequested,
+        waitlistPreferences: ctx.waitlistPreferences,
+        messageCount: ctx.messageCount,
+        lastMessage: ctx.lastMessage,
+        lastAction: ctx.lastAction,
+        currentStep: ctx.currentStep,
+        lastUpdatedAt: ctx.lastUpdatedAt
+      };
     }
-    
+
     console.log('[ContextManager] Novo contexto para lead:', id);
     return { ...DEFAULT_CONTEXT };
-    
+
   } catch (error) {
     console.error('[ContextManager] Erro ao carregar:', error.message);
     contextStats.errors++;
@@ -124,39 +145,53 @@ export async function loadContext(leadId) {
 export async function saveContext(leadId, context) {
   try {
     const id = leadId?.toString?.() || leadId;
-    
+
     if (!id || id === 'unknown') {
       console.warn('[ContextManager] Não pode salvar sem leadId');
       return;
     }
-    
-    // Limita histórico de mudanças (últimas 10)
-    const changeHistory = (context.changeHistory || []).slice(-10);
-    
-    const contextToSave = {
-      ...context,
-      changeHistory,
+
+    // Mapear de volta para Lead.autoBookingContext
+    const autoBookingUpdate = {
+      active: true,
+      therapyArea: context.therapy,
+      mappedTherapyArea: context.therapy,
+      complaint: context.complaint,
+      preferredPeriod: context.period?.replace('a', 'ã'), // 'manha' → 'manhã'
+      patientInfo: {
+        fullName: context.patientName,
+        age: context.age
+      },
+      schedulingRequested: context.schedulingRequested,
+      schedulingRequestedAt: context.schedulingRequestedAt,
+      pendingSchedulingSlots: context.pendingSchedulingSlots,
+      lastSlotsShownAt: context.lastSlotsShownAt,
+      waitlistRequested: context.waitlistRequested,
+      waitlistPreferences: context.waitlistPreferences,
+      messageCount: context.messageCount,
+      lastMessage: context.lastMessage,
+      lastAction: context.lastAction,
+      currentStep: context.currentStep,
       lastUpdatedAt: new Date()
     };
-    
-    await ChatContext.findOneAndUpdate(
-      { lead: id },
-      { 
-        $set: { 
-          conversationState: contextToSave,
-          lastContactAt: new Date()
+
+    await Leads.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          autoBookingContext: autoBookingUpdate
         }
       },
-      { upsert: true }
+      { upsert: false } // Não cria Lead se não existir
     );
-    
-    console.log('[ContextManager] Contexto salvo:', {
+
+    console.log('[ContextManager] Contexto salvo em Lead:', {
       leadId: id,
-      patientName: contextToSave.patientName ? '***' : null,  // Privacy
-      age: contextToSave.age,
-      filledSlotsCount: contextToSave.filledSlots?.length || 0
+      patientName: context.patientName ? '***' : null,  // Privacy
+      age: context.age,
+      therapy: context.therapy
     });
-    
+
   } catch (error) {
     console.error('[ContextManager] Erro ao salvar:', error.message);
     contextStats.errors++;
@@ -402,15 +437,31 @@ export function hasCompleteInfo(context) {
 export async function resetContext(leadId) {
   try {
     const id = leadId?.toString?.() || leadId;
-    
-    await ChatContext.findOneAndUpdate(
-      { lead: id },
-      { $set: { conversationState: { ...DEFAULT_CONTEXT } } },
-      { upsert: true }
+
+    await Leads.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          'autoBookingContext.active': false,
+          'autoBookingContext.therapyArea': null,
+          'autoBookingContext.complaint': null,
+          'autoBookingContext.patientInfo': null,
+          'autoBookingContext.preferredPeriod': null,
+          'autoBookingContext.schedulingRequested': false,
+          'autoBookingContext.schedulingRequestedAt': null,
+          'autoBookingContext.pendingSchedulingSlots': null,
+          'autoBookingContext.waitlistRequested': false,
+          'autoBookingContext.waitlistPreferences': null,
+          'autoBookingContext.messageCount': 0,
+          'autoBookingContext.lastMessage': null,
+          'autoBookingContext.lastAction': null,
+          'autoBookingContext.currentStep': null
+        }
+      }
     );
-    
-    console.log('[ContextManager] Contexto resetado:', id);
-    
+
+    console.log('[ContextManager] Contexto resetado em Lead:', id);
+
   } catch (error) {
     console.error('[ContextManager] Erro ao resetar:', error.message);
     contextStats.errors++;

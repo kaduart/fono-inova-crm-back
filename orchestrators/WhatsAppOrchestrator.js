@@ -180,6 +180,12 @@ export class WhatsAppOrchestrator {
       return { type: 'EXECUTE_AGENDAMENTO', missingAfter: [] };
     }
 
+    // ✨ NOVO: Se detectou terapia MAS não tem queixa ainda E é uma pergunta sobre informação/disponibilidade
+    // Responder primeiro antes de coletar dados
+    if (context.therapy && !context.complaint && intencao === 'informacao' && context.messageCount <= 1) {
+      return { type: 'RESPONSE_DISPONIBILIDADE', missingAfter: missing };
+    }
+
     // Fluxo normal: preencher slots faltantes
     if (missing.length > 0) {
       return {
@@ -211,6 +217,11 @@ export class WhatsAppOrchestrator {
 
     if (flags?.asksAddress || action.type === 'RESPONSE_ENDERECO') {
       return this.responderInterrupcao(ctx, 'endereco');
+    }
+
+    // ✨ NOVO: Responder pergunta sobre disponibilidade ANTES de coletar dados
+    if (action.type === 'RESPONSE_DISPONIBILIDADE') {
+      return this.responderDisponibilidade(ctx);
     }
 
     // 2. Fluxo entity-based
@@ -338,6 +349,41 @@ export class WhatsAppOrchestrator {
     }
 
     return `Entendi! 😊💚\n\nMe conta: qual é a principal questão que ${patientName || 'vocês'} ${patientName ? 'está' : 'estão'} enfrentando? Estou aqui para te ajudar!`;
+  }
+
+  /**
+   * ✨ Resposta para pergunta sobre disponibilidade
+   * Responde SIM/NÃO e então pergunta sobre a queixa
+   */
+  responderDisponibilidade(ctx) {
+    const { therapy, tipo_paciente } = ctx;
+    const info = therapy ? THERAPY_DATA[therapy] : null;
+
+    if (!info) {
+      return `Oi! Sou a Amanda da Fono Inova! 😊💚\n\nQue bom que você entrou em contato! Trabalhamos com diversas especialidades. Me conta: qual atendimento você está procurando?`;
+    }
+
+    const isCrianca = tipo_paciente === 'crianca';
+
+    // Confirma que tem a especialidade
+    let resposta = `Sim, temos ${info.name}! ${info.emoji} ${info.acolhimento}\n\n`;
+
+    // Pergunta sobre a queixa/situação
+    if (therapy === 'fonoaudiologia') {
+      resposta += `Me conta um pouquinho mais sobre a situação: o pequeno ainda não fala nada, fala algumas palavrinhas, ou tem alguma dificuldade específica que você notou? Estou aqui para te ouvir! 💚`;
+    } else if (therapy === 'psicologia') {
+      if (isCrianca) {
+        resposta += `Me conta como está a situação da criança... Está com dificuldade de atenção, comportamento, ou algo que está te preocupando? Pode desabafar! 💚`;
+      } else {
+        resposta += `Me conta como você está se sentindo ultimamente... Está com ansiedade, dificuldade para dormir, ou tem algo que está te incomodando? Estou aqui para ouvir! 💚`;
+      }
+    } else if (therapy === 'fisioterapia') {
+      resposta += `Me conta um pouco sobre o que está sentindo... É dor na coluna, no joelho, ou algum desconforto específico? Vamos entender direitinho para poder ajudar! 💚`;
+    } else {
+      resposta += `Me conta um pouco mais sobre a situação que está preocupando. Quero entender direitinho para poder ajudar da melhor forma! 💚`;
+    }
+
+    return resposta;
   }
 
   /**
