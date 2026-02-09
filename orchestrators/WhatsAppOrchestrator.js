@@ -309,34 +309,34 @@ export class WhatsAppOrchestrator {
 
     switch (slot) {
       case 'therapy':
-        return `Oi! Sou a Amanda da Fono Inova! 😊💚\n\nQue bom que você entrou em contato! Já vi que você está buscando ajuda, e isso é um passo muito importante! 👏\n\nMe conta: você está buscando atendimento para fonoaudiologia, psicologia, ou qual especialidade?`;
+        return `Oi! Sou a Amanda da Fono Inova! 😊\n\nQue bom que você entrou em contato! Me conta: tá procurando fono, psico, fisio, ou qual especialidade?`;
 
       case 'complaint':
         if (therapy === 'fonoaudiologia') {
-          return `Entendi que é para fonoaudiologia! 💬\n\nMe conta um pouquinho mais sobre a situação: o pequeno ainda não fala nada, fala algumas palavrinhas, ou tem alguma dificuldade específica que você notou? Estou aqui para te ouvir! 💚`;
+          return `Entendi que é pra fono! 💬\n\nMe conta mais sobre a situação: o pequeno ainda não fala nada, fala algumas palavrinhas, ou tem alguma dificuldade que você notou?`;
         }
         if (therapy === 'psicologia') {
           return isCrianca
-            ? `Sobre psicologia para crianças 🧠💚\n\nMe conta como está a situação do pequeno... Está com dificuldade de atenção na escola, comportamento, ou algo mais que está te preocupando? Pode desabafar!`
-            : `Sobre psicologia 🧠💚\n\nMe conta como você está se sentindo ultimamente... Está com ansiedade, dificuldade para dormir, ou tem algo mais que está te incomodando? Estou aqui para ouvir!`;
+            ? `Sobre psico pra criança 🧠\n\nMe conta como tá a situação... Tem dificuldade de atenção na escola, comportamento, ou algo que tá te preocupando?`
+            : `Sobre psicologia 🧠\n\nMe conta como você tá se sentindo... Tem ansiedade, dificuldade pra dormir, ou algo que tá incomodando?`;
         }
-        return `Perfeito! ${info?.emoji || '💚'}\n\nMe conta um pouco mais sobre a situação que está preocupando. Quero entender direitinho para poder ajudar da melhor forma!`;
+        return `Perfeito! ${info?.emoji || ''}\n\nMe conta mais sobre o que tá preocupando. Quero entender direitinho pra poder ajudar!`;
 
       case 'patientName':
         if (!extracted?.patientName) {
-          const sujeito = isCrianca ? 'o pequeno' : (therapy === 'psicologia' ? 'a criança' : 'o paciente');
-          return `Para eu organizar tudo certinho aqui, me conta: como é o nome de ${sujeito}? 💚`;
+          const sujeito = isCrianca ? 'o pequeno' : (therapy === 'psicologia' ? 'a criança' : 'paciente');
+          return `Pra eu organizar aqui, me conta: qual o nome ${sujeito === 'paciente' ? 'do' : 'do'} ${sujeito}?`;
         }
-        return `Que nome lindo, ${extracted.patientName}! 🥰💚\n\nE quantos anos ${extracted.patientName} tem?`;
+        return `Que nome lindo, ${extracted.patientName}! 🥰\n\nE quantos anos ${extracted.patientName} tem?`;
 
       case 'age':
         if (patientName) {
-          return `Que nome lindo, ${patientName}! 🥰\n\nE quantos anos ${patientName} tem? Isso ajuda a verificar quais profissionais têm mais experiência com essa idade! 💚`;
+          return `Que nome lindo, ${patientName}! 🥰\n\nE ${patientName} tem quantos aninhos?`;
         }
-        return `Só para eu verificar a disponibilidade certinha... Quantos anos ${isCrianca ? 'o pequeno' : 'você'} tem? 💚`;
+        return `E quantos anos ${isCrianca ? 'o pequeno' : 'você'} tem?`;
 
       case 'period':
-        return `Perfeito! 🌟\n\nPara ${info?.name?.toLowerCase() || 'o atendimento'}, temos ótimos profissionais. Qual período funciona melhor para vocês: **manhã ou tarde**? (Nosso horário é das 8h às 18h) ☀️`;
+        return `Perfeito! 🌟\n\nPra ${info?.name?.toLowerCase() || 'atendimento'}, temos ótimos profissionais. Que período funciona melhor: **manhã ou tarde**? 😊`;
 
       default:
         return this.fallbackResponse(ctx);
@@ -346,31 +346,40 @@ export class WhatsAppOrchestrator {
   /**
    * ✅ Valida o que recebeu e pergunta o próximo
    */
-  acknowledgeAndAskNext(ctx, receivedField, extracted) {
+  async acknowledgeAndAskNext(ctx, receivedField, extracted) {
     const { therapy, patientName, age, period, tipo_paciente } = ctx;
     const info = therapy ? THERAPY_DATA[therapy] : null;
     const isCrianca = tipo_paciente === 'crianca' || (age && age < 12);
 
     // Recebemos NOME → pergunta IDADE
     if (receivedField === 'name' && patientName) {
-      return `Que nome lindo, ${patientName}! 🥰💚\n\nE quantos anos ${patientName} tem? Isso ajuda a verificar quais profissionais têm mais experiência com essa idade!`;
+      return `Que nome lindo, ${patientName}! 🥰\n\nE ${patientName} tem quantos aninhos?`;
     }
 
     // Recebemos IDADE → pergunta PERÍODO
     if (receivedField === 'age' && age) {
       let acolhimento = '';
-      if (age <= 3) acolhimento = `Que fofa! ${age} aninhos é uma fase tão especial! 🥰💚`;
-      else if (age <= 12) acolhimento = `${age} anos! Uma idade linda para acompanhar o desenvolvimento! 🌟`;
-      else if (age <= 17) acolhimento = `Adolescência é uma fase de muitas transformações, né? 💚`;
-      else acolhimento = `Perfeito! Vamos cuidar muito bem de você! 💚`;
+      if (age <= 3) acolhimento = `Que fofa! ${age} aninhos é uma fase tão especial! 🥰`;
+      else if (age <= 12) acolhimento = `${age} anos! Que fase linda! 🌟`;
+      else if (age <= 17) acolhimento = `Adolescência, né? Uma fase de muitas transformações 💚`;
+      else acolhimento = `Perfeito! Vamos cuidar bem de você! 💚`;
 
-      return `${acolhimento}\n\nPara ${info?.name?.toLowerCase() || 'o atendimento'}, temos ótimos profissionais. Qual período funciona melhor para vocês: **manhã ou tarde**? (Nosso horário é das 8h às 18h) ☀️`;
+      return `${acolhimento}\n\nPra ${info?.name?.toLowerCase() || 'atendimento'}, temos ótimos profissionais. Que período funciona melhor: **manhã ou tarde**? 😊`;
     }
 
-    // Recebemos PERÍODO → oferece agendamento
+    // Recebemos PERÍODO → 🔧 FIX: BUSCA SLOTS DE VERDADE!
+    if (receivedField === 'period' && period && therapy && age) {
+      const periodoTexto = period === 'manha' ? 'manhã' : period;
+      this.logger.info('ACKNOWLEDGE_PERIOD_EXECUTANDO_BUSCA', { therapy, age, period });
+
+      // 🔧 CHAMA mostrarHorarios() aqui em vez de só prometer!
+      return await this.mostrarHorarios(therapy, age, period);
+    }
+
+    // Fallback se só recebeu período mas falta outros dados
     if (receivedField === 'period' && period) {
       const periodoTexto = period === 'manha' ? 'manhã' : period;
-      return `Perfeito! Anotado ${periodoTexto}! ✅\n\nDeixa eu verificar os horários disponíveis para você... Só um instante! ⏳`;
+      return `Perfeito! Anotado ${periodoTexto}! ✅\n\nAgora deixa eu ver os horários...`;
     }
 
     return this.fallbackResponse(ctx);
@@ -383,10 +392,10 @@ export class WhatsAppOrchestrator {
     const { therapy, patientName } = ctx;
 
     if (!therapy) {
-      return `Oi! Sou a Amanda da Fono Inova 💚 Que bom que entrou em contato! 😊\n\nMe conta: você está buscando atendimento para qual especialidade? (Fonoaudiologia, Psicologia, Fisioterapia...)`;
+      return `Oi! Sou a Amanda da Fono Inova 💚 Que bom que você entrou em contato! 😊\n\nMe conta: tá procurando fono, psico, fisio, ou qual especialidade?`;
     }
 
-    return `Entendi! 😊💚\n\nMe conta: qual é a principal questão que ${patientName || 'vocês'} ${patientName ? 'está' : 'estão'} enfrentando? Estou aqui para te ajudar!`;
+    return `Entendi! 😊\n\nMe conta: qual a principal questão que ${patientName || 'vocês'} ${patientName ? 'tá' : 'tão'} enfrentando? Tô aqui pra ajudar!`;
   }
 
   /**
@@ -398,7 +407,7 @@ export class WhatsAppOrchestrator {
     const info = therapy ? THERAPY_DATA[therapy] : null;
 
     if (!info) {
-      return `Oi! Sou a Amanda da Fono Inova! 😊💚\n\nQue bom que você entrou em contato! Trabalhamos com diversas especialidades. Me conta: qual atendimento você está procurando?`;
+      return `Oi! Sou a Amanda da Fono Inova! 😊\n\nQue bom que você entrou em contato! A gente trabalha com várias especialidades. Me conta: qual atendimento você tá procurando?`;
     }
 
     const isCrianca = tipo_paciente === 'crianca';
@@ -408,17 +417,17 @@ export class WhatsAppOrchestrator {
 
     // Pergunta sobre a queixa/situação
     if (therapy === 'fonoaudiologia') {
-      resposta += `Me conta um pouquinho mais sobre a situação: o pequeno ainda não fala nada, fala algumas palavrinhas, ou tem alguma dificuldade específica que você notou? Estou aqui para te ouvir! 💚`;
+      resposta += `Me conta mais sobre a situação: o pequeno ainda não fala nada, fala algumas palavrinhas, ou tem alguma dificuldade específica que você notou?`;
     } else if (therapy === 'psicologia') {
       if (isCrianca) {
-        resposta += `Me conta como está a situação da criança... Está com dificuldade de atenção, comportamento, ou algo que está te preocupando? Pode desabafar! 💚`;
+        resposta += `Me conta como tá a situação da criança... Tem dificuldade de atenção, comportamento, ou algo que tá te preocupando?`;
       } else {
-        resposta += `Me conta como você está se sentindo ultimamente... Está com ansiedade, dificuldade para dormir, ou tem algo que está te incomodando? Estou aqui para ouvir! 💚`;
+        resposta += `Me conta como você tá se sentindo ultimamente... Tem ansiedade, dificuldade pra dormir, ou algo que tá incomodando?`;
       }
     } else if (therapy === 'fisioterapia') {
-      resposta += `Me conta um pouco sobre o que está sentindo... É dor na coluna, no joelho, ou algum desconforto específico? Vamos entender direitinho para poder ajudar! 💚`;
+      resposta += `Me conta sobre o que tá sentindo... É dor na coluna, no joelho, ou algum desconforto específico?`;
     } else {
-      resposta += `Me conta um pouco mais sobre a situação que está preocupando. Quero entender direitinho para poder ajudar da melhor forma! 💚`;
+      resposta += `Me conta mais sobre a situação que tá preocupando. Quero entender direitinho pra poder ajudar!`;
     }
 
     return resposta;
@@ -436,18 +445,18 @@ export class WhatsAppOrchestrator {
       case 'preco':
         if (therapy) {
           const info = THERAPY_DATA[therapy];
-          resposta = `Para ${info.name} ${info.emoji}:\n\n${info.valor}\n\nO investimento é de ${info.investimento} (${info.duracao}) 💚\n\nE o melhor: trabalhamos com reembolso de planos de saúde!`;
+          resposta = `Pra ${info.name} ${info.emoji}:\n\n${info.valor}\n\nÉ ${info.investimento} (${info.duracao})\n\nE o melhor: trabalhamos com reembolso de plano! 💚`;
         } else {
-          resposta = `Nossas avaliações são super completas! A gente entende exatamente a necessidade e traça um plano personalizado 💚\n\n💬 Fonoaudiologia: R$ 200\n🧠 Psicologia: R$ 200\n🏃 Fisioterapia: R$ 200\n📚 Psicopedagogia: R$ 200\n🎵 Musicoterapia: R$ 180\n🧩 Neuropsicologia: R$ 400\n\nE trabalhamos com reembolso de planos!`;
+          resposta = `As avaliações aqui são bem completas! A gente entende a necessidade e monta um plano personalizado 💚\n\n💬 Fonoaudiologia: R$ 200\n🧠 Psicologia: R$ 200\n🏃 Fisioterapia: R$ 200\n📚 Psicopedagogia: R$ 200\n🎵 Musicoterapia: R$ 180\n🧩 Neuropsicologia: R$ 400\n\nTrabalhamos com reembolso de plano!`;
         }
         break;
 
       case 'plano':
-        resposta = `💚 Trabalhamos com reembolso de todos os planos de saúde! Você paga e solicita o ressarcimento (geralmente entre 80% e 100% do valor). Também aceitamos Pix, cartão de crédito e débito! 😊`;
+        resposta = `Trabalhamos com reembolso de todos os planos! Você paga e solicita o ressarcimento (geralmente entre 80% e 100%). Também aceitamos Pix, cartão de crédito e débito! 😊`;
         break;
 
       case 'endereco':
-        resposta = `📍 Ficamos na Av. Brasil, 1234 - Centro de Anápolis/GO. Temos estacionamento fácil na rua e também estacionamento pago bem próximo! 🚗`;
+        resposta = `📍 Ficamos na Av. Brasil, 1234 - Centro de Anápolis/GO. Tem estacionamento fácil na rua e estacionamento pago perto! 🚗`;
         break;
     }
 
@@ -513,20 +522,20 @@ export class WhatsAppOrchestrator {
 
     // Respostas específicas por especialidade
     if (especialidade.includes('neurolog')) {
-      resposta = `Entendo que você está buscando um **neurologista** 🧠\n\n`;
-      resposta += `Na Fono Inova trabalhamos com **Neuropsicologia** (avaliação das funções cerebrais como atenção, memória, raciocínio), `;
-      resposta += `mas para acompanhamento neurológico médico, você precisará consultar um neurologista clínico.\n\n`;
-      resposta += `✨ Posso ajudar com **Neuropsicologia** ou outras terapias que temos disponíveis:\n`;
-      resposta += `• 💬 Fonoaudiologia\n• 🧠 Psicologia\n• 🏃 Fisioterapia\n• 🤲 Terapia Ocupacional\n• 📚 Psicopedagogia\n• 🎵 Musicoterapia\n\nQual delas te interessa? 💚`;
+      resposta = `Entendi que você tá buscando **neurologista** 🧠\n\n`;
+      resposta += `Aqui na Fono Inova a gente trabalha com **Neuropsicologia** (avaliação das funções cerebrais como atenção, memória, raciocínio), `;
+      resposta += `mas pra acompanhamento neurológico médico, você vai precisar consultar um neurologista clínico.\n\n`;
+      resposta += `✨ Posso te ajudar com **Neuropsicologia** ou outras terapias que temos:\n`;
+      resposta += `• 💬 Fonoaudiologia\n• 🧠 Psicologia\n• 🏃 Fisioterapia\n• 🤲 Terapia Ocupacional\n• 📚 Psicopedagogia\n• 🎵 Musicoterapia\n\nQual te interessa?`;
     } else if (especialidade.includes('pediatra')) {
-      resposta = `Entendo! Você está buscando um **pediatra** 👶\n\n`;
-      resposta += `Nós somos uma clínica de **terapias e reabilitação**, não atendemos com pediatras.\n\n`;
-      resposta += `Mas temos **terapias infantis** maravilhosas como:\n`;
-      resposta += `• 💬 Fonoaudiologia (fala, linguagem)\n• 🧠 Psicologia Infantil\n• 🤲 Terapia Ocupacional\n• 📚 Psicopedagogia\n\nAlguma delas te interessa? 💚`;
+      resposta = `Entendi! Você tá buscando **pediatra** 👶\n\n`;
+      resposta += `A gente é uma clínica de **terapias e reabilitação**, não atendemos com pediatras.\n\n`;
+      resposta += `Mas temos **terapias infantis** como:\n`;
+      resposta += `• 💬 Fonoaudiologia (fala, linguagem)\n• 🧠 Psicologia Infantil\n• 🤲 Terapia Ocupacional\n• 📚 Psicopedagogia\n\nAlguma te interessa?`;
     } else {
-      resposta = `Entendo! Você está buscando **${especialidade}** 🏥\n\n`;
+      resposta = `Entendi! Você tá buscando **${especialidade}** 🏥\n\n`;
       resposta += `Somos especializados em **terapias e reabilitação**. Não atendemos com médicos, mas temos:\n`;
-      resposta += `• 💬 Fonoaudiologia\n• 🧠 Psicologia\n• 🏃 Fisioterapia\n• 🤲 Terapia Ocupacional\n• 📚 Psicopedagogia\n• 🧩 Neuropsicologia\n• 🎵 Musicoterapia\n\nAlguma dessas especialidades te interessa? 💚`;
+      resposta += `• 💬 Fonoaudiologia\n• 🧠 Psicologia\n• 🏃 Fisioterapia\n• 🤲 Terapia Ocupacional\n• 📚 Psicopedagogia\n• 🧩 Neuropsicologia\n• 🎵 Musicoterapia\n\nAlguma te interessa?`;
     }
 
     return resposta;
@@ -549,14 +558,14 @@ export class WhatsAppOrchestrator {
 
       if (slots?.primary?.length > 0) {
         const txt = slots.primary.slice(0, 3).map(s => `• ${s.day} às ${s.time}`).join('\n');
-        return `Encontrei essas opções para ${info?.name || therapy} ${info?.emoji}:\n\n${txt}\n\nQual desses horários funciona melhor para você? 💚\n\n(Se não der certo nenhum, me avisa que busco outras opções!)`;
+        return `Achei essas opções pra ${info?.name || therapy} ${info?.emoji}:\n\n${txt}\n\nQual desses funciona melhor? 😊\n\n(Se nenhum der certo, me avisa que busco outros!)`;
       }
 
-      return `No momento não encontrei vagas para ${info?.name || therapy} no período da ${period === 'manha' ? 'manhã' : period}. 😔\n\nPosso:\n1️⃣ Verificar outros períodos (manhã/tarde)\n2️⃣ Pedir para nossa equipe entrar em contato quando tiver vaga\n\nO que prefere?`;
+      return `Poxa, não achei vagas pra ${info?.name || therapy} no período da ${period === 'manha' ? 'manhã' : period} agora 😔\n\nPosso:\n1️⃣ Ver outros períodos\n2️⃣ Pedir pra equipe te chamar quando abrir vaga\n\nQual prefere?`;
 
     } catch (e) {
       this.logger.error('BOOKING_ERROR', { error: e.message });
-      return `Estou verificando os horários disponíveis! ⏳\n\nEnquanto isso, me confirma: você prefere atendimento presencial ou online? 💚`;
+      return `Tô verificando os horários! ⏳\n\nEnquanto isso, me confirma: você prefere presencial ou online?`;
     }
   }
 
