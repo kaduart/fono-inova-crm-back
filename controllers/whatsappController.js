@@ -16,11 +16,11 @@ import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import Logger from '../services/utils/Logger.js';
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 
+import WhatsAppOrchestrator from '../orchestrators/WhatsAppOrchestrator.js';
 import { mapFlagsToBookingProduct } from '../utils/bookingProductMapper.js';
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
 import { normalizeE164BR } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
-import WhatsAppOrchestrator from '../orchestrators/WhatsAppOrchestrator.js';
 
 const AUTO_TEST_NUMBERS = [
     "5561981694922", "5561981694922", "556292013573", "5562992013573"

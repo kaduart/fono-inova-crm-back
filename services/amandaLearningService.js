@@ -283,7 +283,7 @@ export async function analyzeHistoricalConversations() {
 export async function getLatestInsights() {
     return await LearningInsight.findOne({ type: 'conversation_patterns' })
         .sort({ generatedAt: -1 })
-        .lean();
+        .lean(); c
 }
 
 export default analyzeHistoricalConversations;

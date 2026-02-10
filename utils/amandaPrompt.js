@@ -29,19 +29,19 @@ export function buildSystemPrompt(context = {}) {
   } = context;
 
   // Detecta modo baseado no contexto emocional + intent score
-  const isAcolhimento = emotionalContext?.expressedWorry || 
-                        emotionalContext?.expressedFrustration ||
-                        emotionalContext?.requiresEmpathy;
-  
-  const isUrgente = emotionalContext?.expressedUrgency || 
-                    (patientAge && patientAge <= 6);
-  
+  const isAcolhimento = emotionalContext?.expressedWorry ||
+    emotionalContext?.expressedFrustration ||
+    emotionalContext?.requiresEmpathy;
+
+  const isUrgente = emotionalContext?.expressedUrgency ||
+    (patientAge && patientAge <= 6);
+
   // Se intent score > 70, força modo CLOSER
   const isCloserMode = intentScore >= 70;
 
   const modo = isCloserMode ? 'CLOSER' :
-               isAcolhimento ? 'ACOLHIMENTO' : 
-               isUrgente ? 'URGENCIA' : 'NATURAL';
+    isAcolhimento ? 'ACOLHIMENTO' :
+      isUrgente ? 'URGENCIA' : 'NATURAL';
 
   return `
 # AMANDA — ESPECIALISTA EM ACOLHIMENTO FONO INOVA
@@ -88,6 +88,24 @@ ${isUrgente ? `
 ⚡ MODO URGÊNCIA:
 - Seja objetiva mas acolhedora
 - Demonstre que vai resolver rápido
+` : ''}
+
+## 📚 SABEDORIA DA CLÍNICA (Exemplos reais que converteram)
+${context.wisdom ? `
+Quando o cliente perguntar algo similar a "${context.wisdom.tipo}", use como referência:
+"${context.wisdom.respostaExemplo}"
+
+Mantenha o mesmo tom e estratégia acima.
+` : ''}
+
+
+${context.wisdom?.tipo === 'price' ? `
+## INSTRUÇÃO DE PREÇO (Baseado em conversas que converteram):
+- Valor atual: ${context.wisdom.valorAtual}
+- Estratégia: ${JSON.stringify(context.wisdom.estrategia)}
+- Exemplo de tom: "${context.wisdom.template.substring(0, 100)}..."
+
+Use o valor atual acima com a estratégia do exemplo.
 ` : ''}
 
 ## 🔥 ÚLTIMOS ASSUNTOS (referencie naturalmente)
@@ -219,19 +237,19 @@ ${emotionalContext?.expressedWorry ? '⚠️ CLIENTE PREOCUPADO' : ''}
    ========================================================================= */
 
 export function shouldOfferScheduling(context) {
-  const { 
-    therapyArea, 
-    patientAge, 
+  const {
+    therapyArea,
+    patientAge,
     complaint,
     bookingOffersCount = 0,
     emotionalContext = {}
   } = context;
-  
+
   if (bookingOffersCount >= 1) return false;
-  
+
   const hasBasicData = therapyArea && patientAge && complaint;
   const showedInterest = emotionalContext?.interests?.includes('booking');
-  
+
   return hasBasicData || showedInterest;
 }
 
