@@ -187,8 +187,11 @@ export default class WhatsAppOrchestratorV7 {
       const normalizedLead = this._normalizeLeadState(lead);
 
       // 1️⃣ PERCEPÇÃO: Detectar fatos
-      const memory = await loadContext(leadId);
       const facts = await perceptionService.analyze(text, normalizedLead, memory);
+
+      if (facts.entities?.patientName && lead.awaitingResponse !== 'NAME') {
+        delete facts.entities.patientName;
+      }
 
       // 🔧 FIX: Valida nome extraído antes de merge
       if (facts.entities?.patientName && !this._isValidPatientName(facts.entities.patientName)) {
@@ -250,7 +253,7 @@ export default class WhatsAppOrchestratorV7 {
       // 5️⃣ PERSISTÊNCIA: Salvar contexto
       await saveContext(leadId, context);
 
-      this.logger.info('V7_COMPLETE', { leadId, route: route.type, responseLength: response.length });
+      this.logger.info('V7_COMPLETE', { leadId, route: route.type, responseLength: response.length || 0 });
 
       return { command: 'SEND_MESSAGE', payload: { text: response } };
 
