@@ -284,6 +284,24 @@ export class LeadRepository {
   }
 
   /**
+ * Seta qual campo o bot está esperando receber do usuário
+ * @param {string} leadId
+ * @param {string} field - 'patientName', 'age', 'period', etc (null para limpar)
+ */
+  async setAwaitingResponse(leadId, field) {
+    try {
+      const update = field
+        ? { $set: { awaitingResponse: field } }
+        : { $unset: { awaitingResponse: 1 } };
+
+      return await Leads.findByIdAndUpdate(leadId, update, { new: true });
+    } catch (error) {
+      logger.error('SET_AWAITING_ERROR', { leadId, field, error: error.message });
+      throw error;
+    }
+  }
+
+  /**
    * Registra evento de auditoria (compliance médico)
    * @param {string} leadId
    * @param {Object} auditEvent - { type, decision, context }
