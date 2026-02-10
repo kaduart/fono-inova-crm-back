@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 import WhatsAppOrchestratorV7 from '../orchestrators/WhatsAppOrchestratorV7.js';
 import Leads from '../models/Leads.js';
 import Contacts from '../models/Contacts.js';
-import Messages from '../models/Messages.js';
+import Message from '../models/Message.js';
 
 // Telefone de teste
 const TEST_PHONE = '556181694922';
@@ -41,7 +41,7 @@ async function cleanupTestData() {
 
   await Contacts.deleteMany({ phone: TEST_PHONE });
   await Leads.deleteMany({ 'contact.phone': TEST_PHONE });
-  await Messages.deleteMany({
+  await Message.deleteMany({
     $or: [{ from: TEST_PHONE }, { to: TEST_PHONE }]
   });
 
@@ -61,11 +61,14 @@ async function setupTestLead() {
   });
 
   const lead = await Leads.create({
-    contact: contact._id,
-    status: 'new',
-    source: 'whatsapp',
+    contact: {
+      phone: TEST_PHONE,
+      email: 'teste@test.com'
+    },
+    origin: 'WhatsApp',
     conversationContext: {},
-    clinicalHistory: {}
+    clinicalHistory: {},
+    interactions: []
   });
 
   log.success(`Lead criado: ${lead._id}`);
@@ -311,7 +314,7 @@ async function runAllTests() {
 
   // Conectar ao MongoDB
   log.section('Conectando ao MongoDB...');
-  await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/fono-inova');
+  await mongoose.connect(process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/fono-inova');
   log.success('Conectado');
 
   // Limpar dados de teste antigos

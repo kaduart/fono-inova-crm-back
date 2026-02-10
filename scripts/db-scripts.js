@@ -254,7 +254,6 @@ db.patients.find(
 const id = ObjectId("686e7f2bb26f4da03d426e7b");
 db.patients.findOne({ _id: id });
 
-
 // 1️⃣ Deletar todas as mensagens do número
 const phone = "556181694922";
 
