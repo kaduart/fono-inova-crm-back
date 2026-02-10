@@ -55,7 +55,9 @@ export default class WhatsAppOrchestratorV7 {
     const invalidStarters = [
       'aceita', 'atende', 'tem', 'faz', 'trabalha', 'valor', 'preço', 'custa',
       'quanto', 'onde', 'como', 'quando', 'qual', 'quem', 'por que', 'porquê',
-      'boa', 'bom', 'olá', 'oi', 'eae', 'hey'
+      'boa', 'bom', 'olá', 'oi', 'eae', 'hey',
+      // 🔴 ADICIONAR ESSAS LINHAS:
+      'é', 'e', 'eh', 'pra', 'para', 'pro', 'adulto', 'criança', 'bebê', 'bebe'
     ];
 
     const lowerName = name.toLowerCase().trim();
@@ -65,12 +67,9 @@ export default class WhatsAppOrchestratorV7 {
       if (lowerName.startsWith(starter)) return false;
     }
 
-    // Se tiver mais de 4 palavras e nenhuma for nome comum, suspeito
-    const words = lowerName.split(/\s+/);
-    if (words.length > 4) {
-      const commonNamePatterns = /^(da|de|do|dos|das|e|maia|silva|souza|santos|oliveira)$/i;
-      const validNameParts = words.filter(w => w.length > 2 && !commonNamePatterns.test(w));
-      if (validNameParts.length < 2) return false;
+    // 🔴 ADICIONAR ESTE BLOCO: Se contém "para" + "adulto/criança", não é nome
+    if (/\b(para|pra)\s+(adulto|adultos|criança|criancas|bebe|bebê)\b/i.test(lowerName)) {
+      return false;
     }
 
     return true;
@@ -94,7 +93,8 @@ export default class WhatsAppOrchestratorV7 {
     if (yearMatch) return parseInt(yearMatch[1]);
 
     // Número solto: "2"
-    if (/^\d+$/.test(text.trim())) return parseInt(text.trim());
+    const numericMatch = text.trim().match(/^(\d+)$/);
+    if (numericMatch) return parseInt(numericMatch[1]);
 
     return null;
   }
@@ -106,8 +106,49 @@ export default class WhatsAppOrchestratorV7 {
 
     this.logger.info('V7_START', { leadId, text: text.substring(0, 80) });
 
+    // 🔴 FALLBACK CRÍTICO: Se tem nome no contexto mas não tem idade, e usuário manda número = é idade
+    // Isso resolve quando awaitingResponse falha em persistir
+    const memory = await loadContext(leadId);
+    const looksLikeAge = /^\d{1,2}$/.test(text.trim());
+    const hasNameButNoAge = memory.patientName && !memory.age;
+
+    if (looksLikeAge && hasNameButNoAge) {
+      const age = this._extractAgeAdvanced(text);
+      if (age !== null) {
+        this.logger.info('V7_AGE_FALLBACK', { age, source: 'context_number' });
+        await Leads.findByIdAndUpdate(leadId, { 'patientInfo.age': age });
+        memory.age = age;
+        await saveContext(leadId, memory);
+
+        // Continua o fluxo com a idade preenchida
+        const missing = getMissingSlots(memory);
+        if (missing.length === 0) {
+          return { command: 'SEND_MESSAGE', payload: { text: await this._handleOfferBooking(memory, lead, text) } };
+        } else {
+          await leadRepository.setAwaitingResponse(leadId, missing[0].field);
+          return { command: 'SEND_MESSAGE', payload: { text: this._handleDataCollection(missing[0], memory) } };
+        }
+      }
+    }
+
+    // 🔴 HARD INTERRUPT #1: Encerramento de conversa (NUNCA entra no pipeline)
+    if (this._isHardStopMessage(text)) {
+      this.logger.info('V7_HARD_STOP', { reason: 'closing_message' });
+      return { command: 'NO_REPLY' }; // Silêncio educado é resposta
+    }
+
+    // 🔴 HARD INTERRUPT #2: Cancelamento explícito
+    if (this._isCancellation(text)) {
+      await this._clearSchedulingState(leadId);
+      return {
+        command: 'SEND_MESSAGE',
+        payload: { text: 'Tudo bem! Cancelado aqui 😊 Se precisar de algo depois, é só chamar!' }
+      };
+    }
+
     // 🔥 FIX DO LOOP: Se tem um step pendente, processa direto, não recalcula rota
-    if (lead.awaitingResponse === 'AGE' && text) {
+    const currentStep = lead.pendingPatientInfoStep || lead.awaitingResponse;
+    if (currentStep === 'age') {
       const age = this._extractAgeAdvanced(text);
       if (age !== null) {
         // Salvou idade, limpa flag
@@ -222,6 +263,45 @@ export default class WhatsAppOrchestratorV7 {
     }
   }
 
+
+  /**
+ * Detecta mensagens que devem PARAR o pipeline imediatamente
+ * Não é "intent", é "circuit breaker"
+ */
+  _isHardStopMessage(text = '') {
+    const lower = text.toLowerCase().trim();
+
+    // Detecta início com agradecimento/despedida
+    const isClosingStart = /^(obg|obrigad[oa]|valeu|tchau|at[ée] logo|boa (tarde|noite|dia))(\s|!|☺️|🙏|👍|$)/i.test(lower);
+
+    if (isClosingStart) {
+      // Se tem "quero", "qual", "como" depois, é continuação de conversa, não encerramento
+      const hasQuestion = /\b(quero|qual|como|onde|quando|vou agendar|marca)\b/i.test(lower);
+      if (!hasQuestion) return true;
+    }
+
+    // Emoji puro
+    return /^[👍🙏☺️❤️💚✅]+$/u.test(lower);
+  }
+
+  /**
+   * Cancelamento explícito (precisa limpar estado)
+   */
+  _isCancellation(text = '') {
+    const lower = text.toLowerCase();
+    return /^(cancela|cancelar|desist|não quero mais|não vou agendar)/.test(lower);
+  }
+
+  async _clearSchedulingState(leadId) {
+    await leadRepository.setAwaitingResponse(leadId, null);
+    await Leads.findByIdAndUpdate(leadId, {
+      $set: {
+        pendingSchedulingSlots: null,
+        pendingChosenSlot: null,
+        pendingPatientInfoStep: null
+      }
+    });
+  }
   _extractNameSimple(text) {
     // Remove "meu nome é", "é", etc
     let cleaned = text.replace(/^(meu nome é|é|nome|chamo|sou)\s*/i, '').trim();
@@ -235,6 +315,16 @@ export default class WhatsAppOrchestratorV7 {
    */
   _determineRoute(facts, context, lead) {
     const { intent, flags, therapies } = facts;
+
+    // 🔴 Se o nome extraído é suspeito (contém "adulto", "criança", etc), ignora ele
+    if (facts.entities?.patientName && /(adulto|criança|para|bebê)/i.test(facts.entities.patientName)) {
+      delete facts.entities.patientName;
+    }
+
+    // Hard guard no roteador também (defesa em profundidade)
+    if (facts.intent.type === 'social_closing') {
+      return { type: 'SILENT_STOP' };
+    }
 
     // 🔧 FIX BUG #1: Usa lead já normalizado (sem "NÃO" strings)
     // Agora a verificação truthy funciona corretamente
@@ -292,6 +382,10 @@ export default class WhatsAppOrchestratorV7 {
 
       case 'OFFER_BOOKING':
         return this._handleOfferBooking(context, lead, text);
+
+      case 'SILENT_STOP':
+        this.logger.info('V7_SILENT_STOP');
+        return null; // ou { command: 'NO_REPLY' }
 
       case 'INITIAL_GREETING':
       default:
