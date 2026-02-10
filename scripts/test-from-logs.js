@@ -10,7 +10,7 @@
  * 4. Veja se a Amanda responderia corretamente agora
  */
 
-import WhatsAppOrchestratorV7 from '../orchestrators/WhatsAppOrchestratorV7.js';
+import WhatsAppOrchestrator from '../orchestrators/WhatsAppOrchestrator.js';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import chalk from 'chalk';
@@ -173,7 +173,7 @@ async function testarConversa(teste) {
   console.log(chalk.gray(`   Esperado: ${teste.esperado}`));
   console.log('═'.repeat(80));
 
-  const orchestrator = new WhatsAppOrchestratorV7();
+  const orchestrator = new WhatsAppOrchestrator();
   const mockLead = {
     _id: new mongoose.Types.ObjectId(),
     contact: { phone: '5562999999999' },

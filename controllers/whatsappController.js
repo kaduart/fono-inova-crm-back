@@ -8,7 +8,6 @@ import Followup from "../models/Followup.js";
 import Lead from '../models/Leads.js';
 import Message from "../models/Message.js";
 import Patient from '../models/Patient.js';
-import { WhatsAppOrchestrator } from '../orchestrators/WhatsAppOrchestrator.js';
 import { describeWaImage, transcribeWaAudio } from "../services/aiAmandaService.js";
 import * as bookingService from '../services/amandaBookingService.js';
 import { createSmartFollowupForLead } from "../services/followupOrchestrator.js";
@@ -21,6 +20,7 @@ import { mapFlagsToBookingProduct } from '../utils/bookingProductMapper.js';
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
 import { normalizeE164BR } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
+import WhatsAppOrchestrator from '../orchestrators/WhatsAppOrchestrator.js';
 
 const AUTO_TEST_NUMBERS = [
     "5561981694922", "5561981694922", "556292013573", "5562992013573"
@@ -933,14 +933,14 @@ export const whatsappController = {
     async uploadMedia(req, res) {
         try {
             if (!req.file) {
-                return res.status(400).json({ 
-                    success: false, 
-                    error: 'Nenhum arquivo enviado' 
+                return res.status(400).json({
+                    success: false,
+                    error: 'Nenhum arquivo enviado'
                 });
             }
 
             const { buffer, originalname, mimetype } = req.file;
-            
+
             console.log('📤 Upload de mídia recebido:', {
                 name: originalname,
                 type: mimetype,
@@ -949,12 +949,12 @@ export const whatsappController = {
 
             // Upload para Meta/WhatsApp
             const { sendWhatsAppMediaMessage } = await import('../services/whatsappService.js');
-            
+
             // Apenas faz upload e retorna o mediaId (não envia mensagem)
             const token = await getMetaToken();
             const PHONE_ID = process.env.META_WABA_PHONE_ID;
             const META_URL = "https://graph.facebook.com/v21.0";
-            
+
             const FormData = (await import('form-data')).default;
             const formData = new FormData();
             formData.append('file', buffer, originalname);
@@ -984,9 +984,9 @@ export const whatsappController = {
 
         } catch (error) {
             console.error('❌ Erro no upload de mídia:', error);
-            res.status(500).json({ 
-                success: false, 
-                error: error.message 
+            res.status(500).json({
+                success: false,
+                error: error.message
             });
         }
     },
@@ -998,14 +998,14 @@ export const whatsappController = {
             const file = req.file;
 
             if (!phone || !file || !type) {
-                return res.status(400).json({ 
-                    success: false, 
-                    error: 'Telefone, arquivo e tipo são obrigatórios' 
+                return res.status(400).json({
+                    success: false,
+                    error: 'Telefone, arquivo e tipo são obrigatórios'
                 });
             }
 
             const to = normalizeE164BR(phone);
-            
+
             console.log('📤 Enviando mídia:', {
                 to,
                 type,
@@ -1015,7 +1015,7 @@ export const whatsappController = {
             });
 
             const { sendWhatsAppMediaMessage } = await import('../services/whatsappService.js');
-            
+
             // Enviar para WhatsApp
             const result = await sendWhatsAppMediaMessage({
                 to,
@@ -1034,9 +1034,9 @@ export const whatsappController = {
 
         } catch (error) {
             console.error('❌ Erro ao enviar mídia:', error);
-            res.status(500).json({ 
-                success: false, 
-                error: error.message 
+            res.status(500).json({
+                success: false,
+                error: error.message
             });
         }
     }

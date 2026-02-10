@@ -9,7 +9,7 @@
  * 3. Veja se Amanda responderia corretamente
  */
 
-import WhatsAppOrchestratorV7 from '../orchestrators/WhatsAppOrchestratorV7.js';
+import WhatsAppOrchestrator from '../orchestrators/WhatsAppOrchestrator.js';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 
@@ -62,11 +62,11 @@ function parseLog(logText) {
   for (const linha of linhas) {
     // Ignora linhas de comentário ou descrição
     if (linha.startsWith('//') ||
-        linha.startsWith('PROBLEMA:') ||
-        linha.startsWith('ESPERADO:') ||
-        linha.startsWith('CONVERSA') ||
-        linha.startsWith('===') ||
-        linha.startsWith('---')) {
+      linha.startsWith('PROBLEMA:') ||
+      linha.startsWith('ESPERADO:') ||
+      linha.startsWith('CONVERSA') ||
+      linha.startsWith('===') ||
+      linha.startsWith('---')) {
       continue;
     }
 
@@ -121,7 +121,7 @@ async function testarConversaRapida(mensagens) {
 
   console.log('═'.repeat(80));
 
-  const orchestrator = new WhatsAppOrchestratorV7();
+  const orchestrator = new WhatsAppOrchestrator();
   const mockLead = {
     _id: new mongoose.Types.ObjectId(),
     contact: { phone: '5562999999999' },
@@ -191,7 +191,7 @@ async function testarConversaRapida(mensagens) {
 
   // Verifica se há HTML não escapado (XSS)
   if (mensagens.some(m => m.includes('<script>')) &&
-      respostas.some(r => r.includes('<script>'))) {
+    respostas.some(r => r.includes('<script>'))) {
     problemas.push('❌ HTML malicioso não foi escapado (vulnerabilidade XSS)');
   }
 
