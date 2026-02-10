@@ -3,6 +3,9 @@ import { findAvailableSlots } from '../services/amandaBookingService.js';
 import Leads from '../models/Leads.js';
 import { detectAllFlags } from '../utils/flagsDetector.js';
 import { detectAllTherapies } from '../utils/therapyDetector.js';
+import { clinicalRulesEngine } from '../services/intelligence/clinicalRulesEngine.js';
+import BookingHandler from '../handlers/BookingHandler.js';
+import { buildDecisionContext, mergeBookingDataToContext } from '../adapters/BookingContextAdapter.js';
 
 // 🆕 NOVO SISTEMA DE CONTEXT E ENTITIES
 import { extractEntities } from '../services/intelligence/EntityExtractor.js';
@@ -101,6 +104,11 @@ export class WhatsAppOrchestrator {
     const leadId = lead?._id?.toString() || 'unknown';
     const text = message?.content || message?.text || '';
 
+    // Guarda lead e message para uso em métodos internos (delegação ao BookingHandler)
+    this.currentLead = lead;
+    this.currentMessage = message;
+    this.currentText = text;
+
     this.logger.info('V6_ENTITY_START', { leadId, text: text.substring(0, 80) });
 
     try {
@@ -109,10 +117,48 @@ export class WhatsAppOrchestrator {
       
       // 2. 🔍 EXTRAI ENTIDADES (novo sistema robusto)
       const extracted = extractEntities(text, memory);
-      
+
+      // 2.5 🚩 ENRIQUECE COM FLAGS (objeções, urgência, TEA, etc.)
+      const flags = detectAllFlags(text, lead, memory);
+      extracted.flags = flags;
+
+      this.logger.debug('FLAGS_ENRICHMENT', {
+        leadId,
+        activeFlags: Object.keys(flags).filter(k => flags[k] === true).length,
+        userProfile: flags.userProfile,
+        topic: flags.topic,
+        teaStatus: flags.teaStatus
+      });
+
       // 3. 🧠 MERGE INTELIGENTE (preserva dados válidos)
       const context = mergeContext(memory, extracted);
-      
+
+      // 3.5 ✅ VALIDAÇÃO CLÍNICA (especialidades médicas, age gates)
+      const eligibility = clinicalRulesEngine({
+        memoryContext: context,
+        analysis: { extractedInfo: extracted, detectedTherapy: context.therapy },
+        text: text
+      });
+
+      if (eligibility.blocked) {
+        // Hard block - retorna imediatamente sem prosseguir
+        this.logger.info('CLINICAL_BLOCK', {
+          leadId,
+          reason: eligibility.reason,
+          specialty: eligibility.specialty
+        });
+
+        await saveContext(leadId, context);
+
+        return {
+          command: 'SEND_MESSAGE',
+          payload: { text: eligibility.message }
+        };
+      }
+
+      // Guarda soft warnings para usar depois se necessário
+      context.eligibilityWarnings = eligibility.message ? [eligibility.message] : [];
+
       // 4. 🎯 DECIDE AÇÃO (passa text original para detectar especialidades não atendidas)
       const action = this.decideNextAction(context, extracted, text);
       context.lastAction = action.type;
@@ -162,35 +208,31 @@ export class WhatsAppOrchestrator {
   decideNextAction(context, extracted, originalText = '') {
     const missing = getMissingSlots(context);
     const intencao = extracted.intencao || context.lastIntencao || 'informacao';
+    const flags = context.flags || extracted.flags || {};
 
-    // 🔧 FIX BUG #1: Detectar especialidades NÃO atendidas
-    const text = extracted.rawText || originalText || '';
-    const textLower = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const ESPECIALIDADES_NAO_ATENDIDAS = [
-      'neurologista', 'neurologia', 'neurologo',
-      'pediatra', 'pediatria',
-      'cardiologista', 'cardiologia',
-      'ortopedista', 'ortopedia',
-      'dermatologista', 'dermatologia'
-    ];
+    // ✅ Especialidades não atendidas já tratadas pelo clinicalRulesEngine (bloqueia antes de chegar aqui)
 
-    for (const esp of ESPECIALIDADES_NAO_ATENDIDAS) {
-      if (textLower.includes(esp)) {
-        return { type: 'RESPONSE_TERAPIA_NAO_ATENDIDA', especialidade: esp, missingAfter: missing };
-      }
+    // PRIORIDADE 1: Bloqueios clínicos (soft warnings)
+    if (context.eligibilityWarnings?.length > 0) {
+      return { type: 'RESPONSE_ELIGIBILITY_WARNING', missingAfter: missing };
     }
 
-    // Se usuário mudou de assunto (intenção clara), responder isso primeiro
-    if (intencao === 'preco' && context.therapy) {
+    // PRIORIDADE 2: Interrupções (preço, plano, endereço) - usa FLAGS
+    if (flags.asksPrice && context.therapy) {
       return { type: 'RESPONSE_PRECO', missingAfter: missing };
     }
 
-    if (intencao === 'plano') {
+    if (flags.asksPlans || intencao === 'plano') {
       return { type: 'RESPONSE_PLANO', missingAfter: missing };
     }
 
-    if (intencao === 'endereco') {
+    if (flags.asksAddress || flags.asksLocation || intencao === 'endereco') {
       return { type: 'RESPONSE_ENDERECO', missingAfter: missing };
+    }
+
+    // PRIORIDADE 3: Objeções e desistência
+    if (flags.givingUp || flags.refusesOrDenies) {
+      return { type: 'HANDLE_OBJECTION', objectionType: this.detectObjectionType(flags), missingAfter: missing };
     }
 
     if (intencao === 'agendamento' && missing.length === 0) {
@@ -215,6 +257,18 @@ export class WhatsAppOrchestrator {
 
     // Tudo preenchido, oferecer agendamento
     return { type: 'OFFER_AGENDAMENTO', missingAfter: [] };
+  }
+
+  /**
+   * 🚨 Detecta tipo de objeção baseado em flags
+   */
+  detectObjectionType(flags) {
+    if (flags.mentionsPriceObjection || flags.insistsPrice) return 'price';
+    if (flags.mentionsTimeObjection) return 'time';
+    if (flags.mentionsInsuranceObjection) return 'insurance';
+    if (flags.givingUp) return 'giving_up';
+    if (flags.refusesOrDenies) return 'refusal';
+    return 'general';
   }
 
   /**
@@ -246,6 +300,12 @@ export class WhatsAppOrchestrator {
       return response;
     }
 
+    // 🚨 NOVO: Tratar objeções detectadas por flags
+    if (action.type === 'HANDLE_OBJECTION') {
+      this.logger.info('HANDLE_OBJECTION', { objectionType: action.objectionType });
+      return this.handleObjection(ctx, action.objectionType);
+    }
+
     // ✨ NOVO: Responder pergunta sobre disponibilidade ANTES de coletar dados
     if (action.type === 'RESPONSE_DISPONIBILIDADE') {
       return this.responderDisponibilidade(ctx);
@@ -261,6 +321,35 @@ export class WhatsAppOrchestrator {
       return this.askForSlot(ctx, action.slot, action.questionType, extracted);
     }
 
+    // 🆕 BOOKING FLOW DELEGATION: Se já mostrou slots ou tem slot escolhido, delega ao BookingHandler
+    const inBookingFlow = !!this.currentLead?.pendingSchedulingSlots || !!this.currentLead?.pendingChosenSlot;
+
+    if (inBookingFlow) {
+      this.logger.info('BOOKING_FLOW_DELEGATION', {
+        hasSlots: !!this.currentLead?.pendingSchedulingSlots,
+        hasChosenSlot: !!this.currentLead?.pendingChosenSlot,
+        hasName: !!ctx.patientName
+      });
+
+      const decisionContext = buildDecisionContext({
+        lead: this.currentLead,
+        message: this.currentText,
+        context: ctx,
+        slots: this.currentLead?.pendingSchedulingSlots,
+        chosenSlot: this.currentLead?.pendingChosenSlot
+      });
+
+      const bookingResponse = await BookingHandler.execute({ decisionContext, services: {} });
+
+      // Atualizar contexto com dados extraídos pelo BookingHandler
+      if (bookingResponse.extractedInfo) {
+        Object.assign(ctx, bookingResponse.extractedInfo);
+      }
+
+      return bookingResponse.text;
+    }
+
+    // Fluxo pré-booking: coleta therapy, complaint, age, period
     // Se detectou entidade nova, valida e pergunta próxima
     if (extracted.patientName && !ctx.askedForAge) {
       ctx.askedForName = true;
@@ -284,11 +373,27 @@ export class WhatsAppOrchestrator {
         return `Tudo bem! Sem problemas! 😊\n\nFico à disposição quando você quiser agendar. Qualquer dúvida, é só me chamar! Estou aqui para ajudar! 💚`;
       }
 
-      // 🔧 FIX BUG #2: SEMPRE busca horários quando contexto está completo
-      // Antes: só buscava se ctx.isConfirmation, agora busca sempre
+      // 🔧 FIX BUG #2: SEMPRE busca horários e delega ao BookingHandler
       if (therapy && age && period) {
-        this.logger.info('OFFER_AGENDAMENTO_EXECUTANDO_BUSCA', { therapy, age, period });
-        return await this.mostrarHorarios(therapy, age, period);
+        this.logger.info('DELEGATING_TO_BOOKING_HANDLER_OFFER', { therapy, age, period });
+
+        // Buscar slots
+        const slots = await findAvailableSlots({
+          therapyArea: therapy,
+          preferredPeriod: period,
+          patientAge: age
+        });
+
+        // Delegar ao BookingHandler
+        const decisionContext = buildDecisionContext({
+          lead: this.currentLead,
+          message: this.currentText,
+          context: ctx,
+          slots
+        });
+
+        const bookingResponse = await BookingHandler.execute({ decisionContext, services: {} });
+        return bookingResponse.text;
       }
 
       // Fallback se faltar algum dado (não deveria chegar aqui)
@@ -367,13 +472,28 @@ export class WhatsAppOrchestrator {
       return `${acolhimento}\n\nPra ${info?.name?.toLowerCase() || 'atendimento'}, temos ótimos profissionais. Que período funciona melhor: **manhã ou tarde**? 😊`;
     }
 
-    // Recebemos PERÍODO → 🔧 FIX: BUSCA SLOTS DE VERDADE!
+    // Recebemos PERÍODO → 🔧 FIX: BUSCA SLOTS E DELEGA AO BOOKINGHANDLER!
     if (receivedField === 'period' && period && therapy && age) {
       const periodoTexto = period === 'manha' ? 'manhã' : period;
-      this.logger.info('ACKNOWLEDGE_PERIOD_EXECUTANDO_BUSCA', { therapy, age, period });
+      this.logger.info('DELEGATING_TO_BOOKING_HANDLER_SLOTS', { therapy, age, period });
 
-      // 🔧 CHAMA mostrarHorarios() aqui em vez de só prometer!
-      return await this.mostrarHorarios(therapy, age, period);
+      // Buscar slots
+      const slots = await findAvailableSlots({
+        therapyArea: therapy,
+        preferredPeriod: period,
+        patientAge: age
+      });
+
+      // Delegar formatação e exibição ao BookingHandler
+      const decisionContext = buildDecisionContext({
+        lead: this.currentLead,
+        message: this.currentText,
+        context: ctx,
+        slots
+      });
+
+      const bookingResponse = await BookingHandler.execute({ decisionContext, services: {} });
+      return bookingResponse.text;
     }
 
     // Fallback se só recebeu período mas falta outros dados
@@ -510,6 +630,51 @@ export class WhatsAppOrchestrator {
     });
 
     return finalResponse;
+  }
+
+  /**
+   * 🚨 Trata objeções do usuário (desistência, recusa, etc.)
+   */
+  handleObjection(ctx, objectionType) {
+    const { therapy, patientName } = ctx;
+    let resposta = '';
+
+    this.logger.info('HANDLING_OBJECTION', { objectionType, therapy, hasName: !!patientName });
+
+    switch (objectionType) {
+      case 'price':
+        resposta = `Entendo sua preocupação com o investimento! 💚\n\n`;
+        resposta += `A gente sabe que é importante cuidar da saúde de forma acessível. `;
+        resposta += `Por isso trabalhamos com reembolso de plano (geralmente entre 80% e 100%).\n\n`;
+        resposta += `Também temos opções de parcelamento no cartão! Quer que eu busque os horários mesmo assim?`;
+        break;
+
+      case 'time':
+        resposta = `Entendo que o tempo tá corrido! ⏰\n\n`;
+        resposta += `A gente tem horários flexíveis de **manhã e tarde** (8h às 18h). `;
+        resposta += `Qual período funcionaria melhor pra você?`;
+        break;
+
+      case 'insurance':
+        resposta = `Sobre o plano de saúde: trabalhamos com **reembolso** de todos os planos! 💚\n\n`;
+        resposta += `Você paga a sessão e depois solicita o reembolso direto com seu plano. `;
+        resposta += `A maioria dos nossos pacientes consegue de 80% a 100% de volta.\n\n`;
+        resposta += `Quer que eu busque os horários disponíveis?`;
+        break;
+
+      case 'giving_up':
+      case 'refusal':
+        resposta = `Tudo bem! Sem pressão nenhuma 😊\n\n`;
+        resposta += `Se mudar de ideia ou tiver alguma dúvida, é só chamar! Estamos aqui pra ajudar 💚`;
+        break;
+
+      case 'general':
+      default:
+        resposta = `Entendo! Se tiver alguma preocupação, pode me contar que vejo como posso ajudar 💚\n\n`;
+        resposta += `Quer que eu busque os horários disponíveis mesmo assim?`;
+    }
+
+    return resposta;
   }
 
   /**
