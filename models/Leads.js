@@ -76,7 +76,7 @@ const leadSchema = new mongoose.Schema({
         primary: { type: Object, default: null },
         alternativesSamePeriod: { type: Array, default: [] },
       },
-      preferredPeriod: { type: String, enum: ['manhã', 'tarde', 'noite', null], default: null },
+      preferredPeriod: { type: String, enum: ['manha', 'tarde', 'noite', null], default: null },
       patientInfo: {
         fullName: String,
         birthDate: String,

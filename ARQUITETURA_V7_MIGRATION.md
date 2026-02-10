@@ -33,7 +33,7 @@ backend/
 │
 ├── orchestrators/
 │   ├── WhatsAppOrchestrator.js      [V6 - LEGADO - 621 linhas]
-│   └── WhatsAppOrchestratorV7.js    [V7 - NOVO - 240 linhas]
+│   └── WhatsAppOrchestrator.js    [V7 - NOVO - 240 linhas]
 │
 ├── adapters/
 │   └── BookingContextAdapter.js     [JÁ EXISTIA]
@@ -125,7 +125,7 @@ await leadRepository.releaseBookingLock(leadId);
 
 ---
 
-### 4. WhatsAppOrchestratorV7 (Slim Orchestrator)
+### 4. WhatsAppOrchestrator (Slim Orchestrator)
 
 **Responsabilidade:** APENAS ROTEAMENTO (zero lógica de negócio)
 
@@ -249,14 +249,14 @@ logger.info('AB_TEST', { version: useV7 ? 'V7' : 'V6' });
 **Implementação:**
 ```javascript
 // whatsappController.js
-import WhatsAppOrchestrator from '../orchestrators/WhatsAppOrchestratorV7.js';
+import WhatsAppOrchestrator from '../orchestrators/WhatsAppOrchestrator.js';
 
 const orchestrator = new WhatsAppOrchestrator();
 const response = await orchestrator.process({ lead, message });
 ```
 
 **Limpeza:**
-- [ ] Renomear `WhatsAppOrchestratorV7.js` → `WhatsAppOrchestrator.js`
+- [ ] Renomear `WhatsAppOrchestrator.js` → `WhatsAppOrchestrator.js`
 - [ ] Deletar `WhatsAppOrchestrator.js` (V6 antigo)
 - [ ] Atualizar imports em todos os controllers
 - [ ] Remover feature flags (`USE_V7`, etc.)

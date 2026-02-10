@@ -3,15 +3,15 @@ import OpenAI from "openai";
 import { Readable } from "stream";
 
 // ✅ Orquestradores para fallback (quando LLM falha)
-import { WhatsAppOrchestrator } from "../orchestrators/WhatsAppOrchestrator.js";
-import { CLINIC_ADDRESS, SYSTEM_PROMPT_AMANDA } from "../utils/amandaPrompt.js";
+import { SYSTEM_PROMPT_AMANDA } from "../utils/amandaPrompt.js";
 import ensureSingleHeart from "../utils/helpers.js";
 import callAI from "./IA/Aiproviderservice.js";
+import { loadContext } from "./intelligence/ContextManager.js";
 import { analyzeLeadMessage } from "./intelligence/leadIntelligence.js";
 import { getMediaBuffer } from "./whatsappMediaService.js";
-import { loadContext } from "./intelligence/ContextManager.js";
+import WhatsAppOrchestratorV7 from "../orchestrators/WhatsAppOrchestrator.js";
 
-const orchestrator = new WhatsAppOrchestrator();
+const orchestrator = new WhatsAppOrchestratorV7();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /* =========================================================================
@@ -39,31 +39,31 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function generateAmandaReply({ userText, lead = {}, context = {} }) {
     // 🎯 ESTRATÉGIA: LLM primeiro (inteligente), regras só como fallback
-    
+
     try {
         const systemPrompt = buildConsultoraPrompt(lead);
-        
+
         // Pega histórico recente para contexto conversacional
         const history = await loadConversationHistory(lead._id, 6);
-        
+
         const messages = buildMessagesWithHistory(history, userText);
-        
+
         const aiResponse = await callAI({
             systemPrompt,
             messages,
             maxTokens: 500,
             temperature: 0.8 // Mais criativo/natural
         });
-        
+
         if (aiResponse) {
             console.log('✅ [AmandaLLM] Resposta natural gerada');
             return ensureSingleHeart(aiResponse);
         }
-        
+
     } catch (err) {
         console.warn('⚠️ [AmandaLLM] Fallback para regras:', err.message);
     }
-    
+
     // Fallback para orquestrador baseado em regras
     return generateRuleBasedReply({ userText, lead, context });
 }
@@ -77,7 +77,7 @@ function buildConsultoraPrompt(lead) {
     const nomePaciente = lead?.patientName || lead?.qualificationData?.extractedInfo?.nome;
     const idade = lead?.patientAge || lead?.qualificationData?.extractedInfo?.idade;
     const especialidade = lead?.therapyArea || lead?.qualificationData?.extractedInfo?.especialidade;
-    
+
     return `Você é Amanda, recepcionista SÊNIOR da Clínica Fono Inova em Anápolis/GO.
 
 🎯 SEU PAPEL: Consultora de atendimento, não robô de formulário.
@@ -147,17 +147,17 @@ Responda naturalmente, como se estivesse conversando no WhatsApp.`;
 async function loadConversationHistory(leadId, limit = 6) {
     try {
         const { default: Message } = await import('../models/Message.js');
-        
+
         const messages = await Message.find({
             $or: [
                 { lead: leadId },
                 { 'metadata.leadId': leadId?.toString() }
             ]
         })
-        .sort({ timestamp: -1 })
-        .limit(limit)
-        .lean();
-        
+            .sort({ timestamp: -1 })
+            .limit(limit)
+            .lean();
+
         return messages.reverse().map(m => ({
             role: m.direction === 'inbound' ? 'user' : 'assistant',
             content: (m.content || m.text || '').toString().substring(0, 200)
@@ -169,15 +169,15 @@ async function loadConversationHistory(leadId, limit = 6) {
 
 function buildMessagesWithHistory(history, currentMessage) {
     const messages = [];
-    
+
     // Adiciona histórico (últimas interações)
     for (const h of history) {
         messages.push({ role: h.role, content: h.content });
     }
-    
+
     // Adiciona mensagem atual
     messages.push({ role: 'user', content: currentMessage });
-    
+
     return messages;
 }
 
@@ -192,7 +192,7 @@ async function generateRuleBasedReply({ userText, lead = {}, context = {} }) {
 
         // Carrega contexto persistido do banco
         const persistedContext = await loadContext(lead._id);
-        
+
         // Merge com dados do lead
         const enrichedContext = {
             ...persistedContext,

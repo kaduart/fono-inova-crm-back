@@ -2,7 +2,7 @@
 // Testa fluxo REAL de conversa com a Amanda (V7 architecture)
 
 import mongoose from 'mongoose';
-import WhatsAppOrchestratorV7 from '../orchestrators/WhatsAppOrchestratorV7.js';
+import WhatsAppOrchestrator from '../orchestrators/WhatsAppOrchestrator.js';
 import Leads from '../models/Leads.js';
 import Contacts from '../models/Contacts.js';
 import Message from '../models/Message.js';
@@ -175,8 +175,8 @@ async function testClinicalContextInheritance(orchestrator) {
   const context = await Leads.findById(updatedLead._id);
 
   if (context.conversationContext?.therapy === 'neuropsicologia' ||
-      response.includes('neuropsico') ||
-      response.includes('idade')) {
+    response.includes('neuropsico') ||
+    response.includes('idade')) {
     log.success('PASSOU: Herdou contexto de neuropsicologia');
   } else {
     log.warning('PARCIAL: Pode ter herdado, verificar contexto manualmente');
@@ -321,7 +321,7 @@ async function runAllTests() {
   await cleanupTestData();
 
   // Criar orchestrator V7
-  const orchestrator = new WhatsAppOrchestratorV7();
+  const orchestrator = new WhatsAppOrchestrator();
 
   // Executar testes
   try {

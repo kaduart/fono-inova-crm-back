@@ -221,9 +221,9 @@ node
 
 ```javascript
 // No REPL do Node
-import { WhatsAppOrchestratorV7 } from './orchestrators/WhatsAppOrchestratorV7.js';
+import { WhatsAppOrchestrator } from './orchestrators/WhatsAppOrchestrator.js';
 
-const orch = new WhatsAppOrchestratorV7();
+const orch = new WhatsAppOrchestrator();
 
 const lead = { _id: 'test123' };
 const message = { content: 'Quanto custa? Aceita plano?' };
@@ -329,7 +329,7 @@ console.log(result.payload.text);
 
 Dúvidas sobre a arquitetura V7?
 
-- Ver código: `backend/orchestrators/WhatsAppOrchestratorV7.js`
+- Ver código: `backend/orchestrators/WhatsAppOrchestrator.js`
 - Ver KB: `backend/knowledge/clinicKnowledge.js`
 - Ver integração: `backend/services/aiAmandaService.js`
 
