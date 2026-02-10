@@ -326,49 +326,52 @@ export const whatsappController = {
 
     async webhook(req, res) {
         console.log("=========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< ===========================", new Date().toISOString());
-
         try {
-            const change = req.body.entry?.[0]?.changes?.[0];
-            const value = change?.value;
+            res.sendStatus(200); // Responde imediato pro Meta
 
-            // ✅ RESPONDE IMEDIATAMENTE
-            res.sendStatus(200);
+            const change = req.body.entry?.[0]?.changes?.[0]; // Pega o change
+            const value = change?.value; // GUARDA O VALUE
 
-            if (!value?.messages || !Array.isArray(value.messages) || !value.messages[0]) {
-                console.log("🔔 Webhook recebido, mas não é mensagem");
-                return;
+            const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0] || value?.messages?.[0];
+            if (!msg) return;
+
+            const from = msg.from;
+            const content = msg.text?.body || '';
+
+            // 🆕 DEBOUNCE CORRETO AQUI (3.5s, não 30s)
+            const debounceKey = `webhook:buffer:${from}`;
+            const existing = await redis?.get(debounceKey);
+
+            if (existing) {
+                // Acumula
+                const data = JSON.parse(existing);
+                data.messages.push(content);
+                data.lastTime = Date.now();
+                await redis.set(debounceKey, JSON.stringify(data), 'EX', 10);
+                console.log(`[BUFFER] Acumulado: ${data.messages.length} msgs`);
+                return; // Não processa ainda!
             }
 
-            const msg = value.messages[0];
-            const wamid = msg.id;
-            const fromRaw = msg.from || "";
+            // Primeira mensagem - inicia timer
+            await redis?.set(debounceKey, JSON.stringify({
+                messages: [content],
+                startTime: Date.now(),
+                msgData: msg
+            }), 'EX', 4); // 4 segundos de espera
 
-            console.log("📨 INBOUND RECEBIDO:", {
-                wamid,
-                from: fromRaw,
-                type: msg.type,
-                timestamp: new Date().toISOString()
-            });
+            // Aguarda 3.5s e processa tudo junto
+            setTimeout(async () => {
+                const buffer = await redis?.get(debounceKey);
+                if (!buffer) return; // Já processado por outra instância
 
-            // ✅ DEDUPLICAÇÃO
-            let isDuplicate = false;
-            try {
-                if (redis?.set) {
-                    const seenKey = `wa:seen:${wamid}`;
-                    const ok = await redis.set(seenKey, "1", "EX", 300, "NX");
-                    if (ok !== "OK") {
-                        console.log("⏭️ Mensagem duplicada, ignorando:", wamid);
-                        isDuplicate = true;
-                    }
-                }
-            } catch (e) {
-                console.warn("⚠️ Redis indisponível, continuando sem dedup:", e.message);
-            }
+                await redis?.del(debounceKey);
+                const data = JSON.parse(buffer);
+                const combinedText = data.messages.join(' ');
 
-            if (isDuplicate) return;
-
-            // ✅ CHAMA PROCESSAMENTO DIRETO (sem this)
-            await processInboundMessage(msg, value);
+                // Substitui o texto da mensagem pelo combinado
+                msg.text.body = combinedText;
+                await processInboundMessage(msg, value);
+            }, 3500);
 
         } catch (err) {
             console.error("❌ Erro crítico no webhook:", err);
@@ -1585,23 +1588,10 @@ async function handleAutoReply(from, to, content, lead) {
             console.warn("⚠️ Falha ao recuperar msgs pendentes:", e.message);
         }
 
-        let leadDoc = await Lead.findOneAndUpdate(
-            {
-                _id: lead._id,
-                $or: [
-                    { isProcessing: { $ne: true } },
-                    { processingStartedAt: { $exists: false } },
-                    { processingStartedAt: { $lt: twoMinutesAgo } },
-                ],
-            },
-            {
-                $set: {
-                    isProcessing: true,
-                    processingStartedAt: new Date(),
-                },
-            },
-            { new: true }
-        ).lean();
+        // Use o lead que já veio (que já tem as últimas atualizações):
+        let leadDoc = lead;
+        // E faça o update do lock separadamente se precisar:
+        await Lead.updateOne({ _id: lead._id }, { $set: { isProcessing: true } });
 
         // No handleAutoReply, após carregar o lead:
         if (leadDoc.pendingChosenSlot === 'NÃO' || leadDoc.pendingSchedulingSlots === 'NÃO') {

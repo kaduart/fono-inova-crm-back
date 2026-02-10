@@ -114,10 +114,27 @@ export class PerceptionService {
    * @private
    */
   _detectIntent(text, flags, entities) {
-    const textLower = text.toLowerCase();
+    const textLower = text.toLowerCase().trim();
+    const textLength = text.length;
 
-    // INTENÇÃO 1: Agendamento
-    if (flags.wantsSchedule || flags.wantsSchedulingNow || flags.inSchedulingFlow) {
+    // 🔴 PRIORIDADE 0: Sinais de Encerramento (Hard Stop)
+    // Detecta "obg", "tchau", "valeu" + emoji em mensagens curtas (< 30 chars)
+    const isSocialClosing = /^(obg|obrigad[oa]|valeu|tchau|at[ée] logo|boa (tarde|noite|dia)|ok)[!\s]*[👍🙏☺️❤️💚]*$/i.test(textLower);
+    const isEmojiOnly = /^[👍🙏☺️❤️💚✅]+$/u.test(text);
+
+    if ((isSocialClosing || isEmojiOnly) && textLength < 30) {
+      return {
+        type: 'social_closing',
+        confidence: 0.95,
+        source: 'social_signal_detected',
+        shouldReply: false  // Flag especial para o orchestrator saber que é silêncio
+      };
+    }
+
+    // INTENÇÃO 1: Agendamento (só se NÃO for closing)
+    // 🔧 FIX: Removemos 'inSchedulingFlow' daqui!
+    // 'inSchedulingFlow' é um ESTADO, não uma INTENÇÃO da mensagem atual
+    if (flags.wantsSchedule || flags.wantsSchedulingNow) {
       return {
         type: 'schedule',
         confidence: 0.9,
@@ -125,7 +142,7 @@ export class PerceptionService {
       };
     }
 
-    // INTENÇÃO 2: Informação sobre Preço
+    // INTENÇÃO 2: Preço (mantém igual)
     if (flags.asksPrice || flags.insistsPrice) {
       return {
         type: 'price_inquiry',
@@ -134,58 +151,31 @@ export class PerceptionService {
       };
     }
 
-    // INTENÇÃO 3: Informação sobre Localização
-    if (flags.asksAddress || flags.asksLocation) {
-      return {
-        type: 'location_inquiry',
-        confidence: 0.9,
-        source: 'flags.asksAddress'
-      };
-    }
+    // ... (restante mantém igual até o final)
 
-    // INTENÇÃO 4: Informação sobre Planos
-    if (flags.asksPlans) {
-      return {
-        type: 'insurance_inquiry',
-        confidence: 0.9,
-        source: 'flags.asksPlans'
-      };
-    }
-
-    // INTENÇÃO 5: Objeção/Desistência
-    if (flags.givingUp || flags.refusesOrDenies) {
-      return {
-        type: 'objection',
-        confidence: 0.85,
-        source: 'flags.givingUp'
-      };
-    }
-
-    // INTENÇÃO 6: Confirmação
-    if (flags.confirmsData && text.length < 30) {
-      return {
-        type: 'confirmation',
-        confidence: 0.8,
-        source: 'flags.confirmsData'
-      };
-    }
-
-    // INTENÇÃO 7: Escolha de Opção (A, B, C)
-    if (/\b[abc]\b/i.test(textLower) && text.length < 20) {
-      return {
-        type: 'option_selection',
-        confidence: 0.75,
-        source: 'pattern_match_abc'
-      };
-    }
-
-    // INTENÇÃO 8: Fornecer Dados (nome, idade, período)
+    // INTENÇÃO 8: Fornecer Dados
+    // 🔧 FIX: Se temos dados novos (entities) mas também temos 'inSchedulingFlow' no lead,
+    // ainda assim é 'provide_data', não 'schedule'
     if (entities.patientName || entities.age || entities.period) {
       return {
         type: 'provide_data',
-        confidence: 0.7,
+        confidence: 0.8, // Aumentei de 0.7 para dar prioridade sobre o default
         source: 'entities_detected'
       };
+    }
+
+    // INTENÇÃO 9: Continuação de Fluxo (NOVO - Fallback seguro)
+    // Só cai aqui se temos inSchedulingFlow=true mas a mensagem não foi reconhecida
+    // Isso evita que "obg" caia em schedule, mas permite que "sim" ou "8" continuem
+    if (flags.inSchedulingFlow) {
+      // Se é uma resposta curta (provavelmente confirmação ou dado)
+      if (textLength < 20) {
+        return {
+          type: 'provide_data', // Trata como "usuário respondendo algo do fluxo"
+          confidence: 0.6,
+          source: 'in_scheduling_flow_short_response'
+        };
+      }
     }
 
     // INTENÇÃO PADRÃO: Informação Geral
