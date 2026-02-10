@@ -6,13 +6,14 @@
 // 4. Garantia de merge de contexto do BookingHandler
 
 import { buildDecisionContext } from '../adapters/BookingContextAdapter.js';
-import { clinicalEligibility } from '../domain/policies/ClinicalEligibility.js';
+import { PRICES, formatPrice, getTherapyPricing } from '../config/pricing.js';
 import BookingHandler from '../handlers/BookingHandler.js';
 import { leadRepository } from '../infrastructure/persistence/LeadRepository.js';
 import Leads from '../models/Leads.js';
 import { perceptionService } from '../perception/PerceptionService.js';
 import { findAvailableSlots } from '../services/amandaBookingService.js';
-import { getMissingSlots, loadContext, mergeContext, saveContext } from '../services/intelligence/ContextManager.js';
+import { getLatestInsights } from '../services/amandaLearningService.js';
+import { getMissingSlots, loadContext, saveContext } from '../services/intelligence/ContextManager.js';
 import Logger from '../services/utils/Logger.js';
 import { THERAPY_DATA } from '../utils/therapyDetector.js';
 
@@ -75,197 +76,187 @@ export default class WhatsAppOrchestratorV7 {
     return true;
   }
 
-  _extractAgeAdvanced(text) {
-    const lower = text.toLowerCase();
-
-    // Meses: "1 mes", "2 meses", "1 mês e 10 dias"
-    const monthMatch = lower.match(/(\d+)\s*m[eê]s(es)?/i);
-    if (monthMatch) {
-      return parseInt(monthMatch[1]) / 12; // Converte pra anos (0.083 = 1 mês)
-    }
-
-    // Dias: "40 dias" (menos de 1 ano = 0)
-    const dayMatch = lower.match(/(\d+)\s*dias?/i);
-    if (dayMatch) return 0;
-
-    // Anos: "2 anos"
-    const yearMatch = lower.match(/(\d+)\s*anos?/);
-    if (yearMatch) return parseInt(yearMatch[1]);
-
-    // Número solto: "2"
-    const numericMatch = text.trim().match(/^(\d+)$/);
-    if (numericMatch) return parseInt(numericMatch[1]);
-
-    return null;
-  }
-
   async process({ lead, message }) {
-    const leadId = lead?._id; // Mantém como ObjectId
-    const leadIdStr = leadId?.toString() || 'unknown'; // Só pra logs
-    const text = message?.content || message?.text || '';
-
-    this.logger.info('V7_START', { leadId, text: text.substring(0, 80) });
-
-    // 🔴 FALLBACK CRÍTICO: Se tem nome no contexto mas não tem idade, e usuário manda número = é idade
-    // Isso resolve quando awaitingResponse falha em persistir
-    const memory = await loadContext(leadId);
-    const looksLikeAge = /^\d{1,2}$/.test(text.trim());
-    const hasNameButNoAge = memory.patientName && !memory.age;
-
-    if (looksLikeAge && hasNameButNoAge) {
-      const age = this._extractAgeAdvanced(text);
-      if (age !== null) {
-        this.logger.info('V7_AGE_FALLBACK', { age, source: 'context_number' });
-        await Leads.findByIdAndUpdate(leadId, { 'patientInfo.age': age });
-        memory.age = age;
-        await saveContext(leadId, memory);
-
-        // Continua o fluxo com a idade preenchida
-        const missing = getMissingSlots(memory);
-        if (missing.length === 0) {
-          return { command: 'SEND_MESSAGE', payload: { text: await this._handleOfferBooking(memory, lead, text) } };
-        } else {
-          await leadRepository.setAwaitingResponse(leadId, missing[0].field);
-          return { command: 'SEND_MESSAGE', payload: { text: this._handleDataCollection(missing[0], memory) } };
-        }
-      }
-    }
-
-    // 🔴 HARD INTERRUPT #1: Encerramento de conversa (NUNCA entra no pipeline)
-    if (this._isHardStopMessage(text)) {
-      this.logger.info('V7_HARD_STOP', { reason: 'closing_message' });
-      return { command: 'NO_REPLY' }; // Silêncio educado é resposta
-    }
-
-    // 🔴 HARD INTERRUPT #2: Cancelamento explícito
-    if (this._isCancellation(text)) {
-      await this._clearSchedulingState(leadId);
-      return {
-        command: 'SEND_MESSAGE',
-        payload: { text: 'Tudo bem! Cancelado aqui 😊 Se precisar de algo depois, é só chamar!' }
-      };
-    }
-
-    // 🔥 FIX DO LOOP: Se tem um step pendente, processa direto, não recalcula rota
-    const currentStep = lead.pendingPatientInfoStep || lead.awaitingResponse;
-    if (currentStep === 'age') {
-      const age = this._extractAgeAdvanced(text);
-      if (age !== null) {
-        // Salvou idade, limpa flag
-        await leadRepository.setAwaitingResponse(leadId, null);
-        await Leads.findByIdAndUpdate(leadId, { 'patientInfo.age': age });
-        // Continua fluxo normal agora que temos o dado
-        return this.process({ lead: { ...lead, awaitingResponse: null }, message });
-      } else {
-        // Não entendeu, repete a pergunta específica (não recalcula)
-        return {
-          command: 'SEND_MESSAGE',
-          payload: { text: `Não entendi direito 😅\n\n${lead.patientName || 'A criança'} tem quantos meses ou anos? (Ex: 8 meses, ou 2 anos)` }
-        };
-      }
-    }
-
-    if (lead.awaitingResponse === 'NAME' && text) {
-      const name = this._extractNameSimple(text);
-      if (name && name.length > 2 && !['tem', 'boa', 'olá'].includes(name.toLowerCase())) {
-        await leadRepository.setAwaitingResponse(leadId, 'AGE');
-        await Leads.findByIdAndUpdate(leadId, { 'patientInfo.fullName': name });
-        return {
-          command: 'SEND_MESSAGE',
-          payload: { text: `Que nome lindo, ${name}! 💚\n\nE ${name} tem quantos meses ou anos?` }
-        };
-      } else {
-        return {
-          command: 'SEND_MESSAGE',
-          payload: { text: `Pode me falar o nome novamente? Só o primeiro nome já ajuda 😊` }
-        };
-      }
-    }
-
     try {
-      // 🔧 Normaliza estado do lead antes de processar
-      const normalizedLead = this._normalizeLeadState(lead);
+      lead = this._normalizeLeadState(lead);
+      const leadId = lead?._id;
+      const text = message?.content || message?.text || '';
 
-      // 1️⃣ PERCEPÇÃO: Detectar fatos
-      const facts = await perceptionService.analyze(text, normalizedLead, memory);
-
-      if (facts.entities?.patientName && lead.awaitingResponse !== 'NAME') {
-        delete facts.entities.patientName;
+      // 🔴 Adicionar isto:
+      if (this._isHardStopMessage(text)) {
+        return { command: 'NO_REPLY' }; // ou 'SEND_MESSAGE' com despedida
       }
 
-      // 🔧 FIX: Valida nome extraído antes de merge
-      if (facts.entities?.patientName && !this._isValidPatientName(facts.entities.patientName)) {
-        this.logger.info('V7_INVALID_NAME_REJECTED', {
-          rejectedName: facts.entities.patientName
-        });
-        delete facts.entities.patientName; // Remove nome inválido
+      if (this._isCancellation(text)) {
+        await this._clearSchedulingState(leadId);
+        return { command: 'SEND_MESSAGE', payload: { text: 'Entendido! Cancelado aqui pra você 😊' } };
       }
 
-      const context = mergeContext(memory, facts.entities);
+      this.logger.info('V7_INTELLIGENT_START', { leadId });
 
-      this.logger.debug('V7_FACTS', perceptionService.summarize(facts));
+      // 1. CARREGA CONTEXTO
+      const memory = await loadContext(leadId);
 
-      // 2️⃣ COGNIÇÃO: Validar elegibilidade clínica
-      const clinicalAuth = await clinicalEligibility.validate({
-        therapy: facts.therapies.primary || context.therapy,
-        age: facts.entities.age || context.age,
-        text,
-        clinicalHistory: normalizedLead.clinicalHistory || {}
-      });
+      // 2. ANÁLISE 
+      const facts = await perceptionService.analyze(text, lead, memory);
 
-      if (clinicalAuth.blocked) {
-        if (clinicalAuth.context) {
-          await leadRepository.updateClinicalContext(leadId, clinicalAuth.context);
-        }
-        if (clinicalAuth.escalate) {
-          await leadRepository.escalateToHuman(leadId, {
-            reason: clinicalAuth.reason,
-            priority: 'high',
-            notes: clinicalAuth.message
-          });
-        }
-        await saveContext(leadId, context);
-        return { command: 'SEND_MESSAGE', payload: { text: clinicalAuth.message } };
+      // 🔥 3. CONSULTA SABEDORIA HISTÓRICA (Learning Service)
+      const sabedoria = await this._consultarSabedoriaHistorica(facts, text, lead, memory);
+      if (sabedoria) {
+        memory.wisdom = sabedoria;
       }
 
-      if (clinicalAuth.context?.inheritedFrom) {
-        context.therapy = clinicalAuth.context.therapy;
+      // 4. ROTEAMENTO INTELIGENTE (Aqui está a mudança)
+      // Se tem sabedoria específica de preço, usa ela direto
+      if (sabedoria?.tipo === 'price') {
+        const respostaPreco = this._montarRespostaPrecoInteligente(memory.therapy, sabedoria);
+        await saveContext(leadId, memory);
+        return { command: 'SEND_MESSAGE', payload: { text: respostaPreco } };
       }
 
-      if (clinicalAuth.priority === 'HIGH') {
-        context.priority = 'HIGH';
-        context.clinicalNotes = clinicalAuth.context?.clinicalPriority;
+      // Se é redirecionamento médico (neuropediatra), usa sabedoria
+      if (sabedoria?.tipo === 'redirecionamento_medico') {
+        await saveContext(leadId, memory);
+        return { command: 'SEND_MESSAGE', payload: { text: sabedoria.estrategia } };
       }
 
-      // 3️⃣ ROTEAMENTO: Determinar ação
-      const route = this._determineRoute(facts, context, normalizedLead);
+      // Senão, usa o fluxo antigo (que funciona)
+      const route = this._determineRoute(facts, memory, lead);
+      const response = await this._executeRoute(route, { facts, context: memory, lead, text });
 
-      this.logger.info('V7_ROUTE', { type: route.type, intent: facts.intent.type });
-
-      // 4️⃣ AÇÃO: Executar handler
-      const response = await this._executeRoute(route, {
-        facts,
-        context,
-        lead: normalizedLead, // Usa lead normalizado
-        text
-      });
-
-      // 5️⃣ PERSISTÊNCIA: Salvar contexto
-      await saveContext(leadId, context);
-
-      this.logger.info('V7_COMPLETE', { leadId, route: route.type, responseLength: response.length || 0 });
-
+      await saveContext(leadId, memory);
+      // No método process, antes do return final (linha 103):
+      if (!response) {
+        return { command: 'NO_REPLY' };
+      }
       return { command: 'SEND_MESSAGE', payload: { text: response } };
 
     } catch (error) {
-      this.logger.error('V7_ERROR', { leadId, error: error.message, stack: error.stack });
+      this.logger.error('V7_CRITICAL_ERROR', { error: error.message, stack: error.stack });
       return {
         command: 'SEND_MESSAGE',
-        payload: { text: 'Oi! Sou a Amanda da Fono Inova 💚 Vou pedir pra equipe te retornar, tudo bem? 😊' }
+        payload: { text: 'Ops, deu um probleminha técnico aqui! 😅 Pode repetir sua mensagem?' }
       };
     }
   }
 
+
+  /**
+ * 🧠 Consulta o "livro de receitas" da clínica antes de responder
+ */
+  async _consultarSabedoriaHistorica(facts, text, lead, memory) {
+    try {
+      // Busca insights mais recentes (cache por 5 min para não bater toda hora)
+      if (!this.insightsCache || Date.now() - this.cacheTime > 300000) {
+        this.insightsCache = await getLatestInsights();
+        this.cacheTime = Date.now();
+      }
+
+      if (!this.insightsCache?.data) return null;
+
+      const { data } = this.insightsCache;
+      const intencao = facts.intent?.type || '';
+      const textoLower = text.toLowerCase();
+
+      // CASO 1: Pergunta de Preço
+      if (intencao === 'price_inquiry' || /preço|valor|custa|r\$/i.test(textoLower)) {
+        // Detecta cenário
+        const scenario = this._detectarCenarioPreco(lead, memory);
+
+        // Busca resposta de preço para esse cenário
+        const respostaPreco = data.effectivePriceResponses?.find(r =>
+          r.scenario === scenario || r.scenario === 'generic'
+        );
+
+        if (respostaPreco) {
+          return {
+            tipo: 'price',
+            respostaExemplo: respostaPreco.response,
+            cenario: scenario,
+            confianca: 'alta' // veio de lead que converteu
+          };
+        }
+      }
+
+      // CASO 2: Saudação/Início
+      if (intencao === 'greeting' || /^(oi|olá|bom dia|boa tarde)/i.test(textoLower)) {
+        const abertura = data.bestOpeningLines?.find(o =>
+          o.leadOrigin === lead.origin || o.leadOrigin === 'desconhecida'
+        );
+
+        if (abertura) {
+          return {
+            tipo: 'opening',
+            respostaExemplo: abertura.text,
+            tom: 'acolhedor',
+            origemMatch: abertura.leadOrigin
+          };
+        }
+      }
+
+      // CASO 3: Pergunta sobre especialidade médica (Neuropediatra, etc)
+      if (/neuropediatra|neurologista|pediatra/i.test(textoLower)) {
+        // Busca em successfulClosingQuestions se tem redirecionamento
+        const redirecionamento = data.successfulClosingQuestions?.find(q =>
+          q.question.toLowerCase().includes('neuro') ||
+          q.question.toLowerCase().includes('direcion')
+        );
+
+        if (redirecionamento) {
+          return {
+            tipo: 'redirecionamento_medico',
+            estrategia: 'Não temos médico, temos terapia',
+            perguntaExemplo: redirecionamento.question,
+            contexto: '_converteram_para_neuropsico'
+          };
+        }
+      }
+
+      return null;
+
+    } catch (err) {
+      console.error('[Orchestrator] Erro ao consultar sabedoria:', err);
+      return null;
+    }
+  }
+
+  /**
+ * 💰 Monta resposta de preço: Valor do pricing.js + Estratégia do Learning
+ */
+  _montarRespostaPrecoInteligente(therapy, wisdom) {
+    // 1. Pega valor REAL do pricing.js (fonte da verdade)
+    const pricing = getTherapyPricing(therapy) || { avaliacao: 200 };
+    const valorAtual = formatPrice(pricing.avaliacao);
+
+    // 2. Se não tem sabedoria histórica, usa resposta padrão
+    if (!wisdom || !wisdom.respostaExemplo) {
+      return `A avaliação é ${valorAtual}. Trabalhamos com reembolso de plano! 💚`;
+    }
+
+    // 3. Pega o template que converteu do Learning Service
+    const template = wisdom.respostaExemplo;
+
+    // 4. Substitui o valor antigo do template pelo valor atual do pricing.js
+    // Ex: Template tinha "R$ 200", pricing.js tem "R$ 250" → substitui
+    let respostaFinal = template.replace(/R\$\s*[\d\.,]+/g, valorAtual);
+
+    // 5. Se o template não tinha o emoji da clínica, adiciona
+    if (!respostaFinal.includes('💚')) {
+      respostaFinal += ' 💚';
+    }
+
+    return respostaFinal;
+  }
+
+  /**
+   * Detecta em qual estágio está o lead para usar resposta de preço correta
+   */
+  _detectarCenarioPreco(lead, memory) {
+    if (lead.messageCount <= 2) return 'first_contact';
+    if (memory.schedulingRequested) return 'returning';
+    if (lead.messageCount > 10) return 'engaged';
+    return 'generic';
+  }
 
   /**
  * Detecta mensagens que devem PARAR o pipeline imediatamente
@@ -284,7 +275,7 @@ export default class WhatsAppOrchestratorV7 {
     }
 
     // Emoji puro
-    return /^[👍🙏☺️❤️💚✅]+$/u.test(lower);
+    return /^[\u{1F44D}\u{1F64F}\u{263A}\u{2764}\u{1F49A}\u{2705}]+$/u.test(lower);
   }
 
   /**
@@ -305,19 +296,15 @@ export default class WhatsAppOrchestratorV7 {
       }
     });
   }
-  _extractNameSimple(text) {
-    // Remove "meu nome é", "é", etc
-    let cleaned = text.replace(/^(meu nome é|é|nome|chamo|sou)\s*/i, '').trim();
-    // Pega primeira parte (primeiro nome + sobrenome se tiver)
-    return cleaned.split(/\s+/).slice(0, 2).join(' ');
-  }
 
   /**
    * Determina rota baseado em fatos
    * @private
    */
   _determineRoute(facts, context, lead) {
+    if (!facts) return { type: 'INITIAL_GREETING' };
     const { intent, flags, therapies } = facts;
+    if (!lead) return { type: 'INITIAL_GREETING' };
 
     // 🔴 Se o nome extraído é suspeito (contém "adulto", "criança", etc), ignora ele
     if (facts.entities?.patientName && /(adulto|criança|para|bebê)/i.test(facts.entities.patientName)) {
@@ -325,7 +312,7 @@ export default class WhatsAppOrchestratorV7 {
     }
 
     // Hard guard no roteador também (defesa em profundidade)
-    if (facts.intent.type === 'social_closing') {
+    if (facts.intent?.type === 'social_closing') {
       return { type: 'SILENT_STOP' };
     }
 
@@ -337,7 +324,7 @@ export default class WhatsAppOrchestratorV7 {
       return { type: 'BOOKING_FLOW' };
     }
 
-    if (flags.givingUp || flags.refusesOrDenies || intent.type === 'objection') {
+    if (flags?.givingUp || flags?.refusesOrDenies || intent?.type === 'objection') {
       return { type: 'OBJECTION', objectionType: flags.givingUp ? 'giving_up' : 'general' };
     }
 
@@ -426,14 +413,21 @@ export default class WhatsAppOrchestratorV7 {
   }
 
   _handlePriceInquiry(context) {
-    const { therapy } = context;
+    const { therapy, wisdom } = context;
+
+    // Se tem sabedoria histórica (aprendeu das conversas que converteram)
+    if (wisdom?.tipo === 'price') {
+      return this._montarRespostaPrecoInteligente(therapy, wisdom);
+    }
+
+    // Fallback: resposta hardcoded antiga (quando não tem dados no Learning ainda)
     const info = therapy ? THERAPY_DATA[therapy] : null;
 
     if (info) {
       return `Pra ${info.name} ${info.emoji}:\n\n${info.valor}\n\nÉ ${info.investimento} (${info.duracao})\n\nE o melhor: trabalhamos com reembolso de plano! 💚\n\nQuer que eu busque os horários?`;
     }
 
-    return `Nossos valores:\n\n💬 Fonoaudiologia: R$ 200\n🧠 Psicologia: R$ 200\n🏃 Fisioterapia: R$ 200\n📚 Psicopedagogia: R$ 200\n🎵 Musicoterapia: R$ 180\n🧩 Neuropsicologia: R$ 400\n\nTrabalhamos com reembolso de plano! 💚`;
+    return `Nossos valores:\n\n💬 Fonoaudiologia: ${PRICES.avaliacaoInicial}\n🧠 Psicologia: ${PRICES.avaliacaoInicial}\n🏃 Fisioterapia: ${PRICES.avaliacaoInicial}\n📚 Psicopedagogia: ${PRICES.avaliacaoInicial}\n🎵 Musicoterapia: ${PRICES.sessaoAvulsa}\n🧩 Neuropsicologia: ${PRICES.neuropsicologica}\n\nTrabalhamos com reembolso de plano! 💚`;
   }
 
   _handleLocationInquiry() {
