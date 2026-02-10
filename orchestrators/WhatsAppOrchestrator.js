@@ -1,4 +1,4 @@
-// orchestrators/WhatsAppOrchestrator.js
+// orchestrators/WhatsAppOrchestratorV7.js
 // Correções aplicadas:
 // 1. Tratamento de "NÃO" string nos campos pending (Bug crítico dos logs)
 // 2. Validação de nome extraído (evita "Aceita Unimed")
@@ -9,6 +9,7 @@ import { buildDecisionContext } from '../adapters/BookingContextAdapter.js';
 import { clinicalEligibility } from '../domain/policies/ClinicalEligibility.js';
 import BookingHandler from '../handlers/BookingHandler.js';
 import { leadRepository } from '../infrastructure/persistence/LeadRepository.js';
+import Leads from '../models/Leads.js';
 import { perceptionService } from '../perception/PerceptionService.js';
 import { findAvailableSlots } from '../services/amandaBookingService.js';
 import { getMissingSlots, loadContext, mergeContext, saveContext } from '../services/intelligence/ContextManager.js';
@@ -18,9 +19,9 @@ import { THERAPY_DATA } from '../utils/therapyDetector.js';
 /**
  * Orchestrator V7 - Pipeline Arquitetural (CORRIGIDO)
  */
-export default class WhatsAppOrchestrator {
+export default class WhatsAppOrchestratorV7 {
   constructor() {
-    this.logger = new Logger('WhatsAppOrchestrator');
+    this.logger = new Logger('WhatsAppOrchestratorV7');
   }
 
   /**
@@ -75,11 +76,70 @@ export default class WhatsAppOrchestrator {
     return true;
   }
 
+  _extractAgeAdvanced(text) {
+    const lower = text.toLowerCase();
+
+    // Meses: "1 mes", "2 meses", "1 mês e 10 dias"
+    const monthMatch = lower.match(/(\d+)\s*m[eê]s(es)?/i);
+    if (monthMatch) {
+      return parseInt(monthMatch[1]) / 12; // Converte pra anos (0.083 = 1 mês)
+    }
+
+    // Dias: "40 dias" (menos de 1 ano = 0)
+    const dayMatch = lower.match(/(\d+)\s*dias?/i);
+    if (dayMatch) return 0;
+
+    // Anos: "2 anos"
+    const yearMatch = lower.match(/(\d+)\s*anos?/);
+    if (yearMatch) return parseInt(yearMatch[1]);
+
+    // Número solto: "2"
+    if (/^\d+$/.test(text.trim())) return parseInt(text.trim());
+
+    return null;
+  }
+
   async process({ lead, message }) {
-    const leadId = lead?._id?.toString() || 'unknown';
+    const leadId = lead?._id; // Mantém como ObjectId
+    const leadIdStr = leadId?.toString() || 'unknown'; // Só pra logs
     const text = message?.content || message?.text || '';
 
     this.logger.info('V7_START', { leadId, text: text.substring(0, 80) });
+
+    // 🔥 FIX DO LOOP: Se tem um step pendente, processa direto, não recalcula rota
+    if (lead.awaitingResponse === 'AGE' && text) {
+      const age = this._extractAgeAdvanced(text);
+      if (age !== null) {
+        // Salvou idade, limpa flag
+        await leadRepository.setAwaitingResponse(leadId, null);
+        await Leads.findByIdAndUpdate(leadId, { 'patientInfo.age': age });
+        // Continua fluxo normal agora que temos o dado
+        return this.process({ lead: { ...lead, awaitingResponse: null }, message });
+      } else {
+        // Não entendeu, repete a pergunta específica (não recalcula)
+        return {
+          command: 'SEND_MESSAGE',
+          payload: { text: `Não entendi direito 😅\n\n${lead.patientName || 'A criança'} tem quantos meses ou anos? (Ex: 8 meses, ou 2 anos)` }
+        };
+      }
+    }
+
+    if (lead.awaitingResponse === 'NAME' && text) {
+      const name = this._extractNameSimple(text);
+      if (name && name.length > 2 && !['tem', 'boa', 'olá'].includes(name.toLowerCase())) {
+        await leadRepository.setAwaitingResponse(leadId, 'AGE');
+        await Leads.findByIdAndUpdate(leadId, { 'patientInfo.fullName': name });
+        return {
+          command: 'SEND_MESSAGE',
+          payload: { text: `Que nome lindo, ${name}! 💚\n\nE ${name} tem quantos meses ou anos?` }
+        };
+      } else {
+        return {
+          command: 'SEND_MESSAGE',
+          payload: { text: `Pode me falar o nome novamente? Só o primeiro nome já ajuda 😊` }
+        };
+      }
+    }
 
     try {
       // 🔧 Normaliza estado do lead antes de processar
@@ -162,6 +222,13 @@ export default class WhatsAppOrchestrator {
     }
   }
 
+  _extractNameSimple(text) {
+    // Remove "meu nome é", "é", etc
+    let cleaned = text.replace(/^(meu nome é|é|nome|chamo|sou)\s*/i, '').trim();
+    // Pega primeira parte (primeiro nome + sobrenome se tiver)
+    return cleaned.split(/\s+/).slice(0, 2).join(' ');
+  }
+
   /**
    * Determina rota baseado em fatos
    * @private
@@ -219,6 +286,8 @@ export default class WhatsAppOrchestrator {
         return this._handleInsuranceInquiry();
 
       case 'COLLECT_DATA':
+        await leadRepository.setAwaitingResponse(lead._id, route.missingSlot.field);
+
         return this._handleDataCollection(route.missingSlot, context);
 
       case 'OFFER_BOOKING':
