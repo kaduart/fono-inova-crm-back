@@ -89,26 +89,30 @@ router.post('/webhook', agendaAuth, async (req, res) => {
     // ✅ EMITIR SOCKET PARA O FRONT (igual whatsappController)
     // Linha ~115 (após criar o 'pre') - SUBSTITUA POR:
 
-    // Aguarda 3.5s igual WhatsApp faz (debounce) para garantir conexão estável
-    setTimeout(() => {
-      try {
-        const io = getIo();
-        io.emit("preagendamento:new", {
-          id: String(pre._id),
-          patientName: pre.patientInfo.fullName,
-          phone: pre.patientInfo.phone,
-          specialty: pre.specialty,
-          preferredDate: pre.preferredDate,
-          preferredTime: pre.preferredTime,
-          status: pre.status,
-          urgency: pre.urgency,
-          createdAt: pre.createdAt
-        });
-        console.log(`📡 Socket emitido: preagendamento:new ${pre._id}`);
-      } catch (socketError) {
-        console.error('⚠️ Erro ao emitir socket:', socketError.message);
-      }
-    }, 3500); // 3.5 segundos igual WhatsApp
+    try {
+      
+      const io = getIo();
+      console.log("IO ID:", io._ids || io.engine?.clientsCount || io);
+      console.log("🔍 DEBUG SOCKET:");
+      console.log("  - io.engine.clientsCount:", io.engine.clientsCount);
+      console.log("  - io.sockets.sockets.size:", io.sockets.sockets.size);
+      console.log("  - Socket IDs:", Array.from(io.sockets.sockets.keys()));
+    
+      io.emit("preagendamento:new", {
+        id: String(pre._id),
+        patientName: pre.patientInfo.fullName,
+        phone: pre.patientInfo.phone,
+        specialty: pre.specialty,
+        preferredDate: pre.preferredDate,
+        preferredTime: pre.preferredTime,
+        status: pre.status,
+        urgency: pre.urgency,
+        createdAt: pre.createdAt
+      });
+      console.log(`📡 Socket emitido: preagendamento:new ${pre._id}`);
+    } catch (socketError) {
+      console.error('⚠️ Erro ao emitir socket:', socketError.message);
+    }
 
     res.status(201).json({
       success: true,

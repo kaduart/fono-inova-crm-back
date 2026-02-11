@@ -8,20 +8,20 @@ export const initializeSocket = (server) => {
     console.log("⚡ Socket.IO já inicializado, reutilizando instância");
     return io;
   }
-
+  console.log("IO INIT:", io);
   const isDev = process.env.NODE_ENV === "development";
 
   io = new Server(server, {
     cors: {
       origin: [
         "http://localhost:5173",
-        "https://app.clinicafonoinova.com.br", // Removi espaço no final
-        "https://fono-inova-crm-front.vercel.app", // Removi espaço no final
+        "https://app.clinicafonoinova.com.br",
+        "https://fono-inova-crm-front.vercel.app",
       ],
       methods: ["GET", "POST"],
       credentials: true,
     },
-    transports: isDev ? ["polling", "websocket"] : ["websocket"],
+    transports: ["polling", "websocket"], // ✅ SEMPRE aceitar ambos
     allowEIO3: true,
     pingTimeout: 60000,
     pingInterval: 25000,
