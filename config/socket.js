@@ -1,16 +1,22 @@
 import { Server } from "socket.io";
 
-let io;
+let io = null; // Inicia como null
 
 export const initializeSocket = (server) => {
+  // ✅ SINGLETON: Se já existe, retorna a instância existente
+  if (io) {
+    console.log("⚡ Socket.IO já inicializado, reutilizando instância");
+    return io;
+  }
+
   const isDev = process.env.NODE_ENV === "development";
 
   io = new Server(server, {
     cors: {
       origin: [
         "http://localhost:5173",
-        "https://app.clinicafonoinova.com.br",
-        "https://fono-inova-crm-front.vercel.app",
+        "https://app.clinicafonoinova.com.br", // Removi espaço no final
+        "https://fono-inova-crm-front.vercel.app", // Removi espaço no final
       ],
       methods: ["GET", "POST"],
       credentials: true,
@@ -23,15 +29,14 @@ export const initializeSocket = (server) => {
 
   io.on("connection", (socket) => {
     console.log("⚡ Novo cliente conectado:", socket.id);
+    console.log("👥 Total de clientes:", io.engine.clientsCount); // Log útil
 
-    // ✅ Debug de eventos
     socket.onAny((event, data) => {
-      if (event !== "ping") { // Evita spam de log
-        console.log("📨 [EVENTO VINDO DO CLIENTE]", event, data);
+      if (event !== "ping") {
+        console.log("📨 [CLIENTE → SERVER]", event);
       }
     });
 
-    // ✅ HEARTBEAT - responde ping com pong
     socket.on("ping", () => {
       socket.emit("pong");
     });
@@ -41,15 +46,13 @@ export const initializeSocket = (server) => {
     });
   });
 
-  // ✅ Diagnóstico do servidor (emissão e clientes conectados)
-  io.on("whatsapp:new_message", (data) => {
-    console.log("📡 [DEBUG SERVER] Evento whatsapp:new_message foi emitido:", data);
-  });
-
   return io;
 };
 
 export const getIo = () => {
-  if (!io) throw new Error("❌ Socket.IO não inicializado!");
+  if (!io) {
+    console.error("❌ getIo() chamado antes de initializeSocket()");
+    throw new Error("Socket.IO não inicializado");
+  }
   return io;
 };

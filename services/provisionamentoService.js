@@ -1,9 +1,9 @@
 import moment from 'moment-timezone';
 import Appointment from '../models/Appointment.js';
-import Payment from '../models/Payment.js';
-import Package from '../models/Package.js';
 import Expense from '../models/Expense.js';
 import Lead from '../models/Leads.js';
+import Package from '../models/Package.js';
+import Payment from '../models/Payment.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
@@ -13,10 +13,11 @@ const TIMEZONE = 'America/Sao_Paulo';
  */
 export const calcularProvisionamento = async (mes, ano) => {
   const startDate = `${ano}-${String(mes).padStart(2, '0')}-01`;
-  const endDate = moment(`${ano}-${mes}-01`).endOf('month').format('YYYY-MM-DD');
-  
+
+  const endDate = moment(`${ano}-${String(mes).padStart(2, '0')}-01`).endOf('month').format('YYYY-MM-DD');
+
   const periodo = { inicio: startDate, fim: endDate };
-  
+
   // Executar em paralelo
   const [
     garantido,
@@ -37,16 +38,16 @@ export const calcularProvisionamento = async (mes, ano) => {
   // Aplicar taxas de risco
   const agendadoAltoRisco = agendadoConfirmado.total * 0.85; // 85% comparecem
   const agendadoMedioRisco = agendadoPendente.total * 0.40;  // 40% confirma e vai
-  
+
   const totalProvisionado = garantido + agendadoAltoRisco + agendadoMedioRisco + pipeline;
   const indiceCerteza = totalProvisionado > 0 ? garantido / totalProvisionado : 0;
-  
+
   // Break-even (20% de margem mínima)
   const breakEven = custosFixos * 1.2;
-  
+
   return {
     periodo: { mes: parseInt(mes), ano: parseInt(ano), inicio: startDate, fim: endDate },
-    
+
     camadas: {
       garantido: {
         valor: Math.round(garantido),
@@ -78,30 +79,30 @@ export const calcularProvisionamento = async (mes, ano) => {
         cor: 'info'
       }
     },
-    
+
     total: Math.round(totalProvisionado),
     indiceCerteza: parseFloat(indiceCerteza.toFixed(2)),
-    
-    status: indiceCerteza >= 0.70 ? 'SEGURO' : 
-            indiceCerteza >= 0.40 ? 'ATENCAO' : 'PERIGO',
-    
+
+    status: indiceCerteza >= 0.70 ? 'SEGURO' :
+      indiceCerteza >= 0.40 ? 'ATENCAO' : 'PERIGO',
+
     custos: {
       fixos: custosFixos,
       breakEven: breakEven,
       margemSeguranca: Math.round(totalProvisionado - breakEven),
       diasParaBreakEven: calcularDiasParaBreakEven(garantido, custosFixos, moment().tz(TIMEZONE))
     },
-    
+
     porEspecialidade: agruparPorEspecialidade({
       agendadoConfirmado: agendadoConfirmado.porEspecialidade,
       agendadoPendente: agendadoPendente.porEspecialidade
     }),
-    
+
     metricas: {
       taxaConfirmacao24h: metricasHistoricas.taxaConfirmacao,
       taxaPresenca: metricasHistoricas.taxaPresenca
     },
-    
+
     alertas: gerarAlertas({
       indiceCerteza,
       agendadoPendente,
@@ -124,22 +125,22 @@ const calcularGarantido = async (periodo) => {
     status: 'paid',
     paymentDate: { $gte: periodo.inicio, $lte: periodo.fim }
   });
-  
+
   const totalPayments = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
-  
+
   // Crédito remanescente de pacotes (sessões pagas não consumidas)
   const pacotes = await Package.find({
     financialStatus: { $in: ['paid', 'partially_paid'] },
     status: { $in: ['active', 'in-progress'] }
   });
-  
+
   const creditoPacotes = pacotes.reduce((sum, pkg) => {
     const sessoesPagas = pkg.paidSessions || 0;
     const sessoesFeitas = pkg.sessionsDone || 0;
     const sessoesRemanescentes = Math.max(0, sessoesPagas - sessoesFeitas);
     return sum + (sessoesRemanescentes * (pkg.sessionValue || 0));
   }, 0);
-  
+
   return totalPayments + creditoPacotes;
 };
 
@@ -152,13 +153,13 @@ const calcularAgendadoConfirmado = async (periodo) => {
     operationalStatus: { $in: ['confirmed', 'scheduled'] },
     paymentStatus: { $nin: ['paid', 'package_paid'] } // Não contar já pagos
   }).select('sessionValue specialty serviceType');
-  
+
   const porEspecialidade = {};
   agendamentos.forEach(apt => {
     const key = `${apt.specialty}_${apt.serviceType}`;
     porEspecialidade[key] = (porEspecialidade[key] || 0) + (apt.sessionValue || 0);
   });
-  
+
   return {
     total: agendamentos.reduce((sum, a) => sum + (a.sessionValue || 0), 0),
     quantidade: agendamentos.length,
@@ -172,21 +173,28 @@ const calcularAgendadoConfirmado = async (periodo) => {
 const calcularAgendadoPendente = async (periodo) => {
   const pendentes = await Appointment.find({
     date: { $gte: periodo.inicio, $lte: periodo.fim },
-    operationalStatus: 'pending'
-  }).select('sessionValue specialty serviceType patient date time').populate('patient', 'fullName');
-  
+    $or: [
+      { operationalStatus: 'pending' },
+      { operationalStatus: 'scheduled' },
+      { operationalStatus: { $exists: false } }
+    ],
+    clinicalStatus: { $nin: ['completed', 'cancelled'] }
+  })
+    .select('sessionValue specialty serviceType patient date time')
+    .populate('patient', 'fullName');
+
   const agora = moment().tz(TIMEZONE);
   const porEspecialidade = {};
-  
+
   const detalhes = pendentes.map(apt => {
     const dataApt = moment(apt.date);
     const horasRestantes = dataApt.diff(agora, 'hours');
-    const risco = horasRestantes <= 24 ? 'urgente' : 
-                  horasRestantes <= 72 ? 'medio' : 'baixo';
-    
+    const risco = horasRestantes <= 24 ? 'urgente' :
+      horasRestantes <= 72 ? 'medio' : 'baixo';
+
     const key = `${apt.specialty}_${apt.serviceType}`;
     porEspecialidade[key] = (porEspecialidade[key] || 0) + (apt.sessionValue || 0);
-    
+
     return {
       id: apt._id,
       paciente: apt.patient?.fullName,
@@ -196,11 +204,11 @@ const calcularAgendadoPendente = async (periodo) => {
       especialidade: apt.specialty,
       horasRestantes,
       risco,
-      acaoSugerida: risco === 'urgente' ? 'ligar_agora' : 
-                    risco === 'medio' ? 'enviar_lembrete' : 'aguardar'
+      acaoSugerida: risco === 'urgente' ? 'ligar_agora' :
+        risco === 'medio' ? 'enviar_lembrete' : 'aguardar'
     };
   });
-  
+
   return {
     total: pendentes.reduce((sum, a) => sum + (a.sessionValue || 0), 0),
     quantidade: pendentes.length,
@@ -218,7 +226,7 @@ const calcularPipeline = async (periodo) => {
     status: { $in: ['interessado_agendamento', 'triagem_agendamento', 'agendado'] },
     createdAt: { $gte: new Date(periodo.inicio) }
   });
-  
+
   // Valor estimado baseado na especialidade (ticket médio estimado)
   const ticketMedio = 180; // R$ 180 média
   return leads.length * ticketMedio * 0.30; // 30% de conversão estimada
@@ -237,7 +245,7 @@ const calcularCustosFixos = async (periodo) => {
       { category: { $in: ['payroll', 'operational'] } }
     ]
   });
-  
+
   return despesas.reduce((sum, d) => sum + (d.amount || 0), 0);
 };
 
@@ -246,35 +254,35 @@ const calcularCustosFixos = async (periodo) => {
  */
 const calcularMetricasHistoricas = async () => {
   const dataCorte = moment().subtract(90, 'days').toDate();
-  
+
   // Taxa de confirmação (pending → confirmed/scheduled)
   const pendingTotal = await Appointment.countDocuments({
     operationalStatus: 'pending',
     createdAt: { $gte: dataCorte }
   });
-  
+
   const confirmedTotal = await Appointment.countDocuments({
     operationalStatus: { $in: ['confirmed', 'scheduled'] },
     createdAt: { $gte: dataCorte }
   });
-  
-  const taxaConfirmacao = (pendingTotal + confirmedTotal) > 0 
-    ? confirmedTotal / (pendingTotal + confirmedTotal) 
+
+  const taxaConfirmacao = (pendingTotal + confirmedTotal) > 0
+    ? confirmedTotal / (pendingTotal + confirmedTotal)
     : 0.50;
-  
+
   // Taxa de presença (confirmed/scheduled → completed)
   const agendadosTotal = await Appointment.countDocuments({
     operationalStatus: { $in: ['confirmed', 'scheduled'] },
     date: { $gte: moment().subtract(30, 'days').format('YYYY-MM-DD') }
   });
-  
+
   const completedTotal = await Appointment.countDocuments({
     clinicalStatus: 'completed',
     date: { $gte: moment().subtract(30, 'days').format('YYYY-MM-DD') }
   });
-  
+
   const taxaPresenca = agendadosTotal > 0 ? completedTotal / agendadosTotal : 0.85;
-  
+
   return {
     taxaConfirmacao: parseFloat(taxaConfirmacao.toFixed(2)),
     taxaPresenca: parseFloat(taxaPresenca.toFixed(2))
@@ -285,7 +293,7 @@ const calcularMetricasHistoricas = async () => {
 
 const agruparPorEspecialidade = (dados) => {
   const resultado = {};
-  
+
   // Consolidar dados de diferentes camadas
   Object.keys(dados).forEach(camada => {
     const porEspec = dados[camada];
@@ -301,27 +309,27 @@ const agruparPorEspecialidade = (dados) => {
       resultado[key].total = resultado[key].confirmado + resultado[key].pendente;
     });
   });
-  
+
   return Object.values(resultado);
 };
 
 const calcularDiasParaBreakEven = (garantido, custosFixos, dataAtual) => {
   if (garantido >= custosFixos) return 0;
   if (custosFixos <= 0) return 0;
-  
+
   const diaAtual = dataAtual.date();
   if (diaAtual <= 0) return 30;
-  
+
   const mediaDiaria = garantido / diaAtual;
   if (mediaDiaria <= 0) return 30;
-  
+
   const diasNecessarios = (custosFixos - garantido) / mediaDiaria;
   return Math.max(0, Math.ceil(diasNecessarios));
 };
 
 const gerarAlertas = ({ indiceCerteza, agendadoPendente, custosFixos, totalProvisionado }) => {
   const alertas = [];
-  
+
   if (indiceCerteza < 0.40) {
     alertas.push({
       tipo: 'error',
@@ -335,7 +343,7 @@ const gerarAlertas = ({ indiceCerteza, agendadoPendente, custosFixos, totalProvi
       acao: 'confirmar_agendamentos'
     });
   }
-  
+
   const urgentes = agendadoPendente.detalhes?.filter(d => d.risco === 'urgente') || [];
   if (urgentes.length > 0) {
     alertas.push({
@@ -345,7 +353,7 @@ const gerarAlertas = ({ indiceCerteza, agendadoPendente, custosFixos, totalProvi
       itens: urgentes
     });
   }
-  
+
   if (totalProvisionado < custosFixos) {
     alertas.push({
       tipo: 'warning',
@@ -353,7 +361,7 @@ const gerarAlertas = ({ indiceCerteza, agendadoPendente, custosFixos, totalProvi
       acao: 'aumentar_captacao'
     });
   }
-  
+
   return alertas;
 };
 
@@ -362,8 +370,8 @@ const gerarAlertas = ({ indiceCerteza, agendadoPendente, custosFixos, totalProvi
 export const confirmarAgendamentosMassa = async (ids) => {
   const resultado = await Appointment.updateMany(
     { _id: { $in: ids } },
-    { 
-      $set: { 
+    {
+      $set: {
         operationalStatus: 'confirmed',
         confirmedAt: new Date()
       },
@@ -383,8 +391,8 @@ export const confirmarAgendamentosMassa = async (ids) => {
 export const liberarVagasMassa = async (ids, motivo = 'Não confirmou') => {
   const resultado = await Appointment.updateMany(
     { _id: { $in: ids } },
-    { 
-      $set: { 
+    {
+      $set: {
         operationalStatus: 'canceled',
         clinicalStatus: 'missed',
         canceledAt: new Date(),
@@ -401,4 +409,314 @@ export const liberarVagasMassa = async (ids, motivo = 'Não confirmou') => {
     }
   );
   return { sucesso: true, quantidade: resultado.modifiedCount };
+};
+
+
+
+/**
+ * Busca pacotes em andamento para a aba de Pacotes
+ */
+export const getPacotesEmAndamento = async () => {
+  const Package = (await import('../models/Package.js')).default;
+  const Session = (await import('../models/Session.js')).default;
+
+  // Buscar packages ativos
+  const packages = await Package.find({
+    $or: [
+      { status: { $in: ['active', 'in-progress'] } },
+      { financialStatus: { $in: ['paid', 'partially_paid'] } }
+    ]
+  })
+    .populate('patient', 'fullName')
+    .populate('doctor', 'fullName specialty')
+    .lean();
+
+  const resultado = [];
+  let index = 1;
+
+  for (const pkg of packages) {
+    // Contar sessões realizadas
+    const sessoesRealizadas = await Session.countDocuments({
+      package: pkg._id,
+      status: { $in: ['completed', 'realizado'] }
+    });
+
+    const totalSessoes = pkg.totalSessions || 1;
+
+    if (sessoesRealizadas < totalSessoes) {
+      const percentual = totalSessoes > 0 ? (sessoesRealizadas / totalSessoes) * 100 : 0;
+      const valorTotal = pkg.totalValue || 0;
+      const valorPorSessao = totalSessoes > 0 ? valorTotal / totalSessoes : 0;
+      const valorProvisionado = valorPorSessao * sessoesRealizadas;
+      const aProvisionar = valorTotal - valorProvisionado;
+
+      resultado.push({
+        ID: index++,
+        'Data Venda': pkg.createdAt ? moment(pkg.createdAt).format('YYYY-MM-DD') : moment().format('YYYY-MM-DD'),
+        Cliente: pkg.patient?.fullName || 'N/A',
+        Pacote: `Pacote ${totalSessoes} Sessões${pkg.sessionType ? ' - ' + pkg.sessionType : ''}`,
+        Categoria: pkg.doctor?.specialty || 'Não categorizado',
+        'Valor Total': valorTotal,
+        'Total Sessões': totalSessoes,
+        Realizadas: sessoesRealizadas,
+        Restantes: totalSessoes - sessoesRealizadas,
+        '% Concluído': percentual,
+        'Valor Provisionado': valorProvisionado,
+        'A Provisionar': aProvisionar
+      });
+    }
+  }
+
+  return resultado;
+};
+
+/**
+ * Gera relatório analítico completo (base de dados, faturamento por mês/categoria)
+ */
+export const gerarRelatorioAnalitico = async (mes, ano) => {
+  const mesCompetencia = `${ano}-${String(mes).padStart(2, '0')}`;
+  const startDate = `${ano}-${String(mes).padStart(2, '0')}-01`;
+
+  const endDate = moment(`${ano}-${String(mes).padStart(2, '0')}-01`).endOf('month').format('YYYY-MM-DD');
+
+  const Payment = (await import('../models/Payment.js')).default;
+  const Appointment = (await import('../models/Appointment.js')).default;
+
+  // Buscar pagamentos do período
+  const payments = await Payment.find({
+    status: 'paid',
+    paymentDate: { $gte: startDate, $lte: endDate }
+  })
+    .populate('patient', 'fullName')
+    .populate('doctor', 'fullName specialty')
+    .populate('session')
+    .lean();
+
+  // Buscar appointments realizados
+  const appointments = await Appointment.find({
+    date: { $gte: startDate, $lte: endDate },
+    clinicalStatus: 'completed'
+  })
+    .populate('patient', 'fullName')
+    .populate('doctor', 'fullName specialty')
+    .lean();
+
+  // Montar base de dados analítica
+  const baseDados = [];
+  let idCounter = 1;
+
+  // Processar pagamentos
+  payments.forEach(payment => {
+    const valor = payment.amount || 0;
+    const impostos = valor * 0.06; // 6% Simples
+    const comissao = valor * 0.10; // 10%
+    const taxaCartao = payment.paymentMethod?.includes('card') ? valor * 0.04 : 0;
+    const totalCV = impostos + comissao + taxaCartao;
+
+    baseDados.push({
+      ID_Venda: `PAY${String(idCounter++).padStart(3, '0')}`,
+      Data_Venda: payment.paymentDate || payment.createdAt,
+      Cliente: payment.patient?.fullName || 'N/A',
+      Tipo_Produto: payment.kind === 'package_receipt' ? 'Pacote' : 'Avulso',
+      Categoria: payment.doctor?.specialty || 'Não categorizado',
+      Valor_Bruto: valor,
+      Desconto: 0,
+      Valor_Liquido: valor,
+      CMV: 0,
+      Impostos: parseFloat(impostos.toFixed(2)),
+      Comissao: parseFloat(comissao.toFixed(2)),
+      Taxa_Cartao: parseFloat(taxaCartao.toFixed(2)),
+      Total_CV: parseFloat(totalCV.toFixed(2)),
+      Margem_Contrib: parseFloat((valor - totalCV).toFixed(2)),
+      Status: 'realizado',
+      Forma_Pagamento: payment.paymentMethod || 'N/A',
+      Profissional: payment.doctor?.fullName || 'N/A'
+    });
+  });
+
+  // Consolidar por mês
+  const faturamentoMes = [];
+  for (let i = 1; i <= 12; i++) {
+    const mesLoop = String(i).padStart(2, '0');
+    const vendasMes = baseDados.filter(d => {
+      const data = moment(d.Data_Venda);
+      return data.month() + 1 === i && data.year() === parseInt(ano);
+    });
+
+    const faturamento = vendasMes.reduce((s, d) => s + d.Valor_Liquido, 0);
+    const custos = vendasMes.reduce((s, d) => s + d.Total_CV, 0);
+
+    faturamentoMes.push({
+      Mes: moment().month(i - 1).format('MMMM'),
+      'Qtd Vendas': vendasMes.length,
+      'Faturamento Bruto': faturamento,
+      'Faturamento Líquido': faturamento,
+      'Total CV': custos,
+      'Margem Contrib.': faturamento - custos,
+      '% Margem': faturamento > 0 ? (((faturamento - custos) / faturamento) * 100).toFixed(2) : 0
+    });
+  }
+
+  // Total do ano
+  const totalFaturamento = baseDados.reduce((s, d) => s + d.Valor_Liquido, 0);
+  const totalCustos = baseDados.reduce((s, d) => s + d.Total_CV, 0);
+
+  faturamentoMes.push({
+    Mes: 'TOTAL ANO',
+    'Qtd Vendas': baseDados.length,
+    'Faturamento Bruto': totalFaturamento,
+    'Faturamento Líquido': totalFaturamento,
+    'Total CV': totalCustos,
+    'Margem Contrib.': totalFaturamento - totalCustos,
+    '% Margem': totalFaturamento > 0 ? (((totalFaturamento - totalCustos) / totalFaturamento) * 100).toFixed(2) : 0
+  });
+
+  // Dashboard
+  const dashboard = {
+    'FATURAMENTO TOTAL': totalFaturamento,
+    'MARGEM DE CONTRIBUIÇÃO': totalFaturamento - totalCustos,
+    '% MARGEM': totalFaturamento > 0 ? ((totalFaturamento - totalCustos) / totalFaturamento * 100).toFixed(2) : 0,
+    'TICKET MÉDIO': baseDados.length > 0 ? (totalFaturamento / baseDados.length).toFixed(2) : 0,
+    'TOTAL DE VENDAS': baseDados.length
+  };
+
+  // Por categoria
+  const categorias = {};
+  baseDados.forEach(item => {
+    if (!categorias[item.Categoria]) {
+      categorias[item.Categoria] = {
+        Categoria: item.Categoria,
+        'Faturamento Líquido': 0,
+        'Margem Contrib.': 0,
+        'Qtd Vendas': 0
+      };
+    }
+    categorias[item.Categoria]['Faturamento Líquido'] += item.Valor_Liquido;
+    categorias[item.Categoria]['Margem Contrib.'] += item.Margem_Contrib;
+    categorias[item.Categoria]['Qtd Vendas']++;
+  });
+
+  return {
+    periodo: { month: mes, year: ano, startDate, endDate },
+    baseDados: baseDados.sort((a, b) => new Date(a.Data_Venda) - new Date(b.Data_Venda)),
+    faturamentoMes,
+    faturamentoCategoria: Object.values(categorias),
+    dashboard,
+    pacotesAndamento: await getPacotesEmAndamento()
+  };
+};
+
+/**
+ * Exporta dados para Excel
+ */
+export const exportarExcel = async (mes, ano) => {
+  const dados = await gerarRelatorioAnalitico(mes, ano);
+
+  return {
+    filename: `provisionamento_${ano}_${String(mes).padStart(2, '0')}.xlsx`,
+    abas: [
+      { nome: 'Base de Dados', dados: dados.baseDados },
+      { nome: 'Faturamento por Mês', dados: dados.faturamentoMes },
+      { nome: 'Faturamento por Categoria', dados: dados.faturamentoCategoria },
+      { nome: 'Pacotes em Andamento', dados: dados.pacotesAndamento },
+      { nome: 'Dashboard', dados: [dados.dashboard] }
+    ]
+  };
+};
+
+/**
+ * Simula uma venda (para o front calcular antes de confirmar)
+ */
+export const simularVenda = async ({ valor, formaPagamento, bandeiraCartao, parcelas, produtoId }) => {
+  const ProdutoServico = (await import('../models/ProdutoServico.js')).default;
+  const TaxaCartao = (await import('../models/TaxaCartao.js')).default;
+
+  const produto = await ProdutoServico.findById(produtoId);
+  if (!produto) throw new Error('Produto não encontrado');
+
+  // Calcular taxa
+  let taxaCartao = 0;
+  if (['debito', 'credito_1x', 'credito_parcelado'].includes(formaPagamento)) {
+    const config = await TaxaCartao.findOne({ bandeira: bandeiraCartao, ativo: true });
+    if (config) {
+      const tipo = formaPagamento === 'debito' ? 'debito' : 'credito';
+      const numParcelas = formaPagamento === 'credito_parcelado' ? parcelas : 1;
+      const pct = config.getTaxa ? config.getTaxa(tipo, numParcelas) : (tipo === 'debito' ? 0.90 : 1.85);
+      taxaCartao = parseFloat((valor * (pct / 100)).toFixed(2));
+    }
+  }
+
+  const cmv = produto.custoMercadoria || 0;
+  const comissao = parseFloat((valor * ((produto.comissaoPercentual || 10) / 100)).toFixed(2));
+  const imposto = parseFloat((valor * 0.06).toFixed(2));
+
+  const totalCustos = cmv + comissao + taxaCartao + imposto;
+  const margem = valor - totalCustos;
+
+  return {
+    valor,
+    custos: {
+      cmv,
+      imposto,
+      comissao,
+      taxaCartao,
+      total: totalCustos
+    },
+    margemContribuicao: margem,
+    percentualMargem: ((margem / valor) * 100).toFixed(2)
+  };
+};
+
+export const criarVenda = async (dadosVenda) => {
+  // Implementação básica - criar Sale e calcular custos
+  const Sale = (await import('../models/Sale.js')).default;
+  const Package = (await import('../models/Package.js')).default;
+
+  const venda = new Sale({
+    ...dadosVenda,
+    mesCompetencia: moment(dadosVenda.dataVenda).format('YYYY-MM')
+  });
+
+  if (dadosVenda.tipoVenda === 'pacote' && dadosVenda.packageId) {
+    const pkg = await Package.findById(dadosVenda.packageId);
+    if (pkg) {
+      venda.pacoteInfo = {
+        totalSessoes: pkg.totalSessions,
+        sessoesRealizadas: 0,
+        valorPorSessao: dadosVenda.valorLiquido / pkg.totalSessions,
+        saldoAProvisionar: dadosVenda.valorLiquido
+      };
+    }
+  }
+
+  await venda.save();
+  return venda;
+};
+
+export const realizarSessao = async (sessionId, dataRealizacao) => {
+  const Session = (await import('../models/Session.js')).default;
+  const session = await Session.findById(sessionId);
+
+  if (!session) throw new Error('Sessão não encontrada');
+
+  session.status = 'completed';
+  session.dataRealizacao = dataRealizacao;
+  await session.save();
+
+  return { session, provisionado: true };
+};
+
+
+// ==================== EXPORT DEFAULT ====================
+
+export default {
+  calcularProvisionamento,
+  confirmarAgendamentosMassa,
+  liberarVagasMassa,
+  getPacotesEmAndamento,
+  gerarRelatorioAnalitico,
+  exportarExcel,
+  simularVenda,
+  criarVenda,
+  realizarSessao
 };

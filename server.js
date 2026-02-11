@@ -22,7 +22,7 @@ import Followup from "./models/Followup.js";
 import { getRedis, startRedis } from "./services/redisClient.js";
 import { registerWebhook } from "./services/sicoobService.js";
 import { sanitizeStack } from './middleware/sanitize.js';
-
+import salesRoutes from './routes/sales.js';
 import { startLearningCron } from "./crons/learningCron.js";
 
 // ======================================================
@@ -148,7 +148,7 @@ const corsOptions = {
 };
 
 app.use(
- cors(corsOptions)
+  cors(corsOptions)
 );
 app.options("*", cors(corsOptions));
 
@@ -188,9 +188,10 @@ app.use('/api/protocols', protocolRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/cashflow', cashflowRoutes);
 app.use('/api/planning', planningRoutes);
-app.use('/api/provisionamento', provisionamentoRoutes);
 app.use('/api/pre-agendamento', preAgendamentoRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/sales', salesRoutes);
+app.use('/api/provisionamento', provisionamentoRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);
