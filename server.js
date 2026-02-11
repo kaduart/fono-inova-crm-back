@@ -86,6 +86,13 @@ const app = express();
 const server = http.createServer(app);
 const io = initializeSocket(server);
 
+console.log("🖥️ INSTANCE INFO:", {
+  nodeAppInstance: process.env.NODE_APP_INSTANCE, // PM2 cluster ID
+  pmId: process.env.pm_id,
+  instances: process.env.instances,
+  isCluster: process.env.NODE_APP_INSTANCE !== undefined
+});
+
 // 🔹 Iniciar cron jobs
 scheduleMonthlyCommissions();
 iniciarJobConfirmacao();
