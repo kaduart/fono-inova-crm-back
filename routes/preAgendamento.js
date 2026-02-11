@@ -8,6 +8,7 @@ import Patient from '../models/Patient.js';
 import Doctor from '../models/Doctor.js';
 import { bookFixedSlot } from '../services/amandaBookingService.js';
 import { findDoctorByName } from '../utils/doctorHelper.js';
+import { getIo } from '../config/socket.js';
 
 const router = express.Router();
 
@@ -18,30 +19,30 @@ const router = express.Router();
 router.post('/webhook', agendaAuth, async (req, res) => {
   try {
     console.log('[WEBHOOK] Payload recebido:', JSON.stringify(req.body, null, 2));
-    
+
     // Suporta dois formatos de payload:
     // 1. Formato antigo: patientName, patientPhone, preferredDate, etc.
     // 2. Formato agenda externa: patientInfo { fullName, phone }, date, time, etc.
-    
+
     const payload = req.body;
-    
+
     // Extrai dados do paciente (ambos os formatos)
     const patientName = payload.patientName || payload.patientInfo?.fullName;
     const patientPhone = payload.patientPhone || payload.patientInfo?.phone;
     const patientEmail = payload.patientEmail || payload.patientInfo?.email;
     const patientBirthDate = payload.patientBirthDate || payload.patientInfo?.birthDate;
-    
+
     // Extrai datas e horários (ambos os formatos)
     const preferredDate = payload.preferredDate || payload.date;
     const preferredTime = payload.preferredTime || payload.time;
-    
+
     // Outros campos
     const specialty = payload.specialty;
     const professionalName = payload.professionalName;
     const source = payload.source || 'agenda_externa';
     // Suporta externalId, id, ou firebaseAppointmentId (da agenda externa)
     const externalId = payload.externalId || payload.id || payload.firebaseAppointmentId || `ext_${Date.now()}`;
-    
+
     // Validação
     if (!patientName || !patientPhone || !preferredDate) {
       return res.status(400).json({
@@ -84,7 +85,31 @@ router.post('/webhook', agendaAuth, async (req, res) => {
     });
 
     console.log(`[WEBHOOK] ✅ PreAgendamento criado: ${pre._id} - ${patientName}`);
-    
+
+    // ✅ EMITIR SOCKET PARA O FRONT (igual whatsappController)
+    // Linha ~115 (após criar o 'pre') - SUBSTITUA POR:
+
+    // Aguarda 3.5s igual WhatsApp faz (debounce) para garantir conexão estável
+    setTimeout(() => {
+      try {
+        const io = getIo();
+        io.emit("preagendamento:new", {
+          id: String(pre._id),
+          patientName: pre.patientInfo.fullName,
+          phone: pre.patientInfo.phone,
+          specialty: pre.specialty,
+          preferredDate: pre.preferredDate,
+          preferredTime: pre.preferredTime,
+          status: pre.status,
+          urgency: pre.urgency,
+          createdAt: pre.createdAt
+        });
+        console.log(`📡 Socket emitido: preagendamento:new ${pre._id}`);
+      } catch (socketError) {
+        console.error('⚠️ Erro ao emitir socket:', socketError.message);
+      }
+    }, 3500); // 3.5 segundos igual WhatsApp
+
     res.status(201).json({
       success: true,
       id: pre._id,
@@ -130,11 +155,11 @@ router.post('/:id/importar-externo', agendaAuth, async (req, res) => {
 
     // 2. Buscar doutor (por ID ou por nome)
     let doctor = null;
-    
+
     if (doctorId) {
       doctor = await Doctor.findById(doctorId).session(session);
     }
-    
+
     // Se não achou por ID, tenta por nome usando o helper existente
     if (!doctor && pre.professionalName) {
       const doctorData = await findDoctorByName(pre.professionalName);
@@ -142,11 +167,11 @@ router.post('/:id/importar-externo', agendaAuth, async (req, res) => {
         doctor = await Doctor.findById(doctorData._id).session(session);
       }
     }
-    
+
     if (!doctor) {
       throw new Error(`Doutor não encontrado. ID: ${doctorId}, Nome: ${pre.professionalName}`);
     }
-    
+
     console.log(`[IMPORTAR-EXTERNO] Doutor encontrado: ${doctor.fullName} (${doctor._id})`);
 
     // 3. Importar usando bookFixedSlot
@@ -168,9 +193,9 @@ router.post('/:id/importar-externo', agendaAuth, async (req, res) => {
       status: 'scheduled',
       notes: `[IMPORTADO DA AGENDA EXTERNA] ${notes || ''}\n${pre.secretaryNotes || ''}`
     };
-    
+
     console.log('[IMPORTAR-EXTERNO] bookFixedSlot params:', JSON.stringify(bookParams, null, 2));
-    
+
     const result = await bookFixedSlot(bookParams);
 
     if (!result.success) {
@@ -187,6 +212,19 @@ router.post('/:id/importar-externo', agendaAuth, async (req, res) => {
     await session.commitTransaction();
 
     console.log(`[IMPORTAR-EXTERNO] ✅ Importado: ${result.appointment._id}`);
+
+    // ✅ EMITIR SOCKET
+    try {
+      const io = getIo();
+      io.emit("preagendamento:imported", {
+        preAgendamentoId: id,
+        appointmentId: result.appointment._id,
+        patientId: result.patientId,
+        timestamp: new Date()
+      });
+    } catch (socketError) {
+      console.error('⚠️ Erro ao emitir socket:', socketError.message);
+    }
 
     res.json({
       success: true,
@@ -236,7 +274,7 @@ router.get('/', authorize(['admin', 'secretary']), async (req, res) => {
     } else {
       filters.status = { $nin: ['importado', 'descartado'] };
     }
-    
+
     if (specialty) filters.specialty = specialty;
     if (urgency) filters.urgency = urgency;
     if (assignedTo) filters.assignedTo = assignedTo;
@@ -363,6 +401,19 @@ router.post('/:id/assign', authorize(['admin', 'secretary']), async (req, res) =
       { new: true }
     );
 
+    // ✅ EMITIR SOCKET
+    try {
+      const io = getIo();
+      io.emit("preagendamento:updated", {
+        id: String(pre._id),
+        status: pre.status,
+        assignedTo: pre.assignedTo?.fullName || req.user.fullName,
+        action: 'assigned'
+      });
+    } catch (e) {
+      console.error('⚠️ Socket error:', e.message);
+    }
+
     res.json({ success: true, data: pre });
 
   } catch (error) {
@@ -396,6 +447,19 @@ router.post('/:id/contact', authorize(['admin', 'secretary']), async (req, res) 
       },
       { new: true }
     );
+
+    // ✅ EMITIR SOCKET
+    try {
+      const io = getIo();
+      io.emit("preagendamento:contact", {
+        id: String(pre._id),
+        attemptCount: pre.attemptCount,
+        status: pre.status,
+        lastContact: new Date()
+      });
+    } catch (e) {
+      console.error('⚠️ Socket error:', e.message);
+    }
 
     res.json({ success: true, data: pre });
 

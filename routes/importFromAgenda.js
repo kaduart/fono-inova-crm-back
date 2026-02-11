@@ -2,6 +2,7 @@ import axios from "axios";
 import express from "express";
 import mongoose from "mongoose";
 import { agendaAuth } from "../middleware/agendaAuth.js";
+import { getIo } from "../config/socket.js"; // ✅ ADICIONAR IMPORT
 import Doctor from "../models/Doctor.js";
 import Package from "../models/Package.js";
 import PreAgendamento from "../models/PreAgendamento.js";
@@ -15,8 +16,7 @@ const api = axios.create({ baseURL: API_BASE, timeout: 8000 });
 
 /**
  * POST /api/import-from-agenda
- * Recebe da agenda externa e cria PRE-AGENDAMENTO (não Appointment ainda)
- * A secretária confirma depois via painel de Pré-Agendamentos
+ * Recebe da agenda externa e cria PRE-AGENDAMENTO
  */
 router.post("/import-from-agenda", agendaAuth, async (req, res) => {
   try {
@@ -35,10 +35,10 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
     const crm = crmRaw || {};
     const cleanPhone = (patientInfo?.phone || "").replace(/\D/g, "");
 
-    // 1) Buscar doutor (apenas para validação e preenchimento)
+    // 1) Buscar doutor
     const doctor = await findDoctorByName(professionalName);
-    
-    // 2) Verificar se paciente já existe
+
+    // 2) Verificar se paciente já existe...
     let patientId = null;
     try {
       const patientResponse = await api.post(
@@ -63,7 +63,7 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
       }
     }
 
-    // 3) Criar PRE-AGENDAMENTO (não cria Appointment ainda!)
+    // 3) Criar PRÉ-AGENDAMENTO
     const preAgendamento = await PreAgendamento.create({
       source: 'agenda_externa',
       externalId: firebaseAppointmentId,
@@ -89,6 +89,25 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
       ].filter(Boolean).join('\n')
     });
 
+    // ✅ EMITIR SOCKET (novo pré-agendamento)
+    try {
+      const io = getIo();
+      io.emit("preagendamento:new", {
+        id: String(preAgendamento._id),
+        patientName: preAgendamento.patientInfo.fullName,
+        phone: preAgendamento.patientInfo.phone,
+        specialty: preAgendamento.specialty,
+        preferredDate: preAgendamento.preferredDate,
+        preferredTime: preAgendamento.preferredTime,
+        status: preAgendamento.status,
+        urgency: preAgendamento.urgency,
+        createdAt: preAgendamento.createdAt
+      });
+      console.log(`📡 Socket emitido: preagendamento:new ${preAgendamento._id}`);
+    } catch (socketError) {
+      console.error('⚠️ Erro ao emitir socket:', socketError.message);
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Pré-agendamento criado com sucesso!',
@@ -106,70 +125,16 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
 });
 
 /**
- * POST /api/import-from-agenda/:id/confirmar
- * (Opcional) Endpoint para confirmar direto se necessário
- */
-router.post("/import-from-agenda/:id/confirmar", agendaAuth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { doctorId, date, time, sessionValue } = req.body;
-
-    const pre = await PreAgendamento.findById(id);
-    if (!pre) {
-      return res.status(404).json({ success: false, error: 'Pré-agendamento não encontrado' });
-    }
-
-    // Importar usando bookFixedSlot
-    const result = await bookFixedSlot({
-      patientInfo: {
-        fullName: pre.patientInfo.fullName,
-        birthDate: pre.patientInfo.birthDate,
-        phone: pre.patientInfo.phone,
-        email: pre.patientInfo.email
-      },
-      doctorId: doctorId || pre.professionalId,
-      specialty: pre.specialty,
-      date: date || pre.preferredDate,
-      time: time || pre.preferredTime,
-      sessionValue: sessionValue || pre.suggestedValue,
-      status: 'scheduled',
-      notes: `[IMPORTADO DO PRE-AGENDAMENTO ${pre._id}]`
-    });
-
-    if (!result.success) {
-      return res.status(400).json(result);
-    }
-
-    // Atualizar pré-agendamento
-    pre.status = 'importado';
-    pre.importedToAppointment = result.appointment._id;
-    pre.importedAt = new Date();
-    await pre.save();
-
-    return res.json({
-      success: true,
-      appointmentId: result.appointment._id,
-      message: 'Agendamento confirmado e importado!'
-    });
-
-  } catch (err) {
-    console.error("[IMPORT_CONFIRM] error:", err);
-    return res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-/**
  * POST /api/import-from-agenda/confirmar-por-external-id
- * Confirma usando o externalId (firebaseAppointmentId) ao invés do _id do MongoDB
- * Resolve o problema: agenda externa não tem acesso ao _id do MongoDB
+ * Confirma usando o externalId
  */
 router.post("/import-from-agenda/confirmar-por-external-id", agendaAuth, async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const { 
-      externalId,  // ID do Firebase (ex: "-OkjTXe5naICvwl2jQLX")
+    const {
+      externalId,
       doctorId,
       date,
       time,
@@ -185,13 +150,12 @@ router.post("/import-from-agenda/confirmar-por-external-id", agendaAuth, async (
 
     console.log(`[CONFIRMAR-POR-EXTERNAL-ID] Buscando pré-agendamento com externalId: ${externalId}`);
 
-    // Buscar pelo externalId (firebaseAppointmentId)
     const pre = await PreAgendamento.findOne({ externalId }).session(session);
-    
+
     if (!pre) {
       await session.abortTransaction();
-      return res.status(404).json({ 
-        success: false, 
+      return res.status(404).json({
+        success: false,
         error: 'Pré-agendamento não encontrado',
         externalId
       });
@@ -199,27 +163,27 @@ router.post("/import-from-agenda/confirmar-por-external-id", agendaAuth, async (
 
     if (pre.status === 'importado') {
       await session.commitTransaction();
-      return res.json({ 
-        success: true, 
-        message: 'Já foi importado', 
-        appointmentId: pre.importedToAppointment 
+      return res.json({
+        success: true,
+        message: 'Já foi importado',
+        appointmentId: pre.importedToAppointment
       });
     }
 
-    // Buscar doutor (por ID ou por nome)
+    // Buscar doutor...
     let doctor = null;
-    
+
     if (doctorId) {
       doctor = await Doctor.findById(doctorId).session(session);
     }
-    
+
     if (!doctor && pre.professionalName) {
       const doctorData = await findDoctorByName(pre.professionalName);
       if (doctorData) {
         doctor = await Doctor.findById(doctorData._id).session(session);
       }
     }
-    
+
     if (!doctor) {
       await session.abortTransaction();
       throw new Error(`Doutor não encontrado. ID: ${doctorId}, Nome: ${pre.professionalName}`);
@@ -246,7 +210,7 @@ router.post("/import-from-agenda/confirmar-por-external-id", agendaAuth, async (
       status: 'scheduled',
       notes: `[IMPORTADO DA AGENDA EXTERNA] ${notes || ''}\n${pre.secretaryNotes || ''}`
     };
-    
+
     const result = await bookFixedSlot(bookParams);
 
     if (!result.success) {
@@ -263,6 +227,21 @@ router.post("/import-from-agenda/confirmar-por-external-id", agendaAuth, async (
     await session.commitTransaction();
 
     console.log(`[CONFIRMAR-POR-EXTERNAL-ID] ✅ Sucesso: ${result.appointment._id}`);
+
+    // ✅ EMITIR SOCKET (importado com sucesso)
+    try {
+      const io = getIo();
+      io.emit("preagendamento:imported", {
+        preAgendamentoId: String(pre._id),
+        appointmentId: result.appointment._id,
+        patientId: result.patientId,
+        patientName: pre.patientInfo.fullName,
+        timestamp: new Date()
+      });
+      console.log(`📡 Socket emitido: preagendamento:imported ${pre._id}`);
+    } catch (socketError) {
+      console.error('⚠️ Erro ao emitir socket:', socketError.message);
+    }
 
     res.json({
       success: true,
@@ -284,11 +263,9 @@ router.post("/import-from-agenda/confirmar-por-external-id", agendaAuth, async (
   }
 });
 
-
 /**
  * POST /api/import-from-agenda/criar-e-confirmar
- * Cria pré-agendamento E já confirma (converte para Appointment) em uma chamada só
- * Use quando o status na agenda externa já é "Confirmado"
+ * Cria pré-agendamento E já confirma em uma chamada só
  */
 router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res) => {
   const session = await mongoose.startSession();
@@ -296,7 +273,7 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
 
   try {
     const {
-      firebaseAppointmentId,  // ID do Firebase (externalId)
+      firebaseAppointmentId,
       professionalName,
       date,
       time,
@@ -312,7 +289,7 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
 
     console.log(`[CRIAR-E-CONFIRMAR] Iniciando: ${patientInfo?.fullName} (${firebaseAppointmentId})`);
 
-    // 1) Buscar ou criar paciente
+    // 1) Buscar ou criar paciente...
     let patientId = null;
     try {
       const patientResponse = await api.post(
@@ -377,7 +354,26 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
     const pre = preAgendamento[0];
     console.log(`[CRIAR-E-CONFIRMAR] Pré-agendamento criado: ${pre._id}`);
 
-    // 4) JÁ CONFIRMA (importa para Appointment)
+    // ✅ EMITIR SOCKET (novo pré-agendamento)
+    try {
+      const io = getIo();
+      io.emit("preagendamento:new", {
+        id: String(pre._id),
+        patientName: pre.patientInfo.fullName,
+        phone: pre.patientInfo.phone,
+        specialty: pre.specialty,
+        preferredDate: pre.preferredDate,
+        preferredTime: pre.preferredTime,
+        status: pre.status,
+        urgency: pre.urgency,
+        createdAt: pre.createdAt
+      });
+      console.log(`📡 Socket emitido: preagendamento:new ${pre._id}`);
+    } catch (socketError) {
+      console.error('⚠️ Erro ao emitir socket (novo):', socketError.message);
+    }
+
+    // 4) JÁ CONFIRMA
     const bookParams = {
       patientInfo: {
         fullName: pre.patientInfo.fullName,
@@ -414,6 +410,23 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
 
     console.log(`[CRIAR-E-CONFIRMAR] ✅ Sucesso: ${result.appointment._id}`);
 
+    // ✅ EMITIR SOCKET (importado)
+    setTimeout(() => {
+      try {
+        const io = getIo();
+        io.emit("preagendamento:imported", {
+          preAgendamentoId: String(pre._id),
+          appointmentId: result.appointment._id,
+          patientId: result.patientId,
+          patientName: pre.patientInfo.fullName,
+          timestamp: new Date()
+        });
+        console.log(`📡 Socket emitido: preagendamento:imported ${pre._id}`);
+      } catch (socketError) {
+        console.error('⚠️ Erro ao emitir socket:', socketError.message);
+      }
+    }, 3500);
+
     return res.status(201).json({
       success: true,
       message: 'Pré-agendamento criado e confirmado!',
@@ -426,10 +439,10 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
   } catch (err) {
     await session.abortTransaction();
     console.error("[CRIAR-E-CONFIRMAR] error:", err);
-    return res.status(500).json({ 
-      success: false, 
-      code: "INTERNAL_ERROR", 
-      error: err.message 
+    return res.status(500).json({
+      success: false,
+      code: "INTERNAL_ERROR",
+      error: err.message
     });
   } finally {
     session.endSession();

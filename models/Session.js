@@ -96,6 +96,28 @@ const sessionSchema = new mongoose.Schema({
     toObject: { virtuals: true }
 });
 
+// Hook pós-save para provisionamento automático
+sessionSchema.post('findOneAndUpdate', async function (doc) {
+    if (doc && doc.status === 'completed') {
+        // Verifica se já não foi provisionado
+        const foiProvisionado = doc.wasProvisioned;
+
+        if (!foiProvisionado) {
+            try {
+                await provisionamentoService.realizarSessao(doc._id, new Date());
+
+                // Marcar como provisionado para não duplicar
+                await mongoose.model('Session').updateOne(
+                    { _id: doc._id },
+                    { $set: { wasProvisioned: true } }
+                );
+            } catch (err) {
+                console.error('Erro ao provisionar sessão:', err);
+            }
+        }
+    }
+});
+
 sessionSchema.post('findOneAndUpdate', async function (doc) {
     if (doc) await syncEvent(doc, 'session');
 });
@@ -115,6 +137,10 @@ sessionSchema.post('save', async function (doc) {
     await syncEvent(doc, 'session');
 });
 
+sessionSchema.add({
+    wasProvisioned: { type: Boolean, default: false },
+    dataRealizacao: { type: Date }
+});
 
 const Session = mongoose.model('Session', sessionSchema);
 
