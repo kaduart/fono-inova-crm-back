@@ -30,7 +30,15 @@ export default class WhatsAppOrchestratorV7 {
    * Converte strings truthy "NÃO" para null/false
    */
   _normalizeLeadState(lead) {
-    const normalized = { ...lead };
+    if (!lead) return lead;
+
+    // Se for um Mongoose Document, preserva o _id explicitamente
+    const leadId = lead._id;
+    const normalized = lead.toObject ? lead.toObject() : { ...lead };
+
+    if (leadId && !normalized._id) {
+      normalized._id = leadId;
+    }
 
     // Se for string "NÃO" ou similar, converte para null
     if (typeof normalized.pendingSchedulingSlots === 'string' &&
@@ -58,7 +66,8 @@ export default class WhatsAppOrchestratorV7 {
       'quanto', 'onde', 'como', 'quando', 'qual', 'quem', 'por que', 'porquê',
       'boa', 'bom', 'olá', 'oi', 'eae', 'hey',
       // 🔴 ADICIONAR ESSAS LINHAS:
-      'é', 'e', 'eh', 'pra', 'para', 'pro', 'adulto', 'criança', 'bebê', 'bebe'
+      'é', 'e', 'eh', 'pra', 'para', 'pro', 'adulto', 'criança', 'bebê', 'bebe',
+      'fono', 'psico', 'fisio', 'fonodiologo', 'fonoaudiologo', 'psicologo', 'fisioterapeuta'
     ];
 
     const lowerName = name.toLowerCase().trim();
@@ -68,19 +77,24 @@ export default class WhatsAppOrchestratorV7 {
       if (lowerName.startsWith(starter)) return false;
     }
 
-    // 🔴 ADICIONAR ESTE BLOCO: Se contém "para" + "adulto/criança", não é nome
-    if (/\b(para|pra)\s+(adulto|adultos|criança|criancas|bebe|bebê)\b/i.test(lowerName)) {
+    // 🔴 ADICIONAR ESTE BLOCO: Se contém "para" + "adulto/criança" ou termos de terapia, não é nome
+    if (/\b(para|pra)\s+(adulto|adultos|criança|criancas|bebe|bebê)\b/i.test(lowerName) ||
+      /\b(fono|psico|fisio|fonodiologo|fonoaudiologo|psicologo|fisioterapeuta)\b/i.test(lowerName)) {
       return false;
     }
 
     return true;
   }
 
-  async process({ lead, message }) {
+  async process({ lead, message, context: providedContext = null }) {
     try {
       lead = this._normalizeLeadState(lead);
       const leadId = lead?._id;
       const text = message?.content || message?.text || '';
+
+      if (!leadId) {
+        this.logger.warn('PROCESS_MISSING_LEAD_ID', { from: message?.from });
+      }
 
       // 🔴 Adicionar isto:
       if (this._isHardStopMessage(text)) {
@@ -95,7 +109,8 @@ export default class WhatsAppOrchestratorV7 {
       this.logger.info('V7_INTELLIGENT_START', { leadId });
 
       // 1. CARREGA CONTEXTO
-      const memory = await loadContext(leadId);
+      // 🔧 Otimização: Se o caller já passou o contexto, usa ele (evita extra DB hit)
+      const memory = (providedContext && leadId) ? providedContext : await loadContext(leadId);
 
       // 2. ANÁLISE 
       const facts = await perceptionService.analyze(text, lead, memory);

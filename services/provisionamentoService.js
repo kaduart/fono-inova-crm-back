@@ -4,6 +4,8 @@ import Expense from '../models/Expense.js';
 import Lead from '../models/Leads.js';
 import Package from '../models/Package.js';
 import Payment from '../models/Payment.js';
+import Patient from '../models/Patient.js';
+import Doctor from '../models/Doctor.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
@@ -418,53 +420,121 @@ export const liberarVagasMassa = async (ids, motivo = 'Não confirmou') => {
  */
 export const getPacotesEmAndamento = async () => {
   const Package = (await import('../models/Package.js')).default;
+
+  const packages = await Package.aggregate([
+    {
+      $match: {
+        $or: [
+          { status: { $in: ['active', 'in-progress'] } },
+          { financialStatus: { $in: ['paid', 'partially_paid'] } }
+        ]
+      }
+    },
+    {
+      $lookup: {
+        from: 'sessions', // Nome da coleção no MongoDB
+        let: { pkgId: '$_id' },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ['$package', '$$pkgId'] },
+              status: { $in: ['completed', 'realizado'] }
+            }
+          },
+          { $count: 'count' }
+        ],
+        as: 'sessionCount'
+      }
+    },
+    {
+      $addFields: {
+        sessoesRealizadas: { $ifNull: [{ $arrayElemAt: ['$sessionCount.count', 0] }, 0] }
+      }
+    },
+    {
+      $match: {
+        $expr: {
+          $lt: [
+            '$sessoesRealizadas',
+            { $ifNull: ['$totalSessions', 1] }
+          ]
+        }
+      }
+    },
+    {
+      $lookup: { from: 'patients', localField: 'patient', foreignField: '_id', as: 'patientDoc' }
+    },
+    {
+      $lookup: { from: 'doctors', localField: 'doctor', foreignField: '_id', as: 'doctorDoc' }
+    },
+    { $unwind: { path: '$patientDoc', preserveNullAndEmptyArrays: true } },
+    { $unwind: { path: '$doctorDoc', preserveNullAndEmptyArrays: true } }
+  ]);
+
+  return packages.map((pkg, index) => {
+    const totalSessoes = pkg.totalSessions || 1;
+    const sessoesRealizadas = pkg.sessoesRealizadas || 0;
+    const percentual = (sessoesRealizadas / totalSessoes) * 100;
+    const valorTotal = pkg.totalValue || 0;
+    const valorPorSessao = valorTotal / totalSessoes;
+    const valorProvisionado = valorPorSessao * sessoesRealizadas;
+
+    return {
+      ID: index + 1,
+      'Data Venda': pkg.createdAt ? moment(pkg.createdAt).format('YYYY-MM-DD') : moment().format('YYYY-MM-DD'),
+      Cliente: pkg.patientDoc?.fullName || 'N/A',
+      Pacote: `Pacote ${totalSessoes} Sessões${pkg.sessionType ? ' - ' + pkg.sessionType : ''}`,
+      Categoria: pkg.doctorDoc?.specialty || 'Não categorizado',
+      'Valor Total': valorTotal,
+      'Total Sessões': totalSessoes,
+      Realizadas: sessoesRealizadas,
+      Restantes: totalSessoes - sessoesRealizadas,
+      '% Concluído': percentual,
+      'Valor Provisionado': valorProvisionado,
+      'A Provisionar': valorTotal - valorProvisionado
+    };
+  });
+};
+
+/**
+ * Busca histórico de pacotes concluídos
+ */
+export const getPacotesConcluidos = async () => {
+  const Package = (await import('../models/Package.js')).default;
   const Session = (await import('../models/Session.js')).default;
 
-  // Buscar packages ativos
   const packages = await Package.find({
     $or: [
-      { status: { $in: ['active', 'in-progress'] } },
-      { financialStatus: { $in: ['paid', 'partially_paid'] } }
+      { status: 'completed' },
+      { sessionsDone: { $gte: 1 }, $expr: { $gte: ['$sessionsDone', '$totalSessions'] } }
     ]
   })
     .populate('patient', 'fullName')
     .populate('doctor', 'fullName specialty')
+    .sort({ updatedAt: -1 })
+    .limit(100)
     .lean();
 
   const resultado = [];
   let index = 1;
 
   for (const pkg of packages) {
-    // Contar sessões realizadas
-    const sessoesRealizadas = await Session.countDocuments({
-      package: pkg._id,
-      status: { $in: ['completed', 'realizado'] }
-    });
-
+    const sessoesRealizadas = pkg.sessionsDone || 0;
     const totalSessoes = pkg.totalSessions || 1;
+    const valorTotal = pkg.totalValue || 0;
 
-    if (sessoesRealizadas < totalSessoes) {
-      const percentual = totalSessoes > 0 ? (sessoesRealizadas / totalSessoes) * 100 : 0;
-      const valorTotal = pkg.totalValue || 0;
-      const valorPorSessao = totalSessoes > 0 ? valorTotal / totalSessoes : 0;
-      const valorProvisionado = valorPorSessao * sessoesRealizadas;
-      const aProvisionar = valorTotal - valorProvisionado;
-
-      resultado.push({
-        ID: index++,
-        'Data Venda': pkg.createdAt ? moment(pkg.createdAt).format('YYYY-MM-DD') : moment().format('YYYY-MM-DD'),
-        Cliente: pkg.patient?.fullName || 'N/A',
-        Pacote: `Pacote ${totalSessoes} Sessões${pkg.sessionType ? ' - ' + pkg.sessionType : ''}`,
-        Categoria: pkg.doctor?.specialty || 'Não categorizado',
-        'Valor Total': valorTotal,
-        'Total Sessões': totalSessoes,
-        Realizadas: sessoesRealizadas,
-        Restantes: totalSessoes - sessoesRealizadas,
-        '% Concluído': percentual,
-        'Valor Provisionado': valorProvisionado,
-        'A Provisionar': aProvisionar
-      });
-    }
+    resultado.push({
+      ID: index++,
+      'Data Venda': pkg.createdAt ? moment(pkg.createdAt).format('YYYY-MM-DD') : moment().format('YYYY-MM-DD'),
+      'Data Conclusão': pkg.updatedAt ? moment(pkg.updatedAt).format('YYYY-MM-DD') : '-',
+      Cliente: pkg.patient?.fullName || 'N/A',
+      Pacote: `Pacote ${totalSessoes} Sessões${pkg.sessionType ? ' - ' + pkg.sessionType : ''}`,
+      Categoria: pkg.doctor?.specialty || 'N/A',
+      'Valor Total': valorTotal,
+      'Total Sessões': totalSessoes,
+      Realizadas: sessoesRealizadas,
+      StatusFinanceiro: pkg.financialStatus
+    });
   }
 
   return resultado;
@@ -597,13 +667,42 @@ export const gerarRelatorioAnalitico = async (mes, ano) => {
   });
 
   return {
-    periodo: { month: mes, year: ano, startDate, endDate },
-    baseDados: baseDados.sort((a, b) => new Date(a.Data_Venda) - new Date(b.Data_Venda)),
+    dashboard,
+    baseDados,
     faturamentoMes,
     faturamentoCategoria: Object.values(categorias),
-    dashboard,
-    pacotesAndamento: await getPacotesEmAndamento()
+    pacotesAndamento: await getPacotesEmAndamento(),
+    porPaciente: consolidarPorPaciente(baseDados)
   };
+};
+
+/**
+ * Agrupa base analítica por paciente
+ */
+const consolidarPorPaciente = (baseDados) => {
+  const pacientes = {};
+  baseDados.forEach(item => {
+    if (!pacientes[item.Cliente]) {
+      pacientes[item.Cliente] = {
+        paciente: item.Cliente,
+        totalGasto: 0,
+        qtdVendas: 0,
+        categorias: new Set(),
+        ultimaVenda: item.Data_Venda
+      };
+    }
+    pacientes[item.Cliente].totalGasto += item.Valor_Liquido;
+    pacientes[item.Cliente].qtdVendas++;
+    pacientes[item.Cliente].categorias.add(item.Categoria);
+    if (new Date(item.Data_Venda) > new Date(pacientes[item.Cliente].ultimaVenda)) {
+      pacientes[item.Cliente].ultimaVenda = item.Data_Venda;
+    }
+  });
+
+  return Object.values(pacientes).map(p => ({
+    ...p,
+    categorias: Array.from(p.categorias).join(', ')
+  })).sort((a, b) => b.totalGasto - a.totalGasto);
 };
 
 /**
@@ -714,6 +813,7 @@ export default {
   confirmarAgendamentosMassa,
   liberarVagasMassa,
   getPacotesEmAndamento,
+  getPacotesConcluidos,
   gerarRelatorioAnalitico,
   exportarExcel,
   simularVenda,

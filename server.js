@@ -71,9 +71,11 @@ import planningRoutes from './routes/planning.js';
 import provisionamentoRoutes from './routes/provisionamento.js';
 import preAgendamentoRoutes from './routes/preAgendamento.js';
 import { iniciarJobConfirmacao } from './jobs/confirmacaoJob.js';
+import { scheduleDailyAlerts } from './jobs/dailyAlerts.js';
 import compression from 'compression';
 import importFromAgendaRouter from './routes/importFromAgenda.js';
 import dashboardRoutes from './routes/dashboard.js';
+import financialAnalyticsRoutes from './routes/analytics/financial.routes.js';
 
 // ======================================================
 // 🧭 Inicialização base
@@ -96,6 +98,7 @@ console.log("🖥️ INSTANCE INFO:", {
 // 🔹 Iniciar cron jobs
 scheduleMonthlyCommissions();
 iniciarJobConfirmacao();
+scheduleDailyAlerts();
 
 const PORT = process.env.PORT || 5000;
 
@@ -199,6 +202,7 @@ app.use('/api/pre-agendamento', preAgendamentoRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/provisionamento', provisionamentoRoutes);
+app.use('/api/analytics/financial', financialAnalyticsRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);
