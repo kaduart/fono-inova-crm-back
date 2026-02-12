@@ -254,6 +254,17 @@ db.patients.find(
 const id = ObjectId("686e7f2bb26f4da03d426e7b");
 db.patients.findOne({ _id: id });
 
+
+/* 
+    ## TESTES AMANDA 
+
+    node tests/amanda/simulacao-conversa.test.js
+    27 cenários RN + clinicWisdom + edge cases	Sempre
+    node tests/amanda/run-94-scenarios.js
+    94 cenários reais de WhatsApp	Antes de deploy 
+
+*/
+
 // 1️⃣ Deletar todas as mensagens do número
 const phone = "556181694922";
 

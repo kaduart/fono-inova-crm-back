@@ -59,7 +59,9 @@ const leadSchema = new mongoose.Schema({
       'triagem_agendamento',
       'engajado',
       'interessado_agendamento',
-      'paciente'
+      'interessado_agendamento',
+      'paciente',
+      'parceria_profissional'
     ],
     default: 'novo',
     index: true
