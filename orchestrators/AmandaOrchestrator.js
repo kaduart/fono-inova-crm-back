@@ -673,6 +673,7 @@ export async function getOptimizedAmandaResponse({
         flags.asksLocation ||
         /psicopedagog/i.test(text) ||
         /linguinha|fren[uú]lo|freio\s*ling/i.test(text) ||
+        /ne[iu]ropsico/i.test(text) ||
         /dificuldade.*(escola|ler|escrever|aprendizagem|leitura|escrita)/i.test(text) ||
         /escola.*(dificuldade|problema|nota|rendimento)/i.test(text) ||
         /(conv[eê]nio|plano\s*(de\s*)?sa[uú]de|unimed|ipasgo|hapvida|bradesco|amil)/i.test(text);
@@ -713,6 +714,7 @@ export async function getOptimizedAmandaResponse({
             flags.wantsPartnershipOrResume ||
             /psicopedagog/i.test(text) ||
             /linguinha|fren[uú]lo|freio\s*ling/i.test(text) ||
+            /ne[iu]ropsico/i.test(text) ||
             /dificuldade.*(escola|ler|escrever|aprendizagem|leitura|escrita)/i.test(text) ||
             /escola.*(dificuldade|problema|nota|rendimento)/i.test(text) ||
             /(conv[eê]nio|plano\s*(de\s*)?sa[uú]de|unimed|ipasgo|hapvida|bradesco|amil)/i.test(text);
@@ -724,7 +726,7 @@ export async function getOptimizedAmandaResponse({
             const period = extractPeriodFromText(text);
             if (!period) {
                 return ensureSingleHeart(
-                    "Perfeito 😊 Pra eu organizar certinho, vocês preferem **manhã ou tarde**?"
+                    "Olá! 😊 Pra eu organizar certinho, vocês preferem **manhã ou tarde**?"
                 );
             }
 
@@ -1236,7 +1238,7 @@ Em breve nossa equipe entra em contato 😊`
                     $set: { "autoBookingContext.awaitingPeriodChoice": false },
                 });
                 return ensureSingleHeart(
-                    "Pra eu puxar os horários certinho: é pra qual área (Fono, Psicologia, TO, Fisio ou Neuropsico)?"
+                    "Olá! 😊 Pra eu puxar os horários certinho: é pra qual área (Fono, Psicologia, TO, Fisio ou Neuropsico)?"
                 );
             }
 
@@ -2375,6 +2377,33 @@ Em breve nossa equipe entra em contato 😊`
 
     // IA com terapias
     if (Array.isArray(therapies) && therapies.length > 0) {
+        // ✅ FIX: Persiste a área detectada no lead para contexto futuro (ex: "Qual valor?")
+        if (lead && !lead.therapyArea) {
+            const primaryTherapy = therapies[0]?.id;
+            const areaMap = {
+                "neuropsychological": "neuropsicologia",
+                "speech": "fonoaudiologia",
+                "tongue_tie": "fonoaudiologia",
+                "psychology": "psicologia",
+                "occupational": "terapia_ocupacional",
+                "physiotherapy": "fisioterapia",
+                "music": "musicoterapia",
+                "neuropsychopedagogy": "neuropsicologia",
+                "psychopedagogy": "neuropsicologia",
+            };
+            const mappedArea = areaMap[primaryTherapy];
+
+            if (mappedArea) {
+                console.log(`💾 [ORCHESTRATOR] Persistindo área detectada: ${mappedArea}`);
+                await safeLeadUpdate(lead._id, {
+                    $set: { therapyArea: mappedArea }
+                }).catch(err => console.warn("[ORCHESTRATOR] Erro ao salvar área:", err.message));
+
+                // Atualiza objeto local
+                lead.therapyArea = mappedArea;
+            }
+        }
+
         try {
             const therapyAnswer = await callClaudeWithTherapyData({
                 therapies,
@@ -2654,7 +2683,7 @@ async function callClaudeWithTherapyData({
     context,
     analysis: passedAnalysis = null,
 }) {
-    const { getTherapyData } = await import("./therapyDetector.js");
+    const { getTherapyData } = await import("../utils/therapyDetector.js");
 
 
     const therapiesInfo = therapies
