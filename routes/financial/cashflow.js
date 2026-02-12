@@ -1,26 +1,27 @@
+// cashflow.js - VERSÃO CORRIGIDA COMPLETA
 import express from 'express';
-import moment from 'moment-timezone'; // <-- Import ES Module
+import moment from 'moment-timezone';
 import { auth } from '../../middleware/auth.js';
-import Appointment from '../../models/Appointment.js'; // <-- Importar
-import Expense from '../../models/Expense.js';
-import Package from '../../models/Package.js'; // <-- Importar
 import Payment from '../../models/Payment.js';
+import Expense from '../../models/Expense.js';
+import Appointment from '../../models/Appointment.js';
+import Package from '../../models/Package.js';
 
 const router = express.Router();
+const TIMEZONE = 'America/Sao_Paulo';
 
 /**
  * @route   GET /api/cashflow/summary
- * @desc    Resumo: Receitas - Despesas = Saldo + Atividade do período
- * @query   ?period=day&date=2026-02-11 ou ?period=month&month=2&year=2026
- * @access  Private
+ * @desc    Resumo financeiro + atividade operacional do período
+ * @query   ?period=day&date=2026-02-11 OU ?period=month&month=2&year=2026
  */
 router.get('/summary', auth, async (req, res) => {
   try {
     const { period = 'month', month, year, date } = req.query;
 
-    // Definir intervalo
     let startDateStr, endDateStr;
 
+    // Definir período
     if (period === 'day' && date) {
       startDateStr = date;
       endDateStr = date;
@@ -29,21 +30,27 @@ router.get('/summary', auth, async (req, res) => {
       const lastDay = new Date(year, month, 0).getDate();
       endDateStr = `${year}-${String(month).padStart(2, '0')}-${lastDay}`;
     } else {
-      const today = new Date().toISOString().split('T')[0];
+      const today = moment().tz(TIMEZONE).format('YYYY-MM-DD');
       startDateStr = today;
       endDateStr = today;
     }
 
-    // Converter para Date com fuso horário Brasil (UTC-3)
-    const startDateTime = moment.tz(startDateStr, 'America/Sao_Paulo').startOf('day').toDate();
-    const endDateTime = moment.tz(endDateStr, 'America/Sao_Paulo').endOf('day').toDate();
+    // Converter para Date objects com timezone BR (crucial para createdAt)
+    const startDateTime = moment.tz(startDateStr, TIMEZONE).startOf('day').toDate();
+    const endDateTime = moment.tz(endDateStr, TIMEZONE).endOf('day').toDate();
 
-    console.log('Buscando atividade de:', startDateStr, 'até', endDateStr);
-    console.log('Intervalo UTC:', startDateTime, 'até', endDateTime);
+    console.log(`[Cashflow] Período: ${startDateStr} a ${endDateStr}`);
+    console.log(`[Cashflow] Buscando createdAt entre: ${startDateTime.toISOString()} e ${endDateTime.toISOString()}`);
 
-    // Queries paralelas
-    const [revenueData, expenseData, agendamentosCriados, pacotesCriados] = await Promise.all([
-      // Receitas (pagamentos confirmados no período)
+    // Queries paralelas otimizadas
+    const [
+      revenueData,
+      expenseData,
+      agendamentosCriados,
+      pacotesCriados,
+      agendamentosRealizados
+    ] = await Promise.all([
+      // 1. Receitas (pagamentos confirmados)
       Payment.aggregate([
         {
           $match: {
@@ -55,12 +62,18 @@ router.get('/summary', auth, async (req, res) => {
           $group: {
             _id: null,
             total: { $sum: '$amount' },
-            count: { $sum: 1 }
+            count: { $sum: 1 },
+            porMetodo: {
+              $push: {
+                k: '$paymentMethod',
+                v: '$amount'
+              }
+            }
           }
         }
       ]),
 
-      // Despesas
+      // 2. Despesas
       Expense.aggregate([
         {
           $match: {
@@ -77,89 +90,119 @@ router.get('/summary', auth, async (req, res) => {
         }
       ]),
 
-      // Agendamentos CRIADOS no período (busca por createdAt)
+      // 3. Agendamentos CRIADOS no período (novas entradas no sistema)
       Appointment.find({
         createdAt: { $gte: startDateTime, $lte: endDateTime }
       })
-        .populate('patient', 'fullName')
+        .populate('patient', 'fullName phoneNumber')
         .populate('doctor', 'fullName specialty')
         .sort({ createdAt: -1 })
-        .limit(10)
+        .limit(20)
         .lean(),
 
-      // Pacotes CRIADOS no período (busca por createdAt)
+      // 4. Pacotes CRIADOS no período (novas vendas)
       Package.find({
         createdAt: { $gte: startDateTime, $lte: endDateTime }
       })
         .populate('patient', 'fullName')
         .populate('doctor', 'fullName specialty')
         .sort({ createdAt: -1 })
-        .limit(10)
-        .lean()
+        .limit(20)
+        .lean(),
+
+      // 5. Agendamentos REALIZADOS (atendidos) no período
+      Appointment.countDocuments({
+        date: { $gte: startDateStr, $lte: endDateStr },
+        clinicalStatus: 'completed'
+      })
     ]);
 
-    const revenue = revenueData[0] || { total: 0, count: 0 };
+    const revenue = revenueData[0] || { total: 0, count: 0, porMetodo: [] };
     const expense = expenseData[0] || { total: 0, count: 0 };
     const balance = revenue.total - expense.total;
 
-    // Calcular valores
+    // Calcular valores potenciais
     const valorAgendamentos = agendamentosCriados.reduce((sum, apt) => sum + (apt.sessionValue || 0), 0);
     const valorPacotes = pacotesCriados.reduce((sum, pkg) => sum + (pkg.totalValue || 0), 0);
 
+    // Agrupar receita por método de pagamento
+    const receitaPorMetodo = {};
+    revenue.porMetodo?.forEach(item => {
+      receitaPorMetodo[item.k] = (receitaPorMetodo[item.k] || 0) + item.v;
+    });
+
     res.json({
       success: true,
-      period: { startDate: startDateStr, endDate: endDateStr, type: period },
-      data: {
-        revenue: {
+      period: {
+        startDate: startDateStr,
+        endDate: endDateStr,
+        type: period,
+        label: period === 'day'
+          ? moment(startDateStr).tz(TIMEZONE).format('DD/MM/YYYY')
+          : `${startDateStr} a ${endDateStr}`
+      },
+      financeiro: {
+        receitas: {
           total: revenue.total,
-          count: revenue.count
+          count: revenue.count,
+          porMetodo: receitaPorMetodo
         },
-        expenses: {
+        despesas: {
           total: expense.total,
           count: expense.count
         },
-        balance,
-        balanceStatus: balance >= 0 ? 'positive' : 'negative',
-
-        atividade: {
-          agendamentosCriados: {
-            count: agendamentosCriados.length,
-            valorPotencial: valorAgendamentos,
-            itens: agendamentosCriados.map(apt => ({
-              id: apt._id,
-              paciente: apt.patient?.fullName || 'N/A',
-              profissional: apt.doctor?.fullName || 'N/A',
-              especialidade: apt.doctor?.specialty || apt.specialty || 'N/A',
-              dataAgendada: apt.date,
-              hora: apt.time,
-              valor: apt.sessionValue || 0,
-              criadoEm: apt.createdAt
-            }))
-          },
-          pacotesCriados: {
-            count: pacotesCriados.length,
-            valorPotencial: valorPacotes,
-            itens: pacotesCriados.map(pkg => ({
-              id: pkg._id,
-              paciente: pkg.patient?.fullName || 'N/A',
-              profissional: pkg.doctor?.fullName || 'N/A',
-              especialidade: pkg.doctor?.specialty || 'N/A',
-              sessoes: pkg.totalSessions,
-              valor: pkg.totalValue || 0,
-              criadoEm: pkg.createdAt
-            }))
-          },
-          movimentacaoTotal: valorAgendamentos + valorPacotes + revenue.total
-        }
+        saldo: balance,
+        status: balance >= 0 ? 'positive' : 'negative'
+      },
+      operacional: {
+        agendamentosCriados: {
+          count: agendamentosCriados.length,
+          valorPotencial: valorAgendamentos,
+          itens: agendamentosCriados.map(apt => ({
+            id: apt._id,
+            paciente: apt.patient?.fullName || 'N/A',
+            telefone: apt.patient?.phoneNumber,
+            profissional: apt.doctor?.fullName || 'N/A',
+            especialidade: apt.doctor?.specialty || apt.specialty || 'N/A',
+            dataAgendada: apt.date,
+            hora: apt.time,
+            valor: apt.sessionValue || 0,
+            criadoEm: apt.createdAt
+          }))
+        },
+        pacotesCriados: {
+          count: pacotesCriados.length,
+          valorTotal: valorPacotes,
+          itens: pacotesCriados.map(pkg => ({
+            id: pkg._id,
+            paciente: pkg.patient?.fullName || 'N/A',
+            profissional: pkg.doctor?.fullName || 'N/A',
+            especialidade: pkg.doctor?.specialty || 'N/A',
+            sessoes: pkg.totalSessions,
+            valor: pkg.totalValue || 0,
+            statusPagamento: pkg.financialStatus,
+            criadoEm: pkg.createdAt
+          }))
+        },
+        atendimentosRealizados: agendamentosRealizados,
+        conversao: agendamentosCriados.length > 0
+          ? ((agendamentosRealizados / agendamentosCriados.length) * 100).toFixed(1)
+          : 0
+      },
+      indicadores: {
+        ticketMedio: agendamentosRealizados > 0 ? revenue.total / agendamentosRealizados : 0,
+        valorMedioPacote: pacotesCriados.length > 0 ? valorPacotes / pacotesCriados.length : 0,
+        eficiencia: balance > 0 ? ((balance / revenue.total) * 100).toFixed(1) : 0
       }
     });
 
   } catch (error) {
-    console.error('Erro ao calcular fluxo de caixa:', error);
+    console.error('[Cashflow] Erro:', error);
     res.status(500).json({
       success: false,
       message: 'Erro ao calcular fluxo de caixa',
-      error: error.message
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });

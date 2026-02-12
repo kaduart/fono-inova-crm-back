@@ -94,6 +94,7 @@ const paymentSchema = new mongoose.Schema({
         default: () => new Date().toISOString().split('T')[0],
     },
     isAdvance: Boolean,
+    paidAt: { type: Date },
 
     sessions: [{
         session: { type: mongoose.Schema.Types.ObjectId, ref: 'Session' },

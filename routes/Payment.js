@@ -18,7 +18,7 @@ router.post('/', async (req, res) => {
         doctorId, serviceType,
         amount, paymentMethod,
         status, notes, packageId,
-        paymentDate,
+        paymentDate, sessionType,
         sessionId, isAdvancePayment = false,
         advanceSessions = []
     } = req.body;
@@ -124,6 +124,7 @@ router.post('/', async (req, res) => {
             status: status || 'paid',
             createdAt: currentDate,
             updatedAt: currentDate,
+            sessionType,
             coveredSessions: advanceSessionsIds.map(id => ({
                 sessionId: id,
                 used: false,
@@ -1227,7 +1228,7 @@ router.get("/totals", async (req, res) => {
             billingType: 'convenio',
             // Inclui todos os convênios do período: pending, billed, received, etc.
         };
-        
+
         // Remove filtro de status para incluir todos os convênios
         delete insuranceMatchStage.status;
 
@@ -1239,76 +1240,76 @@ router.get("/totals", async (req, res) => {
                 $group: {
                     _id: null,
                     // Produção total: soma grossAmount se existir, senão usa amount (para registros antigos)
-                    totalInsuranceProduction: { 
-                        $sum: { 
+                    totalInsuranceProduction: {
+                        $sum: {
                             $cond: [
-                                { 
+                                {
                                     $and: [
                                         { $ne: ["$insurance", null] },
                                         { $gt: ["$insurance.grossAmount", 0] }
                                     ]
-                                }, 
-                                "$insurance.grossAmount", 
+                                },
+                                "$insurance.grossAmount",
                                 { $cond: [{ $gt: ["$amount", 0] }, "$amount", 0] }
-                            ] 
-                        } 
+                            ]
+                        }
                     },
-                    totalInsuranceReceived: { 
-                        $sum: { 
+                    totalInsuranceReceived: {
+                        $sum: {
                             $cond: [
-                                { 
+                                {
                                     $and: [
                                         { $ne: ["$insurance", null] },
                                         { $eq: ["$insurance.status", "received"] }
                                     ]
-                                }, 
-                                { $ifNull: ["$insurance.receivedAmount", "$amount"] }, 
-                                0 
-                            ] 
-                        } 
+                                },
+                                { $ifNull: ["$insurance.receivedAmount", "$amount"] },
+                                0
+                            ]
+                        }
                     },
-                    totalInsurancePending: { 
-                        $sum: { 
+                    totalInsurancePending: {
+                        $sum: {
                             $cond: [
-                                { 
+                                {
                                     $and: [
                                         { $ne: ["$insurance", null] },
                                         { $in: ["$insurance.status", ["pending_billing", "billed"]] }
                                     ]
-                                }, 
-                                "$insurance.grossAmount", 
+                                },
+                                "$insurance.grossAmount",
                                 { $cond: [{ $gt: ["$amount", 0] }, "$amount", 0] }
-                            ] 
-                        } 
+                            ]
+                        }
                     },
                     countInsuranceTotal: { $sum: 1 },
-                    countInsuranceReceived: { 
-                        $sum: { 
+                    countInsuranceReceived: {
+                        $sum: {
                             $cond: [
-                                { 
+                                {
                                     $and: [
                                         { $ne: ["$insurance", null] },
                                         { $eq: ["$insurance.status", "received"] }
                                     ]
-                                }, 
-                                1, 
-                                0 
-                            ] 
-                        } 
+                                },
+                                1,
+                                0
+                            ]
+                        }
                     },
-                    countInsurancePending: { 
-                        $sum: { 
+                    countInsurancePending: {
+                        $sum: {
                             $cond: [
-                                { 
+                                {
                                     $and: [
                                         { $ne: ["$insurance", null] },
                                         { $in: ["$insurance.status", ["pending_billing", "billed"]] }
                                     ]
-                                }, 
-                                1, 
-                                0 
-                            ] 
-                        } 
+                                },
+                                1,
+                                0
+                            ]
+                        }
                     },
                 },
             },
@@ -1336,7 +1337,7 @@ router.get("/totals", async (req, res) => {
             countReceived: cashTotals.countReceived,
             countPending: cashTotals.countPending,
             countPartial: cashTotals.countPartial,
-            
+
             // Produção de Convênios (atendimentos realizados)
             totalInsuranceProduction: insuranceTotals.totalInsuranceProduction,
             totalInsuranceReceived: insuranceTotals.totalInsuranceReceived,
@@ -1344,7 +1345,7 @@ router.get("/totals", async (req, res) => {
             countInsuranceTotal: insuranceTotals.countInsuranceTotal,
             countInsuranceReceived: insuranceTotals.countInsuranceReceived,
             countInsurancePending: insuranceTotals.countInsurancePending,
-            
+
             // Total combinado (caixa + produção de convênios)
             totalCombined: cashTotals.totalReceived + insuranceTotals.totalInsuranceProduction,
         };

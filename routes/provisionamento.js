@@ -9,6 +9,7 @@ import {
   exportarExcel,
   gerarRelatorioAnalitico,
   getPacotesEmAndamento,
+  getPacotesConcluidos,
   liberarVagasMassa,
   simularVenda
 } from '../services/provisionamentoService.js';
@@ -384,10 +385,6 @@ router.get('/analitico', authorize(['admin', 'secretary']), async (req, res) => 
   }
 });
 
-/**
- * GET /api/provisionamento/pacotes-andamento
- * Lista de pacotes em andamento
- */
 router.get('/pacotes-andamento', authorize(['admin', 'secretary']), async (req, res) => {
   try {
     const dados = await getPacotesEmAndamento();
@@ -404,6 +401,23 @@ router.get('/pacotes-andamento', authorize(['admin', 'secretary']), async (req, 
       message: 'Erro ao buscar faturamento por pacote',
       error: error.message
     });
+  }
+});
+
+/**
+ * GET /api/provisionamento/pacotes-concluidos
+ * Lista de pacotes finalizados/concluidos
+ */
+router.get('/pacotes-concluidos', authorize(['admin', 'secretary']), async (req, res) => {
+  try {
+    const dados = await getPacotesConcluidos();
+    res.json({
+      success: true,
+      count: dados.length,
+      data: dados
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
@@ -895,4 +909,52 @@ router.get('/metricas-mes', authorize(['admin', 'secretary']), async (req, res) 
   }
 });
 
+/**
+ * GET /api/provisionamento/paciente/:id/resumo
+ * Resumo financeiro de um paciente específico
+ */
+router.get('/paciente/:id/resumo', authorize(['admin', 'secretary']), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const Patient = (await import('../models/Patient.js')).default;
+    const Payment = (await import('../models/Payment.js')).default;
+    const Package = (await import('../models/Package.js')).default;
+
+    const [patient, payments, packages] = await Promise.all([
+      Patient.findById(id).select('fullName'),
+      Payment.find({ patient: id, status: 'paid' }).lean(),
+      Package.find({ patient: id }).populate('doctor', 'specialty').lean()
+    ]);
+
+    if (!patient) return res.status(404).json({ success: false, message: 'Paciente não encontrado' });
+
+    const totalPago = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    const pacotesAtivos = packages.filter(p => p.status !== 'completed');
+    const pacotesConcluidos = packages.filter(p => p.status === 'completed');
+
+    res.json({
+      success: true,
+      data: {
+        paciente: patient.fullName,
+        estatisticas: {
+          totalPago,
+          qtdPagamentos: payments.length,
+          pacotesAtivos: pacotesAtivos.length,
+          pacotesConcluidos: pacotesConcluidos.length
+        },
+        pacotes: packages.map(p => ({
+          _id: p._id,
+          tipo: p.sessionType,
+          status: p.status,
+          totalSessoes: p.totalSessions,
+          sessoesFeitas: p.sessionsDone,
+          valorTotal: p.totalValue,
+          pago: p.totalPaid
+        }))
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 export default router;

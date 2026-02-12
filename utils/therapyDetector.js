@@ -89,7 +89,7 @@ export function normalizeTherapyTerms(text = "") {
         .replace(/neuropsic(o|ó)log(a|ia|ica)/gi, 'neuropsicologia')
         .replace(/neuropsi/gi, 'neuropsicologia')
         .replace(/neuro[\s-]*psico/gi, 'neuropsicologia')
-        .replace(/fonoaudi(o|ó)log(a|o)/gi, 'fonoaudiologia');
+        .replace(/fonoaudi(o|ó)log(a|o)|fonodiologo/gi, 'fonoaudiologia');
 }
 
 /**
@@ -259,20 +259,20 @@ export function getPriceLinesForDetectedTherapies(detected = [], { max = 2 } = {
 export async function getTherapyDataWithPricing(therapyId) {
     const baseData = getTherapyData(therapyId);
     if (!baseData) return null;
-    
+
     // Import dinâmico para evitar circular dependency
     const { getTherapyPricing, formatPrice } = await import('../config/pricing.js');
-    
+
     const pricing = getTherapyPricing(therapyId);
     if (pricing) {
         return {
             ...baseData,
-            price: pricing.incluiLaudo 
+            price: pricing.incluiLaudo
                 ? `${formatPrice(pricing.avaliacao)} (${pricing.parcelamento})`
                 : `${formatPrice(pricing.avaliacao)} a avaliação`,
             pricing // dados completos do pricing
         };
     }
-    
+
     return baseData;
 }

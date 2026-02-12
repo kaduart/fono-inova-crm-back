@@ -1676,19 +1676,22 @@ async function handleAutoReply(from, to, content, lead) {
         // 8. Gera resposta da Amanda (NOVO ORQUESTRADOR 100%)
         // ================================
         console.log('🤖 Gerando resposta da Amanda (Novo Orquestrador)...');
-        const leadIdStr = String(leadDoc._id);
+        const leadIdStr = leadDoc?._id ? String(leadDoc._id) : null;
         let aiText = null;
+
+        // 🚀 Contexto enriquecido para evitar loadContext redundante no orquestrador
+        const enrichedContext = {
+            preferredPeriod: leadDoc.preferredPeriod || leadDoc.qualificationData?.extractedInfo?.disponibilidade,
+            preferredDate: leadDoc.preferredDate || leadDoc.qualificationData?.extractedInfo?.dataPreferida,
+            therapy: leadDoc.therapy || leadDoc.qualificationData?.extractedInfo?.especialidade,
+            source: 'whatsapp-inbound'
+        };
 
         // 🚀 NOVO FLOW SEMPRE ATIVO - LEGADO REMOVIDO
         const result = await orchestrator.process({
             lead: leadDoc,
             message: { content: aggregatedContent },
-            context: {
-                preferredPeriod: leadDoc.preferredPeriod || leadDoc.qualificationData?.extractedInfo?.disponibilidade,
-                preferredDate: leadDoc.preferredDate || leadDoc.qualificationData?.extractedInfo?.dataPreferida,
-                therapy: leadDoc.therapy || leadDoc.qualificationData?.extractedInfo?.especialidade,
-                source: 'whatsapp-inbound'
-            },
+            context: enrichedContext,
             services: {
                 bookingService,
                 productService: mapFlagsToBookingProduct

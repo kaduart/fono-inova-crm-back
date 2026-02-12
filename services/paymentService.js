@@ -27,121 +27,149 @@ import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 
 async function generateDailyReport(date) {
-  // 1. Converter data para intervalo do dia
   const startDate = new Date(date);
   startDate.setHours(0, 0, 0, 0);
-
   const endDate = new Date(date);
   endDate.setHours(23, 59, 59, 999);
 
-  // 2. Buscar dados necessários em paralelo
-  const [appointments, sessions, payments] = await Promise.all([
-    // Agendamentos do dia
-    Appointment.find({
-      date: { $gte: startDate, $lte: endDate }
-    }).populate('doctor patient'),
+  const [appointmentMetrics, sessionMetrics, paymentMetrics] = await Promise.all([
+    // 1. Agregações de Agendamentos
+    Appointment.aggregate([
+      { $match: { date: { $gte: startDate, $lte: endDate } } },
+      {
+        $facet: {
+          totals: [
+            {
+              $group: {
+                _id: null,
+                count: { $sum: 1 },
+                value: { $sum: { $ifNull: ["$sessionValue", 0] } },
+                absences: { $sum: { $cond: [{ $in: ["$operationalStatus", ["cancelado", "faltou"]] }, 1, 0] } },
+                estimatedLoss: { $sum: { $cond: [{ $in: ["$operationalStatus", ["cancelado", "faltou"]] }, { $ifNull: ["$sessionValue", 0] }, 0] } }
+              }
+            }
+          ],
+          byProfessional: [
+            { $lookup: { from: "doctors", localField: "doctor", foreignField: "_id", as: "doc" } },
+            { $unwind: { path: "$doc", preserveNullAndEmptyArrays: true } },
+            {
+              $group: {
+                _id: "$doctor",
+                doctorName: { $first: "$doc.fullName" },
+                scheduled: { $sum: 1 },
+                scheduledValue: { $sum: { $ifNull: ["$sessionValue", 0] } },
+                absences: { $sum: { $cond: [{ $in: ["$operationalStatus", ["cancelado", "faltou"]] }, 1, 0] } }
+              }
+            }
+          ]
+        }
+      }
+    ]),
 
-    // Sessões realizadas
-    Session.find({
-      date: { $gte: startDate, $lte: endDate },
-      status: 'completed'
-    }),
+    // 2. Agregações de Sessões
+    Session.aggregate([
+      { $match: { date: { $gte: startDate, $lte: endDate }, status: 'completed' } },
+      {
+        $group: {
+          _id: "$doctor",
+          completed: { $sum: 1 },
+          completedValue: { $sum: { $ifNull: ["$sessionValue", 0] } }
+        }
+      }
+    ]),
 
-    // Pagamentos do dia
-    Payment.find({
-      createdAt: { $gte: startDate, $lte: endDate },
-      status: 'paid'
-    })
-  ]);
+    // 3. Agregações de Pagamentos
+    Payment.aggregate([
+      { $match: { createdAt: { $gte: startDate, $lte: endDate }, status: 'paid' } },
+      {
+        $facet: {
+          totals: [
+            {
+              $group: {
+                _id: null,
+                count: { $sum: 1 },
+                value: { $sum: { $ifNull: ["$amount", 0] } },
+                dinheiro: { $sum: { $cond: [{ $eq: ["$paymentMethod", "dinheiro"] }, "$amount", 0] } },
+                pix: { $sum: { $cond: [{ $eq: ["$paymentMethod", "pix"] }, "$amount", 0] } },
+                cartao: { $sum: { $cond: [{ $in: ["$paymentMethod", ["debito", "credito", "cartão"]] }, "$amount", 0] } }
+              }
+            }
+          ],
+          byProfessional: [
+            {
+              $group: {
+                _id: "$doctor",
+                total: { $sum: { $ifNull: ["$amount", 0] } },
+                dinheiro: { $sum: { $cond: [{ $eq: ["$paymentMethod", "dinheiro"] }, "$amount", 0] } },
+                pix: { $sum: { $cond: [{ $eq: ["$paymentMethod", "pix"] }, "$amount", 0] } },
+                cartao: { $sum: { $cond: [{ $in: ["$paymentMethod", ["debito", "credito", "cartão"]] }, "$amount", 0] } }
+              }
+            }
+          ]
+        }
+      }
+    ]
+    )]);
 
-  // 3. Inicializar estrutura do relatório
+  // Processar resultados das agregações
+  const aptTotals = appointmentMetrics[0].totals[0] || { count: 0, value: 0, absences: 0, estimatedLoss: 0 };
+  const payTotals = paymentMetrics[0].totals[0] || { count: 0, value: 0, dinheiro: 0, pix: 0, cartao: 0 };
+
   const report = {
     date: date.toLocaleDateString('pt-BR'),
-    period: {
-      start: startDate.toISOString(),
-      end: endDate.toISOString()
-    },
+    period: { start: startDate.toISOString(), end: endDate.toISOString() },
     totals: {
-      scheduled: { count: 0, value: 0 },
-      completed: { count: 0, value: 0 },
-      payments: { count: 0, value: 0, methods: { dinheiro: 0, pix: 0, cartão: 0 } },
-      absences: { count: 0, estimatedLoss: 0 }
+      scheduled: { count: aptTotals.count, value: aptTotals.value },
+      completed: {
+        count: sessionMetrics.reduce((s, m) => s + m.completed, 0),
+        value: sessionMetrics.reduce((s, m) => s + m.completedValue, 0)
+      },
+      payments: {
+        count: payTotals.count,
+        value: payTotals.value,
+        methods: { dinheiro: payTotals.dinheiro, pix: payTotals.pix, cartão: payTotals.cartao }
+      },
+      absences: { count: aptTotals.absences, estimatedLoss: aptTotals.estimatedLoss }
     },
     byProfessional: {}
   };
 
-  // 4. Processar agendamentos
-  appointments.forEach(appt => {
-    // Contagem geral
-    report.totals.scheduled.count++;
-    report.totals.scheduled.value += appt.sessionValue || 0;
+  // Unificar dados por profissional
+  const professionals = {};
 
-    // Inicializar profissional se necessário
-    const doctorId = appt.doctor._id.toString();
-    if (!report.byProfessional[doctorId]) {
-      report.byProfessional[doctorId] = {
-        doctorId,
-        doctorName: appt.doctor.name,
-        scheduled: 0,
-        scheduledValue: 0,
-        completed: 0,
-        completedValue: 0,
-        absences: 0,
-        payments: {
-          total: 0,
-          methods: { dinheiro: 0, pix: 0, cartão: 0 }
-        }
-      };
-    }
-
-    // Atualizar dados do profissional
-    const prof = report.byProfessional[doctorId];
-    prof.scheduled++;
-    prof.scheduledValue += appt.sessionValue || 0;
-
-    // Verificar faltas/cancelamentos
-    if (['cancelado', 'faltou'].includes(appt.operationalStatus)) {
-      report.totals.absences.count++;
-      report.totals.absences.estimatedLoss += appt.sessionValue || 0;
-      prof.absences++;
-    }
+  // Mapear agendamentos
+  appointmentMetrics[0].byProfessional.forEach(p => {
+    const id = p._id.toString();
+    professionals[id] = {
+      doctorId: id,
+      doctorName: p.doctorName || 'N/A',
+      scheduled: p.scheduled,
+      scheduledValue: p.scheduledValue,
+      completed: 0,
+      completedValue: 0,
+      absences: p.absences,
+      payments: { total: 0, methods: { dinheiro: 0, pix: 0, cartão: 0 } }
+    };
   });
 
-  // 5. Processar sessões realizadas
-  sessions.forEach(session => {
-    report.totals.completed.count++;
-    report.totals.completed.value += session.sessionValue || 0;
-
-    const doctorId = session.doctor.toString();
-    if (report.byProfessional[doctorId]) {
-      const prof = report.byProfessional[doctorId];
-      prof.completed++;
-      prof.completedValue += session.sessionValue || 0;
-    }
+  // Mesclar sessões
+  sessionMetrics.forEach(p => {
+    const id = p._id.toString();
+    if (!professionals[id]) professionals[id] = { doctorId: id, doctorName: 'N/A', scheduled: 0, scheduledValue: 0, completed: 0, completedValue: 0, absences: 0, payments: { total: 0, methods: { dinheiro: 0, pix: 0, cartão: 0 } } };
+    professionals[id].completed = p.completed;
+    professionals[id].completedValue = p.completedValue;
   });
 
-  // 6. Processar pagamentos
-  payments.forEach(payment => {
-    report.totals.payments.count++;
-    report.totals.payments.value += payment.amount;
-
-    if (payment.paymentMethod) {
-      report.totals.payments.methods[payment.paymentMethod] += payment.amount;
-    }
-
-    const doctorId = payment.doctor.toString();
-    if (report.byProfessional[doctorId]) {
-      const prof = report.byProfessional[doctorId];
-      prof.payments.total += payment.amount;
-
-      if (payment.paymentMethod) {
-        prof.payments.methods[payment.paymentMethod] += payment.amount;
-      }
-    }
+  // Mesclar pagamentos
+  paymentMetrics[0].byProfessional.forEach(p => {
+    const id = p._id.toString();
+    if (!professionals[id]) professionals[id] = { doctorId: id, doctorName: 'N/A', scheduled: 0, scheduledValue: 0, completed: 0, completedValue: 0, absences: 0, payments: { total: 0, methods: { dinheiro: 0, pix: 0, cartão: 0 } } };
+    professionals[id].payments.total = p.total;
+    professionals[id].payments.methods.dinheiro = p.dinheiro;
+    professionals[id].payments.methods.pix = p.pix;
+    professionals[id].payments.methods.cartão = p.cartao;
   });
 
-  // 7. Converter objeto de profissionais para array
-  report.byProfessional = Object.values(report.byProfessional);
-
+  report.byProfessional = Object.values(professionals);
   return report;
 }
