@@ -1412,7 +1412,7 @@ async function processInboundMessage(msg, value) {
                 pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
             });
 
-            handleAutoReply(from, to, contentToSave, lead)
+            await handleAutoReply(from, to, contentToSave, lead)
                 .catch(err => console.error("⚠️ Auto-reply não crítico falhou:", err));
         }
 
