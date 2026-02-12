@@ -160,7 +160,7 @@ export async function checkFollowupResponse(followupId, options = {}) {
                 const doc = await Followup.findById(followupId)
                     .populate('lead')
                     .lean()
-                    .option({ maxTimeMS: CONFIG.DB_OPERATION_TIMEOUT });
+                    .maxTimeMS(CONFIG.DB_OPERATION_TIMEOUT);
 
                 if (!doc) {
                     throw new Error(`Follow-up ${followupId} não encontrado`);
@@ -200,7 +200,7 @@ export async function checkFollowupResponse(followupId, options = {}) {
             })
                 .sort({ timestamp: 1 })
                 .lean()
-                .option({ maxTimeMS: CONFIG.DB_OPERATION_TIMEOUT }),
+                .maxTimeMS(CONFIG.DB_OPERATION_TIMEOUT),
             `buscar respostas do lead ${lead._id}`
         );
 
@@ -396,7 +396,7 @@ export async function processPendingResponses(options = {}) {
                 .sort({ sentAt: 1 }) // Mais antigos primeiro
                 .limit(batchSize)
                 .lean()
-                .option({ maxTimeMS: CONFIG.DB_OPERATION_TIMEOUT }),
+                .maxTimeMS(CONFIG.DB_OPERATION_TIMEOUT),
             'buscar follow-ups pendentes'
         );
 
@@ -520,7 +520,7 @@ export async function identifyNonResponders(options = {}) {
             {
                 $sort: { totalFollowups: -1 }
             }
-            ]).option({ maxTimeMS: CONFIG.DB_OPERATION_TIMEOUT }),
+            ], { maxTimeMS: CONFIG.DB_OPERATION_TIMEOUT }),
             'agregar leads frios'
         );
 
@@ -666,7 +666,7 @@ export async function getResponseAnalytics(days = 7) {
                     avgResponseTime: { $round: ['$avgResponseTime', 0] }
                 }
             }
-            ]).option({ maxTimeMS: CONFIG.DB_OPERATION_TIMEOUT }),
+            ], { maxTimeMS: CONFIG.DB_OPERATION_TIMEOUT }),
             'calcular métricas gerais'
         );
 
@@ -701,7 +701,7 @@ export async function getResponseAnalytics(days = 7) {
                 }
             },
             { $sort: { responseRate: -1 } }
-            ]).option({ maxTimeMS: CONFIG.DB_OPERATION_TIMEOUT }),
+            ], { maxTimeMS: CONFIG.DB_OPERATION_TIMEOUT }),
             'calcular métricas por origem'
         );
 
@@ -741,7 +741,7 @@ export async function getResponseAnalytics(days = 7) {
                 }
             },
             { $sort: { responseRate: -1 } }
-            ]).option({ maxTimeMS: CONFIG.DB_OPERATION_TIMEOUT }),
+            ], { maxTimeMS: CONFIG.DB_OPERATION_TIMEOUT }),
             'calcular métricas por horário'
         );
 
@@ -858,7 +858,7 @@ export async function healthCheck() {
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         const recentCount = await Followup.countDocuments({
             createdAt: { $gte: oneDayAgo }
-        }).option({ maxTimeMS: 5000 });
+        }).maxTimeMS(5000);
         checks.recentActivity = recentCount > 0;
 
         // ✅ Saúde depende só de DB + socket
