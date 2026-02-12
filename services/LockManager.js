@@ -8,8 +8,8 @@ import Logger from './utils/Logger.js';
 const logger = new Logger('LockManager');
 
 const LOCK_TIMEOUT_MS = 30_000; // 30s — se travar, libera automaticamente
-const RETRY_DELAY_MS = 300;
-const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 500;
+const MAX_RETRIES = 10;
 
 /**
  * Adquire lock atômico no lead usando findOneAndUpdate.
@@ -46,11 +46,13 @@ async function acquireLock(leadId) {
         logger.warn('LOCK_BUSY', { leadId, attempt, retrying: attempt < MAX_RETRIES - 1 });
 
         if (attempt < MAX_RETRIES - 1) {
-            await new Promise(r => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
+            // Random jitter to prevent thundering herd
+            const jitter = Math.random() * 200;
+            await new Promise(r => setTimeout(r, RETRY_DELAY_MS + jitter));
         }
     }
 
-    logger.error('LOCK_FAILED', { leadId, message: 'Não conseguiu adquirir lock após retries' });
+    logger.error('LOCK_FAILED', { leadId, message: 'Não conseguiu adquirir lock após retries', attempts: MAX_RETRIES });
     return null;
 }
 

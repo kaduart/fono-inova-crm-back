@@ -942,14 +942,14 @@ Em breve nossa equipe entra em contato 😊`
         leadAnalysis = await analyzeLeadMessage({
             text,
             lead,
-            history: baseContext.conversationHistory || [],
+            history: enrichedContext.conversationHistory || [],
         });
         console.log("[INTELLIGENCE]", {
             score: leadAnalysis.score,
             segment: leadAnalysis.segment.label,
             intent: leadAnalysis.intent.primary,
-            urgencia: leadAnalysis.extracted.urgencia,
-            bloqueio: leadAnalysis.extracted.bloqueioDecisao,
+            urgencia: leadAnalysis.extractedInfo?.urgencia,
+            bloqueio: leadAnalysis.extractedInfo?.bloqueioDecisao,
         });
     } catch (err) {
         console.warn("[INTELLIGENCE] Falhou (não crítico):", err.message);
@@ -958,7 +958,7 @@ Em breve nossa equipe entra em contato 😊`
     // Logo após a análise, se tiver dados novos:
     if (leadAnalysis && lead?._id) {
         const updateFields = {};
-        const { extracted, score, segment } = leadAnalysis;
+        const { extractedInfo: extracted, score, segment } = leadAnalysis;
 
         // Idade (se não tinha)
         if (extracted.idade && !lead.patientInfo?.age) {
