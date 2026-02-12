@@ -23,7 +23,7 @@ import { getRedis, startRedis } from "./services/redisClient.js";
 import { registerWebhook } from "./services/sicoobService.js";
 import { sanitizeStack } from './middleware/sanitize.js';
 import salesRoutes from './routes/sales.js';
-import { startLearningCron } from "./crons/learningCron.js";
+// import { startLearningCron } from "./crons/learningCron.js";
 
 // ======================================================
 // 🧩 BullMQ e Painel Bull Board
@@ -268,7 +268,7 @@ function initFollowupWatcher() {
     console.log("✅ Connected to MongoDB");
 
     // 👉 AQUI LIGAMOS SEU CRON DIÁRIO DE APRENDIZADO
-    startLearningCron();
+    // startLearningCron();
 
     // Registrar Webhook PIX no Sicoob
     try {
