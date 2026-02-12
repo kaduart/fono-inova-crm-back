@@ -26,7 +26,8 @@ async function acquireLock(leadId) {
                 $or: [
                     { isProcessing: false },
                     { isProcessing: { $exists: false } },
-                    { processingStartedAt: { $lt: staleThreshold } } // lock expirado
+                    { processingStartedAt: { $lt: staleThreshold } }, // lock expirado
+                    { isProcessing: true, processingStartedAt: null }, // lock órfão (sem timestamp)
                 ]
             },
             {

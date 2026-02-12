@@ -1601,8 +1601,8 @@ async function handleAutoReply(from, to, content, lead) {
 
         // Use o lead que já veio (que já tem as últimas atualizações):
         let leadDoc = lead;
-        // E faça o update do lock separadamente se precisar:
-        await Lead.updateOne({ _id: lead._id }, { $set: { isProcessing: true } });
+        // ✅ FIX: Removido lock manual redundante (isProcessing: true sem processingStartedAt)
+        // O withLeadLock na L1702 já faz o lock atômico correto com processingStartedAt
 
         // No handleAutoReply, após carregar o lead:
         if (leadDoc.pendingChosenSlot === 'NÃO' || leadDoc.pendingSchedulingSlots === 'NÃO') {
@@ -1622,12 +1622,11 @@ async function handleAutoReply(from, to, content, lead) {
         });
 
         if (!leadDoc) {
-            console.log("⏭️ Lead já está processando; ignorando mensagem", lead?._id);
+            console.log("⏭️ Lead não encontrado; ignorando mensagem", lead?._id);
             return;
         }
 
         mongoLockedLeadId = leadDoc._id;
-        mongoLockAcquired = true;
 
         // ================================
         // 5. Controle manual (human takeover)
@@ -1790,14 +1789,8 @@ async function handleAutoReply(from, to, content, lead) {
     } catch (error) {
         console.error('❌ Erro no auto-reply (não crítico):', error);
     } finally {
-        // ✅ Libera trava no Mongo (best-effort)
-        if (mongoLockAcquired && mongoLockedLeadId) {
-            try {
-                await Lead.updateOne({ _id: mongoLockedLeadId }, { $set: { isProcessing: false } });
-            } catch (unlockErr) {
-                console.warn('⚠️ Falha ao liberar isProcessing:', unlockErr.message);
-            }
-        }
+        // ✅ FIX: Lock manual removido — withLeadLock() cuida de tudo
+        // O releaseLock() no finally do withLeadLock já limpa isProcessing + processingStartedAt
 
         // ✅ Libera locks no Redis (best-effort)
         try {

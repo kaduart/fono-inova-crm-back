@@ -659,9 +659,28 @@ export async function getOptimizedAmandaResponse({
         /consulta|avalia[cç][aã]o|atendimento/i.test(text) ||
         extractAgeFromText(text);
 
+    // 🛡️ FLAGS que DEVEM BYPASS da triagem (lead fez pergunta específica)
+    const hasSpecificIntent =
+        flags.asksPrice ||
+        flags.insistsPrice ||
+        flags.asksPlans ||
+        flags.mentionsReembolso ||
+        flags.mentionsTEA_TDAH ||
+        flags.asksAboutAfterHours ||
+        flags.mentionsPriceObjection ||
+        flags.wantsPartnershipOrResume ||
+        flags.asksAddress ||
+        flags.asksLocation ||
+        /psicopedagog/i.test(text) ||
+        /linguinha|fren[uú]lo|freio\s*ling/i.test(text) ||
+        /dificuldade.*(escola|ler|escrever|aprendizagem|leitura|escrita)/i.test(text) ||
+        /escola.*(dificuldade|problema|nota|rendimento)/i.test(text) ||
+        /(conv[eê]nio|plano\s*(de\s*)?sa[uú]de|unimed|ipasgo|hapvida|bradesco|amil)/i.test(text);
+
     if (
         lead?._id &&
         hasImplicitInterest &&
+        !hasSpecificIntent &&
         !lead.triageStep &&
         !lead.pendingSchedulingSlots &&
         !lead.pendingPatientInfoForScheduling &&
@@ -681,21 +700,43 @@ export async function getOptimizedAmandaResponse({
     // ============================================================
 
     if (lead?.triageStep === "ask_period") {
-        const period = extractPeriodFromText(text);
-        if (!period) {
-            return ensureSingleHeart(
-                "Perfeito 😊 Pra eu organizar certinho, vocês preferem **manhã ou tarde**?"
-            );
-        }
+        // 🛡️ Se o lead fez pergunta específica DURANTE a triagem,
+        // não retornar "manhã ou tarde?" — deixar o Claude responder
+        const hasSpecificIntentNow =
+            flags.asksPrice ||
+            flags.insistsPrice ||
+            flags.asksPlans ||
+            flags.mentionsReembolso ||
+            flags.mentionsTEA_TDAH ||
+            flags.asksAboutAfterHours ||
+            flags.mentionsPriceObjection ||
+            flags.wantsPartnershipOrResume ||
+            /psicopedagog/i.test(text) ||
+            /linguinha|fren[uú]lo|freio\s*ling/i.test(text) ||
+            /dificuldade.*(escola|ler|escrever|aprendizagem|leitura|escrita)/i.test(text) ||
+            /escola.*(dificuldade|problema|nota|rendimento)/i.test(text) ||
+            /(conv[eê]nio|plano\s*(de\s*)?sa[uú]de|unimed|ipasgo|hapvida|bradesco|amil)/i.test(text);
 
-        await safeLeadUpdate(lead._id, {
-            $set: {
-                pendingPreferredPeriod: period,
-                triageStep: "ask_profile"
+        if (hasSpecificIntentNow) {
+            console.log("🛡️ [TRIAGEM] Bypass: lead tem pergunta específica, seguindo para IA");
+            // NÃO retorna — deixa seguir para o Claude com clinicWisdom
+        } else {
+            const period = extractPeriodFromText(text);
+            if (!period) {
+                return ensureSingleHeart(
+                    "Perfeito 😊 Pra eu organizar certinho, vocês preferem **manhã ou tarde**?"
+                );
             }
-        });
 
-        return ensureSingleHeart("Ótimo! 💚 Qual o **nome do paciente**?");
+            await safeLeadUpdate(lead._id, {
+                $set: {
+                    pendingPreferredPeriod: period,
+                    triageStep: "ask_profile"
+                }
+            });
+
+            return ensureSingleHeart("Ótimo! 💚 Qual o **nome do paciente**?");
+        } // fecha else do bypass
     }
 
     if (lead?.triageStep === "ask_profile") {
