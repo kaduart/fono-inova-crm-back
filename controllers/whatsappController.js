@@ -16,7 +16,8 @@ import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import Logger from '../services/utils/Logger.js';
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 
-import WhatsAppOrchestrator from '../orchestrators/WhatsAppOrchestrator.js';
+import { getOptimizedAmandaResponse } from '../orchestrators/AmandaOrchestrator.js';
+import { withLeadLock } from '../services/LockManager.js';
 import { mapFlagsToBookingProduct } from '../utils/bookingProductMapper.js';
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
 import { normalizeE164BR } from "../utils/phone.js";
@@ -27,7 +28,7 @@ const AUTO_TEST_NUMBERS = [
 ];
 
 const logger = new Logger('whatsappController');
-const orchestrator = new WhatsAppOrchestrator();
+
 
 export const whatsappController = {
 
@@ -812,15 +813,25 @@ export const whatsappController = {
             let result;
             let aiText = null;
 
-            console.log(`🤖 [AMANDA-RESUME] Gerando resposta (Novo Orquestrador)`);
+            console.log(`🤖 [AMANDA-RESUME] Gerando resposta (Orquestrador Legado)`);
 
-            // 🚀 NOVO FLOW SEMPRE ATIVO - LEGADO REMOVIDO
-            result = await orchestrator.process({
-                lead,
-                message,
-                context,
-                services: { bookingService }
+            // 🚀 LEGADO COM LOCK ATÔMICO
+            const lockResult = await withLeadLock(leadId, async (lockedLead) => {
+                const text = await getOptimizedAmandaResponse({
+                    content: message.content,
+                    userText: message.content,
+                    lead: lockedLead,
+                    context,
+                    messageId: message.waMessageId,
+                });
+                return text ? { command: 'SEND_MESSAGE', payload: { text } } : { command: 'NO_REPLY' };
             });
+
+            if (!lockResult.locked) {
+                console.log('🔒 [AMANDA-RESUME] Lead em processamento, ignorando duplicata');
+                return res.json({ success: true, responded: false });
+            }
+            result = lockResult;
 
             if (result?.command === 'SEND_MESSAGE') aiText = result.payload.text;
             else return res.json({ success: true, responded: false });
@@ -1687,17 +1698,23 @@ async function handleAutoReply(from, to, content, lead) {
             source: 'whatsapp-inbound'
         };
 
-        // 🚀 NOVO FLOW SEMPRE ATIVO - LEGADO REMOVIDO
-        const result = await orchestrator.process({
-            lead: leadDoc,
-            message: { content: aggregatedContent },
-            context: enrichedContext,
-            services: {
-                bookingService,
-                productService: mapFlagsToBookingProduct
-            }
+        // 🚀 LEGADO COM LOCK ATÔMICO
+        const lockResult = await withLeadLock(leadDoc._id, async (lockedLead) => {
+            const text = await getOptimizedAmandaResponse({
+                content: aggregatedContent,
+                userText: aggregatedContent,
+                lead: lockedLead,
+                context: enrichedContext,
+            });
+            return text ? { command: 'SEND_MESSAGE', payload: { text } } : { command: 'NO_REPLY' };
         });
 
+        if (!lockResult.locked) {
+            console.log('🔒 Lead em processamento por outra requisição, ignorando duplicata');
+            return;
+        }
+
+        const result = lockResult;
         if (result?.command === 'SEND_MESSAGE') {
             aiText = result.payload.text;
         }

@@ -154,17 +154,40 @@ export function detectAllTherapies(text = "") {
 export const THERAPY_DATA = {
     neuropsychological: {
         explanation: "A avaliação neuropsicológica completa investiga atenção, memória, linguagem e raciocínio",
-        price: "R$ 2.000(até 6x)",
-        details: "São 10 sessões de 50min",
+        price: "R$ 2.000 (até 6x sem juros)",
+        details: "São ~10 sessões de 50min + laudo completo",
         engagement: "Faça 1 pergunta simples sobre a principal dificuldade e para quem é o atendimento (sem repetir idade se já estiver no histórico)."
     },
     speech: {
         explanation: "Avaliação especializada em desenvolvimento da fala e linguagem",
-        price: "R$ 200 a avaliação inicial",
+        price: "R$ 200 a avaliação inicial (de R$250)",
         details: "40min com fono experiente",
-        //engagement: "É para bebê ou criança maior?"
     },
-    // ... demais terapias
+    psychology: {
+        explanation: "Acompanhamento psicológico infantil/adolescente — comportamento, emocional, sociabilização",
+        price: "R$ 200 a avaliação inicial (de R$250)",
+        details: "Sessões semanais de 50min",
+    },
+    occupational_therapy: {
+        explanation: "Terapia ocupacional focada em coordenação motora, integração sensorial e autonomia",
+        price: "R$ 200 a avaliação inicial (de R$250)",
+        details: "Sessões semanais de 50min",
+    },
+    physiotherapy: {
+        explanation: "Fisioterapia infantil — desenvolvimento motor, postura, reabilitação",
+        price: "R$ 200 a avaliação inicial (de R$250)",
+        details: "Sessões de 50min com fisioterapeuta especializado",
+    },
+    music_therapy: {
+        explanation: "Musicoterapia — usa música como ferramenta para socialização, comunicação e regulação emocional",
+        price: "R$ 200 a avaliação inicial (de R$250)",
+        details: "Sessões semanais de 50min",
+    },
+    psychopedagogy: {
+        explanation: "Psicopedagogia — identifica como a criança aprende e trabalha dificuldades escolares (leitura, escrita, dislexia)",
+        price: "R$ 200 a avaliação inicial (de R$250)",
+        details: "Sessões semanais de 50min",
+    },
 };
 
 /**

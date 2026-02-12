@@ -1,36 +1,24 @@
 // services/intelligence/stageEngine.js
-export function nextStage(current, flags = {}) {
-    const {
-        wantsSchedule,
-        asksPrice,
-        hasAppointment,
-        isPatient,
-        conversionScore
-    } = flags;
+// Stub para compatibilidade com o legado (amandaOrchestrator)
+// A lógica original foi deletada como órfã do V7, mas o legado usa nextStage()
 
-    // Já é paciente
-    if (isPatient || hasAppointment) return 'paciente';
+/**
+ * Determina o próximo estágio do lead baseado no estágio atual e dados coletados.
+ * Mantido simples para não quebrar o fluxo legado.
+ */
+export function nextStage(currentStage, data = {}) {
+    const { hasTherapy, hasComplaint, hasAge, hasPeriod, hasSlots, hasName } = data;
 
-    // Quer agendar
-    if (wantsSchedule) return 'interessado_agendamento';
+    if (!currentStage || currentStage === 'novo') {
+        if (hasTherapy) return 'qualificado';
+        return 'engajado';
+    }
+    if (currentStage === 'engajado' && hasTherapy) return 'qualificado';
+    if (currentStage === 'qualificado' && hasAge && hasPeriod) return 'triagem_agendamento';
+    if (currentStage === 'triagem_agendamento' && hasSlots) return 'agendamento';
+    if (currentStage === 'agendamento' && hasName) return 'paciente';
 
-    // Pesquisando preço
-    if (asksPrice) return 'pesquisando_preco';
-
-    // Score alto = engajado
-    if (conversionScore && conversionScore >= 70) return 'engajado';
-
-    // Fluxo padrão
-    const progression = {
-        'novo': 'primeiro_contato',
-        'primeiro_contato': 'engajado',
-        'engajado': 'interessado_agendamento',
-        'pesquisando_preco': 'interessado_agendamento',
-        'interessado_agendamento': 'triagem_agendamento',
-        'triagem_agendamento': 'agendado',
-    };
-
-    return progression[current] || current;
+    return currentStage; // Mantém estágio atual se nenhuma condição satisfeita
 }
 
 export default { nextStage };

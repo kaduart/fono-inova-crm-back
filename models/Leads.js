@@ -211,6 +211,36 @@ const leadSchema = new mongoose.Schema({
     age: Number,           // ← NOVO: 4 (anos)
     ageUnit: String,
   },
+  // ✅ V8 FSM — Máquina de Estados
+  currentState: {
+    type: String,
+    enum: [
+      'IDLE',              // Aguardando primeira mensagem
+      'GREETING',          // Saudação inicial
+      'COLLECT_THERAPY',   // Coletando área terapêutica
+      'COLLECT_NAME',      // Coletando nome do paciente
+      'COLLECT_BIRTH',     // Coletando data de nascimento
+      'COLLECT_COMPLAINT', // Coletando queixa
+      'COLLECT_PERIOD',    // Coletando período preferido
+      'SHOW_SLOTS',        // Mostrando horários disponíveis
+      'CONFIRM_BOOKING',   // Confirmando agendamento
+      'COLLECT_PATIENT_DATA', // Coletando dados finais do paciente
+      'BOOKED',            // Agendamento confirmado
+      'INTERRUPTED',       // Interrupção global (preço, local, etc)
+      'HANDOFF',           // Encaminhado para humano
+    ],
+    default: 'IDLE',
+    index: true,
+  },
+  stateData: { type: mongoose.Schema.Types.Mixed, default: {} },
+  stateStack: [{
+    state: String,
+    data: mongoose.Schema.Types.Mixed,
+    suspendedAt: { type: Date, default: Date.now },
+    reason: String,
+  }],
+  retryCount: { type: Number, default: 0 }, // Contador anti-loop (handoff após 3)
+
   // ✅ Commit 2: anti-corrida (trava no Mongo)
   isProcessing: { type: Boolean, default: false },
   processingStartedAt: { type: Date, default: null },

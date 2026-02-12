@@ -9,7 +9,7 @@ function logFlags(text, flags) {
     const activeFlags = Object.entries(flags)
         .filter(([key, value]) => value === true && !['text', 'normalizedText'].includes(key))
         .map(([key]) => key);
-    
+
     if (activeFlags.length > 0) {
         logger.debug('FLAGS_DETECTED', {
             textPreview: text?.substring(0, 50),
@@ -125,8 +125,11 @@ export function deriveFlagsFromText(text = "") {
         ].some(r => r.test(normalizedText)),
 
         asksPayment: /(pagamento|pix|cart[aã]o|dinheiro|parcel)/i.test(normalizedText),
-        asksPlans: /(ipasgo|unimed|amil|plano|conv[eê]nio)/i.test(normalizedText),
+        asksPlans: /(ipasgo|unimed|amil|bradesco|sul\s*am[eé]rica|hapvida|plano|conv[eê]nio)/i.test(normalizedText),
         asksDuration: /(quanto\s*tempo|dura[çc][aã]o|dura\s*quanto)/i.test(normalizedText),
+        mentionsReembolso: /(reembolso|guia|nota\s*fiscal|declaração.*plano)/i.test(normalizedText),
+        asksAboutAfterHours: /(depois\s+d[ao]s?\s*18|ap[oó]s\s*18|[aà]\s*noite|hor[aá]rio\s*(especial|noturno)|depois\s+do\s+hor[aá]rio)/i.test(normalizedText),
+        asksAvaliacao: /(avalia[çc][aã]o|anamnese|consulta\s+inicial|primeira\s+consulta|como\s+come[çc]a)/i.test(normalizedText),
 
         mentionsSpeechTherapy: /(fono|fala|linguagem|gagueira|atraso)/i.test(normalizedText),
         asksPsychopedagogy: /(psicopedagog|dificuldade.*aprendiz)/i.test(normalizedText),
@@ -257,10 +260,10 @@ export function deriveFlagsFromText(text = "") {
         mentionsBaby: /\b(beb[eê]|rec[ée]m[-\s]?nascid[oa]|rn\b|meses)\b/i.test(normalizedText),
         wantsPartnershipOrResume
     };
-    
+
     // Log dos flags detectados
     logFlags(text, flags);
-    
+
     return flags;
 }
 
@@ -353,13 +356,13 @@ export function computeTeaStatus(flags = {}, text = "") {
    ========================================================================= */
 export function detectAllFlags(text = "", lead = {}, context = {}) {
     const rawText = String(text ?? "");
-    logger.debug('DETECT_ALL_FLAGS_START', { 
+    logger.debug('DETECT_ALL_FLAGS_START', {
         textPreview: rawText?.substring(0, 50),
         leadId: lead?._id?.toString(),
         stage: context?.stage,
         messageCount: context?.messageCount
     });
-    
+
     const baseFlags = deriveFlagsFromText(rawText || "");
     const t = baseFlags.normalizedText;
     if (context?.urgency?.level) baseFlags.urgencyLevel = context.urgency.level;
@@ -480,7 +483,7 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
         topic,
         teaStatus,
     };
-    
+
     // Log das flags adicionais detectadas
     const additionalFlags = {
         userProfile,
@@ -492,13 +495,13 @@ export function detectAllFlags(text = "", lead = {}, context = {}) {
         topic,
         teaStatus
     };
-    
+
     logger.debug('DETECT_ALL_FLAGS_RESULT', {
         textPreview: rawText?.substring(0, 40),
         ...additionalFlags,
         totalFlagCount: Object.keys(result).filter(k => result[k] === true).length
     });
-    
+
     return result;
 }
 
