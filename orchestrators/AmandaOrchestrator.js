@@ -1754,22 +1754,12 @@ Em breve nossa equipe entra em contato 😊`
         /\b(s[oó]\s*se|apenas\s*se|somente\s*se|quero\s+continuar\s+se)\b.*\b(unimed|plano|conv[eê]nio|ipasgo|amil|bradesco)\b/i.test(text);
 
 
-    if (wantsPlan && lead?.acceptedPrivateCare !== true) {
-        if (isHardPlanCondition) {
-            if (lead?._id)
-                await safeLeadUpdate(lead._id, {
-                    $set: { insuranceHardNo: true, acceptedPrivateCare: false },
-                }).catch(err => logSuppressedError('safeLeadUpdate', err));
-        }
+    // 🔍 [LEGACY] REMOVIDO: Bloco manual de planos que retornava "Consulte a equipe"
+    // Agora o AmandaAI usa o clinicWisdom.js (CONVENIO_WISDOM) para responder corretamente.
 
-        // 🩺 Bradesco — retorna texto específico de reembolso
-        if (/\bbradesco\s*(sa[úu]de)?\b/i.test(text)) {
-            return ensureSingleHeart(getManual("planos_saude", "bradesco_reembolso"));
-        }
-
-        // Demais convênios → resposta padrão
-        return ensureSingleHeart(getManual("planos_saude", "credenciamento"));
-    }
+    // if (wantsPlan && lead?.acceptedPrivateCare !== true) {
+    //    ... removido ...
+    // }
 
     // 🔀 Atualiza estágio
     const newStage = nextStage(stageFromContext, {
@@ -2362,8 +2352,9 @@ Em breve nossa equipe entra em contato 😊`
     }
 
     // 1) Manual
-    const manualAnswer = tryManualResponse(normalized, enrichedContext, flags);
-    if (manualAnswer) return ensureSingleHeart(manualAnswer);
+    // 1) [LEGACY] REMOVIDO: Manual Response (retornava "Consulte a equipe")
+    // const manualAnswer = tryManualResponse(normalized, enrichedContext, flags);
+    // if (manualAnswer) return ensureSingleHeart(manualAnswer);
 
     // 2) TDAH
     if (isTDAHQuestion(text)) {

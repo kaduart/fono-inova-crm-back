@@ -30,14 +30,14 @@ export const manageLeadCircuit = async (leadId, stage = 'initial') => {
 
     const circuitConfig = {
         initial: {
-            hot: { delay: 1 * 60 * 60 * 1000 },    // 1h para hot
-            warm: { delay: 2 * 60 * 60 * 1000 },   // 2h para warm
-            cold: { delay: 4 * 60 * 60 * 1000 },   // 4h para cold
+            hot: { delay: 1 * 60 * 60 * 1000, message: "Olá! Conseguiram ver as informações? Se tiverem qualquer dúvida, estou por aqui 💚" },
+            warm: { delay: 2 * 60 * 60 * 1000, message: "Oi! Tudo bem? Fico no aguardo se quiserem agendar uma avaliação ou tirar mais dúvidas 😊" },
+            cold: { delay: 4 * 60 * 60 * 1000, message: "Olá! Só passando para lembrar que estamos à disposição se precisarem de algo." },
         },
         follow_up: {
-            hot: { delay: 12 * 60 * 60 * 1000 },   // 12h
-            warm: { delay: 24 * 60 * 60 * 1000 },  // 24h
-            cold: { delay: 48 * 60 * 60 * 1000 },  // 48h
+            hot: { delay: 12 * 60 * 60 * 1000, message: "Olá! Ainda tem interesse na avaliação? Conseguimos um horário especial essa semana." },
+            warm: { delay: 24 * 60 * 60 * 1000, message: "Oi! Como estão? Ainda pensando na avaliação?" },
+            cold: { delay: 48 * 60 * 60 * 1000, message: "Olá! Caso queiram retomar o contato futuramente, é só chamar aqui 💚" },
         },
     };
 
