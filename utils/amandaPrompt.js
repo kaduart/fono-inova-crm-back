@@ -98,6 +98,7 @@ Quando o cliente perguntar algo similar a "${context.wisdom.tipo}", use como ref
 Mantenha o mesmo tom e estratégia acima, mas SEMPRE com acolhimento.
 ` : ''}
 
+
 ${context.wisdom?.tipo === 'price' ? `
 ## 💰 INSTRUÇÃO DE PREÇO (Baseado em conversas reais):
 - Valor atual: ${context.wisdom.valorAtual}
@@ -105,6 +106,35 @@ ${context.wisdom?.tipo === 'price' ? `
 - Exemplo: "${context.wisdom.template?.substring(0, 150) || ''}"
 - ⚠️ NUNCA mande preço seco. Contextualize o VALOR do trabalho primeiro.
 - ⚠️ Sempre mencione o que INCLUI (anamnese completa, entrevista, plano terapêutico).
+` : ''}
+
+${context.learnings ? `
+## 🧠 APRENDIZADOS AUTOMÁTICOS (O que funcionou com outros pais)
+Use estes exemplos REAIS como inspiração de tom e abordagem:
+
+${context.learnings.openings?.length ? `
+**Aberturas que geraram resposta:**
+${context.learnings.openings.map(l => `- "${l.text}"`).join('\n')}
+` : ''}
+
+${context.learnings.priceHandling?.length ? `
+**Respostas de preço que converteram:**
+${context.learnings.priceHandling.map(l => `- "${l.text}"`).join('\n')}
+` : ''}
+
+${context.learnings?.closings?.length ? `
+**Perguntas de para fechar agendamento:**
+${context.learnings.closings.map(l => `- "${l.text}"`).join('\n')}
+` : ''}
+⚠️ Nota: Ajuste os valores/nomes para o contexto ATUAL. Use a estrutura frasal.
+` : ''}
+
+${context.negativeScope?.length ? `
+## ⛔ O QUE NÃO FAZEMOS (Regras Verificadas)
+A clínica NÃO realiza os seguintes procedimentos (baseado em recusas anteriores):
+${context.negativeScope.map(n => `- ${n.term.toUpperCase()}: "${n.phrase}"`).join('\n')}
+
+Se o cliente perguntar sobre isso, negue educadamente e ofereça o que fazemos.
 ` : ''}
 
 ## 💚 REGRAS DE TOM — INEGOCIÁVEIS

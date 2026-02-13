@@ -953,6 +953,21 @@ Em breve nossa equipe entra em contato 😊`
         ].filter(Boolean).join("\n\n");
     }
 
+
+    // =========================================================================
+    // 🧠 LEARNING INJECTION (Novo fluxo v2)
+    // =========================================================================
+    let learnings = null;
+    try {
+        const { getActiveLearnings } = await import("../services/LearningInjector.js");
+        learnings = await getActiveLearnings();
+        if (learnings) {
+            console.log("🧠 [ORCHESTRATOR] Injetando insights de aprendizado no prompt");
+        }
+    } catch (err) {
+        console.warn("⚠️ [ORCHESTRATOR] Falha ao injetar learnings:", err.message);
+    }
+
     // ============================================================
     // 🔹 INTEGRAÇÃO DO TONE MODE (PREMIUM / ACOLHIMENTO)
     // ============================================================

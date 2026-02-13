@@ -267,7 +267,12 @@ export function deriveFlagsFromText(text = "") {
         mentionsBaby: /\b(beb[eê]|rec[ée]m[-\s]?nascid[oa]|rn\b|meses)\b/i.test(normalizedText),
         wantsPartnershipOrResume,
         mentionsTongueTieSurgery,
-        mentionsGeneralSurgery
+        mentionsGeneralSurgery,
+
+        // 🕵️ INVESTIGAÇÃO (flag crítica para diferenciar Psicoterapia de Neuropsicologia)
+        mentionsInvestigation:
+            /\b(investiga|descobrir|saber\s+se\s+(tem|é)|fechar\s+diagn[oó]stico|laudo|relat[oó]rio|suspeita)\b/i.test(normalizedText) ||
+            /\b(meu\s+filho\s+tem)\b/i.test(normalizedText), // ex: "meu filho tem x, preciso de avaliacao" -> geralmente é neuro
     };
 
     // Log dos flags detectados
@@ -329,7 +334,7 @@ export function resolveTopicFromFlags(flags = {}, text = "") {
     if (/\bpsicopedagog/.test(t) || flags.asksPsychopedagogy) return "psicopedagogia";
 
     if (/\bfono\b|fonoaudiolog|fala|linguagem|gagueira|atraso/.test(t) || flags.mentionsSpeechTherapy) return "fono";
-    if (/\bpsicolog|ansiedad|comportamento|emocional/.test(t)) return "psicologia";
+    if (/\bpsic(o|ó)log|ansiedad|comportamento|emocional/.test(t)) return "psicologia";
     if (/terapia\s+ocupacional|\bto\b|integra[çc][aã]o\s+sensorial/.test(t)) return "terapia_ocupacional";
     if (/fisioterap|fisio\b|bobath|dor\s+(nas?|na\s+)?(costas|coluna|ombro|joelho|pesco[cç]o)|postura|reabilita[cç][aã]o|motor/i.test(t))
         return "fisioterapia";

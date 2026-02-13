@@ -204,8 +204,8 @@ const ACOLHIMENTO_RULES = {
         'Faz todo sentido a preocupação. Vamos juntos encontrar o melhor caminho.',
     ],
     teaTdah: {
-        regra: 'Para TEA/TDAH: acolher + explicar que avaliação mapeia TUDO + mencionar equipe multiprofissional',
-        script: 'Entendo a preocupação. A avaliação vai mapear todas as áreas do desenvolvimento e a partir disso a gente traça o melhor plano. Temos uma equipe multiprofissional integrada — fono, psico, TO, neuro — que trabalha junta para o melhor resultado.',
+        regra: 'PROTOCOL TEA: 6 meses de intervenção -> Relatório Terapêutico -> Neuropediatra (Laudo). Terapeutas NÃO dão diagnóstico antes disso.',
+        script: 'Sobre o diagnóstico: A criança passa por um período de intervenção de 6 meses. A terapeuta avalia e faz um relatório completo para a família levar ao neuropediatra. O laudo médico é somente com o neuropediatra ou com avaliação neuropsicológica. Nós terapeutas não fechamos diagnóstico antes desse acompanhamento.',
     },
 };
 
@@ -354,6 +354,16 @@ export function getWisdomForContext(topic, flags = {}) {
 - "${exemplo}"
 - ${ACOLHIMENTO_RULES.principios[0]}
 - ${ACOLHIMENTO_RULES.principios[1]}`);
+    }
+
+    // ── 🚨 AMBIGUIDADE: PSICOLOGIA vs NEUROPSICOLOGIA 🚨 ──
+    // Se pede "psicologia" mas cita sintomas de TEA/TDAH, investigação ou "saber se tem"
+    if (topic === 'psicologia' && (flags.mentionsTEA_TDAH || flags.mentionsInvestigation || flags.mentionsDoubtTEA)) {
+        blocks.push(`🤔 AMBIGUIDADE DETECTADA (VISÃO CLÍNICA):
+- O lead pediu "Psicologia", mas o contexto sugere INVESTIGAÇÃO (TEA/TDAH/Suspeita).
+- Mães muitas vezes confundem "Avaliação Psicológica" (terapia) com "Avaliação Neuropsicológica" (diagnóstico).
+- 🛑 NÃO dê o preço de R$200 direto. Explique a diferença PRIMEIRO.
+- SCRIPT OBRIGATÓRIO: "Para eu te passar as informações certinhas: você busca a **Psicoterapia** (acompanhamento semanal para questões emocionais/comportamentais) ou a **Avaliação Neuropsicológica** (bateria de testes para investigar TEA/TDAH e fechar diagnóstico)?"`);
     }
 
     // ── LOCALIZAÇÃO ───────────────────────────────────────
