@@ -41,6 +41,15 @@ const learningInsightSchema = new mongoose.Schema(
                     overcomingRate: Number, // %
                 },
             ],
+            // ⛔ O que NÃO fazemos (Learned Negative Scope)
+            negativeScope: [
+                {
+                    term: String, // ex: "raio-x", "cirurgia"
+                    phrase: String, // ex: "não realizamos raio-x"
+                    frequency: Number,
+                    verified: { type: Boolean, default: false } // 🔒 Human in the loop
+                }
+            ],
         },
 
         leadsAnalyzed: Number,

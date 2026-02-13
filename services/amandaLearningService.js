@@ -122,10 +122,32 @@ function aggregateInsights(insights) {
         }
     });
 
+    // ---------------------------
+    // Negative Scope (Agrupado por termo)
+    // ---------------------------
+    const negativeByTerm = {};
+    (insights.negativeScope || []).forEach(item => {
+        const key = item.term;
+        if (!negativeByTerm[key]) {
+            negativeByTerm[key] = { term: key, parseParams: [], frequency: 0 };
+        }
+        negativeByTerm[key].frequency++;
+        // Guarda uma frase de exemplo (a mais curta para economizar token)
+        if (!negativeByTerm[key].phrase || item.phrase.length < negativeByTerm[key].phrase.length) {
+            negativeByTerm[key].phrase = item.phrase;
+        }
+    });
+
+    // Top 5 termos recusados
+    const topNegativeParams = Object.values(negativeByTerm)
+        .sort((a, b) => b.frequency - a.frequency)
+        .slice(0, 5);
+
     return {
         bestOpeningLines: topOpenings,
         effectivePriceResponses: topPriceResponses,
-        successfulClosingQuestions: uniqueQuestions.slice(0, 10) // Top 10
+        successfulClosingQuestions: uniqueQuestions.slice(0, 10), // Top 10
+        negativeScope: topNegativeParams
     };
 }
 
@@ -154,7 +176,8 @@ export async function analyzeHistoricalConversations() {
             bestOpeningLines: [],
             effectivePriceResponses: [],
             successfulClosingQuestions: [],
-            commonObjections: [] // reservado pra futuro
+            commonObjections: [], // reservado pra futuro
+            negativeScope: [] // 🆕
         };
 
         // 2) Para cada lead convertido, ler conversas
@@ -218,6 +241,7 @@ export async function analyzeHistoricalConversations() {
                 const msg = messages[i];
                 const nextMsg = messages[i + 1];
 
+                // Closing Questions
                 if (
                     msg.direction === 'outbound' &&
                     (msg.content || msg.text || '').includes('?') &&
@@ -236,6 +260,40 @@ export async function analyzeHistoricalConversations() {
             }
 
             insights.successfulClosingQuestions.push(...questionsBeforeScheduling);
+
+            // ------------ ⛔ NEGATIVE SCOPE (O que não fazemos) ------------
+            // Detecta quando a clínica diz "não realizamos", "não fazemos", etc.
+            const refusalKeywords = /n[ãa]o\s+(realiza|faz|trabalha|temos|atende)|infelizmente\s+n[ãa]o/i;
+
+            for (let i = 1; i < messages.length; i++) {
+                const msg = messages[i];
+                const prevMsg = messages[i - 1];
+
+                if (
+                    msg.direction === 'outbound' &&
+                    refusalKeywords.test(msg.content || msg.text || '') &&
+                    prevMsg.direction === 'inbound'
+                ) {
+                    const userText = cleanText(prevMsg.content || prevMsg.text || '');
+                    const refusalText = cleanText(msg.content || msg.text || '');
+
+                    // Simplificação: pega palavras-chave do user (ex: "faz raio-x?")
+                    // Remove 'voces', 'fazem', 'tem', etc. e pega o substantivo
+                    const term = userText
+                        .replace(/\b(voc[eê]s?|faz(em)?|tem|realizam?|trabalham?|gostaria|queria|saber|se)\b/gi, '')
+                        .replace(/[?.,!]/g, '')
+                        .trim();
+
+                    if (term.length > 3 && term.length < 30) {
+                        insights.negativeScope.push({
+                            term: term.toLowerCase(),
+                            phrase: refusalText,
+                            frequency: 1,
+                            verified: false // 🔒 Exige aprovação humana
+                        });
+                    }
+                }
+            }
         }
 
         // 3) Agrega e simplifica (TOPs)

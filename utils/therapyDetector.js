@@ -33,7 +33,7 @@ export const THERAPY_SPECIALTIES = {
     psychology: {
         names: ['psicologia', 'psicólogo'],
         patterns: [
-            /psic(o|ó)log(a|o|ia)(?!\s*pedag)/i,
+            /psic(o|ó)log(a|o|ia|ica)(?!\s*pedag)/i,
             /\btcc\b|ansiedade|depress(ã|a)o/i,
             /psic(o|ó)log(o|a)\s+infantil/i
         ]
