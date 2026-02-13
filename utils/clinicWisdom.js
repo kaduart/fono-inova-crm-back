@@ -357,11 +357,11 @@ export function getWisdomForContext(topic, flags = {}) {
     }
 
     // ── 🚨 AMBIGUIDADE: PSICOLOGIA vs NEUROPSICOLOGIA 🚨 ──
-    // Se pede "psicologia" mas cita sintomas de TEA/TDAH, investigação ou "saber se tem"
-    if (topic === 'psicologia' && (flags.mentionsTEA_TDAH || flags.mentionsInvestigation || flags.mentionsDoubtTEA)) {
+    // Se pede "psicologia" mas cita sintomas de TEA/TDAH, investigação ou "saber se tem" OU pede explicitamente "avaliação" (termo confuso)
+    if (topic === 'psicologia' && (flags.mentionsTEA_TDAH || flags.mentionsInvestigation || flags.mentionsDoubtTEA || flags.talksAboutTypeOfAssessment)) {
         blocks.push(`🤔 AMBIGUIDADE DETECTADA (VISÃO CLÍNICA):
-- O lead pediu "Psicologia", mas o contexto sugere INVESTIGAÇÃO (TEA/TDAH/Suspeita).
-- Mães muitas vezes confundem "Avaliação Psicológica" (terapia) com "Avaliação Neuropsicológica" (diagnóstico).
+- O lead pediu "Psicologia" ou "Avaliação", mas pode estar buscando DIAGNÓSTICO (Neuropsicologia).
+- Mães muitas vezes confundem "Avaliação Psicológica" (terapia) com "Avaliação Neuropsicológica" (bateria de testes).
 - 🛑 NÃO dê o preço de R$200 direto. Explique a diferença PRIMEIRO.
 - SCRIPT OBRIGATÓRIO: "Para eu te passar as informações certinhas: você busca a **Psicoterapia** (acompanhamento semanal para questões emocionais/comportamentais) ou a **Avaliação Neuropsicológica** (bateria de testes para investigar TEA/TDAH e fechar diagnóstico)?"`);
     }

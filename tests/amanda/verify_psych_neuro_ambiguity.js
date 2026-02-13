@@ -8,7 +8,7 @@ const testCases = [
     {
         text: "Gostaria de agendar uma avaliação psicológica infantil",
         expectedTopic: "psicologia",
-        shouldTriggerAmbiguity: false // Terapia padrão
+        shouldTriggerAmbiguity: true // AGORA É TRUE! "Avaliação" ativa a clarificação.
     },
     {
         text: "Queria saber se meu filho tem autismo, preciso de psicologa",
