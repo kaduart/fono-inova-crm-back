@@ -17,7 +17,7 @@ process.env.TZ = 'America/Sao_Paulo';
 // ======================================================
 // 🔧 Configurações internas e serviços
 // ======================================================
-import { initializeSocket, getIo } from "./config/socket.js";
+import { initializeSocket } from "./config/socket.js";
 import Followup from "./models/Followup.js";
 import { getRedis, startRedis } from "./services/redisClient.js";
 import { registerWebhook } from "./services/sicoobService.js";
@@ -86,7 +86,7 @@ dotenv.config({ path: path.resolve(__dirname, "./.env") });
 
 const app = express();
 const server = http.createServer(app);
-initializeSocket(server);
+const io = initializeSocket(server);
 
 console.log("🖥️ INSTANCE INFO:", {
   nodeAppInstance: process.env.NODE_APP_INSTANCE, // PM2 cluster ID
@@ -234,7 +234,7 @@ function initFollowupWatcher() {
           change.documentKey._id
         ).populate("lead");
 
-        getIo().emit("whatsapp-message", {
+        io.emit("whatsapp-message", {
           leadId: updatedFollowup.lead?._id,
           status: updatedFollowup.status,
           message: updatedFollowup.message,

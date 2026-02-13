@@ -98,7 +98,11 @@ router.post('/webhook', agendaAuth, async (req, res) => {
       const io = getIo();
       console.log('[WEBHOOK] getIo() retornou:', !!io);
       console.log('[WEBHOOK] Clientes conectados:', io?.engine?.clientsCount || 0);
-
+      console.log('[WEBHOOK] Socket status:', {
+        ioExists: !!getIo(),
+        clientsCount: getIo()?.engine?.clientsCount,
+        socketsIds: Array.from(getIo()?.sockets?.sockets?.keys() || [])
+      });
       if (io?.engine?.clientsCount > 0) {
         io.emit("preagendamento:new", {
           id: String(pre._id),
