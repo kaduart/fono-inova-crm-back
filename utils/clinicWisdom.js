@@ -17,7 +17,8 @@ import { THERAPY_PRICING, formatPrice, getTherapyPricing } from '../config/prici
 const TESTE_LINGUINHA_WISDOM = {
     teste: {
         regra: 'Teste da Linguinha: R$200 (avaliação fonoaudiológica específica)',
-        script: 'Realizamos o Teste da Linguinha, que é uma avaliação fonoaudiológica específica para verificar a necessidade de intervenção. O valor é R$200.'
+        script: 'Realizamos o Teste da Linguinha, que é uma avaliação fonoaudiológica específica para verificar a necessidade de intervenção. O valor é R$200.',
+        detalhes: 'O teste da linguinha é um exame simples e indolor para avaliar se o bebê tem anquiloglossia (língua presa). Observamos a pega do bebê ao mamar, a sucção (se ele consegue sugar de forma eficiente), o jeito de abocanhar a mama e se há dificuldade que atrapalhe a amamentação.'
     },
     cirurgia: {
         regra: 'NÃO realizamos cirurgia (frenectomia/pique). Apenas reabilitação pós.',
@@ -302,7 +303,19 @@ export function getWisdomForContext(topic, flags = {}) {
         }
     }
 
-    // ── REEMBOLSO ──────────────────────────────────────────
+    // ── NOTA FISCAL (Fluxo de Coleta) ─────────────────────
+    if (flags.wantsInvoice) {
+        blocks.push(`🧾 NOTA FISCAL SOLICITADA:
+- A clínica emite nota fiscal para reembolso.
+- Para emitir, PRECISAMOS DOS DADOS:
+  1. Nome Completo do Responsável (CPF na nota)
+  2. CPF
+  3. Endereço Completo (Rua, Bairro, CEP, Cidade)
+  4. Nome do Paciente
+- Script: "Claro! Para emitir a nota fiscal, preciso que você me envie: Nome completo do responsável (CPF na nota), o número do CPF e o Endereço completo. Assim que me passar, já encaminho para o financeiro."`);
+    }
+
+    // ── REEMBOLSO (Dúvida Geral) ──────────────────────────
     if (flags.mentionsReembolso) {
         blocks.push(`📋 REEMBOLSO:
 - A clínica fornece nota fiscal para reembolso de QUALQUER plano
@@ -386,6 +399,7 @@ export function getWisdomForContext(topic, flags = {}) {
         blocks.push(`👅 TESTE DA LINGUINHA:
 - O teste é realizado pela fonoaudióloga.
 - Valor: R$200 (avaliação inicial).
+- Script DE RESPOSTA OBRIGATÓRIO (Adapte com o nome da criança se souber): "${TESTE_LINGUINHA_WISDOM.teste.detalhes}"
 - Se já fez cirurgia: "A fonoaudiologia é essencial para reabilitar a função da língua após o procedimento."`);
     }
 

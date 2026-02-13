@@ -79,7 +79,7 @@ const SCENARIOS = [
         name: 'RN-05: Teste da Linguinha',
         rule: 'Deve detectar como fono (tongue_tie)',
         messages: [
-            { text: 'Meu bebê tem dificuldade para mamar, quero fazer o teste da linguinha', expect: ['lingua', 'fono', 'beb', 'avaliação', 'conta', 'entendi', 'ajudar'], reject: ['neuropsico', 'psicolog'] }
+            { text: 'Meu bebê tem dificuldade para mamar, quero fazer o teste da linguinha', expect: ['lingua', 'fono', 'beb', 'avaliação', 'conta', 'entendi', 'entendo', 'ajudar', 'preocupação'], reject: ['neuropsico', 'psicolog'] }
         ]
     },
     {
@@ -95,8 +95,8 @@ const SCENARIOS = [
         name: 'RN-06b: TDAH - Pergunta sobre tratamento',
         rule: 'Deve dar resposta estruturada sobre TDAH (clinicWisdom: ACOLHIMENTO_RULES)',
         messages: [
-            // Simplified expectations
-            { text: 'Meu filho foi diagnosticado com TDAH, como funciona o tratamento de vocês?', expect: ['tdah', 'avaliação', 'tratamento', 'acompanhamento'], reject: [] }
+            // Simplified expectations including empathy
+            { text: 'Meu filho foi diagnosticado com TDAH, como funciona o tratamento de vocês?', expect: ['tdah', 'avaliação', 'tratamento', 'acompanhamento', 'entendo', 'cuidado'], reject: [] }
         ]
     },
     {

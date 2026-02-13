@@ -134,7 +134,8 @@ export function deriveFlagsFromText(text = "") {
         asksPayment: /(pagamento|pix|cart[aã]o|dinheiro|parcel)/i.test(normalizedText),
         asksPlans: /(ipasgo|unimed|amil|bradesco|sul\s*am[eé]rica|hapvida|plano|conv[eê]nio)/i.test(normalizedText),
         asksDuration: /(quanto\s*tempo|dura[çc][aã]o|dura\s*quanto)/i.test(normalizedText),
-        mentionsReembolso: /(reembolso|guia|nota\s*fiscal|declaração.*plano)/i.test(normalizedText),
+        mentionsReembolso: /(reembolso|guia|declaração.*plano)/i.test(normalizedText) && !/(nota\s*fiscal|nf)/i.test(normalizedText), // NF tem flag específica agora
+        wantsInvoice: /(nota\s*fiscal|nf|nota\s*para\s*reembolso)/i.test(normalizedText),
         asksAboutAfterHours: /(depois\s+d[ao]s?\s*18|ap[oó]s\s*18|[aà]\s*noite|hor[aá]rio\s*(especial|noturno)|depois\s+do\s+hor[aá]rio)/i.test(normalizedText),
         asksAvaliacao: /(avalia[çc][aã]o|anamnese|consulta\s+inicial|primeira\s+consulta|como\s+come[çc]a)/i.test(normalizedText),
 
