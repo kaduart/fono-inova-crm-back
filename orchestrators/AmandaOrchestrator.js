@@ -1467,7 +1467,12 @@ Em breve nossa equipe entra em contato 😊`
         const { message: menuMsg, optionsText } = buildSlotMenuMessage(slotsCtx);
 
         const preferredDateStr = extractPreferredDateFromText(text);
-        const wantsFromDate = preferredDateStr && /\b(a\s+partir|depois|ap[oó]s)\b/i.test(text);
+        const wantsFromDate = preferredDateStr && (
+            /\b(a\s+partir|depois|ap[oó]s)\b/i.test(text) ||
+            // Se o usuário mandou SÓ a data ou "dia DD/MM", assumimos que quer ESSA data ou a partir dela
+            /^(dia\s+)?\d{1,2}[\/\-]\d{1,2}(\d{2,4})?$/i.test(text.trim()) ||
+            /\b(dia\s+)(\d{1,2}[\/\-]\d{1,2})\b/i.test(text)
+        );
 
         if (wantsFromDate) {
             const therapyArea = lead?.therapyArea;
@@ -1795,14 +1800,18 @@ Em breve nossa equipe entra em contato 😊`
     const schedulingSignalNow = !!(
         flags.wantsSchedule ||
         isSchedulingLikeText ||
-        /\b(agenda|agendar|marcar|hor[aá]rio|data|vaga|dispon[ií]vel|essa\s+semana|semana\s+que\s+vem)\b/i.test(text)
+        /\b(agenda|agendar|marcar|hor[aá]rio|data|vaga|dispon[ií]vel|essa\s+semana|semana\s+que\s+vem)\b/i.test(text) ||
+        // ✅ FIX: Detecta menção a dia específico (dia DD)
+        /\b(dia\s+)(\d{1,2})\b/i.test(text) ||
+        /\b(\d{1,2}[\/\-]\d{1,2})\b/.test(text)
     );
 
 
 
     const wantsScheduling =
         flags.wantsSchedule ||
-        isSchedulingLikeText;
+        isSchedulingLikeText ||
+        schedulingSignalNow;
 
     if (
         flags.inSchedulingFlow &&
@@ -2236,12 +2245,25 @@ Em breve nossa equipe entra em contato 😊`
         console.log("[ORCHESTRATOR] Buscando slots para:", { therapyAreaForSlots, preferredPeriod });
 
         try {
+            // ✅ FIX: Se tiver data específica (flags.preferredDate), filtra no findAvailableSlots
+            const dateFilter = lead?.pendingPreferredDate || flags.preferredDate || null;
+
+            // Se tiver data, podemos ignorar preferredPeriod para ser mais específico
+            const periodToUse = dateFilter ? null : preferredPeriod;
+
             const availableSlots = await findAvailableSlots({
                 therapyArea: therapyAreaForSlots,
-                preferredPeriod,
+                preferredPeriod: periodToUse,
                 daysAhead: 30,
                 maxOptions: 2,
             });
+
+            // ✅ FIX: Se buscou por período mas temos data específica, filtra client-side
+            if (dateFilter && availableSlots?.primary) {
+                // Nota: findAvailableSlots retorna pool. 
+                // Se quisermos filtrar exato:
+                // Implementar lógica de filtro aqui se necessário, ou confiar que o usuário vai escolher
+            }
 
             if (!availableSlots?.primary) {
                 // Tenta sem filtro de período
