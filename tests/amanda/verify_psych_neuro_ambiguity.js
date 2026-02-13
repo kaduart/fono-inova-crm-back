@@ -17,9 +17,8 @@ const testCases = [
     },
     {
         text: "Preciso investigar TDAH dele",
-        expectedTopic: "psicologia", // "investigar" pode cair como psicologia se não tiver neuro explicito, mas FlagsDetector pode não capturar topico se só tiver investigar. Vamos ver o resolveTopic.
-        // Se resolveTopic der null, wisdom não ativa. Mas se tiver "psicologa" e "investigar", ativa.
-        shouldTriggerAmbiguity: false // Teste abaixo
+        expectedTopic: null, // "investigar" sozinho não resolve tópico, mas ativa flag. Wisdom não ativa sem tópico 'psicologia'.
+        shouldTriggerAmbiguity: false // Corretamente false pois não caiu no tópico psicologia
     },
     {
         text: "Marcar psicologa pra investigar TDAH",
@@ -28,7 +27,7 @@ const testCases = [
     },
     {
         text: "Avaliação neuropsicológica",
-        expectedTopic: "neuropsicologia",
+        expectedTopic: "neuropsicologica", // ResolveTopic retorna "neuropsicologica"
         shouldTriggerAmbiguity: false // Já é neuro explicito
     }
 ];

@@ -39,11 +39,11 @@ async function runTest() {
         console.log("\n💬 Resposta da Amanda:\n", response);
 
         if (response && response.includes("Consulte a equipe para informações detalhadas")) {
-            console.log("\n✅ REPRODUZIDO: Resposta genérica detectada.");
-            process.exit(0);
-        } else {
-            console.log("\n❌ NÃO REPRODUZIDO: Resposta parece correta ou diferente do esperado.");
+            console.error("\n❌ FALHA: Bug reapareceu! Resposta genérica detectada.");
             process.exit(1);
+        } else {
+            console.log("\n✅ SUCESSO: Resposta correta (bug não reproduzido).");
+            process.exit(0);
         }
 
     } catch (error) {

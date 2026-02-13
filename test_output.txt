@@ -1,0 +1,129 @@
+🚀 IORedis conectando via REDIS_URL...
+[36m
+╔════════════════════════════════════════════════════════════════╗[0m
+[36m║  🧪 SIMULAÇÃO COMPLETA - AMANDA (AmandaOrchestrator)          ║[0m
+[36m║  📱 Número: 556299997777                                 ║[0m
+[36m║  📋 Cenários: 28 (RNs + Casos Reais + 43k + Flows)          ║[0m
+[36m╚════════════════════════════════════════════════════════════════╝[0m
+[32m
+✅ MongoDB conectado
+[0m
+[36m
+────────────────────────────────────────────────────────────────[0m
+[36m  [RN - therapyDetector / flagsDetector] RN-01: Saudação Pura[0m
+[90m  📋 Deve acolher e perguntar a especialidade[0m
+[36m────────────────────────────────────────────────────────────────[0m
+[90m
+  👤 [MSG 1] "Oi, boa tarde!"[0m
+[32m  🤖 [AMANDA] Olá! 😊 Pra eu puxar os horários certinho: é pra qual área (Fono, Psicologia, TO, Fisio ou Neuropsico)? 💚[0m
+[32m  ✅ Contém palavra esperada[0m
+[36m
+────────────────────────────────────────────────────────────────[0m
+[36m  [RN - therapyDetector / flagsDetector] RN-02: Detecção Fono - "meu filho não fala"[0m
+[90m  📋 Deve identificar fonoaudiologia[0m
+[36m────────────────────────────────────────────────────────────────[0m
+[90m
+  👤 [MSG 1] "Meu filho tem 4 anos e não fala direito, troca muitas letras"[0m
+[32m  🤖 [AMANDA] Olá! 😊 Pra eu organizar certinho, vocês preferem **manhã ou tarde**? 💚[0m
+[32m  ✅ Contém palavra esperada[0m
+[CIRCUIT] Follow-up initial agendado para 13/02/2026, 17:42:55
+[36m
+────────────────────────────────────────────────────────────────[0m
+[36m  [RN - therapyDetector / flagsDetector] RN-03: Detecção Neuropsico + Preço[0m
+[90m  📋 Deve informar preço diferenciado (R$ 2.000) com anchor de laudo incluso[0m
+[36m────────────────────────────────────────────────────────────────[0m
+[90m
+  👤 [MSG 1] "Preciso de uma avaliação neuropsicológica, quanto custa?"[0m
+[32m  🤖 [AMANDA] Entendi! Vou te passar certinho 😊 neuropsicológica: R$ 2.000 (até 6x sem juros). Se você quiser, eu posso ver horários pra você quando fizer sentido 💚[0m
+[32m  ✅ Contém palavra esperada[0m
+[CIRCUIT] Follow-up initial agendado para 13/02/2026, 17:42:56
+[36m
+────────────────────────────────────────────────────────────────[0m
+[36m  [RN - therapyDetector / flagsDetector] RN-04: Detecção Psicologia Infantil[0m
+[90m  📋 Deve detectar psicologia e prosseguir com qualificação[0m
+[36m────────────────────────────────────────────────────────────────[0m
+[90m
+  👤 [MSG 1] "Preciso de psicóloga infantil para minha filha de 7 anos"[0m
+[32m  🤖 [AMANDA] Olá! 😊 Pra eu organizar certinho, vocês preferem **manhã ou tarde**? 💚[0m
+[32m  ✅ Contém palavra esperada[0m
+[CIRCUIT] Follow-up initial agendado para 13/02/2026, 17:42:56
+[36m
+────────────────────────────────────────────────────────────────[0m
+[36m  [RN - therapyDetector / flagsDetector] RN-05: Teste da Linguinha[0m
+[90m  📋 Deve detectar como fono (tongue_tie)[0m
+[36m────────────────────────────────────────────────────────────────[0m
+[90m
+  👤 [MSG 1] "Meu bebê tem dificuldade para mamar, quero fazer o teste da linguinha"[0m
+[32m  🤖 [AMANDA] Entendo sua preocupação 
+
+Quando envolve desenvolvimento infantil isso realmente deixa a gente apreensivo.
+Você fez muito bem em buscar orientação cedo. 💚[0m
+[31m  ❌ Nenhuma palavra esperada: [lingua, fono, beb, avaliação, conta, entendi, ajudar][0m
+[CIRCUIT] Follow-up initial agendado para 13/02/2026, 17:42:57
+[36m
+────────────────────────────────────────────────────────────────[0m
+[36m  [RN - therapyDetector / flagsDetector] RN-06: Tongue Tie Surgery Denial[0m
+[90m  📋 Deve NEGAR cirurgia e oferecer teste/reabilitação[0m
+[36m────────────────────────────────────────────────────────────────[0m
+[90m
+  👤 [MSG 1] "Vocês fazem a cirurgia do pique na linguinha?"[0m
+[32m  🤖 [AMANDA] Olá! 😊 Entendo a preocupação de vocês em relação à cirurgia da linguinha. Nós não realizamos a cirurgia (frenectomia/pique da língua), mas fazemos o Teste da Linguinha, que é uma avaliação importante...[0m
+[32m  ✅ Contém palavra esperada[0m
+[36m
+────────────────────────────────────────────────────────────────[0m
+[36m  [RN - therapyDetector / flagsDetector] RN-06: TDAH - Pergunta sobre tratamento[0m
+[90m  📋 Deve dar resposta estruturada sobre TDAH (clinicWisdom: ACOLHIMENTO_RULES)[0m
+[36m────────────────────────────────────────────────────────────────[0m
+[90m
+  👤 [MSG 1] "Meu filho foi diagnosticado com TDAH, como funciona o tratamento de vocês?"[0m
+[32m  🤖 [AMANDA] Meu filho foi diagnosticado com TDAH, como funciona o tratamento de vocês?, o TDAH costuma ser trabalhado com avaliação especializada e um plano multidisciplinar, envolvendo principalmente psicologia,...[0m
+[32m  ✅ Contém palavra esperada[0m
+[CIRCUIT] Follow-up initial agendado para 13/02/2026, 17:43:01
+[36m
+────────────────────────────────────────────────────────────────[0m
+[36m  [RN - therapyDetector / flagsDetector] RN-07: Dificuldade Escolar → Psicopedagogia[0m
+[90m  📋 Deve direcionar para psicopedagogia, NÃO psicologia[0m
+[36m────────────────────────────────────────────────────────────────[0m
+[90m
+  👤 [MSG 1] "Minha filha está tendo dificuldade na escola para ler e escrever"[0m
+[32m  🤖 [AMANDA] Entendo sua preocupação 
+
+Quando envolve desenvolvimento infantil isso realmente deixa a gente apreensivo.
+Você fez muito bem em buscar orientação cedo. 💚[0m
+[31m  ❌ Nenhuma palavra esperada: [psicopedagog, aprendizagem, escola, entendi, conta, ajudar][0m
+[CIRCUIT] Follow-up initial agendado para 13/02/2026, 17:43:02
+[36m
+────────────────────────────────────────────────────────────────[0m
+[36m  [clinicWisdom] CW-01: Preço Genérico (asksPrice sem área)[0m
+[90m  📋 Deve mostrar preço com anchor: de R$250 por R$200[0m
+[36m────────────────────────────────────────────────────────────────[0m
+[90m
+  👤 [MSG 1] "Quanto custa a avaliação de vocês?"[0m
+[32m  🤖 [AMANDA] A avaliação inicial é **R$ 200**. Se você me disser se é pra **Fono**, **Psicologia**, **TO**, **Fisio** ou **Neuropsico**, eu te passo o certinho 💚[0m
+[32m  ✅ Contém palavra esperada[0m
+[CIRCUIT] Follow-up initial agendado para 13/02/2026, 17:43:02
+[36m
+────────────────────────────────────────────────────────────────[0m
+[36m  [clinicWisdom] CW-02: Convênio Unimed[0m
+[90m  📋 Deve responder sobre reembolso + bridge para particular[0m
+[36m────────────────────────────────────────────────────────────────[0m
+[90m
+  👤 [MSG 1] "Vocês aceitam plano de saúde? Tenho Unimed"[0m
+[32m  🤖 [AMANDA] Olá! 😊 Sobre o seu plano de saúde, estamos em processo de credenciamento com a Unimed. No momento, atendemos de forma particular, mas muitas famílias optam por solicitar o reembolso pelo plano, e nós...[0m
+[32m  ✅ Contém palavra esperada[0m
+[36m
+────────────────────────────────────────────────────────────────[0m
+[36m  [clinicWisdom] CW-03: Objeção de Preço[0m
+[90m  📋 Deve acolher + oferecer pacote ou reembolso, NÃO insistir[0m
+[36m────────────────────────────────────────────────────────────────[0m
+[90m
+  👤 [MSG 1] "Achei muito caro, tá fora do meu orçamento"[0m
+[32m  🤖 [AMANDA] Olá! 😊 Entendo que o investimento em saúde pode pesar no orçamento. A boa notícia é que a nossa avaliação, que antes era de R$250, está com um desconto especial por R$200. Ela inclui uma anamnese com...[0m
+[32m  ✅ Contém palavra esperada[0m
+[36m
+────────────────────────────────────────────────────────────────[0m
+[36m  [clinicWisdom] CW-04: Localização[0m
+[90m  📋 Deve responder com endereço em Anápolis/GO (ou enviar pin)[0m
+[36m────────────────────────────────────────────────────────────────[0m
+[90m
+  👤 [MSG 1] "Onde fica a clínica de vocês?"[0m
