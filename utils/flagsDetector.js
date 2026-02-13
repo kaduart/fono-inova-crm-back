@@ -334,7 +334,7 @@ export function resolveTopicFromFlags(flags = {}, text = "") {
     if (/\bpsicopedagog/.test(t) || flags.asksPsychopedagogy) return "psicopedagogia";
 
     if (/\bfono\b|fonoaudiolog|fala|linguagem|gagueira|atraso/.test(t) || flags.mentionsSpeechTherapy) return "fono";
-    if (/\bpsic(o|ó)log|ansiedad|comportamento|emocional/.test(t)) return "psicologia";
+    if (/\bpsic[oó]l[oó]g|ansiedad|comportamento|emocional/.test(t)) return "psicologia";
     if (/terapia\s+ocupacional|\bto\b|integra[çc][aã]o\s+sensorial/.test(t)) return "terapia_ocupacional";
     if (/fisioterap|fisio\b|bobath|dor\s+(nas?|na\s+)?(costas|coluna|ombro|joelho|pesco[cç]o)|postura|reabilita[cç][aã]o|motor/i.test(t))
         return "fisioterapia";
