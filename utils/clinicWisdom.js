@@ -11,6 +11,22 @@
 import { THERAPY_PRICING, formatPrice, getTherapyPricing } from '../config/pricing.js';
 
 // ================================================================
+// 👅 TESTE DA LINGUINHA (separado de Fono)
+// ================================================================
+
+const TESTE_LINGUINHA_WISDOM = {
+    teste: {
+        regra: 'Teste da Linguinha: R$200 (avaliação fonoaudiológica específica)',
+        script: 'Realizamos o Teste da Linguinha, que é uma avaliação fonoaudiológica específica para verificar a necessidade de intervenção. O valor é R$200.'
+    },
+    cirurgia: {
+        regra: 'NÃO realizamos cirurgia (frenectomia/pique). Apenas reabilitação pós.',
+        script: 'Nós não realizamos a cirurgia (frenectomia/pique da língua). Aqui na clínica fazemos apenas o Teste da Linguinha (avaliação) e a fonoterapia para reabilitação após a cirurgia (caso você faça o procedimento em outro local).',
+        acolhimento: 'Entendo a preocupação. O ideal é realizar o teste primeiro para confirmar a necessidade, ou se já tiver indicação, buscar um odontopediatra para o procedimento e depois voltar conosco para a reabilitação.',
+    }
+};
+
+// ================================================================
 // 📋 REGRAS DE PREÇO (extraídas das conversas reais)
 // ================================================================
 
@@ -347,6 +363,22 @@ export function getWisdomForContext(topic, flags = {}) {
 - ⚠️ O orchestrator JÁ envia pin de localização automaticamente`);
     }
 
+
+
+    // ── TESTE DA LINGUINHA / CIRURGIA ─────────────────────
+    if (flags.mentionsTongueTieSurgery || (topic === 'teste_linguinha' && flags.mentionsGeneralSurgery)) {
+        blocks.push(`🚫 CIRURGIA DE LINGUINHA (FRENECTOMIA):
+- A clínica NÃO realiza a cirurgia (pique/frenectomia).
+- Realizamos apenas o TESTE DA LINGUINHA e a fonoterapia pós-cirúrgica (reabilitação).
+- Script OBRIGATÓRIO: "${TESTE_LINGUINHA_WISDOM.cirurgia.script}"
+- Acolhimento: "${TESTE_LINGUINHA_WISDOM.cirurgia.acolhimento}"`);
+    } else if (topic === 'teste_linguinha') {
+        blocks.push(`👅 TESTE DA LINGUINHA:
+- O teste é realizado pela fonoaudióloga.
+- Valor: R$200 (avaliação inicial).
+- Se já fez cirurgia: "A fonoaudiologia é essencial para reabilitar a função da língua após o procedimento."`);
+    }
+
     // Monta bloco final
     const wisdomBlock = blocks.length > 0
         ? blocks.join('\n\n')
@@ -366,6 +398,7 @@ export {
     HORARIOS_WISDOM,
     THERAPY_WISDOM,
     ACOLHIMENTO_RULES,
+    TESTE_LINGUINHA_WISDOM,
 };
 
 export default {
@@ -376,4 +409,5 @@ export default {
     HORARIOS_WISDOM,
     THERAPY_WISDOM,
     ACOLHIMENTO_RULES,
+    TESTE_LINGUINHA_WISDOM,
 };

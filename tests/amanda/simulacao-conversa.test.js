@@ -84,6 +84,14 @@ const SCENARIOS = [
     },
     {
         group: 'RN - therapyDetector / flagsDetector',
+        name: 'RN-06: Tongue Tie Surgery Denial',
+        rule: 'Deve NEGAR cirurgia e oferecer teste/reabilitação',
+        messages: [
+            { text: 'Vocês fazem a cirurgia do pique na linguinha?', expect: ['não', 'realiza', 'cirurgia', 'teste', 'lingu', 'fono', 'reabilita'], reject: ['agendar cirurgia', 'com certeza'] }
+        ]
+    },
+    {
+        group: 'RN - therapyDetector / flagsDetector',
         name: 'RN-06: TDAH - Pergunta sobre tratamento',
         rule: 'Deve dar resposta estruturada sobre TDAH (clinicWisdom: ACOLHIMENTO_RULES)',
         messages: [
