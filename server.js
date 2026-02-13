@@ -150,10 +150,7 @@ const allowedOrigins = [
 ];
 
 const corsOptions = {
-  origin: (origin, cb) =>
-    !origin || allowedOrigins.includes(origin)
-      ? cb(null, true)
-      : cb(new Error(`Origem não permitida pelo CORS: ${origin}`)),
+  origin: true, // ← Permite TODAS as origens (temporário!)
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
