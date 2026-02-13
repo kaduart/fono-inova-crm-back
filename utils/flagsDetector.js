@@ -30,6 +30,13 @@ export function deriveFlagsFromText(text = "") {
     const mentionsLinguinha =
         /\b(linguinha|fr[eê]nulo\s+lingual|freio\s+da\s+l[ií]ngua|freio\s+lingual)\b/i.test(normalizedText);
 
+    const mentionsTongueTieSurgery =
+        mentionsLinguinha &&
+        /\b(cirurgia|operar|opera[çc][aã]o|cortar|corte|pique|pic|frenectomia|cirurgi[ãa]o|procedimento)\b/i.test(normalizedText);
+
+    const mentionsGeneralSurgery =
+        /\b(cirurgia|operar|opera[çc][aã]o|cortar|corte|pique|pic|frenectomia|cirurgi[ãa]o|procedimento|fazer.*a[ií]|faz.*a[ií])\b/i.test(normalizedText);
+
     const wantsPartnershipOrResume =
         /\b(curr[ií]cul|curriculo|curriculum|cv)\b/i.test(normalizedText) ||
         /\b(parceria|parcerias|credenciamento|prestador|vaga|trabalhar\s+com\s+voc[eê]s)\b/i.test(normalizedText) ||
@@ -258,7 +265,9 @@ export function deriveFlagsFromText(text = "") {
 
         // úteis pro funil
         mentionsBaby: /\b(beb[eê]|rec[ée]m[-\s]?nascid[oa]|rn\b|meses)\b/i.test(normalizedText),
-        wantsPartnershipOrResume
+        wantsPartnershipOrResume,
+        mentionsTongueTieSurgery,
+        mentionsGeneralSurgery
     };
 
     // Log dos flags detectados
