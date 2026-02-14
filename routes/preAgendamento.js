@@ -89,36 +89,27 @@ router.post('/webhook', agendaAuth, async (req, res) => {
     // ✅ EMITIR SOCKET PARA O FRONT (igual whatsappController)
     // Linha ~115 (após criar o 'pre') - SUBSTITUA POR:
 
-    // Linha ~98 (depois de criar o 'pre')
-    console.log(`[WEBHOOK] ✅ PreAgendamento criado: ${pre._id} - ${patientName}`);
-
-    // ✅ SUBSTITUA O BLOCO DO SOCKET POR ISSO (linha ~102):
-    console.log('[WEBHOOK] Preparando emit para:', pre._id);
     try {
+
       const io = getIo();
-      console.log('[WEBHOOK] getIo() retornou:', !!io);
-      console.log('[WEBHOOK] Clientes conectados:', io?.engine?.clientsCount || 0);
-      console.log('[WEBHOOK] Socket status:', {
-        ioExists: !!getIo(),
-        clientsCount: getIo()?.engine?.clientsCount,
-        socketsIds: Array.from(getIo()?.sockets?.sockets?.keys() || [])
+      console.log("IO ID:", io._ids || io.engine?.clientsCount || io);
+      console.log("🔍 DEBUG SOCKET:");
+      console.log("  - io.engine.clientsCount:", io.engine.clientsCount);
+      console.log("  - io.sockets.sockets.size:", io.sockets.sockets.size);
+      console.log("  - Socket IDs:", Array.from(io.sockets.sockets.keys()));
+
+      io.emit("preagendamento:new", {
+        id: String(pre._id),
+        patientName: pre.patientInfo.fullName,
+        phone: pre.patientInfo.phone,
+        specialty: pre.specialty,
+        preferredDate: pre.preferredDate,
+        preferredTime: pre.preferredTime,
+        status: pre.status,
+        urgency: pre.urgency,
+        createdAt: pre.createdAt
       });
-      if (io?.engine?.clientsCount > 0) {
-        io.emit("preagendamento:new", {
-          id: String(pre._id),
-          patientName: pre.patientInfo.fullName,
-          phone: pre.patientInfo.phone,
-          specialty: pre.specialty,
-          preferredDate: pre.preferredDate,
-          preferredTime: pre.preferredTime,
-          status: pre.status,
-          urgency: pre.urgency,
-          createdAt: pre.createdAt
-        });
-        console.log(`📡 Socket emitido: preagendamento:new ${pre._id}`);
-      } else {
-        console.log('⚠️ Nenhum cliente conectado - evento perdido');
-      }
+      console.log(`📡 Socket emitido: preagendamento:new ${pre._id}`);
     } catch (socketError) {
       console.error('⚠️ Erro ao emitir socket:', socketError.message);
     }
