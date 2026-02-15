@@ -224,6 +224,8 @@ router.post("/import-from-agenda/confirmar-por-external-id", agendaAuth, async (
       throw new Error(result.error || 'Erro ao criar agendamento');
     }
 
+    io.emit("appointmentCreated", result.appointment);
+
     // Atualizar pré-agendamento
     pre.status = 'importado';
     pre.importedToAppointment = result.appointment._id;
@@ -571,6 +573,12 @@ router.post("/import-from-agenda/sync-cancel", agendaAuth, async (req, res) => {
       }
     }
 
+    io.emit("appointmentUpdated", {
+      _id: appointment._id,
+      operationalStatus: "canceled"
+    });
+
+
     // 3) Atualizar o pré-agendamento como cancelado
     preAgendamento.status = "cancelado";
     preAgendamento.canceledAt = new Date();
@@ -755,6 +763,11 @@ router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
           updateData,
           { new: true, session }
         );
+
+        if (updatedAppointment) {
+          io.emit("appointmentUpdated", updatedAppointment);
+        }
+
 
         // 4) Sincronizar Session relacionada
         if (appointment.session) {
