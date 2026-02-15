@@ -223,7 +223,7 @@ router.post("/import-from-agenda/confirmar-por-external-id", agendaAuth, async (
       await session.abortTransaction();
       throw new Error(result.error || 'Erro ao criar agendamento');
     }
-
+    const io = getIo();
     io.emit("appointmentCreated", result.appointment);
 
     // Atualizar pré-agendamento
@@ -572,7 +572,7 @@ router.post("/import-from-agenda/sync-cancel", agendaAuth, async (req, res) => {
         console.log(`[SYNC-CANCEL] ✅ Agendamento ${appointment._id} cancelado`);
       }
     }
-
+    const io = getIo();
     io.emit("appointmentUpdated", {
       _id: appointment._id,
       operationalStatus: "canceled"
@@ -763,7 +763,7 @@ router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
           updateData,
           { new: true, session }
         );
-
+        const io = getIo();
         if (updatedAppointment) {
           io.emit("appointmentUpdated", updatedAppointment);
         }
