@@ -19,9 +19,20 @@ import { runJourneyFollowups } from '../services/journeyFollowupEngine.js';
 import { handlePackageSessionUpdate, syncEvent } from '../services/syncService.js';
 import { updateAppointmentFromSession, updatePatientAppointments } from '../utils/appointmentUpdater.js';
 import { runTransactionWithRetry } from '../utils/transactionRetry.js';
+import billingOrchestrator from '../services/billing/BillingOrchestrator.js';
 
 dotenv.config();
 const router = express.Router();
+
+// ======================================================================
+// HELPER: Detector de convênio
+// ======================================================================
+function isInsuranceAppointment(body) {
+    return body.billingType === 'insurance' ||
+           body.billingType === 'convenio' ||
+           body.insuranceGuideId ||
+           body.insurance;
+}
 
 // Verifica horários disponíveis
 router.get('/available-slots', flexibleAuth, getAvailableTimeSlots);
@@ -67,6 +78,15 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
     let createdPaymentId = null; // 👈 NOVO: guardar o ID do pagamento
 
     try {
+        // 🔹 NOVO: Detector de convênio (roteamento para BillingOrchestrator)
+        if (isInsuranceAppointment(req.body)) {
+            const result = await billingOrchestrator.handleBilling({
+                ...req.body,
+                createdBy: req.user?._id
+            });
+            return res.status(201).json({ success: true, ...result });
+        }
+
         // 🔹 Validação básica
         if (!patientId || !doctorId || !serviceType || !paymentMethod) {
             return res.status(400).json({
@@ -594,6 +614,23 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
         });
 
     } catch (err) {
+        // 🔹 NOVO: Mapeamento de erros do convênio
+        const errorMap = {
+            'PACIENTE_SEM_GUIA_ATIVA': { status: 400, code: 'NO_INSURANCE_GUIDE' },
+            'GUIA_ESGOTADA': { status: 400, code: 'GUIDE_DEPLETED' },
+            'GUIA_VENCIDA': { status: 400, code: 'GUIDE_EXPIRED' },
+            'CONFLITO_HORARIO': { status: 409, code: 'SCHEDULE_CONFLICT' }
+        };
+
+        const mapped = errorMap[err.code];
+        if (mapped) {
+            return res.status(mapped.status).json({
+                success: false,
+                message: err.message,
+                code: mapped.code
+            });
+        }
+
         console.error("ERR:", err?.message);
         console.error("MODEL:", err?.model?.modelName);
         console.error("PATH:", err?.path);
