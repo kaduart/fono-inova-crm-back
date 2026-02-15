@@ -86,7 +86,6 @@ dotenv.config({ path: path.resolve(__dirname, "./.env") });
 
 const app = express();
 const server = http.createServer(app);
-const server = http.createServer(app);
 const io = initializeSocket(server);
 
 app.set("io", io);
