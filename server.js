@@ -76,6 +76,8 @@ import compression from 'compression';
 import importFromAgendaRouter from './routes/importFromAgenda.js';
 import dashboardRoutes from './routes/dashboard.js';
 import financialAnalyticsRoutes from './routes/analytics/financial.routes.js';
+import insuranceGuidesRoutes from './routes/insuranceGuides.js';
+import convenioPackagesRoutes from './routes/convenioPackages.js';
 
 // ======================================================
 // 🧭 Inicialização base
@@ -204,6 +206,8 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/provisionamento', provisionamentoRoutes);
 app.use('/api/analytics/financial', financialAnalyticsRoutes);
+app.use('/api/insurance-guides', insuranceGuidesRoutes);
+app.use('/api/convenio-packages', convenioPackagesRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);

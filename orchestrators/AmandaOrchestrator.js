@@ -1,10 +1,11 @@
-import Anthropic from "@anthropic-ai/sdk";
+
 import "dotenv/config";
-import { claudeCircuit, openaiCircuit } from "../services/circuitBreaker.js";
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import { urgencyScheduler } from "../services/intelligence/UrgencyScheduler.js";
 import enrichLeadContext from "../services/leadContext.js";
 import { deriveFlagsFromText, detectAllFlags, resolveTopicFromFlags } from "../utils/flagsDetector.js";
+import { detectWithContext as detectWithContextualDetectors } from "../detectors/DetectorAdapter.js";
+import { enforce as enforceStructuralRules } from "../services/EnforcementLayer.js";
 import { buildEquivalenceResponse } from "../utils/responseBuilder.js";
 import {
     detectAllTherapies,
@@ -44,8 +45,8 @@ import { getWisdomForContext } from "../utils/clinicWisdom.js";
 import ensureSingleHeart from "../utils/helpers.js";
 import { extractAgeFromText, extractBirth, extractName, extractPeriodFromText } from "../utils/patientDataExtractor.js";
 import { buildSlotMenuMessage } from "../utils/slotMenuBuilder.js";
+import callAI from "../services/IA/Aiproviderservice.js";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const recentResponses = new Map();
 
 // ============================================================================
@@ -81,44 +82,7 @@ async function safeLeadUpdate(leadId, updateData, options = {}) {
         throw err;
     }
 }
-const AI_MODEL = "claude-sonnet-4-20250514";
 
-async function runAnthropicWithFallback({ systemPrompt, messages, maxTokens, temperature }) {
-    return claudeCircuit.execute(
-        // Função principal (Claude)
-        async () => {
-            const resp = await anthropic.messages.create({
-                model: AI_MODEL,
-                max_tokens: maxTokens,
-                temperature,
-                system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
-                messages: normalizeClaudeMessages(messages),
-            });
-
-            const text = resp?.content
-                ?.filter((b) => b?.type === "text" && typeof b?.text === "string")
-                ?.map((b) => b.text)
-                ?.join("")
-                ?.trim() || null;
-
-            if (!text) throw new Error("Resposta vazia do Claude");
-            return text;
-        },
-        // Fallback (OpenAI)
-        async (originalError) => {
-            console.warn("[CIRCUIT] Claude falhou, tentando OpenAI:", originalError?.message);
-
-            return openaiCircuit.execute(
-                () => callOpenAIFallback({ systemPrompt, messages, maxTokens, temperature }),
-                () => {
-                    // Fallback do fallback: resposta genérica
-                    console.error("[CIRCUIT] Ambos falharam!");
-                    return "Oi! Poderia me repetir o que você precisa? Quero ter certeza de entender direito para te ajudar 💚";
-                }
-            );
-        }
-    );
-}
 
 const PURE_GREETING_REGEX =
     /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|bom\s*dia)[\s!,.]*$/i;
@@ -646,8 +610,26 @@ export async function getOptimizedAmandaResponse({
         );
     }
 
-    const flags = detectAllFlags(text, lead, enrichedContext);
+    // 🆕 DETECÇÃO COM DETECTORES CONTEXTUAIS (ConfirmationDetector, InsuranceDetector)
+    // Usa adapter pattern para manter compatibilidade com flags legacy
+    const flags = detectWithContextualDetectors(text, lead, enrichedContext);
     console.log("🚩 FLAGS DETECTADAS:", flags);
+
+    // 📊 Log detecções contextuais (quando ativas)
+    if (flags._confirmation) {
+        console.log("✅ [CONFIRMATION] Detecção contextual:", {
+            meaning: flags._confirmation.semanticMeaning,
+            confidence: flags._confirmation.confidence,
+            requiresValidation: flags._confirmation.requiresValidation
+        });
+    }
+    if (flags._insurance) {
+        console.log("🏥 [INSURANCE] Detecção contextual:", {
+            plan: flags._insurance.plan,
+            intentType: flags._insurance.intentType,
+            confidence: flags._insurance.confidence
+        });
+    }
 
     // ============================================================
     // 🧭 TRIAGEM AMANDA 2.0 — USANDO triageStep DO SCHEMA
@@ -2525,7 +2507,7 @@ async function callVisitFunnelAI({ text, lead, context = {}, flags = {} }) {
 
     messages.push({ role: "user", content: visitPrompt });
 
-    const textResp = await runAnthropicWithFallback({
+    const textResp = await callAI({
         systemPrompt: dynamicSystemPrompt,
         messages,
         maxTokens: 300,
@@ -2863,7 +2845,7 @@ async function callClaudeWithTherapyData({
             content: prompt + learnedContext + intelligenceNote + patientStatus + urgencyNote,
         });
 
-        const textResp = await runAnthropicWithFallback({
+        const textResp = await callAI({
             systemPrompt: dynamicSystemPrompt,
             messages,
             maxTokens: 300,
@@ -2895,7 +2877,7 @@ ESTÁGIO: ${stage} (${messageCount} msgs totais)${patientStatus}${urgencyNote}${
         content: currentPrompt,
     });
 
-    const textResp = await runAnthropicWithFallback({
+    const textResp = await callAI({
         systemPrompt: dynamicSystemPrompt,
         messages,
         maxTokens: 300,
@@ -3177,7 +3159,16 @@ ${useModule("noNameBeforeSlotRule")}
     }
 
     // 📚 CONSULTA BASE DE CONHECIMENTO REAL
-    const resolvedTopic = resolveTopicFromFlags(flags) || therapyAreaForScheduling;
+    // 🆕 Se InsuranceDetector detectou plano específico, usa como topic
+    let resolvedTopic = resolveTopicFromFlags(flags) || therapyAreaForScheduling;
+
+    // 🏥 PRIORIZA PLANO ESPECÍFICO detectado (Unimed, Ipasgo, etc.)
+    if (flags._insurance?.isSpecific && flags._insurance?.wisdomKey) {
+        console.log(`🏥 [WISDOM] Usando plano específico: ${flags._insurance.wisdomKey}`);
+        // Usa o wisdom específico do plano (se existir em clinicWisdom.js)
+        resolvedTopic = flags._insurance.wisdomKey;
+    }
+
     const { wisdomBlock, wisdom: wisdomData } = getWisdomForContext(resolvedTopic, flags);
 
     const currentPrompt = `${userText}
@@ -3240,7 +3231,7 @@ ${wisdomBlock}
         content: currentPrompt,
     });
 
-    const textResp = await runAnthropicWithFallback({
+    const textResp = await callAI({
         systemPrompt: dynamicSystemPrompt,
         messages,
         maxTokens: 300,
@@ -3252,6 +3243,32 @@ ${wisdomBlock}
             $set: { "autoBookingContext.handoffSentAt": new Date().toISOString() }
         });
     }
+
+    // 🛡️ ENFORCEMENT LAYER (opcional via env var)
+    // Valida blocos estruturais sem congelar texto
+    const ENABLE_ENFORCEMENT = process.env.ENABLE_ENFORCEMENT === 'true';
+
+    if (ENABLE_ENFORCEMENT) {
+        const enforcementResult = enforceStructuralRules(textResp, {
+            flags,
+            lead,
+            userText: text
+        }, {
+            strictMode: false,  // false = só loga, não força fallback
+            logViolations: true
+        });
+
+        if (enforcementResult.wasEnforced) {
+            console.log('🚨 [ENFORCEMENT] Fallback aplicado');
+            return enforcementResult.response;
+        }
+
+        // Log de score (mesmo sem enforcement)
+        if (enforcementResult.validation.stats.totalRulesChecked > 0) {
+            console.log(`✅ [ENFORCEMENT] Score: ${(enforcementResult.validation.score * 100).toFixed(0)}% (${enforcementResult.validation.stats.passedRules}/${enforcementResult.validation.stats.totalRulesChecked} regras)`);
+        }
+    }
+
     return textResp || "Como posso te ajudar? 💚";
 }
 

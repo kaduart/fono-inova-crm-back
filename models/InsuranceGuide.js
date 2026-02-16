@@ -111,6 +111,18 @@ const insuranceGuideSchema = new mongoose.Schema({
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
+  },
+
+  // ======================================================================
+  // 📦 INTEGRAÇÃO COM PACOTES DE CONVÊNIO
+  // (Opcional - default null = zero impacto no fluxo atual)
+  // ======================================================================
+
+  packageId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Package',
+    default: null,
+    description: 'ID do pacote de convênio (se guia foi convertida em pacote)'
   }
 
 }, {

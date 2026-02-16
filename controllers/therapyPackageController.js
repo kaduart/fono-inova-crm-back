@@ -277,7 +277,7 @@ export const packageOperations = {
                 });
             }
 
-
+/* 
 
             // ==========================================================
             // 🚫 5.1️⃣ VALIDAÇÃO DE CONFLITOS COM SESSÕES EXISTENTES
@@ -298,7 +298,7 @@ export const packageOperations = {
                         `no dia ${moment(s.date).format('DD/MM/YYYY')} às ${s.time}.`
                     );
                 }
-            }
+            } */
 
 
             const insertedSessions = await Session.insertMany(sessionsToCreate, { session: mongoSession });

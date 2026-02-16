@@ -7,12 +7,12 @@ import "dotenv/config";
 // 🔧 CONFIGURAÇÃO DOS PROVIDERS
 // ============================================================================
 
-const groq = process.env.GROQ_API_KEY 
-    ? new Groq({ apiKey: process.env.GROQ_API_KEY }) 
+const groq = process.env.GROQ_API_KEY
+    ? new Groq({ apiKey: process.env.GROQ_API_KEY })
     : null;
 
-const openai = process.env.OPENAI_API_KEY 
-    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) 
+const openai = process.env.OPENAI_API_KEY
+    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
     : null;
 
 // Modelos por provider
@@ -26,12 +26,12 @@ const MODELS = {
 // 🚀 FUNÇÃO PRINCIPAL - CHAMADA COM FALLBACK AUTOMÁTICO
 // ============================================================================
 
-export async function callAI({ 
-    systemPrompt, 
-    messages, 
-    maxTokens = 300, 
+export async function callAI({
+    systemPrompt,
+    messages,
+    maxTokens = 300,
     temperature = 0.7,
-    usePremiumModel = false 
+    usePremiumModel = false
 }) {
     const errors = [];
 
@@ -74,7 +74,7 @@ export async function callAI({
 
 async function callGroq({ systemPrompt, messages, maxTokens, temperature, usePremiumModel }) {
     const model = usePremiumModel ? MODELS.groqPremium : MODELS.groq;
-    
+
     const groqMessages = [
         { role: "system", content: systemPrompt },
         ...normalizeMessages(messages)
@@ -117,8 +117,8 @@ async function callOpenAI({ systemPrompt, messages, maxTokens, temperature }) {
 function normalizeMessages(messages) {
     return messages.map(msg => ({
         role: msg.role,
-        content: typeof msg.content === "string" 
-            ? msg.content 
+        content: typeof msg.content === "string"
+            ? msg.content
             : JSON.stringify(msg.content)
     }));
 }

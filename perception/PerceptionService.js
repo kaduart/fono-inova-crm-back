@@ -4,7 +4,6 @@
 
 import { detectAllFlags } from '../utils/flagsDetector.js';
 import { detectAllTherapies } from '../utils/therapyDetector.js';
-import { extractEntities } from '../services/intelligence/EntityExtractor.js';
 import Logger from '../services/utils/Logger.js';
 
 const logger = new Logger('PerceptionService');
@@ -31,7 +30,7 @@ export class PerceptionService {
 
     try {
       // 1. Extração de Entidades (idade, nome, período, etc.)
-      const entities = extractEntities(text, memory);
+      const entities = {};
 
       // 2. Detecção de Flags (objeções, urgência, TEA, etc.)
       const flags = detectAllFlags(text, lead, memory);

@@ -29,9 +29,9 @@ const router = express.Router();
 // ======================================================================
 function isInsuranceAppointment(body) {
     return body.billingType === 'insurance' ||
-           body.billingType === 'convenio' ||
-           body.insuranceGuideId ||
-           body.insurance;
+        body.billingType === 'convenio' ||
+        body.insuranceGuideId ||
+        body.insurance;
 }
 
 // Verifica horários disponíveis
@@ -969,14 +969,14 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                     kind: 'appointment_payment',
                     notes: `Pagamento registrado via edição de agendamento - ${new Date().toLocaleString('pt-BR')}`
                 });
-                
+
                 await newPayment.save({ session: mongoSession });
-                
+
                 // Vincula o pagamento ao agendamento
                 appointment.payment = newPayment._id;
                 appointment.paymentStatus = updateData.billingType === 'convenio' ? 'pending' : 'paid';
                 await appointment.save({ session: mongoSession });
-                
+
                 console.log(`✅ Novo pagamento criado: ${newPayment._id} para agendamento ${appointment._id}`);
             }
 
@@ -1353,26 +1353,20 @@ router.patch('/:id/complete', auth, async (req, res) => {
             await session.abortTransaction();
             return res.status(404).json({ error: 'Agendamento não encontrado' });
         }
+        // ✅ Só incrementa pacote se ainda não estiver concluído
+        const shouldIncrementPackage =
+            appointment.package &&
+            appointment.clinicalStatus !== 'completed';
 
         /* if (appointment.operationalStatus === 'confirmed') {
             await session.abortTransaction();
             return res.status(400).json({ error: 'Este agendamento já está concluído' });
         } */
 
-        // ✅ VERIFICAR DUPLICAÇÃO APENAS PARA PACOTE
-        let shouldIncrementPackage = true;
-
-        if (appointment.session) {
-            const sessionDoc = await Session.findById(appointment.session._id).session(session);
-            if (sessionDoc.status === 'completed' && appointment.package) {
-                shouldIncrementPackage = false;
-                console.log('⚠️ Sessão já estava completa - evitando duplicar pacote');
-            }
-        }
-
         // 1️⃣ ATUALIZAR SESSÃO (SEMPRE!)
         if (appointment.session) {
-            const sessionResult = await Session.updateOne(
+            // 🔧 Usar findOneAndUpdate para disparar hook de consumo de guia
+            const sessionResult = await Session.findOneAndUpdate(
                 { _id: appointment.session._id },
                 {
                     status: 'completed',
@@ -1380,13 +1374,14 @@ router.patch('/:id/complete', auth, async (req, res) => {
                     paymentStatus: 'paid',
                     visualFlag: 'ok',
                     updatedAt: new Date()
-                }
-            ).session(session);
+                },
+                { new: true, session }  // new: true retorna o documento atualizado
+            );
 
             console.log('✅ Session update:', {
                 id: appointment.session._id,
-                matched: sessionResult.matchedCount,
-                modified: sessionResult.modifiedCount
+                status: sessionResult?.status,
+                guideConsumed: sessionResult?.guideConsumed
             });
         }
 
@@ -1447,19 +1442,20 @@ router.patch('/:id/complete', auth, async (req, res) => {
         }
 
         // 3️⃣ ATUALIZAR PACOTE (SE NECESSÁRIO)
+        let packageDoc = null; // Declarar fora do escopo para reusar depois
         if (shouldIncrementPackage && appointment.package) {
-            const packageDoc = await Package.findById(appointment.package._id).session(session);
-            if (packageDoc.sessionsDone < packageDoc.totalSessions) {
-                await Package.updateOne(
-                    { _id: appointment.package._id },
-                    {
-                        $inc: { sessionsDone: 1 },
-                        updatedAt: new Date()
-                    }
-                ).session(session);
+            packageDoc = await Package.findById(appointment.package._id).session(session);
+            await Package.updateOne(
+                {
+                    _id: appointment.package._id,
+                    $expr: { $lt: ["$sessionsDone", "$totalSessions"] }
+                },
+                {
+                    $inc: { sessionsDone: 1 },
+                    $set: { updatedAt: new Date() }
+                }
+            ).session(session);
 
-                console.log('✅ Package incremented:', appointment.package._id);
-            }
         }
 
         // 4️⃣ ATUALIZAR AGENDAMENTO
@@ -1481,7 +1477,18 @@ router.patch('/:id/complete', auth, async (req, res) => {
         };
 
         if (appointment.package) {
-            updateData.paymentStatus = 'package_paid';
+            // 🏥 Se for pacote de convênio, mantém pending_receipt (recebe em 30 dias)
+            // Reutilizar packageDoc se já foi carregado, senão buscar
+            if (!packageDoc) {
+                packageDoc = await Package.findById(appointment.package._id).session(session);
+            }
+
+            if (packageDoc && packageDoc.type === 'convenio') {
+                updateData.paymentStatus = 'pending_receipt';
+                updateData.visualFlag = 'pending'; // Reflete status financeiro pendente
+            } else {
+                updateData.paymentStatus = 'package_paid';
+            }
         } else {
             updateData.paymentStatus = 'paid';
         }
