@@ -105,7 +105,7 @@ class InsuranceBillingService {
         throw error;
       }
 
-      // 6. Criar Session
+      // 6. Criar Session (com referência à guia, mas SEM consumir)
       const newSession = new Session({
         patient: patientId,
         doctor: doctorId,
@@ -119,6 +119,7 @@ class InsuranceBillingService {
         paymentStatus: 'pending',
         visualFlag: 'pending',
         paymentMethod: 'convenio',
+        insuranceGuide: guide._id, // 🔗 Vincula à guia (mas não consome ainda)
         notes: notes || `Guia: ${guide.number} | ${guide.insurance}`,
         _inFinancialTransaction: true
       });
@@ -161,7 +162,7 @@ class InsuranceBillingService {
         serviceType: 'session',
         amount: 0, // Valor será definido no faturamento
         paymentMethod: 'convenio',
-        status: 'pending_billing', // Status inicial
+        status: 'pending', // Status inicial
         billingType: 'convenio',
         insurance: {
           provider: guide.insurance,
@@ -175,8 +176,7 @@ class InsuranceBillingService {
 
       await payment.save({ session });
 
-      // 10. Consumir sessão da guia
-      const guideUpdate = await guideService.consumeGuideSession(guide._id, session);
+      // 10. ❌ REMOVIDO: consumo da guia (agora acontece quando Session.status = 'completed')
 
       // 11. Atualizar Appointment com Payment
       await Appointment.findByIdAndUpdate(
@@ -210,11 +210,11 @@ class InsuranceBillingService {
           _id: guide._id,
           number: guide.number,
           insurance: guide.insurance,
-          remaining: guideUpdate.remaining,
-          status: guideUpdate.status
+          remaining: guide.remaining, // Saldo atual (sem consumo)
+          status: guide.status
         },
-        message: this._buildMessage(guideUpdate),
-        alert: guideUpdate.remaining <= 2 ? 'LOW_BALANCE' : null
+        message: `Agendamento criado (guia será consumida quando sessão for concluída)`,
+        alert: guide.remaining <= 2 ? 'LOW_BALANCE' : null
       };
 
     } catch (error) {

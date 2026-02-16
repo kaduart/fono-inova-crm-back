@@ -5,12 +5,11 @@
  * Filosofia: Testar o que QUEBROU em produção, não cenários imaginários
  */
 
+import '../mocks/leads.mock.js';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { WhatsAppOrchestrator } from '../../orchestrators/WhatsAppOrchestrator.js';
-import { smartFallback } from '../../services/intelligence/SmartFallback.js';
-
+import WhatsAppOrchestrator from '../../orchestrators/WhatsAppOrchestrator.js';
 // 🎯 CASOS REAIS EXTRAÍDOS DOS ARQUIVOS
-
+console.log('Teste rodando')
 const REAL_CASES = {
   // MC-01: Dayene com 2 crianças (TEA + TDAH)
   MULTIPLE_CHILDREN_01: {
@@ -188,7 +187,7 @@ describe('🚨 Casos Reais - WhatsApp Export', () => {
   describe('Múltiplas Crianças (MC)', () => {
     it('MC-01: Detecta 2 crianças e aplica desconto automático', async () => {
       const testCase = REAL_CASES.MULTIPLE_CHILDREN_01;
-      
+
       const result = await orchestrator.process({
         message: { text: testCase.currentMessage },
         history: testCase.history,
@@ -203,13 +202,9 @@ describe('🚨 Casos Reais - WhatsApp Export', () => {
 
     it('QF-01: Calcula valor correto para avaliação dupla', async () => {
       const testCase = REAL_CASES.MULTIPLE_CHILDREN_DISCOUNT;
-      
-      const result = await smartFallback({
-        userMessage: testCase.currentMessage,
-        history: testCase.history,
-        leadData: testCase.leadData,
-        enrichedContext: { isExistingPatient: false }
-      });
+
+      const result = await runCase(testCase);
+
 
       expect(result.text).toContain('somente uma');
       expect(result.text).toMatch(/R\$\s*200/);
@@ -220,13 +215,9 @@ describe('🚨 Casos Reais - WhatsApp Export', () => {
   describe('Desistência/Cancelamento (DC)', () => {
     it('DC-01: Detecta "não tenho dinheiro" e oferece remarcação', async () => {
       const testCase = REAL_CASES.NO_MONEY_NOW;
-      
-      const result = await smartFallback({
-        userMessage: testCase.currentMessage,
-        history: testCase.history,
-        leadData: {},
-        enrichedContext: {}
-      });
+
+      const result = await runCase(testCase);
+
 
       expect(result.detectedIntent).toContain('no_money');
       expect(result.response).toContain('remarcamos');
@@ -235,7 +226,7 @@ describe('🚨 Casos Reais - WhatsApp Export', () => {
 
     it('DC-04: Reconhece doença e remarca sem custo', async () => {
       const testCase = REAL_CASES.CHILD_SICK_CANCEL;
-      
+
       const result = await orchestrator.process({
         message: { text: testCase.currentMessage },
         history: testCase.history,
@@ -250,7 +241,7 @@ describe('🚨 Casos Reais - WhatsApp Export', () => {
   describe('Confusão de Horário (CH)', () => {
     it('CH-01: Detecta erro de dia e corrige', async () => {
       const testCase = REAL_CASES.WRONG_DAY_CONFUSION;
-      
+
       const result = await orchestrator.process({
         message: { text: testCase.currentMessage },
         history: testCase.history,
@@ -266,7 +257,7 @@ describe('🚨 Casos Reais - WhatsApp Export', () => {
   describe('Perguntas Fora do Fluxo (IF)', () => {
     it('IF-01: NÃO salva pergunta de plano como queixa', async () => {
       const testCase = REAL_CASES.PLAN_QUESTION_EARLY;
-      
+
       const result = await orchestrator.process({
         message: { text: testCase.currentMessage },
         history: testCase.history,
@@ -280,7 +271,7 @@ describe('🚨 Casos Reais - WhatsApp Export', () => {
 
     it('CB-05: Explica que não atende sábado e oferece alternativa', async () => {
       const testCase = REAL_CASES.SATURDAY_REQUEST;
-      
+
       const result = await orchestrator.process({
         message: { text: testCase.currentMessage },
         history: testCase.history,
@@ -295,13 +286,8 @@ describe('🚨 Casos Reais - WhatsApp Export', () => {
   describe('Respostas Curtas (EC)', () => {
     it('EC-03: "Ok" sem contexto → referencia última pergunta', async () => {
       const testCase = REAL_CASES.SHORT_REPLY_OK;
-      
-      const result = await smartFallback({
-        userMessage: testCase.currentMessage,
-        history: testCase.history,
-        leadData: {},
-        enrichedContext: {}
-      });
+      const result = await runCase(testCase);
+
 
       expect(result.action).toBe('ask_clarification');
       expect(result.response).toContain('segunda');
@@ -312,16 +298,8 @@ describe('🚨 Casos Reais - WhatsApp Export', () => {
   describe('Retorno de Paciente (FR)', () => {
     it('FR-02: Detecta retorno após viagem e reativa rápido', async () => {
       const testCase = REAL_CASES.RETURN_AFTER_TRAVEL;
-      
-      const result = await smartFallback({
-        userMessage: testCase.currentMessage,
-        history: testCase.history,
-        leadData: testCase.leadData,
-        enrichedContext: {
-          hoursSinceLastContact: 360, // 15 dias
-          isExistingPatient: true
-        }
-      });
+
+      const result = await runCase(testCase);
 
       expect(result.detectedIntent).toContain('return_after_pause');
       expect(result.response).toContain('que bom que voltou');
@@ -331,7 +309,7 @@ describe('🚨 Casos Reais - WhatsApp Export', () => {
   describe('Direcionamento Especialidade (ES)', () => {
     it('ES-01: Dificuldade escolar → Psicopedagoga', async () => {
       const testCase = REAL_CASES.SPECIALTY_CONFUSION;
-      
+
       const result = await orchestrator.process({
         message: { text: testCase.currentMessage },
         history: testCase.history,
@@ -359,5 +337,17 @@ describe('📊 Métricas dos Casos Reais', () => {
     });
   });
 });
+
+async function runCase(testCase) {
+  const orchestrator = new WhatsAppOrchestrator();
+
+  return orchestrator.handleMessage({
+    userMessage: testCase.currentMessage,
+    history: testCase.history,
+    leadData: testCase.leadData || {},
+    enrichedContext: { isExistingPatient: false }
+  });
+}
+
 
 export { REAL_CASES };

@@ -13,7 +13,21 @@ const packageSchema = new mongoose.Schema({
     enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'psicomotricidade', 'musicoterapia', 'psicopedagogia'],
     required: true
   },
-  sessionValue: { type: Number, default: 200, min: 0.01 },
+  sessionValue: {
+    type: Number,
+    default: 200,
+    validate: {
+      validator: function(value) {
+        // Para pacotes de convênio, aceita 0
+        if (this.type === 'convenio') {
+          return value >= 0;
+        }
+        // Para pacotes therapy, exige >= 0.01
+        return value >= 0.01;
+      },
+      message: 'Valor da sessão deve ser maior que zero para pacotes particulares'
+    }
+  },
   totalSessions: { type: Number, default: 1, min: 1 },
   sessions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Session' }],
   appointments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' }],
@@ -58,7 +72,46 @@ const packageSchema = new mongoose.Schema({
     type: Date,
     description: 'Data do último pagamento recebido'
   },
-  txid: { type: String, unique: true, sparse: true }
+  txid: { type: String, unique: true, sparse: true },
+
+  // ========================================
+  // 🏥 CAMPOS PARA PACOTES DE CONVÊNIO
+  // (Opcionais - default null = zero impacto em pacotes therapy)
+  // ========================================
+  type: {
+    type: String,
+    enum: ['therapy', 'convenio'],
+    default: 'therapy',
+    description: 'Tipo de pacote: therapy (particular) ou convenio (plano de saúde)'
+  },
+  insuranceGuide: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'InsuranceGuide',
+    default: null,
+    description: 'Guia de convênio vinculada (apenas para type=convenio)'
+  },
+  insuranceProvider: {
+    type: String,
+    default: null,
+    description: 'Nome do convênio (ex: unimed-anapolis)'
+  },
+  insuranceGrossAmount: {
+    type: Number,
+    default: 0,
+    description: 'Valor que o convênio paga por sessão'
+  },
+  insuranceBillingStatus: {
+    type: String,
+    enum: ['pending_batch', 'in_batch', 'billed', 'received', null],
+    default: null,
+    description: 'Status do faturamento junto ao convênio'
+  },
+  calculationMode: {
+    type: String,
+    enum: ['sessions', 'duration', null],
+    default: null,
+    description: 'Modo de cálculo: por número de sessões ou duração em meses'
+  }
 
 });
 

@@ -1,4 +1,4 @@
-// orchestrators/WhatsAppOrchestratorV8.js
+// orchestrators/WhatsAppOrchestrator.js
 // FSM Determinística + Context Stack + Handlers preservados do V7
 // IA = APENAS NLU (interpretar texto). Caminho = 100% determinístico.
 
@@ -25,11 +25,11 @@ import { buildDecisionContext } from '../adapters/BookingContextAdapter.js';
 import { THERAPY_DATA, detectAllTherapies } from '../utils/therapyDetector.js';
 import { extractName, extractBirth, extractAgeFromText, extractPeriodFromText } from '../utils/patientDataExtractor.js';
 
-const logger = new Logger('WhatsAppOrchestratorV8');
+const logger = new Logger('WhatsAppOrchestrator');
 
-export default class WhatsAppOrchestratorV8 {
+export default class WhatsAppOrchestrator {
   constructor() {
-    this.logger = new Logger('WhatsAppOrchestratorV8');
+    this.logger = new Logger('WhatsAppOrchestrator');
     this.insightsCache = null;
     this.cacheTime = 0;
   }

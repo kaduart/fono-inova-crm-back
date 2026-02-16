@@ -1,0 +1,1221 @@
+{
+  "price": {
+    "total": 234,
+    "patterns": {
+      "insistence": [],
+      "objection": [
+        {
+          "text": "qual o valor das consultas?13:56",
+          "before": "qual o valor das consultas?13:56",
+          "after": "fica puxado, eu vou tentar com outra atendente da unimed14:00"
+        }
+      ],
+      "urgency": [
+        {
+          "text": "preciso urgente de atendimento e cotação de valores mesnsal12:38",
+          "before": "como no momento estou sem plano de saude12:37",
+          "after": "preciso urgente de atendimento e cotação de valores mesnsal12:38"
+        },
+        {
+          "text": "preciso urgente de atendimento e cotação de valores mesnsal12:38",
+          "before": "preciso urgente de atendimento e cotação de valores mesnsal12:38",
+          "after": "que legal vanessa, bem vinda a nossa cidade 12:38"
+        },
+        {
+          "text": "valor d fonoaudiólogo13:55",
+          "before": "no momento não atendemos.13:55",
+          "after": "valor d fonoaudiólogo13:55"
+        },
+        {
+          "text": "valor d fonoaudiólogo13:55",
+          "before": "valor d fonoaudiólogo13:55",
+          "after": "bom dia08:45"
+        },
+        {
+          "text": "tenho um filho de 6 anos que precisava urgentemente de acompanhamento fonoaudiologo, como faço?  não tenho plano de saúde. valor das consultas01:06",
+          "before": "olá! tenho interesse e queria mais informações, por favor.01:04",
+          "after": "tenho um filho de 6 anos que precisava urgentemente de acompanhamento fonoaudiologo, como faço?  não tenho plano de saúde. valor das consultas01:06"
+        },
+        {
+          "text": "tenho um filho de 6 anos que precisava urgentemente de acompanhamento fonoaudiologo, como faço?  não tenho plano de saúde. valor das consultas01:06",
+          "before": "tenho um filho de 6 anos que precisava urgentemente de acompanhamento fonoaudiologo, como faço?  não tenho plano de saúde. valor das consultas01:06",
+          "after": ""
+        },
+        {
+          "text": "queria saber o valor da consulta15:31",
+          "before": "preciso da especialidade fonoaudiólogo15:31",
+          "after": "queria saber o valor da consulta15:31"
+        }
+      ],
+      "negotiation": [],
+      "acceptance": [
+        {
+          "text": "oi victória, boa tarde, tudo bem ? estamos com uns dois pacientes aqui para fazer avaliação, porém só 1500 conseguimos, tentamos 2,000 mas pessoal quando dizendo o valor nem responde mais, rs gostaria de saber se você está de acordo em fecharmos esse valor ?17:09",
+          "before": "ok, fico no aguardo15:10",
+          "after": "oi victória, boa tarde, tudo bem ? estamos com uns dois pacientes aqui para fazer avaliação, porém só 1500 conseguimos, tentamos 2,000 mas pessoal quando dizendo o valor nem responde mais, rs gostaria de saber se você está de acordo em fecharmos esse valor ?17:09"
+        },
+        {
+          "text": "me confirma o valor por favor10:48",
+          "before": "bom dia tudo bem?10:48",
+          "after": "me confirma o valor por favor10:48"
+        },
+        {
+          "text": "olá bom dia tudo bem ? gostaria de saber sobre o valor da primeira consulta11:46",
+          "before": "",
+          "after": "olá bom dia tudo bem ? gostaria de saber sobre o valor da primeira consulta11:46"
+        },
+        {
+          "text": "olá bom dia tudo bem ? gostaria de saber sobre o valor da primeira consulta11:46",
+          "before": "olá bom dia tudo bem ? gostaria de saber sobre o valor da primeira consulta11:46",
+          "after": "bom dia! estou bem e você?11:47"
+        },
+        {
+          "text": "queria saber o valor da sessão de fonoaudióloga14:26",
+          "before": "jacylene(mãe) kalebe(filho)oie, vamos deixar para janeiroah sim, tudo bem então, obrigada po avisar!14:19",
+          "after": "queria saber o valor da sessão de fonoaudióloga14:26"
+        },
+        {
+          "text": "no momento qual valor você esta pagando na outra clínica?14:37",
+          "before": "ok obrigado14:36",
+          "after": "no momento qual valor você esta pagando na outra clínica?14:37"
+        },
+        {
+          "text": "gostaria de saber valores para fonoaudiologa10:56",
+          "before": "bom dia tudo bem ?10:06",
+          "after": "gostaria de saber valores para fonoaudiologa10:56"
+        },
+        {
+          "text": "a dr falou pra fazer r$180,00 tá bom10:05",
+          "before": "ok10:05",
+          "after": "a dr falou pra fazer r$180,00 tá bom10:05"
+        },
+        {
+          "text": "no momento estamos somente particular gostaria de conhecer nossos valores?08:14",
+          "before": "ok08:13",
+          "after": "no momento estamos somente particular gostaria de conhecer nossos valores?08:14"
+        },
+        {
+          "text": "cada avaliação fica em r$200,00 reais, como são duas,  posso fazer por r$300,00 reais as duas, tudo bem?09:29",
+          "before": "qual o valor ficaria?09:27",
+          "after": "cada avaliação fica em r$200,00 reais, como são duas,  posso fazer por r$300,00 reais as duas, tudo bem?09:29"
+        }
+      ]
+    },
+    "distribution": {
+      "insistence": "0.0%",
+      "objection": "0.4%",
+      "urgency": "3.0%",
+      "negotiation": "0.0%"
+    }
+  },
+  "scheduling": {
+    "total": 306,
+    "patterns": {
+      "urgency": [
+        {
+          "text": "a kauana ficará neste horário?14:16",
+          "before": "a kauana ficará neste horário?14:16",
+          "after": "e ela confirmou amanhã?14:16"
+        },
+        {
+          "text": "se quiser marcar amanhã 10:3013:40",
+          "before": "",
+          "after": "se quiser marcar amanhã 10:3013:40"
+        },
+        {
+          "text": "se quiser marcar amanhã 10:3013:40",
+          "before": "se quiser marcar amanhã 10:3013:40",
+          "after": "seria as 14:00?13:41"
+        },
+        {
+          "text": "vc consegue remarcar pra mim? ai eu quero leva as duas que eu te falei11:54",
+          "before": "bom dia tudo bem? desculpa  pela demora em responder, eu não consegui ir  hoje11:54",
+          "after": "vc consegue remarcar pra mim? ai eu quero leva as duas que eu te falei11:54"
+        },
+        {
+          "text": "gostaria de saber se estão com vaga pra fonoaudiólogo09:57",
+          "before": "tudo bem?09:56",
+          "after": "gostaria de saber se estão com vaga pra fonoaudiólogo09:57"
+        },
+        {
+          "text": "gostaria de saber se estão com vaga pra fonoaudiólogo09:57",
+          "before": "gostaria de saber se estão com vaga pra fonoaudiólogo09:57",
+          "after": "bom dia! carolina, estou bem e você?09:57"
+        },
+        {
+          "text": "você tem horário para avaliação?09:54",
+          "before": "você tem horário para avaliação?09:54",
+          "after": "hoje?09:54"
+        },
+        {
+          "text": "youeu teria pra hoje as 16:40.teria outro dia esse horário, meu esposo quem vai levar ele10:00",
+          "before": "eu teria pra hoje as 16:40.09:59",
+          "after": "youeu teria pra hoje as 16:40.teria outro dia esse horário, meu esposo quem vai levar ele10:00"
+        },
+        {
+          "text": "youeu teria pra hoje as 16:40.teria outro dia esse horário, meu esposo quem vai levar ele10:00",
+          "before": "youeu teria pra hoje as 16:40.teria outro dia esse horário, meu esposo quem vai levar ele10:00",
+          "after": "ok então10:03"
+        },
+        {
+          "text": "oii, ainda tem o horário disponível hoje?11:20",
+          "before": "seu agendamento foi realizado com sucesso. agradecemos pela confiança em nosso trabalho e ficamos à disposição caso precise de algo antes da avaliação10:11",
+          "after": "oii, ainda tem o horário disponível hoje?11:20"
+        },
+        {
+          "text": "oii, ainda tem o horário disponível hoje?11:20",
+          "before": "oii, ainda tem o horário disponível hoje?11:20",
+          "after": "temos sim.11:21"
+        },
+        {
+          "text": "youeu teria pra hoje as 16:40.esse horário né?11:32",
+          "before": "",
+          "after": "youeu teria pra hoje as 16:40.esse horário né?11:32"
+        },
+        {
+          "text": "youeu teria pra hoje as 16:40.esse horário né?11:32",
+          "before": "youeu teria pra hoje as 16:40.esse horário né?11:32",
+          "after": "sim11:32"
+        },
+        {
+          "text": "em minas fazia, psicologo, fono, to não tinha vaga, neuropsicologo e neuropedagogico12:35",
+          "before": "preciso volta com as terapias12:35",
+          "after": "em minas fazia, psicologo, fono, to não tinha vaga, neuropsicologo e neuropedagogico12:35"
+        },
+        {
+          "text": "em minas fazia, psicologo, fono, to não tinha vaga, neuropsicologo e neuropedagogico12:35",
+          "before": "em minas fazia, psicologo, fono, to não tinha vaga, neuropsicologo e neuropedagogico12:35",
+          "after": "2 x na semana com 02 sessoes cada fono e psicologo12:36"
+        },
+        {
+          "text": "eu vou remarcar pra semana que vem17:03",
+          "before": "mas amanhã não poderemos ir17:03",
+          "after": "eu vou remarcar pra semana que vem17:03"
+        },
+        {
+          "text": "quero desmarcar a fono do meu filho hoje, minha esposa tá passando mau e não vai poder levar ele13:45",
+          "before": "boa tarde13:44",
+          "after": "quero desmarcar a fono do meu filho hoje, minha esposa tá passando mau e não vai poder levar ele13:45"
+        },
+        {
+          "text": "quero desmarcar a fono do meu filho hoje, minha esposa tá passando mau e não vai poder levar ele13:45",
+          "before": "quero desmarcar a fono do meu filho hoje, minha esposa tá passando mau e não vai poder levar ele13:45",
+          "after": "igor carvalho da silva13:46"
+        },
+        {
+          "text": "vc tem vaga pra avaliação inicial pra quando ?14:49",
+          "before": "vc tem vaga pra avaliação inicial pra quando ?14:49",
+          "after": "se você quiser tenho para amanhã as 14:00.14:50"
+        },
+        {
+          "text": "oi rafaela, como vai? preenchemos a vaga hoje mas anotarei seu contato e volto a contatá-la em eventuais necessidades , pode ser?13:10",
+          "before": "gostaria de saber se estão contratando fonoaudióloga12:43",
+          "after": "oi rafaela, como vai? preenchemos a vaga hoje mas anotarei seu contato e volto a contatá-la em eventuais necessidades , pode ser?13:10"
+        },
+        {
+          "text": "para amanhã não tenho horário vou ter para sexta-feira as 09:2009:18",
+          "before": "",
+          "after": "para amanhã não tenho horário vou ter para sexta-feira as 09:2009:18"
+        },
+        {
+          "text": "youpara amanhã não tenho horário vou ter para sexta-feira as 09:20ótimo09:18",
+          "before": "para amanhã não tenho horário vou ter para sexta-feira as 09:2009:18",
+          "after": "youpara amanhã não tenho horário vou ter para sexta-feira as 09:20ótimo09:18"
+        },
+        {
+          "text": "youpara amanhã não tenho horário vou ter para sexta-feira as 09:20ótimo09:18",
+          "before": "youpara amanhã não tenho horário vou ter para sexta-feira as 09:20ótimo09:18",
+          "after": "vou remarca então para sexta-feira09:19"
+        },
+        {
+          "text": "jacylene, tenho uma vaga para hoje as 16 daria para vocês esse horário u amanha as 15:2008:51",
+          "before": "",
+          "after": "jacylene, tenho uma vaga para hoje as 16 daria para vocês esse horário u amanha as 15:2008:51"
+        },
+        {
+          "text": "pode ser essa vaga de hoje às 16h?08:54",
+          "before": "ok08:53",
+          "after": "pode ser essa vaga de hoje às 16h?08:54"
+        },
+        {
+          "text": "boa tarde jacylene, passando para lembrar que hoje tem consulta do kalebe com a psicóloga tatiana celuta às 16:00.14:17",
+          "before": "tudo bem então, vou manter o de amanha, desculpe o equivoco!16:16",
+          "after": "boa tarde jacylene, passando para lembrar que hoje tem consulta do kalebe com a psicóloga tatiana celuta às 16:00.14:17"
+        },
+        {
+          "text": "gostaria de marcar uma consulta com a psicopedagoga13:48",
+          "before": "olá!  sou a amanda, da clínica fono inova. como posso ajudar você hoje? 13:47",
+          "after": "gostaria de marcar uma consulta com a psicopedagoga13:48"
+        },
+        {
+          "text": "gostaria de agendar com a fono16:49",
+          "before": "olá!  sou a amanda, da clínica fono inova. como posso ajudar você hoje? 16:48",
+          "after": "gostaria de agendar com a fono16:49"
+        },
+        {
+          "text": "hoje eu teria um horário de retorno da stella, mas não vou conseguir, poderia remarcar para o mesmo horário na quarta 1709:34",
+          "before": "",
+          "after": "hoje eu teria um horário de retorno da stella, mas não vou conseguir, poderia remarcar para o mesmo horário na quarta 1709:34"
+        },
+        {
+          "text": "hoje eu teria um horário de retorno da stella, mas não vou conseguir, poderia remarcar para o mesmo horário na quarta 1709:34",
+          "before": "hoje eu teria um horário de retorno da stella, mas não vou conseguir, poderia remarcar para o mesmo horário na quarta 1709:34",
+          "after": "17/1209:34"
+        },
+        {
+          "text": "tem vaga para amanhã13:59",
+          "before": "daiana mãe do rhaviesse valor passa cartão de crédito ou só a vistatrabalhamos como cartão de crédito também daiane13:58",
+          "after": "tem vaga para amanhã13:59"
+        },
+        {
+          "text": "tem vaga para amanhã13:59",
+          "before": "tem vaga para amanhã13:59",
+          "after": "de manhã13:59"
+        },
+        {
+          "text": "daiane temos uma vaga para amanhã às 14:40, posso agendar?14:03",
+          "before": "ok14:01",
+          "after": "daiane temos uma vaga para amanhã às 14:40, posso agendar?14:03"
+        },
+        {
+          "text": "esse horário não consigo ir tenho uma apresentação na escola do meu filho14:04",
+          "before": "daiane temos uma vaga para amanhã às 14:40, posso agendar?14:03",
+          "after": "esse horário não consigo ir tenho uma apresentação na escola do meu filho14:04"
+        },
+        {
+          "text": "me chamo wilbor gonçalves e sou neuropsicólogo, vocês estão com vaga disponível para essa área?08:19",
+          "before": "tranquilo, fico no aguardo09:55",
+          "after": "me chamo wilbor gonçalves e sou neuropsicólogo, vocês estão com vaga disponível para essa área?08:19"
+        },
+        {
+          "text": "me chamo wilbor gonçalves e sou neuropsicólogo, vocês estão com vaga disponível para essa área?08:19",
+          "before": "me chamo wilbor gonçalves e sou neuropsicólogo, vocês estão com vaga disponível para essa área?08:19",
+          "after": "wilbor gonçalves, no momento não .08:20"
+        },
+        {
+          "text": "entendi fernanda, temos vaga para hoje às 17:20, gostaria de agendar essa avaliação inicial?09:58",
+          "before": "",
+          "after": "entendi fernanda, temos vaga para hoje às 17:20, gostaria de agendar essa avaliação inicial?09:58"
+        }
+      ],
+      "reschedule": [
+        {
+          "text": "vc consegue remarcar pra mim? ai eu quero leva as duas que eu te falei11:54",
+          "before": "bom dia tudo bem? desculpa  pela demora em responder, eu não consegui ir  hoje11:54",
+          "after": "vc consegue remarcar pra mim? ai eu quero leva as duas que eu te falei11:54"
+        },
+        {
+          "text": "vc consegue remarcar pra mim? ai eu quero leva as duas que eu te falei11:54",
+          "before": "vc consegue remarcar pra mim? ai eu quero leva as duas que eu te falei11:54",
+          "after": "a de 7 anos e a de 3 anos11:54"
+        },
+        {
+          "text": "gostaria de remarcar a consulta da heloísa09:17",
+          "before": "tudo bem?09:17",
+          "after": "gostaria de remarcar a consulta da heloísa09:17"
+        },
+        {
+          "text": "gostaria de remarcar a consulta da heloísa09:17",
+          "before": "gostaria de remarcar a consulta da heloísa09:17",
+          "after": "bom dia! maristella, tudo bem?09:18"
+        },
+        {
+          "text": "então pode marcar para a outra segunda13:07",
+          "before": "teria como reagendar para sexta-feira que vem?12:57",
+          "after": "então pode marcar para a outra segunda13:07"
+        },
+        {
+          "text": "eu vou remarcar pra semana que vem17:03",
+          "before": "mas amanhã não poderemos ir17:03",
+          "after": "eu vou remarcar pra semana que vem17:03"
+        },
+        {
+          "text": "eu vou remarcar pra semana que vem17:03",
+          "before": "eu vou remarcar pra semana que vem17:03",
+          "after": "eu vou conversar com a coordenadora da escola17:03"
+        },
+        {
+          "text": "hoje eu teria um horário de retorno da stella, mas não vou conseguir, poderia remarcar para o mesmo horário na quarta 1709:34",
+          "before": "",
+          "after": "hoje eu teria um horário de retorno da stella, mas não vou conseguir, poderia remarcar para o mesmo horário na quarta 1709:34"
+        },
+        {
+          "text": "hoje eu teria um horário de retorno da stella, mas não vou conseguir, poderia remarcar para o mesmo horário na quarta 1709:34",
+          "before": "hoje eu teria um horário de retorno da stella, mas não vou conseguir, poderia remarcar para o mesmo horário na quarta 1709:34",
+          "after": "17/1209:34"
+        },
+        {
+          "text": "remarcar pra mim10:03",
+          "before": "pode ser10:03",
+          "after": "remarcar pra mim10:03"
+        },
+        {
+          "text": "remarcar pra mim10:03",
+          "before": "remarcar pra mim10:03",
+          "after": "combinado .10:04"
+        },
+        {
+          "text": "entendi para remarcar vou ter vaga somente para janeiro.08:49",
+          "before": "acho que não chego a tempo08:40",
+          "after": "entendi para remarcar vou ter vaga somente para janeiro.08:49"
+        }
+      ],
+      "newBooking": [
+        {
+          "text": "vivi pedi para não marcar paciente pra mim esse horário das 13:0009:07",
+          "before": "",
+          "after": "vivi pedi para não marcar paciente pra mim esse horário das 13:0009:07"
+        },
+        {
+          "text": "vivi pedi para não marcar paciente pra mim esse horário das 13:0009:07",
+          "before": "vivi pedi para não marcar paciente pra mim esse horário das 13:0009:07",
+          "after": "esse é meu horário de almoço09:08"
+        },
+        {
+          "text": "esse é meu horário de almoço09:08",
+          "before": "vivi pedi para não marcar paciente pra mim esse horário das 13:0009:07",
+          "after": "esse é meu horário de almoço09:08"
+        },
+        {
+          "text": "se quiser marcar amanhã 10:3013:40",
+          "before": "",
+          "after": "se quiser marcar amanhã 10:3013:40"
+        },
+        {
+          "text": "se quiser marcar amanhã 10:3013:40",
+          "before": "se quiser marcar amanhã 10:3013:40",
+          "after": "seria as 14:00?13:41"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição13:42",
+          "before": "obrigada13:36",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição13:42"
+        },
+        {
+          "text": "vc consegue remarcar pra mim? ai eu quero leva as duas que eu te falei11:54",
+          "before": "bom dia tudo bem? desculpa  pela demora em responder, eu não consegui ir  hoje11:54",
+          "after": "vc consegue remarcar pra mim? ai eu quero leva as duas que eu te falei11:54"
+        },
+        {
+          "text": "vc consegue remarcar pra mim? ai eu quero leva as duas que eu te falei11:54",
+          "before": "vc consegue remarcar pra mim? ai eu quero leva as duas que eu te falei11:54",
+          "after": "a de 7 anos e a de 3 anos11:54"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição08:21",
+          "before": "obrigada08:16",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição08:21"
+        },
+        {
+          "text": "gostaria de agendar uma avaliação?13:51",
+          "before": "entendi13:51",
+          "after": "gostaria de agendar uma avaliação?13:51"
+        },
+        {
+          "text": "podemos agendar?14:25",
+          "before": "ah sim14:25",
+          "after": "podemos agendar?14:25"
+        },
+        {
+          "text": "podemos agendar?14:25",
+          "before": "podemos agendar?14:25",
+          "after": "ele estuda a tarde14:26"
+        },
+        {
+          "text": "como faço então pra marcar, vou fazer o pacote mensal09:55",
+          "before": "bom dia! rosa ribeiro, tudo bem?09:50",
+          "after": "como faço então pra marcar, vou fazer o pacote mensal09:55"
+        },
+        {
+          "text": "como faço então pra marcar, vou fazer o pacote mensal09:55",
+          "before": "como faço então pra marcar, vou fazer o pacote mensal09:55",
+          "after": "você prefere de manhã ou a tarde?09:56"
+        },
+        {
+          "text": "gostaria de remarcar a consulta da heloísa09:17",
+          "before": "tudo bem?09:17",
+          "after": "gostaria de remarcar a consulta da heloísa09:17"
+        },
+        {
+          "text": "gostaria de remarcar a consulta da heloísa09:17",
+          "before": "gostaria de remarcar a consulta da heloísa09:17",
+          "after": "bom dia! maristella, tudo bem?09:18"
+        },
+        {
+          "text": "seu agendamento foi realizado com sucesso. agradecemos pela confiança em nosso trabalho e ficamos à disposição caso precise de algo antes da avaliação.10:37",
+          "before": "pode agendar10:32",
+          "after": "seu agendamento foi realizado com sucesso. agradecemos pela confiança em nosso trabalho e ficamos à disposição caso precise de algo antes da avaliação.10:37"
+        },
+        {
+          "text": "seu agendamento foi realizado com sucesso. agradecemos pela confiança em nosso trabalho e ficamos à disposição caso precise de algo antes da avaliação.11:53",
+          "before": "pode marcar11:41",
+          "after": "seu agendamento foi realizado com sucesso. agradecemos pela confiança em nosso trabalho e ficamos à disposição caso precise de algo antes da avaliação.11:53"
+        },
+        {
+          "text": "boa tarde.gostaria de marcar uma consulta13:41",
+          "before": "vou ver com ela.15:11",
+          "after": "boa tarde.gostaria de marcar uma consulta13:41"
+        },
+        {
+          "text": "boa tarde.gostaria de marcar uma consulta13:41",
+          "before": "boa tarde.gostaria de marcar uma consulta13:41",
+          "after": "boa tarde! anna, tudo bem?13:42"
+        },
+        {
+          "text": "então pode marcar para a outra segunda13:07",
+          "before": "teria como reagendar para sexta-feira que vem?12:57",
+          "after": "então pode marcar para a outra segunda13:07"
+        },
+        {
+          "text": "então pode marcar para a outra segunda13:07",
+          "before": "então pode marcar para a outra segunda13:07",
+          "after": "está sim13:33"
+        },
+        {
+          "text": "gostaria de agendar?13:18",
+          "before": "",
+          "after": "gostaria de agendar?13:18"
+        },
+        {
+          "text": "pode agendar, por favor?09:57",
+          "before": "certo09:57",
+          "after": "pode agendar, por favor?09:57"
+        },
+        {
+          "text": "pode agendar, por favor?09:57",
+          "before": "pode agendar, por favor?09:57",
+          "after": ""
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição14:13",
+          "before": "tá ok. obrigada14:11",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição14:13"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição10:10",
+          "before": "ah sim muito obrigada10:10",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição10:10"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição16:13",
+          "before": "a junção da fono com a psicóloga agiliza a evolução do aprendizado?15:35",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição16:13"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição13:21",
+          "before": "ta bom, vamos ver certinho e entramos em contato. obrigada!13:20",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição13:21"
+        },
+        {
+          "text": "quero marcar um retorno16:13",
+          "before": "boa tarde16:13",
+          "after": "quero marcar um retorno16:13"
+        },
+        {
+          "text": "quero marcar um retorno16:13",
+          "before": "boa tarde16:13",
+          "after": "quero marcar um retorno16:13"
+        },
+        {
+          "text": "quero marcar um retorno16:13",
+          "before": "quero marcar um retorno16:13",
+          "after": "meu nome  é fábio alves martins16:15"
+        },
+        {
+          "text": "quero marcar um retorno16:13",
+          "before": "quero marcar um retorno16:13",
+          "after": "meu nome  é fábio alves martins16:15"
+        },
+        {
+          "text": "gostaria de agendar?17:20",
+          "before": "qual é o valor de cada sessão?16:16",
+          "after": "gostaria de agendar?17:20"
+        },
+        {
+          "text": "quero agendar uma sessão com a fonoaudiologa14:16",
+          "before": "boa tarde14:15",
+          "after": "quero agendar uma sessão com a fonoaudiologa14:16"
+        },
+        {
+          "text": "quero agendar uma sessão com a fonoaudiologa14:16",
+          "before": "quero agendar uma sessão com a fonoaudiologa14:16",
+          "after": "boa tarde fábio, tudo bem , a doutora ira fala com senhor, tudo bem?14:22"
+        },
+        {
+          "text": "nesse caso ideal é agendar uma avaliação para a doutora entender de fato o caso e está orientando você melhor.12:39",
+          "before": "ah sim entendi, nessa fase já e para está falando frases completas.12:38",
+          "after": "nesse caso ideal é agendar uma avaliação para a doutora entender de fato o caso e está orientando você melhor.12:39"
+        },
+        {
+          "text": "younesse caso ideal é agendar uma avaliação para a doutora entender de fato o caso e está orientando você melhor.qual o valor da avaliação12:51",
+          "before": "você tem algum período de  preferência(manhã/tarde)?12:40",
+          "after": "younesse caso ideal é agendar uma avaliação para a doutora entender de fato o caso e está orientando você melhor.qual o valor da avaliação12:51"
+        },
+        {
+          "text": "younesse caso ideal é agendar uma avaliação para a doutora entender de fato o caso e está orientando você melhor.qual o valor da avaliação12:51",
+          "before": "younesse caso ideal é agendar uma avaliação para a doutora entender de fato o caso e está orientando você melhor.qual o valor da avaliação12:51",
+          "after": "+55 62 9317-8485qual o valor da avaliaçãofica em 200,00 reais12:52"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição14:00",
+          "before": "obrigada14:00",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição14:00"
+        },
+        {
+          "text": "gostaria de agendar?09:17",
+          "before": "temos uma ótima profissional .09:16",
+          "after": "gostaria de agendar?09:17"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição09:24",
+          "before": "obrigada09:24",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição09:24"
+        },
+        {
+          "text": "gostaria de agendar ?16:17",
+          "before": "assim16:16",
+          "after": "gostaria de agendar ?16:17"
+        },
+        {
+          "text": "gostaria de agendar?13:56",
+          "before": "tenho sim as 16:0013:56",
+          "after": "gostaria de agendar?13:56"
+        },
+        {
+          "text": "gostaria de agendar?13:24",
+          "before": "ok13:23",
+          "after": "gostaria de agendar?13:24"
+        },
+        {
+          "text": "ah sim entendi, gostaria de agendar um anamnese ?12:04",
+          "before": "ele é diagnosticado com tdah.19:01",
+          "after": "ah sim entendi, gostaria de agendar um anamnese ?12:04"
+        },
+        {
+          "text": "gostaria de agendar?11:29",
+          "before": "fica r$640,0011:17",
+          "after": "gostaria de agendar?11:29"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição11:29",
+          "before": "obrigada11:29",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição11:29"
+        },
+        {
+          "text": "eu vou remarcar pra semana que vem17:03",
+          "before": "mas amanhã não poderemos ir17:03",
+          "after": "eu vou remarcar pra semana que vem17:03"
+        },
+        {
+          "text": "eu vou remarcar pra semana que vem17:03",
+          "before": "eu vou remarcar pra semana que vem17:03",
+          "after": "eu vou conversar com a coordenadora da escola17:03"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição16:05",
+          "before": "muito obrigada pela atenção! ⚘️16:05",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição16:05"
+        },
+        {
+          "text": "atendemos sim, gostaria de agendar?14:16",
+          "before": "boa tarde! tudo bem?14:00",
+          "after": "atendemos sim, gostaria de agendar?14:16"
+        },
+        {
+          "text": "tem vaga pra unimed?15:43",
+          "before": "atendemos sim, gostaria de agendar?14:16",
+          "after": "tem vaga pra unimed?15:43"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição12:03",
+          "before": "obrigada 12:03",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição12:03"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição14:47",
+          "before": "nossa aí dou conta não . ok . obrigada!14:47",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição14:47"
+        },
+        {
+          "text": "quero desmarcar a fono do meu filho hoje, minha esposa tá passando mau e não vai poder levar ele13:45",
+          "before": "boa tarde13:44",
+          "after": "quero desmarcar a fono do meu filho hoje, minha esposa tá passando mau e não vai poder levar ele13:45"
+        },
+        {
+          "text": "quero desmarcar a fono do meu filho hoje, minha esposa tá passando mau e não vai poder levar ele13:45",
+          "before": "quero desmarcar a fono do meu filho hoje, minha esposa tá passando mau e não vai poder levar ele13:45",
+          "after": "igor carvalho da silva13:46"
+        },
+        {
+          "text": "gostaria de agendar, meu neto tem 5 meses e tem alguns engasgos e dificuldade para mamar as vezes , ele mama fórmula10:55",
+          "before": "o restante11:56",
+          "after": "gostaria de agendar, meu neto tem 5 meses e tem alguns engasgos e dificuldade para mamar as vezes , ele mama fórmula10:55"
+        },
+        {
+          "text": "gostaria de agendar, meu neto tem 5 meses e tem alguns engasgos e dificuldade para mamar as vezes , ele mama fórmula10:55",
+          "before": "gostaria de agendar, meu neto tem 5 meses e tem alguns engasgos e dificuldade para mamar as vezes , ele mama fórmula10:55",
+          "after": "claudiatelesribeiro170 ravi emanuel (teste da linguinha)está 200 reais a avaliaçãoah sim teste da linguinha é 150 reais10:56"
+        },
+        {
+          "text": "claudiatelesribeiro170 ravi emanuel (teste da linguinha)gostaria de agendar, meu neto tem 5 meses e tem alguns engasgos e dificuldade para mamar as vezes , ele mama fórmulaentendi10:57",
+          "before": "ele já fez o teste da linguinha não deu nada10:57",
+          "after": "claudiatelesribeiro170 ravi emanuel (teste da linguinha)gostaria de agendar, meu neto tem 5 meses e tem alguns engasgos e dificuldade para mamar as vezes , ele mama fórmulaentendi10:57"
+        },
+        {
+          "text": "temos vaga para quarta-feira às 11:20, gostaria de agendar ?edited11:05",
+          "before": "obrigada por aguardar11:04",
+          "after": "temos vaga para quarta-feira às 11:20, gostaria de agendar ?edited11:05"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição16:14",
+          "before": "muito obrigada pela a atenção 16:13",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição16:14"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição15:50",
+          "before": "fernanda vou te explicar como que funciona nossos atendimentos e valores tá bom.15:39",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição15:50"
+        },
+        {
+          "text": "já confirmo se eu consigo ir nesse horário na sexta caso contrário a gente vê pra próxima semana um horário mais cedo por conta o meu menino vai pra escola 1h00 da tarde então eu queria agendar mais cedo a consulta15:29",
+          "before": "",
+          "after": "já confirmo se eu consigo ir nesse horário na sexta caso contrário a gente vê pra próxima semana um horário mais cedo por conta o meu menino vai pra escola 1h00 da tarde então eu queria agendar mais cedo a consulta15:29"
+        },
+        {
+          "text": "já confirmo se eu consigo ir nesse horário na sexta caso contrário a gente vê pra próxima semana um horário mais cedo por conta o meu menino vai pra escola 1h00 da tarde então eu queria agendar mais cedo a consulta15:29",
+          "before": "já confirmo se eu consigo ir nesse horário na sexta caso contrário a gente vê pra próxima semana um horário mais cedo por conta o meu menino vai pra escola 1h00 da tarde então eu queria agendar mais cedo a consulta15:29",
+          "after": "entendi.15:32"
+        },
+        {
+          "text": "gostaria de agendar?08:27",
+          "before": "entendi08:26",
+          "after": "gostaria de agendar?08:27"
+        },
+        {
+          "text": "quero agendar consulta com fonoaudióloga pra minha filha, ela tem 5 anos13:54",
+          "before": "para podermos direcionar o atendimento da melhor forma, gostaria de saber se você possui algum pedido médico ou se tem alguma queixa específica. assim conseguimos oferecer o acompanhamento mais adequado para a sua necessidade.13:54",
+          "after": "quero agendar consulta com fonoaudióloga pra minha filha, ela tem 5 anos13:54"
+        },
+        {
+          "text": "quero agendar consulta com fonoaudióloga pra minha filha, ela tem 5 anos13:54",
+          "before": "quero agendar consulta com fonoaudióloga pra minha filha, ela tem 5 anos13:54",
+          "after": "ela não consegue falar palavras que tenham r no meio, por exemplo: branco, sai banco13:54"
+        },
+        {
+          "text": "gostaria de agendar?14:31",
+          "before": "o valor da avaliação solicitada de r$250,00 está por r$200,0014:30",
+          "after": "gostaria de agendar?14:31"
+        },
+        {
+          "text": "atendemos sim caso tenha interesse em agendar tenho horário disponível.15:29",
+          "before": "criança15:27",
+          "after": "atendemos sim caso tenha interesse em agendar tenho horário disponível.15:29"
+        },
+        {
+          "text": "entendi, pode agendar então14:59",
+          "before": "tudo sim e vc ?14:59",
+          "after": "entendi, pode agendar então14:59"
+        },
+        {
+          "text": "entendi, pode agendar então14:59",
+          "before": "entendi, pode agendar então14:59",
+          "after": "você poderia me dizer qual foi que ele pontuou com 6 ?14:59"
+        },
+        {
+          "text": "pode marcar então15:39",
+          "before": "entendi15:39",
+          "after": "pode marcar então15:39"
+        },
+        {
+          "text": "pode marcar então15:39",
+          "before": "pode marcar então15:39",
+          "after": "okay15:50"
+        },
+        {
+          "text": "você quer marcar pela unimed ou particular?08:28",
+          "before": "maravilha! gostaria de marca a anamnese. quais horários disponíveis?08:27",
+          "after": "você quer marcar pela unimed ou particular?08:28"
+        },
+        {
+          "text": "caso queira agendar estamos a disposição 11:19",
+          "before": "ok14:47",
+          "after": "caso queira agendar estamos a disposição 11:19"
+        },
+        {
+          "text": "gostaria de marcar uma consulta com a psicopedagoga13:48",
+          "before": "olá!  sou a amanda, da clínica fono inova. como posso ajudar você hoje? 13:47",
+          "after": "gostaria de marcar uma consulta com a psicopedagoga13:48"
+        },
+        {
+          "text": "ela tem horário de manha?13:49",
+          "before": "gostaria de marcar uma consulta com a psicopedagoga13:48",
+          "after": "ela tem horário de manha?13:49"
+        },
+        {
+          "text": "entendi! com as características que você observa no davi, a avaliação neuropsicológica que conversamos vai ajudar a esclarecer direitinho o que está acontecendo e dar um direcionamento seguro. você ainda tem interesse em agendar pra janeiro no período da tarde? 11:50",
+          "before": "então meu filho tem todas as características para tea11:50",
+          "after": "entendi! com as características que você observa no davi, a avaliação neuropsicológica que conversamos vai ajudar a esclarecer direitinho o que está acontecendo e dar um direcionamento seguro. você ainda tem interesse em agendar pra janeiro no período da tarde? 11:50"
+        },
+        {
+          "text": "entendi! com as características que você observa no davi, a avaliação neuropsicológica que conversamos vai ajudar a esclarecer direitinho o que está acontecendo e dar um direcionamento seguro. você ainda tem interesse em agendar pra janeiro no período da tarde? 11:50",
+          "before": "entendi! com as características que você observa no davi, a avaliação neuropsicológica que conversamos vai ajudar a esclarecer direitinho o que está acontecendo e dar um direcionamento seguro. você ainda tem interesse em agendar pra janeiro no período da tarde? 11:50",
+          "after": "oi!  sobre o atendimento na fono inova, tenho alguns horários livres nos próximos dias. você prefere período da manhã ou da tarde pra gente tentar encaixar?13:48"
+        },
+        {
+          "text": "gostaria de marcar com a fono16:44",
+          "before": "",
+          "after": "gostaria de marcar com a fono16:44"
+        },
+        {
+          "text": "gostaria de agendar com a fono16:49",
+          "before": "olá!  sou a amanda, da clínica fono inova. como posso ajudar você hoje? 16:48",
+          "after": "gostaria de agendar com a fono16:49"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição14:38",
+          "before": "obrigada!14:37",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição14:38"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição14:09",
+          "before": "obrigado entro em contato novamente depois 14:09",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição14:09"
+        },
+        {
+          "text": "gostaria de agendar uma avaliação?14:04",
+          "before": "clínica fono inovaav. minas gerais, 405 - jundiaí, anápolis - go, 75110-770, brasil14:0214:02msg-dblcheck",
+          "after": "gostaria de agendar uma avaliação?14:04"
+        },
+        {
+          "text": "gostaria de agendar uma avaliação?11:50",
+          "before": "+55 62 9355-4046fonoaudiologistatemos sim uma ótima profissional.11:50",
+          "after": "gostaria de agendar uma avaliação?11:50"
+        },
+        {
+          "text": "olá sabrina, bom dia , tudo bem? gostaria de agendar a avaliação inicial ?10:20",
+          "before": "",
+          "after": "olá sabrina, bom dia , tudo bem? gostaria de agendar a avaliação inicial ?10:20"
+        },
+        {
+          "text": "oi sueli , bom dia , tudo bem? gostaria de agendar a avaliação para seu filho? estamos abrindo nova agenda para início de janeiro 10:46",
+          "before": "",
+          "after": "oi sueli , bom dia , tudo bem? gostaria de agendar a avaliação para seu filho? estamos abrindo nova agenda para início de janeiro 10:46"
+        },
+        {
+          "text": "olá, bom dia, tudo bem?  você gostaria de agendar a avaliação inicial ?10:17",
+          "before": "olá! tenho interesse e queria mais informações, por favor.18:31",
+          "after": "olá, bom dia, tudo bem?  você gostaria de agendar a avaliação inicial ?10:17"
+        },
+        {
+          "text": "hoje eu teria um horário de retorno da stella, mas não vou conseguir, poderia remarcar para o mesmo horário na quarta 1709:34",
+          "before": "",
+          "after": "hoje eu teria um horário de retorno da stella, mas não vou conseguir, poderia remarcar para o mesmo horário na quarta 1709:34"
+        },
+        {
+          "text": "hoje eu teria um horário de retorno da stella, mas não vou conseguir, poderia remarcar para o mesmo horário na quarta 1709:34",
+          "before": "hoje eu teria um horário de retorno da stella, mas não vou conseguir, poderia remarcar para o mesmo horário na quarta 1709:34",
+          "after": "17/1209:34"
+        },
+        {
+          "text": "quero marcar uma consulta para meu filho08:51",
+          "before": "meu nome é mari08:50",
+          "after": "quero marcar uma consulta para meu filho08:51"
+        },
+        {
+          "text": "quero marcar uma consulta para meu filho08:51",
+          "before": "meu nome é mari08:50",
+          "after": "quero marcar uma consulta para meu filho08:51"
+        },
+        {
+          "text": "quero marcar uma consulta para meu filho08:51",
+          "before": "quero marcar uma consulta para meu filho08:51",
+          "after": "o nome dele é gael ele tem 3 anos08:51"
+        },
+        {
+          "text": "quero marcar uma consulta para meu filho08:51",
+          "before": "quero marcar uma consulta para meu filho08:51",
+          "after": "o nome dele é gael ele tem 3 anos08:51"
+        },
+        {
+          "text": "quero marcar avaliação09:07",
+          "before": "ok09:06",
+          "after": "quero marcar avaliação09:07"
+        },
+        {
+          "text": "quero marcar avaliação09:07",
+          "before": "ok09:06",
+          "after": "quero marcar avaliação09:07"
+        },
+        {
+          "text": "quero marcar avaliação09:07",
+          "before": "quero marcar avaliação09:07",
+          "after": "com a fonoaudióloga ou avaliação neuropsicológica ?09:08"
+        },
+        {
+          "text": "quero marcar avaliação09:07",
+          "before": "quero marcar avaliação09:07",
+          "after": "com a fonoaudióloga ou avaliação neuropsicológica ?09:08"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição11:58",
+          "before": "tá bom obrigada11:57",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição11:58"
+        },
+        {
+          "text": "gostaria de agendar o exame audiometria13:04",
+          "before": "boa tarde13:03",
+          "after": "gostaria de agendar o exame audiometria13:04"
+        },
+        {
+          "text": "gostaria de agendar o exame audiometria13:04",
+          "before": "gostaria de agendar o exame audiometria13:04",
+          "after": "joão victor abrahão limirio13:04"
+        },
+        {
+          "text": "youentendi, ela tem disponibilidade para dia 17/12 às 16:40ok pode marcar pra mim13:19",
+          "before": "",
+          "after": "youentendi, ela tem disponibilidade para dia 17/12 às 16:40ok pode marcar pra mim13:19"
+        },
+        {
+          "text": "youentendi, ela tem disponibilidade para dia 17/12 às 16:40ok pode marcar pra mim13:19",
+          "before": "",
+          "after": "youentendi, ela tem disponibilidade para dia 17/12 às 16:40ok pode marcar pra mim13:19"
+        },
+        {
+          "text": "youentendi, ela tem disponibilidade para dia 17/12 às 16:40ok pode marcar pra mim13:19",
+          "before": "youentendi, ela tem disponibilidade para dia 17/12 às 16:40ok pode marcar pra mim13:19",
+          "after": "já deixa o pix13:19"
+        },
+        {
+          "text": "youentendi, ela tem disponibilidade para dia 17/12 às 16:40ok pode marcar pra mim13:19",
+          "before": "youentendi, ela tem disponibilidade para dia 17/12 às 16:40ok pode marcar pra mim13:19",
+          "after": "já deixa o pix13:19"
+        },
+        {
+          "text": "remarcar pra mim10:03",
+          "before": "pode ser10:03",
+          "after": "remarcar pra mim10:03"
+        },
+        {
+          "text": "remarcar pra mim10:03",
+          "before": "remarcar pra mim10:03",
+          "after": "combinado .10:04"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição13:40",
+          "before": "oi muito obrigada13:39",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição13:40"
+        },
+        {
+          "text": "daiane temos uma vaga para amanhã às 14:40, posso agendar?14:03",
+          "before": "ok14:01",
+          "after": "daiane temos uma vaga para amanhã às 14:40, posso agendar?14:03"
+        },
+        {
+          "text": "esse horário não consigo ir tenho uma apresentação na escola do meu filho14:04",
+          "before": "daiane temos uma vaga para amanhã às 14:40, posso agendar?14:03",
+          "after": "esse horário não consigo ir tenho uma apresentação na escola do meu filho14:04"
+        },
+        {
+          "text": "gostaria de agendar para janeiro?edited09:46",
+          "before": "oi bom dia eu vou querer cancelar09:43",
+          "after": "gostaria de agendar para janeiro?edited09:46"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição10:00",
+          "before": "certinho! por enquanto, obrigada!09:17",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição10:00"
+        },
+        {
+          "text": "entendi para remarcar vou ter vaga somente para janeiro.08:49",
+          "before": "acho que não chego a tempo08:40",
+          "after": "entendi para remarcar vou ter vaga somente para janeiro.08:49"
+        },
+        {
+          "text": "no momento estamos somente particular, gostaria de agendar?15:40",
+          "before": "atendemos sim.15:39",
+          "after": "no momento estamos somente particular, gostaria de agendar?15:40"
+        },
+        {
+          "text": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição16:36",
+          "before": ", muito obrigado vou passar o valor pra mãe16:35",
+          "after": "por nada, caso deseje agendar, ou tirar alguma dúvida,  estamos a disposição16:36"
+        },
+        {
+          "text": "bom dia! gostaria de agendar uma consulta com fono para meu bebê de 1 aninho. pela unimed10:12",
+          "before": "bom dia10:12",
+          "after": "bom dia! gostaria de agendar uma consulta com fono para meu bebê de 1 aninho. pela unimed10:12"
+        },
+        {
+          "text": "bom dia! gostaria de agendar uma consulta com fono para meu bebê de 1 aninho. pela unimed10:12",
+          "before": "bom dia! gostaria de agendar uma consulta com fono para meu bebê de 1 aninho. pela unimed10:12",
+          "after": "bom dia! tudo bem?10:13"
+        },
+        {
+          "text": "podemos já agendar a avaliação de fono pra ela. você prefere de manhã ou à tarde?09:49",
+          "before": "ficamos na avenida minas gerais 405, bairro jundiai, anápolis (de frente ao sesi).09:48",
+          "after": "podemos já agendar a avaliação de fono pra ela. você prefere de manhã ou à tarde?09:49"
+        },
+        {
+          "text": "gostaria de agendar essa reavaliação para ter uma segunda opinião do processo de evolução dele?09:25",
+          "before": "sim09:23",
+          "after": "gostaria de agendar essa reavaliação para ter uma segunda opinião do processo de evolução dele?09:25"
+        },
+        {
+          "text": "tudo bem , ficamos a disposição, temos vaga para semana que vem, caso queriam agendar!09:34",
+          "before": "obrigada09:34",
+          "after": "tudo bem , ficamos a disposição, temos vaga para semana que vem, caso queriam agendar!09:34"
+        },
+        {
+          "text": "entendi fernanda, temos vaga para hoje às 17:20, gostaria de agendar essa avaliação inicial?09:58",
+          "before": "",
+          "after": "entendi fernanda, temos vaga para hoje às 17:20, gostaria de agendar essa avaliação inicial?09:58"
+        },
+        {
+          "text": "vou agendar seu contato14:57",
+          "before": "muito bom14:56",
+          "after": "vou agendar seu contato14:57"
+        },
+        {
+          "text": "vou agendar seu contato14:57",
+          "before": "vou agendar seu contato14:57",
+          "after": "e depois marcar um horario para levá-lo14:57"
+        },
+        {
+          "text": "e depois marcar um horario para levá-lo14:57",
+          "before": "vou agendar seu contato14:57",
+          "after": "e depois marcar um horario para levá-lo14:57"
+        },
+        {
+          "text": "e depois marcar um horario para levá-lo14:57",
+          "before": "e depois marcar um horario para levá-lo14:57",
+          "after": "+55 62 9464-9000e depois marcar um horario para levá-loperfeito marcelo, fico a disposição, quaisquer duvidas só me chamar para agendarmos! 14:58"
+        },
+        {
+          "text": "+55 62 9464-9000e depois marcar um horario para levá-loperfeito marcelo, fico a disposição, quaisquer duvidas só me chamar para agendarmos! 14:58",
+          "before": "e depois marcar um horario para levá-lo14:57",
+          "after": "+55 62 9464-9000e depois marcar um horario para levá-loperfeito marcelo, fico a disposição, quaisquer duvidas só me chamar para agendarmos! 14:58"
+        },
+        {
+          "text": "gostaria de agendar a avaliação inicial ?10:30",
+          "before": "entendi vera, nesse caso o ideal é iniciar um tratamento com a psicóloga infantil que irá ajudar ela demais nesse processo.10:29",
+          "after": "gostaria de agendar a avaliação inicial ?10:30"
+        },
+        {
+          "text": "eu quero marcar fono para o meu filho benjamim de 3 anos10:18",
+          "before": "bom dia10:18",
+          "after": "eu quero marcar fono para o meu filho benjamim de 3 anos10:18"
+        },
+        {
+          "text": "eu quero marcar fono para o meu filho benjamim de 3 anos10:18",
+          "before": "bom dia10:18",
+          "after": "eu quero marcar fono para o meu filho benjamim de 3 anos10:18"
+        },
+        {
+          "text": "eu quero marcar fono para o meu filho benjamim de 3 anos10:18",
+          "before": "eu quero marcar fono para o meu filho benjamim de 3 anos10:18",
+          "after": "vcs atendem pela unimed?10:18"
+        },
+        {
+          "text": "eu quero marcar fono para o meu filho benjamim de 3 anos10:18",
+          "before": "eu quero marcar fono para o meu filho benjamim de 3 anos10:18",
+          "after": "vcs atendem pela unimed?10:18"
+        }
+      ],
+      "periodMorning": [
+        {
+          "text": "precisava de um horário pela manhã14:26",
+          "before": "ele estuda a tarde14:26",
+          "after": "precisava de um horário pela manhã14:26"
+        },
+        {
+          "text": "precisava de um horário pela manhã14:26",
+          "before": "precisava de um horário pela manhã14:26",
+          "after": "só um momento .14:27"
+        },
+        {
+          "text": "ela tem horário de manha?13:49",
+          "before": "gostaria de marcar uma consulta com a psicopedagoga13:48",
+          "after": "ela tem horário de manha?13:49"
+        },
+        {
+          "text": "tem vaga para amanhã13:59",
+          "before": "tem vaga para amanhã13:59",
+          "after": "de manhã13:59"
+        }
+      ],
+      "periodAfternoon": [
+        {
+          "text": "a kauana ficará neste horário?14:16",
+          "before": "boa tarde!14:16",
+          "after": "a kauana ficará neste horário?14:16"
+        },
+        {
+          "text": "thays macedotem terça, ou quinta?somente na terça-feira a tarde, de manhã não tenho horário pois está lotada a agenda .edited16:46",
+          "before": "tem terça, ou quinta?16:38",
+          "after": "thays macedotem terça, ou quinta?somente na terça-feira a tarde, de manhã não tenho horário pois está lotada a agenda .edited16:46"
+        },
+        {
+          "text": "como faço então pra marcar, vou fazer o pacote mensal09:55",
+          "before": "como faço então pra marcar, vou fazer o pacote mensal09:55",
+          "after": "você prefere de manhã ou a tarde?09:56"
+        },
+        {
+          "text": "tenho horário para segunda-feira dia 12/01/2026 as 14:00 pode ser?12:27",
+          "before": "você prefere de manhã ou a tarde?12:23",
+          "after": "tenho horário para segunda-feira dia 12/01/2026 as 14:00 pode ser?12:27"
+        },
+        {
+          "text": "boa tarde.gostaria de marcar uma consulta13:41",
+          "before": "vou ver com ela.15:11",
+          "after": "boa tarde.gostaria de marcar uma consulta13:41"
+        },
+        {
+          "text": "boa tarde.gostaria de marcar uma consulta13:41",
+          "before": "boa tarde.gostaria de marcar uma consulta13:41",
+          "after": "boa tarde! anna, tudo bem?13:42"
+        },
+        {
+          "text": "youamiga, você sabe se sua amiga tem disponibilidade de agenda para atender adulto ?no período da tarde acredito q tenha. mas veja com ela amiga, se não der certo me avisa que indico outra11:40",
+          "before": "amiga, você sabe se sua amiga tem disponibilidade de agenda para atender adulto ?11:13",
+          "after": "youamiga, você sabe se sua amiga tem disponibilidade de agenda para atender adulto ?no período da tarde acredito q tenha. mas veja com ela amiga, se não der certo me avisa que indico outra11:40"
+        },
+        {
+          "text": "youamiga, você sabe se sua amiga tem disponibilidade de agenda para atender adulto ?no período da tarde acredito q tenha. mas veja com ela amiga, se não der certo me avisa que indico outra11:40",
+          "before": "youamiga, você sabe se sua amiga tem disponibilidade de agenda para atender adulto ?no período da tarde acredito q tenha. mas veja com ela amiga, se não der certo me avisa que indico outra11:40",
+          "after": ""
+        },
+        {
+          "text": "gostaria de saber se tem fono infantil e qual o valor da consulta.13:13",
+          "before": "boa tarde!13:12",
+          "after": "gostaria de saber se tem fono infantil e qual o valor da consulta.13:13"
+        },
+        {
+          "text": "gostaria de saber se tem fono infantil e qual o valor da consulta.13:13",
+          "before": "gostaria de saber se tem fono infantil e qual o valor da consulta.13:13",
+          "after": "boa tarde! nayara, tudo bem?13:15"
+        },
+        {
+          "text": "quero agendar uma sessão com a fonoaudiologa14:16",
+          "before": "quero agendar uma sessão com a fonoaudiologa14:16",
+          "after": "boa tarde fábio, tudo bem , a doutora ira fala com senhor, tudo bem?14:22"
+        },
+        {
+          "text": "younesse caso ideal é agendar uma avaliação para a doutora entender de fato o caso e está orientando você melhor.qual o valor da avaliação12:51",
+          "before": "você tem algum período de  preferência(manhã/tarde)?12:40",
+          "after": "younesse caso ideal é agendar uma avaliação para a doutora entender de fato o caso e está orientando você melhor.qual o valor da avaliação12:51"
+        },
+        {
+          "text": "marineide ( mãe) ryan rodrigues ( paciente)a tarde atende até que horasqual horário você queria ?15:40",
+          "before": "e quantas vezes por semana15:37",
+          "after": "marineide ( mãe) ryan rodrigues ( paciente)a tarde atende até que horasqual horário você queria ?15:40"
+        },
+        {
+          "text": "olá como você me pediu mais tarde surgiu um horário as 17:20 pode ser?14:32",
+          "before": "",
+          "after": "olá como você me pediu mais tarde surgiu um horário as 17:20 pode ser?14:32"
+        },
+        {
+          "text": "atendemos sim, gostaria de agendar?14:16",
+          "before": "boa tarde! tudo bem?14:00",
+          "after": "atendemos sim, gostaria de agendar?14:16"
+        },
+        {
+          "text": "já confirmo se eu consigo ir nesse horário na sexta caso contrário a gente vê pra próxima semana um horário mais cedo por conta o meu menino vai pra escola 1h00 da tarde então eu queria agendar mais cedo a consulta15:29",
+          "before": "",
+          "after": "já confirmo se eu consigo ir nesse horário na sexta caso contrário a gente vê pra próxima semana um horário mais cedo por conta o meu menino vai pra escola 1h00 da tarde então eu queria agendar mais cedo a consulta15:29"
+        },
+        {
+          "text": "já confirmo se eu consigo ir nesse horário na sexta caso contrário a gente vê pra próxima semana um horário mais cedo por conta o meu menino vai pra escola 1h00 da tarde então eu queria agendar mais cedo a consulta15:29",
+          "before": "já confirmo se eu consigo ir nesse horário na sexta caso contrário a gente vê pra próxima semana um horário mais cedo por conta o meu menino vai pra escola 1h00 da tarde então eu queria agendar mais cedo a consulta15:29",
+          "after": "entendi.15:32"
+        },
+        {
+          "text": "a fono teria próximo ao horário da to12:46",
+          "before": "oi mariana , desculpe e demora estava vendo horários dos profissionais, to estou tendo somente a tarde , pode ser ?12:34",
+          "after": "a fono teria próximo ao horário da to12:46"
+        },
+        {
+          "text": "+55 62 9254-4727deus é fielgostaria de saber se tem vaga para fonoboa tarde, tudo bem? sim temos vaga!12:55",
+          "before": "se atende plano12:50",
+          "after": "+55 62 9254-4727deus é fielgostaria de saber se tem vaga para fonoboa tarde, tudo bem? sim temos vaga!12:55"
+        },
+        {
+          "text": "boa tarde , tudo bem , tem como adiantar o agendamento para janeiro por gentileza?12:01",
+          "before": "ok13:12",
+          "after": "boa tarde , tudo bem , tem como adiantar o agendamento para janeiro por gentileza?12:01"
+        },
+        {
+          "text": "boa tarde , tudo bem , tem como adiantar o agendamento para janeiro por gentileza?12:01",
+          "before": "boa tarde , tudo bem , tem como adiantar o agendamento para janeiro por gentileza?12:01",
+          "after": "mikhael12:07"
+        },
+        {
+          "text": "boa tarde jacylene, passando para lembrar que hoje tem consulta do kalebe com a psicóloga tatiana celuta às 16:00.14:17",
+          "before": "tudo bem então, vou manter o de amanha, desculpe o equivoco!16:16",
+          "after": "boa tarde jacylene, passando para lembrar que hoje tem consulta do kalebe com a psicóloga tatiana celuta às 16:00.14:17"
+        },
+        {
+          "text": "entendi! com as características que você observa no davi, a avaliação neuropsicológica que conversamos vai ajudar a esclarecer direitinho o que está acontecendo e dar um direcionamento seguro. você ainda tem interesse em agendar pra janeiro no período da tarde? 11:50",
+          "before": "então meu filho tem todas as características para tea11:50",
+          "after": "entendi! com as características que você observa no davi, a avaliação neuropsicológica que conversamos vai ajudar a esclarecer direitinho o que está acontecendo e dar um direcionamento seguro. você ainda tem interesse em agendar pra janeiro no período da tarde? 11:50"
+        },
+        {
+          "text": "entendi! com as características que você observa no davi, a avaliação neuropsicológica que conversamos vai ajudar a esclarecer direitinho o que está acontecendo e dar um direcionamento seguro. você ainda tem interesse em agendar pra janeiro no período da tarde? 11:50",
+          "before": "entendi! com as características que você observa no davi, a avaliação neuropsicológica que conversamos vai ajudar a esclarecer direitinho o que está acontecendo e dar um direcionamento seguro. você ainda tem interesse em agendar pra janeiro no período da tarde? 11:50",
+          "after": "oi!  sobre o atendimento na fono inova, tenho alguns horários livres nos próximos dias. você prefere período da manhã ou da tarde pra gente tentar encaixar?13:48"
+        },
+        {
+          "text": "perfeito! vou verificar com a equipe os horários disponíveis à tarde a partir do dia 06 de janeiro. só me confirma o nome completo do paciente pra eu encaminhar o agendamento? 16:58",
+          "before": "tarde16:58",
+          "after": "perfeito! vou verificar com a equipe os horários disponíveis à tarde a partir do dia 06 de janeiro. só me confirma o nome completo do paciente pra eu encaminhar o agendamento? 16:58"
+        },
+        {
+          "text": "perfeito! vou verificar com a equipe os horários disponíveis à tarde a partir do dia 06 de janeiro. só me confirma o nome completo do paciente pra eu encaminhar o agendamento? 16:58",
+          "before": "perfeito! vou verificar com a equipe os horários disponíveis à tarde a partir do dia 06 de janeiro. só me confirma o nome completo do paciente pra eu encaminhar o agendamento? 16:58",
+          "after": ""
+        },
+        {
+          "text": "qual o valor da consulta?12:45",
+          "before": "qual o valor da consulta?12:45",
+          "after": "boa tarde! glacielly, tudo bem?13:23"
+        },
+        {
+          "text": "consulta com fono quanto está ai13:41",
+          "before": "consulta com fono quanto está ai13:41",
+          "after": "boa tarde! dalina, tudo bem?13:41"
+        },
+        {
+          "text": "podemos já agendar a avaliação de fono pra ela. você prefere de manhã ou à tarde?09:49",
+          "before": "ficamos na avenida minas gerais 405, bairro jundiai, anápolis (de frente ao sesi).09:48",
+          "after": "podemos já agendar a avaliação de fono pra ela. você prefere de manhã ou à tarde?09:49"
+        }
+      ],
+      "periodFlexible": [],
+      "cancellation": [
+        {
+          "text": "quero desmarcar a fono do meu filho hoje, minha esposa tá passando mau e não vai poder levar ele13:45",
+          "before": "boa tarde13:44",
+          "after": "quero desmarcar a fono do meu filho hoje, minha esposa tá passando mau e não vai poder levar ele13:45"
+        },
+        {
+          "text": "quero desmarcar a fono do meu filho hoje, minha esposa tá passando mau e não vai poder levar ele13:45",
+          "before": "quero desmarcar a fono do meu filho hoje, minha esposa tá passando mau e não vai poder levar ele13:45",
+          "after": "igor carvalho da silva13:46"
+        },
+        {
+          "text": "gostaria de agendar para janeiro?edited09:46",
+          "before": "oi bom dia eu vou querer cancelar09:43",
+          "after": "gostaria de agendar para janeiro?edited09:46"
+        }
+      ]
+    },
+    "distribution": {
+      "urgency": "12.1%",
+      "reschedule": "3.9%",
+      "periodMorning": "1.3%",
+      "periodAfternoon": "9.5%"
+    }
+  },
+  "generatedAt": "2026-02-16T02:25:15.420Z"
+}

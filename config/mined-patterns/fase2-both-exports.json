@@ -1,0 +1,204 @@
+{
+  "metadata": {
+    "totalLines": 75010,
+    "files": [
+      "whatsapp_export_2026-02-13.txt",
+      "whatsapp_export_2025-11-26.txt"
+    ],
+    "generatedAt": "2026-02-16T02:26:29.462Z"
+  },
+  "price": {
+    "insistence": {
+      "patterns": [
+        {},
+        {},
+        {},
+        {}
+      ],
+      "examples": [
+        "[YouEstamos com um ótimo desconto para sessões .Me passa o valor do desconto09:03] +55 62 8177-7994: Me passa o valor do desconto",
+        "[YouEstamos com um ótimo desconto para sessões .Me passa o valor do desconto09:03] +55 62 8177-7994: Me passa o valor do desconto"
+      ]
+    },
+    "objection": {
+      "patterns": [
+        {},
+        {},
+        {},
+        {}
+      ],
+      "examples": [
+        "[Porém particular fica muito caro (ainda mais sendo duas crianças)10:20] +55 62 9694-7735: Porém particular fica muito caro (ainda mais sendo duas crianças)",
+        "[Porém particular fica muito caro (ainda mais sendo duas crianças)10:20] +55 62 9694-7735: Porém particular fica muito caro (ainda mais sendo duas crianças)"
+      ]
+    },
+    "negotiation": {
+      "patterns": [
+        {},
+        {},
+        {},
+        {}
+      ],
+      "examples": [
+        "[A preferência persistente por um dos lados pode ser um primeiro sinal de assimetria craniana em formação. Isso acontece porque o crânio do bebê, especialmente nos primeiros meses, ainda está muito maleável. Se o contato com o colchão ou o apoio acontecer sempre no mesmo ponto, há maior risco de achatamento naquela região — principalmente na parte posterior da cabeça.",
+        "Além disso, essa preferência pode estar associada a condições como o torcicolo muscular congênito, em que o bebê apresenta uma limitação na rotação do pescoço, favorecendo sempre o mesmo lado.15:44] +55 62 9334-8085: A preferência persistente por um dos lados pode ser um primeiro sinal de assimetria craniana em formação. Isso acontece porque o crânio do bebê, especialmente nos primeiros meses, ainda está muito maleável. Se o contato com o colchão ou o apoio acontecer sempre no mesmo ponto, há maior risco de achatamento naquela região — principalmente na parte posterior da cabeça.",
+        "[A preferência persistente por um dos lados pode ser um primeiro sinal de assimetria craniana em formação. Isso acontece porque o crânio do bebê, especialmente nos primeiros meses, ainda está muito maleável. Se o contato com o colchão ou o apoio acontecer sempre no mesmo ponto, há maior risco de achatamento naquela região — principalmente na parte posterior da cabeça.",
+        "Além disso, essa preferência pode estar associada a condições como o torcicolo muscular congênito, em que o bebê apresenta uma limitação na rotação do pescoço, favorecendo sempre o mesmo lado.15:44] +55 62 9334-8085: A preferência persistente por um dos lados pode ser um primeiro sinal de assimetria craniana em formação. Isso acontece porque o crânio do bebê, especialmente nos primeiros meses, ainda está muito maleável. Se o contato com o colchão ou o apoio acontecer sempre no mesmo ponto, há maior risco de achatamento naquela região — principalmente na parte posterior da cabeça.",
+        "[Perfeito, obrigada por explicar  Então ele entende bem comandos e o “não”, isso é um ótimo sinal!",
+        "Pra eu já encaminhar o agendamento: qual é o nome do bebê e vocês preferem a avaliação essa semana ou na próxima, de manhã ou tarde? 15:47] +55 62 9366-4771: Perfeito, obrigada por explicar  Então ele entende bem comandos e o “não”, isso é um ótimo sinal!",
+        "[Perfeito, obrigada por explicar  Então ele entende bem comandos e o “não”, isso é um ótimo sinal!",
+        "Pra eu já encaminhar o agendamento: qual é o nome do bebê e vocês preferem a avaliação essa semana ou na próxima, de manhã ou tarde? 15:47] Clínica Fono Inova: Perfeito, obrigada por explicar  Então ele entende bem comandos e o “não”, isso é um ótimo sinal!",
+        "Aqui na Clínica Fono Inova a avaliação neuropsicológica completa (entrevista, sessões de testes, devolutiva e laudo) fica em R$ 2.500,00, podendo ser parcelado em até 6x no cartão.",
+        "Aqui na Clínica Fono Inova a avaliação neuropsicológica completa (entrevista, sessões de testes, devolutiva e laudo) fica em R$ 2.500,00, podendo ser parcelado em até 6x no cartão."
+      ]
+    },
+    "comparison": {
+      "patterns": [
+        {},
+        {},
+        {}
+      ],
+      "examples": [
+        "Mesmo ele estando em outra clínica tem que fazer, pois cada profissional tem um modo de trabalhar.",
+        "Mesmo ele estando em outra clínica tem que fazer, pois cada profissional tem um modo de trabalhar.",
+        "Mesmo ele estando em outra clínica tem que fazer, pois cada profissional tem um modo de trabalhar.",
+        "Mesmo ele estando em outra clínica tem que fazer, pois cada profissional tem um modo de trabalhar.",
+        "[No momento qual valor você esta pagando na outra Clínica?14:37] +55 62 9391-1086: No momento qual valor você esta pagando na outra Clínica?14:37",
+        "[No momento qual valor você esta pagando na outra Clínica?14:37] Clínica Fono Inova: No momento qual valor você esta pagando na outra Clínica?14:37",
+        "[Ah sim entendi , olha nós trabalhamos como pacotes que acaba se tornando mais em conta , cada sessão sai por 180, sendo duas consigo fazer 170 em cada para você.19:21] +55 62 8325-7436: Ah sim entendi , olha nós trabalhamos como pacotes que acaba se tornando mais em conta , cada sessão sai por 180, sendo duas consigo fazer 170 em cada para você.",
+        "[Ah sim entendi , olha nós trabalhamos como pacotes que acaba se tornando mais em conta , cada sessão sai por 180, sendo duas consigo fazer 170 em cada para você.19:21] Clínica Fono Inova: Ah sim entendi , olha nós trabalhamos como pacotes que acaba se tornando mais em conta , cada sessão sai por 180, sendo duas consigo fazer 170 em cada para você.",
+        "[Queria ver pacotes ver se fica mais em conta11:40] +55 62 9477-9889: Queria ver pacotes ver se fica mais em conta",
+        "[Queria ver pacotes ver se fica mais em conta11:40] +55 62 9477-9889: Queria ver pacotes ver se fica mais em conta"
+      ]
+    },
+    "acceptance": {
+      "patterns": [
+        {},
+        {},
+        {}
+      ],
+      "examples": [
+        "[Oi Victória, boa tarde, tudo bem ? Estamos com uns dois pacientes aqui para fazer avaliação, porém só 1500 conseguimos, tentamos 2,000 mas pessoal quando dizendo o valor nem responde mais, RS gostaria de saber se você está de acordo em fecharmos esse valor ?17:09] +55 62 9236-4847: Oi Victória, boa tarde, tudo bem ? Estamos com uns dois pacientes aqui para fazer avaliação, porém só 1500 conseguimos, tentamos 2,000 mas pessoal quando dizendo o valor nem responde mais, RS gostaria de saber se você está de acordo em fecharmos esse valor ?17:09",
+        "[Oi Victória, boa tarde, tudo bem ? Estamos com uns dois pacientes aqui para fazer avaliação, porém só 1500 conseguimos, tentamos 2,000 mas pessoal quando dizendo o valor nem responde mais, RS gostaria de saber se você está de acordo em fecharmos esse valor ?17:09] Clínica Fono Inova: Oi Victória, boa tarde, tudo bem ? Estamos com uns dois pacientes aqui para fazer avaliação, porém só 1500 conseguimos, tentamos 2,000 mas pessoal quando dizendo o valor nem responde mais, RS gostaria de saber se você está de acordo em fecharmos esse valor ?17:09",
+        "[Olá bom dia tudo bem ? Gostaria de saber sobre o valor da primeira consulta11:46] +55 62 9448-7802: Olá bom dia tudo bem ? Gostaria de saber sobre o valor da primeira consulta11:46",
+        "[Olá bom dia tudo bem ? Gostaria de saber sobre o valor da primeira consulta11:46] +55 62 9448-7802: Olá bom dia tudo bem ? Gostaria de saber sobre o valor da primeira consulta11:46",
+        "[Perfeito, o valor da nossa avaliação inicial é 200 reais, onde o profissional irá fazer uma análise inicial do caso e traçar o plano terapeutico. Seria para você mesmo ou para criança ?13:28] +55 62 9230-0911: Perfeito, o valor da nossa avaliação inicial é 200 reais, onde o profissional irá fazer uma análise inicial do caso e traçar o plano terapeutico. Seria para você mesmo ou para criança ?",
+        "[Perfeito, o valor da nossa avaliação inicial é 200 reais, onde o profissional irá fazer uma análise inicial do caso e traçar o plano terapeutico. Seria para você mesmo ou para criança ?13:28] Clínica Fono Inova: Perfeito, o valor da nossa avaliação inicial é 200 reais, onde o profissional irá fazer uma análise inicial do caso e traçar o plano terapeutico. Seria para você mesmo ou para criança ?",
+        "[Drica Correa/ Adriana (Liminar) UnimedComo contactei vocês em Setembro/2025E falei que tenho interesse em fechar ok … hoje falei com Lorraine … para tentarem negociar um valor que fique bom para ambas as partes …",
+        "Mas peço que reavaliem com Carinho e vejam o que conseguem para que a Unimed possa fechar com vocês . Ok14:54] +55 62 9855-4339: E falei que tenho interesse em fechar ok … hoje falei com Lorraine … para tentarem negociar um valor que fique bom para ambas as partes …",
+        "[Drica Correa/ Adriana (Liminar) UnimedComo contactei vocês em Setembro/2025E falei que tenho interesse em fechar ok … hoje falei com Lorraine … para tentarem negociar um valor que fique bom para ambas as partes …",
+        "Mas peço que reavaliem com Carinho e vejam o que conseguem para que a Unimed possa fechar com vocês . Ok14:54] +55 62 9855-4339: E falei que tenho interesse em fechar ok … hoje falei com Lorraine … para tentarem negociar um valor que fique bom para ambas as partes …"
+      ]
+    }
+  },
+  "scheduling": {
+    "urgency": {
+      "patterns": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ],
+      "examples": [
+        "[Anota essas lá na agenda provisória eu vou criar algo essa semana ainda para add ao site tema17:53] +55 62 9236-4847: Anota essas lá na agenda provisória eu vou criar algo essa semana ainda para add ao site tema17:53",
+        "[Anota essas lá na agenda provisória eu vou criar algo essa semana ainda para add ao site tema17:53] +55 62 9236-4847: Anota essas lá na agenda provisória eu vou criar algo essa semana ainda para add ao site tema17:53",
+        "[Sara, atendemos sim adultos, o fonoaudiólogo trabalha para melhorar a clareza e precisão da fala, corrigindo a articulação de sons, ritmos e respiração para que as palavras sejam pronunciadas de forma inteligível e sem ruídos.",
+        "Temos uma ótima profissional.08:55] +55 62 9236-4847: Sara, atendemos sim adultos, o fonoaudiólogo trabalha para melhorar a clareza e precisão da fala, corrigindo a articulação de sons, ritmos e respiração para que as palavras sejam pronunciadas de forma inteligível e sem ruídos.",
+        "[Sara, atendemos sim adultos, o fonoaudiólogo trabalha para melhorar a clareza e precisão da fala, corrigindo a articulação de sons, ritmos e respiração para que as palavras sejam pronunciadas de forma inteligível e sem ruídos.",
+        "Temos uma ótima profissional.08:55] Clínica Fono Inova: Sara, atendemos sim adultos, o fonoaudiólogo trabalha para melhorar a clareza e precisão da fala, corrigindo a articulação de sons, ritmos e respiração para que as palavras sejam pronunciadas de forma inteligível e sem ruídos.",
+        "Só reforço que iniciar as terapias o quanto antes é fundamental para a evolução na fala, na comunicação e na independência. Cada passo conta muito nesse processo.",
+        "Só reforço que iniciar as terapias o quanto antes é fundamental para a evolução na fala, na comunicação e na independência. Cada passo conta muito nesse processo.",
+        "Só reforço que iniciar as terapias o quanto antes é fundamental para a evolução na fala, na comunicação e na independência. Cada passo conta muito nesse processo.",
+        "Só reforço que iniciar as terapias o quanto antes é fundamental para a evolução na fala, na comunicação e na independência. Cada passo conta muito nesse processo."
+      ]
+    },
+    "reschedule": {
+      "patterns": [
+        {},
+        {},
+        {},
+        {},
+        {}
+      ],
+      "examples": [
+        "Passando pra saber se você gostaria de reagendar a Avaliação da  Alice de Sousa Coutinho  ?",
+        "Passando pra saber se você gostaria de reagendar a Avaliação da  Alice de Sousa Coutinho  ?",
+        "Passando pra saber se você gostaria de reagendar a Avaliação da  Alice de Sousa Coutinho  ?",
+        "Passando pra saber se você gostaria de reagendar a Avaliação da  Alice de Sousa Coutinho  ?",
+        "Passando pra saber se você gostaria de reagendar a Avaliação do Heitor ?",
+        "Passando pra saber se você gostaria de reagendar a Avaliação do Heitor ?",
+        "Passando pra saber se você gostaria de reagendar a Avaliação do Heitor ?",
+        "Passando pra saber se você gostaria de reagendar a Avaliação do Heitor ?",
+        "Passando pra saber se você gostaria de reagendar a Avaliação ?",
+        "Passando pra saber se você gostaria de reagendar a Avaliação ?"
+      ]
+    },
+    "periodMorning": {
+      "patterns": [
+        {},
+        {},
+        {}
+      ],
+      "examples": [
+        "[atendem essa demanda somente Fono e Terapia Ocupacional período da manhã08:5008:50] +55 62 9236-4847: atendem essa demanda somente Fono e Terapia Ocupacional período da manhã08:5008:50",
+        "[atendem essa demanda somente Fono e Terapia Ocupacional período da manhã08:5008:50] +55 62 9236-4847: atendem essa demanda somente Fono e Terapia Ocupacional período da manhã08:5008:50",
+        "[Precisava de um horário pela manhã14:26] +55 62 9462-2848: Precisava de um horário pela manhã14:26",
+        "[Precisava de um horário pela manhã14:26] +55 62 9462-2848: Precisava de um horário pela manhã14:26",
+        "[Minha filha começou a estudar de manhã12:26] +55 62 9448-7802: Minha filha começou a estudar de manhã12:26",
+        "[Minha filha começou a estudar de manhã12:26] +55 62 9448-7802: Minha filha começou a estudar de manhã12:26",
+        "[os de manha so que interessa a responsavel15:26] +55 62 9448-7802: os de manha so que interessa a responsavel15:26",
+        "[os de manha so que interessa a responsavel15:26] +55 62 9448-7802: os de manha so que interessa a responsavel15:26",
+        "Quarta-feira 11:20consegui dois atendimentos fono pela manha tb15:31] +55 62 9448-7802: You Fonoterapia",
+        "Quarta-feira 11:20consegui dois atendimentos fono pela manha tb15:31"
+      ]
+    },
+    "periodAfternoon": {
+      "patterns": [
+        {},
+        {},
+        {}
+      ],
+      "examples": [
+        "Mas se não ficar bom para você, posso procurar um horário mais tarde em outro dia. Quer que eu veja?14:01] +55 62 9236-4847:  Resposta seca:",
+        "Mas se não ficar bom para você, posso procurar um horário mais tarde em outro dia. Quer que eu veja?14:01",
+        "Mas se não ficar bom para você, posso procurar um horário mais tarde em outro dia. Quer que eu veja?14:01] Clínica Fono Inova:  Resposta seca:",
+        "Mas se não ficar bom para você, posso procurar um horário mais tarde em outro dia. Quer que eu veja?14:01",
+        "[Boa tarde!",
+        "Isabela Fono15:59] +55 62 9236-4847: Boa tarde!",
+        "[Boa tarde!",
+        "Isabela Fono15:59] Clínica Fono Inova: Boa tarde!",
+        "Mais ela atende somente a tarde.09:43] +55 62 9236-4847: Nós temos uma profissional que seria ideal pra ele tem anos de experiência.",
+        "Mais ela atende somente a tarde.09:43"
+      ]
+    },
+    "cancellation": {
+      "patterns": [
+        {},
+        {},
+        {},
+        {}
+      ],
+      "examples": [
+        "Caso houver desistência ou imprevisto nós avisar com antecedência.08:35] +55 62 9236-4847:  Sua Avaliação está agendada",
+        "Caso houver desistência ou imprevisto nós avisar com antecedência.08:35",
+        "Caso houver desistência ou imprevisto nós avisar com antecedência.08:35] Clínica Fono Inova:  Sua Avaliação está agendada",
+        "Caso houver desistência ou imprevisto nós avisar com antecedência.08:35",
+        "Caso houver desistência ou imprevisto nós avisar com antecedência.11:07] +55 62 9236-4847: Bom dia! Alison, Tudo bem?",
+        "Caso houver desistência ou imprevisto nós avisar com antecedência.11:07",
+        "Caso houver desistência ou imprevisto nós avisar com antecedência.11:07] Clínica Fono Inova: Bom dia! Alison, Tudo bem?",
+        "Caso houver desistência ou imprevisto nós avisar com antecedência.11:07",
+        "Caso houver desistência ou imprevisto nós avisar com antecedência.08:35] +55 62 9236-4847: Bom dia! Juliana, Tudo bem?",
+        "Caso houver desistência ou imprevisto nós avisar com antecedência.08:35"
+      ]
+    },
+    "flexibility": {
+      "patterns": [
+        {},
+        {},
+        {}
+      ],
+      "examples": []
+    }
+  }
+}

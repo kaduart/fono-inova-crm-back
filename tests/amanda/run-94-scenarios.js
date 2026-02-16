@@ -2,34 +2,31 @@
 /**
  * 🧪 RUNNER DOS 94 CENÁRIOS REAIS - via AmandaOrchestrator
  * =========================================================
- * Executa todos os cenários de conversasReaisExtraidas.json
- * usando getOptimizedAmandaResponse() (caminho de produção).
- *
- * Uso: node -r dotenv/config tests/amanda/run-94-scenarios.js
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { getOptimizedAmandaResponse } from '../../orchestrators/AmandaOrchestrator.js';
+import { AmandaMetrics } from '../../utils/orchestrator/AmandaMetrics.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_PATH = join(__dirname, '..', '..', '..', 'tests', 'fixtures', 'conversasReaisExtraidas.json');
 
-// ── CONFIG ──
-const CONCURRENCY = 1; // sequencial pra não sobrecarregar Claude
-const TIMEOUT_PER_SCENARIO = 30_000; // 30s
-const FILTER_CATEGORY = process.env.FILTER_CAT || null; // ex: FILTER_CAT=PRECO
+const CONCURRENCY = 1;
+const TIMEOUT_PER_SCENARIO = 30_000;
+const FILTER_CATEGORY = process.env.FILTER_CAT || null;
 const FILTER_ID = process.env.FILTER_ID ? Number(process.env.FILTER_ID) : null;
 
 console.log(`
 ╔════════════════════════════════════════════════════════════════╗
-║  🧪 94 CENÁRIOS REAIS - AmandaOrchestrator                    ║
+║  🧪 94 CENÁRIOS REAIS + 📊 METRICS                            ║
 ╚════════════════════════════════════════════════════════════════╝
 `);
 
-// ── FAKE LEAD BASE ──
+const metrics = new AmandaMetrics();
+
 function makeFreshLead() {
     return {
         _id: new mongoose.Types.ObjectId(),
@@ -44,7 +41,6 @@ function makeFreshLead() {
     };
 }
 
-// ── CHECK VALIDATORS ──
 function runCheck(check, responseText) {
     const lower = (responseText || '').toLowerCase();
 
@@ -94,21 +90,17 @@ function runCheck(check, responseText) {
     }
 }
 
-// ── MAIN ──
 async function main() {
-    // Conectar ao MongoDB
     await mongoose.connect(process.env.MONGO_URI);
     console.log('✅ MongoDB conectado\n');
 
-    // Carregar cenários
     const raw = readFileSync(FIXTURE_PATH, 'utf-8');
     const data = JSON.parse(raw);
     let scenarios = data.scenarios;
 
-    console.log(`📊 Total: ${scenarios.length} cenários (de ${data.totalPairsExtracted} pares)`);
+    console.log(`📊 Total: ${scenarios.length} cenários`);
     console.log(`📂 Categorias: ${Object.entries(data.categories).map(([k, v]) => `${k}(${v})`).join(', ')}\n`);
 
-    // Filtrar se necessário
     if (FILTER_CATEGORY) {
         scenarios = scenarios.filter(s => s.category === FILTER_CATEGORY);
         console.log(`🔍 Filtro: ${FILTER_CATEGORY} → ${scenarios.length} cenários\n`);
@@ -123,7 +115,7 @@ async function main() {
 
     for (const scenario of scenarios) {
         const label = `[${scenario.id}] ${scenario.category}`;
-        process.stdout.write(`${label}: "${scenario.leadMessage.substring(0, 60)}${scenario.leadMessage.length > 60 ? '...' : ''}" → `);
+        process.stdout.write(`${label}: "${scenario.leadMessage.substring(0, 50)}..." → `);
 
         let responseText;
         try {
@@ -139,10 +131,18 @@ async function main() {
             ]);
 
             responseText = resp || '';
-            // Pode retornar null (ex: cenário de localização que envia location)
             if (resp === null) {
                 responseText = '[NULL - location/action sent]';
             }
+
+            // Métricas
+            const { grade } = metrics.analyze({
+                scenario,
+                output: responseText
+            });
+            process.stdout.write(`[${grade}] `);
+
+
         } catch (err) {
             process.stdout.write(`💥 ERRO: ${err.message}\n`);
             results.errors++;
@@ -150,7 +150,6 @@ async function main() {
             continue;
         }
 
-        // Rodar checks
         const checkResults = scenario.checks.map(c => ({
             name: c.name,
             ...runCheck(c, responseText),
@@ -163,8 +162,8 @@ async function main() {
         } else {
             results.failed++;
             const failedChecks = checkResults.filter(r => !r.passed);
-            process.stdout.write(`❌ ${failedChecks.map(f => `[${f.name}: ${f.detail}]`).join(' ')}\n`);
-            process.stdout.write(`   Resp: "${responseText.substring(0, 120)}${responseText.length > 120 ? '...' : ''}"\n`);
+            process.stdout.write(`❌ ${failedChecks.map(f => `[${f.name}]`).join(' ')}\n`);
+            process.stdout.write(`   Resp: "${responseText.substring(0, 100)}..."\n`);
             failures.push({
                 id: scenario.id,
                 category: scenario.category,
@@ -175,30 +174,43 @@ async function main() {
         }
     }
 
-    // ── RELATÓRIO ──
+    // RELATÓRIO ORIGINAL
     console.log(`\n${'═'.repeat(64)}`);
-    console.log(`📊 RELATÓRIO FINAL`);
-    console.log(`${'═'.repeat(64)}\n`);
+    console.log(`📊 RELATÓRIO DE TESTES`);
+    console.log(`${'═'.repeat(64)}`);
     console.log(`✅ Passaram:  ${results.passed}`);
     console.log(`❌ Falharam:  ${results.failed}`);
     console.log(`💥 Erros:     ${results.errors}`);
     console.log(`📊 Total:     ${scenarios.length}`);
-    console.log(`📈 Taxa:      ${((results.passed / scenarios.length) * 100).toFixed(1)}%\n`);
+    console.log(`📈 Taxa:      ${((results.passed / scenarios.length) * 100).toFixed(1)}%`);
+
+    // 🆕 RELATÓRIO DE MÉTRICAS
+    console.log(`\n${'═'.repeat(64)}`);
+    console.log(`📊 AMANDA METRICS`);
+    console.log(`${'═'.repeat(64)}`);
+
+    const r = metrics.getReport();
+    console.log(`Total: ${r.total} | Notas: ${JSON.stringify(r.byGrade)}`);
+
+    if (r.low && r.low.length > 0) {
+        console.log(`\n⚠️  Problemas:`);
+        r.low.forEach(i => console.log(`  [${i.id}] ${i.grade}`));
+    }
+
+    writeFileSync('amanda-metrics.csv', metrics.exportToCSV());
+    console.log(`\n💾 CSV: amanda-metrics.csv`);
 
     if (failures.length > 0) {
         console.log(`\n${'─'.repeat(64)}`);
-        console.log(`❌ DETALHES DAS FALHAS (${failures.length}):`);
-        console.log(`${'─'.repeat(64)}\n`);
+        console.log(`❌ FALHAS (${failures.length}):`);
         for (const f of failures) {
-            console.log(`  [${f.id}] ${f.category}: ${f.error || ''}`);
-            if (f.message) console.log(`     MSG: "${f.message}"`);
-            if (f.response) console.log(`     RESP: "${f.response}"`);
+            console.log(`  [${f.id}] ${f.category}`);
             if (f.failedChecks) f.failedChecks.forEach(c => console.log(`     ❌ ${c}`));
-            console.log();
         }
     }
 
     await mongoose.disconnect();
+
     process.exit(results.failed + results.errors > 0 ? 1 : 0);
 }
 

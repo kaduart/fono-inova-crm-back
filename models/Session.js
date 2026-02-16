@@ -35,7 +35,7 @@ const sessionSchema = new mongoose.Schema({
     isPaid: { type: Boolean, default: false },
     paymentMethod: {
         type: String,
-        enum: ['dinheiro', 'pix', 'cartão'],
+        enum: ['dinheiro', 'pix', 'cartão', 'convenio'], // ← Adicionado 'convenio'
         default: null
     },
     session: String,
@@ -50,7 +50,7 @@ const sessionSchema = new mongoose.Schema({
     notes: { type: String },
     paymentStatus: {
         type: String,
-        enum: ['paid', 'partial', 'pending'],
+        enum: ['paid', 'partial', 'pending', 'pending_receipt'], // ← Adicionado 'pending_receipt' para convênio
         default: 'pending',
         description: 'Situação financeira específica desta sessão'
     },
@@ -78,7 +78,7 @@ const sessionSchema = new mongoose.Schema({
     },
     originalPaymentMethod: {
         type: String,
-        enum: ['dinheiro', 'pix', 'cartão'],
+        enum: ['dinheiro', 'pix', 'cartão', 'convenio'], // ← Adicionado 'convenio'
         description: 'Método de pagamento original'
     },
     originalIsPaid: {
@@ -88,6 +88,17 @@ const sessionSchema = new mongoose.Schema({
     canceledAt: {
         type: Date,
         description: 'Data do cancelamento'
+    },
+    insuranceGuide: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'InsuranceGuide',
+        default: null,
+        description: 'Guia de convênio vinculada a esta sessão'
+    },
+    guideConsumed: {
+        type: Boolean,
+        default: false,
+        description: 'Flag de idempotência - true se a guia já foi consumida'
     }
 
 }, {
@@ -135,6 +146,81 @@ sessionSchema.post('save', async function (doc) {
     // 🚫 Evita sincronização redundante durante fluxos financeiros
     if (doc._inFinancialTransaction) return;
     await syncEvent(doc, 'session');
+});
+
+// 🏥 Hook para consumir guia de convênio quando sessão for concluída
+sessionSchema.post('findOneAndUpdate', async function (doc) {
+    if (!doc) return;
+
+    // Só prossegue se há guia vinculada
+    if (!doc.insuranceGuide) return;
+
+    // Idempotência: não consumir se já foi consumido
+    if (doc.guideConsumed) return;
+
+    // Só consome se status mudou para 'completed'
+    if (doc.status !== 'completed') return;
+
+    try {
+        console.log(`🏥 Consumindo guia ${doc.insuranceGuide} para sessão ${doc._id}`);
+
+        const InsuranceGuide = mongoose.model('InsuranceGuide');
+        const guide = await InsuranceGuide.findById(doc.insuranceGuide);
+
+        if (!guide) {
+            console.warn(`⚠️ Guia ${doc.insuranceGuide} não encontrada`);
+            return;
+        }
+
+        // Validar guia
+        if (guide.status !== 'active') {
+            console.warn(`⚠️ Guia ${guide.number} não está ativa (status: ${guide.status})`);
+            return;
+        }
+
+        if (guide.usedSessions >= guide.totalSessions) {
+            console.warn(`⚠️ Guia ${guide.number} já está esgotada`);
+            return;
+        }
+
+        // Consumir sessão
+        guide.usedSessions += 1;
+
+        // Se esgotou, marcar como exhausted
+        if (guide.usedSessions >= guide.totalSessions) {
+            guide.status = 'exhausted';
+        }
+
+        await guide.save();
+
+        // Marcar sessão como consumida (idempotência)
+        await mongoose.model('Session').updateOne(
+            { _id: doc._id },
+            { $set: { guideConsumed: true } }
+        );
+
+        console.log(`✅ Guia consumida: ${guide.usedSessions}/${guide.totalSessions} sessões`);
+
+    } catch (error) {
+        console.error(`❌ Erro ao consumir guia para sessão ${doc._id}:`, error);
+        // NÃO lança erro para não quebrar o fluxo principal
+    }
+});
+
+// 🚨 Hook para detectar reversão de status (completed → outro)
+sessionSchema.post('findOneAndUpdate', async function (doc) {
+    if (!doc) return;
+
+    // Só monitora se já foi consumida
+    if (!doc.guideConsumed) return;
+    if (!doc.insuranceGuide) return;
+
+    // Se voltou de completed para outro status
+    if (doc.status !== 'completed') {
+        console.warn(`⚠️ ATENÇÃO: Sessão ${doc._id} mudou de 'completed' para '${doc.status}' mas guia já foi consumida!`);
+        console.warn(`⚠️ Guia ${doc.insuranceGuide} NÃO será revertida automaticamente.`);
+        // NÃO reverte automaticamente conforme especificação
+    }
 });
 
 sessionSchema.add({

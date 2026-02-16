@@ -81,7 +81,7 @@ const appointmentSchema = new mongoose.Schema({
   },
   paymentStatus: {
     type: String,
-    enum: ['pending', 'paid', 'partial', 'canceled', 'advanced', 'package_paid'],
+    enum: ['pending', 'paid', 'partial', 'canceled', 'advanced', 'package_paid', 'pending_receipt'], // ← Adicionado 'pending_receipt'
     default: 'pending'
   },
   advancedSessions: [{
@@ -101,7 +101,7 @@ const appointmentSchema = new mongoose.Schema({
     enum: [
       'evaluation', 'session', 'package_session',
       'individual_session', 'meet', 'alignment', 'return',
-      'tongue_tie_test', 'neuropsych_evaluation'
+      'tongue_tie_test', 'neuropsych_evaluation', 'convenio_session' // ← Adicionado 'convenio_session'
     ],
 
     required: true

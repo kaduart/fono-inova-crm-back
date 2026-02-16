@@ -2,24 +2,20 @@
 
 export const THERAPY_SPECIALTIES = {
     neuropsychological: {
-        names: ['neuropsicológica', 'neuropsicologia', 'avaliação cognitiva'],
-        patterns: [
-            /neuropsic(o|ó)log(a|ia|ica)/i,
-            /avalia(ç|c)(a|ã)o\s+(completa|cognitiva|conhecimento)/i,
-            /avalia(ç|c)(a|ã)o\s+neuropsic(o|ó)log/i,
-            /(solicita(ç|c)(a|ã)o|encaminhament(o|a)).{0,40}neuropsic/i,
-            /laudo\s+psicol(ó|o)gico/i
-        ]
+        id: 'neuropsychological',
+        symptoms: ['investigacao', 'diagnostico', 'laudo', 'avaliacao_completa'],
+        ageRange: ['crianca', 'adolescente', 'adulto'],
+        duration: '10_sessoes',
+        hasReport: true,
+        priceTier: 'premium'
     },
     speech: {
-        names: ['fonoaudiologia', 'fono'],
-        patterns: [
-            /fono(audi(o|ó)log(a|ia|o))?/i,
-            /\bfala\b|\blinguagem\b/i,
-            /fala\s+pouco|nao\s+fala|fala\s+errado|dificuldade\s+(de\s+)?falar/i,
-            /pron(ú|u)ncia|troca\s+letras|gagueira/i,
-            /atraso\s+(de\s+)?fala/i
-        ]
+        id: 'speech',
+        symptoms: ['atraso_fala', 'troca_letras', 'gagueira', 'nao_fala', 'balbucia'],
+        ageRange: ['baby', 'crianca'],
+        duration: 'sessao_50min',
+        hasReport: false,
+        priceTier: 'standard'
     },
     tongue_tie: {
         names: ['teste da linguinha', 'frênulo lingual'],
@@ -195,6 +191,62 @@ export const THERAPY_DATA = {
  */
 export function getTherapyData(therapyId) {
     return THERAPY_DATA[therapyId] || null;
+}
+
+// therapyDetector.js - VERSÃO ESTRUTURAL
+
+export const THERAPY_PROFILES = {
+    neuropsychological: {
+        id: 'neuropsychological',
+        symptoms: ['investigacao', 'diagnostico', 'laudo', 'avaliacao_completa'],
+        ageRange: ['crianca', 'adolescente', 'adulto'],
+        duration: '10_sessoes',
+        hasReport: true,
+        priceTier: 'premium'
+    },
+    speech: {
+        id: 'speech',
+        symptoms: ['atraso_fala', 'troca_letras', 'gagueira', 'nao_fala', 'balbucia'],
+        ageRange: ['baby', 'crianca'],
+        duration: 'sessao_50min',
+        hasReport: false,
+        priceTier: 'standard'
+    },
+    // ... etc
+};
+
+// NOVO: Detecta por SINTOMA, não palavra
+export function detectTherapyBySymptoms(text = "") {
+    const symptoms = extractSymptoms(text); // NLP leve
+
+    const scores = {};
+    for (const [id, profile] of Object.entries(THERAPY_PROFILES)) {
+        scores[id] = profile.symptoms.filter(s => symptoms.includes(s)).length;
+    }
+
+    // Retorna array ordenado por score, não apenas o primeiro
+    return Object.entries(scores)
+        .filter(([_, score]) => score > 0)
+        .sort((a, b) => b[1] - a[1])
+        .map(([id]) => id);
+}
+
+// Helper: Extrai sintomas do texto (heurística melhorada)
+function extractSymptoms(text) {
+     const symptoms = [];
+    const t = text.toLowerCase();
+    
+    // Mapeamento semântico, não literal
+    if (/(n[aã]o\s+fala|fala\s+pouco|balbucia|n[aã]o\s+consegue\s+se\s+expressar)/.test(t))
+        symptoms.push('atraso_fala');
+    
+    if (/(troca\s+letras|fala\s+errado|pronuncia\s+errado)/.test(t))
+        symptoms.push('troca_letras');
+        
+    if (/(suspeita|investiga|laudo|diagn[oó]stico|fechar\s+diagn)/.test(t))
+        symptoms.push('investigacao');
+
+    return symptoms;
 }
 
 /**
