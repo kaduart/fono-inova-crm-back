@@ -5,6 +5,7 @@ import ConversationAnalysis from './ConversationAnalysisService.js';
 import PatternRecognition from './PatternRecognitionService.js';
 import LearningInsight from '../../models/LearningInsight.js';
 import { analyzeHistoricalConversations } from '../amandaLearningService.js';
+import { analyzeDetectorPerformance, generateAnalysisReport } from '../DetectorLearningService.js';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -155,11 +156,46 @@ export async function runLearningCycle() {
     });
     
     console.log(`✅ Insights salvos: ${saved._id}`);
-    
+
     // ═══════════════════════════════════════════════════
-    // 8. LIMPA DADOS ANTIGOS
+    // 8. ANALISA PERFORMANCE DOS DETECTORES (FASE 4)
     // ═══════════════════════════════════════════════════
-    console.log('\n🧹 Etapa 8: Limpando dados antigos...');
+    console.log('\n🎯 Etapa 8: Analisando detectores contextuais...');
+    let detectorAnalysis = null;
+
+    try {
+      detectorAnalysis = await analyzeDetectorPerformance(7); // Últimos 7 dias
+
+      // Mostra relatório resumido
+      const report = generateAnalysisReport(detectorAnalysis);
+      console.log(report);
+
+      // Salva análise dos detectores no MongoDB
+      await LearningInsight.create({
+        type: 'detector_effectiveness',
+        data: {
+          detectors: detectorAnalysis.detectors,
+          newPatternsDiscovered: detectorAnalysis.newPatternsDiscovered
+        },
+        leadsAnalyzed: 0, // Análise agregada
+        conversationsAnalyzed: 0,
+        dateRange: {
+          from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+          to: new Date()
+        },
+        generatedAt: new Date()
+      });
+
+      console.log('✅ Análise de detectores salva');
+    } catch (error) {
+      console.warn('⚠️ Erro ao analisar detectores:', error.message);
+      results.errors.push(`Detector analysis: ${error.message}`);
+    }
+
+    // ═══════════════════════════════════════════════════
+    // 9. LIMPA DADOS ANTIGOS
+    // ═══════════════════════════════════════════════════
+    console.log('\n🧹 Etapa 9: Limpando dados antigos...');
     await cleanupOldData();
     
     // ═══════════════════════════════════════════════════

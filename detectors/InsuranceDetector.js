@@ -121,6 +121,14 @@ export class InsuranceDetector {
         /\b(s[oó]|apenas|somente)\b.*\b(plano|conv[êe]nio)\b/i,
         /\b(n[aã]o tenho|sem)\b.*\b(plano|conv[êe]nio)\b/i,
         /\b(particular|privado)\b/i
+      ],
+
+      // 🆕 Confusão genérica sobre convênio (absorve insurance_confusion pattern)
+      // Lead menciona convênio de forma ambígua ou assume que clínica atende plano
+      confusion: [
+        /\breembolso\b/i,                                     // Menciona reembolso (indica dúvida sobre modalidade)
+        /\bparticular\s*[\-–]\s*conv[eê]nio\b/i,             // Confunde particular com convênio
+        /\b(conv[eê]nio|plano)\b(?!.*\b(aceita|atende|tem|possui|tenho|meu|sou)\b)/i  // Menciona plano isoladamente (sem verbo)
       ]
     };
 
@@ -173,12 +181,13 @@ export class InsuranceDetector {
       frequency: specificPlan ? specificPlan.frequency : null,
 
       // 🎭 Intenção
-      intentType,                 // 'question', 'statement', 'concern'
+      intentType,                 // 'question', 'statement', 'concern', 'confusion'
       confidence,                 // 0.0 - 1.0
 
       // 🔍 Análise
       isSpecific: !!specificPlan,
-      requiresClarification: !specificPlan || intentType === 'concern',
+      requiresClarification: !specificPlan || intentType === 'concern' || intentType === 'confusion',
+      isConfused: intentType === 'confusion', // 🆕 Flag específica para confusão (absorve insurance_confusion pattern)
 
       // 📝 Metadados
       metadata: {
@@ -224,19 +233,28 @@ export class InsuranceDetector {
    * 🎯 Classifica tipo de intenção
    */
   _classifyIntent(text) {
+    // 1️⃣ Confusão tem prioridade (absorve insurance_confusion pattern)
+    if (this.INTENT_PATTERNS.confusion.some(p => p.test(text))) {
+      return 'confusion';
+    }
+
+    // 2️⃣ Pergunta clara
     if (this.INTENT_PATTERNS.question.some(p => p.test(text))) {
       return 'question';
     }
 
+    // 3️⃣ Afirmação (já tem plano)
     if (this.INTENT_PATTERNS.statement.some(p => p.test(text))) {
       return 'statement';
     }
 
+    // 4️⃣ Preocupação
     if (this.INTENT_PATTERNS.concern.some(p => p.test(text))) {
       return 'concern';
     }
 
-    return 'question'; // Default: trata como pergunta
+    // Default: trata como pergunta
+    return 'question';
   }
 
   /**
@@ -258,6 +276,11 @@ export class InsuranceDetector {
     // +0.1 se é plano comum (alta frequência nos dados)
     if (specificPlan && specificPlan.frequency > 50) {
       confidence += 0.1;
+    }
+
+    // +0.15 se é confusão (importante detectar para esclarecer)
+    if (intentType === 'confusion') {
+      confidence += 0.15;
     }
 
     // -0.1 se é preocupação (ambíguo)

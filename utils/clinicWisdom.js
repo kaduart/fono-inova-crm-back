@@ -187,6 +187,54 @@ const THERAPY_WISDOM = {
 };
 
 // ================================================================
+// 🚨 CANCELAMENTOS E REMARCAÇÕES (Dados reais de 2026)
+// ================================================================
+
+const CANCELLATION_WISDOM = {
+    familiar: {
+        regra: 'Cancelamentos por problemas familiares são os mais comuns (9 casos + 13 remarcações no export 2026)',
+        exemplos: [
+            'minha esposa tá passando mal',
+            'imprevisto familiar',
+            'infelizmente terei q cancelar'
+        ],
+        script: 'Entendo totalmente! Situações assim acontecem mesmo. A saúde da família vem sempre em primeiro lugar. Quer remarcar para quando vocês conseguirem ou prefere que eu entre em contato mais pra frente? 💚',
+        acolhimento: 'NUNCA fazer o cliente se sentir culpado. Empatia primeiro, solução depois.',
+    },
+    esposo: {
+        regra: 'Quando OUTRA pessoa desmarca (esposo/marido)',
+        exemplo: 'Meu esposo acabou de desmarcar a sessão do Igor',
+        script: 'Sem problema! Recebemos o cancelamento. Assim que vocês quiserem remarcar, é só me chamar que a gente ajeita um novo horário pra vocês, ok? 💚'
+    },
+    semMotivo: {
+        regra: 'Cancelamento genérico sem explicação',
+        script: 'Tudo bem! Entendo que imprevistos acontecem. Se quiser remarcar, estou à disposição. Qualquer coisa é só me chamar 💚'
+    },
+    reagendar: {
+        regra: '13 casos de remarcação no export 2026 - Lead QUER continuar',
+        script: 'Claro! Vou verificar os horários disponíveis. Prefere manhã ou tarde? E qual semana funciona melhor pra vocês?',
+        oportunidade: 'Remarcação é sinal POSITIVO - lead não desistiu. Priorize!'
+    }
+};
+
+// ================================================================
+// ⚡ URGÊNCIA (98 casos no export 2026!)
+// ================================================================
+
+const URGENCY_WISDOM = {
+    regra: '98 casos de urgência detectados - "urgente", "logo", "rápido", "hoje"',
+    prioridade: 'ALTA - Resposta rápida é crítica',
+    palavras: ['urgente', 'urgencia', 'logo', 'rápido', 'hoje', 'amanhã', 'essa semana'],
+    script: 'Entendo a urgência! Vou verificar agora mesmo a disponibilidade mais próxima. Me dá só um minutinho? 💚',
+    estrategia: [
+        'Mostrar que entendeu a urgência',
+        'Agir rápido (não deixar esperando)',
+        'Oferecer o slot MAIS PRÓXIMO disponível',
+        'Se não tiver vaga próxima: oferecer lista de espera'
+    ]
+};
+
+// ================================================================
 // 💚 ACOLHIMENTO — Regras de tom (pais de TEA/TDAH)
 // ================================================================
 
@@ -403,6 +451,26 @@ export function getWisdomForContext(topic, flags = {}) {
 - Se já fez cirurgia: "A fonoaudiologia é essencial para reabilitar a função da língua após o procedimento."`);
     }
 
+    // ── 🚨 CANCELAMENTO (Dados reais 2026) ────────────────
+    if (flags.wantsCancellation || flags.mentionsCancellation) {
+        blocks.push(`🚨 CANCELAMENTO DETECTADO (${CANCELLATION_WISDOM.familiar.regra.split(' - ')[0]}):
+- ${CANCELLATION_WISDOM.familiar.acolhimento}
+- Script RECOMENDADO: "${CANCELLATION_WISDOM.familiar.script}"
+- ⚠️ NUNCA fazer o cliente se sentir culpado
+- 💡 Se mencionar REMARCAR: "${CANCELLATION_WISDOM.reagendar.script}"
+- Insight: ${CANCELLATION_WISDOM.reagendar.oportunidade}`);
+    }
+
+    // ── ⚡ URGÊNCIA (98 casos no export 2026!) ────────────
+    if (flags.mentionsUrgency || flags.expressedUrgency) {
+        blocks.push(`⚡ URGÊNCIA DETECTADA (${URGENCY_WISDOM.regra}):
+- ${URGENCY_WISDOM.prioridade}
+- Script: "${URGENCY_WISDOM.script}"
+- Estratégia:
+  ${URGENCY_WISDOM.estrategia.map(e => `• ${e}`).join('\n  ')}
+- ⚠️ Responda RÁPIDO - não deixe esperando!`);
+    }
+
     // Monta bloco final
     const wisdomBlock = blocks.length > 0
         ? blocks.join('\n\n')
@@ -423,6 +491,8 @@ export {
     THERAPY_WISDOM,
     ACOLHIMENTO_RULES,
     TESTE_LINGUINHA_WISDOM,
+    CANCELLATION_WISDOM,  // 🆕 Export 2026
+    URGENCY_WISDOM,       // 🆕 Export 2026
 };
 
 export default {
@@ -434,4 +504,6 @@ export default {
     THERAPY_WISDOM,
     ACOLHIMENTO_RULES,
     TESTE_LINGUINHA_WISDOM,
+    CANCELLATION_WISDOM,  // 🆕 Export 2026
+    URGENCY_WISDOM,       // 🆕 Export 2026
 };

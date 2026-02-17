@@ -384,7 +384,23 @@ export default class WhatsAppOrchestrator {
   // ═══════════════════════════════════════════
 
   async _saveTherapy(leadId, therapy) {
-    await Leads.updateOne({ _id: leadId }, { $set: { therapyArea: therapy } });
+    // 🔧 Normaliza therapy para string (pode vir como objeto de detectAllTherapies)
+    let therapyString = therapy;
+    if (typeof therapy === 'object' && therapy?.id) {
+      const areaMap = {
+        "neuropsychological": "neuropsicologia",
+        "speech": "fonoaudiologia",
+        "tongue_tie": "fonoaudiologia",
+        "psychology": "psicologia",
+        "occupational": "terapia_ocupacional",
+        "physiotherapy": "fisioterapia",
+        "music": "musicoterapia",
+        "neuropsychopedagogy": "neuropsicologia",
+        "psychopedagogy": "neuropsicologia",
+      };
+      therapyString = areaMap[therapy.id] || therapy.name || therapy;
+    }
+    await Leads.updateOne({ _id: leadId }, { $set: { therapyArea: therapyString } });
   }
 
   async _saveComplaint(leadId, complaint) {

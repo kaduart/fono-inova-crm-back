@@ -500,6 +500,7 @@ export async function autoBookAppointment({
             status: "scheduled",
             notes: "[AGENDADO AUTOMATICAMENTE VIA AMANDA/WHATSAPP]",
             isAdvancePayment: false,
+            source: "amandaAI", // 📈 ROI
         };
 
         const appointmentResponse = await api.post(
@@ -677,6 +678,8 @@ export async function bookFixedSlot({
     sessionValue = 0,
     status = "scheduled",
     packageId = null,
+    source = "outro",
+    preAgendamentoId = null,
 }) {
     bookingStats.totalAttempts++;
 
@@ -720,8 +723,8 @@ export async function bookFixedSlot({
         const isPackage = serviceType === "package_session";
         const paymentAmount = isPackage ? 0 : Number(sessionValue) || 0;
 
-        if (!isPackage && paymentAmount <= 0) {
-            return { success: false, code: "INVALID_VALUE", error: "sessionValue deve ser > 0 para atendimentos avulsos" };
+        if (!isPackage && paymentAmount < 0) {
+            return { success: false, code: "INVALID_VALUE", error: "sessionValue não pode ser negativo" };
         }
 
         const appointmentPayload = {
@@ -738,6 +741,8 @@ export async function bookFixedSlot({
             notes: notes || "[IMPORTADO DA AGENDA PROVISÓRIA]",
             isAdvancePayment: false,
             ...(isPackage ? { packageId } : {}),
+            source,             // 📈 ROI
+            preAgendamentoId,    // 📈 ROI
         };
 
         const appointmentResponse = await api.post("/api/appointments", appointmentPayload);

@@ -61,6 +61,7 @@ router.put('/contacts/:id', whatsappController.updateContact);
 router.delete('/contacts/:id', whatsappController.deleteContact);
 router.post('/send-manual', whatsappController.sendManualMessage);
 router.post('/amanda-resume/:leadId', whatsappController.amandaResume);
+router.post('/amanda-pause/:leadId', whatsappController.amandaPause);
 router.get('/contacts/search', whatsappController.contactsSearch);
 
 export default router;

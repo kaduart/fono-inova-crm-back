@@ -40,7 +40,7 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
     // ======================================================
     // 🧩 PATCH: Neuropsico e TDAH enriquecidos
     // ======================================================
-    const primaryArea = flags.therapyArea || flags.topic || lead?.therapyArea;
+    let primaryArea = flags.therapyArea || flags.topic || lead?.therapyArea;
 
     if (!primaryArea && text?.match(/(encaminhament|solicita(ç|c)(a|ã)o).{0,40}neuropsic/i)) {
       primaryArea = "neuropsicologia";

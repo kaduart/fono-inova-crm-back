@@ -90,6 +90,7 @@ export function detectWithContext(text, lead = {}, enrichedContext = {}) {
       intentType: insuranceDetection.intentType,
       confidence: insuranceDetection.confidence,
       isSpecific: insuranceDetection.isSpecific,
+      isConfused: insuranceDetection.isConfused,  // 🆕 Absorve insurance_confusion pattern
       wisdomKey: insuranceDetection.wisdomKey  // Orchestrator pode usar clinicWisdom[wisdomKey]
     };
 
@@ -108,6 +109,9 @@ export function detectWithContext(text, lead = {}, enrichedContext = {}) {
       legacyFlags.hasPlan = true;
     } else if (insuranceDetection.intentType === 'concern') {
       legacyFlags.worriesAboutPlan = true;
+    } else if (insuranceDetection.intentType === 'confusion') {
+      // 🆕 Flag para confusão sobre convênio (absorve pattern deprecated)
+      legacyFlags.hasInsuranceConfusion = true;  // Orchestrator explica modalidade particular
     }
 
     // 🔥 Se perguntou sobre plano específico com alta confiança, reduz insistência
@@ -127,7 +131,8 @@ export function detectWithContext(text, lead = {}, enrichedContext = {}) {
       confidence: priceDetection.confidence,
       isInsistent: priceDetection.isInsistent,
       hasObjection: priceDetection.hasObjection,
-      wantsNegotiation: priceDetection.wantsNegotiation
+      wantsNegotiation: priceDetection.wantsNegotiation,
+      isEarlyQuestion: priceDetection.isEarlyQuestion  // 🆕 Absorve early_price_question pattern
     };
 
     // 🔥 FLAGS ESPECÍFICAS POR TIPO
@@ -142,6 +147,11 @@ export function detectWithContext(text, lead = {}, enrichedContext = {}) {
     }
     if (priceDetection.priceType === 'acceptance') {
       legacyFlags.acceptsPrice = true;
+    }
+
+    // 🆕 Flag para early price question (absorve pattern deprecated)
+    if (priceDetection.isEarlyQuestion) {
+      legacyFlags.asksEarlyPrice = true;  // Orchestrator pode valorizar antes de falar preço
     }
   }
 
@@ -206,6 +216,9 @@ function buildDetectorContext(lead, enrichedContext) {
   // 🎯 Determina stage atual
   const stage = determineStage(lead, enrichedContext);
 
+  // 📊 Calcula messageIndex (índice da mensagem inbound no histórico)
+  const messageIndex = calculateMessageIndex(enrichedContext.conversationHistory);
+
   return {
     // Contexto da conversa
     lastBotMessage,
@@ -222,11 +235,33 @@ function buildDetectorContext(lead, enrichedContext) {
     // Contexto de conversa
     messageCount: enrichedContext.messageCount || 0,
     isFirstContact: enrichedContext.isFirstContact || false,
+    messageIndex,  // 🆕 Índice da mensagem inbound (0-based) para detecção de early questions
 
     // 🆕 FASE 2: Contexto de preço e agendamento
     priceAlreadyMentioned: !!(lastBotMessage && /R\$\s*\d+/i.test(lastBotMessage)),
     hasScheduling: !!lead.pendingSchedulingSlots || !!lead.pendingChosenSlot
   };
+}
+
+/**
+ * 📊 CALCULA ÍNDICE DA MENSAGEM INBOUND (0-based)
+ *
+ * Conta quantas mensagens inbound (role: 'user') existem no histórico.
+ * Usado por PriceDetector.isEarlyQuestion para detectar perguntas nas primeiras mensagens.
+ *
+ * @param {Array} conversationHistory - Histórico de mensagens
+ * @returns {number} Índice da mensagem inbound (0-based)
+ */
+function calculateMessageIndex(conversationHistory = []) {
+  if (!Array.isArray(conversationHistory)) {
+    return 0;
+  }
+
+  // Conta mensagens inbound (role: 'user')
+  const inboundCount = conversationHistory.filter(msg => msg?.role === 'user').length;
+
+  // Retorna índice 0-based (se houver 3 mensagens, a atual é índice 2)
+  return Math.max(0, inboundCount - 1);
 }
 
 /**

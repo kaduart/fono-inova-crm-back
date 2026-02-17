@@ -11,9 +11,9 @@
 
 import 'dotenv/config';
 import mongoose from 'mongoose';
-import { WhatsAppOrchestrator } from '../../orchestrators/WhatsAppOrchestrator.js';
+import WhatsAppOrchestrator from '../../orchestrators/WhatsAppOrchestrator.js';
 import Leads from '../../models/Leads.js';
-import ChatContext from '../../models/ChatContext.js';
+// ChatContext não existe mais - contexto agora está no Lead
 import { redisConnection } from '../../config/redisConnection.js';
 
 const orchestrator = new WhatsAppOrchestrator();
@@ -45,7 +45,7 @@ class AmandaTestFramework {
 
     async createLead(phone) {
         await Leads.findOneAndDelete({ phone });
-        await ChatContext.deleteOne({ lead: { $in: await Leads.find({ phone }).distinct('_id') } });
+        // ChatContext não existe mais - contexto está no Lead
         
         this.currentLead = await Leads.create({
             name: `Teste ${phone}`,
@@ -73,7 +73,7 @@ class AmandaTestFramework {
     async cleanup() {
         if (this.currentLead) {
             await Leads.findByIdAndDelete(this.currentLead._id);
-            await ChatContext.deleteOne({ lead: this.currentLead._id });
+            // ChatContext não existe mais - contexto está no Lead
         }
     }
 

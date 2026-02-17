@@ -27,7 +27,7 @@ const preAgendamentoSchema = new mongoose.Schema({
   source: {
     type: String,
     default: 'agenda_externa',
-    enum: ['agenda_externa', 'whatsapp', 'telefone', 'instagram', 'site', 'indicacao', 'outro']
+    enum: ['agenda_externa', 'whatsapp', 'telefone', 'instagram', 'site', 'indicacao', 'amandaAI', 'outro']
   },
   externalId: {
     type: String,
@@ -98,6 +98,7 @@ const preAgendamentoSchema = new mongoose.Schema({
       'confirmado',     // Paciente confirmou interesse
       'importado',      // Convertido para Appointment
       'descartado',     // Não vai prosseguir
+      'desistiu',       // Paciente desistiu explicitamente (Métrica de Perda)
       'expirado'        // Data passou sem ação
     ],
     default: 'novo',

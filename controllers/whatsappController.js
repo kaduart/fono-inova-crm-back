@@ -129,6 +129,19 @@ export const whatsappController = {
 
             console.log('✅ Service retornou:', result);
 
+            // 🔴 PAUSA AMANDA automaticamente ao enviar mensagem manual
+            if (resolvedLeadId && sentBy === 'manual') {
+                console.log(`⏸️ [SEND-TEXT] Pausando Amanda para lead ${resolvedLeadId}`);
+                await Lead.findByIdAndUpdate(resolvedLeadId, {
+                    $set: {
+                        'manualControl.active': true,
+                        'manualControl.takenOverAt': new Date(),
+                        'manualControl.takenOverBy': userId || 'manual',
+                        'manualControl.autoResumeAfter': 30
+                    }
+                });
+            }
+
             // ✅ Busca a mensagem recém-salva - CORRIGIDO
             const waMessageId = result?.messages?.[0]?.id || null;
 
@@ -903,6 +916,67 @@ export const whatsappController = {
 
         } catch (error) {
             console.error('❌ [AMANDA-RESUME] Erro:', error);
+            return res.status(500).json({ success: false, error: error.message });
+        }
+    },
+
+    // 🔴 PAUSAR AMANDA MANUALMENTE
+    async amandaPause(req, res) {
+        try {
+            const { leadId: rawId } = req.params;
+
+            if (!rawId) {
+                return res.status(400).json({ success: false, error: 'leadId obrigatório' });
+            }
+
+            let leadId = null;
+
+            // 1) Resolve leadId (Lead > Contact > Phone)
+            if (mongoose.Types.ObjectId.isValid(rawId)) {
+                const lead = await Lead.findById(rawId).lean();
+                if (lead) leadId = lead._id;
+                else {
+                    const contactDoc = await Contacts.findById(rawId).lean();
+                    if (contactDoc?.phone) {
+                        const phoneNorm = normalizeE164BR(contactDoc.phone);
+                        const leadByPhone = await Lead.findOne({ 'contact.phone': phoneNorm }).lean();
+                        if (leadByPhone) leadId = leadByPhone._id;
+                    }
+                }
+            }
+
+            if (!leadId) {
+                const phoneNorm = normalizeE164BR(rawId);
+                const leadByPhone = await Lead.findOne({ 'contact.phone': phoneNorm }).lean();
+                if (leadByPhone) leadId = leadByPhone._id;
+            }
+
+            if (!leadId) {
+                return res.status(404).json({ success: false, error: 'Lead não encontrado' });
+            }
+
+            console.log(`⏸️ [AMANDA-PAUSE] Pausando para lead ${leadId}`);
+
+            // 🔴 ATIVA CONTROLE MANUAL (PAUSA AMANDA)
+            await Lead.findByIdAndUpdate(leadId, {
+                $set: {
+                    'manualControl.active': true,
+                    'manualControl.takenOverAt': new Date(),
+                    'manualControl.takenOverBy': req.user?._id || 'manual',
+                    'manualControl.autoResumeAfter': 30  // 30 minutos padrão
+                }
+            });
+
+            console.log(`✅ [AMANDA-PAUSE] Amanda pausada para lead ${leadId}`);
+
+            return res.json({
+                success: true,
+                message: 'Amanda pausada. Você pode enviar mensagens manualmente.',
+                paused: true
+            });
+
+        } catch (error) {
+            console.error('❌ [AMANDA-PAUSE] Erro:', error);
             return res.status(500).json({ success: false, error: error.message });
         }
     },

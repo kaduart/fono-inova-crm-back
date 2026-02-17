@@ -99,6 +99,7 @@ export class PriceDetector {
    * @param {object} context - Contexto da conversa
    * @param {string} context.lastBotMessage - Última mensagem da Amanda
    * @param {boolean} context.priceAlreadyMentioned - Se Amanda já falou preço
+   * @param {number} context.messageIndex - Índice da mensagem (0-based)
    *
    * @returns {object|null} Detecção estruturada ou null
    */
@@ -122,6 +123,9 @@ export class PriceDetector {
     // 📊 Calcula confiança
     const confidence = this._calculateConfidence(priceType, context);
 
+    // 🚨 Detecta pergunta early (primeiras 2 mensagens)
+    const isEarlyQuestion = this._isEarlyPriceQuestion(context.messageIndex, priceType);
+
     // 🏗️ ESTRUTURA DE DETECÇÃO (pura: só detecta, nunca responde)
     return {
       detected: true,
@@ -134,17 +138,19 @@ export class PriceDetector {
       hasObjection: priceType === 'objection' || priceType === 'comparison',
       wantsNegotiation: priceType === 'negotiation',
       hasAccepted: priceType === 'acceptance',
+      isEarlyQuestion,         // 🆕 Pergunta sobre preço nas primeiras 2 mensagens (absorve early_price_question pattern)
 
       // 📊 Contexto
       alreadyMentioned: !!context.priceAlreadyMentioned,
-      requiresSpecialHandling: priceType === 'objection' || priceType === 'comparison',
+      requiresSpecialHandling: priceType === 'objection' || priceType === 'comparison' || isEarlyQuestion,
 
       // 📝 Metadados
       metadata: {
         originalText: text,
         detectedAt: new Date().toISOString(),
         detector: this.name,
-        version: this.config.version
+        version: this.config.version,
+        messageIndex: context.messageIndex
       }
     };
   }
@@ -209,6 +215,29 @@ export class PriceDetector {
     }
 
     return Math.max(0, Math.min(1, confidence)); // Clamp 0-1
+  }
+
+  /**
+   * 🚨 Detecta pergunta sobre preço nas primeiras mensagens
+   *
+   * Absorve funcionalidade do pattern 'early_price_question' de PatternRecognitionService
+   *
+   * @param {number} messageIndex - Índice da mensagem (0-based)
+   * @param {string} priceType - Tipo de pergunta sobre preço
+   * @returns {boolean} true se é pergunta early
+   */
+  _isEarlyPriceQuestion(messageIndex, priceType) {
+    // Considera "early" se:
+    // 1. messageIndex existe e é <= 2 (primeiras 3 mensagens: 0, 1, 2)
+    // 2. É uma pergunta sobre preço (qualquer tipo, mas principalmente insistence/generic)
+
+    if (typeof messageIndex !== 'number') {
+      return false; // Sem contexto de índice
+    }
+
+    // Primeiras 2-3 mensagens do lead (índices 0, 1, 2)
+    // e é pergunta direta sobre preço (não aceitação)
+    return messageIndex <= 2 && priceType !== 'acceptance';
   }
 
   /**

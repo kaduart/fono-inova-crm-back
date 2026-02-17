@@ -27,7 +27,7 @@ const api = axios.create({ baseURL: API_BASE, timeout: 8000 });
 router.post("/import-from-agenda", agendaAuth, async (req, res) => {
   try {
     const {
-      firebaseAppointmentId,
+      externalId,
       professionalName,
       date,
       time,
@@ -72,7 +72,7 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
     // 3) Criar PRÉ-AGENDAMENTO
     const preAgendamento = await PreAgendamento.create({
       source: 'agenda_externa',
-      externalId: firebaseAppointmentId,
+      externalId,
       patientInfo: {
         fullName: patientInfo?.fullName,
         phone: cleanPhone,
@@ -85,7 +85,7 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
       preferredTime: time,
       professionalName,
       professionalId: doctor?._id,
-      serviceType: crm.serviceType || 'evaluation',
+      serviceType: (crm.serviceType === 'individual_session' ? 'session' : (crm.serviceType || 'evaluation')),
       suggestedValue: Number(crm.paymentAmount || req.body.sessionValue || 0),
       status: 'novo',
       secretaryNotes: [
@@ -169,10 +169,16 @@ router.post("/import-from-agenda/confirmar-por-external-id", agendaAuth, async (
 
     if (pre.status === 'importado') {
       await session.commitTransaction();
+
+      console.log(`[CONFIRMAR-POR-EXTERNAL-ID] ⚠️ PreAgendamento ${pre._id} já foi importado para ${pre.importedToAppointment}`);
+
       return res.json({
         success: true,
-        message: 'Já foi importado',
-        appointmentId: pre.importedToAppointment
+        message: 'Já foi importado anteriormente',
+        appointmentId: pre.importedToAppointment,
+        preAgendamentoId: pre._id,
+        importedAt: pre.importedAt,
+        warning: 'Este pré-agendamento já havia sido convertido em agendamento'
       });
     }
 
@@ -197,7 +203,7 @@ router.post("/import-from-agenda/confirmar-por-external-id", agendaAuth, async (
 
     console.log(`[CONFIRMAR-POR-EXTERNAL-ID] Importando: ${pre.patientInfo.fullName} com ${doctor.fullName}`);
 
-    // Importar usando bookFixedSlot
+    // Criar appointment como PRÉ-AGENDADO
     const bookParams = {
       patientInfo: {
         fullName: pre.patientInfo.fullName,
@@ -213,8 +219,8 @@ router.post("/import-from-agenda/confirmar-por-external-id", agendaAuth, async (
       serviceType,
       paymentMethod,
       sessionValue: Number(sessionValue || pre.suggestedValue || 0),
-      status: 'scheduled',
-      notes: `[IMPORTADO DA AGENDA EXTERNA] ${notes || ''}\n${pre.secretaryNotes || ''}`
+      status: 'pre-scheduled', // 🆕 Criar como pré-agendado
+      notes: `[IMPORTADO DA AGENDA EXTERNA - AGUARDANDO CONFIRMAÇÃO] ${notes || ''}\n${pre.secretaryNotes || ''}`
     };
 
     const result = await bookFixedSlot(bookParams);
@@ -281,7 +287,7 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
 
   try {
     const {
-      firebaseAppointmentId,
+      externalId,
       professionalName,
       date,
       time,
@@ -295,7 +301,81 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
     const crm = crmRaw || {};
     const cleanPhone = (patientInfo?.phone || "").replace(/\D/g, "");
 
-    console.log(`[CRIAR-E-CONFIRMAR] Iniciando: ${patientInfo?.fullName} (${firebaseAppointmentId})`);
+    console.log(`[CRIAR-E-CONFIRMAR] Iniciando: ${patientInfo?.fullName} (${externalId})`);
+
+    // 🔍 Verificar se já existe PreAgendamento com este externalId
+    const existingPre = await PreAgendamento.findOne({ externalId }).session(session);
+
+    if (existingPre) {
+      console.log(`[CRIAR-E-CONFIRMAR] ⚠️ PreAgendamento ${existingPre._id} já existe para externalId: ${externalId}`);
+
+      // Se já foi importado E já tem appointment
+      if (existingPre.status === 'importado' && existingPre.importedToAppointment) {
+        // Buscar appointment existente
+        const existingAppointment = await Appointment.findById(existingPre.importedToAppointment).session(session);
+
+        if (existingAppointment) {
+          // Se já está scheduled, retorna sucesso
+          if (existingAppointment.operationalStatus === 'scheduled') {
+            await session.commitTransaction();
+            return res.json({
+              success: true,
+              message: 'Agendamento já confirmado anteriormente',
+              appointmentId: existingAppointment._id,
+              preAgendamentoId: existingPre._id,
+              status: 'already_confirmed'
+            });
+          }
+
+          // Se está pre-scheduled, vamos confirmar agora
+          if (existingAppointment.operationalStatus === 'pre-scheduled') {
+            console.log(`[CRIAR-E-CONFIRMAR] Confirmando appointment pré-agendado: ${existingAppointment._id}`);
+
+            existingAppointment.operationalStatus = 'scheduled';
+            existingAppointment.status = 'scheduled';
+            existingAppointment.updatedAt = new Date();
+
+            if (!existingAppointment.history) existingAppointment.history = [];
+            existingAppointment.history.push({
+              action: 'confirmacao_via_agenda_externa',
+              changedBy: null,
+              timestamp: new Date(),
+              context: 'operacional',
+              details: { from: 'pre-scheduled', to: 'scheduled' }
+            });
+
+            await existingAppointment.save({ session });
+
+            // Atualizar session se existir
+            if (existingAppointment.session) {
+              await Session.findByIdAndUpdate(
+                existingAppointment.session,
+                {
+                  $set: {
+                    status: 'scheduled',
+                    updatedAt: new Date()
+                  }
+                },
+                { session }
+              );
+            }
+
+            await session.commitTransaction();
+
+            const io = getIo();
+            io.emit("appointmentUpdated", existingAppointment);
+
+            return res.json({
+              success: true,
+              message: 'Pré-agendamento confirmado com sucesso!',
+              appointmentId: existingAppointment._id,
+              preAgendamentoId: existingPre._id,
+              status: 'confirmed'
+            });
+          }
+        }
+      }
+    }
 
     // 1) Buscar ou criar paciente...
     let patientId = null;
@@ -333,34 +413,43 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
       });
     }
 
-    // 3) Criar PRÉ-AGENDAMENTO
-    const preAgendamento = await PreAgendamento.create([{
-      source: 'agenda_externa',
-      externalId: firebaseAppointmentId,
-      patientInfo: {
-        fullName: patientInfo?.fullName,
-        phone: cleanPhone,
-        email: patientInfo?.email,
-        birthDate: patientInfo?.birthDate
-      },
-      patientId,
-      specialty: (specialty || doctor?.specialty || 'fonoaudiologia').toLowerCase(),
-      preferredDate: date,
-      preferredTime: time,
-      professionalName,
-      professionalId: doctor?._id,
-      serviceType: crm.serviceType || 'evaluation',
-      suggestedValue: Number(crm.paymentAmount || 0),
-      status: 'novo',
-      secretaryNotes: [
-        responsible && `Responsável: ${responsible}`,
-        observations && `Obs: ${observations}`,
-        `[CRIADO E CONFIRMADO VIA AGENDA EXTERNA]`
-      ].filter(Boolean).join('\n')
-    }], { session });
+    // 3) Criar ou reusar PRÉ-AGENDAMENTO
+    let pre;
 
-    const pre = preAgendamento[0];
-    console.log(`[CRIAR-E-CONFIRMAR] Pré-agendamento criado: ${pre._id}`);
+    if (existingPre) {
+      // Reusar existente
+      pre = existingPre;
+      console.log(`[CRIAR-E-CONFIRMAR] Reusando PreAgendamento existente: ${pre._id}`);
+    } else {
+      // Criar novo
+      const preAgendamento = await PreAgendamento.create([{
+        source: 'agenda_externa',
+        externalId,
+        patientInfo: {
+          fullName: patientInfo?.fullName,
+          phone: cleanPhone,
+          email: patientInfo?.email,
+          birthDate: patientInfo?.birthDate
+        },
+        patientId,
+        specialty: (specialty || doctor?.specialty || 'fonoaudiologia').toLowerCase(),
+        preferredDate: date,
+        preferredTime: time,
+        professionalName,
+        professionalId: doctor?._id,
+        serviceType: (crm.serviceType === 'individual_session' ? 'session' : (crm.serviceType || 'evaluation')),
+        suggestedValue: Number(crm.paymentAmount || 0),
+        status: 'novo',
+        secretaryNotes: [
+          responsible && `Responsável: ${responsible}`,
+          observations && `Obs: ${observations}`,
+          `[CRIADO E CONFIRMADO VIA AGENDA EXTERNA]`
+        ].filter(Boolean).join('\n')
+      }], { session });
+
+      pre = preAgendamento[0];
+      console.log(`[CRIAR-E-CONFIRMAR] Pré-agendamento criado: ${pre._id}`);
+    }
 
     // ✅ EMITIR SOCKET (novo pré-agendamento)
     try {
@@ -381,7 +470,7 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
       console.error('⚠️ Erro ao emitir socket (novo):', socketError.message);
     }
 
-    // 4) JÁ CONFIRMA
+    // 4) CRIAR APPOINTMENT COMO PRÉ-AGENDADO (não confirmado ainda)
     const bookParams = {
       patientInfo: {
         fullName: pre.patientInfo.fullName,
@@ -397,8 +486,8 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
       serviceType: crm.serviceType || 'evaluation',
       paymentMethod: crm.paymentMethod || 'pix',
       sessionValue: Number(crm.paymentAmount || 0),
-      status: 'scheduled',
-      notes: `[CRIADO E CONFIRMADO VIA AGENDA EXTERNA]\n${pre.secretaryNotes || ''}`
+      status: 'pre-scheduled', // 🆕 Criar como pré-agendado
+      notes: `[IMPORTADO DA AGENDA EXTERNA - AGUARDANDO CONFIRMAÇÃO]\n${pre.secretaryNotes || ''}`
     };
 
     const result = await bookFixedSlot(bookParams);
@@ -438,7 +527,7 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
       preAgendamentoId: pre._id,
       appointmentId: result.appointment._id,
       patientId: result.patientId,
-      externalId: firebaseAppointmentId
+      externalId
     });
 
   } catch (err) {
@@ -935,6 +1024,224 @@ router.post("/import-from-agenda/sync-delete", agendaAuth, async (req, res) => {
       success: false,
       error: error.message,
       code: "SYNC_DELETE_ERROR"
+    });
+  } finally {
+    session.endSession();
+  }
+});
+
+/**
+ * GET /api/import-from-agenda/appointments-amanda
+ * Retorna appointments agendados pela Amanda (source: amandaAI)
+ * para a agenda externa mostrar como "pendentes de confirmação"
+ */
+router.get("/import-from-agenda/appointments-amanda", agendaAuth, async (req, res) => {
+  try {
+    const { date, doctorId, status } = req.query;
+
+    const filter = {
+      'metadata.origin.source': 'amandaAI',
+      operationalStatus: { $nin: ['canceled', 'cancelado', 'cancelada'] }
+    };
+
+    if (date) {
+      filter.date = date;
+    }
+
+    if (doctorId) {
+      filter.doctor = doctorId;
+    }
+
+    if (status) {
+      filter.operationalStatus = status;
+    }
+
+    const appointments = await Appointment.find(filter)
+      .populate('patient', 'fullName phone dateOfBirth')
+      .populate('doctor', 'fullName specialty')
+      .populate('session', 'sessionType')
+      .sort({ date: 1, time: 1 })
+      .lean();
+
+    console.log(`[APPOINTMENTS-AMANDA] Encontrados ${appointments.length} appointments da Amanda`);
+
+    // Mapear para formato da agenda externa
+    const mapped = appointments.map(appt => ({
+      appointmentId: appt._id,
+      externalId: `AMANDA-${appt._id}`, // ID único para agenda externa
+      status: appt.operationalStatus === 'scheduled' ? 'pendente_confirmacao' : appt.operationalStatus,
+      date: appt.date,
+      time: appt.time,
+      professionalName: appt.doctor?.fullName,
+      professionalId: appt.doctor?._id,
+      specialty: appt.doctor?.specialty || appt.specialty,
+      patientInfo: {
+        fullName: appt.patient?.fullName,
+        phone: appt.patient?.phone,
+        birthDate: appt.patient?.dateOfBirth
+      },
+      sessionType: appt.session?.sessionType || appt.sessionType,
+      notes: appt.notes,
+      createdAt: appt.createdAt,
+      source: 'amanda_ai',
+      isPending: appt.operationalStatus === 'scheduled', // Amanda agendou mas secretária ainda não confirmou
+      canConfirm: true,
+      canCancel: true
+    }));
+
+    return res.json({
+      success: true,
+      count: mapped.length,
+      appointments: mapped
+    });
+
+  } catch (error) {
+    console.error('[APPOINTMENTS-AMANDA] Erro:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/import-from-agenda/confirmar-agendamento
+ * Confirma um pré-agendamento (muda de pre-scheduled → scheduled)
+ */
+router.post("/import-from-agenda/confirmar-agendamento", agendaAuth, async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { externalId, preAgendamentoId } = req.body;
+
+    if (!externalId && !preAgendamentoId) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        error: "externalId ou preAgendamentoId é obrigatório"
+      });
+    }
+
+    console.log(`[CONFIRMAR-AGENDAMENTO] Confirmando: ${externalId || preAgendamentoId}`);
+
+    // Buscar PreAgendamento
+    const query = externalId ? { externalId } : { _id: preAgendamentoId };
+    const preAgendamento = await PreAgendamento.findOne(query).session(session);
+
+    if (!preAgendamento) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        success: false,
+        error: "Pré-agendamento não encontrado",
+        query
+      });
+    }
+
+    // Verificar se já foi importado
+    if (preAgendamento.status !== 'importado' || !preAgendamento.importedToAppointment) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        success: false,
+        error: "Pré-agendamento ainda não foi importado para appointment",
+        status: preAgendamento.status
+      });
+    }
+
+    // Buscar Appointment
+    const appointment = await Appointment.findById(preAgendamento.importedToAppointment).session(session);
+
+    if (!appointment) {
+      await session.abortTransaction();
+      return res.status(404).json({
+        success: false,
+        error: "Appointment não encontrado",
+        appointmentId: preAgendamento.importedToAppointment
+      });
+    }
+
+    // Verificar se já está confirmado
+    if (appointment.operationalStatus === 'scheduled') {
+      await session.commitTransaction();
+      return res.json({
+        success: true,
+        message: "Agendamento já estava confirmado",
+        appointmentId: appointment._id,
+        preAgendamentoId: preAgendamento._id,
+        status: 'already_confirmed'
+      });
+    }
+
+    // CONFIRMAR: pre-scheduled → scheduled
+    appointment.operationalStatus = 'scheduled';
+    appointment.status = 'scheduled';
+    appointment.updatedAt = new Date();
+
+    if (!appointment.history) appointment.history = [];
+    appointment.history.push({
+      action: 'confirmacao_manual',
+      changedBy: null,
+      timestamp: new Date(),
+      context: 'operacional',
+      details: {
+        from: 'pre-scheduled',
+        to: 'scheduled',
+        method: 'api_confirmar_agendamento'
+      }
+    });
+
+    await appointment.save({ session });
+
+    // Atualizar Session se existir
+    if (appointment.session) {
+      await Session.findByIdAndUpdate(
+        appointment.session,
+        {
+          $set: {
+            status: 'scheduled',
+            updatedAt: new Date()
+          }
+        },
+        { session }
+      );
+    }
+
+    await session.commitTransaction();
+
+    console.log(`[CONFIRMAR-AGENDAMENTO] ✅ Appointment ${appointment._id} confirmado`);
+
+    // Emitir socket
+    try {
+      const io = getIo();
+      io.emit("appointmentUpdated", appointment);
+      io.emit("preagendamento:confirmed", {
+        preAgendamentoId: String(preAgendamento._id),
+        appointmentId: appointment._id,
+        externalId: preAgendamento.externalId,
+        patientName: preAgendamento.patientInfo?.fullName,
+        timestamp: new Date()
+      });
+      console.log(`📡 Socket emitido: preagendamento:confirmed ${preAgendamento._id}`);
+    } catch (socketError) {
+      console.error("⚠️ Erro ao emitir socket:", socketError.message);
+    }
+
+    return res.json({
+      success: true,
+      message: "Pré-agendamento confirmado com sucesso!",
+      appointmentId: appointment._id,
+      preAgendamentoId: preAgendamento._id,
+      externalId: preAgendamento.externalId,
+      status: 'confirmed'
+    });
+
+  } catch (error) {
+    await session.abortTransaction();
+    console.error("[CONFIRMAR-AGENDAMENTO] Erro:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+      code: "CONFIRM_ERROR"
     });
   } finally {
     session.endSession();

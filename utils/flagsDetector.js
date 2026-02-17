@@ -37,10 +37,14 @@ export function deriveFlagsFromText(text = "") {
     const mentionsGeneralSurgery =
         /\b(cirurgia|operar|opera[çc][aã]o|cortar|corte|pique|pic|frenectomia|cirurgi[ãa]o|procedimento|fazer.*a[ií]|faz.*a[ií])\b/i.test(normalizedText);
 
-    const wantsPartnershipOrResume =
-        /\b(curr[ií]cul|curriculo|curriculum|cv)\b/i.test(normalizedText) ||
-        /\b(parceria|parcerias|credenciamento|prestador|vaga|trabalhar\s+com\s+voc[eê]s)\b/i.test(normalizedText) ||
-        /\b(sou|me\s+chamo)\b.*\b(musicoterap|psicopedagog|fonoaudi[oó]log[oa]?|psic[oó]log[oa]?|fisioterap|terapeuta\s+ocupacional|\bto\b|neuropsic)/i.test(normalizedText);
+    // 🔥 DETECÇÃO DE PARCERIA/CURRÍCULO - Nunca confundir com "vaga de consulta"
+    const hasCurriculumTerms = /\b(curr[ií]cul|curriculo|curriculum|curr[ií]culo|cv)\b/i.test(normalizedText);
+    const hasExplicitPartnership = /\b(parceria|parcerias|credenciamento|prestador|trabalhar\s+com\s+voc[eê]s)\b/i.test(normalizedText);
+    // "vaga" só conta se tiver contexto explícito de trabalho/emprego
+    const hasJobContext = /\b(vaga\s+(de\s+)?(trabalho|emprego|estágio|estagio)|enviar\s+curric|trabalhar\s+(com|na)\s+(voc[eê]s|cl[ií]nica))\b/i.test(normalizedText);
+    const hasProfessionalIntro = /\b(sou|me\s+chamo)\b.*\b(musicoterap|psicopedagog|fonoaudi[oó]log[oa]?|psic[oó]log[oa]?|fisioterap|terapeuta\s+ocupacional|\bto\b|neuropsic)/i.test(normalizedText);
+
+    const wantsPartnershipOrResume = hasCurriculumTerms || hasExplicitPartnership || hasJobContext || hasProfessionalIntro;
 
     const ageGroup = extractAgeGroup(normalizedText);
 
@@ -63,7 +67,8 @@ export function deriveFlagsFromText(text = "") {
             /\b(teria\s+vaga|tem\s+vaga|tem\s+hor[áa]rio|conseguir\s+um\s+hor[áa]rio)\b/i.test(normalizedText) ||
             /\b(hor[áa]rio\s+pra\s+(consulta|avalia[çc][aã]o))\b/i.test(normalizedText) ||
             /\b(quero\s+(uma?\s+)?consult|preciso\s+marc|posso\s+(agendar|marc)|quando\s+posso\s+(ir|marc))\b/i.test(normalizedText) ||
-            /\b(tem\s+disponibilidade|dispon[ií]vel\s+(essa|pr[oó]xima)\s+semana)\b/i.test(normalizedText),
+            /\b(tem\s+disponibilidade|dispon[ií]vel\s+(essa|pr[oó]xima)\s+semana)\b/i.test(normalizedText) ||
+            /\b(queria\s+(um\s+)?hor[áa]rio|quais\s+(os\s+)?dias|pra\s+mais\s+(cedo|tarde)|tem\s+pra\s+(cedo|tarde)|outro\s+hor[áa]rio)\b/i.test(normalizedText),
 
         mentionsUrgency:
             /\b(urgente|urg[êe]ncia|o\s+quanto\s+antes|logo|r[aá]pido|n[aã]o\s+pode\s+esperar|muito\s+tempo\s+esperando)\b/i.test(normalizedText) ||
@@ -104,8 +109,9 @@ export function deriveFlagsFromText(text = "") {
         ].some(r => r.test(normalizedText)),
 
         wantsMoreOptions:
-            /\b(outr[oa]s?\s+(hor[aá]rio|op[çc][aã]o)|nenhum[a]?\s+dessas?|n[aã]o\s+serve|diferente|mais\s+opções?)\b/i.test(normalizedText) ||
-            /\b(outro\s+dia|outra\s+data|semana\s+que\s+vem)\b/i.test(normalizedText),
+            /\b(outr[oa]s?\s+(hor[aá]rio|op[çc][aã]o)|nenhum[a]?\s+dessas?|n[aã]o\s+serve|diferente|mais\s+op(ç|c)(õ|o)es?)\b/i.test(normalizedText) ||
+            /\b(outro\s+dia|outra\s+data|semana\s+que\s+vem|mais\s+cedo|mais\s+tarde|outro\s+hor[áa]rio|tem\s+outro|tem\s+mais)\b/i.test(normalizedText) ||
+            /\b(pra\s+mais\s+cedo|pra\s+mais\s+tarde)\b/i.test(normalizedText),
         mentionsCDL:
             /\b(cdl|desconto|promo[çc][aã]o|cupom|c[oó]digo)\b/i.test(normalizedText),
         wantsReschedule: /\b(reagendar|remarcar|mudar\s+hor[aá]rio|trocar\s+hor[aá]rio|alterar\s+data)\b/i.test(normalizedText),

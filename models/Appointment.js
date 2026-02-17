@@ -29,6 +29,11 @@ const appointmentSchema = new mongoose.Schema({
     required: false,
     default: ''
   },
+  responsible: {
+    type: String,
+    required: false,
+    default: ''
+  },
   operationalStatus: {
     type: String,
     enum: ['scheduled', 'confirmed', 'pending', 'canceled', 'paid', 'missed'],
@@ -138,6 +143,19 @@ const appointmentSchema = new mongoose.Schema({
   authorizationCode: {
     type: String,
     default: null
+  },
+  // 📈 Metadados de Origem (ROI)
+  metadata: {
+    origin: {
+      source: {
+        type: String,
+        enum: ['agenda_externa', 'whatsapp', 'telefone', 'instagram', 'site', 'indicacao', 'amandaAI', 'outro'],
+        default: 'outro'
+      },
+      preAgendamentoId: { type: mongoose.Schema.Types.ObjectId, ref: 'PreAgendamento' },
+      convertedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      convertedAt: Date
+    }
   }
 }, {
   timestamps: true,

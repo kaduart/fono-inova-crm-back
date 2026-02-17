@@ -13,6 +13,7 @@ import Appointment from '../models/Appointment.js';
 import Leads from '../models/Leads.js';
 import Package from '../models/Package.js';
 import Patient from '../models/Patient.js';
+import PreAgendamento from '../models/PreAgendamento.js'; // 👈 Importado para unificação
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import { runJourneyFollowups } from '../services/journeyFollowupEngine.js';
@@ -20,6 +21,7 @@ import { handlePackageSessionUpdate, syncEvent } from '../services/syncService.j
 import { updateAppointmentFromSession, updatePatientAppointments } from '../utils/appointmentUpdater.js';
 import { runTransactionWithRetry } from '../utils/transactionRetry.js';
 import billingOrchestrator from '../services/billing/BillingOrchestrator.js';
+import { mapAppointmentToEvent, mapPreAgendamentoToEvent } from '../utils/appointmentMapper.js';
 
 dotenv.config();
 const router = express.Router();
@@ -60,6 +62,8 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
         authorizationCode,
         isAdvancePayment,
         advanceSessions,
+        source,             // 📈 ROI
+        preAgendamentoId,    // 📈 ROI
     } = req.body;
     const leadId = req.body?.leadId || null;
 
@@ -451,6 +455,14 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 serviceType,
                 specialty,
                 notes,
+                metadata: {
+                    origin: {
+                        source: source || 'outro',
+                        preAgendamentoId: safeId(preAgendamentoId),
+                        convertedBy: req.user?._id || null,
+                        convertedAt: new Date()
+                    }
+                }
             });
             createdAppointmentId = appointment._id;
 
@@ -656,7 +668,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
 });
 
 // Busca agendamentos com filtros
-router.get('/', auth, async (req, res) => {
+router.get('/', flexibleAuth, async (req, res) => {
     try {
         const { patientId, doctorId, status, specialty, startDate, endDate } = req.query;
         const filter = {};
@@ -689,9 +701,9 @@ router.get('/', auth, async (req, res) => {
         const skip = parseInt(req.query.skip) || 0;
 
         const appointments = await Appointment.find(filter)
-            .select('date time duration specialty reason operationalStatus clinicalStatus paymentStatus visualFlag patient doctor package session payment')
-            .populate({ path: 'doctor', select: 'fullName specialty' })
-            .populate({ path: 'patient', select: 'fullName dateOfBirth gender phone email cpf' })
+            .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus visualFlag patient doctor package session payment metadata')
+            .populate({ path: 'doctor', select: 'fullName specialty email phoneNumber specialties' })
+            .populate({ path: 'patient', select: 'fullName dateOfBirth gender phone email cpf rg address' })
             .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue' })
             .populate({ path: 'session', select: 'isPaid paymentStatus partialAmount' })
             .populate({ path: 'payment', select: 'status amount paymentMethod' })
@@ -702,100 +714,27 @@ router.get('/', auth, async (req, res) => {
 
         console.log('📦 Total appointments encontrados:', appointments.length);
 
-        // 🔧 Função para resolver visualFlag com base no estado real
-        const resolveVisualFlag = (appt) => {
-            if (appt.visualFlag) return appt.visualFlag;
+        // 🔹 2. BUSCAR PRÉ-AGENDAMENTOS (INTERESSES) NÃO CONVERTIDOS
+        // (Apenas se o filtro de profissional permitir ou se for 'todas')
+        const preAgendamentos = await PreAgendamento.find({
+            status: { $nin: ['importado', 'descartado'] }, // Removido 'desistiu' para manter histórico visível
+            preferredDate: filter.date || { $exists: true }
+        }).lean();
 
-            // ✅ PRIORIZAR O PAYMENT VINCULADO
-            if (appt.payment) {
-                switch (appt.payment.status) {
-                    case 'paid': return 'ok';
-                    case 'partial': return 'partial';
-                    case 'pending': return 'pending';
-                }
-            }
-
-            // Sessão vinculada a pacote
-            if (appt.package) {
-                const pkg = appt.package;
-                const sess = appt.session;
-                const totalPaid = pkg.totalPaid || 0;
-                const balance = pkg.balance ?? 0;
-
-                if (sess?.isPaid || balance === 0) return 'ok';
-                if (balance > 0 && totalPaid > 0 && balance < totalPaid) return 'partial';
-                if (balance > 0 && !sess?.isPaid) return 'blocked';
-            }
-
-            // Sessão avulsa (fallback)
-            switch (appt.paymentStatus) {
-                case 'paid':
-                case 'package_paid':
-                case 'advanced':
-                    return 'ok';
-                case 'partial':
-                    return 'partial';
-                case 'pending':
-                default:
-                    return 'pending';
-            }
-        };
-        // 🔹 Mapear para o formato do FullCalendar
+        // 🔹 Mapear agendamentos REAIS
         const calendarEvents = appointments
             .filter(appt => appt.patient || appt.package)
-            .map(appt => {
-                const [hours, minutes] = appt.time?.split(':').map(Number) || [0, 0];
-                const start = new Date(appt.date);
-                start.setHours(hours, minutes);
-                const end = new Date(start.getTime() + (appt.duration || 40) * 60000);
+            .map(appt => mapAppointmentToEvent(appt));
 
-                // ✅ Consolida o status financeiro
-                const paymentStatus =
-                    appt.payment?.status ||                    // 1º: Payment vinculado
-                    appt.paymentStatus ||                       // 2º: Campo do Appointment
-                    appt.session?.paymentStatus ||              // 3º: Session
-                    (appt.package?.financialStatus === 'paid' ? 'paid' : 'pending'); // 4º: Package
+        // 🔹 Mapear PRÉ-AGENDAMENTOS (INTERESSES)
+        const preEvents = preAgendamentos.map(pre => mapPreAgendamentoToEvent(pre));
 
-                // 🧩 Resolve visualFlag de forma robusta
-                const visualFlag = resolveVisualFlag({ ...appt, paymentStatus });
+        // ✅ Retorna tudo unificado
+        const finalResults = [...calendarEvents, ...preEvents].sort((a, b) => {
+            return (a.date + a.time).localeCompare(b.date + b.time);
+        });
 
-                return {
-                    id: appt._id.toString(),
-                    title: `${appt.reason || 'Consulta'} - ${appt.doctor?.fullName || 'Profissional'}`,
-                    start: start.toISOString(),
-                    end: end.toISOString(),
-                    date: appt.date,
-                    time: appt.time,
-                    status: appt.status,
-                    specialty: appt.specialty,
-                    description: appt.reason,
-                    operationalStatus: appt.operationalStatus,
-                    clinicalStatus: appt.clinicalStatus,
-                    paymentStatus,
-                    visualFlag, // ✅ campo calculado e padronizado
-                    package: appt.package || null,
-                    session: appt.session || null,
-                    patient: {
-                        id: appt.patient._id.toString(),
-                        fullName: appt.patient.fullName,
-                        dateOfBirth: appt.patient.dateOfBirth,
-                        gender: appt.patient.gender,
-                        phone: appt.patient.phone,
-                        email: appt.patient.email,
-                        cpf: appt.patient.cpf,
-                        rg: appt.patient.rg,
-                        address: appt.patient.address,
-                    },
-                    doctor: {
-                        id: appt.doctor?._id?.toString(),
-                        fullName: appt.doctor?.fullName,
-                        specialty: appt.doctor?.specialty,
-                    },
-                };
-            });
-
-        // ✅ Retorna tudo já consolidado
-        res.json(calendarEvents);
+        res.json(finalResults);
     } catch (error) {
         console.error('Erro ao buscar agendamentos:', error);
 
@@ -810,6 +749,32 @@ router.get('/', auth, async (req, res) => {
             error: 'Erro interno',
             details: error.message
         });
+    }
+});
+
+// Busca agendamento por ID
+router.get('/:id', flexibleAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, error: 'ID inválido' });
+        }
+
+        const appointment = await Appointment.findById(id)
+            .populate('patient', 'fullName phone email dateOfBirth')
+            .populate('doctor', 'fullName specialty')
+            .populate('package', 'totalSessions sessionsUsed')
+            .populate('session', 'status paymentStatus');
+
+        if (!appointment) {
+            return res.status(404).json({ success: false, error: 'Agendamento não encontrado' });
+        }
+
+        res.json({ success: true, data: appointment });
+    } catch (error) {
+        console.error('[APPOINTMENT] Erro ao buscar:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 

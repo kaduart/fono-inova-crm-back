@@ -3,6 +3,12 @@
 export const THERAPY_SPECIALTIES = {
     neuropsychological: {
         id: 'neuropsychological',
+        names: ['neuropsicologia', 'neuropsi'],
+        patterns: [
+            /neuropsi(c(o|ó)l(o|ó)g(a|o|ia))?/i,
+            /avalia(ç|c)(ã|a)o\s+neuropsi/i,
+            /laudo\s+neuropsi/i
+        ],
         symptoms: ['investigacao', 'diagnostico', 'laudo', 'avaliacao_completa'],
         ageRange: ['crianca', 'adolescente', 'adulto'],
         duration: '10_sessoes',
@@ -11,6 +17,15 @@ export const THERAPY_SPECIALTIES = {
     },
     speech: {
         id: 'speech',
+        names: ['fonoaudiologia', 'fono'],
+        patterns: [
+            /fono(audi(o|ó)log(a|o|ia))?/i,
+            /n[aã]o\s+fala/i,
+            /fala\s+(pouco|errado|mal|direito)/i,
+            /gaguej(a|o)/i,
+            /troca\s+(letras|sons)/i,
+            /atraso\s+(na\s+)?fala/i
+        ],
         symptoms: ['atraso_fala', 'troca_letras', 'gagueira', 'nao_fala', 'balbucia'],
         ageRange: ['baby', 'crianca'],
         duration: 'sessao_50min',
@@ -92,31 +107,40 @@ export function normalizeTherapyTerms(text = "") {
  * ✅ APENAS DETECÇÃO (sem gerar resposta)
  */
 export function detectAllTherapies(text = "") {
-    const normalized = normalizeTherapyTerms(text);
-    const detected = [];
+    try {
+        // 🛡️ Proteção inicial contra input inválido
+        if (!text || typeof text !== 'string') {
+            return [];
+        }
+        
+        const normalized = normalizeTherapyTerms(text);
+        const detected = [];
 
-    const orderedSpecialties = [
-        'neuropsychological', 'speech', 'tongue_tie',
-        'occupational', 'physiotherapy', 'music',
-        'neuropsychopedagogy', 'psychopedagogy', 'psychology'
-    ];
+        const orderedSpecialties = [
+            'neuropsychological', 'speech', 'tongue_tie',
+            'occupational', 'physiotherapy', 'music',
+            'neuropsychopedagogy', 'psychopedagogy', 'psychology'
+        ];
 
-    for (const id of orderedSpecialties) {
-        const spec = THERAPY_SPECIALTIES[id];
-        if (!spec) continue;
-
-        const hasMatch = spec.patterns.some(pattern => {
-            if (pattern.global) pattern.lastIndex = 0;
-            return pattern.test(normalized);
-        });
-
-        if (hasMatch) {
-            if (id === 'psychology' && detected.some(d => d.id === 'neuropsychological')) {
+        for (const id of orderedSpecialties) {
+            const spec = THERAPY_SPECIALTIES[id];
+            // 🛡️ Proteção robusta contra undefined/null
+            if (!spec || !Array.isArray(spec.patterns) || spec.patterns.length === 0) {
                 continue;
             }
-            detected.push({ id, name: spec.names[0], allNames: spec.names });
+
+            const hasMatch = spec.patterns.some(pattern => {
+                if (pattern.global) pattern.lastIndex = 0;
+                return pattern.test(normalized);
+            });
+
+            if (hasMatch) {
+                if (id === 'psychology' && detected.some(d => d.id === 'neuropsychological')) {
+                    continue;
+                }
+                detected.push({ id, name: spec.names[0], allNames: spec.names });
+            }
         }
-    }
 
     // 🚫 Fora de escopo clínico (exames, triagens, laudos)
     const outOfScopeKeywords = [
@@ -198,6 +222,12 @@ export function getTherapyData(therapyId) {
 export const THERAPY_PROFILES = {
     neuropsychological: {
         id: 'neuropsychological',
+        names: ['neuropsicologia', 'neuropsi'],
+        patterns: [
+            /neuropsi(c(o|ó)l(o|ó)g(a|o|ia))?/i,
+            /avalia(ç|c)(ã|a)o\s+neuropsi/i,
+            /laudo\s+neuropsi/i
+        ],
         symptoms: ['investigacao', 'diagnostico', 'laudo', 'avaliacao_completa'],
         ageRange: ['crianca', 'adolescente', 'adulto'],
         duration: '10_sessoes',
@@ -206,6 +236,15 @@ export const THERAPY_PROFILES = {
     },
     speech: {
         id: 'speech',
+        names: ['fonoaudiologia', 'fono'],
+        patterns: [
+            /fono(audi(o|ó)log(a|o|ia))?/i,
+            /n[aã]o\s+fala/i,
+            /fala\s+(pouco|errado|mal|direito)/i,
+            /gaguej(a|o)/i,
+            /troca\s+(letras|sons)/i,
+            /atraso\s+(na\s+)?fala/i
+        ],
         symptoms: ['atraso_fala', 'troca_letras', 'gagueira', 'nao_fala', 'balbucia'],
         ageRange: ['baby', 'crianca'],
         duration: 'sessao_50min',

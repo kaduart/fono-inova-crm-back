@@ -5,6 +5,8 @@ import { urgencyScheduler } from "../services/intelligence/UrgencyScheduler.js";
 import enrichLeadContext from "../services/leadContext.js";
 import { deriveFlagsFromText, detectAllFlags, resolveTopicFromFlags } from "../utils/flagsDetector.js";
 import { detectWithContext as detectWithContextualDetectors } from "../detectors/DetectorAdapter.js";
+import { buildStrategicContext, logStrategicEnrichment } from "./ContextEnrichmentLayer.js"; // 🆕 FASE 3
+import { trackDetection, recordOutcome } from "../services/DetectorFeedbackTracker.js"; // 🆕 FASE 4
 import { enforce as enforceStructuralRules } from "../services/EnforcementLayer.js";
 import { buildEquivalenceResponse } from "../utils/responseBuilder.js";
 import {
@@ -218,14 +220,14 @@ function buildTriageSchedulingMessage({
     const needsArea = !knownArea;
     const needsProfile = !knownProfile;
     const needsPeriod = !knownPeriod;
-    const needsComplaint = !knownComplaint && needsArea; // Só precisa de queixa se não tiver área
+    const needsComplaint = !knownComplaint; // 🆕 FASE 3.1: SEMPRE precisa de queixa (prioridade #1)
 
-    // Ordem: perfil → queixa (para mapear área) → período
-    if (needsProfile) {
-        return "Claro 😊 Só pra eu te orientar direitinho: qual a idade do paciente (anos ou meses)?";
-    }
+    // 🆕 FASE 3.1: Ordem correta - QUEIXA → PERFIL → PERÍODO (venda psicológica primeiro)
     if (needsComplaint) {
-        return "Entendi 💚 Me conta um pouquinho: o que você tem observado no dia a dia que te preocupou?";
+        return "Me conta um pouquinho: o que você tem observado no dia a dia que te preocupou? 💚";
+    }
+    if (needsProfile) {
+        return "Entendi 😊 Só pra eu te orientar direitinho: qual a idade do paciente (anos ou meses)?";
     }
     if (needsPeriod) {
         return "Perfeito! Pra eu ver as melhores opções: vocês preferem manhã ou tarde?";
@@ -547,6 +549,18 @@ export async function getOptimizedAmandaResponse({
                     },
                 }).catch(err => logSuppressedError('safeLeadUpdate', err));
 
+                // 🆕 FASE 4: Registra conversão no Learning Loop
+                // Atualiza todos os feedbacks pendentes deste lead
+                recordOutcome({
+                    leadId: lead._id,
+                    converted: true,
+                    specificMetrics: {
+                        bookingType: 'auto',
+                        hadObjections: false, // Pode ser inferido dos feedbacks
+                        therapyArea: lead.therapyArea
+                    }
+                }).catch(err => console.warn('[TRACKING] Erro ao registrar outcome:', err.message));
+
                 await Followup.updateMany(
                     { lead: lead._id, status: "scheduled" },
                     {
@@ -610,7 +624,7 @@ export async function getOptimizedAmandaResponse({
         );
     }
 
-    // 🆕 DETECÇÃO COM DETECTORES CONTEXTUAIS (ConfirmationDetector, InsuranceDetector)
+    // 🆕 DETECÇÃO COM DETECTORES CONTEXTUAIS (ConfirmationDetector, InsuranceDetector, PriceDetector, SchedulingDetector)
     // Usa adapter pattern para manter compatibilidade com flags legacy
     const flags = detectWithContextualDetectors(text, lead, enrichedContext);
     console.log("🚩 FLAGS DETECTADAS:", flags);
@@ -630,6 +644,96 @@ export async function getOptimizedAmandaResponse({
             confidence: flags._insurance.confidence
         });
     }
+    if (flags._price) {
+        console.log("💰 [PRICE] Detecção contextual:", {
+            type: flags._price.priceType,
+            confidence: flags._price.confidence,
+            hasObjection: flags._price.hasObjection
+        });
+    }
+    if (flags._scheduling) {
+        console.log("📅 [SCHEDULING] Detecção contextual:", {
+            type: flags._scheduling.schedulingType,
+            confidence: flags._scheduling.confidence,
+            hasUrgency: flags._scheduling.hasUrgency,
+            period: flags._scheduling.preferredPeriod
+        });
+    }
+
+    // 🆕 FASE 4: RASTREAMENTO DE DETECÇÕES (Learning Loop)
+    // Registra cada detecção para análise de efetividade
+    const trackingPromises = [];
+
+    if (flags._confirmation) {
+        trackingPromises.push(
+            trackDetection({
+                detector: 'confirmation',
+                pattern: flags._confirmation.type || 'general',
+                text,
+                confidence: flags._confirmation.confidence,
+                lead,
+                messageId: null, // Será preenchido depois se disponível
+                strategicHint: null // Será preenchido pela FASE 3
+            }).catch(err => console.warn('[TRACKING] Erro ao rastrear confirmation:', err.message))
+        );
+    }
+
+    if (flags._insurance) {
+        trackingPromises.push(
+            trackDetection({
+                detector: 'insurance',
+                pattern: flags._insurance.intentType || 'question',
+                text,
+                confidence: flags._insurance.confidence,
+                lead,
+                messageId: null,
+                strategicHint: null
+            }).catch(err => console.warn('[TRACKING] Erro ao rastrear insurance:', err.message))
+        );
+    }
+
+    if (flags._price) {
+        trackingPromises.push(
+            trackDetection({
+                detector: 'price',
+                pattern: flags._price.priceType || 'question',
+                text,
+                confidence: flags._price.confidence,
+                lead,
+                messageId: null,
+                strategicHint: null
+            }).catch(err => console.warn('[TRACKING] Erro ao rastrear price:', err.message))
+        );
+    }
+
+    if (flags._scheduling) {
+        trackingPromises.push(
+            trackDetection({
+                detector: 'scheduling',
+                pattern: flags._scheduling.schedulingType || 'request',
+                text,
+                confidence: flags._scheduling.confidence,
+                lead,
+                messageId: null,
+                strategicHint: null
+            }).catch(err => console.warn('[TRACKING] Erro ao rastrear scheduling:', err.message))
+        );
+    }
+
+    // Executa tracking em paralelo (non-blocking)
+    if (trackingPromises.length > 0) {
+        Promise.all(trackingPromises).catch(() => {}); // Fire and forget
+    }
+
+    // 🆕 FASE 3: ENRIQUECIMENTO ESTRATÉGICO DO CONTEXTO
+    // NÃO intercepta fluxo, apenas adiciona insights ao enrichedContext existente
+    const strategicEnhancements = buildStrategicContext(flags, lead, enrichedContext);
+
+    // Adiciona strategicHints ao enrichedContext (não substitui, enriquece)
+    enrichedContext.strategicHints = strategicEnhancements.strategicHints;
+    enrichedContext._enrichment = strategicEnhancements._enrichment;
+
+    logStrategicEnrichment(enrichedContext, flags);
 
     // ============================================================
     // 🧭 TRIAGEM AMANDA 2.0 — USANDO triageStep DO SCHEMA
@@ -892,19 +996,48 @@ Em breve nossa equipe entra em contato 😊`
             await safeLeadUpdate(lead._id, { $set });
         }
     }
+    // 🛡️ VERIFICAÇÃO DE DESAMBIGUAÇÃO: "vaga" pode ser consulta OU emprego
     if (flags.wantsPartnershipOrResume) {
-        await safeLeadUpdate(lead._id, {
-            $set: {
-                reason: "parceria_profissional",
-                stage: "parceria_profissional",
-                "qualificationData.intent": "parceria_profissional",
-            },
-            $addToSet: { flags: "parceria_profissional" },
-        });
-
-        return ensureSingleHeart(
-            "Que bom! 😊\n\nParcerias e currículos nós recebemos **exclusivamente por e-mail**.\nPode enviar para **contato@clinicafonoinova.com.br** (no assunto, coloque sua área).\n\nSe quiser, já me diga também sua cidade e disponibilidade 🙂 💚"
-        );
+        const normalizedText = flags.normalizedText || text.toLowerCase();
+        
+        // Se ambos forem detectados, verificar contexto para decidir
+        if (flags.wantsSchedule) {
+            // Contextos que indicam agendamento de consulta (não emprego)
+            const schedulingContext = /\b(dias|hor[áa]rio|consulta|agendar|marcar|disponibilidade|atendimento|tem\s+vaga|quais\s+os\s+dias)\b/i.test(normalizedText);
+            // Contextos que indicam emprego/parceria
+            const jobContext = /\b(vaga\s+(de\s+)?(trabalho|emprego)|curriculo|cv|parceria|enviar\s+curr[ií]culo|trabalhar\s+(com|na)\s+voc[eê]s)\b/i.test(normalizedText);
+            
+            if (schedulingContext && !jobContext) {
+                console.log("[DISAMBIGUATION] wantsSchedule + wantsPartnershipOrResume → Contexto indica AGENDAMENTO, ignorando parceria");
+                // Não retorna, deixa o fluxo continuar para busca de slots reais
+            } else {
+                // É realmente sobre parceria/emprego
+                await safeLeadUpdate(lead._id, {
+                    $set: {
+                        reason: "parceria_profissional",
+                        stage: "parceria_profissional",
+                        "qualificationData.intent": "parceria_profissional",
+                    },
+                    $addToSet: { flags: "parceria_profissional" },
+                });
+                return ensureSingleHeart(
+                    "Que bom! 😊\n\nParcerias e currículos nós recebemos **exclusivamente por e-mail**.\nPode enviar para **contato@clinicafonoinova.com.br** (no assunto, coloque sua área).\n\nSe quiser, já me diga também sua cidade e disponibilidade 🙂 💚"
+                );
+            }
+        } else {
+            // Só tem parceria, sem conflito
+            await safeLeadUpdate(lead._id, {
+                $set: {
+                    reason: "parceria_profissional",
+                    stage: "parceria_profissional",
+                    "qualificationData.intent": "parceria_profissional",
+                },
+                $addToSet: { flags: "parceria_profissional" },
+            });
+            return ensureSingleHeart(
+                "Que bom! 😊\n\nParcerias e currículos nós recebemos **exclusivamente por e-mail**.\nPode enviar para **contato@clinicafonoinova.com.br** (no assunto, coloque sua área).\n\nSe quiser, já me diga também sua cidade e disponibilidade 🙂 💚"
+            );
+        }
     }
 
     const psychologicalCue = determinePsychologicalFollowup({
@@ -1506,6 +1639,65 @@ Em breve nossa equipe entra em contato 😊`
             }
         }
 
+        // =========================================================================
+        // 🔥 HANDLER MODULAR: Usuário quer mais opções / alternativas
+        // Detecta: "mais cedo", "outro horário", "nenhuma serve", etc.
+        // =========================================================================
+        const isAskingForAlternatives = flags.wantsMoreOptions || 
+            /\b(mais\s+cedo|mais\s+tarde|outro\s+hor[áa]rio|outra\s+op[çc][aã]o|nenhuma\s+serve|tem\s+outro|tem\s+mais)\b/i.test(normalized);
+        
+        if (isAskingForAlternatives && slotsCtx?.all?.length > 0) {
+            console.log("[ALTERNATIVES] Usuário pediu alternativas. Buscando slots em outro período...");
+            
+            const requestedPeriod = extractPeriodFromText(text);
+            const currentPeriod = lead?.autoBookingContext?.preferredPeriod || 
+                (slotsCtx.primary ? getTimePeriod(slotsCtx.primary.time) : null);
+            
+            // Se pediu período específico diferente do atual, busca nesse período
+            const targetPeriod = requestedPeriod && requestedPeriod !== currentPeriod ? requestedPeriod : null;
+            
+            if (targetPeriod || !requestedPeriod) {
+                try {
+                    const therapyArea = lead?.therapyArea || 
+                        lead?.autoBookingContext?.mappedTherapyArea || 
+                        lead?.autoBookingContext?.therapyArea;
+                    
+                    if (therapyArea) {
+                        const alternativeSlots = await findAvailableSlots({
+                            therapyArea,
+                            preferredPeriod: targetPeriod || (currentPeriod === "manhã" ? "tarde" : "manhã"),
+                            daysAhead: 30,
+                            maxOptions: 3,
+                        });
+                        
+                        if (alternativeSlots?.primary) {
+                            // Salva novos slots
+                            await safeLeadUpdate(lead._id, { 
+                                $set: { 
+                                    pendingSchedulingSlots: alternativeSlots,
+                                    pendingChosenSlot: null,
+                                    "autoBookingContext.preferredPeriod": targetPeriod || (currentPeriod === "manhã" ? "tarde" : "manhã"),
+                                } 
+                            }).catch(err => logSuppressedError("safeLeadUpdate", err));
+                            
+                            const { optionsText, letters } = buildSlotMenuMessage(alternativeSlots);
+                            const periodLabel = targetPeriod === "manhã" ? "de manhã" : targetPeriod === "tarde" ? "à tarde" : "em outros horários";
+                            
+                            return ensureSingleHeart(
+                                `Claro! Encontrei essas opções ${periodLabel}:\n\n${optionsText}\n\nQual você prefere? (${letters.join(" ou ")}) 💚`
+                            );
+                        } else {
+                            return ensureSingleHeart(
+                                `Não encontrei vagas ${targetPeriod === "manhã" ? "de manhã" : targetPeriod === "tarde" ? "à tarde" : "nesses critérios"} 😕\n\nPosso verificar outro período ou dia da semana pra você?`
+                            );
+                        }
+                    }
+                } catch (err) {
+                    console.error("[ALTERNATIVES] Erro ao buscar alternativas:", err.message);
+                }
+            }
+        }
+
         if (!looksLikeChoice) {
             return ensureSingleHeart(menuMsg);
         }
@@ -1596,8 +1788,30 @@ Em breve nossa equipe entra em contato 😊`
         flags.therapyArea = bookingProduct.therapyArea;
     }
 
+    // 🔧 Garante que therapyArea seja string (pode vir como objeto de detectAllTherapies)
+    const normalizeTherapyArea = (area) => {
+        if (!area) return null;
+        if (typeof area === 'string') return area;
+        if (typeof area === 'object' && area.id) {
+            // Mapeia ID do therapyDetector para nome da área no banco
+            const areaMap = {
+                "neuropsychological": "neuropsicologia",
+                "speech": "fonoaudiologia",
+                "tongue_tie": "fonoaudiologia",
+                "psychology": "psicologia",
+                "occupational": "terapia_ocupacional",
+                "physiotherapy": "fisioterapia",
+                "music": "musicoterapia",
+                "neuropsychopedagogy": "neuropsicologia",
+                "psychopedagogy": "neuropsicologia",
+            };
+            return areaMap[area.id] || area.name || null;
+        }
+        return null;
+    };
+
     const resolvedTherapyArea =
-        flags.therapyArea | lead?.therapyArea || null;
+        normalizeTherapyArea(flags.therapyArea) || normalizeTherapyArea(lead?.therapyArea) || null;
 
     // -------------------------------------------------------------------
     // 🔄 Sincronização de áreas (clínica vs. agenda)
