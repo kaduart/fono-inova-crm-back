@@ -7,7 +7,7 @@ import Message from '../models/Message.js';
 /**
  * 🧹 LIMPA TEXTO DE MENSAGEM
  */
-function cleanText(text) {
+export function cleanText(text) {
     if (!text) return '';
 
     return String(text)
@@ -31,7 +31,7 @@ function cleanText(text) {
 /**
  * ✅ VALIDA SE TEXTO É ÚTIL
  */
-function isValidText(text) {
+export function isValidText(text) {
     if (!text) return false;
 
     const t = String(text).trim();
@@ -47,7 +47,7 @@ function isValidText(text) {
 /**
  * ⏱️ CALCULA TEMPO ATÉ CONVERSÃO (em horas)
  */
-function calculateConversionTime(lead) {
+export function calculateConversionTime(lead) {
     if (!lead?.createdAt || !lead?.updatedAt) return 0;
     const diff = new Date(lead.updatedAt) - new Date(lead.createdAt);
     return Math.round(diff / (1000 * 60 * 60));

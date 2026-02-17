@@ -7,3 +7,4 @@ import "./Package.js";
 import "./Payment.js";
 import "./User.js";
 import "./Followup.js";
+import "./Notification.js";

@@ -5,7 +5,7 @@ const learningInsightSchema = new mongoose.Schema(
     {
         type: {
             type: String,
-            enum: ["conversation_patterns", "successful_responses", "common_objections", "continuous_learning_cycle"],
+            enum: ["conversation_patterns", "successful_responses", "common_objections", "continuous_learning_cycle", "detector_effectiveness"],
             required: true,
         },
 

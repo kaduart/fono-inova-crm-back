@@ -70,6 +70,7 @@ import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
 import planningRoutes from './routes/planning.js';
 import provisionamentoRoutes from './routes/provisionamento.js';
 import preAgendamentoRoutes from './routes/preAgendamento.js';
+import notificationRoutes from './routes/notifications.js';
 import { iniciarJobConfirmacao } from './jobs/confirmacaoJob.js';
 import { scheduleDailyAlerts } from './jobs/dailyAlerts.js';
 import compression from 'compression';
@@ -78,6 +79,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import financialAnalyticsRoutes from './routes/analytics/financial.routes.js';
 import insuranceGuidesRoutes from './routes/insuranceGuides.js';
 import convenioPackagesRoutes from './routes/convenioPackages.js';
+import reminderRoutes from './routes/reminder.js';
 
 // ======================================================
 // 🧭 Inicialização base
@@ -121,8 +123,8 @@ process.on("error", (err) => {
 // ======================================================
 // 🔒 Middlewares globais
 // ======================================================
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true, limit: "2mb" }));
+app.use(express.json({ limit: '20mb' }));
+app.use(express.urlencoded({ limit: '20mb', extended: true }));
 app.use(
   helmet({
     crossOriginEmbedderPolicy: false,
@@ -202,12 +204,14 @@ app.use('/api/expenses', expenseRoutes);
 app.use('/api/cashflow', cashflowRoutes);
 app.use('/api/planning', planningRoutes);
 app.use('/api/pre-agendamento', preAgendamentoRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/provisionamento', provisionamentoRoutes);
 app.use('/api/analytics/financial', financialAnalyticsRoutes);
 app.use('/api/insurance-guides', insuranceGuidesRoutes);
 app.use('/api/convenio-packages', convenioPackagesRoutes);
+app.use('/api/reminders', reminderRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);

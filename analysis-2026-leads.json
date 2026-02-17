@@ -1,0 +1,113 @@
+{
+  "metadata": {
+    "analyzedAt": "2026-02-17T11:55:42.268Z",
+    "sourceFile": "/home/user/projetos/CRM-CLINICA/back/whatsapp_export_2026-02-13.txt",
+    "totalLines": 37495,
+    "leadMessages": 4497
+  },
+  "stats": {
+    "firstContact.greetings": 755,
+    "scheduling.period": 356,
+    "scheduling.request": 700,
+    "firstContact.therapy": 366,
+    "child.age": 111,
+    "insurance.reimbursement": 20,
+    "child.name": 333,
+    "firstContact.priceFirst": 26,
+    "child.complaint": 33,
+    "scheduling.urgency": 98,
+    "cancellation.reschedule": 13,
+    "cancellation.problem": 16,
+    "price.value": 71,
+    "price.objection": 4,
+    "price.discount": 6,
+    "insurance.accepts": 9,
+    "cancellation.cancel": 9,
+    "insurance.hasInsurance": 4,
+    "price.direct": 2
+  },
+  "topPatterns": [
+    {
+      "pattern": "firstContact.greetings",
+      "count": 755
+    },
+    {
+      "pattern": "scheduling.request",
+      "count": 700
+    },
+    {
+      "pattern": "firstContact.therapy",
+      "count": 366
+    },
+    {
+      "pattern": "scheduling.period",
+      "count": 356
+    },
+    {
+      "pattern": "child.name",
+      "count": 333
+    },
+    {
+      "pattern": "child.age",
+      "count": 111
+    },
+    {
+      "pattern": "scheduling.urgency",
+      "count": 98
+    },
+    {
+      "pattern": "price.value",
+      "count": 71
+    },
+    {
+      "pattern": "child.complaint",
+      "count": 33
+    },
+    {
+      "pattern": "firstContact.priceFirst",
+      "count": 26
+    },
+    {
+      "pattern": "insurance.reimbursement",
+      "count": 20
+    },
+    {
+      "pattern": "cancellation.problem",
+      "count": 16
+    },
+    {
+      "pattern": "cancellation.reschedule",
+      "count": 13
+    },
+    {
+      "pattern": "insurance.accepts",
+      "count": 9
+    },
+    {
+      "pattern": "cancellation.cancel",
+      "count": 9
+    }
+  ],
+  "examples": {
+    "priceFirst": [
+      "Olá, boa tarde! Vou me organizar aqui e mando mensagem ta13:35",
+      "Bom dia confirmado09:41",
+      "Olá19:14"
+    ],
+    "objections": [
+      "Bom dia! Carolina, estou bem e você?09:57",
+      "O valor e muito alto por mês 15:12",
+      "Bom dia! Ana Carolina, Tudo bem?10:00"
+    ],
+    "insurance": [
+      "E aceita plano de saúde13:28",
+      "Bom dia, vocês aceitam Unimed?00:31",
+      "No momento estamos somente particular, mais fornecemos nota fiscal para o reembolso com o plano de saúde .14:36"
+    ],
+    "cancellations": [
+      "Meu esposo acabou de desmarcar a sessão do Igor14:21",
+      "Quero desmarcar a fono do meu filho hoje, minha esposa tá passando mau e não vai poder levar ele13:45",
+      "Bom dia , infelizmente terei q cancelar10:30"
+    ]
+  }
+}

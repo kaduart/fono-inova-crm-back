@@ -3,9 +3,9 @@
  * Simula conversas completas para validar o fluxo
  */
 
-import { WhatsAppOrchestrator } from '../orchestrators/WhatsAppOrchestrator.js';
+import WhatsAppOrchestrator from '../orchestrators/WhatsAppOrchestrator.js';
 import Leads from '../models/Leads.js';
-import ChatContext from '../models/ChatContext.js';
+// ChatContext não existe mais - contexto agora está no Lead
 import mongoose from 'mongoose';
 import 'dotenv/config';
 

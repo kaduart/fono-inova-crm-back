@@ -44,7 +44,12 @@ const KNOWN_PROBLEM_PATTERNS = {
     ],
     earlyMessageThreshold: 2,
     severity: 'medium',
-    suggestion: 'Valorizar antes de falar preço. Contexto: lead ainda não sabe o valor da terapia'
+    suggestion: 'Valorizar antes de falar preço. Contexto: lead ainda não sabe o valor da terapia',
+    // 🔴 DEPRECATED: Funcionalidade movida para PriceDetector.isEarlyQuestion
+    // Monitore por 30 dias antes de remover (adicionado em 2026-02-16)
+    deprecated: true,
+    deprecatedSince: '2026-02-16',
+    replacedBy: 'PriceDetector.isEarlyQuestion'
   },
   
   cancellation: {
@@ -55,7 +60,13 @@ const KNOWN_PROBLEM_PATTERNS = {
       /\b(n[aã]o\s+posso\s+mais|mudei\s+de\s+ideia)\b/i
     ],
     severity: 'critical',
-    suggestion: 'Oferecer reagendamento flexível, entender motivo real'
+    suggestion: 'Oferecer reagendamento flexível, entender motivo real',
+    // 🔴 DEPRECATED: Funcionalidade movida para SchedulingDetector.schedulingType='cancellation'
+    // Duplicação de 95%+ com detector contextual
+    // Monitore por 30 dias antes de remover (adicionado em 2026-02-16)
+    deprecated: true,
+    deprecatedSince: '2026-02-16',
+    replacedBy: 'SchedulingDetector.schedulingType=cancellation'
   },
   
   time_confusion: {
@@ -78,7 +89,12 @@ const KNOWN_PROBLEM_PATTERNS = {
       /\b(reembolso|particular\s*[\-–]\s*conv[eê]nio)\b/i
     ],
     severity: 'medium',
-    suggestion: 'Explicar claramente modalidade particular com reembolso'
+    suggestion: 'Explicar claramente modalidade particular com reembolso',
+    // 🔴 DEPRECATED: Funcionalidade movida para InsuranceDetector.intentType='confusion'
+    // Monitore por 30 dias antes de remover (adicionado em 2026-02-16)
+    deprecated: true,
+    deprecatedSince: '2026-02-16',
+    replacedBy: 'InsuranceDetector.intentType=confusion / isConfused flag'
   },
   
   silence_after_price: {
@@ -153,7 +169,15 @@ export function analyzePatterns(conversations) {
         count: detected.count,
         affectedConversations: detected.conversations,
         successRate: calculateSuccessRate(detected.conversations),
-        recommendation: generateRecommendation(key, detected)
+        recommendation: generateRecommendation(key, detected),
+        // 🔴 Marca se padrão está deprecated
+        isDeprecated: !!config.deprecated,
+        ...(config.deprecated && {
+          deprecationInfo: {
+            since: config.deprecatedSince,
+            replacedBy: config.replacedBy
+          }
+        })
       });
     }
   }

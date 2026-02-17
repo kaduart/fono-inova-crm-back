@@ -1,14 +1,17 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { auth, authorize } from '../middleware/auth.js';
+import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { agendaAuth } from '../middleware/agendaAuth.js';
 import PreAgendamento from '../models/PreAgendamento.js';
 import Appointment from '../models/Appointment.js';
 import Patient from '../models/Patient.js';
 import Doctor from '../models/Doctor.js';
+import Notification from '../models/Notification.js';
 import { bookFixedSlot } from '../services/amandaBookingService.js';
 import { findDoctorByName } from '../utils/doctorHelper.js';
 import { getIo } from '../config/socket.js';
+import { isBusinessHours } from '../utils/businessHours.js';
 
 const router = express.Router();
 
@@ -86,32 +89,50 @@ router.post('/webhook', agendaAuth, async (req, res) => {
 
     console.log(`[WEBHOOK] ✅ PreAgendamento criado: ${pre._id} - ${patientName}`);
 
-    // ✅ EMITIR SOCKET PARA O FRONT (igual whatsappController)
-    // Linha ~115 (após criar o 'pre') - SUBSTITUA POR:
+    // 🔔 SISTEMA DE NOTIFICAÇÃO INTELIGENTE
+    const businessHours = isBusinessHours();
+    console.log(`[WEBHOOK] Horário comercial: ${businessHours ? 'SIM' : 'NÃO (fora do horário)'}`);
 
     try {
-
       const io = getIo();
-      console.log("IO ID:", io._ids || io.engine?.clientsCount || io);
-      console.log("🔍 DEBUG SOCKET:");
-      console.log("  - io.engine.clientsCount:", io.engine.clientsCount);
-      console.log("  - io.sockets.sockets.size:", io.sockets.sockets.size);
-      console.log("  - Socket IDs:", Array.from(io.sockets.sockets.keys()));
 
-      io.emit("preagendamento:new", {
-        id: String(pre._id),
-        patientName: pre.patientInfo.fullName,
-        phone: pre.patientInfo.phone,
-        specialty: pre.specialty,
-        preferredDate: pre.preferredDate,
-        preferredTime: pre.preferredTime,
-        status: pre.status,
-        urgency: pre.urgency,
-        createdAt: pre.createdAt
-      });
-      console.log(`📡 Socket emitido: preagendamento:new ${pre._id}`);
-    } catch (socketError) {
-      console.error('⚠️ Erro ao emitir socket:', socketError.message);
+      if (businessHours) {
+        // 🟢 HORÁRIO COMERCIAL: Emite socket em tempo real
+        console.log("📡 Emitindo socket em tempo real (horário comercial)...");
+        io.emit("preagendamento:new", {
+          id: String(pre._id),
+          patientName: pre.patientInfo.fullName,
+          phone: pre.patientInfo.phone,
+          specialty: pre.specialty,
+          preferredDate: pre.preferredDate,
+          preferredTime: pre.preferredTime,
+          status: pre.status,
+          urgency: pre.urgency,
+          createdAt: pre.createdAt,
+          isBusinessHours: true
+        });
+        console.log(`✅ Socket emitido: preagendamento:new ${pre._id}`);
+      } else {
+        // 🔴 FORA DO HORÁRIO: Cria notificação persistente
+        console.log("🔔 Criando notificação persistente (fora do horário)...");
+        
+        const notification = await Notification.createFromPreAgendamento(pre);
+        
+        // Emite apenas para usuários online (silencioso)
+        io.emit("notification:new", {
+          id: String(notification._id),
+          type: 'preagendamento',
+          data: notification.data,
+          priority: notification.priority,
+          isBusinessHours: false,
+          message: 'Novo pré-agendamento (fora do horário comercial)'
+        });
+        
+        console.log(`✅ Notificação criada: ${notification._id}`);
+      }
+    } catch (error) {
+      console.error('⚠️ Erro no sistema de notificação:', error.message);
+      // Não falha a requisição se notificação falhar
     }
 
     res.status(201).json({
@@ -195,7 +216,9 @@ router.post('/:id/importar-externo', agendaAuth, async (req, res) => {
       paymentMethod,
       sessionValue: Number(sessionValue),
       status: 'scheduled',
-      notes: `[IMPORTADO DA AGENDA EXTERNA] ${notes || ''}\n${pre.secretaryNotes || ''}`
+      notes: `[IMPORTADO DA AGENDA EXTERNA] ${notes || ''}\n${pre.secretaryNotes || ''}`,
+      source: pre.source || 'agenda_externa', // 📈 ROI
+      preAgendamentoId: String(pre._id) // 📈 ROI
     };
 
     console.log('[IMPORTAR-EXTERNO] bookFixedSlot params:', JSON.stringify(bookParams, null, 2));
@@ -250,13 +273,14 @@ router.post('/:id/importar-externo', agendaAuth, async (req, res) => {
 });
 
 // Middleware de auth para rotas protegidas (após as rotas públicas)
-router.use(auth);
+// Mudando para flexibleAuth para permitir acesso via AGENDA_EXPORT_TOKEN
+router.use(flexibleAuth);
 
 /**
  * GET /api/pre-agendamento
  * Lista para a secretária (com filtros e paginação)
  */
-router.get('/', authorize(['admin', 'secretary']), async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const {
       status,
@@ -358,7 +382,7 @@ router.get('/', authorize(['admin', 'secretary']), async (req, res) => {
  * GET /api/pre-agendamento/:id
  * Detalhes de um pré-agendamento
  */
-router.get('/:id', authorize(['admin', 'secretary']), async (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const pre = await PreAgendamento.findById(req.params.id)
       .populate('patientId')
@@ -391,14 +415,19 @@ router.get('/:id', authorize(['admin', 'secretary']), async (req, res) => {
  * POST /api/pre-agendamento/:id/assign
  * Atribuir a um usuário
  */
-router.post('/:id/assign', authorize(['admin', 'secretary']), async (req, res) => {
+router.post('/:id/assign', async (req, res) => {
   try {
     const { userId } = req.body;
+    
+    // Verifica se é um ObjectId válido (usuário real) ou token de serviço
+    const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+    const assignedUserId = (userId && isValidObjectId(userId)) ? userId : 
+                           (isValidObjectId(req.user?.id) ? req.user.id : null);
 
     const pre = await PreAgendamento.findByIdAndUpdate(
       req.params.id,
       {
-        assignedTo: userId || req.user.id,
+        assignedTo: assignedUserId,
         status: 'em_analise',
         updatedAt: new Date()
       },
@@ -411,7 +440,7 @@ router.post('/:id/assign', authorize(['admin', 'secretary']), async (req, res) =
       io.emit("preagendamento:updated", {
         id: String(pre._id),
         status: pre.status,
-        assignedTo: pre.assignedTo?.fullName || req.user.fullName,
+        assignedTo: pre.assignedTo?.fullName || req.user?.fullName || 'Sistema',
         action: 'assigned'
       });
     } catch (e) {
@@ -429,9 +458,13 @@ router.post('/:id/assign', authorize(['admin', 'secretary']), async (req, res) =
  * POST /api/pre-agendamento/:id/contact
  * Registrar tentativa de contato
  */
-router.post('/:id/contact', authorize(['admin', 'secretary']), async (req, res) => {
+router.post('/:id/contact', async (req, res) => {
   try {
     const { channel, success, notes } = req.body;
+    
+    // Verifica se é um ObjectId válido
+    const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+    const madeByUserId = isValidObjectId(req.user?.id) ? req.user.id : null;
 
     const pre = await PreAgendamento.findByIdAndUpdate(
       req.params.id,
@@ -442,7 +475,7 @@ router.post('/:id/contact', authorize(['admin', 'secretary']), async (req, res) 
             channel,
             success,
             notes,
-            madeBy: req.user.id
+            madeBy: madeByUserId
           }
         },
         $inc: { attemptCount: 1 },
@@ -476,7 +509,7 @@ router.post('/:id/contact', authorize(['admin', 'secretary']), async (req, res) 
  * POST /api/pre-agendamento/:id/importar
  * Converter para Appointment definitivo
  */
-router.post('/:id/importar', authorize(['admin', 'secretary']), async (req, res) => {
+router.post('/:id/importar', async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -518,7 +551,9 @@ router.post('/:id/importar', authorize(['admin', 'secretary']), async (req, res)
       paymentMethod,
       sessionValue: Number(sessionValue),
       status: 'scheduled',
-      notes: `[IMPORTADO DO PRE-AGENDAMENTO] ${notes || ''}\n${pre.secretaryNotes || ''}`
+      notes: `[IMPORTADO DO PRE-AGENDAMENTO] ${notes || ''}\n${pre.secretaryNotes || ''}`,
+      source: pre.source || 'outro', // 📈 ROI
+      preAgendamentoId: String(pre._id) // 📈 ROI
     });
 
     if (!result.success) {
@@ -529,10 +564,26 @@ router.post('/:id/importar', authorize(['admin', 'secretary']), async (req, res)
     pre.status = 'importado';
     pre.importedToAppointment = result.appointment._id;
     pre.importedAt = new Date();
-    pre.importedBy = req.user.id;
+
+    // Verifica se é um usuário real (ObjectId) ou serviço
+    if (mongoose.Types.ObjectId.isValid(req.user.id)) {
+      pre.importedBy = req.user.id;
+    }
     await pre.save({ session });
 
     await session.commitTransaction();
+
+    // 🤖 Feedback para AmandaAI/Bots
+    try {
+      const io = getIo();
+      io.emit("preagendamento:confirmed", {
+        id: String(pre._id),
+        appointmentId: result.appointment._id,
+        source: pre.source
+      });
+    } catch (e) {
+      console.error('⚠️ AmandaAI Feedback Socket error:', e.message);
+    }
 
     res.json({
       success: true,
@@ -557,17 +608,17 @@ router.post('/:id/importar', authorize(['admin', 'secretary']), async (req, res)
  * POST /api/pre-agendamento/:id/descartar
  * Descartar pré-agendamento
  */
-router.post('/:id/descartar', authorize(['admin', 'secretary']), async (req, res) => {
+router.post('/:id/descartar', async (req, res) => {
   try {
     const { reason } = req.body;
 
     const pre = await PreAgendamento.findByIdAndUpdate(
       req.params.id,
       {
-        status: 'descartado',
+        status: 'desistiu', // 📈 ROI: Diferenciar descarte manual de desistência do paciente
         discardReason: reason,
         discardedAt: new Date(),
-        discardedBy: req.user.id,
+        discardedBy: (req.user.id && mongoose.Types.ObjectId.isValid(req.user.id)) ? req.user.id : undefined,
         updatedAt: new Date()
       },
       { new: true }
@@ -579,6 +630,18 @@ router.post('/:id/descartar', authorize(['admin', 'secretary']), async (req, res
       data: pre
     });
 
+    // 🚀 Emitir Socket para o Front e AmandaAI
+    try {
+      const io = getIo();
+      io.emit("preagendamento:discarded", {
+        id: String(pre._id),
+        reason,
+        source: pre.source
+      });
+    } catch (e) {
+      console.error('⚠️ Socket error:', e.message);
+    }
+
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -588,7 +651,7 @@ router.post('/:id/descartar', authorize(['admin', 'secretary']), async (req, res
  * PATCH /api/pre-agendamento/:id
  * Atualizar dados do pré-agendamento
  */
-router.patch('/:id', authorize(['admin', 'secretary']), async (req, res) => {
+router.patch('/:id', async (req, res) => {
   try {
     const updates = req.body;
     delete updates.status; // Não permitir mudar status diretamente
@@ -611,7 +674,7 @@ router.patch('/:id', authorize(['admin', 'secretary']), async (req, res) => {
  * GET /api/pre-agendamento/stats/dashboard
  * Estatísticas para dashboard
  */
-router.get('/stats/dashboard', authorize(['admin', 'secretary']), async (req, res) => {
+router.get('/stats/dashboard', async (req, res) => {
   try {
     const hoje = new Date().toISOString().split('T')[0];
 
