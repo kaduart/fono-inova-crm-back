@@ -7,13 +7,15 @@ export const manageLeadCircuit = async (leadId, stage = 'initial') => {
     const lead = await Lead.findById(leadId);
     if (!lead) throw new Error('Lead não encontrado');
 
-    const now = Date.now();
+    // 🛡️ FIX: Usar horário local do Brasil para agendamento
+    const now = new Date();
+    const brTimestamp = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
     const stageWindowMs = 24 * 60 * 60 * 1000;
     const dup = await Followup.findOne({
         lead: leadId,
         stage,
         status: { $in: ['scheduled', 'processing'] },
-        scheduledAt: { $gte: new Date(now - stageWindowMs) }
+        scheduledAt: { $gte: new Date(brTimestamp.getTime() - stageWindowMs) }
     }).lean();
 
     if (dup) {
@@ -48,8 +50,10 @@ export const manageLeadCircuit = async (leadId, stage = 'initial') => {
         return null;
     }
 
-    const scheduledAt = new Date(now + (config.delay || 0));
-    const initialStatus = scheduledAt.getTime() <= now ? 'processing' : 'scheduled';
+    // 🛡️ FIX: Usar timestamp atual em vez de now para evitar -1h
+    const currentTimestamp = Date.now();
+    const scheduledAt = new Date(currentTimestamp + (config.delay || 0));
+    const initialStatus = scheduledAt.getTime() <= currentTimestamp ? 'processing' : 'scheduled';
 
     const f = await Followup.create({
         lead: leadId,
@@ -58,7 +62,7 @@ export const manageLeadCircuit = async (leadId, stage = 'initial') => {
         scheduledAt,
         status: initialStatus,
         origin: lead.origin,
-        playbook: 'default',
+        playbook: null, // 🛡️ FIX: Usar mensagem de texto ao invés de template 'default'
         leadName: lead.name,
         leadPhoneE164: lead.contact?.phone || null,
     });
