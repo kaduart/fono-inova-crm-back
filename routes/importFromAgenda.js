@@ -19,6 +19,67 @@ const router = express.Router();
 const API_BASE = process.env.API_BASE || "http://localhost:5000";
 const api = axios.create({ baseURL: API_BASE, timeout: 8000 });
 
+/**
+ * 🔍 Helper: Encontra ou cria paciente de forma segura
+ * Usado quando os dados da migração não bateram corretamente
+ */
+async function findOrCreatePatient(patientInfo, session) {
+  try {
+    const cleanPhone = (patientInfo?.phone || "").replace(/\D/g, "");
+    const fullName = patientInfo?.fullName?.trim();
+
+    if (!cleanPhone && !fullName) {
+      console.log(`[findOrCreatePatient] ⚠️ Dados insuficientes do paciente`);
+      return null;
+    }
+
+    // 1) Tentar encontrar por telefone (mais confiável)
+    let patient = null;
+    if (cleanPhone && cleanPhone.length >= 10) {
+      patient = await Patient.findOne({ phone: cleanPhone }).session(session);
+      if (patient) {
+        console.log(`[findOrCreatePatient] ✅ Encontrado por telefone: ${patient._id}`);
+        return patient;
+      }
+    }
+
+    // 2) Tentar encontrar por nome + telefone parcial
+    if (fullName) {
+      const nameQuery = { fullName: { $regex: new RegExp(fullName, 'i') } };
+      if (cleanPhone && cleanPhone.length >= 8) {
+        nameQuery.phone = { $regex: cleanPhone.slice(-8) }; // Últimos 8 dígitos
+      }
+      patient = await Patient.findOne(nameQuery).session(session);
+      if (patient) {
+        console.log(`[findOrCreatePatient] ✅ Encontrado por nome+telefone: ${patient._id}`);
+        return patient;
+      }
+    }
+
+    // 3) Se não encontrou e tem dados suficientes, criar novo paciente
+    if (fullName && cleanPhone && cleanPhone.length >= 10) {
+      console.log(`[findOrCreatePatient] 🔄 Criando novo paciente: ${fullName}`);
+
+      patient = await Patient.create([{
+        fullName: fullName,
+        phone: cleanPhone,
+        email: patientInfo?.email || undefined,
+        dateOfBirth: patientInfo?.birthDate || undefined,
+        source: 'agenda_externa_migration'
+      }], { session });
+
+      console.log(`[findOrCreatePatient] ✅ Paciente criado: ${patient[0]._id}`);
+      return patient[0];
+    }
+
+    console.log(`[findOrCreatePatient] ⚠️ Não encontrou nem criou paciente`);
+    return null;
+  } catch (error) {
+    console.error(`[findOrCreatePatient] ❌ Erro:`, error.message);
+    return null;
+  }
+}
+
 
 /**
  * POST /api/import-from-agenda
@@ -219,7 +280,7 @@ router.post("/import-from-agenda/confirmar-por-external-id", agendaAuth, async (
       serviceType,
       paymentMethod,
       sessionValue: Number(sessionValue || pre.suggestedValue || 0),
-      status: 'pre-scheduled', // 🆕 Criar como pré-agendado
+      status: 'scheduled', // Alterado de 'pre-scheduled' para 'scheduled' conforme solicitação
       notes: `[IMPORTADO DA AGENDA EXTERNA - AGUARDANDO CONFIRMAÇÃO] ${notes || ''}\n${pre.secretaryNotes || ''}`
     };
 
@@ -327,8 +388,8 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
             });
           }
 
-          // Se está pre-scheduled, vamos confirmar agora
-          if (existingAppointment.operationalStatus === 'pre-scheduled') {
+          // Se está scheduled, vamos confirmar agora (caso venha de um pré-agendamento anterior)
+          if (existingAppointment.operationalStatus === 'scheduled') {
             console.log(`[CRIAR-E-CONFIRMAR] Confirmando appointment pré-agendado: ${existingAppointment._id}`);
 
             existingAppointment.operationalStatus = 'scheduled';
@@ -341,7 +402,7 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
               changedBy: null,
               timestamp: new Date(),
               context: 'operacional',
-              details: { from: 'pre-scheduled', to: 'scheduled' }
+              details: { from: 'scheduled', to: 'scheduled' }
             });
 
             await existingAppointment.save({ session });
@@ -486,7 +547,7 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
       serviceType: crm.serviceType || 'evaluation',
       paymentMethod: crm.paymentMethod || 'pix',
       sessionValue: Number(crm.paymentAmount || 0),
-      status: 'pre-scheduled', // 🆕 Criar como pré-agendado
+      status: 'scheduled', // Alterado de 'pre-scheduled' para 'scheduled' conforme solicitação
       notes: `[IMPORTADO DA AGENDA EXTERNA - AGUARDANDO CONFIRMAÇÃO]\n${pre.secretaryNotes || ''}`
     };
 
@@ -546,6 +607,8 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
 /**
  * POST /api/import-from-agenda/sync-cancel
  * Cancela um agendamento vindo da agenda externa
+ * 
+ * NOTA: Firebase sendo desativado. Fonte única de verdade: MongoDB.
  */
 router.post("/import-from-agenda/sync-cancel", agendaAuth, async (req, res) => {
   const session = await mongoose.startSession();
@@ -559,135 +622,146 @@ router.post("/import-from-agenda/sync-cancel", agendaAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: "externalId é obrigatório" });
     }
 
-    console.log(`[SYNC-CANCEL] Cancelando agendamento externo: ${externalId}`);
+    console.log(`[SYNC-CANCEL] Cancelando agendamento. externalId (ref): ${externalId}`);
 
-    // 1) Buscar o pré-agendamento pelo externalId
-    const preAgendamento = await PreAgendamento.findOne({ externalId }).session(session);
+    // FONTE ÚNICA DE VERDADE: MongoDB
+    // 1) Tentar encontrar appointment pelo externalId
+    let appointment = null;
 
-    if (!preAgendamento) {
+    if (mongoose.Types.ObjectId.isValid(externalId)) {
+      appointment = await Appointment.findById(externalId)
+        .populate("session payment patient")
+        .session(session);
+    }
+
+    // Se não encontrou, tentar por PreAgendamento (legado)
+    if (!appointment) {
+      const preAgendamento = await PreAgendamento.findOne({ externalId }).session(session);
+      if (preAgendamento?.importedToAppointment) {
+        appointment = await Appointment.findById(preAgendamento.importedToAppointment)
+          .populate("session payment patient")
+          .session(session);
+      }
+    }
+
+    // Se não encontrou appointment, retorna erro (fonte de verdade é MongoDB)
+    if (!appointment) {
+      console.log(`[SYNC-CANCEL] ❌ Appointment não encontrado no MongoDB para externalId: ${externalId}`);
       await session.abortTransaction();
       return res.status(404).json({
         success: false,
-        error: "Pré-agendamento não encontrado",
-        externalId
+        error: "Agendamento não encontrado no sistema",
+        externalId,
+        note: "Fonte única de verdade: MongoDB. Firebase sendo desativado."
       });
     }
 
-    // 2) Se já foi importado para um agendamento real, cancela o agendamento
-    if (preAgendamento.importedToAppointment) {
-      const appointment = await Appointment.findById(preAgendamento.importedToAppointment)
-        .populate("session payment")
-        .session(session);
+    console.log(`[SYNC-CANCEL] ✅ Appointment encontrado: ${appointment._id}`);
 
-      if (appointment) {
-        // Atualizar Payment (se não for de pacote)
-        if (appointment.payment && appointment.payment.kind !== "package_receipt") {
-          await Payment.findByIdAndUpdate(
-            appointment.payment,
-            {
-              $set: {
-                status: "canceled",
-                canceledAt: new Date(),
-                canceledReason: reason,
-                updatedAt: new Date()
-              }
-            },
-            { session }
-          );
-        }
+    // Verificar se já está cancelado
+    if (appointment.operationalStatus === 'canceled') {
+      console.log(`[SYNC-CANCEL] ℹ️ Appointment ${appointment._id} já está cancelado`);
+      await session.commitTransaction();
+      return res.json({
+        success: true,
+        message: "Agendamento já estava cancelado",
+        appointmentId: appointment._id,
+        externalId,
+        status: 'already_canceled'
+      });
+    }
 
-        // Atualizar Session - guardando dados financeiros para reaproveitamento
-        if (appointment.session) {
-          const sessionDoc = await Session.findById(appointment.session).session(session);
-
-          if (sessionDoc) {
-            const wasPaid = sessionDoc.paymentStatus === "paid" ||
-              sessionDoc.isPaid === true ||
-              (sessionDoc.partialAmount && sessionDoc.partialAmount > 0);
-
-            if (wasPaid) {
-              sessionDoc.originalPartialAmount = sessionDoc.partialAmount;
-              sessionDoc.originalPaymentStatus = sessionDoc.paymentStatus;
-              sessionDoc.originalPaymentMethod = sessionDoc.paymentMethod;
-              sessionDoc.originalIsPaid = sessionDoc.isPaid;
-            }
-
-            sessionDoc.status = "canceled";
-            sessionDoc.paymentStatus = "canceled";
-            sessionDoc.visualFlag = "blocked";
-            sessionDoc.confirmedAbsence = confirmedAbsence;
-            sessionDoc.canceledAt = new Date();
-
-            if (!sessionDoc.history) sessionDoc.history = [];
-            sessionDoc.history.push({
-              action: "cancelamento_via_agenda_externa",
-              changedBy: null,
-              timestamp: new Date(),
-              details: { reason, confirmedAbsence, hadPayment: wasPaid }
-            });
-
-            await sessionDoc.save({ session, validateBeforeSave: false });
+    // 2) Cancelar o agendamento
+    // Atualizar Payment (se não for de pacote)
+    if (appointment.payment && appointment.payment.kind !== "package_receipt") {
+      await Payment.findByIdAndUpdate(
+        appointment.payment,
+        {
+          $set: {
+            status: "canceled",
+            canceledAt: new Date(),
+            canceledReason: reason,
+            updatedAt: new Date()
           }
+        },
+        { session }
+      );
+    }
+
+    // Atualizar Session - guardando dados financeiros para reaproveitamento
+    if (appointment.session) {
+      const sessionDoc = await Session.findById(appointment.session).session(session);
+
+      if (sessionDoc) {
+        const wasPaid = sessionDoc.paymentStatus === "paid" ||
+          sessionDoc.isPaid === true ||
+          (sessionDoc.partialAmount && sessionDoc.partialAmount > 0);
+
+        if (wasPaid) {
+          sessionDoc.originalPartialAmount = sessionDoc.partialAmount;
+          sessionDoc.originalPaymentStatus = sessionDoc.paymentStatus;
+          sessionDoc.originalPaymentMethod = sessionDoc.paymentMethod;
+          sessionDoc.originalIsPaid = sessionDoc.isPaid;
         }
 
-        // Atualizar Appointment
-        await Appointment.findByIdAndUpdate(
-          appointment._id,
-          {
-            $set: {
-              operationalStatus: "canceled",
-              clinicalStatus: confirmedAbsence ? "missed" : "pending",
-              paymentStatus: "canceled",
-              visualFlag: "blocked",
-              canceledReason: reason,
-              canceledAt: new Date(),
-              confirmedAbsence,
-              updatedAt: new Date()
-            },
-            $push: {
-              history: {
-                action: "cancelamento_externo",
-                newStatus: "canceled",
-                changedBy: null,
-                timestamp: new Date(),
-                context: "operacional",
-                details: { reason, confirmedAbsence, externalId }
-              }
-            }
-          },
-          { session }
-        );
+        sessionDoc.status = "canceled";
+        sessionDoc.paymentStatus = "canceled";
+        sessionDoc.visualFlag = "blocked";
+        sessionDoc.confirmedAbsence = confirmedAbsence;
+        sessionDoc.canceledAt = new Date();
 
-        console.log(`[SYNC-CANCEL] ✅ Agendamento ${appointment._id} cancelado`);
+        if (!sessionDoc.history) sessionDoc.history = [];
+        sessionDoc.history.push({
+          action: "cancelamento_via_agenda_externa",
+          changedBy: null,
+          timestamp: new Date(),
+          details: { reason, confirmedAbsence, hadPayment: wasPaid }
+        });
+
+        await sessionDoc.save({ session, validateBeforeSave: false });
       }
     }
-    const io = getIo();
-    io.emit("appointmentUpdated", {
-      _id: appointment._id,
-      operationalStatus: "canceled"
-    });
 
+    // Atualizar Appointment
+    await Appointment.findByIdAndUpdate(
+      appointment._id,
+      {
+        $set: {
+          operationalStatus: "canceled",
+          clinicalStatus: confirmedAbsence ? "missed" : "pending",
+          paymentStatus: "canceled",
+          visualFlag: "blocked",
+          canceledReason: reason,
+          canceledAt: new Date(),
+          confirmedAbsence,
+          updatedAt: new Date()
+        },
+        $push: {
+          history: {
+            action: "cancelamento_externo",
+            newStatus: "canceled",
+            changedBy: null,
+            timestamp: new Date(),
+            context: "operacional",
+            details: { reason, confirmedAbsence, externalId }
+          }
+        }
+      },
+      { session }
+    );
 
-    // 3) Atualizar o pré-agendamento como cancelado
-    preAgendamento.status = "cancelado";
-    preAgendamento.canceledAt = new Date();
-    preAgendamento.canceledReason = reason;
-    preAgendamento.secretaryNotes += `\n[CANCELADO VIA AGENDA EXTERNA - ${new Date().toLocaleString("pt-BR")}]`;
-    await preAgendamento.save({ session });
+    console.log(`[SYNC-CANCEL] ✅ Agendamento ${appointment._id} cancelado`);
 
     await session.commitTransaction();
 
-    // 4) Emitir socket para atualizar o painel em tempo real
+    // 3) Emitir socket
     try {
       const io = getIo();
-      io.emit("preagendamento:canceled", {
-        preAgendamentoId: String(preAgendamento._id),
-        externalId: preAgendamento.externalId,
-        appointmentId: preAgendamento.importedToAppointment,
-        patientName: preAgendamento.patientInfo?.fullName,
-        timestamp: new Date()
+      io.emit("appointmentUpdated", {
+        _id: appointment._id,
+        operationalStatus: "canceled"
       });
-      console.log(`📡 Socket emitido: preagendamento:canceled ${preAgendamento._id}`);
+      console.log(`📡 Socket emitido: appointmentUpdated ${appointment._id}`);
     } catch (socketError) {
       console.error("⚠️ Erro ao emitir socket:", socketError.message);
     }
@@ -695,8 +769,9 @@ router.post("/import-from-agenda/sync-cancel", agendaAuth, async (req, res) => {
     return res.json({
       success: true,
       message: "Cancelamento sincronizado com sucesso",
-      preAgendamentoId: preAgendamento._id,
-      appointmentId: preAgendamento.importedToAppointment || null
+      appointmentId: appointment._id,
+      externalId,
+      note: "Fonte única de verdade: MongoDB"
     });
 
   } catch (error) {
@@ -715,6 +790,9 @@ router.post("/import-from-agenda/sync-cancel", agendaAuth, async (req, res) => {
 /**
  * POST /api/import-from-agenda/sync-update
  * Atualiza (edita) um agendamento vindo da agenda externa
+ * 
+ * NOTA: Firebase sendo desativado. Fonte única de verdade: MongoDB.
+ * externalId é apenas referência histórica, não chave primária.
  */
 router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
   const session = await mongoose.startSession();
@@ -722,175 +800,131 @@ router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
 
   try {
     const {
-      externalId,
+      externalId, // Referência histórica ou _id
       date,
       time,
       professionalName,
       specialty,
       patientInfo,
       observations,
-      status // novo status (Pendente, Confirmado, etc)
+      status,           // Legado
+      operationalStatus, // Unificado
+      crm: crmRaw
     } = req.body;
+
+    const crm = crmRaw || {};
 
     if (!externalId) {
       await session.abortTransaction();
       return res.status(400).json({ success: false, error: "externalId é obrigatório" });
     }
 
-    console.log(`[SYNC-UPDATE] Atualizando agendamento externo: ${externalId}`);
+    console.log(`[SYNC-UPDATE] Atualizando agendamento. externalId (ref): ${externalId}`);
 
-    // 1) Buscar pré-agendamento
-    const preAgendamento = await PreAgendamento.findOne({ externalId }).session(session);
+    // 1) Encontrar agendamento (MongoDB é a fonte única de verdade)
+    let appointment = null;
+    if (mongoose.Types.ObjectId.isValid(externalId)) {
+      appointment = await Appointment.findById(externalId).session(session);
+    }
 
-    if (!preAgendamento) {
+    if (!appointment) {
+      const preAgendamento = await PreAgendamento.findOne({ externalId }).select('importedToAppointment').session(session);
+      if (preAgendamento?.importedToAppointment) {
+        appointment = await Appointment.findById(preAgendamento.importedToAppointment).session(session);
+      }
+    }
+
+    if (!appointment) {
+      console.log(`[SYNC-UPDATE] ❌ Appointment não encontrado no MongoDB para externalId: ${externalId}`);
       await session.abortTransaction();
       return res.status(404).json({
         success: false,
-        error: "Pré-agendamento não encontrado",
-        externalId
+        error: "Agendamento não encontrado no sistema",
+        externalId,
+        note: "Fonte única de verdade: MongoDB. Firebase sendo desativado."
       });
     }
 
-    // 2) Atualizar dados do pré-agendamento
-    if (date) preAgendamento.preferredDate = date;
-    if (time) preAgendamento.preferredTime = time;
-    if (professionalName) preAgendamento.professionalName = professionalName;
-    if (specialty) preAgendamento.specialty = specialty.toLowerCase();
-    if (observations) {
-      preAgendamento.secretaryNotes += `\n[ATUALIZADO VIA AGENDA EXTERNA - ${new Date().toLocaleString("pt-BR")}]: ${observations}`;
+    console.log(`[SYNC-UPDATE] ✅ Appointment encontrado: ${appointment._id}`);
+
+    // OTIMIZAÇÃO: Se for agendamento antigo (>7 dias) e já concluído, não gasta recursos
+    if (['paid', 'confirmed', 'completed'].includes(appointment.operationalStatus) &&
+      new Date(appointment.date) < new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)) {
+      console.log(`[SYNC-UPDATE] ℹ️ Appointment ${appointment._id} já concluído há mais de 7 dias, ignorando update`);
+      await session.commitTransaction();
+      return res.json({ success: true, message: "Histórico preservado", status: 'archived' });
     }
 
-    // Atualizar info do paciente se fornecida
-    if (patientInfo) {
-      if (patientInfo.fullName) preAgendamento.patientInfo.fullName = patientInfo.fullName;
-      if (patientInfo.phone) preAgendamento.patientInfo.phone = patientInfo.phone.replace(/\D/g, "");
-      if (patientInfo.email) preAgendamento.patientInfo.email = patientInfo.email;
-      if (patientInfo.birthDate) preAgendamento.patientInfo.birthDate = patientInfo.birthDate;
+    const updateData = { updatedAt: new Date() };
+    if (date) updateData.date = date;
+    if (time) updateData.time = time;
+    if (observations) updateData.notes = observations;
+    if (specialty) updateData.specialty = specialty.toLowerCase();
+
+    // Prioridade para operationalStatus (unificado)
+    if (operationalStatus) {
+      updateData.operationalStatus = operationalStatus;
+    } else if (status) {
+      const statusMap = { "pendente": "scheduled", "confirmado": "confirmed", "cancelado": "canceled", "pago": "confirmed", "faltou": "missed" };
+      const mapped = statusMap[status.toLowerCase()];
+      if (mapped) updateData.operationalStatus = mapped;
     }
 
-    await preAgendamento.save({ session });
+    if (professionalName) {
+      const doctor = await findDoctorByName(professionalName);
+      if (doctor) updateData.doctor = doctor._id;
+    }
 
-    // 3) Se já foi importado, atualizar o agendamento real também
-    let updatedAppointment = null;
-    if (preAgendamento.importedToAppointment) {
-      const appointment = await Appointment.findById(preAgendamento.importedToAppointment)
-        .populate("session payment")
-        .session(session);
-
-      // Adicione esta verificação:
-      if (appointment.session) {
-        const sessionUpdate = {};
-        if (date) sessionUpdate.date = date;
-        if (time) sessionUpdate.time = time;
-        if (professionalName && updateData.doctor) sessionUpdate.doctor = updateData.doctor;
-        if (specialty) sessionUpdate.specialty = specialty.toLowerCase();
-        if (observations) sessionUpdate.notes = observations;
-        sessionUpdate.updatedAt = new Date();
-
-        await Session.findByIdAndUpdate(appointment.session, sessionUpdate, { session });
-      }
-
-      if (appointment) {
-        const updateData = {
-          updatedAt: new Date()
-        };
-
-        // Atualizar data/hora
-        if (date) updateData.date = date;
-        if (time) updateData.time = time;
-
-        // Atualizar profissional se mudou
-        if (professionalName) {
-          const doctor = await findDoctorByName(professionalName);
-          if (doctor) {
-            updateData.doctor = doctor._id;
-          }
-        }
-
-        // Atualizar especialidade
-        if (specialty) {
-          updateData.specialty = specialty.toLowerCase();
-        }
-
-        // Atualizar observações
-        if (observations) {
-          updateData.notes = observations;
-        }
-
-        // Atualizar status se fornecido
-        if (status) {
-          const statusMap = {
-            "pendente": "scheduled",
-            "confirmado": "confirmed",
-            "cancelado": "canceled",  // ou "canceled" mesmo
-            "pago": "confirmed"
-          };
-
-          const newOperationalStatus = statusMap[status.toLowerCase()];
-          if (newOperationalStatus) {
-            updateData.operationalStatus = newOperationalStatus;
-            if (newOperationalStatus === "canceled") {
-              updateData.paymentStatus = "canceled";
-              updateData.visualFlag = "blocked";
-            }
-          }
-        }
-
-        // Adicionar ao histórico
-        updateData.$push = {
+    // Atualização eficiente
+    const updatedAppointment = await Appointment.findByIdAndUpdate(
+      appointment._id,
+      {
+        $set: updateData,
+        $push: {
           history: {
-            action: "atualizacao_via_agenda_externa",
-            changedBy: null,
+            action: "sync_externo_otimizado",
             timestamp: new Date(),
-            context: "operacional",
-            details: { externalId, changes: Object.keys(updateData).filter(k => k !== "$push" && k !== "updatedAt") }
+            details: { source: 'agenda_externa', operationalStatus: updateData.operationalStatus }
           }
-        };
-
-        updatedAppointment = await Appointment.findByIdAndUpdate(
-          appointment._id,
-          updateData,
-          { new: true, session }
-        );
-        const io = getIo();
-        if (updatedAppointment) {
-          io.emit("appointmentUpdated", updatedAppointment);
         }
-
-
-        // 4) Sincronizar Session relacionada
-        if (appointment.session) {
-          const sessionUpdate = {};
-          if (date) sessionUpdate.date = date;
-          if (time) sessionUpdate.time = time;
-          if (professionalName && updateData.doctor) sessionUpdate.doctor = updateData.doctor;
-          if (specialty) sessionUpdate.specialty = specialty.toLowerCase();
-          if (observations) sessionUpdate.notes = observations;
-          sessionUpdate.updatedAt = new Date();
-
-          await Session.findByIdAndUpdate(appointment.session, sessionUpdate, { session });
-        }
-
-        console.log(`[SYNC-UPDATE] ✅ Agendamento ${appointment._id} atualizado`);
-      }
-    }
+      },
+      { new: true, session }
+    ).populate('patient doctor session');
 
     await session.commitTransaction();
 
-    console.log(`🚀 Tentando emitir socket: preagendamento:XXXX para externalId: ${externalId}`);
+    // Emitir socket de forma assíncrona pós-commit
+    setImmediate(() => {
+      try {
+        getIo().emit("appointmentUpdated", updatedAppointment);
+        console.log(`📡 Socket emitido: appointmentUpdated ${updatedAppointment._id}`);
+      } catch (e) {
+        console.error("⚠️ Erro ao emitir socket (setImmediate):", e.message);
+      }
+    });
 
-    // 5) Emitir socket
+    // 3) Sincronizar Session relacionada
+    if (appointment.session) {
+      const sessionUpdate = {};
+      if (date) sessionUpdate.date = date;
+      if (time) sessionUpdate.time = time;
+      if (doctor) sessionUpdate.doctor = doctor._id;
+      if (specialty) sessionUpdate.specialty = specialty.toLowerCase();
+      if (observations) sessionUpdate.notes = observations;
+      sessionUpdate.updatedAt = new Date();
+
+      await Session.findByIdAndUpdate(appointment.session, sessionUpdate, { session });
+    }
+
+    console.log(`[SYNC-UPDATE] ✅ Agendamento ${appointment._id} atualizado`);
+
+    await session.commitTransaction();
+
+    // 4) Emitir socket
     try {
       const io = getIo();
-      io.emit("preagendamento:updated", {
-        preAgendamentoId: String(preAgendamento._id),
-        externalId: preAgendamento.externalId,
-        appointmentId: preAgendamento.importedToAppointment,
-        patientName: preAgendamento.patientInfo?.fullName,
-        changes: { date, time, professionalName, specialty, status },
-        timestamp: new Date()
-      });
-      console.log(`📡 Socket emitido: preagendamento:updated ${preAgendamento._id}`);
+      io.emit("appointmentUpdated", updatedAppointment);
+      console.log(`📡 Socket emitido: appointmentUpdated ${appointment._id}`);
     } catch (socketError) {
       console.error("⚠️ Erro ao emitir socket:", socketError.message);
     }
@@ -898,9 +932,10 @@ router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
     return res.json({
       success: true,
       message: "Atualização sincronizada com sucesso",
-      preAgendamentoId: preAgendamento._id,
-      appointmentId: preAgendamento.importedToAppointment || null,
-      updatedFields: { date, time, professionalName, specialty, status }
+      appointmentId: appointment._id,
+      externalId,
+      updatedFields: { date, time, professionalName, specialty, status },
+      note: "Fonte única de verdade: MongoDB"
     });
 
   } catch (error) {
@@ -919,6 +954,8 @@ router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
 /**
  * POST /api/import-from-agenda/sync-delete
  * Exclui (deleta permanentemente) um agendamento vindo da agenda externa
+ * 
+ * NOTA: Firebase sendo desativado. Fonte única de verdade: MongoDB.
  */
 router.post("/import-from-agenda/sync-delete", agendaAuth, async (req, res) => {
   const session = await mongoose.startSession();
@@ -932,79 +969,90 @@ router.post("/import-from-agenda/sync-delete", agendaAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: "externalId é obrigatório" });
     }
 
-    console.log(`[SYNC-DELETE] Excluindo agendamento externo: ${externalId}`);
+    console.log(`[SYNC-DELETE] Excluindo agendamento. externalId (ref): ${externalId}`);
 
-    // 1) Buscar pré-agendamento
-    const preAgendamento = await PreAgendamento.findOne({ externalId }).session(session);
+    // FONTE ÚNICA DE VERDADE: MongoDB
+    // 1) Tentar encontrar appointment pelo externalId
+    let appointment = null;
 
-    if (!preAgendamento) {
-      await session.abortTransaction();
-      return res.status(404).json({
-        success: false,
-        error: "Pré-agendamento não encontrado",
-        externalId
-      });
+    if (mongoose.Types.ObjectId.isValid(externalId)) {
+      appointment = await Appointment.findById(externalId)
+        .populate("patient")
+        .session(session);
     }
 
-    const appointmentId = preAgendamento.importedToAppointment;
-    let deletedAppointment = null;
-
-    // 2) Se tem agendamento importado, deletar em cascata
-    if (appointmentId) {
-      const appointment = await Appointment.findById(appointmentId).session(session);
-
-      if (appointment) {
-        // Deletar Session relacionada
-        if (appointment.session) {
-          await Session.findByIdAndDelete(appointment.session).session(session);
-          console.log(`[SYNC-DELETE] Session ${appointment.session} deletada`);
-        }
-
-        // Deletar Payment relacionado (se não for parte de pacote)
-        if (appointment.payment) {
-          const payment = await Payment.findById(appointment.payment).session(session);
-          if (payment && payment.kind !== "package_receipt") {
-            await Payment.findByIdAndDelete(appointment.payment).session(session);
-            console.log(`[SYNC-DELETE] Payment ${appointment.payment} deletado`);
-          }
-        }
-
-        // Remover referência do paciente
-        if (appointment.patient) {
-          await Patient.findByIdAndUpdate(
-            appointment.patient,
-            { $pull: { appointments: appointment._id } },
-            { session }
-          );
-        }
-
-        // Deletar o appointment
-        await Appointment.findByIdAndDelete(appointment._id).session(session);
-        deletedAppointment = appointment;
-        console.log(`[SYNC-DELETE] Appointment ${appointment._id} deletado`);
+    // Se não encontrou, tentar por PreAgendamento (legado)
+    if (!appointment) {
+      const preAgendamento = await PreAgendamento.findOne({ externalId }).session(session);
+      if (preAgendamento?.importedToAppointment) {
+        appointment = await Appointment.findById(preAgendamento.importedToAppointment)
+          .populate("patient")
+          .session(session);
       }
     }
 
-    // 3) Deletar o pré-agendamento
-    await PreAgendamento.findByIdAndDelete(preAgendamento._id).session(session);
-    console.log(`[SYNC-DELETE] PreAgendamento ${preAgendamento._id} deletado`);
+    // Se não encontrou appointment, retorna erro (fonte de verdade é MongoDB)
+    if (!appointment) {
+      console.log(`[SYNC-DELETE] ❌ Appointment não encontrado no MongoDB para externalId: ${externalId}`);
+      await session.abortTransaction();
+      return res.status(404).json({
+        success: false,
+        error: "Agendamento não encontrado no sistema",
+        externalId,
+        note: "Fonte única de verdade: MongoDB. Firebase sendo desativado."
+      });
+    }
+
+    console.log(`[SYNC-DELETE] ✅ Appointment encontrado: ${appointment._id}`);
+
+    // 2) Deletar em cascata
+    // Deletar Session relacionada
+    if (appointment.session) {
+      await Session.findByIdAndDelete(appointment.session).session(session);
+      console.log(`[SYNC-DELETE] Session ${appointment.session} deletada`);
+    }
+
+    // Deletar Payment relacionado (se não for parte de pacote)
+    if (appointment.payment) {
+      const payment = await Payment.findById(appointment.payment).session(session);
+      if (payment && payment.kind !== "package_receipt") {
+        await Payment.findByIdAndDelete(appointment.payment).session(session);
+        console.log(`[SYNC-DELETE] Payment ${appointment.payment} deletado`);
+      }
+    }
+
+    // Remover referência do paciente
+    if (appointment.patient) {
+      await Patient.findByIdAndUpdate(
+        appointment.patient,
+        { $pull: { appointments: appointment._id } },
+        { session }
+      );
+    }
+
+    // Deletar o appointment
+    await Appointment.findByIdAndDelete(appointment._id).session(session);
+    console.log(`[SYNC-DELETE] Appointment ${appointment._id} deletado`);
+
+    // 3) Se houver PreAgendamento associado, deletar também
+    const preAgendamento = await PreAgendamento.findOne({ externalId }).session(session);
+    if (preAgendamento) {
+      await PreAgendamento.findByIdAndDelete(preAgendamento._id).session(session);
+      console.log(`[SYNC-DELETE] PreAgendamento ${preAgendamento._id} deletado`);
+    }
 
     await session.commitTransaction();
-
-    console.log(`🚀 Tentando emitir socket: preagendamento:XXXX para externalId: ${externalId}`);
 
     // 4) Emitir socket
     try {
       const io = getIo();
-      io.emit("preagendamento:deleted", {
-        preAgendamentoId: String(preAgendamento._id),
-        externalId: preAgendamento.externalId,
-        appointmentId: appointmentId,
-        patientName: preAgendamento.patientInfo?.fullName,
+      io.emit("appointmentDeleted", {
+        appointmentId: appointment._id,
+        externalId,
         reason,
         timestamp: new Date()
       });
-      console.log(`📡 Socket emitido: preagendamento:deleted ${preAgendamento._id}`);
+      console.log(`📡 Socket emitido: appointmentDeleted ${appointment._id}`);
     } catch (socketError) {
       console.error("⚠️ Erro ao emitir socket:", socketError.message);
     }
@@ -1012,9 +1060,9 @@ router.post("/import-from-agenda/sync-delete", agendaAuth, async (req, res) => {
     return res.json({
       success: true,
       message: "Exclusão sincronizada com sucesso",
-      deletedPreAgendamentoId: preAgendamento._id,
-      deletedAppointmentId: appointmentId,
-      patientName: preAgendamento.patientInfo?.fullName
+      appointmentId: appointment._id,
+      externalId,
+      note: "Fonte única de verdade: MongoDB"
     });
 
   } catch (error) {
@@ -1106,7 +1154,7 @@ router.get("/import-from-agenda/appointments-amanda", agendaAuth, async (req, re
 
 /**
  * POST /api/import-from-agenda/confirmar-agendamento
- * Confirma um pré-agendamento (muda de pre-scheduled → scheduled)
+ * Confirma um pré-agendamento (muda de scheduled → confirmed/scheduled conforme lógica)
  */
 router.post("/import-from-agenda/confirmar-agendamento", agendaAuth, async (req, res) => {
   const session = await mongoose.startSession();
@@ -1172,7 +1220,7 @@ router.post("/import-from-agenda/confirmar-agendamento", agendaAuth, async (req,
       });
     }
 
-    // CONFIRMAR: pre-scheduled → scheduled
+    // CONFIRMAR: scheduled → confirmed (ou manter scheduled se for apenas atualização)
     appointment.operationalStatus = 'scheduled';
     appointment.status = 'scheduled';
     appointment.updatedAt = new Date();
@@ -1184,7 +1232,7 @@ router.post("/import-from-agenda/confirmar-agendamento", agendaAuth, async (req,
       timestamp: new Date(),
       context: 'operacional',
       details: {
-        from: 'pre-scheduled',
+        from: 'scheduled',
         to: 'scheduled',
         method: 'api_confirmar_agendamento'
       }

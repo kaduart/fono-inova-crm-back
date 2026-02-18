@@ -248,36 +248,73 @@ async function calculateChartData() {
 }
 
 /**
- * 👥 Lista resumida de profissionais com métricas
+ * 👥 Lista resumida de profissionais com métricas - OTIMIZADO
+ * Reduz de 20+ queries para apenas 3 queries!
  */
 async function getDoctorsOverview() {
+    const last30Days = moment().tz(TIMEZONE).subtract(30, 'days').format('YYYY-MM-DD');
+
+    // 🚀 Busca todos os médicos (1 query)
     const doctors = await Doctor.find()
         .select('fullName specialty')
         .sort({ fullName: 1 })
         .lean();
 
-    // Contar pacientes por médico (últimos 30 dias)
-    const last30Days = moment().tz(TIMEZONE).subtract(30, 'days').format('YYYY-MM-DD');
+    const doctorIds = doctors.map(d => d._id.toString());
 
-    const doctorStats = await Promise.all(
-        doctors.slice(0, 10).map(async (doctor) => {
-            const patientCount = await Patient.countDocuments({ doctor: doctor._id });
-            const appointmentCount = await Appointment.countDocuments({
-                doctor: doctor._id,
-                date: { $gte: last30Days }
-            });
+    // 🚀 Contagem de pacientes por médico em PARALELO (2 queries agregadas)
+    const [patientCounts, appointmentCounts] = await Promise.all([
+        // Conta pacientes por doctor (1 query só!)
+        Patient.aggregate([
+            {
+                $match: {
+                    doctor: { $in: doctorIds.map(id => new mongoose.Types.ObjectId(id)) }
+                }
+            },
+            {
+                $group: {
+                    _id: '$doctor',
+                    count: { $sum: 1 }
+                }
+            }
+        ]),
 
-            return {
-                _id: doctor._id,
-                name: doctor.fullName,
-                specialty: doctor.specialty,
-                patients: patientCount,
-                appointments: appointmentCount
-            };
-        })
-    );
+        // Conta agendamentos por doctor nos últimos 30 dias (1 query só!)
+        Appointment.aggregate([
+            {
+                $match: {
+                    doctor: { $in: doctorIds.map(id => new mongoose.Types.ObjectId(id)) },
+                    date: { $gte: last30Days }
+                }
+            },
+            {
+                $group: {
+                    _id: '$doctor',
+                    count: { $sum: 1 }
+                }
+            }
+        ])
+    ]);
 
-    return doctorStats;
+    // Converte arrays de agregação para mapas (O(1) lookup)
+    const patientMap = patientCounts.reduce((acc, item) => {
+        acc[item._id.toString()] = item.count;
+        return acc;
+    }, {});
+
+    const appointmentMap = appointmentCounts.reduce((acc, item) => {
+        acc[item._id.toString()] = item.count;
+        return acc;
+    }, {});
+
+    // Monta resultado final
+    return doctors.slice(0, 10).map(doctor => ({
+        _id: doctor._id,
+        name: doctor.fullName,
+        specialty: doctor.specialty,
+        patients: patientMap[doctor._id.toString()] || 0,
+        appointments: appointmentMap[doctor._id.toString()] || 0
+    }));
 }
 
 /**

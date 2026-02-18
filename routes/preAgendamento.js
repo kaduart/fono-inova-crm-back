@@ -115,9 +115,9 @@ router.post('/webhook', agendaAuth, async (req, res) => {
       } else {
         // 🔴 FORA DO HORÁRIO: Cria notificação persistente
         console.log("🔔 Criando notificação persistente (fora do horário)...");
-        
+
         const notification = await Notification.createFromPreAgendamento(pre);
-        
+
         // Emite apenas para usuários online (silencioso)
         io.emit("notification:new", {
           id: String(notification._id),
@@ -127,7 +127,7 @@ router.post('/webhook', agendaAuth, async (req, res) => {
           isBusinessHours: false,
           message: 'Novo pré-agendamento (fora do horário comercial)'
         });
-        
+
         console.log(`✅ Notificação criada: ${notification._id}`);
       }
     } catch (error) {
@@ -215,7 +215,7 @@ router.post('/:id/importar-externo', agendaAuth, async (req, res) => {
       serviceType,
       paymentMethod,
       sessionValue: Number(sessionValue),
-      status: 'scheduled',
+      operationalStatus: 'scheduled',
       notes: `[IMPORTADO DA AGENDA EXTERNA] ${notes || ''}\n${pre.secretaryNotes || ''}`,
       source: pre.source || 'agenda_externa', // 📈 ROI
       preAgendamentoId: String(pre._id) // 📈 ROI
@@ -418,11 +418,11 @@ router.get('/:id', async (req, res) => {
 router.post('/:id/assign', async (req, res) => {
   try {
     const { userId } = req.body;
-    
+
     // Verifica se é um ObjectId válido (usuário real) ou token de serviço
     const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
-    const assignedUserId = (userId && isValidObjectId(userId)) ? userId : 
-                           (isValidObjectId(req.user?.id) ? req.user.id : null);
+    const assignedUserId = (userId && isValidObjectId(userId)) ? userId :
+      (isValidObjectId(req.user?.id) ? req.user.id : null);
 
     const pre = await PreAgendamento.findByIdAndUpdate(
       req.params.id,
@@ -461,7 +461,7 @@ router.post('/:id/assign', async (req, res) => {
 router.post('/:id/contact', async (req, res) => {
   try {
     const { channel, success, notes } = req.body;
-    
+
     // Verifica se é um ObjectId válido
     const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
     const madeByUserId = isValidObjectId(req.user?.id) ? req.user.id : null;
@@ -550,7 +550,7 @@ router.post('/:id/importar', async (req, res) => {
       serviceType,
       paymentMethod,
       sessionValue: Number(sessionValue),
-      status: 'scheduled',
+      operationalStatus: 'scheduled',
       notes: `[IMPORTADO DO PRE-AGENDAMENTO] ${notes || ''}\n${pre.secretaryNotes || ''}`,
       source: pre.source || 'outro', // 📈 ROI
       preAgendamentoId: String(pre._id) // 📈 ROI
