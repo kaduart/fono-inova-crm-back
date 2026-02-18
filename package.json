@@ -10,7 +10,10 @@
     "restart": "npm stop && npm run dev",
     "cron": "node -r dotenv/config ./workers/followup.cron.js",
     "worker": "node -r dotenv/config ./workers/followup.worker.js",
-    "test": "node tests/amanda/bootstrap.js",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui",
     "test:amanda": "node tests/amanda/bootstrap.js",
     "test:flow": "node -r dotenv/config scripts/test-conversation-flow.js"
   },

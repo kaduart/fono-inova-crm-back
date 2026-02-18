@@ -39,10 +39,10 @@ export const getFriendlyStatus = (opStatus, isPre = false) => {
     switch (opStatus) {
         case 'confirmed':
         case 'paid': return 'Confirmado';
-        case 'scheduled': // Mapeando scheduled para Pendente conforme solicitado pelo usuário
-        case 'canceled': return 'Cancelado';
-        case 'pending':
-        case 'missed':
+        case 'scheduled':
+        case 'pending': return 'Pendente';
+        case 'canceled':
+        case 'missed': return 'Cancelado';
         default: return 'Pendente';
     }
 };
@@ -151,6 +151,7 @@ export const mapPreAgendamentoToEvent = (pre) => {
         date: pre.preferredDate,
         time: pre.preferredTime || "08:00",
         status: getFriendlyStatus(pre.status, true),
+        operationalStatus: 'scheduled', // Unificado: Pré-agendamentos são sempre 'scheduled' (pendentes) operacionalmente
         specialty: pre.specialty,
         professional: dName,
         patientName: pName,

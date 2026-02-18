@@ -683,7 +683,15 @@ router.get('/', flexibleAuth, async (req, res) => {
             filter.doctor = new mongoose.Types.ObjectId(doctorId);
         }
 
-        if (status && status !== 'all') filter.status = status;
+        if (status && status !== 'all') {
+            if (status === 'Confirmado') {
+                filter.operationalStatus = { $in: ['confirmed', 'paid'] };
+            } else if (status === 'Pendente') {
+                filter.operationalStatus = { $in: ['scheduled', 'pending'] };
+            } else if (status === 'Cancelado') {
+                filter.operationalStatus = { $in: ['canceled', 'missed'] };
+            }
+        }
         if (specialty && specialty !== 'all') filter.specialty = specialty;
 
         // 🔹 Filtro por período
@@ -756,7 +764,7 @@ router.get('/', flexibleAuth, async (req, res) => {
 router.get('/:id', flexibleAuth, async (req, res) => {
     try {
         const { id } = req.params;
-        
+
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({ success: false, error: 'ID inválido' });
         }
@@ -1845,6 +1853,67 @@ router.patch('/:id/clinical-status', validateId, auth, async (req, res) => {
     } catch (error) {
         console.error('Erro ao atualizar status clínico:', error);
         res.status(500).json({ error: 'Erro interno no servidor' });
+    }
+});
+
+// NOVO: Confirmação direta de agendamento (Pendente -> Confirmado)
+router.patch('/:id/confirm', validateId, auth, async (req, res) => {
+    const session = await mongoose.startSession();
+    try {
+        await session.startTransaction();
+        const appointment = await Appointment.findById(req.params.id).session(session);
+
+        if (!appointment) {
+            await session.abortTransaction();
+            return res.status(404).json({ error: 'Agendamento não encontrado' });
+        }
+
+        if (req.user.role === 'doctor' && appointment.doctor.toString() !== req.user.id) {
+            await session.abortTransaction();
+            return res.status(403).json({ error: 'Acesso não autorizado' });
+        }
+
+        // Atualiza Status Operacional
+        const oldStatus = appointment.operationalStatus;
+        appointment.operationalStatus = 'confirmed';
+        // appointment.paymentStatus = 'paid'; // REMOVIDO: pagamento é feito no CRM
+        appointment.clinicalStatus = 'pending';
+
+        if (!appointment.history) appointment.history = [];
+        appointment.history.push({
+            action: 'confirmação_presença_manual',
+            changedBy: req.user._id,
+            timestamp: new Date(),
+            context: 'operacional',
+            details: { from: oldStatus, to: 'confirmed' }
+        });
+
+        const updatedAppointment = await appointment.save({ session, validateBeforeSave: false });
+
+        // Atualiza Sessão vinculada (apenas status, sem pagamento)
+        if (appointment.session) {
+            await Session.findByIdAndUpdate(appointment.session, {
+                $set: {
+                    status: 'confirmed',
+                    // isPaid: true, // REMOVIDO
+                    updatedAt: new Date()
+                }
+            }, { session });
+        }
+
+        await session.commitTransaction();
+
+        // Sincronização pós-commit (opcional, mas recomendado)
+        setTimeout(() => syncEvent(updatedAppointment, 'appointment').catch(console.error), 100);
+
+        res.json({ success: true, appointment: updatedAppointment });
+
+    } catch (error) {
+        if (session) await session.abortTransaction();
+        console.error('Erro ao confirmar agendamento:', error);
+        res.status(500).json({ error: 'Erro interno no servidor' });
+    } finally {
+        if (session) session.endSession();
     }
 });
 
