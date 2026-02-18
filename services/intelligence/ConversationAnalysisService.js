@@ -79,10 +79,8 @@ export async function fetchRecentConversations(days = ANALYSIS_CONFIG.lookbackDa
         .select('direction content timestamp status')
         .lean(),
         
-        // Contexto do chat (memória da Amanda)
-        ChatContext.findOne({ lead: lead._id })
-          .select('history extractedInfo flags')
-          .lean(),
+        // Contexto do chat (memória da Amanda) - 🛡️ FIX: ChatContext removido, usar dados do lead
+        Promise.resolve(null), // ChatContext não existe mais, usar null por enquanto
         
         // Agendamentos relacionados
         Appointment.find({

@@ -37,18 +37,20 @@ export function startLearningCron() {
       // Registra no Redis para monitoramento
       const redis = getRedis?.();
       if (redis) {
-        await redis.setex('learning:last_run', 86400 * 7, JSON.stringify({
+        // 🛡️ FIX: Redis v4+ usa set com EX ao invés de setex
+        await redis.set('learning:last_run', JSON.stringify({
           timestamp: new Date().toISOString(),
           duration: Date.now() - startTime,
           conversationsAnalyzed: results.conversationsAnalyzed,
           patternsFound: results.patternsFound,
           problemsDetected: results.problemsDetected,
           testCasesGenerated: results.testCasesGenerated
-        }));
+        }), { EX: 86400 * 7 });
         
         // Alerta se detectou problemas críticos
         if (results.problemsDetected > 0) {
-          await redis.setex('learning:has_critical_issues', 86400, 'true');
+          // 🛡️ FIX: Redis v4+ usa set com EX ao invés de setex
+          await redis.set('learning:has_critical_issues', 'true', { EX: 86400 });
         }
       }
       
@@ -61,11 +63,12 @@ export function startLearningCron() {
       // Registra erro no Redis
       const redis = getRedis?.();
       if (redis) {
-        await redis.setex('learning:last_error', 86400, JSON.stringify({
+        // 🛡️ FIX: Redis v4+ usa set com EX ao invés de setex
+        await redis.set('learning:last_error', JSON.stringify({
           timestamp: new Date().toISOString(),
           error: error.message,
           stack: error.stack
-        }));
+        }), { EX: 86400 });
       }
       
     } finally {

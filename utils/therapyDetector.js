@@ -126,12 +126,24 @@ export function detectAllTherapies(text = "") {
             const spec = THERAPY_SPECIALTIES[id];
             // 🛡️ Proteção robusta contra undefined/null
             if (!spec || !Array.isArray(spec.patterns) || spec.patterns.length === 0) {
+                console.log(`[therapyDetector] Pulando ${id}: patterns inválido`);
                 continue;
             }
 
-            const hasMatch = spec.patterns.some(pattern => {
-                if (pattern.global) pattern.lastIndex = 0;
-                return pattern.test(normalized);
+            // 🛡️ Proteção extra: validar cada pattern
+            const validPatterns = spec.patterns.filter(p => p instanceof RegExp);
+            if (validPatterns.length === 0) {
+                continue;
+            }
+
+            const hasMatch = validPatterns.some(pattern => {
+                try {
+                    if (pattern.global) pattern.lastIndex = 0;
+                    return pattern.test(normalized);
+                } catch (e) {
+                    console.error(`[therapyDetector] Erro no pattern de ${id}:`, e.message);
+                    return false;
+                }
             });
 
             if (hasMatch) {
