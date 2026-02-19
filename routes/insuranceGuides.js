@@ -22,6 +22,7 @@ const VALID_SPECIALTIES = [
 const VALID_INSURANCES = [
   'unimed-anapolis',
   'unimed-goiania',
+  'unimed-campinas',
   'unimed-central',
   'bradesco-saude',
   'amil',
