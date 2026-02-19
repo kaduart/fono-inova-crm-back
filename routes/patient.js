@@ -175,8 +175,15 @@ router.put('/:id', validateId, auth, async (req, res) => {
 router.get('/', auth, async (req, res) => {
   try {
     // 🔹 Configurações de paginação
-    const limit = parseInt(req.query.limit) || 200;
+    const { search } = req.query;
+    const limit = parseInt(req.query.limit) || (search ? 100 : 50);
     const skip = parseInt(req.query.skip) || 0;
+    
+    // 🔹 Query de busca
+    let query = {};
+    if (search && search.trim()) {
+      query.fullName = { $regex: search.trim(), $options: 'i' };
+    }
     
     // 🔹 Configurações de população - OTIMIZADAS
     const basePopulate = [
@@ -232,7 +239,7 @@ router.get('/', auth, async (req, res) => {
 
     try {
       // Consulta principal - OTIMIZADA com limite
-      patients = await Patient.find()
+      patients = await Patient.find(query)
         .select('fullName dateOfBirth gender phone email cpf rg address doctor packages appointments lastAppointment nextAppointment')
         .populate(basePopulate)
         .populate(appointmentsPopulate)
@@ -241,11 +248,31 @@ router.get('/', auth, async (req, res) => {
         .skip(skip)
         .lean();
 
+      // 🔹 Fallback: se busca não retornou nada, tenta buscar todos e filtrar em memória (ignora acentos)
+      if (search && patients.length === 0) {
+        console.log('🔍 Fallback: buscando todos e filtrando em memória');
+        const searchTerm = search.trim().toLowerCase();
+        const normalizedSearch = searchTerm.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        
+        const allPatients = await Patient.find()
+          .select('fullName dateOfBirth gender phone email cpf rg address doctor packages appointments lastAppointment nextAppointment')
+          .populate(basePopulate)
+          .populate(appointmentsPopulate)
+          .lean();
+          
+        patients = allPatients.filter(p => {
+          const normalizedName = (p.fullName || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+          return normalizedName.includes(normalizedSearch);
+        });
+        
+        console.log('✅ Fallback encontrou:', patients.length, 'pacientes');
+      }
+
     } catch (error) {
       console.error('Erro na consulta principal:', error);
 
       // Fallback simplificado - MANTIDO
-      patients = await Patient.find()
+      patients = await Patient.find(query)
         .populate(basePopulate)
         .populate({
           path: 'appointments',

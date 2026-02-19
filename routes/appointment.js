@@ -671,6 +671,9 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
 router.get('/', flexibleAuth, async (req, res) => {
     try {
         const { patientId, doctorId, status, specialty, startDate, endDate } = req.query;
+        
+        console.log(`[GET /appointments] Query:`, { patientId, doctorId, status, specialty, startDate, endDate });
+        
         const filter = {};
         let individualSessionId = null;
         let createdAppointmentId = null; // 👈 novo
@@ -708,6 +711,8 @@ router.get('/', flexibleAuth, async (req, res) => {
         const limit = parseInt(req.query.limit) || 500;
         const skip = parseInt(req.query.skip) || 0;
 
+        // 🔹 Buscar agendamentos com relacionamentos importantes (otimizado)
+        // Removido limit default para garantir que todos os appointments do período venham
         const appointments = await Appointment.find(filter)
             .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus visualFlag patient doctor package session payment metadata')
             .populate({ path: 'doctor', select: 'fullName specialty email phoneNumber specialties' })
@@ -715,23 +720,39 @@ router.get('/', flexibleAuth, async (req, res) => {
             .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue' })
             .populate({ path: 'session', select: 'isPaid paymentStatus partialAmount' })
             .populate({ path: 'payment', select: 'status amount paymentMethod' })
-            .sort({ date: -1 }) // Mais recentes primeiro
-            .limit(limit)
-            .skip(skip)
+            .sort({ date: -1, time: 1 }) // Mais recentes primeiro, depois por hora
             .lean();
 
         console.log('📦 Total appointments encontrados:', appointments.length);
+        console.log('📋 IDs dos appointments:', appointments.map(a => a._id?.toString?.() || a._id));
+        
+        // Verificar se o appointment específico está aqui
+        const targetAppt = appointments.find(a => {
+            const id = a._id?.toString?.() || a._id;
+            return id === '69964dc81e0e9b385928bb06';
+        });
+        console.log('🎯 Appointment 69964dc8... encontrado no filter:', !!targetAppt);
 
         // 🔹 2. BUSCAR PRÉ-AGENDAMENTOS (INTERESSES) NÃO CONVERTIDOS
-        // (Apenas se o filtro de profissional permitir ou se for 'todas')
-        const preAgendamentos = await PreAgendamento.find({
-            status: { $nin: ['importado', 'descartado'] }, // Removido 'desistiu' para manter histórico visível
-            preferredDate: filter.date || { $exists: true }
-        }).lean();
+        // Usa o mesmo range de datas da query (startDate/endDate)
+        const preFilter = {
+            status: { $nin: ['importado', 'descartado'] }
+        };
+        
+        // Aplicar filtro de data nos pré-agendamentos (preferredDate é string YYYY-MM-DD)
+        if (startDate && endDate) {
+            preFilter.preferredDate = {
+                $gte: startDate,  // string "2026-02-19"
+                $lte: endDate     // string "2026-02-19"
+            };
+        }
+        
+        const preAgendamentos = await PreAgendamento.find(preFilter).lean();
 
         // 🔹 Mapear agendamentos REAIS
+        // NOTA: Removido filtro que excluía appointments sem patient populado
+        // O patient pode ser um ObjectId (não populado) se houver erro no populate
         const calendarEvents = appointments
-            .filter(appt => appt.patient || appt.package)
             .map(appt => mapAppointmentToEvent(appt));
 
         // 🔹 Mapear PRÉ-AGENDAMENTOS (INTERESSES)
@@ -742,6 +763,8 @@ router.get('/', flexibleAuth, async (req, res) => {
             return (a.date + a.time).localeCompare(b.date + b.time);
         });
 
+        console.log(`[GET /appointments] Retornando ${finalResults.length} eventos (${calendarEvents.length} appointments + ${preEvents.length} pré-agendamentos)`);
+        
         res.json(finalResults);
     } catch (error) {
         console.error('Erro ao buscar agendamentos:', error);
