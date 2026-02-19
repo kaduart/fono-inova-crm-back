@@ -242,11 +242,7 @@ router.post("/import-from-agenda/confirmar-por-id", agendaAuth, async (req, res)
     }
 
     if (pre.status === 'importado') {
-      console.log('[SYNC-UPDATE] 📋 updateData:', updateData);
-    console.log('[SYNC-UPDATE] 📋 doctor encontrado:', doctor ? doctor._id : 'null');
-    
-    await session.commitTransaction();
-    console.log('[SYNC-UPDATE] ✅ Commit realizado');
+      await session.commitTransaction();
 
       console.log(`[CONFIRMAR-POR-EXTERNAL-ID] ⚠️ PreAgendamento ${pre._id} já foi importado para ${pre.importedToAppointment}`);
 
@@ -813,43 +809,6 @@ router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
     } = req.body;
 
     const crm = crmRaw || {};
-    
-    // 🗺️ MAPEAMENTO DE CAMPOS: formato agenda externa → formato CRM interno
-    const mappedData = {
-      // IDs
-      doctorId: doctor?._id || null,
-      patientId: appointment?.patient?.toString() || null,
-      
-      // Dados básicos
-      date: date,
-      time: time,
-      specialty: specialty?.toLowerCase(),
-      notes: observations,
-      operationalStatus: operationalStatus || (status === 'Pendente' ? 'scheduled' : status?.toLowerCase()),
-      
-      // Dados financeiros
-      paymentAmount: Number(crm.paymentAmount || 0),
-      paymentMethod: crm.paymentMethod || 'pix',
-      amount: Number(crm.paymentAmount || 0), // compatibilidade
-      billingType: 'particular', // default
-      
-      // Dados da sessão
-      sessionType: crm.sessionType || 'avaliacao',
-      serviceType: crm.serviceType === 'session' ? 'session' : 'evaluation',
-      sessionStatus: operationalStatus,
-      
-      // Dados do paciente
-      patientName: patientInfo?.fullName,
-      patientPhone: patientInfo?.phone,
-      patientBirthDate: patientInfo?.birthDate,
-      patientEmail: patientInfo?.email,
-      
-      // Outros
-      responsible: responsible,
-      updatedAt: new Date()
-    };
-    
-    console.log('[SYNC-UPDATE] 🗺️ Dados mapeados:', mappedData);
 
     if (!_id) {
       await session.abortTransaction();
@@ -858,31 +817,20 @@ router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
 
     console.log(`[SYNC-UPDATE] Atualizando agendamento: ${_id}`);
 
-    // 1) Tentar encontrar em Appointment primeiro
-    let appointment = await Appointment.findById(_id).session(session);
-    let isPreAgendamento = false;
-    let preAgendamento = null;
+    // 1) Encontrar agendamento pelo _id
+    const appointment = await Appointment.findById(_id).session(session);
 
     if (!appointment) {
-      // Se não encontrou, tentar em PreAgendamento
-      console.log(`[SYNC-UPDATE] ⚠️ Appointment não encontrado, tentando PreAgendamento: ${_id}`);
-      preAgendamento = await PreAgendamento.findById(_id).session(session);
-      
-      if (preAgendamento) {
-        isPreAgendamento = true;
-        console.log(`[SYNC-UPDATE] ✅ PreAgendamento encontrado: ${preAgendamento._id}`);
-      } else {
-        console.log(`[SYNC-UPDATE] ❌ Não encontrado em Appointment nem PreAgendamento: ${_id}`);
-        await session.abortTransaction();
-        return res.status(404).json({
-          success: false,
-          error: "Agendamento não encontrado",
-          _id
-        });
-      }
-    } else {
-      console.log(`[SYNC-UPDATE] ✅ Appointment encontrado: ${appointment._id}`);
+      console.log(`[SYNC-UPDATE] ❌ Appointment não encontrado: ${_id}`);
+      await session.abortTransaction();
+      return res.status(404).json({
+        success: false,
+        error: "Agendamento não encontrado",
+        _id
+      });
     }
+
+    console.log(`[SYNC-UPDATE] ✅ Appointment encontrado: ${appointment._id}`);
 
     // OTIMIZAÇÃO: Se for agendamento antigo (>7 dias) e já concluído, não gasta recursos
     if (['paid', 'confirmed', 'completed'].includes(appointment.operationalStatus) &&
@@ -907,145 +855,51 @@ router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
       if (mapped) updateData.operationalStatus = mapped;
     }
 
-    let doctor = null;
     if (professionalName) {
-      doctor = await findDoctorByName(professionalName);
+      const doctor = await findDoctorByName(professionalName);
       if (doctor) updateData.doctor = doctor._id;
     }
 
-
-    // SE FOR PRÉ-AGENDAMENTO: atualização simplificada
-    if (isPreAgendamento && preAgendamento) {
-      const preUpdateData = { updatedAt: new Date() };
-      if (date) preUpdateData.preferredDate = date;
-      if (time) preUpdateData.preferredTime = time;
-      if (specialty) preUpdateData.specialty = specialty.toLowerCase();
-      if (observations) preUpdateData.secretaryNotes = observations;
-      if (operationalStatus) preUpdateData.status = operationalStatus;
-      
-      // Atualizar patientInfo
-      if (patientInfo) {
-        preUpdateData.patientInfo = {
-          ...preAgendamento.patientInfo,
-          ...patientInfo
-        };
-      }
-      
-      // Atualizar professional
-      if (doctor) {
-        preUpdateData.professionalId = doctor._id;
-        preUpdateData.professionalName = doctor.fullName;
-      }
-      
-      const updatedPre = await PreAgendamento.findByIdAndUpdate(
-        preAgendamento._id,
-        { $set: preUpdateData },
-        { new: true, session }
-      );
-      
-      await session.commitTransaction();
-      
-      // Emitir socket
-      try {
-        const io = getIo();
-        io.emit("preagendamento:updated", updatedPre);
-        console.log(`📡 Socket emitido: preagendamento:updated ${updatedPre._id}`);
-      } catch (socketError) {
-        console.error("⚠️ Erro ao emitir socket:", socketError.message);
-      }
-      
-      return res.json({
-        success: true,
-        message: "Pré-agendamento atualizado com sucesso",
-        appointmentId: preAgendamento._id,
-        isPreAgendamento: true
-      });
-    }
-
-    // SE FOR APPOINTMENT REAL: atualização completa
-    // 2) Atualizar Patient (nome, telefone, etc.)
-    if (appointment.patient && patientInfo) {
-      const patientUpdate = {};
-      if (patientInfo.fullName) {
-        // Limpar nome (remover quebras de linha e espaços extras)
-        patientUpdate.fullName = patientInfo.fullName.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-      }
-      if (patientInfo.phone) patientUpdate.phone = patientInfo.phone;
-      if (patientInfo.birthDate) patientUpdate.dateOfBirth = patientInfo.birthDate;
-      if (patientInfo.email) patientUpdate.email = patientInfo.email;
-      patientUpdate.updatedAt = new Date();
-      
-      if (Object.keys(patientUpdate).length > 0) {
-        await Patient.findByIdAndUpdate(appointment.patient, patientUpdate, { session });
-        console.log(`[SYNC-UPDATE] ✅ Patient ${appointment.patient} atualizado`);
-      }
-    }
-
-    // 3) Atualizar Sessão relacionada (mesma lógica do appointments.js)
-    if (appointment.session) {
-      await Session.findByIdAndUpdate(
-        appointment.session,
-        {
-          $set: {
-            date: date || appointment.date,
-            time: time || appointment.time,
-            doctor: doctor?._id || appointment.doctor,
-            specialty: specialty?.toLowerCase() || appointment.specialty,
-            notes: observations || appointment.notes,
-            status: operationalStatus || appointment.operationalStatus,
-            updatedAt: new Date()
-          }
-        },
-        { session }
-      );
-      console.log(`[SYNC-UPDATE] ✅ Session ${appointment.session} atualizada`);
-    }
-
-    // 4) Atualizar Pagamento relacionado (mesma lógica do appointments.js)
-    if (appointment.payment) {
-      await Payment.findByIdAndUpdate(
-        appointment.payment,
-        {
-          $set: {
-            doctor: doctor?._id || appointment.doctor,
-            amount: crm.paymentAmount || appointment.paymentAmount,
-            paymentMethod: crm.paymentMethod || appointment.paymentMethod,
-            serviceDate: date || appointment.date,
-            updatedAt: new Date()
-          }
-        },
-        { session }
-      );
-      console.log(`[SYNC-UPDATE] ✅ Payment ${appointment.payment} atualizado`);
-    }
-
-    // 5) Atualizar Appointment principal
+    // Atualização eficiente
     const updatedAppointment = await Appointment.findByIdAndUpdate(
       appointment._id,
       {
         $set: updateData,
         $push: {
           history: {
-            action: "sync_externo_completo",
+            action: "sync_externo_otimizado",
             timestamp: new Date(),
             details: { source: 'agenda_externa', operationalStatus: updateData.operationalStatus }
           }
         }
       },
       { new: true, session }
-    ).populate('patient doctor session payment');
-    
-    console.log('[SYNC-UPDATE] 📋 updatedAppointment:', {
-      _id: updatedAppointment._id,
-      date: updatedAppointment.date,
-      time: updatedAppointment.time,
-      doctor: updatedAppointment.doctor?._id,
-      notes: updatedAppointment.notes
-    });
+    ).populate('patient doctor session');
 
     await session.commitTransaction();
 
+    // Emitir socket de forma assíncrona pós-commit
+    setImmediate(() => {
+      try {
+        getIo().emit("appointmentUpdated", updatedAppointment);
+        console.log(`📡 Socket emitido: appointmentUpdated ${updatedAppointment._id}`);
+      } catch (e) {
+        console.error("⚠️ Erro ao emitir socket (setImmediate):", e.message);
+      }
+    });
 
+    // 3) Sincronizar Session relacionada
+    if (appointment.session) {
+      const sessionUpdate = {};
+      if (date) sessionUpdate.date = date;
+      if (time) sessionUpdate.time = time;
+      if (doctor) sessionUpdate.doctor = doctor._id;
+      if (specialty) sessionUpdate.specialty = specialty.toLowerCase();
+      if (observations) sessionUpdate.notes = observations;
+      sessionUpdate.updatedAt = new Date();
+
+      await Session.findByIdAndUpdate(appointment.session, sessionUpdate, { session });
+    }
 
     console.log(`[SYNC-UPDATE] ✅ Agendamento ${appointment._id} atualizado`);
 
