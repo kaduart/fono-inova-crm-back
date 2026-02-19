@@ -714,7 +714,7 @@ router.get('/', flexibleAuth, async (req, res) => {
         // 🔹 Buscar agendamentos com relacionamentos importantes (otimizado)
         // Removido limit default para garantir que todos os appointments do período venham
         const appointments = await Appointment.find(filter)
-            .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus visualFlag patient doctor package session payment metadata')
+            .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus visualFlag patient doctor package session payment metadata billingType insuranceProvider insuranceValue authorizationCode serviceType sessionType sessionValue reason')
             .populate({ path: 'doctor', select: 'fullName specialty email phoneNumber specialties' })
             .populate({ path: 'patient', select: 'fullName dateOfBirth gender phone email cpf rg address' })
             .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue' })
