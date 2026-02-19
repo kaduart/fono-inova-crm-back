@@ -11,19 +11,44 @@
 import { THERAPY_PRICING, formatPrice, getTherapyPricing } from '../config/pricing.js';
 
 // ================================================================
-// 👅 TESTE DA LINGUINHA (separado de Fono)
+// 👅 TESTE DA LINGUINHA (AVALIAÇÃO - não é cirurgia!)
 // ================================================================
 
 const TESTE_LINGUINHA_WISDOM = {
     teste: {
-        regra: 'Teste da Linguinha: R$200 (avaliação fonoaudiológica específica)',
-        script: 'Realizamos o Teste da Linguinha, que é uma avaliação fonoaudiológica específica para verificar a necessidade de intervenção. O valor é R$200.',
-        detalhes: 'O teste da linguinha é um exame simples e indolor para avaliar se o bebê tem anquiloglossia (língua presa). Observamos a pega do bebê ao mamar, a sucção (se ele consegue sugar de forma eficiente), o jeito de abocanhar a mama e se há dificuldade que atrapalhe a amamentação.'
+        regra: 'Teste da Linguinha: R$200 (avaliação fonoaudiológica do frênulo lingual)',
+        script: 'Realizamos o Teste da Linguinha, uma avaliação fonoaudiológica específica para verificar como está o frênulo lingual. O valor é R$200.',
+        detalhes: 'O teste da linguinha é uma avaliação simples e indolor onde observamos como está o frênulo (aquela membrana que conecta a língua ao céu da boca). Verificamos a mobilidade da língua, a pega do bebê ao mamar, a sucção e se há dificuldades que possam atrapalhar a amamentação ou a fala. É uma avaliação diagnóstica para entender a situação e orientar a família.',
+        explicacao_humanizada: `Oi! 💚
+
+O **Teste da Linguinha** é uma avaliação que fazemos para ver como está o frênulo lingual (aquela "pelinha" que liga a língua ao céu da boca).
+
+Durante a avaliação, observamos:
+• Como a língua se movimenta 👅
+• A pega do bebê ao mamar 🍼
+• Se a amamentação está confortável para mãe e bebê
+• A sucção e a deglutição
+
+É um exame simples, indolor e rápido! Serve pra entender se há alguma restrição na mobilidade da língua que possa estar causando dificuldades.
+
+O valor é R$170. Quer agendar? 😊`
     },
     cirurgia: {
-        regra: 'NÃO realizamos cirurgia (frenectomia/pique). Apenas reabilitação pós.',
-        script: 'Nós não realizamos a cirurgia (frenectomia/pique da língua). Aqui na clínica fazemos apenas o Teste da Linguinha (avaliação) e a fonoterapia para reabilitação após a cirurgia (caso você faça o procedimento em outro local).',
-        acolhimento: 'Entendo a preocupação. O ideal é realizar o teste primeiro para confirmar a necessidade, ou se já tiver indicação, buscar um odontopediatra para o procedimento e depois voltar conosco para a reabilitação.',
+        regra: 'NÃO realizamos cirurgia (frenectomia/pique). Indicamos parceiros.',
+        script: 'Nós não realizamos cirurgia no frênulo lingual. Temos parceiros (odontopediatras e cirurgiões) que podemos indicar. Aqui fazemos a avaliação e, depois do procedimento, a reabilitação fonoaudiológica.',
+        acolhimento: 'Entendo a preocupação! Não fazemos a cirurgia aqui, mas temos parceiros de confiança que podemos indicar. O ideal é fazer nossa avaliação primeiro para entender a situação, e aí te orientamos sobre os próximos passos.',
+        esclarecimento: `Oi! 💚
+
+Aqui na Fono Inova **não realizamos cirurgia** no frênulo lingual.
+
+O que fazemos:
+✅ **Avaliação** do frênulo (Teste da Linguinha) — R$200
+✅ Indicamos **parceiros** (odontopediatras e cirurgiões) se houver necessidade
+✅ **Fonoterapia** de reabilitação após o procedimento
+
+A avaliação é importante porque nem sempre é necessária a intervenção cirúrgica! E quando é, podemos indicar profissionais de confiança.
+
+Quer agendar a avaliação primeiro? 😊`
     }
 };
 
@@ -630,3 +655,7 @@ export default {
     URGENCY_WISDOM,       // 🆕 Export 2026
     SERVICE_REDIRECT_WISDOM,  // 🆕 Redirecionamentos
 };
+// ================================================================
+// 👅 TESTE DA LINGUINHA (AVALIAÇÃO - não cirurgia!)
+// ================================================================
+

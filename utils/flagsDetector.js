@@ -565,7 +565,10 @@ export function detectManualIntent(text = "") {
         return { intent: "price_generic", category: "valores", subcategory: "avaliacao" };
     }
 
-    if (/^(oi|ol[aá]|boa\s*(tarde|noite|dia)|bom\s*dia)[\s!,.]*$/i.test(t)) {
+    // Saudação - pode ser só "Oi" ou "Oi, tudo bem?" etc
+    // Suporta: oi, olá/ola, bom dia, boa tarde/noite
+    // Usa lookahead em vez de word boundary \b porque \b não funciona com acentos
+    if (/^(oi|ola|ol[aá]|boa\s*(tarde|noite|dia)|bom\s*dia)(?=\s|$|[,!?])/i.test(t) && t.length < 50) {
         return { intent: "greeting", category: "saudacao", subcategory: null };
     }
 
@@ -665,7 +668,9 @@ export function validateServiceAvailability(text = "", lead = {}) {
         terapia_ocupacional: { name: 'Terapia Ocupacional', aliases: ['to', 'terapeuta ocupacional'] },
         fisioterapia: { name: 'Fisioterapia', aliases: ['fisio', 'fisioterapeuta'] },
         neuropsicologia: { name: 'Neuropsicologia', aliases: ['neuropsico', 'neuropsicologo', 'neuropsicologa'] },
-        musicoterapia: { name: 'Musicoterapia', aliases: ['musicoterapeuta'] }
+        musicoterapia: { name: 'Musicoterapia', aliases: ['musicoterapeuta'] },
+        psicomotricidade: { name: 'Psicomotricidade', aliases: ['psicomotricidade', 'psicomotricista'] },
+        psicopedagogia: { name: 'Psicopedagogia', aliases: ['psicopedagogo', 'psicopedagoga'], available: false, redirectTo: 'neuropsicologia', reason: 'Sem profissional ativo no momento' }
     };
     
     // 3. Detecta qual serviço foi mencionado
@@ -685,6 +690,17 @@ export function validateServiceAvailability(text = "", lead = {}) {
     
     // 5. Validações específicas por serviço
     const patientAge = lead?.patientInfo?.age;
+    
+    // Serviço indisponível (ex: psicopedagogia sem profissional)
+    if (detectedService.available === false) {
+        return {
+            valid: false,
+            service: detectedService.key,
+            reason: detectedService.reason || 'service_unavailable',
+            redirect: detectedService.redirectTo,
+            message: `No momento não temos ${detectedService.name.toLowerCase()} disponível. ${detectedService.redirectTo ? `Posso te ajudar com ${VALID_SERVICES[detectedService.redirectTo]?.name || detectedService.redirectTo}?` : 'Entre em contato para mais informações.'}`
+        };
+    }
     
     // Psicologia: só até 16 anos
     if (detectedService.key === 'psicologia' && patientAge && patientAge > 16) {

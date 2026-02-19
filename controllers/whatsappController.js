@@ -136,7 +136,7 @@ export const whatsappController = {
                     $set: {
                         'manualControl.active': true,
                         'manualControl.takenOverAt': new Date(),
-                        'manualControl.takenOverBy': userId || 'manual',
+                        'manualControl.takenOverBy': userId || null,
                         'manualControl.autoResumeAfter': 30
                     }
                 });
@@ -962,7 +962,7 @@ export const whatsappController = {
                 $set: {
                     'manualControl.active': true,
                     'manualControl.takenOverAt': new Date(),
-                    'manualControl.takenOverBy': req.user?._id || 'manual',
+                    'manualControl.takenOverBy': req.user?._id || null,
                     'manualControl.autoResumeAfter': 30  // 30 minutos padrão
                 }
             });
