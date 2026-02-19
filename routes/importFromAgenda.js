@@ -928,7 +928,6 @@ router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
 
     console.log(`[SYNC-UPDATE] ✅ Agendamento ${appointment._id} atualizado`);
 
-    await session.commitTransaction();
 
     // 4) Emitir socket
     try {
