@@ -100,10 +100,8 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
       crm: crmRaw,
     } = req.body;
 
-    if (!_id) {
-      return res.status(400).json({ success: false, error: "_id é obrigatório" });
-    }
-
+    // _id é opcional - se não vier, o MongoDB gera automaticamente
+    // Se vier, salvamos em externalId para rastreamento
     const crm = crmRaw || {};
     const cleanPhone = (patientInfo?.phone || "").replace(/\D/g, "");
 
@@ -143,10 +141,11 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
       console.error("[IMPORT-FROM-AGENDA] Erro ao buscar paciente:", searchError.message);
     }
 
-    // 3) Criar PRÉ-AGENDAMENTO (mesmo _id da agenda externa)
-    const preAgendamento = await PreAgendamento.create({
-      _id,
+    // 3) Criar PRÉ-AGENDAMENTO (_id gerado automaticamente pelo MongoDB)
+    const preAgendamentoData = {
       source: 'agenda_externa',
+      // Se _id foi enviado, salva em externalId para rastreamento
+      ...( _id ? { externalId: _id } : {}),
       patientInfo: {
         fullName: patientInfo?.fullName,
         phone: cleanPhone,
@@ -167,7 +166,9 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
         observations && `Obs: ${observations}`,
         `[IMPORTADO DA AGENDA EXTERNA]`
       ].filter(Boolean).join('\n')
-    });
+    };
+
+    const preAgendamento = await PreAgendamento.create(preAgendamentoData);
 
     // ✅ EMITIR SOCKET (novo pré-agendamento)
     try {

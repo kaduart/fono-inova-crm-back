@@ -292,8 +292,8 @@ export function shouldOfferScheduling(context) {
 
   if (bookingOffersCount >= 1) return false;
 
-  const hasBasicData = therapyArea && patientAge && complaint;
-  const showedInterest = emotionalContext?.interests?.includes('booking');
+  const hasBasicData = !!(therapyArea && patientAge && complaint);
+  const showedInterest = !!emotionalContext?.interests?.includes('booking');
 
   return hasBasicData || showedInterest;
 }

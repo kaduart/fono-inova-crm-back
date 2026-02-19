@@ -3,7 +3,7 @@ import "dotenv/config";
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import { urgencyScheduler } from "../services/intelligence/UrgencyScheduler.js";
 import enrichLeadContext from "../services/leadContext.js";
-import { deriveFlagsFromText, detectAllFlags, resolveTopicFromFlags } from "../utils/flagsDetector.js";
+import { deriveFlagsFromText, detectAllFlags, resolveTopicFromFlags, detectManualIntent, computeTeaStatus } from "../utils/flagsDetector.js";
 import { detectWithContext as detectWithContextualDetectors } from "../detectors/DetectorAdapter.js";
 import { buildStrategicContext, logStrategicEnrichment } from "./ContextEnrichmentLayer.js"; // 🆕 FASE 3
 import { trackDetection, recordOutcome } from "../services/DetectorFeedbackTracker.js"; // 🆕 FASE 4
@@ -38,12 +38,11 @@ import {
     buildDynamicSystemPrompt,
     buildUserPromptWithValuePitch,
     calculateUrgency,
-    DYNAMIC_MODULES,
-    getManual,
+    shouldOfferScheduling,
 } from "../utils/amandaPrompt.js";
 import { logBookingGate, mapFlagsToBookingProduct } from "../utils/bookingProductMapper.js";
 import { extractPreferredDateFromText } from "../utils/dateParser.js";
-import { getWisdomForContext } from "../utils/clinicWisdom.js";
+import { getWisdomForContext, TESTE_LINGUINHA_WISDOM } from "../utils/clinicWisdom.js";
 import ensureSingleHeart from "../utils/helpers.js";
 import { extractAgeFromText, extractBirth, extractName, extractPeriodFromText } from "../utils/patientDataExtractor.js";
 import { buildSlotMenuMessage } from "../utils/slotMenuBuilder.js";
@@ -1014,6 +1013,38 @@ export async function getOptimizedAmandaResponse({
     enrichedContext._enrichment = strategicEnhancements._enrichment;
 
     logStrategicEnrichment(enrichedContext, flags);
+
+    // =========================================================================
+    // 🆕 ENRIQUECIMENTO DE CONTEXTO ADICIONAL (Manual Intent, TEA Status, Scheduling)
+    // =========================================================================
+    
+    // 1. Detecta intenção manual (endereço, planos, preço genérico, saudação)
+    const manualIntent = detectManualIntent(text);
+    if (manualIntent) {
+        enrichedContext.manualIntent = manualIntent;
+        console.log("🎯 [MANUAL INTENT] Detectado:", manualIntent);
+    }
+    
+    // 2. Calcula status TEA (laudo_confirmado | suspeita | desconhecido)
+    const teaStatus = computeTeaStatus(flags, text);
+    if (teaStatus && teaStatus !== "desconhecido") {
+        enrichedContext.teaStatus = teaStatus;
+        console.log("🧩 [TEA STATUS]:", teaStatus);
+    }
+    
+    // 3. Verifica se deve oferecer agendamento (contexto acumulado)
+    const shouldOffer = shouldOfferScheduling({
+        therapyArea: flags.therapyArea,
+        patientAge: lead?.patientInfo?.age || flags.ageGroup,
+        complaint: flags.hasPain || flags.topic,
+        bookingOffersCount: lead?.bookingOffersCount || 0,
+        emotionalContext: {
+            interests: flags.wantsSchedule ? ['booking'] : [],
+            objections: flags.mentionsPriceObjection ? ['price'] : []
+        }
+    });
+    enrichedContext.shouldOfferScheduling = shouldOffer;
+    console.log("📅 [SCHEDULING DECISION]:", shouldOffer);
 
     // ============================================================
     // 🧭 TRIAGEM AMANDA 2.0 — USANDO triageStep DO SCHEMA
@@ -2181,7 +2212,7 @@ Em breve nossa equipe entra em contato 😊`
         // 4) fallback por ID de terapia detectada (quando detectAllTherapies achou algo mas priceLines veio vazio)
         const PRICE_BY_THERAPY_ID = {
             speech: "A avaliação inicial de fonoaudiologia é **R$ 200**.",
-            tongue_tie: "O **Teste da Linguinha** custa **R$ 150**.",
+            tongue_tie: "O **Teste da Linguinha** (avaliação do frênulo lingual) custa **R$ 200**.",
             psychology: "A avaliação inicial de psicologia é **R$ 200**.",
             occupational: "A avaliação inicial de terapia ocupacional é **R$ 200**.",
             physiotherapy: "A avaliação inicial de fisioterapia é **R$ 200**.",
@@ -3311,7 +3342,7 @@ async function callClaudeWithTherapyData({
         const hasLinguinha = detected.some(t => t.id === "tongue_tie");
 
         return hasLinguinha
-            ? "O teste da orelhinha (triagem auditiva/TAN) nós não realizamos aqui. O Teste da Linguinha a gente faz sim (R$ 150). Quer agendar pra essa semana ou pra próxima? 💚"
+            ? ensureSingleHeart(TESTE_LINGUINHA_WISDOM.teste.explicacao_humanizada)
             : "O teste da orelhinha (triagem auditiva/TAN) nós não realizamos aqui. Mas podemos te ajudar com avaliação e terapias (Fono, Psico, TO, Fisio…). O que você está buscando exatamente: avaliação, terapia ou um exame específico? 💚";
     }
 
@@ -3665,13 +3696,34 @@ ${useModule("noNameBeforeSlotRule")}
 
     const { wisdomBlock, wisdom: wisdomData } = getWisdomForContext(resolvedTopic, flags);
 
+    // 🆕 MONTA CONTEXTO ADICIONAL (Manual Intent, TEA Status, Scheduling Decision)
+    let additionalContext = "";
+    
+    if (safeContext.manualIntent) {
+        additionalContext += `\n🎯 INTENÇÃO DETECTADA: ${safeContext.manualIntent.intent} (${safeContext.manualIntent.category})`;
+    }
+    
+    if (safeContext.teaStatus && safeContext.teaStatus !== "desconhecido") {
+        const teaContextMap = {
+            "laudo_confirmado": "Paciente tem laudo de TEA confirmado - prioridade e acolhimento especial",
+            "suspeita": "Família suspeita de TEA - ainda sem laudo, necessidade de orientação",
+        };
+        additionalContext += `\n🧩 CONTEXTO TEA: ${teaContextMap[safeContext.teaStatus] || safeContext.teaStatus}`;
+    }
+    
+    if (safeContext.shouldOfferScheduling !== undefined) {
+        additionalContext += safeContext.shouldOfferScheduling 
+            ? "\n📅 MOMENTO: Contexto propício para oferecer agendamento se fizer sentido"
+            : "\n📅 MOMENTO: Ainda não é hora de pressionar agendamento - foco em informação";
+    }
+    
     const currentPrompt = `${userText}
 ${wisdomBlock ? `
 📚 REGRAS DA CLÍNICA (OBRIGATÓRIO — use esses dados exatos):
 ${wisdomBlock}
 ` : ''}
                                     CONTEXTO:
-                                    LEAD: ${lead?.name || "Desconhecido"} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}
+                                    LEAD: ${lead?.name || "Desconhecido"} | ESTÁGIO: ${stage} (${messageCount} msgs)${therapiesContext}${patientNote}${urgencyNote}${intelligenceNote}${additionalContext}
                                     ${ageProfileNote ? `PERFIL_IDADE: ${ageProfileNote}` : ""}${historyAgeNote}
                                     ${scheduleInfoNote ? `\n${scheduleInfoNote}` : ""}${openingsNote}${closingNote}
 
@@ -3799,9 +3851,10 @@ function enforceClinicScope(aiText = "", userText = "") {
         /(teste\s+da\s+orelhinha|triagem\s+auditiva(\s+neonatal)?|\bTAN\b)/i.test(combined);
 
     if (mentionsOrelhinha) {
-        return (
+        return ensureSingleHeart(
             "O teste da orelhinha (triagem auditiva) nós **não realizamos** aqui. " +
-            "A gente realiza o **Teste da Linguinha (R$150)**, e se você quiser eu já te passo horários pra agendar 💚"
+            "A gente faz avaliação fonoaudiológica, fonoterapia e o Teste da Linguinha. " +
+            "Quer que eu te explique sobre algum desses? 💚"
         );
     }
     const mentionsRPGorPilates = /\brpg\b|pilates/i.test(combined);

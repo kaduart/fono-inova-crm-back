@@ -723,6 +723,7 @@ router.get('/', flexibleAuth, async (req, res) => {
             .sort({ date: -1, time: 1 }) // Mais recentes primeiro, depois por hora
             .lean();
 
+        console.timeEnd('appointments.query');
         console.log('📦 Total appointments encontrados:', appointments.length);
         console.log('📋 IDs dos appointments:', appointments.map(a => a._id?.toString?.() || a._id));
         
