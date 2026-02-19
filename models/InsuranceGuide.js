@@ -47,7 +47,9 @@ const insuranceGuideSchema = new mongoose.Schema({
         'psicomotricidade',
         'musicoterapia',
         'psicopedagogia',
-        'terapia_ocupacional'
+        'terapia_ocupacional',
+        'neuropsicologia'
+
       ],
       message: 'Especialidade "{VALUE}" não é válida'
     }
@@ -139,7 +141,7 @@ const insuranceGuideSchema = new mongoose.Schema({
  * Virtual: remaining
  * Retorna o número de sessões restantes (sempre >= 0)
  */
-insuranceGuideSchema.virtual('remaining').get(function() {
+insuranceGuideSchema.virtual('remaining').get(function () {
   const remaining = this.totalSessions - this.usedSessions;
   return Math.max(0, remaining);
 });
@@ -164,7 +166,7 @@ insuranceGuideSchema.index(
 // PRE-SAVE HOOKS (Regras de Negócio)
 // ======================================================================
 
-insuranceGuideSchema.pre('save', function(next) {
+insuranceGuideSchema.pre('save', function (next) {
   // REGRA 1: usedSessions não pode exceder totalSessions
   if (this.usedSessions > this.totalSessions) {
     const err = new Error('Sessões utilizadas não podem exceder o total autorizado');
@@ -223,7 +225,7 @@ insuranceGuideSchema.pre('save', function(next) {
  *   new Date('2025-02-15')
  * );
  */
-insuranceGuideSchema.statics.findValid = async function(patientId, specialty, date = new Date()) {
+insuranceGuideSchema.statics.findValid = async function (patientId, specialty, date = new Date()) {
   return await this.findOne({
     patientId: new mongoose.Types.ObjectId(patientId),
     specialty: specialty.toLowerCase().trim(),
@@ -231,9 +233,9 @@ insuranceGuideSchema.statics.findValid = async function(patientId, specialty, da
     expiresAt: { $gte: date },
     $expr: { $lt: ['$usedSessions', '$totalSessions'] } // usedSessions < totalSessions
   })
-  .sort({ expiresAt: 1 }) // FIFO: primeira a vencer
-  .populate('patientId', 'fullName cpf')
-  .lean(false); // Retorna documento Mongoose (não POJO)
+    .sort({ expiresAt: 1 }) // FIFO: primeira a vencer
+    .populate('patientId', 'fullName cpf')
+    .lean(false); // Retorna documento Mongoose (não POJO)
 };
 
 /**
@@ -256,7 +258,7 @@ insuranceGuideSchema.statics.findValid = async function(patientId, specialty, da
  * //   guides: [...]     // array de guias ativas
  * // }
  */
-insuranceGuideSchema.statics.getBalance = async function(patientId, specialty = null) {
+insuranceGuideSchema.statics.getBalance = async function (patientId, specialty = null) {
   const query = {
     patientId: new mongoose.Types.ObjectId(patientId),
     status: 'active',
@@ -322,7 +324,7 @@ insuranceGuideSchema.statics.getBalance = async function(patientId, specialty = 
  *   session.endSession();
  * }
  */
-insuranceGuideSchema.methods.consumeSession = async function(mongoSession) {
+insuranceGuideSchema.methods.consumeSession = async function (mongoSession) {
   // Validações críticas
   if (this.status !== 'active') {
     throw new Error(`Guia está ${this.status} e não pode ser utilizada`);
@@ -361,7 +363,7 @@ insuranceGuideSchema.methods.consumeSession = async function(mongoSession) {
  *   await guide.consumeSession(session);
  * }
  */
-insuranceGuideSchema.methods.isValid = function() {
+insuranceGuideSchema.methods.isValid = function () {
   const now = new Date();
   return (
     this.status === 'active' &&
