@@ -17,7 +17,7 @@ const router = express.Router();
 
 /**
  * POST /api/pre-agendamento/webhook
- * Recebe da agenda externa (Firebase) - usa agendaAuth
+ * Recebe da agenda externa - usa agendaAuth
  */
 router.post('/webhook', agendaAuth, async (req, res) => {
   try {
@@ -43,7 +43,7 @@ router.post('/webhook', agendaAuth, async (req, res) => {
     const specialty = payload.specialty;
     const professionalName = payload.professionalName;
     const source = payload.source || 'agenda_externa';
-    // Suporta externalId, id, ou firebaseAppointmentId (da agenda externa)
+    // Suporta externalId, id, ou firebaseAppointmentId (legado)
     const externalId = payload.externalId || payload.id || payload.firebaseAppointmentId || `ext_${Date.now()}`;
 
     // Validação

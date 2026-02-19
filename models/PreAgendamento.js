@@ -32,7 +32,7 @@ const preAgendamentoSchema = new mongoose.Schema({
   externalId: {
     type: String,
     index: true,
-    description: 'ID na agenda externa (Firebase/etc)'
+    description: 'ID na agenda externa (legado)'
   },
 
   // Informações do paciente
