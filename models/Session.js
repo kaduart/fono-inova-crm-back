@@ -1,6 +1,7 @@
 // models/Session.js
 import mongoose from 'mongoose';
 import { syncEvent } from '../services/syncService.js';
+import provisionamentoService from '../services/provisionamentoService.js';
 import MedicalEvent from './MedicalEvent.js';
 
 const sessionSchema = new mongoose.Schema({
