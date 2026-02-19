@@ -122,6 +122,13 @@ export const mapAppointmentToEvent = (appt) => {
         phone: appt.patient?.phone || appt.patientInfo?.phone || "",
         paymentStatus,
         visualFlag: resolveVisualFlag({ ...appt, paymentStatus }),
+        // 🆕 DADOS DE CONVÊNIO/PLANO
+        billingType: appt.billingType || 'particular',
+        insuranceProvider: appt.insuranceProvider || '',
+        insuranceValue: appt.insuranceValue || 0,
+        authorizationCode: appt.authorizationCode || '',
+        // 📦 PACOTE (se houver)
+        package: appt.package || null,
         patient: {
             ...(typeof appt.patient === 'object' ? appt.patient : {}),
             fullName: patientName,
