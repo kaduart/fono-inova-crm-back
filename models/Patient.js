@@ -56,6 +56,17 @@ const patientSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// ---------- ÍNDICES ÚNICOS (após consolidar duplicados) ----------
+// Estes índices impedem a criação de duplicados futuros
+// Comentados até consolidar os dados existentes:
+// patientSchema.index({ cpf: 1 }, { unique: true, sparse: true });
+// patientSchema.index({ email: 1 }, { unique: true, sparse: true });
+// patientSchema.index({ rg: 1 }, { unique: true, sparse: true });
+
+// Índice composto para busca rápida de duplicados
+patientSchema.index({ fullName: 1, dateOfBirth: 1 });
+patientSchema.index({ phone: 1 });
+
 // ---------- VIRTUALS (apenas ordenação simples) ----------
 patientSchema.virtual('lastAppointment', {
   ref: 'Appointment',

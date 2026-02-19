@@ -124,7 +124,10 @@ export const mapAppointmentToEvent = (appt) => {
         visualFlag: resolveVisualFlag({ ...appt, paymentStatus }),
         patient: {
             ...(typeof appt.patient === 'object' ? appt.patient : {}),
-            fullName: patientName
+            fullName: patientName,
+            phone: appt.patient?.phone || appt.patientInfo?.phone || "",
+            dateOfBirth: appt.patient?.dateOfBirth || appt.patientInfo?.birthDate || "",
+            email: appt.patient?.email || appt.patientInfo?.email || ""
         },
         doctor: {
             ...(typeof appt.doctor === 'object' ? appt.doctor : {}),

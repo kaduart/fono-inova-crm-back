@@ -1096,7 +1096,7 @@ function determineActionType(updateData) {
 }
 
 // Deleta um agendamento
-router.delete('/:id', validateId, auth, async (req, res) => {
+router.delete('/:id', validateId, flexibleAuth, async (req, res) => {
     try {
         const appt = await Appointment.findByIdAndDelete(req.params.id);
 
