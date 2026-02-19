@@ -87,8 +87,9 @@ async function findOrCreatePatient(patientInfo, session) {
  */
 router.post("/import-from-agenda", agendaAuth, async (req, res) => {
   try {
+    // Dados direto no formato MongoDB
     const {
-      externalId,
+      _id,
       professionalName,
       date,
       time,
@@ -98,6 +99,10 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
       observations,
       crm: crmRaw,
     } = req.body;
+
+    if (!_id) {
+      return res.status(400).json({ success: false, error: "_id é obrigatório" });
+    }
 
     const crm = crmRaw || {};
     const cleanPhone = (patientInfo?.phone || "").replace(/\D/g, "");
@@ -138,10 +143,10 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
       console.error("[IMPORT-FROM-AGENDA] Erro ao buscar paciente:", searchError.message);
     }
 
-    // 3) Criar PRÉ-AGENDAMENTO
+    // 3) Criar PRÉ-AGENDAMENTO (mesmo _id da agenda externa)
     const preAgendamento = await PreAgendamento.create({
+      _id,
       source: 'agenda_externa',
-      externalId,
       patientInfo: {
         fullName: patientInfo?.fullName,
         phone: cleanPhone,
@@ -200,16 +205,16 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
 });
 
 /**
- * POST /api/import-from-agenda/confirmar-por-external-id
- * Confirma usando o externalId
+ * POST /api/import-from-agenda/confirmar-por-id
+ * Confirma usando o _id
  */
-router.post("/import-from-agenda/confirmar-por-external-id", agendaAuth, async (req, res) => {
+router.post("/import-from-agenda/confirmar-por-id", agendaAuth, async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
     const {
-      externalId,
+      _id,
       doctorId,
       date,
       time,
@@ -219,20 +224,20 @@ router.post("/import-from-agenda/confirmar-por-external-id", agendaAuth, async (
       notes
     } = req.body;
 
-    if (!externalId) {
-      return res.status(400).json({ success: false, error: 'externalId é obrigatório' });
+    if (!_id) {
+      return res.status(400).json({ success: false, error: '_id é obrigatório' });
     }
 
-    console.log(`[CONFIRMAR-POR-EXTERNAL-ID] Buscando pré-agendamento com externalId: ${externalId}`);
+    console.log(`[CONFIRMAR-POR-ID] Buscando pré-agendamento: ${_id}`);
 
-    const pre = await PreAgendamento.findOne({ externalId }).session(session);
+    const pre = await PreAgendamento.findById(_id).session(session);
 
     if (!pre) {
       await session.abortTransaction();
       return res.status(404).json({
         success: false,
         error: 'Pré-agendamento não encontrado',
-        externalId
+        _id
       });
     }
 
@@ -357,7 +362,7 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
 
   try {
     const {
-      externalId,
+      _id,
       professionalName,
       date,
       time,
@@ -371,13 +376,13 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
     const crm = crmRaw || {};
     const cleanPhone = (patientInfo?.phone || "").replace(/\D/g, "");
 
-    console.log(`[CRIAR-E-CONFIRMAR] Iniciando: ${patientInfo?.fullName} (${externalId})`);
+    console.log(`[CRIAR-E-CONFIRMAR] Iniciando: ${patientInfo?.fullName} (${_id})`);
 
-    // 🔍 Verificar se já existe PreAgendamento com este externalId
-    const existingPre = await PreAgendamento.findOne({ externalId }).session(session);
+    // 🔍 Verificar se já existe PreAgendamento com este _id
+    const existingPre = await PreAgendamento.findById(_id).session(session);
 
     if (existingPre) {
-      console.log(`[CRIAR-E-CONFIRMAR] ⚠️ PreAgendamento ${existingPre._id} já existe para externalId: ${externalId}`);
+      console.log(`[CRIAR-E-CONFIRMAR] ⚠️ PreAgendamento ${existingPre._id} já existe`);
 
       // Se já foi importado E já tem appointment
       if (existingPre.status === 'importado' && existingPre.importedToAppointment) {
@@ -493,8 +498,8 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
     } else {
       // Criar novo
       const preAgendamento = await PreAgendamento.create([{
+        _id,
         source: 'agenda_externa',
-        externalId,
         patientInfo: {
           fullName: patientInfo?.fullName,
           phone: cleanPhone,
@@ -597,8 +602,7 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
       message: 'Pré-agendamento criado e confirmado!',
       preAgendamentoId: pre._id,
       appointmentId: result.appointment._id,
-      patientId: result.patientId,
-      externalId
+      patientId: result.patientId
     });
 
   } catch (err) {
@@ -625,44 +629,27 @@ router.post("/import-from-agenda/sync-cancel", agendaAuth, async (req, res) => {
   session.startTransaction();
 
   try {
-    const { externalId, reason = "Cancelado via agenda externa", confirmedAbsence = false } = req.body;
+    const { _id, reason = "Cancelado via agenda externa", confirmedAbsence = false } = req.body;
 
-    if (!externalId) {
+    if (!_id) {
       await session.abortTransaction();
-      return res.status(400).json({ success: false, error: "externalId é obrigatório" });
+      return res.status(400).json({ success: false, error: "_id é obrigatório" });
     }
 
-    console.log(`[SYNC-CANCEL] Cancelando agendamento. externalId (ref): ${externalId}`);
+    console.log(`[SYNC-CANCEL] Cancelando agendamento: ${_id}`);
 
-    // FONTE ÚNICA DE VERDADE: MongoDB
-    // 1) Tentar encontrar appointment pelo externalId
-    let appointment = null;
+    // Buscar appointment direto pelo _id
+    const appointment = await Appointment.findById(_id)
+      .populate("session payment patient")
+      .session(session);
 
-    if (mongoose.Types.ObjectId.isValid(externalId)) {
-      appointment = await Appointment.findById(externalId)
-        .populate("session payment patient")
-        .session(session);
-    }
-
-    // Se não encontrou, tentar por PreAgendamento (legado)
     if (!appointment) {
-      const preAgendamento = await PreAgendamento.findOne({ externalId }).session(session);
-      if (preAgendamento?.importedToAppointment) {
-        appointment = await Appointment.findById(preAgendamento.importedToAppointment)
-          .populate("session payment patient")
-          .session(session);
-      }
-    }
-
-    // Se não encontrou appointment, retorna erro (fonte de verdade é MongoDB)
-    if (!appointment) {
-      console.log(`[SYNC-CANCEL] ❌ Appointment não encontrado no MongoDB para externalId: ${externalId}`);
+      console.log(`[SYNC-CANCEL] ❌ Appointment não encontrado: ${_id}`);
       await session.abortTransaction();
       return res.status(404).json({
         success: false,
-        error: "Agendamento não encontrado no sistema",
-        externalId,
-        note: "Fonte única de verdade: MongoDB. Firebase sendo desativado."
+        error: "Agendamento não encontrado",
+        _id
       });
     }
 
@@ -780,8 +767,7 @@ router.post("/import-from-agenda/sync-cancel", agendaAuth, async (req, res) => {
       success: true,
       message: "Cancelamento sincronizado com sucesso",
       appointmentId: appointment._id,
-      externalId,
-      note: "Fonte única de verdade: MongoDB"
+      _id
     });
 
   } catch (error) {
@@ -810,48 +796,37 @@ router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
 
   try {
     const {
-      externalId, // Referência histórica ou _id
+      _id,
       date,
       time,
       professionalName,
       specialty,
       patientInfo,
       observations,
-      status,           // Legado
-      operationalStatus, // Unificado
+      status,
+      operationalStatus,
       crm: crmRaw
     } = req.body;
 
     const crm = crmRaw || {};
 
-    if (!externalId) {
+    if (!_id) {
       await session.abortTransaction();
-      return res.status(400).json({ success: false, error: "externalId é obrigatório" });
+      return res.status(400).json({ success: false, error: "_id é obrigatório" });
     }
 
-    console.log(`[SYNC-UPDATE] Atualizando agendamento. externalId (ref): ${externalId}`);
+    console.log(`[SYNC-UPDATE] Atualizando agendamento: ${_id}`);
 
-    // 1) Encontrar agendamento (MongoDB é a fonte única de verdade)
-    let appointment = null;
-    if (mongoose.Types.ObjectId.isValid(externalId)) {
-      appointment = await Appointment.findById(externalId).session(session);
-    }
+    // 1) Encontrar agendamento pelo _id
+    const appointment = await Appointment.findById(_id).session(session);
 
     if (!appointment) {
-      const preAgendamento = await PreAgendamento.findOne({ externalId }).select('importedToAppointment').session(session);
-      if (preAgendamento?.importedToAppointment) {
-        appointment = await Appointment.findById(preAgendamento.importedToAppointment).session(session);
-      }
-    }
-
-    if (!appointment) {
-      console.log(`[SYNC-UPDATE] ❌ Appointment não encontrado no MongoDB para externalId: ${externalId}`);
+      console.log(`[SYNC-UPDATE] ❌ Appointment não encontrado: ${_id}`);
       await session.abortTransaction();
       return res.status(404).json({
         success: false,
-        error: "Agendamento não encontrado no sistema",
-        externalId,
-        note: "Fonte única de verdade: MongoDB. Firebase sendo desativado."
+        error: "Agendamento não encontrado",
+        _id
       });
     }
 
@@ -942,9 +917,7 @@ router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
       success: true,
       message: "Atualização sincronizada com sucesso",
       appointmentId: appointment._id,
-      externalId,
-      updatedFields: { date, time, professionalName, specialty, status },
-      note: "Fonte única de verdade: MongoDB"
+      updatedFields: { date, time, professionalName, specialty, status }
     });
 
   } catch (error) {
@@ -971,44 +944,27 @@ router.post("/import-from-agenda/sync-delete", agendaAuth, async (req, res) => {
   session.startTransaction();
 
   try {
-    const { externalId, reason = "Excluído via agenda externa" } = req.body;
+    const { _id, reason = "Excluído via agenda externa" } = req.body;
 
-    if (!externalId) {
+    if (!_id) {
       await session.abortTransaction();
-      return res.status(400).json({ success: false, error: "externalId é obrigatório" });
+      return res.status(400).json({ success: false, error: "_id é obrigatório" });
     }
 
-    console.log(`[SYNC-DELETE] Excluindo agendamento. externalId (ref): ${externalId}`);
+    console.log(`[SYNC-DELETE] Excluindo agendamento: ${_id}`);
 
-    // FONTE ÚNICA DE VERDADE: MongoDB
-    // 1) Tentar encontrar appointment pelo externalId
-    let appointment = null;
+    // Buscar appointment direto pelo _id
+    const appointment = await Appointment.findById(_id)
+      .populate("patient")
+      .session(session);
 
-    if (mongoose.Types.ObjectId.isValid(externalId)) {
-      appointment = await Appointment.findById(externalId)
-        .populate("patient")
-        .session(session);
-    }
-
-    // Se não encontrou, tentar por PreAgendamento (legado)
     if (!appointment) {
-      const preAgendamento = await PreAgendamento.findOne({ externalId }).session(session);
-      if (preAgendamento?.importedToAppointment) {
-        appointment = await Appointment.findById(preAgendamento.importedToAppointment)
-          .populate("patient")
-          .session(session);
-      }
-    }
-
-    // Se não encontrou appointment, retorna erro (fonte de verdade é MongoDB)
-    if (!appointment) {
-      console.log(`[SYNC-DELETE] ❌ Appointment não encontrado no MongoDB para externalId: ${externalId}`);
+      console.log(`[SYNC-DELETE] ❌ Appointment não encontrado: ${_id}`);
       await session.abortTransaction();
       return res.status(404).json({
         success: false,
-        error: "Agendamento não encontrado no sistema",
-        externalId,
-        note: "Fonte única de verdade: MongoDB. Firebase sendo desativado."
+        error: "Agendamento não encontrado",
+        _id
       });
     }
 
@@ -1043,8 +999,8 @@ router.post("/import-from-agenda/sync-delete", agendaAuth, async (req, res) => {
     await Appointment.findByIdAndDelete(appointment._id).session(session);
     console.log(`[SYNC-DELETE] Appointment ${appointment._id} deletado`);
 
-    // 3) Se houver PreAgendamento associado, deletar também
-    const preAgendamento = await PreAgendamento.findOne({ externalId }).session(session);
+    // 3) Se houver PreAgendamento com mesmo _id, deletar também
+    const preAgendamento = await PreAgendamento.findById(_id).session(session);
     if (preAgendamento) {
       await PreAgendamento.findByIdAndDelete(preAgendamento._id).session(session);
       console.log(`[SYNC-DELETE] PreAgendamento ${preAgendamento._id} deletado`);
@@ -1170,28 +1126,27 @@ router.post("/import-from-agenda/confirmar-agendamento", agendaAuth, async (req,
   session.startTransaction();
 
   try {
-    const { externalId, preAgendamentoId } = req.body;
+    const { _id } = req.body;
 
-    if (!externalId && !preAgendamentoId) {
+    if (!_id) {
       await session.abortTransaction();
       return res.status(400).json({
         success: false,
-        error: "externalId ou preAgendamentoId é obrigatório"
+        error: "_id é obrigatório"
       });
     }
 
-    console.log(`[CONFIRMAR-AGENDAMENTO] Confirmando: ${externalId || preAgendamentoId}`);
+    console.log(`[CONFIRMAR-AGENDAMENTO] Confirmando: ${_id}`);
 
     // Buscar PreAgendamento
-    const query = externalId ? { externalId } : { _id: preAgendamentoId };
-    const preAgendamento = await PreAgendamento.findOne(query).session(session);
+    const preAgendamento = await PreAgendamento.findById(_id).session(session);
 
     if (!preAgendamento) {
       await session.abortTransaction();
       return res.status(404).json({
         success: false,
         error: "Pré-agendamento não encontrado",
-        query
+        _id
       });
     }
 

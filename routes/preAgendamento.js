@@ -29,57 +29,42 @@ router.post('/webhook', agendaAuth, async (req, res) => {
 
     const payload = req.body;
 
-    // Extrai dados do paciente (ambos os formatos)
-    const patientName = payload.patientName || payload.patientInfo?.fullName;
-    const patientPhone = payload.patientPhone || payload.patientInfo?.phone;
-    const patientEmail = payload.patientEmail || payload.patientInfo?.email;
-    const patientBirthDate = payload.patientBirthDate || payload.patientInfo?.birthDate;
+    // Dados direto no formato MongoDB (sem conversões!)
+    const { 
+      _id, 
+      patientInfo, 
+      preferredDate, 
+      preferredTime, 
+      specialty, 
+      professionalName, 
+      source = 'agenda_externa' 
+    } = payload;
 
-    // Extrai datas e horários (ambos os formatos)
-    const preferredDate = payload.preferredDate || payload.date;
-    const preferredTime = payload.preferredTime || payload.time;
-
-    // Outros campos
-    const specialty = payload.specialty;
-    const professionalName = payload.professionalName;
-    const source = payload.source || 'agenda_externa';
-    // Suporta externalId, id, ou firebaseAppointmentId (legado)
-    const externalId = payload.externalId || payload.id || payload.firebaseAppointmentId || `ext_${Date.now()}`;
-
-    // Validação
-    if (!patientName || !patientPhone || !preferredDate) {
+    // Validação simples
+    if (!_id || !patientInfo?.fullName || !patientInfo?.phone || !preferredDate) {
       return res.status(400).json({
         success: false,
-        error: 'Campos obrigatórios faltando: patientName/patientInfo.fullName, patientPhone/patientInfo.phone, preferredDate/date',
+        error: 'Campos obrigatórios: _id, patientInfo.fullName, patientInfo.phone, preferredDate',
         received: payload
       });
     }
 
     // Verificar se já existe
-    const existe = await PreAgendamento.findOne({ externalId });
+    const existe = await PreAgendamento.findById(_id);
     if (existe) {
       return res.json({ success: true, message: 'Já existe', id: existe._id });
     }
 
-    // Buscar paciente existente
-    const patient = await Patient.findOne({
-      $or: [
-        { phone: patientPhone?.replace(/\D/g, '') },
-        { email: patientEmail }
-      ]
-    });
-
-    // Criar pré-agendamento
+    // Criar pré-agendamento direto (mesmo ID da agenda externa)
     const pre = await PreAgendamento.create({
+      _id,
       source,
-      externalId,
       patientInfo: {
-        fullName: patientName,
-        phone: String(patientPhone).replace(/\D/g, ''),
-        email: patientEmail,
-        birthDate: patientBirthDate
+        fullName: patientInfo.fullName,
+        phone: String(patientInfo.phone).replace(/\D/g, ''),
+        email: patientInfo.email,
+        birthDate: patientInfo.birthDate
       },
-      patientId: patient?._id,
       specialty: specialty?.toLowerCase(),
       preferredDate,
       preferredTime,
