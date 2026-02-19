@@ -15,7 +15,10 @@
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
     "test:amanda": "node tests/amanda/bootstrap.js",
-    "test:flow": "node -r dotenv/config scripts/test-conversation-flow.js"
+    "test:flow": "node -r dotenv/config scripts/test-conversation-flow.js",
+    "test:agenda-externa": "vitest run --config vitest.config.integration.js",
+    "test:agenda-externa:watch": "vitest --config vitest.config.integration.js",
+    "test:agenda-externa:coverage": "vitest run --config vitest.config.integration.js --coverage"
   },
   "keywords": [],
   "author": "",
@@ -70,6 +73,8 @@
     "@types/socket.io": "^3.0.1",
     "@vitest/coverage-v8": "^4.0.18",
     "nodemon": "^3.1.10",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "mongodb-memory-server": "^9.0.0",
+    "supertest": "^6.3.0"
   }
 }

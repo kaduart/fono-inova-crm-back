@@ -154,7 +154,7 @@ const allowedOrigins = [
   "http://localhost:5000",
   "http://localhost:5173",
   "https://agenda-clinica-fono-inova.web.app", // ← ADICIONAR ISSO!
-  "https://agenda-clinica-fono-inova.firebaseapp.com",
+  // Firebase removido - MongoDB é fonte única de verdade
 ];
 
 const corsOptions = {

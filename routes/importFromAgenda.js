@@ -618,7 +618,7 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
  * POST /api/import-from-agenda/sync-cancel
  * Cancela um agendamento vindo da agenda externa
  * 
- * NOTA: Firebase sendo desativado. Fonte única de verdade: MongoDB.
+ * NOTA: Fonte única de verdade: MongoDB.
  */
 router.post("/import-from-agenda/sync-cancel", agendaAuth, async (req, res) => {
   const session = await mongoose.startSession();
@@ -801,7 +801,7 @@ router.post("/import-from-agenda/sync-cancel", agendaAuth, async (req, res) => {
  * POST /api/import-from-agenda/sync-update
  * Atualiza (edita) um agendamento vindo da agenda externa
  * 
- * NOTA: Firebase sendo desativado. Fonte única de verdade: MongoDB.
+ * NOTA: Fonte única de verdade: MongoDB.
  * externalId é apenas referência histórica, não chave primária.
  */
 router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
@@ -964,7 +964,7 @@ router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
  * POST /api/import-from-agenda/sync-delete
  * Exclui (deleta permanentemente) um agendamento vindo da agenda externa
  * 
- * NOTA: Firebase sendo desativado. Fonte única de verdade: MongoDB.
+ * NOTA: Fonte única de verdade: MongoDB.
  */
 router.post("/import-from-agenda/sync-delete", agendaAuth, async (req, res) => {
   const session = await mongoose.startSession();
