@@ -11,7 +11,7 @@ import validateId from '../middleware/validateId.js';
 const router = express.Router();
 
 // Novas rotas para o dashboard médico - sempre tem qeu vir primeiro doq eu as demioas rotas senao quebra 
-router.get('/patients', auth, getDoctorPatients);
+router.get('/patients', flexibleAuth, getDoctorPatients);
 router.get('/appointments/today', auth, getTodaysAppointments);
 router.get('/therapy-sessions', auth, getDoctorTherapySessions);
 router.get('/appointments/stats', auth, getDoctorStats);

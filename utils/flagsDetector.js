@@ -575,3 +575,141 @@ export function detectManualIntent(text = "") {
 
     return null;
 }
+
+/* =========================================================================
+   7) 🩺 DETECÇÃO DE ESPECIALIDADES MÉDICAS (fora do escopo)
+   ========================================================================= */
+
+/**
+ * Especialidades médicas que a clínica NÃO oferece
+ * Usado para redirecionar o cliente corretamente
+ */
+export const MEDICAL_SPECIALTIES_MAP = [
+    {
+        id: 'neurologista',
+        terms: ['neuropediatra', 'neurologista', 'neurologia', 'neurologo', 'neuro pediatra'],
+        redirectTo: 'neuropsicologia',
+        message: 'Somos uma clínica de terapias. Não temos médicos neurologistas, mas oferecemos Neuropsicologia (avaliação das funções cognitivas).'
+    },
+    {
+        id: 'pediatra',
+        terms: ['pediatra', 'pediatria', 'médico de criança'],
+        redirectTo: 'fonoaudiologia',
+        message: 'Somos uma clínica de terapias especializadas. Para consulta médica com pediatra, você precisará procurar um posto de saúde ou clínica médica.'
+    },
+    {
+        id: 'psiquiatra',
+        terms: ['psiquiatra', 'psiquiatria', 'médico psiquiatra'],
+        redirectTo: 'psicologia',
+        message: 'Não temos psiquiatra na equipe. Para questões emocionais/comportamentais, oferecemos Psicologia Infantil.'
+    },
+    {
+        id: 'psicopedagogo',
+        terms: ['psicopedagogo', 'psicopedagogia médica'],
+        redirectTo: 'neuropsicologia',
+        message: 'Psicopedagogia é oferecida no contexto terapêutico. Para avaliação completa de aprendizagem, indicamos Neuropsicologia.'
+    }
+];
+
+/**
+ * Detecta se o usuário está buscando especialidade médica
+ * @returns {Object|null} { specialty, redirectTo, message } ou null
+ */
+export function detectMedicalSpecialty(text = "") {
+    const normalized = text.toLowerCase().trim();
+    
+    for (const medical of MEDICAL_SPECIALTIES_MAP) {
+        const matched = medical.terms.some(term => {
+            // Verifica palavra completa ou parcial
+            const pattern = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+            return pattern.test(normalized) || normalized.includes(term.toLowerCase());
+        });
+        
+        if (matched) {
+            return {
+                isMedical: true,
+                specialty: medical.id,
+                specialtyName: medical.terms[0],
+                redirectTo: medical.redirectTo,
+                message: medical.message
+            };
+        }
+    }
+    
+    return null;
+}
+
+/**
+ * Valida se o serviço mencionado está disponível na clínica
+ * @returns {Object} { valid, service, redirect, message }
+ */
+export function validateServiceAvailability(text = "", lead = {}) {
+    const normalized = text.toLowerCase().trim();
+    
+    // 1. Primeiro verifica se é especialidade médica
+    const medicalCheck = detectMedicalSpecialty(text);
+    if (medicalCheck) {
+        return {
+            valid: false,
+            isMedicalSpecialty: true,
+            service: medicalCheck.specialty,
+            redirect: medicalCheck.redirectTo,
+            message: medicalCheck.message
+        };
+    }
+    
+    // 2. Mapeamento de serviços válidos
+    const VALID_SERVICES = {
+        fonoaudiologia: { name: 'Fonoaudiologia', aliases: ['fono', 'fonoaudiologo', 'fonoaudiologa'] },
+        psicologia: { name: 'Psicologia Infantil', aliases: ['psicologo', 'psicologa', 'psicologia'], ageLimit: 16 },
+        terapia_ocupacional: { name: 'Terapia Ocupacional', aliases: ['to', 'terapeuta ocupacional'] },
+        fisioterapia: { name: 'Fisioterapia', aliases: ['fisio', 'fisioterapeuta'] },
+        neuropsicologia: { name: 'Neuropsicologia', aliases: ['neuropsico', 'neuropsicologo', 'neuropsicologa'] },
+        musicoterapia: { name: 'Musicoterapia', aliases: ['musicoterapeuta'] }
+    };
+    
+    // 3. Detecta qual serviço foi mencionado
+    let detectedService = null;
+    for (const [key, config] of Object.entries(VALID_SERVICES)) {
+        const allTerms = [key, ...config.aliases];
+        if (allTerms.some(term => normalized.includes(term.toLowerCase()))) {
+            detectedService = { key, ...config };
+            break;
+        }
+    }
+    
+    // 4. Se não detectou nenhum serviço específico, está válido (conversa geral)
+    if (!detectedService) {
+        return { valid: true };
+    }
+    
+    // 5. Validações específicas por serviço
+    const patientAge = lead?.patientInfo?.age;
+    
+    // Psicologia: só até 16 anos
+    if (detectedService.key === 'psicologia' && patientAge && patientAge > 16) {
+        return {
+            valid: false,
+            service: 'psicologia',
+            reason: 'age_limit',
+            redirect: 'neuropsicologia',
+            message: `Nossa Psicologia é especializada em crianças e adolescentes (até 16 anos). Para ${patientAge} anos, indicamos Neuropsicologia.`
+        };
+    }
+    
+    return { valid: true, service: detectedService.key };
+}
+
+/* =========================================================================
+   8) Helper exports adicionais
+   ========================================================================= */
+
+export default {
+    deriveFlagsFromText,
+    detectAllFlags,
+    resolveTopicFromFlags,
+    computeTeaStatus,
+    detectManualIntent,
+    detectMedicalSpecialty,
+    validateServiceAvailability
+};

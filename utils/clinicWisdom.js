@@ -259,6 +259,107 @@ const ACOLHIMENTO_RULES = {
 };
 
 // ================================================================
+// 🚫 SERVIÇOS NÃO OFERECIDOS / REDIRECIONAMENTOS
+// ================================================================
+
+const SERVICE_REDIRECT_WISDOM = {
+    neuropediatra: {
+        detected: 'Neuropediatra (médico neurologista pediátrico)',
+        redirect: 'Neuropsicologia',
+        explanation: 'Neuropsicologia avalia as funções cognitivas (atenção, memória, linguagem, raciocínio) através de testes padronizados. O laudo serve para escola, médicos e planejamento terapêutico.',
+        script: `Oi! 💚 Entendi que você está buscando neuropediatra.
+
+Somos uma clínica de **terapias especializadas**, não temos médicos na equipe. O neuropediatra é um médico neurologista.
+
+Mas posso te ajudar com **Neuropsicologia**! É uma avaliação completa das funções cerebrais (atenção, memória, linguagem, raciocínio) feita por meio de testes. Muitas famílias que buscam neuropediatra acabam precisando da avaliação neuropsicológica primeiro.
+
+O laudo serve para levar ao médico, para a escola adaptar o ensino, e para planejar as terapias. Quer saber mais? 😊`,
+        empathyNote: 'Muitos pais confundem neuropediatra com neuropsicologia. Explique com calma a diferença sem fazer o pai se sentir ignorante.'
+    },
+    
+    neurologista: {
+        detected: 'Neurologista',
+        redirect: 'Neuropsicologia',
+        explanation: 'Avaliação neuropsicológica investiga funções cognitivas. É diferente de consulta médica neurológica.',
+        script: `Oi! 💚 Vi que você está buscando neurologista.
+
+Somos uma clínica de **terapias** (fonoaudiologia, psicologia, neuropsicologia, terapia ocupacional). Não temos médicos.
+
+Para avaliação das funções cerebrais (atenção, memória, comportamento), oferecemos **Neuropsicologia**. É uma bateria de testes que gera um laudo completo, muito usado para complementar avaliação médica.
+
+Se você já tem indicação médica para avaliação neurológica, precisará procurar um neurologista. Mas se busca entender melhor o funcionamento cognitivo, a Neuropsicologia pode ajudar! 💚`,
+    },
+    
+    pediatra: {
+        detected: 'Pediatra (médico)',
+        redirect: null,
+        explanation: 'Clínica não tem médicos. Indicar posto de saúde ou clínica médica.',
+        script: `Oi! 💚 Entendi que você precisa de pediatra.
+
+Somos uma clínica de **terapias especializadas** — fonoaudiologia, psicologia, neuropsicologia, terapia ocupacional, fisioterapia.
+
+Não temos médicos na equipe. Para consulta pediátrica, você pode procurar:
+- Posto de saúde da sua região
+- UPA (Unidade de Pronto Atendimento)
+- Clínica médica particular
+
+Se depois da consulta médica indicarem alguma terapia, é só me chamar que eu explico como funciona! 💚`,
+        bridge: 'Sempre ofereça ajuda terapêutica no final, mesmo quando não atende a demanda médica.'
+    },
+    
+    psiquiatra: {
+        detected: 'Psiquiatra (médico psiquiatra)',
+        redirect: 'psicologia',
+        explanation: 'Psiquiatra é médico (medicação). Psicólogo faz terapia. Para crianças, muitas vezes a terapia é o primeiro passo.',
+        script: `Oi! 💚 Vi que você está buscando psiquiatra.
+
+Não temos psiquiatra na equipe. Aqui trabalhamos com **Psicologia Infantil** — acompanhamento terapêutico semanal para questões comportamentais, emocionais e de desenvolvimento.
+
+Muitas famílias começam com psicoterapia e, se necessário, buscam psiquiatra depois. A terapia ajuda a entender melhor o que está acontecendo e muitas crianças evoluem bem sem necessidade de medicação.
+
+Quer conhecer como funciona a Psicologia Infantil aqui? 😊`,
+    },
+    
+    psicopedagogia: {
+        detected: 'Psicopedagogia',
+        redirect: 'neuropsicologia',
+        explanation: 'No momento sem profissional de psicopedagogia ativo. Neuropsicologia cobre avaliação de aprendizagem.',
+        script: `Oi! 💚 Agradeço o interesse!
+
+No momento não temos psicopedagogia ativa na clínica. Mas posso te ajudar com **Neuropsicologia**!
+
+A avaliação neuropsicológica investiga exatamente as dificuldades de aprendizagem (atenção, memória, linguagem, raciocínio) — é até mais completa que a avaliação psicopedagógica para entender por que a criança tem dificuldade na escola.
+
+O laudo neuropsicológico serve para:
+- Escola adaptar o ensino
+- Encaminhar ao médico se necessário
+- Planejar as terapias certas
+
+Quer saber mais sobre como funciona? 💚`,
+    }
+};
+
+/**
+ * Retorna resposta humanizada para serviço não oferecido
+ */
+export function getMedicalSpecialtyResponse(specialty) {
+    const info = SERVICE_REDIRECT_WISDOM[specialty];
+    if (!info) {
+        return {
+            text: `Oi! 💚 Somos uma clínica de terapias especializadas. Não temos médicos na equipe, mas oferecemos fonoaudiologia, psicologia, neuropsicologia, terapia ocupacional e fisioterapia. Posso te explicar como alguma dessas terapias pode ajudar? 😊`,
+            hasRedirect: false
+        };
+    }
+    
+    return {
+        text: info.script,
+        redirectTo: info.redirect,
+        hasRedirect: !!info.redirect,
+        explanation: info.explanation
+    };
+}
+
+// ================================================================
 // 🎯 FUNÇÃO PRINCIPAL — Consulta contextual
 // ================================================================
 
@@ -370,6 +471,25 @@ export function getWisdomForContext(topic, flags = {}) {
 - Unimed: "${CONVENIO_WISDOM.unimed.script}"
 - Bradesco: "${CONVENIO_WISDOM.bradesco.script}"
 - Bridge: "${CONVENIO_WISDOM.geral.bridge}"`);
+    }
+
+    // ── ESPECIALIDADES MÉDICAS (Fora de escopo) ────────────
+    if (flags.mentionsNeuropediatra || /neuropediatra|neurologista\b/i.test(flags.normalizedText || '')) {
+        blocks.push(`🚫 NEUROPEDIATRA / NEUROLOGISTA — FORA DE ESCOPO:
+- A clínica NÃO tem médicos neurologistas.
+- Somos uma clínica de TERAPIAS (fonoaudiologia, psicologia, neuropsicologia, TO, fisioterapia).
+- REDIRECIONAMENTO: Oferecer Neuropsicologia (avaliação das funções cognitivas).
+- EXPLICAÇÃO: "A neuropsicologia avalia atenção, memória, linguagem e raciocínio através de testes. O laudo serve para escola e médicos."
+- NUNCA confirme que temos neuropediatra.`);
+        
+        if (!wisdom) {
+            wisdom = {
+                tipo: 'redirect_medical',
+                de: 'neuropediatra',
+                para: 'neuropsicologia',
+                respostaExemplo: SERVICE_REDIRECT_WISDOM.neuropediatra.script
+            };
+        }
     }
 
     // ── AGENDAMENTO / FICHA ───────────────────────────────
@@ -493,10 +613,12 @@ export {
     TESTE_LINGUINHA_WISDOM,
     CANCELLATION_WISDOM,  // 🆕 Export 2026
     URGENCY_WISDOM,       // 🆕 Export 2026
+    SERVICE_REDIRECT_WISDOM,  // 🆕 Redirecionamentos de serviços
 };
 
 export default {
     getWisdomForContext,
+    getMedicalSpecialtyResponse,
     PRICE_WISDOM,
     CONVENIO_WISDOM,
     FICHA_CADASTRO_WISDOM,
@@ -506,4 +628,5 @@ export default {
     TESTE_LINGUINHA_WISDOM,
     CANCELLATION_WISDOM,  // 🆕 Export 2026
     URGENCY_WISDOM,       // 🆕 Export 2026
+    SERVICE_REDIRECT_WISDOM,  // 🆕 Redirecionamentos
 };

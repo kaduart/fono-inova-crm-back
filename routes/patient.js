@@ -88,7 +88,7 @@ router.post('/add', flexibleAuth, async (req, res) => {
 });
 
 // 🔥 List all patients - OTIMIZADO
-router.get('/', auth, async (req, res) => {
+router.get('/', flexibleAuth, async (req, res) => {
   try {
     const { search } = req.query;
     const limit = parseInt(req.query.limit) || (search ? 100 : 50);
