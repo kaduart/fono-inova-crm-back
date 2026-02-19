@@ -844,7 +844,7 @@ router.get('/by-specialty/:specialty', auth, async (req, res) => {
 });
 
 router.put('/:id', validateId, auth, checkPackageAvailability,
-    validateIndividualPayment, checkAppointmentConflicts, async (req, res) => {
+    checkAppointmentConflicts, async (req, res) => {
 
         const mongoSession = await mongoose.startSession();
 
@@ -1152,6 +1152,7 @@ router.get('/history/:patientId', async (req, res) => {
 router.patch('/:id/cancel', validateId, auth, async (req, res) => {
     try {
         const { reason, confirmedAbsence = false } = req.body;
+        console.log('🔍 [Cancel] ID recebido:', req.params.id);
 
         if (!reason) {
             return res.status(400).json({
@@ -1164,6 +1165,8 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
             const appointment = await Appointment.findById(req.params.id)
                 .populate('session')
                 .session(session);
+
+            console.log('🔍 [Cancel] Appointment encontrado:', appointment ? 'SIM' : 'NÃO');
 
             if (!appointment) {
                 const err = new Error('Agendamento não encontrado');
@@ -1361,24 +1364,25 @@ router.patch('/:id/complete', auth, async (req, res) => {
 
         // 1️⃣ ATUALIZAR SESSÃO (SEMPRE!)
         if (appointment.session) {
-            // 🔧 Usar findOneAndUpdate para disparar hook de consumo de guia
-            const sessionResult = await Session.findOneAndUpdate(
-                { _id: appointment.session._id },
-                {
-                    status: 'completed',
-                    isPaid: true,
-                    paymentStatus: 'paid',
-                    visualFlag: 'ok',
-                    updatedAt: new Date()
-                },
-                { new: true, session }  // new: true retorna o documento atualizado
-            );
+            try {
+                // 🔧 Usar findOneAndUpdate para disparar hook de consumo de guia
+                const sessionResult = await Session.findOneAndUpdate(
+                    { _id: appointment.session._id },
+                    {
+                        status: 'completed',
+                        isPaid: true,
+                        paymentStatus: 'paid',
+                        visualFlag: 'ok',
+                        updatedAt: new Date()
+                    },
+                    { new: true, session }  // new: true retorna o documento atualizado
+                );
 
-            console.log('✅ Session update:', {
-                id: appointment.session._id,
-                status: sessionResult?.status,
-                guideConsumed: sessionResult?.guideConsumed
-            });
+                // Session atualizada com sucesso
+            } catch (err) {
+                console.error('❌ Erro ao atualizar session:', err.message);
+                throw err;
+            }
         }
 
         // 2️⃣ ATUALIZAR PAYMENT (BUSCA ÓRFÃO SE NÃO ESTIVER VINCULADO)
@@ -1386,72 +1390,78 @@ router.patch('/:id/complete', auth, async (req, res) => {
 
         // ✅ FIX: Se não tem payment vinculado, busca pelo appointment ID
         if (!paymentId && !appointment.package) {
-            const orphanPayment = await Payment.findOne({
-                appointment: appointment._id
-            }).session(session);
+            try {
+                const orphanPayment = await Payment.findOne({
+                    appointment: appointment._id
+                }).session(session);
 
-            if (orphanPayment) {
-                paymentId = orphanPayment._id;
-                console.log('🔗 Payment órfão encontrado:', paymentId);
+                if (orphanPayment) {
+                    paymentId = orphanPayment._id;
 
-                // Vincula de volta ao appointment
-                await Appointment.updateOne(
-                    { _id: appointment._id },
-                    { $set: { payment: paymentId } }
-                ).session(session);
+                    // Vincula de volta ao appointment
+                    await Appointment.updateOne(
+                        { _id: appointment._id },
+                        { $set: { payment: paymentId } }
+                    ).session(session);
+                }
+            } catch (err) {
+                console.error('❌ Erro ao buscar payment órfão:', err.message);
+                throw err;
             }
         }
 
         if (paymentId) {
-            // 🔒 TRAVA ANTI-DUPLICAÇÃO: Verificar se já existe pagamento pago
-            const existingPayment = await Payment.findById(paymentId).session(session);
+            try {
+                // 🔒 TRAVA ANTI-DUPLICAÇÃO: Verificar se já existe pagamento pago
+                const existingPayment = await Payment.findById(paymentId).session(session);
 
-            // Se já está pago, NÃO alterar a data do pagamento (mantém data original)
-            // Se está pendente, atualiza para pago com data de hoje
-            const updateData = existingPayment?.status === 'paid'
-                ? {
-                    // Pagamento já existe - mantém a data original, apenas garante que está pago
-                    status: 'paid',
-                    updatedAt: new Date()
-                }
-                : {
-                    // Pagamento pendente - confirma com data de hoje
-                    status: 'paid',
-                    paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"),
-                    updatedAt: new Date()
-                };
+                // Se já está pago, NÃO alterar a data do pagamento (mantém data original)
+                // Se está pendente, atualiza para pago com data de hoje
+                const updateData = existingPayment?.status === 'paid'
+                    ? {
+                        // Pagamento já existe - mantém a data original, apenas garante que está pago
+                        status: 'paid',
+                        updatedAt: new Date()
+                    }
+                    : {
+                        // Pagamento pendente - confirma com data de hoje
+                        status: 'paid',
+                        paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"),
+                        updatedAt: new Date()
+                    };
 
-            const paymentResult = await Payment.updateOne(
-                { _id: paymentId },
-                { $set: updateData }
-            ).session(session);
+                const paymentResult = await Payment.updateOne(
+                    { _id: paymentId },
+                    { $set: updateData }
+                ).session(session);
 
-            console.log('✅ Payment update:', {
-                id: paymentId,
-                wasAlreadyPaid: existingPayment?.status === 'paid',
-                originalPaymentDate: existingPayment?.paymentDate,
-                matched: paymentResult.matchedCount,
-                modified: paymentResult.modifiedCount
-            });
-        } else if (!appointment.package) {
-            console.log('⚠️ Nenhum payment encontrado para este appointment');
+                // Payment atualizado com sucesso
+            } catch (err) {
+                console.error('❌ Erro ao atualizar payment:', err.message);
+                throw err;
+            }
         }
 
         // 3️⃣ ATUALIZAR PACOTE (SE NECESSÁRIO)
         let packageDoc = null; // Declarar fora do escopo para reusar depois
         if (shouldIncrementPackage && appointment.package) {
-            packageDoc = await Package.findById(appointment.package._id).session(session);
-            await Package.updateOne(
-                {
-                    _id: appointment.package._id,
-                    $expr: { $lt: ["$sessionsDone", "$totalSessions"] }
-                },
-                {
-                    $inc: { sessionsDone: 1 },
-                    $set: { updatedAt: new Date() }
-                }
-            ).session(session);
-
+            try {
+                packageDoc = await Package.findById(appointment.package._id).session(session);
+                
+                await Package.updateOne(
+                    {
+                        _id: appointment.package._id,
+                        $expr: { $lt: ["$sessionsDone", "$totalSessions"] }
+                    },
+                    {
+                        $inc: { sessionsDone: 1 },
+                        $set: { updatedAt: new Date() }
+                    }
+                ).session(session);
+            } catch (err) {
+                console.error('❌ Erro ao atualizar package:', err.message);
+                throw err;
+            }
         }
 
         // 4️⃣ ATUALIZAR AGENDAMENTO
@@ -1475,45 +1485,49 @@ router.patch('/:id/complete', auth, async (req, res) => {
         if (appointment.package) {
             // 🏥 Se for pacote de convênio, mantém pending_receipt (recebe em 30 dias)
             // Reutilizar packageDoc se já foi carregado, senão buscar
-            if (!packageDoc) {
-                packageDoc = await Package.findById(appointment.package._id).session(session);
-            }
+            try {
+                if (!packageDoc) {
+                    packageDoc = await Package.findById(appointment.package._id).session(session);
+                }
 
-            if (packageDoc && packageDoc.type === 'convenio') {
-                updateData.paymentStatus = 'pending_receipt';
-                updateData.visualFlag = 'pending'; // Reflete status financeiro pendente
-            } else {
-                updateData.paymentStatus = 'package_paid';
+                if (packageDoc && packageDoc.type === 'convenio') {
+                    updateData.paymentStatus = 'pending_receipt';
+                    updateData.visualFlag = 'pending'; // Reflete status financeiro pendente
+                } else {
+                    updateData.paymentStatus = 'package_paid';
+                }
+            } catch (err) {
+                console.error('❌ Erro ao verificar package:', err.message);
+                throw err;
             }
         } else {
             updateData.paymentStatus = 'paid';
         }
 
-        const appointmentResult = await Appointment.updateOne(
-            { _id: id },
-            updateData
-        ).session(session);
-
-        console.log('✅ Appointment update:', {
-            id,
-            matched: appointmentResult.matchedCount,
-            modified: appointmentResult.modifiedCount
-        });
+        try {
+            await Appointment.updateOne(
+                { _id: id },
+                updateData
+            ).session(session);
+        } catch (err) {
+            console.error('❌ Erro ao atualizar appointment:', err.message);
+            throw err;
+        }
 
         // ✅ BUSCAR DENTRO DA TRANSAÇÃO (antes do commit)
-        const updatedAppointment = await Appointment.findById(id)
-            .populate('session package patient doctor payment')
-            .session(session);
-
-        console.log('🔍 Status ANTES do commit:', {
-            operationalStatus: updatedAppointment.operationalStatus,
-            paymentStatus: updatedAppointment.paymentStatus
-        });
+        let updatedAppointment;
+        try {
+            updatedAppointment = await Appointment.findById(id)
+                .populate('session package patient doctor payment')
+                .session(session);
+        } catch (err) {
+            console.error('❌ Erro ao buscar appointment atualizado:', err.message);
+            throw err;
+        }
 
         // 5️⃣ SINCRONIZAR DENTRO DA TRANSAÇÃO
         try {
             await syncEvent(updatedAppointment, 'appointment', session);
-            console.log('✅ Sync completado dentro da transação');
         } catch (syncError) {
             console.error('⚠️ Erro no sync (não crítico):', syncError.message);
             // Não aborta a transação por erro de sync
@@ -1526,12 +1540,6 @@ router.patch('/:id/complete', auth, async (req, res) => {
         // 7️⃣ BUSCAR NOVAMENTE APÓS COMMIT (para garantir)
         const finalAppointment = await Appointment.findById(id)
             .populate('session package patient doctor payment');
-
-        console.log('🎯 Status APÓS commit:', {
-            operationalStatus: finalAppointment.operationalStatus,
-            paymentStatus: finalAppointment.paymentStatus,
-            sessionPaid: finalAppointment.session?.isPaid
-        });
 
         res.json(finalAppointment);
 

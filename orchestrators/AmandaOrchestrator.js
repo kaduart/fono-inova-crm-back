@@ -48,8 +48,233 @@ import ensureSingleHeart from "../utils/helpers.js";
 import { extractAgeFromText, extractBirth, extractName, extractPeriodFromText } from "../utils/patientDataExtractor.js";
 import { buildSlotMenuMessage } from "../utils/slotMenuBuilder.js";
 import callAI from "../services/IA/Aiproviderservice.js";
+import { clinicalEligibility } from "../domain/policies/ClinicalEligibility.js";
 
 const recentResponses = new Map();
+
+// ============================================================================
+// 🛡️ SERVIÇOS VÁLIDOS DA CLÍNICA (fonte única da verdade)
+// ============================================================================
+const VALID_SERVICES = {
+    // Terapias disponíveis
+    fonoaudiologia: { name: "Fonoaudiologia", available: true },
+    psicologia: { name: "Psicologia Infantil", available: true, ageLimit: 16 },
+    terapia_ocupacional: { name: "Terapia Ocupacional", available: true },
+    fisioterapia: { name: "Fisioterapia", available: true },
+    musicoterapia: { name: "Musicoterapia", available: true },
+    neuropsicologia: { name: "Neuropsicologia", available: true },
+    
+    // Mapeamentos comuns
+    fono: { alias: "fonoaudiologia" },
+    to: { alias: "terapia_ocupacional" },
+    fisio: { alias: "fisioterapia" },
+    neuropsico: { alias: "neuropsicologia" },
+    psicopedagogia: { name: "Psicopedagogia", available: false, redirectTo: "neuropsicologia", reason: "Sem profissional ativo" },
+};
+
+// Especialidades médicas que NÃO oferecemos
+const MEDICAL_SPECIALTIES = [
+    { terms: ['neuropediatra', 'neurologista', 'neurologia'], name: 'Neurologista', redirect: 'neuropsicologia' },
+    { terms: ['pediatra', 'pediatria'], name: 'Pediatra', redirect: 'fonoaudiologia' },
+    { terms: ['psiquiatra', 'psiquiatria'], name: 'Psiquiatra', redirect: 'psicologia' },
+    { terms: ['cardiologista', 'ortopedista', 'dermatologista'], name: null, redirect: null },
+];
+
+/**
+ * 🩺 Valida se o serviço solicitado existe na clínica
+ * Retorna: { valid: boolean, service: string, message?: string, redirect?: string }
+ */
+function validateServiceRequest(text = "") {
+    const normalized = text.toLowerCase();
+    
+    // 1. Verificar especialidades médicas primeiro
+    for (const medical of MEDICAL_SPECIALTIES) {
+        if (medical.terms.some(term => normalized.includes(term))) {
+            return {
+                valid: false,
+                isMedicalSpecialty: true,
+                requested: medical.name,
+                redirect: medical.redirect,
+                message: buildMedicalSpecialtyResponse(medical)
+            };
+        }
+    }
+    
+    // 2. Verificar serviços indisponíveis
+    for (const [key, config] of Object.entries(VALID_SERVICES)) {
+        if (config.alias) continue; // Pular aliases
+        
+        // Verificar se mencionou este serviço
+        const serviceTerms = [key, config.name?.toLowerCase()].filter(Boolean);
+        const mentioned = serviceTerms.some(term => normalized.includes(term));
+        
+        if (mentioned && config.available === false) {
+            return {
+                valid: false,
+                requested: config.name,
+                redirect: config.redirectTo,
+                reason: config.reason,
+                message: buildUnavailableServiceResponse(config)
+            };
+        }
+    }
+    
+    return { valid: true };
+}
+
+/**
+ * 💚 Resposta humanizada para especialidade médica
+ * Usa variações para não parecer robótico
+ */
+function buildMedicalSpecialtyResponse(medical, context = {}) {
+    const name = medical.name;
+    const redirect = medical.redirect;
+    const { leadName, mentionedSymptoms } = context;
+    
+    // Variações de abertura mais naturais
+    const openingVariations = [
+        `Oi${leadName ? ` ${leadName}` : ''}! 💚`,
+        `Oi! Tudo bem? 💚`,
+        `Olá! 😊`,
+    ];
+    
+    const opening = openingVariations[Math.floor(Math.random() * openingVariations.length)];
+    
+    // Reconhecimento da demanda
+    let acknowledgment = '';
+    if (mentionedSymptoms) {
+        acknowledgment = ` Entendi que vocês estão lidando com ${mentionedSymptoms}. É uma preocupação válida!`;
+    }
+    
+    // Explicação sobre ser clínica de terapias
+    const explanations = [
+        `\n\nSomos uma clínica de **terapias especializadas** — trabalhamos com fonoaudiologia, psicologia, neuropsicologia, terapia ocupacional e fisioterapia. Não temos médicos na equipe.`,
+        `\n\nAqui na Fono Inova somos uma equipe de **terapeutas** (fonoaudiólogas, psicólogas, neuropsicólogas). Não atendemos com médicos.`,
+        `\n\nSomos especializados em **terapias** para desenvolvimento infantil. Não temos médicos na equipe, mas trabalhamos em parceria com a área médica quando necessário!`,
+    ];
+    
+    const explanation = explanations[Math.floor(Math.random() * explanations.length)];
+    
+    let redirectPart = '';
+    if (redirect) {
+        const redirectOptions = {
+            neuropsicologia: {
+                intro: [
+                    `\n\nMas posso te ajudar com **Neuropsicologia**! 😊`,
+                    `\n\nO que posso oferecer é **Neuropsicologia**:`,
+                    `\n\nUma alternativa que costuma ajudar muito é a **Neuropsicologia**:`,
+                ],
+                details: [
+                    `É uma avaliação completa das funções cerebrais — atenção, memória, linguagem, raciocínio. Muitas famílias que buscam ${name} descobrem que a neuropsicologia é exatamente o que precisam!`,
+                    `Fazemos uma bateria de testes para avaliar cognição, comportamento e aprendizagem. O laudo serve para escola, médicos e planejamento terapêutico.`,
+                    `Avaliamos tudo: atenção, memória, forma de pensar, comportamento. É super completo e o laudo é válido para escola e médicos!`,
+                ]
+            },
+            fonoaudiologia: {
+                intro: [`\n\nPosso te ajudar com **Fonoaudiologia**! 😊`],
+                details: [`Trabalhamos desenvolvimento da fala, linguagem, alimentação e motricidade oral.`],
+            },
+            psicologia: {
+                intro: [`\n\nPosso te ajudar com **Psicologia Infantil**! 😊`],
+                details: [`Acompanhamento terapêutico para questões emocionais, comportamentais e desenvolvimento.`],
+            }
+        };
+        
+        const info = redirectOptions[redirect];
+        if (info) {
+            const intro = info.intro[Math.floor(Math.random() * info.intro.length)];
+            const detail = info.details[Math.floor(Math.random() * info.details.length)];
+            redirectPart = intro + '\n' + detail;
+        }
+    } else {
+        redirectPart = `\n\nSe quiser, posso explicar como as terapias podem ajudar no desenvolvimento! 💚`;
+    }
+    
+    return opening + acknowledgment + explanation + redirectPart + '\n\nQuer saber mais? 💚';
+}
+
+/**
+ * 💚 Resposta humanizada para serviço indisponível
+ */
+function buildUnavailableServiceResponse(config, context = {}) {
+    const { leadName, conversationHistory } = context;
+    const hasHistory = conversationHistory && conversationHistory.length > 0;
+    
+    // Abertura mais pessoal se já tem histórico
+    let opening = '';
+    if (hasHistory) {
+        opening = `Oi${leadName ? ` ${leadName}` : ''}! 💚 Entendi que você tá buscando **${config.name}**.`;
+    } else {
+        opening = `Oi! 💚 Agradeço o interesse em **${config.name}**!`;
+    }
+    
+    let body = '';
+    if (config.reason) {
+        const explanations = [
+            `\n\nNo momento não temos profissional de ${config.name} ativo na clínica. Mas não quer dizer que não possamos ajudar de outra forma!`,
+            `\n\nInfelizmente agora não temos ${config.name} disponível. Mas deixa eu te explicar uma alternativa que pode ser até melhor:`,
+        ];
+        body = explanations[Math.floor(Math.random() * explanations.length)];
+    }
+    
+    let redirectPart = '';
+    if (config.redirectTo) {
+        const redirectOptions = {
+            neuropsicologia: {
+                name: "Neuropsicologia",
+                phrases: [
+                    `Posso te ajudar com **Neuropsicologia**! É uma avaliação completa das funções cognitivas (atenção, memória, linguagem, raciocínio). Na prática, muitas crianças com dificuldades escolares se beneficiam MUITO dessa avaliação! 😊`,
+                    `O que oferecemos é **Neuropsicologia** — é tipo um "raio-x" do cérebro, mas feito com testes. Avaliamos tudo: como a criança presta atenção, memoriza, raciocina. O laudo é super completo!`,
+                ]
+            }
+        };
+        
+        const info = redirectOptions[config.redirectTo];
+        if (info) {
+            const phrase = info.phrases[Math.floor(Math.random() * info.phrases.length)];
+            redirectPart = `\n\n${phrase}`;
+        }
+    }
+    
+    // Fechamento acolhedor
+    const closings = [
+        `\n\nPosso te explicar melhor como funciona? 💚`,
+        `\n\nQuer que eu te conte mais sobre isso? 😊`,
+        `\n\nSe quiser saber mais, é só me perguntar! Estou aqui pra ajudar. 💚`,
+    ];
+    const closing = closings[Math.floor(Math.random() * closings.length)];
+    
+    return opening + body + redirectPart + closing;
+}
+
+/**
+ * 🧠 Extrai sintomas/contexto do texto para personalizar resposta
+ */
+function extractContextForResponse(text = "", lead = {}) {
+    const normalized = text.toLowerCase();
+    const symptoms = [];
+    
+    // Mapeamento de sintomas comuns
+    const symptomMap = {
+        'atraso de fala': /n[aã]o fala|fala pouco|demorou pra falar/i,
+        'dificuldade escolar': /n[aã]o aprende|dificuldade na escola|nota baixa/i,
+         'problema de comportamento': /birra|agressivo|n[aã]o obedece/i,
+        'suspeita de autismo': /autismo|tea|suspeita/i,
+        'dificuldade motora': /n[aã]o anda direito|tropeça|coordena[cç][aã]o/i,
+    };
+    
+    for (const [symptom, pattern] of Object.entries(symptomMap)) {
+        if (pattern.test(normalized)) {
+            symptoms.push(symptom);
+        }
+    }
+    
+    return {
+        leadName: lead?.patientInfo?.fullName?.split(' ')[0] || lead?.contact?.name?.split(' ')[0],
+        mentionedSymptoms: symptoms.length > 0 ? symptoms.join(', ') : null,
+        conversationHistory: lead?.conversationHistory || []
+    };
+}
 
 // ============================================================================
 // 🛡️ HELPER: Update seguro que inicializa autoBookingContext se for null
@@ -382,6 +607,61 @@ export async function getOptimizedAmandaResponse({
         }
     } else {
         console.warn("⚠️ [REFRESH] Lead sem _id:", lead);
+    }
+
+    // =========================================================================
+    // 🆕 PASSO 0.5: VALIDAÇÃO DE SERVIÇOS (Bloqueia serviços que não existem)
+    // =========================================================================
+    console.log("🩺 [VALIDATION] Verificando serviço solicitado...");
+    
+    // Extrai contexto para respostas personalizadas
+    const responseContext = extractContextForResponse(text, lead);
+    
+    // Usa ClinicalEligibility para validação completa
+    const age = lead?.patientInfo?.age || extractAgeFromText(text);
+    const eligibilityCheck = await clinicalEligibility.validate({
+        therapy: lead?.therapyArea,
+        age: age,
+        text: text,
+        clinicalHistory: lead?.clinicalHistory || {}
+    });
+    
+    if (eligibilityCheck.blocked) {
+        console.log("🚫 [VALIDATION] Serviço bloqueado:", eligibilityCheck.reason);
+        return ensureSingleHeart(eligibilityCheck.message);
+    }
+    
+    // Validação adicional de serviços específicos com contexto
+    const serviceValidation = validateServiceRequest(text);
+    if (!serviceValidation.valid) {
+        console.log("🚫 [VALIDATION] Serviço inválido:", serviceValidation.requested);
+        
+        // Gera mensagem humanizada com contexto
+        let humanizedMessage = serviceValidation.message;
+        if (serviceValidation.isMedicalSpecialty) {
+            const medical = MEDICAL_SPECIALTIES.find(m => m.name === serviceValidation.requested);
+            if (medical) {
+                humanizedMessage = buildMedicalSpecialtyResponse(medical, responseContext);
+            }
+        } else if (serviceValidation.requested) {
+            const config = VALID_SERVICES[Object.keys(VALID_SERVICES).find(k => VALID_SERVICES[k].name === serviceValidation.requested)];
+            if (config) {
+                humanizedMessage = buildUnavailableServiceResponse(config, responseContext);
+            }
+        }
+        
+        // Se tem redirecionamento, salva no lead para contexto futuro
+        if (serviceValidation.redirect && lead?._id) {
+            await safeLeadUpdate(lead._id, {
+                $set: {
+                    "qualificationData.redirectedFrom": serviceValidation.requested,
+                    "qualificationData.suggestedAlternative": serviceValidation.redirect,
+                    "qualificationData.redirectContext": responseContext
+                }
+            }).catch(() => {});
+        }
+        
+        return ensureSingleHeart(humanizedMessage);
     }
 
     // =========================================================================
