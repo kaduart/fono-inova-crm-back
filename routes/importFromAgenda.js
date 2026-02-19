@@ -810,16 +810,23 @@ router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
       observations,
       status,
       operationalStatus,
-      crm: crmRaw
+      crm: crmRaw,
+      responsible
     } = req.body;
 
     const crm = crmRaw || {};
+    
+    // Buscar doutor primeiro (se professionalName foi enviado)
+    let doctor = null;
+    if (professionalName) {
+      doctor = await findDoctorByName(professionalName);
+    }
     
     // 🗺️ MAPEAMENTO DE CAMPOS: formato agenda externa → formato CRM interno
     const mappedData = {
       // IDs
       doctorId: doctor?._id || null,
-      patientId: appointment?.patient?.toString() || null,
+      patientId: patientInfo?.patientId || null,
       
       // Dados básicos
       date: date,
@@ -908,12 +915,8 @@ router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
       if (mapped) updateData.operationalStatus = mapped;
     }
 
-    let doctor = null;
-    if (professionalName) {
-      doctor = await findDoctorByName(professionalName);
-      if (doctor) updateData.doctor = doctor._id;
-    }
-
+    // Adiciona doctor ao updateData se encontrado
+    if (doctor) updateData.doctor = doctor._id;
 
     // SE FOR PRÉ-AGENDAMENTO: atualização simplificada
     if (isPreAgendamento && preAgendamento) {
