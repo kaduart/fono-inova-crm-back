@@ -759,10 +759,36 @@ export async function bookFixedSlot({
         const appointmentData = appointmentResponse.data.data;
         bookingStats.successful++;
 
+        // 🔹 O payment retornado tem o campo 'appointment' com o ID do agendamento criado
+        // Garantimos que retornamos um objeto com _id
+        let createdAppointment = null;
+        if (appointmentData.appointment) {
+            const appointmentId = typeof appointmentData.appointment === 'object' 
+                ? appointmentData.appointment._id 
+                : appointmentData.appointment;
+            
+            try {
+                const apptResponse = await api.get(`/api/appointments/${appointmentId}`);
+                if (apptResponse.data?.success) {
+                    createdAppointment = apptResponse.data.data;
+                }
+            } catch (e) {
+                console.warn('[bookFixedSlot] Erro ao buscar appointment:', e.message);
+            }
+            
+            // Se não conseguiu buscar, cria um objeto mínimo com o ID
+            if (!createdAppointment) {
+                createdAppointment = { 
+                    _id: appointmentId,
+                    id: appointmentId 
+                };
+            }
+        }
+
         return {
             success: true,
             patientId,
-            appointment: appointmentData.appointment,
+            appointment: createdAppointment,
             payment: appointmentData,
             session: appointmentData.session,
         };

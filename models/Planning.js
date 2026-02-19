@@ -41,7 +41,8 @@ const planningSchema = new mongoose.Schema({
             type: String,
             enum: ['on_track', 'at_risk', 'behind', 'achieved'],
             default: 'on_track'
-        }
+        },
+        gapRevenue: { type: Number, default: 0 }  // Quanto falta para a meta de receita
     },
 
     // 🔹 Distribuição por profissional (opcional)
@@ -97,6 +98,9 @@ planningSchema.pre('save', function (next) {
     this.progress.revenuePercentage = targets.expectedRevenue > 0
         ? Math.round((actual.actualRevenue / targets.expectedRevenue) * 100)
         : 0;
+
+    // Calcular gap (quanto falta)
+    this.progress.gapRevenue = Math.max(0, targets.expectedRevenue - actual.actualRevenue);
 
     // Status geral (média das 4 métricas)
     const avgProgress = (

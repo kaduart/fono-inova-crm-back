@@ -1,0 +1,306 @@
+// services/financial/FinancialOverviewService.js
+// Orquestrador do Financial Overview - reutiliza serviços existentes
+
+import moment from 'moment-timezone';
+import mongoose from 'mongoose';
+import Payment from '../../models/Payment.js';
+import Expense from '../../models/Expense.js';
+import Planning from '../../models/Planning.js';
+import FinancialInsightsEngine from './FinancialInsightsEngine.js';
+
+const TIMEZONE = 'America/Sao_Paulo';
+
+class FinancialOverviewService {
+
+    /**
+     * Busca overview financeiro completo com comparação de períodos
+     */
+    async getOverview({ month, year, compare = 'previous' }) {
+        const periodoAtual = this._getPeriodDates(month, year);
+        const periodoComparativo = this._getComparisonPeriod(month, year, compare);
+
+        // Buscar métricas em paralelo
+        const [metricsAtual, metricsComparativo, planning] = await Promise.all([
+            this._calculateMetrics(periodoAtual),
+            this._calculateMetrics(periodoComparativo),
+            this._getPlanning(month, year)
+        ]);
+
+        // Calcular variações
+        const variation = this._calculateVariations(metricsAtual, metricsComparativo);
+
+        // Calcular projeções
+        const projecao = this._calculateProjection(metricsAtual.receita, month, year);
+        const valorDiarioNecessario = FinancialInsightsEngine.calculateDailyRequired(
+            planning?.target || 0,
+            metricsAtual.receita,
+            this._getRemainingDays(month, year)
+        );
+
+        // Montar objeto de métricas final
+        const metrics = {
+            receita: metricsAtual.receita,
+            despesas: metricsAtual.despesas,
+            lucro: metricsAtual.lucro,
+            margem: metricsAtual.margem,
+            caixa: metricsAtual.caixa,
+            aReceber: metricsAtual.aReceber,
+            meta: planning?.target || 0,
+            metaPercent: planning?.target > 0 ? (metricsAtual.receita / planning.target) * 100 : 0,
+            projecao,
+            valorDiarioNecessario
+        };
+
+        // Gerar insights
+        const insights = FinancialInsightsEngine.generateInsights(metrics, variation, metricsComparativo);
+
+        return {
+            period: {
+                month: parseInt(month),
+                year: parseInt(year),
+                startDate: periodoAtual.start,
+                endDate: periodoAtual.end
+            },
+            comparisonPeriod: {
+                month: periodoComparativo.month,
+                year: periodoComparativo.year,
+                startDate: periodoComparativo.start,
+                endDate: periodoComparativo.end,
+                type: compare
+            },
+            metrics,
+            variation,
+            insights
+        };
+    }
+
+    /**
+     * Calcula métricas para um período específico
+     */
+    async _calculateMetrics(periodo) {
+        const { start, end, startDateTime, endDateTime } = periodo;
+
+        // Agregações em paralelo - reutilizando lógica do cashflow.js
+        const [
+            receitasAgg,
+            despesasAgg,
+            aReceberAgg,
+            pagamentosPendentes
+        ] = await Promise.all([
+            // Receitas pagas
+            Payment.aggregate([
+                {
+                    $match: {
+                        status: 'paid',
+                        paymentDate: { $gte: start, $lte: end }
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        total: { $sum: '$amount' },
+                        count: { $sum: 1 }
+                    }
+                }
+            ]),
+
+            // Despesas pagas
+            Expense.aggregate([
+                {
+                    $match: {
+                        status: 'paid',
+                        date: { $gte: start, $lte: end }
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        total: { $sum: '$amount' },
+                        count: { $sum: 1 }
+                    }
+                }
+            ]),
+
+            // A receber (convênios pending_billing)
+            Payment.aggregate([
+                {
+                    $match: {
+                        status: 'paid',
+                        billingType: 'convenio',
+                        'insurance.status': 'pending_billing',
+                        paymentDate: { $gte: start, $lte: end }
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        total: { $sum: { $ifNull: ['$insurance.grossAmount', '$amount'] } }
+                    }
+                }
+            ]),
+
+            // Pagamentos pendentes (não convênio)
+            Payment.aggregate([
+                {
+                    $match: {
+                        status: 'pending',
+                        paymentDate: { $gte: start, $lte: end }
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        total: { $sum: '$amount' }
+                    }
+                }
+            ])
+        ]);
+
+        const receita = receitasAgg[0]?.total || 0;
+        const despesas = despesasAgg[0]?.total || 0;
+        const lucro = receita - despesas;
+        const margem = receita > 0 ? lucro / receita : 0;
+
+        // Caixa = receitas recebidas (já pagas)
+        const caixa = receita;
+
+        // A receber = convênios pending + pagamentos pendentes
+        const aReceberConvenios = aReceberAgg[0]?.total || 0;
+        const aReceberPendentes = pagamentosPendentes[0]?.total || 0;
+        const aReceber = aReceberConvenios + aReceberPendentes;
+
+        return {
+            receita,
+            despesas,
+            lucro,
+            margem,
+            caixa,
+            aReceber,
+            countReceitas: receitasAgg[0]?.count || 0,
+            countDespesas: despesasAgg[0]?.count || 0
+        };
+    }
+
+    /**
+     * Busca planejamento/meta do período
+     */
+    async _getPlanning(month, year) {
+        try {
+            const startOfMonth = moment(`${year}-${String(month).padStart(2, '0')}-01`)
+                .tz(TIMEZONE)
+                .startOf('month')
+                .toDate();
+            
+            const endOfMonth = moment(startOfMonth).endOf('month').toDate();
+
+            const planning = await Planning.findOne({
+                startDate: { $lte: endOfMonth },
+                endDate: { $gte: startOfMonth }
+            }).sort({ createdAt: -1 });
+
+            return planning ? {
+                target: planning.target || 0,
+                type: planning.type,
+                id: planning._id
+            } : null;
+        } catch (error) {
+            console.error('Erro ao buscar planning:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Calcula variações percentuais
+     */
+    _calculateVariations(atual, comparativo) {
+        return {
+            receita: FinancialInsightsEngine.calculateVariation(atual.receita, comparativo.receita),
+            despesas: FinancialInsightsEngine.calculateVariation(atual.despesas, comparativo.despesas),
+            lucro: FinancialInsightsEngine.calculateVariation(atual.lucro, comparativo.lucro),
+            margem: (atual.margem - comparativo.margem) * 100 // Em pontos percentuais
+        };
+    }
+
+    /**
+     * Calcula projeção de faturamento
+     */
+    _calculateProjection(receitaAtual, month, year) {
+        const hoje = moment().tz(TIMEZONE);
+        const dataReferencia = moment(`${year}-${month}-01`).tz(TIMEZONE);
+        
+        // Se estiver consultando mês passado, não projeta
+        if (dataReferencia.isBefore(hoje, 'month')) {
+            return receitaAtual;
+        }
+
+        const diaAtual = hoje.date();
+        const totalDiasMes = dataReferencia.endOf('month').date();
+
+        return FinancialInsightsEngine.calculateProjection(receitaAtual, diaAtual, totalDiasMes);
+    }
+
+    /**
+     * Retorna datas do período
+     */
+    _getPeriodDates(month, year) {
+        const start = `${year}-${String(month).padStart(2, '0')}-01`;
+        const end = moment(`${year}-${String(month).padStart(2, '0')}-01`)
+            .endOf('month')
+            .format('YYYY-MM-DD');
+        
+        return {
+            start,
+            end,
+            startDateTime: moment.tz(start, TIMEZONE).startOf('day').toDate(),
+            endDateTime: moment.tz(end, TIMEZONE).endOf('day').toDate()
+        };
+    }
+
+    /**
+     * Retorna período de comparação
+     */
+    _getComparisonPeriod(month, year, compare) {
+        let compMonth, compYear;
+        const m = parseInt(month);
+        const y = parseInt(year);
+
+        switch (compare) {
+            case 'previous':
+                compMonth = m === 1 ? 12 : m - 1;
+                compYear = m === 1 ? y - 1 : y;
+                break;
+            case 'lastYear':
+                compMonth = m;
+                compYear = y - 1;
+                break;
+            default:
+                compMonth = m === 1 ? 12 : m - 1;
+                compYear = m === 1 ? y - 1 : y;
+        }
+
+        return {
+            month: compMonth,
+            year: compYear,
+            ...this._getPeriodDates(compMonth, compYear)
+        };
+    }
+
+    /**
+     * Calcula dias restantes no mês
+     */
+    _getRemainingDays(month, year) {
+        const hoje = moment().tz(TIMEZONE);
+        const dataReferencia = moment(`${year}-${String(month).padStart(2, '0')}-01`).tz(TIMEZONE);
+        
+        // Se não for mês atual, retorna 0
+        if (!dataReferencia.isSame(hoje, 'month')) {
+            return 0;
+        }
+
+        const totalDias = dataReferencia.endOf('month').date();
+        const diaAtual = hoje.date();
+        return Math.max(0, totalDias - diaAtual);
+    }
+}
+
+export default new FinancialOverviewService();

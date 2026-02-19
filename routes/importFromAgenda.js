@@ -105,29 +105,37 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
     // 1) Buscar doutor
     const doctor = await findDoctorByName(professionalName);
 
-    // 2) Verificar se paciente já existe...
+    // 2) Verificar se paciente já existe (não cria agora se for lead novo)
     let patientId = null;
     try {
-      const patientResponse = await api.post(
-        "/api/patients/add",
-        {
-          fullName: patientInfo?.fullName,
-          dateOfBirth: patientInfo?.birthDate,
-          phone: cleanPhone,
-          email: patientInfo?.email || undefined,
-        },
-        {
-          headers: { Authorization: req.headers.authorization || `Bearer ${process.env.AGENDA_EXPORT_TOKEN}` },
-        }
-      );
+      // Normaliza o telefone antes da busca
+      const phoneToSearch = cleanPhone;
 
-      if (patientResponse.data?.success && patientResponse.data?.data?._id) {
-        patientId = patientResponse.data.data._id;
+      if (phoneToSearch && phoneToSearch.length >= 8) {
+        // Tenta encontrar por telefone
+        const existingPatient = await Patient.findOne({
+          phone: { $regex: phoneToSearch.slice(-10) } // Busca pelos últimos 10 dígitos para maior flexibilidade
+        }).select('_id').lean();
+
+        if (existingPatient) {
+          patientId = existingPatient._id;
+          console.log(`[IMPORT-FROM-AGENDA] ✅ Paciente encontrado: ${patientId}`);
+        }
       }
-    } catch (patientError) {
-      if (patientError.response?.status === 409 && patientError.response.data?.existingId) {
-        patientId = patientError.response.data.existingId;
+
+      // Se não achou por telefone, tenta por nome (opcional, mas bom para leads que viraram pacientes)
+      if (!patientId && patientInfo?.fullName) {
+        const existingByName = await Patient.findOne({
+          fullName: { $regex: new RegExp(`^${patientInfo.fullName.trim()}$`, 'i') }
+        }).select('_id').lean();
+
+        if (existingByName) {
+          patientId = existingByName._id;
+          console.log(`[IMPORT-FROM-AGENDA] ✅ Paciente encontrado por nome: ${patientId}`);
+        }
       }
+    } catch (searchError) {
+      console.error("[IMPORT-FROM-AGENDA] Erro ao buscar paciente:", searchError.message);
     }
 
     // 3) Criar PRÉ-AGENDAMENTO
@@ -297,6 +305,7 @@ router.post("/import-from-agenda/confirmar-por-external-id", agendaAuth, async (
     pre.status = 'importado';
     pre.importedToAppointment = result.appointment._id;
     pre.importedAt = new Date();
+    pre.patientId = result.patientId; // ✅ Garante o vínculo final
     await pre.save({ session });
 
     await session.commitTransaction();
@@ -562,6 +571,7 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
     pre.status = 'importado';
     pre.importedToAppointment = result.appointment._id;
     pre.importedAt = new Date();
+    pre.patientId = result.patientId; // ✅ Garante o vínculo final
     await pre.save({ session });
 
     await session.commitTransaction();
