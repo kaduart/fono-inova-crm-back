@@ -35,6 +35,8 @@ import * as BullMQ from "bullmq";
 const { Queue, QueueEvents } = BullMQ;
 
 import "./models/index.js";
+import jwt from "jsonwebtoken";
+import { auth } from "./middleware/auth.js";
 // ======================================================
 // 📦 Rotas
 // ======================================================
@@ -81,6 +83,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import financialAnalyticsRoutes from './routes/analytics/financial.routes.js';
 import insuranceGuidesRoutes from './routes/insuranceGuides.js';
 import convenioPackagesRoutes from './routes/convenioPackages.js';
+import convenioRoutes from './routes/financial/convenio.routes.js';
 import reminderRoutes from './routes/reminder.js';
 
 // ======================================================
@@ -215,6 +218,7 @@ app.use('/api/provisionamento', provisionamentoRoutes);
 app.use('/api/analytics/financial', financialAnalyticsRoutes);
 app.use('/api/insurance-guides', insuranceGuidesRoutes);
 app.use('/api/convenio-packages', convenioPackagesRoutes);
+app.use('/api/financial/convenio', convenioRoutes);
 app.use('/api/reminders', reminderRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
@@ -224,6 +228,24 @@ app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/followups", followupRoutes);
 app.use("/api/marketing", marketingRoutes);
 app.use('/api', importFromAgendaRouter);
+
+// ======================================================
+// 🔄 Renew Token (endpoint direto para o frontend)
+// ======================================================
+app.post('/api/renew-token', auth, (req, res) => {
+  try {
+    const { iat, exp, ...userData } = req.user;
+    const newToken = jwt.sign(
+      userData,
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+    res.json({ newToken });
+  } catch (error) {
+    console.error('Error renewing token:', error);
+    res.status(500).json({ error: 'Failed to renew token' });
+  }
+});
 
 // ======================================================
 // 💚 Health Check

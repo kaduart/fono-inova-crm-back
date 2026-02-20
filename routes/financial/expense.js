@@ -83,10 +83,13 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     } catch (error) {
         await session.abortTransaction();
         console.error('Erro ao criar despesa:', error);
+        console.error('Payload recebido:', req.body);
+        console.error('User:', req.user);
         res.status(500).json({
             success: false,
             message: 'Erro ao registrar despesa',
-            error: error.message
+            error: error.message,
+            details: error.errors ? Object.keys(error.errors).map(k => `${k}: ${error.errors[k].message}`) : null
         });
     } finally {
         session.endSession();

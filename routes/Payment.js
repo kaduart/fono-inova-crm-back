@@ -2400,7 +2400,7 @@ router.post('/insurance', auth, async (req, res) => {
 
 /**
  * GET /api/payments/insurance/receivables
- * Lista contas a receber de convênios
+ * Lista contas a receber de convênios - COM POPULATE DE PACIENTE
  */
 router.get('/insurance/receivables', auth, async (req, res) => {
     try {
@@ -2415,6 +2415,22 @@ router.get('/insurance/receivables', auth, async (req, res) => {
 
         const receivables = await Payment.aggregate([
             { $match: match },
+            // Fazer lookup do paciente
+            {
+                $lookup: {
+                    from: 'patients',
+                    localField: 'patient',
+                    foreignField: '_id',
+                    as: 'patientInfo'
+                }
+            },
+            // Desestruturar o array do lookup
+            {
+                $addFields: {
+                    patientName: { $arrayElemAt: ['$patientInfo.fullName', 0] }
+                }
+            },
+            // Agrupar por convênio
             {
                 $group: {
                     _id: '$insurance.provider',
@@ -2424,6 +2440,7 @@ router.get('/insurance/receivables', auth, async (req, res) => {
                         $push: {
                             paymentId: '$_id',
                             patient: '$patient',
+                            patientName: { $ifNull: ['$patientName', 'N/A'] },
                             grossAmount: '$insurance.grossAmount',
                             status: '$insurance.status',
                             paymentDate: '$paymentDate',
@@ -2434,14 +2451,6 @@ router.get('/insurance/receivables', auth, async (req, res) => {
             },
             { $sort: { totalPending: -1 } }
         ]);
-
-        // Populate patients
-        for (const group of receivables) {
-            for (const p of group.payments) {
-                const patient = await mongoose.model('Patient').findById(p.patient).select('fullName').lean();
-                p.patientName = patient?.fullName || 'N/A';
-            }
-        }
 
         const grandTotal = receivables.reduce((sum, r) => sum + r.totalPending, 0);
 
@@ -2541,6 +2550,136 @@ router.patch('/insurance/:id/bill', auth, async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// ======================================================================
+// SALDO DEVEDOR / CONTA CORRENTE (consolidado de patientBalance.js)
+// ======================================================================
+
+import PatientBalance from '../models/PatientBalance.js';
+
+// Helper
+async function getOrCreateBalance(patientId) {
+    return await PatientBalance.getOrCreate(patientId);
+}
+
+// GET /api/payments/balance/:patientId
+router.get('/balance/:patientId', auth, async (req, res) => {
+    try {
+        const { patientId } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(patientId)) {
+            return res.status(400).json({ success: false, message: 'ID inválido' });
+        }
+
+        const balance = await PatientBalance.findOne({ patient: patientId })
+            .populate('transactions.sessionId', 'date time status')
+            .populate('transactions.appointmentId', 'date time operationalStatus')
+            .populate('transactions.registeredBy', 'fullName name');
+
+        if (!balance) {
+            return res.json({
+                success: true,
+                data: { patient: patientId, currentBalance: 0, hasDebt: false, hasCredit: false, transactions: [] }
+            });
+        }
+
+        res.json({ success: true, data: balance });
+    } catch (error) {
+        console.error('Erro ao buscar saldo:', error);
+        res.status(500).json({ success: false, message: 'Erro ao buscar saldo' });
+    }
+});
+
+// POST /api/payments/balance/:patientId/debit
+router.post('/balance/:patientId/debit', auth, async (req, res) => {
+    const mongoSession = await mongoose.startSession();
+    try {
+        await mongoSession.startTransaction();
+        const { patientId } = req.params;
+        const { amount, description, sessionId, appointmentId } = req.body;
+
+        if (!mongoose.Types.ObjectId.isValid(patientId) || !amount || amount <= 0) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({ success: false, message: 'Dados inválidos' });
+        }
+
+        const balance = await getOrCreateBalance(patientId);
+        await balance.addDebit(amount, description || 'Sessão utilizada - pagamento pendente', sessionId, appointmentId, req.user?._id);
+
+        if (sessionId) {
+            await Session.findByIdAndUpdate(sessionId, {
+                $set: { addedToBalance: true, balanceRegisteredAt: new Date() }
+            }, { session: mongoSession });
+        }
+
+        await mongoSession.commitTransaction();
+        res.json({
+            success: true,
+            message: 'Débito registrado',
+            data: { currentBalance: balance.currentBalance, transaction: balance.transactions[balance.transactions.length - 1] }
+        });
+    } catch (error) {
+        await mongoSession.abortTransaction();
+        res.status(500).json({ success: false, message: 'Erro ao registrar débito' });
+    } finally {
+        await mongoSession.endSession();
+    }
+});
+
+// POST /api/payments/balance/:patientId/payment
+router.post('/balance/:patientId/payment', auth, async (req, res) => {
+    const mongoSession = await mongoose.startSession();
+    try {
+        await mongoSession.startTransaction();
+        const { patientId } = req.params;
+        const { amount, paymentMethod, description, sessionId, appointmentId } = req.body;
+
+        if (!mongoose.Types.ObjectId.isValid(patientId) || !amount || amount <= 0) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({ success: false, message: 'Dados inválidos' });
+        }
+
+        const balance = await getOrCreateBalance(patientId);
+        if (amount > balance.currentBalance) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({ success: false, message: 'Valor excede saldo devedor' });
+        }
+
+        await balance.addPayment(amount, paymentMethod || 'dinheiro', description || 'Pagamento saldo devedor', req.user?._id);
+        const transaction = balance.transactions[balance.transactions.length - 1];
+
+        if (sessionId) {
+            await Session.findByIdAndUpdate(sessionId, {
+                $set: { isPaid: true, paymentStatus: 'paid', visualFlag: 'ok', paidAt: new Date() }
+            }, { session: mongoSession });
+        }
+        if (appointmentId) {
+            await Appointment.findByIdAndUpdate(appointmentId, {
+                $set: { paymentStatus: 'paid', visualFlag: 'ok', paidAt: new Date() },
+                $push: { history: { action: 'payment_received', newStatus: 'paid', changedBy: req.user?._id, timestamp: new Date(), context: 'financial' } }
+            }, { session: mongoSession });
+        }
+
+        await mongoSession.commitTransaction();
+        res.json({ success: true, message: 'Pagamento registrado', data: { currentBalance: balance.currentBalance, transaction } });
+    } catch (error) {
+        await mongoSession.abortTransaction();
+        res.status(500).json({ success: false, message: 'Erro ao registrar pagamento' });
+    } finally {
+        await mongoSession.endSession();
+    }
+});
+
+// GET /api/payments/balance/debtors
+router.get('/balance/debtors', auth, async (req, res) => {
+    try {
+        const debtors = await PatientBalance.find({ currentBalance: { $gt: 0 } })
+            .populate('patient', 'fullName phone email')
+            .sort({ currentBalance: -1 });
+        res.json({ success: true, count: debtors.length, data: debtors });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Erro ao buscar devedores' });
     }
 });
 
