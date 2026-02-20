@@ -453,10 +453,7 @@ router.patch('/:id', auth, async (req, res) => {
         let transactionCommitted = false;
 
         try {
-            await mongoSession.startTransaction({
-                readConcern: { level: "snapshot" },
-                writeConcern: { w: "majority", wtimeout: 10000 }
-            });
+            await mongoSession.startTransaction();
 
             console.log(`🔄 Tentativa ${retryCount + 1} de ${MAX_RETRIES} para atualizar pagamento ${id}`);
 
@@ -796,10 +793,6 @@ router.patch('/:id/mark-as-paid', auth, authorize(['admin', 'secretary']), async
                 message: 'Pagamento marcado como pago com sucesso',
                 data: payment
             });
-        }, {
-            readConcern: { level: 'snapshot' },
-            writeConcern: { w: 'majority' },
-            readPreference: 'primary'
         });
     };
 

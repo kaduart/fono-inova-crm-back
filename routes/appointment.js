@@ -1351,7 +1351,7 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
     }
 });
 
-// routes/appointments.js (trecho)
+// routes/appointments.js (trecho) - OTIMIZADO
 router.patch('/:id/complete', auth, async (req, res) => {
     let session = null;
     const startTime = Date.now();
@@ -1362,32 +1362,43 @@ router.patch('/:id/complete', auth, async (req, res) => {
         
         console.log(`[complete] Iniciando - addToBalance: ${addToBalance}, patientId: ${req.body.patientId || 'n/a'}`);
 
-        session = await mongoose.startSession();
-        session.startTransaction({
-            readConcern: { level: 'snapshot' },
-            writeConcern: { w: 'majority' },
-            maxCommitTimeMS: 30000 // 30 segundos timeout
-        });
-
-        console.log(`[complete] Buscando appointment (${Date.now() - startTime}ms)`);
+        // ============================================================
+        // FASE 1: BUSCAR DADOS FORA DA TRANSAÇÃO (sem lock)
+        // ============================================================
+        console.log(`[complete] Fase 1: Buscando dados (${Date.now() - startTime}ms)`);
+        
         const appointment = await Appointment.findById(id)
             .populate('session patient doctor payment')
             .populate({
                 path: 'package',
                 populate: { path: 'payments' }
             })
-            .session(session);
-        console.log(`[complete] Appointment encontrado (${Date.now() - startTime}ms)`);
-
+            .lean(); // <-- SEM .session()! Sem transação!
         if (!appointment) {
-            await session.abortTransaction();
             return res.status(404).json({ error: 'Agendamento não encontrado' });
         }
+
+        console.log(`[complete] Dados carregados (${Date.now() - startTime}ms)`);
+
+        // Guardar IDs para usar na transação
+        const sessionId = appointment.session?._id || appointment.session;
+        const paymentId = appointment.payment?._id || appointment.payment;
+        const packageId = appointment.package?._id || appointment.package;
+        const patientId = appointment.patient?._id || appointment.patient;
+
         // ✅ Só incrementa pacote se ainda não estiver concluído
         const shouldIncrementPackage =
             appointment.package &&
             appointment.clinicalStatus !== 'completed';
         console.log(`[complete] shouldIncrementPackage: ${shouldIncrementPackage}, hasPackage: ${!!appointment.package}, clinicalStatus: ${appointment.clinicalStatus}`);
+
+        // ============================================================
+        // FASE 2: TRANSAÇÃO MÍNIMA (apenas updates)
+        // ============================================================
+        console.log(`[complete] Fase 2: Iniciando transação (${Date.now() - startTime}ms)`);
+        
+        session = await mongoose.startSession();
+        session.startTransaction();
 
         /* if (appointment.operationalStatus === 'confirmed') {
             await session.abortTransaction();
@@ -1413,18 +1424,15 @@ router.patch('/:id/complete', auth, async (req, res) => {
             updatedAt: new Date()
         };
         
-        if (appointment.session) {
+        if (sessionId) {
             try {
-                console.log(`[complete] Atualizando session ${appointment.session._id} (${Date.now() - startTime}ms)`);
-                // 🔧 Usar findOneAndUpdate para disparar hook de consumo de guia
-                const sessionResult = await Session.findOneAndUpdate(
-                    { _id: appointment.session._id },
+                console.log(`[complete] Atualizando session ${sessionId} (${Date.now() - startTime}ms)`);
+                await Session.findOneAndUpdate(
+                    { _id: sessionId },
                     sessionUpdateData,
-                    { new: true, session }  // new: true retorna o documento atualizado
+                    { session }
                 );
                 console.log(`[complete] Session atualizada (${Date.now() - startTime}ms)`);
-
-                // Session atualizada com sucesso
             } catch (err) {
                 console.error('❌ Erro ao atualizar session:', err.message);
                 throw err;
@@ -1433,60 +1441,46 @@ router.patch('/:id/complete', auth, async (req, res) => {
 
         // 2️⃣ ATUALIZAR PAYMENT (se não for saldo devedor)
         if (!addToBalance) {
-            let paymentId = appointment.payment?._id || appointment.payment;
+            let finalPaymentId = paymentId;
 
             // ✅ FIX: Se não tem payment vinculado, busca pelo appointment ID
-            if (!paymentId && !appointment.package) {
-                try {
-                    const orphanPayment = await Payment.findOne({
-                        appointment: appointment._id
-                    }).session(session);
+            if (!finalPaymentId && !packageId) {
+                const orphanPayment = await Payment.findOne(
+                    { appointment: appointment._id },
+                    { _id: 1 },
+                    { session }
+                );
 
-                    if (orphanPayment) {
-                        paymentId = orphanPayment._id;
-
-                        // Vincula de volta ao appointment
-                        await Appointment.updateOne(
-                            { _id: appointment._id },
-                            { $set: { payment: paymentId } }
-                        ).session(session);
-                    }
-                } catch (err) {
-                    console.error('❌ Erro ao buscar payment órfão:', err.message);
-                    throw err;
+                if (orphanPayment) {
+                    finalPaymentId = orphanPayment._id;
+                    await Appointment.updateOne(
+                        { _id: appointment._id },
+                        { $set: { payment: finalPaymentId } },
+                        { session }
+                    );
                 }
             }
 
-            if (paymentId) {
-                try {
-                    // 🔒 TRAVA ANTI-DUPLICAÇÃO: Verificar se já existe pagamento pago
-                    const existingPayment = await Payment.findById(paymentId).session(session);
+            if (finalPaymentId) {
+                const existingPayment = await Payment.findOne(
+                    { _id: finalPaymentId },
+                    { status: 1 },
+                    { session }
+                );
 
-                    // Se já está pago, NÃO alterar a data do pagamento (mantém data original)
-                    // Se está pendente, atualiza para pago com data de hoje
-                    const updateData = existingPayment?.status === 'paid'
-                        ? {
-                            // Pagamento já existe - mantém a data original, apenas garante que está pago
-                            status: 'paid',
-                            updatedAt: new Date()
-                        }
-                        : {
-                            // Pagamento pendente - confirma com data de hoje
-                            status: 'paid',
-                            paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"),
-                            updatedAt: new Date()
-                        };
+                const paymentUpdateData = existingPayment?.status === 'paid'
+                    ? { status: 'paid', updatedAt: new Date() }
+                    : { 
+                        status: 'paid', 
+                        paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"),
+                        updatedAt: new Date() 
+                    };
 
-                    const paymentResult = await Payment.updateOne(
-                        { _id: paymentId },
-                        { $set: updateData }
-                    ).session(session);
-
-                    // Payment atualizado com sucesso
-                } catch (err) {
-                    console.error('❌ Erro ao atualizar payment:', err.message);
-                    throw err;
-                }
+                await Payment.updateOne(
+                    { _id: finalPaymentId },
+                    { $set: paymentUpdateData },
+                    { session }
+                );
             }
         } else {
             console.log(`[complete] Pulando atualização de payment (saldo devedor)`);
@@ -1494,25 +1488,19 @@ router.patch('/:id/complete', auth, async (req, res) => {
 
         // 3️⃣ ATUALIZAR PACOTE (SE NECESSÁRIO)
         console.log(`[complete] Etapa 3: Verificando pacote (${Date.now() - startTime}ms)`);
-        let packageDoc = null; // Declarar fora do escopo para reusar depois
-        if (shouldIncrementPackage && appointment.package) {
-            try {
-                packageDoc = await Package.findById(appointment.package._id).session(session);
-                
-                await Package.updateOne(
-                    {
-                        _id: appointment.package._id,
-                        $expr: { $lt: ["$sessionsDone", "$totalSessions"] }
-                    },
-                    {
-                        $inc: { sessionsDone: 1 },
-                        $set: { updatedAt: new Date() }
-                    }
-                ).session(session);
-            } catch (err) {
-                console.error('❌ Erro ao atualizar package:', err.message);
-                throw err;
-            }
+        let packageDoc = null;
+        if (shouldIncrementPackage && packageId) {
+            packageDoc = await Package.findOne(
+                { _id: packageId },
+                { type: 1, sessionsDone: 1, totalSessions: 1 },
+                { session }
+            );
+            
+            await Package.updateOne(
+                { _id: packageId, $expr: { $lt: ["$sessionsDone", "$totalSessions"] } },
+                { $inc: { sessionsDone: 1 }, $set: { updatedAt: new Date() } },
+                { session }
+            );
         }
 
         console.log(`[complete] Etapa 4: Atualizando agendamento (${Date.now() - startTime}ms)`);
@@ -1545,87 +1533,55 @@ router.patch('/:id/complete', auth, async (req, res) => {
             updateData.addedToBalance = true;
             updateData.balanceAmount = balanceAmount || appointment.sessionValue || 0;
             updateData.balanceDescription = balanceDescription || 'Sessão utilizada - pagamento pendente';
-        } else if (appointment.package) {
-            // 🏥 Se for pacote de convênio, mantém pending_receipt (recebe em 30 dias)
-            // Reutilizar packageDoc se já foi carregado, senão buscar
-            try {
-                if (!packageDoc) {
-                    packageDoc = await Package.findById(appointment.package._id).session(session);
-                }
-
-                if (packageDoc && packageDoc.type === 'convenio') {
-                    updateData.paymentStatus = 'pending_receipt';
-                    updateData.visualFlag = 'pending'; // Reflete status financeiro pendente
-                } else {
-                    updateData.paymentStatus = 'package_paid';
-                }
-            } catch (err) {
-                console.error('❌ Erro ao verificar package:', err.message);
-                throw err;
+        } else if (packageId) {
+            // 🏥 Se for pacote de convênio, mantém pending_receipt
+            if (packageDoc && packageDoc.type === 'convenio') {
+                updateData.paymentStatus = 'pending_receipt';
+                updateData.visualFlag = 'pending';
+            } else {
+                updateData.paymentStatus = 'package_paid';
             }
         } else {
             updateData.paymentStatus = 'paid';
         }
 
-        try {
-            console.log(`[complete] Executando Appointment.updateOne (${Date.now() - startTime}ms)`);
-            await Appointment.updateOne(
-                { _id: id },
-                updateData
-            ).session(session);
-            console.log(`[complete] Appointment.updateOne concluído (${Date.now() - startTime}ms)`);
-        } catch (err) {
-            console.error('❌ Erro ao atualizar appointment:', err.message);
-            throw err;
-        }
+        console.log(`[complete] Executando Appointment.updateOne (${Date.now() - startTime}ms)`);
+        await Appointment.updateOne({ _id: id }, updateData, { session });
+        console.log(`[complete] Appointment.updateOne concluído (${Date.now() - startTime}ms)`);
 
-        // ✅ BUSCAR DENTRO DA TRANSAÇÃO (antes do commit)
-        let updatedAppointment;
-        try {
-            updatedAppointment = await Appointment.findById(id)
-                .populate('session package patient doctor payment')
-                .session(session);
-        } catch (err) {
-            console.error('❌ Erro ao buscar appointment atualizado:', err.message);
-            throw err;
-        }
-
-        // 5️⃣ SINCRONIZAR (NÃO dentro da transação - faz depois do commit)
-        // Movido para fora da transação para evitar timeouts
-        console.log(`[complete] Preparando commit (${Date.now() - startTime}ms)`);
-
-        // 6️⃣ COMMIT UMA ÚNICA VEZ
+        // 5️⃣ COMMIT
         console.log(`[complete] Commitando transação... (${Date.now() - startTime}ms)`);
         await session.commitTransaction();
         console.log(`[complete] ✅ Transação commitada (${Date.now() - startTime}ms)`);
 
-        // 7️⃣ ATUALIZAR SALDO DEVEDOR (APÓS o commit, fora da transação)
-        if (addToBalance && appointment.patient) {
+        // ============================================================
+        // FASE 3: OPERAÇÕES PÓS-COMMIT (não bloqueiam resposta)
+        // ============================================================
+        
+        // 6️⃣ ATUALIZAR SALDO DEVEDOR (fora da transação)
+        if (addToBalance && patientId) {
             console.log(`[complete] Atualizando saldo devedor... (${Date.now() - startTime}ms)`);
             try {
-                const patientBalance = await PatientBalance.getOrCreate(appointment.patient);
-                console.log(`[complete] PatientBalance encontrado/criado (${Date.now() - startTime}ms)`);
-                
+                const patientBalance = await PatientBalance.getOrCreate(patientId);
                 await patientBalance.addDebit(
                     balanceAmount || appointment.sessionValue || 0,
                     balanceDescription || `Sessão ${appointment.date} - pagamento pendente`,
-                    appointment.session?._id || appointment.session,
+                    sessionId,
                     appointment._id,
                     req.user?._id
                 );
-                
                 console.log(`[complete] ✅ Débito adicionado (${Date.now() - startTime}ms)`);
             } catch (err) {
                 console.error(`[complete] ❌ Erro ao atualizar saldo (não crítico): ${err.message}`);
-                // Não falha a resposta, apenas loga
             }
         }
 
-        // 8️⃣ BUSCAR NOVAMENTE APÓS COMMIT (para garantir)
+        // 7️⃣ BUSCAR DADOS FINAIS (retorno idêntico ao original)
+        console.log(`[complete] Buscando dados finais... (${Date.now() - startTime}ms)`);
         const finalAppointment = await Appointment.findById(id)
             .populate('session package patient doctor payment');
 
-        // 9️⃣ SINCRONIZAR APÓS COMMIT (não bloqueia a resposta)
+        // 8️⃣ SINCRONIZAR (não bloqueia resposta)
         setImmediate(async () => {
             try {
                 await syncEvent(finalAppointment, 'appointment');
@@ -1657,10 +1613,9 @@ router.patch('/:id/complete', auth, async (req, res) => {
             try {
                 session.endSession();
             } catch (e) {
-                // ignora erro ao fechar sessão
+                // Silenciar erro ao fechar sessão
             }
         }
-        console.log(`[complete] Total: ${Date.now() - startTime}ms`);
     }
 });
 

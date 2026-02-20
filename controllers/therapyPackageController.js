@@ -73,10 +73,11 @@ export const packageOperations = {
             let replacedSessionId = null;
 
             // 2.1) Caso explícito: veio appointmentId no body
+            // 🚀 OTIMIZAÇÃO: Buscar FORA da transação (sem lock)
             if (appointmentId) {
                 existingAppointment = await Appointment.findById(appointmentId)
                     .populate('session')
-                    .session(mongoSession);
+                    .lean();
 
                 if (!existingAppointment) {
                     throw new Error('Agendamento a ser convertido não encontrado');
@@ -88,24 +89,24 @@ export const packageOperations = {
                         'Este agendamento já está vinculado a um pacote e não pode ser usado para criar outro.'
                     );
                     err.code = 'APPOINTMENT_IN_OTHER_PACKAGE';
-                    // se quiser, pode passar o packageId
                     err.packageId = existingAppointment.package || existingAppointment.session?.package;
                     throw err;
                 }
 
-                if (existingAppointment.session?._id) {
-                    replacedSessionId = existingAppointment.session._id.toString();
-                }
-
-                // Só chega aqui se NÃO estiver em pacote
-                await Appointment.deleteOne({ _id: appointmentId }).session(mongoSession);
-                if (existingAppointment.session) {
-                    await Session.deleteOne({ _id: existingAppointment.session._id }).session(mongoSession);
-                }
+                // Extrair IDs para usar na transação
+                const sessionIdToDelete = existingAppointment.session?._id;
+                replacedSessionId = sessionIdToDelete?.toString();
                 replacedAppointmentId = appointmentId;
+
+                // 🚀 Transação mínima: só os deletes
+                await Appointment.deleteOne({ _id: appointmentId }).session(mongoSession);
+                if (sessionIdToDelete) {
+                    await Session.deleteOne({ _id: sessionIdToDelete }).session(mongoSession);
+                }
             }
 
             // 2.2) Caso implícito: NÃO veio appointmentId → detectar pelo primeiro slot
+            // 🚀 OTIMIZAÇÃO: Buscar FORA da transação (sem lock)
             if (!existingAppointment && selectedSlots?.length > 0) {
                 const firstSlot = selectedSlots[0];
                 if (firstSlot?.date && firstSlot?.time) {
@@ -117,7 +118,7 @@ export const packageOperations = {
                         status: { $ne: 'canceled' }
                     })
                         .populate('session')
-                        .session(mongoSession);
+                        .lean();
 
                     if (toConvert) {
                         // 🚫 TRAVA: já é de pacote?
@@ -130,15 +131,16 @@ export const packageOperations = {
                             throw err;
                         }
 
-                        if (toConvert.session?._id) {
-                            replacedSessionId = toConvert.session._id.toString();
-                        }
-
-                        await Appointment.deleteOne({ _id: toConvert._id }).session(mongoSession);
-                        if (toConvert.session) {
-                            await Session.deleteOne({ _id: toConvert.session._id }).session(mongoSession);
-                        }
+                        // Extrair IDs para transação
+                        const sessionIdToDelete = toConvert.session?._id;
+                        replacedSessionId = sessionIdToDelete?.toString();
                         replacedAppointmentId = toConvert._id.toString();
+
+                        // 🚀 Transação mínima: só os deletes
+                        await Appointment.deleteOne({ _id: toConvert._id }).session(mongoSession);
+                        if (sessionIdToDelete) {
+                            await Session.deleteOne({ _id: sessionIdToDelete }).session(mongoSession);
+                        }
                     }
                 }
             }
@@ -1578,10 +1580,10 @@ export const packageOperations = {
                 throw new Error("Valor e método de pagamento são obrigatórios.");
             }
 
-            // 🔹 Buscar pacote existente
+            // 🔹 Buscar pacote existente (FORA da transação - otimizado)
             const pkg = await Package.findById(packageId)
                 .populate("sessions")
-                .session(mongoSession);
+                .lean();
 
             if (!pkg) throw new Error("Pacote não encontrado.");
 
@@ -1612,20 +1614,29 @@ export const packageOperations = {
                 paymentDoc._id // passa o recibo como parentPayment
             );
 
-            // 🔹 Atualizar vínculos no pacote
-            pkg.payments.push(paymentDoc._id);
-            pkg.totalPaid = (pkg.totalPaid || 0) + parseFloat(amount);
-            pkg.balance =
-                pkg.totalSessions * pkg.sessionValue - pkg.totalPaid;
-            pkg.financialStatus =
-                pkg.balance <= 0
+            // 🔹 Atualizar vínculos no pacote (usando updateOne - otimizado)
+            const newTotalPaid = (pkg.totalPaid || 0) + parseFloat(amount);
+            const newBalance = pkg.totalSessions * pkg.sessionValue - newTotalPaid;
+            const newFinancialStatus =
+                newBalance <= 0
                     ? "paid"
-                    : pkg.totalPaid > 0
+                    : newTotalPaid > 0
                         ? "partially_paid"
                         : "unpaid";
-            pkg.lastPaymentAt = new Date();
 
-            await pkg.save({ session: mongoSession });
+            await Package.updateOne(
+                { _id: packageId },
+                {
+                    $push: { payments: paymentDoc._id },
+                    $set: {
+                        totalPaid: newTotalPaid,
+                        balance: newBalance,
+                        financialStatus: newFinancialStatus,
+                        lastPaymentAt: new Date()
+                    }
+                },
+                { session: mongoSession }
+            );
 
             // 🔹 Finalizar transação
             await mongoSession.commitTransaction();

@@ -46,7 +46,7 @@ db.sessions.find({
 
 //consulta pagamento por id patient
 db.payments.find({
-  patient: ObjectId("6979026c4b46e3fee85dc521"),
+  patient: ObjectId("699850a37c92d32c1fd3e761"),
 });
 
 //consulta agendamento por  patient
