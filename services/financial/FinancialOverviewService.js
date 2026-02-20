@@ -6,7 +6,9 @@ import mongoose from 'mongoose';
 import Payment from '../../models/Payment.js';
 import Expense from '../../models/Expense.js';
 import Planning from '../../models/Planning.js';
+import Package from '../../models/Package.js';
 import FinancialInsightsEngine from './FinancialInsightsEngine.js';
+import ConvenioMetricsService from './ConvenioMetricsService.js';
 
 const TIMEZONE = 'America/Sao_Paulo';
 
@@ -14,16 +16,19 @@ class FinancialOverviewService {
 
     /**
      * Busca overview financeiro completo com comparação de períodos
+     * INCLUI métricas de convênio separadas
      */
     async getOverview({ month, year, compare = 'previous' }) {
         const periodoAtual = this._getPeriodDates(month, year);
         const periodoComparativo = this._getComparisonPeriod(month, year, compare);
 
-        // Buscar métricas em paralelo
-        const [metricsAtual, metricsComparativo, planning] = await Promise.all([
+        // Buscar métricas em paralelo (incluindo convênios e crédito de pacotes)
+        const [metricsAtual, metricsComparativo, planning, convenioMetrics, creditoPacotes] = await Promise.all([
             this._calculateMetrics(periodoAtual),
             this._calculateMetrics(periodoComparativo),
-            this._getPlanning(month, year)
+            this._getPlanning(month, year),
+            ConvenioMetricsService.getConvenioMetrics({ month, year }), // NOVO: Métricas de convênio
+            this._getCreditoPacotes() // NOVO: Crédito em pacotes ativos
         ]);
 
         // Calcular variações
@@ -45,10 +50,31 @@ class FinancialOverviewService {
             margem: metricsAtual.margem,
             caixa: metricsAtual.caixa,
             aReceber: metricsAtual.aReceber,
+            
+            // NOVO: Separar receitas por tipo
+            particularRecebido: metricsAtual.particularRecebido,
+            convenioRecebido: metricsAtual.convenioRecebido,
+            
             meta: planning?.target || 0,
             metaPercent: planning?.target > 0 ? (metricsAtual.receita / planning.target) * 100 : 0,
             projecao,
-            valorDiarioNecessario
+            valorDiarioNecessario,
+            
+            // NOVO: Métricas de convênio integradas
+            convenio: {
+                receitaRealizada: convenioMetrics.receitaRealizada.total,     // Produção do mês
+                aReceber: convenioMetrics.aReceber.total,                       // A receber do mês
+                provisaoTotal: convenioMetrics.provisaoConvenio.total,          // Provisão acumulada até o mês
+                provisaoAgendadas: convenioMetrics.provisaoAgendadas?.total || 0, // Provisão de agendadas futuras
+                pipeline: convenioMetrics.pipelineFuturo.total,                 // Pipeline futuro
+                ativos: convenioMetrics.ativos                                  // Pacotes e guias ativos
+            },
+            
+            // NOVO: Crédito em pacotes (sessões pagas não utilizadas)
+            creditoPacotes: {
+                total: creditoPacotes.total,
+                pacientes: creditoPacotes.detalhes
+            }
         };
 
         // Gerar insights
@@ -70,7 +96,9 @@ class FinancialOverviewService {
             },
             metrics,
             variation,
-            insights
+            insights,
+            // NOVO: Dados completos de convênio para o frontend
+            convenio: convenioMetrics
         };
     }
 
@@ -83,11 +111,12 @@ class FinancialOverviewService {
         // Agregações em paralelo - reutilizando lógica do cashflow.js
         const [
             receitasAgg,
+            receitasPorTipo,
             despesasAgg,
             aReceberAgg,
             pagamentosPendentes
         ] = await Promise.all([
-            // Receitas pagas
+            // Receitas pagas (total)
             Payment.aggregate([
                 {
                     $match: {
@@ -98,6 +127,23 @@ class FinancialOverviewService {
                 {
                     $group: {
                         _id: null,
+                        total: { $sum: '$amount' },
+                        count: { $sum: 1 }
+                    }
+                }
+            ]),
+
+            // NOVO: Receitas separadas por tipo (particular vs convênio recebido)
+            Payment.aggregate([
+                {
+                    $match: {
+                        status: 'paid',
+                        paymentDate: { $gte: start, $lte: end }
+                    }
+                },
+                {
+                    $group: {
+                        _id: '$billingType',
                         total: { $sum: '$amount' },
                         count: { $sum: 1 }
                     }
@@ -169,9 +215,15 @@ class FinancialOverviewService {
         const aReceberPendentes = pagamentosPendentes[0]?.total || 0;
         const aReceber = aReceberConvenios + aReceberPendentes;
 
+        // NOVO: Separar receitas por tipo
+        const particularRecebido = receitasPorTipo.find(r => r._id === 'particular')?.total || 0;
+        const convenioRecebido = receitasPorTipo.find(r => r._id === 'convenio')?.total || 0;
+
         return {
             receita,
             despesas,
+            particularRecebido,
+            convenioRecebido,
             lucro,
             margem,
             caixa,
@@ -179,6 +231,48 @@ class FinancialOverviewService {
             countReceitas: receitasAgg[0]?.count || 0,
             countDespesas: despesasAgg[0]?.count || 0
         };
+    }
+
+    /**
+     * Calcula crédito remanescente em pacotes ativos
+     * (sessões pagas mas não utilizadas)
+     */
+    async _getCreditoPacotes() {
+        try {
+            const pacotes = await Package.find({
+                financialStatus: { $in: ['paid', 'partially_paid'] },
+                status: { $in: ['active', 'in-progress'] }
+            }).populate('patient', 'fullName');
+
+            const detalhes = [];
+            
+            const total = pacotes.reduce((sum, pkg) => {
+                const sessoesPagas = pkg.paidSessions || 0;
+                const sessoesFeitas = pkg.sessionsDone || 0;
+                const sessoesRemanescentes = Math.max(0, sessoesPagas - sessoesFeitas);
+                const valor = sessoesRemanescentes * (pkg.sessionValue || 0);
+                
+                if (valor > 0 && sessoesRemanescentes > 0) {
+                    detalhes.push({
+                        pacoteId: pkg._id,
+                        paciente: pkg.patient?.fullName || 'N/A',
+                        sessoesRemanescentes,
+                        valorPorSessao: pkg.sessionValue,
+                        valorTotal: valor
+                    });
+                }
+                
+                return sum + valor;
+            }, 0);
+
+            // Ordenar por valor (maior primeiro)
+            detalhes.sort((a, b) => b.valorTotal - a.valorTotal);
+
+            return { total, detalhes };
+        } catch (error) {
+            console.error('Erro ao calcular crédito de pacotes:', error);
+            return { total: 0, detalhes: [] };
+        }
     }
 
     /**

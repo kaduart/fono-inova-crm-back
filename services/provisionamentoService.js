@@ -23,6 +23,7 @@ export const calcularProvisionamento = async (mes, ano) => {
   // Executar em paralelo
   const [
     garantido,
+    creditoPacotes,
     agendadoConfirmado,
     agendadoPendente,
     pipeline,
@@ -30,6 +31,7 @@ export const calcularProvisionamento = async (mes, ano) => {
     metricasHistoricas
   ] = await Promise.all([
     calcularGarantido(periodo),
+    calcularCreditoPacotes(periodo),
     calcularAgendadoConfirmado(periodo),
     calcularAgendadoPendente(periodo),
     calcularPipeline(periodo),
@@ -56,6 +58,13 @@ export const calcularProvisionamento = async (mes, ano) => {
         percentual: totalProvisionado > 0 ? Math.round((garantido / totalProvisionado) * 100) : 0,
         certeza: 0.95,
         cor: 'success'
+      },
+      creditoPacotes: {
+        valor: Math.round(creditoPacotes.total),
+        percentual: 0,
+        certeza: 0.90,
+        cor: 'info',
+        detalhes: creditoPacotes.detalhes
       },
       agendadoConfirmado: {
         valor: Math.round(agendadoAltoRisco),
@@ -117,9 +126,9 @@ export const calcularProvisionamento = async (mes, ano) => {
 // ==================== CÁLCULOS POR CAMADA ====================
 
 /**
- * Camada 1: GARANTIDO (dinheiro já recebido)
- * - Payments 'paid' do período
- * - Crédito remanescente de pacotes ativos (sessões pagas não consumidas)
+ * Camada 1: GARANTIDO (dinheiro já recebido no período)
+ * - Apenas Payments 'paid' do período (dinheiro que efetivamente entrou no caixa)
+ * - NÃO inclui crédito de pacotes (não é dinheiro realizado no mês)
  */
 const calcularGarantido = async (periodo) => {
   // Pagamentos recebidos no mês
@@ -128,22 +137,42 @@ const calcularGarantido = async (periodo) => {
     paymentDate: { $gte: periodo.inicio, $lte: periodo.fim }
   });
 
-  const totalPayments = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+  return payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+};
 
-  // Crédito remanescente de pacotes (sessões pagas não consumidas)
+/**
+ * Crédito em Pacotes (dinheiro "preso" em sessões pagas não utilizadas)
+ * - Sessões já pagas mas ainda não consumidas
+ * - Não é caixa do mês, mas é dinheiro que o cliente pode usar
+ */
+const calcularCreditoPacotes = async (periodo) => {
   const pacotes = await Package.find({
     financialStatus: { $in: ['paid', 'partially_paid'] },
     status: { $in: ['active', 'in-progress'] }
-  });
+  }).populate('patient', 'fullName');
 
-  const creditoPacotes = pacotes.reduce((sum, pkg) => {
+  const detalhes = [];
+  
+  const total = pacotes.reduce((sum, pkg) => {
     const sessoesPagas = pkg.paidSessions || 0;
     const sessoesFeitas = pkg.sessionsDone || 0;
     const sessoesRemanescentes = Math.max(0, sessoesPagas - sessoesFeitas);
-    return sum + (sessoesRemanescentes * (pkg.sessionValue || 0));
+    const valor = sessoesRemanescentes * (pkg.sessionValue || 0);
+    
+    if (valor > 0) {
+      detalhes.push({
+        pacoteId: pkg._id,
+        paciente: pkg.patient?.fullName || 'N/A',
+        sessoesRemanescentes,
+        valorPorSessao: pkg.sessionValue,
+        valorTotal: valor
+      });
+    }
+    
+    return sum + valor;
   }, 0);
 
-  return totalPayments + creditoPacotes;
+  return { total, detalhes };
 };
 
 /**
