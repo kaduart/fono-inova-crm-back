@@ -23,6 +23,7 @@ import { runTransactionWithRetry } from '../utils/transactionRetry.js';
 import billingOrchestrator from '../services/billing/BillingOrchestrator.js';
 import { mapAppointmentToEvent, mapPreAgendamentoToEvent } from '../utils/appointmentMapper.js';
 import PatientBalance from '../models/PatientBalance.js';
+import { getIo } from '../config/socket.js';
 
 dotenv.config();
 const router = express.Router();
@@ -299,12 +300,22 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
 
                     await mongoSession.commitTransaction();
 
-                    // (Opcional) se quiser sincronizar o pacote aqui também:
-                    // try {
-                    //     await syncEvent(updatedPkg, 'package');
-                    // } catch (syncError) {
-                    //     console.error('⚠️ Erro na sincronização:', syncError.message);
-                    // }
+                    // 🔔 Emitir evento socket para atualizar agenda externa
+                    try {
+                        const io = getIo();
+                        io.emit('appointmentCreated', {
+                            _id: newAppointment._id,
+                            patient: newAppointment.patient,
+                            doctor: newAppointment.doctor,
+                            date: newAppointment.date,
+                            time: newAppointment.time,
+                            specialty: newAppointment.specialty,
+                            source: 'crm_package_session'
+                        });
+                        console.log(`📡 Socket emitido: appointmentCreated ${newAppointment._id}`);
+                    } catch (socketError) {
+                        console.error('⚠️ Erro ao emitir socket:', socketError.message);
+                    }
 
                     const result = await Package.findById(packageId)
                         .populate('sessions appointments payments')
@@ -466,6 +477,23 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 }
             });
             createdAppointmentId = appointment._id;
+
+            // 🔔 Emitir evento socket para atualizar agenda externa
+            try {
+                const io = getIo();
+                io.emit('appointmentCreated', {
+                    _id: appointment._id,
+                    patient: appointment.patient,
+                    doctor: appointment.doctor,
+                    date: appointment.date,
+                    time: appointment.time,
+                    specialty: appointment.specialty,
+                    source: 'crm_package'
+                });
+                console.log(`📡 Socket emitido: appointmentCreated ${appointment._id}`);
+            } catch (socketError) {
+                console.error('⚠️ Erro ao emitir socket:', socketError.message);
+            }
 
             await Session.findByIdAndUpdate(individualSessionId, {
                 appointmentId: createdAppointmentId
@@ -1032,6 +1060,24 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
 
             await mongoSession.commitTransaction();
 
+            // 🔔 Emitir evento socket para atualizar agenda externa
+            try {
+                const io = getIo();
+                io.emit('appointmentUpdated', {
+                    _id: updatedAppointment._id,
+                    patient: updatedAppointment.patient,
+                    doctor: updatedAppointment.doctor,
+                    date: updatedAppointment.date,
+                    time: updatedAppointment.time,
+                    specialty: updatedAppointment.specialty,
+                    operationalStatus: updatedAppointment.operationalStatus,
+                    source: 'crm_update'
+                });
+                console.log(`📡 Socket emitido: appointmentUpdated ${updatedAppointment._id}`);
+            } catch (socketError) {
+                console.error('⚠️ Erro ao emitir socket:', socketError.message);
+            }
+
             // 5. Sincronização pós-transação
             setTimeout(async () => {
                 try {
@@ -1122,6 +1168,22 @@ router.delete('/:id', validateId, flexibleAuth, async (req, res) => {
 
         if (!appt) {
             return res.status(404).json({ error: 'Agendamento não encontrado' });
+        }
+
+        // 🔔 Emitir evento socket para atualizar agenda externa
+        try {
+            const io = getIo();
+            io.emit('appointmentDeleted', {
+                _id: appt._id,
+                patient: appt.patient,
+                doctor: appt.doctor,
+                date: appt.date,
+                time: appt.time,
+                source: 'crm_delete'
+            });
+            console.log(`📡 Socket emitido: appointmentDeleted ${appt._id}`);
+        } catch (socketError) {
+            console.error('⚠️ Erro ao emitir socket:', socketError.message);
         }
 
         // Recalcular agendamentos do paciente
@@ -1553,6 +1615,22 @@ router.patch('/:id/complete', auth, async (req, res) => {
         console.log(`[complete] Commitando transação... (${Date.now() - startTime}ms)`);
         await session.commitTransaction();
         console.log(`[complete] ✅ Transação commitada (${Date.now() - startTime}ms)`);
+
+        // 🔔 Emitir evento socket para atualizar agenda externa
+        try {
+            const io = getIo();
+            io.emit('appointmentUpdated', {
+                _id: id,
+                operationalStatus: 'confirmed',
+                clinicalStatus: 'completed',
+                paymentStatus: updateData.paymentStatus,
+                visualFlag: 'ok',
+                source: 'crm_complete'
+            });
+            console.log(`📡 Socket emitido: appointmentUpdated (completed) ${id}`);
+        } catch (socketError) {
+            console.error('⚠️ Erro ao emitir socket:', socketError.message);
+        }
 
         // ============================================================
         // FASE 3: OPERAÇÕES PÓS-COMMIT (não bloqueiam resposta)
@@ -2038,6 +2116,22 @@ export const bookFromAmanda = async (req, res) => {
             operationalStatus: 'scheduled',
             clinicalStatus: 'scheduled',
         });
+
+        // 🔔 Emitir evento socket para atualizar agenda externa
+        try {
+            const io = getIo();
+            io.emit('appointmentCreated', {
+                _id: appointment._id,
+                lead: appointment.lead,
+                doctor: appointment.doctor,
+                date: appointment.date,
+                time: appointment.time,
+                source: 'crm_lead'
+            });
+            console.log(`📡 Socket emitido: appointmentCreated ${appointment._id}`);
+        } catch (socketError) {
+            console.error('⚠️ Erro ao emitir socket:', socketError.message);
+        }
 
         // 3) atualiza lead -> status/agendado
         await Leads.findByIdAndUpdate(leadId, {

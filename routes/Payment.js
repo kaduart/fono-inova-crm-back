@@ -2597,8 +2597,30 @@ router.post('/balance/:patientId/debit', auth, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Dados inválidos' });
         }
 
-        const balance = await getOrCreateBalance(patientId);
-        await balance.addDebit(amount, description || 'Sessão utilizada - pagamento pendente', sessionId, appointmentId, req.user?._id);
+        // 🚀 OTIMIZAÇÃO: Usar updateOne dentro da transação (atômico)
+        const newTransaction = {
+            type: 'debit',
+            amount,
+            description: description || 'Sessão utilizada - pagamento pendente',
+            sessionId: sessionId || null,
+            appointmentId: appointmentId || null,
+            registeredBy: req.user?._id || null,
+            transactionDate: new Date()
+        };
+
+        const result = await PatientBalance.findOneAndUpdate(
+            { patient: patientId },
+            {
+                $push: { transactions: newTransaction },
+                $inc: { currentBalance: amount, totalDebited: amount },
+                $set: { lastTransactionAt: new Date() }
+            },
+            { 
+                upsert: true, 
+                new: true,
+                session: mongoSession 
+            }
+        );
 
         if (sessionId) {
             await Session.findByIdAndUpdate(sessionId, {
@@ -2610,10 +2632,14 @@ router.post('/balance/:patientId/debit', auth, async (req, res) => {
         res.json({
             success: true,
             message: 'Débito registrado',
-            data: { currentBalance: balance.currentBalance, transaction: balance.transactions[balance.transactions.length - 1] }
+            data: { 
+                currentBalance: result.currentBalance, 
+                transaction: result.transactions[result.transactions.length - 1] 
+            }
         });
     } catch (error) {
         await mongoSession.abortTransaction();
+        console.error('❌ Erro ao registrar débito:', error);
         res.status(500).json({ success: false, message: 'Erro ao registrar débito' });
     } finally {
         await mongoSession.endSession();
