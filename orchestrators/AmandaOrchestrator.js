@@ -44,10 +44,12 @@ import { logBookingGate, mapFlagsToBookingProduct } from "../utils/bookingProduc
 import { extractPreferredDateFromText } from "../utils/dateParser.js";
 import { getWisdomForContext, TESTE_LINGUINHA_WISDOM } from "../utils/clinicWisdom.js";
 import ensureSingleHeart from "../utils/helpers.js";
-import { extractAgeFromText, extractBirth, extractName, extractPeriodFromText } from "../utils/patientDataExtractor.js";
+import { extractAgeFromText, extractBirth, extractComplaint, extractName, extractPeriodFromText, isValidPatientName } from "../utils/patientDataExtractor.js";
 import { buildSlotMenuMessage } from "../utils/slotMenuBuilder.js";
 import callAI from "../services/IA/Aiproviderservice.js";
 import { clinicalEligibility } from "../domain/policies/ClinicalEligibility.js";
+import { canAutoRespond, buildResponseFromFlags, getTherapyInfo } from '../services/ResponseBuilder.js';
+import { CLINIC_KNOWLEDGE } from '../knowledge/clinicKnowledge.js';
 
 const recentResponses = new Map();
 
@@ -1154,6 +1156,65 @@ function safeGetPriceLinesForDetectedTherapies(detectedTherapies, opts = {}) {
     return [];
 }
 
+async function persistExtractedData(leadId, text, lead) {
+    if (!leadId) return;
+    try {
+        const _n = extractName(text);
+        const _a = extractAgeFromText(text);
+        const _p = extractPeriodFromText(text);
+        const _c = extractComplaint(text);
+        const _upd = {};
+        if (_n && isValidPatientName(_n) && !lead?.patientInfo?.fullName)
+            _upd['patientInfo.fullName'] = _n;
+        if (_a && !lead?.patientInfo?.age)
+            _upd['patientInfo.age'] = typeof _a === 'object' ? _a.age : _a;
+        if (_p && !lead?.pendingPreferredPeriod)
+            _upd['pendingPreferredPeriod'] = _p;
+        if (_c && !lead?.complaint)
+            _upd['complaint'] = _c;
+        if (Object.keys(_upd).length) {
+            await safeLeadUpdate(leadId, { $set: _upd });
+            // 🆕 Atualizar lead em memória para knownDataNote ler dados frescos
+            if (_upd['patientInfo.fullName']) {
+                lead.patientInfo = lead.patientInfo || {};
+                lead.patientInfo.fullName = _upd['patientInfo.fullName'];
+            }
+            if (_upd['patientInfo.age'] !== undefined) {
+                lead.patientInfo = lead.patientInfo || {};
+                lead.patientInfo.age = _upd['patientInfo.age'];
+            }
+            if (_upd['pendingPreferredPeriod'])
+                lead.pendingPreferredPeriod = _upd['pendingPreferredPeriod'];
+            if (_upd['complaint'])
+                lead.complaint = _upd['complaint'];
+            console.log('✅ [CTX-PERSIST] Dados salvos e memória atualizada:', _upd);
+        }
+    } catch (e) {
+        logSuppressedError('ctx-auto-persist', e);
+    }
+}
+
+function getMissingFields(lead, extracted = {}, userText = '') {
+    const missing = [];
+    const hasName = lead?.patientInfo?.fullName || extracted?.patientName;
+    const hasAge = lead?.patientInfo?.age || extracted?.patientAge;
+    
+    // Coleta dados de identificação primeiro (ordem natural de atendimento)
+    if (!hasName) missing.push('nome do paciente');
+    if (!hasAge) missing.push('idade');
+    if (!lead?.pendingPreferredPeriod && !extracted?.period)
+        missing.push('período (manhã ou tarde)');
+    if (!lead?.therapyArea && !extracted?.therapyArea)
+        missing.push('área terapêutica');
+    
+    // Queixa: só pede se já tem nome + idade E não é pergunta sobre convênio
+    const isInsuranceQuery = /\b(unimed|ipasgo|amil|bradesco|sulam[eé]rica|plano|conv[eê]nio|reembolso)\b/i.test(userText || '');
+    if (hasName && hasAge && !lead?.complaint && !extracted?.complaint && !isInsuranceQuery)
+        missing.push('queixa principal');
+    
+    return missing;
+}
+
 // ============================================================================
 // 🎯 ORQUESTRADOR PRINCIPAL
 // ============================================================================
@@ -1203,6 +1264,9 @@ export async function getOptimizedAmandaResponse({
     } else {
         console.warn("⚠️ [REFRESH] Lead sem _id:", lead);
     }
+
+    // 💾 Persiste dados extraídos ANTES de qualquer early return
+    await persistExtractedData(lead._id, text, lead);
 
     // =========================================================================
     // 🆕 PASSO 0.5: VALIDAÇÃO DE SERVIÇOS (Bloqueia serviços que não existem)
@@ -3980,7 +4044,24 @@ async function callClaudeWithTherapyData({
         return textResp || "Como posso te ajudar? 💚";
     }
 
-    const currentPrompt = `${userText}
+    // 🧠 Monta nota sobre dados já coletados (evita perguntar de novo)
+    const knownDataNote = (() => {
+        const parts = [];
+        if (lead?.patientInfo?.fullName) parts.push(`nome: "${lead.patientInfo.fullName}"`);
+        if (lead?.patientInfo?.age) parts.push(`idade: ${lead.patientInfo.age}`);
+        if (lead?.patientInfo?.birthday) parts.push(`nascimento: ${lead.patientInfo.birthday}`);
+        if (lead?.complaint) parts.push(`queixa: "${lead.complaint}"`);
+        if (lead?.therapyArea) parts.push(`área: ${lead.therapyArea}`);
+        if (lead?.pendingPreferredPeriod) parts.push(`período: ${lead.pendingPreferredPeriod}`);
+        return parts.length ? `\n\n🧠 JÁ SABEMOS — NÃO PERGUNTE NOVAMENTE: ${parts.join(' | ')}` : '';
+    })();
+
+    const _missing = getMissingFields(lead, {}, userText);
+    const missingFieldsNote = _missing.length
+        ? `\n\n📍 AINDA FALTA COLETAR (1 por vez, de forma natural): ${_missing.join(', ')}`
+        : `\n\n✅ DADOS COMPLETOS — foque em confirmar agendamento.`;
+
+    const currentPrompt = `${userText}${knownDataNote}${missingFieldsNote}
 
 📊 CONTEXTO DESTA MENSAGEM:
 TERAPIAS DETECTADAS:
@@ -4317,7 +4398,24 @@ ${useModule("noNameBeforeSlotRule")}
             : "\n📅 MOMENTO: Ainda não é hora de pressionar agendamento - foco em informação";
     }
     
-    const currentPrompt = `${userText}
+    // 🧠 Monta nota sobre dados já coletados (evita perguntar de novo)
+    const knownDataNote = (() => {
+        const parts = [];
+        if (lead?.patientInfo?.fullName) parts.push(`nome: "${lead.patientInfo.fullName}"`);
+        if (lead?.patientInfo?.age) parts.push(`idade: ${lead.patientInfo.age}`);
+        if (lead?.patientInfo?.birthday) parts.push(`nascimento: ${lead.patientInfo.birthday}`);
+        if (lead?.complaint) parts.push(`queixa: "${lead.complaint}"`);
+        if (lead?.therapyArea) parts.push(`área: ${lead.therapyArea}`);
+        if (lead?.pendingPreferredPeriod) parts.push(`período: ${lead.pendingPreferredPeriod}`);
+        return parts.length ? `\n\n🧠 JÁ SABEMOS — NÃO PERGUNTE NOVAMENTE: ${parts.join(' | ')}` : '';
+    })();
+
+    const _missing = getMissingFields(lead, {}, userText);
+    const missingFieldsNote = _missing.length
+        ? `\n\n📍 AINDA FALTA COLETAR (1 por vez, de forma natural): ${_missing.join(', ')}`
+        : `\n\n✅ DADOS COMPLETOS — foque em confirmar agendamento.`;
+
+    const currentPrompt = `${userText}${knownDataNote}${missingFieldsNote}
 ${wisdomBlock ? `
 📚 REGRAS DA CLÍNICA (OBRIGATÓRIO — use esses dados exatos):
 ${wisdomBlock}
