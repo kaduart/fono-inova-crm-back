@@ -176,6 +176,53 @@ export const checkAppointmentConflicts = async (req, res, next) => {
 };
 
 // ======================================================
+// 🔧 FUNÇÃO: Calcular slots disponíveis (reutilizável)
+// ======================================================
+export async function calculateAvailableSlots(doctorId, date) {
+  const doctor = await Doctor.findById(doctorId).lean();
+  if (!doctor) {
+    throw new Error("Médico não encontrado");
+  }
+
+  const dayKey = getDayKeyFromYMD(date);
+
+  const dailyAvailability = doctor.weeklyAvailability?.find((d) => d.day === dayKey);
+  const rawTimes = dailyAvailability?.times || [];
+
+  if (!rawTimes.length) return [];
+
+  // normalize + dedupe + sort + business hours
+  const normalizedTimes = Array.from(
+    new Set(
+      rawTimes
+        .map(normalizeTimeHHmm)
+        .filter(Boolean)
+        .filter(inBusinessHoursHHmm)
+    )
+  ).sort();
+
+  if (!normalizedTimes.length) return [];
+
+  const booked = await Appointment.find({
+    doctor: toObjectId(doctorId),
+    date,
+    operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
+  })
+    .select("time -_id")
+    .lean();
+
+  const bookedTimes = new Set(
+    booked
+      .map((a) => normalizeTimeHHmm(a.time))
+      .filter(Boolean)
+  );
+
+  const availableSlots = normalizedTimes.filter((t) => !bookedTimes.has(t));
+
+  return availableSlots;
+}
+
+// ======================================================
 // ✅ GET: /available-slots?doctorId=...&date=YYYY-MM-DD
 // ======================================================
 export const getAvailableTimeSlots = async (req, res) => {
@@ -192,46 +239,7 @@ export const getAvailableTimeSlots = async (req, res) => {
       return res.status(400).json({ error: "doctorId inválido" });
     }
 
-    const doctor = await Doctor.findById(doctorId).lean();
-    if (!doctor) {
-      return res.status(404).json({ error: "Médico não encontrado" });
-    }
-
-    const dayKey = getDayKeyFromYMD(date);
-
-    const dailyAvailability = doctor.weeklyAvailability?.find((d) => d.day === dayKey);
-    const rawTimes = dailyAvailability?.times || [];
-
-    if (!rawTimes.length) return res.json([]);
-
-    // normalize + dedupe + sort + business hours
-    const normalizedTimes = Array.from(
-      new Set(
-        rawTimes
-          .map(normalizeTimeHHmm)
-          .filter(Boolean)
-          .filter(inBusinessHoursHHmm)
-      )
-    ).sort();
-
-    if (!normalizedTimes.length) return res.json([]);
-
-    const booked = await Appointment.find({
-      doctor: toObjectId(doctorId),
-      date,
-      operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
-    })
-      .select("time -_id")
-      .lean();
-
-    const bookedTimes = new Set(
-      booked
-        .map((a) => normalizeTimeHHmm(a.time))
-        .filter(Boolean)
-    );
-
-    const availableSlots = normalizedTimes.filter((t) => !bookedTimes.has(t));
-
+    const availableSlots = await calculateAvailableSlots(doctorId, date);
     return res.json(availableSlots);
   } catch (err) {
     console.error("❌ Erro getAvailableTimeSlots:", err);

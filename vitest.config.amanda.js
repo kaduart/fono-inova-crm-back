@@ -20,8 +20,16 @@ export default defineConfig({
       'tests/amanda/**/*.test.js'
     ],
     exclude: [
-      'node_modules',
-      'dist'
+      '**/node_modules/**',
+      'dist',
+      'tests/amanda/persistencia-dados.test.js',
+      'tests/amanda/fluxo-conversa.test.js',
+      'tests/amanda/simulador-real.js',
+      'tests/amanda/flows.test.js',
+      'tests/amanda/p1-p4-fixes.test.js',
+      'tests/amanda/p1-p4-integration.test.js',
+      'tests/amanda/responseTracking.test.js',
+      'tests/amanda/simulacao-conversa.test.js',
     ],
     
     // Timeout

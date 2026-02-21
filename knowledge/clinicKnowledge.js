@@ -126,7 +126,7 @@ export const CLINIC_KNOWLEDGE = {
   // 🏢 LOCALIZAÇÃO E ESTRUTURA
   // ═══════════════════════════════════════════════════
   location: {
-    endereco: "Av. Brasil, 1234 - Centro, Anápolis/GO",
+    endereco: "Av. Minas Gerais, 405 - Bairro Jundiaí, Anápolis - GO",
     estacionamento: "Fácil na rua + estacionamento pago próximo",
     acessibilidade: "Térreo com acessibilidade",
     salas: "Salas individuais equipadas para cada especialidade"

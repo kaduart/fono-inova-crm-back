@@ -8,6 +8,7 @@ import Package from "../models/Package.js";
 import PreAgendamento from "../models/PreAgendamento.js";
 import { bookFixedSlot, fetchAvailableSlotsForDoctor } from "../services/amandaBookingService.js";
 import { findDoctorByName } from "../utils/doctorHelper.js";
+import { calculateAvailableSlots } from "../middleware/conflictDetection.js";
 
 import Appointment from "../models/Appointment.js";
 import Session from "../models/Session.js";
@@ -1416,6 +1417,170 @@ router.post("/import-from-agenda/confirmar-agendamento", agendaAuth, async (req,
     });
   } finally {
     session.endSession();
+  }
+});
+
+/**
+ * ======================================================
+ * GET /api/import-from-agenda/weekly-availability
+ * 
+ * Retorna grade de horários LIVRES da semana para todos os profissionais
+ * de uma especialidade específica.
+ * 
+ * Query params:
+ *   - startDate: Data de início (YYYY-MM-DD), idealmente uma segunda
+ *   - specialty: Especialidade (fonoaudiologia, psicologia, etc)
+ *   - days: Quantidade de dias (default: 7, max: 14)
+ * 
+ * Exemplo de retorno:
+ * {
+ *   success: true,
+ *   weekStart: "2026-02-24",
+ *   weekEnd: "2026-03-02",
+ *   specialty: "fonoaudiologia",
+ *   days: [
+ *     {
+ *       date: "2026-02-24",
+ *       dayOfWeek: "tuesday",
+ *       dayLabel: "Terça-feira",
+ *       professionals: [
+ *         {
+ *           doctorId: "...",
+ *           name: "Lorrany",
+ *           specialty: "fonoaudiologia",
+ *           availableSlots: ["08:00", "09:00", "14:00", "15:00"]
+ *         }
+ *       ]
+ *     }
+ *   ]
+ * }
+ * ======================================================
+ */
+router.get("/import-from-agenda/weekly-availability", agendaAuth, async (req, res) => {
+  try {
+    const { startDate, specialty, days = 7 } = req.query;
+
+    // Validações
+    if (!startDate || !specialty) {
+      return res.status(400).json({
+        success: false,
+        error: "startDate e specialty são obrigatórios"
+      });
+    }
+
+    const daysCount = Math.min(parseInt(days) || 7, 14);
+
+    // 1. Buscar profissionais ativos da especialidade (1 query)
+    const doctors = await Doctor.find({
+      specialty: specialty.toLowerCase(),
+      active: true
+    }).lean();
+
+    if (!doctors.length) {
+      return res.status(404).json({
+        success: false,
+        error: `Nenhum profissional encontrado para: ${specialty}`
+      });
+    }
+
+    // 2. Gerar datas da semana
+    const DAYS_PT = {
+      sunday: "Dom", monday: "Seg", tuesday: "Ter", wednesday: "Qua",
+      thursday: "Qui", friday: "Sex", saturday: "Sáb"
+    };
+    const DAYS_EN = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+    const weekDays = [];
+    const start = new Date(`${startDate}T12:00:00-03:00`);
+    
+    for (let i = 0; i < daysCount; i++) {
+      const currentDate = new Date(start);
+      currentDate.setDate(start.getDate() + i);
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const dayOfWeek = DAYS_EN[currentDate.getDay()];
+      weekDays.push({ date: dateStr, dayOfWeek, dayLabel: DAYS_PT[dayOfWeek] });
+    }
+
+    const dates = weekDays.map(d => d.date);
+    const doctorIds = doctors.map(d => d._id);
+
+    // 3. Buscar TODOS os agendamentos da semana de uma vez (1 query)
+    const appointments = await Appointment.find({
+      date: { $in: dates },
+      doctor: { $in: doctorIds },
+      operationalStatus: { $nin: ['canceled', 'cancelado', 'cancelada', 'no_show', 'missed'] }
+    }).select('doctor date time').lean();
+
+    // 4. Indexar agendamentos por doutor e data para acesso rápido
+    const bookedMap = {}; // { doctorId: { date: Set([times]) } }
+    appointments.forEach(appt => {
+      const docId = String(appt.doctor);
+      if (!bookedMap[docId]) bookedMap[docId] = {};
+      if (!bookedMap[docId][appt.date]) bookedMap[docId][appt.date] = new Set();
+      bookedMap[docId][appt.date].add(String(appt.time).slice(0, 5));
+    });
+
+    // 5. Calcular disponibilidade para cada dia
+    const result = [];
+
+    for (const day of weekDays) {
+      const dayResult = {
+        date: day.date,
+        dayOfWeek: day.dayOfWeek,
+        dayLabel: day.dayLabel,
+        professionals: []
+      };
+
+      for (const doctor of doctors) {
+        // Verificar se tem disponibilidade cadastrada para este dia
+        const dailyAvailability = doctor.weeklyAvailability?.find(a => a.day === day.dayOfWeek);
+        if (!dailyAvailability?.times?.length) continue;
+
+        // Normalizar horários
+        const allSlots = dailyAvailability.times
+          .map(t => String(t).slice(0, 5))
+          .filter(t => /^\d{2}:\d{2}$/.test(t))
+          .sort();
+
+        // Remover ocupados
+        const bookedSlots = bookedMap[String(doctor._id)]?.[day.date] || new Set();
+        const availableSlots = allSlots.filter(slot => !bookedSlots.has(slot));
+
+        if (availableSlots.length > 0) {
+          dayResult.professionals.push({
+            doctorId: String(doctor._id),
+            name: doctor.fullName,
+            specialty: doctor.specialty,
+            availableSlots,
+            totalSlots: allSlots.length,
+            bookedSlots: allSlots.length - availableSlots.length
+          });
+        }
+      }
+
+      if (dayResult.professionals.length > 0) {
+        dayResult.professionals.sort((a, b) => a.name.localeCompare(b.name));
+        result.push(dayResult);
+      }
+    }
+
+    return res.json({
+      success: true,
+      weekStart: startDate,
+      weekEnd: weekDays[weekDays.length - 1]?.date,
+      specialty: specialty.toLowerCase(),
+      totalProfessionals: doctors.length,
+      daysWithAvailability: result.length,
+      days: result
+    });
+
+  } catch (error) {
+    console.error("[WEEKLY-AVAILABILITY] Erro:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+      code: "WEEKLY_AVAILABILITY_ERROR"
+    });
   }
 });
 

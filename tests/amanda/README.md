@@ -18,6 +18,17 @@ Esta suite de testes não verifica se a Amanda segue um roteiro rígido. Em vez 
 cd backend && npm test
 ```
 
+## 📁 Arquivos de Teste
+
+| Arquivo | Descrição | Cobertura | Como Executar |
+|---------|-----------|-----------|---------------|
+| `persistencia-dados.test.js` | 🆕 Teste de integração (Node) | Persistência no MongoDB | `node tests/amanda/persistencia-dados.test.js` |
+| `responseBuilder.test.js` | 🆕 Testes do ResponseBuilder | Auto-respostas baseadas em flags | `npm run test:amanda -- responseBuilder` |
+| `contextPersistence.test.js` | 🆕 Testes de Persistência | Extração e persistência de dados | `npm run test:amanda -- contextPersistence` |
+| `flows.test.js` | Fluxos de conversa | Testes de fluxo completos | `npm run test:amanda -- flows` |
+| `dynamic-modules.test.js` | Módulos dinâmicos | Carregamento de módulos | `npm run test:amanda -- dynamic-modules` |
+| `real-world-cases.test.js` | Casos reais | Casos extraídos de conversas | `npm run test:amanda -- real-world-cases` |
+
 ## 📋 Cenários de Teste (Behavioral-Driven)
 
 | ID | Nome | Descrição | Múltiplas Variações |
@@ -168,5 +179,106 @@ Antes de subir para produção:
 
 ---
 
-**Última atualização:** 03/02/2026  
-**Status:** ✅ 7/7 Testes Passando
+---
+
+## ⚠️ Atenção: Arquivos de Teste
+
+### `testeAmanda.js` — NÃO USAR diretamente
+
+O arquivo `testeAmanda.js` tem configurações padrão que **não funcionam**:
+```javascript
+API_URL: 'https://sua-api.com',  // ❌ URL fake
+TOKEN: 'SEU_JWT_TOKEN',          // ❌ Token fake
+```
+
+**Erro típico:** `fetch failed`
+
+**Solução:** Use o novo teste de integração que não requer servidor HTTP:
+```bash
+node tests/amanda/persistencia-dados.test.js
+```
+
+Ou configure corretamente as variáveis no `testeAmanda.js` antes de usar.
+
+---
+
+## 🆕 Novos Testes (Fev/2026)
+
+### Persistência de Dados (`persistencia-dados.test.js`)
+
+Teste de integração que verifica se os dados extraídos das mensagens são persistidos corretamente no MongoDB, mesmo em fluxos de bypass (preço, endereço, etc).
+
+```bash
+# NÃO requer servidor HTTP rodando
+node tests/amanda/persistencia-dados.test.js
+```
+
+**Cobertura:**
+- ✅ Persistência de nome, idade e período
+- ✅ Não sobrescreve dados já coletados
+- ✅ Extração com padrão "nome:" (recomendado)
+- ✅ Documentação dos comportamentos das funções
+
+**⚠️ Limitações conhecidas:**
+- `extractName()` pode ter falso positivo se o texto começar com 2+ palavras
+- Recomenda-se usar padrão explícito: `"nome: [nome completo]"`
+
+### ResponseBuilder Tests (`responseBuilder.test.js`)
+
+Testa o serviço de respostas automáticas baseadas em flags.
+
+```bash
+npm run test:amanda -- tests/amanda/responseBuilder.test.js
+```
+
+**Cobertura:**
+- ✅ `canAutoRespond()` - Detecção de flags para auto-resposta
+- ✅ `buildResponseFromFlags()` - Construção de respostas (preço, planos, endereço, horários)
+- ✅ `getTherapyInfo()` - Metadados de terapias
+
+**Exemplo de teste:**
+```javascript
+it('deve retornar preço específico para neuropsicologia', () => {
+  const flags = { asksPrice: true };
+  const context = { therapyArea: 'neuropsicologia' };
+  const response = buildResponseFromFlags(flags, context);
+  
+  expect(response).toContain('R$ 2.000');
+  expect(response).toContain('6x');
+});
+```
+
+### Context Persistence Tests (`contextPersistence.test.js`)
+
+Testa a persistência automática de dados extraídos das mensagens.
+
+```bash
+npm run test:amanda -- tests/amanda/contextPersistence.test.js
+```
+
+**Cobertura:**
+- ✅ `getMissingFields()` - Lista campos que ainda faltam coletar
+- ✅ `extractName()` - Extrai nome do texto do usuário
+- ✅ `extractAgeFromText()` - Extrai idade (anos/meses)
+- ✅ `extractPeriodFromText()` - Extrai período preferido
+- ✅ Construção de `knownDataNote` e `missingFieldsNote`
+
+**Exemplo de teste:**
+```javascript
+it('deve retornar apenas campos realmente faltantes', () => {
+  const lead = {
+    patientInfo: { fullName: 'Ana Costa', age: '3 anos' },
+    therapyArea: 'psicologia'
+  };
+  const missing = getMissingFields(lead);
+  
+  expect(missing).not.toContain('nome do paciente');
+  expect(missing).not.toContain('idade');
+  expect(missing).toContain('período (manhã ou tarde)');
+});
+```
+
+---
+
+**Última atualização:** 21/02/2026  
+**Status:** ✅ 48/48 Testes Passando (incluindo novos)
