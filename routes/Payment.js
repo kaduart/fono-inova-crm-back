@@ -2393,7 +2393,7 @@ router.post('/insurance', auth, async (req, res) => {
 
 /**
  * GET /api/payments/insurance/receivables
- * Lista contas a receber de convênios - COM POPULATE DE PACIENTE
+ * Lista contas a receber de convênios - AGRUPADO POR PACIENTE
  */
 router.get('/insurance/receivables', auth, async (req, res) => {
     try {
@@ -2417,27 +2417,93 @@ router.get('/insurance/receivables', auth, async (req, res) => {
                     as: 'patientInfo'
                 }
             },
-            // Desestruturar o array do lookup
+            // Fazer lookup do agendamento para pegar especialidade
             {
-                $addFields: {
-                    patientName: { $arrayElemAt: ['$patientInfo.fullName', 0] }
+                $lookup: {
+                    from: 'appointments',
+                    localField: 'appointment',
+                    foreignField: '_id',
+                    as: 'appointmentInfo'
                 }
             },
-            // Agrupar por convênio
+            // Fazer lookup do pacote para pegar dados da guia
+            {
+                $lookup: {
+                    from: 'packages',
+                    localField: 'package',
+                    foreignField: '_id',
+                    as: 'packageInfo'
+                }
+            },
+            // Fazer lookup da guia para pegar número
+            {
+                $lookup: {
+                    from: 'insuranceguides',
+                    localField: 'packageInfo.insuranceGuide',
+                    foreignField: '_id',
+                    as: 'guideInfo'
+                }
+            },
+            // Desestruturar os arrays do lookup
+            {
+                $addFields: {
+                    patientName: {
+                        $ifNull: [
+                            { $arrayElemAt: ['$patientInfo.fullName', 0] },
+                            'Paciente não identificado'
+                        ]
+                    },
+                    specialty: {
+                        $ifNull: [
+                            { $arrayElemAt: ['$appointmentInfo.specialty', 0] },
+                            { $arrayElemAt: ['$packageInfo.specialty', 0] },
+                            'N/A'
+                        ]
+                    },
+                    guideNumber: {
+                        $ifNull: [
+                            { $arrayElemAt: ['$guideInfo.number', 0] },
+                            'N/A'
+                        ]
+                    }
+                }
+            },
+            // Agrupar por convênio E paciente
             {
                 $group: {
-                    _id: '$insurance.provider',
-                    totalPending: { $sum: '$insurance.grossAmount' },
-                    count: { $sum: 1 },
+                    _id: {
+                        provider: '$insurance.provider',
+                        patient: '$patient',
+                        patientName: '$patientName'
+                    },
+                    patientTotal: { $sum: '$insurance.grossAmount' },
+                    patientCount: { $sum: 1 },
                     payments: {
                         $push: {
                             paymentId: '$_id',
-                            patient: '$patient',
-                            patientName: { $ifNull: ['$patientName', 'N/A'] },
                             grossAmount: '$insurance.grossAmount',
                             status: '$insurance.status',
                             paymentDate: '$paymentDate',
-                            authorizationCode: '$insurance.authorizationCode'
+                            authorizationCode: '$insurance.authorizationCode',
+                            specialty: '$specialty',
+                            guideNumber: '$guideNumber'
+                        }
+                    }
+                }
+            },
+            // Agrupar por convênio (nível superior)
+            {
+                $group: {
+                    _id: '$_id.provider',
+                    totalPending: { $sum: '$patientTotal' },
+                    count: { $sum: '$patientCount' },
+                    patients: {
+                        $push: {
+                            patientId: '$_id.patient',
+                            patientName: '$_id.patientName',
+                            total: '$patientTotal',
+                            count: '$patientCount',
+                            payments: '$payments'
                         }
                     }
                 }
@@ -2457,6 +2523,90 @@ router.get('/insurance/receivables', auth, async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Erro ao buscar recebíveis:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+/**
+ * GET /api/payments/insurance/audit
+ * Auditoria de pagamentos de convênio - identifica problemas de dados
+ */
+router.get('/insurance/audit', auth, async (req, res) => {
+    try {
+        // Buscar todos os pagamentos de convênio
+        const payments = await Payment.find({
+            billingType: 'convenio'
+        }).select('patient insurance.provider insurance.grossAmount insurance.status paymentDate').lean();
+
+        const issues = [];
+        const patientIds = new Set();
+
+        // Primeira passada: identificar problemas básicos
+        for (const payment of payments) {
+            // Verificar se tem patient
+            if (!payment.patient) {
+                issues.push({
+                    paymentId: payment._id.toString(),
+                    issue: 'MISSING_PATIENT',
+                    details: 'Pagamento sem paciente vinculado',
+                    provider: payment.insurance?.provider,
+                    grossAmount: payment.insurance?.grossAmount,
+                    status: payment.insurance?.status,
+                    paymentDate: payment.paymentDate
+                });
+                continue;
+            }
+
+            patientIds.add(payment.patient.toString());
+        }
+
+        // Verificar quais pacientes existem no banco
+        const patientIdsArray = Array.from(patientIds);
+        const existingPatients = await mongoose.model('Patient').find({
+            _id: { $in: patientIdsArray }
+        }).select('_id fullName').lean();
+
+        const existingPatientIds = new Set(existingPatients.map(p => p._id.toString()));
+        const patientMap = new Map(existingPatients.map(p => [p._id.toString(), p.fullName]));
+
+        // Segunda passada: identificar pacientes não encontrados
+        for (const payment of payments) {
+            if (!payment.patient) continue;
+
+            const patientId = payment.patient.toString();
+            if (!existingPatientIds.has(patientId)) {
+                issues.push({
+                    paymentId: payment._id.toString(),
+                    issue: 'PATIENT_NOT_FOUND',
+                    details: `Paciente ${patientId} não encontrado no banco de dados`,
+                    patientId: patientId,
+                    provider: payment.insurance?.provider,
+                    grossAmount: payment.insurance?.grossAmount,
+                    status: payment.insurance?.status,
+                    paymentDate: payment.paymentDate
+                });
+            }
+        }
+
+        // Estatísticas
+        const stats = {
+            totalPayments: payments.length,
+            withPatient: payments.filter(p => p.patient).length,
+            withoutPatient: payments.filter(p => !p.patient).length,
+            uniquePatients: patientIds.size,
+            existingPatients: existingPatientIds.size,
+            missingPatients: patientIds.size - existingPatientIds.size,
+            totalIssues: issues.length
+        };
+
+        res.json({
+            success: true,
+            stats,
+            issues: issues.slice(0, 100), // Limitar a 100 issues para não sobrecarregar
+            patientMap: Object.fromEntries(patientMap) // Mapa de pacientes existentes
+        });
+    } catch (error) {
+        console.error('❌ Erro na auditoria:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 });

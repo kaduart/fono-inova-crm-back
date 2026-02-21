@@ -4,9 +4,9 @@
  */
 
 import { extractEntities } from './services/intelligence/EntityExtractor.js';
-import { mergeContext, DEFAULT_CONTEXT } from './services/intelligence/ContextManager.js';
-import { isWhitelisted, addToWhitelist, reloadWhitelist, getWhitelistStats } from './services/intelligence/WhitelistManager.js';
-import { getValidationStats, calculateNameConfidence, checkExplicitName } from './services/intelligence/EntityValidator.js';
+import { mergeContext, DEFAULT_CONTEXT } from '../services/intelligence/ContextManager.js';
+import { isWhitelisted, addToWhitelist, reloadWhitelist, getWhitelistStats } from '../services/intelligence/WhitelistManager.js';
+import { getValidationStats, calculateNameConfidence, checkExplicitName } from '../services/intelligence/EntityValidator.js';
 
 const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';

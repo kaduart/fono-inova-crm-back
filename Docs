@@ -1,0 +1,2120 @@
+2026-02-20T17:59:34.367579013Z [2026-02-20T17:59:34.366Z] POST → /api/whatsapp/webhook
+2026-02-20T17:59:34.367615835Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T17:59:34.366Z
+2026-02-20T17:59:37.87356211Z [DEBUG CANARY ENV] 556292013573,5561981694922,556181694922,5562992013573
+2026-02-20T17:59:37.873632224Z 🔎 isTestNumber? 556294786874 false
+2026-02-20T17:59:37.873637875Z 🔄 Processando mensagem: {
+2026-02-20T17:59:37.873642855Z   from: '556294786874',
+2026-02-20T17:59:37.873646895Z   type: 'text',
+2026-02-20T17:59:37.873651156Z   wamid: 'wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAEhggQUM5NTM4ODM3QTlFMjEzOEEwM0NCMkM1RTQ2RjAwQjYA'
+2026-02-20T17:59:37.873655216Z }
+2026-02-20T17:59:38.228993389Z 🔍 Patient encontrado: Nenhum
+2026-02-20T17:59:39.246327429Z 🔍 [DEBUG PRE-SAVE #1] Estado do lead ANTES do save: {
+2026-02-20T17:59:39.246362711Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T17:59:39.246367931Z   pendingPatientInfoForScheduling: false,
+2026-02-20T17:59:39.246372612Z   pendingPatientInfoStep: null,
+2026-02-20T17:59:39.246376752Z   pendingChosenSlot: 'NÃO',
+2026-02-20T17:59:39.246380472Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T17:59:39.246384292Z }
+2026-02-20T17:59:40.54652623Z 📅 Interação atualizada no lead
+2026-02-20T17:59:40.747750226Z 🔍 [DEBUG POST-SAVE #2] Estado do lead DEPOIS do save: {
+2026-02-20T17:59:40.747780128Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T17:59:40.747795349Z   pendingPatientInfoForScheduling: false,
+2026-02-20T17:59:40.747801079Z   pendingPatientInfoStep: null
+2026-02-20T17:59:40.747804959Z }
+2026-02-20T17:59:40.747809379Z 🧠 qualificationData atualizado: { idade: undefined, idadeRange: undefined, disponibilidade: 'tarde' }
+2026-02-20T17:59:40.74781407Z 🔍 [DEBUG PRE-ORCHESTRATOR] Lead sendo passado pro handleAutoReply: {
+2026-02-20T17:59:40.74781802Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T17:59:40.7478218Z   pendingPatientInfoForScheduling: false,
+2026-02-20T17:59:40.74782554Z   pendingPatientInfoStep: null,
+2026-02-20T17:59:40.74782928Z   pendingChosenSlot: 'NÃO'
+2026-02-20T17:59:40.747832951Z }
+2026-02-20T17:59:40.747837181Z 🤖 [AUTO-REPLY] Iniciando para {
+2026-02-20T17:59:40.747859732Z   from: '556294786874',
+2026-02-20T17:59:40.747862272Z   to: '556293377726',
+2026-02-20T17:59:40.747864613Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T17:59:40.747866973Z   content: 'Minha menina anda muito estressada preciso com urgência'
+2026-02-20T17:59:40.747869133Z }
+2026-02-20T17:59:40.753743184Z 🔍 [DEBUG HANDLE-AUTO-REPLY] Lead carregado do banco: {
+2026-02-20T17:59:40.753766256Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T17:59:40.753769536Z   pendingPatientInfoForScheduling: false,
+2026-02-20T17:59:40.753772176Z   pendingPatientInfoStep: null,
+2026-02-20T17:59:40.753774576Z   pendingChosenSlot: 'NÃO',
+2026-02-20T17:59:40.753776696Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T17:59:40.753778796Z }
+2026-02-20T17:59:40.930380021Z 🤖 Gerando resposta da Amanda (Novo Orquestrador)...
+2026-02-20T17:59:41.114993661Z [INFO] [LockManager] LOCK_ACQUIRED { leadId: new ObjectId('69989c3ab70ca66ae2830773'), attempt: 0 }
+2026-02-20T17:59:41.115031683Z 🎯 [ORCHESTRATOR] Processando: "Minha menina anda muito estressada preciso com urgência"
+2026-02-20T17:59:41.294470403Z 🔄 [REFRESH] Lead atualizado: {
+2026-02-20T17:59:41.294493994Z   pendingPatientInfoForScheduling: false,
+2026-02-20T17:59:41.294497584Z   pendingPatientInfoStep: null,
+2026-02-20T17:59:41.294500405Z   pendingChosenSlot: 'NÃO',
+2026-02-20T17:59:41.294502815Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T17:59:41.294509225Z }
+2026-02-20T17:59:41.294512475Z 🩺 [VALIDATION] Verificando serviço solicitado...
+2026-02-20T17:59:41.294878147Z 🔍 [PASSO 1 CHECK] { pendingPatientInfoForScheduling: false, hasLeadId: true }
+2026-02-20T17:59:41.651209578Z 🚩 FLAGS DETECTADAS: {
+2026-02-20T17:59:41.651230119Z   text: 'Minha menina anda muito estressada preciso com urgência',
+2026-02-20T17:59:41.651233169Z   normalizedText: 'minha menina anda muito estressada preciso com urgência',
+2026-02-20T17:59:41.651235849Z   ageGroup: null,
+2026-02-20T17:59:41.651238119Z   asksPrice: false,
+2026-02-20T17:59:41.651240389Z   insistsPrice: false,
+2026-02-20T17:59:41.651242629Z   asksAddress: false,
+2026-02-20T17:59:41.651245429Z   asksLocation: false,
+2026-02-20T17:59:41.65124815Z   wantsSchedule: false,
+2026-02-20T17:59:41.65125085Z   mentionsUrgency: true,
+2026-02-20T17:59:41.65125379Z   confirmsData: false,
+2026-02-20T17:59:41.65125711Z   refusesOrDenies: false,
+2026-02-20T17:59:41.65125965Z   wantsMoreOptions: false,
+2026-02-20T17:59:41.65126217Z   mentionsCDL: false,
+2026-02-20T17:59:41.651265031Z   wantsReschedule: false,
+2026-02-20T17:59:41.651267711Z   wantsCancel: false,
+2026-02-20T17:59:41.651270421Z   asksPayment: false,
+2026-02-20T17:59:41.651273381Z   asksPlans: false,
+2026-02-20T17:59:41.651276101Z   asksDuration: false,
+2026-02-20T17:59:41.651278562Z   mentionsReembolso: false,
+2026-02-20T17:59:41.651281292Z   wantsInvoice: false,
+2026-02-20T17:59:41.651284732Z   asksAboutAfterHours: false,
+2026-02-20T17:59:41.651287702Z   asksAvaliacao: false,
+2026-02-20T17:59:41.651290292Z   mentionsSpeechTherapy: false,
+2026-02-20T17:59:41.651293022Z   asksPsychopedagogy: false,
+2026-02-20T17:59:41.651295703Z   asksCAA: false,
+2026-02-20T17:59:41.651298453Z   asksAgeMinimum: false,
+2026-02-20T17:59:41.651301193Z   asksRescheduling: false,
+2026-02-20T17:59:41.651303823Z   givingUp: false,
+2026-02-20T17:59:41.651310193Z   talksAboutTypeOfAssessment: false,
+2026-02-20T17:59:41.651313244Z   hasMedicalReferral: false,
+2026-02-20T17:59:41.651316224Z   wantsHumanAgent: false,
+2026-02-20T17:59:41.651369477Z   alreadyScheduled: false,
+2026-02-20T17:59:41.651373027Z   asksDays: false,
+2026-02-20T17:59:41.651376037Z   asksTimes: false,
+2026-02-20T17:59:41.651378817Z   mentionsAdult: false,
+2026-02-20T17:59:41.651381588Z   mentionsTeen: false,
+2026-02-20T17:59:41.651384157Z   mentionsChild: false,
+2026-02-20T17:59:41.651386898Z   mentionsTEA_TDAH: false,
+2026-02-20T17:59:41.651390318Z   mentionsTOD: false,
+2026-02-20T17:59:41.651396088Z   mentionsABA: false,
+2026-02-20T17:59:41.651398958Z   mentionsMethodPrompt: false,
+2026-02-20T17:59:41.651401429Z   mentionsDenver: false,
+2026-02-20T17:59:41.651404199Z   mentionsBobath: false,
+2026-02-20T17:59:41.651406839Z   saysThanks: false,
+2026-02-20T17:59:41.651409599Z   saysBye: false,
+2026-02-20T17:59:41.651412559Z   asksSpecialtyAvailability: false,
+2026-02-20T17:59:41.651415439Z   mentionsPriceObjection: false,
+2026-02-20T17:59:41.65141831Z   mentionsInsuranceObjection: false,
+2026-02-20T17:59:41.65142097Z   mentionsTimeObjection: false,
+2026-02-20T17:59:41.65142382Z   mentionsOtherClinicObjection: false,
+2026-02-20T17:59:41.65142652Z   mentionsDoubtTEA: false,
+2026-02-20T17:59:41.65142925Z   mentionsNeuropediatra: false,
+2026-02-20T17:59:41.65143185Z   mentionsLaudo: false,
+2026-02-20T17:59:41.651455052Z   mentionsBaby: false,
+2026-02-20T17:59:41.651461482Z   wantsPartnershipOrResume: false,
+2026-02-20T17:59:41.651464312Z   mentionsTongueTieSurgery: false,
+2026-02-20T17:59:41.651467022Z   mentionsGeneralSurgery: false,
+2026-02-20T17:59:41.651525346Z   mentionsInvestigation: false,
+2026-02-20T17:59:41.651529276Z   _meta: {
+2026-02-20T17:59:41.651532356Z     hasContextualDetection: false,
+2026-02-20T17:59:41.651535256Z     detectors: {
+2026-02-20T17:59:41.651537766Z       confirmation: 'inactive',
+2026-02-20T17:59:41.651540467Z       insurance: 'inactive',
+2026-02-20T17:59:41.651543157Z       price: 'inactive',
+2026-02-20T17:59:41.651545737Z       scheduling: 'inactive'
+2026-02-20T17:59:41.651548347Z     },
+2026-02-20T17:59:41.651551117Z     timestamp: '2026-02-20T17:59:41.650Z'
+2026-02-20T17:59:41.651553958Z   }
+2026-02-20T17:59:41.651556528Z }
+2026-02-20T17:59:41.651576199Z 🤝 [CONTEXT-ENRICHMENT] Welcoming approach added: empathy first, gentle scheduling suggestion
+2026-02-20T17:59:41.651583329Z 🎯 [CONTEXT-ENRICHMENT] Strategic context summary: {
+2026-02-20T17:59:41.651586199Z   hasPrice: false,
+2026-02-20T17:59:41.651589089Z   hasScheduling: false,
+2026-02-20T17:59:41.65159186Z   hasInsurance: false,
+2026-02-20T17:59:41.65159477Z   hasConfirmation: false,
+2026-02-20T17:59:41.65159721Z   mustAskComplaint: false,
+2026-02-20T17:59:41.65159966Z   avgConfidence: 0
+2026-02-20T17:59:41.65160186Z }
+2026-02-20T17:59:41.65160426Z 📅 [SCHEDULING DECISION]: false
+2026-02-20T17:59:41.65195167Z [CTX] intent: duvida_geral
+2026-02-20T17:59:41.651958241Z [CTX] area: neuropsicologia
+2026-02-20T17:59:41.651960841Z [CTX] stage: triagem_agendamento
+2026-02-20T17:59:41.651963601Z 🧠 [ORCHESTRATOR] Injetando insights de aprendizado no prompt
+2026-02-20T17:59:41.651966471Z [AmandaAI] Aplicando toneMode → acolhimento
+2026-02-20T17:59:41.653356412Z [INTELLIGENCE] {
+2026-02-20T17:59:41.653368983Z   score: 70,
+2026-02-20T17:59:41.653372523Z   segment: 'warm',
+2026-02-20T17:59:41.653375273Z   intent: 'duvida_geral',
+2026-02-20T17:59:41.653377903Z   urgencia: 'normal',
+2026-02-20T17:59:41.653380553Z   bloqueio: null
+2026-02-20T17:59:41.653382984Z }
+2026-02-20T17:59:41.838393357Z [INTELLIGENCE] Lead atualizado: [ 'conversionScore', 'segment', 'lastAnalyzedAt' ]
+2026-02-20T17:59:41.840067874Z [BOOKING_GATE] {
+2026-02-20T17:59:41.840089076Z   wantsSchedule: false,
+2026-02-20T17:59:41.840093406Z   wantsSchedulingNow: false,
+2026-02-20T17:59:41.840095676Z   inSchedulingFlow: false,
+2026-02-20T17:59:41.840098726Z   mappedTherapyArea: 'neuropsicologia',
+2026-02-20T17:59:41.840101276Z   topic: null
+2026-02-20T17:59:41.840103496Z }
+2026-02-20T17:59:41.840834689Z 🧠 [YES-CONTEXT] {
+2026-02-20T17:59:41.84084969Z   text: 'Minha menina anda muito estressada preciso com urgência',
+2026-02-20T17:59:41.84085371Z   inSchedulingFlow: undefined,
+2026-02-20T17:59:41.84085749Z   lastStage: 'triagem_agendamento',
+2026-02-20T17:59:41.84086024Z   hasPendingSlots: false
+2026-02-20T17:59:41.840862861Z }
+2026-02-20T17:59:41.841064572Z 🚦 [SCHEDULING-GATE] {
+2026-02-20T17:59:41.841072243Z   wantsScheduling: false,
+2026-02-20T17:59:41.841075103Z   stage: 'triagem_agendamento',
+2026-02-20T17:59:41.841077993Z   flags: {
+2026-02-20T17:59:41.841081203Z     text: 'Minha menina anda muito estressada preciso com urgência',
+2026-02-20T17:59:41.841083903Z     normalizedText: 'minha menina anda muito estressada preciso com urgência',
+2026-02-20T17:59:41.841086634Z     ageGroup: null,
+2026-02-20T17:59:41.841089414Z     asksPrice: false,
+2026-02-20T17:59:41.841091834Z     insistsPrice: false,
+2026-02-20T17:59:41.841094514Z     asksAddress: false,
+2026-02-20T17:59:41.841096814Z     asksLocation: false,
+2026-02-20T17:59:41.841099374Z     wantsSchedule: false,
+2026-02-20T17:59:41.841102284Z     mentionsUrgency: true,
+2026-02-20T17:59:41.841104955Z     confirmsData: false,
+2026-02-20T17:59:41.841108025Z     refusesOrDenies: false,
+2026-02-20T17:59:41.841110645Z     wantsMoreOptions: false,
+2026-02-20T17:59:41.841113395Z     mentionsCDL: false,
+2026-02-20T17:59:41.841116085Z     wantsReschedule: false,
+2026-02-20T17:59:41.841118635Z     wantsCancel: false,
+2026-02-20T17:59:41.841121216Z     asksPayment: false,
+2026-02-20T17:59:41.841123516Z     asksPlans: false,
+2026-02-20T17:59:41.841126006Z     asksDuration: false,
+2026-02-20T17:59:41.841128916Z     mentionsReembolso: false,
+2026-02-20T17:59:41.841131736Z     wantsInvoice: false,
+2026-02-20T17:59:41.841134396Z     asksAboutAfterHours: false,
+2026-02-20T17:59:41.841137117Z     asksAvaliacao: false,
+2026-02-20T17:59:41.841139917Z     mentionsSpeechTherapy: false,
+2026-02-20T17:59:41.841142817Z     asksPsychopedagogy: false,
+2026-02-20T17:59:41.841145637Z     asksCAA: false,
+2026-02-20T17:59:41.841148107Z     asksAgeMinimum: false,
+2026-02-20T17:59:41.841151227Z     asksRescheduling: false,
+2026-02-20T17:59:41.841153497Z     givingUp: false,
+2026-02-20T17:59:41.841155798Z     talksAboutTypeOfAssessment: false,
+2026-02-20T17:59:41.841158168Z     hasMedicalReferral: false,
+2026-02-20T17:59:41.841160738Z     wantsHumanAgent: false,
+2026-02-20T17:59:41.841163318Z     alreadyScheduled: false,
+2026-02-20T17:59:41.841165708Z     asksDays: false,
+2026-02-20T17:59:41.841168358Z     asksTimes: false,
+2026-02-20T17:59:41.841171059Z     mentionsAdult: false,
+2026-02-20T17:59:41.841173719Z     mentionsTeen: false,
+2026-02-20T17:59:41.841176319Z     mentionsChild: false,
+2026-02-20T17:59:41.841179159Z     mentionsTEA_TDAH: false,
+2026-02-20T17:59:41.841181699Z     mentionsTOD: false,
+2026-02-20T17:59:41.841184189Z     mentionsABA: false,
+2026-02-20T17:59:41.841186779Z     mentionsMethodPrompt: false,
+2026-02-20T17:59:41.841189429Z     mentionsDenver: false,
+2026-02-20T17:59:41.8411919Z     mentionsBobath: false,
+2026-02-20T17:59:41.84120647Z     saysThanks: false,
+2026-02-20T17:59:41.841209071Z     saysBye: false,
+2026-02-20T17:59:41.841211601Z     asksSpecialtyAvailability: false,
+2026-02-20T17:59:41.841213941Z     mentionsPriceObjection: false,
+2026-02-20T17:59:41.841216141Z     mentionsInsuranceObjection: false,
+2026-02-20T17:59:41.841218551Z     mentionsTimeObjection: false,
+2026-02-20T17:59:41.841220761Z     mentionsOtherClinicObjection: false,
+2026-02-20T17:59:41.841223022Z     mentionsDoubtTEA: false,
+2026-02-20T17:59:41.841225302Z     mentionsNeuropediatra: false,
+2026-02-20T17:59:41.841227532Z     mentionsLaudo: false,
+2026-02-20T17:59:41.841230212Z     mentionsBaby: false,
+2026-02-20T17:59:41.841232522Z     wantsPartnershipOrResume: false,
+2026-02-20T17:59:41.841234732Z     mentionsTongueTieSurgery: false,
+2026-02-20T17:59:41.841237002Z     mentionsGeneralSurgery: false,
+2026-02-20T17:59:41.841239432Z     mentionsInvestigation: false,
+2026-02-20T17:59:41.841242172Z     _meta: {
+2026-02-20T17:59:41.841244883Z       hasContextualDetection: false,
+2026-02-20T17:59:41.841247443Z       detectors: [Object],
+2026-02-20T17:59:41.841250073Z       timestamp: '2026-02-20T17:59:41.650Z'
+2026-02-20T17:59:41.841252563Z     },
+2026-02-20T17:59:41.841255193Z     therapyArea: 'neuropsicologia'
+2026-02-20T17:59:41.841257693Z   }
+2026-02-20T17:59:41.841260274Z }
+2026-02-20T17:59:45.513938709Z ✅ [AI] Resposta via OpenAI (fallback)
+2026-02-20T17:59:45.696013002Z [INFO] [LockManager] LOCK_RELEASED { leadId: new ObjectId('69989c3ab70ca66ae2830773') }
+2026-02-20T17:59:45.696063675Z [AmandaReply] Texto gerado: Entendo a urgência!  Isso é algo que preocupa muitos pais, e você fez muito bem ...
+2026-02-20T17:59:46.056543407Z ✅ Token do cache
+2026-02-20T17:59:46.056576469Z 🔍 Token (primeiros 50 chars): EAASluIuLGKQBPncq7aPBbr060Ts6OuM799bnmoTj7mdu0h2vZ
+2026-02-20T17:59:46.056592019Z 📤 [WhatsApp] Tentativa 1/3 para 556294786874
+2026-02-20T17:59:46.571135886Z 💾 Salvando com waMessageId: wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAERgSNjk3MkJGRjMwMTU3M0JCRDU3AA==
+2026-02-20T17:59:46.571273224Z 💾 Payload completo para salvar: {
+2026-02-20T17:59:46.571282274Z   lead: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T17:59:46.571286235Z   contact: new ObjectId('69989c39397255b0643cb3aa'),
+2026-02-20T17:59:46.571290275Z   patient: null,
+2026-02-20T17:59:46.571295415Z   direction: 'outbound',
+2026-02-20T17:59:46.571299175Z   type: 'text',
+2026-02-20T17:59:46.571303486Z   content: 'Entendo a urgência!  Isso é algo que preocupa muit...',
+2026-02-20T17:59:46.571307556Z   timestamp: 2026-02-20T17:59:46.570Z,
+2026-02-20T17:59:46.571311466Z   status: 'sent',
+2026-02-20T17:59:46.571315876Z   waMessageId: 'wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAERgSNjk3MkJGRjMwMTU3M0JCRDU3AA==',
+2026-02-20T17:59:46.571319797Z   to: '556294786874',
+2026-02-20T17:59:46.571324837Z   from: '891659614023862',
+2026-02-20T17:59:46.571328867Z   metadata: { sentBy: 'amanda', userId: null }
+2026-02-20T17:59:46.571332997Z }
+2026-02-20T17:59:46.756517711Z ✅ Mensagem criada no banco: {
+2026-02-20T17:59:46.756549423Z   _id: new ObjectId('6998a112397255b0643cc783'),
+2026-02-20T17:59:46.756554933Z   waMessageId: 'wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAERgSNjk3MkJGRjMwMTU3M0JCRDU3AA==',
+2026-02-20T17:59:46.756559654Z   lead: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T17:59:46.756564714Z   to: '556294786874'
+2026-02-20T17:59:46.756568434Z }
+2026-02-20T17:59:46.936779228Z ✅ Mensagem enviada com sucesso (tentativa 1)
+2026-02-20T17:59:47.113746524Z [2026-02-20T17:59:47.113Z] POST → /api/whatsapp/webhook
+2026-02-20T17:59:47.113857881Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T17:59:47.113Z
+2026-02-20T17:59:47.314420148Z 🔍 Busca Amanda por waMessageId: ENCONTROU
+2026-02-20T17:59:47.314981Z ✅ Amanda respondeu e emitiu via socket: 6998a112397255b0643cc783
+2026-02-20T17:59:47.315823569Z [2026-02-20T17:59:47.315Z] GET → /api/pre-agendamento
+2026-02-20T17:59:47.416071826Z [2026-02-20T17:59:47.415Z] POST → /api/whatsapp/webhook
+2026-02-20T17:59:47.416105958Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T17:59:47.416Z
+2026-02-20T17:59:47.675286552Z ℹ️ Já existe follow-up futuro para este lead, não vou duplicar: {
+2026-02-20T17:59:47.675314524Z   leadId: '69989c3ab70ca66ae2830773',
+2026-02-20T17:59:47.675319814Z   followupId: '69989c3c397255b0643cb3c4',
+2026-02-20T17:59:47.675322704Z   status: 'scheduled',
+2026-02-20T17:59:47.675324504Z   scheduledAt: 2026-02-20T19:39:08.408Z
+2026-02-20T17:59:47.675326684Z }
+2026-02-20T17:59:47.675329615Z ✅ Mensagem processada com sucesso: wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAEhggQUM5NTM4ODM3QTlFMjEzOEEwM0NCMkM1RTQ2RjAwQjYA
+2026-02-20T17:59:51.408251971Z [2026-02-20T17:59:51.408Z] GET → /api/amanda/status
+2026-02-20T17:59:52.651399626Z [2026-02-20T17:59:52.651Z] POST → /api/whatsapp/webhook
+2026-02-20T17:59:52.651543384Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T17:59:52.651Z
+2026-02-20T17:59:56.159470333Z [DEBUG CANARY ENV] 556292013573,5561981694922,556181694922,5562992013573
+2026-02-20T17:59:56.159498224Z 🔎 isTestNumber? 556294786874 false
+2026-02-20T17:59:56.159513955Z 🔄 Processando mensagem: {
+2026-02-20T17:59:56.159519856Z   from: '556294786874',
+2026-02-20T17:59:56.159523476Z   type: 'text',
+2026-02-20T17:59:56.159527796Z   wamid: 'wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAEhggQUNDRjE0RjAwMkFGMEMwRThFQzgzODQ3ODZCNkU0RkUA'
+2026-02-20T17:59:56.159531396Z }
+2026-02-20T17:59:56.512529674Z 🔍 Patient encontrado: Nenhum
+2026-02-20T17:59:57.059783321Z 🔍 [DEBUG PRE-SAVE #1] Estado do lead ANTES do save: {
+2026-02-20T17:59:57.059814753Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T17:59:57.059821983Z   pendingPatientInfoForScheduling: false,
+2026-02-20T17:59:57.059828744Z   pendingPatientInfoStep: null,
+2026-02-20T17:59:57.059834054Z   pendingChosenSlot: 'NÃO',
+2026-02-20T17:59:57.059839074Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T17:59:57.059844714Z }
+2026-02-20T17:59:57.243631207Z 📅 Interação atualizada no lead
+2026-02-20T17:59:57.425347049Z 🔍 [DEBUG POST-SAVE #2] Estado do lead DEPOIS do save: {
+2026-02-20T17:59:57.42536954Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T17:59:57.4253757Z   pendingPatientInfoForScheduling: false,
+2026-02-20T17:59:57.42538048Z   pendingPatientInfoStep: null
+2026-02-20T17:59:57.425385231Z }
+2026-02-20T17:59:57.425405782Z 🧠 qualificationData atualizado: { idade: undefined, idadeRange: undefined, disponibilidade: 'tarde' }
+2026-02-20T17:59:57.425613174Z 🔍 [DEBUG PRE-ORCHESTRATOR] Lead sendo passado pro handleAutoReply: {
+2026-02-20T17:59:57.425628665Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T17:59:57.425636135Z   pendingPatientInfoForScheduling: false,
+2026-02-20T17:59:57.425642766Z   pendingPatientInfoStep: null,
+2026-02-20T17:59:57.425649596Z   pendingChosenSlot: 'NÃO'
+2026-02-20T17:59:57.425653906Z }
+2026-02-20T17:59:57.425669307Z 🤖 [AUTO-REPLY] Iniciando para {
+2026-02-20T17:59:57.425676568Z   from: '556294786874',
+2026-02-20T17:59:57.425682068Z   to: '556293377726',
+2026-02-20T17:59:57.425687658Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T17:59:57.425704329Z   content: 'Andressa Dos Santos Gomes 07/12/2018'
+2026-02-20T17:59:57.425708039Z }
+2026-02-20T17:59:57.43277384Z 🔍 [DEBUG HANDLE-AUTO-REPLY] Lead carregado do banco: {
+2026-02-20T17:59:57.432783451Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T17:59:57.432785971Z   pendingPatientInfoForScheduling: false,
+2026-02-20T17:59:57.432788231Z   pendingPatientInfoStep: null,
+2026-02-20T17:59:57.432789961Z   pendingChosenSlot: 'NÃO',
+2026-02-20T17:59:57.432791631Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T17:59:57.432793451Z }
+2026-02-20T17:59:57.609550905Z 🤖 Gerando resposta da Amanda (Novo Orquestrador)...
+2026-02-20T17:59:57.790307001Z [INFO] [LockManager] LOCK_ACQUIRED { leadId: new ObjectId('69989c3ab70ca66ae2830773'), attempt: 0 }
+2026-02-20T17:59:57.790336622Z 🎯 [ORCHESTRATOR] Processando: "Andressa Dos Santos Gomes 07/12/2018"
+2026-02-20T17:59:57.966614998Z 🔄 [REFRESH] Lead atualizado: {
+2026-02-20T17:59:57.96664403Z   pendingPatientInfoForScheduling: false,
+2026-02-20T17:59:57.96665196Z   pendingPatientInfoStep: null,
+2026-02-20T17:59:57.966657931Z   pendingChosenSlot: 'NÃO',
+2026-02-20T17:59:57.966663461Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T17:59:57.966669351Z }
+2026-02-20T17:59:57.966675272Z 🩺 [VALIDATION] Verificando serviço solicitado...
+2026-02-20T17:59:57.966889184Z 🔍 [PASSO 1 CHECK] { pendingPatientInfoForScheduling: false, hasLeadId: true }
+2026-02-20T17:59:58.32159949Z 🚩 FLAGS DETECTADAS: {
+2026-02-20T17:59:58.321629082Z   text: 'Andressa Dos Santos Gomes 07/12/2018',
+2026-02-20T17:59:58.321634972Z   normalizedText: 'andressa dos santos gomes 07/12/2018',
+2026-02-20T17:59:58.321639233Z   ageGroup: null,
+2026-02-20T17:59:58.321643503Z   asksPrice: false,
+2026-02-20T17:59:58.321648133Z   insistsPrice: false,
+2026-02-20T17:59:58.321652464Z   asksAddress: false,
+2026-02-20T17:59:58.321657204Z   asksLocation: false,
+2026-02-20T17:59:58.321661294Z   wantsSchedule: false,
+2026-02-20T17:59:58.321665924Z   mentionsUrgency: false,
+2026-02-20T17:59:58.321670215Z   confirmsData: false,
+2026-02-20T17:59:58.321674325Z   refusesOrDenies: false,
+2026-02-20T17:59:58.321678835Z   wantsMoreOptions: false,
+2026-02-20T17:59:58.321682915Z   mentionsCDL: false,
+2026-02-20T17:59:58.321686906Z   wantsReschedule: false,
+2026-02-20T17:59:58.321691146Z   wantsCancel: false,
+2026-02-20T17:59:58.321695866Z   asksPayment: false,
+2026-02-20T17:59:58.321699856Z   asksPlans: false,
+2026-02-20T17:59:58.321703897Z   asksDuration: false,
+2026-02-20T17:59:58.321707657Z   mentionsReembolso: false,
+2026-02-20T17:59:58.321711257Z   wantsInvoice: false,
+2026-02-20T17:59:58.321714847Z   asksAboutAfterHours: false,
+2026-02-20T17:59:58.321719048Z   asksAvaliacao: false,
+2026-02-20T17:59:58.321723658Z   mentionsSpeechTherapy: false,
+2026-02-20T17:59:58.321727888Z   asksPsychopedagogy: false,
+2026-02-20T17:59:58.321732048Z   asksCAA: false,
+2026-02-20T17:59:58.321736038Z   asksAgeMinimum: false,
+2026-02-20T17:59:58.321740119Z   asksRescheduling: false,
+2026-02-20T17:59:58.321743969Z   givingUp: false,
+2026-02-20T17:59:58.321748039Z   talksAboutTypeOfAssessment: false,
+2026-02-20T17:59:58.32175261Z   hasMedicalReferral: false,
+2026-02-20T17:59:58.32175718Z   wantsHumanAgent: false,
+2026-02-20T17:59:58.32176144Z   alreadyScheduled: false,
+2026-02-20T17:59:58.32176551Z   asksDays: false,
+2026-02-20T17:59:58.32176986Z   asksTimes: false,
+2026-02-20T17:59:58.321774011Z   mentionsAdult: false,
+2026-02-20T17:59:58.321777921Z   mentionsTeen: false,
+2026-02-20T17:59:58.321793562Z   mentionsChild: false,
+2026-02-20T17:59:58.321796652Z   mentionsTEA_TDAH: false,
+2026-02-20T17:59:58.321799162Z   mentionsTOD: false,
+2026-02-20T17:59:58.321801812Z   mentionsABA: false,
+2026-02-20T17:59:58.321804682Z   mentionsMethodPrompt: false,
+2026-02-20T17:59:58.321807303Z   mentionsDenver: false,
+2026-02-20T17:59:58.321809753Z   mentionsBobath: false,
+2026-02-20T17:59:58.321812673Z   saysThanks: false,
+2026-02-20T17:59:58.321814703Z   saysBye: false,
+2026-02-20T17:59:58.321816803Z   asksSpecialtyAvailability: false,
+2026-02-20T17:59:58.321819073Z   mentionsPriceObjection: false,
+2026-02-20T17:59:58.321821634Z   mentionsInsuranceObjection: false,
+2026-02-20T17:59:58.321824143Z   mentionsTimeObjection: false,
+2026-02-20T17:59:58.321826854Z   mentionsOtherClinicObjection: false,
+2026-02-20T17:59:58.321829204Z   mentionsDoubtTEA: false,
+2026-02-20T17:59:58.321831374Z   mentionsNeuropediatra: false,
+2026-02-20T17:59:58.321833544Z   mentionsLaudo: false,
+2026-02-20T17:59:58.321835694Z   mentionsBaby: false,
+2026-02-20T17:59:58.321837784Z   wantsPartnershipOrResume: false,
+2026-02-20T17:59:58.321839884Z   mentionsTongueTieSurgery: false,
+2026-02-20T17:59:58.321841915Z   mentionsGeneralSurgery: false,
+2026-02-20T17:59:58.321844475Z   mentionsInvestigation: false,
+2026-02-20T17:59:58.321847135Z   _meta: {
+2026-02-20T17:59:58.321849885Z     hasContextualDetection: false,
+2026-02-20T17:59:58.321852445Z     detectors: {
+2026-02-20T17:59:58.321855055Z       confirmation: 'inactive',
+2026-02-20T17:59:58.321857556Z       insurance: 'inactive',
+2026-02-20T17:59:58.321860146Z       price: 'inactive',
+2026-02-20T17:59:58.321862616Z       scheduling: 'inactive'
+2026-02-20T17:59:58.321865206Z     },
+2026-02-20T17:59:58.321867886Z     timestamp: '2026-02-20T17:59:58.321Z'
+2026-02-20T17:59:58.321870416Z   }
+2026-02-20T17:59:58.321872677Z }
+2026-02-20T17:59:58.323155391Z 🤝 [CONTEXT-ENRICHMENT] Welcoming approach added: empathy first, gentle scheduling suggestion
+2026-02-20T17:59:58.323170472Z 🎯 [CONTEXT-ENRICHMENT] Strategic context summary: {
+2026-02-20T17:59:58.323174112Z   hasPrice: false,
+2026-02-20T17:59:58.323176422Z   hasScheduling: false,
+2026-02-20T17:59:58.323178732Z   hasInsurance: false,
+2026-02-20T17:59:58.323181482Z   hasConfirmation: false,
+2026-02-20T17:59:58.323184003Z   mustAskComplaint: false,
+2026-02-20T17:59:58.323199823Z   avgConfidence: 0
+2026-02-20T17:59:58.323202524Z }
+2026-02-20T17:59:58.323205394Z 📅 [SCHEDULING DECISION]: false
+2026-02-20T17:59:58.323207894Z [CTX] intent: duvida_geral
+2026-02-20T17:59:58.323210254Z [CTX] area: neuropsicologia
+2026-02-20T17:59:58.323212704Z [CTX] stage: triagem_agendamento
+2026-02-20T17:59:58.323215084Z 🧠 [ORCHESTRATOR] Injetando insights de aprendizado no prompt
+2026-02-20T17:59:58.323217635Z [AmandaAI] Aplicando toneMode → acolhimento
+2026-02-20T17:59:58.323851901Z [INTELLIGENCE] {
+2026-02-20T17:59:58.323863322Z   score: 70,
+2026-02-20T17:59:58.323866522Z   segment: 'warm',
+2026-02-20T17:59:58.323869153Z   intent: 'duvida_geral',
+2026-02-20T17:59:58.323872023Z   urgencia: 'normal',
+2026-02-20T17:59:58.323874583Z   bloqueio: null
+2026-02-20T17:59:58.323877033Z }
+2026-02-20T17:59:58.506045451Z [INTELLIGENCE] Lead atualizado: [ 'conversionScore', 'segment', 'lastAnalyzedAt' ]
+2026-02-20T17:59:58.510050674Z [BOOKING_GATE] {
+2026-02-20T17:59:58.510069255Z   wantsSchedule: false,
+2026-02-20T17:59:58.510072165Z   wantsSchedulingNow: false,
+2026-02-20T17:59:58.510074415Z   inSchedulingFlow: false,
+2026-02-20T17:59:58.510088516Z   mappedTherapyArea: 'neuropsicologia',
+2026-02-20T17:59:58.510091036Z   topic: null
+2026-02-20T17:59:58.510093486Z }
+2026-02-20T17:59:58.51084636Z 🧠 [YES-CONTEXT] {
+2026-02-20T17:59:58.510857971Z   text: 'Andressa Dos Santos Gomes 07/12/2018',
+2026-02-20T17:59:58.510861291Z   inSchedulingFlow: undefined,
+2026-02-20T17:59:58.510864051Z   lastStage: 'triagem_agendamento',
+2026-02-20T17:59:58.510866461Z   hasPendingSlots: false
+2026-02-20T17:59:58.510868671Z }
+2026-02-20T17:59:58.510871071Z 🚦 [SCHEDULING-GATE] {
+2026-02-20T17:59:58.510873271Z   wantsScheduling: true,
+2026-02-20T17:59:58.510875502Z   stage: 'triagem_agendamento',
+2026-02-20T17:59:58.510877662Z   flags: {
+2026-02-20T17:59:58.510880302Z     text: 'Andressa Dos Santos Gomes 07/12/2018',
+2026-02-20T17:59:58.510882452Z     normalizedText: 'andressa dos santos gomes 07/12/2018',
+2026-02-20T17:59:58.510884572Z     ageGroup: null,
+2026-02-20T17:59:58.510886722Z     asksPrice: false,
+2026-02-20T17:59:58.510888903Z     insistsPrice: false,
+2026-02-20T17:59:58.510891303Z     asksAddress: false,
+2026-02-20T17:59:58.510893443Z     asksLocation: false,
+2026-02-20T17:59:58.510895453Z     wantsSchedule: false,
+2026-02-20T17:59:58.510897563Z     mentionsUrgency: false,
+2026-02-20T17:59:58.510899723Z     confirmsData: false,
+2026-02-20T17:59:58.510902143Z     refusesOrDenies: false,
+2026-02-20T17:59:58.510904363Z     wantsMoreOptions: false,
+2026-02-20T17:59:58.510906544Z     mentionsCDL: false,
+2026-02-20T17:59:58.510908673Z     wantsReschedule: false,
+2026-02-20T17:59:58.510910824Z     wantsCancel: false,
+2026-02-20T17:59:58.510912954Z     asksPayment: false,
+2026-02-20T17:59:58.510915014Z     asksPlans: false,
+2026-02-20T17:59:58.510917084Z     asksDuration: false,
+2026-02-20T17:59:58.510919254Z     mentionsReembolso: false,
+2026-02-20T17:59:58.510921454Z     wantsInvoice: false,
+2026-02-20T17:59:58.510923685Z     asksAboutAfterHours: false,
+2026-02-20T17:59:58.510925805Z     asksAvaliacao: false,
+2026-02-20T17:59:58.510927965Z     mentionsSpeechTherapy: false,
+2026-02-20T17:59:58.510930355Z     asksPsychopedagogy: false,
+2026-02-20T17:59:58.510933045Z     asksCAA: false,
+2026-02-20T17:59:58.510935615Z     asksAgeMinimum: false,
+2026-02-20T17:59:58.510938545Z     asksRescheduling: false,
+2026-02-20T17:59:58.510941115Z     givingUp: false,
+2026-02-20T17:59:58.510943596Z     talksAboutTypeOfAssessment: false,
+2026-02-20T17:59:58.510945996Z     hasMedicalReferral: false,
+2026-02-20T17:59:58.510948576Z     wantsHumanAgent: false,
+2026-02-20T17:59:58.510951226Z     alreadyScheduled: false,
+2026-02-20T17:59:58.510953826Z     asksDays: false,
+2026-02-20T17:59:58.510956426Z     asksTimes: false,
+2026-02-20T17:59:58.510958707Z     mentionsAdult: false,
+2026-02-20T17:59:58.510961007Z     mentionsTeen: false,
+2026-02-20T17:59:58.510963127Z     mentionsChild: false,
+2026-02-20T17:59:58.510965347Z     mentionsTEA_TDAH: false,
+2026-02-20T17:59:58.510967497Z     mentionsTOD: false,
+2026-02-20T17:59:58.510969627Z     mentionsABA: false,
+2026-02-20T17:59:58.510971867Z     mentionsMethodPrompt: false,
+2026-02-20T17:59:58.510974007Z     mentionsDenver: false,
+2026-02-20T17:59:58.510976237Z     mentionsBobath: false,
+2026-02-20T17:59:58.510978568Z     saysThanks: false,
+2026-02-20T17:59:58.510980728Z     saysBye: false,
+2026-02-20T17:59:58.510982948Z     asksSpecialtyAvailability: false,
+2026-02-20T17:59:58.510985118Z     mentionsPriceObjection: false,
+2026-02-20T17:59:58.510987338Z     mentionsInsuranceObjection: false,
+2026-02-20T17:59:58.511004619Z     mentionsTimeObjection: false,
+2026-02-20T17:59:58.511007119Z     mentionsOtherClinicObjection: false,
+2026-02-20T17:59:58.51100939Z     mentionsDoubtTEA: false,
+2026-02-20T17:59:58.511011779Z     mentionsNeuropediatra: false,
+2026-02-20T17:59:58.51101409Z     mentionsLaudo: false,
+2026-02-20T17:59:58.51101659Z     mentionsBaby: false,
+2026-02-20T17:59:58.51101884Z     wantsPartnershipOrResume: false,
+2026-02-20T17:59:58.51102107Z     mentionsTongueTieSurgery: false,
+2026-02-20T17:59:58.51102398Z     mentionsGeneralSurgery: false,
+2026-02-20T17:59:58.511026751Z     mentionsInvestigation: false,
+2026-02-20T17:59:58.51102926Z     _meta: {
+2026-02-20T17:59:58.511032031Z       hasContextualDetection: false,
+2026-02-20T17:59:58.511034711Z       detectors: [Object],
+2026-02-20T17:59:58.511037331Z       timestamp: '2026-02-20T17:59:58.321Z'
+2026-02-20T17:59:58.511039941Z     },
+2026-02-20T17:59:58.511042781Z     preferredDate: '2026-12-07',
+2026-02-20T17:59:58.511045632Z     therapyArea: 'neuropsicologia'
+2026-02-20T17:59:58.511047882Z   }
+2026-02-20T17:59:58.511050212Z }
+2026-02-20T17:59:58.516534111Z [BLOCO_INICIAL] hasArea: neuropsicologia | hasAge: undefined | hasPeriod: tarde | hasValidLeadArea: null
+2026-02-20T18:00:00.016415757Z [20/02/2026, 15:00:00] [CRON] healthCheck - START
+2026-02-20T18:00:00.018339519Z [20/02/2026, 15:00:00] [CRON] checkResponses - START
+2026-02-20T18:00:00.018638906Z [20/02/2026, 15:00:00] [INFO] Iniciando verificação de respostas pendentes... {}
+2026-02-20T18:00:00.018780024Z [INFO] Iniciando processamento de respostas pendentes { batchSize: 50, minAge: '24h' }
+2026-02-20T18:00:00.372701025Z [20/02/2026, 15:00:00] [INFO] ✓ Sistema saudável (DB + socket + atividade recente) {
+2026-02-20T18:00:00.372731907Z   "database": true,
+2026-02-20T18:00:00.372734927Z   "socket": true,
+2026-02-20T18:00:00.372737217Z   "recentActivity": true
+2026-02-20T18:00:00.372739357Z }
+2026-02-20T18:00:00.372887876Z [20/02/2026, 15:00:00] [CRON] healthCheck - SUCCESS
+2026-02-20T18:00:00.373170962Z [20/02/2026, 15:00:00] [SUCCESS] Tarefa concluída: healthCheck {
+2026-02-20T18:00:00.373175503Z   "duration": "356ms"
+2026-02-20T18:00:00.373177843Z }
+2026-02-20T18:00:00.395926735Z [INFO] Processando 50 follow-ups... {}
+2026-02-20T18:00:01.404385999Z ✅ [AI] Resposta via OpenAI (fallback)
+2026-02-20T18:00:01.764309888Z [INFO] [LockManager] LOCK_RELEASED { leadId: new ObjectId('69989c3ab70ca66ae2830773') }
+2026-02-20T18:00:01.764335829Z [AmandaReply] Texto gerado: Entendo  A Andressa está passando por um momento difícil e é totalmente compreen...
+2026-02-20T18:00:02.115370943Z ✅ Token do cache
+2026-02-20T18:00:02.115392534Z 🔍 Token (primeiros 50 chars): EAASluIuLGKQBPncq7aPBbr060Ts6OuM799bnmoTj7mdu0h2vZ
+2026-02-20T18:00:02.115397854Z 📤 [WhatsApp] Tentativa 1/3 para 556294786874
+2026-02-20T18:00:02.574511289Z 💾 Salvando com waMessageId: wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAERgSQkQwNTg4M0M5MTZBODlEQTgwAA==
+2026-02-20T18:00:02.574650487Z 💾 Payload completo para salvar: {
+2026-02-20T18:00:02.574663658Z   lead: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T18:00:02.574668708Z   contact: new ObjectId('69989c39397255b0643cb3aa'),
+2026-02-20T18:00:02.574672818Z   patient: null,
+2026-02-20T18:00:02.574677728Z   direction: 'outbound',
+2026-02-20T18:00:02.574682459Z   type: 'text',
+2026-02-20T18:00:02.574687079Z   content: 'Entendo  A Andressa está passando por um momento d...',
+2026-02-20T18:00:02.574691659Z   timestamp: 2026-02-20T18:00:02.574Z,
+2026-02-20T18:00:02.574697Z   status: 'sent',
+2026-02-20T18:00:02.57470153Z   waMessageId: 'wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAERgSQkQwNTg4M0M5MTZBODlEQTgwAA==',
+2026-02-20T18:00:02.574721951Z   to: '556294786874',
+2026-02-20T18:00:02.574725601Z   from: '891659614023862',
+2026-02-20T18:00:02.574728181Z   metadata: { sentBy: 'amanda', userId: null }
+2026-02-20T18:00:02.574730582Z }
+2026-02-20T18:00:02.71871192Z [WARN] Resposta fora da janela de tempo válida {
+2026-02-20T18:00:02.718728631Z   followupId: new ObjectId('6941a690fbcea767fb2ae5d7'),
+2026-02-20T18:00:02.718731451Z   sentAt: 2025-12-17T18:36:03.749Z,
+2026-02-20T18:00:02.718733571Z   respondedAt: 2026-01-06T20:27:30.000Z
+2026-02-20T18:00:02.718735471Z }
+2026-02-20T18:00:02.754820719Z ✅ Mensagem criada no banco: {
+2026-02-20T18:00:02.75483815Z   _id: new ObjectId('6998a122397255b0643cc81f'),
+2026-02-20T18:00:02.75484268Z   waMessageId: 'wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAERgSQkQwNTg4M0M5MTZBODlEQTgwAA==',
+2026-02-20T18:00:02.75484618Z   lead: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T18:00:02.75484953Z   to: '556294786874'
+2026-02-20T18:00:02.754855461Z }
+2026-02-20T18:00:02.932939941Z ✅ Mensagem enviada com sucesso (tentativa 1)
+2026-02-20T18:00:03.152653372Z [2026-02-20T18:00:03.152Z] POST → /api/whatsapp/webhook
+2026-02-20T18:00:03.152757178Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T18:00:03.152Z
+2026-02-20T18:00:03.307591967Z 🔍 Busca Amanda por waMessageId: ENCONTROU
+2026-02-20T18:00:03.308090076Z ✅ Amanda respondeu e emitiu via socket: 6998a122397255b0643cc81f
+2026-02-20T18:00:03.433668335Z [WARN] Resposta fora da janela de tempo válida {
+2026-02-20T18:00:03.433689756Z   followupId: new ObjectId('693ff8dfbb6ba6cc3ff61b21'),
+2026-02-20T18:00:03.433693076Z   sentAt: 2026-01-07T20:41:05.022Z,
+2026-02-20T18:00:03.433694836Z   respondedAt: 2026-01-22T14:27:46.000Z
+2026-02-20T18:00:03.433696586Z }
+2026-02-20T18:00:03.660593964Z ℹ️ Já existe follow-up futuro para este lead, não vou duplicar: {
+2026-02-20T18:00:03.660635857Z   leadId: '69989c3ab70ca66ae2830773',
+2026-02-20T18:00:03.660639577Z   followupId: '69989c3c397255b0643cb3c4',
+2026-02-20T18:00:03.660643367Z   status: 'scheduled',
+2026-02-20T18:00:03.660646257Z   scheduledAt: 2026-02-20T19:39:08.408Z
+2026-02-20T18:00:03.660649337Z }
+2026-02-20T18:00:03.660653087Z ✅ Mensagem processada com sucesso: wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAEhggQUNDRjE0RjAwMkFGMEMwRThFQzgzODQ3ODZCNkU0RkUA
+2026-02-20T18:00:03.973405535Z [WARN] Resposta fora da janela de tempo válida {
+2026-02-20T18:00:03.973428957Z   followupId: new ObjectId('693ff8dfbb6ba6cc3ff61b2e'),
+2026-02-20T18:00:03.973432437Z   sentAt: 2026-01-07T20:41:08.899Z,
+2026-02-20T18:00:03.973447858Z   respondedAt: 2026-01-21T11:41:22.000Z
+2026-02-20T18:00:03.973452418Z }
+2026-02-20T18:00:04.925850923Z [2026-02-20T18:00:04.925Z] POST → /api/whatsapp/webhook
+2026-02-20T18:00:04.925920047Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T18:00:04.925Z
+2026-02-20T18:00:06.637506918Z [SUCCESS] Processamento em lote concluído {
+2026-02-20T18:00:06.637561881Z   processed: 50,
+2026-02-20T18:00:06.637567491Z   responded: 0,
+2026-02-20T18:00:06.637571242Z   errors: 0,
+2026-02-20T18:00:06.637576112Z   errorDetails: [],
+2026-02-20T18:00:06.637580632Z   responseRate: '0.0%',
+2026-02-20T18:00:06.637584652Z   duration: '6619ms'
+2026-02-20T18:00:06.637588623Z }
+2026-02-20T18:00:06.638245211Z [20/02/2026, 15:00:06] [SUCCESS] Verificação concluída {
+2026-02-20T18:00:06.638256631Z   "processed": 50,
+2026-02-20T18:00:06.638260952Z   "responded": 0,
+2026-02-20T18:00:06.638278943Z   "errors": 0,
+2026-02-20T18:00:06.638281603Z   "responseRate": "0.0%"
+2026-02-20T18:00:06.638283843Z }
+2026-02-20T18:00:06.638611092Z [20/02/2026, 15:00:06] [CRON] checkResponses - SUCCESS
+2026-02-20T18:00:06.638868357Z [20/02/2026, 15:00:06] [SUCCESS] Tarefa concluída: checkResponses {
+2026-02-20T18:00:06.638874387Z   "duration": "6620ms"
+2026-02-20T18:00:06.638877008Z }
+2026-02-20T18:00:07.013694433Z [2026-02-20T18:00:07.013Z] HEAD → /health
+2026-02-20T18:00:09.582344047Z [2026-02-20T18:00:09.582Z] POST → /api/whatsapp/webhook
+2026-02-20T18:00:09.582474695Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T18:00:09.582Z
+2026-02-20T18:00:17.329834025Z [2026-02-20T18:00:17.329Z] GET → /api/pre-agendamento
+2026-02-20T18:00:21.157509915Z [2026-02-20T18:00:21.157Z] GET → /api/amanda/status
+2026-02-20T18:00:22.371665164Z 📬 183 follow-ups prontos para envio (após filtro)
+2026-02-20T18:00:22.371690935Z    🔥 0 quentes
+2026-02-20T18:00:22.371696305Z    🟡 101 mornos
+2026-02-20T18:00:22.371707446Z    🧊 82 frios
+2026-02-20T18:00:34.105142328Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:00:34.108770449Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:00:34.157249667Z [2026-02-20T18:00:34.157Z] GET → /api/pre-agendamento
+2026-02-20T18:00:34.877086745Z ⚡ Novo cliente conectado: bJMkB0XW9PzgXC6fAAB7
+2026-02-20T18:00:34.877110586Z 👥 Total de clientes: 5
+2026-02-20T18:00:35.589792357Z ⚡ Novo cliente conectado: OX9H-Dj-EunyakbkAAB9
+2026-02-20T18:00:35.589820719Z 👥 Total de clientes: 6
+2026-02-20T18:00:36.190053805Z [2026-02-20T18:00:36.189Z] POST → /api/whatsapp/webhook
+2026-02-20T18:00:36.190186063Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T18:00:36.190Z
+2026-02-20T18:00:39.698649688Z [DEBUG CANARY ENV] 556292013573,5561981694922,556181694922,5562992013573
+2026-02-20T18:00:39.69868429Z 🔎 isTestNumber? 556294786874 false
+2026-02-20T18:00:39.698707712Z 🔄 Processando mensagem: {
+2026-02-20T18:00:39.698714232Z   from: '556294786874',
+2026-02-20T18:00:39.698718642Z   type: 'text',
+2026-02-20T18:00:39.698724083Z   wamid: 'wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAEhggQUMxQzgzNThFNzU1Q0RDNTExQjczMjkyQjhCODAzQjYA'
+2026-02-20T18:00:39.698728553Z }
+2026-02-20T18:00:40.050343589Z 🔍 Patient encontrado: Nenhum
+2026-02-20T18:00:40.598980836Z 🔍 [DEBUG PRE-SAVE #1] Estado do lead ANTES do save: {
+2026-02-20T18:00:40.599009388Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T18:00:40.599014088Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:00:40.599019029Z   pendingPatientInfoStep: null,
+2026-02-20T18:00:40.599023019Z   pendingChosenSlot: 'NÃO',
+2026-02-20T18:00:40.599026569Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T18:00:40.599030359Z }
+2026-02-20T18:00:40.784966986Z 📅 Interação atualizada no lead
+2026-02-20T18:00:40.96811249Z 🔍 [DEBUG POST-SAVE #2] Estado do lead DEPOIS do save: {
+2026-02-20T18:00:40.968141322Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T18:00:40.968146632Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:00:40.968151603Z   pendingPatientInfoStep: null
+2026-02-20T18:00:40.968156003Z }
+2026-02-20T18:00:40.968172914Z 🧠 qualificationData atualizado: { idade: 7, idadeRange: 'escolar_7a12', disponibilidade: 'tarde' }
+2026-02-20T18:00:40.968363225Z 🔍 [DEBUG PRE-ORCHESTRATOR] Lead sendo passado pro handleAutoReply: {
+2026-02-20T18:00:40.968386697Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T18:00:40.968415038Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:00:40.968419648Z   pendingPatientInfoStep: null,
+2026-02-20T18:00:40.968423299Z   pendingChosenSlot: 'NÃO'
+2026-02-20T18:00:40.968426759Z }
+2026-02-20T18:00:40.968473111Z 🤖 [AUTO-REPLY] Iniciando para {
+2026-02-20T18:00:40.968490552Z   from: '556294786874',
+2026-02-20T18:00:40.968494243Z   to: '556293377726',
+2026-02-20T18:00:40.968498293Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T18:00:40.968501773Z   content: 'Ela está com 7 anos'
+2026-02-20T18:00:40.968505293Z }
+2026-02-20T18:00:40.974055376Z 🔍 [DEBUG HANDLE-AUTO-REPLY] Lead carregado do banco: {
+2026-02-20T18:00:40.974074637Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T18:00:40.974079188Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:00:40.974083368Z   pendingPatientInfoStep: null,
+2026-02-20T18:00:40.974087068Z   pendingChosenSlot: 'NÃO',
+2026-02-20T18:00:40.974090508Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T18:00:40.974094248Z }
+2026-02-20T18:00:41.150603457Z 🤖 Gerando resposta da Amanda (Novo Orquestrador)...
+2026-02-20T18:00:41.332894012Z [INFO] [LockManager] LOCK_ACQUIRED { leadId: new ObjectId('69989c3ab70ca66ae2830773'), attempt: 0 }
+2026-02-20T18:00:41.332933184Z 🎯 [ORCHESTRATOR] Processando: "Ela está com 7 anos"
+2026-02-20T18:00:41.464329091Z [2026-02-20T18:00:41.464Z] POST → /api/whatsapp/webhook
+2026-02-20T18:00:41.464390235Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T18:00:41.464Z
+2026-02-20T18:00:41.509660146Z 🔄 [REFRESH] Lead atualizado: {
+2026-02-20T18:00:41.509691288Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:00:41.509696068Z   pendingPatientInfoStep: null,
+2026-02-20T18:00:41.509698918Z   pendingChosenSlot: 'NÃO',
+2026-02-20T18:00:41.509702138Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T18:00:41.509705348Z }
+2026-02-20T18:00:41.509709389Z 🩺 [VALIDATION] Verificando serviço solicitado...
+2026-02-20T18:00:41.509992545Z 🔍 [PASSO 1 CHECK] { pendingPatientInfoForScheduling: false, hasLeadId: true }
+2026-02-20T18:00:45.32833247Z ✅ [AI] Resposta via OpenAI (fallback)
+2026-02-20T18:00:45.328355091Z ✅ [RESUMO] Gerado com sucesso (2 msgs antigas)
+2026-02-20T18:00:45.509921284Z 🚩 FLAGS DETECTADAS: {
+2026-02-20T18:00:45.509949206Z   text: 'Ela está com 7 anos',
+2026-02-20T18:00:45.509953036Z   normalizedText: 'ela está com 7 anos',
+2026-02-20T18:00:45.509955846Z   ageGroup: 'crianca',
+2026-02-20T18:00:45.509958477Z   asksPrice: false,
+2026-02-20T18:00:45.509960877Z   insistsPrice: false,
+2026-02-20T18:00:45.509963217Z   asksAddress: false,
+2026-02-20T18:00:45.509965437Z   asksLocation: false,
+2026-02-20T18:00:45.509968017Z   wantsSchedule: false,
+2026-02-20T18:00:45.509971607Z   mentionsUrgency: false,
+2026-02-20T18:00:45.509974267Z   confirmsData: false,
+2026-02-20T18:00:45.509977087Z   refusesOrDenies: false,
+2026-02-20T18:00:45.509979738Z   wantsMoreOptions: false,
+2026-02-20T18:00:45.509982728Z   mentionsCDL: false,
+2026-02-20T18:00:45.509985428Z   wantsReschedule: false,
+2026-02-20T18:00:45.509988118Z   wantsCancel: false,
+2026-02-20T18:00:45.509991418Z   asksPayment: false,
+2026-02-20T18:00:45.509993999Z   asksPlans: false,
+2026-02-20T18:00:45.509996519Z   asksDuration: false,
+2026-02-20T18:00:45.509998949Z   mentionsReembolso: false,
+2026-02-20T18:00:45.510001379Z   wantsInvoice: false,
+2026-02-20T18:00:45.510003849Z   asksAboutAfterHours: false,
+2026-02-20T18:00:45.510006399Z   asksAvaliacao: false,
+2026-02-20T18:00:45.510008879Z   mentionsSpeechTherapy: false,
+2026-02-20T18:00:45.51002425Z   asksPsychopedagogy: false,
+2026-02-20T18:00:45.51002701Z   asksCAA: false,
+2026-02-20T18:00:45.51002951Z   asksAgeMinimum: false,
+2026-02-20T18:00:45.510031991Z   asksRescheduling: false,
+2026-02-20T18:00:45.510034361Z   givingUp: false,
+2026-02-20T18:00:45.510037041Z   talksAboutTypeOfAssessment: false,
+2026-02-20T18:00:45.510039651Z   hasMedicalReferral: false,
+2026-02-20T18:00:45.510042131Z   wantsHumanAgent: false,
+2026-02-20T18:00:45.510044622Z   alreadyScheduled: false,
+2026-02-20T18:00:45.510047002Z   asksDays: false,
+2026-02-20T18:00:45.510049602Z   asksTimes: false,
+2026-02-20T18:00:45.510052092Z   mentionsAdult: false,
+2026-02-20T18:00:45.510054632Z   mentionsTeen: false,
+2026-02-20T18:00:45.510057112Z   mentionsChild: true,
+2026-02-20T18:00:45.510059392Z   mentionsTEA_TDAH: false,
+2026-02-20T18:00:45.510061912Z   mentionsTOD: false,
+2026-02-20T18:00:45.510064332Z   mentionsABA: false,
+2026-02-20T18:00:45.510066783Z   mentionsMethodPrompt: false,
+2026-02-20T18:00:45.510069403Z   mentionsDenver: false,
+2026-02-20T18:00:45.510071793Z   mentionsBobath: false,
+2026-02-20T18:00:45.510074003Z   saysThanks: false,
+2026-02-20T18:00:45.510076533Z   saysBye: false,
+2026-02-20T18:00:45.510079184Z   asksSpecialtyAvailability: false,
+2026-02-20T18:00:45.510081584Z   mentionsPriceObjection: false,
+2026-02-20T18:00:45.510084044Z   mentionsInsuranceObjection: false,
+2026-02-20T18:00:45.510086664Z   mentionsTimeObjection: false,
+2026-02-20T18:00:45.510089094Z   mentionsOtherClinicObjection: false,
+2026-02-20T18:00:45.510091524Z   mentionsDoubtTEA: false,
+2026-02-20T18:00:45.510093964Z   mentionsNeuropediatra: false,
+2026-02-20T18:00:45.510096165Z   mentionsLaudo: false,
+2026-02-20T18:00:45.510098545Z   mentionsBaby: false,
+2026-02-20T18:00:45.510101055Z   wantsPartnershipOrResume: false,
+2026-02-20T18:00:45.510103875Z   mentionsTongueTieSurgery: false,
+2026-02-20T18:00:45.510106285Z   mentionsGeneralSurgery: false,
+2026-02-20T18:00:45.510108915Z   mentionsInvestigation: false,
+2026-02-20T18:00:45.510111415Z   _meta: {
+2026-02-20T18:00:45.510114006Z     hasContextualDetection: false,
+2026-02-20T18:00:45.510116536Z     detectors: {
+2026-02-20T18:00:45.510119276Z       confirmation: 'inactive',
+2026-02-20T18:00:45.510122046Z       insurance: 'inactive',
+2026-02-20T18:00:45.510124516Z       price: 'inactive',
+2026-02-20T18:00:45.510126926Z       scheduling: 'inactive'
+2026-02-20T18:00:45.510129476Z     },
+2026-02-20T18:00:45.510131976Z     timestamp: '2026-02-20T18:00:45.509Z'
+2026-02-20T18:00:45.510134727Z   }
+2026-02-20T18:00:45.510137177Z }
+2026-02-20T18:00:45.510153008Z 🤝 [CONTEXT-ENRICHMENT] Welcoming approach added: empathy first, gentle scheduling suggestion
+2026-02-20T18:00:45.510163658Z 🎯 [CONTEXT-ENRICHMENT] Strategic context summary: {
+2026-02-20T18:00:45.510166369Z   hasPrice: false,
+2026-02-20T18:00:45.510168889Z   hasScheduling: false,
+2026-02-20T18:00:45.510171339Z   hasInsurance: false,
+2026-02-20T18:00:45.510173789Z   hasConfirmation: false,
+2026-02-20T18:00:45.510176109Z   mustAskComplaint: false,
+2026-02-20T18:00:45.510178549Z   avgConfidence: 0
+2026-02-20T18:00:45.510181379Z }
+2026-02-20T18:00:45.510244373Z 📅 [SCHEDULING DECISION]: false
+2026-02-20T18:00:45.871358381Z [INFO] [LockManager] LOCK_RELEASED { leadId: new ObjectId('69989c3ab70ca66ae2830773') }
+2026-02-20T18:00:45.871396044Z [AmandaReply] Texto gerado: Olá! 😊 Pra eu organizar certinho, vocês preferem **manhã ou tarde**? 💚...
+2026-02-20T18:00:46.22284176Z ✅ Token do cache
+2026-02-20T18:00:46.222886372Z 🔍 Token (primeiros 50 chars): EAASluIuLGKQBPncq7aPBbr060Ts6OuM799bnmoTj7mdu0h2vZ
+2026-02-20T18:00:46.222975158Z 📤 [WhatsApp] Tentativa 1/3 para 556294786874
+2026-02-20T18:00:46.996556008Z 💾 Salvando com waMessageId: wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAERgSNkZCMzk0Qjg5MkJDQUNCRTMxAA==
+2026-02-20T18:00:46.996720858Z 💾 Payload completo para salvar: {
+2026-02-20T18:00:46.996727209Z   lead: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T18:00:46.996730029Z   contact: new ObjectId('69989c39397255b0643cb3aa'),
+2026-02-20T18:00:46.996732849Z   patient: null,
+2026-02-20T18:00:46.996735799Z   direction: 'outbound',
+2026-02-20T18:00:46.996738269Z   type: 'text',
+2026-02-20T18:00:46.996741609Z   content: 'Olá! 😊 Pra eu organizar certinho, vocês preferem ...',
+2026-02-20T18:00:46.99674397Z   timestamp: 2026-02-20T18:00:46.996Z,
+2026-02-20T18:00:46.99674632Z   status: 'sent',
+2026-02-20T18:00:46.99674907Z   waMessageId: 'wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAERgSNkZCMzk0Qjg5MkJDQUNCRTMxAA==',
+2026-02-20T18:00:46.99675138Z   to: '556294786874',
+2026-02-20T18:00:46.99675468Z   from: '891659614023862',
+2026-02-20T18:00:46.99675735Z   metadata: { sentBy: 'amanda', userId: null }
+2026-02-20T18:00:46.99675964Z }
+2026-02-20T18:00:47.178115831Z ✅ Mensagem criada no banco: {
+2026-02-20T18:00:47.178164334Z   _id: new ObjectId('6998a14e397255b0643cca18'),
+2026-02-20T18:00:47.178169084Z   waMessageId: 'wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAERgSNkZCMzk0Qjg5MkJDQUNCRTMxAA==',
+2026-02-20T18:00:47.178173104Z   lead: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T18:00:47.178176755Z   to: '556294786874'
+2026-02-20T18:00:47.178179355Z }
+2026-02-20T18:00:47.335657848Z [2026-02-20T18:00:47.335Z] GET → /api/pre-agendamento
+2026-02-20T18:00:47.359698195Z ✅ Mensagem enviada com sucesso (tentativa 1)
+2026-02-20T18:00:47.654477918Z [2026-02-20T18:00:47.653Z] POST → /api/whatsapp/webhook
+2026-02-20T18:00:47.654505819Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T18:00:47.654Z
+2026-02-20T18:00:47.735529228Z 🔍 Busca Amanda por waMessageId: ENCONTROU
+2026-02-20T18:00:47.736125893Z ✅ Amanda respondeu e emitiu via socket: 6998a14e397255b0643cca18
+2026-02-20T18:00:48.024929258Z [2026-02-20T18:00:48.024Z] POST → /api/whatsapp/webhook
+2026-02-20T18:00:48.024970981Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T18:00:48.024Z
+2026-02-20T18:00:48.089891324Z ℹ️ Já existe follow-up futuro para este lead, não vou duplicar: {
+2026-02-20T18:00:48.089918015Z   leadId: '69989c3ab70ca66ae2830773',
+2026-02-20T18:00:48.089920856Z   followupId: '69989c3c397255b0643cb3c4',
+2026-02-20T18:00:48.089923576Z   status: 'scheduled',
+2026-02-20T18:00:48.089925916Z   scheduledAt: 2026-02-20T19:39:08.408Z
+2026-02-20T18:00:48.089928246Z }
+2026-02-20T18:00:48.089931096Z ✅ Mensagem processada com sucesso: wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAEhggQUMxQzgzNThFNzU1Q0RDNTExQjczMjkyQjhCODAzQjYA
+2026-02-20T18:00:51.794329768Z [2026-02-20T18:00:51.794Z] GET → /api/amanda/status
+2026-02-20T18:00:55.01766404Z [2026-02-20T18:00:55.017Z] GET → /api/pre-agendamento
+2026-02-20T18:01:17.492875742Z [2026-02-20T18:01:17.492Z] GET → /api/pre-agendamento
+2026-02-20T18:01:19.555708954Z [2026-02-20T18:01:19.555Z] GET → /api/amanda/status
+2026-02-20T18:01:23.570844882Z [2026-02-20T18:01:23.570Z] POST → /api/whatsapp/webhook
+2026-02-20T18:01:23.57097574Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T18:01:23.570Z
+2026-02-20T18:01:27.078268312Z [DEBUG CANARY ENV] 556292013573,5561981694922,556181694922,5562992013573
+2026-02-20T18:01:27.078303484Z 🔎 isTestNumber? 556291109889 false
+2026-02-20T18:01:27.07839432Z 🔄 Processando mensagem: {
+2026-02-20T18:01:27.07840156Z   from: '556291109889',
+2026-02-20T18:01:27.07840384Z   type: 'text',
+2026-02-20T18:01:27.07840638Z   wamid: 'wamid.HBgMNTU2MjkxMTA5ODg5FQIAEhggQUMxRjNCOTVFREIxMTRBN0Y4RTZFNjg3MDc2NjAxNTEA'
+2026-02-20T18:01:27.0784082Z }
+2026-02-20T18:01:27.428304196Z 🔍 Patient encontrado: Nenhum
+2026-02-20T18:01:28.01217349Z 🔍 [DEBUG PRE-SAVE #1] Estado do lead ANTES do save: {
+2026-02-20T18:01:28.012216043Z   leadId: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:01:28.012221133Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:01:28.012225673Z   pendingPatientInfoStep: null,
+2026-02-20T18:01:28.012227483Z   pendingChosenSlot: 'NÃO',
+2026-02-20T18:01:28.012229294Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T18:01:28.012231254Z }
+2026-02-20T18:01:28.197780127Z 📅 Interação atualizada no lead
+2026-02-20T18:01:28.379098816Z 🔍 [DEBUG POST-SAVE #2] Estado do lead DEPOIS do save: {
+2026-02-20T18:01:28.379126457Z   leadId: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:01:28.379129847Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:01:28.379132648Z   pendingPatientInfoStep: null
+2026-02-20T18:01:28.379135018Z }
+2026-02-20T18:01:28.379146988Z 🧠 qualificationData atualizado: { idade: undefined, idadeRange: undefined, disponibilidade: 'tarde' }
+2026-02-20T18:01:28.379318218Z 🔍 [DEBUG PRE-ORCHESTRATOR] Lead sendo passado pro handleAutoReply: {
+2026-02-20T18:01:28.379326429Z   leadId: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:01:28.379330119Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:01:28.379333699Z   pendingPatientInfoStep: null,
+2026-02-20T18:01:28.37933613Z   pendingChosenSlot: 'NÃO'
+2026-02-20T18:01:28.37933873Z }
+2026-02-20T18:01:28.3793447Z 🤖 [AUTO-REPLY] Iniciando para {
+2026-02-20T18:01:28.37934831Z   from: '556291109889',
+2026-02-20T18:01:28.37935078Z   to: '556293377726',
+2026-02-20T18:01:28.379353311Z   leadId: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:01:28.379355851Z   content: 'E pela manhã qual o horário'
+2026-02-20T18:01:28.379358641Z }
+2026-02-20T18:01:28.384812548Z 🔍 [DEBUG HANDLE-AUTO-REPLY] Lead carregado do banco: {
+2026-02-20T18:01:28.384826199Z   leadId: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:01:28.384830599Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:01:28.384833739Z   pendingPatientInfoStep: null,
+2026-02-20T18:01:28.384836279Z   pendingChosenSlot: 'NÃO',
+2026-02-20T18:01:28.38483921Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T18:01:28.38484228Z }
+2026-02-20T18:01:28.38501462Z 👤 [CONTROLE MANUAL] Ativo para lead: new ObjectId('69986fc5b70ca66ae2830045') - null
+2026-02-20T18:01:28.385077273Z ⏸️ Amanda PAUSADA - humano no controle. Não responderei por IA.
+2026-02-20T18:01:28.562831424Z ℹ️ Auto follow-up ignorado (manualControl ativo ou autoReply desativado).
+2026-02-20T18:01:28.563186885Z ✅ Mensagem processada com sucesso: wamid.HBgMNTU2MjkxMTA5ODg5FQIAEhggQUMxRjNCOTVFREIxMTRBN0Y4RTZFNjg3MDc2NjAxNTEA
+2026-02-20T18:01:28.806489225Z ✅ 183 follow-ups processados!
+2026-02-20T18:01:34.447358659Z [2026-02-20T18:01:34.447Z] POST → /api/renew-token
+2026-02-20T18:01:34.754280037Z [2026-02-20T18:01:34.754Z] GET → /api/pre-agendamento
+2026-02-20T18:01:47.473046161Z [2026-02-20T18:01:47.472Z] GET → /api/pre-agendamento
+2026-02-20T18:01:51.425545076Z [2026-02-20T18:01:51.425Z] GET → /api/amanda/status
+2026-02-20T18:02:07.029372698Z [2026-02-20T18:02:07.029Z] POST → /api/whatsapp/webhook
+2026-02-20T18:02:07.029534397Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T18:02:07.029Z
+2026-02-20T18:02:10.544791618Z [DEBUG CANARY ENV] 556292013573,5561981694922,556181694922,5562992013573
+2026-02-20T18:02:10.54482842Z 🔎 isTestNumber? 556291109889 false
+2026-02-20T18:02:10.544854592Z 🔄 Processando mensagem: {
+2026-02-20T18:02:10.544866832Z   from: '556291109889',
+2026-02-20T18:02:10.544871073Z   type: 'text',
+2026-02-20T18:02:10.544875603Z   wamid: 'wamid.HBgMNTU2MjkxMTA5ODg5FQIAEhggQUNGNDJFMzlENDQ2NUE0MzhEM0IzQzFCMENEQzZBODYA'
+2026-02-20T18:02:10.544879253Z }
+2026-02-20T18:02:10.897400261Z 🔍 Patient encontrado: Nenhum
+2026-02-20T18:02:11.451172376Z 🔍 [DEBUG PRE-SAVE #1] Estado do lead ANTES do save: {
+2026-02-20T18:02:11.451189646Z   leadId: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:02:11.451194867Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:02:11.451199487Z   pendingPatientInfoStep: null,
+2026-02-20T18:02:11.451203147Z   pendingChosenSlot: 'NÃO',
+2026-02-20T18:02:11.451206967Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T18:02:11.451210638Z }
+2026-02-20T18:02:11.63243054Z 📅 Interação atualizada no lead
+2026-02-20T18:02:11.815652308Z 🔍 [DEBUG POST-SAVE #2] Estado do lead DEPOIS do save: {
+2026-02-20T18:02:11.81568618Z   leadId: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:02:11.815692671Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:02:11.815698241Z   pendingPatientInfoStep: null
+2026-02-20T18:02:11.815702821Z }
+2026-02-20T18:02:11.815734913Z 🧠 qualificationData atualizado: { idade: undefined, idadeRange: undefined, disponibilidade: 'tarde' }
+2026-02-20T18:02:11.815937105Z 🔍 [DEBUG PRE-ORCHESTRATOR] Lead sendo passado pro handleAutoReply: {
+2026-02-20T18:02:11.815948765Z   leadId: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:02:11.815953646Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:02:11.815958416Z   pendingPatientInfoStep: null,
+2026-02-20T18:02:11.815962966Z   pendingChosenSlot: 'NÃO'
+2026-02-20T18:02:11.815967037Z }
+2026-02-20T18:02:11.815975377Z 🤖 [AUTO-REPLY] Iniciando para {
+2026-02-20T18:02:11.815980607Z   from: '556291109889',
+2026-02-20T18:02:11.815984748Z   to: '556293377726',
+2026-02-20T18:02:11.815989178Z   leadId: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:02:11.815993378Z   content: 'Pode ser esse horário'
+2026-02-20T18:02:11.815997898Z }
+2026-02-20T18:02:11.827806515Z 🔍 [DEBUG HANDLE-AUTO-REPLY] Lead carregado do banco: {
+2026-02-20T18:02:11.827825786Z   leadId: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:02:11.827829826Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:02:11.827836076Z   pendingPatientInfoStep: null,
+2026-02-20T18:02:11.827838947Z   pendingChosenSlot: 'NÃO',
+2026-02-20T18:02:11.827841887Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T18:02:11.827844827Z }
+2026-02-20T18:02:11.827975624Z 👤 [CONTROLE MANUAL] Ativo para lead: new ObjectId('69986fc5b70ca66ae2830045') - null
+2026-02-20T18:02:11.828030048Z ⏸️ Amanda PAUSADA - humano no controle. Não responderei por IA.
+2026-02-20T18:02:12.006375933Z ℹ️ Auto follow-up ignorado (manualControl ativo ou autoReply desativado).
+2026-02-20T18:02:12.006402474Z ✅ Mensagem processada com sucesso: wamid.HBgMNTU2MjkxMTA5ODg5FQIAEhggQUNGNDJFMzlENDQ2NUE0MzhEM0IzQzFCMENEQzZBODYA
+2026-02-20T18:02:15.288843234Z [2026-02-20T18:02:15.288Z] GET → /api/reminders
+2026-02-20T18:02:15.306603926Z [2026-02-20T18:02:15.306Z] GET → /api/doctors
+2026-02-20T18:02:15.745132933Z [2026-02-20T18:02:15.744Z] GET → /api/patients
+2026-02-20T18:02:15.745251729Z [PATIENTS LIST] Search: "undefined", Limit: 1000
+2026-02-20T18:02:15.762928327Z [2026-02-20T18:02:15.762Z] GET → /api/appointments
+2026-02-20T18:02:15.763086056Z [GET /appointments] Query: {
+2026-02-20T18:02:15.763094556Z   patientId: undefined,
+2026-02-20T18:02:15.763099287Z   doctorId: undefined,
+2026-02-20T18:02:15.763103627Z   status: undefined,
+2026-02-20T18:02:15.763107567Z   specialty: undefined,
+2026-02-20T18:02:15.763110477Z   startDate: '2026-02-20',
+2026-02-20T18:02:15.763113378Z   endDate: '2026-02-20'
+2026-02-20T18:02:15.763116208Z }
+2026-02-20T18:02:15.763615687Z (node:68) Warning: Label 'appointments.query' already exists for console.time()
+2026-02-20T18:02:15.792356157Z ⚡ Novo cliente conectado: EmENiqWdKrYZic97AACA
+2026-02-20T18:02:15.792374978Z 👥 Total de clientes: 7
+2026-02-20T18:02:16.276635982Z [PATIENTS LIST] Encontrados: 170 pacientes
+2026-02-20T18:02:16.479894785Z [GET /appointments] Retornando 26 eventos (17 appointments + 9 pré-agendamentos)
+2026-02-20T18:02:16.54674225Z ⚡ Novo cliente conectado: Ne5L5VD2wPhZhEjEAACC
+2026-02-20T18:02:16.546768292Z 👥 Total de clientes: 8
+2026-02-20T18:02:18.342777343Z [2026-02-20T18:02:18.342Z] GET → /api/pre-agendamento
+2026-02-20T18:02:19.93930497Z [2026-02-20T18:02:19.939Z] GET → /api/amanda/status
+2026-02-20T18:02:34.103280858Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:02:34.108507272Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:02:34.325598518Z [2026-02-20T18:02:34.325Z] GET → /api/pre-agendamento
+2026-02-20T18:02:34.834811913Z ⚡ Novo cliente conectado: mv2UXsPagJIwpYvQAACE
+2026-02-20T18:02:34.834833424Z 👥 Total de clientes: 7
+2026-02-20T18:02:35.56207948Z ⚡ Novo cliente conectado: V7l6ZLZfnUAd3jpoAACG
+2026-02-20T18:02:35.562102071Z 👥 Total de clientes: 8
+2026-02-20T18:02:47.726873075Z [2026-02-20T18:02:47.726Z] GET → /api/pre-agendamento
+2026-02-20T18:03:04.513649401Z [2026-02-20T18:03:04.513Z] GET → /api/appointments/available-slots
+2026-02-20T18:03:04.514991939Z [AVAILABLE-SLOTS] { doctorId: '684072213830f473da1b0b0b', date: '2026-02-20' }
+2026-02-20T18:03:17.323095012Z [2026-02-20T18:03:17.322Z] GET → /api/pre-agendamento
+2026-02-20T18:03:22.14288676Z 📬 183 follow-ups prontos para envio (após filtro)
+2026-02-20T18:03:22.142914982Z    🔥 0 quentes
+2026-02-20T18:03:22.142920922Z    🟡 101 mornos
+2026-02-20T18:03:22.142925432Z    🧊 82 frios
+2026-02-20T18:03:23.354482234Z [2026-02-20T18:03:23.354Z] POST → /api/whatsapp/webhook
+2026-02-20T18:03:23.35460081Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T18:03:23.354Z
+2026-02-20T18:03:33.113113546Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:03:33.793344039Z ⚡ Novo cliente conectado: OqIAB8K5tokLdD3ZAACI
+2026-02-20T18:03:33.793387341Z 👥 Total de clientes: 8
+2026-02-20T18:03:34.171500175Z [2026-02-20T18:03:34.171Z] GET → /api/pre-agendamento
+2026-02-20T18:03:34.80841878Z [2026-02-20T18:03:34.808Z] GET → /api/amanda/status
+2026-02-20T18:03:47.70803118Z [2026-02-20T18:03:47.707Z] GET → /api/pre-agendamento
+2026-02-20T18:04:08.712019199Z [2026-02-20T18:04:08.711Z] GET → /api/payments/daily-closing
+2026-02-20T18:04:08.736499542Z [2026-02-20T18:04:08.736Z] GET → /api/financial/overview
+2026-02-20T18:04:08.913965585Z [FinancialOverview] Buscando overview para 2/2026, comparação: previous
+2026-02-20T18:04:08.915927069Z [ConvenioMetrics] Calculando métricas para 2/2026
+2026-02-20T18:04:11.245683153Z ⏱️ Query Sessions: 2.435s
+2026-02-20T18:04:12.053402753Z ⏱️ Bulk Update Appointments: 807.598ms
+2026-02-20T18:04:12.492258538Z Deprecation warning: value provided is not in a recognized RFC2822 or ISO format. moment construction falls back to js Date(), which is not reliable across all browsers and versions. Non RFC2822/ISO date formats are discouraged. Please refer to http://momentjs.com/guides/#/warnings/js-date/ for more info.
+2026-02-20T18:04:12.492287609Z Arguments: 
+2026-02-20T18:04:12.492291799Z [0] _isAMomentObject: true, _isUTC: false, _useUTC: false, _l: undefined, _i: 2026-2-01, _f: undefined, _strict: undefined, _locale: [object Object]
+2026-02-20T18:04:12.49229448Z Error
+2026-02-20T18:04:12.49229781Z     at Function.createFromInputFallback (/opt/render/project/src/node_modules/moment/moment.js:324:25)
+2026-02-20T18:04:12.49230095Z     at configFromString (/opt/render/project/src/node_modules/moment/moment.js:2613:19)
+2026-02-20T18:04:12.49230361Z     at configFromInput (/opt/render/project/src/node_modules/moment/moment.js:3056:13)
+2026-02-20T18:04:12.49230634Z     at prepareConfig (/opt/render/project/src/node_modules/moment/moment.js:3039:13)
+2026-02-20T18:04:12.49230913Z     at createFromConfig (/opt/render/project/src/node_modules/moment/moment.js:3006:44)
+2026-02-20T18:04:12.49231187Z     at createLocalOrUTC (/opt/render/project/src/node_modules/moment/moment.js:3100:16)
+2026-02-20T18:04:12.492314701Z     at createLocal (/opt/render/project/src/node_modules/moment/moment.js:3104:16)
+2026-02-20T18:04:12.492317051Z     at hooks (/opt/render/project/src/node_modules/moment/moment.js:16:29)
+2026-02-20T18:04:12.492319491Z     at FinancialOverviewService._calculateProjection (file:///opt/render/project/src/services/financial/FinancialOverviewService.js:323:32)
+2026-02-20T18:04:12.492321251Z     at FinancialOverviewService.getOverview (file:///opt/render/project/src/services/financial/FinancialOverviewService.js:38:31)
+2026-02-20T18:04:12.937385906Z ⏱️ Parallel Queries: 883.851ms
+2026-02-20T18:04:12.937545165Z 
+2026-02-20T18:04:12.937562776Z 📊 RESUMO PAGAMENTOS:
+2026-02-20T18:04:12.937565596Z    Total buscados: 2
+2026-02-20T18:04:12.937567886Z    Filtrados do dia: 2
+2026-02-20T18:04:12.937580807Z    Total em dinheiro: R$200
+2026-02-20T18:04:12.937587398Z 
+2026-02-20T18:04:12.938605537Z 
+2026-02-20T18:04:12.938617687Z 📊 FECHAMENTO FINAL 2026-02-20
+2026-02-20T18:04:12.938622218Z ✅ Agendamentos válidos: 16
+2026-02-20T18:04:12.938626028Z 💰 Recebido: 200
+2026-02-20T18:04:12.938635079Z 📅 Previsto: 840
+2026-02-20T18:04:12.938638719Z ⏳ A receber: 840
+2026-02-20T18:04:12.938642139Z 📦 Pagamentos processados: 2
+2026-02-20T18:04:17.317721198Z [2026-02-20T18:04:17.317Z] GET → /api/pre-agendamento
+2026-02-20T18:04:29.951824452Z ✅ 183 follow-ups processados!
+2026-02-20T18:04:34.107762631Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:04:34.115476489Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:04:34.32886865Z [2026-02-20T18:04:34.328Z] GET → /api/pre-agendamento
+2026-02-20T18:04:34.420311534Z [2026-02-20T18:04:34.420Z] GET → /api/amanda/status
+2026-02-20T18:04:34.808812532Z ⚡ Novo cliente conectado: -PIYeU7NZho1XnvaAACK
+2026-02-20T18:04:34.808856724Z 👥 Total de clientes: 7
+2026-02-20T18:04:34.809375894Z [2026-02-20T18:04:34.809Z] GET → /api/patients
+2026-02-20T18:04:34.810287797Z [PATIENTS LIST] Search: "undefined", Limit: 50
+2026-02-20T18:04:34.836376594Z [2026-02-20T18:04:34.836Z] GET → /api/payments/insurance/receivables
+2026-02-20T18:04:35.162811874Z [PATIENTS LIST] Encontrados: 50 pacientes
+2026-02-20T18:04:35.278045301Z [2026-02-20T18:04:35.277Z] GET → /api/doctors
+2026-02-20T18:04:35.517659876Z ⚡ Novo cliente conectado: VZ8qv9ek30tVddxSAACM
+2026-02-20T18:04:35.517684517Z 👥 Total de clientes: 8
+2026-02-20T18:04:47.323346531Z [2026-02-20T18:04:47.323Z] GET → /api/pre-agendamento
+2026-02-20T18:04:47.815889014Z [2026-02-20T18:04:47.815Z] GET → /api/expenses
+2026-02-20T18:04:47.822822977Z [2026-02-20T18:04:47.822Z] GET → /api/planning
+2026-02-20T18:04:47.832319289Z [2026-02-20T18:04:47.832Z] GET → /api/payments
+2026-02-20T18:04:47.860225681Z [2026-02-20T18:04:47.860Z] GET → /api/cashflow/historico
+2026-02-20T18:04:56.891544114Z [2026-02-20T18:04:56.891Z] GET → /api/payments/insurance/receivables
+2026-02-20T18:04:56.909414752Z [2026-02-20T18:04:56.909Z] GET → /api/doctors
+2026-02-20T18:04:56.921488424Z [2026-02-20T18:04:56.921Z] GET → /api/patients
+2026-02-20T18:04:56.922461901Z [PATIENTS LIST] Search: "undefined", Limit: 50
+2026-02-20T18:04:57.273965588Z [PATIENTS LIST] Encontrados: 50 pacientes
+2026-02-20T18:05:11.209689009Z [2026-02-20T18:05:11.209Z] HEAD → /health
+2026-02-20T18:05:11.651255349Z [2026-02-20T18:05:11.651Z] GET → /api/cashflow/summary
+2026-02-20T18:05:11.830495076Z [Cashflow] Período: 2026-02-01 a 2026-02-28
+2026-02-20T18:05:11.830524238Z [Cashflow] Buscando createdAt entre: 2026-02-01T03:00:00.000Z e 2026-03-01T02:59:59.999Z
+2026-02-20T18:05:17.327596739Z [2026-02-20T18:05:17.325Z] GET → /api/pre-agendamento
+2026-02-20T18:05:18.342856029Z [2026-02-20T18:05:18.342Z] GET → /api/doctors
+2026-02-20T18:05:18.352319068Z [2026-02-20T18:05:18.352Z] GET → /api/patients
+2026-02-20T18:05:18.353323577Z [PATIENTS LIST] Search: "undefined", Limit: 50
+2026-02-20T18:05:18.355043737Z [2026-02-20T18:05:18.354Z] GET → /api/payments/insurance/receivables
+2026-02-20T18:05:18.70664679Z [PATIENTS LIST] Encontrados: 50 pacientes
+2026-02-20T18:05:34.127816265Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:05:34.640716641Z [2026-02-20T18:05:34.639Z] GET → /api/pre-agendamento
+2026-02-20T18:05:34.809282797Z [2026-02-20T18:05:34.809Z] GET → /api/amanda/status
+2026-02-20T18:05:34.851970527Z ⚡ Novo cliente conectado: ffPZrwOdOsKfNjfYAACO
+2026-02-20T18:05:34.851991619Z 👥 Total de clientes: 8
+2026-02-20T18:05:47.310379684Z [2026-02-20T18:05:47.310Z] GET → /api/pre-agendamento
+2026-02-20T18:06:17.386199871Z [2026-02-20T18:06:17.385Z] GET → /api/pre-agendamento
+2026-02-20T18:06:18.498584813Z [2026-02-20T18:06:18.498Z] POST → /api/import-from-agenda
+2026-02-20T18:06:18.499165747Z === AUTH DEBUG ===
+2026-02-20T18:06:18.499175868Z Header completo: "Bearer agenda_export_token_fono_inova_2025_secure_abc123"
+2026-02-20T18:06:18.499180308Z Token extraído: "agenda_export_token_fono_inova_2025_secure_abc123"
+2026-02-20T18:06:18.499184068Z Token esperado: "agenda_export_token_fono_inova_2025_secure_abc123"
+2026-02-20T18:06:18.499187899Z Tamanho token recebido: 49
+2026-02-20T18:06:18.499191739Z Tamanho token esperado: 49
+2026-02-20T18:06:18.499195399Z São iguais?: true
+2026-02-20T18:06:18.499199019Z ✅ TOKEN VÁLIDO!
+2026-02-20T18:06:21.948070057Z 📬 183 follow-ups prontos para envio (após filtro)
+2026-02-20T18:06:21.948093819Z    🔥 0 quentes
+2026-02-20T18:06:21.948099019Z    🟡 101 mornos
+2026-02-20T18:06:21.948103469Z    🧊 82 frios
+2026-02-20T18:06:22.14790688Z [IMPORT-FROM-AGENDA] ✅ Paciente encontrado por nome: 688a2b3c8779aa5ee830bf0d
+2026-02-20T18:06:22.336304308Z 📡 Socket emitido: preagendamento:new 6998a29e397255b0643cced7
+2026-02-20T18:06:22.822044695Z [2026-02-20T18:06:22.821Z] GET → /api/appointments
+2026-02-20T18:06:22.822226636Z [GET /appointments] Query: {
+2026-02-20T18:06:22.822256707Z   patientId: undefined,
+2026-02-20T18:06:22.822259007Z   doctorId: undefined,
+2026-02-20T18:06:22.822260738Z   status: undefined,
+2026-02-20T18:06:22.822262418Z   specialty: undefined,
+2026-02-20T18:06:22.822264988Z   startDate: '2026-02-25',
+2026-02-20T18:06:22.822267718Z   endDate: '2026-02-25'
+2026-02-20T18:06:22.822270588Z }
+2026-02-20T18:06:22.82282432Z (node:68) Warning: Label 'appointments.query' already exists for console.time()
+2026-02-20T18:06:22.957406301Z [2026-02-20T18:06:22.957Z] GET → /api/appointments
+2026-02-20T18:06:22.957633674Z [GET /appointments] Query: {
+2026-02-20T18:06:22.957642905Z   patientId: undefined,
+2026-02-20T18:06:22.957645465Z   doctorId: undefined,
+2026-02-20T18:06:22.957647505Z   status: undefined,
+2026-02-20T18:06:22.957649925Z   specialty: undefined,
+2026-02-20T18:06:22.957651985Z   startDate: '2026-02-20',
+2026-02-20T18:06:22.957654165Z   endDate: '2026-02-20'
+2026-02-20T18:06:22.957656235Z }
+2026-02-20T18:06:22.958154664Z (node:68) Warning: Label 'appointments.query' already exists for console.time()
+2026-02-20T18:06:23.53661673Z [GET /appointments] Retornando 11 eventos (8 appointments + 3 pré-agendamentos)
+2026-02-20T18:06:23.679136401Z [GET /appointments] Retornando 26 eventos (17 appointments + 9 pré-agendamentos)
+2026-02-20T18:06:23.794037489Z [2026-02-20T18:06:23.793Z] GET → /api/appointments
+2026-02-20T18:06:23.794209859Z [GET /appointments] Query: {
+2026-02-20T18:06:23.794215449Z   patientId: undefined,
+2026-02-20T18:06:23.794218379Z   doctorId: undefined,
+2026-02-20T18:06:23.794221449Z   status: undefined,
+2026-02-20T18:06:23.794224119Z   specialty: undefined,
+2026-02-20T18:06:23.79422648Z   startDate: '2026-02-25',
+2026-02-20T18:06:23.79422962Z   endDate: '2026-02-25'
+2026-02-20T18:06:23.79423276Z }
+2026-02-20T18:06:23.794627183Z (node:68) Warning: Label 'appointments.query' already exists for console.time()
+2026-02-20T18:06:24.511193713Z [GET /appointments] Retornando 11 eventos (8 appointments + 3 pré-agendamentos)
+2026-02-20T18:06:34.115831058Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:06:34.119977259Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:06:34.193266218Z [2026-02-20T18:06:34.193Z] GET → /api/pre-agendamento
+2026-02-20T18:06:34.808066564Z ⚡ Novo cliente conectado: s5dgyvx9wn4lKgzkAACQ
+2026-02-20T18:06:34.808091446Z 👥 Total de clientes: 7
+2026-02-20T18:06:34.840263085Z [2026-02-20T18:06:34.840Z] GET → /api/amanda/status
+2026-02-20T18:06:35.618376312Z ⚡ Novo cliente conectado: GAmF5FBzxyJKxPTXAACS
+2026-02-20T18:06:35.618394793Z 👥 Total de clientes: 8
+2026-02-20T18:06:47.312529977Z [2026-02-20T18:06:47.310Z] GET → /api/pre-agendamento
+2026-02-20T18:07:17.327925771Z [2026-02-20T18:07:17.327Z] GET → /api/pre-agendamento
+2026-02-20T18:07:28.311988485Z ✅ 183 follow-ups processados!
+2026-02-20T18:07:34.127777414Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:07:34.202500897Z [2026-02-20T18:07:34.202Z] GET → /api/pre-agendamento
+2026-02-20T18:07:34.532003334Z [2026-02-20T18:07:34.531Z] GET → /api/amanda/status
+2026-02-20T18:07:34.923000815Z ⚡ Novo cliente conectado: -SD5YRwhXXZkPE4OAACU
+2026-02-20T18:07:34.923028697Z 👥 Total de clientes: 8
+2026-02-20T18:07:47.315825608Z [2026-02-20T18:07:47.315Z] GET → /api/pre-agendamento
+2026-02-20T18:08:17.33433461Z [2026-02-20T18:08:17.334Z] GET → /api/pre-agendamento
+2026-02-20T18:08:34.119667034Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:08:34.132903053Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:08:34.432067577Z [2026-02-20T18:08:34.431Z] GET → /api/amanda/status
+2026-02-20T18:08:34.617785039Z [2026-02-20T18:08:34.617Z] GET → /api/pre-agendamento
+2026-02-20T18:08:34.80227992Z ⚡ Novo cliente conectado: qsxatl7r9vXZtoAQAACW
+2026-02-20T18:08:34.802298591Z 👥 Total de clientes: 7
+2026-02-20T18:08:35.517936546Z ⚡ Novo cliente conectado: fZ7TypBtXJnrtOiBAACY
+2026-02-20T18:08:35.517956997Z 👥 Total de clientes: 8
+2026-02-20T18:08:47.331608315Z [2026-02-20T18:08:47.331Z] GET → /api/pre-agendamento
+2026-02-20T18:09:17.348851415Z [2026-02-20T18:09:17.348Z] GET → /api/pre-agendamento
+2026-02-20T18:09:21.948176932Z 📬 183 follow-ups prontos para envio (após filtro)
+2026-02-20T18:09:21.948214794Z    🔥 0 quentes
+2026-02-20T18:09:21.948221485Z    🟡 101 mornos
+2026-02-20T18:09:21.948226975Z    🧊 82 frios
+2026-02-20T18:09:34.128391456Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:09:34.19109865Z [2026-02-20T18:09:34.190Z] GET → /api/pre-agendamento
+2026-02-20T18:09:34.812911142Z ⚡ Novo cliente conectado: bzD1Uv2EuqKDY05AAACa
+2026-02-20T18:09:34.812934503Z 👥 Total de clientes: 8
+2026-02-20T18:09:34.84093453Z [2026-02-20T18:09:34.840Z] GET → /api/amanda/status
+2026-02-20T18:09:47.362000325Z [2026-02-20T18:09:47.361Z] GET → /api/pre-agendamento
+2026-02-20T18:10:15.841762463Z [2026-02-20T18:10:15.841Z] HEAD → /health
+2026-02-20T18:10:17.721989336Z [2026-02-20T18:10:17.721Z] GET → /api/pre-agendamento
+2026-02-20T18:10:28.293622583Z ✅ 183 follow-ups processados!
+2026-02-20T18:10:34.123010716Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:10:34.123140853Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:10:34.196673756Z [2026-02-20T18:10:34.196Z] GET → /api/pre-agendamento
+2026-02-20T18:10:34.422048202Z [2026-02-20T18:10:34.421Z] GET → /api/amanda/status
+2026-02-20T18:10:34.820683245Z ⚡ Novo cliente conectado: lqCbGUnIS_S7W0GEAACc
+2026-02-20T18:10:34.820708916Z 👥 Total de clientes: 7
+2026-02-20T18:10:35.527362287Z ⚡ Novo cliente conectado: j9hOkodUpDa0RESDAACe
+2026-02-20T18:10:35.527390179Z 👥 Total de clientes: 8
+2026-02-20T18:10:47.371647528Z [2026-02-20T18:10:47.371Z] GET → /api/pre-agendamento
+2026-02-20T18:11:15.812120948Z [2026-02-20T18:11:15.811Z] POST → /api/renew-token
+2026-02-20T18:11:17.345239689Z [2026-02-20T18:11:17.345Z] GET → /api/pre-agendamento
+2026-02-20T18:11:34.128351386Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:11:34.211340598Z [2026-02-20T18:11:34.210Z] GET → /api/pre-agendamento
+2026-02-20T18:11:34.403554367Z [2026-02-20T18:11:34.403Z] GET → /api/amanda/status
+2026-02-20T18:11:34.862430279Z ⚡ Novo cliente conectado: yYIc0qRZeh__TIgvAACg
+2026-02-20T18:11:34.862485672Z 👥 Total de clientes: 8
+2026-02-20T18:11:48.115972006Z [2026-02-20T18:11:48.115Z] GET → /api/pre-agendamento
+2026-02-20T18:11:53.311701949Z [2026-02-20T18:11:53.311Z] GET → /api/dashboard/overview
+2026-02-20T18:11:54.947312304Z [2026-02-20T18:11:54.947Z] POST → /api/import-from-agenda
+2026-02-20T18:11:54.947456812Z === AUTH DEBUG ===
+2026-02-20T18:11:54.947476803Z Header completo: "Bearer agenda_export_token_fono_inova_2025_secure_abc123"
+2026-02-20T18:11:54.947481074Z Token extraído: "agenda_export_token_fono_inova_2025_secure_abc123"
+2026-02-20T18:11:54.947485054Z Token esperado: "agenda_export_token_fono_inova_2025_secure_abc123"
+2026-02-20T18:11:54.947494755Z Tamanho token recebido: 49
+2026-02-20T18:11:54.947500965Z Tamanho token esperado: 49
+2026-02-20T18:11:54.947506415Z São iguais?: true
+2026-02-20T18:11:54.947599121Z ✅ TOKEN VÁLIDO!
+2026-02-20T18:11:54.948478632Z [IMPORT_FROM_AGENDA] error: Error: Nome do profissional é obrigatório
+2026-02-20T18:11:54.948492833Z     at findDoctorByName (file:///opt/render/project/src/utils/doctorHelper.js:29:15)
+2026-02-20T18:11:54.948495843Z     at file:///opt/render/project/src/routes/importFromAgenda.js:109:26
+2026-02-20T18:11:54.948499443Z     at Layer.handle [as handle_request] (/opt/render/project/src/node_modules/express/lib/router/layer.js:95:5)
+2026-02-20T18:11:54.948502453Z     at next (/opt/render/project/src/node_modules/express/lib/router/route.js:149:13)
+2026-02-20T18:11:54.948505023Z     at agendaAuth (file:///opt/render/project/src/middleware/agendaAuth.js:27:5)
+2026-02-20T18:11:54.948507793Z     at Layer.handle [as handle_request] (/opt/render/project/src/node_modules/express/lib/router/layer.js:95:5)
+2026-02-20T18:11:54.948510854Z     at next (/opt/render/project/src/node_modules/express/lib/router/route.js:149:13)
+2026-02-20T18:11:54.948513394Z     at Route.dispatch (/opt/render/project/src/node_modules/express/lib/router/route.js:119:3)
+2026-02-20T18:11:54.948515884Z     at Layer.handle [as handle_request] (/opt/render/project/src/node_modules/express/lib/router/layer.js:95:5)
+2026-02-20T18:11:54.948518884Z     at /opt/render/project/src/node_modules/express/lib/router/index.js:284:15
+2026-02-20T18:11:55.168353767Z [2026-02-20T18:11:55.168Z] GET → /api/whatsapp/chat/556291109889
+2026-02-20T18:11:55.564402759Z [2026-02-20T18:11:55.564Z] GET → /api/amanda/status
+2026-02-20T18:11:55.596014256Z [2026-02-20T18:11:55.595Z] GET → /api/whatsapp/chat/556291109889
+2026-02-20T18:11:59.804492154Z ⚠️ Cliente desconectado (transport close)
+2026-02-20T18:12:00.560203164Z [2026-02-20T18:12:00.559Z] GET → /api/whatsapp/contacts
+2026-02-20T18:12:00.560324841Z chamoiu contactssss
+2026-02-20T18:12:00.599306236Z [2026-02-20T18:12:00.599Z] GET → /api/users/me
+2026-02-20T18:12:00.934129631Z ✅ [CONTACTS] Retornando 50 de 502 contacts
+2026-02-20T18:12:00.934158142Z 📊 [CONTACTS] 50/50 têm leadId
+2026-02-20T18:12:00.934216846Z 🔍 [FIRST CONTACT] {
+2026-02-20T18:12:00.934222226Z   phone: '556291109889',
+2026-02-20T18:12:00.934226586Z   leadId: '69986fc5b70ca66ae2830045',
+2026-02-20T18:12:00.934230787Z   type: 'string'
+2026-02-20T18:12:00.934234567Z }
+2026-02-20T18:12:01.226206152Z ⚡ Novo cliente conectado: 424pMyhBbiDyTMBOAACi
+2026-02-20T18:12:01.226225233Z 👥 Total de clientes: 8
+2026-02-20T18:12:01.246594476Z [2026-02-20T18:12:01.246Z] GET → /api/users/me
+2026-02-20T18:12:01.538537089Z [2026-02-20T18:12:01.538Z] GET → /api/pre-agendamento
+2026-02-20T18:12:01.760258172Z [2026-02-20T18:12:01.760Z] GET → /api/patients
+2026-02-20T18:12:01.761099601Z [PATIENTS LIST] Search: "undefined", Limit: 50
+2026-02-20T18:12:01.774047973Z [2026-02-20T18:12:01.773Z] GET → /api/dashboard/overview
+2026-02-20T18:12:01.783694724Z [2026-02-20T18:12:01.783Z] GET → /api/admin/patient-overview
+2026-02-20T18:12:01.792383549Z [2026-02-20T18:12:01.792Z] GET → /api/doctors/appointments/today
+2026-02-20T18:12:01.803736408Z [2026-02-20T18:12:01.803Z] GET → /api/doctors
+2026-02-20T18:12:01.817143477Z [2026-02-20T18:12:01.816Z] GET → /api/doctors/patients
+2026-02-20T18:12:01.848977337Z [2026-02-20T18:12:01.848Z] GET → /api/users/me
+2026-02-20T18:12:01.973070227Z [GET_TODAYS_APPOINTMENTS] doctorId: 6806dd1bb6f92559b49a8a9c
+2026-02-20T18:12:01.973102229Z [GET_TODAYS_APPOINTMENTS] todayStr: 2026-02-20
+2026-02-20T18:12:02.116303419Z [PATIENTS LIST] Encontrados: 50 pacientes
+2026-02-20T18:12:02.222830889Z [GET_TODAYS_APPOINTMENTS] encontrados: 0
+2026-02-20T18:12:02.22490746Z [2026-02-20T18:12:02.224Z] GET → /api/admin/total-patients
+2026-02-20T18:12:02.251551078Z [2026-02-20T18:12:02.250Z] GET → /api/payments
+2026-02-20T18:12:02.346284272Z [2026-02-20T18:12:02.346Z] GET → /api/admin/appointment/completed-cancelled
+2026-02-20T18:12:02.351534137Z [2026-02-20T18:12:02.351Z] GET → /api/doctors/therapy-sessions
+2026-02-20T18:12:02.35400103Z [2026-02-20T18:12:02.353Z] GET → /api/appointments
+2026-02-20T18:12:02.354628797Z [GET /appointments] Query: {
+2026-02-20T18:12:02.354643268Z   patientId: undefined,
+2026-02-20T18:12:02.354646778Z   doctorId: undefined,
+2026-02-20T18:12:02.354649668Z   status: undefined,
+2026-02-20T18:12:02.354652468Z   specialty: undefined,
+2026-02-20T18:12:02.354655299Z   startDate: undefined,
+2026-02-20T18:12:02.354658219Z   endDate: undefined
+2026-02-20T18:12:02.354660869Z }
+2026-02-20T18:12:02.354957176Z (node:68) Warning: Label 'appointments.query' already exists for console.time()
+2026-02-20T18:12:02.356165696Z [2026-02-20T18:12:02.356Z] GET → /api/admin/profile
+2026-02-20T18:12:02.357655243Z [2026-02-20T18:12:02.357Z] GET → /api/doctors/appointments/stats
+2026-02-20T18:12:02.789691796Z [2026-02-20T18:12:02.787Z] GET → /api/amanda/status
+2026-02-20T18:12:02.963285832Z [2026-02-20T18:12:02.963Z] GET → /api/doctors
+2026-02-20T18:12:03.206838534Z [2026-02-20T18:12:03.206Z] GET → /api/doctors/appointments/calendar/6806dd1bb6f92559b49a8a9c
+2026-02-20T18:12:03.209787585Z [2026-02-20T18:12:03.209Z] GET → /api/admin/total-doctors
+2026-02-20T18:12:03.254890455Z [2026-02-20T18:12:03.254Z] GET → /api/doctors/6806dd1bb6f92559b49a8a9c/attendance-summary
+2026-02-20T18:12:03.256421615Z [2026-02-20T18:12:03.256Z] GET → /api/admin/doctor-overview
+2026-02-20T18:12:03.349180284Z [2026-02-20T18:12:03.348Z] GET → /api/doctors/appointments/future
+2026-02-20T18:12:15.349564149Z [2026-02-20T18:12:15.349Z] GET → /api/whatsapp/chat/556291109889
+2026-02-20T18:12:16.362847044Z [2026-02-20T18:12:16.362Z] GET → /api/whatsapp/chat/556291109889
+2026-02-20T18:12:21.048717578Z [GET /appointments] Retornando 1178 eventos (1140 appointments + 38 pré-agendamentos)
+2026-02-20T18:12:21.746065917Z [2026-02-20T18:12:21.646Z] POST → /api/import-from-agenda
+2026-02-20T18:12:21.746748286Z === AUTH DEBUG ===
+2026-02-20T18:12:21.746759857Z Header completo: "Bearer agenda_export_token_fono_inova_2025_secure_abc123"
+2026-02-20T18:12:21.746764057Z Token extraído: "agenda_export_token_fono_inova_2025_secure_abc123"
+2026-02-20T18:12:21.746768497Z Token esperado: "agenda_export_token_fono_inova_2025_secure_abc123"
+2026-02-20T18:12:21.746773108Z Tamanho token recebido: 49
+2026-02-20T18:12:21.746777028Z Tamanho token esperado: 49
+2026-02-20T18:12:21.746780688Z São iguais?: true
+2026-02-20T18:12:21.746784478Z ✅ TOKEN VÁLIDO!
+2026-02-20T18:12:23.890515666Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:12:24.048780862Z [2026-02-20T18:12:24.047Z] GET → /api/pre-agendamento
+2026-02-20T18:12:24.302471492Z [2026-02-20T18:12:24.302Z] GET → /api/amanda/status
+2026-02-20T18:12:24.858211292Z [IMPORT-FROM-AGENDA] ✅ Paciente encontrado por nome: 696e1597a5ff8d58658a139e
+2026-02-20T18:12:25.169808007Z ⚡ Novo cliente conectado: esl3X_zzTVf7V8KTAACk
+2026-02-20T18:12:25.169836558Z 👥 Total de clientes: 8
+2026-02-20T18:12:26.245850518Z 📡 Socket emitido: preagendamento:new 6998a408397255b0643cd409
+2026-02-20T18:12:26.533775528Z [2026-02-20T18:12:26.533Z] GET → /api/pre-agendamento
+2026-02-20T18:12:26.570622409Z 📬 183 follow-ups prontos para envio (após filtro)
+2026-02-20T18:12:26.57064745Z    🔥 0 quentes
+2026-02-20T18:12:26.57065187Z    🟡 101 mornos
+2026-02-20T18:12:26.57065627Z    🧊 82 frios
+2026-02-20T18:12:26.749253117Z [2026-02-20T18:12:26.749Z] GET → /api/appointments
+2026-02-20T18:12:26.749388895Z [GET /appointments] Query: {
+2026-02-20T18:12:26.749396006Z   patientId: undefined,
+2026-02-20T18:12:26.749399216Z   doctorId: undefined,
+2026-02-20T18:12:26.749401916Z   status: undefined,
+2026-02-20T18:12:26.749404606Z   specialty: undefined,
+2026-02-20T18:12:26.749407236Z   startDate: '2026-02-25',
+2026-02-20T18:12:26.749410006Z   endDate: '2026-02-25'
+2026-02-20T18:12:26.749412566Z }
+2026-02-20T18:12:26.749970889Z (node:68) Warning: Label 'appointments.query' already exists for console.time()
+2026-02-20T18:12:26.806252259Z [2026-02-20T18:12:26.806Z] GET → /api/appointments
+2026-02-20T18:12:26.806392437Z [GET /appointments] Query: {
+2026-02-20T18:12:26.806399888Z   patientId: undefined,
+2026-02-20T18:12:26.806402618Z   doctorId: undefined,
+2026-02-20T18:12:26.806404668Z   status: undefined,
+2026-02-20T18:12:26.806406988Z   specialty: undefined,
+2026-02-20T18:12:26.806409438Z   startDate: '2026-02-20',
+2026-02-20T18:12:26.806411518Z   endDate: '2026-02-20'
+2026-02-20T18:12:26.806413599Z }
+2026-02-20T18:12:26.80678421Z (node:68) Warning: Label 'appointments.query' already exists for console.time()
+2026-02-20T18:12:27.482535723Z [GET /appointments] Retornando 12 eventos (8 appointments + 4 pré-agendamentos)
+2026-02-20T18:12:27.524508262Z [GET /appointments] Retornando 26 eventos (17 appointments + 9 pré-agendamentos)
+2026-02-20T18:12:27.74803817Z [2026-02-20T18:12:27.747Z] GET → /api/appointments
+2026-02-20T18:12:27.748060471Z [GET /appointments] Query: {
+2026-02-20T18:12:27.748063841Z   patientId: undefined,
+2026-02-20T18:12:27.748066251Z   doctorId: undefined,
+2026-02-20T18:12:27.748068932Z   status: undefined,
+2026-02-20T18:12:27.748071352Z   specialty: undefined,
+2026-02-20T18:12:27.748073602Z   startDate: '2026-02-25',
+2026-02-20T18:12:27.748075982Z   endDate: '2026-02-25'
+2026-02-20T18:12:27.748078312Z }
+2026-02-20T18:12:27.748428412Z (node:68) Warning: Label 'appointments.query' already exists for console.time()
+2026-02-20T18:12:28.466626462Z [GET /appointments] Retornando 12 eventos (8 appointments + 4 pré-agendamentos)
+2026-02-20T18:12:31.557408196Z [2026-02-20T18:12:31.557Z] GET → /api/pre-agendamento
+2026-02-20T18:12:31.601154758Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:12:32.282580971Z ⚡ Novo cliente conectado: tM6SOSfASX6BDxraAACm
+2026-02-20T18:12:32.282606392Z 👥 Total de clientes: 8
+2026-02-20T18:12:32.959600837Z [2026-02-20T18:12:32.959Z] GET → /api/pre-agendamento
+2026-02-20T18:12:35.256683104Z [2026-02-20T18:12:35.251Z] POST → /api/renew-token
+2026-02-20T18:12:35.577171356Z ⚡ Novo cliente conectado: HXCyCi151TKJ609bAACo
+2026-02-20T18:12:35.577207938Z 👥 Total de clientes: 9
+2026-02-20T18:12:37.392206784Z [2026-02-20T18:12:37.391Z] GET → /api/dashboard/overview
+2026-02-20T18:12:38.574779995Z [2026-02-20T18:12:38.574Z] GET → /api/patients
+2026-02-20T18:12:38.575628625Z [PATIENTS LIST] Search: "undefined", Limit: 50
+2026-02-20T18:12:38.928964145Z [PATIENTS LIST] Encontrados: 50 pacientes
+2026-02-20T18:12:40.586408067Z [2026-02-20T18:12:40.586Z] GET → /api/patients
+2026-02-20T18:12:40.587616817Z [PATIENTS LIST] Search: "th", Limit: 100
+2026-02-20T18:12:40.587653579Z [PATIENTS LIST] Search: "th", Regex: "th"
+2026-02-20T18:12:40.765835502Z [PATIENTS LIST] Encontrados: 11 pacientes
+2026-02-20T18:12:43.005546515Z [2026-02-20T18:12:43.005Z] GET → /api/pre-agendamento
+2026-02-20T18:12:43.562961552Z [2026-02-20T18:12:43.562Z] GET → /api/patients
+2026-02-20T18:12:43.564169632Z [PATIENTS LIST] Search: "theo", Limit: 100
+2026-02-20T18:12:43.564386905Z [PATIENTS LIST] Search: "theo", Regex: "th[eèéêë][oòóôõö]"
+2026-02-20T18:12:43.747542077Z [PATIENTS LIST] Encontrados: 1 pacientes
+2026-02-20T18:12:47.829236754Z [2026-02-20T18:12:47.829Z] GET → /api/patients/6941663ebb6ba6cc3ff64ea2
+2026-02-20T18:12:47.856083134Z [2026-02-20T18:12:47.855Z] GET → /api/appointments/patient/6941663ebb6ba6cc3ff64ea2
+2026-02-20T18:12:48.195912269Z [2026-02-20T18:12:48.195Z] GET → /api/patients
+2026-02-20T18:12:48.196852974Z [PATIENTS LIST] Search: "undefined", Limit: 50
+2026-02-20T18:12:48.247933651Z [2026-02-20T18:12:48.247Z] GET → /api/doctors
+2026-02-20T18:12:48.2566962Z [2026-02-20T18:12:48.256Z] GET → /api/admin/patient-overview
+2026-02-20T18:12:48.259125412Z [2026-02-20T18:12:48.259Z] GET → /api/admin/profile
+2026-02-20T18:12:48.345936356Z [2026-02-20T18:12:48.345Z] GET → /api/admin/total-patients
+2026-02-20T18:12:48.348208218Z [2026-02-20T18:12:48.348Z] GET → /api/admin/appointment/completed-cancelled
+2026-02-20T18:12:48.598371373Z [PATIENTS LIST] Encontrados: 50 pacientes
+2026-02-20T18:12:48.706876837Z [2026-02-20T18:12:48.706Z] GET → /api/payments/future-sessions/6941663ebb6ba6cc3ff64ea2
+2026-02-20T18:12:48.747791374Z [2026-02-20T18:12:48.746Z] GET → /api/evolutions/patient/6941663ebb6ba6cc3ff64ea2
+2026-02-20T18:13:01.180414479Z [2026-02-20T18:13:01.180Z] GET → /api/pre-agendamento
+2026-02-20T18:13:02.153916022Z [2026-02-20T18:13:02.152Z] GET → /api/pre-agendamento
+2026-02-20T18:13:03.409289172Z [2026-02-20T18:13:03.409Z] GET → /api/amanda/status
+2026-02-20T18:13:31.750958461Z [2026-02-20T18:13:31.750Z] GET → /api/pre-agendamento
+2026-02-20T18:13:33.821542327Z ✅ 183 follow-ups processados!
+2026-02-20T18:13:57.107074314Z [2026-02-20T18:13:57.106Z] POST → /api/whatsapp/send-text
+2026-02-20T18:13:57.107230314Z 📩 [/api/whatsapp/send-text] body recebido: {
+2026-02-20T18:13:57.107243034Z   phone: '556291109889',
+2026-02-20T18:13:57.107248224Z   text: 'Pela manhã estamos sem disponibilidade no momento 💚\n' +
+2026-02-20T18:13:57.107252505Z     'Mas posso deixar seu contato anotado e te aviso assim que surgir uma vaga, pode ser? 😊'
+2026-02-20T18:13:57.107256135Z }
+2026-02-20T18:13:57.462258314Z 📤 Enviando mensagem via service... {
+2026-02-20T18:13:57.462275665Z   to: '556291109889',
+2026-02-20T18:13:57.462280525Z   lead: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:13:57.462284495Z   contact: new ObjectId('69986fc47c92d32c1fd45980'),
+2026-02-20T18:13:57.462288626Z   text: 'Pela manhã estamos sem disponibilidade no momento '
+2026-02-20T18:13:57.462292506Z }
+2026-02-20T18:13:57.462721731Z ✅ Token do cache
+2026-02-20T18:13:57.462742952Z 🔍 Token (primeiros 50 chars): EAASluIuLGKQBPncq7aPBbr060Ts6OuM799bnmoTj7mdu0h2vZ
+2026-02-20T18:13:57.462855949Z 📤 [WhatsApp] Tentativa 1/3 para 556291109889
+2026-02-20T18:13:58.355194172Z 💾 Salvando com waMessageId: wamid.HBgMNTU2MjkxMTA5ODg5FQIAERgSNDU2NzI1M0UwMzM2MEVFRUZGAA==
+2026-02-20T18:13:58.355345661Z 💾 Payload completo para salvar: {
+2026-02-20T18:13:58.355353731Z   lead: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:13:58.355358302Z   contact: new ObjectId('69986fc47c92d32c1fd45980'),
+2026-02-20T18:13:58.355362772Z   patient: null,
+2026-02-20T18:13:58.355368012Z   direction: 'outbound',
+2026-02-20T18:13:58.355372432Z   type: 'text',
+2026-02-20T18:13:58.355377063Z   content: 'Pela manhã estamos sem disponibilidade no momento ...',
+2026-02-20T18:13:58.355381313Z   timestamp: 2026-02-20T18:13:58.355Z,
+2026-02-20T18:13:58.355385593Z   status: 'sent',
+2026-02-20T18:13:58.355428146Z   waMessageId: 'wamid.HBgMNTU2MjkxMTA5ODg5FQIAERgSNDU2NzI1M0UwMzM2MEVFRUZGAA==',
+2026-02-20T18:13:58.355466168Z   to: '556291109889',
+2026-02-20T18:13:58.355471478Z   from: '891659614023862',
+2026-02-20T18:13:58.355474138Z   metadata: { sentBy: 'manual', userId: null }
+2026-02-20T18:13:58.355476738Z }
+2026-02-20T18:13:58.538665544Z ✅ Mensagem criada no banco: {
+2026-02-20T18:13:58.538693396Z   _id: new ObjectId('6998a466397255b0643cd5d6'),
+2026-02-20T18:13:58.538697816Z   waMessageId: 'wamid.HBgMNTU2MjkxMTA5ODg5FQIAERgSNDU2NzI1M0UwMzM2MEVFRUZGAA==',
+2026-02-20T18:13:58.538701306Z   lead: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:13:58.538705026Z   to: '556291109889'
+2026-02-20T18:13:58.538707826Z }
+2026-02-20T18:13:58.71980171Z ✅ Mensagem enviada com sucesso (tentativa 1)
+2026-02-20T18:13:58.719876485Z ✅ Service retornou: {
+2026-02-20T18:13:58.719881845Z   messaging_product: 'whatsapp',
+2026-02-20T18:13:58.719888345Z   contacts: [ { input: '556291109889', wa_id: '556291109889' } ],
+2026-02-20T18:13:58.719891645Z   messages: [
+2026-02-20T18:13:58.719894255Z     {
+2026-02-20T18:13:58.719896946Z       id: 'wamid.HBgMNTU2MjkxMTA5ODg5FQIAERgSNDU2NzI1M0UwMzM2MEVFRUZGAA=='
+2026-02-20T18:13:58.719899916Z     }
+2026-02-20T18:13:58.719902686Z   ]
+2026-02-20T18:13:58.719905276Z }
+2026-02-20T18:13:58.719920977Z ⏸️ [SEND-TEXT] Pausando Amanda para lead 69986fc5b70ca66ae2830045
+2026-02-20T18:13:59.205043962Z [2026-02-20T18:13:59.204Z] POST → /api/whatsapp/webhook
+2026-02-20T18:13:59.205075394Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T18:13:59.205Z
+2026-02-20T18:13:59.279105464Z 🔍 Busca por waMessageId: ENCONTROU
+2026-02-20T18:13:59.279127725Z 📡 Mensagem encontrada para emitir? SIM
+2026-02-20T18:13:59.279253632Z 📡 Dados da mensagem: {
+2026-02-20T18:13:59.279261623Z   id: '6998a466397255b0643cd5d6',
+2026-02-20T18:13:59.279265123Z   waMessageId: 'wamid.HBgMNTU2MjkxMTA5ODg5FQIAERgSNDU2NzI1M0UwMzM2MEVFRUZGAA==',
+2026-02-20T18:13:59.279268523Z   lead: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:13:59.279271133Z   contact: new ObjectId('69986fc47c92d32c1fd45980'),
+2026-02-20T18:13:59.279274203Z   to: '556291109889',
+2026-02-20T18:13:59.279276934Z   from: '891659614023862'
+2026-02-20T18:13:59.279279444Z }
+2026-02-20T18:13:59.279286134Z 📡 Emitindo message:new via socket...
+2026-02-20T18:13:59.280025727Z ✅ Socket emitido com sucesso!
+2026-02-20T18:14:00.074655192Z [2026-02-20T18:14:00.074Z] POST → /api/whatsapp/webhook
+2026-02-20T18:14:00.074691754Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T18:14:00.074Z
+2026-02-20T18:14:01.561857329Z [2026-02-20T18:14:01.561Z] GET → /api/pre-agendamento
+2026-02-20T18:14:03.546167598Z [2026-02-20T18:14:03.545Z] GET → /api/amanda/status
+2026-02-20T18:14:12.245029286Z [2026-02-20T18:14:12.244Z] POST → /api/whatsapp/send-text
+2026-02-20T18:14:12.245132832Z 📩 [/api/whatsapp/send-text] body recebido: {
+2026-02-20T18:14:12.245142743Z   phone: '556291109889',
+2026-02-20T18:14:12.245148683Z   text: 'Perfeito 😊💚\n' +
+2026-02-20T18:14:12.245153903Z     'Vou reservar para vocês então. Pode me enviar, por favor:\n' +
+2026-02-20T18:14:12.245158674Z     '• Nome completo\n' +
+2026-02-20T18:14:12.245163924Z     '• Data de nascimento Assim já deixo o agendamento confirmado certinho ✨'
+2026-02-20T18:14:12.245168784Z }
+2026-02-20T18:14:12.597100624Z 📤 Enviando mensagem via service... {
+2026-02-20T18:14:12.597147817Z   to: '556291109889',
+2026-02-20T18:14:12.597154767Z   lead: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:14:12.597178139Z   contact: new ObjectId('69986fc47c92d32c1fd45980'),
+2026-02-20T18:14:12.597182749Z   text: 'Perfeito 😊💚\nVou reservar para vocês então. Pode '
+2026-02-20T18:14:12.597186019Z }
+2026-02-20T18:14:12.59720113Z ✅ Token do cache
+2026-02-20T18:14:12.59720618Z 🔍 Token (primeiros 50 chars): EAASluIuLGKQBPncq7aPBbr060Ts6OuM799bnmoTj7mdu0h2vZ
+2026-02-20T18:14:12.597424833Z 📤 [WhatsApp] Tentativa 1/3 para 556291109889
+2026-02-20T18:14:13.20488254Z 💾 Salvando com waMessageId: wamid.HBgMNTU2MjkxMTA5ODg5FQIAERgSQkI2NzFFMjNGMEQ3NjREMkZFAA==
+2026-02-20T18:14:13.205007767Z 💾 Payload completo para salvar: {
+2026-02-20T18:14:13.205015287Z   lead: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:14:13.205017988Z   contact: new ObjectId('69986fc47c92d32c1fd45980'),
+2026-02-20T18:14:13.205020148Z   patient: null,
+2026-02-20T18:14:13.205023068Z   direction: 'outbound',
+2026-02-20T18:14:13.205025228Z   type: 'text',
+2026-02-20T18:14:13.205027968Z   content: 'Perfeito 😊💚\nVou reservar para vocês então. Pode ...',
+2026-02-20T18:14:13.205030298Z   timestamp: 2026-02-20T18:14:13.204Z,
+2026-02-20T18:14:13.205032398Z   status: 'sent',
+2026-02-20T18:14:13.205034669Z   waMessageId: 'wamid.HBgMNTU2MjkxMTA5ODg5FQIAERgSQkI2NzFFMjNGMEQ3NjREMkZFAA==',
+2026-02-20T18:14:13.205036769Z   to: '556291109889',
+2026-02-20T18:14:13.205039439Z   from: '891659614023862',
+2026-02-20T18:14:13.205042119Z   metadata: { sentBy: 'manual', userId: null }
+2026-02-20T18:14:13.205044309Z }
+2026-02-20T18:14:13.385690796Z ✅ Mensagem criada no banco: {
+2026-02-20T18:14:13.385718488Z   _id: new ObjectId('6998a475397255b0643cd5f4'),
+2026-02-20T18:14:13.385723108Z   waMessageId: 'wamid.HBgMNTU2MjkxMTA5ODg5FQIAERgSQkI2NzFFMjNGMEQ3NjREMkZFAA==',
+2026-02-20T18:14:13.385726618Z   lead: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:14:13.385730039Z   to: '556291109889'
+2026-02-20T18:14:13.385732799Z }
+2026-02-20T18:14:13.565255401Z ✅ Mensagem enviada com sucesso (tentativa 1)
+2026-02-20T18:14:13.565331455Z ✅ Service retornou: {
+2026-02-20T18:14:13.565336395Z   messaging_product: 'whatsapp',
+2026-02-20T18:14:13.565340226Z   contacts: [ { input: '556291109889', wa_id: '556291109889' } ],
+2026-02-20T18:14:13.565343206Z   messages: [
+2026-02-20T18:14:13.565345776Z     {
+2026-02-20T18:14:13.565348646Z       id: 'wamid.HBgMNTU2MjkxMTA5ODg5FQIAERgSQkI2NzFFMjNGMEQ3NjREMkZFAA=='
+2026-02-20T18:14:13.565351496Z     }
+2026-02-20T18:14:13.565354247Z   ]
+2026-02-20T18:14:13.565356897Z }
+2026-02-20T18:14:13.565359337Z ⏸️ [SEND-TEXT] Pausando Amanda para lead 69986fc5b70ca66ae2830045
+2026-02-20T18:14:13.860033583Z [2026-02-20T18:14:13.859Z] POST → /api/whatsapp/webhook
+2026-02-20T18:14:13.860557923Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T18:14:13.860Z
+2026-02-20T18:14:14.124216724Z 🔍 Busca por waMessageId: ENCONTROU
+2026-02-20T18:14:14.124249126Z 📡 Mensagem encontrada para emitir? SIM
+2026-02-20T18:14:14.124347652Z 📡 Dados da mensagem: {
+2026-02-20T18:14:14.124356362Z   id: '6998a475397255b0643cd5f4',
+2026-02-20T18:14:14.124359932Z   waMessageId: 'wamid.HBgMNTU2MjkxMTA5ODg5FQIAERgSQkI2NzFFMjNGMEQ3NjREMkZFAA==',
+2026-02-20T18:14:14.124362773Z   lead: new ObjectId('69986fc5b70ca66ae2830045'),
+2026-02-20T18:14:14.124364902Z   contact: new ObjectId('69986fc47c92d32c1fd45980'),
+2026-02-20T18:14:14.124368123Z   to: '556291109889',
+2026-02-20T18:14:14.124370283Z   from: '891659614023862'
+2026-02-20T18:14:14.124372853Z }
+2026-02-20T18:14:14.124375133Z 📡 Emitindo message:new via socket...
+2026-02-20T18:14:14.125041742Z ✅ Socket emitido com sucesso!
+2026-02-20T18:14:14.292556815Z [2026-02-20T18:14:14.291Z] POST → /api/whatsapp/webhook
+2026-02-20T18:14:14.292588707Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T18:14:14.292Z
+2026-02-20T18:14:21.80975054Z [2026-02-20T18:14:21.809Z] GET → /api/dashboard/overview
+2026-02-20T18:14:23.58558151Z [2026-02-20T18:14:23.583Z] GET → /api/patients
+2026-02-20T18:14:23.585619542Z [PATIENTS LIST] Search: "undefined", Limit: 50
+2026-02-20T18:14:23.939131344Z [PATIENTS LIST] Encontrados: 50 pacientes
+2026-02-20T18:14:25.566926744Z ⚠️ Cliente desconectado (ping timeout)
+2026-02-20T18:14:28.853135137Z [2026-02-20T18:14:28.852Z] GET → /api/appointments
+2026-02-20T18:14:28.854265413Z [GET /appointments] Query: {
+2026-02-20T18:14:28.854833207Z   patientId: undefined,
+2026-02-20T18:14:28.854840047Z   doctorId: undefined,
+2026-02-20T18:14:28.854843267Z   status: undefined,
+2026-02-20T18:14:28.854846157Z   specialty: undefined,
+2026-02-20T18:14:28.854849647Z   startDate: '2026-02-02',
+2026-02-20T18:14:28.854852448Z   endDate: '2026-03-14'
+2026-02-20T18:14:28.854855358Z }
+2026-02-20T18:14:28.85489594Z (node:68) Warning: Label 'appointments.query' already exists for console.time()
+2026-02-20T18:14:31.445896768Z [GET /appointments] Retornando 263 eventos (225 appointments + 38 pré-agendamentos)
+2026-02-20T18:14:31.573124705Z [2026-02-20T18:14:31.572Z] GET → /api/pre-agendamento
+2026-02-20T18:14:34.126096929Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:14:34.131169924Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:14:34.93461359Z ⚡ Novo cliente conectado: Aa2CXTQzOkE2hPquAACq
+2026-02-20T18:14:34.934645232Z 👥 Total de clientes: 7
+2026-02-20T18:14:35.635619333Z ⚡ Novo cliente conectado: zyCAF8FIzf2utElMAACs
+2026-02-20T18:14:35.635653065Z 👥 Total de clientes: 8
+2026-02-20T18:14:42.777499719Z [2026-02-20T18:14:42.776Z] PATCH → /api/appointments/699847fe7c92d32c1fd3c635/complete
+2026-02-20T18:14:42.956195352Z [complete] Iniciando - addToBalance: false, patientId: n/a
+2026-02-20T18:14:42.956223394Z [complete] Fase 1: Buscando dados (0ms)
+2026-02-20T18:14:43.313115762Z [complete] Dados carregados (356ms)
+2026-02-20T18:14:43.313152694Z [complete] shouldIncrementPackage: true, hasPackage: true, clinicalStatus: pending
+2026-02-20T18:14:43.313158365Z [complete] Fase 2: Iniciando transação (357ms)
+2026-02-20T18:14:43.313172606Z [complete] Etapa 1: Atualizando sessão (357ms)
+2026-02-20T18:14:43.313231579Z [complete] Atualizando session 699847fe7c92d32c1fd3c62c (357ms)
+2026-02-20T18:14:43.860125339Z [complete] Session atualizada (903ms)
+2026-02-20T18:14:43.860161781Z [complete] Etapa 3: Verificando pacote (904ms)
+2026-02-20T18:14:44.214877372Z [complete] Etapa 4: Atualizando agendamento (1258ms)
+2026-02-20T18:14:44.215027411Z [complete] Executando Appointment.updateOne (1258ms)
+2026-02-20T18:14:44.392588968Z [complete] Appointment.updateOne concluído (1436ms)
+2026-02-20T18:14:44.39262038Z [complete] Commitando transação... (1436ms)
+2026-02-20T18:14:44.573015193Z [complete] ✅ Transação commitada (1616ms)
+2026-02-20T18:14:44.573759206Z 📡 Socket emitido: appointmentUpdated (completed) 699847fe7c92d32c1fd3c635
+2026-02-20T18:14:44.573773547Z [complete] Buscando dados finais... (1617ms)
+2026-02-20T18:14:44.933788417Z [complete] ✅ Respondendo em 1977ms
+2026-02-20T18:14:45.261134394Z 📨 [CLIENTE → SERVER] appointmentUpdated
+2026-02-20T18:14:45.29421863Z [complete] Sync concluído
+2026-02-20T18:14:45.508122874Z [2026-02-20T18:14:45.507Z] GET → /api/appointments
+2026-02-20T18:14:45.508291844Z [GET /appointments] Query: {
+2026-02-20T18:14:45.508298304Z   patientId: undefined,
+2026-02-20T18:14:45.508300824Z   doctorId: undefined,
+2026-02-20T18:14:45.508302954Z   status: undefined,
+2026-02-20T18:14:45.508305345Z   specialty: undefined,
+2026-02-20T18:14:45.508307465Z   startDate: '2026-02-25',
+2026-02-20T18:14:45.508309565Z   endDate: '2026-02-25'
+2026-02-20T18:14:45.508311685Z }
+2026-02-20T18:14:45.508761751Z (node:68) Warning: Label 'appointments.query' already exists for console.time()
+2026-02-20T18:14:45.510178494Z [2026-02-20T18:14:45.510Z] GET → /api/appointments
+2026-02-20T18:14:45.511273597Z [GET /appointments] Query: {
+2026-02-20T18:14:45.511283458Z   patientId: undefined,
+2026-02-20T18:14:45.511286508Z   doctorId: undefined,
+2026-02-20T18:14:45.511288888Z   status: undefined,
+2026-02-20T18:14:45.511291278Z   specialty: undefined,
+2026-02-20T18:14:45.511293748Z   startDate: '2026-02-02',
+2026-02-20T18:14:45.511296359Z   endDate: '2026-03-14'
+2026-02-20T18:14:45.511298939Z }
+2026-02-20T18:14:45.511550843Z (node:68) Warning: Label 'appointments.query' already exists for console.time()
+2026-02-20T18:14:45.558255482Z (node:68) Warning: Label 'appointments.query' already exists for console.time()
+2026-02-20T18:14:45.558259083Z [2026-02-20T18:14:45.556Z] GET → /api/appointments
+2026-02-20T18:14:45.558286994Z [GET /appointments] Query: {
+2026-02-20T18:14:45.558290324Z   patientId: undefined,
+2026-02-20T18:14:45.558292615Z   doctorId: undefined,
+2026-02-20T18:14:45.558294995Z   status: undefined,
+2026-02-20T18:14:45.558297545Z   specialty: undefined,
+2026-02-20T18:14:45.558300055Z   startDate: '2026-02-20',
+2026-02-20T18:14:45.558302495Z   endDate: '2026-02-20'
+2026-02-20T18:14:45.558305125Z }
+2026-02-20T18:14:46.224654129Z [GET /appointments] Retornando 12 eventos (8 appointments + 4 pré-agendamentos)
+2026-02-20T18:14:46.448172743Z [GET /appointments] Retornando 26 eventos (17 appointments + 9 pré-agendamentos)
+2026-02-20T18:14:49.947344451Z [GET /appointments] Retornando 263 eventos (225 appointments + 38 pré-agendamentos)
+2026-02-20T18:14:50.199873963Z [2026-02-20T18:14:50.199Z] GET → /api/appointments
+2026-02-20T18:14:50.201013309Z [GET /appointments] Query: {
+2026-02-20T18:14:50.20102936Z   patientId: undefined,
+2026-02-20T18:14:50.20103427Z   doctorId: undefined,
+2026-02-20T18:14:50.201038531Z   status: undefined,
+2026-02-20T18:14:50.201042661Z   specialty: undefined,
+2026-02-20T18:14:50.201046841Z   startDate: '2026-02-02',
+2026-02-20T18:14:50.201051461Z   endDate: '2026-03-14'
+2026-02-20T18:14:50.201055921Z }
+2026-02-20T18:14:50.201509868Z (node:68) Warning: Label 'appointments.query' already exists for console.time()
+2026-02-20T18:14:51.695473515Z [2026-02-20T18:14:51.695Z] GET → /api/payments/daily-closing
+2026-02-20T18:14:51.697866814Z [2026-02-20T18:14:51.697Z] GET → /api/financial/overview
+2026-02-20T18:14:51.882464201Z [FinancialOverview] Buscando overview para 2/2026, comparação: previous
+2026-02-20T18:14:51.883898685Z [ConvenioMetrics] Calculando métricas para 2/2026
+2026-02-20T18:14:52.45339476Z [GET /appointments] Retornando 263 eventos (225 appointments + 38 pré-agendamentos)
+2026-02-20T18:14:52.555965672Z ⏱️ Query Sessions: 859.685ms
+2026-02-20T18:14:55.248310617Z ⏱️ Bulk Update Appointments: 2.692s
+2026-02-20T18:14:55.886065896Z [2026-02-20T18:14:55.885Z] GET → /api/doctors
+2026-02-20T18:14:55.95071291Z [2026-02-20T18:14:55.950Z] GET → /api/patients
+2026-02-20T18:14:55.951353147Z [PATIENTS LIST] Search: "undefined", Limit: 50
+2026-02-20T18:14:56.128543392Z [PATIENTS LIST] Encontrados: 50 pacientes
+2026-02-20T18:14:56.132162933Z ⏱️ Parallel Queries: 883.728ms
+2026-02-20T18:14:56.132369805Z 
+2026-02-20T18:14:56.132381246Z 📊 RESUMO PAGAMENTOS:
+2026-02-20T18:14:56.132386466Z    Total buscados: 2
+2026-02-20T18:14:56.132390596Z    Filtrados do dia: 2
+2026-02-20T18:14:56.132396637Z    Total em dinheiro: R$200
+2026-02-20T18:14:56.132400467Z 
+2026-02-20T18:14:56.133518282Z 
+2026-02-20T18:14:56.133534923Z 📊 FECHAMENTO FINAL 2026-02-20
+2026-02-20T18:14:56.133539463Z ✅ Agendamentos válidos: 16
+2026-02-20T18:14:56.133544734Z 💰 Recebido: 200
+2026-02-20T18:14:56.133552784Z 📅 Previsto: 840
+2026-02-20T18:14:56.133556974Z ⏳ A receber: 840
+2026-02-20T18:14:56.133560684Z 📦 Pagamentos processados: 2
+2026-02-20T18:14:56.28703503Z [2026-02-20T18:14:56.286Z] GET → /api/payments/insurance/receivables
+2026-02-20T18:15:00.00767902Z [20/02/2026, 15:15:00] [CRON] healthCheck - START
+2026-02-20T18:15:00.363267171Z [20/02/2026, 15:15:00] [INFO] ✓ Sistema saudável (DB + socket + atividade recente) {
+2026-02-20T18:15:00.363296793Z   "database": true,
+2026-02-20T18:15:00.363302064Z   "socket": true,
+2026-02-20T18:15:00.363306384Z   "recentActivity": true
+2026-02-20T18:15:00.363312034Z }
+2026-02-20T18:15:00.363373848Z [20/02/2026, 15:15:00] [CRON] healthCheck - SUCCESS
+2026-02-20T18:15:00.363635143Z [20/02/2026, 15:15:00] [SUCCESS] Tarefa concluída: healthCheck {
+2026-02-20T18:15:00.363643393Z   "duration": "356ms"
+2026-02-20T18:15:00.363646424Z }
+2026-02-20T18:15:01.652480217Z [2026-02-20T18:15:01.652Z] GET → /api/pre-agendamento
+2026-02-20T18:15:09.430660569Z [2026-02-20T18:15:09.430Z] GET → /api/pre-agendamento
+2026-02-20T18:15:10.01899529Z ⚡ Novo cliente conectado: 2T7JiZ_8mUCgmMFWAACu
+2026-02-20T18:15:10.019016772Z 👥 Total de clientes: 9
+2026-02-20T18:15:10.057907826Z [2026-02-20T18:15:10.057Z] POST → /api/renew-token
+2026-02-20T18:15:10.713053187Z ⚡ Novo cliente conectado: LjiXymeRJf6a0ZnrAACw
+2026-02-20T18:15:10.713081759Z 👥 Total de clientes: 10
+2026-02-20T18:15:19.739774621Z [2026-02-20T18:15:19.739Z] HEAD → /health
+2026-02-20T18:15:26.804743573Z 📬 183 follow-ups prontos para envio (após filtro)
+2026-02-20T18:15:26.804768255Z    🔥 0 quentes
+2026-02-20T18:15:26.804773305Z    🟡 101 mornos
+2026-02-20T18:15:26.804777695Z    🧊 82 frios
+2026-02-20T18:15:27.045542062Z [2026-02-20T18:15:27.045Z] GET → /api/packages
+2026-02-20T18:15:31.20100138Z [2026-02-20T18:15:31.200Z] GET → /api/pre-agendamento
+2026-02-20T18:15:31.743563476Z [2026-02-20T18:15:31.743Z] GET → /api/pre-agendamento
+2026-02-20T18:15:42.767388054Z [2026-02-20T18:15:42.767Z] GET → /api/pre-agendamento
+2026-02-20T18:15:42.986934005Z [2026-02-20T18:15:42.986Z] GET → /api/users/me
+2026-02-20T18:15:42.989126733Z [2026-02-20T18:15:42.988Z] GET → /api/doctors/patients
+2026-02-20T18:15:42.997040354Z [2026-02-20T18:15:42.996Z] GET → /api/admin/total-patients
+2026-02-20T18:15:43.004930423Z [2026-02-20T18:15:43.004Z] GET → /api/doctors/appointments/stats
+2026-02-20T18:15:43.006680795Z [2026-02-20T18:15:43.006Z] GET → /api/doctors/therapy-sessions
+2026-02-20T18:15:43.107791851Z [2026-02-20T18:15:43.107Z] GET → /api/admin/profile
+2026-02-20T18:15:43.137594256Z [2026-02-20T18:15:43.137Z] GET → /api/dashboard/overview
+2026-02-20T18:15:43.150120385Z [2026-02-20T18:15:43.149Z] GET → /api/patients
+2026-02-20T18:15:43.151046529Z [PATIENTS LIST] Search: "undefined", Limit: 50
+2026-02-20T18:15:43.154773906Z [2026-02-20T18:15:43.154Z] GET → /api/doctors
+2026-02-20T18:15:43.157176826Z [2026-02-20T18:15:43.157Z] GET → /api/admin/patient-overview
+2026-02-20T18:15:43.161392612Z [2026-02-20T18:15:43.161Z] GET → /api/appointments
+2026-02-20T18:15:43.162174897Z [GET /appointments] Query: {
+2026-02-20T18:15:43.162191128Z   patientId: undefined,
+2026-02-20T18:15:43.162194178Z   doctorId: undefined,
+2026-02-20T18:15:43.162196419Z   status: undefined,
+2026-02-20T18:15:43.162198559Z   specialty: undefined,
+2026-02-20T18:15:43.162200839Z   startDate: undefined,
+2026-02-20T18:15:43.162202929Z   endDate: undefined
+2026-02-20T18:15:43.162205639Z }
+2026-02-20T18:15:43.162478095Z (node:68) Warning: Label 'appointments.query' already exists for console.time()
+2026-02-20T18:15:43.167953723Z [2026-02-20T18:15:43.167Z] GET → /api/doctors/appointments/today
+2026-02-20T18:15:43.353633343Z [GET_TODAYS_APPOINTMENTS] doctorId: 6838c7a174704e74c1511cd3
+2026-02-20T18:15:43.353666995Z [GET_TODAYS_APPOINTMENTS] todayStr: 2026-02-20
+2026-02-20T18:15:43.384140789Z [2026-02-20T18:15:43.383Z] GET → /api/admin/appointment/completed-cancelled
+2026-02-20T18:15:43.447511148Z [2026-02-20T18:15:43.447Z] GET → /api/payments
+2026-02-20T18:15:43.504865977Z [PATIENTS LIST] Encontrados: 50 pacientes
+2026-02-20T18:15:43.557326441Z [GET_TODAYS_APPOINTMENTS] encontrados: 0
+2026-02-20T18:15:43.827544442Z [2026-02-20T18:15:43.827Z] GET → /api/doctors
+2026-02-20T18:15:44.057348521Z [2026-02-20T18:15:44.057Z] GET → /api/doctors/appointments/calendar/6838c7a174704e74c1511cd3
+2026-02-20T18:15:44.076632183Z [2026-02-20T18:15:44.076Z] GET → /api/doctors/appointments/future
+2026-02-20T18:15:44.08276503Z [2026-02-20T18:15:44.082Z] GET → /api/admin/doctor-overview
+2026-02-20T18:15:44.084542244Z [2026-02-20T18:15:44.084Z] GET → /api/doctors/6838c7a174704e74c1511cd3/attendance-summary
+2026-02-20T18:15:44.086413613Z [2026-02-20T18:15:44.086Z] GET → /api/admin/total-doctors
+2026-02-20T18:15:48.348488824Z [2026-02-20T18:15:48.348Z] GET → /api/patients
+2026-02-20T18:15:48.349665072Z [PATIENTS LIST] Search: "undefined", Limit: 50
+2026-02-20T18:15:54.847552341Z [PATIENTS LIST] Encontrados: 50 pacientes
+2026-02-20T18:16:00.360558123Z [GET /appointments] Retornando 1179 eventos (1140 appointments + 39 pré-agendamentos)
+2026-02-20T18:16:03.647228827Z [2026-02-20T18:16:03.647Z] GET → /api/financial/overview
+2026-02-20T18:16:03.650171259Z [2026-02-20T18:16:03.650Z] GET → /api/payments/daily-closing
+2026-02-20T18:16:03.747108762Z [2026-02-20T18:16:03.746Z] GET → /api/pre-agendamento
+2026-02-20T18:16:03.826230978Z [FinancialOverview] Buscando overview para 2/2026, comparação: previous
+2026-02-20T18:16:03.82625711Z [ConvenioMetrics] Calculando métricas para 2/2026
+2026-02-20T18:16:04.094007197Z [2026-02-20T18:16:04.093Z] GET → /api/payments
+2026-02-20T18:16:04.748846428Z ⏱️ Query Sessions: 1.097s
+2026-02-20T18:16:04.948382184Z ⏱️ Bulk Update Appointments: 199.837ms
+2026-02-20T18:16:05.846605554Z ⏱️ Parallel Queries: 898.088ms
+2026-02-20T18:16:05.846888521Z 
+2026-02-20T18:16:05.846895781Z 📊 RESUMO PAGAMENTOS:
+2026-02-20T18:16:05.846900371Z    Total buscados: 2
+2026-02-20T18:16:05.846904211Z    Filtrados do dia: 2
+2026-02-20T18:16:05.846908211Z    Total em dinheiro: R$200
+2026-02-20T18:16:05.846911712Z 
+2026-02-20T18:16:05.848632172Z 
+2026-02-20T18:16:05.848643463Z 📊 FECHAMENTO FINAL 2026-02-20
+2026-02-20T18:16:05.848647473Z ✅ Agendamentos válidos: 16
+2026-02-20T18:16:05.848651613Z 💰 Recebido: 200
+2026-02-20T18:16:05.848655433Z 📅 Previsto: 840
+2026-02-20T18:16:05.848659184Z ⏳ A receber: 840
+2026-02-20T18:16:05.848663014Z 📦 Pagamentos processados: 2
+2026-02-20T18:16:13.350915915Z [2026-02-20T18:16:13.350Z] GET → /api/pre-agendamento
+2026-02-20T18:16:14.589789116Z [2026-02-20T18:16:14.588Z] GET → /api/payments
+2026-02-20T18:16:14.845130521Z [2026-02-20T18:16:14.844Z] GET → /api/payments/totals
+2026-02-20T18:16:15.023361446Z 💰 Cash Result: [
+2026-02-20T18:16:15.023399849Z   {
+2026-02-20T18:16:15.023404309Z     _id: null,
+2026-02-20T18:16:15.023408499Z     totalReceived: 13050,
+2026-02-20T18:16:15.023412189Z     totalPending: 1751.01,
+2026-02-20T18:16:15.023416219Z     totalPartial: 0,
+2026-02-20T18:16:15.02341999Z     countReceived: 54,
+2026-02-20T18:16:15.02342359Z     countPending: 144,
+2026-02-20T18:16:15.02342768Z     countPartial: 0
+2026-02-20T18:16:15.02343185Z   }
+2026-02-20T18:16:15.023461612Z ]
+2026-02-20T18:16:15.023485023Z 🔍 Insurance Match Stage: {
+2026-02-20T18:16:15.023510025Z   "$or": [
+2026-02-20T18:16:15.023514895Z     {
+2026-02-20T18:16:15.023520105Z       "paymentDate": {
+2026-02-20T18:16:15.023524006Z         "$gte": "2026-02-01",
+2026-02-20T18:16:15.023527456Z         "$lte": "2026-03-01"
+2026-02-20T18:16:15.023531296Z       }
+2026-02-20T18:16:15.023535166Z     },
+2026-02-20T18:16:15.023538767Z     {
+2026-02-20T18:16:15.023542577Z       "paymentDate": {
+2026-02-20T18:16:15.023546347Z         "$exists": false
+2026-02-20T18:16:15.023550087Z       },
+2026-02-20T18:16:15.023554018Z       "createdAt": {
+2026-02-20T18:16:15.023558938Z         "$gte": "2026-02-01T03:00:00.000Z",
+2026-02-20T18:16:15.023562718Z         "$lte": "2026-03-01T02:59:59.999Z"
+2026-02-20T18:16:15.023566778Z       }
+2026-02-20T18:16:15.023570468Z     }
+2026-02-20T18:16:15.023574479Z   ],
+2026-02-20T18:16:15.023578379Z   "billingType": "convenio"
+2026-02-20T18:16:15.023582289Z }
+2026-02-20T18:16:15.200377961Z 🏥 Insurance Result: [
+2026-02-20T18:16:15.200400702Z   {
+2026-02-20T18:16:15.200406553Z     _id: null,
+2026-02-20T18:16:15.200426064Z     totalInsuranceProduction: 480,
+2026-02-20T18:16:15.200432584Z     totalInsuranceReceived: 0,
+2026-02-20T18:16:15.200454585Z     totalInsurancePending: 480,
+2026-02-20T18:16:15.200461986Z     countInsuranceTotal: 6,
+2026-02-20T18:16:15.200467066Z     countInsuranceReceived: 0,
+2026-02-20T18:16:15.200472137Z     countInsurancePending: 6
+2026-02-20T18:16:15.200477187Z   }
+2026-02-20T18:16:15.200482357Z ]
+2026-02-20T18:16:15.753505291Z 📊 /totals response: {
+2026-02-20T18:16:15.753538163Z   totals: {
+2026-02-20T18:16:15.753543123Z     totalReceived: 13050,
+2026-02-20T18:16:15.753547203Z     totalPending: 1751.01,
+2026-02-20T18:16:15.753551194Z     totalPartial: 0,
+2026-02-20T18:16:15.753554994Z     countReceived: 54,
+2026-02-20T18:16:15.753558724Z     countPending: 144,
+2026-02-20T18:16:15.753562884Z     countPartial: 0,
+2026-02-20T18:16:15.753567275Z     totalInsuranceProduction: 480,
+2026-02-20T18:16:15.753571325Z     totalInsuranceReceived: 0,
+2026-02-20T18:16:15.753575025Z     totalInsurancePending: 480,
+2026-02-20T18:16:15.753578805Z     countInsuranceTotal: 6,
+2026-02-20T18:16:15.753582586Z     countInsuranceReceived: 0,
+2026-02-20T18:16:15.753586416Z     countInsurancePending: 6,
+2026-02-20T18:16:15.753589976Z     totalCombined: 13530
+2026-02-20T18:16:15.753593606Z   },
+2026-02-20T18:16:15.753598297Z   dateRange: { start: 2026-02-01T03:00:00.000Z, end: 2026-03-01T02:59:59.999Z }
+2026-02-20T18:16:15.753602157Z }
+2026-02-20T18:16:23.688950357Z [2026-02-20T18:16:23.688Z] GET → /api/payments/daily-closing
+2026-02-20T18:16:24.402777522Z ⏱️ Query Sessions: 712.986ms
+2026-02-20T18:16:24.601943506Z ⏱️ Bulk Update Appointments: 198.969ms
+2026-02-20T18:16:25.3100862Z ⏱️ Parallel Queries: 708.049ms
+2026-02-20T18:16:25.310103781Z 
+2026-02-20T18:16:25.310106951Z 📊 RESUMO PAGAMENTOS:
+2026-02-20T18:16:25.310119342Z    Total buscados: 1
+2026-02-20T18:16:25.310126812Z    Filtrados do dia: 1
+2026-02-20T18:16:25.310130322Z    Total em dinheiro: R$640
+2026-02-20T18:16:25.310132482Z 
+2026-02-20T18:16:25.310697185Z 
+2026-02-20T18:16:25.310707686Z 📊 FECHAMENTO FINAL 2026-02-18
+2026-02-20T18:16:25.310712536Z ✅ Agendamentos válidos: 11
+2026-02-20T18:16:25.310719016Z 💰 Recebido: 640
+2026-02-20T18:16:25.310720806Z 📅 Previsto: 1715
+2026-02-20T18:16:25.310722627Z ⏳ A receber: 1555
+2026-02-20T18:16:25.310724317Z 📦 Pagamentos processados: 1
+2026-02-20T18:16:31.546042798Z [2026-02-20T18:16:31.545Z] GET → /api/pre-agendamento
+2026-02-20T18:16:33.56640952Z [2026-02-20T18:16:33.566Z] GET → /api/dashboard/overview
+2026-02-20T18:16:35.320875153Z [2026-02-20T18:16:35.320Z] GET → /api/patients
+2026-02-20T18:16:35.322131806Z [PATIENTS LIST] Search: "undefined", Limit: 50
+2026-02-20T18:16:35.672000244Z [PATIENTS LIST] Encontrados: 50 pacientes
+2026-02-20T18:16:37.967165113Z [2026-02-20T18:16:37.966Z] GET → /api/appointments
+2026-02-20T18:16:37.968281978Z [GET /appointments] Query: {
+2026-02-20T18:16:37.968294659Z   patientId: undefined,
+2026-02-20T18:16:37.968298759Z   doctorId: undefined,
+2026-02-20T18:16:37.968302459Z   status: undefined,
+2026-02-20T18:16:37.968306099Z   specialty: undefined,
+2026-02-20T18:16:37.9683099Z   startDate: '2026-02-02',
+2026-02-20T18:16:37.96831378Z   endDate: '2026-03-14'
+2026-02-20T18:16:37.96831758Z }
+2026-02-20T18:16:37.968736014Z (node:68) Warning: Label 'appointments.query' already exists for console.time()
+2026-02-20T18:16:42.050349498Z [GET /appointments] Retornando 263 eventos (225 appointments + 38 pré-agendamentos)
+2026-02-20T18:16:42.844006799Z [2026-02-20T18:16:42.843Z] GET → /api/pre-agendamento
+2026-02-20T18:17:00.461142168Z ⚠️ Cliente desconectado (ping timeout)
+2026-02-20T18:17:00.751475429Z ⚠️ Cliente desconectado (ping timeout)
+2026-02-20T18:17:01.561754717Z [2026-02-20T18:17:01.561Z] GET → /api/pre-agendamento
+2026-02-20T18:17:08.080702157Z ✅ 183 follow-ups processados!
+2026-02-20T18:17:12.848035871Z [2026-02-20T18:17:12.847Z] GET → /api/pre-agendamento
+2026-02-20T18:17:31.581288423Z [2026-02-20T18:17:31.581Z] GET → /api/pre-agendamento
+2026-02-20T18:17:34.144570563Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:17:34.82704397Z ⚡ Novo cliente conectado: s1YaUzjWzfEJEzdtAACy
+2026-02-20T18:17:34.827062611Z 👥 Total de clientes: 8
+2026-02-20T18:17:42.822505387Z [2026-02-20T18:17:42.822Z] GET → /api/pre-agendamento
+2026-02-20T18:18:01.916342659Z [2026-02-20T18:18:01.916Z] GET → /api/pre-agendamento
+2026-02-20T18:18:12.796334409Z [2026-02-20T18:18:12.796Z] GET → /api/pre-agendamento
+2026-02-20T18:18:26.760773253Z 📬 183 follow-ups prontos para envio (após filtro)
+2026-02-20T18:18:26.760805065Z    🔥 0 quentes
+2026-02-20T18:18:26.760809615Z    🟡 101 mornos
+2026-02-20T18:18:26.760813485Z    🧊 82 frios
+2026-02-20T18:18:31.955249821Z [2026-02-20T18:18:31.955Z] GET → /api/pre-agendamento
+2026-02-20T18:18:34.145065625Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:18:34.834239549Z ⚡ Novo cliente conectado: QiPq6J1xR6qGp8v2AAC0
+2026-02-20T18:18:34.834266121Z 👥 Total de clientes: 8
+2026-02-20T18:18:43.19731262Z [2026-02-20T18:18:43.197Z] GET → /api/pre-agendamento
+2026-02-20T18:19:01.562936688Z [2026-02-20T18:19:01.562Z] GET → /api/pre-agendamento
+2026-02-20T18:19:13.205961069Z [2026-02-20T18:19:13.205Z] GET → /api/pre-agendamento
+2026-02-20T18:19:31.610368417Z [2026-02-20T18:19:31.610Z] GET → /api/pre-agendamento
+2026-02-20T18:19:33.468506289Z ✅ 183 follow-ups processados!
+2026-02-20T18:19:34.150916769Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:19:34.845872918Z ⚡ Novo cliente conectado: 0zfpgzSb0JBge6b9AAC2
+2026-02-20T18:19:34.84589627Z 👥 Total de clientes: 8
+2026-02-20T18:20:01.590698786Z [2026-02-20T18:20:01.590Z] GET → /api/pre-agendamento
+2026-02-20T18:20:13.645337519Z [2026-02-20T18:20:13.645Z] POST → /api/whatsapp/webhook
+2026-02-20T18:20:13.645372372Z =========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< =========================== 2026-02-20T18:20:13.645Z
+2026-02-20T18:20:17.157930171Z [DEBUG CANARY ENV] 556292013573,5561981694922,556181694922,5562992013573
+2026-02-20T18:20:17.157950572Z 🔎 isTestNumber? 556294786874 false
+2026-02-20T18:20:17.157955742Z 🔄 Processando mensagem: {
+2026-02-20T18:20:17.157960682Z   from: '556294786874',
+2026-02-20T18:20:17.157965313Z   type: 'text',
+2026-02-20T18:20:17.157970573Z   wamid: 'wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAEhggQUNGRkQ0QUEzRTA3MTlCQjJGNjlDNjY3RUUyOUFCRTIA'
+2026-02-20T18:20:17.157974713Z }
+2026-02-20T18:20:17.512326338Z 🔍 Patient encontrado: Nenhum
+2026-02-20T18:20:18.072119319Z 🔍 [DEBUG PRE-SAVE #1] Estado do lead ANTES do save: {
+2026-02-20T18:20:18.07213517Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T18:20:18.07213969Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:20:18.0721441Z   pendingPatientInfoStep: null,
+2026-02-20T18:20:18.07214786Z   pendingChosenSlot: 'NÃO',
+2026-02-20T18:20:18.072151801Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T18:20:18.072155671Z }
+2026-02-20T18:20:18.26268327Z 📅 Interação atualizada no lead
+2026-02-20T18:20:18.447626424Z 🔍 [DEBUG POST-SAVE #2] Estado do lead DEPOIS do save: {
+2026-02-20T18:20:18.447643815Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T18:20:18.447648625Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:20:18.447654986Z   pendingPatientInfoStep: null
+2026-02-20T18:20:18.447658776Z }
+2026-02-20T18:20:18.447664956Z 🧠 qualificationData atualizado: { idade: 7, idadeRange: 'escolar_7a12', disponibilidade: 'tarde' }
+2026-02-20T18:20:18.447671687Z 🔍 [DEBUG PRE-ORCHESTRATOR] Lead sendo passado pro handleAutoReply: {
+2026-02-20T18:20:18.447675647Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T18:20:18.447679507Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:20:18.447683537Z   pendingPatientInfoStep: null,
+2026-02-20T18:20:18.447687438Z   pendingChosenSlot: 'NÃO'
+2026-02-20T18:20:18.447691298Z }
+2026-02-20T18:20:18.447695108Z 🤖 [AUTO-REPLY] Iniciando para {
+2026-02-20T18:20:18.447699438Z   from: '556294786874',
+2026-02-20T18:20:18.447703948Z   to: '556293377726',
+2026-02-20T18:20:18.447708549Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T18:20:18.447712799Z   content: 'Manhã'
+2026-02-20T18:20:18.447716809Z }
+2026-02-20T18:20:18.453982654Z 🔍 [DEBUG HANDLE-AUTO-REPLY] Lead carregado do banco: {
+2026-02-20T18:20:18.453994965Z   leadId: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T18:20:18.454000645Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:20:18.454005895Z   pendingPatientInfoStep: null,
+2026-02-20T18:20:18.454009626Z   pendingChosenSlot: 'NÃO',
+2026-02-20T18:20:18.454013266Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T18:20:18.454016936Z }
+2026-02-20T18:20:18.630926932Z 🤖 Gerando resposta da Amanda (Novo Orquestrador)...
+2026-02-20T18:20:18.813943704Z [INFO] [LockManager] LOCK_ACQUIRED { leadId: new ObjectId('69989c3ab70ca66ae2830773'), attempt: 0 }
+2026-02-20T18:20:18.814002368Z 🎯 [ORCHESTRATOR] Processando: "Manhã"
+2026-02-20T18:20:18.857479488Z ⚠️ Cliente desconectado (client namespace disconnect)
+2026-02-20T18:20:18.932480524Z [2026-02-20T18:20:18.931Z] GET → /api/pre-agendamento
+2026-02-20T18:20:18.993431451Z 🔄 [REFRESH] Lead atualizado: {
+2026-02-20T18:20:18.993503145Z   pendingPatientInfoForScheduling: false,
+2026-02-20T18:20:18.993507375Z   pendingPatientInfoStep: null,
+2026-02-20T18:20:18.993509946Z   pendingChosenSlot: 'NÃO',
+2026-02-20T18:20:18.993512526Z   pendingSchedulingSlots: 'NÃO'
+2026-02-20T18:20:18.993515136Z }
+2026-02-20T18:20:18.993518206Z 🩺 [VALIDATION] Verificando serviço solicitado...
+2026-02-20T18:20:18.993522116Z 🔍 [PASSO 1 CHECK] { pendingPatientInfoForScheduling: false, hasLeadId: true }
+2026-02-20T18:20:19.640616339Z ⚡ Novo cliente conectado: teRDZXuR_S2NCTCKAAC4
+2026-02-20T18:20:19.64063475Z 👥 Total de clientes: 8
+2026-02-20T18:20:22.942629563Z [2026-02-20T18:20:22.942Z] HEAD → /health
+2026-02-20T18:20:23.918017252Z ✅ [AI] Resposta via OpenAI (fallback)
+2026-02-20T18:20:23.918040284Z ✅ [RESUMO] Gerado com sucesso (4 msgs antigas)
+2026-02-20T18:20:24.104180047Z 🚩 FLAGS DETECTADAS: {
+2026-02-20T18:20:24.104204239Z   text: 'Manhã',
+2026-02-20T18:20:24.104208299Z   normalizedText: 'manhã',
+2026-02-20T18:20:24.104210659Z   ageGroup: null,
+2026-02-20T18:20:24.104212959Z   asksPrice: false,
+2026-02-20T18:20:24.10421504Z   insistsPrice: false,
+2026-02-20T18:20:24.10421734Z   asksAddress: false,
+2026-02-20T18:20:24.10421951Z   asksLocation: false,
+2026-02-20T18:20:24.10422172Z   wantsSchedule: false,
+2026-02-20T18:20:24.10422378Z   mentionsUrgency: false,
+2026-02-20T18:20:24.104226Z   confirmsData: false,
+2026-02-20T18:20:24.10422814Z   refusesOrDenies: false,
+2026-02-20T18:20:24.10423035Z   wantsMoreOptions: false,
+2026-02-20T18:20:24.10423235Z   mentionsCDL: false,
+2026-02-20T18:20:24.10423431Z   wantsReschedule: false,
+2026-02-20T18:20:24.104236331Z   wantsCancel: false,
+2026-02-20T18:20:24.104238381Z   asksPayment: false,
+2026-02-20T18:20:24.104240581Z   asksPlans: false,
+2026-02-20T18:20:24.104242611Z   asksDuration: false,
+2026-02-20T18:20:24.104244761Z   mentionsReembolso: false,
+2026-02-20T18:20:24.104246861Z   wantsInvoice: false,
+2026-02-20T18:20:24.104248921Z   asksAboutAfterHours: false,
+2026-02-20T18:20:24.104250911Z   asksAvaliacao: false,
+2026-02-20T18:20:24.104253402Z   mentionsSpeechTherapy: false,
+2026-02-20T18:20:24.104255482Z   asksPsychopedagogy: false,
+2026-02-20T18:20:24.104257532Z   asksCAA: false,
+2026-02-20T18:20:24.104259562Z   asksAgeMinimum: false,
+2026-02-20T18:20:24.104261572Z   asksRescheduling: false,
+2026-02-20T18:20:24.104263662Z   givingUp: false,
+2026-02-20T18:20:24.104266663Z   talksAboutTypeOfAssessment: false,
+2026-02-20T18:20:24.104268712Z   hasMedicalReferral: false,
+2026-02-20T18:20:24.104270743Z   wantsHumanAgent: false,
+2026-02-20T18:20:24.104273253Z   alreadyScheduled: false,
+2026-02-20T18:20:24.104275333Z   asksDays: false,
+2026-02-20T18:20:24.104277483Z   asksTimes: false,
+2026-02-20T18:20:24.104279583Z   mentionsAdult: false,
+2026-02-20T18:20:24.104281603Z   mentionsTeen: false,
+2026-02-20T18:20:24.104283613Z   mentionsChild: false,
+2026-02-20T18:20:24.104285693Z   mentionsTEA_TDAH: false,
+2026-02-20T18:20:24.104287814Z   mentionsTOD: false,
+2026-02-20T18:20:24.104301745Z   mentionsABA: false,
+2026-02-20T18:20:24.104304075Z   mentionsMethodPrompt: false,
+2026-02-20T18:20:24.104306235Z   mentionsDenver: false,
+2026-02-20T18:20:24.104308465Z   mentionsBobath: false,
+2026-02-20T18:20:24.104310545Z   saysThanks: false,
+2026-02-20T18:20:24.104312565Z   saysBye: false,
+2026-02-20T18:20:24.104314755Z   asksSpecialtyAvailability: false,
+2026-02-20T18:20:24.104316925Z   mentionsPriceObjection: false,
+2026-02-20T18:20:24.104319015Z   mentionsInsuranceObjection: false,
+2026-02-20T18:20:24.104321216Z   mentionsTimeObjection: false,
+2026-02-20T18:20:24.104323266Z   mentionsOtherClinicObjection: false,
+2026-02-20T18:20:24.104325416Z   mentionsDoubtTEA: false,
+2026-02-20T18:20:24.104327416Z   mentionsNeuropediatra: false,
+2026-02-20T18:20:24.104329516Z   mentionsLaudo: false,
+2026-02-20T18:20:24.104331536Z   mentionsBaby: false,
+2026-02-20T18:20:24.104333756Z   wantsPartnershipOrResume: false,
+2026-02-20T18:20:24.104335847Z   mentionsTongueTieSurgery: false,
+2026-02-20T18:20:24.104337976Z   mentionsGeneralSurgery: false,
+2026-02-20T18:20:24.104339937Z   mentionsInvestigation: false,
+2026-02-20T18:20:24.104341867Z   _meta: {
+2026-02-20T18:20:24.104343977Z     hasContextualDetection: false,
+2026-02-20T18:20:24.104346037Z     detectors: {
+2026-02-20T18:20:24.104348277Z       confirmation: 'inactive',
+2026-02-20T18:20:24.104350367Z       insurance: 'inactive',
+2026-02-20T18:20:24.104352428Z       price: 'inactive',
+2026-02-20T18:20:24.104354437Z       scheduling: 'inactive'
+2026-02-20T18:20:24.104356488Z     },
+2026-02-20T18:20:24.104358568Z     timestamp: '2026-02-20T18:20:24.103Z'
+2026-02-20T18:20:24.104360598Z   }
+2026-02-20T18:20:24.104362658Z }
+2026-02-20T18:20:24.105045618Z 🤝 [CONTEXT-ENRICHMENT] Welcoming approach added: empathy first, gentle scheduling suggestion
+2026-02-20T18:20:24.105061239Z 🎯 [CONTEXT-ENRICHMENT] Strategic context summary: {
+2026-02-20T18:20:24.105064919Z   hasPrice: false,
+2026-02-20T18:20:24.105067339Z   hasScheduling: false,
+2026-02-20T18:20:24.105069239Z   hasInsurance: false,
+2026-02-20T18:20:24.105071549Z   hasConfirmation: false,
+2026-02-20T18:20:24.105073209Z   mustAskComplaint: false,
+2026-02-20T18:20:24.10507493Z   avgConfidence: 0
+2026-02-20T18:20:24.10507677Z }
+2026-02-20T18:20:24.10508398Z 📅 [SCHEDULING DECISION]: false
+2026-02-20T18:20:24.105520775Z [CTX] intent: duvida_geral
+2026-02-20T18:20:24.105531186Z [CTX] area: neuropsicologia
+2026-02-20T18:20:24.105533666Z [CTX] stage: triagem_agendamento
+2026-02-20T18:20:24.106007634Z 🧠 [ORCHESTRATOR] Injetando insights de aprendizado no prompt
+2026-02-20T18:20:24.106013614Z [AmandaAI] Aplicando toneMode → acolhimento
+2026-02-20T18:20:24.106194895Z [INTELLIGENCE] {
+2026-02-20T18:20:24.106199875Z   score: 70,
+2026-02-20T18:20:24.106202505Z   segment: 'warm',
+2026-02-20T18:20:24.106205065Z   intent: 'duvida_geral',
+2026-02-20T18:20:24.106207335Z   urgencia: 'normal',
+2026-02-20T18:20:24.106210016Z   bloqueio: null
+2026-02-20T18:20:24.106212365Z }
+2026-02-20T18:20:24.290950548Z [INTELLIGENCE] Lead atualizado: [ 'conversionScore', 'segment', 'lastAnalyzedAt' ]
+2026-02-20T18:20:24.29322224Z [BOOKING_GATE] {
+2026-02-20T18:20:24.293237511Z   wantsSchedule: false,
+2026-02-20T18:20:24.293240831Z   wantsSchedulingNow: false,
+2026-02-20T18:20:24.293243581Z   inSchedulingFlow: false,
+2026-02-20T18:20:24.293246791Z   mappedTherapyArea: 'neuropsicologia',
+2026-02-20T18:20:24.293249382Z   topic: null
+2026-02-20T18:20:24.293252302Z }
+2026-02-20T18:20:24.294210898Z 🧠 [YES-CONTEXT] {
+2026-02-20T18:20:24.294279042Z   text: 'Manhã',
+2026-02-20T18:20:24.294285142Z   inSchedulingFlow: undefined,
+2026-02-20T18:20:24.294288562Z   lastStage: 'triagem_agendamento',
+2026-02-20T18:20:24.294291222Z   hasPendingSlots: false
+2026-02-20T18:20:24.294293712Z }
+2026-02-20T18:20:24.294372647Z 🚦 [SCHEDULING-GATE] {
+2026-02-20T18:20:24.294377877Z   wantsScheduling: false,
+2026-02-20T18:20:24.294380508Z   stage: 'triagem_agendamento',
+2026-02-20T18:20:24.294383168Z   flags: {
+2026-02-20T18:20:24.294385798Z     text: 'Manhã',
+2026-02-20T18:20:24.294388138Z     normalizedText: 'manhã',
+2026-02-20T18:20:24.294390618Z     ageGroup: null,
+2026-02-20T18:20:24.294393428Z     asksPrice: false,
+2026-02-20T18:20:24.294395918Z     insistsPrice: false,
+2026-02-20T18:20:24.294398878Z     asksAddress: false,
+2026-02-20T18:20:24.294401449Z     asksLocation: false,
+2026-02-20T18:20:24.294404249Z     wantsSchedule: false,
+2026-02-20T18:20:24.294406719Z     mentionsUrgency: false,
+2026-02-20T18:20:24.294409459Z     confirmsData: false,
+2026-02-20T18:20:24.294412219Z     refusesOrDenies: false,
+2026-02-20T18:20:24.29441483Z     wantsMoreOptions: false,
+2026-02-20T18:20:24.29441657Z     mentionsCDL: false,
+2026-02-20T18:20:24.29441825Z     wantsReschedule: false,
+2026-02-20T18:20:24.29441993Z     wantsCancel: false,
+2026-02-20T18:20:24.29442158Z     asksPayment: false,
+2026-02-20T18:20:24.29442324Z     asksPlans: false,
+2026-02-20T18:20:24.29442505Z     asksDuration: false,
+2026-02-20T18:20:24.29442685Z     mentionsReembolso: false,
+2026-02-20T18:20:24.29442856Z     wantsInvoice: false,
+2026-02-20T18:20:24.2944303Z     asksAboutAfterHours: false,
+2026-02-20T18:20:24.294431971Z     asksAvaliacao: false,
+2026-02-20T18:20:24.294454782Z     mentionsSpeechTherapy: false,
+2026-02-20T18:20:24.294463392Z     asksPsychopedagogy: false,
+2026-02-20T18:20:24.294466073Z     asksCAA: false,
+2026-02-20T18:20:24.294468373Z     asksAgeMinimum: false,
+2026-02-20T18:20:24.294470983Z     asksRescheduling: false,
+2026-02-20T18:20:24.294473453Z     givingUp: false,
+2026-02-20T18:20:24.294475993Z     talksAboutTypeOfAssessment: false,
+2026-02-20T18:20:24.294479063Z     hasMedicalReferral: false,
+2026-02-20T18:20:24.294481823Z     wantsHumanAgent: false,
+2026-02-20T18:20:24.294484443Z     alreadyScheduled: false,
+2026-02-20T18:20:24.294486904Z     asksDays: false,
+2026-02-20T18:20:24.294489654Z     asksTimes: false,
+2026-02-20T18:20:24.294492394Z     mentionsAdult: false,
+2026-02-20T18:20:24.294494934Z     mentionsTeen: false,
+2026-02-20T18:20:24.294497624Z     mentionsChild: false,
+2026-02-20T18:20:24.294500114Z     mentionsTEA_TDAH: false,
+2026-02-20T18:20:24.294502984Z     mentionsTOD: false,
+2026-02-20T18:20:24.294505645Z     mentionsABA: false,
+2026-02-20T18:20:24.294508365Z     mentionsMethodPrompt: false,
+2026-02-20T18:20:24.294511025Z     mentionsDenver: false,
+2026-02-20T18:20:24.294512715Z     mentionsBobath: false,
+2026-02-20T18:20:24.294515255Z     saysThanks: false,
+2026-02-20T18:20:24.294516995Z     saysBye: false,
+2026-02-20T18:20:24.294518696Z     asksSpecialtyAvailability: false,
+2026-02-20T18:20:24.294520436Z     mentionsPriceObjection: false,
+2026-02-20T18:20:24.294522206Z     mentionsInsuranceObjection: false,
+2026-02-20T18:20:24.294523966Z     mentionsTimeObjection: false,
+2026-02-20T18:20:24.294525646Z     mentionsOtherClinicObjection: false,
+2026-02-20T18:20:24.294527376Z     mentionsDoubtTEA: false,
+2026-02-20T18:20:24.294529096Z     mentionsNeuropediatra: false,
+2026-02-20T18:20:24.294535806Z     mentionsLaudo: false,
+2026-02-20T18:20:24.294537546Z     mentionsBaby: false,
+2026-02-20T18:20:24.294539227Z     wantsPartnershipOrResume: false,
+2026-02-20T18:20:24.294540897Z     mentionsTongueTieSurgery: false,
+2026-02-20T18:20:24.294542577Z     mentionsGeneralSurgery: false,
+2026-02-20T18:20:24.294545437Z     mentionsInvestigation: false,
+2026-02-20T18:20:24.294548297Z     _meta: {
+2026-02-20T18:20:24.294551287Z       hasContextualDetection: false,
+2026-02-20T18:20:24.294554318Z       detectors: [Object],
+2026-02-20T18:20:24.294557288Z       timestamp: '2026-02-20T18:20:24.103Z'
+2026-02-20T18:20:24.294559968Z     },
+2026-02-20T18:20:24.294562828Z     therapyArea: 'neuropsicologia'
+2026-02-20T18:20:24.294565418Z   }
+2026-02-20T18:20:24.294568298Z }
+2026-02-20T18:20:26.9707967Z ✅ [AI] Resposta via OpenAI (fallback)
+2026-02-20T18:20:27.337298411Z [INFO] [LockManager] LOCK_RELEASED { leadId: new ObjectId('69989c3ab70ca66ae2830773') }
+2026-02-20T18:20:27.337321782Z [AmandaReply] Texto gerado: Entendo a preocupação, e você fez muito bem em buscar ajuda cedo. A avaliação ne...
+2026-02-20T18:20:27.69242224Z ✅ Token do cache
+2026-02-20T18:20:27.692473223Z 🔍 Token (primeiros 50 chars): EAASluIuLGKQBPncq7aPBbr060Ts6OuM799bnmoTj7mdu0h2vZ
+2026-02-20T18:20:27.692678925Z 📤 [WhatsApp] Tentativa 1/3 para 556294786874
+2026-02-20T18:20:28.587198817Z 💾 Salvando com waMessageId: wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAERgSRjUwRTY5MkEyRjZCNDU2MkE1AA==
+2026-02-20T18:20:28.587301233Z 💾 Payload completo para salvar: {
+2026-02-20T18:20:28.587310234Z   lead: new ObjectId('69989c3ab70ca66ae2830773'),
+2026-02-20T18:20:28.587313154Z   contact: new ObjectId('69989c39397255b0643cb3aa'),
+2026-02-20T18:20:28.587315814Z   patient: null,
+2026-02-20T18:20:28.587319984Z   direction: 'outbound',
+2026-02-20T18:20:28.587322645Z   type: 'text',
+2026-02-20T18:20:28.587326655Z   content: 'Entendo a preocupação, e você fez muito bem em bus...',
+2026-02-20T18:20:28.587329215Z   timestamp: 2026-02-20T18:20:28.586Z,
+2026-02-20T18:20:28.587331805Z   status: 'sent',
+2026-02-20T18:20:28.587334355Z   waMessageId: 'wamid.HBgMNTU2Mjk0Nzg2ODc0FQIAERgSRjUwRTY5MkEyRjZCNDU2MkE1AA==',
+2026-02-20T18:20:28.587336825Z   to: '556294786874',
+2026-02-20T18:20:28.587340786Z   from: '891659614023862',
+2026-02-20T18:20:28.587343506Z   metadata: { sentBy: 'amanda', userId: null }
+2026-02-20T18:20:28.587346026Z }
+2026-02-20T18:20:28.770126394Z ✅ Mensagem criada no banco: {
+
+
+
+
+
+
+
+
+
+
+
+
+
+    segue analise Agora vou falar como estrategista, não como “psicólogo” 😅
+
+Essa conversa ficou **totalmente desorganizada e repetitiva**.
+O problema não foi o atendimento em si — foi o fluxo.
+
+Você teve:
+
+* Pergunta repetida 4x (manhã ou tarde)
+* Mudança de área depois de já ter definido
+* Respostas automáticas repetidas
+* Não confirmou horário concreto
+* Não fechou o agendamento
+* Voltou para discurso emocional no meio
+* Informou que não abre sábado só no final
+* Não direcionou para horário disponível real
+
+Isso gera insegurança no lead.
+
+---
+
+## 🚨 Onde quebrou o fluxo
+
+1. Ela pediu sábado.
+2. Você não disse logo: “Não abrimos sábado.”
+3. Voltou a perguntar manhã/tarde várias vezes.
+4. Não ofereceu horário específico.
+5. Falou “vou verificar” várias vezes sem resolver.
+6. Não fechou com proposta concreta.
+
+---
+
+## 🎯 Como deveria ter sido
+
+Quando ela disse:
+
+> Se for sábado manhã
+
+Resposta correta seria:
+
+> No momento não abrimos aos sábados 💚
+> Nosso atendimento é de segunda a sexta, das 08h às 18h.
+> Consigo te oferecer amanhã às 09h ou 10h30 pela manhã. Qual prefere? 😊
+
+Objetivo:
+✔ cortar dúvida
+✔ informar regra
+✔ oferecer opção real
+✔ forçar decisão
+
+---
+
+## ⚠️ Outro erro importante
+
+Depois que ela falou:
+
+> Minha menina anda muito estressada preciso com urgência
+
+Você deveria ter ido para:
+
+> Entendo sua preocupação 💚
+> Tenho um horário amanhã às 10h ou às 11h. Qual funciona melhor pra você?
+
+Não voltar para explicação teórica de avaliação.
+
+---
+
+## 🧠 O maior problema
+
+O bot ficou:
+
+* Em modo informativo
+* Em modo emocional
+* Em modo repetitivo
+* Sem modo fechamento
+
+E clínica vive de fechamento.
+
+---
+
+## 💡 Como encerrar essa conversa agora (recuperação)
+
+Manda isso:
+
+> Entendo sua urgência 💚
+> Nosso atendimento é somente com horário agendado, tá?
+> Hoje consigo te atender às 16h40 ou amanhã às 09h.
+> Qual fica melhor para você?
+
+Simples.
+Objetivo.
+Direcionado.
+
+---
+
+Ricardo, sendo bem direto:
+
+Sua copy está boa.
+Seu acolhimento está bom.
+Mas seu fluxo está bagunçado.
+
+Você precisa de:
+
+* Menos pergunta aberta
+* Mais opção fechada
+* Menos texto longo
+* Mais direcionamento
+

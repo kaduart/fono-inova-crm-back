@@ -5,7 +5,7 @@
 
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import ConvenioMetricsService from './services/financial/ConvenioMetricsService.js';
+import ConvenioMetricsService from '../services/financial/ConvenioMetricsService.js';
 
 dotenv.config();
 
