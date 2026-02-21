@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import moment from 'moment-timezone';
-import { gerarRelatorioAnalitico } from './services/provisionamentoService.js';
+import { gerarRelatorioAnalitico } from '../services/provisionamentoService.js';
 import dotenv from 'dotenv';
 
 dotenv.config();

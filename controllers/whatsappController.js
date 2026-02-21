@@ -56,6 +56,9 @@ export const whatsappController = {
                 waMessageId,
             });
 
+            // Busca contato associado para incluir no socket
+            const contact = await Contacts.findOne({ phone: to }).lean();
+
             const io = getIo();
             io.emit("message:new", {
                 id: String(saved._id),
@@ -67,6 +70,8 @@ export const whatsappController = {
                 text: saved.content,
                 status: saved.status,
                 timestamp: saved.timestamp,
+                leadId: leadId || null,
+                contactId: contact?._id || null,
             });
 
             res.json({ success: true, result });

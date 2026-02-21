@@ -24,6 +24,8 @@ import billingOrchestrator from '../services/billing/BillingOrchestrator.js';
 import { mapAppointmentToEvent, mapPreAgendamentoToEvent } from '../utils/appointmentMapper.js';
 import PatientBalance from '../models/PatientBalance.js';
 import { getIo } from '../config/socket.js';
+import guideService from '../services/billing/guideService.js';
+import Convenio from '../models/Convenio.js';
 
 dotenv.config();
 const router = express.Router();
@@ -973,8 +975,8 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                 updatePromises.push(sessionUpdate);
             }
 
-            // Atualizar ou Criar Pagamento
-            if (appointment.payment) {
+            // Atualizar ou Criar Pagamento (somente se NÃO for pacote)
+            if (!appointment.package && appointment.payment) {
                 // Pagamento existe - atualiza
                 const paymentUpdate = Payment.findByIdAndUpdate(
                     appointment.payment,
@@ -995,7 +997,7 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                     { session: mongoSession, new: true }
                 );
                 updatePromises.push(paymentUpdate);
-            } else if (updateData.billingType || updateData.paymentAmount > 0) {
+            } else if (!appointment.package && (updateData.billingType || updateData.paymentAmount > 0)) {
                 // 🆕 Não tem pagamento ainda, mas recebeu dados de pagamento - cria novo!
                 const newPayment = new Payment({
                     patient: appointment.patient,
@@ -1010,7 +1012,7 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                     insuranceValue: updateData.billingType === 'convenio' ? updateData.insuranceValue : 0,
                     authorizationCode: updateData.billingType === 'convenio' ? updateData.authorizationCode : null,
                     status: updateData.billingType === 'convenio' ? 'pending' : 'paid',
-                    kind: 'appointment_payment',
+                    kind: 'manual',
                     notes: `Pagamento registrado via edição de agendamento - ${new Date().toLocaleString('pt-BR')}`
                 });
 
@@ -1486,25 +1488,10 @@ router.patch('/:id/complete', auth, async (req, res) => {
             updatedAt: new Date()
         };
         
-        if (sessionId) {
-            try {
-                console.log(`[complete] Atualizando session ${sessionId} (${Date.now() - startTime}ms)`);
-                await Session.findOneAndUpdate(
-                    { _id: sessionId },
-                    sessionUpdateData,
-                    { session }
-                );
-                console.log(`[complete] Session atualizada (${Date.now() - startTime}ms)`);
-            } catch (err) {
-                console.error('❌ Erro ao atualizar session:', err.message);
-                throw err;
-            }
-        }
-
         // 2️⃣ ATUALIZAR PAYMENT (se não for saldo devedor)
+        let finalPaymentId = paymentId; // 📜 Declarar fora do bloco para uso posterior
+        
         if (!addToBalance) {
-            let finalPaymentId = paymentId;
-
             // ✅ FIX: Se não tem payment vinculado, busca pelo appointment ID
             if (!finalPaymentId && !packageId) {
                 const orphanPayment = await Payment.findOne(
@@ -1551,18 +1538,22 @@ router.patch('/:id/complete', auth, async (req, res) => {
         // 3️⃣ ATUALIZAR PACOTE (SE NECESSÁRIO)
         console.log(`[complete] Etapa 3: Verificando pacote (${Date.now() - startTime}ms)`);
         let packageDoc = null;
-        if (shouldIncrementPackage && packageId) {
+        if (packageId) {
+            // Buscar packageDoc sempre que tiver pacote (necessário para convênio)
             packageDoc = await Package.findOne(
                 { _id: packageId },
-                { type: 1, sessionsDone: 1, totalSessions: 1 },
+                { type: 1, sessionsDone: 1, totalSessions: 1, insuranceProvider: 1, insuranceGuide: 1 },
                 { session }
             );
             
-            await Package.updateOne(
-                { _id: packageId, $expr: { $lt: ["$sessionsDone", "$totalSessions"] } },
-                { $inc: { sessionsDone: 1 }, $set: { updatedAt: new Date() } },
-                { session }
-            );
+            // Só incrementa sessionsDone se ainda não estiver concluído
+            if (shouldIncrementPackage) {
+                await Package.updateOne(
+                    { _id: packageId, $expr: { $lt: ["$sessionsDone", "$totalSessions"] } },
+                    { $inc: { sessionsDone: 1 }, $set: { updatedAt: new Date() } },
+                    { session }
+                );
+            }
         }
 
         console.log(`[complete] Etapa 4: Atualizando agendamento (${Date.now() - startTime}ms)`);
@@ -1607,6 +1598,29 @@ router.patch('/:id/complete', auth, async (req, res) => {
             updateData.paymentStatus = 'paid';
         }
 
+        // 💰 Atualizar sessionValue se estiver vazio
+        if (!appointment.sessionValue || appointment.sessionValue === 0) {
+            let valueToSet = 0;
+            
+            if (addToBalance && balanceAmount > 0) {
+                // 💳 Saldo devedor: usar o valor informado
+                valueToSet = balanceAmount;
+            } else if (finalPaymentId) {
+                // 💳 Pagamento normal: usar valor do payment
+                const paymentDoc = await Payment.findOne(
+                    { _id: finalPaymentId },
+                    { amount: 1 },
+                    { session }
+                );
+                valueToSet = paymentDoc?.amount || 0;
+            }
+            
+            if (valueToSet > 0) {
+                updateData.sessionValue = valueToSet;
+                console.log(`[complete] Atualizando sessionValue: ${valueToSet}`);
+            }
+        }
+
         console.log(`[complete] Executando Appointment.updateOne (${Date.now() - startTime}ms)`);
         await Appointment.updateOne({ _id: id }, updateData, { session });
         console.log(`[complete] Appointment.updateOne concluído (${Date.now() - startTime}ms)`);
@@ -1636,7 +1650,122 @@ router.patch('/:id/complete', auth, async (req, res) => {
         // FASE 3: OPERAÇÕES PÓS-COMMIT (não bloqueiam resposta)
         // ============================================================
         
+        // 🏥 CONSUMIR GUIA DE CONVÊNIO e CRIAR PAYMENT (se for pacote de convênio)
+        if (packageId && packageDoc?.type === 'convenio') {
+            try {
+                // Consumir guia
+                if (packageDoc?.insuranceGuide) {
+                    console.log(`[complete] Consumindo guia de convênio... (${Date.now() - startTime}ms)`);
+                    const guideResult = await guideService.consumeGuideSession(packageDoc.insuranceGuide);
+                    console.log(`[complete] ✅ Guia consumida - Restam ${guideResult.remaining} sessões (${Date.now() - startTime}ms)`);
+                }
+                
+                // Criar Payment para faturamento
+                console.log(`[complete] Criando payment de convênio... (${Date.now() - startTime}ms)`);
+                const InsuranceGuide = mongoose.model('InsuranceGuide');
+                const guide = packageDoc?.insuranceGuide ? await InsuranceGuide.findById(packageDoc.insuranceGuide) : null;
+                
+                // Buscar valor do convênio
+                const convenioValue = await Convenio.getSessionValue(packageDoc.insuranceProvider) || 0;
+                console.log(`[complete] Valor do convênio ${packageDoc.insuranceProvider}: R$ ${convenioValue}`);
+                
+                const newPayment = new Payment({
+                    patient: patientId,
+                    doctor: appointment.doctor?._id || appointment.doctor,
+                    appointment: appointment._id,
+                    session: sessionId,
+                    package: packageId,
+                    amount: 0,
+                    billingType: 'convenio',
+                    insuranceProvider: packageDoc.insuranceProvider,
+                    insuranceValue: convenioValue,
+                    paymentMethod: 'convenio',
+                    status: 'pending',
+                    kind: 'manual',
+                    insurance: {
+                        provider: packageDoc.insuranceProvider,
+                        grossAmount: convenioValue,
+                        authorizationCode: guide?.authorizationCode || null,
+                        status: 'pending_billing'
+                    },
+                    serviceDate: appointment.date,
+                    notes: `Sessão de convênio - Guia ${guide?.number || 'N/A'} - Pacote ${packageId}`
+                });
+                
+                await newPayment.save();
+                
+                // Vincular payment ao agendamento
+                await Appointment.updateOne(
+                    { _id: id },
+                    { $set: { payment: newPayment._id } }
+                );
+                
+                // Atualizar pacote com o valor do convênio (para relatórios de receita)
+                if (convenioValue > 0 && packageId) {
+                    await Package.updateOne(
+                        { _id: packageId },
+                        { 
+                            $set: { 
+                                insuranceGrossAmount: convenioValue,
+                                sessionValue: convenioValue
+                            } 
+                        }
+                    );
+                    console.log(`[complete] ✅ Pacote atualizado com valor do convênio: ${convenioValue} (${Date.now() - startTime}ms)`);
+                }
+                
+                console.log(`[complete] ✅ Payment criado: ${newPayment._id} (${Date.now() - startTime}ms)`);
+            } catch (guideError) {
+                console.error(`[complete] ❌ Erro ao processar convênio (não crítico): ${guideError.message}`);
+            }
+        }
+        
+        // 1️⃣ ATUALIZAR SESSÃO (fora da transação - evita lock)
+        if (sessionId) {
+            try {
+                console.log(`[complete] Atualizando session ${sessionId} (fora da transação)... (${Date.now() - startTime}ms)`);
+                await Session.findOneAndUpdate(
+                    { _id: sessionId },
+                    sessionUpdateData
+                );
+                console.log(`[complete] Session atualizada (${Date.now() - startTime}ms)`);
+                
+                // 🏥 Consumir guia de convênio se a sessão tiver guia vinculada
+                if (sessionUpdateData.status === 'completed') {
+                    const session = await Session.findById(sessionId);
+                    if (session?.insuranceGuide && !session.guideConsumed) {
+                        try {
+                            console.log(`[complete] Consumindo guia ${session.insuranceGuide} para sessão ${sessionId}...`);
+                            const InsuranceGuide = mongoose.model('InsuranceGuide');
+                            const guide = await InsuranceGuide.findById(session.insuranceGuide);
+                            
+                            if (guide && guide.status === 'active' && guide.usedSessions < guide.totalSessions) {
+                                guide.usedSessions += 1;
+                                if (guide.usedSessions >= guide.totalSessions) {
+                                    guide.status = 'exhausted';
+                                }
+                                await guide.save();
+                                
+                                // Marcar sessão como consumida
+                                await Session.updateOne(
+                                    { _id: sessionId },
+                                    { $set: { guideConsumed: true } }
+                                );
+                                
+                                console.log(`[complete] ✅ Guia consumida: ${guide.usedSessions}/${guide.totalSessions}`);
+                            }
+                        } catch (guideErr) {
+                            console.error(`[complete] ❌ Erro ao consumir guia: ${guideErr.message}`);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('[complete] ❌ Erro ao atualizar session (não crítico):', err.message);
+            }
+        }
+        
         // 6️⃣ ATUALIZAR SALDO DEVEDOR (fora da transação)
+        console.log(`[complete] Verificando saldo devedor - addToBalance: ${addToBalance}, patientId: ${patientId} (${Date.now() - startTime}ms)`);
         if (addToBalance && patientId) {
             console.log(`[complete] Atualizando saldo devedor... (${Date.now() - startTime}ms)`);
             try {
@@ -1659,6 +1788,19 @@ router.patch('/:id/complete', auth, async (req, res) => {
         const finalAppointment = await Appointment.findById(id)
             .populate('session package patient doctor payment');
 
+        // 💰 BUSCAR SALDO DEVEDOR DO PACIENTE
+        let patientBalance = 0;
+        if (finalAppointment?.patient?._id) {
+            try {
+                const balanceDoc = await PatientBalance.findOne({ patient: finalAppointment.patient._id });
+                if (balanceDoc) {
+                    patientBalance = balanceDoc.currentBalance;
+                }
+            } catch (err) {
+                console.error('[complete] Erro ao buscar saldo (não crítico):', err.message);
+            }
+        }
+
         // 8️⃣ SINCRONIZAR (não bloqueia resposta)
         setImmediate(async () => {
             try {
@@ -1670,7 +1812,12 @@ router.patch('/:id/complete', auth, async (req, res) => {
         });
 
         console.log(`[complete] ✅ Respondendo em ${Date.now() - startTime}ms`);
-        res.json(finalAppointment);
+        
+        // Adicionar patientBalance ao objeto de resposta
+        const responseData = finalAppointment.toObject ? finalAppointment.toObject() : finalAppointment;
+        responseData.patientBalance = patientBalance;
+        
+        res.json(responseData);
 
     } catch (error) {
         if (session) {

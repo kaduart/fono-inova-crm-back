@@ -282,6 +282,10 @@ router.post("/import-from-agenda/confirmar-por-id", agendaAuth, async (req, res)
 
     console.log(`[CONFIRMAR-POR-EXTERNAL-ID] Importando: ${pre.patientInfo.fullName} com ${doctor.fullName}`);
 
+    // 🚨 IMPORTANTE: Nunca usar 'session' como serviceType pois isso ativa o modo 
+    // "pagamento para sessão existente" que não cria appointment, só cria payment fantasma
+    const normalizedServiceType = serviceType === 'session' ? 'individual_session' : serviceType;
+
     // Criar appointment como PRÉ-AGENDADO
     const bookParams = {
       patientInfo: {
@@ -295,10 +299,10 @@ router.post("/import-from-agenda/confirmar-por-id", agendaAuth, async (req, res)
       date: date || pre.preferredDate,
       time: time || pre.preferredTime,
       sessionType: serviceType === 'evaluation' ? 'avaliacao' : 'sessao',
-      serviceType,
+      serviceType: normalizedServiceType,
       paymentMethod,
       sessionValue: Number(sessionValue || pre.suggestedValue || 0),
-      status: 'scheduled', // Alterado de 'pre-scheduled' para 'scheduled' conforme solicitação
+      status: 'scheduled',
       notes: `[IMPORTADO DA AGENDA EXTERNA - AGUARDANDO CONFIRMAÇÃO] ${notes || ''}\n${pre.secretaryNotes || ''}`
     };
 
@@ -551,6 +555,11 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
     }
 
     // 4) CRIAR APPOINTMENT COMO PRÉ-AGENDADO (não confirmado ainda)
+    // 🚨 IMPORTANTE: Nunca usar 'session' como serviceType pois isso ativa o modo 
+    // "pagamento para sessão existente" que não cria appointment, só cria payment fantasma
+    const rawServiceType = crm.serviceType || 'evaluation';
+    const normalizedServiceType = rawServiceType === 'session' ? 'individual_session' : rawServiceType;
+    
     const bookParams = {
       patientInfo: {
         fullName: pre.patientInfo.fullName,
@@ -563,10 +572,10 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
       date: date || pre.preferredDate,
       time: time || pre.preferredTime,
       sessionType: crm.sessionType === 'avaliacao' ? 'avaliacao' : 'sessao',
-      serviceType: crm.serviceType || 'evaluation',
+      serviceType: normalizedServiceType,
       paymentMethod: crm.paymentMethod || 'pix',
       sessionValue: Number(crm.paymentAmount || 0),
-      status: 'scheduled', // Alterado de 'pre-scheduled' para 'scheduled' conforme solicitação
+      status: 'scheduled',
       notes: `[IMPORTADO DA AGENDA EXTERNA - AGUARDANDO CONFIRMAÇÃO]\n${pre.secretaryNotes || ''}`
     };
 

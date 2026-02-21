@@ -5,6 +5,8 @@ import InsuranceGuide from '../models/InsuranceGuide.js';
 import Session from '../models/Session.js';
 import Appointment from '../models/Appointment.js';
 import Patient from '../models/Patient.js';
+import Payment from '../models/Payment.js';
+import Convenio from '../models/Convenio.js';
 import { syncEvent } from '../services/syncService.js';
 
 /**

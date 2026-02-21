@@ -6,11 +6,76 @@ import Package from '../models/Package.js';
 import Patient from '../models/Patient.js';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
+import InsuranceGuide from '../models/InsuranceGuide.js';
 import { distributePayments } from '../services/distributePayments.js';
 
 import { syncEvent } from '../services/syncService.js';
 import { runJourneyFollowups } from '../services/journeyFollowupEngine.js';
 import Leads from '../models/Leads.js';
+
+/**
+ * 🏥 Cria recebível de convênio quando sessão é completada
+ * @param {Object} session - Sessão completada
+ * @param {Object} pkg - Pacote da sessão
+ * @param {Object} mongoSession - Sessão do MongoDB para transação
+ */
+async function criarRecebivelConvenio(session, pkg, mongoSession) {
+    try {
+        // Verificar se é pacote de convênio
+        if (pkg.type !== 'convenio' && session.paymentMethod !== 'convenio') {
+            return null; // Não é convênio, não cria recebível
+        }
+
+        // Verificar se já existe recebível para esta sessão
+        const existingPayment = await Payment.findOne({
+            session: session._id,
+            billingType: 'convenio'
+        }).session(mongoSession);
+
+        if (existingPayment) {
+            console.log(`⚠️ Recebível de convênio já existe para sessão ${session._id}`);
+            return existingPayment;
+        }
+
+        // Buscar guia de convênio
+        const guide = pkg.insuranceGuide 
+            ? await InsuranceGuide.findById(pkg.insuranceGuide).session(mongoSession)
+            : null;
+
+        // Valor da tabela do convênio
+        const valorTabela = pkg.sessionValue || 80;
+        const convenio = pkg.insuranceProvider || guide?.insurance || 'Convênio';
+
+        // Criar pagamento de convênio
+        const recebivel = await Payment.create([{
+            patient: session.patient,
+            doctor: session.doctor,
+            session: session._id,
+            package: pkg._id,
+            serviceType: 'package_session',
+            amount: 0, // Zerado - só entra no caixa quando receber
+            paymentMethod: 'convenio',
+            billingType: 'convenio',
+            status: 'pending',
+            paymentDate: session.date,
+            notes: `Atendimento ${convenio} - ${pkg.sessionType || pkg.specialty}`,
+            insurance: {
+                provider: convenio,
+                grossAmount: valorTabela,
+                authorizationCode: guide?.number || pkg.insuranceAuthorization || null,
+                status: 'pending_billing', // Aguardando faturamento
+                expectedReceiptDate: moment(session.date).add(1, 'month').endOf('month').toDate()
+            }
+        }], { session: mongoSession });
+
+        console.log(`✅ Recebível de convênio criado: ${recebivel[0]._id} - ${convenio} - R$ ${valorTabela}`);
+        
+        return recebivel[0];
+    } catch (error) {
+        console.error('❌ Erro ao criar recebível de convênio:', error);
+        throw error;
+    }
+}
 
 const APPOINTMENTS_API_BASE_URL = 'http://167.234.249.6:5000/api';
 const validateInputs = {
@@ -859,7 +924,22 @@ export const packageOperations = {
                         }
 
                         // 🔧 CORREÇÃO: Usar sessionValue ao invés de value
-                        if (!sessionDoc.isPaid) {
+                        // 🏥 CONVÊNIO: Criar recebível (não entra no caixa ainda)
+                        // 💰 PARTICULAR: Criar pagamento normal (entra no caixa)
+                        const isConvenio = pkg.type === 'convenio' || 
+                                          sessionDoc.paymentMethod === 'convenio' ||
+                                          sessionDoc.billingType === 'convenio';
+
+                        if (isConvenio) {
+                            // 🏥 Criar recebível de convênio
+                            await criarRecebivelConvenio(sessionDoc, pkg, mongoSession);
+                            
+                            // Marcar sessão como aguardando recebimento do convênio
+                            sessionDoc.isPaid = false;
+                            sessionDoc.paymentStatus = 'pending_receipt';
+                            sessionDoc.visualFlag = 'pending';
+                        } else if (!sessionDoc.isPaid) {
+                            // 💰 PARTICULAR: Criar pagamento normal
                             const paymentDoc = new Payment({
                                 patient: sessionDoc.patient,
                                 doctor: sessionDoc.doctor,
@@ -921,39 +1001,62 @@ export const packageOperations = {
                         // LÓGICA REFINADA DE REMOÇÃO DE PAGAMENTO
                         // ============================================
 
-                        // Buscar pagamento de conclusão automático desta sessão
-                        const autoPayment = await Payment.findOne({
-                            session: sessionDoc._id,
-                            kind: 'session_completion',
-                            status: 'paid'
-                        }).session(mongoSession);
+                        // 🏥 CONVÊNIO: Remover recebível se existir
+                        const isConvenio = pkg.type === 'convenio' || 
+                                          sessionDoc.paymentMethod === 'convenio' ||
+                                          sessionDoc.billingType === 'convenio';
 
-                        if (autoPayment) {
-                            // Verificar se a sessão já estava paga ANTES de ser concluída
-                            // Se isPaid era true antes da conclusão, NÃO remove o pagamento
-                            const wasAlreadyPaid = sessionDoc.isPaid &&
-                                sessionDoc.paymentStatus === 'paid';
+                        if (isConvenio) {
+                            // Buscar e remover recebível de convênio
+                            const recebivelConvenio = await Payment.findOne({
+                                session: sessionDoc._id,
+                                billingType: 'convenio',
+                                'insurance.status': 'pending_billing'
+                            }).session(mongoSession);
 
-                            if (!wasAlreadyPaid) {
-                                // Remove pagamento automático (não estava pago antes)
-                                await Payment.deleteOne({ _id: autoPayment._id })
+                            if (recebivelConvenio) {
+                                await Payment.deleteOne({ _id: recebivelConvenio._id })
                                     .session(mongoSession);
+                                console.log(`🏥 Recebível de convênio removido: ${recebivelConvenio._id}`);
+                            }
+                            
+                            sessionDoc.isPaid = false;
+                            sessionDoc.paymentStatus = 'pending';
+                            sessionDoc.visualFlag = 'pending';
+                        } else {
+                            // 💰 PARTICULAR: Buscar pagamento de conclusão automático
+                            const autoPayment = await Payment.findOne({
+                                session: sessionDoc._id,
+                                kind: 'session_completion',
+                                status: 'paid'
+                            }).session(mongoSession);
 
-                                await Package.findByIdAndUpdate(
-                                    pkgId,
-                                    {
-                                        $pull: { payments: autoPayment._id },
-                                        $inc: { totalPaid: -autoPayment.amount }
-                                    },
-                                    { session: mongoSession }
-                                );
+                            if (autoPayment) {
+                                // Verificar se a sessão já estava paga ANTES de ser concluída
+                                const wasAlreadyPaid = sessionDoc.isPaid &&
+                                    sessionDoc.paymentStatus === 'paid';
 
-                                sessionDoc.isPaid = false;
-                                sessionDoc.paymentStatus = 'pending';
+                                if (!wasAlreadyPaid) {
+                                    // Remove pagamento automático (não estava pago antes)
+                                    await Payment.deleteOne({ _id: autoPayment._id })
+                                        .session(mongoSession);
 
-                                console.log(`💰 Pagamento automático removido (sessão não estava paga antes)`);
-                            } else {
-                                console.log(`💰 Pagamento mantido (sessão já estava paga antes da conclusão)`);
+                                    await Package.findByIdAndUpdate(
+                                        pkgId,
+                                        {
+                                            $pull: { payments: autoPayment._id },
+                                            $inc: { totalPaid: -autoPayment.amount }
+                                        },
+                                        { session: mongoSession }
+                                    );
+
+                                    sessionDoc.isPaid = false;
+                                    sessionDoc.paymentStatus = 'pending';
+
+                                    console.log(`💰 Pagamento automático removido (sessão não estava paga antes)`);
+                                } else {
+                                    console.log(`💰 Pagamento mantido (sessão já estava paga antes da conclusão)`);
+                                }
                             }
                         }
                     }

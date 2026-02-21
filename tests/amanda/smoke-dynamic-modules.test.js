@@ -70,7 +70,11 @@ describe('🚨 SMOKE TEST: DYNAMIC_MODULES', () => {
             error = e;
         }
         
-        expect(error?.message).not.toContain('DYNAMIC_MODULES is not defined');
+        // Se não houve erro, está tudo bem
+        // Se houve erro, não pode ser o DYNAMIC_MODULES
+        if (error) {
+            expect(error.message).not.toContain('DYNAMIC_MODULES is not defined');
+        }
     });
 
     it('DEVE funcionar sem toneMode', async () => {
@@ -96,7 +100,11 @@ describe('🚨 SMOKE TEST: DYNAMIC_MODULES', () => {
             error = e;
         }
         
-        expect(error?.message).not.toContain('DYNAMIC_MODULES is not defined');
+        // Se não houve erro, está tudo bem
+        // Se houve erro, não pode ser o DYNAMIC_MODULES
+        if (error) {
+            expect(error.message).not.toContain('DYNAMIC_MODULES is not defined');
+        }
     });
 });
 
