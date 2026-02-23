@@ -62,6 +62,7 @@ const preAgendamentoSchema = new mongoose.Schema({
       'fisioterapia',
       'musicoterapia',
       'psicopedagogia',
+      'psicomotricidade',
       'tongue_tie_test',
       'neuropsych_evaluation',
       'pediatria',
