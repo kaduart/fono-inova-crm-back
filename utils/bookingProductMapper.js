@@ -30,9 +30,9 @@ export function mapFlagsToBookingProduct(flags = {}, lead = {}) {
       physiotherapy: "fisioterapia",
       music: "musicoterapia",
       psychomotor: "psicomotricidade",
-      neuropsychological: "psicologia",
+      neuropsychological: "neuropsicologia",
       neuropsychopedagogy: "psicopedagogia",
-      psychopedagogy: "psicologia"
+      psychopedagogy: "psicopedagogia"
     };
 
     const therapyArea = therapyMap[primaryTherapy] || "fonoaudiologia";

@@ -74,13 +74,13 @@ const VALID_SERVICES = {
     fisioterapia: { name: "Fisioterapia", available: true },
     musicoterapia: { name: "Musicoterapia", available: true },
     neuropsicologia: { name: "Neuropsicologia", available: true },
+    psicopedagogia: { name: "Psicopedagogia", available: true },
     
     // Mapeamentos comuns
     fono: { alias: "fonoaudiologia" },
     to: { alias: "terapia_ocupacional" },
     fisio: { alias: "fisioterapia" },
     neuropsico: { alias: "neuropsicologia" },
-    psicopedagogia: { name: "Psicopedagogia", available: false, redirectTo: "neuropsicologia", reason: "Sem profissional ativo" },
 };
 
 // Especialidades médicas que NÃO oferecemos
@@ -96,11 +96,27 @@ const MEDICAL_SPECIALTIES = [
  * Retorna: { valid: boolean, service: string, message?: string, redirect?: string }
  */
 function validateServiceRequest(text = "") {
-    const normalized = text.toLowerCase();
+    // 🛡️ FIX: Normaliza acentos para detectar palavras com/sem acento
+    const normalized = text.toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+    
+    // 🆕 FIX: Se usuário mencionou serviço VÁLIDO da clínica, não bloquear por especialidade médica
+    // Ex: "quero neuropsicóloga mas estou esperando neuropediatra" → deve permitir
+    const hasValidService = Object.entries(VALID_SERVICES).some(([key, config]) => {
+        if (config.alias) return false;
+        const terms = [key, config.name?.toLowerCase()].filter(Boolean);
+        return config.available !== false && terms.some(term => normalized.includes(term));
+    });
     
     // 1. Verificar especialidades médicas primeiro
     for (const medical of MEDICAL_SPECIALTIES) {
         if (medical.terms.some(term => normalized.includes(term))) {
+            // 🛡️ Se usuário também mencionou serviço válido, não bloquear
+            if (hasValidService) {
+                console.log(`[VALIDATION] Especialidade médica '${medical.name}' detectada, mas usuário também mencionou serviço válido. Permitindo.`);
+                return { valid: true };
+            }
             return {
                 valid: false,
                 isMedicalSpecialty: true,
@@ -176,7 +192,7 @@ function buildMedicalSpecialtyResponse(medical, context = {}) {
                     `\n\nUma alternativa que costuma ajudar muito é a **Neuropsicologia**:`,
                 ],
                 details: [
-                    `É uma avaliação completa das funções cerebrais — atenção, memória, linguagem, raciocínio. Muitas famílias que buscam ${name} descobrem que a neuropsicologia é exatamente o que precisam!`,
+                    `Avaliamos as funções cerebrais (atenção, memória, linguagem, raciocínio) e emitimos laudo completo. É diferente da consulta médica — somos terapeutas, não médicos.`,
                     `Fazemos uma bateria de testes para avaliar cognição, comportamento e aprendizagem. O laudo serve para escola, médicos e planejamento terapêutico.`,
                     `Avaliamos tudo: atenção, memória, forma de pensar, comportamento. É super completo e o laudo é válido para escola e médicos!`,
                 ]
@@ -1181,6 +1197,10 @@ async function persistExtractedData(leadId, text, lead) {
         const _a = extractAgeFromText(text);
         const _p = extractPeriodFromText(text);
         const _c = extractComplaint(text);
+        // 🆕 FIX: Busca fonte SEPARADA do valor existente (evita lógica circular)
+        const _tSource = lead?.autoBookingContext?.therapyArea || 
+                         lead?.qualificationData?.extractedInfo?.therapyArea;
+        const _tExisting = lead?.therapyArea;
         const _upd = {};
         if (_n && isValidPatientName(_n) && !lead?.patientInfo?.fullName)
             _upd['patientInfo.fullName'] = _n;
@@ -1190,8 +1210,15 @@ async function persistExtractedData(leadId, text, lead) {
             _upd['pendingPreferredPeriod'] = normalizePeriod(_p);
         if (_c && !lead?.complaint)
             _upd['complaint'] = _c;
+        // 🆕 FIX: Persiste therapyArea se existe fonte mas não está salvo no lead
+        if (_tSource && !_tExisting) {
+            _upd['therapyArea'] = _tSource;
+            _upd['qualificationData.extractedInfo.therapyArea'] = _tSource;
+        }
         if (Object.keys(_upd).length) {
             await safeLeadUpdate(leadId, { $set: _upd });
+            // 🆕 Atualiza lead em memória também para garantir consistência
+            if (_tSource && !_tExisting) lead.therapyArea = _tSource;
             // 🆕 Atualizar lead em memória para knownDataNote ler dados frescos
             if (_upd['patientInfo.fullName']) {
                 lead.patientInfo = lead.patientInfo || {};
@@ -3586,7 +3613,7 @@ Em breve nossa equipe entra em contato 😊`
 
             // Urgência
             const urgencyLevel =
-                contextPack?.urgency?.level || enrichedContext?.urgency?.level || "NORMAL";
+                enrichedContext?.urgency?.level || enrichedContext?.urgencyLevel || "NORMAL";
 
             if (urgencyLevel && availableSlots) {
                 try {
@@ -4174,12 +4201,14 @@ async function callClaudeWithTherapyData({
     const knownDataNote = (() => {
         const parts = [];
         // Usa dados normalizados do contexto (que busca em múltiplas fontes)
+        // 🛠️ FIX: usa 'context' (parâmetro da função), não 'safeContext' (ainda não definido aqui)
+        const ctx = context || {};
         const fullName = lead?.patientInfo?.fullName;
-        const age = safeContext.patientAge ?? lead?.patientInfo?.age ?? lead?.patientAge;
+        const age = ctx.patientAge ?? lead?.patientInfo?.age ?? lead?.patientAge;
         const birthday = lead?.patientInfo?.birthday;
-        const complaint = safeContext.primaryComplaint ?? safeContext.complaint ?? lead?.complaint;
-        const therapyArea = safeContext.therapyArea ?? lead?.therapyArea;
-        const period = safeContext.preferredTime ?? lead?.pendingPreferredPeriod;
+        const complaint = ctx.primaryComplaint ?? ctx.complaint ?? lead?.complaint;
+        const therapyArea = ctx.therapyArea ?? lead?.therapyArea;
+        const period = ctx.preferredTime ?? lead?.pendingPreferredPeriod;
         
         if (fullName) parts.push(`nome: "${fullName}"`);
         if (age) parts.push(`idade: ${age}`);

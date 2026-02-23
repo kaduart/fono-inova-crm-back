@@ -26,6 +26,19 @@ const MODELS = {
 // 🚀 FUNÇÃO PRINCIPAL - CHAMADA COM FALLBACK AUTOMÁTICO
 // ============================================================================
 
+// 🆕 Helper sleep
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// 🆕 Groq com timeout de 8s
+async function callGroqWithTimeout(params, timeoutMs = 8000) {
+    return Promise.race([
+        callGroq(params),
+        new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Groq timeout')), timeoutMs)
+        )
+    ]);
+}
+
 export async function callAI({
     systemPrompt,
     messages,
@@ -34,19 +47,28 @@ export async function callAI({
     usePremiumModel = false
 }) {
     const errors = [];
+    const params = { systemPrompt, messages, maxTokens, temperature, usePremiumModel };
 
-    // 1️⃣ GROQ (primário - grátis)
+    // 1️⃣ GROQ (primário - grátis) com retry 1x
     if (groq) {
-        try {
-            const response = await callGroq({ systemPrompt, messages, maxTokens, temperature, usePremiumModel });
-            if (response) {
-                console.log("✅ [AI] Resposta via Groq");
-                return response;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+                const response = await callGroqWithTimeout(params, 8000);
+                if (response) {
+                    console.log("✅ [AI] Resposta via Groq");
+                    return response;
+                }
+            } catch (err) {
+                console.warn(`⚠️ [LLM] Groq falhou (tentativa ${attempt}):`, err.message);
+                errors.push(`Groq (tentativa ${attempt}): ${err.message}`);
+                
+                if (attempt < 2) {
+                    console.log("[LLM] Aguardando 1.5s antes de retry...");
+                    await sleep(1500);
+                }
             }
-        } catch (err) {
-            errors.push(`Groq: ${err.message}`);
-            console.warn("⚠️ [AI] Groq falhou:", err.message);
         }
+        console.warn("[LLM] Groq indisponível após 2 tentativas, usando OpenAI fallback");
     }
 
     // 2️⃣ OPENAI (fallback)
@@ -54,7 +76,7 @@ export async function callAI({
         try {
             const response = await callOpenAI({ systemPrompt, messages, maxTokens, temperature });
             if (response) {
-                console.log("✅ [AI] Resposta via OpenAI (fallback)");
+                console.log("✅ [LLM] OpenAI respondeu como fallback");
                 return response;
             }
         } catch (err) {
