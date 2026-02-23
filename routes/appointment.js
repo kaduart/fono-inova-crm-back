@@ -31,6 +31,22 @@ dotenv.config();
 const router = express.Router();
 
 // ======================================================================
+// HELPER: Validação segura de datas
+// ======================================================================
+function isValidDateString(dateStr) {
+    if (!dateStr || typeof dateStr !== 'string') return false;
+    const date = new Date(dateStr);
+    return !isNaN(date.getTime());
+}
+
+function safeNewDate(dateStr, fallback = null) {
+    if (!dateStr) return fallback;
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return fallback;
+    return date;
+}
+
+// ======================================================================
 // HELPER: Detector de convênio
 // ======================================================================
 function isInsuranceAppointment(body) {
@@ -1889,8 +1905,10 @@ router.get('/patient/:id', validateId, auth, async (req, res) => {
             if (appt.advancedSessions) {
                 appt.advancedSessions = appt.advancedSessions.map(session => ({
                     ...session,
-                    formattedDate: new Date(session.date).toLocaleDateString('pt-BR'),
-                    formattedTime: session.time,
+                    formattedDate: session.date && isValidDateString(session.date) 
+                        ? new Date(session.date).toLocaleDateString('pt-BR')
+                        : 'Data não disponível',
+                    formattedTime: session.time || '--:--',
                 }));
             }
 
@@ -1934,8 +1952,10 @@ router.get('/count-by-status', auth, async (req, res) => {
         // Filtro de datas
         if (dateFrom || dateTo) {
             filter.date = {};
-            if (dateFrom) filter.date.$gte = new Date(dateFrom);
-            if (dateTo) {
+            if (dateFrom && isValidDateString(dateFrom)) {
+                filter.date.$gte = new Date(dateFrom);
+            }
+            if (dateTo && isValidDateString(dateTo)) {
                 const end = new Date(dateTo);
                 end.setHours(23, 59, 59, 999);
                 filter.date.$lte = end;

@@ -1511,6 +1511,13 @@ router.get("/import-from-agenda/weekly-availability", agendaAuth, async (req, re
       operationalStatus: { $nin: ['canceled', 'cancelado', 'cancelada', 'no_show', 'missed'] }
     }).select('doctor date time').lean();
 
+    // 3.1 Buscar PRÉ-AGENDAMENTOS ativos da semana (para marcar como ocupados)
+    const preAgendamentos = await PreAgendamento.find({
+      preferredDate: { $in: dates },
+      professionalId: { $in: doctorIds },
+      status: { $nin: ['importado', 'desistiu', 'descartado', 'cancelado'] }
+    }).select('professionalId preferredDate preferredTime').lean();
+
     // 4. Indexar agendamentos por doutor e data para acesso rápido
     const bookedMap = {}; // { doctorId: { date: Set([times]) } }
     appointments.forEach(appt => {
@@ -1518,6 +1525,14 @@ router.get("/import-from-agenda/weekly-availability", agendaAuth, async (req, re
       if (!bookedMap[docId]) bookedMap[docId] = {};
       if (!bookedMap[docId][appt.date]) bookedMap[docId][appt.date] = new Set();
       bookedMap[docId][appt.date].add(String(appt.time).slice(0, 5));
+    });
+
+    // 4.1 Indexar pré-agendamentos também como ocupados
+    preAgendamentos.forEach(pre => {
+      const docId = String(pre.professionalId);
+      if (!bookedMap[docId]) bookedMap[docId] = {};
+      if (!bookedMap[docId][pre.preferredDate]) bookedMap[docId][pre.preferredDate] = new Set();
+      bookedMap[docId][pre.preferredDate].add(String(pre.preferredTime).slice(0, 5));
     });
 
     // 5. Calcular disponibilidade para cada dia

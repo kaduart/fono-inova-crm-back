@@ -26,7 +26,8 @@ import {
     findAvailableSlots,
     formatDatePtBr,
     formatSlot,
-    pickSlotFromUserReply
+    pickSlotFromUserReply,
+    validateSlotStillAvailable
 } from "../services/amandaBookingService.js";
 import { getLatestInsights } from "../services/amandaLearningService.js";
 import { buildValueAnchoredClosure, determinePsychologicalFollowup } from "../services/intelligence/smartFollowup.js";
@@ -52,6 +53,15 @@ import { canAutoRespond, buildResponseFromFlags, getTherapyInfo } from '../servi
 import { CLINIC_KNOWLEDGE } from '../knowledge/clinicKnowledge.js';
 
 const recentResponses = new Map();
+
+// ============================================================================
+// 🔧 HELPER: Normaliza período para schema (remove acentos)
+// 'manhã' → 'manha' | 'tarde' → 'tarde' | 'noite' → 'noite'
+// ============================================================================
+const normalizePeriod = (p) => {
+    if (!p) return null;
+    return p.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+};
 
 // ============================================================================
 // 🛡️ SERVIÇOS VÁLIDOS DA CLÍNICA (fonte única da verdade)
@@ -1065,7 +1075,15 @@ function mapComplaintToTherapyArea(complaint) {
     if (!complaint) return null;
 
     // 1. Usa detectAllTherapies (do therapyDetector.js) - mais preciso
-    const detectedTherapies = detectAllTherapies(complaint);
+    // 🛡️ Proteção contra erro em detectAllTherapies
+    let detectedTherapies = [];
+    try {
+        detectedTherapies = detectAllTherapies(complaint) || [];
+    } catch (err) {
+        console.warn("[mapComplaintToTherapyArea] Erro em detectAllTherapies:", err.message);
+        detectedTherapies = [];
+    }
+    
     if (detectedTherapies?.length > 0) {
         const primary = detectedTherapies[0];
         // Mapeia ID do therapyDetector para nome da área no banco
@@ -1169,7 +1187,7 @@ async function persistExtractedData(leadId, text, lead) {
         if (_a && !lead?.patientInfo?.age)
             _upd['patientInfo.age'] = typeof _a === 'object' ? _a.age : _a;
         if (_p && !lead?.pendingPreferredPeriod)
-            _upd['pendingPreferredPeriod'] = _p;
+            _upd['pendingPreferredPeriod'] = normalizePeriod(_p);
         if (_c && !lead?.complaint)
             _upd['complaint'] = _c;
         if (Object.keys(_upd).length) {
@@ -1427,6 +1445,14 @@ export async function getOptimizedAmandaResponse({
         }
 
         if (step === "name") {
+            // 🛡️ FIX: nome já coletado (wamid duplicado / msg re-processada)
+            if (lead?.patientInfo?.fullName) {
+                await safeLeadUpdate(lead._id, {
+                    $set: { pendingPatientInfoStep: "birth" }
+                }).catch(err => logSuppressedError('autoAdvanceStep', err));
+                return ensureSingleHeart("Obrigada! Agora me manda a **data de nascimento** (dd/mm/aaaa)");
+            }
+
             const name = extractName(text);
             // 📌 Salva como info clínica inferida (não operacional)
             if (name && !lead?.patientInfo?.fullName) {
@@ -1789,7 +1815,7 @@ export async function getOptimizedAmandaResponse({
 
             await safeLeadUpdate(lead._id, {
                 $set: {
-                    pendingPreferredPeriod: period,
+                    pendingPreferredPeriod: normalizePeriod(period),
                     triageStep: "ask_profile"
                 }
             });
@@ -2136,8 +2162,7 @@ Em breve nossa equipe entra em contato 😊`
 
         // Disponibilidade → pendingPreferredPeriod
         if (extracted.disponibilidade && !lead.pendingPreferredPeriod) {
-            const periodMap = { manha: "manhã", tarde: "tarde", noite: "noite" };
-            updateFields.pendingPreferredPeriod = periodMap[extracted.disponibilidade];
+            updateFields.pendingPreferredPeriod = normalizePeriod(extracted.disponibilidade);
         }
 
         // Score e Segment (SEMPRE atualiza)
@@ -2248,6 +2273,7 @@ Em breve nossa equipe entra em contato 😊`
                                 active: true,
                                 lastOfferedSlots: slots,
                                 mappedTherapyArea: therapyArea,
+                                lastSlotsShownAt: new Date(), // ← 🆕 timestamp para TTL
                             },
                         },
                     }, { new: true }).catch((err) => {
@@ -2290,6 +2316,7 @@ Em breve nossa equipe entra em contato 😊`
                                 active: true,
                                 lastOfferedSlots: slots,
                                 mappedTherapyArea: therapyArea,
+                                lastSlotsShownAt: new Date(), // ← 🆕 timestamp para TTL
                             },
                         }
                     });
@@ -2377,6 +2404,7 @@ Em breve nossa equipe entra em contato 😊`
                         $set: {
                             pendingSchedulingSlots: slots,
                             stage: "interessado_agendamento",
+                            "autoBookingContext.lastSlotsShownAt": new Date(), // ← 🆕 timestamp para TTL
                         },
                     }).catch(err => logSuppressedError('safeLeadUpdate', err));
 
@@ -2517,6 +2545,7 @@ Em breve nossa equipe entra em contato 😊`
                             $set: {
                                 pendingSchedulingSlots: newSlotsCtx,
                                 pendingChosenSlot: null,
+                                "autoBookingContext.lastSlotsShownAt": new Date(), // ← 🆕 timestamp para TTL
                             }
                         }).catch(err => logSuppressedError('safeLeadUpdate', err));
 
@@ -2594,8 +2623,13 @@ Em breve nossa equipe entra em contato 😊`
                             maxOptions: Math.min(filtered.length, 5),
                         };
 
-                        await safeLeadUpdate(lead._id, { $set: { pendingSchedulingSlots: newSlotsCtx, pendingChosenSlot: null } })
-                            .catch(err => logSuppressedError("safeLeadUpdate", err));
+                        await safeLeadUpdate(lead._id, { 
+                            $set: { 
+                                pendingSchedulingSlots: newSlotsCtx, 
+                                pendingChosenSlot: null,
+                                "autoBookingContext.lastSlotsShownAt": new Date(), // ← 🆕 timestamp para TTL
+                            } 
+                        }).catch(err => logSuppressedError("safeLeadUpdate", err));
 
                         const { optionsText, letters } = buildSlotMenuMessage(newSlotsCtx);
                         const allowed = letters.slice(0, newSlotsCtx.all.length).join(" ou ");
@@ -2652,6 +2686,7 @@ Em breve nossa equipe entra em contato 😊`
                                     pendingSchedulingSlots: alternativeSlots,
                                     pendingChosenSlot: null,
                                     "autoBookingContext.preferredPeriod": targetPeriod || (currentPeriod === "manhã" ? "tarde" : "manhã"),
+                                    "autoBookingContext.lastSlotsShownAt": new Date(), // ← 🆕 timestamp para TTL
                                 } 
                             }).catch(err => logSuppressedError("safeLeadUpdate", err));
                             
@@ -2674,6 +2709,47 @@ Em breve nossa equipe entra em contato 😊`
         }
 
         if (!looksLikeChoice) {
+            // 🆕 FIX CRÍTICO: Revalida slots antes de mostrar (previne overbooking)
+            const SLOT_TTL_MS = 20 * 60 * 1000; // 20 minutos
+            const lastShown = lead?.autoBookingContext?.lastSlotsShownAt ?? lead?.updatedAt;
+            const slotsAreStale = !lastShown || (Date.now() - new Date(lastShown).getTime() > SLOT_TTL_MS);
+
+            if (slotsAreStale) {
+                console.log(`⏰ [PASSO 2] Slots stale (lastShown: ${lastShown || 'nunca'}) — revalidando em tempo real...`);
+                try {
+                    const therapyArea = lead?.therapyArea || lead?.autoBookingContext?.mappedTherapyArea;
+                    const preferredPeriod = lead?.pendingPreferredPeriod || lead?.autoBookingContext?.preferredPeriod;
+                    
+                    if (therapyArea) {
+                        const freshSlots = await findAvailableSlots({ 
+                            therapyArea, 
+                            preferredPeriod, 
+                            daysAhead: 30, 
+                            maxOptions: 3 
+                        });
+
+                        if (freshSlots?.primary) {
+                            // Atualiza slots e timestamp
+                            await safeLeadUpdate(lead._id, {
+                                $set: { 
+                                    pendingSchedulingSlots: freshSlots,
+                                    "autoBookingContext.lastSlotsShownAt": new Date(),
+                                }
+                            }).catch(err => logSuppressedError('refreshSlots', err));
+
+                            const { message: freshMsg } = buildSlotMenuMessage(freshSlots);
+                            console.log("✅ [PASSO 2] Slots revalidados e atualizados");
+                            return ensureSingleHeart(freshMsg);
+                        } else {
+                            console.warn("⚠️ [PASSO 2] Revalidação retornou vazio — mantendo slots antigos como fallback");
+                        }
+                    }
+                } catch (err) {
+                    console.error("[PASSO 2] Erro ao revalidar slots:", err.message);
+                    // 🛡️ FALLBACK SEGURO: mostra slots antigos se revalidação falhar
+                }
+            }
+
             return ensureSingleHeart(menuMsg);
         }
 
@@ -2745,6 +2821,42 @@ Em breve nossa equipe entra em contato 😊`
 
             return ensureSingleHeart(`Não consegui identificar qual você escolheu 😅\n\n${optionsText}\n\nResponda A-F ou escreva o dia e a hora`);
         }
+
+        // 🛡️ VALIDAÇÃO CRÍTICA: Verifica se o slot ainda está disponível antes de confirmar
+        console.log("🔍 [PASSO 2] Validando disponibilidade do slot escolhido:", chosen);
+        const validation = await validateSlotStillAvailable(chosen, {
+            therapyArea: lead?.therapyArea,
+            preferredPeriod: lead?.pendingPreferredPeriod,
+        });
+
+        if (!validation.isValid) {
+            console.log("⚠️ [PASSO 2] Slot não está mais disponível:", validation.reason);
+            
+            // Se tem slots frescos, mostra novas opções
+            if (validation.freshSlots?.primary) {
+                await safeLeadUpdate(lead._id, {
+                    $set: { 
+                        pendingSchedulingSlots: validation.freshSlots, 
+                        pendingChosenSlot: null,
+                    },
+                }).catch(err => logSuppressedError('safeLeadUpdate', err));
+                
+                const { optionsText: freshOptions, letters } = buildSlotMenuMessage(validation.freshSlots);
+                return ensureSingleHeart(
+                    `Essa vaga acabou de ser preenchida 😕\n\n` +
+                    `Mas encontrei novas opções:\n\n${freshOptions}\n\n` +
+                    `Qual você prefere? (${letters.join(", ")}) 💚`
+                );
+            }
+            
+            // Se não tem slots frescos, pede para tentar outro período
+            return ensureSingleHeart(
+                `Essa vaga acabou de ser preenchida 😕\n\n` +
+                `Pode me dizer se prefere **manhã, tarde ou noite**? Assim busco outras opções pra você 💚`
+            );
+        }
+
+        console.log("✅ [PASSO 2] Slot validado, prosseguindo com coleta de dados");
 
         await safeLeadUpdate(lead._id, {
             $set: { pendingChosenSlot: chosen, pendingPatientInfoForScheduling: true, pendingPatientInfoStep: "name" },
@@ -3037,7 +3149,14 @@ Em breve nossa equipe entra em contato 😊`
     });
 
     if (wantsScheduling) {
-        const detectedTherapies = detectAllTherapies(text);
+        // 🛡️ Proteção contra erro em detectAllTherapies
+        let detectedTherapies = [];
+        try {
+            detectedTherapies = detectAllTherapies(text) || [];
+        } catch (err) {
+            console.warn("[ORCHESTRATOR] Erro em detectAllTherapies:", err.message);
+            detectedTherapies = [];
+        }
 
         // ✅ FIX: Só considera área do lead se tiver queixa registrada
         const hasValidLeadArea = lead?.therapyArea &&
@@ -3046,20 +3165,23 @@ Em breve nossa equipe entra em contato 😊`
                 lead?.patientInfo?.complaint ||
                 lead?.autoBookingContext?.complaint);
 
-        // ✅ FIX: Verifica área em TODAS as fontes (mensagem atual + lead COM queixa + qualificationData COM queixa)
+        // ✅ FIX: Verifica área em TODAS as fontes (mensagem atual + lead COM queixa + qualificationData COM queixa + enrichedContext)
         const hasArea = detectedTherapies.length > 0 ||
             flags.therapyArea ||
+            enrichedContext?.therapyArea ||           // ← 🆕 contexto/summary
             hasValidLeadArea ||
             getValidQualificationArea(lead);
 
-        // ✅ FIX: Verifica idade em TODAS as fontes
+        // ✅ FIX: Verifica idade em TODAS as fontes (incluindo enrichedContext)
         const hasAge = /\b\d{1,2}\s*(anos?|mes(es)?)\b/i.test(text) ||
+            enrichedContext?.patientAge ||            // ← 🆕 contexto/summary
             lead?.patientInfo?.age ||
             lead?.ageGroup ||
             lead?.qualificationData?.extractedInfo?.idade;
 
-        // ✅ FIX: Verifica período em TODAS as fontes (incluindo qualificationData)
+        // ✅ FIX: Verifica período em TODAS as fontes (incluindo enrichedContext)
         const hasPeriod = extractPeriodFromText(text) ||
+            enrichedContext?.preferredTime ||         // ← 🆕 contexto/summary
             lead?.pendingPreferredPeriod ||
             lead?.autoBookingContext?.preferredPeriod ||
             lead?.qualificationData?.extractedInfo?.disponibilidade;
@@ -3297,8 +3419,8 @@ Em breve nossa equipe entra em contato 😊`
         // ✅ FIX: Detecta período e salva em pendingPreferredPeriod (FONTE ÚNICA)
         const periodDetected = extractPeriodFromText(text);
         if (periodDetected && !lead?.pendingPreferredPeriod) {
-            updateData.pendingPreferredPeriod = periodDetected;
-            console.log("[TRIAGEM] ✅ Período detectado e salvo:", periodDetected);
+            updateData.pendingPreferredPeriod = normalizePeriod(periodDetected);
+            console.log("[TRIAGEM] ✅ Período detectado e salvo:", normalizePeriod(periodDetected));
         }
 
         // Detecta e salva idade
@@ -3495,6 +3617,7 @@ Em breve nossa equipe entra em contato 😊`
                     "autoBookingContext.active": true,
                     "autoBookingContext.mappedTherapyArea": therapyAreaForSlots,
                     "autoBookingContext.mappedProduct": bookingProduct?.product,
+                    "autoBookingContext.lastSlotsShownAt": new Date(), // ← 🆕 timestamp para TTL
                 },
             }).catch(err => logSuppressedError('safeLeadUpdate', err));
 
@@ -3784,11 +3907,13 @@ function tryManualResponse(normalizedText, context = {}, flags = {}) {
 
     // 👋 SAUDAÇÃO PURA
     if (PURE_GREETING_REGEX.test(normalizedText)) {
-        if (isFirstContact || !messageCount) {
+        // 🛡️ FIX: usa messageCount do context OU histórico de interações do lead
+        const totalMsgs = messageCount || context?.recentMessages?.length || 0;
+        if (isFirstContact && totalMsgs <= 1) {
             return getManual("saudacao");
         }
 
-        return "Oi! Que bom falar com você de novo 😊 Me conta, deu tudo certo com o agendamento ou ficou mais alguma dúvida? 💚";
+        return "Oi! 😊 Me conta, posso te ajudar com mais alguma coisa? 💚";
     }
 
     // 💼 CURRÍCULO / VAGA / TRABALHO
@@ -4045,14 +4170,23 @@ async function callClaudeWithTherapyData({
     }
 
     // 🧠 Monta nota sobre dados já coletados (evita perguntar de novo)
+    // ✅ USA DADOS NORMALIZADOS DO CONTEXTO (não apenas do lead cru)
     const knownDataNote = (() => {
         const parts = [];
-        if (lead?.patientInfo?.fullName) parts.push(`nome: "${lead.patientInfo.fullName}"`);
-        if (lead?.patientInfo?.age) parts.push(`idade: ${lead.patientInfo.age}`);
-        if (lead?.patientInfo?.birthday) parts.push(`nascimento: ${lead.patientInfo.birthday}`);
-        if (lead?.complaint) parts.push(`queixa: "${lead.complaint}"`);
-        if (lead?.therapyArea) parts.push(`área: ${lead.therapyArea}`);
-        if (lead?.pendingPreferredPeriod) parts.push(`período: ${lead.pendingPreferredPeriod}`);
+        // Usa dados normalizados do contexto (que busca em múltiplas fontes)
+        const fullName = lead?.patientInfo?.fullName;
+        const age = safeContext.patientAge ?? lead?.patientInfo?.age ?? lead?.patientAge;
+        const birthday = lead?.patientInfo?.birthday;
+        const complaint = safeContext.primaryComplaint ?? safeContext.complaint ?? lead?.complaint;
+        const therapyArea = safeContext.therapyArea ?? lead?.therapyArea;
+        const period = safeContext.preferredTime ?? lead?.pendingPreferredPeriod;
+        
+        if (fullName) parts.push(`nome: "${fullName}"`);
+        if (age) parts.push(`idade: ${age}`);
+        if (birthday) parts.push(`nascimento: ${birthday}`);
+        if (complaint) parts.push(`queixa: "${complaint}"`);
+        if (therapyArea) parts.push(`área: ${therapyArea}`);
+        if (period) parts.push(`período: ${period}`);
         return parts.length ? `\n\n🧠 JÁ SABEMOS — NÃO PERGUNTE NOVAMENTE: ${parts.join(' | ')}` : '';
     })();
 
@@ -4115,7 +4249,7 @@ async function callAmandaAIWithContext(
         daysSinceLastContact = 0,
         conversationHistory = [],
         conversationSummary = null,
-        shouldGreet = true,
+        shouldGreet = false,  // 🛡️ FIX: default seguro — só sauda se enrichedContext mandar true
         customInstruction = null,
         toneMode = "acolhimento",
     } = safeContext;
