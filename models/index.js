@@ -8,3 +8,4 @@ import "./Payment.js";
 import "./User.js";
 import "./Followup.js";
 import "./Notification.js";
+import "./GmbPost.js";

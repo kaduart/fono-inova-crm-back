@@ -52,7 +52,7 @@ import googleAdsRoutes from "./routes/google-ads.js";
 import googleAdsAuthRoutes from "./routes/google-auth.js";
 import { default as leadRoutes, default as leadsRouter } from "./routes/leads.js";
 import loginRoutes from "./routes/login.js";
-import marketingRoutes from "./routes/marketing.js";
+
 import PackageRoutes from "./routes/Package.js";
 import patientRoutes from "./routes/patient.js";
 import patientDuplicatesRoutes from "./routes/patients/duplicates.js";
@@ -72,6 +72,13 @@ import cashflowRoutes from './routes/financial/cashflow.js';
 import financialOverviewRoutes from './routes/financial/overview.routes.js';
 import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
 import planningRoutes from './routes/planning.js';
+import marketingRoutes from './routes/marketing.js';
+import gmbRoutes from './routes/gmb.routes.js';
+import instagramRoutes from './routes/instagram.routes.js';
+import facebookRoutes from './routes/facebook.routes.js';
+import videoRoutes from './routes/video.routes.js';
+import spyRoutes from './routes/spy.routes.js';
+
 import provisionamentoRoutes from './routes/provisionamento.js';
 import preAgendamentoRoutes from './routes/preAgendamento.js';
 import notificationRoutes from './routes/notifications.js';
@@ -220,13 +227,19 @@ app.use('/api/insurance-guides', insuranceGuidesRoutes);
 app.use('/api/convenio-packages', convenioPackagesRoutes);
 app.use('/api/financial/convenio', convenioRoutes);
 app.use('/api/reminders', reminderRoutes);
+app.use('/api/marketing', marketingRoutes);
+app.use('/api/gmb', gmbRoutes);
+app.use('/api/instagram', instagramRoutes);
+app.use('/api/facebook', facebookRoutes);
+app.use('/api/videos', videoRoutes);
+app.use('/api/spy', spyRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);
 
 app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/followups", followupRoutes);
-app.use("/api/marketing", marketingRoutes);
+
 app.use('/api', importFromAgendaRouter);
 
 // ======================================================
@@ -308,6 +321,9 @@ function initFollowupWatcher() {
     // 🧪 CRON DE REGRESSÃO DIÁRIA (00:00)
     const { startRegressionCron } = await import("./crons/regressionCron.js");
     startRegressionCron();
+    
+    // 📍 Inicializa cron do Google Meu Negócio
+    // Marketing crons desabilitados temporariamente
 
     // Registrar Webhook PIX no Sicoob
     try {

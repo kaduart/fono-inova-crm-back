@@ -32,6 +32,7 @@
     "@sendgrid/mail": "^8.1.5",
     "bcryptjs": "^3.0.2",
     "bullmq": "^5.61.0",
+    "cloudinary": "^2.9.0",
     "colorize": "^0.1.0",
     "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
@@ -73,9 +74,9 @@
   "devDependencies": {
     "@types/socket.io": "^3.0.1",
     "@vitest/coverage-v8": "^4.0.18",
-    "nodemon": "^3.1.10",
-    "vitest": "^4.0.18",
     "mongodb-memory-server": "^9.0.0",
-    "supertest": "^6.3.0"
+    "nodemon": "^3.1.10",
+    "supertest": "^6.3.0",
+    "vitest": "^4.0.18"
   }
 }

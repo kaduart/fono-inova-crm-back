@@ -14,3 +14,8 @@ export const getAccessTokenGoogle = async () => {
     const { token } = await oauth2Client.getAccessToken();
     return token;
 };
+
+router.get('/gmb/token-test', async (req, res) => {
+  const { token } = await oauth2Client.getAccessToken();
+  res.json({ token });
+});
