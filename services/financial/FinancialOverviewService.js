@@ -229,6 +229,9 @@ class FinancialOverviewService {
         const particularRecebido = receitasPorTipo.find(r => r._id === 'particular')?.total || 0;
         const convenioRecebido = receitasPorTipo.find(r => r._id === 'convenio')?.total || 0;
 
+        const countReceitas = receitasAgg[0]?.count || 0;
+        const ticketMedio = countReceitas > 0 ? receita / countReceitas : 0;
+
         return {
             receita,
             despesas,
@@ -238,8 +241,9 @@ class FinancialOverviewService {
             margem,
             caixa,
             aReceber,
-            countReceitas: receitasAgg[0]?.count || 0,
-            countDespesas: despesasAgg[0]?.count || 0
+            countReceitas,
+            countDespesas: despesasAgg[0]?.count || 0,
+            ticketMedio
         };
     }
 
