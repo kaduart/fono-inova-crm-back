@@ -606,12 +606,13 @@ export const MEDICAL_SPECIALTIES_MAP = [
         redirectTo: 'psicologia',
         message: 'Não temos psiquiatra na equipe. Para questões emocionais/comportamentais, oferecemos Psicologia Infantil.'
     },
-    {
-        id: 'psicopedagogo',
-        terms: ['psicopedagogo', 'psicopedagogia médica'],
-        redirectTo: 'neuropsicologia',
-        message: 'Psicopedagogia é oferecida no contexto terapêutico. Para avaliação completa de aprendizagem, indicamos Neuropsicologia.'
-    }
+    // 🛡️ REMOVIDO: Psicopedagogia agora é serviço ativo da clínica
+    // {
+    //     id: 'psicopedagogo',
+    //     terms: ['psicopedagogo', 'psicopedagogia médica'],
+    //     redirectTo: 'neuropsicologia',
+    //     message: '...'
+    // }
 ];
 
 /**
@@ -670,7 +671,7 @@ export function validateServiceAvailability(text = "", lead = {}) {
         neuropsicologia: { name: 'Neuropsicologia', aliases: ['neuropsico', 'neuropsicologo', 'neuropsicologa'] },
         musicoterapia: { name: 'Musicoterapia', aliases: ['musicoterapeuta'] },
         psicomotricidade: { name: 'Psicomotricidade', aliases: ['psicomotricidade', 'psicomotricista'] },
-        psicopedagogia: { name: 'Psicopedagogia', aliases: ['psicopedagogo', 'psicopedagoga'], available: false, redirectTo: 'neuropsicologia', reason: 'Sem profissional ativo no momento' }
+        psicopedagogia: { name: 'Psicopedagogia', aliases: ['psicopedagogo', 'psicopedagoga'] }
     };
     
     // 3. Detecta qual serviço foi mencionado

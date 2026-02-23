@@ -347,20 +347,17 @@ Quer conhecer como funciona a Psicologia Infantil aqui? 😊`,
     
     psicopedagogia: {
         detected: 'Psicopedagogia',
-        redirect: 'neuropsicologia',
-        explanation: 'No momento sem profissional de psicopedagogia ativo. Neuropsicologia cobre avaliação de aprendizagem.',
-        script: `Oi! 💚 Agradeço o interesse!
+        explanation: 'Avaliação das dificuldades de aprendizagem e estratégias pedagógicas.',
+        script: `Oi! 💚 Que bom que você procurou a Psicopedagogia!
 
-No momento não temos psicopedagogia ativa na clínica. Mas posso te ajudar com **Neuropsicologia**!
+Trabalhamos com avaliação das dificuldades de aprendizagem (leitura, escrita, matemática) e desenvolvemos estratégias personalizadas para ajudar a criança no ambiente escolar.
 
-A avaliação neuropsicológica investiga exatamente as dificuldades de aprendizagem (atenção, memória, linguagem, raciocínio) — é até mais completa que a avaliação psicopedagógica para entender por que a criança tem dificuldade na escola.
+Como posso te ajudar?
+- Agendar uma avaliação inicial
+- Explicar como funciona o acompanhamento
+- Tirar dúvidas sobre o processo
 
-O laudo neuropsicológico serve para:
-- Escola adaptar o ensino
-- Encaminhar ao médico se necessário
-- Planejar as terapias certas
-
-Quer saber mais sobre como funciona? 💚`,
+Me conta um pouco sobre a situação da criança? 💚`,
     }
 };
 

@@ -137,10 +137,15 @@ export async function enrichLeadContext(leadId) {
 
         const therapyArea =
             lead.therapyArea ??
-            lead.autoBookingContext?.therapyArea ??
+            lead.mappedTherapyArea ??
             lead.qualificationData?.extractedInfo?.therapyArea ??
+            lead.qualificationData?.extractedInfo?.mappedTherapyArea ??
+            lead.autoBookingContext?.therapyArea ??
             lead.qualificationData?.extractedInfo?.areaTerapia ??
             null;
+        
+        // 🆕 Log de diagnóstico
+        console.log(`[AMANDA] therapyArea resolved: ${therapyArea} (leadId: ${lead._id})`);
 
         const primaryComplaint =
             lead.primaryComplaint ??

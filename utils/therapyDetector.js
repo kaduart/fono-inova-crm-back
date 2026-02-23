@@ -94,13 +94,19 @@ export function normalizeTherapyTerms(text = "") {
     if (!text) return "";
     return String(text)
         .toLowerCase()
+        // 🛡️ FIX: Remove acentos para normalização consistente
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
         // ✅ FIX: Remove nome da clínica ANTES de detectar área
-        .replace(/cl[ií]nica\s+fono\s+inova/gi, '')
+        .replace(/clinica\s+fono\s+inova/gi, '')
         .replace(/fono\s+inova/gi, '')
-        .replace(/neuropsic(o|ó)log(a|ia|ica)/gi, 'neuropsicologia')
+        .replace(/neuropsicolog(a|ia|ica)/gi, 'neuropsicologia')
         .replace(/neuropsi/gi, 'neuropsicologia')
         .replace(/neuro[\s-]*psico/gi, 'neuropsicologia')
-        .replace(/fonoaudi(o|ó)log(a|o)|fonodiologo/gi, 'fonoaudiologia');
+        // 🛡️ FIX: Tolerância a typos comuns
+        .replace(/\bfino\b/gi, 'fono')  // fino → fono
+        .replace(/\bfini\b/gi, 'fono')  // fini → fono
+        .replace(/fonoaudiolog(a|o)|fonodiologo/gi, 'fonoaudiologia');
 }
 
 /**
