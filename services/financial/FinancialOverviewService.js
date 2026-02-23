@@ -55,6 +55,10 @@ class FinancialOverviewService {
             caixa: metricsAtual.caixa,
             aReceber: metricsAtual.aReceber,
             
+            // NOVO: Ticket médio e contagem de transações
+            ticketMedio: metricsAtual.ticketMedio,
+            countReceitas: metricsAtual.countReceitas,
+            
             // NOVO: Separar receitas por tipo
             particularRecebido: metricsAtual.particularRecebido,
             convenioRecebido: metricsAtual.convenioRecebido,
@@ -294,20 +298,27 @@ class FinancialOverviewService {
      */
     async _getPlanning(month, year) {
         try {
-            const startOfMonth = moment(`${year}-${String(month).padStart(2, '0')}-01`)
-                .tz(TIMEZONE)
-                .startOf('month')
-                .toDate();
-            
-            const endOfMonth = moment(startOfMonth).endOf('month').toDate();
+            const startOfMonthStr = `${year}-${String(month).padStart(2, '0')}-01`;
+            const endOfMonthStr = moment(startOfMonthStr).endOf('month').format('YYYY-MM-DD');
+
+            console.log(`[DEBUG] Buscando planning para ${month}/${year}:`, {
+                startOfMonthStr,
+                endOfMonthStr
+            });
 
             const planning = await Planning.findOne({
-                startDate: { $lte: endOfMonth },
-                endDate: { $gte: startOfMonth }
+                type: 'monthly',
+                'period.start': { $lte: endOfMonthStr },
+                'period.end': { $gte: startOfMonthStr }
             }).sort({ createdAt: -1 });
 
+            console.log(`[DEBUG] Planning encontrado:`, planning ? {
+                target: planning.targets?.expectedRevenue,
+                period: planning.period
+            } : 'Nenhum');
+
             return planning ? {
-                target: planning.target || 0,
+                target: planning.targets?.expectedRevenue || 0,
                 type: planning.type,
                 id: planning._id
             } : null;
@@ -334,7 +345,7 @@ class FinancialOverviewService {
      */
     _calculateProjection(receitaAtual, month, year) {
         const hoje = moment().tz(TIMEZONE);
-        const dataReferencia = moment(`${year}-${month}-01`).tz(TIMEZONE);
+        const dataReferencia = moment(`${year}-${String(month).padStart(2, '0')}-01`).tz(TIMEZONE);
         
         // Se estiver consultando mês passado, não projeta
         if (dataReferencia.isBefore(hoje, 'month')) {

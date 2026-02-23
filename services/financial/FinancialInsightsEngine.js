@@ -9,15 +9,19 @@ class FinancialInsightsEngine {
     generateInsights(metrics, variation, comparisonData) {
         const insights = [];
 
-        // 1. Despesas cresceram mais que receita
-        if (variation.despesas > variation.receita && variation.despesas > 0) {
-            insights.push({
-                type: 'warning',
-                severity: 'medium',
-                code: 'EXPENSE_GROWTH',
-                message: 'Despesas cresceram acima da receita este mês',
-                detail: `+${variation.despesas.toFixed(1)}% despesas vs +${variation.receita.toFixed(1)}% receita`
-            });
+        // 1. Despesas cresceram mais que receita (só se ambos forem válidos)
+        if (variation.despesas !== null && variation.receita !== null) {
+            const varDespesas = variation.despesas;
+            const varReceita = variation.receita;
+            if (varDespesas > varReceita && varDespesas > 0) {
+                insights.push({
+                    type: 'warning',
+                    severity: 'medium',
+                    code: 'EXPENSE_GROWTH',
+                    message: 'Despesas cresceram acima da receita este mês',
+                    detail: `+${varDespesas.toFixed(1)}% despesas vs +${varReceita.toFixed(1)}% receita`
+                });
+            }
         }
 
         // 2. Margem abaixo do ideal
@@ -61,33 +65,38 @@ class FinancialInsightsEngine {
             });
         }
 
-        // 4. Receita caiu vs período comparado
-        if (variation.receita < 0) {
-            insights.push({
-                type: 'risk',
-                severity: 'high',
-                code: 'REVENUE_DROP',
-                message: 'Receita caiu em relação ao período anterior',
-                detail: `${variation.receita.toFixed(1)}% de queda`
-            });
-        } else if (variation.receita > 15) {
-            insights.push({
-                type: 'positive',
-                severity: 'good',
-                code: 'REVENUE_GROWTH',
-                message: 'Ótimo crescimento de receita',
-                detail: `+${variation.receita.toFixed(1)}% vs período anterior`
-            });
+        // 4. Receita caiu vs período comparado (só se houver dados válidos)
+        if (variation.receita !== null) {
+            if (variation.receita < 0) {
+                insights.push({
+                    type: 'risk',
+                    severity: 'high',
+                    code: 'REVENUE_DROP',
+                    message: 'Receita caiu em relação ao período anterior',
+                    detail: `${variation.receita.toFixed(1)}% de queda`
+                });
+            } else if (variation.receita > 15) {
+                insights.push({
+                    type: 'positive',
+                    severity: 'good',
+                    code: 'REVENUE_GROWTH',
+                    message: 'Ótimo crescimento de receita',
+                    detail: `+${variation.receita.toFixed(1)}% vs período anterior`
+                });
+            }
         }
 
         // 5. Crescimento sustentável (receita cresce mais que despesas)
-        if (variation.receita > variation.despesas && variation.receita > 5) {
+        // Só mostra se ambas as variações forem válidas (não null)
+        const varRec = variation.receita;
+        const varDesp = variation.despesas;
+        if (varRec !== null && varDesp !== null && varRec > varDesp && varRec > 5) {
             insights.push({
                 type: 'positive',
                 severity: 'good',
                 code: 'SUSTAINABLE_GROWTH',
                 message: 'Crescimento sustentável detectado',
-                detail: `Receita +${variation.receita.toFixed(1)}% cresceu mais que despesas +${variation.despesas.toFixed(1)}%`
+                detail: `Receita +${varRec.toFixed(1)}% cresceu mais que despesas +${varDesp.toFixed(1)}%`
             });
         }
 
@@ -105,7 +114,7 @@ class FinancialInsightsEngine {
             }
         }
 
-        // 7. Lucro negativo
+        // 7. Lucro negativo / crescimento de lucro
         if (metrics.lucro < 0) {
             insights.push({
                 type: 'risk',
@@ -114,7 +123,7 @@ class FinancialInsightsEngine {
                 message: 'Prejuízo no período',
                 detail: `R$ ${Math.abs(metrics.lucro).toLocaleString('pt-BR')}`
             });
-        } else if (variation.lucro > 20) {
+        } else if (variation.lucro !== null && variation.lucro > 20) {
             insights.push({
                 type: 'positive',
                 severity: 'good',
@@ -150,10 +159,22 @@ class FinancialInsightsEngine {
 
     /**
      * Calcula variação percentual entre dois valores
+     * Limita a variação a um range razoável (-100% a +300%)
+     * Retorna null se a variação for muito extrema (indica dados inconsistentes)
      */
     calculateVariation(atual, anterior) {
-        if (!anterior || anterior === 0) return 0;
-        return ((atual - anterior) / anterior) * 100;
+        if (!anterior || anterior === 0) return null;
+        if (!atual || atual === 0) return null;
+        
+        const variacao = ((atual - anterior) / anterior) * 100;
+        
+        // Se a variação for muito extrema (>300% ou <-90%), considera inválida
+        // Isso acontece quando o mês anterior teve receita muito baixa
+        if (variacao > 300 || variacao < -90) {
+            return null;
+        }
+        
+        return variacao;
     }
 }
 
