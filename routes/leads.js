@@ -22,18 +22,168 @@ import { normalizeE164BR } from '../utils/phone.js';
 const router = express.Router();
 
 // =====================================================================
-// 🌐 WEBHOOKS PÚBLICOS (SEM AUTH) - Meta e Google Ads
+// 🌐 WEBHOOKS PÚBLICOS (SEM AUTH) - Meta, Google Ads e Site Fono Inova
 // =====================================================================
+
 // Meta Ads Webhook (GET para verificação, POST para receber leads)
 router.get('/webhook/meta', metaLeadWebhook);
 router.post('/webhook/meta', metaLeadWebhook);
-router.get('/:id', getHistoryMetrics);
 
 // Google Ads Webhook
 router.post('/webhook/google', googleLeadWebhook);
 
+// Rota de health check para o site (DEVE VIR ANTES DE /:id e ANTES do router.use(auth))
+router.get('/from-website/health', (req, res) => {
+    res.json({ 
+        status: 'ok', 
+        service: 'CRM-CLINICA Lead Webhook',
+        timestamp: new Date().toISOString()
+    });
+});
+
+// 🆕 WEBHOOK DO SITE FONO INOVA - Recebe leads do site
+// Endpoint público para receber leads convertidos no site
+router.post('/from-website', async (req, res) => {
+    try {
+        const {
+            id,
+            dadosPessoais,
+            ga4,
+            origem,
+            contexto,
+            device
+        } = req.body;
+
+        // Validação básica
+        if (!dadosPessoais?.nome || !dadosPessoais?.telefone) {
+            return res.status(400).json({
+                success: false,
+                message: 'Dados obrigatórios: nome e telefone'
+            });
+        }
+
+        console.log('🌐 Lead recebido do site Fono Inova:', {
+            id: id || 'n/a',
+            nome: dadosPessoais.nome,
+            origem: origem?.source || 'direct',
+            landingPage: contexto?.pagePath
+        });
+
+        // Monta dados do lead para o CRM
+        const leadData = {
+            name: dadosPessoais.nome,
+            contact: {
+                phone: dadosPessoais.telefone ? normalizeE164BR(dadosPessoais.telefone) : null,
+                email: dadosPessoais.email || null
+            },
+            status: 'novo',
+            origin: origem?.source === 'google' && origem?.medium === 'cpc' 
+                ? 'google_ads' 
+                : origem?.source === 'facebook' || origem?.source === 'instagram'
+                    ? 'meta_ads'
+                    : 'site_fono_inova',
+            notes: `Lead do site Fono Inova\n\n` +
+                   `Página: ${contexto?.pagePath || 'n/a'}\n` +
+                   `UTM Source: ${origem?.source || 'n/a'}\n` +
+                   `UTM Medium: ${origem?.medium || 'n/a'}\n` +
+                   `UTM Campaign: ${origem?.campaign || 'n/a'}\n` +
+                   `GA4 Client ID: ${ga4?.clientId || 'n/a'}`,
+            circuit: 'Circuito Padrão',
+            conversionScore: 10, // Lead de site tem score alto
+            responded: false,
+            autoReplyEnabled: true,
+            manualControl: {
+                active: false,
+                autoResumeAfter: 360
+            },
+            appointment: {
+                seekingFor: 'Adulto +18 anos',
+                modality: 'Online',
+                healthPlan: 'Mensalidade'
+            },
+            interactions: [{
+                type: 'system',
+                content: `Lead capturado via site Fono Inova - ${contexto?.pagePath || 'homepage'}`,
+                timestamp: new Date(),
+                metadata: {
+                    source: 'website',
+                    pagePath: contexto?.pagePath,
+                    utmSource: origem?.source,
+                    utmMedium: origem?.medium,
+                    utmCampaign: origem?.campaign,
+                    deviceType: device?.type,
+                    ga4ClientId: ga4?.clientId
+                }
+            }],
+            scoreHistory: [{
+                score: 10,
+                reason: 'Conversão direta no site',
+                timestamp: new Date()
+            }],
+            lastInteractionAt: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date()
+        };
+
+        // Verifica se já existe lead com mesmo telefone/email (evita duplicados)
+        const existingLead = await Lead.findOne({
+            $or: [
+                { 'contact.phone': leadData.contact.phone },
+                ...(leadData.contact.email ? [{ 'contact.email': leadData.contact.email }] : [])
+            ],
+            createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } // Últimas 24h
+        });
+
+        if (existingLead) {
+            console.log('⚠️ Lead duplicado detectado (24h):', existingLead._id);
+            return res.status(200).json({
+                success: true,
+                leadId: existingLead._id,
+                message: 'Lead já existe (recebido nas últimas 24h)',
+                duplicate: true
+            });
+        }
+
+        // Insere no MongoDB
+        const result = await Lead.collection.insertOne(leadData);
+        const insertedLead = await Lead.findById(result.insertedId);
+
+        console.log('✅ Lead do site criado:', insertedLead._id);
+
+        // Envia para Meta CAPI (se tiver telefone/email)
+        try {
+            if (insertedLead.contact?.phone || insertedLead.contact?.email) {
+                await sendLeadToMeta({
+                    email: insertedLead.contact?.email,
+                    phone: insertedLead.contact?.phone,
+                    leadId: insertedLead._id,
+                    source: 'website',
+                    campaign: origem?.campaign
+                });
+            }
+        } catch (err) {
+            console.error('⚠️ Erro Meta CAPI:', err.message);
+        }
+
+        res.status(201).json({
+            success: true,
+            leadId: insertedLead._id,
+            message: 'Lead recebido com sucesso',
+            duplicate: false
+        });
+
+    } catch (err) {
+        console.error('❌ Erro ao processar lead do site:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Erro interno ao processar lead',
+            error: err.message
+        });
+    }
+});
+
 // =====================================================================
-// 🔒 ROTAS PROTEGIDAS (COM AUTH)
+// 🔒 ROTAS PROTEGIDAS (COM AUTH) - TUDO ABAIXO PRECISA DE AUTENTICAÇÃO
 // =====================================================================
 router.use(auth);
 
