@@ -7,6 +7,9 @@ import Payment from '../../models/Payment.js';
 import Expense from '../../models/Expense.js';
 import Planning from '../../models/Planning.js';
 import Package from '../../models/Package.js';
+import Leads from '../../models/Leads.js';
+import Appointment from '../../models/Appointment.js';
+import Sale from '../../models/Sale.js';
 import FinancialInsightsEngine from './FinancialInsightsEngine.js';
 import ConvenioMetricsService from './ConvenioMetricsService.js';
 
@@ -22,13 +25,14 @@ class FinancialOverviewService {
         const periodoAtual = this._getPeriodDates(month, year);
         const periodoComparativo = this._getComparisonPeriod(month, year, compare);
 
-        // Buscar métricas em paralelo (incluindo convênios e crédito de pacotes)
-        const [metricsAtual, metricsComparativo, planning, convenioMetrics, creditoPacotes] = await Promise.all([
+        // Buscar métricas em paralelo (incluindo convênios, crédito de pacotes e métricas operacionais)
+        const [metricsAtual, metricsComparativo, planning, convenioMetrics, creditoPacotes, metricasOperacionais] = await Promise.all([
             this._calculateMetrics(periodoAtual),
             this._calculateMetrics(periodoComparativo),
             this._getPlanning(month, year),
             ConvenioMetricsService.getConvenioMetrics({ month, year }), // NOVO: Métricas de convênio
-            this._getCreditoPacotes() // NOVO: Crédito em pacotes ativos
+            this._getCreditoPacotes(), // NOVO: Crédito em pacotes ativos
+            this._calculateMetricasOperacionais(periodoAtual) // NOVO: Métricas operacionais (funnel)
         ]);
 
         // Calcular variações
@@ -74,7 +78,13 @@ class FinancialOverviewService {
             creditoPacotes: {
                 total: creditoPacotes.total,
                 pacientes: creditoPacotes.detalhes
-            }
+            },
+            // NOVO: Métricas operacionais (funnel)
+            leadsRecebidos: metricasOperacionais.leadsRecebidos,
+            agendamentosRealizados: metricasOperacionais.agendamentosRealizados,
+            avaliacoesRealizadas: metricasOperacionais.avaliacoesRealizadas,
+            projetosFechados: metricasOperacionais.projetosFechados, // Agora só pacotes
+            sessoesMes: metricasOperacionais.sessoesMes // NOVO: Sessões atendidas no mês
         };
 
         // Gerar insights
@@ -394,6 +404,120 @@ class FinancialOverviewService {
         const totalDias = dataReferencia.endOf('month').date();
         const diaAtual = hoje.date();
         return Math.max(0, totalDias - diaAtual);
+    }
+
+    /**
+     * Calcula métricas operacionais (funnel de vendas)
+     * 1. Leads recebidos
+     * 2. Agendamentos realizados (novos agendamentos - primeira consulta)
+     * 3. Avaliações realizadas
+     * 4. Projetos fechados (apenas Pacotes vendidos)
+     * 5. Sessões do mês (total de sessões atendidas)
+     */
+    async _calculateMetricasOperacionais(periodo) {
+        const { startDateTime, endDateTime } = periodo;
+
+        try {
+            // Executar contagens em paralelo
+            const [
+                leadsRecebidos,
+                agendamentosRealizados,
+                avaliacoesRealizadas,
+                projetosFechados, // Só pacotes
+                sessoesMes
+            ] = await Promise.all([
+                // 1. Leads recebidos (criados no período) - EXCLUINDO convertidos e perdidos
+                Leads.countDocuments({
+                    createdAt: { $gte: startDateTime, $lte: endDateTime },
+                    status: { 
+                        $nin: ['convertido', 'virou_paciente', 'perdido'] // Exclui leads já processados
+                    }
+                }),
+
+                // 2. Novos agendamentos (avaliações = primeiras consultas)
+                Appointment.countDocuments({
+                    date: { $gte: periodo.start, $lte: periodo.end },
+                    operationalStatus: { $nin: ['canceled'] },
+                    serviceType: 'evaluation' // Só avaliações (primeira consulta)
+                }),
+
+                // 3. Avaliações realizadas (serviceType = evaluation e não canceladas)
+                Appointment.countDocuments({
+                    date: { $gte: periodo.start, $lte: periodo.end },
+                    serviceType: 'evaluation',
+                    operationalStatus: { $nin: ['canceled', 'missed'] }
+                }),
+
+                // 4. Projetos fechados = Pacotes vendidos/criados no período
+                Package.countDocuments({
+                    date: { $gte: startDateTime, $lte: endDateTime }
+                    // Inclui todos os pacotes criados (representam projetos fechados)
+                }),
+
+                // 5. Sessões do mês = total de sessões atendidas (exclui avaliações)
+                Appointment.countDocuments({
+                    date: { $gte: periodo.start, $lte: periodo.end },
+                    operationalStatus: { $nin: ['canceled', 'missed'] },
+                    serviceType: { $in: ['session', 'package_session', 'individual_session', 'return', 'convenio_session'] }
+                })
+            ]);
+
+            // Log para auditoria
+            console.log('[FinancialOverview] Métricas Operacionais:', {
+                periodo: `${periodo.start} a ${periodo.end}`,
+                periodoISO: { start: startDateTime.toISOString(), end: endDateTime.toISOString() },
+                leadsRecebidos,
+                agendamentosRealizados,
+                avaliacoesRealizadas,
+                projetosFechados,
+                sessoesMes
+            });
+
+            // AUDIT: Detalhamento de leads para verificação
+            const leadsDetalhe = await Leads.aggregate([
+                { 
+                    $match: { 
+                        createdAt: { $gte: startDateTime, $lte: endDateTime }
+                    } 
+                },
+                { 
+                    $group: { 
+                        _id: '$status', 
+                        count: { $sum: 1 } 
+                    } 
+                },
+                { $sort: { count: -1 } }
+            ]);
+            console.log('[FinancialOverview] AUDIT - Leads por status:', leadsDetalhe);
+
+            // AUDIT: Verificar se há leads sem interação (possíveis duplicados/teste)
+            const leadsSemInteracao = await Leads.countDocuments({
+                createdAt: { $gte: startDateTime, $lte: endDateTime },
+                $or: [
+                    { interactions: { $size: 0 } },
+                    { interactions: { $exists: false } }
+                ]
+            });
+            console.log('[FinancialOverview] AUDIT - Leads sem interação:', leadsSemInteracao);
+
+            return {
+                leadsRecebidos,
+                agendamentosRealizados,
+                avaliacoesRealizadas,
+                projetosFechados,
+                sessoesMes
+            };
+
+        } catch (error) {
+            console.error('[FinancialOverview] Erro ao calcular métricas operacionais:', error);
+            return {
+                leadsRecebidos: 0,
+                agendamentosRealizados: 0,
+                avaliacoesRealizadas: 0,
+                projetosFechados: 0,
+                sessoesMes: 0
+            };
+        }
     }
 }
 
