@@ -144,9 +144,6 @@ export async function enrichLeadContext(leadId) {
             lead.qualificationData?.extractedInfo?.areaTerapia ??
             null;
         
-        // 🆕 Log de diagnóstico
-        console.log(`[AMANDA] therapyArea resolved: ${therapyArea} (leadId: ${lead._id})`);
-
         const primaryComplaint =
             lead.primaryComplaint ??
             lead.qualificationData?.extractedInfo?.queixa ??

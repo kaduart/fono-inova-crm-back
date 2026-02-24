@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from "../constants/appointmentStatus.js";
 import Appointment from "../models/Appointment.js";
 import Doctor from "../models/Doctor.js";
+import PreAgendamento from "../models/PreAgendamento.js";
 
 /**
  * ✅ SAFE AVAILABILITY + CONFLICT CHECK (drop-in)
@@ -211,11 +212,34 @@ export async function calculateAvailableSlots(doctorId, date) {
     .select("time -_id")
     .lean();
 
+  // 🔒 Bloquear horários que têm pré-agendamentos pendentes
+  // Busca por professionalId OU por professionalName (compatibilidade com registros antigos)
+  const preAgendamentosAtivos = await PreAgendamento.find({
+    preferredDate: date,
+    status: { $nin: ['importado', 'descartado', 'desistiu', 'expirado'] },
+    preferredTime: { $exists: true, $ne: null },
+    $or: [
+      { professionalId: toObjectId(doctorId) },
+      { professionalId: { $eq: null }, professionalName: { $regex: new RegExp(doctor.fullName, 'i') } },
+      { professionalId: { $exists: false }, professionalName: { $regex: new RegExp(doctor.fullName, 'i') } }
+    ]
+  })
+    .select("preferredTime -_id")
+    .lean();
+
   const bookedTimes = new Set(
     booked
       .map((a) => normalizeTimeHHmm(a.time))
       .filter(Boolean)
   );
+
+  // Adicionar horários dos pré-agendamentos ao conjunto de bloqueados
+  preAgendamentosAtivos.forEach((pa) => {
+    const normalizedTime = normalizeTimeHHmm(pa.preferredTime);
+    if (normalizedTime) {
+      bookedTimes.add(normalizedTime);
+    }
+  });
 
   const availableSlots = normalizedTimes.filter((t) => !bookedTimes.has(t));
 
