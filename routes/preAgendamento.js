@@ -37,6 +37,8 @@ router.post('/webhook', agendaAuth, async (req, res) => {
       preferredTime, 
       specialty, 
       professionalName, 
+      professionalId: payloadProfessionalId,  // ← ID do médico vindo da agenda externa (mesmo ID do CRM!)
+      doctorId,  // ← Alternativa: agenda externa pode enviar como doctorId
       source = 'agenda_externa' 
     } = payload;
 
@@ -55,6 +57,31 @@ router.post('/webhook', agendaAuth, async (req, res) => {
       return res.json({ success: true, message: 'Já existe', id: existe._id });
     }
 
+    // 🔍 Determinar o professionalId
+    // Prioridade: 1) doctorId do payload, 2) professionalId do payload, 3) busca pelo nome
+    let professionalId = null;
+    
+    if (doctorId && mongoose.Types.ObjectId.isValid(doctorId)) {
+      // ✅ Agenda externa enviou o ID do médico (mesmo ID do CRM)
+      professionalId = new mongoose.Types.ObjectId(doctorId);
+      console.log(`[WEBHOOK] ✅ Usando doctorId do payload: ${professionalId}`);
+    } else if (payloadProfessionalId && mongoose.Types.ObjectId.isValid(payloadProfessionalId)) {
+      // ✅ Alternativa: professionalId no payload
+      professionalId = new mongoose.Types.ObjectId(payloadProfessionalId);
+      console.log(`[WEBHOOK] ✅ Usando professionalId do payload: ${professionalId}`);
+    } else if (professionalName) {
+      // 🔍 Fallback: buscar pelo nome (para compatibilidade)
+      try {
+        const doctorData = await findDoctorByName(professionalName);
+        if (doctorData) {
+          professionalId = doctorData._id;
+          console.log(`[WEBHOOK] 🔍 Doutor encontrado por nome: ${professionalName} → ${professionalId}`);
+        }
+      } catch (err) {
+        console.log(`[WEBHOOK] ⚠️ Não encontrou doutor: ${professionalName}`);
+      }
+    }
+
     // Criar pré-agendamento direto (mesmo ID da agenda externa)
     const pre = await PreAgendamento.create({
       _id,
@@ -69,10 +96,11 @@ router.post('/webhook', agendaAuth, async (req, res) => {
       preferredDate,
       preferredTime,
       professionalName,
+      professionalId,  // ← Agora com o ID do médico!
       status: 'novo'
     });
 
-    console.log(`[WEBHOOK] ✅ PreAgendamento criado: ${pre._id} - ${patientName}`);
+    console.log(`[WEBHOOK] ✅ PreAgendamento criado: ${pre._id} - ${patientInfo.fullName} (Profissional: ${professionalId || 'N/A'})`);
 
     // 🔔 SISTEMA DE NOTIFICAÇÃO INTELIGENTE
     const businessHours = isBusinessHours();
