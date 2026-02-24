@@ -120,7 +120,7 @@ export async function triggerManualPublish(req, res) {
 
 export async function triggerManualGeneration(req, res) {
   try {
-    const { especialidadeId, customTheme, generateImage } = req.body;
+    const { especialidadeId, customTheme, generateImage, scheduledAt } = req.body;
     
     // Busca especialidade
     let especialidade = gmbService.ESPECIALIDADES.find(e => e.id === especialidadeId);
@@ -143,12 +143,22 @@ export async function triggerManualGeneration(req, res) {
       }
     }
     
+    // Determina o horário de agendamento
+    let scheduledDate = null;
+    if (scheduledAt) {
+      scheduledDate = new Date(scheduledAt);
+    } else {
+      // Usa horário estratégico automático
+      scheduledDate = getNextHorarioEstrategico();
+    }
+    
     // Cria post
     const post = new GmbPost({
       title: postData.title,
       content: postData.content,
       theme: especialidade.id,
-      status: 'draft',
+      status: scheduledDate > new Date() ? 'scheduled' : 'draft',
+      scheduledAt: scheduledDate,
       mediaUrl,
       mediaType: mediaUrl ? 'image' : null,
       aiGenerated: true,
@@ -160,12 +170,35 @@ export async function triggerManualGeneration(req, res) {
     res.json({ 
       success: true, 
       data: post,
-      message: mediaUrl ? 'Post + imagem gerados!' : 'Post gerado (sem imagem)'
+      message: mediaUrl 
+        ? `Post + imagem gerados! ${scheduledDate > new Date() ? `Agendado para ${scheduledDate.toLocaleString('pt-BR')}` : ''}`
+        : `Post gerado (sem imagem) ${scheduledDate > new Date() ? `Agendado para ${scheduledDate.toLocaleString('pt-BR')}` : ''}`
     });
   } catch (error) {
     console.error('❌ Erro ao gerar post GMB:', error);
     res.status(500).json({ success: false, error: error.message });
   }
+}
+
+/**
+ * 🕐 Obtém próximo horário estratégico automático
+ */
+function getNextHorarioEstrategico() {
+  const now = new Date();
+  const currentHour = now.getHours();
+
+  const horarios = gmbService.HORARIOS_PUBLICACAO.map(h => parseInt(h.split(':')[0]));
+
+  for (const hora of horarios) {
+    if (currentHour < hora) {
+      now.setHours(hora, 0, 0, 0);
+      return now;
+    }
+  }
+
+  now.setDate(now.getDate() + 1);
+  now.setHours(parseInt(gmbService.HORARIOS_PUBLICACAO[0]), 0, 0, 0);
+  return now;
 }
 
 export async function triggerWeeklyGeneration(req, res) {

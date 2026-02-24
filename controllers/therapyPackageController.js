@@ -926,13 +926,13 @@ export const packageOperations = {
                         // 🔧 CORREÇÃO: Usar sessionValue ao invés de value
                         // 🏥 CONVÊNIO: Criar recebível (não entra no caixa ainda)
                         // 💰 PARTICULAR: Criar pagamento normal (entra no caixa)
-                        const isConvenio = pkg.type === 'convenio' || 
+                        const isConvenio = sessionDoc.package.type === 'convenio' || 
                                           sessionDoc.paymentMethod === 'convenio' ||
                                           sessionDoc.billingType === 'convenio';
 
                         if (isConvenio) {
                             // 🏥 Criar recebível de convênio
-                            await criarRecebivelConvenio(sessionDoc, pkg, mongoSession);
+                            await criarRecebivelConvenio(sessionDoc, sessionDoc.package, mongoSession);
                             
                             // Marcar sessão como aguardando recebimento do convênio
                             sessionDoc.isPaid = false;
@@ -1002,7 +1002,7 @@ export const packageOperations = {
                         // ============================================
 
                         // 🏥 CONVÊNIO: Remover recebível se existir
-                        const isConvenio = pkg.type === 'convenio' || 
+                        const isConvenio = sessionDoc.package.type === 'convenio' || 
                                           sessionDoc.paymentMethod === 'convenio' ||
                                           sessionDoc.billingType === 'convenio';
 
