@@ -39,9 +39,37 @@ export const updatePlanningProgress = async (planningId) => {
             clinicalStatus: 'completed'
         }).lean();
 
-        // Calcular totais
+        // Calcular totais e separar por tipo de receita
         const completedSessions = sessions.length;
-        const actualRevenue = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+        
+        // 1. Calcular convênio a receber (deve ser antes de calcular a receita total)
+        const pagamentosConvenioPendentes = await Payment.find({
+            paymentDate: { $gte: start, $lte: end },
+            billingType: 'convenio',
+            'insurance.status': { $in: ['pending_billing', 'billed'] }
+        }).lean();
+        
+        const actualRevenueConvenioAReceber = pagamentosConvenioPendentes.reduce(
+            (sum, p) => sum + (p.insurance?.grossAmount || 0), 0
+        );
+        
+        // 2. Calcular particular e convênio recebido
+        let actualRevenueParticular = 0;
+        let actualRevenueConvenio = 0;
+        
+        payments.forEach(pag => {
+            const valor = pag.amount || 0;
+            // Se for convênio (billingType ou paymentMethod ou insurance.received)
+            if (pag.billingType === 'convenio' || pag.paymentMethod === 'convenio' || 
+                pag.insurance?.status === 'received') {
+                actualRevenueConvenio += valor;
+            } else {
+                actualRevenueParticular += valor;
+            }
+        });
+        
+        // 3. Receita total inclui: particular + convênio recebido + convênio a receber
+        const actualRevenue = actualRevenueParticular + actualRevenueConvenio + actualRevenueConvenioAReceber;
         
         // Calcular horas trabalhadas (baseado na duração dos agendamentos ou 40min padrão)
         const workedHours = appointments.length > 0 
@@ -53,10 +81,16 @@ export const updatePlanningProgress = async (planningId) => {
         planning.actual.workedHours = parseFloat(workedHours.toFixed(2));
         planning.actual.usedSlots = completedSessions;
         planning.actual.actualRevenue = actualRevenue;
+        planning.actual.actualRevenueParticular = actualRevenueParticular;
+        planning.actual.actualRevenueConvenio = actualRevenueConvenio;
+        planning.actual.actualRevenueConvenioAReceber = actualRevenueConvenioAReceber;
 
         console.log(`[Planning Update] ✅ Dados atualizados:`);
         console.log(`[Planning Update]    - Sessões: ${completedSessions}`);
-        console.log(`[Planning Update]    - Receita: R$ ${actualRevenue}`);
+        console.log(`[Planning Update]    - Receita Total (inclui a receber): R$ ${actualRevenue}`);
+        console.log(`[Planning Update]      ├─ Particular: R$ ${actualRevenueParticular}`);
+        console.log(`[Planning Update]      ├─ Convênio (recebido): R$ ${actualRevenueConvenio}`);
+        console.log(`[Planning Update]      └─ Convênio (a receber): R$ ${actualRevenueConvenioAReceber}`);
         console.log(`[Planning Update]    - Horas: ${workedHours.toFixed(2)}h`);
 
         await planning.save(); // Middleware calcula progresso automaticamente
@@ -219,14 +253,41 @@ export const calculateDetailedProgress = async (planningId) => {
             criadoEm: pkg.date
         }));
 
-        // 3. Calcular totais gerais
-        const totalRevenue = pagamentos.reduce((sum, p) => sum + (p.amount || 0), 0);
+        // 3. Calcular totais gerais e separar por tipo
+        let totalRevenueParticular = 0;
+        let totalRevenueConvenio = 0;
+        
+        pagamentos.forEach(pag => {
+            const valor = pag.amount || 0;
+            // Se for convênio (billingType ou paymentMethod)
+            if (pag.billingType === 'convenio' || pag.paymentMethod === 'convenio' || 
+                pag.insurance?.status === 'received') {
+                totalRevenueConvenio += valor;
+            } else {
+                totalRevenueParticular += valor;
+            }
+        });
+        
+        // Total inclui particular + convênio recebido + convênio a receber
+        const totalRevenue = totalRevenueParticular + totalRevenueConvenio + totalConvenioAReceber;
+        
         const totalSessions = await Session.countDocuments({
             date: { $gte: start, $lte: end },
             status: 'completed'
         });
+        
+        // 3.1 Buscar receita de convênios a receber (não recebida ainda)
+        const pagamentosConvenioPendentes = await Payment.find({
+            paymentDate: { $gte: start, $lte: end },
+            billingType: 'convenio',
+            'insurance.status': { $in: ['pending_billing', 'billed'] }
+        }).lean();
+        
+        const totalConvenioAReceber = pagamentosConvenioPendentes.reduce(
+            (sum, p) => sum + (p.insurance?.grossAmount || 0), 0
+        );
 
-        // 4. Calcular gap (quanto falta)
+        // 4. Calcular gap (quanto falta) - baseado na receita total incluindo a receber
         const gapRevenue = Math.max(0, planning.targets.expectedRevenue - totalRevenue);
         const gapSessions = Math.max(0, planning.targets.totalSessions - totalSessions);
 
@@ -242,6 +303,9 @@ export const calculateDetailedProgress = async (planningId) => {
         return {
             actual: {
                 actualRevenue: totalRevenue,
+                actualRevenueParticular: totalRevenueParticular,
+                actualRevenueConvenio: totalRevenueConvenio,
+                actualRevenueConvenioAReceber: totalConvenioAReceber,
                 completedSessions: totalSessions,
                 workedHours: totalSessions * 0.67
             },
@@ -249,7 +313,18 @@ export const calculateDetailedProgress = async (planningId) => {
                 porPaciente: Object.values(porPaciente),
                 pacotesFechados: pacotesDetalhados,
                 totalPacientes: Object.keys(porPaciente).length,
-                totalPacotes: pacotes.length
+                totalPacotes: pacotes.length,
+                detalhamentoReceita: {
+                    particular: {
+                        valor: totalRevenueParticular,
+                        percentual: totalRevenue > 0 ? Math.round((totalRevenueParticular / totalRevenue) * 100) : 0
+                    },
+                    convenio: {
+                        valor: totalRevenueConvenio,
+                        percentual: totalRevenue > 0 ? Math.round((totalRevenueConvenio / totalRevenue) * 100) : 0,
+                        aReceber: totalConvenioAReceber
+                    }
+                }
             },
             progress: {
                 sessionsPercentage: Math.round((totalSessions / planning.targets.totalSessions) * 100),

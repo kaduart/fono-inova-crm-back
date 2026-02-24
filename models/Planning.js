@@ -29,6 +29,10 @@ const planningSchema = new mongoose.Schema({
         workedHours: { type: Number, default: 0 },
         usedSlots: { type: Number, default: 0 },
         actualRevenue: { type: Number, default: 0 },
+        // 💰 Detalhamento por tipo de receita
+        actualRevenueParticular: { type: Number, default: 0 },
+        actualRevenueConvenio: { type: Number, default: 0 },
+        actualRevenueConvenioAReceber: { type: Number, default: 0 },
     },
 
     // 🔹 Progresso calculado

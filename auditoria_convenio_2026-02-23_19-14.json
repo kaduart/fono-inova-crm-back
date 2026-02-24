@@ -1,0 +1,149 @@
+{
+  "dataAuditoria": "2026-02-23T19:14:50-03:00",
+  "modo": "auditoria",
+  "filtros": {
+    "date": "2026-02-11"
+  },
+  "resumo": {
+    "totalProblemas": 4,
+    "problemasCriticos": 2,
+    "valorNaoContabilizado": 0,
+    "problemasPorTipo": {
+      "DIVERGENCIA_CONTAGEM": [
+        {
+          "tipo": "DIVERGENCIA_CONTAGEM",
+          "pacoteId": "699847fe7c92d32c1fd3c62a",
+          "sessionsDone": 3,
+          "realCompleted": 2,
+          "mensagem": "sessionsDone (3) ≠ sessões completed reais (2)",
+          "gravidade": "MEDIA"
+        },
+        {
+          "tipo": "DIVERGENCIA_CONTAGEM",
+          "pacoteId": "69986c057c92d32c1fd44a1f",
+          "sessionsDone": 4,
+          "realCompleted": 3,
+          "mensagem": "sessionsDone (4) ≠ sessões completed reais (3)",
+          "gravidade": "MEDIA"
+        }
+      ],
+      "APPOINTMENT_LISTADO_AUSENTE": [
+        {
+          "tipo": "APPOINTMENT_LISTADO_AUSENTE",
+          "pacoteId": "6998486a7c92d32c1fd3c8ef",
+          "appointmentId": "6998486a7c92d32c1fd3c8ff",
+          "mensagem": "Appointment listado no pacote mas não existe no banco",
+          "gravidade": "ALTA"
+        },
+        {
+          "tipo": "APPOINTMENT_LISTADO_AUSENTE",
+          "pacoteId": "69986c057c92d32c1fd44a1f",
+          "appointmentId": "69986c067c92d32c1fd44a49",
+          "mensagem": "Appointment listado no pacote mas não existe no banco",
+          "gravidade": "ALTA"
+        }
+      ]
+    }
+  },
+  "resultados": [
+    {
+      "pacoteId": "69971097c13fa9c3fb544095",
+      "paciente": "Nicolas Lucca Santos Ferreira",
+      "totalSessoes": 0,
+      "problemas": []
+    },
+    {
+      "pacoteId": "699742df8727d5361b6d846e",
+      "paciente": "Nicolas Lucca Santos Ferreira",
+      "totalSessoes": 0,
+      "problemas": []
+    },
+    {
+      "pacoteId": "6997454c8727d5361b6d8ba7",
+      "paciente": "Nicolas Lucca Santos Ferreira",
+      "totalSessoes": 1,
+      "problemas": []
+    },
+    {
+      "pacoteId": "699847fe7c92d32c1fd3c62a",
+      "paciente": "Davi Felipe Araújo",
+      "totalSessoes": 0,
+      "problemas": [
+        {
+          "tipo": "DIVERGENCIA_CONTAGEM",
+          "pacoteId": "699847fe7c92d32c1fd3c62a",
+          "sessionsDone": 3,
+          "realCompleted": 2,
+          "mensagem": "sessionsDone (3) ≠ sessões completed reais (2)",
+          "gravidade": "MEDIA"
+        }
+      ]
+    },
+    {
+      "pacoteId": "699848397c92d32c1fd3c7dd",
+      "paciente": "Davi Felipe Araújo",
+      "totalSessoes": 0,
+      "problemas": []
+    },
+    {
+      "pacoteId": "6998486a7c92d32c1fd3c8ef",
+      "paciente": "Davi Felipe Araújo",
+      "totalSessoes": 0,
+      "problemas": [
+        {
+          "tipo": "APPOINTMENT_LISTADO_AUSENTE",
+          "pacoteId": "6998486a7c92d32c1fd3c8ef",
+          "appointmentId": "6998486a7c92d32c1fd3c8ff",
+          "mensagem": "Appointment listado no pacote mas não existe no banco",
+          "gravidade": "ALTA"
+        }
+      ]
+    },
+    {
+      "pacoteId": "699866a77c92d32c1fd43595",
+      "paciente": "Gabriel Alves Leite",
+      "totalSessoes": 0,
+      "problemas": []
+    },
+    {
+      "pacoteId": "699866e27c92d32c1fd43657",
+      "paciente": "Gabriel Alves Leite",
+      "totalSessoes": 0,
+      "problemas": []
+    },
+    {
+      "pacoteId": "69986c057c92d32c1fd44a1f",
+      "paciente": "Kauana Queiroz Gomes Naves",
+      "totalSessoes": 0,
+      "problemas": [
+        {
+          "tipo": "APPOINTMENT_LISTADO_AUSENTE",
+          "pacoteId": "69986c057c92d32c1fd44a1f",
+          "appointmentId": "69986c067c92d32c1fd44a49",
+          "mensagem": "Appointment listado no pacote mas não existe no banco",
+          "gravidade": "ALTA"
+        },
+        {
+          "tipo": "DIVERGENCIA_CONTAGEM",
+          "pacoteId": "69986c057c92d32c1fd44a1f",
+          "sessionsDone": 4,
+          "realCompleted": 3,
+          "mensagem": "sessionsDone (4) ≠ sessões completed reais (3)",
+          "gravidade": "MEDIA"
+        }
+      ]
+    },
+    {
+      "pacoteId": "69986c7c7c92d32c1fd44be9",
+      "paciente": "Kauana Queiroz Gomes Naves",
+      "totalSessoes": 0,
+      "problemas": []
+    },
+    {
+      "pacoteId": "69986d557c92d32c1fd44f15",
+      "paciente": "Kauana Queiroz Gomes Naves",
+      "totalSessoes": 0,
+      "problemas": []
+    }
+  ]
+}

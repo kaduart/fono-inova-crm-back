@@ -1,0 +1,953 @@
+{
+  "dataAuditoria": "2026-02-23T19:16:10-03:00",
+  "modo": "correcao",
+  "resumo": {
+    "totalProblemas": 21,
+    "problemasCriticos": 21,
+    "problemasPorTipo": {
+      "SEM_PAGAMENTO": [
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "69971097c13fa9c3fb544095",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69971098c13fa9c3fb544098",
+          "sessaoDate": "2026-02-06",
+          "mensagem": "Sessão 2026-02-06 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "69971097c13fa9c3fb544095",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69971098c13fa9c3fb54409a",
+          "sessaoDate": "2026-02-13",
+          "mensagem": "Sessão 2026-02-13 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "69971097c13fa9c3fb544095",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69971098c13fa9c3fb54409d",
+          "sessaoDate": "2026-02-23",
+          "mensagem": "Sessão 2026-02-23 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "699742df8727d5361b6d846e",
+          "pacoteSpecialty": "psicomotricidade",
+          "sessaoId": "699742df8727d5361b6d8473",
+          "sessaoDate": "2026-02-05",
+          "mensagem": "Sessão 2026-02-05 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "699742df8727d5361b6d846e",
+          "pacoteSpecialty": "psicomotricidade",
+          "sessaoId": "699742df8727d5361b6d8475",
+          "sessaoDate": "2026-02-12",
+          "mensagem": "Sessão 2026-02-12 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "699742df8727d5361b6d846e",
+          "pacoteSpecialty": "psicomotricidade",
+          "sessaoId": "699742df8727d5361b6d8477",
+          "sessaoDate": "2026-02-19",
+          "mensagem": "Sessão 2026-02-19 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "6997454c8727d5361b6d8ba7",
+          "pacoteSpecialty": "terapia_ocupacional",
+          "sessaoId": "6997454c8727d5361b6d8baa",
+          "sessaoDate": "2026-02-04",
+          "mensagem": "Sessão 2026-02-04 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "6997454c8727d5361b6d8ba7",
+          "pacoteSpecialty": "terapia_ocupacional",
+          "sessaoId": "6997454c8727d5361b6d8bab",
+          "sessaoDate": "2026-02-09",
+          "mensagem": "Sessão 2026-02-09 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "692da1e37a66901c8975db66",
+          "pacienteNome": "Davi Felipe Araújo",
+          "pacoteId": "699847fe7c92d32c1fd3c62a",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "699847fe7c92d32c1fd3c62d",
+          "sessaoDate": "2026-02-06",
+          "mensagem": "Sessão 2026-02-06 sem pagamento de convênio",
+          "valorEsperado": 140
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "692da1e37a66901c8975db66",
+          "pacienteNome": "Davi Felipe Araújo",
+          "pacoteId": "699848397c92d32c1fd3c7dd",
+          "pacoteSpecialty": "psicologia",
+          "sessaoId": "6998483a7c92d32c1fd3c7e0",
+          "sessaoDate": "2026-02-02",
+          "mensagem": "Sessão 2026-02-02 sem pagamento de convênio",
+          "valorEsperado": 140
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "692da1e37a66901c8975db66",
+          "pacienteNome": "Davi Felipe Araújo",
+          "pacoteId": "699848397c92d32c1fd3c7dd",
+          "pacoteSpecialty": "psicologia",
+          "sessaoId": "6998483a7c92d32c1fd3c7e1",
+          "sessaoDate": "2026-02-02",
+          "mensagem": "Sessão 2026-02-02 sem pagamento de convênio",
+          "valorEsperado": 140
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "692da1e37a66901c8975db66",
+          "pacienteNome": "Davi Felipe Araújo",
+          "pacoteId": "6998486a7c92d32c1fd3c8ef",
+          "pacoteSpecialty": "fisioterapia",
+          "sessaoId": "6998486a7c92d32c1fd3c8f1",
+          "sessaoDate": "2026-02-02",
+          "mensagem": "Sessão 2026-02-02 sem pagamento de convênio",
+          "valorEsperado": 140
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "692da1e37a66901c8975db66",
+          "pacienteNome": "Davi Felipe Araújo",
+          "pacoteId": "6998486a7c92d32c1fd3c8ef",
+          "pacoteSpecialty": "fisioterapia",
+          "sessaoId": "6998486a7c92d32c1fd3c8f2",
+          "sessaoDate": "2026-02-06",
+          "mensagem": "Sessão 2026-02-06 sem pagamento de convênio",
+          "valorEsperado": 140
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986c057c92d32c1fd44a1f",
+          "pacoteSpecialty": "terapia_ocupacional",
+          "sessaoId": "69986c057c92d32c1fd44a23",
+          "sessaoDate": "2026-02-13",
+          "mensagem": "Sessão 2026-02-13 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986c057c92d32c1fd44a1f",
+          "pacoteSpecialty": "terapia_ocupacional",
+          "sessaoId": "69986c057c92d32c1fd44a24",
+          "sessaoDate": "2026-02-16",
+          "mensagem": "Sessão 2026-02-16 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986c7c7c92d32c1fd44be9",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69986c7d7c92d32c1fd44bec",
+          "sessaoDate": "2026-02-13",
+          "mensagem": "Sessão 2026-02-13 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986c7c7c92d32c1fd44be9",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69986c7d7c92d32c1fd44bed",
+          "sessaoDate": "2026-02-16",
+          "mensagem": "Sessão 2026-02-16 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986c7c7c92d32c1fd44be9",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69986c7d7c92d32c1fd44bef",
+          "sessaoDate": "2026-02-23",
+          "mensagem": "Sessão 2026-02-23 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986d557c92d32c1fd44f15",
+          "pacoteSpecialty": "psicologia",
+          "sessaoId": "69986d557c92d32c1fd44f17",
+          "sessaoDate": "2026-02-09",
+          "mensagem": "Sessão 2026-02-09 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986d557c92d32c1fd44f15",
+          "pacoteSpecialty": "psicologia",
+          "sessaoId": "69986d557c92d32c1fd44f18",
+          "sessaoDate": "2026-02-13",
+          "mensagem": "Sessão 2026-02-13 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986d557c92d32c1fd44f15",
+          "pacoteSpecialty": "psicologia",
+          "sessaoId": "69986d557c92d32c1fd44f19",
+          "sessaoDate": "2026-02-16",
+          "mensagem": "Sessão 2026-02-16 sem pagamento de convênio",
+          "valorEsperado": 80
+        }
+      ]
+    },
+    "problemasPorPaciente": {
+      "69655746dcdf49e2c282800b": [
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "69971097c13fa9c3fb544095",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69971098c13fa9c3fb544098",
+          "sessaoDate": "2026-02-06",
+          "mensagem": "Sessão 2026-02-06 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "69971097c13fa9c3fb544095",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69971098c13fa9c3fb54409a",
+          "sessaoDate": "2026-02-13",
+          "mensagem": "Sessão 2026-02-13 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "69971097c13fa9c3fb544095",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69971098c13fa9c3fb54409d",
+          "sessaoDate": "2026-02-23",
+          "mensagem": "Sessão 2026-02-23 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "699742df8727d5361b6d846e",
+          "pacoteSpecialty": "psicomotricidade",
+          "sessaoId": "699742df8727d5361b6d8473",
+          "sessaoDate": "2026-02-05",
+          "mensagem": "Sessão 2026-02-05 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "699742df8727d5361b6d846e",
+          "pacoteSpecialty": "psicomotricidade",
+          "sessaoId": "699742df8727d5361b6d8475",
+          "sessaoDate": "2026-02-12",
+          "mensagem": "Sessão 2026-02-12 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "699742df8727d5361b6d846e",
+          "pacoteSpecialty": "psicomotricidade",
+          "sessaoId": "699742df8727d5361b6d8477",
+          "sessaoDate": "2026-02-19",
+          "mensagem": "Sessão 2026-02-19 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "6997454c8727d5361b6d8ba7",
+          "pacoteSpecialty": "terapia_ocupacional",
+          "sessaoId": "6997454c8727d5361b6d8baa",
+          "sessaoDate": "2026-02-04",
+          "mensagem": "Sessão 2026-02-04 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "6997454c8727d5361b6d8ba7",
+          "pacoteSpecialty": "terapia_ocupacional",
+          "sessaoId": "6997454c8727d5361b6d8bab",
+          "sessaoDate": "2026-02-09",
+          "mensagem": "Sessão 2026-02-09 sem pagamento de convênio",
+          "valorEsperado": 80
+        }
+      ],
+      "692da1e37a66901c8975db66": [
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "692da1e37a66901c8975db66",
+          "pacienteNome": "Davi Felipe Araújo",
+          "pacoteId": "699847fe7c92d32c1fd3c62a",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "699847fe7c92d32c1fd3c62d",
+          "sessaoDate": "2026-02-06",
+          "mensagem": "Sessão 2026-02-06 sem pagamento de convênio",
+          "valorEsperado": 140
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "692da1e37a66901c8975db66",
+          "pacienteNome": "Davi Felipe Araújo",
+          "pacoteId": "699848397c92d32c1fd3c7dd",
+          "pacoteSpecialty": "psicologia",
+          "sessaoId": "6998483a7c92d32c1fd3c7e0",
+          "sessaoDate": "2026-02-02",
+          "mensagem": "Sessão 2026-02-02 sem pagamento de convênio",
+          "valorEsperado": 140
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "692da1e37a66901c8975db66",
+          "pacienteNome": "Davi Felipe Araújo",
+          "pacoteId": "699848397c92d32c1fd3c7dd",
+          "pacoteSpecialty": "psicologia",
+          "sessaoId": "6998483a7c92d32c1fd3c7e1",
+          "sessaoDate": "2026-02-02",
+          "mensagem": "Sessão 2026-02-02 sem pagamento de convênio",
+          "valorEsperado": 140
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "692da1e37a66901c8975db66",
+          "pacienteNome": "Davi Felipe Araújo",
+          "pacoteId": "6998486a7c92d32c1fd3c8ef",
+          "pacoteSpecialty": "fisioterapia",
+          "sessaoId": "6998486a7c92d32c1fd3c8f1",
+          "sessaoDate": "2026-02-02",
+          "mensagem": "Sessão 2026-02-02 sem pagamento de convênio",
+          "valorEsperado": 140
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "692da1e37a66901c8975db66",
+          "pacienteNome": "Davi Felipe Araújo",
+          "pacoteId": "6998486a7c92d32c1fd3c8ef",
+          "pacoteSpecialty": "fisioterapia",
+          "sessaoId": "6998486a7c92d32c1fd3c8f2",
+          "sessaoDate": "2026-02-06",
+          "mensagem": "Sessão 2026-02-06 sem pagamento de convênio",
+          "valorEsperado": 140
+        }
+      ],
+      "699869177c92d32c1fd43f86": [
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986c057c92d32c1fd44a1f",
+          "pacoteSpecialty": "terapia_ocupacional",
+          "sessaoId": "69986c057c92d32c1fd44a23",
+          "sessaoDate": "2026-02-13",
+          "mensagem": "Sessão 2026-02-13 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986c057c92d32c1fd44a1f",
+          "pacoteSpecialty": "terapia_ocupacional",
+          "sessaoId": "69986c057c92d32c1fd44a24",
+          "sessaoDate": "2026-02-16",
+          "mensagem": "Sessão 2026-02-16 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986c7c7c92d32c1fd44be9",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69986c7d7c92d32c1fd44bec",
+          "sessaoDate": "2026-02-13",
+          "mensagem": "Sessão 2026-02-13 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986c7c7c92d32c1fd44be9",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69986c7d7c92d32c1fd44bed",
+          "sessaoDate": "2026-02-16",
+          "mensagem": "Sessão 2026-02-16 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986c7c7c92d32c1fd44be9",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69986c7d7c92d32c1fd44bef",
+          "sessaoDate": "2026-02-23",
+          "mensagem": "Sessão 2026-02-23 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986d557c92d32c1fd44f15",
+          "pacoteSpecialty": "psicologia",
+          "sessaoId": "69986d557c92d32c1fd44f17",
+          "sessaoDate": "2026-02-09",
+          "mensagem": "Sessão 2026-02-09 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986d557c92d32c1fd44f15",
+          "pacoteSpecialty": "psicologia",
+          "sessaoId": "69986d557c92d32c1fd44f18",
+          "sessaoDate": "2026-02-13",
+          "mensagem": "Sessão 2026-02-13 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986d557c92d32c1fd44f15",
+          "pacoteSpecialty": "psicologia",
+          "sessaoId": "69986d557c92d32c1fd44f19",
+          "sessaoDate": "2026-02-16",
+          "mensagem": "Sessão 2026-02-16 sem pagamento de convênio",
+          "valorEsperado": 80
+        }
+      ]
+    }
+  },
+  "resultados": [
+    {
+      "pacienteId": "69655746dcdf49e2c282800b",
+      "pacienteNome": "Nicolas Lucca Santos Ferreira",
+      "totalProblemas": 8,
+      "problemas": [
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "69971097c13fa9c3fb544095",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69971098c13fa9c3fb544098",
+          "sessaoDate": "2026-02-06",
+          "mensagem": "Sessão 2026-02-06 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "69971097c13fa9c3fb544095",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69971098c13fa9c3fb54409a",
+          "sessaoDate": "2026-02-13",
+          "mensagem": "Sessão 2026-02-13 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "69971097c13fa9c3fb544095",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69971098c13fa9c3fb54409d",
+          "sessaoDate": "2026-02-23",
+          "mensagem": "Sessão 2026-02-23 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "699742df8727d5361b6d846e",
+          "pacoteSpecialty": "psicomotricidade",
+          "sessaoId": "699742df8727d5361b6d8473",
+          "sessaoDate": "2026-02-05",
+          "mensagem": "Sessão 2026-02-05 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "699742df8727d5361b6d846e",
+          "pacoteSpecialty": "psicomotricidade",
+          "sessaoId": "699742df8727d5361b6d8475",
+          "sessaoDate": "2026-02-12",
+          "mensagem": "Sessão 2026-02-12 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "699742df8727d5361b6d846e",
+          "pacoteSpecialty": "psicomotricidade",
+          "sessaoId": "699742df8727d5361b6d8477",
+          "sessaoDate": "2026-02-19",
+          "mensagem": "Sessão 2026-02-19 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "6997454c8727d5361b6d8ba7",
+          "pacoteSpecialty": "terapia_ocupacional",
+          "sessaoId": "6997454c8727d5361b6d8baa",
+          "sessaoDate": "2026-02-04",
+          "mensagem": "Sessão 2026-02-04 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "69655746dcdf49e2c282800b",
+          "pacienteNome": "Nicolas Lucca Santos Ferreira",
+          "pacoteId": "6997454c8727d5361b6d8ba7",
+          "pacoteSpecialty": "terapia_ocupacional",
+          "sessaoId": "6997454c8727d5361b6d8bab",
+          "sessaoDate": "2026-02-09",
+          "mensagem": "Sessão 2026-02-09 sem pagamento de convênio",
+          "valorEsperado": 80
+        }
+      ]
+    },
+    {
+      "pacienteId": "692da1e37a66901c8975db66",
+      "pacienteNome": "Davi Felipe Araújo",
+      "totalProblemas": 5,
+      "problemas": [
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "692da1e37a66901c8975db66",
+          "pacienteNome": "Davi Felipe Araújo",
+          "pacoteId": "699847fe7c92d32c1fd3c62a",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "699847fe7c92d32c1fd3c62d",
+          "sessaoDate": "2026-02-06",
+          "mensagem": "Sessão 2026-02-06 sem pagamento de convênio",
+          "valorEsperado": 140
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "692da1e37a66901c8975db66",
+          "pacienteNome": "Davi Felipe Araújo",
+          "pacoteId": "699848397c92d32c1fd3c7dd",
+          "pacoteSpecialty": "psicologia",
+          "sessaoId": "6998483a7c92d32c1fd3c7e0",
+          "sessaoDate": "2026-02-02",
+          "mensagem": "Sessão 2026-02-02 sem pagamento de convênio",
+          "valorEsperado": 140
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "692da1e37a66901c8975db66",
+          "pacienteNome": "Davi Felipe Araújo",
+          "pacoteId": "699848397c92d32c1fd3c7dd",
+          "pacoteSpecialty": "psicologia",
+          "sessaoId": "6998483a7c92d32c1fd3c7e1",
+          "sessaoDate": "2026-02-02",
+          "mensagem": "Sessão 2026-02-02 sem pagamento de convênio",
+          "valorEsperado": 140
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "692da1e37a66901c8975db66",
+          "pacienteNome": "Davi Felipe Araújo",
+          "pacoteId": "6998486a7c92d32c1fd3c8ef",
+          "pacoteSpecialty": "fisioterapia",
+          "sessaoId": "6998486a7c92d32c1fd3c8f1",
+          "sessaoDate": "2026-02-02",
+          "mensagem": "Sessão 2026-02-02 sem pagamento de convênio",
+          "valorEsperado": 140
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "692da1e37a66901c8975db66",
+          "pacienteNome": "Davi Felipe Araújo",
+          "pacoteId": "6998486a7c92d32c1fd3c8ef",
+          "pacoteSpecialty": "fisioterapia",
+          "sessaoId": "6998486a7c92d32c1fd3c8f2",
+          "sessaoDate": "2026-02-06",
+          "mensagem": "Sessão 2026-02-06 sem pagamento de convênio",
+          "valorEsperado": 140
+        }
+      ]
+    },
+    {
+      "pacienteId": "699865f57c92d32c1fd432bc",
+      "totalProblemas": 0,
+      "problemas": []
+    },
+    {
+      "pacienteId": "699869177c92d32c1fd43f86",
+      "pacienteNome": "Kauana Queiroz Gomes Naves",
+      "totalProblemas": 8,
+      "problemas": [
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986c057c92d32c1fd44a1f",
+          "pacoteSpecialty": "terapia_ocupacional",
+          "sessaoId": "69986c057c92d32c1fd44a23",
+          "sessaoDate": "2026-02-13",
+          "mensagem": "Sessão 2026-02-13 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986c057c92d32c1fd44a1f",
+          "pacoteSpecialty": "terapia_ocupacional",
+          "sessaoId": "69986c057c92d32c1fd44a24",
+          "sessaoDate": "2026-02-16",
+          "mensagem": "Sessão 2026-02-16 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986c7c7c92d32c1fd44be9",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69986c7d7c92d32c1fd44bec",
+          "sessaoDate": "2026-02-13",
+          "mensagem": "Sessão 2026-02-13 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986c7c7c92d32c1fd44be9",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69986c7d7c92d32c1fd44bed",
+          "sessaoDate": "2026-02-16",
+          "mensagem": "Sessão 2026-02-16 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986c7c7c92d32c1fd44be9",
+          "pacoteSpecialty": "fonoaudiologia",
+          "sessaoId": "69986c7d7c92d32c1fd44bef",
+          "sessaoDate": "2026-02-23",
+          "mensagem": "Sessão 2026-02-23 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986d557c92d32c1fd44f15",
+          "pacoteSpecialty": "psicologia",
+          "sessaoId": "69986d557c92d32c1fd44f17",
+          "sessaoDate": "2026-02-09",
+          "mensagem": "Sessão 2026-02-09 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986d557c92d32c1fd44f15",
+          "pacoteSpecialty": "psicologia",
+          "sessaoId": "69986d557c92d32c1fd44f18",
+          "sessaoDate": "2026-02-13",
+          "mensagem": "Sessão 2026-02-13 sem pagamento de convênio",
+          "valorEsperado": 80
+        },
+        {
+          "tipo": "SEM_PAGAMENTO",
+          "gravidade": "ALTA",
+          "pacienteId": "699869177c92d32c1fd43f86",
+          "pacienteNome": "Kauana Queiroz Gomes Naves",
+          "pacoteId": "69986d557c92d32c1fd44f15",
+          "pacoteSpecialty": "psicologia",
+          "sessaoId": "69986d557c92d32c1fd44f19",
+          "sessaoDate": "2026-02-16",
+          "mensagem": "Sessão 2026-02-16 sem pagamento de convênio",
+          "valorEsperado": 80
+        }
+      ]
+    }
+  ],
+  "correcoes": [
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Nicolas Lucca Santos Ferreira",
+      "pacoteId": "69971097c13fa9c3fb544095",
+      "sessaoId": "69971098c13fa9c3fb544098",
+      "pagamentoId": "699cd1a6d6de140f6f20968c"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Nicolas Lucca Santos Ferreira",
+      "pacoteId": "69971097c13fa9c3fb544095",
+      "sessaoId": "69971098c13fa9c3fb54409a",
+      "pagamentoId": "699cd1a6d6de140f6f209695"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Nicolas Lucca Santos Ferreira",
+      "pacoteId": "69971097c13fa9c3fb544095",
+      "sessaoId": "69971098c13fa9c3fb54409d",
+      "pagamentoId": "699cd1a6d6de140f6f20969e"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Nicolas Lucca Santos Ferreira",
+      "pacoteId": "699742df8727d5361b6d846e",
+      "sessaoId": "699742df8727d5361b6d8473",
+      "pagamentoId": "699cd1a6d6de140f6f2096a9"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Nicolas Lucca Santos Ferreira",
+      "pacoteId": "699742df8727d5361b6d846e",
+      "sessaoId": "699742df8727d5361b6d8475",
+      "pagamentoId": "699cd1a6d6de140f6f2096b2"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Nicolas Lucca Santos Ferreira",
+      "pacoteId": "699742df8727d5361b6d846e",
+      "sessaoId": "699742df8727d5361b6d8477",
+      "pagamentoId": "699cd1a7d6de140f6f2096bb"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Nicolas Lucca Santos Ferreira",
+      "pacoteId": "6997454c8727d5361b6d8ba7",
+      "sessaoId": "6997454c8727d5361b6d8baa",
+      "pagamentoId": "699cd1a7d6de140f6f2096c6"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Nicolas Lucca Santos Ferreira",
+      "pacoteId": "6997454c8727d5361b6d8ba7",
+      "sessaoId": "6997454c8727d5361b6d8bab",
+      "pagamentoId": "699cd1a7d6de140f6f2096cf"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Davi Felipe Araújo",
+      "pacoteId": "699847fe7c92d32c1fd3c62a",
+      "sessaoId": "699847fe7c92d32c1fd3c62d",
+      "pagamentoId": "699cd1a7d6de140f6f2096d8"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Davi Felipe Araújo",
+      "pacoteId": "699848397c92d32c1fd3c7dd",
+      "sessaoId": "6998483a7c92d32c1fd3c7e0",
+      "pagamentoId": "699cd1a7d6de140f6f2096e1"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Davi Felipe Araújo",
+      "pacoteId": "699848397c92d32c1fd3c7dd",
+      "sessaoId": "6998483a7c92d32c1fd3c7e1",
+      "pagamentoId": "699cd1a8d6de140f6f2096ea"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Davi Felipe Araújo",
+      "pacoteId": "6998486a7c92d32c1fd3c8ef",
+      "sessaoId": "6998486a7c92d32c1fd3c8f1",
+      "pagamentoId": "699cd1a8d6de140f6f2096f3"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Davi Felipe Araújo",
+      "pacoteId": "6998486a7c92d32c1fd3c8ef",
+      "sessaoId": "6998486a7c92d32c1fd3c8f2",
+      "pagamentoId": "699cd1a8d6de140f6f2096fc"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Kauana Queiroz Gomes Naves",
+      "pacoteId": "69986c057c92d32c1fd44a1f",
+      "sessaoId": "69986c057c92d32c1fd44a23",
+      "pagamentoId": "699cd1a8d6de140f6f209705"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Kauana Queiroz Gomes Naves",
+      "pacoteId": "69986c057c92d32c1fd44a1f",
+      "sessaoId": "69986c057c92d32c1fd44a24",
+      "pagamentoId": "699cd1a8d6de140f6f20970e"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Kauana Queiroz Gomes Naves",
+      "pacoteId": "69986c7c7c92d32c1fd44be9",
+      "sessaoId": "69986c7d7c92d32c1fd44bec",
+      "pagamentoId": "699cd1a9d6de140f6f209717"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Kauana Queiroz Gomes Naves",
+      "pacoteId": "69986c7c7c92d32c1fd44be9",
+      "sessaoId": "69986c7d7c92d32c1fd44bed",
+      "pagamentoId": "699cd1a9d6de140f6f209720"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Kauana Queiroz Gomes Naves",
+      "pacoteId": "69986c7c7c92d32c1fd44be9",
+      "sessaoId": "69986c7d7c92d32c1fd44bef",
+      "pagamentoId": "699cd1a9d6de140f6f209729"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Kauana Queiroz Gomes Naves",
+      "pacoteId": "69986d557c92d32c1fd44f15",
+      "sessaoId": "69986d557c92d32c1fd44f17",
+      "pagamentoId": "699cd1a9d6de140f6f209736"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Kauana Queiroz Gomes Naves",
+      "pacoteId": "69986d557c92d32c1fd44f15",
+      "sessaoId": "69986d557c92d32c1fd44f18",
+      "pagamentoId": "699cd1a9d6de140f6f20973f"
+    },
+    {
+      "tipo": "PAGAMENTO_CRIADO",
+      "paciente": "Kauana Queiroz Gomes Naves",
+      "pacoteId": "69986d557c92d32c1fd44f15",
+      "sessaoId": "69986d557c92d32c1fd44f19",
+      "pagamentoId": "699cd1aad6de140f6f209748"
+    }
+  ]
+}
