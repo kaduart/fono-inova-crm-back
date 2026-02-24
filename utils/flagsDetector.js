@@ -72,7 +72,9 @@ export function deriveFlagsFromText(text = "") {
 
         mentionsUrgency:
             /\b(urgente|urg[êe]ncia|o\s+quanto\s+antes|logo|r[aá]pido|n[aã]o\s+pode\s+esperar|muito\s+tempo\s+esperando)\b/i.test(normalizedText) ||
-            /\b(preciso\s+(muito|urgente)|caso\s+urgente|emerg[êe]ncia)\b/i.test(normalizedText),
+            /\b(preciso\s+(muito|urgente)|caso\s+urgente|emerg[êe]ncia)\b/i.test(normalizedText) ||
+            // ✅ FIX: "hj", "hoje", "ainda hoje", "hoje mesmo" — forma mais comum de urgência no WhatsApp
+            /\b(hj|hoje(\s+mesmo)?|ainda\s+hoje|nessa\s+semana\s+mesmo|o\s+mais\s+r[aá]pido\s+poss[ií]vel)\b/i.test(normalizedText),
         confirmsData:
             /\b(isso|isso\s+mesmo|exato|correto|certo|confirmo|pode\s+ser|ta\s+bom|beleza)\b/i.test(normalizedText) &&
             normalizedText.length < 30,
