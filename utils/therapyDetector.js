@@ -100,9 +100,10 @@ export function normalizeTherapyTerms(text = "") {
         // ✅ FIX: Remove nome da clínica ANTES de detectar área
         .replace(/clinica\s+fono\s+inova/gi, '')
         .replace(/fono\s+inova/gi, '')
-        .replace(/neuropsicolog(a|ia|ica)/gi, 'neuropsicologia')
-        .replace(/neuropsi/gi, 'neuropsicologia')
-        .replace(/neuro[\s-]*psico/gi, 'neuropsicologia')
+        // ✅ FIX: Uma regex unificada evita re-processamento em cascata
+        // Antes: 3 regexes rodavam em sequência sobre o próprio resultado
+        // "neuropsico" → linha 104 virava "neuropsicologiaco" → linha 105 re-processava → "neuropsicologialogiaco"
+        .replace(/\b(neuropsicolog(?:a|ia|ica|o)?|neuropsi(?:co(?:log(?:ia|o|a)?)?)?|neuro[\s-]*psico(?:log(?:ia|o|a)?)?)\b/gi, 'neuropsicologia')
         // 🛡️ FIX: Tolerância a typos comuns
         .replace(/\bfino\b/gi, 'fono')  // fino → fono
         .replace(/\bfini\b/gi, 'fono')  // fini → fono

@@ -137,6 +137,35 @@ const STRUCTURAL_RULES = {
     requiredWhen: (flags) => flags.asksLocation || flags.asksAddress
   },
 
+  // 🚫 HORÁRIO INVENTADO: Nunca confirmar horário específico sem ter slots reais
+  // RN: Amanda NUNCA deve mencionar "às 10h", "dia 15", "segunda às 14h" etc.
+  // a menos que o slot tenha sido retornado por findAvailableSlots()
+  no_hallucinated_slots: {
+    name: 'Horário sem Base Real',
+    validators: [
+      {
+        name: 'sem_horario_inventado',
+        test: (text, context) => {
+          const hasPendingSlots = !!(
+            context.lead?.pendingSchedulingSlots?.length ||
+            context.lead?.pendingChosenSlot
+          );
+
+          // Se tem slots reais retornados pelo sistema, tudo bem mencionar horários
+          if (hasPendingSlots) return true;
+
+          // Detecta menção a horário específico (ex: "às 10h", "14:30", "dia 15")
+          const hasSpecificTime = /\b(às\s+\d{1,2}h|\d{2}:\d{2}|dia\s+\d{1,2}\b|segunda|terça|quarta|quinta|sexta).*\b(horário|vaga|disponível|encaixar)/i.test(text);
+
+          // Se tem horário específico sem slots reais → violação
+          return !hasSpecificTime;
+        },
+        errorMessage: 'Amanda mencionou horário específico sem slots reais do sistema'
+      }
+    ],
+    requiredWhen: (flags, lead) => !!(flags.wantsSchedule || flags.mentionsUrgency)
+  },
+
   // 🎯 AREA TERAPÊUTICA: Deve mencionar a especialidade (se identificada)
   therapy_area: {
     name: 'Resposta sobre Área Terapêutica',

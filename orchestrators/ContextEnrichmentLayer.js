@@ -285,28 +285,48 @@ export function buildStrategicContext(flags, lead, enrichedContext) {
         flags?.therapyArea
     );
 
+    // ✅ FIX: Suprimir "MUST ask complaint" quando o usuário tem ação imediata pendente.
+    // Queixa é pré-requisito clínico, NÃO comercial. Coleta-se depois do agendamento.
+    const userHasImmediateAction = !!(
+        flags?.wantsSchedule ||
+        flags?.mentionsUrgency ||
+        flags?.asksPrice ||
+        flags?.insistsPrice ||
+        flags?.asksPlans ||
+        flags?.asksAddress ||
+        flags?.asksLocation ||
+        flags?.confirmsData ||
+        flags?.wantsReschedule ||
+        lead?.pendingSchedulingSlots ||
+        lead?.pendingChosenSlot ||
+        lead?.awaitingResponseFor
+    );
+
     strategic.strategicHints.complaintPriority = {
         // 📊 Estado atual
         hasComplaint,
         hasTherapyArea,
 
-        // ✅ Regra: se não tem queixa, SEMPRE priorizar
-        shouldAskComplaint: !hasComplaint && !hasTherapyArea,
+        // ✅ Só pedir queixa se não há ação imediata pendente
+        shouldAskComplaint: !hasComplaint && !hasTherapyArea && !userHasImmediateAction,
 
         // 💡 Sugestão de como perguntar (IA pode adaptar)
-        suggestedComplaintQuestion: !hasComplaint ?
+        suggestedComplaintQuestion: !hasComplaint && !userHasImmediateAction ?
             "Me conta um pouquinho: o que você tem observado no dia a dia que te preocupou? 💚" :
             null,
 
         // 🎯 Contexto
         context: {
-            complaintIsFirstPriority: !hasComplaint,
-            readyForNextStep: hasComplaint
+            complaintIsFirstPriority: !hasComplaint && !userHasImmediateAction,
+            readyForNextStep: hasComplaint,
+            suppressedByImmediateAction: userHasImmediateAction
         }
     };
 
     if (strategic.strategicHints.complaintPriority.shouldAskComplaint) {
         console.log("🎯 [CONTEXT-ENRICHMENT] Complaint priority: MUST ask complaint first");
+    } else if (userHasImmediateAction) {
+        console.log("🚀 [CONTEXT-ENRICHMENT] Complaint suppressed: user has immediate action pending");
     }
 
     // ========================================

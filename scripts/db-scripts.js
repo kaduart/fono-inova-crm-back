@@ -302,3 +302,13 @@ db.contacts.updateOne(
 );
 
 
+// guias de convenio por paciente
+db.insuranceguides.find({
+  patientId: ObjectId("69655746dcdf49e2c282800b")
+})
+
+// deletar guias por paciten
+db.insuranceguides.deleteMany({
+  patientId: ObjectId("69655746dcdf49e2c282800b"),
+  status: "cancelled"
+})

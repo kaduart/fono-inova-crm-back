@@ -146,6 +146,9 @@ export const mapAppointmentToEvent = (appt) => {
 
 /**
  * 🔹 Mapeia um PRÉ-AGENDAMENTO (INTERESSE) para o formato do Frontend
+ * 
+ * 🎯 SIMPLIFICAÇÃO: Agora pré-agendamento é tratado como um agendamento normal
+ * com operationalStatus = 'pre_agendado', sem a flag __isPreAgendamento
  */
 export const mapPreAgendamentoToEvent = (pre) => {
     const startMoment = moment.tz(`${pre.preferredDate} ${pre.preferredTime || "08:00"}`, "YYYY-MM-DD HH:mm", "America/Sao_Paulo");
@@ -153,15 +156,26 @@ export const mapPreAgendamentoToEvent = (pre) => {
     const pName = getSafePatientName(pre);
     const dName = getSafeProfessionalName(pre);
 
+    // Status do pré-agendamento: novo, em_analise, contatado, confirmado -> mapeamos para status amigável
+    const preStatus = pre.status || 'novo';
+    const statusLabels = {
+        'novo': 'Novo',
+        'em_analise': 'Em Análise', 
+        'contatado': 'Contatado',
+        'confirmado': 'Confirmado',
+        'importado': 'Importado',
+        'descartado': 'Descartado'
+    };
+
     return {
         id: pre._id?.toString() || pre.id,
-        title: `[INTERESSE] ${pName} - ${dName}`,
+        title: `${pName} - ${dName}`,  // 🎯 Sem [INTERESSE], igual agendamento normal
         start: startMoment.toISOString(),
         end,
         date: pre.preferredDate,
         time: pre.preferredTime || "08:00",
-        status: getFriendlyStatus(pre.status, true),
-        operationalStatus: 'scheduled', // Unificado: Pré-agendamentos são sempre 'scheduled' (pendentes) operacionalmente
+        status: statusLabels[preStatus] || 'Pré-Agendado', // Status amigável para exibição
+        operationalStatus: 'pre_agendado', // 🎯 Simplificado: é só mais um status de agendamento
         specialty: pre.specialty,
         professional: dName,
         patientName: pName,
@@ -169,9 +183,21 @@ export const mapPreAgendamentoToEvent = (pre) => {
         responsible: "",
         phone: pre.patientInfo?.phone || "",
         visualFlag: 'pending',
-        __isPreAgendamento: true,
-        patient: { fullName: pName },
-        doctor: { fullName: dName },
-        originalData: pre
+        // ❌ Removido: __isPreAgendamento - agora é tratado como agendamento normal
+        patient: { 
+            fullName: pName,
+            phone: pre.patientInfo?.phone || "",
+            dateOfBirth: pre.patientInfo?.birthDate || "",
+            email: pre.patientInfo?.email || ""
+        },
+        doctor: { 
+            fullName: dName,
+            specialty: pre.specialty
+        },
+        metadata: {
+            isPreAgendamento: true, // Mantido aqui só para referência interna se necessário
+            preAgendamentoStatus: preStatus,
+            source: pre.source || 'agenda_externa'
+        }
     };
 };

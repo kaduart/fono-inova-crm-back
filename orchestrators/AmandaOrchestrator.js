@@ -1385,6 +1385,71 @@ export async function getOptimizedAmandaResponse({
     }
 
     // =========================================================================
+    // 🛡️ GUARD: awaitingResponseFor — "Sim" com contexto de pergunta pendente
+    // ✅ FIX: Quando Amanda pergunta algo e o usuário confirma, retomar o contexto
+    // certo em vez de cair no handler genérico.
+    // =========================================================================
+    const isSimpleConfirmation = /^(sim|pode|ok|claro|fechado|quero|gostaria|s|yep|yes|tá\s*bom|ta\s*bom)$/i.test(text.trim());
+    const awaiting = lead?.awaitingResponseFor;
+
+    if (awaiting && isSimpleConfirmation) {
+        const now = Date.now();
+        const ageMs = now - (awaiting.timestamp || 0);
+        const isValid = ageMs < 30 * 60 * 1000; // válido por 30 minutos
+
+        if (isValid) {
+            console.log("✅ [AWAITING] Confirmação recebida para:", awaiting.type);
+
+            // Limpa o estado antes de processar
+            await safeLeadUpdate(lead._id, {
+                $unset: { awaitingResponseFor: "" }
+            }).catch(e => console.warn("[AWAITING] Erro ao limpar estado:", e.message));
+            lead.awaitingResponseFor = null;
+
+            if (awaiting.type === 'package_detail') {
+                const area = awaiting.area || lead?.therapyArea || 'avaliação';
+                const PACKAGES = {
+                    fonoaudiologia: "Nosso pacote mensal de fonoaudiologia inclui **4 sessões/mês por R$ 560** (R$ 140/sessão). A avaliação inicial não entra no pacote — é separada. Quer que eu veja um horário pra avaliação? 💚",
+                    psicologia: "O acompanhamento psicológico é **R$ 150/sessão**. Muitas famílias fazem sessões semanais. A avaliação inicial é o primeiro passo. Quer agendar? 💚",
+                    terapia_ocupacional: "Nosso pacote mensal de TO é **4 sessões/mês por R$ 560** (R$ 140/sessão). Quer que eu veja horários disponíveis? 💚",
+                    neuropsicologia: "A avaliação neuropsicológica completa é **R$ 2.000 (até 6x)** e inclui ~10 sessões com laudo final. É um investimento único — diferente de terapia contínua. Quer agendar uma conversa pra tirar dúvidas? 💚",
+                    fisioterapia: "Nosso pacote mensal de fisioterapia é **4 sessões/mês por R$ 560**. Quer que eu veja horários? 💚",
+                };
+                return ensureSingleHeart(
+                    PACKAGES[area] || "Nosso pacote mensal inclui 4 sessões por R$ 560 (R$ 140/sessão). Quer que eu veja horários disponíveis? 💚"
+                );
+            }
+
+            if (awaiting.type === 'schedule_confirmation' || awaiting.type === 'show_slots') {
+                // Força o flag de agendamento para continuar o fluxo de slots
+                flags.wantsSchedule = true;
+                console.log("🗓️ [AWAITING] Redirecionando para fluxo de slots");
+                // Não retorna — deixa o fluxo de slots continuar abaixo
+            }
+
+            if (awaiting.type === 'schedule_today') {
+                flags.wantsSchedule = true;
+                flags.mentionsUrgency = true;
+                console.log("⚡ [AWAITING] Redirecionando para slots urgentes (hoje)");
+                // Não retorna — deixa o fluxo de urgência continuar
+            }
+
+            if (awaiting.type === 'insurance_followup') {
+                return ensureSingleHeart(
+                    "Ótimo! 💚 Então vamos por conta própria mesmo — você solicita o reembolso depois direto pelo app do plano. Eu forneço a nota fiscal e todos os documentos necessários.\n\nQual período fica melhor pra vocês: **manhã ou tarde**? 😊"
+                );
+            }
+        } else {
+            // Estado expirado — limpa silenciosamente
+            await safeLeadUpdate(lead._id, {
+                $unset: { awaitingResponseFor: "" }
+            }).catch(() => {});
+            lead.awaitingResponseFor = null;
+            console.log("⏰ [AWAITING] Estado expirado, ignorando");
+        }
+    }
+
+    // =========================================================================
     // 🛡️ GUARD: Preço tem prioridade SEMPRE
     // =========================================================================
     const asksPrice = /(pre[çc]o|valor|quanto\s*(custa|[eé]))/i.test(text);
@@ -1412,7 +1477,10 @@ export async function getOptimizedAmandaResponse({
         hasLeadId: !!lead?._id,
     });
 
-    const asksLocation = /(endere[çc]o|onde\s+fica|localiza(?:ç|c)(?:a|ã)o)/i.test(text.normalize('NFC'));
+    // ✅ FIX: Usar flags já calculados (mais abrangentes que regex local)
+    // Antes: regex própria não capturava "fica em Anápolis", "são de Anápolis", etc.
+    const asksLocation = flags?.asksAddress || flags?.asksLocation ||
+        /(endere[çc]o|onde\s+fica|localiza(?:ç|c)(?:a|ã)o)/i.test(text.normalize('NFC'));
     if (asksLocation) {
         const coords = {
             latitude: -16.3334217,
@@ -1822,18 +1890,51 @@ export async function getOptimizedAmandaResponse({
             flags.asksAboutAfterHours ||
             flags.mentionsPriceObjection ||
             flags.wantsPartnershipOrResume ||
+            flags.asksAddress ||
+            flags.asksLocation ||
+            flags.asksSpecialtyAvailability ||    // ✅ FIX: "Vcs tem psicólogo?" bypass
+            flags.mentionsInsuranceObjection ||   // ✅ FIX: objeção de plano bypass
             /psicopedagog/i.test(text) ||
             /linguinha|fren[uú]lo|freio\s*ling/i.test(text) ||
             /ne[iu]ropsico/i.test(text) ||
             /dificuldade.*(escola|ler|escrever|aprendizagem|leitura|escrita)/i.test(text) ||
             /escola.*(dificuldade|problema|nota|rendimento)/i.test(text) ||
-            /(conv[eê]nio|plano\s*(de\s*)?sa[uú]de|unimed|ipasgo|hapvida|bradesco|amil)/i.test(text);
+            /(conv[eê]nio|plano\s*(de\s*)?sa[uú]de|unimed|ipasgo|hapvida|bradesco|amil)/i.test(text) ||
+            // ✅ FIX: Usuário fazendo pergunta de disponibilidade ("tem psicólogo?", "atende X?")
+            /\b(tem|voc[eê]s\s+t[eê]m|atendem|oferecem)\s+(psic[oó]log|fonoaudi|fisioterap|terapeu|neuropsic)/i.test(text);
 
         if (hasSpecificIntentNow) {
             console.log("🛡️ [TRIAGEM] Bypass: lead tem pergunta específica, seguindo para IA");
             // NÃO retorna — deixa seguir para o Claude com clinicWisdom
         } else {
             const period = extractPeriodFromText(text);
+
+            // ✅ FIX: Greedy data extraction — salvar dados de perfil MESMO quando o
+            // usuário não respondeu o período. Ex: "Infantil pra menino de 12 anos de"
+            // Antes: ignorava tudo e repetia "manhã ou tarde?"
+            // Agora: salva o que chegou e pede só o que falta
+            const ageExtracted = extractAgeFromText(text);
+            const nameExtracted = extractName(text);
+            const updateData = {};
+
+            if (ageExtracted && !lead?.patientInfo?.age) {
+                updateData["patientInfo.age"] = ageExtracted;
+                updateData["qualificationData.idade"] = ageExtracted.age;
+                updateData["qualificationData.idadeRange"] = ageExtracted.age <= 3 ? '0-3' :
+                    ageExtracted.age <= 6 ? '4-6' :
+                    ageExtracted.age <= 12 ? '7-12' : '13+';
+                console.log("📝 [TRIAGEM] Greedy: idade extraída durante ask_period:", ageExtracted.age);
+            }
+            if (nameExtracted && !lead?.patientInfo?.fullName) {
+                updateData["patientInfo.fullName"] = nameExtracted;
+                console.log("📝 [TRIAGEM] Greedy: nome extraído durante ask_period:", nameExtracted);
+            }
+
+            if (Object.keys(updateData).length > 0) {
+                await safeLeadUpdate(lead._id, { $set: updateData });
+                lead = { ...lead, patientInfo: { ...lead.patientInfo, ...updateData } };
+            }
+
             if (!period) {
                 return ensureSingleHeart(
                     "Olá! 😊 Pra eu organizar certinho, vocês preferem **manhã ou tarde**?"
@@ -1879,9 +1980,17 @@ export async function getOptimizedAmandaResponse({
             );
         }
 
+        // ✅ FIX: Sincronizar patientInfo.age com qualificationData.idade
+        // Antes: só salvava em patientInfo.age, findAvailableSlots() lê qualificationData.idade
+        const idadeRange = age.age <= 3 ? '0-3' :
+            age.age <= 6 ? '4-6' :
+            age.age <= 12 ? '7-12' : '13+';
+
         await safeLeadUpdate(lead._id, {
             $set: {
                 "patientInfo.age": age,
+                "qualificationData.idade": age.age,
+                "qualificationData.idadeRange": idadeRange,
                 triageStep: "done",
                 stage: "engajado"
             }
@@ -1940,10 +2049,21 @@ export async function getOptimizedAmandaResponse({
             PRICE_BY_AREA[savedArea] ||
             "A avaliação inicial é **R$ 200**.";
 
+        // ✅ FIX: Salvar estado — quando user confirmar com "Sim", saberemos que é sobre pacotes
+        await safeLeadUpdate(lead._id, {
+            $set: {
+                awaitingResponseFor: {
+                    type: 'package_detail',
+                    area: savedArea,
+                    timestamp: Date.now()
+                }
+            }
+        }).catch(e => console.warn("[AWAITING] Erro ao salvar estado:", e.message));
+
+        // ✅ FIX Bug #4: remover "sim" duplicado do template
         return ensureSingleHeart(
             `Perfeito! 😊\n\n${priceText}\n\n` +
-            `Sim, trabalhamos com **pacotes mensais** sim 💚 ` +
-            `Quer que eu te explique as opções?`
+            `Trabalhamos com **pacotes mensais** 💚 Quer que eu te explique as opções?`
         );
     }
 
@@ -4651,29 +4771,26 @@ ${wisdomBlock}
         });
     }
 
-    // 🛡️ ENFORCEMENT LAYER (opcional via env var)
-    // Valida blocos estruturais sem congelar texto
-    const ENABLE_ENFORCEMENT = process.env.ENABLE_ENFORCEMENT === 'true';
+    // 🛡️ ENFORCEMENT LAYER — sempre ativo
+    // Valida blocos estruturais: preço, plano, localização, slots inventados
+    // strictMode: true aplica fallback automático em violações críticas
+    const enforcementResult = enforceStructuralRules(textResp, {
+        flags,
+        lead,
+        userText: text
+    }, {
+        strictMode: true,   // ✅ FIX: ativo para garantir "nunca inventar horário/opção"
+        logViolations: true
+    });
 
-    if (ENABLE_ENFORCEMENT) {
-        const enforcementResult = enforceStructuralRules(textResp, {
-            flags,
-            lead,
-            userText: text
-        }, {
-            strictMode: false,  // false = só loga, não força fallback
-            logViolations: true
-        });
+    if (enforcementResult.wasEnforced) {
+        console.log('🚨 [ENFORCEMENT] Fallback aplicado — resposta original violou RN');
+        return enforcementResult.response;
+    }
 
-        if (enforcementResult.wasEnforced) {
-            console.log('🚨 [ENFORCEMENT] Fallback aplicado');
-            return enforcementResult.response;
-        }
-
-        // Log de score (mesmo sem enforcement)
-        if (enforcementResult.validation.stats.totalRulesChecked > 0) {
-            console.log(`✅ [ENFORCEMENT] Score: ${(enforcementResult.validation.score * 100).toFixed(0)}% (${enforcementResult.validation.stats.passedRules}/${enforcementResult.validation.stats.totalRulesChecked} regras)`);
-        }
+    // Log de score para monitoramento
+    if (enforcementResult.validation.stats.totalRulesChecked > 0) {
+        console.log(`✅ [ENFORCEMENT] Score: ${(enforcementResult.validation.score * 100).toFixed(0)}% (${enforcementResult.validation.stats.passedRules}/${enforcementResult.validation.stats.totalRulesChecked} regras)`);
     }
 
     return textResp || "Como posso te ajudar? 💚";
