@@ -19,7 +19,7 @@ function logFlags(text, flags) {
     }
 }
 
-const PRICE_REGEX = /(?:\b(?:pre(?:c|ç)o|val(?:or|ores)|or(?:c|ç)amento|mensal(?:idade)?|pacote|tabela\s+de\s+pre(?:c|ç)os?|investimento|custo|taxa|pre(?:c|ç)o\s+m(?:e|é)dio|me\s+passa\s+o\s+valor|qual\s+(?:(?:o|é)\s+)?valor|quanto(?:\s+(?:custa|é|está|tá|fica|sai|cobra|dá))?)\b|r\$\s*\d+(?:[.,]\d{2})?|\$\$+)/i;
+const PRICE_REGEX = /(?:\b(?:pre(?:c|ç)o|val(?:or|ores)|or(?:c|ç)amento|mensal(?:idade)?|pacote|tabela\s+de\s+pre(?:c|ç)os?|investimento|custo|taxa|pre(?:c|ç)o\s+m(?:e|é)dio|me\s+passa\s+o\s+valor|qual\s+(?:(?:o|é)\s+)?valor|quanto(?=\s+(?:custa|é|está|tá|fica|sai|cobra|dá)))\b|r\$\s*\d+(?:[.,]\d{2})?|\$\$+)/i;
 
 /* =========================================================================
    1) BASE FLAGS (regex) — FONTE DA VERDADE

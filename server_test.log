@@ -1,0 +1,173 @@
+🚀 IORedis conectando via REDIS_URL...
+🌍 Modo detectado: production
+🔍 REDIS_URL existe? SIM
+🔗 REDIS_URL (mascarada): redis://localhost:6379
+🚀 Conectando ao Redis via REDIS_URL...
+⚠️ Certificado Sicoob não encontrado. PIX desabilitado.
+✅ GA4: Usando arquivo /home/user/projetos/CRM-CLINICA/back/config/ga4-key.json
+✅ GA4 Client inicializado
+✅ GA4_PROPERTY_ID: 486036516
+[Planning Routes] ✅ Rotas de planejamento carregadas
+IO INIT: null
+🖥️ INSTANCE INFO: {
+  nodeAppInstance: undefined,
+  pmId: undefined,
+  instances: undefined,
+  isCluster: false
+}
+✅ Cron job de comissões mensais agendado (dia 1 às 8h)
+✅ Jobs de confirmação agendados: 9h e 18h (America/Sao_Paulo)
+⏰ Job de Alertas Diários agendado (09:00).
+🔄 Iniciando conexão Redis...
+🔄 Iniciando conexão Redis...
+🖥️ Bull Board disponível em: /admin/queues
+(node:1982) [MONGOOSE] Warning: Duplicate schema index on {"status":1,"scheduledAt":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1982) [MONGOOSE] Warning: Duplicate schema index on {"code":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:1982) [MONGOOSE] Warning: Duplicate schema index on {"jobId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:1982) [MONGOOSE] Warning: Duplicate schema index on {"pipelineStatus":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+✅ Redis conectado
+✅ Redis Client conectado!
+🚀 Redis conectado e validado!
+💚 Health Check Redis: OK
+👷 Follow-up Worker iniciado com Amanda 2.0!
+[INACTIVE-CHECK] Verificando leads inativos...
+[INACTIVE-FOLLOWUP] Iniciando verificação de leads inativos...
+⏰ Follow-up Cron iniciado (scan a cada 3min + inactive check a cada 6h)
+[WARN] 2026-02-25T14:03:32.620Z — [META CLIENT] META_ACCESS_TOKEN não configurado
+[INFO] 2026-02-25T14:03:32.621Z — [VIDEO WORKER] 🎬 Worker inicializado (concurrency: 2)
+📊 Iniciando cron de análise semanal de Follow-ups...
+
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║   📊 RESPONSE TRACKING CRON - AMANDA 2.0                     ║
+║                                                               ║
+║   Status: Inicializando...                                   ║
+║   Timezone: America/Sao_Paulo                               ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+    
+[25/02/2026, 11:03:32] [INFO] Executando verificações iniciais... {}
+✅ Connected to MongoDB
+🧠 [CRON] Inicializando cron de aprendizado...
+✅ [CRON] Agendado: todos os dias às 23:00 (America/Sao_Paulo)
+🧪 [CRON] Inicializando cron de regressão...
+✅ [CRON] Agendado: testes de regressão à meia-noite (America/Sao_Paulo)
+⚠️ PIX Sicoob desabilitado: certificado não configurado
+🔗 Webhook PIX registrado com sucesso
+👀 Iniciando watcher de Followups...
+🚀 Server running on port 5000
+🌐 Environment: production
+[25/02/2026, 11:03:33] [INFO] ✓ Sistema saudável (DB + socket + atividade recente) {
+  "database": true,
+  "socket": true,
+  "recentActivity": true
+}
+[25/02/2026, 11:03:33] [CRON] checkResponses - START
+[25/02/2026, 11:03:33] [INFO] Iniciando verificação de respostas pendentes... {}
+[INFO] Iniciando processamento de respostas pendentes { batchSize: 50, minAge: '24h' }
+[2026-02-25T14:03:33.692Z] GET → /health
+[2026-02-25T14:03:33.704Z] GET → /gmb/intelligence/data
+[INACTIVE-FOLLOWUP] 1 leads inativos encontrados
+[INFO] Processando 50 follow-ups... {}
+[INACTIVE-FOLLOWUP] Lead 698749d7b1f7de4a3dd23d31 já atingiu limite de 3 follow-ups
+[INACTIVE-FOLLOWUP] Concluído: 0 follow-ups criados
+[INACTIVE-CHECK] Concluído: 0 follow-ups criados
+⚡ Novo cliente conectado: TywijxMpadf5H0XHAAAB
+👥 Total de clientes: 1
+📬 183 follow-ups prontos para envio (após filtro)
+   🔥 0 quentes
+   🟡 101 mornos
+   🧊 82 frios
+[WARN] Resposta fora da janela de tempo válida {
+  followupId: new ObjectId('6941a690fbcea767fb2ae5d7'),
+  sentAt: 2025-12-17T18:36:03.749Z,
+  respondedAt: 2026-01-06T20:27:30.000Z
+}
+[WARN] Resposta fora da janela de tempo válida {
+  followupId: new ObjectId('693ff8dfbb6ba6cc3ff61b21'),
+  sentAt: 2026-01-07T20:41:05.022Z,
+  respondedAt: 2026-01-22T14:27:46.000Z
+}
+[WARN] Resposta fora da janela de tempo válida {
+  followupId: new ObjectId('693ff8dfbb6ba6cc3ff61b2e'),
+  sentAt: 2026-01-07T20:41:08.899Z,
+  respondedAt: 2026-01-21T11:41:22.000Z
+}
+[SUCCESS] Processamento em lote concluído {
+  processed: 50,
+  responded: 0,
+  errors: 0,
+  errorDetails: [],
+  responseRate: '0.0%',
+  duration: '5011ms'
+}
+[25/02/2026, 11:03:38] [SUCCESS] Verificação concluída {
+  "processed": 50,
+  "responded": 0,
+  "errors": 0,
+  "responseRate": "0.0%"
+}
+[25/02/2026, 11:03:38] [CRON] checkResponses - SUCCESS
+[25/02/2026, 11:03:38] [SUCCESS] Tarefa concluída: checkResponses {
+  "duration": "5013ms"
+}
+[25/02/2026, 11:03:38] [SUCCESS] Verificações iniciais concluídas {}
+[25/02/2026, 11:03:38] [INFO] Agendando tarefas cron... {
+  "timezone": "America/Sao_Paulo",
+  "schedules": {
+    "CHECK_RESPONSES": "*/30 * * * *",
+    "IDENTIFY_COLD": "0 20 * * *",
+    "DAILY_REPORT": "0 21 * * *",
+    "HEALTH_CHECK": "*/15 * * * *"
+  }
+}
+[25/02/2026, 11:03:38] [SUCCESS] Tarefas agendadas com sucesso {
+  "tasks": 4
+}
+
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║   ✅ SISTEMA INICIADO COM SUCESSO                            ║
+║                                                               ║
+║   Tarefas ativas:                                            ║
+║   • Verificar respostas: a cada 30min                        ║
+║   • Identificar frios: diariamente 20h                       ║
+║   • Relatório diário: diariamente 21h                        ║
+║   • Health check: a cada 15min                               ║
+║                                                               ║
+║   Pressione Ctrl+C para parar                                ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+        
+[2026-02-25T14:03:43.368Z] POST → /api/renew-token
+✅ 183 follow-ups processados!
+[25/02/2026, 11:04:24] [WARN] Recebido sinal SIGTERM - iniciando shutdown... {}
+[25/02/2026, 11:04:24] [SUCCESS] MongoDB desconectado com sucesso {}
+[25/02/2026, 11:04:24] [INFO] Estatísticas finais: {
+  "checkResponses": {
+    "runs": 1,
+    "errors": 0,
+    "lastRun": "2026-02-25T14:03:38.598Z",
+    "lastDuration": 5013
+  },
+  "identifyCold": {
+    "runs": 0,
+    "errors": 0,
+    "lastRun": null,
+    "lastDuration": 0
+  },
+  "dailyReport": {
+    "runs": 0,
+    "errors": 0,
+    "lastRun": null,
+    "lastDuration": 0
+  },
+  "healthCheck": {
+    "runs": 0,
+    "errors": 0,
+    "lastRun": null,
+    "lastDuration": 0
+  }
+}
+[25/02/2026, 11:04:24] [INFO] Processo finalizado com shutdown gracioso {}

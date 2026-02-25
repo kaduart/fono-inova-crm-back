@@ -579,6 +579,7 @@ Leia o que a pessoa responder e decida a área principal:
 - CAA: Usamos Comunicação Alternativa. Explique que NÃO atrapalha a fala.
 - TESTE DA LINGUINHA: Bebês/Crianças, R$ 150, rápido e seguro.
 - Gagueira, atraso de fala, voz: Todos atendidos.
+- DURAÇÃO: Avaliação inicial ~40min. Sessões semanais ~40min.
 `.trim(),
 
     neuroPsychContext: `
@@ -586,6 +587,7 @@ Leia o que a pessoa responder e decida a área principal:
 - NÃO existe "avaliação inicial avulsa" separada.
 - O PRODUTO É: "Avaliação Neuropsicológica Completa".
 - ESTRUTURA: Pacote de ~10 sessões (Entrevista + Testes + Laudo).
+- DURAÇÃO: ~40min por sessão. Total do processo: ~10 sessões + laudo completo.
 - PREÇO: R$ 2.000 (até 6x).
 - Atendemos CRIANÇAS (a partir de 4 anos) e ADULTOS.
 `.trim(),
@@ -595,6 +597,7 @@ Leia o que a pessoa responder e decida a área principal:
 - Atendimento **exclusivo para CRIANÇAS e ADOLESCENTES até 16 anos**.
 - Foco: comportamento, emoções, habilidades sociais e orientação aos pais.
 - NÃO realizamos atendimentos de psicologia para adultos.
+- DURAÇÃO: Avaliação inicial ~40min–1h. Sessões semanais ~40min.
 `.trim(),
 
     psychopedContext: `
@@ -603,6 +606,7 @@ Leia o que a pessoa responder e decida a área principal:
 - ADULTOS: Preparação para cursos, concursos e faculdade.
 - Anamnese inicial: R$ 200.
 - Pacote mensal: R$ 160/sessão (~R$ 640/mês).
+- DURAÇÃO: Anamnese ~40min–1h. Sessões semanais ~40min.
 `.trim(),
 
     physioContext: `
@@ -612,6 +616,7 @@ Leia o que a pessoa responder e decida a área principal:
 - Infantil: Desenvolvimento motor, postura, equilíbrio.
 - Adulto: Reabilitação funcional, dor crônica, mobilidade.
 - BOBATH: Usamos abordagem neurofuncional quando indicado.
+- DURAÇÃO: Avaliação inicial ~40min–1h. Sessões ~40min.
 `.trim(),
 
     occupationalContext: `
@@ -619,6 +624,7 @@ Leia o que a pessoa responder e decida a área principal:
 - Foco: Integração sensorial, coordenação, autonomia.
 - Infantil: AVDs, escrita, organização sensorial.
 - Adulto: Rotina, independência, habilidades funcionais.
+- DURAÇÃO: Avaliação inicial ~40min–1h. Sessões semanais ~40min.
 `.trim(),
 
     musicTherapyContext: `
@@ -626,6 +632,7 @@ Leia o que a pessoa responder e decida a área principal:
 - Foco: Regulação emocional, interação social, desenvolvimento global.
 - Infantil: Expressão, comunicação não-verbal, vínculo.
 - Adulto: Ansiedade, relaxamento, foco.
+- DURAÇÃO: Avaliação inicial ~40min–1h. Sessões semanais ~40min.
 `.trim(),
 
     // =========================================================================
@@ -1314,6 +1321,67 @@ export async function getOptimizedAmandaResponse({
     await persistExtractedData(lead._id, text, lead);
 
     // =========================================================================
+    // 🆕 PASSO 0.6: CONTEXTO ENRIQUECIDO E FLAGS (Movido para cima - necessário para guards abaixo)
+    // =========================================================================
+    // ✅ CONTEXTO UNIFICADO (leadContext.js tem tudo: mode, toneMode, urgencyLevel)
+    const enrichedContext = lead?._id
+        ? await enrichLeadContext(lead._id)
+        : {
+            stage: "novo",
+            isFirstContact: true,
+            messageCount: 0,
+            conversationHistory: [],
+            conversationSummary: null,
+            shouldGreet: true,
+            mode: 'commercial',
+            toneMode: 'acolhimento',
+            urgencyLevel: 'NORMAL',
+            ...context
+        };
+
+    if (enrichedContext.isFirstContact && lead?._id) {
+        manageLeadCircuit(lead._id, 'initial').catch(err =>
+            console.error('[CIRCUIT] Erro ao agendar initial:', err.message)
+        );
+    }
+
+    // 🆕 DETECÇÃO COM DETECTORES CONTEXTUAIS (ConfirmationDetector, InsuranceDetector, PriceDetector, SchedulingDetector)
+    // Usa adapter pattern para manter compatibilidade com flags legacy
+    const flags = detectWithContextualDetectors(text, lead, enrichedContext);
+    console.log("🚩 FLAGS DETECTADAS:", flags);
+
+    // 📊 Log detecções contextuais (quando ativas)
+    if (flags._confirmation) {
+        console.log("✅ [CONFIRMATION] Detecção contextual:", {
+            meaning: flags._confirmation.semanticMeaning,
+            confidence: flags._confirmation.confidence,
+            requiresValidation: flags._confirmation.requiresValidation
+        });
+    }
+    if (flags._insurance) {
+        console.log("🏥 [INSURANCE] Detecção contextual:", {
+            plan: flags._insurance.plan,
+            intentType: flags._insurance.intentType,
+            confidence: flags._insurance.confidence
+        });
+    }
+    if (flags._price) {
+        console.log("💰 [PRICE] Detecção contextual:", {
+            type: flags._price.priceType,
+            confidence: flags._price.confidence,
+            hasObjection: flags._price.hasObjection
+        });
+    }
+    if (flags._scheduling) {
+        console.log("📅 [SCHEDULING] Detecção contextual:", {
+            type: flags._scheduling.schedulingType,
+            confidence: flags._scheduling.confidence,
+            hasUrgency: flags._scheduling.hasUrgency,
+            period: flags._scheduling.preferredPeriod
+        });
+    }
+
+    // =========================================================================
     // 🆕 PASSO 0.5: VALIDAÇÃO DE SERVIÇOS (Bloqueia serviços que não existem)
     // =========================================================================
     console.log("🩺 [VALIDATION] Verificando serviço solicitado...");
@@ -1607,6 +1675,8 @@ export async function getOptimizedAmandaResponse({
                         pendingPatientInfoStep: "",
                         autoBookingContext: "",
                         teaQuestionAsked: "", // Limpa flag de pergunta TEA
+                        awaitingTherapyConfirmation: "", // Limpa confirmação de área
+                        hasMedicalReferral: "", // Limpa flag de pedido médico
                     },
                 }).catch(err => logSuppressedError('safeLeadUpdate', err));
 
@@ -1663,63 +1733,8 @@ export async function getOptimizedAmandaResponse({
         }
     }
 
-    // ✅ CONTEXTO UNIFICADO (leadContext.js tem tudo: mode, toneMode, urgencyLevel)
-    const enrichedContext = lead?._id
-        ? await enrichLeadContext(lead._id)
-        : {
-            stage: "novo",
-            isFirstContact: true,
-            messageCount: 0,
-            conversationHistory: [],
-            conversationSummary: null,
-            shouldGreet: true,
-            mode: 'commercial',
-            toneMode: 'acolhimento',
-            urgencyLevel: 'NORMAL',
-            ...context
-        };
-
-    if (enrichedContext.isFirstContact && lead?._id) {
-        manageLeadCircuit(lead._id, 'initial').catch(err =>
-            console.error('[CIRCUIT] Erro ao agendar initial:', err.message)
-        );
-    }
-
-    // 🆕 DETECÇÃO COM DETECTORES CONTEXTUAIS (ConfirmationDetector, InsuranceDetector, PriceDetector, SchedulingDetector)
-    // Usa adapter pattern para manter compatibilidade com flags legacy
-    const flags = detectWithContextualDetectors(text, lead, enrichedContext);
-    console.log("🚩 FLAGS DETECTADAS:", flags);
-
-    // 📊 Log detecções contextuais (quando ativas)
-    if (flags._confirmation) {
-        console.log("✅ [CONFIRMATION] Detecção contextual:", {
-            meaning: flags._confirmation.semanticMeaning,
-            confidence: flags._confirmation.confidence,
-            requiresValidation: flags._confirmation.requiresValidation
-        });
-    }
-    if (flags._insurance) {
-        console.log("🏥 [INSURANCE] Detecção contextual:", {
-            plan: flags._insurance.plan,
-            intentType: flags._insurance.intentType,
-            confidence: flags._insurance.confidence
-        });
-    }
-    if (flags._price) {
-        console.log("💰 [PRICE] Detecção contextual:", {
-            type: flags._price.priceType,
-            confidence: flags._price.confidence,
-            hasObjection: flags._price.hasObjection
-        });
-    }
-    if (flags._scheduling) {
-        console.log("📅 [SCHEDULING] Detecção contextual:", {
-            type: flags._scheduling.schedulingType,
-            confidence: flags._scheduling.confidence,
-            hasUrgency: flags._scheduling.hasUrgency,
-            period: flags._scheduling.preferredPeriod
-        });
-    }
+    // ✅ CONTEXTO UNIFICADO e FLAGS já foram inicializados no PASSO 0.6 (linhas ~1320+)
+    // enrichedContext e flags estão disponíveis para uso a partir deste ponto
 
     // 🆕 FASE 4: RASTREAMENTO DE DETECÇÕES (Learning Loop)
     // Registra cada detecção para análise de efetividade
@@ -3091,6 +3106,43 @@ Em breve nossa equipe entra em contato 😊`
         flags.therapyArea = bookingProduct.therapyArea;
     }
 
+    // 🧠 RECUPERAÇÃO DE CONTEXTO: Se mensagem atual é genérica (só "agendar", "avaliação")
+    // mas temos conversationSummary, tenta inferir terapia do histórico
+    const isGenericMessage = 
+        /\b(agendar|marcar|avalia[cç][aã]o|consulta|atendimento)\b/i.test(text) &&
+        !flags.therapyArea &&
+        !bookingProduct?.therapyArea;
+    
+    if (isGenericMessage && enrichedContext?.conversationSummary && !flags.therapyArea) {
+        console.log("🧠 [CONTEXT RECOVERY] Mensagem genérica detectada, tentando recuperar terapia do resumo...");
+        
+        const summary = enrichedContext.conversationSummary.toLowerCase();
+        
+        // Mapeia terapias mencionadas no resumo
+        const therapyFromSummary = 
+            /terapia ocupacional|\bto\b|ocupacional/i.test(summary) ? "terapia_ocupacional" :
+            /fonoaudiologia|\bfono\b/i.test(summary) ? "fonoaudiologia" :
+            /psicologia(?!.*pedagogia)|\bpsic[oó]logo/i.test(summary) ? "psicologia" :
+            /neuropsicologia|neuropsicopedagogia/i.test(summary) ? "neuropsicologia" :
+            /fisioterapia|\bfisio\b/i.test(summary) ? "fisioterapia" :
+            /musicoterapia/i.test(summary) ? "musicoterapia" :
+            /psicopedagogia/i.test(summary) ? "neuropsicologia" :
+            null;
+        
+        if (therapyFromSummary) {
+            console.log(`🧠 [CONTEXT RECOVERY] Terapia recuperada do resumo: ${therapyFromSummary}`);
+            flags.therapyArea = therapyFromSummary;
+            
+            // Também salva no lead para persistir
+            if (lead?._id && !lead.therapyArea) {
+                await safeLeadUpdate(lead._id, {
+                    $set: { therapyArea: therapyFromSummary }
+                }).catch(() => {});
+                lead.therapyArea = therapyFromSummary;
+            }
+        }
+    }
+
     // 🔧 Garante que therapyArea seja string (pode vir como objeto de detectAllTherapies)
     const normalizeTherapyArea = (area) => {
         if (!area) return null;
@@ -3372,6 +3424,114 @@ Em breve nossa equipe entra em contato 😊`
         } catch (err) {
             console.warn("[ORCHESTRATOR] Erro em detectAllTherapies:", err.message);
             detectedTherapies = [];
+        }
+
+        // 🧠 VERIFICAÇÃO DE CONSISTÊNCIA: Se lead tem therapyArea salva mas mensagem atual 
+        // não detectou nada específico, confirma se é a mesma área
+        const hasLeadTherapyArea = lead?.therapyArea && 
+            lead.therapyArea !== "psicologia" && // Default muitas vezes
+            lead.therapyArea !== "avaliacao";
+        
+        const isGenericSchedulingRequest = 
+            /\b(agendar|marcar|avalia[cç][aã]o|consulta)\b/i.test(text) &&
+            detectedTherapies.length === 0 &&
+            !flags.therapyArea;
+        
+        if (isGenericSchedulingRequest && hasLeadTherapyArea && !lead?.therapyAreaConfirmed) {
+            console.log(`🧠 [AREA CONFIRMATION] Lead tem therapyArea: ${lead.therapyArea}, mensagem genérica, confirmando...`);
+            
+            // Marca que precisa confirmar
+            await safeLeadUpdate(lead._id, {
+                $set: { awaitingTherapyConfirmation: true }
+            }).catch(() => {});
+            
+            const areaLabels = {
+                fonoaudiologia: "Fonoaudiologia",
+                psicologia: "Psicologia",
+                terapia_ocupacional: "Terapia Ocupacional",
+                fisioterapia: "Fisioterapia",
+                neuropsicologia: "Neuropsicologia",
+                musicoterapia: "Musicoterapia"
+            };
+            
+            return ensureSingleHeart(
+                `Vi aqui que da última vez conversamos sobre **${areaLabels[lead.therapyArea] || lead.therapyArea}** 💚\n\n` +
+                `É isso mesmo que você quer agendar?\n\n` +
+                `E me conta: você tem algum **pedido médico, encaminhamento ou relatório da escola**? ` +
+                `Isso ajuda a gente a entender melhor como podemos ajudar.`
+            );
+        }
+        
+        // Se está confirmando a área e pedido médico
+        if (lead?.awaitingTherapyConfirmation) {
+            const confirmedYes = /\b(sim|isso|mesmo|correto|certo|yes|s)\b/i.test(text);
+            const wantsDifferent = /\b(n[aã]o|outra|diferente|mudar|trocar|psic[oó]loga?|fono|terapia ocupacional|to|fisio|neuro)\b/i.test(text);
+            
+            // Detecta se tem pedido médico/encaminhamento na resposta
+            const hasMedicalReferral = 
+                /\b(tenho|sim|receita|pedido|encaminhamento|relat[oó]rio|laudo|escola|m[eé]dico|neuropediatra|m[eé]dica)\b/i.test(text);
+            
+            const hasNoReferral = 
+                /\b(n[aã]o\s+tenho|n[aã]o|sem|ainda\s+n[aã]o)\b/i.test(text);
+            
+            if (confirmedYes && !wantsDifferent) {
+                console.log(`🧠 [AREA CONFIRMATION] Confirmação positiva, usando: ${lead.therapyArea}`);
+                
+                if (hasMedicalReferral) {
+                    console.log("🧠 [MEDICAL REFERRAL] Paciente TEM pedido médico/encaminhamento");
+                    await safeLeadUpdate(lead._id, {
+                        $set: { 
+                            therapyAreaConfirmed: true,
+                            awaitingTherapyConfirmation: false,
+                            hasMedicalReferral: true
+                        }
+                    }).catch(() => {});
+                    flags.therapyArea = lead.therapyArea;
+                    flags.hasMedicalReferral = true;
+                    
+                    // Tem pedido médico, pode ir direto para agendamento
+                    return ensureSingleHeart(
+                        `Perfeito! Com o encaminhamento, conseguimos direcionar melhor o atendimento 💚\n\n` +
+                        `Qual período funciona melhor pra vocês: manhã ou tarde?`
+                    );
+                    
+                } else if (hasNoReferral) {
+                    console.log("🧠 [MEDICAL REFERRAL] Paciente NÃO tem pedido médico");
+                    await safeLeadUpdate(lead._id, {
+                        $set: { 
+                            therapyAreaConfirmed: true,
+                            awaitingTherapyConfirmation: false,
+                            hasMedicalReferral: false
+                        }
+                    }).catch(() => {});
+                    flags.therapyArea = lead.therapyArea;
+                    flags.hasMedicalReferral = false;
+                    
+                    // Não tem pedido médico, pergunta a queixa primeiro
+                    return ensureSingleHeart(
+                        `Entendido! 💚\n\n` +
+                        `Sem problema se não tiver encaminhamento. Me conta: ` +
+                        `qual a principal queixa ou dificuldade que vocês estão observando? ` +
+                        `Isso ajuda a preparar a avaliação da melhor forma.`
+                    );
+                } else {
+                    // Não respondeu sobre pedido médico, segue normal
+                    await safeLeadUpdate(lead._id, {
+                        $set: { 
+                            therapyAreaConfirmed: true,
+                            awaitingTherapyConfirmation: false
+                        }
+                    }).catch(() => {});
+                    flags.therapyArea = lead.therapyArea;
+                }
+                
+            } else if (wantsDifferent) {
+                console.log("🧠 [AREA CONFIRMATION] Usuário quer área diferente, seguindo...");
+                await safeLeadUpdate(lead._id, {
+                    $unset: { awaitingTherapyConfirmation: "" }
+                }).catch(() => {});
+                // Deixa o fluxo normal detectar a nova área
+            }
         }
 
         // ✅ FIX: Só considera área do lead se tiver queixa registrada
