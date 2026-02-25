@@ -1296,7 +1296,7 @@ export async function getOptimizedAmandaResponse({
                 lead = freshLead;
                 console.log("🔄 [REFRESH] Lead atualizado:", {
                     pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
-                    pendingPatientInfoStep: lead.pendingPatientInfoStep,
+                    pendingPatientInfoStep: lead.pendingPatientInfoStep ?? null, // 🛡️ FIX: Padroniza null
                     pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
                     pendingSchedulingSlots: lead.pendingSchedulingSlots?.primary ? "SIM" : "NÃO",
                 });
@@ -1606,6 +1606,7 @@ export async function getOptimizedAmandaResponse({
                         pendingPatientInfoForScheduling: "",
                         pendingPatientInfoStep: "",
                         autoBookingContext: "",
+                        teaQuestionAsked: "", // Limpa flag de pergunta TEA
                     },
                 }).catch(err => logSuppressedError('safeLeadUpdate', err));
 
@@ -1811,6 +1812,74 @@ export async function getOptimizedAmandaResponse({
     if (teaStatus && teaStatus !== "desconhecido") {
         enrichedContext.teaStatus = teaStatus;
         console.log("🧩 [TEA STATUS]:", teaStatus);
+    }
+    
+    // =========================================================================
+    // 🩺 DECISÃO CLÍNICA: Investigação TEA - Pergunta objetivo
+    // =========================================================================
+    // Se detectou investigação/suspeita de TEA, pergunta direto o objetivo
+    const needsTeaQuestion = 
+        flags.mentionsInvestigation && 
+        flags.mentionsTEA_TDAH && 
+        !lead?.teaQuestionAsked &&
+        !lead?.therapyArea;
+    
+    if (needsTeaQuestion) {
+        console.log("🩺 [CLINICAL DECISION] Investigacao TEA detectada, perguntando objetivo");
+        
+        await safeLeadUpdate(lead._id, {
+            $set: { teaQuestionAsked: true }
+        }).catch(() => {});
+        
+        return ensureSingleHeart(
+            `Entendo que estão em fase de descoberta 💚\n\n` +
+            `Vocês querem o **laudo de TEA** ou querem fazer **acompanhamento terapêutico**?`
+        );
+    }
+    
+    // 🩺 Interpreta a resposta
+    if (lead?.teaQuestionAsked && flags.mentionsTEA_TDAH) {
+        const wantsLaudo = 
+            /\b(laudo|neuropsic|avalia[cç][aã]o\s+neuro|neuropediatra|escola|relat[oó]rio|10\s+sess[õo]es|dez\s+sess[õo]es|2000|dois\s+mil)\b/i.test(text);
+        
+        const wantsAcompanhamento = 
+            /\b(terapia|terapias|psic[oó]loga|acompanhamento|tratamento|sess[õo]es|200\s+reais|duzentos)\b/i.test(text);
+        
+        if (wantsLaudo && !wantsAcompanhamento) {
+            console.log("🩺 [CLINICAL DECISION] Quer LAUDO → Neuropsicológica");
+            await safeLeadUpdate(lead._id, {
+                $set: { 
+                    therapyArea: "neuropsicologia",
+                    "qualificationData.extractedInfo.especialidade": "neuropsicologia",
+                    teaQuestionAsked: null
+                }
+            }).catch(() => {});
+            flags.therapyArea = "neuropsicologia";
+            
+            // Já explica e vai direto pro agendamento
+            return ensureSingleHeart(
+                `Perfeito! Pra laudo de TEA, fazemos a avaliação neuropsicológica 💚\n\n` +
+                `São ~10 sessões, investimento R$ 2.000 (até 6x). O laudo é válido pra escola e médicos.\n\n` +
+                `Prefere manhã ou tarde?`
+            );
+        } else if (wantsAcompanhamento && !wantsLaudo) {
+            console.log("🩺 [CLINICAL DECISION] Quer ACOMPANHAMENTO → Psicologia");
+            await safeLeadUpdate(lead._id, {
+                $set: { 
+                    therapyArea: "psicologia",
+                    "qualificationData.extractedInfo.especialidade": "psicologia",
+                    teaQuestionAsked: null
+                }
+            }).catch(() => {});
+            flags.therapyArea = "psicologia";
+            
+            return ensureSingleHeart(
+                `Ótimo! O acompanhamento terapêutico é um ótimo caminho 💚\n\n` +
+                `Avaliação inicial R$ 200, sessões R$ 200. Começamos com psicologia e podemos integrar com fono/TO depois.\n\n` +
+                `Prefere manhã ou tarde?`
+            );
+        }
+        // Se ambíguo, deixa o fluxo normal tratar
     }
     
     // 3. Verifica se deve oferecer agendamento (contexto acumulado)

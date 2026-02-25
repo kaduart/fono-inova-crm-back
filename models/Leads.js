@@ -155,6 +155,8 @@ const leadSchema = new mongoose.Schema({
     sentiment: String,
     urgencyLevel: Number
   },
+  // 🩺 DECISÃO CLÍNICA: Pergunta sobre TEA já foi feita?
+  teaQuestionAsked: { type: Boolean, default: false },
   scoreHistory: [{
     score: Number,
     reason: String,

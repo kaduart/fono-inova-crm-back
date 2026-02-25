@@ -17,6 +17,7 @@ router.put('/posts/:id', gmbController.updatePost);
 router.delete('/posts/:id', gmbController.deletePost);
 router.post('/posts/:id/publish', gmbController.publishPost);
 router.post('/posts/:id/retry', gmbController.retryPost);
+router.post('/posts/:id/republish', gmbController.republishPost);
 router.post('/preview', gmbController.generatePreview);
 router.post('/preview/image', gmbController.generateImagePreview);
 router.get('/especialidades', gmbController.listEspecialidades);

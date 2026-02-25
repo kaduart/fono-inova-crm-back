@@ -267,7 +267,8 @@ export function deriveFlagsFromText(text = "") {
             /\b(j[aá]\s+(estou|tô|to)\s+(vendo|fazendo|tratando)|outra\s+cl[ií]nica|outro\s+profissional|j[aá]\s+tenho\s+(fono|psic[oó]log|terapeuta))\b/i.test(normalizedText),
 
         mentionsDoubtTEA:
-            /\b(ser[aá]\s+que\s+[eé]\s+tea|suspeita\s+de\s+(tea|autismo)|acho\s+que\s+pode\s+ser|n[aã]o\s+sei\s+se\s+[eé]|muito\s+novo\s+pra\s+saber)\b/i.test(normalizedText),
+            /\b(ser[aá]\s+que\s+[eé]\s+tea|suspeita\s+de\s+(tea|autismo)|acho\s+que\s+pode\s+ser|n[aã]o\s+sei\s+se\s+[eé]|muito\s+novo\s+pra\s+saber)\b/i.test(normalizedText) ||
+            /\b(fase\s+de\s+descoberta|em\s+descoberta|processo\s+de\s+descoberta)\b/i.test(normalizedText),
 
         mentionsNeuropediatra: /\bneuro(pediatra)?\b/i.test(normalizedText),
         mentionsLaudo: /\blaudo\b/i.test(normalizedText),
@@ -281,6 +282,10 @@ export function deriveFlagsFromText(text = "") {
         // 🕵️ INVESTIGAÇÃO (flag crítica para diferenciar Psicoterapia de Neuropsicologia)
         mentionsInvestigation:
             /\b(investiga|descobrir|saber\s+se\s+(tem|é)|fechar\s+diagn[oó]stico|laudo|relat[oó]rio|suspeita)\b/i.test(normalizedText) ||
+            /\b(fase\s+de\s+descoberta|em\s+descoberta|processo\s+de\s+descoberta)\b/i.test(normalizedText) ||
+            /\b(avalia[cç][aã]o\s+neuropediatrica|avalia[cç][aã]o\s+com\s+neuropediatra|em\s+avalia[cç][aã]o\s+neuro)\b/i.test(normalizedText) ||
+            /\b(desconfio\s+que\s+(seja|é)|escola\s+levantou\s+hip[oó]tese|hip[oó]tese\s+de\s+(tea|autismo|tdah))\b/i.test(normalizedText) ||
+            /\b(possibilidade\s+de\s+(tea|autismo|tdah)|pode\s+ser\s+(tea|autismo|tdah))\b/i.test(normalizedText) ||
             /\b(meu\s+filho\s+tem)\b/i.test(normalizedText), // ex: "meu filho tem x, preciso de avaliacao" -> geralmente é neuro
     };
 

@@ -13,6 +13,7 @@ import {
 } from "date-fns";
 import { getFirstAvailableDate, isInRecesso } from '../config/clinic.js';
 import Doctor from "../models/Doctor.js";
+import { sendTextMessage } from './whatsappService.js';
 
 // 🔗 Base interna: primeiro INTERNAL_BASE_URL, depois BACKEND_URL_PRD, depois localhost
 const API_BASE =
@@ -758,6 +759,35 @@ export async function bookFixedSlot({
 
         const appointmentData = appointmentResponse.data.data;
         bookingStats.successful++;
+
+        // 📲 NOTIFICAÇÃO WPP AO DONO
+        const ownerPhone = process.env.OWNER_NOTIFY_PHONE;
+        if (ownerPhone) {
+            try {
+                const doctorDoc = await Doctor.findById(doctorId).select('fullName').lean();
+                const doctorName = doctorDoc?.fullName || 'N/A';
+                const patientName = patientInfo?.fullName || 'Paciente';
+                const formattedDate = date ? format(parseISO(date), 'dd/MM/yyyy') : date;
+                const sourceLabel =
+                    source === 'amandaAI' ? 'Amanda AI' :
+                    source === 'agenda_externa' ? 'Agenda Externa' :
+                    source;
+
+                const msg =
+                    `🗓️ *Novo agendamento* via ${sourceLabel}\n\n` +
+                    `👤 *Paciente:* ${patientName}\n` +
+                    `📅 *Data:* ${formattedDate}\n` +
+                    `⏰ *Horário:* ${time}\n` +
+                    `👩‍⚕️ *Profissional:* ${doctorName}\n` +
+                    `🩺 *Especialidade:* ${specialty || 'N/A'}\n` +
+                    `📋 *Tipo:* ${sessionType}`;
+
+                await sendTextMessage({ to: ownerPhone, text: msg, sentBy: 'sistema' });
+                console.log('[bookFixedSlot] ✅ Notificação WPP enviada ao dono');
+            } catch (notifyErr) {
+                console.warn('[bookFixedSlot] ⚠️ Falha ao notificar dono via WPP:', notifyErr.message);
+            }
+        }
 
         // 🔹 O payment retornado tem o campo 'appointment' com o ID do agendamento criado
         // Garantimos que retornamos um objeto com _id

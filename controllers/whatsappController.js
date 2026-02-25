@@ -27,6 +27,10 @@ const AUTO_TEST_NUMBERS = [
     "5561981694922", "5561981694922", "556292013573", "5562992013573"
 ];
 
+// 🛡️ FIX: Cache para evitar processamento duplicado de mensagens
+const processedWamids = new Set();
+const MAX_WAMID_CACHE_SIZE = 1000;
+
 const logger = new Logger('whatsappController');
 
 
@@ -1141,6 +1145,20 @@ async function processInboundMessage(msg, value) {
         const io = getIo();
 
         const wamid = msg.id;
+        
+        // 🛡️ FIX: Verifica duplicidade de mensagem
+        if (processedWamids.has(wamid)) {
+            console.log(`⚠️ Mensagem ${wamid} já processada, ignorando duplicidade.`);
+            return { success: true, duplicate: true };
+        }
+        
+        // Adiciona ao cache e mantém tamanho limitado
+        processedWamids.add(wamid);
+        if (processedWamids.size > MAX_WAMID_CACHE_SIZE) {
+            const firstItem = processedWamids.values().next().value;
+            processedWamids.delete(firstItem);
+        }
+        
         const fromRaw = msg.from || "";
         const toRaw =
             value?.metadata?.display_phone_number ||
@@ -1887,7 +1905,18 @@ async function handleAutoReply(from, to, content, lead) {
 function mergeNonNull(base = {}, incoming = {}) {
     const out = { ...(base || {}) };
     for (const [k, v] of Object.entries(incoming || {})) {
-        if (v === null || v === undefined || v === "") continue;
+        // 🛡️ FIX: Nunca sobrescrever valores existentes com null/undefined/vazio
+        if (v === null || v === undefined || v === "") {
+            // Se o valor atual existe no out, mantenha-o
+            if (out[k] !== undefined && out[k] !== null && out[k] !== "") {
+                continue; // Mantém o valor existente
+            }
+            // Se não existe valor atual e o incoming é nulo, define como null apenas se não existir
+            if (!(k in out)) {
+                out[k] = v;
+            }
+            continue;
+        }
         if (Array.isArray(v)) { if (v.length) out[k] = v; continue; }
         if (typeof v === "object") out[k] = mergeNonNull(out[k], v);
         else out[k] = v;
