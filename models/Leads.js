@@ -157,6 +157,10 @@ const leadSchema = new mongoose.Schema({
   },
   // 🩺 DECISÃO CLÍNICA: Pergunta sobre TEA já foi feita?
   teaQuestionAsked: { type: Boolean, default: false },
+  // 🧠 CONFIRMAÇÃO DE ÁREA: Lead já confirmou a terapia?
+  therapyAreaConfirmed: { type: Boolean, default: false },
+  awaitingTherapyConfirmation: { type: Boolean, default: false },
+  hasMedicalReferral: { type: Boolean, default: false },
   scoreHistory: [{
     score: Number,
     reason: String,

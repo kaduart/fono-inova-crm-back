@@ -1,6 +1,8 @@
 import GmbPost from '../models/GmbPost.js';
 import * as gmbService from '../services/gmbService.js';
+import * as makeService from '../services/makeService.js';
 
+// Listar posts
 export async function listPosts(req, res) {
   try {
     const posts = await GmbPost.find().sort({ createdAt: -1 }).lean();
@@ -10,6 +12,7 @@ export async function listPosts(req, res) {
   }
 }
 
+// Criar post
 export async function createPost(req, res) {
   try {
     const post = new GmbPost({ ...req.body, status: 'draft' });
@@ -20,24 +23,29 @@ export async function createPost(req, res) {
   }
 }
 
+// Buscar post
 export async function getPost(req, res) {
   try {
     const post = await GmbPost.findById(req.params.id);
+    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
     res.json({ success: true, data: post });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 }
 
+// Atualizar post
 export async function updatePost(req, res) {
   try {
     const post = await GmbPost.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
     res.json({ success: true, data: post });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 }
 
+// Deletar post
 export async function deletePost(req, res) {
   try {
     await GmbPost.findByIdAndDelete(req.params.id);
@@ -47,118 +55,87 @@ export async function deletePost(req, res) {
   }
 }
 
+// Publicar post via Make (para posts com status 'scheduled')
 export async function publishPost(req, res) {
   try {
     const post = await GmbPost.findById(req.params.id);
-    
-    if (!post) {
-      return res.status(404).json({ success: false, error: 'Post não encontrado' });
-    }
-    
-    if (post.status === 'published') {
-      return res.status(400).json({ success: false, error: 'Post já está publicado' });
-    }
-    
-    // 🚨 CHAMA A API DO GOOGLE PARA PUBLICAR DE VERDADE
-    const result = await gmbService.publishToGMB({
-      title: post.title,
-      content: post.content,
-      mediaUrl: post.mediaUrl,
-      ctaUrl: post.ctaUrl
-    });
-    
-    // Marca como publicado no banco
-    await post.markPublished(result.gmbPostId);
-    
-    res.json({ 
-      success: true, 
-      data: post,
-      gmbPostId: result.gmbPostId,
-      url: result.url
-    });
-  } catch (error) {
-    console.error('❌ Erro ao publicar:', error);
-    // Tenta marcar como falho
-    try {
-      const post = await GmbPost.findById(req.params.id);
-      if (post) await post.markFailed(error.message);
-    } catch (e) { /* ignore */ }
-    
-    res.status(500).json({ success: false, error: error.message });
-  }
-}
+    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
 
-export async function retryPost(req, res) {
-  try {
-    res.json({ success: true });
+    if (!makeService.isMakeConfigured()) {
+      return res.status(503).json({
+        success: false,
+        error: 'Make não configurado. Adicione MAKE_WEBHOOK_URL no .env'
+      });
+    }
+
+    await makeService.sendPostToMake(post);
+
+    post.status = 'published';
+    post.publishedAt = new Date();
+    post.publishedBy = 'api';
+    await post.save();
+
+    res.json({ success: true, message: 'Post enviado ao Make para publicação!' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 }
 
-/**
- * 🔄 REPUBLICAR POST (para posts que estão como 'published' no banco
- * mas nunca foram publicados no Google)
- */
+// Republicar post via Make (para posts já publicados ou com falha)
 export async function republishPost(req, res) {
   try {
     const post = await GmbPost.findById(req.params.id);
-    
-    if (!post) {
-      return res.status(404).json({ success: false, error: 'Post não encontrado' });
-    }
-    
-    // Só permite republicar posts já publicados ou que falharam
-    if (post.status !== 'published' && post.status !== 'failed') {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Só é possível republicar posts já publicados ou com falha' 
+    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+
+    if (!makeService.isMakeConfigured()) {
+      return res.status(503).json({
+        success: false,
+        error: 'Make não configurado. Adicione MAKE_WEBHOOK_URL no .env'
       });
     }
-    
-    // 🚨 PUBLICA NO GOOGLE (mesmo que já tenha gmbPostId, tenta novamente)
-    const result = await gmbService.publishToGMB({
-      title: post.title,
-      content: post.content,
-      mediaUrl: post.mediaUrl,
-      ctaUrl: post.ctaUrl || post.especialidade?.url
-    });
-    
-    // Atualiza o post com novo ID do Google
-    post.gmbPostId = result.gmbPostId;
-    post.publishedAt = new Date();
+
+    await makeService.sendPostToMake(post);
+
     post.status = 'published';
-    post.error = null;
+    post.publishedAt = new Date();
+    post.publishedBy = 'api';
     post.retryCount = (post.retryCount || 0) + 1;
     await post.save();
-    
-    res.json({ 
-      success: true, 
-      data: post,
-      gmbPostId: result.gmbPostId,
-      url: result.url,
-      message: 'Post republicado com sucesso!'
+
+    res.json({ success: true, message: 'Post reenviado ao Make para republicação!' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// Stats
+export async function getStats(req, res) {
+  try {
+    const stats = await GmbPost.getStats();
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// Status da conexão (agora informa sobre Make)
+export async function checkConnection(req, res) {
+  try {
+    const makeOk = makeService.isMakeConfigured();
+    res.json({
+      success: true,
+      data: {
+        connected: makeOk,
+        mode: 'make',
+        message: makeOk ? 'Make configurado ✅' : 'MAKE_WEBHOOK_URL não configurado'
+      }
     });
   } catch (error) {
-    console.error('❌ Erro ao republicar:', error);
-    // Tenta marcar como falho
-    try {
-      const post = await GmbPost.findById(req.params.id);
-      if (post) await post.markFailed(error.message);
-    } catch (e) { /* ignore */ }
-    
     res.status(500).json({ success: false, error: error.message });
   }
 }
 
-export async function generatePreview(req, res) {
-  try {
-    res.json({ success: true, data: { content: 'Preview' } });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-}
-
+// Preview de imagem
 export async function generateImagePreview(req, res) {
   try {
     const { content, especialidadeId } = req.body;
@@ -169,82 +146,60 @@ export async function generateImagePreview(req, res) {
   }
 }
 
-export async function getStats(req, res) {
+// Preview
+export async function generatePreview(req, res) {
   try {
-    const stats = await GmbPost.getStats();
-    res.json({ success: true, data: stats });
+    res.json({ success: true, data: { content: 'Preview' } });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 }
 
-export async function checkConnection(req, res) {
+// Listar especialidades
+export async function listEspecialidades(req, res) {
   try {
-    res.json({ success: true, data: { connected: true } });
+    res.json({ success: true, data: gmbService.ESPECIALIDADES });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 }
 
+// Cron status
 export async function getCronStatus(req, res) {
   try {
-    res.json({ success: true, data: {} });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-}
-
-export async function triggerManualPublish(req, res) {
-  try {
-    // Publica posts agendados que já passaram do horário
-    const results = await gmbService.publishScheduledPosts(5);
-    
-    res.json({ 
-      success: true, 
-      data: results,
-      message: `${results.published} posts publicados, ${results.failed} falhas`
+    res.json({
+      success: true,
+      data: {
+        makeConfigured: makeService.isMakeConfigured(),
+        schedules: ['Geração: diariamente 8h', 'Envio ao Make: diariamente 8h05']
+      }
     });
   } catch (error) {
-    console.error('❌ Erro no trigger manual:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 }
 
+// Gerar post manualmente (trigger admin)
 export async function triggerManualGeneration(req, res) {
   try {
     const { especialidadeId, customTheme, generateImage, scheduledAt } = req.body;
-    
-    // Busca especialidade
+
     let especialidade = gmbService.ESPECIALIDADES.find(e => e.id === especialidadeId);
-    if (!especialidade) {
-      especialidade = gmbService.ESPECIALIDADES[0];
-    }
-    
-    // Gera conteúdo
+    if (!especialidade) especialidade = gmbService.ESPECIALIDADES[0];
+
     const postData = await gmbService.generatePostForEspecialidade(especialidade, customTheme);
-    
-    // Gera imagem se solicitado
+
     let mediaUrl = null;
-    if (generateImage) {
+    if (generateImage !== false) {
       try {
-        console.log('🎨 Gerando imagem para GMB...');
         mediaUrl = await gmbService.generateImageForEspecialidade(especialidade, postData.content);
-        console.log('✅ Imagem GMB:', mediaUrl);
       } catch (imgError) {
-        console.warn('⚠️ Erro ao gerar imagem GMB:', imgError.message);
+        console.warn('Erro ao gerar imagem:', imgError.message);
       }
     }
-    
-    // Determina o horário de agendamento
-    let scheduledDate = null;
-    if (scheduledAt) {
-      scheduledDate = new Date(scheduledAt);
-    } else {
-      // Usa horário estratégico automático
-      scheduledDate = getNextHorarioEstrategico();
-    }
-    
-    // Cria post
+
+    const scheduledDate = scheduledAt ? new Date(scheduledAt) : new Date();
+
     const post = new GmbPost({
       title: postData.title,
       content: postData.content,
@@ -256,55 +211,191 @@ export async function triggerManualGeneration(req, res) {
       aiGenerated: true,
       createdBy: req.user?._id
     });
-    
+
     await post.save();
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       data: post,
-      message: mediaUrl 
-        ? `Post + imagem gerados! ${scheduledDate > new Date() ? `Agendado para ${scheduledDate.toLocaleString('pt-BR')}` : ''}`
-        : `Post gerado (sem imagem) ${scheduledDate > new Date() ? `Agendado para ${scheduledDate.toLocaleString('pt-BR')}` : ''}`
+      message: mediaUrl ? 'Post + imagem gerados!' : 'Post gerado (sem imagem)',
+      isFree: !postData.isFallback
     });
   } catch (error) {
-    console.error('❌ Erro ao gerar post GMB:', error);
+    console.error('Erro ao gerar post:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 }
 
-/**
- * 🕐 Obtém próximo horário estratégico automático
- */
-function getNextHorarioEstrategico() {
-  const now = new Date();
-  const currentHour = now.getHours();
-
-  const horarios = gmbService.HORARIOS_PUBLICACAO.map(h => parseInt(h.split(':')[0]));
-
-  for (const hora of horarios) {
-    if (currentHour < hora) {
-      now.setHours(hora, 0, 0, 0);
-      return now;
-    }
-  }
-
-  now.setDate(now.getDate() + 1);
-  now.setHours(parseInt(gmbService.HORARIOS_PUBLICACAO[0]), 0, 0, 0);
-  return now;
-}
-
+// Gerar semana de posts
 export async function triggerWeeklyGeneration(req, res) {
   try {
+    const results = await gmbService.generateWeekPosts();
+    const count = results.filter(r => r.success).length;
+    res.json({
+      success: true,
+      data: results,
+      message: `${count}/7 posts gerados para a semana`
+    });
+  } catch (error) {
+    console.error('Erro ao gerar semana:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// Trigger manual de publicação (envia ao Make)
+export async function triggerManualPublish(req, res) {
+  try {
+    if (!makeService.isMakeConfigured()) {
+      return res.status(503).json({
+        success: false,
+        error: 'Make não configurado. Adicione MAKE_WEBHOOK_URL no .env'
+      });
+    }
+
+    const posts = await GmbPost.findScheduledForPublish(1);
+    if (posts.length === 0) {
+      return res.json({ success: true, message: 'Nenhum post agendado pendente' });
+    }
+
+    const post = posts[0];
+    await makeService.sendPostToMake(post);
+    post.status = 'published';
+    post.publishedAt = new Date();
+    post.publishedBy = 'api';
+    await post.save();
+
+    res.json({ success: true, message: 'Post enviado ao Make!', postId: post._id });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// Retry post
+export async function retryPost(req, res) {
+  try {
+    const post = await GmbPost.findById(req.params.id);
+    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+
+    if (!makeService.isMakeConfigured()) {
+      return res.status(503).json({ success: false, error: 'Make não configurado' });
+    }
+
+    await makeService.sendPostToMake(post);
+    post.status = 'published';
+    post.publishedAt = new Date();
+    await post.save();
+
+    res.json({ success: true, message: 'Post reenviado ao Make!' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 🤖 CRIAR POST ASSISTIDO
+export async function createAssistedPost(req, res) {
+  try {
+    const { especialidadeId, customTheme } = req.body;
+
+    const result = await gmbService.createAssistedPost({
+      especialidadeId,
+      customTheme,
+      userId: req.user?._id
+    });
+
+    res.json({
+      success: true,
+      data: result,
+      message: 'Post criado! Copie o texto e imagem para publicar no Google.'
+    });
+  } catch (error) {
+    console.error('Erro ao criar post assistido:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// Copiar texto do post assistido
+export async function copyPostText(req, res) {
+  try {
+    const post = await GmbPost.findById(req.params.id);
+    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+
+    post.assistData = post.assistData || {};
+    post.assistData.copiedAt = new Date();
+    await post.save();
+
+    res.json({
+      success: true,
+      copyText: post.assistData?.copyText || post.content,
+      mediaUrl: post.mediaUrl
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// Marcar post assistido como publicado manualmente
+export async function markAsPublished(req, res) {
+  try {
+    const post = await GmbPost.findById(req.params.id);
+    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+
+    post.status = 'published';
+    post.publishedAt = new Date();
+    post.publishedBy = 'manual';
+    await post.save();
+
+    res.json({ success: true, message: 'Post marcado como publicado' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 🔗 CALLBACK DO MAKE — Make avisa quando publicou no Google
+export async function makeCallback(req, res) {
+  try {
+    const { postId, status, gmbPostId, error: makeError } = req.body;
+
+    if (!postId) return res.status(400).json({ success: false, error: 'postId obrigatório' });
+
+    const post = await GmbPost.findById(postId);
+    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+
+    if (status === 'published') {
+      post.status = 'published';
+      post.publishedAt = new Date();
+      if (gmbPostId) post.gmbPostId = gmbPostId;
+    } else if (status === 'failed') {
+      await post.markFailed(makeError || 'Falha reportada pelo Make');
+    }
+
+    await post.save();
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 }
 
-export async function listEspecialidades(req, res) {
-  try {
-    res.json({ success: true, data: gmbService.ESPECIALIDADES });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+// Placeholders — inteligência em desenvolvimento
+export async function getIntelligentSuggestion(req, res) {
+  res.json({ success: true, data: null, message: 'Em desenvolvimento' });
+}
+
+export async function getIntelligenceData(req, res) {
+  res.json({
+    success: true,
+    data: { vagas: { count: 0 }, vendas: { count: 0 }, reviews: { count: 0 }, jaPostouHoje: false },
+    message: 'Em desenvolvimento'
+  });
+}
+
+export async function acceptSuggestion(req, res) {
+  res.json({ success: false, error: 'Em desenvolvimento' });
+}
+
+export async function generateWeekAssisted(req, res) {
+  res.json({ success: false, error: 'Em desenvolvimento' });
+}
+
+export async function createSmartPost(req, res) {
+  res.json({ success: false, error: 'Em desenvolvimento' });
 }

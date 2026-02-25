@@ -392,7 +392,11 @@ export const whatsappController = {
                 const combinedText = data.messages.join(' ');
 
                 // Substitui o texto da mensagem pelo combinado
-                msg.text.body = combinedText;
+                if (!msg.text) {
+                    msg.text = { body: combinedText };
+                } else {
+                    msg.text.body = combinedText;
+                }
                 await processInboundMessage(msg, value);
             }, 3500);
 

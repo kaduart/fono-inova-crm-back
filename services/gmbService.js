@@ -1,9 +1,8 @@
 /**
  * 📍 Serviço de integração com Google Meu Negócio (GMB)
- * VERSÃO DEFINITIVA: HuggingFace FLUX + Cloudinary
+ * Modo: Geração de conteúdo + Make (Integromat) para publicação automática
  */
 
-import { google } from 'googleapis';
 import OpenAI from 'openai';
 import { v2 as cloudinary } from 'cloudinary';
 import GmbPost from '../models/GmbPost.js';
@@ -19,20 +18,6 @@ cloudinary.config({
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
-
-// Configuração OAuth2 para GMB
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GMB_CLIENT_ID,
-  process.env.GMB_CLIENT_SECRET,
-  'urn:ietf:wg:oauth:2.0:oob'
-);
-
-if (process.env.GMB_REFRESH_TOKEN) {
-  oauth2Client.setCredentials({ refresh_token: process.env.GMB_REFRESH_TOKEN });
-}
-
-const LOCATION_NAME = process.env.GMB_LOCATION_ID ?
-  `accounts/${process.env.GMB_ACCOUNT_ID}/locations/${process.env.GMB_LOCATION_ID.trim()}` : null;
 
 /**
  * 🏥 ESPECIALIDADES DA FONO INOVA
@@ -539,87 +524,6 @@ export async function generateImageForEspecialidade(especialidade, postContent =
   return null;
 }
 
-/**
- * 📤 PUBLICA NO GMB
- */
-export async function publishToGMB(postData) {
-  try {
-    if (!LOCATION_NAME) {
-      throw new Error('GMB_LOCATION_ID não configurado');
-    }
-
-    const { token } = await oauth2Client.getAccessToken();
-    if (!token) throw new Error('Não foi possível obter access token');
-
-    const postBody = {
-      languageCode: 'pt-BR',
-      summary: postData.content.slice(0, 1500),
-      topicType: 'STANDARD',
-      callToAction: {
-        actionType: 'LEARN_MORE',
-        url: postData.ctaUrl
-      }
-    };
-
-    if (postData.mediaUrl) {
-      postBody.media = [{
-        mediaFormat: 'PHOTO',
-        sourceUrl: postData.mediaUrl
-      }];
-    }
-
-    const title = postData.title || 'Post da Clínica Fono Inova';
-    console.log(`📤 Publicando "${title.substring(0, 40)}..."`);
-
-    // 🚨 API DO GOOGLE BUSINESS PROFILE (My Business)
-    const url = `https://mybusiness.googleapis.com/v4/${LOCATION_NAME}/localPosts`;
-    console.log('🌐 URL:', url);
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(postBody)
-    });
-
-    // Log da resposta para debug
-    const responseText = await response.text();
-    console.log('📥 Status:', response.status);
-    console.log('📥 Resposta:', responseText.substring(0, 500));
-
-    if (!response.ok) {
-      // Tenta parsear como JSON, se não for, mostra o texto
-      let errorMessage = response.statusText;
-      try {
-        const errorJson = JSON.parse(responseText);
-        errorMessage = errorJson.error?.message || errorJson.error || response.statusText;
-      } catch (e) {
-        errorMessage = responseText.substring(0, 200) || response.statusText;
-      }
-      throw new Error(`HTTP ${response.status}: ${errorMessage}`);
-    }
-
-    // Parseia o JSON manualmente já que já lemos o texto
-    let data;
-    try {
-      data = JSON.parse(responseText);
-    } catch (e) {
-      throw new Error(`Resposta inválida do Google: ${responseText.substring(0, 200)}`);
-    }
-
-    return {
-      success: true,
-      gmbPostId: data.name,
-      url: data.searchUrl
-    };
-
-  } catch (error) {
-    console.error('❌ Erro ao publicar:', error);
-    throw error;
-  }
-}
 
 /**
  * 🔄 CRIA POST DO DIA
@@ -659,31 +563,12 @@ export async function createDailyPost(options = {}) {
       aiPrompt: options.customTheme
         ? `Especialidade: ${especialidade.nome} | Tema: ${options.customTheme}`
         : `Especialidade: ${especialidade.nome}`,
-      status: options.publishImmediately ? 'draft' : 'scheduled',
+      status: 'scheduled',
       scheduledAt,
       createdBy: options.userId
     });
 
     await post.save();
-
-    if (options.publishImmediately) {
-      const published = await publishToGMB({
-        title: post.title,
-        content: post.content,
-        mediaUrl: post.mediaUrl,
-        ctaUrl: post.ctaUrl
-      });
-
-      await post.markPublished(published.gmbPostId);
-      console.log('✅ PUBLICADO:', published.gmbPostId);
-
-      return {
-        success: true,
-        post,
-        gmbPostId: published.gmbPostId,
-        especialidade
-      };
-    }
 
     return {
       success: true,
@@ -716,46 +601,6 @@ function getNextHorarioEstrategico() {
   return now;
 }
 
-/**
- * 📤 PUBLICA AGENDADOS
- */
-export async function publishScheduledPosts(limit = 1) {
-  const results = { processed: 0, published: 0, failed: 0, errors: [] };
-
-  try {
-    const posts = await GmbPost.findScheduledForPublish(limit);
-    results.processed = posts.length;
-
-    if (posts.length === 0) return results;
-
-    for (const post of posts) {
-      try {
-        const published = await publishToGMB({
-          title: post.title,
-          content: post.content,
-          mediaUrl: post.mediaUrl,
-          ctaUrl: post.ctaUrl
-        });
-
-        await post.markPublished(published.gmbPostId);
-        results.published++;
-
-      } catch (error) {
-        await post.markFailed(error.message);
-        results.failed++;
-        results.errors.push({ postId: post._id, error: error.message });
-      }
-
-      await new Promise(r => setTimeout(r, 3000));
-    }
-
-    return results;
-
-  } catch (error) {
-    console.error('❌ Erro:', error);
-    throw error;
-  }
-}
 
 /**
  * 📅 GERA SEMANA
@@ -796,61 +641,11 @@ export async function generateWeekPosts() {
   return results;
 }
 
-export async function checkGMBConnection() {
-  try {
-    if (!process.env.GMB_REFRESH_TOKEN) {
-      return { connected: false, error: 'Refresh token não configurado' };
-    }
-
-    const { token } = await oauth2Client.getAccessToken();
-    const response = await fetch(
-      'https://mybusiness.googleapis.com/v4/accounts',
-      { headers: { 'Authorization': `Bearer ${token}` } }
-    );
-
-    if (!response.ok) {
-      return { connected: false, error: `API retornou ${response.status}` };
-    }
-
-    const data = await response.json();
-    return { connected: true, accounts: data.accounts || [] };
-
-  } catch (error) {
-    return { connected: false, error: error.message };
-  }
-}
 
 export async function fetchPostMetrics() {
   return await GmbPost.getStats();
 }
 
-export async function deleteGMBPost(postId) {
-  try {
-    const post = await GmbPost.findById(postId);
-    if (!post || !post.gmbPostId) {
-      throw new Error('Post não encontrado');
-    }
-
-    const { token } = await oauth2Client.getAccessToken();
-
-    await fetch(
-      `https://mybusiness.googleapis.com/v4/${post.gmbPostId}`,
-      {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` }
-      }
-    );
-
-    post.status = 'cancelled';
-    await post.save();
-
-    return { success: true };
-
-  } catch (error) {
-    console.error('❌ Erro ao deletar:', error);
-    throw error;
-  }
-}
 
 /**
  * 🎨 GERA IMAGEM A PARTIR DO CONTEÚDO (para preview/edit)
@@ -895,6 +690,82 @@ export async function generatePostImage(content, especialidadeId = null) {
   }
 }
 
+/**
+ * 🤖 CRIA POST NO MODO ASSISTIDO (sem API do Google)
+ * Gera post + imagem e retorna para publicação manual
+ */
+export async function createAssistedPost(options = {}) {
+  try {
+    const { 
+      especialidadeId, 
+      customTheme, 
+      userId,
+      type = 'daily'
+    } = options;
+
+    console.log('🤖 Criando post assistido:', { type, especialidadeId });
+
+    // Busca especialidade
+    let especialidade = ESPECIALIDADES.find(e => e.id === especialidadeId);
+    if (!especialidade) {
+      especialidade = ESPECIALIDADES[0];
+    }
+
+    // Gera conteúdo
+    const postData = await generatePostForEspecialidade(especialidade, customTheme);
+
+    // Gera imagem
+    const mediaUrl = await generateImageForEspecialidade(especialidade, postData.content);
+
+    // Formata texto para copiar
+    const copyText = `${postData.content}
+
+---
+💚 Fono Inova - Centro de Desenvolvimento Infantil
+📍 Anápolis - GO
+📲 WhatsApp: (62) 99331-5240
+🌐 www.clinicafonoinova.com.br`;
+
+    // Salva no banco
+    const post = new GmbPost({
+      title: postData.title,
+      content: postData.content,
+      theme: especialidade.id,
+      type,
+      status: 'ready',
+      mediaUrl,
+      mediaType: mediaUrl ? 'image' : null,
+      ctaUrl: especialidade.url,
+      assistData: {
+        gmbUrl: 'https://business.google.com/posts',
+        copyText,
+        scheduledFor: new Date()
+      },
+      aiGenerated: true,
+      createdBy: userId
+    });
+
+    await post.save();
+
+    console.log('✅ Post assistido criado:', post._id);
+
+    return {
+      success: true,
+      post,
+      assistData: {
+        postId: post._id,
+        gmbUrl: 'https://business.google.com/posts',
+        copyText,
+        mediaUrl
+      }
+    };
+
+  } catch (error) {
+    console.error('❌ Erro ao criar post assistido:', error);
+    throw error;
+  }
+}
+
 export {
   uploadToCloudinary
 };
@@ -903,13 +774,9 @@ export default {
   generatePostForEspecialidade,
   generateImageForEspecialidade,
   generatePostImage,
-  publishToGMB,
   createDailyPost,
-  publishScheduledPosts,
   generateWeekPosts,
-  checkGMBConnection,
   fetchPostMetrics,
-  deleteGMBPost,
   ESPECIALIDADES,
   HORARIOS_PUBLICACAO
 };

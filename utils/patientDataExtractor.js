@@ -37,7 +37,7 @@ export function extractName(msg) {
 
 // Extrai data de nascimento
 export function extractBirth(msg) {
-    const m = msg.match(/\b(\d{2})[\/\-](\d{2})[\/\-](\d{4})\b/);
+    const m = msg.match(/\b(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})\b/);
     if (!m) return null;
     return `${m[3]}-${m[2]}-${m[1]}`;
 };

@@ -2,12 +2,20 @@ import mongoose from "mongoose";
 
 /**
  * 📍 Schema para posts do Google Meu Negócio (GMB)
- * Gerencia criação, agendamento e publicação automatizada
+ * VERSÃO ASSISTIDA: Sistema gera, humano publica
  */
 const gmbPostSchema = new mongoose.Schema({
   // Conteúdo do post
   title: { type: String, required: true },
   content: { type: String, required: true },
+  
+  // Tipo de post (estratégia)
+  type: {
+    type: String,
+    enum: ['daily', 'offer', 'review', 'institutional', 'educational', 'vaga'],
+    default: 'daily',
+    index: true
+  },
   
   // Tema/assunto do post
   theme: { 
@@ -16,10 +24,10 @@ const gmbPostSchema = new mongoose.Schema({
     index: true 
   },
   
-  // Status do post
+  // Status do post (assistido)
   status: {
     type: String,
-    enum: ['draft', 'scheduled', 'published', 'failed', 'cancelled'],
+    enum: ['draft', 'ready', 'scheduled', 'published', 'failed', 'cancelled'],
     default: 'draft',
     index: true
   },
@@ -56,6 +64,29 @@ const gmbPostSchema = new mongoose.Schema({
     lastUpdated: { type: Date }
   },
   
+  // 🎯 Campos do Publisher Assistido
+  assistData: {
+    // URL direta do painel do Google
+    gmbUrl: { type: String },
+    // Conteúdo formatado para copiar
+    copyText: { type: String },
+    // Indica se já foi copiado
+    copiedAt: { type: Date },
+    // Quem publicou manualmente
+    publishedByUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    // Data prevista de publicação
+    scheduledFor: { type: Date }
+  },
+  
+  // Prioridade/Score do post (para IA)
+  priority: { type: Number, default: 0 },
+  
+  // Fonte de dados (agenda, vendas, etc)
+  dataSource: {
+    type: { type: String, enum: ['agenda', 'vendas', 'avaliacoes', 'vagas', 'manual'] },
+    details: { type: String }
+  },
+  
   // Geração por IA
   aiGenerated: { type: Boolean, default: true },
   aiModel: { type: String, default: 'claude-sonnet-4-6' },
@@ -81,9 +112,22 @@ const gmbPostSchema = new mongoose.Schema({
 // Índices para consultas comuns
 gmbPostSchema.index({ status: 1, scheduledAt: 1 });
 gmbPostSchema.index({ status: 1, createdAt: -1 });
+gmbPostSchema.index({ status: 1, type: 1, createdAt: -1 });
 gmbPostSchema.index({ theme: 1, status: 1 });
 gmbPostSchema.index({ tags: 1 });
 gmbPostSchema.index({ gmbPostId: 1 });
+
+// 🚨 Índice ÚNICO: Impede 2 posts do mesmo tipo no mesmo dia
+gmbPostSchema.index({ 
+  type: 1, 
+  createdAt: 1 
+}, {
+  unique: true,
+  partialFilterExpression: { 
+    status: { $in: ['ready', 'published'] },
+    type: { $in: ['daily', 'vaga'] }
+  }
+});
 
 // Índice para busca de posts agendados pendentes
 gmbPostSchema.index({ 
@@ -91,6 +135,12 @@ gmbPostSchema.index({
   scheduledAt: 1 
 }, {
   partialFilterExpression: { status: 'scheduled' }
+});
+
+// Índice para posts do dia (evita duplicidade)
+gmbPostSchema.index({
+  'assistData.scheduledFor': 1,
+  status: 1
 });
 
 /**
@@ -167,6 +217,34 @@ gmbPostSchema.statics.findByPeriod = function(startDate, endDate, status) {
   };
   if (status) query.status = status;
   return this.find(query).sort({ createdAt: -1 });
+};
+
+/**
+ * 🚨 Verifica se já existe post do tipo hoje
+ */
+gmbPostSchema.statics.existsToday = async function(type) {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  
+  const endOfDay = new Date();
+  endOfDay.setHours(23, 59, 59, 999);
+  
+  const count = await this.countDocuments({
+    type,
+    createdAt: { $gte: startOfDay, $lte: endOfDay },
+    status: { $in: ['ready', 'published'] }
+  });
+  
+  return count > 0;
+};
+
+/**
+ * Busca posts prontos para publicar (assistido)
+ */
+gmbPostSchema.statics.findReadyForPublish = function(limit = 5) {
+  return this.find({ status: 'ready' })
+    .sort({ 'assistData.scheduledFor': 1, priority: -1 })
+    .limit(limit);
 };
 
 /**
