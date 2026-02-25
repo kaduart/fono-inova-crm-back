@@ -11,7 +11,7 @@ import http from "http";
 import mongoose from "mongoose";
 import path from "path";
 import { fileURLToPath } from "url";
-import { followupEvents, followupQueue } from "./config/bullConfig.js";
+import { followupEvents, followupQueue, videoGenerationQueue, videoGenerationEvents } from "./config/bullConfig.js";
 process.env.TZ = 'America/Sao_Paulo';
 
 // ======================================================
@@ -71,6 +71,7 @@ import expenseRoutes from './routes/financial/expense.js';
 import cashflowRoutes from './routes/financial/cashflow.js';
 import financialOverviewRoutes from './routes/financial/overview.routes.js';
 import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
+import { scheduleGmbCron } from './jobs/gmbScheduledTasks.js';
 import planningRoutes from './routes/planning.js';
 import marketingRoutes from './routes/marketing.js';
 import gmbRoutes from './routes/gmb.routes.js';
@@ -308,6 +309,7 @@ function initFollowupWatcher() {
     // Workers e Crons
     await import("./workers/followup.worker.js");
     await import("./workers/followup.cron.js");
+    await import("./workers/video.worker.js");  // 🎬 Video pipeline worker
     await import("./jobs/followup.analytics.cron.js");
     await import("./crons/responseTracking.cron.js");
 
@@ -350,12 +352,19 @@ function initFollowupWatcher() {
 // 🎛️ Painel Bull Board (BullMQ v5)
 // ======================================================
 try {
-  // 🔹 Eventos globais da fila
+  // 🔹 Eventos globais das filas
   followupEvents.on("completed", ({ jobId }) =>
-    console.log(`🎯 Job ${jobId} concluído com sucesso`)
+    console.log(`🎯 Followup Job ${jobId} concluído`)
   );
   followupEvents.on("failed", ({ jobId, failedReason }) =>
-    console.error(`💥 Job ${jobId} falhou: ${failedReason}`)
+    console.error(`💥 Followup Job ${jobId} falhou: ${failedReason}`)
+  );
+  
+  videoGenerationEvents.on("completed", ({ jobId }) =>
+    console.log(`🎬 Video Job ${jobId} concluído`)
+  );
+  videoGenerationEvents.on("failed", ({ jobId, failedReason }) =>
+    console.error(`🎬 Video Job ${jobId} falhou: ${failedReason}`)
   );
 
   // 🔹 Painel Bull Board
@@ -363,7 +372,10 @@ try {
   serverAdapter.setBasePath("/admin/queues");
 
   createBullBoard({
-    queues: [new BullMQAdapter(followupQueue)],
+    queues: [
+      new BullMQAdapter(followupQueue),
+      new BullMQAdapter(videoGenerationQueue)  // 🎬 Adicionar fila de vídeos
+    ],
     serverAdapter,
   });
 

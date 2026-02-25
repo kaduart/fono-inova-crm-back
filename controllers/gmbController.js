@@ -50,11 +50,40 @@ export async function deletePost(req, res) {
 export async function publishPost(req, res) {
   try {
     const post = await GmbPost.findById(req.params.id);
-    post.status = 'published';
-    post.publishedAt = new Date();
-    await post.save();
-    res.json({ success: true, data: post });
+    
+    if (!post) {
+      return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    }
+    
+    if (post.status === 'published') {
+      return res.status(400).json({ success: false, error: 'Post já está publicado' });
+    }
+    
+    // 🚨 CHAMA A API DO GOOGLE PARA PUBLICAR DE VERDADE
+    const result = await gmbService.publishToGMB({
+      title: post.title,
+      content: post.content,
+      mediaUrl: post.mediaUrl,
+      ctaUrl: post.ctaUrl
+    });
+    
+    // Marca como publicado no banco
+    await post.markPublished(result.gmbPostId);
+    
+    res.json({ 
+      success: true, 
+      data: post,
+      gmbPostId: result.gmbPostId,
+      url: result.url
+    });
   } catch (error) {
+    console.error('❌ Erro ao publicar:', error);
+    // Tenta marcar como falho
+    try {
+      const post = await GmbPost.findById(req.params.id);
+      if (post) await post.markFailed(error.message);
+    } catch (e) { /* ignore */ }
+    
     res.status(500).json({ success: false, error: error.message });
   }
 }
@@ -63,6 +92,61 @@ export async function retryPost(req, res) {
   try {
     res.json({ success: true });
   } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * 🔄 REPUBLICAR POST (para posts que estão como 'published' no banco
+ * mas nunca foram publicados no Google)
+ */
+export async function republishPost(req, res) {
+  try {
+    const post = await GmbPost.findById(req.params.id);
+    
+    if (!post) {
+      return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    }
+    
+    // Só permite republicar posts já publicados ou que falharam
+    if (post.status !== 'published' && post.status !== 'failed') {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Só é possível republicar posts já publicados ou com falha' 
+      });
+    }
+    
+    // 🚨 PUBLICA NO GOOGLE (mesmo que já tenha gmbPostId, tenta novamente)
+    const result = await gmbService.publishToGMB({
+      title: post.title,
+      content: post.content,
+      mediaUrl: post.mediaUrl,
+      ctaUrl: post.ctaUrl || post.especialidade?.url
+    });
+    
+    // Atualiza o post com novo ID do Google
+    post.gmbPostId = result.gmbPostId;
+    post.publishedAt = new Date();
+    post.status = 'published';
+    post.error = null;
+    post.retryCount = (post.retryCount || 0) + 1;
+    await post.save();
+    
+    res.json({ 
+      success: true, 
+      data: post,
+      gmbPostId: result.gmbPostId,
+      url: result.url,
+      message: 'Post republicado com sucesso!'
+    });
+  } catch (error) {
+    console.error('❌ Erro ao republicar:', error);
+    // Tenta marcar como falho
+    try {
+      const post = await GmbPost.findById(req.params.id);
+      if (post) await post.markFailed(error.message);
+    } catch (e) { /* ignore */ }
+    
     res.status(500).json({ success: false, error: error.message });
   }
 }
@@ -112,8 +196,16 @@ export async function getCronStatus(req, res) {
 
 export async function triggerManualPublish(req, res) {
   try {
-    res.json({ success: true });
+    // Publica posts agendados que já passaram do horário
+    const results = await gmbService.publishScheduledPosts(5);
+    
+    res.json({ 
+      success: true, 
+      data: results,
+      message: `${results.published} posts publicados, ${results.failed} falhas`
+    });
   } catch (error) {
+    console.error('❌ Erro no trigger manual:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 }

@@ -571,24 +571,43 @@ export async function publishToGMB(postData) {
     const title = postData.title || 'Post da Clínica Fono Inova';
     console.log(`📤 Publicando "${title.substring(0, 40)}..."`);
 
-    const response = await fetch(
-      `https://mybusiness.googleapis.com/v4/${LOCATION_NAME}/localPosts`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(postBody)
-      }
-    );
+    // 🚨 API DO GOOGLE BUSINESS PROFILE (My Business)
+    const url = `https://mybusiness.googleapis.com/v4/${LOCATION_NAME}/localPosts`;
+    console.log('🌐 URL:', url);
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(postBody)
+    });
+
+    // Log da resposta para debug
+    const responseText = await response.text();
+    console.log('📥 Status:', response.status);
+    console.log('📥 Resposta:', responseText.substring(0, 500));
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error?.message || response.statusText);
+      // Tenta parsear como JSON, se não for, mostra o texto
+      let errorMessage = response.statusText;
+      try {
+        const errorJson = JSON.parse(responseText);
+        errorMessage = errorJson.error?.message || errorJson.error || response.statusText;
+      } catch (e) {
+        errorMessage = responseText.substring(0, 200) || response.statusText;
+      }
+      throw new Error(`HTTP ${response.status}: ${errorMessage}`);
     }
 
-    const data = await response.json();
+    // Parseia o JSON manualmente já que já lemos o texto
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      throw new Error(`Resposta inválida do Google: ${responseText.substring(0, 200)}`);
+    }
 
     return {
       success: true,
