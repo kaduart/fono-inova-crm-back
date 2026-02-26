@@ -125,7 +125,11 @@ export function extractAgeFromText(text) {
  */
 export function extractPeriodFromText(text) {
     // Normalizar para NFD para lidar com caracteres acentuados
-    const t = (text || "").toLowerCase().normalize('NFD');
+    let t = (text || "").toLowerCase().normalize('NFD');
+    
+    // 🆕 FIX: Limpa erros comuns de digitação mobile
+    // "Dmanha" → "manha" (quando o usuário digita rápido e o D fica grudado)
+    t = t.replace(/^d(manha|tarde|noite)\b/, '$1');
     
     // Padrões com contexto positivo (só, apenas, prefiro) vêm primeiro
     const regexPositivoTarde = /\b(s[oó]\s+|apenas\s+|s[oó]mente\s+|prefer[io]\s+)?(de\s+)?tarde\b/i;

@@ -171,6 +171,18 @@ const leadSchema = new mongoose.Schema({
   // ✅ TRACKING DE RESPOSTA
   responded: { type: Boolean, default: false },
 
+  // 🆕 TRIAGEM AMANDA 2.0 - Fluxo de coleta de dados
+  triageStep: {
+    type: String,
+    enum: [
+      'ask_profile',     // nome/idade
+      'ask_complaint',   // queixa/motivo
+      'ask_period',      // período (manhã/tarde)
+      'done'
+    ],
+    default: null,
+  },
+
   // 🆕 TRACKING DE CONTATO PARA WARM RECALL
   lastContactAt: { type: Date, default: null, index: true },
   lastFollowUpAt: { type: Date, default: null },

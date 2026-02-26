@@ -1949,12 +1949,18 @@ export async function getOptimizedAmandaResponse({
         !lead.pendingPatientInfoForScheduling &&
         lead.stage !== "paciente"
     ) {
-        await safeLeadUpdate(lead._id, {
+        console.log("🔄 [TRIAGEM] Iniciando triagem - setando triageStep: ask_period");
+        const updateResult = await safeLeadUpdate(lead._id, {
             $set: {
                 triageStep: "ask_period",
                 stage: "triagem_agendamento"
             }
         });
+        if (updateResult) {
+            console.log("✅ [TRIAGEM] triageStep salvo com sucesso:", updateResult.triageStep);
+        } else {
+            console.warn("⚠️ [TRIAGEM] Falha ao salvar triageStep");
+        }
         lead.triageStep = "ask_period"; // mantém em memória
     }
 
@@ -5019,7 +5025,7 @@ ${wisdomBlock}
     const enforcementResult = enforceStructuralRules(textResp, {
         flags,
         lead,
-        userText: text
+        userText: userText
     }, {
         strictMode: true,   // ✅ FIX: ativo para garantir "nunca inventar horário/opção"
         logViolations: true
