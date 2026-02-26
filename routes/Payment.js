@@ -2397,13 +2397,21 @@ router.post('/insurance', auth, async (req, res) => {
  */
 router.get('/insurance/receivables', auth, async (req, res) => {
     try {
-        const { provider, status } = req.query;
+        const { provider, status, month } = req.query;
 
         const match = {
             billingType: 'convenio',
-            'insurance.status': { $in: status ? [status] : ['pending_billing', 'billed'] }
+            'insurance.status': {
+                $in: status
+                    ? [status]
+                    : month
+                        ? ['pending_billing', 'billed', 'received', 'partial', 'glosa']
+                        : ['pending_billing', 'billed']
+            }
         };
 
+        // Filtro de mês (paymentDate no formato YYYY-MM-DD)
+        if (month) match['paymentDate'] = { $regex: `^${month}` };
         if (provider) match['insurance.provider'] = provider;
 
         const receivables = await Payment.aggregate([

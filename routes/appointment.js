@@ -538,8 +538,10 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
             };
 
 
+            console.log('[POST APPOINTMENT] Criando pagamento com dados:', paymentData);
             const payment = await Payment.create(paymentData);
             createdPaymentId = payment._id;
+            console.log('[POST APPOINTMENT] ✅ Pagamento criado:', createdPaymentId);
 
             // após criar o appointment:
             await Patient.findByIdAndUpdate(
@@ -663,12 +665,49 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
             });
         }
 
+        // 🛡️ SEGURANÇA: Verificar se pagamento foi criado, se não, criar fallback
+        if (!createdPaymentId && createdAppointmentId) {
+            console.warn('[POST APPOINTMENT] ⚠️ Pagamento não foi criado! Criando fallback...');
+            
+            const fallbackPaymentData = {
+                patient: safeId(patientId),
+                doctor: safeId(doctorId),
+                appointment: safeId(createdAppointmentId),
+                serviceType: serviceType || 'individual_session',
+                amount: parseFloat(req.body.paymentAmount) || 0,
+                paymentMethod: paymentMethod || 'pix',
+                notes: notes || '[PAGAMENTO FALLBACK - CRIADO AUTOMATICAMENTE]',
+                status: 'pending',
+                paymentDate: req.body.date,
+                serviceDate: req.body.date,
+                createdAt: currentDate,
+                updatedAt: currentDate,
+            };
+            
+            const fallbackPayment = await Payment.create(fallbackPaymentData);
+            createdPaymentId = fallbackPayment._id;
+            
+            // Vincular ao appointment
+            await Appointment.findByIdAndUpdate(createdAppointmentId, {
+                payment: createdPaymentId
+            });
+            
+            console.log('[POST APPOINTMENT] ✅ Fallback payment criado:', createdPaymentId);
+        }
+
+        // Buscar o appointment criado para retornar completo
+        const createdAppointment = await Appointment.findById(createdAppointmentId)
+            .populate('patient doctor session payment');
+        
+        console.log('[POST APPOINTMENT] ✅ Retornando appointment:', createdAppointmentId, 'com payment:', createdPaymentId);
+        
         return res.status(201).json({
             success: true,
             message: 'Agendamento criado (pagamento pendente)',
             data: {
                 ...populatedPayment.toObject(),
-                billingType: billingType || 'particular'
+                billingType: billingType || 'particular',
+                appointment: createdAppointment
             }
         });
 
@@ -949,6 +988,13 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
             }
 
             // 3. Aplicar atualizações manualmente
+            console.log(`[PUT] Dados recebidos:`, {
+                paymentAmount: req.body.paymentAmount,
+                sessionValue: req.body.sessionValue,
+                amount: req.body.amount,
+                body: req.body
+            });
+            
             const updateData = {
                 ...req.body,
                 doctor: req.body.doctorId || appointment.doctor,
@@ -1530,6 +1576,44 @@ router.patch('/:id/complete', auth, async (req, res) => {
                         { session }
                     );
                 }
+            }
+            
+            // 🆕 CRIAR PAYMENT SE NÃO EXISTIR (e não for pacote NEM convênio)
+            const isConvenio = appointment.billingType === 'convenio' || 
+                               appointment.insuranceProvider || 
+                               appointment.insuranceGuide;
+            
+            if (!finalPaymentId && !packageId && !isConvenio) {
+                console.log(`[complete] ⚠️ Payment não encontrado, criando novo...`);
+                
+                const newPayment = await Payment.create([{
+                    patient: appointment.patient?._id || appointment.patient,
+                    doctor: appointment.doctor?._id || appointment.doctor,
+                    appointment: appointment._id,
+                    session: appointment.session?._id || appointment.session,
+                    serviceType: appointment.serviceType || 'individual_session',
+                    amount: appointment.sessionValue || 0,
+                    paymentMethod: appointment.paymentMethod || 'pix',
+                    status: 'paid',
+                    paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"),
+                    serviceDate: appointment.date,
+                    notes: '[CRIADO AUTOMATICAMENTE NO COMPLETE]',
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                }], { session });
+                
+                finalPaymentId = newPayment[0]._id;
+                
+                // Vincular ao appointment
+                await Appointment.updateOne(
+                    { _id: appointment._id },
+                    { $set: { payment: finalPaymentId } },
+                    { session }
+                );
+                
+                console.log(`[complete] ✅ Payment criado: ${finalPaymentId}`);
+            } else if (isConvenio) {
+                console.log(`[complete] ℹ️ Convênio detectado - não criando payment`);
             }
 
             if (finalPaymentId) {

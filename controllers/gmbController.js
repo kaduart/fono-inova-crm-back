@@ -192,7 +192,7 @@ export async function triggerManualGeneration(req, res) {
     let mediaUrl = null;
     if (generateImage !== false) {
       try {
-        mediaUrl = await gmbService.generateImageForEspecialidade(especialidade, postData.content);
+        mediaUrl = await gmbService.generateImageForEspecialidade(especialidade, postData.content, false);
       } catch (imgError) {
         console.warn('Erro ao gerar imagem:', imgError.message);
       }
@@ -204,10 +204,12 @@ export async function triggerManualGeneration(req, res) {
       title: postData.title,
       content: postData.content,
       theme: especialidade.id,
-      status: scheduledDate > new Date() ? 'scheduled' : 'draft',
+      status: 'scheduled',
       scheduledAt: scheduledDate,
       mediaUrl,
       mediaType: mediaUrl ? 'image' : null,
+      ctaUrl: especialidade.url || null,
+      ctaType: 'LEARN_MORE',
       aiGenerated: true,
       createdBy: req.user?._id
     });
@@ -370,6 +372,32 @@ export async function makeCallback(req, res) {
 
     await post.save();
     res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// Regenerar imagem de um post existente
+export async function regenerateImage(req, res) {
+  try {
+    const post = await GmbPost.findById(req.params.id);
+    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+
+    const especialidade =
+      gmbService.ESPECIALIDADES.find(e => e.id === post.theme) ||
+      gmbService.ESPECIALIDADES[0];
+
+    const mediaUrl = await gmbService.generateImageForEspecialidade(especialidade, post.content, false);
+
+    if (!mediaUrl) {
+      return res.status(500).json({ success: false, error: 'Falha ao gerar imagem' });
+    }
+
+    post.mediaUrl = mediaUrl;
+    post.mediaType = 'image';
+    await post.save();
+
+    res.json({ success: true, data: { mediaUrl }, message: 'Imagem regenerada!' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

@@ -574,4 +574,14 @@ router.get('/weekly-metrics',
     getWeeklyMetrics
 );
 
+/**
+ * GET /leads/history-metrics
+ * Métricas de leads do histórico (WhatsApp importados)
+ * Acesso: admin, secretary
+ */
+router.get('/history-metrics',
+    authorize(['admin', 'secretary']),
+    getHistoryMetrics
+);
+
 export default router;
