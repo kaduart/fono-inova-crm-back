@@ -26,6 +26,73 @@ import PatientBalance from '../models/PatientBalance.js';
 import { getIo } from '../config/socket.js';
 import guideService from '../services/billing/guideService.js';
 import Convenio from '../models/Convenio.js';
+import { normalizeE164BR } from '../utils/phone.js';
+
+// 🆕 HELPER: Cria lead automaticamente quando agendamento é feito direto
+// SEMPRE cria novo lead (mesmo telefone pode ser pai com múltiplos filhos)
+async function ensureLeadForAppointment(patientId, appointmentData, source = 'agenda_direta') {
+    try {
+        // Buscar dados do paciente
+        const patient = await Patient.findById(patientId).lean();
+        if (!patient) {
+            console.log('[ensureLeadForAppointment] Paciente não encontrado:', patientId);
+            return null;
+        }
+
+        const phoneE164 = patient.phone ? normalizeE164BR(patient.phone) : null;
+        
+        // 🆕 SEMPRE cria novo lead - não verifica duplicados
+        // (mesmo telefone pode ser pai agendando para filhos diferentes)
+        const newLead = await Leads.create({
+            name: patient.fullName || patient.name || 'Paciente',
+            contact: {
+                phone: phoneE164,
+                email: patient.email || null
+            },
+            origin: source === 'whatsapp' ? 'WhatsApp' : 'Agenda Direta',
+            status: 'agendado',
+            stage: 'interessado_agendamento',
+            circuit: 'Circuito Padrão',
+            conversionScore: 50,
+            responded: true,
+            autoReplyEnabled: false,
+            patientInfo: {
+                fullName: patient.fullName,
+                phone: phoneE164,
+                email: patient.email
+            },
+            appointment: {
+                seekingFor: 'Adulto +18 anos',
+                modality: 'Presencial',
+                healthPlan: 'Mensalidade'
+            },
+            interactions: [{
+                date: new Date(),
+                channel: 'manual',
+                direction: 'inbound',
+                message: `Lead criado do agendamento direto - ${appointmentData.serviceType || 'consulta'} em ${appointmentData.date}`,
+                status: 'completed'
+            }],
+            scoreHistory: [{
+                score: 50,
+                reason: 'Agendamento direto na agenda externa',
+                date: new Date()
+            }],
+            lastInteractionAt: new Date(),
+            lastContactAt: new Date(),
+            autoCreatedFromAppointment: true,
+            appointmentSource: source,
+            linkedPatientId: patientId // 🆕 Link para o paciente
+        });
+
+        console.log('[ensureLeadForAppointment] ✅ Novo lead criado:', newLead._id);
+        return newLead._id;
+
+    } catch (error) {
+        console.error('[ensureLeadForAppointment] Erro:', error);
+        return null;
+    }
+}
 
 dotenv.config();
 const router = express.Router();
@@ -458,6 +525,8 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
 
             const totalDone = await Session.countDocuments({ patient: safeId(patientId) });
 
+            let effectiveLeadId = leadId;
+            
             if (leadId) {
                 await Leads.findByIdAndUpdate(leadId, { patientJourneyStage: "ativo" });
 
@@ -468,6 +537,19 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                     sessionNumber: totalDone,
                     patientName: patientDoc?.fullName || patientDoc?.name || ""
                 });
+            } else {
+                // 🆕 Criar lead automaticamente se não houver (agendamento direto)
+                const leadSource = source || 'agenda_direta';
+                effectiveLeadId = await ensureLeadForAppointment(patientId, {
+                    serviceType,
+                    date: req.body.date,
+                    time: req.body.time,
+                    specialty
+                }, leadSource);
+                
+                if (effectiveLeadId) {
+                    console.log('[POST Appointment] Lead criado/vinculado automaticamente:', effectiveLeadId);
+                }
             }
 
             const appointment = await Appointment.create({
@@ -867,11 +949,33 @@ router.get('/', flexibleAuth, async (req, res) => {
         const shouldExcludePreAgendamentos = excludePreAgendamentos === 'true' || excludePreAgendamentos === true;
         
         if (!shouldExcludePreAgendamentos) {
+            // 🎯 DEDUPLICAÇÃO: Verificar quais pré-agendamentos já foram convertidos em appointments
+            // Criar um Set de chaves dos appointments existentes (data|hora|paciente)
+            const existingAppointmentsKeys = new Set(
+                calendarEvents.map(evt => {
+                    const patientName = (evt.patientName || evt.patient?.fullName || '').toLowerCase().trim();
+                    return `${evt.date}|${evt.time}|${patientName}`;
+                })
+            );
+            
             const preEvents = preAgendamentos.map(pre => mapPreAgendamentoToEvent(pre));
-            finalResults = [...calendarEvents, ...preEvents].sort((a, b) => {
+            
+            // Filtrar apenas pré-agendamentos que NÃO foram convertidos em appointments
+            const filteredPreEvents = preEvents.filter(pre => {
+                const prePatientName = (pre.patientName || '').toLowerCase().trim();
+                const preKey = `${pre.date}|${pre.time}|${prePatientName}`;
+                const alreadyConverted = existingAppointmentsKeys.has(preKey);
+                
+                if (alreadyConverted) {
+                    console.log(`[DEDUP] Pré-agendamento ${pre.id} ignorado (já convertido em appointment: ${pre.date} ${pre.time} - ${pre.patientName})`);
+                }
+                return !alreadyConverted;
+            });
+            
+            finalResults = [...calendarEvents, ...filteredPreEvents].sort((a, b) => {
                 return (a.date + a.time).localeCompare(b.date + b.time);
             });
-            console.log(`[GET /appointments] Retornando ${finalResults.length} eventos (${calendarEvents.length} appointments + ${preEvents.length} pré-agendamentos)`);
+            console.log(`[GET /appointments] Retornando ${finalResults.length} eventos (${calendarEvents.length} appointments + ${filteredPreEvents.length}/${preEvents.length} pré-agendamentos não convertidos)`);
         } else {
             console.log(`[GET /appointments] Retornando ${finalResults.length} eventos (apenas appointments, pré-agendamentos excluídos)`);
         }

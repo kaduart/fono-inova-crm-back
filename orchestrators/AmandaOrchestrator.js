@@ -1298,7 +1298,7 @@ export async function getOptimizedAmandaResponse({
     // =========================================================================
     if (lead?._id) {
         try {
-            const freshLead = await Leads.findById(lead._id).lean();
+            const freshLead = await Leads.findById(lead._id).select('+triageStep').lean();
             if (freshLead) {
                 lead = freshLead;
                 console.log("🔄 [REFRESH] Lead atualizado:", {
@@ -1639,7 +1639,7 @@ export async function getOptimizedAmandaResponse({
             }
 
             // Busca dados atualizados
-            const updated = await Leads.findById(lead._id).lean().catch(() => null);
+            const updated = await Leads.findById(lead._id).select('+triageStep').lean().catch(() => null);
             const fullName = updated?.patientInfo?.fullName;
             const phone = updated?.contact?.phone;
 

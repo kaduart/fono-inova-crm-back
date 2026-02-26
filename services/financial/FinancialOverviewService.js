@@ -9,6 +9,7 @@ import Planning from '../../models/Planning.js';
 import Package from '../../models/Package.js';
 import Leads from '../../models/Leads.js';
 import Appointment from '../../models/Appointment.js';
+import Patient from '../../models/Patient.js';
 import Sale from '../../models/Sale.js';
 import FinancialInsightsEngine from './FinancialInsightsEngine.js';
 import ConvenioMetricsService from './ConvenioMetricsService.js';
@@ -87,8 +88,16 @@ class FinancialOverviewService {
             leadsRecebidos: metricasOperacionais.leadsRecebidos,
             agendamentosRealizados: metricasOperacionais.agendamentosRealizados,
             avaliacoesRealizadas: metricasOperacionais.avaliacoesRealizadas,
-            projetosFechados: metricasOperacionais.projetosFechados, // Agora só pacotes
-            sessoesMes: metricasOperacionais.sessoesMes // NOVO: Sessões atendidas no mês
+            projetosFechados: metricasOperacionais.projetosFechados,
+            sessoesMes: metricasOperacionais.sessoesMes,
+            // 🆕 NOVAS MÉTRICAS DE LEADS
+            diaPico: metricasOperacionais.diaPico,
+            origemBreakdown: metricasOperacionais.origemBreakdown,
+            agendamentosDiretos: metricasOperacionais.agendamentosDiretos,
+            leadsAutoCriados: metricasOperacionais.leadsAutoCriados,
+            leadsWhatsApp: metricasOperacionais.leadsWhatsApp,
+            leadsAgendaDireta: metricasOperacionais.leadsAgendaDireta,
+            leadsTrafegoPago: metricasOperacionais.leadsTrafegoPago
         };
 
         // Gerar insights
@@ -428,9 +437,12 @@ class FinancialOverviewService {
      * 3. Avaliações realizadas
      * 4. Projetos fechados (apenas Pacotes vendidos)
      * 5. Sessões do mês (total de sessões atendidas)
+     * 6. 🆕 Leads por origem (WhatsApp, Agenda Direta, etc.)
+     * 7. 🆕 Dia com pico de leads
+     * 8. 🆕 Agendamentos diretos (sem lead existente)
      */
     async _calculateMetricasOperacionais(periodo) {
-        const { startDateTime, endDateTime } = periodo;
+        const { startDateTime, endDateTime, start, end } = periodo;
 
         try {
             // Executar contagens em paralelo
@@ -438,89 +450,144 @@ class FinancialOverviewService {
                 leadsRecebidos,
                 agendamentosRealizados,
                 avaliacoesRealizadas,
-                projetosFechados, // Só pacotes
-                sessoesMes
+                projetosFechados,
+                sessoesMes,
+                // 🆕 NOVAS MÉTRICAS
+                leadsPorOrigem,
+                leadsPorDia,
+                agendamentosDiretos,
+                leadsAutoCriados
             ] = await Promise.all([
                 // 1. Leads recebidos (criados no período) - EXCLUINDO convertidos e perdidos
                 Leads.countDocuments({
                     createdAt: { $gte: startDateTime, $lte: endDateTime },
                     status: { 
-                        $nin: ['convertido', 'virou_paciente', 'perdido'] // Exclui leads já processados
+                        $nin: ['convertido', 'virou_paciente', 'perdido']
                     }
                 }),
 
                 // 2. Novos agendamentos (avaliações = primeiras consultas)
                 Appointment.countDocuments({
-                    date: { $gte: periodo.start, $lte: periodo.end },
+                    date: { $gte: start, $lte: end },
                     operationalStatus: { $nin: ['canceled'] },
-                    serviceType: 'evaluation' // Só avaliações (primeira consulta)
+                    serviceType: 'evaluation'
                 }),
 
-                // 3. Avaliações realizadas (serviceType = evaluation e não canceladas)
+                // 3. Avaliações realizadas
                 Appointment.countDocuments({
-                    date: { $gte: periodo.start, $lte: periodo.end },
+                    date: { $gte: start, $lte: end },
                     serviceType: 'evaluation',
                     operationalStatus: { $nin: ['canceled', 'missed'] }
                 }),
 
-                // 4. Projetos fechados = Pacotes vendidos/criados no período
+                // 4. Projetos fechados = Pacotes vendidos
                 Package.countDocuments({
                     date: { $gte: startDateTime, $lte: endDateTime }
-                    // Inclui todos os pacotes criados (representam projetos fechados)
                 }),
 
-                // 5. Sessões do mês = total de sessões atendidas (exclui avaliações)
+                // 5. Sessões do mês
                 Appointment.countDocuments({
-                    date: { $gte: periodo.start, $lte: periodo.end },
+                    date: { $gte: start, $lte: end },
                     operationalStatus: { $nin: ['canceled', 'missed'] },
                     serviceType: { $in: ['session', 'package_session', 'individual_session', 'return', 'convenio_session'] }
+                }),
+
+                // 🆕 6. Leads por origem
+                Leads.aggregate([
+                    {
+                        $match: {
+                            createdAt: { $gte: startDateTime, $lte: endDateTime }
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: '$origin',
+                            count: { $sum: 1 }
+                        }
+                    },
+                    { $sort: { count: -1 } }
+                ]),
+
+                // 🆕 7. Leads por dia (para identificar pico)
+                Leads.aggregate([
+                    {
+                        $match: {
+                            createdAt: { $gte: startDateTime, $lte: endDateTime }
+                        }
+                    },
+                    {
+                        $group: {
+                            _id: {
+                                year: { $year: '$createdAt' },
+                                month: { $month: '$createdAt' },
+                                day: { $dayOfMonth: '$createdAt' }
+                            },
+                            count: { $sum: 1 },
+                            date: { $first: '$createdAt' }
+                        }
+                    },
+                    { $sort: { count: -1 } },
+                    { $limit: 1 }
+                ]),
+
+                // 🆕 8. Agendamentos diretos (sem leadId ou com lead auto-criado)
+                Appointment.countDocuments({
+                    date: { $gte: start, $lte: end },
+                    operationalStatus: { $nin: ['canceled'] },
+                    $or: [
+                        { 'metadata.origin.source': 'agenda_direta' },
+                        { 'metadata.origin.convertedFromLead': { $exists: false } }
+                    ]
+                }),
+
+                // 🆕 9. Leads criados automaticamente do agendamento
+                Leads.countDocuments({
+                    createdAt: { $gte: startDateTime, $lte: endDateTime },
+                    autoCreatedFromAppointment: true
                 })
             ]);
 
+            // Processar dia com pico de leads
+            const diaPico = (leadsPorDia[0] && leadsPorDia[0]._id) ? {
+                data: new Date(leadsPorDia[0]._id.year, leadsPorDia[0]._id.month - 1, leadsPorDia[0]._id.day),
+                quantidade: leadsPorDia[0].count
+            } : null;
+
+            // Processar leads por origem em objeto
+            const origemBreakdown = leadsPorOrigem.reduce((acc, item) => {
+                acc[item._id || 'Outro'] = item.count;
+                return acc;
+            }, {});
+
             // Log para auditoria
             console.log('[FinancialOverview] Métricas Operacionais:', {
-                periodo: `${periodo.start} a ${periodo.end}`,
-                periodoISO: { start: startDateTime.toISOString(), end: endDateTime.toISOString() },
+                periodo: `${start} a ${end}`,
                 leadsRecebidos,
                 agendamentosRealizados,
                 avaliacoesRealizadas,
                 projetosFechados,
-                sessoesMes
+                sessoesMes,
+                diaPico,
+                origemBreakdown,
+                agendamentosDiretos,
+                leadsAutoCriados
             });
-
-            // AUDIT: Detalhamento de leads para verificação
-            const leadsDetalhe = await Leads.aggregate([
-                { 
-                    $match: { 
-                        createdAt: { $gte: startDateTime, $lte: endDateTime }
-                    } 
-                },
-                { 
-                    $group: { 
-                        _id: '$status', 
-                        count: { $sum: 1 } 
-                    } 
-                },
-                { $sort: { count: -1 } }
-            ]);
-            console.log('[FinancialOverview] AUDIT - Leads por status:', leadsDetalhe);
-
-            // AUDIT: Verificar se há leads sem interação (possíveis duplicados/teste)
-            const leadsSemInteracao = await Leads.countDocuments({
-                createdAt: { $gte: startDateTime, $lte: endDateTime },
-                $or: [
-                    { interactions: { $size: 0 } },
-                    { interactions: { $exists: false } }
-                ]
-            });
-            console.log('[FinancialOverview] AUDIT - Leads sem interação:', leadsSemInteracao);
 
             return {
                 leadsRecebidos,
                 agendamentosRealizados,
                 avaliacoesRealizadas,
                 projetosFechados,
-                sessoesMes
+                sessoesMes,
+                // 🆕 NOVAS MÉTRICAS
+                diaPico,
+                origemBreakdown,
+                agendamentosDiretos,
+                leadsAutoCriados,
+                leadsWhatsApp: origemBreakdown['WhatsApp'] || 0,
+                leadsAgendaDireta: origemBreakdown['Agenda Direta'] || 0,
+                // 🆕 WhatsApp também é considerado tráfego pago (anúncios -> WhatsApp)
+                leadsTrafegoPago: (origemBreakdown['WhatsApp'] || 0) + (origemBreakdown['Meta Ads'] || 0) + (origemBreakdown['Google Ads'] || 0) + (origemBreakdown['Tráfego pago'] || 0)
             };
 
         } catch (error) {
@@ -530,9 +597,210 @@ class FinancialOverviewService {
                 agendamentosRealizados: 0,
                 avaliacoesRealizadas: 0,
                 projetosFechados: 0,
-                sessoesMes: 0
+                sessoesMes: 0,
+                diaPico: null,
+                origemBreakdown: {},
+                agendamentosDiretos: 0,
+                leadsAutoCriados: 0,
+                leadsWhatsApp: 0,
+                leadsAgendaDireta: 0,
+                leadsTrafegoPago: 0
             };
         }
+    }
+
+    // ================== MÉTODOS PARA MODAL COM PAGINAÇÃO ==================
+
+    /**
+     * Busca leads detalhados com paginação e filtros
+     */
+    async getLeadsDetalhados({ month, year, page = 1, limit = 20, origin = null, status = null, search = null }) {
+        const { startDateTime, endDateTime } = this._getPeriodDates(month, year);
+        
+        const query = {
+            createdAt: { $gte: startDateTime, $lte: endDateTime }
+        };
+        
+        if (origin) query.origin = origin;
+        if (status) query.status = status;
+        
+        // Busca por nome ou telefone
+        if (search) {
+            query.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { 'contact.phone': { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        const [data, total] = await Promise.all([
+            Leads.find(query)
+                .sort({ createdAt: -1 })
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .select('name contact origin status createdAt conversionScore')
+                .lean(),
+            Leads.countDocuments(query)
+        ]);
+
+        return { data, total, page, pages: Math.ceil(total / limit) };
+    }
+
+    /**
+     * Busca avaliações agendadas com paginação e filtros
+     */
+    async getAvaliacoesAgendadas({ month, year, page = 1, limit = 20, status = null, doctorId = null, dateFrom = null, dateTo = null, search = null }) {
+        const { start, end } = this._getPeriodDates(month, year);
+
+        const query = {
+            date: { $gte: dateFrom || start, $lte: dateTo || end },
+            serviceType: 'evaluation'
+        };
+        
+        if (status) {
+            query.operationalStatus = status;
+        } else {
+            query.operationalStatus = { $nin: ['canceled'] };
+        }
+        
+        if (doctorId) query.doctor = doctorId;
+        
+        // Busca por nome do paciente
+        if (search) {
+            const patients = await Patient.find({ fullName: { $regex: search, $options: 'i' } }).select('_id');
+            const patientIds = patients.map(p => p._id.toString());
+            query.patient = { $in: patientIds };
+        }
+
+        const [data, total] = await Promise.all([
+            Appointment.find(query)
+                .sort({ date: -1, time: -1 })
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .populate('patient', 'fullName phone')
+                .populate('doctor', 'fullName')
+                .select('date time patient doctor operationalStatus clinicalStatus')
+                .lean(),
+            Appointment.countDocuments(query)
+        ]);
+
+        return { data, total, page, pages: Math.ceil(total / limit) };
+    }
+
+    /**
+     * Busca avaliações realizadas com paginação e filtros
+     */
+    async getAvaliacoesRealizadas({ month, year, page = 1, limit = 20, status = null, doctorId = null, dateFrom = null, dateTo = null, search = null }) {
+        const { start, end } = this._getPeriodDates(month, year);
+
+        const query = {
+            date: { $gte: dateFrom || start, $lte: dateTo || end },
+            serviceType: 'evaluation'
+        };
+        
+        if (status) {
+            query.operationalStatus = status;
+        } else {
+            query.operationalStatus = { $nin: ['canceled', 'missed'] };
+        }
+        
+        if (doctorId) query.doctor = doctorId;
+        
+        // Busca por nome do paciente
+        if (search) {
+            const patients = await Patient.find({ fullName: { $regex: search, $options: 'i' } }).select('_id');
+            const patientIds = patients.map(p => p._id.toString());
+            query.patient = { $in: patientIds };
+        }
+
+        const [data, total] = await Promise.all([
+            Appointment.find(query)
+                .sort({ date: -1, time: -1 })
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .populate('patient', 'fullName phone')
+                .populate('doctor', 'fullName')
+                .select('date time patient doctor operationalStatus clinicalStatus')
+                .lean(),
+            Appointment.countDocuments(query)
+        ]);
+
+        return { data, total, page, pages: Math.ceil(total / limit) };
+    }
+
+    /**
+     * Busca pacotes fechados com paginação e filtros
+     */
+    async getPacotesFechados({ month, year, page = 1, limit = 20, status = null, doctorId = null, search = null }) {
+        const { startDateTime, endDateTime } = this._getPeriodDates(month, year);
+
+        const query = {
+            date: { $gte: startDateTime, $lte: endDateTime }
+        };
+        
+        if (status) query.status = status;
+        if (doctorId) query.doctor = doctorId;
+        
+        // Busca por nome do paciente
+        if (search) {
+            const patients = await Patient.find({ fullName: { $regex: search, $options: 'i' } }).select('_id');
+            const patientIds = patients.map(p => p._id.toString());
+            query.patient = { $in: patientIds };
+        }
+
+        const [data, total] = await Promise.all([
+            Package.find(query)
+                .sort({ date: -1 })
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .populate('patient', 'fullName phone')
+                .populate('doctor', 'fullName')
+                .select('patient doctor totalSessions sessionsUsed totalPaid status date')
+                .lean(),
+            Package.countDocuments(query)
+        ]);
+
+        return { data, total, page, pages: Math.ceil(total / limit) };
+    }
+
+    /**
+     * Busca sessões do mês com paginação e filtros
+     */
+    async getSessoesMes({ month, year, page = 1, limit = 20, status = null, doctorId = null, dateFrom = null, dateTo = null, serviceType = null, search = null }) {
+        const { start, end } = this._getPeriodDates(month, year);
+
+        const query = {
+            date: { $gte: dateFrom || start, $lte: dateTo || end },
+            serviceType: serviceType ? serviceType : { $in: ['session', 'package_session', 'individual_session', 'return', 'convenio_session'] }
+        };
+        
+        if (status) {
+            query.operationalStatus = status;
+        } else {
+            query.operationalStatus = { $nin: ['canceled', 'missed'] };
+        }
+        
+        if (doctorId) query.doctor = doctorId;
+        
+        // Busca por nome do paciente
+        if (search) {
+            const patients = await Patient.find({ fullName: { $regex: search, $options: 'i' } }).select('_id');
+            const patientIds = patients.map(p => p._id.toString());
+            query.patient = { $in: patientIds };
+        }
+
+        const [data, total] = await Promise.all([
+            Appointment.find(query)
+                .sort({ date: -1, time: -1 })
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .populate('patient', 'fullName phone')
+                .populate('doctor', 'fullName')
+                .select('date time patient doctor operationalStatus clinicalStatus serviceType package')
+                .lean(),
+            Appointment.countDocuments(query)
+        ]);
+
+        return { data, total, page, pages: Math.ceil(total / limit) };
     }
 }
 

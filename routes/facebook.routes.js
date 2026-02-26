@@ -10,6 +10,10 @@ router.get('/posts', facebookController.listPosts);
 router.get('/posts/stats', facebookController.getStats);
 router.post('/generate', facebookController.generatePost);
 
+// 🎯 NOVOS: 3 Modos de Geração Estratégica
+router.post('/generate-caption', facebookController.generateCaption);
+router.post('/generate-hooks', facebookController.generateHooks);
+
 // Rotas com parâmetros - ORDEM IMPORTANTE: mais específicas primeiro
 router.post('/posts/:id/image', facebookController.generateImageForPost);
 router.post('/posts/:id/publish', facebookController.publishPost);

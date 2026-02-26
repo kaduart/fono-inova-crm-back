@@ -1,4 +1,4 @@
-import { generatePostForEspecialidade, ESPECIALIDADES, generateImageForEspecialidade } from '../services/gmbService.js';
+import { generatePostForEspecialidade, ESPECIALIDADES, generateImageForEspecialidade, generateCaptionSEO, generateHooksViral } from '../services/gmbService.js';
 import InstagramPost from '../models/InstagramPost.js';
 
 /**
@@ -48,8 +48,8 @@ export async function generatePost(req, res) {
       especialidade = ESPECIALIDADES[0];
     }
     
-    // Gera conteúdo do post
-    const postData = await generatePostForEspecialidade(especialidade, customTheme);
+    // Gera conteúdo do post com estratégia por funil
+    const postData = await generatePostForEspecialidade(especialidade, customTheme, funnelStage || 'top');
     
     // Gera imagem em paralelo (usa mesma função do GMB - DALL-E 3 > HuggingFace > Pollinations)
     let mediaUrl = null;
@@ -76,7 +76,7 @@ export async function generatePost(req, res) {
       mediaUrl,
       mediaType: mediaUrl ? 'image' : null,
       aiGenerated: true,
-      aiModel: 'gpt-3.5-turbo',
+      aiModel: 'gpt-4o-mini',
       createdBy: req.user?._id
     });
     
@@ -192,6 +192,48 @@ export async function generateImageForPost(req, res) {
     res.json({ success: true, data: { imageUrl } });
   } catch (error) {
     console.error('❌ Erro ao gerar imagem:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 🟢 GERAR LEGENDA SEO
+export async function generateCaption(req, res) {
+  try {
+    const { especialidadeId, customTheme, funnelStage } = req.body;
+    
+    let especialidade = ESPECIALIDADES.find(e => e.id === especialidadeId);
+    if (!especialidade) especialidade = ESPECIALIDADES[0];
+
+    const result = await generateCaptionSEO(especialidade, customTheme, funnelStage || 'top');
+    
+    res.json({
+      success: true,
+      data: result,
+      message: '📝 Legenda SEO gerada com sucesso!'
+    });
+  } catch (error) {
+    console.error('Erro ao gerar legenda:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 🟡 GERAR GANCHOS VIRAIS
+export async function generateHooks(req, res) {
+  try {
+    const { especialidadeId, customTheme, funnelStage, count } = req.body;
+    
+    let especialidade = ESPECIALIDADES.find(e => e.id === especialidadeId);
+    if (!especialidade) especialidade = ESPECIALIDADES[0];
+
+    const result = await generateHooksViral(especialidade, customTheme, funnelStage || 'top', count || 10);
+    
+    res.json({
+      success: true,
+      data: result,
+      message: `🎣 ${count || 10} Ganchos virais gerados!`
+    });
+  } catch (error) {
+    console.error('Erro ao gerar ganchos:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 }

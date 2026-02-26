@@ -24,13 +24,26 @@ export function extractName(msg) {
     const m1 = t.match(/\b(nome|paciente|me chamo|meu nome é|sou o|sou a)\s*[:\-]?\s*([A-ZÀ-Ü][a-zà-ú]+(?:\s+[A-ZÀ-Ü][a-zà-ú]+)+)/i);
     if (m1) return m1[2].trim();
     
+    // 🆕 Padrão: nome seguido de idade (ex: "Maria Luísa 7 anos" ou "José 5 anos")
+    // Extrai apenas o nome, ignorando a parte numérica
+    const mAge = t.match(/^([A-Za-zÀ-ú]+(?:\s+[A-Za-zÀ-ú]+)+?)\s+\d+\s*(anos?|meses?|m|a)/i);
+    if (mAge && isValidPatientName(mAge[1].trim())) {
+        return mAge[1].trim();
+    }
+    
     // Padrão de nome próprio (2+ palavras, sem pontuação no final)
     // Rejeita textos com palavras comuns de pergunta/comando
     if (!isValidPatientName(t)) return null;
     
     // Aceita 2+ palavras (independentemente de maiúsculas - WhatsApp é informal)
-    const m2 = t.match(/^([A-Za-zÀ-ú]+(?:\s+[A-Za-zÀ-ú]+)+)$/);
-    if (m2 && t.length < 60) return t;
+    // 🆕 Permite que tenha mais texto depois (números, etc)
+    const m2 = t.match(/^([A-Za-zÀ-ú]+(?:\s+[A-Za-zÀ-ú]+){1,5})/);
+    if (m2 && m2[1].length > 3 && t.length < 100) {
+        // Verifica se o que capturou é um nome válido
+        if (isValidPatientName(m2[1].trim())) {
+            return m2[1].trim();
+        }
+    }
     
     return null;
 };

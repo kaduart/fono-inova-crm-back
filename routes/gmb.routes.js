@@ -69,4 +69,8 @@ router.get('/intelligence/suggestion', gmbController.getIntelligentSuggestion);
 router.get('/intelligence/data', gmbController.getIntelligenceData);
 router.post('/intelligence/accept', gmbController.acceptSuggestion);
 
+// 🎯 NOVOS: 3 Modos de Geração Estratégica
+router.post('/generate-caption', gmbController.generateCaption);
+router.post('/generate-hooks', gmbController.generateHooks);
+
 export default router;

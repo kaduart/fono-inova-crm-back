@@ -788,7 +788,7 @@ export const getHistoryMetrics = async (req, res) => {
 export async function resolveLeadByPhone(phone, defaults = {}) {
     const phoneE164 = normalizeE164BR(phone);
 
-    return await Lead.findOneAndUpdate(
+    const lead = await Lead.findOneAndUpdate(
         { "contact.phone": phoneE164 },
         {
             $setOnInsert: {
@@ -806,4 +806,14 @@ export async function resolveLeadByPhone(phone, defaults = {}) {
         },
         { upsert: true, new: true }
     );
+    
+    // 🆕 Garantir que triageStep seja carregado (campo adicionado recentemente ao schema)
+    if (lead && lead.triageStep === undefined) {
+        const freshLead = await Lead.findById(lead._id).select('triageStep').lean();
+        if (freshLead) {
+            lead.triageStep = freshLead.triageStep || null;
+        }
+    }
+    
+    return lead;
 }
