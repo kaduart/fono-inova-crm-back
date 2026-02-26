@@ -19,6 +19,24 @@
 const MAKE_WEBHOOK_URL = process.env.MAKE_WEBHOOK_URL;
 const MAKE_TIMEOUT_MS = 15000; // 15s
 
+// Hashtags por especialidade
+function gerarHashtags(tema) {
+  const base = '#fonoinova #fonoaudiologia #desenvolvimentoinfantil #terapiainfantil #criançassaudaveis #anapolisgo';
+  const extras = {
+    fonoaudiologia:       '#atrasodafala #fala #linguagem #autismo #tdah #fonoaudióloga',
+    psicologia:           '#psicologiainfantil #saudeemocional #comportamento #ansiedadeinfantil',
+    terapia_ocupacional:  '#terapiaocupacional #integracaosensorial #autonomia #motricidade',
+    fisioterapia:         '#fisioterapiainfantil #motricidade #postura #hipotonia',
+    psicomotricidade:     '#psicomotricidade #coordenacao #alfabetizacao #escolainfantil',
+    freio_lingual:        '#freiolingual #amamentacao #linguapresa #bebê',
+    neuropsicologia:      '#neuropsicologia #tdah #dislexia #avaliacaoneuropsicologica',
+    psicopedagogia_clinica: '#psicopedagogia #dislexia #dificuldadedeaprendizagem #leitura',
+    psicopedagogia:       '#psicopedagogia #aprendizagem #escola #desenvolvimento',
+    musicoterapia:        '#musicoterapia #autismo #expressao #musicaeterapia',
+  };
+  return `${base} ${extras[tema] || ''}`.trim();
+}
+
 /**
  * Verifica se o Make está configurado
  */
@@ -36,16 +54,40 @@ export async function sendPostToMake(post) {
     throw new Error('MAKE_WEBHOOK_URL não configurado no .env');
   }
 
+  // ── Legendas por canal ───────────────────────────────────────────────
+  const textoBase = post.content || '';
+  const ctaUrl    = post.ctaUrl || 'https://www.clinicafonoinova.com.br/';
+
+  // Instagram: texto curto (até 150 chars) + hashtags + link na bio
+  const textoShort = textoBase.split('\n').filter(Boolean).slice(0, 2).join('\n');
+  const hashtags = gerarHashtags(post.theme);
+  const instagramCaption =
+    `${textoShort.substring(0, 220)}\n\n` +
+    `🔗 Agende uma avaliação gratuita — link na bio!\n` +
+    `📍 Fono Inova · Anápolis-GO\n` +
+    `📲 (62) 9933-15240\n\n` +
+    `${hashtags}`;
+
+  // Facebook: texto completo + link explícito + WhatsApp
+  const facebookCaption =
+    `${textoBase.substring(0, 900)}\n\n` +
+    `👉 Saiba mais ou agende: ${ctaUrl}\n` +
+    `📲 WhatsApp: (62) 99331-5240\n` +
+    `📍 Fono Inova · Centro de Desenvolvimento Infantil · Anápolis-GO`;
+
   const payload = {
     postId: post._id.toString(),
     title: post.title || '',
-    content: post.content || '',
-    mediaUrl: post.mediaUrl || null,
-    ctaUrl: post.ctaUrl || null,
+    content: post.content || '',          // GMB summary (até 1500 chars)
+    mediaUrl: post.mediaUrl || null,       // imagem branded (para Insta/Face)
+    mediaUrlBranded: post.mediaUrlBranded || post.mediaUrl || null, // alias
+    ctaUrl,
     ctaType: post.ctaType || 'LEARN_MORE',
     especialidade: post.theme || null,
     scheduledAt: post.scheduledAt || null,
-    // Texto formatado para copiar (se existir — do modo assistido)
+    // Legendas por canal
+    instagramCaption,                      // para o módulo Instagram no Make
+    facebookCaption,                       // para o módulo Facebook no Make
     copyText: post.assistData?.copyText || post.content || '',
   };
 

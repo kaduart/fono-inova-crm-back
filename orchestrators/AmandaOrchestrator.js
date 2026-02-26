@@ -2829,11 +2829,13 @@ Em breve nossa equipe entra em contato 😊`
             const currentPeriod = lead?.autoBookingContext?.preferredPeriod || lead?.pendingPreferredPeriod || null;
 
             try {
+                // Busca slots a partir da data pedida (preferredDate faz searchStart = data pedida)
                 const pool = await findAvailableSlots({
                     therapyArea,
+                    preferredDate: preferredDateStr,
                     preferredPeriod: currentPeriod,
                     daysAhead: 60,
-                    maxOptions: 10,
+                    maxOptions: 5,
                 });
 
                 if (pool?.primary) {
@@ -2843,36 +2845,54 @@ Em breve nossa equipe entra em contato 😊`
                         ...(pool.alternativesOtherPeriod || []),
                     ].filter(Boolean);
 
-                    const filtered = all.filter(s => String(s.date) >= String(preferredDateStr));
+                    const newSlotsCtx = {
+                        primary: all[0],
+                        alternativesSamePeriod: all.slice(1, 3),
+                        alternativesOtherPeriod: all.slice(3, 5),
+                        all: all.slice(0, 5),
+                        maxOptions: Math.min(all.length, 5),
+                    };
 
-                    if (filtered.length) {
-                        const newSlotsCtx = {
-                            primary: filtered[0],
-                            alternativesSamePeriod: filtered.slice(1, 3),
-                            alternativesOtherPeriod: filtered.slice(3, 5),
-                            all: filtered.slice(0, 5),
-                            maxOptions: Math.min(filtered.length, 5),
-                        };
+                    await safeLeadUpdate(lead._id, {
+                        $set: {
+                            pendingSchedulingSlots: newSlotsCtx,
+                            pendingChosenSlot: null,
+                            "autoBookingContext.lastSlotsShownAt": new Date(),
+                        }
+                    }).catch(err => logSuppressedError("safeLeadUpdate", err));
 
-                        await safeLeadUpdate(lead._id, { 
-                            $set: { 
-                                pendingSchedulingSlots: newSlotsCtx, 
-                                pendingChosenSlot: null,
-                                "autoBookingContext.lastSlotsShownAt": new Date(), // ← 🆕 timestamp para TTL
-                            } 
-                        }).catch(err => logSuppressedError("safeLeadUpdate", err));
+                    const { optionsText, letters } = buildSlotMenuMessage(newSlotsCtx);
+                    const allowed = letters.slice(0, newSlotsCtx.all.length).join(" ou ");
 
-                        const { optionsText, letters } = buildSlotMenuMessage(newSlotsCtx);
-                        const allowed = letters.slice(0, newSlotsCtx.all.length).join(" ou ");
+                    // Se o primeiro slot é exatamente na data pedida ou após
+                    const isExactDate = all[0]?.date === preferredDateStr;
+                    const label = isExactDate
+                        ? `No dia **${formatDatePtBr(preferredDateStr)}**, tenho:`
+                        : `Não tenho vaga no dia **${formatDatePtBr(preferredDateStr)}**, mas o próximo disponível é:`;
 
-                        return ensureSingleHeart(
-                            `Perfeito! A partir de **${formatDatePtBr(preferredDateStr)}**, tenho essas opções:\n\n${optionsText}\n\nQual você prefere? (${allowed}) 💚`
-                        );
-                    }
+                    return ensureSingleHeart(
+                        `${label}\n\n${optionsText}\n\nQual você prefere? (${allowed}) 💚`
+                    );
+                }
+
+                // Nenhum slot em 60 dias — fallback sem filtro de data
+                const anySlot = await findAvailableSlots({
+                    therapyArea,
+                    preferredPeriod: null,
+                    daysAhead: 30,
+                    maxOptions: 2,
+                });
+                if (anySlot?.primary) {
+                    const { optionsText, letters } = buildSlotMenuMessage(anySlot);
+                    await safeLeadUpdate(lead._id, { $set: { pendingSchedulingSlots: anySlot } })
+                        .catch(err => logSuppressedError("safeLeadUpdate", err));
+                    return ensureSingleHeart(
+                        `A partir de **${formatDatePtBr(preferredDateStr)}** não encontrei vaga 😕 As próximas disponíveis são:\n\n${optionsText}\n\nQual você prefere? (${letters.join(" ou ")}) 💚`
+                    );
                 }
 
                 return ensureSingleHeart(
-                    `Entendi 😊 A partir de **${formatDatePtBr(preferredDateStr)}** não encontrei vaga nas opções atuais. Você prefere **manhã ou tarde** e qual **dia da semana** fica melhor? 💚`
+                    `Não encontrei vagas disponíveis no momento 😕 Posso avisar assim que abrir um horário. Qual período você prefere — **manhã ou tarde**? 💚`
                 );
             } catch (err) {
                 console.error("[PASSO 2] Erro ao aplicar filtro por data:", err.message);
@@ -3914,28 +3934,21 @@ Em breve nossa equipe entra em contato 😊`
         console.log("[ORCHESTRATOR] Buscando slots para:", { therapyAreaForSlots, preferredPeriod });
 
         try {
-            // ✅ FIX: Se tiver data específica (flags.preferredDate), filtra no findAvailableSlots
             const dateFilter = lead?.pendingPreferredDate || flags.preferredDate || null;
-
-            // Se tiver data, podemos ignorar preferredPeriod para ser mais específico
             const periodToUse = dateFilter ? null : preferredPeriod;
+
+            console.log("[ORCHESTRATOR] dateFilter:", dateFilter, "periodToUse:", periodToUse);
 
             const availableSlots = await findAvailableSlots({
                 therapyArea: therapyAreaForSlots,
+                preferredDate: dateFilter || undefined,
                 preferredPeriod: periodToUse,
-                daysAhead: 30,
+                daysAhead: dateFilter ? 60 : 30,
                 maxOptions: 2,
             });
 
-            // ✅ FIX: Se buscou por período mas temos data específica, filtra client-side
-            if (dateFilter && availableSlots?.primary) {
-                // Nota: findAvailableSlots retorna pool. 
-                // Se quisermos filtrar exato:
-                // Implementar lógica de filtro aqui se necessário, ou confiar que o usuário vai escolher
-            }
-
             if (!availableSlots?.primary) {
-                // Tenta sem filtro de período
+                // Tenta sem filtro de período/data
                 const fallbackSlots = await findAvailableSlots({
                     therapyArea: therapyAreaForSlots,
                     preferredPeriod: null,

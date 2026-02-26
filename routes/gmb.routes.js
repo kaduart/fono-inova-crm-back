@@ -28,6 +28,7 @@ router.delete('/posts/:id', gmbController.deletePost);
 router.post('/posts/:id/publish', gmbController.publishPost);
 router.post('/posts/:id/retry', gmbController.retryPost);
 router.post('/posts/:id/republish', gmbController.republishPost);
+router.post('/posts/:id/regenerate-image', gmbController.regenerateImage);
 
 // Preview
 router.post('/preview', gmbController.generatePreview);

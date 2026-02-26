@@ -25,7 +25,7 @@ const CONFIG = {
 
     SCHEDULES: {
         GENERATE_DAILY: '0 8 * * *',      // Todo dia 8h da manhã
-        SEND_TO_MAKE:   '5 8 * * *',      // Todo dia 8h05 — envia para Make publicar
+        SEND_TO_MAKE:   '5 8,12,15,19 * * *',  // 8h05, 12h05, 15h05, 19h05 — envia para Make publicar
     },
 
     MAX_RETRIES: 3,
@@ -235,7 +235,7 @@ function scheduleTasks() {
     }, { timezone: CONFIG.TIMEZONE });
 
     logger.success('Tarefas GMB agendadas!', {
-        tasks: ['generateDaily (8h)', 'sendToMake (8h05)']
+        tasks: ['generateDaily (8h)', 'sendToMake (8h05, 12h05, 15h05, 19h05)']
     });
 }
 

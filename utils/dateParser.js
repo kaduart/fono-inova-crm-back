@@ -1,5 +1,5 @@
 // utils/dateParser.js
-import { format, isValid, parse } from "date-fns";
+import { addDays, format, isValid, parse } from "date-fns";
 import { ptBR } from "date-fns/locale"; // você já usa date-fns no projeto
 
 // Padrões de data em pt-BR que queremos aceitar
@@ -15,6 +15,21 @@ const DATE_PATTERNS = [
   "dd MMMM yyyy",
   "d MMMM yyyy",
 ];
+
+const MONTH_MAP = {
+  'jan': '01', 'janeiro': '01',
+  'fev': '02', 'fevereiro': '02',
+  'mar': '03', 'marco': '03', 'março': '03',
+  'abr': '04', 'abril': '04',
+  'mai': '05', 'maio': '05',
+  'jun': '06', 'junho': '06',
+  'jul': '07', 'julho': '07',
+  'ago': '08', 'agosto': '08',
+  'set': '09', 'setembro': '09',
+  'out': '10', 'outubro': '10',
+  'nov': '11', 'novembro': '11',
+  'dez': '12', 'dezembro': '12',
+};
 
 /**
  * Tenta converter um texto em um Date válido (pt-BR)
@@ -37,33 +52,52 @@ export function parsePtBrDate(text = "") {
 }
 
 export function extractPreferredDateFromText(text = "") {
-  const normalized = (text || "").toLowerCase();
-
-  // pega primeiro padrão dd/MM ou dd-MM
-  const match = normalized.match(/\b(\d{1,2})[\/\-](\d{1,2})\b/);
-  if (!match) return null;
-
-  const day = match[1].padStart(2, "0");
-  const month = match[2].padStart(2, "0");
-
+  const normalized = (text || "").toLowerCase().normalize('NFC');
   const today = new Date();
-  const year = today.getFullYear();
+  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
 
-  let date = parse(`${day}/${month}/${year}`, "dd/MM/yyyy", new Date());
-  if (!isValid(date)) return null;
-
-  // se já passou hoje, sobe pro ano seguinte
-  const todayMidnight = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate()
-  );
-
-  if (date < todayMidnight) {
-    const nextYear = year + 1;
-    date = parse(`${day}/${month}/${nextYear}`, "dd/MM/yyyy", new Date());
-    if (!isValid(date)) return null;
+  // "amanhã" / "amanha"
+  if (/\bamanh[aã]\b/.test(normalized)) {
+    return format(addDays(todayMidnight, 1), "yyyy-MM-dd");
   }
 
-  return format(date, "yyyy-MM-dd"); // **string ISO curtinha**
+  // "depois de amanhã"
+  if (/\bdepois\s+de\s+amanh[aã]\b/.test(normalized)) {
+    return format(addDays(todayMidnight, 2), "yyyy-MM-dd");
+  }
+
+  // Padrão numérico dd/MM ou dd-MM (ex: "10/03", "a partir de 15-04")
+  const numericMatch = normalized.match(/\b(\d{1,2})[\/\-](\d{1,2})\b/);
+  if (numericMatch) {
+    const day = numericMatch[1].padStart(2, "0");
+    const month = numericMatch[2].padStart(2, "0");
+    const year = today.getFullYear();
+    let date = parse(`${day}/${month}/${year}`, "dd/MM/yyyy", new Date());
+    if (!isValid(date)) return null;
+    if (date < todayMidnight) {
+      date = parse(`${day}/${month}/${year + 1}`, "dd/MM/yyyy", new Date());
+      if (!isValid(date)) return null;
+    }
+    return format(date, "yyyy-MM-dd");
+  }
+
+  // Padrão por nome de mês: "10 de março", "dia 15 de abril", "15 março"
+  const monthNames = Object.keys(MONTH_MAP).join('|');
+  const monthNameRegex = new RegExp(`(?:dia\\s+)?(\\d{1,2})\\s+(?:de\\s+)?(${monthNames})(?:\\s+(?:de\\s+)?(\\d{4}))?`, 'i');
+  const monthMatch = normalized.match(monthNameRegex);
+  if (monthMatch) {
+    const day = monthMatch[1].padStart(2, "0");
+    const monthNum = MONTH_MAP[monthMatch[2].toLowerCase().normalize('NFC')];
+    if (!monthNum) return null;
+    const year = monthMatch[3] ? parseInt(monthMatch[3]) : today.getFullYear();
+    let date = parse(`${day}/${monthNum}/${year}`, "dd/MM/yyyy", new Date());
+    if (!isValid(date)) return null;
+    if (date < todayMidnight) {
+      date = parse(`${day}/${monthNum}/${year + 1}`, "dd/MM/yyyy", new Date());
+      if (!isValid(date)) return null;
+    }
+    return format(date, "yyyy-MM-dd");
+  }
+
+  return null;
 }

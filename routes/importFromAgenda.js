@@ -169,7 +169,15 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
       ].filter(Boolean).join('\n')
     };
 
+    console.log(`[IMPORT-FROM-AGENDA] 💾 Criando PreAgendamento:`, {
+      patient: patientInfo?.fullName,
+      date, time, specialty,
+      suggestedValue: Number(crm.paymentAmount || req.body.sessionValue || 0)
+    });
+    
     const preAgendamento = await PreAgendamento.create(preAgendamentoData);
+    
+    console.log(`[IMPORT-FROM-AGENDA] ✅ PreAgendamento criado: ${preAgendamento._id}`);
 
     // ✅ EMITIR SOCKET (novo pré-agendamento)
     try {
@@ -288,6 +296,14 @@ router.post("/import-from-agenda/confirmar-por-id", agendaAuth, async (req, res)
     const normalizedServiceType = serviceType === 'session' ? 'individual_session' : serviceType;
 
     // Criar appointment como PRÉ-AGENDADO
+    console.log(`[CONFIRMAR-POR-EXTERNAL-ID] 📋 bookParams:`, {
+      patient: pre.patientInfo.fullName,
+      date: date || pre.preferredDate,
+      time: time || pre.preferredTime,
+      serviceType: normalizedServiceType,
+      sessionValue: Number(sessionValue || pre.suggestedValue || 0)
+    });
+    
     const bookParams = {
       patientInfo: {
         fullName: pre.patientInfo.fullName,
@@ -308,6 +324,14 @@ router.post("/import-from-agenda/confirmar-por-id", agendaAuth, async (req, res)
     };
 
     const result = await bookFixedSlot(bookParams);
+    
+    console.log(`[CONFIRMAR-POR-EXTERNAL-ID] 📊 Resultado bookFixedSlot:`, {
+      success: result.success,
+      appointmentId: result.appointment?._id,
+      paymentId: result.payment?._id,
+      hasPayment: !!result.payment,
+      patientId: result.patientId
+    });
 
     if (!result.success) {
       await session.abortTransaction();

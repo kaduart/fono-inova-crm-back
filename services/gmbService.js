@@ -6,6 +6,7 @@
 import OpenAI from 'openai';
 import { v2 as cloudinary } from 'cloudinary';
 import GmbPost from '../models/GmbPost.js';
+import { gerarImagemBranded } from './brandImageService.js';
 
 // OpenAI - GPT-3.5
 const openai = new OpenAI({
@@ -136,24 +137,99 @@ async function getNextEspecialidade() {
 }
 
 /**
+ * 🎯 PROMPTS ESPECÍFICOS POR ESPECIALIDADE — foco em geração de leads
+ */
+const PROMPTS_ESPECIALIDADE = {
+  fonoaudiologia: {
+    dor: 'a criança não fala, tem fala enrolada, gagueja, não pronuncia letras, tem diagnóstico de autismo ou TDAH, ou o pediatra disse "vamos esperar mais um pouco"',
+    urgencia: 'cada mês sem intervenção é um mês de atraso no desenvolvimento da fala — quanto antes, melhores os resultados',
+    diferencial: 'a Fono Inova tem fonoaudiólogos especializados em linguagem infantil que identificam a causa real do atraso e montam um plano individualizado',
+    gatilho: 'pais que estão em dúvida se devem buscar ajuda agora ou esperar mais',
+  },
+  psicologia: {
+    dor: 'a criança tem crises de choro sem motivo, agressividade, ansiedade, dificuldade de socializar, medo excessivo, comportamentos repetitivos ou tristeza',
+    urgencia: 'comportamentos emocionais não resolvidos na infância se tornam padrões difíceis de mudar na adolescência',
+    diferencial: 'a Fono Inova tem psicólogos infantis que trabalham com brinquedos e técnicas lúdicas — a criança nem percebe que está em terapia',
+    gatilho: 'pais que se sentem esgotados e sem saber como ajudar o filho emocionalmente',
+  },
+  terapia_ocupacional: {
+    dor: 'a criança tem dificuldade para se vestir sozinha, se recusa a comer certos alimentos, não consegue segurar lápis, tem sensibilidade ao toque ou barulho, ou perde equilíbrio fácil',
+    urgencia: 'dificuldades de autonomia afetam diretamente a autoestima e o desempenho escolar — intervenção precoce evita isso',
+    diferencial: 'a Fono Inova usa a abordagem de integração sensorial — transforma atividades do dia a dia em terapia sem a criança perceber',
+    gatilho: 'pais que acham que o filho é "difícil" ou "mimado" sem saber que pode ser uma questão sensorial',
+  },
+  fisioterapia: {
+    dor: 'a criança tropeça muito, tem postura curvada, cansa fácil, tem hipotonia (músculo molinho), dificuldade de correr ou pular, ou ficou com sequela após uma cirurgia',
+    urgencia: 'o corpo em desenvolvimento corrige padrões motores com muito mais facilidade na infância — na adolescência é muito mais difícil',
+    diferencial: 'a Fono Inova combina fisioterapia com atividades lúdicas — a criança se exercita brincando sem resistência',
+    gatilho: 'pais que achavam que o filho só era "desajeitado" e descobriram que há algo a tratar',
+  },
+  psicomotricidade: {
+    dor: 'a criança confunde letras (b/d, p/q), tem caligrafia ilegível, não sabe direita de esquerda, é desatenta na escola ou tem dificuldade de coordenação para esportes',
+    urgencia: 'o período dos 4 aos 8 anos é a janela ideal para desenvolver o esquema corporal que sustenta a alfabetização — depois fica muito mais difícil',
+    diferencial: 'a Fono Inova usa psicomotricidade relacional — jogos de movimento que preparam o cérebro para ler, escrever e calcular',
+    gatilho: 'pais que receberam reclamação da escola sobre coordenação ou atenção do filho',
+  },
+  freio_lingual: {
+    dor: 'o bebê tem dificuldade para mamar, fica irrequieto no peito, a mãe sente dor ao amamentar, ou a criança maior tem dificuldade para pronunciar o "R" ou "L"',
+    urgencia: 'o freio lingual não tratado afeta amamentação, mastigação, deglutição e fala — quanto antes avaliado, mais simples a solução',
+    diferencial: 'a Fono Inova faz avaliação completa do freio lingual com protocolo MBGR e orienta sobre o procedimento mais adequado para cada caso',
+    gatilho: 'mães que estão sofrendo para amamentar e ninguém identificou ainda a causa',
+  },
+  neuropsicologia: {
+    dor: 'a criança esquece o que acabou de aprender, é muito dispersa, tem dificuldade de concentração, demora muito para fazer tarefas simples ou tem suspeita de TDAH, dislexia ou TEA',
+    urgencia: 'uma avaliação neuropsicológica identifica exatamente onde está a dificuldade — sem isso qualquer intervenção é um chute no escuro',
+    diferencial: 'a Fono Inova emite laudo neuropsicológico detalhado com orientações para escola, família e outros profissionais — um mapa completo do desenvolvimento',
+    gatilho: 'pais que estão há anos ouvindo "é só falta de atenção" sem um diagnóstico claro',
+  },
+  psicopedagogia_clinica: {
+    dor: 'a criança lê muito devagar, troca letras ao escrever, não consegue aprender a ler mesmo com esforço, tem dificuldade com matemática ou recebe diagnóstico de dislexia ou disortografia',
+    urgencia: 'dificuldades de leitura e escrita não tratadas geram baixa autoestima e bloqueio escolar que pode durar a vida toda — a intervenção antes dos 9 anos tem 90% de sucesso',
+    diferencial: 'a Fono Inova usa método fônico estruturado e terapia cognitiva — a criança aprende de um jeito que faz sentido para o cérebro dela',
+    gatilho: 'pais desesperados porque o filho repete de ano ou está muito abaixo dos colegas em leitura',
+  },
+  psicopedagogia: {
+    dor: 'a criança não tem interesse em aprender, não consegue se organizar para estudar, tem notas baixas mesmo estudando, ou perdeu a motivação na escola',
+    urgencia: 'dificuldades de aprendizagem sem suporte viram crenças limitantes — a criança passa a acreditar que "não é boa nos estudos"',
+    diferencial: 'a Fono Inova investiga o estilo de aprendizagem único de cada criança e cria estratégias personalizadas para ela aprender de verdade',
+    gatilho: 'pais que estão brigando diariamente com o filho para fazer lição e não sabem mais o que fazer',
+  },
+  musicoterapia: {
+    dor: 'a criança tem autismo, não se comunica verbalmente, tem dificuldade de expressar emoções, está isolada socialmente ou não responde a terapias tradicionais',
+    urgencia: 'a música acessa áreas do cérebro que outras terapias não alcançam — especialmente em crianças com TEA e dificuldades de comunicação não verbal',
+    diferencial: 'a Fono Inova usa musicoterapia receptiva e ativa — a criança se conecta através do ritmo e do som quando as palavras ainda não chegaram',
+    gatilho: 'pais de crianças com autismo que já tentaram várias terapias e estão buscando algo diferente',
+  },
+};
+
+/**
  * 🤖 GERA POST COM GPT
  */
 export async function generatePostForEspecialidade(especialidade, customTheme = null) {
   try {
+    const nicho = PROMPTS_ESPECIALIDADE[especialidade.id] || null;
+
     const temaTexto = customTheme
       ? `TEMA ESPECÍFICO: "${customTheme}" dentro da área de ${especialidade.nome}`
       : `GANCHO: ${especialidade.gancho}`;
 
     const instrucaoTema = customTheme
       ? `Crie um post sobre "${customTheme}" na área de ${especialidade.nome}.`
-      : `Crie um post para ${especialidade.nome}.`;
+      : `Crie um post de ${especialidade.nome} para atrair pais que ainda não agendaram avaliação.`;
+
+    const nichoInstrucoes = nicho ? `
+DOR DO PAI/MÃE: ${nicho.dor}
+URGÊNCIA: ${nicho.urgencia}
+DIFERENCIAL DA CLÍNICA: ${nicho.diferencial}
+GATILHO EMOCIONAL: fale para ${nicho.gatilho}` : '';
 
     const messages = [
       {
         role: 'system',
-        content: `Você é especialista em marketing para clínicas de saúde infantil.
+        content: `Você é especialista em marketing de saúde infantil e geração de leads para clínicas.
 Crie posts para Google Meu Negócio da Clínica Fono Inova em Anápolis-GO.
-Regras: Máximo 150 palavras, tom acolhedor, termine com "Saiba mais sobre [TERAPIA] 👇"`
+Objetivo: fazer o pai/mãe que leu sentir que precisa agendar uma avaliação HOJE.
+Regras: máximo 200 palavras, tom acolhedor e empático, sem ser alarmista, sem hashtags, máximo 2 emojis.`
       },
       {
         role: 'user',
@@ -163,19 +239,21 @@ ESPECIALIDADE: ${especialidade.nome}
 ${temaTexto}
 FOCO: ${especialidade.foco}
 PÚBLICO: Pais de ${especialidade.publico}
+${nichoInstrucoes}
 
-Estrutura:
-1. Gancho chamativo
-2. 2-3 frases sobre a importância
-3. Sinais de alerta ou dicas
-4. Como a Fono Inova ajuda
-5. CTA: "Saiba mais sobre ${especialidade.nome} 👇"
+Estrutura obrigatória:
+1. Abertura com a DOR real do pai/mãe (1 frase direta, sem rodeios)
+2. Validação emocional (você não está sozinho, isso é mais comum do que parece)
+3. Explicação simples do que causa esse problema
+4. Como a Fono Inova resolve isso (específico, não genérico)
+5. Urgência suave (quanto antes, melhores os resultados)
+6. CTA direto: "Agende uma avaliação gratuita pelo link abaixo 👇"
 
-Regras:
-- Máximo 150 palavras
-- Sem hashtags
-- Máximo 2 emojis
-- Linguagem simples, empática${customTheme ? '\n- Foque no tema solicitado' : ''}`
+Regras extras:
+- Máximo 200 palavras
+- Comece com a dor, não com o nome da clínica
+- Use linguagem de mãe para mãe, não de médico para paciente
+- Seja específico: cite o sintoma real, não apenas "dificuldades"${customTheme ? '\n- Foque no tema: ' + customTheme : ''}`
       }
     ];
 
@@ -205,12 +283,15 @@ Regras:
  * 📝 POST TEMPLATE (FALLBACK)
  */
 function generateFallbackPost(especialidade) {
+  const nicho = PROMPTS_ESPECIALIDADE[especialidade.id];
+  const dor = nicho?.dor?.split(',')[0] || especialidade.foco.split(',')[0];
+
   const templates = [
-    `${especialidade.gancho}\n\nA ${especialidade.nome} pode fazer toda diferença no desenvolvimento do seu filho. ${especialidade.foco.split(',')[0]} são aspectos fundamentais.\n\nNa Fono Inova, avaliamos e criamos um plano personalizado para cada criança.\n\nSaiba mais sobre ${especialidade.nome} 👇`,
+    `${especialidade.gancho}\n\nSe você reconhece esse sinal no seu filho, saiba que não está sozinho — e que existe solução.\n\nNa Fono Inova, nossos especialistas em ${especialidade.nome} identificam a causa real e criam um plano personalizado para cada criança.\n\nQuanto antes a avaliação, melhores os resultados. Agende uma avaliação pelo link abaixo 👇`,
 
-    `Você sabia que ${especialidade.foco.split(',')[0]} pode impactar toda a vida escolar?\n\nNa Fono Inova, oferecemos ${especialidade.nome} com profissionais experientes.\n\n${especialidade.gancho} Agende uma avaliação!\n\nSaiba mais sobre ${especialidade.nome} 👇`,
+    `Você sabia que ${dor} é mais comum do que parece?\n\nMuitos pais passam meses esperando "melhorar sozinho" — e perdem o momento ideal de intervenção.\n\nNa Fono Inova em Anápolis, atendemos ${especialidade.publico} com uma equipe especializada e ambiente pensado para crianças.\n\nAgende uma avaliação pelo link abaixo 👇`,
 
-    `${especialidade.gancho}\n\nA ${especialidade.nome} utiliza técnicas modernas para ajudar seu filho.\n\nNosso ambiente foi pensado para o conforto das crianças.\n\nEntre em contato!\n\nSaiba mais sobre ${especialidade.nome} 👇`
+    `${especialidade.gancho}\n\nIsso pode ser sinal de que seu filho precisa de apoio especializado em ${especialidade.nome}.\n\nNa Fono Inova, cada criança recebe um atendimento único — porque cada desenvolvimento é único.\n\nNão espere o problema aumentar. Agende uma avaliação pelo link abaixo 👇`
   ];
 
   const dia = new Date().getDate();
@@ -261,24 +342,23 @@ function generateImagePromptFromContent(content, especialidade) {
   const personMale = 'real Brazilian male therapist late 20s, light olive skin, short dark hair, colorful clinical scrubs, warm smile';
   const parent = 'real Brazilian mother early 30s, light caramel skin, dark wavy hair, casual everyday clothes, warm gentle smile';
 
-  // ESTILO FOTOGRÁFICO — quente, acolhedor, clínico
+  // ESTILO FOTOGRÁFICO — hiper-realista, editorial clínico
   const photoStyle =
-    'professional healthcare editorial photography, ' +
-    'Canon EF 85mm f/1.4, shallow depth of field, soft bokeh, ' +
-    'warm natural window light from side, golden warm tones, ' +
-    'BOTH subjects facing each other fully engaged, ' +
-    'child face clearly visible and expressive toward therapist, ' +
-    'therapist looking at child NOT at camera, ' +
-    'natural subtle facial expressions, soft genuine smiles NOT wide open laughing, ' +
-    'real human faces with natural imperfections, NOT perfect AI faces, ' +
-    'subtle authentic emotion NOT exaggerated, calm warm interaction, ' +
-    'photorealistic skin texture, natural teeth not overly white, ' +
-    'shot from slight 45 degree angle, ' +
-    // ADICIONA após 'shot from slight 45 degree angle, ':
-    'centered composition, subjects filling the frame, ' +
-    'NO empty space on sides, close crop on therapist and child, ' +
-    'premium private Brazilian pediatric clinic, ' +
-    'no text, no watermark, NOT a luxury apartment, NOT a public clinic';
+    'RAW photo, hyperrealistic, ultra-detailed, 8K UHD, ' +
+    'Nikon D850 85mm f/1.8 lens, shallow depth of field, beautiful soft bokeh background, ' +
+    'warm natural window light from left side, cinematic warm golden tones, ' +
+    'BOTH subjects facing each other fully engaged in activity, ' +
+    'child face clearly visible expressive and engaged, ' +
+    'therapist watching child attentively NOT at camera, ' +
+    'natural micro-expressions, genuine soft authentic smiles, ' +
+    'real human faces with natural skin pores and subtle imperfections, ' +
+    'realistic eyes with natural light reflection, ' +
+    'soft realistic skin tones, natural hair texture, ' +
+    'lifelike hands and gestures, realistic fabric folds on clothing, ' +
+    'centered composition subjects filling 80 percent of frame, ' +
+    'NO empty space on sides, close intimate editorial crop, ' +
+    'premium private Brazilian pediatric clinic environment, ' +
+    'no text, no watermark, no logo, NOT CGI, NOT cartoon, NOT illustration';
 
   // AMBIENTES — clínicos, alegres, acolhedores
   const rooms = {
@@ -438,43 +518,111 @@ async function uploadToCloudinary(imageBlob, especialidadeId) {
 // ─────────────────────────────────────────────
 // GERA IMAGEM — Múltiplos providers → Cloudinary
 // ─────────────────────────────────────────────
-export async function generateImageForEspecialidade(especialidade, postContent = '') {
+export async function generateImageForEspecialidade(especialidade, postContent = '', withBranding = true) {
   const prompt = generateImagePromptFromContent(postContent || especialidade.foco, especialidade);
-  console.log('🎨 Prompt:', prompt.substring(0, 100) + '...');
+  console.log(`🎨 Prompt [branding=${withBranding}]:`, prompt.substring(0, 100) + '...');
 
-  // Tentativa 1: DALL-E 3 (se tiver créditos)
+  // Título extraído do conteúdo para o SVG de branding
+  const tituloPost = (postContent.split('\n')[0] || '')
+    .replace(/^[*#\s]+/, '').substring(0, 55) || especialidade.nome;
+
+  // Sobe foto limpa pro Cloudinary (para Google — sem overlay)
+  const uploadFotoLimpa = async (fotoBuf) => {
+    try {
+      const base64 = `data:image/jpeg;base64,${fotoBuf.toString('base64')}`;
+      const result = await cloudinary.uploader.upload(base64, {
+        folder:    'fono-inova/gmb',
+        public_id: `${especialidade.id}_gmb_${Date.now()}`,
+      });
+      return result.secure_url;
+    } catch (e) {
+      console.warn('⚠️ Upload foto limpa falhou:', e.message);
+      return null;
+    }
+  };
+
+  // Aplica branding com buffer direto (para Instagram/Facebook)
+  const comBranding = async (fotoBuf) => {
+    if (!withBranding) return uploadFotoLimpa(fotoBuf);
+    try {
+      return await gerarImagemBranded({
+        fotoBuffer: fotoBuf,
+        titulo: tituloPost,
+        conteudo: postContent,
+        especialidadeId: especialidade.id,
+      });
+    } catch (e) {
+      console.warn('⚠️ Branding falhou:', e.message);
+      return null;
+    }
+  };
+
+  // Tentativa 1: DALL-E 3 HD (se tiver créditos)
   if (process.env.OPENAI_API_KEY) {
     try {
-      console.log('🤖 Tentando DALL-E 3...');
+      console.log('🤖 Tentando DALL-E 3 HD...');
       const response = await openai.images.generate({
         model: 'dall-e-3',
         prompt,
         n: 1,
         size: '1024x1024',
-        quality: 'standard',
+        quality: 'hd',
         style: 'natural',
       });
 
       const tempUrl = response.data[0].url;
-      const finalUrl = await uploadToCloudinary(
-        await fetch(tempUrl).then(r => r.blob()),
-        especialidade.id
-      );
-
-      console.log('✅ DALL-E 3 → Cloudinary:', finalUrl);
-      return finalUrl;
+      const fotoBuf = Buffer.from(await (await fetch(tempUrl, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
+      console.log(`✅ DALL-E 3 HD → buffer ${fotoBuf.length} bytes`);
+      return await comBranding(fotoBuf);
 
     } catch (e) {
       console.warn('⚠️ DALL-E 3 falhou:', e.message);
     }
   }
 
-  // Tentativa 2: HuggingFace FLUX (gratuito)
+  // Tentativa 2: fal.ai FLUX.1-pro (alta qualidade, ~$0.05/img)
+  if (process.env.FAL_API_KEY) {
+    try {
+      console.log('🤖 Tentando fal.ai FLUX.1-pro...');
+      const falRes = await fetch('https://fal.run/fal-ai/flux-pro/v1.1', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Key ${process.env.FAL_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt,
+          image_size: 'square_hd',
+          num_inference_steps: 28,
+          guidance_scale: 3.5,
+          num_images: 1,
+          output_format: 'jpeg',
+          safety_tolerance: '2',
+        }),
+        signal: AbortSignal.timeout(60000),
+      });
+
+      if (falRes.ok) {
+        const falData = await falRes.json();
+        const imgUrl = falData.images?.[0]?.url;
+        if (imgUrl) {
+          const fotoBuf = Buffer.from(await (await fetch(imgUrl, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
+          console.log(`✅ fal.ai FLUX.1-pro → buffer ${fotoBuf.length} bytes`);
+          return await comBranding(fotoBuf);
+        }
+      }
+      console.warn('⚠️ fal.ai retornou erro:', falRes.status);
+    } catch (e) {
+      console.warn('⚠️ fal.ai falhou:', e.message);
+    }
+  }
+
+  // Tentativa 3: HuggingFace FLUX.1-dev (gratuito, alta qualidade)
   if (process.env.HUGGINGFACE_API_KEY) {
     try {
-      console.log('🤖 Tentando HuggingFace FLUX...');
+      console.log('🤖 Tentando HuggingFace FLUX.1-dev...');
       const response = await fetch(
-        'https://router.huggingface.co/black-forest-labs/FLUX.1-schnell',
+        'https://router.huggingface.co/black-forest-labs/FLUX.1-dev',
         {
           method: 'POST',
           headers: {
@@ -483,17 +631,16 @@ export async function generateImageForEspecialidade(especialidade, postContent =
           },
           body: JSON.stringify({
             inputs: prompt,
-            parameters: { width: 1024, height: 1024, num_inference_steps: 4 }
+            parameters: { width: 1024, height: 1024, num_inference_steps: 28, guidance_scale: 3.5 }
           }),
-          signal: AbortSignal.timeout(45000),
+          signal: AbortSignal.timeout(90000),
         }
       );
 
       if (response.ok) {
-        const blob = await response.blob();
-        const url = await uploadToCloudinary(blob, especialidade.id);
-        console.log('✅ FLUX → Cloudinary:', url);
-        return url;
+        const fotoBuf = Buffer.from(await response.arrayBuffer());
+        console.log(`✅ FLUX.1-dev → buffer ${fotoBuf.length} bytes`);
+        return await comBranding(fotoBuf);
       }
       console.warn('⚠️ HF retornou erro:', response.status);
     } catch (e) {
@@ -501,20 +648,20 @@ export async function generateImageForEspecialidade(especialidade, postContent =
     }
   }
 
-  // Tentativa 3: Pollinations (sempre gratuito)
+  // Tentativa 4: Pollinations com FLUX (sempre gratuito)
   try {
-    console.log('🔄 Tentando Pollinations...');
+    console.log('🔄 Tentando Pollinations FLUX...');
     const encoded = encodeURIComponent(prompt);
     const seed = Math.floor(Math.random() * 99999);
     const res = await fetch(
-      `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true`,
-      { signal: AbortSignal.timeout(30000) }
+      `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true&model=flux-realism&enhance=true`,
+      { signal: AbortSignal.timeout(60000) }
     );
 
     if (res.ok) {
-      const url = await uploadToCloudinary(await res.blob(), especialidade.id);
-      console.log('✅ Pollinations → Cloudinary:', url);
-      return url;
+      const fotoBuf = Buffer.from(await res.arrayBuffer());
+      console.log(`✅ Pollinations → buffer ${fotoBuf.length} bytes`);
+      return await comBranding(fotoBuf);
     }
   } catch (e) {
     console.warn('⚠️ Pollinations falhou:', e.message);
@@ -543,8 +690,8 @@ export async function createDailyPost(options = {}) {
 
     let mediaUrl = null;
     if (options.generateImage !== false) {
-      mediaUrl = await generateImageForEspecialidade(especialidade, generated.content);
-      if (mediaUrl) console.log('✅ Imagem gerada');
+      mediaUrl = await generateImageForEspecialidade(especialidade, generated.content, false);
+      if (mediaUrl) console.log('✅ Imagem gerada (sem branding — Google)');
     }
 
     const scheduledAt = options.scheduledAt || getNextHorarioEstrategico();
@@ -619,7 +766,6 @@ export async function generateWeekPosts() {
       const result = await createDailyPost({
         generateImage: true,
         scheduledAt,
-        publishImmediately: false
       });
 
       results.push({
@@ -634,8 +780,6 @@ export async function generateWeekPosts() {
     } catch (error) {
       results.push({ success: false, error: error.message });
     }
-
-    await new Promise(r => setTimeout(r, 5000));
   }
 
   return results;
@@ -672,7 +816,7 @@ export async function generatePostImage(content, especialidadeId = null) {
     console.log('📌 Especialidade detectada:', especialidade.nome);
 
     // Gera a imagem
-    const imageUrl = await generateImageForEspecialidade(especialidade, content);
+    const imageUrl = await generateImageForEspecialidade(especialidade, content, false);
 
     if (!imageUrl) {
       throw new Error('Falha ao gerar imagem');
@@ -715,7 +859,7 @@ export async function createAssistedPost(options = {}) {
     const postData = await generatePostForEspecialidade(especialidade, customTheme);
 
     // Gera imagem
-    const mediaUrl = await generateImageForEspecialidade(especialidade, postData.content);
+    const mediaUrl = await generateImageForEspecialidade(especialidade, postData.content, false);
 
     // Formata texto para copiar
     const copyText = `${postData.content}

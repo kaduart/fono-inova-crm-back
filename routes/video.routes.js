@@ -30,23 +30,29 @@ router.get('/', async (req, res) => {
   }
 });
 
-// 🆕 POST /gerar — Inicia pipeline completo (async)
-router.post('/gerar', async (req, res) => {
+// 🆕 Função handler para iniciar pipeline
+async function handleGenerateVideo(req, res) {
   try {
     const { 
       tema, 
+      roteiro,
       especialidadeId, 
       funil = 'TOPO', 
       duracao = 60, 
+      duration,
       publicar = false,
       targeting = {}
     } = req.body;
 
+    // Usar roteiro como tema se tema não foi enviado
+    const temaFinal = tema || roteiro;
+    const duracaoFinal = duracao || duration || 60;
+
     // Validação
-    if (!tema || !especialidadeId) {
+    if (!temaFinal || !especialidadeId) {
       return res.status(400).json({ 
         success: false, 
-        error: 'tema e especialidadeId são obrigatórios' 
+        error: 'tema (ou roteiro) e especialidadeId são obrigatórios' 
       });
     }
 
@@ -55,8 +61,8 @@ router.post('/gerar', async (req, res) => {
 
     // Criar documento Video no Mongo (tracking)
     const videoDoc = await Video.create({
-      title: `Vídeo ${especialidadeId} — ${tema.substring(0, 30)}...`,
-      roteiro: 'Gerando...',
+      title: `Vídeo ${especialidadeId} — ${temaFinal.substring(0, 30)}...`,
+      roteiro: temaFinal,
       especialidadeId,
       status: 'processing',
       jobId,
@@ -67,10 +73,10 @@ router.post('/gerar', async (req, res) => {
     await videoGenerationQueue.add('generate-video', {
       jobId,
       videoDocId: videoDoc._id.toString(),
-      tema,
+      tema: temaFinal,
       especialidadeId,
       funil,
-      duracao,
+      duracao: duracaoFinal,
       publicar,
       targeting,
       userId: req.user?._id
@@ -94,7 +100,11 @@ router.post('/gerar', async (req, res) => {
     logger.error('[VIDEO ROUTES] Erro ao iniciar pipeline:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}
+
+// 🆕 POST / (raiz) e /gerar — ambos iniciam pipeline
+router.post('/', handleGenerateVideo);
+router.post('/gerar', handleGenerateVideo);
 
 // 🆕 GET /status/:jobId — Status do job BullMQ
 router.get('/status/:jobId', async (req, res) => {

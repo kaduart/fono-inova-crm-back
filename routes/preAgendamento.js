@@ -237,6 +237,14 @@ router.post('/:id/importar-externo', agendaAuth, async (req, res) => {
     console.log('[IMPORTAR-EXTERNO] bookFixedSlot params:', JSON.stringify(bookParams, null, 2));
 
     const result = await bookFixedSlot(bookParams);
+    
+    console.log(`[IMPORTAR-EXTERNO] 📊 Resultado bookFixedSlot:`, {
+      success: result.success,
+      appointmentId: result.appointment?._id,
+      paymentId: result.payment?._id,
+      hasPayment: !!result.payment,
+      patientId: result.patientId
+    });
 
     if (!result.success) {
       console.error('[IMPORTAR-EXTERNO] bookFixedSlot erro:', result);
@@ -251,7 +259,7 @@ router.post('/:id/importar-externo', agendaAuth, async (req, res) => {
 
     await session.commitTransaction();
 
-    console.log(`[IMPORTAR-EXTERNO] ✅ Importado: ${result.appointment._id}`);
+    console.log(`[IMPORTAR-EXTERNO] ✅ Importado: ${result.appointment._id} com payment: ${result.payment?._id || 'SEM PAYMENT'}`);
 
     // ✅ EMITIR SOCKET
     try {

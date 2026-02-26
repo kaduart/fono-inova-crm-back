@@ -746,7 +746,20 @@ export async function bookFixedSlot({
             preAgendamentoId,    // 📈 ROI
         };
 
+        console.log(`[bookFixedSlot] 📤 Enviando para /api/appointments:`, {
+            patientId, doctorId, date, time, serviceType, sessionValue
+        });
+        
         const appointmentResponse = await api.post("/api/appointments", appointmentPayload);
+        
+        console.log(`[bookFixedSlot] 📥 Resposta da API:`, {
+            success: appointmentResponse.data?.success,
+            hasData: !!appointmentResponse.data?.data,
+            hasAppointment: !!appointmentResponse.data?.data?.appointment,
+            hasPayment: !!appointmentResponse.data?.data?._id, // payment retorna no data
+            appointmentId: appointmentResponse.data?.data?.appointment?._id,
+            paymentId: appointmentResponse.data?.data?._id
+        });
 
         if (!appointmentResponse.data?.success) {
             bookingStats.errors++;
@@ -815,6 +828,13 @@ export async function bookFixedSlot({
             }
         }
 
+        console.log(`[bookFixedSlot] ✅ Retornando sucesso:`, {
+            patientId,
+            appointmentId: createdAppointment?._id,
+            paymentId: appointmentData?._id,
+            sessionId: appointmentData?.session
+        });
+        
         return {
             success: true,
             patientId,
