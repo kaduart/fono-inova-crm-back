@@ -149,6 +149,17 @@ export const whatsappController = {
                         'manualControl.autoResumeAfter': 30
                     }
                 });
+                
+                // 🔄 NOTIFICAR FRONTEND em tempo real sobre a mudança de estado
+                const io = getIo();
+                io.emit('lead:manualControl', {
+                    leadId: resolvedLeadId,
+                    manualActive: true,
+                    phone: to,
+                    reason: 'mensagem_manual_enviada',
+                    timestamp: new Date()
+                });
+                console.log(`📡 [SEND-TEXT] Emitido lead:manualControl para lead ${resolvedLeadId}`);
             }
 
             // ✅ Busca a mensagem recém-salva - CORRIGIDO
@@ -1508,6 +1519,7 @@ async function processInboundMessage(msg, value) {
         if ((type === "text" || type === "audio" || type === "image") && isRealText) {
             console.log("🔍 [DEBUG PRE-ORCHESTRATOR] Lead sendo passado pro handleAutoReply:", {
                 leadId: lead._id,
+                triageStep: lead.triageStep, // 🆕 CRÍTICO: verificar se está vindo
                 pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
                 pendingPatientInfoStep: lead.pendingPatientInfoStep,
                 pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
@@ -1521,7 +1533,7 @@ async function processInboundMessage(msg, value) {
         // ✅ FIX: agora a supressão só impede o auto-followup, sem quebrar o processamento da mensagem
         try {
             if (!suppressAutoFollowup) {
-                const freshLead = await Lead.findById(lead._id).lean();
+                const freshLead = await Lead.findById(lead._id).select('+triageStep').lean();
 
                 const autoReplyOn = freshLead?.autoReplyEnabled !== false;
                 const manualActive = freshLead?.manualControl?.active === true;
@@ -1711,11 +1723,12 @@ async function handleAutoReply(from, to, content, lead) {
                 $unset: { pendingChosenSlot: "", pendingSchedulingSlots: "" }
             });
             // Recarrega limpo
-            leadDoc = await Lead.findById(leadDoc._id).lean();
+            leadDoc = await Lead.findById(leadDoc._id).select('+triageStep').lean();
         }
         // 🔍 DEBUG: Lead carregado do banco no handleAutoReply
         console.log("🔍 [DEBUG HANDLE-AUTO-REPLY] Lead carregado do banco:", {
             leadId: leadDoc?._id,
+            triageStep: leadDoc?.triageStep, // 🆕 LOG do campo crítico
             pendingPatientInfoForScheduling: leadDoc?.pendingPatientInfoForScheduling,
             pendingPatientInfoStep: leadDoc?.pendingPatientInfoStep,
             pendingChosenSlot: leadDoc?.pendingChosenSlot ? "SIM" : "NÃO",

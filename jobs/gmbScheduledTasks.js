@@ -39,8 +39,8 @@ export const scheduleGmbCron = () => {
         }
     }, { scheduled: true, timezone: 'America/Sao_Paulo' });
 
-    // Enviar posts agendados ao Make — 8h05 (após geração)
-    cron.schedule('5 8 * * *', async () => {
+    // Enviar posts agendados ao Make — várias vezes ao dia
+    cron.schedule('5 8,12,15,19 * * *', async () => {
         try {
             if (!makeService.isMakeConfigured()) return;
 
@@ -68,5 +68,5 @@ export const scheduleGmbCron = () => {
         }
     }, { scheduled: true, timezone: 'America/Sao_Paulo' });
 
-    console.log('✅ Cron do GMB agendado: gerar 8h + enviar Make 8h05');
+    console.log('✅ Cron do GMB agendado: gerar 8h + enviar Make 8h05/12h05/15h05/19h05');
 };

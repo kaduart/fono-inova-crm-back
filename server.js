@@ -118,6 +118,7 @@ console.log("🖥️ INSTANCE INFO:", {
 scheduleMonthlyCommissions();
 iniciarJobConfirmacao();
 scheduleDailyAlerts();
+scheduleGmbCron(); // ← Inicia cron do GMB (geração + envio ao Make)
 
 const PORT = process.env.PORT || 5000;
 
@@ -216,7 +217,7 @@ app.use('/api/diagnostic', diagnosticRouter);
 app.use('/api/protocols', protocolRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/cashflow', cashflowRoutes);
-app.use('/api/financial/overview', financialOverviewRoutes);
+app.use('/api/financial', financialOverviewRoutes);
 app.use('/api/planning', planningRoutes);
 app.use('/api/pre-agendamento', preAgendamentoRoutes);
 app.use('/api/notifications', notificationRoutes);

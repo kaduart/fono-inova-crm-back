@@ -198,7 +198,7 @@ Retorne APENAS JSON:
 | **Saída** | 1 campo `content` | 8+ campos (texto, hook, CTA, copy_anuncio...) |
 | **Compliance** | Básico | Estrito (saúde) |
 | **Estrutura** | Livre | Por segundos [0-5s], [5-20s]... |
-| **Modelo** | GPT-3.5-turbo | GPT-4o-mini |
+| **Modelo** | GPT-4o-turbo | GPT-4o-mini |
 
 ---
 

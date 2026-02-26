@@ -10,6 +10,10 @@ router.get('/posts', instagramController.listPosts);
 router.get('/posts/stats', instagramController.getStats);
 router.post('/generate', instagramController.generatePost);
 
+// 🎯 NOVOS: 3 Modos de Geração Estratégica
+router.post('/generate-caption', instagramController.generateCaption);
+router.post('/generate-hooks', instagramController.generateHooks);
+
 // Rotas com parâmetros - ORDEM IMPORTANTE: mais específicas primeiro
 router.post('/posts/:id/image', instagramController.generateImageForPost);
 router.post('/posts/:id/publish', instagramController.publishPost);

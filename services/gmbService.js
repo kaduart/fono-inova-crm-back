@@ -203,74 +203,137 @@ const PROMPTS_ESPECIALIDADE = {
 };
 
 /**
- * 🤖 GERA POST COM GPT
+ * 🤖 GERA POST COM GPT - VERSÃO ESTRATÉGICA
+ * Prompt turbinado com gatilhos psicológicos por funil
  */
-export async function generatePostForEspecialidade(especialidade, customTheme = null) {
+export async function generatePostForEspecialidade(especialidade, customTheme = null, funnelStage = 'top') {
   try {
     const nicho = PROMPTS_ESPECIALIDADE[especialidade.id] || null;
+
+    // 🧠 LÓGICA ESTRATÉGICA: Define gatilho e CTA baseado no funil
+    const estrategiaPorFunil = {
+      top: {
+        objetivo: 'crescimento/viralização',
+        gatilhos: ['Curiosidade', 'Contradição', 'Identificação'],
+        cta: 'Comente "SIM" se você passou por isso, salve este post ou marque outra mãe que precisa ver',
+        tom: 'provocativo mas acolhedor'
+      },
+      middle: {
+        objetivo: 'autoridade/educar',
+        gatilhos: ['Prova Social', 'Autoridade Técnica', 'Benefício Rápido'],
+        cta: 'Siga para parte 2 nos comentários ou comente sua dúvida que respondo pessoalmente',
+        tom: 'especialista empático'
+      },
+      bottom: {
+        objetivo: 'conversão/agendamento',
+        gatilhos: ['Urgência', 'Escassez', 'Medo Estratégico'],
+        cta: 'Me chame com a palavra AVALIAÇÃO no WhatsApp - temos apenas 3 vagas esta semana',
+        tom: 'urgente mas ético'
+      }
+    };
+
+    const estrategia = estrategiaPorFunil[funnelStage] || estrategiaPorFunil.top;
+    const gatilhoPrincipal = estrategia.gatilhos[Math.floor(Math.random() * estrategia.gatilhos.length)];
 
     const temaTexto = customTheme
       ? `TEMA ESPECÍFICO: "${customTheme}" dentro da área de ${especialidade.nome}`
       : `GANCHO: ${especialidade.gancho}`;
 
-    const instrucaoTema = customTheme
-      ? `Crie um post sobre "${customTheme}" na área de ${especialidade.nome}.`
-      : `Crie um post de ${especialidade.nome} para atrair pais que ainda não agendaram avaliação.`;
-
     const nichoInstrucoes = nicho ? `
 DOR DO PAI/MÃE: ${nicho.dor}
 URGÊNCIA: ${nicho.urgencia}
 DIFERENCIAL DA CLÍNICA: ${nicho.diferencial}
-GATILHO EMOCIONAL: fale para ${nicho.gatilho}` : '';
+GATILHO EMOCIONAL: ${nicho.gatilho}` : '';
+
+    // 🎯 KEYWORD SEO DINÂMICA
+    const keywordSEO = `${especialidade.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')} infantil`;
 
     const messages = [
       {
         role: 'system',
-        content: `Você é especialista em marketing de saúde infantil e geração de leads para clínicas.
-Crie posts para Google Meu Negócio da Clínica Fono Inova em Anápolis-GO.
-Objetivo: fazer o pai/mãe que leu sentir que precisa agendar uma avaliação HOJE.
-Regras: máximo 200 palavras, tom acolhedor e empático, sem ser alarmista, sem hashtags, máximo 2 emojis.`
+        content: `Você é estrategista de conteúdo da Clínica Fono Inova, especialista em copywriting para saúde infantil.
+
+REGRAS INEGOCIÁVEIS:
+- Máximo 200 palavras
+- Máximo 2 emojis
+- SEM alarmismo (saúde infantil é sensível)
+- SEM promessas de cura
+- Tom: técnico mas conversacional (como mãe experiente falando com outra)
+- Proibido usar pontos no meio das frases do hook (frase corrida para vídeos)
+- CTA deve ser CHOCANTE, VIRAL e QUEBRAR PADRÕES (não use "Agende pelo link")`
       },
       {
         role: 'user',
-        content: `${instrucaoTema}
+        content: `Crie post estratégico para ${especialidade.nome}.
 
-ESPECIALIDADE: ${especialidade.nome}
 ${temaTexto}
 FOCO: ${especialidade.foco}
 PÚBLICO: Pais de ${especialidade.publico}
 ${nichoInstrucoes}
 
-Estrutura obrigatória:
-1. Abertura com a DOR real do pai/mãe (1 frase direta, sem rodeios)
-2. Validação emocional (você não está sozinho, isso é mais comum do que parece)
-3. Explicação simples do que causa esse problema
-4. Como a Fono Inova resolve isso (específico, não genérico)
-5. Urgência suave (quanto antes, melhores os resultados)
-6. CTA direto: "Agende uma avaliação gratuita pelo link abaixo 👇"
+📊 ESTRATÉGIA DO FUNIL (${funnelStage.toUpperCase()}):
+- Objetivo: ${estrategia.objetivo}
+- Gatilho dominante: ${gatilhoPrincipal}
+- Tom obrigatório: ${estrategia.tom}
+- CTA obrigatória: "${estrategia.cta}"
 
-Regras extras:
-- Máximo 200 palavras
-- Comece com a dor, não com o nome da clínica
-- Use linguagem de mãe para mãe, não de médico para paciente
-- Seja específico: cite o sintoma real, não apenas "dificuldades"${customTheme ? '\n- Foque no tema: ' + customTheme : ''}`
+🎯 SEO OBRIGATÓRIO:
+- Inclua a palavra-chave "${keywordSEO}" naturalmente no meio do texto (densidade 1-2%)
+- NÃO comece com a keyword
+- Primeiras 125 caracteres devem conter o hook principal
+
+📋 ESTRUTURA OBRIGATÓRIA:
+
+1️⃣ HOOK (2 frases curtas, máx 25 palavras):
+- Use o gatilho ${gatilhoPrincipal}
+- Frase corrida (evite pontos no meio)
+- Interrompa o scroll imediatamente
+- Exemplo se Curiosidade: "Tem uma coisa sobre ${especialidade.nome.toLowerCase()} que ninguém te contou e que pode estar prejudicando seu filho sem você perceber"
+- Exemplo se Contradição: "Pare de fazer isso com seu filho - você está atrasando o desenvolvimento sem saber"
+
+2️⃣ VALOR + CONEXÃO:
+- Valide a dor: "Você não está sozinha, isso é mais comum do que parece"
+- Explique o problema de forma simples
+- Como a Fono Inova resolve (específico, não genérico)
+
+3️⃣ SEO NATURAL:
+- Insira "${keywordSEO}" no meio do texto
+- Use termos relacionados: desenvolvimento infantil, Anápolis, terapia infantil
+
+4️⃣ CTA ESTRATÉGICA:
+- Use EXATAMENTE: "${estrategia.cta}"
+- NÃO invente outra CTA
+- Seja específico e gerador de ação
+
+💡 DICA: Pense como um Social Media profissional, não como assistente genérico. Cada palavra deve ter propósito estratégico.
+
+${customTheme ? `\n🎯 FOCO ESPECIAL NO TEMA: ${customTheme}` : ''}`
       }
     ];
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4o-mini',
       messages: messages,
-      max_tokens: 400,
+      max_tokens: 450,
       temperature: 0.8
     });
 
     const content = response.choices[0].message.content.trim();
-    const title = content.split('.')[0].substring(0, 80);
+    
+    // Extrai título do hook (primeiras 80 chars da primeira linha não vazia)
+    const linhas = content.split('\n').filter(l => l.trim());
+    const primeiraLinha = linhas[0]?.replace(/^[^a-zA-Z0-9]+/, '').substring(0, 80) || especialidade.gancho;
 
     return {
-      title,
+      title: primeiraLinha,
       content,
-      especialidade
+      especialidade,
+      estrategia: {
+        funnelStage,
+        gatilho: gatilhoPrincipal,
+        objetivo: estrategia.objetivo,
+        cta: estrategia.cta
+      }
     };
 
   } catch (error) {
@@ -685,7 +748,7 @@ export async function createDailyPost(options = {}) {
     const especialidade = options.especialidade || await getNextEspecialidade();
     console.log('📌 Especialidade:', especialidade.nome);
 
-    const generated = await generatePostForEspecialidade(especialidade, options.customTheme);
+    const generated = await generatePostForEspecialidade(especialidade, options.customTheme, options.funnelStage || 'top');
     console.log(generated.isFallback ? '📝 Post template' : '✅ Texto gerado');
 
     let mediaUrl = null;
@@ -706,7 +769,7 @@ export async function createDailyPost(options = {}) {
       ctaType: 'LEARN_MORE',
       ctaUrl: especialidade.url,
       aiGenerated: !generated.isFallback,
-      aiModel: generated.isFallback ? 'template' : 'gpt-3.5-turbo',
+      aiModel: generated.isFallback ? 'template' : 'gpt-4o-mini',
       aiPrompt: options.customTheme
         ? `Especialidade: ${especialidade.nome} | Tema: ${options.customTheme}`
         : `Especialidade: ${especialidade.nome}`,
@@ -855,8 +918,8 @@ export async function createAssistedPost(options = {}) {
       especialidade = ESPECIALIDADES[0];
     }
 
-    // Gera conteúdo
-    const postData = await generatePostForEspecialidade(especialidade, customTheme);
+    // Gera conteúdo com estratégia por funil
+    const postData = await generatePostForEspecialidade(especialidade, customTheme, options.funnelStage || 'top');
 
     // Gera imagem
     const mediaUrl = await generateImageForEspecialidade(especialidade, postData.content, false);
@@ -910,6 +973,186 @@ export async function createAssistedPost(options = {}) {
   }
 }
 
+/**
+ * 📝 GERA LEGENDA SEO OTIMIZADA (Modo Especializado)
+ */
+export async function generateCaptionSEO(especialidade, customTheme = null, funnelStage = 'top') {
+  try {
+    const nicho = PROMPTS_ESPECIALIDADE[especialidade.id] || null;
+    const keywordSEO = `${especialidade.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')} infantil`;
+    
+    const estrategiaPorFunil = {
+      top: { cta: 'Comente "SIM" se você passou por isso', tom: 'conversacional, empático' },
+      middle: { cta: 'Siga para parte 2 nos comentários', tom: 'educativo, especialista' },
+      bottom: { cta: 'Me chame com a palavra AVALIAÇÃO - apenas 3 vagas', tom: 'urgente mas ético' }
+    };
+    const estrategia = estrategiaPorFunil[funnelStage] || estrategiaPorFunil.top;
+
+    const messages = [
+      {
+        role: 'system',
+        content: `Você é copywriter SEO especialista em saúde infantil.
+Crie uma LEGENDA otimizada para Instagram e Google.
+
+REGRAS DE SEO:
+- Palavra-chave principal: "${keywordSEO}"
+- Densidade: 1-2% (use naturalmente no meio do texto)
+- Primeiras 125 caracteres: hook que prenda atenção
+- Parágrafos curtos (máx 2 linhas cada)
+- Máximo 2 emojis
+- CTA claro no final
+
+REGRAS ÉTICAS:
+- SEM alarmismo
+- SEM promessas de cura
+- Tom natural como influencer experiente` 
+      },
+      {
+        role: 'user',
+        content: `Crie legenda SEO para ${especialidade.nome}.
+
+${customTheme ? `TEMA: ${customTheme}` : `FOCO: ${especialidade.foco}`}
+PÚBLICO: Pais de ${especialidade.publico}
+${nicho ? `DOR: ${nicho.dor}` : ''}
+
+ESTRUTURA OBRIGATÓRIA:
+1. Hook (primeiras 2 frases) - chame atenção imediatamente
+2. Desenvolvimento - valor educativo + emocional
+3. SEO - insira "${keywordSEO}" naturalmente no meio
+4. CTA: "${estrategia.cta}"
+5. Hashtags: 5-8 tags (mix nicho + local + amplo)
+
+OUTPUT: Apenas a legenda pronta para copiar e colar.`
+      }
+    ];
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages,
+      max_tokens: 400,
+      temperature: 0.8
+    });
+
+    const caption = response.choices[0].message.content.trim();
+    
+    // Calcula densidade da keyword
+    const wordCount = caption.split(/\s+/).length;
+    const keywordCount = (caption.toLowerCase().match(new RegExp(keywordSEO.replace(/\s+/g, '\\s+'), 'g')) || []).length;
+    const density = ((keywordCount / wordCount) * 100).toFixed(1);
+
+    return {
+      type: 'caption',
+      title: `Legenda SEO - ${especialidade.nome}`,
+      content: caption,
+      especialidade,
+      meta: {
+        keyword: keywordSEO,
+        density: `${density}%`,
+        wordCount,
+        cta: estrategia.cta,
+        funnelStage
+      }
+    };
+
+  } catch (error) {
+    console.error('❌ Erro ao gerar legenda SEO:', error);
+    throw error;
+  }
+}
+
+/**
+ * 🎣 GERA GANCHOS VIRAIS (10 variações)
+ */
+export async function generateHooksViral(especialidade, customTheme = null, funnelStage = 'top', count = 10) {
+  try {
+    const nicho = PROMPTS_ESPECIALIDADE[especialidade.id] || null;
+    
+    // Define gatilhos baseado no funil
+    const gatilhosPorFunil = {
+      top: ['Curiosidade', 'Contradição', 'Identificação'],
+      middle: ['Prova Social', 'Autoridade', 'Benefício Rápido'],
+      bottom: ['Urgência', 'Escassez', 'Medo Estratégico']
+    };
+    
+    const gatilhos = gatilhosPorFunil[funnelStage] || gatilhosPorFunil.top;
+    
+    // Distribui os ganchos entre os gatilhos
+    const ganchosPorGatilho = Math.ceil(count / gatilhos.length);
+
+    const messages = [
+      {
+        role: 'system',
+        content: `Você é especialista em Ganchos Virais e Psicologia da Atenção.
+Crie HOOKS de 3-5 segundos que param o scroll IMEDIATAMENTE.
+
+REGRAS CRÍTICAS:
+- FRASES CORRIDAS (evite pontos no meio - para vídeos)
+- Máximo 25 palavras por gancho
+- Texto deve soar natural quando falado
+- Cada gancho ativa UMA emoção específica
+- SEM alarmismo na saúde infantil
+
+GATILHOS PSICOLÓGICOS:
+- Curiosidade: lacuna de conhecimento
+- Contradição: quebra de expectativa  
+- Identificação: espelho do público
+- Prova Social: números/autoridade
+- Urgência: tempo limitado
+- Escassez: poucos sabem/têm acesso` 
+      },
+      {
+        role: 'user',
+        content: `Gere ${count} GANCHOS VIRAIS para ${especialidade.nome}.
+
+TEMA: ${customTheme || especialidade.gancho}
+PÚBLICO: Pais de ${especialidade.publico}
+${nicho ? `DOR: ${nicho.dor}` : ''}
+
+DISTRIBUIÇÃO DOS GATILHOS:
+${gatilhos.map(g => `- ${g}: ${ganchosPorGatilho} variações`).join('\n')}
+
+FORMATO DE SAÍDA:
+GATILHO [Nome] - Gancho [número]:
+"Texto do gancho em frase corrida sem pontos no meio"
+
+REGRA: Cada gancho deve ser COMPLETAMENTE DIFERENTE dos outros.
+Teste ângulos psicológicos distintos.`
+      }
+    ];
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages,
+      max_tokens: 800,
+      temperature: 0.9
+    });
+
+    const hooksText = response.choices[0].message.content.trim();
+    
+    // Parseia os ganchos
+    const hooks = hooksText.split('\n')
+      .filter(line => line.trim().startsWith('"') || line.includes('GATILHO'))
+      .map(line => line.trim());
+
+    return {
+      type: 'hooks',
+      title: `${count} Ganchos Virais - ${especialidade.nome}`,
+      content: hooksText,
+      especialidade,
+      meta: {
+        count,
+        gatilhos,
+        funnelStage,
+        hooks: hooks.length > 0 ? hooks : hooksText.split('\n').filter(l => l.trim())
+      }
+    };
+
+  } catch (error) {
+    console.error('❌ Erro ao gerar ganchos:', error);
+    throw error;
+  }
+}
+
 export {
   uploadToCloudinary
 };
@@ -918,6 +1161,8 @@ export default {
   generatePostForEspecialidade,
   generateImageForEspecialidade,
   generatePostImage,
+  generateCaptionSEO,
+  generateHooksViral,
   createDailyPost,
   generateWeekPosts,
   fetchPostMetrics,

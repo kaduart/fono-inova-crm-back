@@ -312,3 +312,61 @@ db.insuranceguides.deleteMany({
   patientId: ObjectId("69655746dcdf49e2c282800b"),
   status: "cancelled"
 })
+
+
+- /// agednaemtnos duplciados 
+db.appointments.aggregate([
+  {
+    $addFields: {
+      doctorStr: { $toString: "$doctor" },
+      patientStr: { $toString: "$patient" }
+    }
+  },
+  {
+    $group: {
+      _id: {
+        date: "$date",
+        time: "$time",
+        doctor: "$doctorStr",
+        patient: "$patientStr"
+      },
+      count: { $sum: 1 },
+      ids: { $push: "$_id" }
+    }
+  },
+  {
+    $match: { count: { $gt: 1 } }
+  },
+  {
+    $lookup: {
+      from: "patients",
+      let: { patientId: { $toObjectId: "$_id.patient" } },
+      pipeline: [
+        { $match: { $expr: { $eq: ["$_id", "$$patientId"] } } }
+      ],
+      as: "patientData"
+    }
+  },
+  {
+    $lookup: {
+      from: "doctors",
+      let: { doctorId: { $toObjectId: "$_id.doctor" } },
+      pipeline: [
+        { $match: { $expr: { $eq: ["$_id", "$$doctorId"] } } }
+      ],
+      as: "doctorData"
+    }
+  },
+  {
+    $project: {
+      _id: 0,
+      data: "$_id.date",
+      hora: "$_id.time",
+      paciente: { $arrayElemAt: ["$patientData.fullName", 0] },
+      medico: { $arrayElemAt: ["$doctorData.fullName", 0] },
+      quantidade: "$count",
+      ids: 1
+    }
+  },
+  { $sort: { data: 1, hora: 1 } }
+]);

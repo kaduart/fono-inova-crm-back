@@ -187,7 +187,7 @@ export async function triggerManualGeneration(req, res) {
     let especialidade = gmbService.ESPECIALIDADES.find(e => e.id === especialidadeId);
     if (!especialidade) especialidade = gmbService.ESPECIALIDADES[0];
 
-    const postData = await gmbService.generatePostForEspecialidade(especialidade, customTheme);
+    const postData = await gmbService.generatePostForEspecialidade(especialidade, customTheme, req.body.funnelStage || 'top');
 
     let mediaUrl = null;
     if (generateImage !== false) {
@@ -198,13 +198,15 @@ export async function triggerManualGeneration(req, res) {
       }
     }
 
-    const scheduledDate = scheduledAt ? new Date(scheduledAt) : new Date();
+    // Se tem scheduledAt, agendar. Senão, fica como draft (rascunho)
+    const isScheduled = Boolean(scheduledAt);
+    const scheduledDate = isScheduled ? new Date(scheduledAt) : null;
 
     const post = new GmbPost({
       title: postData.title,
       content: postData.content,
       theme: especialidade.id,
-      status: 'scheduled',
+      status: isScheduled ? 'scheduled' : 'draft',
       scheduledAt: scheduledDate,
       mediaUrl,
       mediaType: mediaUrl ? 'image' : null,
@@ -426,4 +428,46 @@ export async function generateWeekAssisted(req, res) {
 
 export async function createSmartPost(req, res) {
   res.json({ success: false, error: 'Em desenvolvimento' });
+}
+
+// 🟢 GERAR LEGENDA SEO
+export async function generateCaption(req, res) {
+  try {
+    const { especialidadeId, customTheme, funnelStage } = req.body;
+    
+    let especialidade = gmbService.ESPECIALIDADES.find(e => e.id === especialidadeId);
+    if (!especialidade) especialidade = gmbService.ESPECIALIDADES[0];
+
+    const result = await gmbService.generateCaptionSEO(especialidade, customTheme, funnelStage || 'top');
+    
+    res.json({
+      success: true,
+      data: result,
+      message: '📝 Legenda SEO gerada com sucesso!'
+    });
+  } catch (error) {
+    console.error('Erro ao gerar legenda:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 🟡 GERAR GANCHOS VIRAIS
+export async function generateHooks(req, res) {
+  try {
+    const { especialidadeId, customTheme, funnelStage, count } = req.body;
+    
+    let especialidade = gmbService.ESPECIALIDADES.find(e => e.id === especialidadeId);
+    if (!especialidade) especialidade = gmbService.ESPECIALIDADES[0];
+
+    const result = await gmbService.generateHooksViral(especialidade, customTheme, funnelStage || 'top', count || 10);
+    
+    res.json({
+      success: true,
+      data: result,
+      message: `🎣 ${count || 10} Ganchos virais gerados!`
+    });
+  } catch (error) {
+    console.error('Erro ao gerar ganchos:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 }
