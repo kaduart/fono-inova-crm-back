@@ -40,7 +40,7 @@ export async function getStats(req, res) {
 
 export async function generatePost(req, res) {
   try {
-    const { especialidadeId, customTheme, funnelStage } = req.body;
+    const { especialidadeId, customTheme, funnelStage, provider = 'auto' } = req.body;
     
     const especialidade = ESPECIALIDADES.find(e => e.id === especialidadeId) || ESPECIALIDADES[0];
     
@@ -69,6 +69,7 @@ export async function generatePost(req, res) {
       especialidadeId: especialidade.id,
       customTheme,
       funnelStage: funnelStage || 'top',
+      provider: provider || 'auto',
       generateImage: true,
       userId: req.user?._id
     }, { jobId });

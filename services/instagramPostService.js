@@ -609,3 +609,145 @@ export async function regenerateImageForPost(post) {
 }
 
 export { gerarHeadline, gerarLegenda, IMAGE_TYPES };
+
+// ═══════════════════════════════════════════════════════════
+// 🆕 INTEGRAÇÃO COM NOVO SISTEMA DE LAYOUTS (v2)
+// ═══════════════════════════════════════════════════════════
+
+import { gerarPostComRotacao } from './postGeneratorService.js';
+
+/**
+ * 🎨 GERAR POST COM SISTEMA DE LAYOUTS V2 (Novo)
+ * Usa o motor de renderização genérico com 15+ layouts
+ * 
+ * @param {Object} options - Opções de geração
+ * @param {string} options.especialidadeId - ID da especialidade
+ * @param {string} options.funnelStage - Estágio do funil (top/middle/bottom)
+ * @param {string} options.customTheme - Tema customizado (opcional)
+ * @param {string} options.userId - ID do usuário criador
+ * @param {boolean} options.useV2Layouts - Forçar uso do novo sistema
+ */
+export async function generateInstagramPostV2({
+  especialidadeId,
+  funnelStage = 'top',
+  customTheme = null,
+  userId = null,
+  useV2Layouts = true,
+  provider = 'auto'
+}) {
+  if (!useV2Layouts) {
+    // Fallback para sistema antigo
+    return generateInstagramPost({ especialidadeId, customTheme, funnelStage, userId });
+  }
+  
+  const especialidade = ESPECIALIDADES.find(e => e.id === especialidadeId) || ESPECIALIDADES[0];
+  
+  console.log('📸 [v2] Instagram Post com Layouts Dinâmicos:', especialidade.nome);
+  
+  // 1. Gerar headline e legenda (reutiliza funções existentes)
+  const headline = await gerarHeadline({ especialidade, funnelStage, customTheme });
+  const legenda = await gerarLegenda({ especialidade, headline, funnelStage });
+  
+  console.log('🎯 Headline:', headline);
+  console.log('📝 Legenda:', legenda.split('\n')[0]);
+  
+  // 2. Gerar imagem com novo sistema de layouts
+  const hook = legenda.split('\n')[0]?.substring(0, 50);
+  
+  try {
+    const resultado = await gerarPostComRotacao({
+      especialidadeId,
+      conteudo: legenda,
+      headline,
+      hook,
+      categoriaPreferida: null, // Deixa o sistema escolher
+      channel: 'instagram',
+      provider
+    });
+    
+    // 3. Criar post no MongoDB
+    const post = new InstagramPost({
+      title: headline,
+      headline,
+      content: legenda,
+      caption: legenda,
+      theme: especialidade.id,
+      funnelStage,
+      status: 'draft',
+      mediaUrl: resultado.url,
+      mediaType: 'image',
+      aiGenerated: true,
+      imageProvider: resultado.imageProvider,
+      layoutId: resultado.layoutId, // Novo campo
+      createdBy: userId,
+      metadata: {
+        customTheme,
+        headlineStrategy: resultado.layoutCategoria,
+        layoutNome: resultado.layoutNome
+      }
+    });
+    
+    await post.save();
+    
+    console.log('✅ Post v2 criado:', resultado.layoutId, resultado.layoutNome);
+    
+    return {
+      success: true,
+      post,
+      data: {
+        headline,
+        legenda,
+        mediaUrl: resultado.url,
+        especialidade: especialidade.nome,
+        layout: {
+          id: resultado.layoutId,
+          nome: resultado.layoutNome,
+          categoria: resultado.layoutCategoria
+        },
+        provider: resultado.imageProvider,
+        tempo: resultado.tempo,
+        proximoLayoutSugerido: resultado.proximoLayoutSugerido
+      }
+    };
+    
+  } catch (error) {
+    console.error('❌ Erro no sistema v2, fallback para v1:', error.message);
+    
+    // Fallback para sistema antigo em caso de erro
+    return generateInstagramPost({ especialidadeId, customTheme, funnelStage, userId });
+  }
+}
+
+/**
+ * 🔄 REGENERAR IMAGEM COM NOVO SISTEMA (v2)
+ */
+export async function regenerateImageForPostV2(post) {
+  try {
+    const { regenerarImagemPost } = await import('./postGeneratorService.js');
+    
+    const hook = post.caption?.split('\n')[0]?.substring(0, 50) || '';
+    
+    const resultado = await regenerarImagemPost({
+      especialidadeId: post.theme,
+      headline: post.headline,
+      hook,
+      // Não passa layoutId para forçar novo layout
+    });
+    
+    // Atualizar post
+    post.mediaUrl = resultado.url;
+    post.imageProvider = resultado.imageProvider;
+    post.layoutId = resultado.layoutId;
+    await post.save();
+    
+    return {
+      url: resultado.url,
+      layoutId: resultado.layoutId,
+      layoutNome: resultado.layoutNome
+    };
+    
+  } catch (error) {
+    console.error('❌ Erro na regeneração v2, fallback para v1:', error.message);
+    return regenerateImageForPost(post);
+  }
+}

@@ -188,8 +188,20 @@ export function extractComplaint(text) {
         [/dificuldade.*escola|dificuldade.*ler|dificuldade.*escrever|nao\s+aprende|aprendizagem|leitura|escrita|dislexia/i, 'dificuldade de aprendizagem'],
         // Motricidade oral / baba / deglutição
         [/baba\s+muito|baba\s+demais|dificuldade.*engolir|engasgando|degluti|motricidade\s+oral/i, 'motricidade oral'],
-        // Voz
-        [/problema.*voz|voz\s+rouca|rouquidao|voz\s+falhando|calos\s+vocal|nodulo/i, 'problema de voz'],
+        // Voz - PROBLEMAS VOCAIS (adulto e criança)
+        [/problema.*voz|voz\s+rouca|rouquidao|voz\s+falhando|calos\s+vocal|nodulo|nodulos/i, 'problema de voz'],
+        // Fenda vocal / fissura / fenda glótica
+        [/fenda\s+vocal|fissura\s+vocal|fenda\s+glotica|fenda\s+na\s+voz/i, 'fenda vocal'],
+        // Pre gas vocais não fecham / diastase
+        [/pregas?\s+vocai?s?|pregas?\s+nao\s+fecha|diastase|paralisia\s+vocal/i, 'disfunção de pregas vocais'],
+        // Ar na voz / escaping / eficiência vocal
+        [/ar\s+na\s+voz|escapando|voz\s+fraca|voz\s+sem\s+forca|voz\s+baixa/i, 'ineficiência vocal (ar na voz)'],
+        // Cantor / voz profissional
+        [/cantor|cantora|voz\s+profissional|uso\s+profissional|professor|locutor|apresentador/i, 'voz profissional / cantor'],
+        // Cisto / pólipo vocal
+        [/cisto\s+vocal|polipo\s+vocal|edema\s+de\s+reinke/i, 'lesão benigna de pregas vocais'],
+        // Disfonia genérica
+        [/disfonia|disfonico|disfonica/i, 'disfonia'],
         // Psicologia / saúde mental
         [/ansiedade|depressao|deprimid|comportamento|birra|agress|medo.*excessivo|fobia|choro\s+muito|nao\s+dorme/i, 'saúde mental / comportamento'],
         // TOD / oposição
