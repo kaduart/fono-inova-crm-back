@@ -1236,7 +1236,7 @@ async function processInboundMessage(msg, value) {
             console.log(`🎙️ Processando áudio para transcrição: ${mediaId}`);
 
             // 🔹 TRANSCRIÇÃO
-            content = await transcribeWaAudio(mediaId, `audio_${wamid}.ogg`);
+            content = await transcribeWaAudio({ mediaId });
 
             if (!content || content.length < 3) {
                 content = "[Áudio não pôde ser transcrito]";

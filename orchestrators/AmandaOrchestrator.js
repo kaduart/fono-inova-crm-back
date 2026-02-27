@@ -2030,11 +2030,11 @@ export async function getOptimizedAmandaResponse({
         
         if (updateResult) {
             console.log("✅ [TRIAGEM] triageStep salvo com sucesso:", updateResult.triageStep);
-            lead.triageStep = initialStep; // mantém em memória
+            lead.triageStep = initialStep; // ✅ mantém em memória o step correto
         } else {
             console.warn("⚠️ [TRIAGEM] Falha ao salvar triageStep");
+            lead.triageStep = "ask_period"; // Fallback só se falhar
         }
-        lead.triageStep = "ask_period"; // mantém em memória
     }
 
     // ============================================================
