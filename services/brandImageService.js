@@ -1,17 +1,7 @@
 /**
- * 🎨 Brand Image Service — Identidade Visual Fono Inova
- *
- * Layout profissional estilo social media:
- * ┌────────────────────────────────────┐
- * │   FOTO LIMPA (sem overlay)         │  57% — sujeito visível
- * │                                    │
- * ╰────── curva orgânica ──────────────╯  transição suave
- * │  ESPECIALIDADE (grande, bold)      │  43% banda verde degradê
- * │  Hook / subtítulo                  │
- * │  ──────   [LOGO REAL]              │
- * └────────────────────────────────────┘
- *
- * Blobs: formas orgânicas SVG (não círculos) — estilo dos posts reais
+ * Brand Image Service v3 - Fono Inova
+ * Sistema Visual Profissional: fal.ai FLUX → HuggingFace → Pollinations
+ * SEM DALL-E, SEM Groq - só FLUX real
  */
 
 import sharp from 'sharp';
@@ -19,339 +9,487 @@ import { v2 as cloudinary } from 'cloudinary';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-const __dir    = dirname(fileURLToPath(import.meta.url));
+const __dir = dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = join(__dir, '../dist/images/logo-completa.png');
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// ─── Cor da banda e acento ───────────────────────────────────────────────────
-const ACCENT     = '#FFD166';
-const TEXT_WHITE = '#FFFFFF';
-
-// ─── Templates — blobs GRANDES e orgânicos (amoeba/nuvem, não círculos) ─────
-// Formas com curvas côncavo-convexas alternadas — estilo Instagram editorial
-const TEMPLATES = [
-  {
-    id: 'A',
-    bandStart: '#1F6B57', bandEnd: '#0E2E20',
-    blobs: [
-      // MEGA blob amarelo topo-direita — amoeba com borda irregular ondulada
-      {
-        d: 'M1080,0 L565,0 C648,10 758,-18 795,82 C830,175 755,258 812,362 C848,428 960,402 998,508 C1018,562 975,628 1080,628 Z',
-        fill: '#FFD166', op: 0.93,
-      },
-      // Blob lilás esquerda — grande, cruza a transição foto/banda
-      {
-        d: 'M0,330 C105,295 182,362 168,488 C155,595 60,622 98,735 C124,814 65,882 0,868 Z',
-        fill: '#C9B8E8', op: 0.88,
-      },
-      // Blob rosa direita — acento na banda
-      {
-        d: 'M1080,648 C1018,614 972,682 985,775 C997,858 1058,875 1080,870 Z',
-        fill: '#F9A8B4', op: 0.82,
-      },
-    ],
-  },
-  {
-    id: 'B',
-    bandStart: '#1F6B57', bandEnd: '#0E2E20',
-    blobs: [
-      {
-        d: 'M1080,0 L545,0 C632,14 742,-12 778,86 C814,185 740,266 796,370 C832,435 942,412 980,518 C1002,574 958,638 1080,638 Z',
-        fill: '#FFD166', op: 0.91,
-      },
-      {
-        d: 'M0,310 C112,278 190,345 175,472 C160,580 62,608 100,722 C126,800 68,870 0,858 Z',
-        fill: '#A8D8EA', op: 0.86,
-      },
-      {
-        d: 'M1080,662 C1020,628 975,696 988,788 C1000,872 1060,888 1080,882 Z',
-        fill: '#F9A8B4', op: 0.80,
-      },
-    ],
-  },
-  {
-    id: 'C',
-    bandStart: '#1F6B57', bandEnd: '#0E2E20',
-    blobs: [
-      {
-        d: 'M1080,0 L555,0 C640,12 752,-15 788,84 C825,182 750,262 806,366 C840,432 952,408 990,515 C1012,570 968,635 1080,635 Z',
-        fill: '#FFD166', op: 0.94,
-      },
-      {
-        d: 'M0,348 C98,315 175,382 162,508 C148,615 55,640 92,752 C116,830 58,898 0,884 Z',
-        fill: '#F9A8B4', op: 0.86,
-      },
-      {
-        d: 'M1080,655 C1022,622 978,690 990,780 C1002,862 1060,878 1080,872 Z',
-        fill: '#C9B8E8', op: 0.78,
-      },
-    ],
-  },
-  {
-    id: 'D',
-    bandStart: '#1F6B57', bandEnd: '#0E2E20',
-    blobs: [
-      {
-        d: 'M1080,0 L548,0 C636,15 745,-10 782,88 C818,185 744,265 800,368 C835,435 945,410 984,518 C1006,574 962,640 1080,640 Z',
-        fill: '#FFD166', op: 0.90,
-      },
-      {
-        d: 'M0,320 C108,287 186,354 172,480 C158,588 62,615 100,728 C126,806 66,876 0,862 Z',
-        fill: '#C9B8E8', op: 0.91,
-      },
-      // Acento amarelo baixo-esquerda
-      {
-        d: 'M0,958 C52,924 98,948 94,1018 C90,1075 42,1090 0,1082 Z',
-        fill: '#FFD166', op: 0.65,
-      },
-    ],
-  },
-  {
-    id: 'E',
-    bandStart: '#1F6B57', bandEnd: '#0E2E20',
-    blobs: [
-      {
-        d: 'M1080,0 L558,0 C644,12 754,-14 790,84 C826,182 752,262 808,365 C842,432 952,408 990,516 C1012,572 968,636 1080,636 Z',
-        fill: '#FFD166', op: 0.92,
-      },
-      {
-        d: 'M0,338 C102,305 178,372 165,498 C152,606 58,632 96,745 C120,822 62,890 0,876 Z',
-        fill: '#D4A8D8', op: 0.87,
-      },
-      {
-        d: 'M1080,658 C1022,626 978,694 990,784 C1002,866 1060,882 1080,876 Z',
-        fill: '#A8F0D0', op: 0.76,
-      },
-    ],
-  },
-];
-
-// Labels por especialidade
-const LABELS = {
-  fonoaudiologia:          'FONOAUDIOLOGIA',
-  psicologia:              'PSICOLOGIA INFANTIL',
-  terapia_ocupacional:     'TERAPIA OCUPACIONAL',
-  fisioterapia:            'FISIOTERAPIA INFANTIL',
-  psicomotricidade:        'PSICOMOTRICIDADE',
-  freio_lingual:           'FREIO LINGUAL',
-  neuropsicologia:         'NEUROPSICOLOGIA',
-  psicopedagogia_clinica:  'PSICOPEDAGOGIA',
-  psicopedagogia:          'PSICOPEDAGOGIA',
-  musicoterapia:           'MUSICOTERAPIA',
+const CORES = {
+  verdeProfundo: '#1A4D3A',
+  verdeVibrante: '#2D6A4F',
+  amareloOuro: '#F4D03F',
+  rosaCoral: '#F1948A',
+  lilas: '#C39BD3',
+  branco: '#FFFFFF',
 };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-function escapeSvg(s = '') {
-  return String(s).replace(/[<>&"']/g, c =>
-    ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
-}
-
-function fontSizeParaLinha(linha) {
-  const n = linha.length;
-  if (n <= 8)  return 92;
-  if (n <= 11) return 82;
-  if (n <= 14) return 72;
-  if (n <= 17) return 62;
-  return 54;
-}
-
-function truncarHook(texto, max = 48) {
-  if (!texto || texto.length <= max) return texto || '';
-  const cortado = texto.substring(0, max);
-  const ultimo  = cortado.lastIndexOf(' ');
-  return (ultimo > 20 ? cortado.substring(0, ultimo) : cortado) + '...';
-}
-
-// ─── Gera SVG overlay completo ───────────────────────────────────────────────
 /**
- * SVG inclui:
- *  - Overlay cinematográfico sutil na área da foto
- *  - Banda curva orgânica com gradiente verde
- *  - Linha branca na curva (separação elegante)
- *  - Blobs orgânicos irregulares nos cantos
- *  - Tipografia da especialidade + hook
+ * Quebra título em linhas balanceadas (não corta palavras)
  */
-function gerarSVG({ tmpl, label, hook, bandY, largura = 1080, altura = 1080 }) {
-  const palavras = label.split(' ');
-  const meio  = Math.ceil(palavras.length / 2);
-  const spec1 = palavras.slice(0, meio).join(' ');
-  const spec2 = palavras.slice(meio).join(' ') || null;
+function quebrarTituloBalanceado(titulo, maxLinhas = 2) {
+  const palavras = titulo.split(' ').filter(p => p.trim());
+  if (palavras.length === 0) return Array(maxLinhas).fill('');
+  
+  // Distribui palavras igualmente entre as linhas
+  const linhas = [];
+  const palavrasPorLinha = Math.ceil(palavras.length / maxLinhas);
+  
+  for (let i = 0; i < maxLinhas; i++) {
+    const inicio = i * palavrasPorLinha;
+    const fim = Math.min(inicio + palavrasPorLinha, palavras.length);
+    const linha = palavras.slice(inicio, fim).join(' ');
+    linhas.push(linha);
+  }
+  
+  return linhas;
+}
 
-  const fs1 = fontSizeParaLinha(spec1);
-  const fs2 = spec2 ? fontSizeParaLinha(spec2) : 0;
+/**
+ * Calcula tamanho da fonte baseado no comprimento do texto
+ */
+function calcularFontSize(texto, baseSize = 56, minSize = 36) {
+  if (texto.length <= 20) return baseSize;
+  if (texto.length <= 30) return 48;
+  if (texto.length <= 40) return 42;
+  return minSize;
+}
 
-  const pad = 60;
-  const y1  = bandY + 95;
-  const y2  = spec2 ? y1 + fs1 + 10 : y1;
-  const yH  = (spec2 ? y2 + fs2 : y1 + fs1) + 26;
-  const sepY = yH + 20;
-
-  // Curva da banda: sobe 70px no centro
-  const curveY = bandY - 70;
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${largura}" height="${altura}">
+const LAYOUTS = {
+  hero_banner: {
+    fotoRatio: 0.70,
+    crop: 'entropy',
+    gerarSVG: (titulo, hook, bandY) => {
+      // Quebra título em 2 linhas balanceadas
+      const tituloLinhas = quebrarTituloBalanceado(titulo, 2);
+      
+      // Ajusta tamanho da fonte baseado no comprimento
+      const fontSize = calcularFontSize(titulo, 52, 38);
+      const letterSpacing = titulo.length > 25 ? '1' : '2';
+      
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080">
   <defs>
-
-    <!-- Shadow elegante para o texto -->
-    <filter id="sh">
-      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-opacity="0.22"/>
-    </filter>
-
-    <!-- Gradiente da banda verde (profundidade) -->
-    <linearGradient id="bandGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"   stop-color="${tmpl.bandStart}"/>
-      <stop offset="100%" stop-color="${tmpl.bandEnd}"/>
+    <filter id="sh"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.35"/></filter>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="${CORES.verdeProfundo}"/>
+      <stop offset="100%" stop-color="${CORES.verdeVibrante}"/>
     </linearGradient>
-
-    <!-- Vignette sutil sobre a foto (topo escurece levemente) -->
-    <linearGradient id="vigGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%"   stop-color="#000000" stop-opacity="0.10"/>
-      <stop offset="50%"  stop-color="#000000" stop-opacity="0.00"/>
-    </linearGradient>
-
   </defs>
+  <path d="M0,${bandY} Q540,${bandY-40} 1080,${bandY} L1080,1080 L0,1080 Z" fill="url(#bg)"/>
+  <path d="M1080,0 L850,0 C900,20 950,80 960,150 C970,220 1020,250 1080,280 Z" fill="${CORES.amareloOuro}" opacity="0.85"/>
+  <path d="M0,${bandY-80} C80,${bandY-90} 140,${bandY-40} 130,${bandY+80} C120,${bandY+180} 50,${bandY+220} 0,${bandY+240} Z" fill="${CORES.lilas}" opacity="0.6"/>
+  <text x="70" y="${bandY+90}" font-family="Montserrat,Arial Black,sans-serif" font-weight="900" font-size="${fontSize}" letter-spacing="${letterSpacing}" fill="${CORES.branco}" filter="url(#sh)">${tituloLinhas[0]}</text>
+  ${tituloLinhas[1] ? `<text x="70" y="${bandY+150}" font-family="Montserrat,Arial Black,sans-serif" font-weight="900" font-size="${fontSize}" letter-spacing="${letterSpacing}" fill="${CORES.branco}" filter="url(#sh)">${tituloLinhas[1]}</text>` : ''}
+  <text x="70" y="${bandY+205}" font-family="Montserrat,Arial,sans-serif" font-weight="600" font-size="26" fill="${CORES.branco}" filter="url(#sh)">${hook.substring(0, 50)}${hook.length > 50 ? '...' : ''}</text>
+  <rect x="70" y="${bandY+240}" width="120" height="4" rx="2" fill="${CORES.amareloOuro}"/>
+</svg>`;
+    }
+  },
 
-  <!-- 1. Vignette cinematográfico sutil na área da foto -->
-  <rect x="0" y="0" width="${largura}" height="${bandY}" fill="url(#vigGrad)"/>
+  split_diagonal: {
+    fotoRatio: 0.70,
+    crop: 'attention',
+    gerarSVG: (titulo, hook) => {
+      const tituloLinhas = quebrarTituloBalanceado(titulo, 3);
+      const fontSize = calcularFontSize(titulo, 48, 36);
+      
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080">
+  <defs><filter id="sh"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.35"/></filter></defs>
+  <polygon points="0,0 450,0 580,650 0,850" fill="${CORES.verdeVibrante}" opacity="0.95"/>
+  <circle cx="520" cy="520" r="80" fill="${CORES.amareloOuro}" opacity="0.9"/>
+  <text x="60" y="400" font-family="Montserrat,Arial Black,sans-serif" font-weight="900" font-size="${fontSize}" fill="${CORES.branco}" filter="url(#sh)">${tituloLinhas[0]}</text>
+  ${tituloLinhas[1] ? `<text x="60" y="460" font-family="Montserrat,Arial Black,sans-serif" font-weight="900" font-size="${fontSize}" fill="${CORES.amareloOuro}" filter="url(#sh)">${tituloLinhas[1]}</text>` : ''}
+  ${tituloLinhas[2] ? `<text x="60" y="520" font-family="Montserrat,Arial Black,sans-serif" font-weight="900" font-size="${Math.max(fontSize - 4, 32)}" fill="${CORES.branco}" filter="url(#sh)">${tituloLinhas[2]}</text>` : ''}
+  <text x="60" y="280" font-family="Montserrat,Arial,sans-serif" font-weight="600" font-size="24" fill="${CORES.branco}">${hook.substring(0, 45)}${hook.length > 45 ? '...' : ''}</text>
+</svg>`;
+    }
+  },
 
-  <!-- 2. Banda verde com curva orgânica no topo -->
-  <path d="M0,${bandY} Q${largura / 2},${curveY} ${largura},${bandY} L${largura},${altura} L0,${altura} Z"
-        fill="url(#bandGrad)"/>
+  dual_screen: {
+    fotoRatio: 0.65,
+    crop: 'center',
+    gerarSVG: (titulo, hook) => {
+      const tituloLinhas = quebrarTituloBalanceado(titulo, 2);
+      const fontSize = calcularFontSize(titulo, 42, 32);
+      
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1080">
+  <defs><filter id="sh"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-opacity="0.35"/></filter></defs>
+  <rect x="580" y="0" width="500" height="1080" fill="${CORES.rosaCoral}" opacity="0.9"/>
+  <circle cx="580" cy="980" r="70" fill="${CORES.amareloOuro}" opacity="0.85"/>
+  <text x="620" y="780" font-family="Montserrat,Arial Black,sans-serif" font-weight="900" font-size="${fontSize}" fill="${CORES.amareloOuro}" filter="url(#sh)">${tituloLinhas[0]}</text>
+  ${tituloLinhas[1] ? `<text x="620" y="830" font-family="Montserrat,Arial Black,sans-serif" font-weight="900" font-size="${Math.max(fontSize - 2, 30)}" fill="${CORES.branco}" filter="url(#sh)">${tituloLinhas[1]}</text>` : ''}
+  <text x="620" y="680" font-family="Montserrat,Arial,sans-serif" font-weight="600" font-size="26" fill="${CORES.branco}" filter="url(#sh)">${hook.substring(0, 40)}${hook.length > 40 ? '...' : ''}</text>
+  <rect x="620" y="450" width="380" height="80" rx="12" fill="${CORES.amareloOuro}"/>
+  <text x="810" y="500" font-family="Montserrat,Arial,sans-serif" font-weight="600" font-size="24" fill="${CORES.verdeProfundo}" text-anchor="middle">Saiba mais</text>
+</svg>`;
+    }
+  }
+};
 
-  <!-- 3. Linha branca elegante na curva (separação sutil) -->
-  <path d="M0,${bandY} Q${largura / 2},${curveY} ${largura},${bandY}"
-        stroke="#FFFFFF" stroke-width="1.8" opacity="0.18" fill="none"/>
+const ESPECIALIDADE_LAYOUTS = {
+  fonoaudiologia: 'hero_banner',
+  psicologia: 'dual_screen',
+  terapia_ocupacional: 'hero_banner',
+  fisioterapia: 'hero_banner',
+  neuropsicologia: 'dual_screen',
+};
 
-  <!-- 4. Blobs orgânicos (por cima de tudo para aparecer na foto e na banda) -->
-  ${tmpl.blobs.map(b =>
-    `<path d="${b.d}" fill="${b.fill}" opacity="${b.op}"/>`
-  ).join('\n  ')}
-
-  <!-- 5. Especialidade — linha 1 (branca) -->
-  <text x="${pad}" y="${y1}"
-        font-family="'Arial Black', 'Helvetica Neue', Impact, Arial, sans-serif" font-weight="900"
-        font-size="${fs1}" letter-spacing="2"
-        fill="${TEXT_WHITE}" filter="url(#sh)">${escapeSvg(spec1)}</text>
-
-  <!-- 6. Especialidade — linha 2 em amarelo (se houver) -->
-  ${spec2 ? `<text x="${pad}" y="${y2}"
-        font-family="'Arial Black', 'Helvetica Neue', Impact, Arial, sans-serif" font-weight="900"
-        font-size="${fs2}" letter-spacing="2"
-        fill="${ACCENT}" filter="url(#sh)">${escapeSvg(spec2)}</text>` : ''}
-
-  <!-- 7. Hook / subtítulo -->
-  <text x="${pad}" y="${yH}"
-        font-family="'Helvetica Neue', Arial, sans-serif" font-weight="600"
-        font-size="34" fill="${TEXT_WHITE}" opacity="0.90"
-        filter="url(#sh)">${escapeSvg(hook)}</text>
-
-  <!-- 8. Separador amarelo -->
-  <rect x="${pad}" y="${sepY}" width="110" height="3" rx="2"
-        fill="${ACCENT}" opacity="0.72"/>
-
-</svg>`.trim();
+/**
+ * Extrai título e hook do conteúdo
+ * Limita tamanho sem cortar palavras no meio
+ */
+function extrairTituloHook(postContent, especialidade) {
+  const linhas = (postContent || '').split('\n').filter(l => l.trim());
+  
+  // Título: máx 35 caracteres (cabe em 2 linhas), sem cortar palavras
+  let titulo = linhas[0]?.trim() || especialidade?.nome || 'FONO INOVA';
+  titulo = titulo.replace(/^["']|["']$/g, '');
+  titulo = truncarSemCortarPalavra(titulo, 35);
+  
+  // Hook: máx 50 caracteres, sem cortar palavras
+  let hook = linhas[1]?.trim() || especialidade?.gancho || 'Cuidado especializado';
+  hook = hook.replace(/^["']|["']$/g, '');
+  hook = truncarSemCortarPalavra(hook, 50);
+  
+  return { titulo, hook };
 }
 
-// ─── Função principal ─────────────────────────────────────────────────────────
 /**
- * Gera imagem branded estilo Fono Inova — profissional, social media ready.
+ * Trunca texto sem cortar palavra no meio
  */
-export async function gerarImagemBranded({ fotoUrl, fotoBuffer, titulo, conteudo, especialidadeId, templateIndex }) {
-  const SIZE   = 1080;
-  const BAND_H = 380;           // banda menor (35%) → mais foto visível
-  const BAND_Y = SIZE - BAND_H; // y = 700
+function truncarSemCortarPalavra(texto, limite) {
+  if (texto.length <= limite) return texto;
+  
+  // Encontra o último espaço antes do limite
+  const corte = texto.lastIndexOf(' ', limite);
+  if (corte === -1) return texto.substring(0, limite); // Sem espaço, corta no limite
+  
+  return texto.substring(0, corte);
+}
 
-  const idx  = templateIndex !== undefined
-    ? templateIndex % TEMPLATES.length
-    : Math.floor(Math.random() * TEMPLATES.length);
-  const tmpl = TEMPLATES[idx];
+/**
+ * Gera imagem com branding SVG aplicado
+ */
+export async function gerarImagemBranded({ fotoUrl, fotoBuffer, titulo, hook, especialidadeId, layoutId, postContent }) {
+  const layoutKey = layoutId || ESPECIALIDADE_LAYOUTS[especialidadeId] || 'hero_banner';
+  const layout = LAYOUTS[layoutKey];
 
-  console.log(`🎨 [BRAND] Template ${tmpl.id} | ${especialidadeId}`);
+  let tituloFinal = titulo;
+  let hookFinal = hook;
+  
+  if ((!tituloFinal || !hookFinal) && postContent) {
+    const extraido = extrairTituloHook(postContent, { nome: especialidadeId });
+    tituloFinal = tituloFinal || extraido.titulo;
+    hookFinal = hookFinal || extraido.hook;
+  }
+  
+  tituloFinal = (tituloFinal || 'FONO INOVA').toUpperCase();
+  hookFinal = hookFinal || 'Cuidado especializado';
 
-  // 1. Foto como buffer
-  let fotoBuf = fotoBuffer || null;
+  console.log(`🎨 [v3] ${layoutKey} | ${especialidadeId} | "${tituloFinal.substring(0, 20)}..."`);
+
+  let fotoBuf = fotoBuffer;
   if (!fotoBuf && fotoUrl) {
+    console.log(`📥 Download: ${fotoUrl.substring(0, 50)}...`);
+    const r = await fetch(fotoUrl, { signal: AbortSignal.timeout(20000) });
+    if (!r.ok) throw new Error(`Download falhou: ${r.status}`);
+    fotoBuf = Buffer.from(await r.arrayBuffer());
+    console.log(`📦 ${(fotoBuf.length / 1024).toFixed(1)}KB`);
+  }
+
+  let baseImg;
+  if (fotoBuf && layout.fotoRatio > 0) {
+    baseImg = await sharp(fotoBuf)
+      .resize(1080, 1080, { fit: 'cover', position: layout.crop })
+      .jpeg({ quality: 95 }).toBuffer();
+  } else {
+    baseImg = await sharp({create: {width: 1080, height: 1080, channels: 3, background: {r: 244, g: 208, b: 63}}}).jpeg().toBuffer();
+  }
+
+  const bandY = Math.round(1080 * (1 - layout.fotoRatio));
+  const svg = layout.gerarSVG(tituloFinal, hookFinal, bandY);
+
+  const final = await sharp(baseImg)
+    .composite([{ input: Buffer.from(svg), blend: 'over' }])
+    .webp({ quality: 95 }).toBuffer();
+
+  const base64 = `data:image/webp;base64,${final.toString('base64')}`;
+  const res = await cloudinary.uploader.upload(base64, {
+    folder: 'fono-inova/branded-v3',
+    public_id: `${especialidadeId}_${layoutKey}_${Date.now()}`,
+  });
+
+  console.log(`☁️  Cloudinary: ${res.secure_url.substring(0, 60)}...`);
+  return { url: res.secure_url, layout: layoutKey };
+}
+
+/**
+ * Gera imagem base: fal.ai FLUX → HuggingFace → Pollinations
+ */
+export async function generateImageForEspecialidade(especialidade, postContent = '') {
+  const { titulo } = extrairTituloHook(postContent, especialidade);
+  
+  const promptBase = `Ultra realistic professional medical photography, Brazilian ${especialidade.nome.toLowerCase()} therapist with child, ${especialidade.foco}, natural skin texture, authentic expressions, bright modern clinic, soft window light, shallow depth of field, documentary style, shot on Sony A7R IV`;
+
+  const errors = [];
+
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 1: fal.ai FLUX dev (FOCO PRINCIPAL - mais barato!)
+  // ═══════════════════════════════════════════════════════════
+  if (process.env.FAL_API_KEY) {
     try {
-      const r = await fetch(fotoUrl, { signal: AbortSignal.timeout(20000) });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      fotoBuf = Buffer.from(await r.arrayBuffer());
-      console.log(`📸 [BRAND] ${fotoBuf.length} bytes`);
-    } catch (err) {
-      console.warn(`⚠️ [BRAND] Foto falhou: ${err.message}`);
+      console.log('🚀 [1/3] fal.ai FLUX dev...');
+      console.log('   Endpoint: fal-ai/flux/dev');
+      
+      const falRes = await fetch('https://fal.run/fal-ai/flux/dev', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Key ${process.env.FAL_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: promptBase,
+          image_size: 'square',  // 1024x1024 para Instagram
+          num_inference_steps: 28,
+          guidance_scale: 3.5,
+          safety_tolerance: '2',
+        }),
+        signal: AbortSignal.timeout(120000), // 2 minutos
+      });
+
+      console.log('   Status:', falRes.status);
+
+      if (falRes.ok) {
+        const falData = await falRes.json();
+        console.log('   Response:', JSON.stringify(falData).substring(0, 150));
+        
+        const imgUrl = falData.images?.[0]?.url;
+        if (imgUrl) {
+          console.log('   Download:', imgUrl.substring(0, 50) + '...');
+          const fotoBuf = Buffer.from(await (await fetch(imgUrl, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
+          console.log(`✅ FLUX dev: ${(fotoBuf.length/1024).toFixed(1)}KB`);
+          return { buffer: fotoBuf, provider: 'fal-flux-dev' };
+        } else {
+          console.warn('⚠️ fal.ai: Sem URL na resposta');
+          errors.push('fal.ai: Sem URL');
+        }
+      } else if (falRes.status === 403) {
+        try {
+          const errData = await falRes.json();
+          if (errData.detail?.includes('balance') || errData.detail?.includes('locked')) {
+            console.warn('⚠️ fal.ai: Saldo esgotado. Recarregue em fal.ai/dashboard');
+            errors.push('fal.ai: Saldo esgotado');
+          }
+        } catch {
+          errors.push(`fal.ai ${falRes.status}`);
+        }
+      } else {
+        const err = await falRes.text();
+        console.error('❌ fal.ai erro:', falRes.status, err.substring(0, 200));
+        errors.push(`fal.ai ${falRes.status}: ${err.substring(0, 100)}`);
+      }
+    } catch (e) {
+      console.error('❌ fal.ai exception:', e.message);
+      errors.push(`fal.ai: ${e.message}`);
+    }
+  } else {
+    console.log('⏭️  [1/4] FAL_API_KEY não configurada');
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 2: HuggingFace FLUX.1-dev (fallback)
+  // ═══════════════════════════════════════════════════════════
+  if (process.env.HUGGINGFACE_API_KEY) {
+    try {
+      console.log('🔄 [2/3] HuggingFace FLUX.1-dev...');
+      const response = await fetch(
+        'https://router.huggingface.co/black-forest-labs/FLUX.1-dev',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            inputs: promptBase,
+            parameters: { width: 1024, height: 1024, num_inference_steps: 28, guidance_scale: 3.5 }
+          }),
+          signal: AbortSignal.timeout(90000),
+        }
+      );
+
+      if (response.ok) {
+        const fotoBuf = Buffer.from(await response.arrayBuffer());
+        console.log(`✅ HuggingFace: ${(fotoBuf.length/1024).toFixed(1)}KB`);
+        return { buffer: fotoBuf, provider: 'hf-flux-dev' };
+      } else {
+        const err = await response.text();
+        errors.push(`HF ${response.status}: ${err.substring(0, 100)}`);
+      }
+    } catch (e) {
+      errors.push(`HF: ${e.message}`);
+    }
+  } else {
+    console.log('⏭️  [2/4] HUGGINGFACE_API_KEY não configurada');
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 3: Replicate (se tiver token)
+  // ═══════════════════════════════════════════════════════════
+  if (process.env.REPLICATE_API_TOKEN) {
+    try {
+      console.log('🚀 [3/4] Replicate FLUX...');
+      
+      const response = await fetch('https://api.replicate.com/v1/predictions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${process.env.REPLICATE_API_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          version: 'black-forest-labs/flux-schnell',
+          input: {
+            prompt: promptBase,
+            aspect_ratio: '1:1',
+            output_format: 'png',
+            output_quality: 80,
+          }
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (response.ok) {
+        const prediction = await response.json();
+        // Polling
+        let result = prediction;
+        let attempts = 0;
+        while (result.status !== 'succeeded' && result.status !== 'failed' && attempts < 30) {
+          await new Promise(r => setTimeout(r, 1000));
+          const pollRes = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
+            headers: { 'Authorization': `Token ${process.env.REPLICATE_API_TOKEN}` },
+          });
+          result = await pollRes.json();
+          attempts++;
+        }
+        
+        if (result.status === 'succeeded' && result.output) {
+          const imgUrl = Array.isArray(result.output) ? result.output[0] : result.output;
+          const fotoBuf = Buffer.from(await (await fetch(imgUrl, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
+          console.log(`✅ Replicate: ${(fotoBuf.length/1024).toFixed(1)}KB`);
+          return { buffer: fotoBuf, provider: 'replicate-flux' };
+        }
+      }
+    } catch (e) {
+      errors.push(`Replicate: ${e.message}`);
+    }
+  } else {
+    console.log('⏭️  [3/4] REPLICATE_API_TOKEN não configurado');
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 4: Pollinations (último recurso - sempre gratuito)
+  // ═══════════════════════════════════════════════════════════
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+  
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      console.log(`🔄 [4/4] Pollinations (tentativa ${attempt}/3)...`);
+      const encoded = encodeURIComponent(promptBase);
+      const seed = Math.floor(Math.random() * 999999);
+      const model = attempt === 1 ? 'flux' : attempt === 2 ? 'turbo' : 'default';
+      const pollUrl = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true&model=${model}`;
+      
+      const res = await fetch(pollUrl, { 
+        signal: AbortSignal.timeout(90000),
+        headers: { 'Accept': 'image/*' }
+      });
+      
+      if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('image')) {
+          throw new Error(`Invalid content-type: ${contentType}`);
+        }
+        const fotoBuf = Buffer.from(await res.arrayBuffer());
+        if (fotoBuf.length < 1024) throw new Error('Image too small');
+        
+        console.log(`✅ Pollinations: ${(fotoBuf.length/1024).toFixed(1)}KB`);
+        return { buffer: fotoBuf, provider: `pollinations-${model}` };
+      } else {
+        const status = res.status;
+        errors.push(`Pollinations ${status} (tentativa ${attempt})`);
+        if ((status >= 500 || status === 429) && attempt < 3) {
+          console.log(`   ⏳ Retry em ${attempt * 2}s...`);
+          await delay(attempt * 2000);
+          continue;
+        }
+      }
+    } catch (e) {
+      errors.push(`Pollinations: ${e.message}`);
+      if (attempt < 3) await delay(attempt * 2000);
     }
   }
 
-  // 2. Foto base 1080×1080
-  //    Retrato → 'top' (preserva rosto no topo) | Paisagem/quadrado → 'attention'
-  let baseImg;
-  if (fotoBuf) {
-    const meta = await sharp(fotoBuf).metadata();
-    const isRetrato = (meta.height || 0) > (meta.width || 0) * 1.1;
-    const cropPos   = isRetrato ? 'top' : 'attention';
-    console.log(`📐 [BRAND] ${meta.width}×${meta.height} → crop: ${cropPos}`);
-    baseImg = await sharp(fotoBuf)
-      .resize(SIZE, SIZE, { fit: 'cover', position: cropPos })
-      .jpeg({ quality: 95 })
-      .toBuffer();
-  } else {
-    baseImg = await sharp({
-      create: { width: SIZE, height: SIZE, channels: 3,
-                background: { r: 218, g: 240, b: 230 } }
-    }).jpeg().toBuffer();
-  }
-
-  // 3. Hook: prefere frase curta e impactante
-  const corpo     = (conteudo || '').replace(/^.+\n/, '').trim();
-  const sentences = corpo.split(/[.!?]/).map(s => s.trim()).filter(s => s.length > 8);
-  const hookRaw   = sentences.find(s => s.length <= 55) || sentences[0] || titulo || '';
-  const hook      = truncarHook(hookRaw, 48);
-
-  // 4. SVG com banda curva + blobs orgânicos + texto
-  const label  = LABELS[especialidadeId] || 'FONO INOVA';
-  const svgStr = gerarSVG({ tmpl, label, hook, bandY: BAND_Y });
-
-  // 5. Logo real da Fono Inova
-  const LOGO_W = 280;
-  let logoComposite = null;
+  // ═══════════════════════════════════════════════════════════
+  // FALHOU TUDO - Último recurso: URL direta do Pollinations
+  // ═══════════════════════════════════════════════════════════
+  console.error('❌ Todas as fontes falharam:');
+  errors.forEach(e => console.error(`   • ${e}`));
+  
+  // Fallback: retorna URL direta do Pollinations (pode funcionar no frontend)
+  console.log('🔄 Fallback final: URL direta do Pollinations...');
+  const directUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptBase)}?width=1024&height=1024&seed=${Date.now()}&nologo=true`;
+  console.log('⚠️ URL direta gerada (pode não carregar):', directUrl.substring(0, 60) + '...');
+  
+  // Tenta fazer download da URL direta
   try {
-    const logoBuf  = await sharp(LOGO_PATH).resize(LOGO_W, null, { fit: 'inside' }).toBuffer();
-    const logoMeta = await sharp(logoBuf).metadata();
-    const logoH    = logoMeta.height || 110;
-    const logoX    = Math.round((SIZE - LOGO_W) / 2);
-    const logoY    = SIZE - logoH - 18;
-    logoComposite  = { input: logoBuf, top: logoY, left: logoX };
-    console.log(`🖼️ [BRAND] Logo ${LOGO_W}×${logoH}`);
-  } catch (err) {
-    console.warn(`⚠️ [BRAND] Logo: ${err.message}`);
+    const res = await fetch(directUrl, { signal: AbortSignal.timeout(60000) });
+    if (res.ok) {
+      const fotoBuf = Buffer.from(await res.arrayBuffer());
+      if (fotoBuf.length > 1024) {
+        console.log(`✅ Pollinations direto: ${(fotoBuf.length/1024).toFixed(1)}KB`);
+        return { buffer: fotoBuf, provider: 'pollinations-direct' };
+      }
+    }
+  } catch (e) {
+    console.warn('⚠️ Download direto falhou:', e.message);
   }
+  
+  throw new Error(`Image generation failed: ${errors.join('; ')}`);
+}
 
-  // 6. Compositar: foto base → SVG (banda + blobs + texto) → logo
-  const composites = [{ input: Buffer.from(svgStr), blend: 'over' }];
-  if (logoComposite) composites.push(logoComposite);
+/**
+ * Fluxo completo: gera imagem + aplica branding
+ */
+export async function gerarPostCompleto(especialidade, postContent, especialidadeId) {
+  console.log('\n═══════════════════════════════════════════════════════');
+  console.log('🎯 GERAR POST COMPLETO');
+  console.log(`   Especialidade: ${especialidade?.nome || especialidadeId}`);
+  console.log(`   Content: "${postContent?.substring(0, 40)}..."`);
+  console.log('═══════════════════════════════════════════════════════\n');
 
-  const imagemFinal = await sharp(baseImg)
-    .composite(composites)
-    .webp({ quality: 95, effort: 4 })
-    .toBuffer();
+  const start = Date.now();
+  
+  // 1. Gera imagem base
+  const { buffer, provider } = await generateImageForEspecialidade(especialidade, postContent);
+  console.log(`📸 Provider: ${provider}`);
 
-  // 7. Upload Cloudinary
-  const base64 = `data:image/webp;base64,${imagemFinal.toString('base64')}`;
-  const result  = await cloudinary.uploader.upload(base64, {
-    folder:    'fono-inova/branded',
-    public_id: `${especialidadeId}_branded_${Date.now()}`,
+  // 2. Aplica branding
+  const resultado = await gerarImagemBranded({
+    fotoBuffer: buffer,
+    especialidadeId,
+    postContent
   });
 
-  console.log(`✅ [BRAND] ${result.secure_url}`);
-  return result.secure_url;
+  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+  console.log(`\n✅ Completo em ${elapsed}s`);
+  console.log(`   URL: ${resultado.url.substring(0, 70)}...`);
+  console.log('═══════════════════════════════════════════════════════\n');
+
+  return { ...resultado, provider, tempo: `${elapsed}s` };
 }
 
-export async function aplicarBrandingSobreFoto(fotoUrl, titulo, conteudo, especialidadeId) {
-  return gerarImagemBranded({ fotoUrl, titulo, conteudo, especialidadeId });
-}
-
-export default { gerarImagemBranded, aplicarBrandingSobreFoto };
+export { LAYOUTS, ESPECIALIDADE_LAYOUTS, CORES };
+export default { gerarImagemBranded, generateImageForEspecialidade, gerarPostCompleto, LAYOUTS, ESPECIALIDADE_LAYOUTS };

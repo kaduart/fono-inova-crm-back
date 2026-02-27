@@ -202,14 +202,17 @@ const videoWorker = new Worker('video-generation', async (job) => {
     };
 
   } catch (error) {
-    logger.error(`[VIDEO WORKER] ❌ ${jobId} falhou: ${error.message}`);
+    const errorMsg = error?.message || error?.toString() || 'Erro desconhecido';
+    const errorStack = error?.stack || '';
+    logger.error(`[VIDEO WORKER] ❌ ${jobId} falhou: ${errorMsg}`);
+    if (errorStack) logger.error(`[VIDEO WORKER] Stack: ${errorStack}`);
     
     // Atualizar como erro
     try {
       await Video.findByIdAndUpdate(videoDocId, {
         status: 'failed',
         pipelineStatus: 'ERRO',
-        errorMessage: error.message,
+        errorMessage: errorMsg.substring(0, 500),
         'progresso.etapa': 'ERRO',
         'progresso.percentual': 0
       });

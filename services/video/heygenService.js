@@ -24,30 +24,32 @@ const HEADERS = {
 };
 
 // ─── Configuração de Avatares (preencher via .env) ─────────────────────
+// 🎙️ Voice IDs HeyGen válidos (Portuguese - Brasil)
+// Lista atualizada via GET /api/videos/voices
 export const AVATARES = {
   fono_ana: { 
     avatar_id: process.env.HEYGEN_AVATAR_FONO   || 'Abigail_expressive_2024112501', 
-    voice_id:  process.env.HEYGEN_VOICE_FONO    || '0130939032d87be594eadc8cc9d39415' 
+    voice_id:  process.env.HEYGEN_VOICE_FONO    || '94ec497104a04c87904a8aa138d6e46c'  // Sofia Brazil
   },
   psico_bia: { 
     avatar_id: process.env.HEYGEN_AVATAR_PSICO  || 'Abigail_expressive_2024112501', 
-    voice_id:  process.env.HEYGEN_VOICE_PSICO   || '0130939032d87be594eadc8cc9d39415' 
+    voice_id:  process.env.HEYGEN_VOICE_PSICO   || '6c0a95599317428a8151293305deceba'  // Ana Carvalho - Friendly
   },
   to_carla: { 
     avatar_id: process.env.HEYGEN_AVATAR_TO     || 'Abigail_expressive_2024112501', 
-    voice_id:  process.env.HEYGEN_VOICE_TO      || '0130939032d87be594eadc8cc9d39415' 
+    voice_id:  process.env.HEYGEN_VOICE_TO      || '0edbc867be6f48c5be8ff8b0fbca0802'  // Sofia Brazil - Friendly
   },
   neuro_dani: { 
     avatar_id: process.env.HEYGEN_AVATAR_NEURO  || 'Abigail_expressive_2024112501', 
-    voice_id:  process.env.HEYGEN_VOICE_NEURO   || '0130939032d87be594eadc8cc9d39415' 
+    voice_id:  process.env.HEYGEN_VOICE_NEURO   || '6d282a9f296746568da9d65586935dba'  // Sofia Brazil - Excited
   },
   fisio_edu: { 
     avatar_id: process.env.HEYGEN_AVATAR_FISIO  || 'Abigail_expressive_2024112501', 
-    voice_id:  process.env.HEYGEN_VOICE_FISIO   || '0130939032d87be594eadc8cc9d39415' 
+    voice_id:  process.env.HEYGEN_VOICE_FISIO   || '94ec497104a04c87904a8aa138d6e46c'  // Sofia Brazil
   },
   musico_fer: { 
     avatar_id: process.env.HEYGEN_AVATAR_MUSICO || 'Abigail_expressive_2024112501', 
-    voice_id:  process.env.HEYGEN_VOICE_MUSICO  || '0130939032d87be594eadc8cc9d39415' 
+    voice_id:  process.env.HEYGEN_VOICE_MUSICO  || '6c0a95599317428a8151293305deceba'  // Ana Carvalho
   }
 };
 
@@ -70,6 +72,13 @@ export async function gerarVideo({ profissional, textoFala, titulo }) {
   }
 
   logger.info(`[HEYGEN] Gerando: "${titulo}" | avatar: ${profissional}`);
+  logger.info(`[HEYGEN] Avatar config: ${avatar.avatar_id} | Voice: ${avatar.voice_id}`);
+  logger.info(`[HEYGEN] Texto (${textoFala.length} chars): ${textoFala.substring(0, 100)}...`);
+
+  // Validar texto
+  if (!textoFala || textoFala.trim().length < 10) {
+    throw new Error('Texto muito curto para gerar vídeo (mínimo 10 caracteres)');
+  }
 
   // 1. Disparar geração
   const { data: createRes } = await axios.post(`${BASE}/v2/video/generate`, {
@@ -132,7 +141,9 @@ async function _aguardarConclusao(videoId, maxTentativas = 60, intervaloMs = 100
       }
       
       if (status === 'failed') {
-        throw new Error(`HeyGen falhou: ${error || 'sem detalhe'}`);
+        const errorDetail = error ? (typeof error === 'object' ? JSON.stringify(error) : error) : 'sem detalhe';
+        logger.error(`[HEYGEN] Falha no vídeo ${videoId}: ${errorDetail}`);
+        throw new Error(`HeyGen falhou: ${errorDetail}`);
       }
     } catch (err) {
       // Se for erro de network, continua tentando

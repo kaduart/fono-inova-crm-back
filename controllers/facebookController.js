@@ -1,5 +1,6 @@
 import { generatePostForEspecialidade, ESPECIALIDADES, generateImageForEspecialidade, generateCaptionSEO, generateHooksViral } from '../services/gmbService.js';
 import FacebookPost from '../models/FacebookPost.js';
+import { postGenerationQueue } from '../config/bullConfig.js';
 
 /**
  * Lista posts do Facebook
@@ -36,7 +37,7 @@ export async function getStats(req, res) {
 }
 
 /**
- * Gera novo post com IA + IMAGEM
+ * Gera novo post com IA + IMAGEM — AGORA ASYNC
  */
 export async function generatePost(req, res) {
   try {
@@ -48,49 +49,45 @@ export async function generatePost(req, res) {
       especialidade = ESPECIALIDADES[0];
     }
     
-    // Gera conteúdo do post com estratégia por funil
-    const postData = await generatePostForEspecialidade(especialidade, customTheme, funnelStage || 'top');
-    
-    // Gera imagem em paralelo (usa mesma função do GMB - DALL-E 3 > HuggingFace > Pollinations)
-    let mediaUrl = null;
-    try {
-      console.log('📸 Iniciando geração de imagem para Facebook...');
-      mediaUrl = await generateImageForEspecialidade(especialidade, postData.content);
-      console.log('📸 Resultado geração imagem:', mediaUrl);
-      if (mediaUrl) {
-        console.log('✅ Imagem gerada com sucesso:', mediaUrl);
-      } else {
-        console.warn('⚠️ Nenhuma URL de imagem retornada');
-      }
-    } catch (imgError) {
-      console.warn('⚠️ Erro ao gerar imagem:', imgError.message);
-      // Continua sem imagem se falhar
-    }
-    
+    // Criar post imediatamente com status 'processing'
     const post = new FacebookPost({
-      title: postData.title,
-      content: postData.content,
+      title: 'Gerando conteúdo...',
+      content: 'Nossa IA está criando seu post do Facebook.',
       theme: especialidade.id,
       funnelStage: funnelStage || 'top',
-      status: 'draft',
-      mediaUrl,
-      mediaType: mediaUrl ? 'image' : null,
+      status: 'processing',
+      processingStatus: 'processing',
+      mediaUrl: null,
+      mediaType: null,
       aiGenerated: true,
-      aiModel: 'gpt-4o-mini',
       createdBy: req.user?._id
     });
     
     await post.save();
     
-    res.status(201).json({
+    // Enfileirar job para processar em background
+    const jobId = `post_fb_${Date.now()}`;
+    await postGenerationQueue.add('generate-post', {
+      postId: post._id.toString(),
+      channel: 'facebook',
+      especialidadeId: especialidade.id,
+      customTheme,
+      funnelStage: funnelStage || 'top',
+      generateImage: true,
+      userId: req.user?._id
+    }, { jobId });
+    
+    // Retornar imediatamente
+    res.status(202).json({
       success: true,
-      data: post,
-      message: mediaUrl 
-        ? '✅ Post Facebook + Imagem gerados com sucesso!' 
-        : '✅ Post Facebook gerado (sem imagem)'
+      message: '📘 Post Facebook em processamento!',
+      postId: post._id,
+      jobId,
+      status: 'processing',
+      status_url: `/api/facebook/posts/${post._id}`
     });
   } catch (error) {
-    console.error('❌ Erro ao gerar post Facebook:', error);
+    console.error('❌ Erro ao iniciar geração de post Facebook:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 }
@@ -179,17 +176,18 @@ export async function generateImageForPost(req, res) {
     // Busca especialidade
     const especialidade = ESPECIALIDADES.find(e => e.id === post.theme) || ESPECIALIDADES[0];
     
-    const imageUrl = await generateImageForEspecialidade(especialidade, post.content);
+    const imgResult = await generateImageForEspecialidade(especialidade, post.content);
     
-    if (!imageUrl) {
+    if (!imgResult?.url) {
       return res.status(500).json({ success: false, error: 'Falha ao gerar imagem' });
     }
     
-    post.mediaUrl = imageUrl;
+    post.mediaUrl = imgResult.url;
+    post.imageProvider = imgResult.provider;
     post.mediaType = 'image';
     await post.save();
     
-    res.json({ success: true, data: { imageUrl } });
+    res.json({ success: true, data: { imageUrl: imgResult.url, provider: imgResult.provider } });
   } catch (error) {
     console.error('❌ Erro ao gerar imagem:', error);
     res.status(500).json({ success: false, error: error.message });

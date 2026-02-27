@@ -9,6 +9,21 @@ const instagramPostSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  // 🎯 Headline curta para imagem (estilo Fono Inova)
+  headline: {
+    type: String,
+    default: null
+  },
+  // 📝 Subheadline (frase complementar na imagem)
+  subheadline: {
+    type: String,
+    default: null
+  },
+  // 📝 Legenda completa (SEO + CTA)
+  caption: {
+    type: String,
+    default: null
+  },
   content: {
     type: String,
     required: true
@@ -31,11 +46,24 @@ const instagramPostSchema = new mongoose.Schema({
     enum: ['top', 'middle', 'bottom'],
     default: 'top'
   },
+  // 🎯 Tipo de post (50/50 estratégia)
+  postType: {
+    type: String,
+    enum: ['lead', 'branding'],
+    default: 'branding'
+  },
   status: {
     type: String,
-    enum: ['draft', 'scheduled', 'published', 'failed'],
+    enum: ['draft', 'scheduled', 'published', 'failed', 'processing'],
     default: 'draft'
   },
+  processingStatus: {
+    type: String,
+    enum: ['pending', 'processing', 'completed', 'failed'],
+    default: null
+  },
+  errorMessage: { type: String },
+  jobId: { type: String },
   scheduledAt: {
     type: Date,
     default: null
@@ -56,10 +84,21 @@ const instagramPostSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  // 🖼️ Qual IA gerou a imagem (fal-flux-pro, hf-flux-dev, pollinations-flux)
+  imageProvider: {
+    type: String,
+    default: null
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     default: null
+  },
+  // 📊 Metadados da estratégia
+  metadata: {
+    headlineStrategy: { type: String, default: null },
+    keywordsMatched: [{ type: String }],
+    customTheme: { type: String, default: null }
   }
 }, {
   timestamps: true

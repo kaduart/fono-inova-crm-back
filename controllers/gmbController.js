@@ -1,6 +1,7 @@
 import GmbPost from '../models/GmbPost.js';
 import * as gmbService from '../services/gmbService.js';
 import * as makeService from '../services/makeService.js';
+import { postGenerationQueue } from '../config/bullConfig.js';
 
 // Listar posts
 export async function listPosts(req, res) {
@@ -179,37 +180,26 @@ export async function getCronStatus(req, res) {
   }
 }
 
-// Gerar post manualmente (trigger admin)
+// Gerar post manualmente (trigger admin) — AGORA ASYNC
 export async function triggerManualGeneration(req, res) {
   try {
     const { especialidadeId, customTheme, generateImage, scheduledAt } = req.body;
+    const funnelStage = req.body.funnelStage || 'top';
 
     let especialidade = gmbService.ESPECIALIDADES.find(e => e.id === especialidadeId);
     if (!especialidade) especialidade = gmbService.ESPECIALIDADES[0];
 
-    const postData = await gmbService.generatePostForEspecialidade(especialidade, customTheme, req.body.funnelStage || 'top');
-
-    let mediaUrl = null;
-    if (generateImage !== false) {
-      try {
-        mediaUrl = await gmbService.generateImageForEspecialidade(especialidade, postData.content, false);
-      } catch (imgError) {
-        console.warn('Erro ao gerar imagem:', imgError.message);
-      }
-    }
-
-    // Se tem scheduledAt, agendar. Senão, fica como draft (rascunho)
+    // Criar post imediatamente com status 'processing'
     const isScheduled = Boolean(scheduledAt);
-    const scheduledDate = isScheduled ? new Date(scheduledAt) : null;
-
     const post = new GmbPost({
-      title: postData.title,
-      content: postData.content,
+      title: 'Gerando conteúdo...',
+      content: 'Aguarde, nossa IA está criando seu post personalizado.',
       theme: especialidade.id,
-      status: isScheduled ? 'scheduled' : 'draft',
-      scheduledAt: scheduledDate,
-      mediaUrl,
-      mediaType: mediaUrl ? 'image' : null,
+      status: 'processing',  // Status temporário durante geração
+      processingStatus: 'processing',
+      scheduledAt: isScheduled ? new Date(scheduledAt) : null,
+      mediaUrl: null,
+      mediaType: null,
       ctaUrl: especialidade.url || null,
       ctaType: 'LEARN_MORE',
       aiGenerated: true,
@@ -218,14 +208,30 @@ export async function triggerManualGeneration(req, res) {
 
     await post.save();
 
-    res.json({
+    // Enfileirar job para processar em background
+    const jobId = `post_${Date.now()}`;
+    await postGenerationQueue.add('generate-post', {
+      postId: post._id.toString(),
+      channel: 'gmb',
+      especialidadeId: especialidade.id,
+      customTheme,
+      funnelStage,
+      scheduledAt,
+      generateImage: generateImage !== false,
+      userId: req.user?._id
+    }, { jobId });
+
+    // Retornar imediatamente (não espera o processamento)
+    res.status(202).json({
       success: true,
-      data: post,
-      message: mediaUrl ? 'Post + imagem gerados!' : 'Post gerado (sem imagem)',
-      isFree: !postData.isFallback
+      message: isScheduled ? '📅 Post em processamento para agendamento!' : '📝 Post em processamento!',
+      postId: post._id,
+      jobId,
+      status: 'processing',
+      status_url: `/api/gmb/posts/${post._id}`
     });
   } catch (error) {
-    console.error('Erro ao gerar post:', error);
+    console.error('Erro ao iniciar geração de post:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 }
@@ -389,13 +395,14 @@ export async function regenerateImage(req, res) {
       gmbService.ESPECIALIDADES.find(e => e.id === post.theme) ||
       gmbService.ESPECIALIDADES[0];
 
-    const mediaUrl = await gmbService.generateImageForEspecialidade(especialidade, post.content, false);
+    const imgResult = await gmbService.generateImageForEspecialidade(especialidade, post.content, false);
 
-    if (!mediaUrl) {
+    if (!imgResult?.url) {
       return res.status(500).json({ success: false, error: 'Falha ao gerar imagem' });
     }
 
-    post.mediaUrl = mediaUrl;
+    post.mediaUrl = imgResult.url;
+    post.imageProvider = imgResult.provider;
     post.mediaType = 'image';
     await post.save();
 

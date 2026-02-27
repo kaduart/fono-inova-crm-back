@@ -12,7 +12,7 @@ const videoSchema = new mongoose.Schema({
   },
   roteiro: {
     type: String,
-    required: true
+    default: ''
   },
   especialidadeId: {
     type: String,

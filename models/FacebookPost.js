@@ -33,9 +33,16 @@ const facebookPostSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['draft', 'scheduled', 'published', 'failed'],
+    enum: ['draft', 'scheduled', 'published', 'failed', 'processing'],
     default: 'draft'
   },
+  processingStatus: {
+    type: String,
+    enum: ['pending', 'processing', 'completed', 'failed'],
+    default: null
+  },
+  errorMessage: { type: String },
+  jobId: { type: String },
   scheduledAt: {
     type: Date,
     default: null
@@ -58,6 +65,11 @@ const facebookPostSchema = new mongoose.Schema({
     default: false
   },
   aiModel: {
+    type: String,
+    default: null
+  },
+  // 🖼️ Qual IA gerou a imagem
+  imageProvider: {
     type: String,
     default: null
   },
