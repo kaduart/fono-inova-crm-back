@@ -44,12 +44,13 @@ async function handleGenerateVideo(req, res) {
       targeting = {}
     } = req.body;
 
-    // Usar roteiro como tema se tema não foi enviado
-    const temaFinal = tema || roteiro;
+    // Usar roteiro como tema se tema não foi enviado (aceita string vazia)
+    const temaFinal = tema !== undefined ? tema : roteiro;
     const duracaoFinal = duracao || duration || 60;
 
-    // Validação
-    if (!temaFinal || !especialidadeId) {
+    // Validação: temaFinal pode ser string vazia (geração automática)
+    // mas não pode ser undefined/null; especialidadeId é obrigatório
+    if (temaFinal === undefined || temaFinal === null || !especialidadeId) {
       return res.status(400).json({ 
         success: false, 
         error: 'tema (ou roteiro) e especialidadeId são obrigatórios' 
@@ -105,6 +106,52 @@ async function handleGenerateVideo(req, res) {
 // 🆕 POST / (raiz) e /gerar — ambos iniciam pipeline
 router.post('/', handleGenerateVideo);
 router.post('/gerar', handleGenerateVideo);
+
+// 🆕 GET /voices — Lista vozes disponíveis do HeyGen
+router.get('/voices', async (req, res) => {
+  try {
+    const axios = (await import('axios')).default;
+    const API_KEY = process.env.HEYGEN_API_KEY;
+    
+    if (!API_KEY) {
+      return res.status(503).json({ success: false, error: 'HEYGEN_API_KEY não configurado' });
+    }
+
+    const { data } = await axios.get('https://api.heygen.com/v2/voices', {
+      headers: { 'X-Api-Key': API_KEY }
+    });
+
+    // Filtrar apenas vozes em português
+    const voices = data.data.voices || [];
+    const ptVoices = voices.filter((v) => 
+      v.language?.toLowerCase().includes('portuguese') || 
+      v.language_code?.toLowerCase().startsWith('pt')
+    );
+
+    res.json({
+      success: true,
+      data: {
+        total: voices.length,
+        portuguese: ptVoices.map(v => ({
+          voice_id: v.voice_id,
+          name: v.name,
+          language: v.language,
+          language_code: v.language_code,
+          gender: v.gender,
+          preview: v.preview_audio
+        })),
+        all: voices.slice(0, 20).map(v => ({  // Limitar a 20 para não poluir
+          voice_id: v.voice_id,
+          name: v.name,
+          language: v.language_code || v.language
+        }))
+      }
+    });
+  } catch (error) {
+    logger.error('[VIDEO ROUTES] Erro ao listar vozes:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // 🆕 GET /status/:jobId — Status do job BullMQ
 router.get('/status/:jobId', async (req, res) => {

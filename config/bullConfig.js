@@ -42,3 +42,21 @@ export const videoGenerationQueue = new Queue("video-generation", {
 export const videoGenerationEvents = new QueueEvents("video-generation", { 
     connection: redisConnection 
 });
+
+// 📝 NOVO: Fila de geração de posts (GMB, Instagram, Facebook)
+export const postGenerationQueue = new Queue("post-generation", { 
+    connection: redisConnection,
+    defaultJobOptions: {
+        attempts: 2,
+        backoff: {
+            type: 'exponential',
+            delay: 15000  // 15s entre tentativas
+        },
+        removeOnComplete: 100,
+        removeOnFail: 50
+    }
+});
+
+export const postGenerationEvents = new QueueEvents("post-generation", { 
+    connection: redisConnection 
+});

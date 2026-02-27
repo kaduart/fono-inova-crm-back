@@ -311,6 +311,7 @@ function initFollowupWatcher() {
     await import("./workers/followup.worker.js");
     await import("./workers/followup.cron.js");
     await import("./workers/video.worker.js");  // 🎬 Video pipeline worker
+    await import("./workers/post.worker.js");   // 📝 Post generation worker
     await import("./jobs/followup.analytics.cron.js");
     await import("./crons/responseTracking.cron.js");
 

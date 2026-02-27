@@ -32,10 +32,14 @@ const ESPECIALIDADES = [
 export async function generateImage(content, especialidadeId = 'fonoaudiologia') {
   const especialidade = ESPECIALIDADES.find(e => e.id === especialidadeId) || ESPECIALIDADES[0];
   
-  const prompt = `Professional photograph for pediatric clinic social media. 
-Theme: ${especialidade.foco}. 
-Scene: Warm, welcoming therapy session with child and female therapist in bright modern clinic.
-Style: Natural lighting, 85mm lens, soft focus background, Brazilian therapist, no text, photorealistic, high quality.`;
+  const prompt = `Cinematic photo, professional pediatric therapy session,
+Brazilian female therapist in colorful scrubs playing with 5-year-old child,
+genuine natural expressions (NOT posed smile),
+bright modern clinic with colorful educational toys,
+soft window light, shallow depth of field,
+professional healthcare photography style,
+realistic skin texture, natural skin tones,
+NO text, NO watermarks, 4K quality`; 
 
   console.log('🎨 Gerando imagem para:', especialidade.nome);
   console.log('🔑 HF_KEY disponível:', !!HF_KEY);

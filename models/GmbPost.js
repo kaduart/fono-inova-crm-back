@@ -27,10 +27,18 @@ const gmbPostSchema = new mongoose.Schema({
   // Status do post (assistido)
   status: {
     type: String,
-    enum: ['draft', 'ready', 'scheduled', 'published', 'failed', 'cancelled'],
+    enum: ['draft', 'ready', 'scheduled', 'published', 'failed', 'cancelled', 'processing'],
     default: 'draft',
     index: true
   },
+  
+  // Status do processamento (async)
+  processingStatus: {
+    type: String,
+    enum: ['pending', 'processing', 'completed', 'failed'],
+    default: null
+  },
+  errorMessage: { type: String },
   
   // Agendamento
   scheduledAt: { type: Date, index: true },
@@ -91,11 +99,14 @@ const gmbPostSchema = new mongoose.Schema({
   aiGenerated: { type: Boolean, default: true },
   aiModel: { type: String, default: 'claude-sonnet-4-6' },
   aiPrompt: { type: String },
+  // 🖼️ Qual IA gerou a imagem (fal-flux-pro, hf-flux-dev, pollinations-flux)
+  imageProvider: { type: String, default: null },
   
   // Erros e retries
   error: { type: String },
   retryCount: { type: Number, default: 0 },
   lastErrorAt: { type: Date },
+  jobId: { type: String },
   
   // Metadados
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

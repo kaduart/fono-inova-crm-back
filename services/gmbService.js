@@ -405,23 +405,18 @@ function generateImagePromptFromContent(content, especialidade) {
   const personMale = 'real Brazilian male therapist late 20s, light olive skin, short dark hair, colorful clinical scrubs, warm smile';
   const parent = 'real Brazilian mother early 30s, light caramel skin, dark wavy hair, casual everyday clothes, warm gentle smile';
 
-  // ESTILO FOTOGRÁFICO — hiper-realista, editorial clínico
+  // ESTILO FOTOGRÁFICO — cinematográfico, natural, não forçado
   const photoStyle =
-    'RAW photo, hyperrealistic, ultra-detailed, 8K UHD, ' +
-    'Nikon D850 85mm f/1.8 lens, shallow depth of field, beautiful soft bokeh background, ' +
-    'warm natural window light from left side, cinematic warm golden tones, ' +
-    'BOTH subjects facing each other fully engaged in activity, ' +
-    'child face clearly visible expressive and engaged, ' +
-    'therapist watching child attentively NOT at camera, ' +
-    'natural micro-expressions, genuine soft authentic smiles, ' +
-    'real human faces with natural skin pores and subtle imperfections, ' +
-    'realistic eyes with natural light reflection, ' +
-    'soft realistic skin tones, natural hair texture, ' +
-    'lifelike hands and gestures, realistic fabric folds on clothing, ' +
-    'centered composition subjects filling 80 percent of frame, ' +
-    'NO empty space on sides, close intimate editorial crop, ' +
-    'premium private Brazilian pediatric clinic environment, ' +
-    'no text, no watermark, no logo, NOT CGI, NOT cartoon, NOT illustration';
+    'Cinematic photo, professional pediatric therapy session, ' +
+    'genuine natural expressions (NOT posed smile, NOT exaggerated), ' +
+    'soft window light, shallow depth of field, ' +
+    'professional healthcare photography style, ' +
+    'realistic skin texture, natural skin tones, ' +
+    'authentic candid moment, documentary style, ' +
+    'child and therapist naturally engaged in activity, ' +
+    'NO forced smiles, NO teeth showing, ' +
+    'NO text, NO watermarks, 4K quality, ' +
+    'premium Brazilian pediatric clinic environment';
 
   // AMBIENTES — clínicos, alegres, acolhedores
   const rooms = {
@@ -608,46 +603,26 @@ export async function generateImageForEspecialidade(especialidade, postContent =
   const comBranding = async (fotoBuf) => {
     if (!withBranding) return uploadFotoLimpa(fotoBuf);
     try {
-      return await gerarImagemBranded({
+      const result = await gerarImagemBranded({
         fotoBuffer: fotoBuf,
         titulo: tituloPost,
-        conteudo: postContent,
+        postContent: postContent,
         especialidadeId: especialidade.id,
       });
+      return result.url;
     } catch (e) {
       console.warn('⚠️ Branding falhou:', e.message);
       return null;
     }
   };
 
-  // Tentativa 1: DALL-E 3 HD (se tiver créditos)
-  if (process.env.OPENAI_API_KEY) {
-    try {
-      console.log('🤖 Tentando DALL-E 3 HD...');
-      const response = await openai.images.generate({
-        model: 'dall-e-3',
-        prompt,
-        n: 1,
-        size: '1024x1024',
-        quality: 'hd',
-        style: 'natural',
-      });
-
-      const tempUrl = response.data[0].url;
-      const fotoBuf = Buffer.from(await (await fetch(tempUrl, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
-      console.log(`✅ DALL-E 3 HD → buffer ${fotoBuf.length} bytes`);
-      return await comBranding(fotoBuf);
-
-    } catch (e) {
-      console.warn('⚠️ DALL-E 3 falhou:', e.message);
-    }
-  }
-
-  // Tentativa 2: fal.ai FLUX.1-pro (alta qualidade, ~$0.05/img)
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 1: fal.ai FLUX dev (FOCO PRINCIPAL - mais barato!)
+  // ═══════════════════════════════════════════════════════════
   if (process.env.FAL_API_KEY) {
     try {
-      console.log('🤖 Tentando fal.ai FLUX.1-pro...');
-      const falRes = await fetch('https://fal.run/fal-ai/flux-pro/v1.1', {
+      console.log('🤖 fal.ai FLUX dev...');
+      const falRes = await fetch('https://fal.run/fal-ai/flux/dev', {
         method: 'POST',
         headers: {
           'Authorization': `Key ${process.env.FAL_API_KEY}`,
@@ -655,32 +630,38 @@ export async function generateImageForEspecialidade(especialidade, postContent =
         },
         body: JSON.stringify({
           prompt,
-          image_size: 'square_hd',
+          image_size: 'square',  // 1024x1024
           num_inference_steps: 28,
           guidance_scale: 3.5,
-          num_images: 1,
-          output_format: 'jpeg',
           safety_tolerance: '2',
         }),
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(120000),
       });
+
+      console.log('   Status:', falRes.status);
 
       if (falRes.ok) {
         const falData = await falRes.json();
         const imgUrl = falData.images?.[0]?.url;
         if (imgUrl) {
           const fotoBuf = Buffer.from(await (await fetch(imgUrl, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
-          console.log(`✅ fal.ai FLUX.1-pro → buffer ${fotoBuf.length} bytes`);
-          return await comBranding(fotoBuf);
+          console.log(`✅ fal.ai FLUX dev → ${(fotoBuf.length/1024).toFixed(1)}KB`);
+          const url = await comBranding(fotoBuf);
+          return { url, provider: 'fal-flux-dev' };
         }
+      } else {
+        const err = await falRes.text();
+        console.warn('⚠️ fal.ai erro:', falRes.status, err.substring(0, 150));
       }
-      console.warn('⚠️ fal.ai retornou erro:', falRes.status);
     } catch (e) {
       console.warn('⚠️ fal.ai falhou:', e.message);
     }
+  } else {
+    console.log('⏭️  FAL_API_KEY não configurada');
   }
 
-  // Tentativa 3: HuggingFace FLUX.1-dev (gratuito, alta qualidade)
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 2: HuggingFace FLUX.1-dev (gratuito, alta qualidade)
   if (process.env.HUGGINGFACE_API_KEY) {
     try {
       console.log('🤖 Tentando HuggingFace FLUX.1-dev...');
@@ -703,7 +684,8 @@ export async function generateImageForEspecialidade(especialidade, postContent =
       if (response.ok) {
         const fotoBuf = Buffer.from(await response.arrayBuffer());
         console.log(`✅ FLUX.1-dev → buffer ${fotoBuf.length} bytes`);
-        return await comBranding(fotoBuf);
+        const url = await comBranding(fotoBuf);
+        return { url, provider: 'hf-flux-dev' };
       }
       console.warn('⚠️ HF retornou erro:', response.status);
     } catch (e) {
@@ -711,23 +693,69 @@ export async function generateImageForEspecialidade(especialidade, postContent =
     }
   }
 
-  // Tentativa 4: Pollinations com FLUX (sempre gratuito)
-  try {
-    console.log('🔄 Tentando Pollinations FLUX...');
-    const encoded = encodeURIComponent(prompt);
-    const seed = Math.floor(Math.random() * 99999);
-    const res = await fetch(
-      `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true&model=flux-realism&enhance=true`,
-      { signal: AbortSignal.timeout(60000) }
-    );
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 3: Pollinations com FLUX (sempre gratuito) + retry
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+  
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      console.log(`🔄 Pollinations (tentativa ${attempt}/3)...`);
+      const encoded = encodeURIComponent(prompt);
+      const seed = Math.floor(Math.random() * 999999);
+      const model = attempt === 1 ? 'flux-realism' : attempt === 2 ? 'turbo' : 'default';
+      
+      const res = await fetch(
+        `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true&model=${model}&enhance=true`,
+        { signal: AbortSignal.timeout(90000), headers: { 'Accept': 'image/*' } }
+      );
 
-    if (res.ok) {
-      const fotoBuf = Buffer.from(await res.arrayBuffer());
-      console.log(`✅ Pollinations → buffer ${fotoBuf.length} bytes`);
-      return await comBranding(fotoBuf);
+      if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('image')) {
+          console.warn('⚠️ Resposta não é imagem:', contentType);
+          throw new Error(`Invalid content-type: ${contentType}`);
+        }
+        
+        const fotoBuf = Buffer.from(await res.arrayBuffer());
+        if (fotoBuf.length < 1024) {
+          console.warn('⚠️ Imagem muito pequena');
+          throw new Error('Image too small');
+        }
+        
+        console.log(`✅ Pollinations → ${(fotoBuf.length/1024).toFixed(1)}KB`);
+        const url = await comBranding(fotoBuf);
+        return { url, provider: `pollinations-${model}` };
+      } else {
+        const status = res.status;
+        console.warn(`⚠️ Pollinations HTTP ${status}`);
+        if ((status >= 500 || status === 429) && attempt < 3) {
+          const wait = attempt * 2000;
+          console.log(`   ⏳ Retry em ${wait}ms...`);
+          await delay(wait);
+          continue;
+        }
+        throw new Error(`HTTP ${status}`);
+      }
+    } catch (e) {
+      console.warn(`⚠️ Pollinations erro:`, e.message);
+      if (attempt < 3) await delay(attempt * 2000);
+    }
+  }
+
+  // FALLBACK: URL direta
+  console.log('🔄 Fallback: URL direta...');
+  try {
+    const encoded = encodeURIComponent(prompt);
+    const seed = Math.floor(Math.random() * 999999);
+    const directUrl = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true`;
+    
+    const check = await fetch(directUrl, { method: 'HEAD', signal: AbortSignal.timeout(30000) });
+    if (check.ok) {
+      console.log('✅ URL direta OK');
+      return { url: directUrl, provider: 'pollinations-direct' };
     }
   } catch (e) {
-    console.warn('⚠️ Pollinations falhou:', e.message);
+    console.error('❌ Fallback falhou:', e.message);
   }
 
   console.error('❌ Todas as opções falharam - post será salvo sem imagem');
@@ -752,9 +780,14 @@ export async function createDailyPost(options = {}) {
     console.log(generated.isFallback ? '📝 Post template' : '✅ Texto gerado');
 
     let mediaUrl = null;
+    let imageProvider = null;
     if (options.generateImage !== false) {
-      mediaUrl = await generateImageForEspecialidade(especialidade, generated.content, false);
-      if (mediaUrl) console.log('✅ Imagem gerada (sem branding — Google)');
+      const imgResult = await generateImageForEspecialidade(especialidade, generated.content, false);
+      if (imgResult?.url) {
+        mediaUrl = imgResult.url;
+        imageProvider = imgResult.provider;
+        console.log('✅ Imagem gerada (sem branding — Google):', imageProvider);
+      }
     }
 
     const scheduledAt = options.scheduledAt || getNextHorarioEstrategico();
@@ -766,6 +799,7 @@ export async function createDailyPost(options = {}) {
       tags: [especialidade.id, 'terapia', 'pediatria'],
       mediaUrl,
       mediaType: mediaUrl ? 'image' : null,
+      imageProvider,  // 🖼️ Qual IA gerou a imagem
       ctaType: 'LEARN_MORE',
       ctaUrl: especialidade.url,
       aiGenerated: !generated.isFallback,
@@ -879,14 +913,15 @@ export async function generatePostImage(content, especialidadeId = null) {
     console.log('📌 Especialidade detectada:', especialidade.nome);
 
     // Gera a imagem
-    const imageUrl = await generateImageForEspecialidade(especialidade, content, false);
+    const imgResult = await generateImageForEspecialidade(especialidade, content, false);
 
-    if (!imageUrl) {
+    if (!imgResult?.url) {
       throw new Error('Falha ao gerar imagem');
     }
 
     return {
-      imageUrl,
+      imageUrl: imgResult.url,
+      imageProvider: imgResult.provider,
       especialidade: especialidade.nome,
       promptUsed: generateImagePromptFromContent(content, especialidade)
     };
@@ -922,7 +957,8 @@ export async function createAssistedPost(options = {}) {
     const postData = await generatePostForEspecialidade(especialidade, customTheme, options.funnelStage || 'top');
 
     // Gera imagem
-    const mediaUrl = await generateImageForEspecialidade(especialidade, postData.content, false);
+    const imgResult = await generateImageForEspecialidade(especialidade, postData.content, false);
+    const mediaUrl = imgResult?.url || null;
 
     // Formata texto para copiar
     const copyText = `${postData.content}
