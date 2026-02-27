@@ -137,8 +137,60 @@ process.on("error", (err) => {
 // ======================================================
 // 🔒 Middlewares globais
 // ======================================================
-app.use(express.json({ limit: '20mb' }));
-app.use(express.urlencoded({ limit: '20mb', extended: true }));
+// Middleware para log de requisições grandes (debug)
+app.use((req, res, next) => {
+    const contentLength = parseInt(req.headers['content-length'] || '0');
+    if (contentLength > 100000) { // Loga se maior que 100KB
+        console.log('📊 [Server] Requisição grande detectada:', {
+            method: req.method,
+            path: req.path,
+            contentLength: contentLength,
+            contentType: req.headers['content-type']?.substring(0, 50)
+        });
+    }
+    next();
+});
+
+// 🔥 Rota de upload de mídia ANTES dos middlewares de body parsing
+// Importar apenas as rotas de upload
+import { whatsappController } from './controllers/whatsappController.js';
+import multer from 'multer';
+
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+});
+
+// Rotas de upload de mídia - antes do body parsing
+// Adicionar CORS manualmente para essas rotas (pois estão antes do middleware global)
+const corsHeaders = (req, res, next) => {
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+};
+
+app.post('/api/whatsapp/send-media', corsHeaders, upload.single('file'), whatsappController.sendMedia);
+app.post('/api/whatsapp/upload-media', corsHeaders, upload.single('file'), whatsappController.uploadMedia);
+
+// Aumentar limites para suportar uploads de até 50MB
+// Ignorar requisições multipart (deixar para o multer tratar)
+app.use((req, res, next) => {
+    if (req.headers['content-type']?.includes('multipart/form-data')) {
+        return next();
+    }
+    express.json({ limit: '50mb' })(req, res, next);
+});
+app.use((req, res, next) => {
+    if (req.headers['content-type']?.includes('multipart/form-data')) {
+        return next();
+    }
+    express.urlencoded({ limit: '50mb', extended: true })(req, res, next);
+});
 app.use(
   helmet({
     crossOriginEmbedderPolicy: false,

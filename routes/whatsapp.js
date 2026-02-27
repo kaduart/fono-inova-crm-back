@@ -4,11 +4,24 @@ import { whatsappController } from '../controllers/whatsappController.js';
 
 const router = express.Router();
 
+// Log para debug de tamanho de requisições
+router.use((req, res, next) => {
+    if (req.path.includes('send-media') || req.path.includes('upload-media')) {
+        console.log('📊 [WhatsApp Route] Requisição recebida:', {
+            path: req.path,
+            method: req.method,
+            contentLength: req.headers['content-length'],
+            contentType: req.headers['content-type']?.substring(0, 50)
+        });
+    }
+    next();
+});
+
 // Configuração do multer para upload de arquivos
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
-        fileSize: 16 * 1024 * 1024 // 16MB max (limite WhatsApp)
+        fileSize: 50 * 1024 * 1024 // 50MB max (limite aumentado para arquivos maiores)
     },
     fileFilter: (req, file, cb) => {
         // Tipos permitidos pelo WhatsApp
@@ -28,7 +41,11 @@ const upload = multer({
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         ];
         
-        console.log('📁 [Multer] Arquivo recebido:', file.originalname, 'tipo:', file.mimetype);
+        console.log('📁 [Multer] Arquivo recebido:', {
+            name: file.originalname,
+            type: file.mimetype,
+            size: file.size
+        });
         
         if (allowedMimeTypes.includes(file.mimetype)) {
             cb(null, true);
@@ -43,9 +60,33 @@ router.post('/send-template', whatsappController.sendTemplate);
 router.post('/send-text', whatsappController.sendText);
 router.delete('/messages/:id', whatsappController.deletarMsgChat);
 
+// Middleware de tratamento de erro do multer
+const handleMulterError = (err, req, res, next) => {
+    if (err instanceof multer.MulterError) {
+        // Erro específico do multer
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(413).json({
+                success: false,
+                error: 'Arquivo muito grande. Limite máximo: 50MB'
+            });
+        }
+        return res.status(400).json({
+            success: false,
+            error: `Erro no upload: ${err.message}`
+        });
+    } else if (err) {
+        // Outro tipo de erro
+        return res.status(400).json({
+            success: false,
+            error: err.message
+        });
+    }
+    next();
+};
+
 // 🎬 Envio de mídia
-router.post('/upload-media', upload.single('file'), whatsappController.uploadMedia);
-router.post('/send-media', upload.single('file'), whatsappController.sendMedia);
+router.post('/upload-media', upload.single('file'), handleMulterError, whatsappController.uploadMedia);
+router.post('/send-media', upload.single('file'), handleMulterError, whatsappController.sendMedia);
 
 // 📩 Webhook
 router.post('/webhook', whatsappController.webhook);
