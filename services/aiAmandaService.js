@@ -103,21 +103,29 @@ export async function describeWaImage({ mediaUrl, mimeType, mediaId }) {
  */
 export async function transcribeWaAudio({ mediaUrl, mimeType, mediaId }) {
     try {
-        console.log(`👂 Transcrevendo áudio ${mediaId}...`);
+        console.log(`👂 [transcribeWaAudio] Iniciando transcrição:`, { mediaId, mediaUrl, mimeType });
 
         let finalBuffer, finalMime;
 
         if (mediaId && !mediaUrl) {
+            console.log(`👂 [transcribeWaAudio] Buscando buffer para mediaId: ${mediaId}`);
             const mediaBuffer = await getMediaBuffer(mediaId);
             if (!mediaBuffer) throw new Error("Não foi possível obter o buffer do áudio");
             finalBuffer = mediaBuffer.buffer || mediaBuffer;
             finalMime = mediaBuffer.mimeType || mimeType || "audio/ogg";
+            console.log(`👂 [transcribeWaAudio] Buffer obtido: ${finalBuffer?.length || 0} bytes, mime: ${finalMime}`);
         } else if (mediaUrl) {
+            console.log(`👂 [transcribeWaAudio] Baixando de URL: ${mediaUrl}`);
             const response = await axios.get(mediaUrl, { responseType: "arraybuffer", timeout: 15000 });
             finalBuffer = Buffer.from(response.data, "binary");
             finalMime = mimeType || response.headers["content-type"] || "audio/ogg";
+            console.log(`👂 [transcribeWaAudio] Download concluído: ${finalBuffer?.length || 0} bytes`);
         } else {
             throw new Error("É necessário fornecer mediaUrl ou mediaId");
+        }
+
+        if (!finalBuffer || finalBuffer.length === 0) {
+            throw new Error("Buffer do áudio está vazio");
         }
 
         // Cria stream legível para o OpenAI (necessário para file upload)
@@ -125,15 +133,19 @@ export async function transcribeWaAudio({ mediaUrl, mimeType, mediaId }) {
         // Hack: Adiciona path para o axios/openai form-data reconhecer extensão
         stream.path = `audio.ogg`;
 
+        console.log(`👂 [transcribeWaAudio] Chamando Whisper API...`);
+        
         // Chama Whisper API
         const response = await openai.audio.transcriptions.create({
             file: stream,
             model: "whisper-1",
         });
 
+        console.log(`👂 [transcribeWaAudio] Transcrição concluída: "${response.text?.substring(0, 50)}..."`);
         return response.text || "";
     } catch (err) {
-        console.error("❌ Erro ao transcrever áudio:", err.message);
+        console.error("❌ [transcribeWaAudio] Erro ao transcrever áudio:", err.message);
+        console.error("❌ [transcribeWaAudio] Stack:", err.stack);
         return "";
     }
 }

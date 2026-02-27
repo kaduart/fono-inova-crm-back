@@ -94,6 +94,10 @@ export async function registerMessage({
     to = null,
     from = null,
     metadata = null,
+    // Campos de mídia
+    mediaId = null,
+    caption = null,
+    mediaUrl = null,
 }) {
     const now = timestamp || new Date();
 
@@ -119,6 +123,11 @@ export async function registerMessage({
     if (to) payload.to = to;
     if (from) payload.from = from;
     if (metadata) payload.metadata = metadata;
+    
+    // ✅ Campos de mídia
+    if (mediaId) payload.mediaId = mediaId;
+    if (caption) payload.caption = caption;
+    if (mediaUrl) payload.mediaUrl = mediaUrl;
 
     console.log('💾 Payload completo para salvar:', {
         ...payload,
@@ -670,7 +679,11 @@ export async function sendWhatsAppMediaMessage({
         timestamp: new Date(),
         to: phone,
         from: PHONE_ID,
-        metadata: { sentBy, userId, mediaId, filename },
+        metadata: { sentBy, userId, filename },
+        // ✅ Campos de mídia para renderização correta
+        mediaId,
+        caption: filename || caption,  // Usa filename para documentos, caption para imagens
+        mediaUrl: uploadData.url,
     });
 
     return {
