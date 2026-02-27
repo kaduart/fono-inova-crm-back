@@ -89,6 +89,12 @@ const instagramPostSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  // 🎨 Layout utilizado (hero_banner_curva, dual_screen_psico, etc)
+  layoutId: {
+    type: String,
+    default: null,
+    index: true
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

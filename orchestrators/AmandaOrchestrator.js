@@ -1203,7 +1203,17 @@ async function persistExtractedData(leadId, text, lead) {
         const _n = extractName(text);
         const _a = extractAgeFromText(text);
         const _p = extractPeriodFromText(text);
-        const _c = extractComplaint(text);
+        let _c = extractComplaint(text);
+        
+        // ✅ FIX: Se não extraiu padrão específico MAS o texto é descritivo, aceita como queixa
+        if (!_c && text && text.length > 20 && !lead?.complaint) {
+            const pareceDescricao = /\b(eu|minha|meu|estou|tenho|sinto|está|doente|problema|dificuldade|dor|mal|não consigo|fui ao|médico|otorrino|fenda|vocal|pregas|cantor|voz)\b/i.test(text);
+            if (pareceDescricao) {
+                _c = text.trim().substring(0, 200);
+                console.log('📝 [CTX-PERSIST] Queixa extraída do texto livre:', _c.substring(0, 50));
+            }
+        }
+        
         // 🆕 FIX: Busca fonte SEPARADA do valor existente (evita lógica circular)
         const _tSource = lead?.autoBookingContext?.therapyArea || 
                          lead?.qualificationData?.extractedInfo?.therapyArea;
@@ -1298,7 +1308,7 @@ export async function getOptimizedAmandaResponse({
     // =========================================================================
     if (lead?._id) {
         try {
-            const freshLead = await Leads.findById(lead._id).select('+triageStep').lean();
+            const freshLead = await Leads.findById(lead._id).select('+triageStep complaint').lean();
             if (freshLead) {
                 lead = freshLead;
                 console.log("🔄 [REFRESH] Lead atualizado:", {
@@ -1650,7 +1660,7 @@ export async function getOptimizedAmandaResponse({
             }
 
             // Busca dados atualizados
-            const updated = await Leads.findById(lead._id).select('+triageStep').lean().catch(() => null);
+            const updated = await Leads.findById(lead._id).select('+triageStep complaint').lean().catch(() => null);
             const fullName = updated?.patientInfo?.fullName;
             const phone = updated?.contact?.phone;
 
@@ -2189,7 +2199,18 @@ export async function getOptimizedAmandaResponse({
     // ▶️ STEP: ask_complaint (coleta queixa - NOVO STEP CORRETO!)
     // ============================================================
     if (lead?.triageStep === "ask_complaint") {
-        const complaint = extractComplaint(text);
+        let complaint = extractComplaint(text);
+        
+        // ✅ FIX: Se não extraiu padrão específico MAS o texto é descritivo (explicação longa),
+        // aceita o próprio texto como queixa
+        if (!complaint && text && text.length > 20 && !text.match(/^(sim|não|nao|ok|tá|ta|ok\s|bom|boa|oi|olá|ola|hey)$/i)) {
+            // Verifica se parece uma descrição de sintoma/problema
+            const pareceDescricao = /\b(eu|minha|meu|estou|tenho|sinto|está|doente|problema|dificuldade|dor|mal|não consigo|não consigo|fui ao|médico|otorrino)\b/i.test(text);
+            if (pareceDescricao) {
+                complaint = text.trim().substring(0, 200); // Limita a 200 chars
+                console.log("📝 [TRIAGEM] Queixa extraída do texto livre:", complaint.substring(0, 50));
+            }
+        }
         
         // Se não extraiu queixa claramente, pergunta
         if (!complaint || complaint.length < 3) {
