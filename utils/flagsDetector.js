@@ -45,6 +45,11 @@ export function deriveFlagsFromText(text = "") {
     const hasProfessionalIntro = /\b(sou|me\s+chamo)\b.*\b(musicoterap|psicopedagog|fonoaudi[oó]log[oa]?|psic[oó]log[oa]?|fisioterap|terapeuta\s+ocupacional|\bto\b|neuropsic)/i.test(normalizedText);
 
     const wantsPartnershipOrResume = hasCurriculumTerms || hasExplicitPartnership || hasJobContext || hasProfessionalIntro;
+    
+    // ✅ NOVO: Detecção específica de busca por emprego/estágio
+    const wantsJobOrInternship = 
+        /\b(estagi[áa]ria?|est[áa]gio|emprego|trabalho|vaga\s+(de\s+)?(trabalho|emprego|est[áa]gio)|curriculo|cv|trabalhar\s+(com|na|para)\s+voc[eê]s?)\b/i.test(normalizedText) ||
+        /\b(sou\s+(estagi[áa]ria?|profissional|formando|formada))\b/i.test(normalizedText);
 
     const ageGroup = extractAgeGroup(normalizedText);
 
@@ -276,6 +281,7 @@ export function deriveFlagsFromText(text = "") {
         // úteis pro funil
         mentionsBaby: /\b(beb[eê]|rec[ée]m[-\s]?nascid[oa]|rn\b|meses)\b/i.test(normalizedText),
         wantsPartnershipOrResume,
+        wantsJobOrInternship,  // ✅ NOVA FLAG
         mentionsTongueTieSurgery,
         mentionsGeneralSurgery,
 
@@ -288,6 +294,12 @@ export function deriveFlagsFromText(text = "") {
             /\b(possibilidade\s+de\s+(tea|autismo|tdah)|pode\s+ser\s+(tea|autismo|tdah))\b/i.test(normalizedText) ||
             /\b(meu\s+filho\s+tem)\b/i.test(normalizedText), // ex: "meu filho tem x, preciso de avaliacao" -> geralmente é neuro
     };
+
+    // ✅ FIX: Se for sobre emprego/estágio, NÃO é givingUp (desistência)
+    if (flags.wantsPartnershipOrResume && flags.givingUp) {
+        flags.givingUp = false;
+        console.log("🛡️ [FLAGS] wantsPartnershipOrResume=true, sobrescrevendo givingUp para false");
+    }
 
     // Log dos flags detectados
     logFlags(text, flags);

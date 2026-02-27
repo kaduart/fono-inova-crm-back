@@ -1117,6 +1117,11 @@ export const whatsappController = {
             }
 
             const to = normalizeE164BR(phone);
+            
+            console.log('📤 [SEND-MEDIA] Números:', {
+                original: phone,
+                formatted: to
+            });
 
             console.log('📤 Enviando mídia:', {
                 to,
@@ -1138,6 +1143,10 @@ export const whatsappController = {
                 lead: leadId || null
             });
 
+            // Adicionar headers CORS manualmente
+            res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+            res.header('Access-Control-Allow-Credentials', 'true');
+            
             res.json({
                 success: true,
                 messageId: result.messages?.[0]?.id,
@@ -1146,6 +1155,9 @@ export const whatsappController = {
 
         } catch (error) {
             console.error('❌ Erro ao enviar mídia:', error);
+            // Adicionar headers CORS mesmo em erro
+            res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+            res.header('Access-Control-Allow-Credentials', 'true');
             res.status(500).json({
                 success: false,
                 error: error.message

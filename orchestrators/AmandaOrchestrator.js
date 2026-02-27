@@ -1547,9 +1547,17 @@ export async function getOptimizedAmandaResponse({
 
     // ✅ FIX: Usar flags já calculados (mais abrangentes que regex local)
     // Antes: regex própria não capturava "fica em Anápolis", "são de Anápolis", etc.
+    
+    // ✅ NOVO: Verificar perguntas sobre plano ANTES de localização
+    const asksInsurance = flags?.asksPlans || 
+        flags?.mentionsReembolso ||
+        /(conv[eê]nio|plano\s*(de\s*)?sa[uú]de|unimed|ipasgo|hapvida|bradesco|amil|sulamerica|reembolso)/i.test(text.normalize('NFC'));
+    
     const asksLocation = flags?.asksAddress || flags?.asksLocation ||
         /(endere[çc]o|onde\s+fica|localiza(?:ç|c)(?:a|ã)o)/i.test(text.normalize('NFC'));
-    if (asksLocation) {
+    
+    // ✅ NOVO: Se perguntar sobre plano, NÃO envia localização (deixa fluxo normal responder)
+    if (asksLocation && !asksInsurance) {
         const coords = {
             latitude: -16.3334217,
             longitude: -48.9488967,
@@ -1583,6 +1591,9 @@ export async function getOptimizedAmandaResponse({
         });
 
         return null;
+    } else if (asksInsurance) {
+        console.log("🛡️ [PASSO 1] Pergunta sobre plano detectada - bypassing location");
+        // Não retorna - deixa o fluxo normal responder sobre planos
     }
 
     if (lead?.pendingPatientInfoForScheduling && lead?._id) {
@@ -1949,15 +1960,77 @@ export async function getOptimizedAmandaResponse({
         !lead.pendingPatientInfoForScheduling &&
         lead.stage !== "paciente"
     ) {
-        console.log("🔄 [TRIAGEM] Iniciando triagem - setando triageStep: ask_period");
-        const updateResult = await safeLeadUpdate(lead._id, {
-            $set: {
-                triageStep: "ask_period",
-                stage: "triagem_agendamento"
-            }
+        // ✅ FIX: Tentar extrair dados da PRIMEIRA mensagem para não perguntar de novo
+        const extractedAge = extractAgeFromText(text);
+        const extractedName = extractName(text);
+        const extractedPeriod = extractPeriodFromText(text);
+        const extractedComplaint = extractComplaint(text);
+        
+        console.log("🔄 [TRIAGEM] Iniciando triagem - dados extraídos:", {
+            age: extractedAge?.age || extractedAge,
+            name: extractedName,
+            period: extractedPeriod,
+            complaint: extractedComplaint
         });
+        
+        // Determinar qual step iniciar baseado nos dados já extraídos
+        let initialStep = "ask_period";
+        const updateData = {
+            triageStep: "ask_period",
+            stage: "triagem_agendamento"
+        };
+        
+        // Se já tem período, vai direto para ask_name
+        if (extractedPeriod) {
+            initialStep = "ask_name";
+            updateData.triageStep = "ask_name";
+            updateData.pendingPreferredPeriod = normalizePeriod(extractedPeriod);
+            console.log("📝 [TRIAGEM] Período já informado, pulando para ask_name");
+        }
+        
+        // Se já tem nome também, salva e continua
+        if (extractedName) {
+            updateData["patientInfo.fullName"] = extractedName;
+            if (extractedPeriod) {
+                initialStep = "ask_age";
+                updateData.triageStep = "ask_age";
+                console.log("📝 [TRIAGEM] Nome já informado, pulando para ask_age");
+            }
+        }
+        
+        // Se já tem idade também, salva e continua
+        if (extractedAge) {
+            const ageValue = typeof extractedAge === 'object' ? extractedAge.age : extractedAge;
+            const ageUnit = typeof extractedAge === 'object' ? extractedAge.unit : 'anos';
+            updateData["patientInfo.age"] = ageValue;
+            updateData["patientInfo.ageUnit"] = ageUnit;
+            updateData["qualificationData.idade"] = ageValue;
+            updateData["qualificationData.idadeRange"] = ageValue <= 3 ? '0-3' :
+                ageValue <= 6 ? '4-6' :
+                ageValue <= 12 ? '7-12' : '13+';
+            
+            if (extractedPeriod && extractedName) {
+                initialStep = "ask_complaint";
+                updateData.triageStep = "ask_complaint";
+                console.log("📝 [TRIAGEM] Idade já informada, pulando para ask_complaint");
+            }
+        }
+        
+        // Se já tem queixa também, salva e finaliza
+        if (extractedComplaint && extractedPeriod && extractedName && extractedAge) {
+            updateData.complaint = extractedComplaint;
+            initialStep = "done";
+            updateData.triageStep = "done";
+            updateData.stage = "engajado";
+            console.log("📝 [TRIAGEM] Queixa já informada, finalizando triagem");
+        }
+        
+        console.log(`🔄 [TRIAGEM] Iniciando na etapa: ${initialStep}`);
+        const updateResult = await safeLeadUpdate(lead._id, { $set: updateData });
+        
         if (updateResult) {
             console.log("✅ [TRIAGEM] triageStep salvo com sucesso:", updateResult.triageStep);
+            lead.triageStep = initialStep; // mantém em memória
         } else {
             console.warn("⚠️ [TRIAGEM] Falha ao salvar triageStep");
         }
@@ -2008,12 +2081,14 @@ export async function getOptimizedAmandaResponse({
             const updateData = {};
 
             if (ageExtracted && !lead?.patientInfo?.age) {
-                updateData["patientInfo.age"] = ageExtracted;
-                updateData["qualificationData.idade"] = ageExtracted.age;
-                updateData["qualificationData.idadeRange"] = ageExtracted.age <= 3 ? '0-3' :
-                    ageExtracted.age <= 6 ? '4-6' :
-                    ageExtracted.age <= 12 ? '7-12' : '13+';
-                console.log("📝 [TRIAGEM] Greedy: idade extraída durante ask_period:", ageExtracted.age);
+                // ✅ FIX: Extrair número do objeto (evita CastError)
+                const ageValue = typeof ageExtracted === 'object' ? ageExtracted.age : ageExtracted;
+                updateData["patientInfo.age"] = ageValue;  // ✅ Number puro
+                updateData["qualificationData.idade"] = ageValue;
+                updateData["qualificationData.idadeRange"] = ageValue <= 3 ? '0-3' :
+                    ageValue <= 6 ? '4-6' :
+                    ageValue <= 12 ? '7-12' : '13+';
+                console.log("📝 [TRIAGEM] Greedy: idade extraída durante ask_period:", ageValue);
             }
             if (nameExtracted && !lead?.patientInfo?.fullName) {
                 updateData["patientInfo.fullName"] = nameExtracted;
@@ -2026,15 +2101,24 @@ export async function getOptimizedAmandaResponse({
             }
 
             if (!period) {
+                // ✅ FIX: Detecta saudação pura (ex: "Bom dia!") e responde adequadamente
+                const isPureGreeting = PURE_GREETING_REGEX.test(text.trim());
+                
+                if (isPureGreeting) {
+                    return ensureSingleHeart(
+                        "Olá! 😊 Tudo bem? Pra eu organizar certinho, vocês preferem **manhã ou tarde**?"
+                    );
+                }
+                
                 return ensureSingleHeart(
-                    "Olá! 😊 Pra eu organizar certinho, vocês preferem **manhã ou tarde**?"
+                    "Pra eu organizar certinho, vocês preferem **manhã ou tarde**?"
                 );
             }
 
             await safeLeadUpdate(lead._id, {
                 $set: {
                     pendingPreferredPeriod: normalizePeriod(period),
-                    triageStep: "ask_profile"
+                    triageStep: "ask_name"  // ✅ Era ask_profile, agora ask_name
                 }
             });
 
@@ -2042,7 +2126,10 @@ export async function getOptimizedAmandaResponse({
         } // fecha else do bypass
     }
 
-    if (lead?.triageStep === "ask_profile") {
+    // ============================================================
+    // ▶️ STEP: ask_name (coleta nome)
+    // ============================================================
+    if (lead?.triageStep === "ask_name") {
         const name = extractName(text);
         if (!name) {
             return ensureSingleHeart(
@@ -2053,7 +2140,7 @@ export async function getOptimizedAmandaResponse({
         await safeLeadUpdate(lead._id, {
             $set: {
                 "patientInfo.fullName": name,
-                triageStep: "ask_complaint"
+                triageStep: "ask_age"  // ✅ Vai para ask_age, não ask_complaint
             }
         });
 
@@ -2062,7 +2149,10 @@ export async function getOptimizedAmandaResponse({
         );
     }
 
-    if (lead?.triageStep === "ask_complaint") {
+    // ============================================================
+    // ▶️ STEP: ask_age (coleta idade)
+    // ============================================================
+    if (lead?.triageStep === "ask_age") {
         const age = extractAgeFromText(text);
         if (!age) {
             return ensureSingleHeart(
@@ -2070,17 +2160,48 @@ export async function getOptimizedAmandaResponse({
             );
         }
 
+        // ✅ FIX: Extrair número do objeto (evita CastError)
+        const ageValue = typeof age === 'object' ? age.age : age;
+        const ageUnit = typeof age === 'object' ? age.unit : 'anos';
+        
         // ✅ FIX: Sincronizar patientInfo.age com qualificationData.idade
-        // Antes: só salvava em patientInfo.age, findAvailableSlots() lê qualificationData.idade
-        const idadeRange = age.age <= 3 ? '0-3' :
-            age.age <= 6 ? '4-6' :
-            age.age <= 12 ? '7-12' : '13+';
+        const idadeRange = ageValue <= 3 ? '0-3' :
+            ageValue <= 6 ? '4-6' :
+            ageValue <= 12 ? '7-12' : '13+';
 
         await safeLeadUpdate(lead._id, {
             $set: {
-                "patientInfo.age": age,
-                "qualificationData.idade": age.age,
+                "patientInfo.age": ageValue,  // ✅ Number puro, não objeto
+                "patientInfo.ageUnit": ageUnit,
+                "qualificationData.idade": ageValue,
                 "qualificationData.idadeRange": idadeRange,
+                triageStep: "ask_complaint",  // ✅ Vai perguntar queixa agora
+                stage: "triagem_agendamento"
+            }
+        });
+
+        return ensureSingleHeart(
+            "Obrigada! 💚 Agora me conta: qual a principal preocupação/queixa que vocês têm observado? 💚"
+        );
+    }
+
+    // ============================================================
+    // ▶️ STEP: ask_complaint (coleta queixa - NOVO STEP CORRETO!)
+    // ============================================================
+    if (lead?.triageStep === "ask_complaint") {
+        const complaint = extractComplaint(text);
+        
+        // Se não extraiu queixa claramente, pergunta
+        if (!complaint || complaint.length < 3) {
+            return ensureSingleHeart(
+                "Me conta um pouquinho: o que você tem observado no dia a dia que te preocupou? 💚"
+            );
+        }
+        
+        // Salva queixa e finaliza triagem
+        await safeLeadUpdate(lead._id, {
+            $set: {
+                complaint: complaint,
                 triageStep: "done",
                 stage: "engajado"
             }
