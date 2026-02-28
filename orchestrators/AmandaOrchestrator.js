@@ -1331,6 +1331,81 @@ export async function getOptimizedAmandaResponse({
     await persistExtractedData(lead._id, text, lead);
 
     // =========================================================================
+    // 🆕 ENTITY-DRIVEN SIMPLIFICADO (NOVO FLUXO PRINCIPAL)
+    // =========================================================================
+    console.log(`🧠 [AMANDA-SÊNIOR] Iniciando análise entity-driven...`);
+    
+    const amandaAnalysis = await processMessageLikeAmanda(text, lead);
+    
+    console.log('📊 [AMANDA] Analysis:', {
+        therapyArea: amandaAnalysis.extracted.therapyArea,
+        missing: amandaAnalysis.missing,
+        status: amandaAnalysis.serviceStatus,
+        hasAll: amandaAnalysis.hasAll
+    });
+    
+    // 3.1 SERVIÇO NÃO DISPONÍVEL → Responde direto
+    if (amandaAnalysis.serviceStatus === 'not_available') {
+        return ensureSingleHeart(amandaAnalysis.serviceMessage);
+    }
+    
+    // 3.2 LIMITE DE IDADE → Responde direto
+    if (amandaAnalysis.serviceStatus === 'age_limit') {
+        return ensureSingleHeart(amandaAnalysis.serviceMessage);
+    }
+    
+    // 3.3 PERGUNTAS SIMPLES (preço, plano, local) → Responde direto
+    if (amandaAnalysis.extracted.flags.asksPrice && !amandaAnalysis.extracted.therapyArea) {
+        return ensureSingleHeart("A avaliação inicial é **R$ 200**. Se me disser a área (Fono, Psicologia, TO...), passo o valor exato 💚");
+    }
+    
+    if (amandaAnalysis.extracted.flags.asksPrice && amandaAnalysis.extracted.therapyArea) {
+        const prices = {
+            fonoaudiologia: "R$ 200", psicologia: "R$ 200", 
+            terapia_ocupacional: "R$ 200", fisioterapia: "R$ 200",
+            neuropsicologia: "R$ 2.000 (até 6x)"
+        };
+        const price = prices[amandaAnalysis.extracted.therapyArea] || "R$ 200";
+        return ensureSingleHeart(`A avaliação de ${amandaAnalysis.extracted.therapyArea} é **${price}** 💚`);
+    }
+    
+    if (amandaAnalysis.extracted.flags.asksPlans) {
+        return ensureSingleHeart("Trabalhamos com reembolso para a maioria dos planos. Você paga e solicita o reembolso pelo app do plano 💚");
+    }
+    
+    if (amandaAnalysis.extracted.flags.asksLocation) {
+        return ensureSingleHeart("📍 Estamos na Av. Minas Gerais, 405 - Jundiaí, Anápolis/GO. Tem estacionamento fácil! Quer o link do Maps? 💚");
+    }
+    
+    // 3.4 TRIAGEM: Falta dados → Pergunta contextual
+    if (amandaAnalysis.serviceStatus === 'available' && !amandaAnalysis.hasAll && amandaAnalysis.extracted.therapyArea) {
+        // Salva therapyArea no lead se ainda não tem
+        if (!lead?.therapyArea && amandaAnalysis.extracted.therapyArea) {
+            await safeLeadUpdate(lead._id, { 
+                $set: { 
+                    therapyArea: amandaAnalysis.extracted.therapyArea,
+                    stage: 'triagem_agendamento'
+                } 
+            });
+        }
+        return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead);
+    }
+    
+    // 3.5 SEM THERAPY AREA → Pergunta qual área
+    if (!amandaAnalysis.extracted.therapyArea && !lead?.therapyArea) {
+        return ensureSingleHeart("Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚");
+    }
+    
+    // 3.6 COMPLETO → Continua para oferecer slots (fluxo existente abaixo)
+    if (amandaAnalysis.hasAll) {
+        console.log("✅ [AMANDA] Triagem completa! Continuando para slots...");
+        // Não retorna, deixa o fluxo original continuar
+    }
+    
+    // Se chegou aqui, usa o fluxo legado (mantido para compatibilidade)
+    console.log("🔄 [AMANDA] Usando fluxo legado para casos complexos...");
+
+    // =========================================================================
     // 🆕 PASSO 0.6: CONTEXTO ENRIQUECIDO E FLAGS (Movido para cima - necessário para guards abaixo)
     // =========================================================================
     // ✅ CONTEXTO UNIFICADO (leadContext.js tem tudo: mode, toneMode, urgencyLevel)
@@ -5296,5 +5371,166 @@ const buildSystemContext = (flags, text = "", stage = "novo") => ({
             text,
         ),
 });
+
+// ============================================================================
+// 🆕 ENTITY-DRIVEN SIMPLIFICADO (NOVA IMPLEMENTAÇÃO)
+// ============================================================================
+
+/**
+ * 🧠 AMANDA SÊNIOR - Processamento Entity-Driven
+ * Extrai tudo → Valida → Decide → Responde
+ */
+async function processMessageLikeAmanda(text, lead = {}) {
+    console.log('🧠 [AMANDA-SÊNIOR] Analisando:', text.substring(0, 50));
+    
+    // 1. EXTRAÇÃO MÁXIMA
+    const extracted = {
+        responsibleName: null,
+        patientName: null,
+        patientAge: null,
+        patientAgeUnit: 'anos',
+        complaint: null,
+        therapyArea: null,
+        preferredPeriod: null,
+        intent: 'informacao',
+        flags: {
+            asksPrice: /\b(preço|valor|custa|quanto)\b/i.test(text),
+            wantsSchedule: /\b(agendar|marcar|vaga|consulta)\b/i.test(text),
+            mentionsChild: /\b(filho|filha|criança|bebê|anos)\b/i.test(text),
+            asksPlans: /\b(plano|convênio|unimed|amil)\b/i.test(text),
+            asksLocation: /\b(onde|endereço|fica)\b/i.test(text),
+        }
+    };
+    
+    // Extrai nome
+    const nameMatch = text.match(/(?:sou|me chamo|nome[\s:]+)\s*([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)/i);
+    if (nameMatch) {
+        const isParent = /\b(minha filha|meu filho|minha criança)\b/i.test(text);
+        if (isParent) {
+            extracted.responsibleName = nameMatch[1].trim();
+            const childName = text.match(/(?:minha filha|meu filho)\s+([A-Z][a-z]+)/i);
+            if (childName) extracted.patientName = childName[1];
+        } else {
+            extracted.patientName = nameMatch[1].trim();
+        }
+    }
+    
+    // Extrai idade
+    const ageMatch = text.match(/(\d+)\s*(anos?|meses?)/i);
+    if (ageMatch) {
+        extracted.patientAge = parseInt(ageMatch[1]);
+        extracted.patientAgeUnit = ageMatch[2].toLowerCase().startsWith('m') ? 'meses' : 'anos';
+        if (extracted.patientAge <= 12) extracted.flags.mentionsChild = true;
+    }
+    
+    // Extrai período
+    if (/\bmanh[ãa]\b/i.test(text)) extracted.preferredPeriod = 'manha';
+    else if (/\btarde\b/i.test(text)) extracted.preferredPeriod = 'tarde';
+    else if (/\bnoite\b/i.test(text)) extracted.preferredPeriod = 'noite';
+    
+    // Extrai therapyArea da queixa
+    const patterns = [
+        { regex: /\b(não fala|fala pouco|atraso na fala)\b/i, area: 'fonoaudiologia' },
+        { regex: /\b(dificuldade de aprender|problema na escola|dislexia)\b/i, area: 'psicopedagogia' },
+        { regex: /\b(comportamento|birra|não obedece|agressivo)\b/i, area: 'psicologia' },
+        { regex: /\b(não anda|atraso motor|coordenação)\b/i, area: 'fisioterapia' },
+        { regex: /\b(enurese|xixi na cama)\b/i, area: 'fonoaudiologia' },
+        { regex: /\b(fenda|fissura|lábio|palato)\b/i, area: 'fonoaudiologia' },
+        { regex: /\b(linguinha|freio|frenulo)\b/i, area: 'fonoaudiologia' },
+        { regex: /\b(autismo|tea|tdah|hiperatividade)\b/i, area: 'neuropsicologia' },
+        { regex: /\b(voz|rouquidão|pregas vocais)\b/i, area: 'fonoaudiologia' }
+    ];
+    
+    for (const p of patterns) {
+        if (p.regex.test(text)) {
+            extracted.therapyArea = p.area;
+            break;
+        }
+    }
+    
+    // Detecta intenção
+    if (extracted.flags.wantsSchedule) extracted.intent = 'agendar';
+    else if (extracted.flags.asksPrice) extracted.intent = 'preco';
+    else if (extracted.flags.asksPlans) extracted.intent = 'plano';
+    
+    // 2. VALIDAÇÃO DE SERVIÇO
+    const VALID_AREAS = ['fonoaudiologia', 'psicologia', 'terapia_ocupacional', 'fisioterapia', 'musicoterapia', 'neuropsicologia', 'psicopedagogia'];
+    
+    let serviceStatus = 'available';
+    let serviceMessage = null;
+    
+    if (extracted.therapyArea && !VALID_AREAS.includes(extracted.therapyArea)) {
+        serviceStatus = 'not_available';
+        serviceMessage = `Não temos ${extracted.therapyArea}. Temos fonoaudiologia, psicologia, terapia ocupacional... Quer saber mais?`;
+    }
+    
+    // Validação idade psicologia
+    if (extracted.therapyArea === 'psicologia' && extracted.patientAge > 16) {
+        serviceStatus = 'age_limit';
+        serviceMessage = 'Atendemos psicologia apenas até 16 anos. Temos neuropsicologia para adultos 💚';
+    }
+    
+    // 3. O QUE FALTA?
+    const hasPeriod = lead?.pendingPreferredPeriod || extracted.preferredPeriod;
+    const hasName = lead?.patientInfo?.fullName || extracted.patientName;
+    const hasAge = lead?.patientInfo?.age || extracted.patientAge;
+    const hasComplaint = lead?.complaint || extracted.complaint;
+    const hasTherapyArea = lead?.therapyArea || extracted.therapyArea;
+    
+    const missing = [];
+    if (!hasTherapyArea && serviceStatus === 'available') missing.push('therapyArea');
+    if (!hasName) missing.push(extracted.responsibleName ? 'patientName' : 'name');
+    if (!hasAge) missing.push('age');
+    if (!hasPeriod) missing.push('period');
+    if (!hasComplaint) missing.push('complaint');
+    
+    return {
+        extracted,
+        missing,
+        serviceStatus,
+        serviceMessage,
+        hasAll: missing.length === 0 && serviceStatus === 'available'
+    };
+}
+
+/**
+ * Constrói resposta simples baseada no que falta
+ */
+function buildSimpleResponse(missing, extracted, lead) {
+    const [first] = missing;
+    const respName = extracted.responsibleName || lead?.responsibleName;
+    const patientName = extracted.patientName || lead?.patientInfo?.fullName;
+    const age = extracted.patientAge || lead?.patientInfo?.age;
+    
+    switch (first) {
+        case 'therapyArea':
+            return ensureSingleHeart(`Oi${respName ? ' ' + respName : ''}! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚`);
+            
+        case 'period':
+            const context = respName && age 
+                ? `Oi ${respName}! Entendi que ${patientName || 'o paciente'} tem ${age} anos. 💚\n\n`
+                : `Oi${respName ? ' ' + respName : ''}! 💚\n`;
+            return ensureSingleHeart(context + "Pra eu organizar, prefere **manhã ou tarde**? 😊");
+            
+        case 'name':
+        case 'patientName':
+            if (respName) {
+                return ensureSingleHeart(`Oi ${respName}! Entendi que é para seu filho(a). Qual o **nome completo** da criança? 💚`);
+            }
+            return ensureSingleHeart("Oi! Pra eu organizar, qual o **nome completo** do paciente? 😊");
+            
+        case 'age':
+            if (patientName) {
+                return ensureSingleHeart(`Perfeito, ${patientName}! 💚 E qual a **idade**? (anos ou meses)`);
+            }
+            return ensureSingleHeart("Qual a **idade** do paciente? (anos ou meses) 😊");
+            
+        case 'complaint':
+            return ensureSingleHeart("Me conta um pouquinho: qual a principal preocupação que vocês têm? 💚");
+            
+        default:
+            return ensureSingleHeart("Pra eu organizar, prefere **manhã ou tarde**? 😊");
+    }
+}
 
 export default getOptimizedAmandaResponse;

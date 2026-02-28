@@ -20,7 +20,9 @@ import FacebookPost from '../models/FacebookPost.js';
 
 // Services
 import * as gmbService from '../services/gmbService.js';
-import { generateInstagramPost, regenerateImageForPost } from '../services/instagramPostService.js';
+import { generateInstagramPost, regenerateImageForPost, gerarHeadline, generateImage as gerarImagemBase, IMAGE_TYPES } from '../services/instagramPostService.js';
+import { generateCaptionSEO, generateHooksViral } from '../services/gmbService.js';
+import { gerarImagemBranded } from '../services/brandImageService.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -75,6 +77,7 @@ const postWorker = new Worker('post-generation', async (job) => {
     funnelStage = 'top',
     scheduledAt,
     generateImage = true,
+    provider = 'auto',
     userId
   } = job.data;
 
@@ -101,7 +104,7 @@ const postWorker = new Worker('post-generation', async (job) => {
       
       if (generateImage) {
         try {
-          const imgResult = await gmbService.generateImageForEspecialidade(especialidade, postData.content, false);
+          const imgResult = await gmbService.generateImageForEspecialidade(especialidade, postData.content, false, provider);
           mediaUrl = imgResult?.url || null;
           imageProvider = imgResult?.provider || null;
         } catch (imgError) {
@@ -126,27 +129,65 @@ const postWorker = new Worker('post-generation', async (job) => {
       });
 
     } else if (channel === 'instagram') {
-      // Instagram: Usa serviço específico
-      const result = await generateInstagramPost({
-        especialidadeId,
-        customTheme,
-        funnelStage,
-        userId
-      });
+      // Instagram: gerar conteúdo baseado no modo selecionado pelo usuário
+      const mode = job.data.mode || 'full'; // 'full' | 'caption' | 'hooks'
+      logger.info(`[POST WORKER] Instagram modo: ${mode}`);
 
-      // O post já foi criado pelo service, apenas atualizamos o ID do job
-      await InstagramPost.findByIdAndUpdate(result.post._id, {
+      // Headline curta para a imagem (sempre necessária)
+      const headline = await gerarHeadline({ especialidade, funnelStage, customTheme });
+
+      let legenda;
+      if (mode === 'hooks') {
+        // 🎣 GANCHOS VIRAIS: Gera 10 ganchos para usar nos Reels
+        const hooksResult = await generateHooksViral(especialidade, customTheme, funnelStage, 10);
+        legenda = hooksResult.content;
+      } else {
+        // ✨ FULL ou 📝 CAPTION SEO: legenda com keyword density + CTA por funil
+        const captionResult = await generateCaptionSEO(especialidade, customTheme || headline, funnelStage);
+        legenda = captionResult.content;
+      }
+
+      // Gerar imagem base
+      const imageResult = await gerarImagemBase({
+        especialidade,
+        headline,
+        tipoImagem: IMAGE_TYPES.FOTO_REAL
+      }).catch(e => { logger.warn(`[POST WORKER] Erro imagem IG: ${e.message}`); return null; });
+
+      let mediaUrl = imageResult?.url || null;
+      let imageProvider = imageResult?.provider || null;
+
+      // Aplicar branding visual
+      if (mediaUrl) {
+        try {
+          const branded = await gerarImagemBranded({
+            fotoUrl: mediaUrl,
+            titulo: headline,
+            postContent: `${headline}\n\n${legenda}`,
+            especialidadeId: especialidade.id
+          });
+          mediaUrl = branded.url;
+        } catch (e) {
+          logger.warn(`[POST WORKER] Branding IG falhou: ${e.message}`);
+        }
+      }
+
+      // Atualizar o post EXISTENTE (sem criar novo)
+      const isScheduled = Boolean(scheduledAt);
+      await InstagramPost.findByIdAndUpdate(postId, {
+        title: headline,
+        headline,
+        content: legenda,
+        caption: legenda,
+        theme: especialidade.id,
+        status: isScheduled ? 'scheduled' : 'draft',
+        mediaUrl,
+        mediaType: mediaUrl ? 'image' : null,
+        imageProvider,
+        scheduledAt: isScheduled ? new Date(scheduledAt) : null,
+        aiGenerated: true,
         processingStatus: 'completed',
-        jobId: job.id
-      });
-
-      // Notificar com o novo postId
-      const io = getIo();
-      io.emit(`post-complete-${channel}-${postId}`, {
-        oldPostId: postId,
-        newPostId: result.post._id,
-        channel,
-        status: 'completed'
+        funnelStage
       });
 
     } else if (channel === 'facebook') {

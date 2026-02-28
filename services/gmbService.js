@@ -576,9 +576,9 @@ async function uploadToCloudinary(imageBlob, especialidadeId) {
 // ─────────────────────────────────────────────
 // GERA IMAGEM — Múltiplos providers → Cloudinary
 // ─────────────────────────────────────────────
-export async function generateImageForEspecialidade(especialidade, postContent = '', withBranding = true) {
+export async function generateImageForEspecialidade(especialidade, postContent = '', withBranding = true, provider = 'auto') {
   const prompt = generateImagePromptFromContent(postContent || especialidade.foco, especialidade);
-  console.log(`🎨 Prompt [branding=${withBranding}]:`, prompt.substring(0, 100) + '...');
+  console.log(`🎨 Prompt [branding=${withBranding}] [provider=${provider}]:`, prompt.substring(0, 100) + '...');
 
   // Título extraído do conteúdo para o SVG de branding
   const tituloPost = (postContent.split('\n')[0] || '')
@@ -617,9 +617,18 @@ export async function generateImageForEspecialidade(especialidade, postContent =
   };
 
   // ═══════════════════════════════════════════════════════════
+  // Roteamento por provider selecionado
+  // gemini-nano = sem FLUX, vai direto para Pollinations (sem custo)
+  const skipFal = provider !== 'auto' && provider !== 'fal';
+  const skipHF  = provider !== 'auto' && provider !== 'hf' && provider !== 'together';
+  const forceProvider = provider; // 'fal' | 'hf' | 'pollinations' | 'gemini-nano' | 'auto'
+  if (forceProvider !== 'auto') {
+    console.log(`🎯 Provider selecionado: ${forceProvider} (${skipFal ? 'skip fal.ai' : 'usa fal.ai'}, ${skipHF ? 'skip HF' : 'usa HF'})`);
+  }
+
   // TENTATIVA 1: fal.ai FLUX dev (FOCO PRINCIPAL - mais barato!)
   // ═══════════════════════════════════════════════════════════
-  if (process.env.FAL_API_KEY) {
+  if (!skipFal && process.env.FAL_API_KEY) {
     try {
       console.log('🤖 fal.ai FLUX dev...');
       const falRes = await fetch('https://fal.run/fal-ai/flux/dev', {
@@ -662,7 +671,7 @@ export async function generateImageForEspecialidade(especialidade, postContent =
 
   // ═══════════════════════════════════════════════════════════
   // TENTATIVA 2: HuggingFace FLUX.1-dev (gratuito, alta qualidade)
-  if (process.env.HUGGINGFACE_API_KEY) {
+  if (!skipHF && process.env.HUGGINGFACE_API_KEY) {
     try {
       console.log('🤖 Tentando HuggingFace FLUX.1-dev...');
       const response = await fetch(

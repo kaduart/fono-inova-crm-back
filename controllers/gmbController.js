@@ -183,7 +183,7 @@ export async function getCronStatus(req, res) {
 // Gerar post manualmente (trigger admin) — AGORA ASYNC
 export async function triggerManualGeneration(req, res) {
   try {
-    const { especialidadeId, customTheme, generateImage, scheduledAt } = req.body;
+    const { especialidadeId, customTheme, generateImage, scheduledAt, provider } = req.body;
     const funnelStage = req.body.funnelStage || 'top';
 
     let especialidade = gmbService.ESPECIALIDADES.find(e => e.id === especialidadeId);
@@ -218,6 +218,7 @@ export async function triggerManualGeneration(req, res) {
       funnelStage,
       scheduledAt,
       generateImage: generateImage !== false,
+      provider: provider || 'auto',
       userId: req.user?._id
     }, { jobId });
 

@@ -1,0 +1,333 @@
+[
+  {
+    "id": "curva_superior_losango",
+    "nome": "Curva Superior com Losango",
+    "uso": ["fonoaudiologia", "posts_gerais"],
+    "categoria": "institucional",
+    "frequencia": "alta",
+    "specs": {
+      "foto_ratio": 0.27,
+      "crop": "top",
+      "is_illustration": false
+    },
+    "layout_specs": {
+      "foto_ratio": 0.27,
+      "crop": "top",
+      "elements": [
+        { "type": "path", "pos": "bottom_left", "color": "#C39BD3" },
+        { "type": "path", "pos": "top_right",   "color": "#F4D03F" }
+      ]
+    },
+    "aesthetic_dna": {
+      "dominant_colors_hex": ["#1A4D3A", "#0E2E20", "#F4D03F", "#C39BD3"],
+      "key_visual_tokens": ["curva", "losango", "fono", "crianca", "fala"]
+    }
+  },
+  {
+    "id": "curva_superior",
+    "nome": "Curva Superior Clean",
+    "uso": ["fonoaudiologia", "fisioterapia", "terapia_ocupacional", "posts_gerais"],
+    "categoria": "institucional",
+    "frequencia": "alta",
+    "specs": {
+      "foto_ratio": 0.28,
+      "crop": "top",
+      "is_illustration": false
+    },
+    "layout_specs": {
+      "foto_ratio": 0.28,
+      "crop": "top",
+      "elements": [
+        { "type": "path", "pos": "top_right",   "color": "#F4D03F" },
+        { "type": "path", "pos": "bottom_left", "color": "#C39BD3" }
+      ]
+    },
+    "aesthetic_dna": {
+      "dominant_colors_hex": ["#1A4D3A", "#0E2E20", "#F4D03F", "#C39BD3"],
+      "key_visual_tokens": ["curva", "losango", "fono", "crianca", "terapeuta"]
+    }
+  },
+  {
+    "id": "hero_banner",
+    "nome": "Banner Clássico",
+    "uso": ["fonoaudiologia", "fisioterapia", "terapia_ocupacional", "posts_gerais"],
+    "categoria": "institucional",
+    "frequencia": "alta",
+    "specs": {
+      "foto_ratio": 0.30,
+      "crop": "entropy",
+      "is_illustration": false
+    },
+    "layout_specs": {
+      "foto_ratio": 0.30,
+      "crop": "entropy",
+      "elements": [
+        { "type": "path", "pos": "top_right",   "color": "#F4D03F" },
+        { "type": "path", "pos": "bottom_left", "color": "#C39BD3" }
+      ]
+    },
+    "aesthetic_dna": {
+      "dominant_colors_hex": ["#1A4D3A", "#2D6A4F", "#F4D03F", "#C39BD3"],
+      "key_visual_tokens": ["banner", "foto", "terapeuta", "clinica"]
+    }
+  },
+  {
+    "id": "dual_screen",
+    "nome": "Dual Screen Psicologia",
+    "uso": ["psicologia", "neuropsicologia"],
+    "categoria": "emocional",
+    "frequencia": "media",
+    "specs": {
+      "foto_ratio": 0.55,
+      "crop": "center",
+      "is_illustration": false
+    },
+    "layout_specs": {
+      "foto_ratio": 0.55,
+      "crop": "center",
+      "elements": []
+    },
+    "aesthetic_dna": {
+      "dominant_colors_hex": ["#F1948A", "#1A4D3A", "#F4D03F", "#C39BD3"],
+      "key_visual_tokens": ["psicologia", "emocao", "ansiedade", "saude mental"]
+    }
+  },
+  {
+    "id": "dual_screen_psicologia",
+    "nome": "Hero Banner Psicologia",
+    "uso": ["psicologia", "neuropsicologia"],
+    "categoria": "emocional",
+    "frequencia": "media",
+    "specs": {
+      "foto_ratio": 0.60,
+      "crop": "center",
+      "is_illustration": false
+    },
+    "layout_specs": {
+      "foto_ratio": 0.60,
+      "crop": "center",
+      "elements": [
+        { "type": "path", "pos": "top_right", "color": "#C39BD3" }
+      ]
+    },
+    "aesthetic_dna": {
+      "dominant_colors_hex": ["#F1948A", "#C39BD3", "#F4D03F", "#1A4D3A"],
+      "key_visual_tokens": ["psicologia", "saude mental", "bem-estar", "emocional"]
+    }
+  },
+  {
+    "id": "comparativo_x",
+    "nome": "Comparativo Losango",
+    "uso": ["fonoaudiologia", "psicologia", "terapia_ocupacional"],
+    "categoria": "educativo",
+    "frequencia": "media",
+    "specs": {
+      "foto_ratio": 0,
+      "crop": null,
+      "is_illustration": false
+    },
+    "layout_specs": {
+      "foto_ratio": 0,
+      "crop": null,
+      "elements": []
+    },
+    "aesthetic_dna": {
+      "dominant_colors_hex": ["#1A4D3A", "#0E2E20", "#F4D03F", "#C39BD3"],
+      "key_visual_tokens": ["comparativo", "atraso", "transtorno", "diferenca", "x", "vs"]
+    }
+  },
+  {
+    "id": "split_comparativo",
+    "nome": "Split Comparativo",
+    "uso": ["fonoaudiologia", "psicologia", "posts_gerais"],
+    "categoria": "educativo",
+    "frequencia": "media",
+    "specs": {
+      "foto_ratio": 0,
+      "crop": null,
+      "is_illustration": false
+    },
+    "layout_specs": {
+      "foto_ratio": 0,
+      "crop": null,
+      "elements": []
+    },
+    "aesthetic_dna": {
+      "dominant_colors_hex": ["#1A4D3A", "#2D6A4F", "#F4D03F", "#F1948A"],
+      "key_visual_tokens": ["split", "comparativo", "versus", "diferenca"]
+    }
+  },
+  {
+    "id": "checklist",
+    "nome": "Checklist Informativo",
+    "uso": ["fonoaudiologia", "psicologia", "terapia_ocupacional", "posts_gerais"],
+    "categoria": "checklist",
+    "frequencia": "media",
+    "specs": {
+      "foto_ratio": 0.35,
+      "crop": "top",
+      "is_illustration": false
+    },
+    "layout_specs": {
+      "foto_ratio": 0.35,
+      "crop": "top",
+      "elements": []
+    },
+    "aesthetic_dna": {
+      "dominant_colors_hex": ["#1A4D3A", "#2D6A4F", "#F4D03F", "#C39BD3"],
+      "key_visual_tokens": ["checklist", "sinais", "alerta", "normal", "lista"]
+    }
+  },
+  {
+    "id": "data_comemorativa",
+    "nome": "Data Especial",
+    "uso": ["fonoaudiologia", "psicologia", "fisioterapia", "terapia_ocupacional", "posts_gerais"],
+    "categoria": "datas",
+    "frequencia": "baixa",
+    "specs": {
+      "foto_ratio": 0.75,
+      "crop": "top",
+      "is_illustration": false
+    },
+    "layout_specs": {
+      "foto_ratio": 0.75,
+      "crop": "top",
+      "elements": []
+    },
+    "aesthetic_dna": {
+      "dominant_colors_hex": ["#1A4D3A", "#F4D03F", "#F1948A", "#C39BD3"],
+      "key_visual_tokens": ["data", "dia", "mes", "comemorativo", "evento"]
+    }
+  },
+  {
+    "id": "arte_3d",
+    "nome": "Ilustração 3D",
+    "uso": ["terapia_ocupacional", "fonoaudiologia"],
+    "categoria": "infantil",
+    "frequencia": "baixa",
+    "specs": {
+      "foto_ratio": 0,
+      "crop": null,
+      "is_illustration": true
+    },
+    "layout_specs": {
+      "foto_ratio": 0,
+      "crop": null,
+      "elements": []
+    },
+    "aesthetic_dna": {
+      "dominant_colors_hex": ["#F4D03F", "#1A4D3A", "#F1948A", "#C39BD3"],
+      "key_visual_tokens": ["infantil", "crianca", "brincar", "colorido", "3d"]
+    }
+  },
+  {
+    "id": "metodo_autoridade",
+    "nome": "Layout Autoridade",
+    "uso": ["fonoaudiologia", "psicologia", "fisioterapia", "terapia_ocupacional"],
+    "categoria": "autoridade",
+    "frequencia": "media",
+    "specs": {
+      "foto_ratio": 0.70,
+      "crop": "attention",
+      "is_illustration": false
+    },
+    "layout_specs": {
+      "foto_ratio": 0.70,
+      "crop": "attention",
+      "elements": [
+        { "type": "path", "pos": "top_right", "color": "#F4D03F" }
+      ]
+    },
+    "aesthetic_dna": {
+      "dominant_colors_hex": ["#1A4D3A", "#0E2E20", "#F4D03F", "#C39BD3"],
+      "key_visual_tokens": ["metodo", "especialista", "autoridade", "terapeuta", "clinica"]
+    }
+  },
+  {
+    "id": "caa_tecnico",
+    "nome": "Comunicação Técnica CAA",
+    "uso": ["fonoaudiologia"],
+    "categoria": "caa",
+    "frequencia": "baixa",
+    "specs": {
+      "foto_ratio": 0.40,
+      "crop": "center",
+      "is_illustration": false
+    },
+    "layout_specs": {
+      "foto_ratio": 0.40,
+      "crop": "center",
+      "elements": []
+    },
+    "aesthetic_dna": {
+      "dominant_colors_hex": ["#1A4D3A", "#2D6A4F", "#F4D03F", "#C39BD3"],
+      "key_visual_tokens": ["caa", "comunicacao", "aumentativa", "alternativa", "prancha"]
+    }
+  },
+  {
+    "id": "ansiedade",
+    "nome": "Emocional Suave",
+    "uso": ["psicologia", "neuropsicologia"],
+    "categoria": "emocional",
+    "frequencia": "media",
+    "specs": {
+      "foto_ratio": 0.50,
+      "crop": "center",
+      "is_illustration": false
+    },
+    "layout_specs": {
+      "foto_ratio": 0.50,
+      "crop": "center",
+      "elements": []
+    },
+    "aesthetic_dna": {
+      "dominant_colors_hex": ["#F1948A", "#F5B7B1", "#F4D03F", "#C39BD3"],
+      "key_visual_tokens": ["ansiedade", "emocao", "tdah", "mental", "sentimento"]
+    }
+  },
+  {
+    "id": "split_diagonal",
+    "nome": "Split Diagonal",
+    "uso": ["fisioterapia", "terapia_ocupacional", "posts_gerais"],
+    "categoria": "institucional",
+    "frequencia": "media",
+    "specs": {
+      "foto_ratio": 0.65,
+      "crop": "attention",
+      "is_illustration": false
+    },
+    "layout_specs": {
+      "foto_ratio": 0.65,
+      "crop": "attention",
+      "elements": []
+    },
+    "aesthetic_dna": {
+      "dominant_colors_hex": ["#2D6A4F", "#1A4D3A", "#F4D03F", "#F1948A"],
+      "key_visual_tokens": ["diagonal", "dinamico", "fisioterapia", "esporte", "movimento"]
+    }
+  },
+  {
+    "id": "curva_fisioterapia",
+    "nome": "Curva Fisioterapia",
+    "uso": ["fisioterapia"],
+    "categoria": "institucional",
+    "frequencia": "media",
+    "specs": {
+      "foto_ratio": 0.55,
+      "crop": "entropy",
+      "is_illustration": false
+    },
+    "layout_specs": {
+      "foto_ratio": 0.55,
+      "crop": "entropy",
+      "elements": [
+        { "type": "path", "pos": "top_right",   "color": "#F4D03F" },
+        { "type": "path", "pos": "bottom_left", "color": "#F1948A" }
+      ]
+    },
+    "aesthetic_dna": {
+      "dominant_colors_hex": ["#2D6A4F", "#1A4D3A", "#F4D03F", "#F1948A"],
+      "key_visual_tokens": ["fisioterapia", "reabilitacao", "movimento", "corpo", "saude"]
+    }
+  }
+]

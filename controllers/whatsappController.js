@@ -417,7 +417,6 @@ export const whatsappController = {
     },
 
     async listContacts(req, res) {
-        console.log('chamoiu contactssss')
         try {
             const page = Math.max(parseInt(req.query.page || "1", 10), 1);
             const limit = Math.min(parseInt(req.query.limit || "50", 10), 100);

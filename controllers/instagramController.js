@@ -3,13 +3,13 @@
  * Headline curta (imagem) + Legenda estratégica
  */
 
-import { 
-  generateInstagramPost, 
+import {
+  generateInstagramPost,
   regenerateImageForPost,
   gerarHeadline,
   gerarLegenda
 } from '../services/instagramPostService.js';
-import { ESPECIALIDADES } from '../services/gmbService.js';
+import { ESPECIALIDADES, generateCaptionSEO, generateHooksViral } from '../services/gmbService.js';
 import InstagramPost from '../models/InstagramPost.js';
 import { postGenerationQueue } from '../config/bullConfig.js';
 
@@ -40,13 +40,15 @@ export async function getStats(req, res) {
 
 export async function generatePost(req, res) {
   try {
-    const { especialidadeId, customTheme, funnelStage, provider = 'auto' } = req.body;
-    
+    const { especialidadeId, customTheme, funnelStage, provider = 'auto', mode = 'full' } = req.body;
+
     const especialidade = ESPECIALIDADES.find(e => e.id === especialidadeId) || ESPECIALIDADES[0];
-    
+
+    const modeLabel = mode === 'caption' ? '📝 Gerando legenda SEO...' : mode === 'hooks' ? '🎣 Gerando ganchos virais...' : '📸 Gerando post...';
+
     // Criar post imediatamente com status 'processing'
     const post = new InstagramPost({
-      title: 'Gerando conteúdo...',
+      title: modeLabel,
       headline: 'Aguarde...',
       content: 'Nossa IA está criando seu post do Instagram.',
       caption: 'Gerando legenda...',
@@ -58,9 +60,9 @@ export async function generatePost(req, res) {
       aiGenerated: true,
       createdBy: req.user?._id
     });
-    
+
     await post.save();
-    
+
     // Enfileirar job para processar em background
     const jobId = `post_ig_${Date.now()}`;
     await postGenerationQueue.add('generate-post', {
@@ -71,7 +73,8 @@ export async function generatePost(req, res) {
       funnelStage: funnelStage || 'top',
       provider: provider || 'auto',
       generateImage: true,
-      userId: req.user?._id
+      userId: req.user?._id,
+      mode  // 'full' | 'caption' | 'hooks'
     }, { jobId });
     
     // Retornar imediatamente
@@ -167,6 +170,30 @@ export async function generateCaptionPreview(req, res) {
       funnelStage: funnelStage || 'top'
     });
     res.json({ success: true, data: legenda });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 📝 GERAR LEGENDA SEO (modo "Só Legenda SEO")
+export async function generateCaption(req, res) {
+  try {
+    const { especialidadeId, customTheme, funnelStage } = req.body;
+    let especialidade = ESPECIALIDADES.find(e => e.id === especialidadeId) || ESPECIALIDADES[0];
+    const result = await generateCaptionSEO(especialidade, customTheme, funnelStage || 'top');
+    res.json({ success: true, data: result, message: '📝 Legenda SEO gerada!' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 🎣 GERAR GANCHOS VIRAIS (modo "10 Ganchos Virais")
+export async function generateHooks(req, res) {
+  try {
+    const { especialidadeId, customTheme, funnelStage, count } = req.body;
+    let especialidade = ESPECIALIDADES.find(e => e.id === especialidadeId) || ESPECIALIDADES[0];
+    const result = await generateHooksViral(especialidade, customTheme, funnelStage || 'top', count || 10);
+    res.json({ success: true, data: result, message: `🎣 ${count || 10} Ganchos gerados!` });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

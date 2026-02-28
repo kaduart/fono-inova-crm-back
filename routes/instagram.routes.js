@@ -13,6 +13,10 @@ router.get('/posts/stats', instagramController.getStats);
 // 🎯 GERAÇÃO PRINCIPAL: Post completo (Headline + Caption + Imagem)
 router.post('/generate', instagramController.generatePost);
 
+// 🆕 MODOS DE GERAÇÃO ESTRATÉGICA
+router.post('/generate-caption', instagramController.generateCaption);
+router.post('/generate-hooks', instagramController.generateHooks);
+
 // 🆕 GERAÇÃO V2: Sistema de layouts dinâmicos (15+ formatos)
 router.post('/generate-v2', postGeneratorController.generatePostV2);
 router.post('/posts/:id/regenerate', postGeneratorController.regeneratePostImage);

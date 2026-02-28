@@ -608,7 +608,7 @@ export async function regenerateImageForPost(post) {
   return null;
 }
 
-export { gerarHeadline, gerarLegenda, IMAGE_TYPES };
+export { gerarHeadline, gerarLegenda, generateImage, IMAGE_TYPES };
 
 // ═══════════════════════════════════════════════════════════
 // 🆕 INTEGRAÇÃO COM NOVO SISTEMA DE LAYOUTS (v2)
