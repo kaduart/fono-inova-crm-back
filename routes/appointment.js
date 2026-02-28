@@ -40,7 +40,7 @@ async function ensureLeadForAppointment(patientId, appointmentData, source = 'ag
         }
 
         const phoneE164 = patient.phone ? normalizeE164BR(patient.phone) : null;
-        
+
         // 🆕 SEMPRE cria novo lead - não verifica duplicados
         // (mesmo telefone pode ser pai agendando para filhos diferentes)
         const newLead = await Leads.create({
@@ -526,7 +526,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
             const totalDone = await Session.countDocuments({ patient: safeId(patientId) });
 
             let effectiveLeadId = leadId;
-            
+
             if (leadId) {
                 await Leads.findByIdAndUpdate(leadId, { patientJourneyStage: "ativo" });
 
@@ -546,7 +546,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                     time: req.body.time,
                     specialty
                 }, leadSource);
-                
+
                 if (effectiveLeadId) {
                     console.log('[POST Appointment] Lead criado/vinculado automaticamente:', effectiveLeadId);
                 }
@@ -750,7 +750,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
         // 🛡️ SEGURANÇA: Verificar se pagamento foi criado, se não, criar fallback
         if (!createdPaymentId && createdAppointmentId) {
             console.warn('[POST APPOINTMENT] ⚠️ Pagamento não foi criado! Criando fallback...');
-            
+
             const fallbackPaymentData = {
                 patient: safeId(patientId),
                 doctor: safeId(doctorId),
@@ -765,24 +765,24 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 createdAt: currentDate,
                 updatedAt: currentDate,
             };
-            
+
             const fallbackPayment = await Payment.create(fallbackPaymentData);
             createdPaymentId = fallbackPayment._id;
-            
+
             // Vincular ao appointment
             await Appointment.findByIdAndUpdate(createdAppointmentId, {
                 payment: createdPaymentId
             });
-            
+
             console.log('[POST APPOINTMENT] ✅ Fallback payment criado:', createdPaymentId);
         }
 
         // Buscar o appointment criado para retornar completo
         const createdAppointment = await Appointment.findById(createdAppointmentId)
             .populate('patient doctor session payment');
-        
+
         console.log('[POST APPOINTMENT] ✅ Retornando appointment:', createdAppointmentId, 'com payment:', createdPaymentId);
-        
+
         return res.status(201).json({
             success: true,
             message: 'Agendamento criado (pagamento pendente)',
@@ -839,9 +839,9 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
 router.get('/', flexibleAuth, async (req, res) => {
     try {
         const { patientId, doctorId, status, specialty, startDate, endDate, excludePreAgendamentos } = req.query;
-        
+
         console.log(`[GET /appointments] Query:`, { patientId, doctorId, status, specialty, startDate, endDate, excludePreAgendamentos });
-        
+
         const filter = {};
         let individualSessionId = null;
         let createdAppointmentId = null; // 👈 novo
@@ -904,7 +904,7 @@ router.get('/', flexibleAuth, async (req, res) => {
             // 🎯 Não trazer pré-agendamentos que já foram importados (mesmo que status não tenha sido atualizado)
             importedToAppointment: { $exists: false }
         };
-        
+
         // Aplicar filtro de data nos pré-agendamentos (preferredDate é string YYYY-MM-DD)
         if (startDate && endDate) {
             preFilter.preferredDate = {
@@ -912,19 +912,19 @@ router.get('/', flexibleAuth, async (req, res) => {
                 $lte: endDate     // string "2026-02-19"
             };
         }
-        
+
         const preAgendamentos = await PreAgendamento.find(preFilter).lean();
 
         // 🔹 Buscar saldos dos pacientes para mostrar no calendário
         const patientIds = appointments
             .map(appt => appt.patient?._id?.toString())
             .filter((id, index, arr) => id && arr.indexOf(id) === index); // únicos
-        
+
         const patientBalances = await PatientBalance.find({
             patient: { $in: patientIds },
             currentBalance: { $gt: 0 } // só quem deve
         }).select('patient currentBalance').lean();
-        
+
         // Map de patientId -> saldo para lookup rápido
         const balanceMap = patientBalances.reduce((map, bal) => {
             map[bal.patient.toString()] = bal.currentBalance;
@@ -947,7 +947,7 @@ router.get('/', flexibleAuth, async (req, res) => {
         // 🔹 Mapear PRÉ-AGENDAMENTOS (INTERESSES) - apenas se não estiver excluindo
         let finalResults = calendarEvents;
         const shouldExcludePreAgendamentos = excludePreAgendamentos === 'true' || excludePreAgendamentos === true;
-        
+
         if (!shouldExcludePreAgendamentos) {
             // 🎯 DEDUPLICAÇÃO: Verificar quais pré-agendamentos já foram convertidos em appointments
             // Criar um Set de chaves dos appointments existentes (data|hora|paciente)
@@ -957,21 +957,14 @@ router.get('/', flexibleAuth, async (req, res) => {
                     return `${evt.date}|${evt.time}|${patientName}`;
                 })
             );
-            
+
             const preEvents = preAgendamentos.map(pre => mapPreAgendamentoToEvent(pre));
-            
+
             // Filtrar apenas pré-agendamentos que NÃO foram convertidos em appointments
-            const filteredPreEvents = preEvents.filter(pre => {
-                const prePatientName = (pre.patientName || '').toLowerCase().trim();
-                const preKey = `${pre.date}|${pre.time}|${prePatientName}`;
-                const alreadyConverted = existingAppointmentsKeys.has(preKey);
-                
-                if (alreadyConverted) {
-                    console.log(`[DEDUP] Pré-agendamento ${pre.id} ignorado (já convertido em appointment: ${pre.date} ${pre.time} - ${pre.patientName})`);
-                }
-                return !alreadyConverted;
-            });
-            
+            const filteredPreEvents = preEvents.filter(pre =>
+                !existingAppointmentsKeys.has(`${pre.date}|${pre.time}|${(pre.patientName || '').toLowerCase().trim()}`)
+            );
+
             finalResults = [...calendarEvents, ...filteredPreEvents].sort((a, b) => {
                 return (a.date + a.time).localeCompare(b.date + b.time);
             });
@@ -979,7 +972,7 @@ router.get('/', flexibleAuth, async (req, res) => {
         } else {
             console.log(`[GET /appointments] Retornando ${finalResults.length} eventos (apenas appointments, pré-agendamentos excluídos)`);
         }
-        
+
         res.json(finalResults);
     } catch (error) {
         console.error('Erro ao buscar agendamentos:', error);
@@ -1098,7 +1091,7 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                 amount: req.body.amount,
                 body: req.body
             });
-            
+
             const updateData = {
                 ...req.body,
                 doctor: req.body.doctorId || appointment.doctor,
@@ -1591,18 +1584,18 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
 router.patch('/:id/complete', auth, async (req, res) => {
     let session = null;
     const startTime = Date.now();
-    
+
     try {
         const { id } = req.params;
         const { addToBalance = false, balanceAmount = 0, balanceDescription = '' } = req.body;
-        
+
         console.log(`[complete] Iniciando - addToBalance: ${addToBalance}, patientId: ${req.body.patientId || 'n/a'}`);
 
         // ============================================================
         // FASE 1: BUSCAR DADOS FORA DA TRANSAÇÃO (sem lock)
         // ============================================================
         console.log(`[complete] Fase 1: Buscando dados (${Date.now() - startTime}ms)`);
-        
+
         const appointment = await Appointment.findById(id)
             .populate('session patient doctor payment')
             .populate({
@@ -1632,7 +1625,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
         // FASE 2: TRANSAÇÃO MÍNIMA (apenas updates)
         // ============================================================
         console.log(`[complete] Fase 2: Iniciando transação (${Date.now() - startTime}ms)`);
-        
+
         session = await mongoose.startSession();
         session.startTransaction();
 
@@ -1659,10 +1652,10 @@ router.patch('/:id/complete', auth, async (req, res) => {
             visualFlag: 'ok',
             updatedAt: new Date()
         };
-        
+
         // 2️⃣ ATUALIZAR PAYMENT (se não for saldo devedor)
         let finalPaymentId = paymentId; // 📜 Declarar fora do bloco para uso posterior
-        
+
         if (!addToBalance) {
             // ✅ FIX: Se não tem payment vinculado, busca pelo appointment ID
             if (!finalPaymentId && !packageId) {
@@ -1681,15 +1674,15 @@ router.patch('/:id/complete', auth, async (req, res) => {
                     );
                 }
             }
-            
+
             // 🆕 CRIAR PAYMENT SE NÃO EXISTIR (e não for pacote NEM convênio)
-            const isConvenio = appointment.billingType === 'convenio' || 
-                               appointment.insuranceProvider || 
-                               appointment.insuranceGuide;
-            
+            const isConvenio = appointment.billingType === 'convenio' ||
+                appointment.insuranceProvider ||
+                appointment.insuranceGuide;
+
             if (!finalPaymentId && !packageId && !isConvenio) {
                 console.log(`[complete] ⚠️ Payment não encontrado, criando novo...`);
-                
+
                 const newPayment = await Payment.create([{
                     patient: appointment.patient?._id || appointment.patient,
                     doctor: appointment.doctor?._id || appointment.doctor,
@@ -1705,16 +1698,16 @@ router.patch('/:id/complete', auth, async (req, res) => {
                     createdAt: new Date(),
                     updatedAt: new Date()
                 }], { session });
-                
+
                 finalPaymentId = newPayment[0]._id;
-                
+
                 // Vincular ao appointment
                 await Appointment.updateOne(
                     { _id: appointment._id },
                     { $set: { payment: finalPaymentId } },
                     { session }
                 );
-                
+
                 console.log(`[complete] ✅ Payment criado: ${finalPaymentId}`);
             } else if (isConvenio) {
                 console.log(`[complete] ℹ️ Convênio detectado - não criando payment`);
@@ -1729,10 +1722,10 @@ router.patch('/:id/complete', auth, async (req, res) => {
 
                 const paymentUpdateData = existingPayment?.status === 'paid'
                     ? { status: 'paid', updatedAt: new Date() }
-                    : { 
-                        status: 'paid', 
+                    : {
+                        status: 'paid',
                         paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"),
-                        updatedAt: new Date() 
+                        updatedAt: new Date()
                     };
 
                 await Payment.updateOne(
@@ -1755,7 +1748,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
                 { type: 1, sessionsDone: 1, totalSessions: 1, insuranceProvider: 1, insuranceGuide: 1 },
                 { session }
             );
-            
+
             // Só incrementa sessionsDone se ainda não estiver concluído
             if (shouldIncrementPackage) {
                 await Package.updateOne(
@@ -1774,9 +1767,9 @@ router.patch('/:id/complete', auth, async (req, res) => {
             changedBy: req.user._id,
             timestamp: new Date(),
             context: 'operacional',
-            details: addToBalance ? { 
-                addedToBalance: true, 
-                amount: balanceAmount || appointment.sessionValue || 0 
+            details: addToBalance ? {
+                addedToBalance: true,
+                amount: balanceAmount || appointment.sessionValue || 0
             } : undefined
         };
 
@@ -1811,7 +1804,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
         // 💰 Atualizar sessionValue se estiver vazio
         if (!appointment.sessionValue || appointment.sessionValue === 0) {
             let valueToSet = 0;
-            
+
             if (addToBalance && balanceAmount > 0) {
                 // 💳 Saldo devedor: usar o valor informado
                 valueToSet = balanceAmount;
@@ -1824,7 +1817,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
                 );
                 valueToSet = paymentDoc?.amount || 0;
             }
-            
+
             if (valueToSet > 0) {
                 updateData.sessionValue = valueToSet;
                 console.log(`[complete] Atualizando sessionValue: ${valueToSet}`);
@@ -1859,7 +1852,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
         // ============================================================
         // FASE 3: OPERAÇÕES PÓS-COMMIT (não bloqueiam resposta)
         // ============================================================
-        
+
         // 🏥 CONSUMIR GUIA DE CONVÊNIO e CRIAR PAYMENT (se for pacote de convênio)
         if (packageId && packageDoc?.type === 'convenio') {
             try {
@@ -1869,16 +1862,16 @@ router.patch('/:id/complete', auth, async (req, res) => {
                     const guideResult = await guideService.consumeGuideSession(packageDoc.insuranceGuide);
                     console.log(`[complete] ✅ Guia consumida - Restam ${guideResult.remaining} sessões (${Date.now() - startTime}ms)`);
                 }
-                
+
                 // Criar Payment para faturamento
                 console.log(`[complete] Criando payment de convênio... (${Date.now() - startTime}ms)`);
                 const InsuranceGuide = mongoose.model('InsuranceGuide');
                 const guide = packageDoc?.insuranceGuide ? await InsuranceGuide.findById(packageDoc.insuranceGuide) : null;
-                
+
                 // Buscar valor do convênio
                 const convenioValue = await Convenio.getSessionValue(packageDoc.insuranceProvider) || 0;
                 console.log(`[complete] Valor do convênio ${packageDoc.insuranceProvider}: R$ ${convenioValue}`);
-                
+
                 const newPayment = new Payment({
                     patient: patientId,
                     doctor: appointment.doctor?._id || appointment.doctor,
@@ -1901,35 +1894,35 @@ router.patch('/:id/complete', auth, async (req, res) => {
                     serviceDate: appointment.date,
                     notes: `Sessão de convênio - Guia ${guide?.number || 'N/A'} - Pacote ${packageId}`
                 });
-                
+
                 await newPayment.save();
-                
+
                 // Vincular payment ao agendamento
                 await Appointment.updateOne(
                     { _id: id },
                     { $set: { payment: newPayment._id } }
                 );
-                
+
                 // Atualizar pacote com o valor do convênio (para relatórios de receita)
                 if (convenioValue > 0 && packageId) {
                     await Package.updateOne(
                         { _id: packageId },
-                        { 
-                            $set: { 
+                        {
+                            $set: {
                                 insuranceGrossAmount: convenioValue,
                                 sessionValue: convenioValue
-                            } 
+                            }
                         }
                     );
                     console.log(`[complete] ✅ Pacote atualizado com valor do convênio: ${convenioValue} (${Date.now() - startTime}ms)`);
                 }
-                
+
                 console.log(`[complete] ✅ Payment criado: ${newPayment._id} (${Date.now() - startTime}ms)`);
             } catch (guideError) {
                 console.error(`[complete] ❌ Erro ao processar convênio (não crítico): ${guideError.message}`);
             }
         }
-        
+
         // 1️⃣ ATUALIZAR SESSÃO (fora da transação - evita lock)
         if (sessionId) {
             try {
@@ -1939,7 +1932,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
                     sessionUpdateData
                 );
                 console.log(`[complete] Session atualizada (${Date.now() - startTime}ms)`);
-                
+
                 // 🏥 Consumir guia de convênio se a sessão tiver guia vinculada
                 if (sessionUpdateData.status === 'completed') {
                     const session = await Session.findById(sessionId);
@@ -1948,20 +1941,20 @@ router.patch('/:id/complete', auth, async (req, res) => {
                             console.log(`[complete] Consumindo guia ${session.insuranceGuide} para sessão ${sessionId}...`);
                             const InsuranceGuide = mongoose.model('InsuranceGuide');
                             const guide = await InsuranceGuide.findById(session.insuranceGuide);
-                            
+
                             if (guide && guide.status === 'active' && guide.usedSessions < guide.totalSessions) {
                                 guide.usedSessions += 1;
                                 if (guide.usedSessions >= guide.totalSessions) {
                                     guide.status = 'exhausted';
                                 }
                                 await guide.save();
-                                
+
                                 // Marcar sessão como consumida
                                 await Session.updateOne(
                                     { _id: sessionId },
                                     { $set: { guideConsumed: true } }
                                 );
-                                
+
                                 console.log(`[complete] ✅ Guia consumida: ${guide.usedSessions}/${guide.totalSessions}`);
                             }
                         } catch (guideErr) {
@@ -1973,7 +1966,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
                 console.error('[complete] ❌ Erro ao atualizar session (não crítico):', err.message);
             }
         }
-        
+
         // 6️⃣ ATUALIZAR SALDO DEVEDOR (fora da transação)
         console.log(`[complete] Verificando saldo devedor - addToBalance: ${addToBalance}, patientId: ${patientId} (${Date.now() - startTime}ms)`);
         if (addToBalance && patientId) {
@@ -2022,11 +2015,11 @@ router.patch('/:id/complete', auth, async (req, res) => {
         });
 
         console.log(`[complete] ✅ Respondendo em ${Date.now() - startTime}ms`);
-        
+
         // Adicionar patientBalance ao objeto de resposta
         const responseData = finalAppointment.toObject ? finalAppointment.toObject() : finalAppointment;
         responseData.patientBalance = patientBalance;
-        
+
         res.json(responseData);
 
     } catch (error) {
@@ -2099,7 +2092,7 @@ router.get('/patient/:id', validateId, auth, async (req, res) => {
             if (appt.advancedSessions) {
                 appt.advancedSessions = appt.advancedSessions.map(session => ({
                     ...session,
-                    formattedDate: session.date && isValidDateString(session.date) 
+                    formattedDate: session.date && isValidDateString(session.date)
                         ? new Date(session.date).toLocaleDateString('pt-BR')
                         : 'Data não disponível',
                     formattedTime: session.time || '--:--',
@@ -2184,7 +2177,7 @@ router.get('/count-by-status', auth, async (req, res) => {
         if (specialty && specialty !== 'all') {
             preFilter.specialty = specialty;
         }
-        
+
         const preAgendamentosCount = await PreAgendamento.countDocuments(preFilter);
 
         // Formatar resultado

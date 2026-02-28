@@ -44,6 +44,21 @@ const balanceTransactionSchema = new mongoose.Schema({
     transactionDate: {
         type: Date,
         default: Date.now
+    },
+    // Para débitos: quanto já foi pago (para controle de pagamentos parciais)
+    paidAmount: {
+        type: Number,
+        default: 0
+    },
+    // Para débitos: se está totalmente quitado
+    isPaid: {
+        type: Boolean,
+        default: false
+    },
+    // Para pagamentos: ID do débito que foi pago
+    linkedDebitId: {
+        type: mongoose.Schema.Types.ObjectId,
+        default: null
     }
 }, { _id: true });
 

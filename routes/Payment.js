@@ -2724,9 +2724,17 @@ router.get('/balance/:patientId', auth, async (req, res) => {
         }
 
         const balance = await PatientBalance.findOne({ patient: patientId })
-            .populate('transactions.sessionId', 'date time status')
+            .populate('transactions.sessionId', 'date time status serviceType')
             .populate('transactions.appointmentId', 'date time operationalStatus')
-            .populate('transactions.registeredBy', 'fullName name');
+            .populate('transactions.registeredBy', 'fullName name')
+            .populate({
+                path: 'transactions.appointmentId',
+                select: 'date time operationalStatus doctor',
+                populate: {
+                    path: 'doctor',
+                    select: 'fullName specialty'
+                }
+            });
 
         if (!balance) {
             return res.json({
@@ -2845,6 +2853,196 @@ router.post('/balance/:patientId/payment', auth, async (req, res) => {
         res.status(500).json({ success: false, message: 'Erro ao registrar pagamento' });
     } finally {
         await mongoSession.endSession();
+    }
+});
+
+// POST /api/payments/balance/:patientId/payment-multi
+// Aceita múltiplas formas de pagamento em uma única transação
+router.post('/balance/:patientId/payment-multi', auth, async (req, res) => {
+    const mongoSession = await mongoose.startSession();
+    try {
+        await mongoSession.startTransaction();
+        const { patientId } = req.params;
+        const { payments, totalAmount } = req.body; // payments: [{ amount, paymentMethod, description }]
+
+        if (!mongoose.Types.ObjectId.isValid(patientId) || !payments || !Array.isArray(payments) || payments.length === 0) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({ success: false, message: 'Dados inválidos' });
+        }
+
+        // Busca o balance dentro da sessão (com populate para pegar session/appointment)
+        let balance = await PatientBalance.findOne({ patient: patientId })
+            .populate('transactions.sessionId', '_id')
+            .populate('transactions.appointmentId', '_id')
+            .session(mongoSession);
+        
+        // Verifica se há débitos pendentes
+        const hasPendingDebits = balance?.transactions.some(t => t.type === 'debit' && !t.isPaid);
+        if (!hasPendingDebits) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({ success: false, message: 'Não há débitos pendentes para pagar' });
+        }
+        if (!balance) {
+            balance = new PatientBalance({ patient: patientId });
+        }
+
+        const { debitIds } = req.body; // IDs dos débitos selecionados
+        
+        // Calcula valor total do pagamento
+        const totalPaymentAmount = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+        
+        // Marca os débitos SELECIONADOS como pagos e coleta info das sessões
+        const paidSessionIds = [];
+        const paidAppointmentIds = [];
+        
+        if (debitIds && Array.isArray(debitIds) && debitIds.length > 0) {
+            balance.transactions.forEach(t => {
+                if (t.type === 'debit' && debitIds.includes(t._id.toString())) {
+                    t.isPaid = true;
+                    t.paidAmount = t.amount;
+                    // Extrai ID do objeto populado ou usa direto
+                    const sessionId = t.sessionId?._id?.toString() || t.sessionId?.toString();
+                    const appointmentId = t.appointmentId?._id?.toString() || t.appointmentId?.toString();
+                    if (sessionId) paidSessionIds.push(sessionId);
+                    if (appointmentId) paidAppointmentIds.push(appointmentId);
+                }
+            });
+        }
+
+        // Cria APENAS UM pagamento consolidado com todas as formas
+        const paymentMethodsList = payments
+            .filter(p => p.amount > 0)
+            .map(p => p.paymentMethod || 'dinheiro')
+            .join(' + ');
+        
+        const transactionData = {
+            type: 'payment',
+            amount: totalPaymentAmount,
+            description: `Pagamento de ${debitIds?.length || 0} débito(s) - ${paymentMethodsList}`,
+            paymentMethod: payments[0]?.paymentMethod || 'dinheiro', // Forma principal
+            registeredBy: req.user?._id,
+            sessionId: null,
+            appointmentId: null,
+            transactionDate: new Date()
+        };
+        
+        balance.transactions.push(transactionData);
+        balance.currentBalance -= totalPaymentAmount;
+        balance.totalCredited += totalPaymentAmount;
+        balance.lastTransactionAt = new Date();
+
+        // Atualiza as sessões/appointments/payments pagos (com data de pagamento)
+        const now = new Date();
+        const today = moment().tz("America/Sao_Paulo").format("YYYY-MM-DD");
+        
+        for (const sessionId of paidSessionIds) {
+            await Session.findByIdAndUpdate(sessionId, {
+                $set: { 
+                    isPaid: true, 
+                    paymentStatus: 'paid', 
+                    visualFlag: 'ok', 
+                    paidAt: now 
+                }
+            }, { session: mongoSession });
+        }
+        
+        for (const appointmentId of paidAppointmentIds) {
+            // Atualiza Appointment
+            await Appointment.findByIdAndUpdate(appointmentId, {
+                $set: { 
+                    paymentStatus: 'paid', 
+                    visualFlag: 'ok', 
+                    paidAt: now 
+                },
+                $push: { history: { action: 'payment_received', newStatus: 'paid', changedBy: req.user?._id, timestamp: now, context: 'financial' } }
+            }, { session: mongoSession });
+            
+            // Atualiza o Payment vinculado ao appointment (o que já existe!)
+            await Payment.updateOne(
+                { appointment: appointmentId },
+                { 
+                    $set: { 
+                        status: 'paid', 
+                        paymentDate: today,
+                        paidAt: now,
+                        paymentMethod: payments[0]?.paymentMethod || 'dinheiro'
+                    } 
+                },
+                { session: mongoSession }
+            );
+        }
+
+        // Salva o balance
+        await balance.save({ session: mongoSession });
+
+        await mongoSession.commitTransaction();
+        res.json({ 
+            success: true, 
+            message: `Pagamento de ${debitIds?.length || 0} débito(s) registrado`, 
+            data: { 
+                currentBalance: balance.currentBalance, 
+                payment: transactionData,
+                totalPaid: totalPaymentAmount,
+                debitsPaid: debitIds?.length || 0
+            } 
+        });
+    } catch (error) {
+        await mongoSession.abortTransaction();
+        console.error('❌ Erro ao registrar pagamentos múltiplos:', error);
+        res.status(500).json({ success: false, message: 'Erro ao registrar pagamentos: ' + error.message });
+    } finally {
+        await mongoSession.endSession();
+    }
+});
+
+// POST /api/payments/cleanup-isis - APAGA PAGAMENTOS ERRADOS
+router.post('/cleanup-isis', auth, async (req, res) => {
+    try {
+        const balance = await PatientBalance.findOne({ patient: '685b0cfaaec14c7163585b5b' });
+        
+        if (!balance) {
+            return res.status(404).json({ error: 'Balance não encontrado' });
+        }
+
+        // Pega só os débitos (mantém eles)
+        const debits = balance.transactions.filter(t => t.type === 'debit');
+        
+        // Marca todos como pagos
+        debits.forEach(d => {
+            d.isPaid = true;
+            d.paidAmount = d.amount;
+        });
+
+        // Calcula total dos débitos
+        const totalDebitado = debits.reduce((sum, d) => sum + d.amount, 0);
+
+        // Cria UM pagamento só
+        const payment = {
+            type: 'payment',
+            amount: totalDebitado,
+            description: 'Pagamento consolidado',
+            paymentMethod: 'cartao_credito',
+            transactionDate: new Date()
+        };
+
+        // Substitui tudo: só débitos + 1 pagamento
+        balance.transactions = [...debits, payment];
+        balance.currentBalance = 0;
+        balance.totalDebited = totalDebitado;
+        balance.totalCredited = totalDebitado;
+
+        await balance.save();
+
+        res.json({ 
+            success: true,
+            message: '✅ APAGADOS TODOS OS PAGAMENTOS ERRADOS!',
+            debits: debits.length,
+            payments: 1,
+            saldo: balance.currentBalance,
+            total: `R$ ${totalDebitado}`
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
