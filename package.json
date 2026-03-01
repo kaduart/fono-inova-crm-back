@@ -30,6 +30,7 @@
     "@anthropic-ai/sdk": "^0.68.0",
     "@bull-board/express": "^6.13.0",
     "@google-analytics/data": "^5.2.0",
+    "@napi-rs/canvas": "^0.1.95",
     "@sendgrid/mail": "^8.1.5",
     "bcryptjs": "^3.0.2",
     "bullmq": "^5.61.0",

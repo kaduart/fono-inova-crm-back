@@ -191,8 +191,7 @@ Escreva a legenda completa (4-5 parágrafos curtos):`
 
 /**
  * 🎨 GERAR IMAGEM 
- * Opção temporária: DALL-E (enquanto não tem crédito no fal.ai)
- * Opção normal: Together.ai (FLUX) → fal.ai → Replicate → Pollinations
+ * Ordem: fal.ai → Freepik → DALL-E → Together.ai → Replicate → Pollinations
  */
 async function generateImage({ especialidade, headline, tipoImagem = IMAGE_TYPES.FOTO_REAL, useDalleTemp = false }) {
   const prompt = getPromptPronto(
@@ -208,14 +207,133 @@ async function generateImage({ especialidade, headline, tipoImagem = IMAGE_TYPES
   console.log('🎨 Prompt:', prompt.substring(0, 80) + '...');
 
   // ═══════════════════════════════════════════════════════════
-  // OPÇÃO TEMPORÁRIA: DALL-E (ative quando não tiver crédito no fal.ai)
-  // Para usar: mude useDalleTemp para true abaixo
+  // TENTATIVA 1: fal.ai FLUX dev (PRIORIDADE #1)
   // ═══════════════════════════════════════════════════════════
-  const USE_DALLE_TEMPORARIO = true; // <-- ALTERE PARA false QUANDO TIVER CRÉDITO NO FAL.AI
+  if (process.env.FAL_API_KEY) {
+    try {
+      console.log('🎨 [1/6] fal.ai FLUX dev...');
+      
+      const falRes = await fetch('https://fal.run/fal-ai/flux/dev', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Key ${process.env.FAL_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: promptBase,
+          image_size: 'square',
+          num_inference_steps: 28,
+          guidance_scale: 3.5,
+          safety_tolerance: '2',
+        }),
+        signal: AbortSignal.timeout(120000),
+      });
+
+      console.log('   fal.ai Status:', falRes.status);
+
+      if (falRes.ok) {
+        const falData = await falRes.json();
+        const imgUrl = falData.images?.[0]?.url;
+        if (imgUrl) {
+          const fotoBuf = Buffer.from(await (await fetch(imgUrl, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
+          console.log(`✅ fal.ai FLUX dev → ${(fotoBuf.length/1024).toFixed(1)}KB`);
+          return { buffer: fotoBuf, provider: 'fal-flux-dev' };
+        }
+      } else {
+        console.warn('⚠️ fal.ai erro:', falRes.status);
+      }
+    } catch (e) {
+      console.warn('⚠️ fal.ai falhou:', e.message);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 2: Freepik AI (fallback)
+  // ═══════════════════════════════════════════════════════════
+  if (process.env.FREEPIK_API_KEY) {
+    try {
+      console.log('🎨 [2/6] Freepik AI Image Generator...');
+      
+      const freepikPrompt = `Professional photorealistic photography, 8k uhd, sharp focus.
+NO illustration, NO vector, NO cartoon, NO plants, NO flowers.
+
+SCENE: Brazilian female pediatric therapist in colorful scrubs with young child in bright clinic room.
+
+ENVIRONMENT: Modern pediatric clinic "Fono Inova" - white walls, large windows, light wood floors, colorful posters, wooden shelves with toys, soft foam mats.
+
+TECHNICAL: Canon EOS R5, 85mm f/1.4, soft window light, documentary style.`;
+      
+      const freepikRes = await fetch('https://api.freepik.com/v1/ai/text-to-image', {
+        method: 'POST',
+        headers: {
+          'x-freepik-api-key': process.env.FREEPIK_API_KEY,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          prompt: freepikPrompt,
+          negative_prompt: 'illustration, vector, cartoon, anime, drawing, 3d render, text, watermark, blurry, low quality',
+          num_images: 1,
+          image_size: 'square_1024',
+          guidance_scale: 8.5,
+          num_inference_steps: 50,
+          seed: Math.floor(Math.random() * 1000000),
+        }),
+        signal: AbortSignal.timeout(180000),
+      });
+
+      console.log('   Freepik Status:', freepikRes.status);
+
+      if (freepikRes.ok) {
+        const freepikData = await freepikRes.json();
+        const imgUrl = freepikData.data?.[0]?.url || freepikData.url;
+        const imgBase64 = freepikData.data?.[0]?.base64 || freepikData.base64;
+        
+        let fotoBuf;
+        if (imgUrl) {
+          console.log('   Freepik URL:', imgUrl.substring(0, 50) + '...');
+          fotoBuf = Buffer.from(await (await fetch(imgUrl, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
+        } else if (imgBase64) {
+          console.log('   Freepik base64 detectado');
+          const base64Clean = imgBase64.replace(/^data:image\/\w+;base64,/, '');
+          fotoBuf = Buffer.from(base64Clean, 'base64');
+        }
+        
+        if (fotoBuf && fotoBuf.length > 100) {
+          const kb = (fotoBuf.length/1024).toFixed(1);
+          console.log(`✅ Freepik → ${kb}KB`);
+          
+          // Se arquivo muito pequeno (< 30KB), provavelmente é vetor
+          if (fotoBuf.length < 30000) {
+            console.warn(`⚠️ Freepik: Arquivo muito pequeno (${kb}KB), parece vetor. Pulando...`);
+          } else {
+            const base64 = `data:image/jpeg;base64,${fotoBuf.toString('base64')}`;
+            const result = await cloudinary.uploader.upload(base64, {
+              folder: 'fono-inova/instagram/freepik',
+              public_id: `${especialidade.id}_${Date.now()}`,
+            });
+            console.log('✅ Freepik OK:', result.secure_url);
+            return { url: result.secure_url, provider: 'freepik-ai' };
+          }
+        }
+      } else {
+        console.warn('⚠️ Freepik erro:', freepikRes.status);
+      }
+    } catch (e) {
+      console.warn('⚠️ Freepik falhou:', e.message);
+    }
+  } else {
+    console.log('⏭️  FREEPIK_API_KEY não configurada');
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 3: DALL-E (fallback)
+  // ═══════════════════════════════════════════════════════════
+  const USE_DALLE_TEMPORARIO = true;
   
   if (USE_DALLE_TEMPORARIO && process.env.OPENAI_API_KEY) {
     try {
-      console.log('🎨 [TEMP] DALL-E 3 (enquanto não tem crédito fal.ai)...');
+      console.log('🎨 [2/6] DALL-E 3...');
       const response = await openai.images.generate({
         model: 'dall-e-3',
         prompt: prompt,
@@ -230,23 +348,20 @@ async function generateImage({ especialidade, headline, tipoImagem = IMAGE_TYPES
       
       const base64 = `data:image/jpeg;base64,${fotoBuf.toString('base64')}`;
       const result = await cloudinary.uploader.upload(base64, {
-        folder: 'fono-inova/instagram/dalle-temp',
+        folder: 'fono-inova/instagram/dalle',
         public_id: `${especialidade.id}_${Date.now()}`,
       });
-      console.log('✅ DALL-E temp:', result.secure_url);
-      return { url: result.secure_url, provider: 'dalle-3-temp' };
+      console.log('✅ DALL-E:', result.secure_url);
+      return { url: result.secure_url, provider: 'dalle-3' };
     } catch (e) {
-      console.warn('⚠️ DALL-E temp falhou:', e.message);
-      console.log('🔄 Tentando FLUX...');
+      console.warn('⚠️ DALL-E falhou:', e.message);
     }
   }
 
-  console.log('🎨 Prompt:', prompt.substring(0, 80) + '...');
-
-  // TENTATIVA 1: Together.ai (FLUX) - $5 crédito free
+  // TENTATIVA 3: Together.ai (FLUX)
   if (process.env.TOGETHER_API_KEY) {
     try {
-      console.log('🚀 Together.ai FLUX...');
+      console.log('🎨 [3/6] Together.ai FLUX...');
       const response = await fetch('https://api.together.xyz/v1/images/generations', {
         method: 'POST',
         headers: {
@@ -287,11 +402,11 @@ async function generateImage({ especialidade, headline, tipoImagem = IMAGE_TYPES
   }
 
   // ═══════════════════════════════════════════════════════════
-  // TENTATIVA 2: fal.ai FLUX dev (FOCO PRINCIPAL)
+  // TENTATIVA 5: fal.ai FLUX dev (backup)
   // ═══════════════════════════════════════════════════════════
   if (process.env.FAL_API_KEY) {
     try {
-      console.log('🚀 fal.ai FLUX dev...');
+      console.log('🎨 [4/6] fal.ai FLUX dev...');
       console.log('   API Key:', process.env.FAL_API_KEY.substring(0, 8) + '...');
       
       const falRes = await fetch('https://fal.run/fal-ai/flux/dev', {
@@ -349,11 +464,11 @@ async function generateImage({ especialidade, headline, tipoImagem = IMAGE_TYPES
   }
 
   // ═══════════════════════════════════════════════════════════
-  // TENTATIVA 3: Replicate (se tiver token)
+  // TENTATIVA 6: Replicate
   // ═══════════════════════════════════════════════════════════
   if (process.env.REPLICATE_API_TOKEN) {
     try {
-      console.log('🚀 Replicate FLUX...');
+      console.log('🎨 [5/6] Replicate FLUX...');
       
       const response = await fetch('https://api.replicate.com/v1/predictions', {
         method: 'POST',
@@ -404,12 +519,12 @@ async function generateImage({ especialidade, headline, tipoImagem = IMAGE_TYPES
     }
   }
 
-  // TENTATIVA 4: Pollinations (geralmente instável)
+  // TENTATIVA 6: Pollinations (último recurso)
   const delay = ms => new Promise(r => setTimeout(r, ms));
   
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      console.log(`🔄 Pollinations (tentativa ${attempt}/3)...`);
+      console.log(`🎨 [6/6] Pollinations (tentativa ${attempt}/3)...`);
       const encoded = encodeURIComponent(prompt);
       const seed = Math.floor(Math.random() * 999999);
       

@@ -82,6 +82,7 @@ const postWorker = new Worker('post-generation', async (job) => {
   } = job.data;
 
   logger.info(`[POST WORKER] ▶ ${channel}/${postId} — ${especialidadeId}`);
+  logger.info(`[POST WORKER] Config: generateImage=${generateImage}, provider=${provider}, mode=${channel === 'gmb' ? (generateImage ? 'full' : 'caption') : 'N/A'}`);
 
   try {
     // Atualizar status para processing
@@ -100,16 +101,30 @@ const postWorker = new Worker('post-generation', async (job) => {
     
     if (channel === 'gmb') {
       // GMB: Gera post com conteúdo completo
+      logger.info(`[POST WORKER] Gerando conteúdo GMB para ${especialidade.nome}...`);
       postData = await gmbService.generatePostForEspecialidade(especialidade, customTheme, funnelStage);
+      logger.info(`[POST WORKER] Conteúdo gerado: "${postData.title?.substring(0, 50)}..."`);
       
       if (generateImage) {
         try {
+          logger.info(`[POST WORKER] Gerando imagem GMB (provider: ${provider || 'auto'})...`);
+          logger.info(`[POST WORKER] Ordem de tentativa: fal.ai → Freepik → HuggingFace → Pollinations`);
           const imgResult = await gmbService.generateImageForEspecialidade(especialidade, postData.content, false, provider);
           mediaUrl = imgResult?.url || null;
           imageProvider = imgResult?.provider || null;
+          if (mediaUrl) {
+            logger.info(`[POST WORKER] ✅ IMAGEM GERADA com SUCESSO!`);
+            logger.info(`[POST WORKER]    → Provider: ${imageProvider}`);
+            logger.info(`[POST WORKER]    → URL: ${mediaUrl.substring(0, 70)}...`);
+          } else {
+            logger.error(`[POST WORKER] ❌ IMAGEM FALHOU: Nenhuma URL retornada!`);
+            logger.error(`[POST WORKER]    → Todos os providers falharam (Freepik → fal.ai → HF → Pollinations)`);
+          }
         } catch (imgError) {
-          logger.warn(`[POST WORKER] Erro imagem GMB: ${imgError.message}`);
+          logger.error(`[POST WORKER] Erro imagem GMB: ${imgError.message}`);
         }
+      } else {
+        logger.info(`[POST WORKER] Geração de imagem desabilitada para este post`);
       }
 
       const isScheduled = Boolean(scheduledAt);
@@ -127,6 +142,8 @@ const postWorker = new Worker('post-generation', async (job) => {
         processingStatus: 'completed',
         ctaUrl: especialidade.url || null
       });
+      
+      logger.info(`[POST WORKER] 💾 Post salvo: mediaUrl=${mediaUrl ? '✅ COM IMAGEM' : '❌ SEM IMAGEM'}, provider=${imageProvider || 'N/A'}`);
 
     } else if (channel === 'instagram') {
       // Instagram: gerar conteúdo baseado no modo selecionado pelo usuário

@@ -14,11 +14,23 @@ const openai = new OpenAI({
 });
 
 // Cloudinary config
-cloudinary.config({
+const cloudinaryConfig = {
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+};
+
+// Verifica se as credenciais estão configuradas
+if (!cloudinaryConfig.cloud_name || !cloudinaryConfig.api_key || !cloudinaryConfig.api_secret) {
+  console.error('❌ Cloudinary: Credenciais não configuradas! Verifique .env');
+  console.error('   CLOUDINARY_CLOUD_NAME:', cloudinaryConfig.cloud_name ? '***' : 'undefined');
+  console.error('   CLOUDINARY_API_KEY:', cloudinaryConfig.api_key ? '***' : 'undefined');
+  console.error('   CLOUDINARY_API_SECRET:', cloudinaryConfig.api_secret ? '***' : 'undefined');
+} else {
+  console.log('✅ Cloudinary: Configurado com sucesso');
+}
+
+cloudinary.config(cloudinaryConfig);
 
 /**
  * 🏥 ESPECIALIDADES DA FONO INOVA
@@ -409,85 +421,84 @@ function generateImagePromptFromContent(content, especialidade) {
   const photoStyle =
     'Cinematic photo, professional pediatric therapy session, ' +
     'genuine natural expressions (NOT posed smile, NOT exaggerated), ' +
-    'soft window light, shallow depth of field, ' +
+    'soft window light from large window, shallow depth of field, ' +
     'professional healthcare photography style, ' +
     'realistic skin texture, natural skin tones, ' +
     'authentic candid moment, documentary style, ' +
-    'child and therapist naturally engaged in activity, ' +
+    'child and therapist naturally engaged in therapeutic activity, ' +
     'NO forced smiles, NO teeth showing, ' +
     'NO text, NO watermarks, 4K quality, ' +
-    'premium Brazilian pediatric clinic environment';
+    'Fono Inova premium Brazilian pediatric clinic environment';
 
   // AMBIENTES — clínicos, alegres, acolhedores
   const rooms = {
     fono:
-      'bright cheerful pediatric speech therapy room, ' +
-      'white walls with colorful children alphabet posters and animal illustrations pinned up, ' +
-      'large window with soft natural light, light hardwood floor, ' +
-      'modern white low table, colorful picture cards spread on table, ' +
-      'wooden shelves with therapy toys and picture books, ' +
-      'large mirror on one wall, warm cheerful professional pediatric clinic',
+      'bright cheerful Fono Inova pediatric speech therapy room, ' +
+      'white walls with colorful alphabet posters and animal illustrations, ' +
+      'large window with soft natural light streaming in, light hardwood floor, ' +
+      'modern white low table with colorful picture cards and speech therapy materials spread out, ' +
+      'wooden shelves with therapy toys, picture books, puppets, and mirror, ' +
+      'soft colorful foam mat area, warm cheerful professional pediatric clinic environment',
 
     psico:
-      'warm cheerful pediatric psychology room, ' +
+      'warm cheerful Fono Inova pediatric psychology room, ' +
       'soft sage green accent wall with colorful children art prints, ' +
-      'large window with sheer white curtains, light hardwood floor, ' +
-      'small round white table, two low child-height chairs, ' +
-      'wooden shelf with dolls stuffed animals and drawing materials, ' +
-      'cozy welcoming professional pediatric clinic',
+      'large window with sheer white curtains and soft natural light, light hardwood floor, ' +
+      'small round white table with drawing materials and toys, two low child-height chairs, ' +
+      'wooden shelf with dolls, stuffed animals, play therapy materials, sandbox, ' +
+      'cozy rug area with cushions, welcoming professional pediatric clinic',
 
     to:
-      'bright cheerful occupational therapy room, ' +
-      'white walls with colorful educational posters and children illustrations, ' +
-      'large window with natural light, light hardwood floor, ' +
-      'modern white activity table at child height, ' +
-      'wooden Montessori shelves with beads pegboards puzzles and fine motor toys, ' +
-      'small colorful foam mat area, warm professional pediatric clinic',
+      'bright cheerful Fono Inova occupational therapy room, ' +
+      'white walls with colorful educational posters, ' +
+      'large window with abundant natural light, light hardwood floor, ' +
+      'modern white activity table at child height with sensory materials, ' +
+      'wooden Montessori shelves with colorful beads, pegboards, puzzles, fine motor toys, playdough, ' +
+      'colorful foam mat area with climbing structures, swing, warm professional pediatric clinic',
 
     fisio:
-      'spacious bright pediatric physiotherapy gym, ' +
-      'white walls with colorful exercise and body illustration posters, ' +
-      'floor-to-ceiling windows with trees outside, light hardwood floor, ' +
-      'colorful foam therapy steps blocks and balance beam, ' +
-      'cheerful energetic professional pediatric rehabilitation clinic',
+      'spacious bright Fono Inova pediatric physiotherapy gym, ' +
+      'white walls with colorful exercise posters, ' +
+      'floor-to-ceiling windows with natural light, light hardwood floor, ' +
+      'colorful foam therapy steps, balance beam, therapy balls, climbing structures, ' +
+      'playful equipment, cheerful energetic professional pediatric rehabilitation clinic',
 
     psicomotri:
-      'large bright psychomotor therapy room, ' +
-      'white walls with colorful movement and body awareness posters, ' +
+      'large bright Fono Inova psychomotor therapy room, ' +
+      'white walls with colorful movement posters, ' +
       'floor-to-ceiling windows with abundant natural light, ' +
-      'premium colorful foam mats covering floor, ' +
-      'foam tunnels steps and soft obstacles, ' +
-      'joyful energetic professional pediatric clinic',
+      'colorful foam mats covering floor, foam tunnels, steps, soft obstacles, ' +
+      'balls, hoops, playful movement equipment, joyful energetic pediatric clinic',
 
     neuro:
-      'clean bright neuropsychology assessment room, ' +
-      'white walls with colorful framed alphabet and number prints, ' +
+      'clean bright Fono Inova neuropsychology assessment room, ' +
+      'white walls with colorful alphabet and number prints, ' +
       'large window with natural light, light hardwood floor, ' +
-      'modern white desk at child height, two ergonomic chairs, ' +
-      'organized colorful cognitive assessment blocks and cards on table, ' +
+      'modern white desk at child height with colorful blocks and assessment materials, ' +
+      'organized wooden toys, puzzles, educational games on shelves, ' +
       'warm focused professional pediatric clinic',
 
     music:
-      'warm bright music therapy room, ' +
-      'white walls with colorful music note and instrument illustrations, ' +
-      'large window with natural light, light hardwood floor with fabric rug, ' +
-      'wooden shelves with drum tambourine xylophone acoustic guitar, ' +
-      'small colorful cushions on floor, joyful creative professional pediatric clinic',
+      'warm bright Fono Inova music therapy room, ' +
+      'white walls with colorful music note illustrations, ' +
+      'large window with natural light, light hardwood floor with colorful rug, ' +
+      'wooden shelves with drums, tambourines, xylophone, colorful shakers, guitar, ' +
+      'colorful cushions on floor, scarves, playful musical instruments, joyful creative clinic',
 
     psicoped:
-      'bright cheerful learning support room, ' +
-      'white walls covered with colorful alphabet number and children book illustration posters, ' +
+      'bright cheerful Fono Inova learning support room, ' +
+      'white walls with colorful alphabet, number and book illustration posters, ' +
       'large window with abundant natural light, light hardwood floor, ' +
-      'modern white desk at child height, ergonomic low chairs, ' +
-      'wooden Montessori shelves with educational books wooden puzzles and learning materials, ' +
+      'modern white desk at child height with books and learning materials, ' +
+      'wooden Montessori shelves with educational books, wooden puzzles, letters, numbers, games, ' +
       'warm encouraging professional pediatric clinic',
 
     freio:
-      'clean warm pediatric consultation room, ' +
-      'white walls with one colorful children educational illustration print, ' +
+      'clean warm Fono Inova pediatric consultation room, ' +
+      'white walls with colorful children educational prints, ' +
       'large window with soft natural light, light hardwood floor, ' +
-      'modern comfortable examination chair, sleek white cabinet, ' +
-      'small plant in corner, warm professional private pediatric clinic',
+      'modern comfortable child-friendly examination area with toys, ' +
+      'wooden shelf with soft toys and books, small plant, warm professional pediatric clinic',
   };
 
   // INTERAÇÃO obrigatória — força engajamento mútuo
@@ -577,7 +588,12 @@ async function uploadToCloudinary(imageBlob, especialidadeId) {
 // GERA IMAGEM — Múltiplos providers → Cloudinary
 // ─────────────────────────────────────────────
 export async function generateImageForEspecialidade(especialidade, postContent = '', withBranding = true, provider = 'auto') {
-  const prompt = generateImagePromptFromContent(postContent || especialidade.foco, especialidade);
+  // Limpar conteúdo para evitar confusões da IA (ex: "freio lingual" -> planta!)
+  const conteudoLimpo = (postContent || especialidade.foco)
+    .replace(/freio lingual/gi, 'tongue tie feeding therapy')
+    .replace(/freio/gi, 'oral motor');
+  
+  const prompt = generateImagePromptFromContent(conteudoLimpo, especialidade);
   console.log(`🎨 Prompt [branding=${withBranding}] [provider=${provider}]:`, prompt.substring(0, 100) + '...');
 
   // Título extraído do conteúdo para o SVG de branding
@@ -587,14 +603,23 @@ export async function generateImageForEspecialidade(especialidade, postContent =
   // Sobe foto limpa pro Cloudinary (para Google — sem overlay)
   const uploadFotoLimpa = async (fotoBuf) => {
     try {
+      if (!fotoBuf || fotoBuf.length < 100) {
+        console.error('❌ Upload: Buffer inválido ou muito pequeno');
+        return null;
+      }
+      console.log(`📤 Upload Cloudinary: ${(fotoBuf.length/1024).toFixed(1)}KB...`);
       const base64 = `data:image/jpeg;base64,${fotoBuf.toString('base64')}`;
       const result = await cloudinary.uploader.upload(base64, {
         folder:    'fono-inova/gmb',
         public_id: `${especialidade.id}_gmb_${Date.now()}`,
       });
+      console.log('✅ Upload OK:', result.secure_url.substring(0, 60) + '...');
       return result.secure_url;
     } catch (e) {
-      console.warn('⚠️ Upload foto limpa falhou:', e.message);
+      console.error('❌ Upload foto limpa falhou:', e.message);
+      if (e.message.includes('authentication')) {
+        console.error('   💡 Verifique as credenciais do Cloudinary no .env');
+      }
       return null;
     }
   };
@@ -619,18 +644,264 @@ export async function generateImageForEspecialidade(especialidade, postContent =
   // ═══════════════════════════════════════════════════════════
   // Roteamento por provider selecionado
   // gemini-nano = sem FLUX, vai direto para Pollinations (sem custo)
+  const skipFreepik = provider !== 'auto' && provider !== 'freepik';
   const skipFal = provider !== 'auto' && provider !== 'fal';
   const skipHF  = provider !== 'auto' && provider !== 'hf' && provider !== 'together';
-  const forceProvider = provider; // 'fal' | 'hf' | 'pollinations' | 'gemini-nano' | 'auto'
+  const forceProvider = provider; // 'freepik' | 'fal' | 'hf' | 'pollinations' | 'gemini-nano' | 'auto'
   if (forceProvider !== 'auto') {
-    console.log(`🎯 Provider selecionado: ${forceProvider} (${skipFal ? 'skip fal.ai' : 'usa fal.ai'}, ${skipHF ? 'skip HF' : 'usa HF'})`);
+    console.log(`🎯 Provider selecionado: ${forceProvider} (freepik: ${skipFreepik ? 'skip' : 'usa'}, fal: ${skipFal ? 'skip' : 'usa'}, HF: ${skipHF ? 'skip' : 'usa'})`);
   }
 
-  // TENTATIVA 1: fal.ai FLUX dev (FOCO PRINCIPAL - mais barato!)
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 1: fal.ai FLUX dev (PRIORIDADE #1 - melhor custo/benefício!)
   // ═══════════════════════════════════════════════════════════
   if (!skipFal && process.env.FAL_API_KEY) {
     try {
-      console.log('🤖 fal.ai FLUX dev...');
+      console.log('🚀 [1/3] fal.ai FLUX dev...');
+      
+      // Função para extrair tema específico do post e gerar prompt contextualizado
+      function extrairTemaParaPrompt(postContent, especialidadeId) {
+        if (!postContent) return null;
+        
+        const conteudo = postContent.toLowerCase();
+        const titulo = postContent.split('\n')[0].toLowerCase();
+        
+        // Dicionário de temas por especialidade com palavras-chave e prompts específicos
+        const temas = {
+          'fonoaudiologia': [
+            { 
+              keywords: ['troca letra', 'troca de letra', 'troca os sons', 'substitui', 'errinho'],
+              prompt: 'therapist using mirror to show child mouth position for letter sounds, child looking at mirror practicing correct pronunciation'
+            },
+            { 
+              keywords: ['lisp', 'ceceio', 'chiqueiro', 'l lateral', 'erre'],
+              prompt: 'therapist demonstrating tongue placement for lisp correction, using straw or tongue depressor as visual aid'
+            },
+            { 
+              keywords: ['gagueira', 'gaguejar', 'fluência', 'travar'],
+              prompt: 'patient therapist listening attentively to child speaking, relaxed environment for fluency practice'
+            },
+            { 
+              keywords: ['mamar', 'amamentação', 'peito', 'dificuldade'],
+              prompt: 'speech therapist observing baby feeding, gentle assessment of oral motor skills for feeding therapy'
+            },
+            { 
+              keywords: ['respirar', 'respiração', 'nariz', 'boca aberta'],
+              prompt: 'therapist teaching child nasal breathing exercises, using feather or cotton ball to demonstrate airflow'
+            }
+          ],
+          'psicologia': [
+            { 
+              keywords: ['ansiedade', 'medo', 'preocupação', 'nervoso'],
+              prompt: 'therapist using breathing ball or calm-down jar with anxious child, teaching emotional regulation technique'
+            },
+            { 
+              keywords: ['birra', 'chateação', 'birrete', 'frustração'],
+              prompt: 'therapist helping child identify emotions using emotion chart or feelings wheel, naming the emotion together'
+            },
+            { 
+              keywords: ['autismo', 'tea', 'espectro', 'social'],
+              prompt: 'structured play therapy session with visual schedule cards, therapist and child engaged in turn-taking game'
+            },
+            { 
+              keywords: ['toca', 'brinca sozinho', 'isolado', 'amigos'],
+              prompt: 'therapist facilitating social skills practice through puppet play or role-playing social scenarios'
+            }
+          ],
+          'terapia_ocupacional': [
+            { 
+              keywords: ['escrita', 'lápis', 'segura', 'coordenação motora fina'],
+              prompt: 'child practicing pencil grip with adaptive triangular pencil, therapist guiding hand position for writing readiness'
+            },
+            { 
+              keywords: ['botão', 'abotoar', 'zíper', 'roupa', 'vestir'],
+              prompt: 'child practicing dressing skills on dressing board with buttons and zippers, building independence'
+            },
+            { 
+              keywords: ['pular', 'corda', 'equilíbrio', 'coordenação'],
+              prompt: 'child balancing on one foot or beam, therapist supporting, working on gross motor coordination'
+            },
+            { 
+              keywords: ['alimentação', 'comer', 'garfo', 'colher', 'mastigar'],
+              prompt: 'feeding therapy session with adapted utensils, child practicing scooping with therapist guidance'
+            },
+            { 
+              keywords: ['sensível', 'sensibilidade', 'tato', 'textura'],
+              prompt: 'sensory exploration activity with various textured materials, child touching different fabrics and surfaces'
+            }
+          ],
+          'fisioterapia': [
+            { 
+              keywords: ['engatinhar', 'andar', 'marcha', 'deformidade'],
+              prompt: 'physiotherapist guiding child through crawling or walking exercises, using colorful tunnel or foam blocks'
+            },
+            { 
+              keywords: ['postura', 'sentar', 'coluna', 'fortalecer'],
+              prompt: 'child sitting on therapy ball practicing core stability, therapist supporting proper posture'
+            },
+            { 
+              keywords: ['torticolo', 'pescoço', 'posição', 'assimetria'],
+              prompt: 'gentle neck positioning exercises, therapist using toys to encourage child to turn head symmetrically'
+            }
+          ],
+          'psicomotricidade': [
+            { 
+              keywords: ['espaço', 'direção', 'esquerda', 'direita', 'cima', 'baixo'],
+              prompt: 'body awareness game with obstacles, child navigating through colorful cones following directions'
+            },
+            { 
+              keywords: ['lateralidade', 'mão dominante', 'esquerda', 'direita'],
+              prompt: 'lateralization activity with bean bags, child throwing to target to establish dominant hand preference'
+            }
+          ],
+          'neuropsicologia': [
+            { 
+              keywords: ['memória', 'lembrar', 'esquece', 'atividade'],
+              prompt: 'memory game with picture cards laid out on table, child concentrating on matching pairs'
+            },
+            { 
+              keywords: ['atenção', 'distraído', 'concentração', 'foco'],
+              prompt: 'attention training with sorting activity, child organizing colored objects by category'
+            }
+          ],
+          'musicoterapia': [
+            { 
+              keywords: ['canto', 'voz', 'cantar', 'música'],
+              prompt: 'music therapist and child singing together with simple percussion, child holding shaker or tambourine'
+            },
+            { 
+              keywords: ['ritmo', 'batida', 'tocar', 'instrumento'],
+              prompt: 'rhythm exercise with drums or xylophone, therapist and child playing musical patterns together'
+            }
+          ],
+          'psicopedagogia': [
+            { 
+              keywords: ['leitura', 'ler', 'livro', 'palavra'],
+              prompt: 'reading readiness activity with large print book, child pointing to words while therapist guides with finger'
+            },
+            { 
+              keywords: ['escrita', 'escrever', 'letra', 'alfabeto'],
+              prompt: 'multisensory writing practice, child tracing letters in sand tray or textured surface'
+            },
+            { 
+              keywords: ['número', 'contar', 'matemática', 'contagem'],
+              prompt: 'number concept activity with manipulatives, child counting colorful objects grouped on table'
+            }
+          ],
+          'freio_lingual': [
+            { 
+              keywords: ['mamar', 'succao', 'amamentar', 'peito'],
+              prompt: 'lactation consultant observing breastfeeding, gentle assessment of tongue mobility for feeding'
+            },
+            { 
+              keywords: ['língua', 'lingua presa', 'movimento', 'elevar'],
+              prompt: 'tongue mobility assessment, child sticking tongue out to touch upper lip, therapist observing range'
+            },
+            { 
+              keywords: ['fala', 'pronunciar', 'lateral', 'erre'],
+              prompt: 'tongue placement exercises for speech, using mirror to visualize tongue position for sounds'
+            }
+          ]
+        };
+        
+        const temasEspecialidade = temas[especialidadeId] || [];
+        
+        // Procura por correspondências de keywords no conteúdo completo
+        for (const tema of temasEspecialidade) {
+          if (tema.keywords.some(kw => conteudo.includes(kw))) {
+            return tema.prompt;
+          }
+        }
+        
+        // Fallback: tenta extrair substantivos do título para criar contexto
+        const palavrasChave = titulo.match(/\b(\.?\w{4,})\b/g) || [];
+        const substantivos = palavrasChave.filter(p => 
+          !['como', 'para', 'sobre', 'esse', 'esse', 'aqui', 'quando', 'onde', 'mais', 'muito', 'pode', 'toda'].includes(p)
+        );
+        
+        if (substantivos.length > 0) {
+          return `therapy session addressing ${substantivos.slice(0, 2).join(' and ')}, child engaged in therapeutic activity`;
+        }
+        
+        return null;
+      }
+      
+      // Extrai tema específico do post
+      const temaEspecifico = extrairTemaParaPrompt(postContent, especialidade.id);
+      
+      // Fallback por especialidade se não encontrou tema específico
+      const atividadesPorEspecialidade = {
+        'fonoaudiologia': {
+          atividade: temaEspecifico || 'helping child with speech articulation exercises using mirror and picture cards',
+          materiais: 'speech therapy flashcards, small mirror, colorful foam letters on table',
+          foco: 'speech and language development'
+        },
+        'psicologia': {
+          atividade: temaEspecifico || 'engaged in therapeutic play session using dolls and drawing materials',
+          materiais: 'colorful drawing paper, crayons, stuffed animals, emotion cards',
+          foco: 'emotional and behavioral support'
+        },
+        'terapia_ocupacional': {
+          atividade: temaEspecifico || 'guiding child through fine motor skills exercise using colorful beads',
+          materiais: 'sensory beads, lacing cards, playdough, peg boards on table',
+          foco: 'motor skills development'
+        },
+        'fisioterapia': {
+          atividade: temaEspecifico || 'assisting child with movement therapy using colorful balls',
+          materiais: 'therapy balls, colorful cones, foam rollers, soft mats',
+          foco: 'physical development and mobility'
+        },
+        'psicomotricidade': {
+          atividade: temaEspecifico || 'leading body awareness exercise using scarves',
+          materiais: 'colorful scarves, rhythm instruments, coordination games',
+          foco: 'psychomotor development'
+        },
+        'neuropsicologia': {
+          atividade: temaEspecifico || 'conducting cognitive assessment using puzzle games',
+          materiais: 'wooden puzzles, memory game cards, pattern blocks',
+          foco: 'cognitive development'
+        },
+        'musicoterapia': {
+          atividade: temaEspecifico || 'engaging child in music therapy using percussion instruments',
+          materiais: 'colorful tambourines, maracas, xylophone, music sheets',
+          foco: 'musical and emotional expression'
+        },
+        'psicopedagogia': {
+          atividade: temaEspecifico || 'teaching child pre-reading skills using letter tiles',
+          materiais: 'magnetic letters, word cards, educational board games',
+          foco: 'learning support and literacy'
+        },
+        'psicopedagogia_clinica': {
+          atividade: temaEspecifico || 'working on reading and writing skills',
+          materiais: 'sand tray for letters, textured letter cards, colorful alphabet',
+          foco: 'multisensory learning'
+        },
+        'freio_lingual': {
+          atividade: temaEspecifico || 'evaluating oral motor function',
+          materiais: 'small mirror, wooden tongue depressors, oral motor tools',
+          foco: 'tongue mobility and feeding'
+        }
+      };
+      
+      const atividade = atividadesPorEspecialidade[especialidade.id] || {
+        atividade: temaEspecifico || 'engaged in therapeutic activity',
+        materiais: 'colorful educational toys appropriate for therapy',
+        foco: 'child development support'
+      };
+      
+      // Log do tema detectado
+      if (temaEspecifico) {
+        console.log(`   🎯 Tema detectado: "${temaEspecifico.substring(0, 60)}..."`);
+      }
+      
+      // Prompt contextualizado com atividade específica da especialidade
+      const falPrompt = `Editorial documentary photo, Canon EOS R5 with 85mm f/1.8 lens, ISO 400, natural soft daylight from large windows, bright white modern pediatric clinic interior with light wood accents, cheerful Brazilian female ${especialidade.nome.toLowerCase()} therapist wearing pastel scrubs (light teal, coral or lavender), ${atividade.atividade}, happy Brazilian child aged 4-6 participating actively, both seated at colorful but clean activity table with ${atividade.materiais}, authentic candid smiles, ${atividade.foco}, sharp focus on faces with shallow depth of field, background softly blurred showing therapy toys and books, warm color balance 5500K, NO green tint, NO neon lighting, NO dark shadows, NO dramatic contrasts, photojournalism quality, realistic skin tones, professional healthcare photography`;
+      
+      console.log(`   📝 Prompt: ${especialidade.nome} - ${atividade.foco}`);
+      
+      // Negative prompt explícito para evitar renders/cartoons
+      const negativePrompt = "3d render, cartoon, illustration, anime, neon lighting, dark background, oversaturated colors, green tint, red tint, blue tint, dramatic chiaroscuro lighting, CGI, animation, painting, sketch, drawing, low quality, blurry faces, distorted hands, extra fingers, plastic skin, doll-like, synthetic, artificial, game screenshot, blender render, unreal engine, 3d model";
+      
       const falRes = await fetch('https://fal.run/fal-ai/flux/dev', {
         method: 'POST',
         headers: {
@@ -638,13 +909,14 @@ export async function generateImageForEspecialidade(especialidade, postContent =
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          prompt,
+          prompt: falPrompt,
+          negative_prompt: negativePrompt,
           image_size: 'square',  // 1024x1024
           num_inference_steps: 28,
           guidance_scale: 3.5,
           safety_tolerance: '2',
         }),
-        signal: AbortSignal.timeout(120000),
+        signal: AbortSignal.timeout(300000), // 5 minutos
       });
 
       console.log('   Status:', falRes.status);
@@ -656,7 +928,11 @@ export async function generateImageForEspecialidade(especialidade, postContent =
           const fotoBuf = Buffer.from(await (await fetch(imgUrl, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
           console.log(`✅ fal.ai FLUX dev → ${(fotoBuf.length/1024).toFixed(1)}KB`);
           const url = await comBranding(fotoBuf);
-          return { url, provider: 'fal-flux-dev' };
+          if (url) {
+            console.log(`✅ fal.ai OK: ${url.substring(0, 60)}...`);
+            return { url, provider: 'fal-flux-dev' };
+          }
+          console.warn('⚠️ fal.ai: Upload Cloudinary falhou, tentando próximo provider...');
         }
       } else {
         const err = await falRes.text();
@@ -666,14 +942,141 @@ export async function generateImageForEspecialidade(especialidade, postContent =
       console.warn('⚠️ fal.ai falhou:', e.message);
     }
   } else {
-    console.log('⏭️  FAL_API_KEY não configurada');
+    if (skipFal) {
+      console.log('⏭️  fal.ai pulado (provider especificado)');
+    } else {
+      console.log('⏭️  FAL_API_KEY não configurada');
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
-  // TENTATIVA 2: HuggingFace FLUX.1-dev (gratuito, alta qualidade)
+  // TENTATIVA 2: Freepik API (fallback #2)
+  // ═══════════════════════════════════════════════════════════
+  if (!skipFreepik && process.env.FREEPIK_API_KEY) {
+    try {
+      console.log('🎨 [2/3] Freepik AI Image Generator...');
+      
+      // Prompt otimizado para Freepik gerar FOTO REAL de ALTA QUALIDADE
+      // Mapeamento de especialidades para evitar confusões (ex: freio lingual -> planta!)
+      const especialidadeNome = {
+        'freio_lingual': 'pediatric feeding and tongue tie assessment',
+        'fonoaudiologia': 'speech therapy',
+        'psicologia': 'child psychology',
+        'terapia_ocupacional': 'occupational therapy',
+        'fisioterapia': 'physiotherapy',
+        'psicomotricidade': 'psychomotor therapy',
+        'neuropsicologia': 'neuropsychology',
+        'musicoterapia': 'music therapy',
+        'psicopedagogia': 'educational therapy',
+        'neuro': 'neuropsychology assessment'
+      }[especialidade.id] || especialidade.nome;
+      
+      // Referência ao tema do post para contextualizar
+      const temaContexto = postContent ? 
+        postContent.split('\n')[0].substring(0, 100).replace(/freio lingual/gi, 'feeding assessment') : 
+        especialidade.foco.replace(/freio lingual/gi, 'feeding and oral motor therapy');
+      
+      // PROMPT GENÉRICO FIXO - Evita confusões da IA com termos médicos
+      const freepikPrompt = `Professional photorealistic photography, 8k uhd, sharp focus.
+NO illustration, NO vector, NO cartoon, NO plants, NO flowers, NO leaves, NO fruits, NO vegetables, NO nature, NO macro.
+
+SCENE: Brazilian female pediatric therapist in colorful scrubs interacting with young child in bright clinic room.
+
+DETAILS: Therapist and child sitting together at small table, engaged in playful educational activity with toys and colorful materials. Child appears happy and engaged. Therapist showing warm, professional attention.
+
+ENVIRONMENT: Modern pediatric clinic named "Fono Inova" - white walls, large windows with soft natural light, light wood floors, colorful educational posters, wooden shelves with toys and books, child-size furniture, soft colorful foam mats, cheerful welcoming atmosphere.
+
+COLORS: Soft greens, warm yellows, white walls, natural wood tones.
+
+TECHNICAL: Shot on Canon EOS R5 camera, 85mm f/1.4 lens, ISO 200, soft window light from left, shallow depth of field, documentary photography style, authentic candid moment, natural skin texture, professional color grading.`;
+      
+      const freepikRes = await fetch('https://api.freepik.com/v1/ai/text-to-image', {
+        method: 'POST',
+        headers: {
+          'x-freepik-api-key': process.env.FREEPIK_API_KEY,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          prompt: freepikPrompt,
+          negative_prompt: 'illustration, vector, cartoon, anime, drawing, painting, sketch, flat design, graphic design, text, watermark, signature, blurry, low quality, distorted faces, extra limbs, illustration style, vector art, clip art, 3d render, digital art, painting style, oversaturated, overexposed, underexposed',
+          num_images: 1,
+          image_size: 'square_1024',
+          guidance_scale: 9.0,        // Máxima fidelidade ao prompt
+          num_inference_steps: 75,    // Mais passos = mais qualidade
+          style: 'photo',             // Força estilo fotográfico
+          seed: Math.floor(Math.random() * 1000000), // Seed aleatória (max 1.000.000 para Freepik)
+        }),
+        signal: AbortSignal.timeout(300000), // 5 minutos (máximo tempo para qualidade)
+      });
+
+      console.log('   Freepik Status:', freepikRes.status);
+
+      if (freepikRes.ok) {
+        const freepikData = await freepikRes.json();
+        console.log('   Freepik resposta bruta:', JSON.stringify(freepikData).substring(0, 300));
+        
+        // Freepik pode retornar URL ou base64
+        // Estrutura: { data: [{ url: '...' }] } ou { data: [{ base64: '...' }] }
+        const imgUrl = freepikData.data?.[0]?.url || freepikData.url || freepikData.image_url;
+        const imgBase64 = freepikData.data?.[0]?.base64 || freepikData.base64 || freepikData.image_base64;
+        
+        let fotoBuf;
+        
+        if (imgUrl) {
+          // Formato URL - download da imagem
+          console.log('   Freepik URL:', imgUrl.substring(0, 50) + '...');
+          fotoBuf = Buffer.from(await (await fetch(imgUrl, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
+        } else if (imgBase64) {
+          // Formato base64 - decodificar diretamente
+          console.log('   ✅ Freepik base64 detectado! Tamanho:', imgBase64.length);
+          // Remove prefixo data:image/... se existir
+          const base64Clean = imgBase64.replace(/^data:image\/\w+;base64,/, '');
+          console.log('   Decodificando base64...');
+          fotoBuf = Buffer.from(base64Clean, 'base64');
+          console.log('   ✅ Base64 decodificado:', (fotoBuf.length/1024).toFixed(1), 'KB');
+        }
+        
+        if (fotoBuf && fotoBuf.length > 100) {
+          const kb = (fotoBuf.length/1024).toFixed(1);
+          console.log(`✅ Freepik → ${kb}KB`);
+          
+          // Fallback: se arquivo muito pequeno (< 30KB), provavelmente é vetor/ilustração
+          // Fotos reais geralmente são > 50KB
+          if (fotoBuf.length < 30000) {
+            console.warn(`⚠️ Freepik: Arquivo muito pequeno (${kb}KB), parece vetor/ilustração. Pulando...`);
+            // Continua para próximo provider
+          } else {
+            const url = await comBranding(fotoBuf);
+            if (url) {
+              console.log(`✅ Freepik OK: ${url.substring(0, 60)}...`);
+              return { url, provider: 'freepik-ai' };
+            }
+            console.warn('⚠️ Freepik: Upload Cloudinary falhou, tentando próximo provider...');
+          }
+        } else {
+          console.warn('⚠️ Freepik: Buffer inválido ou vazio na resposta');
+        }
+      } else {
+        const errText = await freepikRes.text();
+        console.warn('⚠️ Freepik erro:', freepikRes.status, errText.substring(0, 200));
+      }
+    } catch (e) {
+      console.warn('⚠️ Freepik falhou:', e.message);
+    }
+  } else {
+    if (skipFreepik) {
+      console.log('⏭️  Freepik pulado (provider especificado)');
+    } else {
+      console.log('⏭️  FREEPIK_API_KEY não configurada');
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 3: HuggingFace FLUX.1-dev (gratuito, alta qualidade)
   if (!skipHF && process.env.HUGGINGFACE_API_KEY) {
     try {
-      console.log('🤖 Tentando HuggingFace FLUX.1-dev...');
+      console.log('🔄 [3/3] HuggingFace FLUX.1-dev...');
       const response = await fetch(
         'https://router.huggingface.co/black-forest-labs/FLUX.1-dev',
         {
@@ -692,9 +1095,13 @@ export async function generateImageForEspecialidade(especialidade, postContent =
 
       if (response.ok) {
         const fotoBuf = Buffer.from(await response.arrayBuffer());
-        console.log(`✅ FLUX.1-dev → buffer ${fotoBuf.length} bytes`);
+        console.log(`✅ HuggingFace FLUX.1-dev → ${(fotoBuf.length/1024).toFixed(1)}KB`);
         const url = await comBranding(fotoBuf);
-        return { url, provider: 'hf-flux-dev' };
+        if (url) {
+          console.log(`✅ HuggingFace OK: ${url.substring(0, 60)}...`);
+          return { url, provider: 'hf-flux-dev' };
+        }
+        console.warn('⚠️ HF: Upload Cloudinary falhou, tentando próximo provider...');
       }
       console.warn('⚠️ HF retornou erro:', response.status);
     } catch (e) {
@@ -703,12 +1110,12 @@ export async function generateImageForEspecialidade(especialidade, postContent =
   }
 
   // ═══════════════════════════════════════════════════════════
-  // TENTATIVA 3: Pollinations com FLUX (sempre gratuito) + retry
+  // TENTATIVA 4: Pollinations com FLUX (sempre gratuito) + retry
   const delay = ms => new Promise(r => setTimeout(r, ms));
   
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      console.log(`🔄 Pollinations (tentativa ${attempt}/3)...`);
+      console.log(`🔄 [Fallback] Pollinations (tentativa ${attempt}/3)...`);
       const encoded = encodeURIComponent(prompt);
       const seed = Math.floor(Math.random() * 999999);
       const model = attempt === 1 ? 'flux-realism' : attempt === 2 ? 'turbo' : 'default';
@@ -733,7 +1140,11 @@ export async function generateImageForEspecialidade(especialidade, postContent =
         
         console.log(`✅ Pollinations → ${(fotoBuf.length/1024).toFixed(1)}KB`);
         const url = await comBranding(fotoBuf);
-        return { url, provider: `pollinations-${model}` };
+        if (url) {
+          console.log(`✅ Pollinations OK: ${url.substring(0, 60)}...`);
+          return { url, provider: `pollinations-${model}` };
+        }
+        console.warn(`⚠️ Pollinations: Upload Cloudinary falhou, tentando próximo...`);
       } else {
         const status = res.status;
         console.warn(`⚠️ Pollinations HTTP ${status}`);
@@ -751,8 +1162,8 @@ export async function generateImageForEspecialidade(especialidade, postContent =
     }
   }
 
-  // FALLBACK: URL direta
-  console.log('🔄 Fallback: URL direta...');
+  // FALLBACK: URL direta (sem upload para Cloudinary - usa URL direta da Pollinations)
+  console.log('🔄 Fallback: URL direta Pollinations...');
   try {
     const encoded = encodeURIComponent(prompt);
     const seed = Math.floor(Math.random() * 999999);
@@ -760,7 +1171,7 @@ export async function generateImageForEspecialidade(especialidade, postContent =
     
     const check = await fetch(directUrl, { method: 'HEAD', signal: AbortSignal.timeout(30000) });
     if (check.ok) {
-      console.log('✅ URL direta OK');
+      console.log('✅ URL direta OK:', directUrl.substring(0, 60) + '...');
       return { url: directUrl, provider: 'pollinations-direct' };
     }
   } catch (e) {
