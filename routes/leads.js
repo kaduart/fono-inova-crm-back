@@ -236,7 +236,6 @@ router.get('/', authorize(['admin', 'secretary', 'professional']), async (req, r
             .sort({ createdAt: -1 })
             .skip((pageNumber - 1) * limitNumber)
             .limit(limitNumber);
-        console.log('📞 Primeiro lead:', JSON.stringify(leads[0], null, 2));
 
         const total = await Lead.countDocuments(filters);
 

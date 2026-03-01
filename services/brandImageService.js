@@ -1,7 +1,7 @@
 /**
- * Brand Image Service v3 - Fono Inova
+ * Brand Image Service v4 - Fono Inova
  * Sistema Visual Profissional: fal.ai FLUX → HuggingFace → Pollinations
- * SEM DALL-E, SEM Groq - só FLUX real
+ * Com composição Canvas estilo Lovart.ai (blobs orgânicos)
  */
 
 import sharp from 'sharp';
@@ -9,6 +9,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const LOGO_PATH = join(__dir, '../dist/images/logo-completa.png');
@@ -40,6 +41,42 @@ const CORES = {
   lilas: '#C39BD3',
   branco: '#FFFFFF',
 };
+
+// ═══════════════════════════════════════════════════════════
+// PALETAS LOVART - Cores por especialidade
+// ═══════════════════════════════════════════════════════════
+const PALETAS_LOVART = {
+  fonoaudiologia:         { bg: '#F0FBF4', blob1: '#2D6A4F', blob2: '#F9E545', blob3: '#F48FB1' },
+  psicologia:             { bg: '#EDE7F6', blob1: '#6A1B9A', blob2: '#FFCC80', blob3: '#80DEEA' },
+  terapia_ocupacional:    { bg: '#FFF8E1', blob1: '#E65100', blob2: '#AED581', blob3: '#F48FB1' },
+  fisioterapia:           { bg: '#E3F2FD', blob1: '#1565C0', blob2: '#F9E545', blob3: '#80CBC4' },
+  psicomotricidade:       { bg: '#FFF3E0', blob1: '#BF360C', blob2: '#AED581', blob3: '#80D8FF' },
+  neuropsicologia:        { bg: '#E8EAF6', blob1: '#283593', blob2: '#FFCC80', blob3: '#80CBC4' },
+  musicoterapia:          { bg: '#FCE4EC', blob1: '#880E4F', blob2: '#AED581', blob3: '#80D8FF' },
+  psicopedagogia_clinica: { bg: '#E0F2F1', blob1: '#004D40', blob2: '#F9E545', blob3: '#F48FB1' },
+  psicopedagogia:         { bg: '#E8F5E9', blob1: '#1B5E20', blob2: '#FFCC80', blob3: '#CE93D8' },
+  freio_lingual:          { bg: '#E1F5FE', blob1: '#01579B', blob2: '#FFCC80', blob3: '#80CBC4' },
+  default:                { bg: '#F0FBF4', blob1: '#2D6A4F', blob2: '#F9E545', blob3: '#F48FB1' },
+};
+
+// ═══════════════════════════════════════════════════════════
+// MAPEAMENTO DE TEMPLATES POR ESPECIALIDADE
+// ═══════════════════════════════════════════════════════════
+const TPL_MAP = {
+  fonoaudiologia:         'left_text',
+  psicologia:             'right_quote',
+  terapia_ocupacional:    'top_info',
+  fisioterapia:           'cta_bottom',
+  psicomotricidade:       'left_text',
+  neuropsicologia:        'top_info',
+  musicoterapia:          'right_quote',
+  psicopedagogia_clinica: 'left_text',
+  psicopedagogia:         'top_info',
+  freio_lingual:          'cta_bottom',
+};
+
+// Fallback rotacional
+const TPL_ROTATE = ['left_text', 'top_info', 'right_quote', 'cta_bottom'];
 
 /**
  * Quebra título em linhas balanceadas (não corta palavras)
@@ -329,60 +366,642 @@ function truncarSemCortarPalavra(texto, limite) {
   return texto.substring(0, corte);
 }
 
+// ═══════════════════════════════════════════════════════════
+// HELPERS CANVAS - Lovart Style
+// ═══════════════════════════════════════════════════════════
+
 /**
- * Gera imagem com branding SVG aplicado
+ * Gera pseudo-random determinístico baseado em seed
+ */
+function seededRandom(seed, i) {
+  const x = Math.sin(seed + i * 127.1) * 43758.5453123;
+  return x - Math.floor(x);
+}
+
+/**
+ * Desenha blob orgânico com curvas bezier
+ */
+function drawOrgBlob(ctx, cx, cy, radius, color, alpha, seed, pts = 8) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  
+  const points = [];
+  for (let i = 0; i < pts; i++) {
+    const angle = (i / pts) * Math.PI * 2;
+    const rVar = 0.7 + seededRandom(seed, i) * 0.6; // variação 0.7x a 1.3x
+    points.push({
+      x: cx + Math.cos(angle) * radius * rVar,
+      y: cy + Math.sin(angle) * radius * rVar,
+      angle: angle
+    });
+  }
+  
+  // Fecha o path com curvas bezier
+  for (let i = 0; i < pts; i++) {
+    const p0 = points[i];
+    const p1 = points[(i + 1) % pts];
+    
+    // Ponto de controle
+    const cpX = (p0.x + p1.x) / 2 + (seededRandom(seed, i + 100) - 0.5) * radius * 0.5;
+    const cpY = (p0.y + p1.y) / 2 + (seededRandom(seed, i + 200) - 0.5) * radius * 0.5;
+    
+    if (i === 0) {
+      ctx.moveTo(p0.x, p0.y);
+    }
+    ctx.quadraticCurveTo(cpX, cpY, p1.x, p1.y);
+  }
+  
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * Desenha foto com máscara arredondada
+ */
+async function drawPhotoMasked(ctx, buffer, x, y, w, h, borderRadius) {
+  try {
+    const img = await loadImage(buffer);
+    ctx.save();
+    
+    // Cria path arredondado
+    ctx.beginPath();
+    ctx.moveTo(x + borderRadius, y);
+    ctx.lineTo(x + w - borderRadius, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + borderRadius);
+    ctx.lineTo(x + w, y + h - borderRadius);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - borderRadius, y + h);
+    ctx.lineTo(x + borderRadius, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - borderRadius);
+    ctx.lineTo(x, y + borderRadius);
+    ctx.quadraticCurveTo(x, y, x + borderRadius, y);
+    ctx.closePath();
+    
+    ctx.clip();
+    
+    // Calcula cover fit
+    const scale = Math.max(w / img.width, h / img.height);
+    const scaledW = img.width * scale;
+    const scaledH = img.height * scale;
+    const offsetX = (w - scaledW) / 2;
+    const offsetY = (h - scaledH) / 2;
+    
+    ctx.drawImage(img, x + offsetX, y + offsetY, scaledW, scaledH);
+    ctx.restore();
+    return true;
+  } catch (e) {
+    console.warn('⚠️ Erro ao carregar imagem:', e.message);
+    // Fallback: desenha placeholder
+    ctx.save();
+    ctx.fillStyle = '#E0E0E0';
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, borderRadius);
+    ctx.fill();
+    ctx.restore();
+    return false;
+  }
+}
+
+/**
+ * Quebra texto em múltiplas linhas sem cortar palavras
+ * Retorna a posição Y final
+ * Suporta align 'left' | 'center' | 'right'
+ */
+function wrapText(ctx, text, x, y, maxWidth, lineHeight, align = 'left') {
+  const words = text.split(' ');
+  let line = '';
+  let curY = y;
+  const lines = [];
+  
+  // Primeiro passo: quebra em linhas
+  for (let i = 0; i < words.length; i++) {
+    const testLine = line + words[i] + ' ';
+    const metrics = ctx.measureText(testLine);
+    const testWidth = metrics.width;
+    
+    if (testWidth > maxWidth && i > 0) {
+      lines.push(line.trim());
+      line = words[i] + ' ';
+    } else {
+      line = testLine;
+    }
+  }
+  lines.push(line.trim());
+  
+  // Segundo passo: renderiza com alinhamento correto
+  ctx.textAlign = align;
+  for (const lineText of lines) {
+    let drawX = x;
+    if (align === 'center') {
+      // x já é o centro, então desenha no mesmo x
+      drawX = x;
+    } else if (align === 'right') {
+      drawX = x;
+    }
+    ctx.fillText(lineText, drawX, curY);
+    curY += lineHeight;
+  }
+  
+  return curY;
+}
+
+/**
+ * Versão simples apenas para calcular altura total do texto
+ */
+function measureTextHeight(ctx, text, maxWidth, lineHeight) {
+  const words = text.split(' ');
+  let line = '';
+  let lines = 1;
+  
+  for (let i = 0; i < words.length; i++) {
+    const testLine = line + words[i] + ' ';
+    const metrics = ctx.measureText(testLine);
+    const testWidth = metrics.width;
+    
+    if (testWidth > maxWidth && i > 0) {
+      lines++;
+      line = words[i] + ' ';
+    } else {
+      line = testLine;
+    }
+  }
+  
+  return lines * lineHeight;
+}
+
+/**
+ * Desenha botão pill com sombra
+ */
+function drawBtn(ctx, text, x, y, w, h, bgColor, textColor) {
+  ctx.save();
+  
+  // Sombra
+  ctx.shadowColor = 'rgba(0,0,0,0.2)';
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetY = 4;
+  
+  // Fundo
+  ctx.fillStyle = bgColor;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, h / 2); // pill shape
+  ctx.fill();
+  
+  // Reset sombra
+  ctx.shadowColor = 'transparent';
+  
+  // Texto
+  ctx.fillStyle = textColor;
+  ctx.font = `bold ${Math.round(h * 0.35)}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + w / 2, y + h / 2);
+  
+  ctx.restore();
+}
+
+/**
+ * Desenha marca d'água
+ */
+function drawWatermark(ctx, text, x, y, color = '#000000', alpha = 0.16) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.font = '24px Arial, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════
+// TEMPLATES LOVART - 4 layouts orgânicos
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * TEMPLATE 1: left_text
+ * Card "Seu filho troca letras ao falar?" 
+ * Foto canto superior direito, texto à esquerda
+ */
+async function tplLeftText(ctx, fotoBuffer, titulo, subtitulo, paleta) {
+  const W = 1080, H = 1080;
+  
+  // Fundo
+  ctx.fillStyle = paleta.bg;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Blobs decorativos
+  drawOrgBlob(ctx, W * 0.85, H * 0.15, 140, paleta.blob1, 0.15, 1, 7);
+  drawOrgBlob(ctx, W * 0.12, H * 0.82, 160, paleta.blob2, 0.25, 2, 8);
+  drawOrgBlob(ctx, W * 0.88, H * 0.65, 100, paleta.blob3, 0.12, 3, 6);
+  
+  // Foto: canto superior direito, 60% x 55%
+  const fotoW = Math.round(W * 0.60);
+  const fotoH = Math.round(H * 0.55);
+  const fotoX = W - fotoW - 44;
+  const fotoY = 44;
+  await drawPhotoMasked(ctx, fotoBuffer, fotoX, fotoY, fotoW, fotoH, 28);
+  
+  // Título: abaixo da foto, lado esquerdo
+  const tituloX = 60;
+  const tituloY = fotoY + fotoH + 50;
+  const tituloMaxW = W - 120;
+  
+  // Fonte dinâmica baseada no tamanho do texto
+  const fontSize = calcularFontSize(titulo, 72, 40);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  
+  const lineHeight = fontSize * 1.15;
+  const endY = wrapText(ctx, titulo.toUpperCase(), tituloX, tituloY, tituloMaxW, lineHeight, 'left');
+  
+  // Subtítulo
+  ctx.fillStyle = '#444444';
+  ctx.font = '32px Arial, sans-serif';
+  const subEndY = wrapText(ctx, subtitulo, tituloX, endY + 16, tituloMaxW, 42, 'left');
+  
+  // Botão CTA - posição dinâmica baseada no conteúdo, com mínimo de segurança
+  const btnW = W - 176;
+  const btnH = 74;
+  const btnX = 88;
+  const minBtnY = H - 180; // Mínimo: não passar do rodapé
+  const calculatedBtnY = subEndY + 40; // Espaço após subtítulo
+  const btnY = Math.min(calculatedBtnY, minBtnY);
+  drawBtn(ctx, 'SAIBA MAIS', btnX, btnY, btnW, btnH, paleta.blob1, '#FFFFFF');
+  
+  // Marca d'água
+  drawWatermark(ctx, 'clinicafonoinova.com.br', 60, H - 30, paleta.blob1, 0.16);
+}
+
+/**
+ * TEMPLATE 2: top_info
+ * Card "5 Sinais de Alerta"
+ * Header blob no topo com título, foto centro, badges grid
+ */
+async function tplTopInfo(ctx, fotoBuffer, titulo, subtitulo, paleta, items = []) {
+  const W = 1080, H = 1080;
+  
+  // Fundo
+  ctx.fillStyle = paleta.bg;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Header blob grande (~40% superior)
+  drawOrgBlob(ctx, W / 2, H * 0.18, 380, paleta.blob1, 0.95, 10, 9);
+  
+  // Título branco dentro do header blob
+  ctx.fillStyle = '#FFFFFF';
+  const fontSize = calcularFontSize(titulo, 56, 42);
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  ctx.textBaseline = 'middle';
+  const titleMaxW = W - 100;
+  const titleLineH = fontSize * 1.2;
+  const titleY = H * 0.15;
+  wrapText(ctx, titulo.toUpperCase(), W / 2, titleY, titleMaxW, titleLineH, 'center');
+  
+  // Foto: centro, 84% x 37%
+  const fotoW = Math.round(W * 0.84);
+  const fotoH = Math.round(H * 0.37);
+  const fotoX = (W - fotoW) / 2;
+  const fotoY = Math.round(H * 0.32);
+  await drawPhotoMasked(ctx, fotoBuffer, fotoX, fotoY, fotoW, fotoH, 20);
+  
+  // Blobs laterais na transição
+  drawOrgBlob(ctx, W * 0.08, fotoY + fotoH + 30, 60, paleta.blob2, 0.4, 20, 5);
+  drawOrgBlob(ctx, W * 0.92, fotoY + fotoH + 30, 60, paleta.blob3, 0.3, 21, 5);
+  
+  // Badges grid (até 6, 2 colunas)
+  const badgeItems = items.length > 0 ? items : ['✓ Atendimento especializado', '✓ Ambiente acolhedor', '✓ Equipe multidisciplinar'];
+  const badgeW = (W - 120) / 2;
+  const badgeH = 56;
+  const startY = fotoY + fotoH + 50;
+  
+  ctx.font = '24px Arial, sans-serif';
+  
+  for (let i = 0; i < Math.min(badgeItems.length, 6); i++) {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const bx = 50 + col * (badgeW + 20);
+    const by = startY + row * (badgeH + 16);
+    
+    // Fundo badge (opacidade via alpha, não hex)
+    ctx.save();
+    ctx.fillStyle = paleta.blob2;
+    ctx.globalAlpha = 0.27;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, badgeW, badgeH, 12);
+    ctx.fill();
+    ctx.restore();
+    
+    // Texto
+    ctx.fillStyle = '#333333';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(badgeItems[i].substring(0, 35), bx + 16, by + badgeH / 2);
+  }
+  
+  // Botão CTA
+  const lastRow = Math.min(badgeItems.length, 6) / 2;
+  const btnY = startY + Math.ceil(lastRow) * (badgeH + 16) + 30;
+  const btnW = W - 176;
+  const btnH = 74;
+  drawBtn(ctx, 'AGENDE UMA AVALIAÇÃO', 88, btnY, btnW, btnH, paleta.blob1, '#FFFFFF');
+  
+  // Marca d'água
+  drawWatermark(ctx, 'clinicafonoinova.com.br', 60, H - 30, paleta.blob1, 0.16);
+}
+
+/**
+ * TEMPLATE 3: right_quote
+ * Card "Meu filho melhorou muito!"
+ * Foto esquerda grande, quote direita com aspas
+ */
+async function tplRightQuote(ctx, fotoBuffer, titulo, subtitulo, paleta) {
+  const W = 1080, H = 1080;
+  
+  // Fundo
+  ctx.fillStyle = paleta.bg;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Blobs decorativos
+  drawOrgBlob(ctx, W * 0.88, H * 0.12, 120, paleta.blob3, 0.6, 30, 7);
+  drawOrgBlob(ctx, W * 0.12, H * 0.88, 140, paleta.blob2, 0.5, 31, 8);
+  drawOrgBlob(ctx, W * 0.5, H * 0.5, 200, paleta.blob1, 0.08, 32, 6);
+  
+  // Foto: lado esquerdo, 58% x 52%
+  const fotoW = Math.round(W * 0.58);
+  const fotoH = Math.round(H * 0.52);
+  const fotoX = 44;
+  const fotoY = 100;
+  await drawPhotoMasked(ctx, fotoBuffer, fotoX, fotoY, fotoW, fotoH, 24);
+  
+  // Aspas decorativas gigantes à direita da foto
+  const quoteX = fotoX + fotoW + 40;
+  const quoteY = fotoY + 60;
+  
+  ctx.save();
+  ctx.fillStyle = paleta.blob1;
+  ctx.globalAlpha = 0.12;
+  ctx.font = 'bold 200px Georgia, serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText('"', quoteX, quoteY);
+  ctx.restore();
+  
+  // Texto quote em itálico (usa subtitulo dinamicamente)
+  const quoteText = subtitulo ? `"${subtitulo}"` : '"A evolução foi incrível com o acompanhamento da clínica."';
+  ctx.fillStyle = '#2a2a2a';
+  ctx.font = 'italic bold 32px Georgia, serif';
+  ctx.textAlign = 'left';
+  const quoteEndY = wrapText(ctx, quoteText, quoteX, quoteY + 80, W - fotoX - fotoW - 60, 44, 'left');
+  
+  // Author
+  ctx.fillStyle = '#555555';
+  ctx.font = '24px Arial, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('— Mãe do Pedro, 5 anos', quoteX, quoteEndY + 10);
+  
+  // Badge "Depoimento real"
+  ctx.save();
+  ctx.fillStyle = paleta.blob2;
+  ctx.globalAlpha = 0.3;
+  ctx.beginPath();
+  ctx.roundRect(quoteX, quoteEndY + 30, 160, 32, 16);
+  ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = paleta.blob1;
+  ctx.font = '14px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('DEPOIMENTO REAL', quoteX + 80, quoteEndY + 51);
+  
+  // Título na metade inferior esquerda
+  const tituloY = fotoY + fotoH + 50;
+  ctx.fillStyle = '#1a1a1a';
+  const fontSize = calcularFontSize(titulo, 56, 40);
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  ctx.textAlign = 'left';
+  wrapText(ctx, titulo.toUpperCase(), fotoX, tituloY, fotoW, fontSize * 1.15, 'left');
+  
+  // Subtítulo
+  ctx.fillStyle = '#444444';
+  ctx.font = '28px Arial, sans-serif';
+  wrapText(ctx, subtitulo, fotoX, tituloY + fontSize * 1.5, fotoW, 38, 'left');
+  
+  // Botão CTA
+  const btnW = W - 132;
+  const btnH = 74;
+  drawBtn(ctx, 'CONHEÇA NOSSOS SERVIÇOS', 66, H - 130, btnW, btnH, paleta.blob1, '#FFFFFF');
+  
+  // Marca d'água
+  drawWatermark(ctx, 'clinicafonoinova.com.br', 60, H - 30, paleta.blob1, 0.16);
+}
+
+/**
+ * TEMPLATE 4: cta_bottom
+ * Card "Agende Hoje!"
+ * Fundo blob2 (amarelo/vibrante), foto topo, banner CTA
+ */
+async function tplBottomCta(ctx, fotoBuffer, titulo, subtitulo, paleta) {
+  const W = 1080, H = 1080;
+  
+  // Fundo: blob2 como cor base
+  ctx.fillStyle = paleta.blob2;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Foto: topo, 92% x 50%
+  const fotoW = Math.round(W * 0.92);
+  const fotoH = Math.round(H * 0.50);
+  const fotoX = (W - fotoW) / 2;
+  const fotoY = 40;
+  await drawPhotoMasked(ctx, fotoBuffer, fotoX, fotoY, fotoW, fotoH, 24);
+  
+  // Blobs laterais na transição
+  drawOrgBlob(ctx, W * 0.06, fotoY + fotoH, 80, paleta.blob3, 0.4, 40, 6);
+  drawOrgBlob(ctx, W * 0.94, fotoY + fotoH, 80, paleta.blob1, 0.3, 41, 6);
+  
+  // Título flutuante
+  ctx.fillStyle = '#1a1a1a';
+  const fontSize = calcularFontSize(titulo, 64, 44);
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  ctx.textBaseline = 'top';
+  const titleY = fotoY + fotoH + 30;
+  wrapText(ctx, titulo.toUpperCase(), W / 2, titleY, W - 120, fontSize * 1.2, 'center');
+  
+  // Banner CTA retangular rounded
+  const bannerY = titleY + fontSize * 2 + 20;
+  const bannerH = 140;
+  const bannerMargin = 60;
+  
+  ctx.save();
+  ctx.fillStyle = paleta.blob1;
+  ctx.shadowColor = 'rgba(0,0,0,0.15)';
+  ctx.shadowBlur = 12;
+  ctx.shadowOffsetY = 6;
+  ctx.beginPath();
+  ctx.roundRect(bannerMargin, bannerY, W - bannerMargin * 2, bannerH, 20);
+  ctx.fill();
+  ctx.restore();
+  
+  // Texto CTA no banner
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 40px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('AGENDE SUA AVALIAÇÃO', W / 2, bannerY + bannerH / 2 - 20);
+  
+  ctx.font = '24px Arial, sans-serif';
+  ctx.fillText('Vagas limitadas para este mês', W / 2, bannerY + bannerH / 2 + 25);
+  
+  // Botão WhatsApp verde
+  const btnW = W - 160;
+  const btnH = 80;
+  const btnX = 80;
+  const btnY = H - 130;
+  
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.2)';
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetY = 4;
+  ctx.fillStyle = '#25D366';
+  ctx.beginPath();
+  ctx.roundRect(btnX, btnY, btnW, btnH, btnH / 2);
+  ctx.fill();
+  ctx.restore();
+  
+  // Texto WhatsApp
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 32px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('💬 (62) 99331-5240', btnX + btnW / 2, btnY + btnH / 2);
+  
+  // Subtítulo
+  ctx.fillStyle = '#333333';
+  ctx.font = '22px Arial, sans-serif';
+  ctx.fillText('Toque para iniciar conversa no WhatsApp', W / 2, btnY - 20);
+  
+  // Marca d'água
+  drawWatermark(ctx, 'clinicafonoinova.com.br', 60, H - 30, '#000000', 0.2);
+}
+
+/**
+ * Extrai items/badges do conteúdo do post
+ */
+function extrairItemsDoPost(postContent) {
+  if (!postContent) return [];
+  const lines = postContent.split('\n').filter(l => l.trim());
+  const items = [];
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Procura por bullets, números, ou checkmarks
+    if (/^[\d•\-\*✓✔]/.test(trimmed) || trimmed.startsWith('-')) {
+      items.push(trimmed.replace(/^[\d•\-\*✓✔\.\)\s]+/, '').trim());
+    }
+  }
+  
+  return items.slice(0, 6); // Máximo 6
+}
+
+/**
+ * Gera imagem com branding Canvas Lovart aplicado
+ * NOVA IMPLEMENTAÇÃO - substitui versão SVG
  */
 export async function gerarImagemBranded({ fotoUrl, fotoBuffer, titulo, hook, especialidadeId, layoutId, postContent }) {
-  const layoutKey = layoutId || ESPECIALIDADE_LAYOUTS[especialidadeId] || 'hero_banner';
-  const layout = LAYOUTS[layoutKey];
-
-  let tituloFinal = titulo;
-  let hookFinal = hook;
+  // Determina template
+  let templateKey = layoutId;
+  if (!templateKey && TPL_MAP[especialidadeId]) {
+    templateKey = TPL_MAP[especialidadeId];
+  } else if (!templateKey) {
+    // Fallback rotacional baseado no timestamp
+    const index = Math.floor(Date.now() / 1000) % TPL_ROTATE.length;
+    templateKey = TPL_ROTATE[index];
+  }
   
-  if ((!tituloFinal || !hookFinal) && postContent) {
+  // Extrai título e subtitulo se necessário
+  let tituloFinal = titulo;
+  let subtituloFinal = hook;
+  
+  if ((!tituloFinal || !subtituloFinal) && postContent) {
     const extraido = extrairTituloHook(postContent, { nome: especialidadeId });
     tituloFinal = tituloFinal || extraido.titulo;
-    hookFinal = hookFinal || extraido.hook;
+    subtituloFinal = subtituloFinal || extraido.hook;
   }
   
   tituloFinal = (tituloFinal || 'FONO INOVA').toUpperCase();
-  hookFinal = hookFinal || 'Cuidado especializado';
-
-  console.log(`🎨 [v3] ${layoutKey} | ${especialidadeId} | "${tituloFinal.substring(0, 20)}..."`);
-
+  subtituloFinal = subtituloFinal || 'Cuidado especializado';
+  
+  // Paleta de cores
+  const paleta = PALETAS_LOVART[especialidadeId] || PALETAS_LOVART.default;
+  
+  console.log(`🎨 [Lovart] ${templateKey} | ${especialidadeId} | "${tituloFinal.substring(0, 25)}..."`);
+  
+  // Download foto se necessário
   let fotoBuf = fotoBuffer;
   if (!fotoBuf && fotoUrl) {
     console.log(`📥 Download: ${fotoUrl.substring(0, 50)}...`);
-    const r = await fetch(fotoUrl, { signal: AbortSignal.timeout(20000) });
-    if (!r.ok) throw new Error(`Download falhou: ${r.status}`);
-    fotoBuf = Buffer.from(await r.arrayBuffer());
-    console.log(`📦 ${(fotoBuf.length / 1024).toFixed(1)}KB`);
+    try {
+      const r = await fetch(fotoUrl, { signal: AbortSignal.timeout(20000) });
+      if (!r.ok) throw new Error(`Download falhou: ${r.status}`);
+      fotoBuf = Buffer.from(await r.arrayBuffer());
+      console.log(`📦 ${(fotoBuf.length / 1024).toFixed(1)}KB`);
+    } catch (e) {
+      console.warn('⚠️ Erro no download, usando placeholder:', e.message);
+      fotoBuf = null;
+    }
   }
-
-  let baseImg;
-  if (fotoBuf && layout.fotoRatio > 0) {
-    baseImg = await sharp(fotoBuf)
-      .resize(1080, 1080, { fit: 'cover', position: layout.crop })
-      .jpeg({ quality: 95 }).toBuffer();
-  } else {
-    baseImg = await sharp({create: {width: 1080, height: 1080, channels: 3, background: {r: 244, g: 208, b: 63}}}).jpeg().toBuffer();
+  
+  // Cria canvas
+  const canvas = createCanvas(1080, 1080);
+  const ctx = canvas.getContext('2d');
+  
+  // Seleciona e renderiza template
+  try {
+    switch (templateKey) {
+      case 'left_text':
+        await tplLeftText(ctx, fotoBuf, tituloFinal, subtituloFinal, paleta);
+        break;
+      case 'top_info':
+        const items = extrairItemsDoPost(postContent);
+        await tplTopInfo(ctx, fotoBuf, tituloFinal, subtituloFinal, paleta, items);
+        break;
+      case 'right_quote':
+        await tplRightQuote(ctx, fotoBuf, tituloFinal, subtituloFinal, paleta);
+        break;
+      case 'cta_bottom':
+        await tplBottomCta(ctx, fotoBuf, tituloFinal, subtituloFinal, paleta);
+        break;
+      default:
+        // Fallback para left_text
+        await tplLeftText(ctx, fotoBuf, tituloFinal, subtituloFinal, paleta);
+    }
+  } catch (e) {
+    console.error('❌ Erro ao renderizar template:', e);
+    // Fallback: renderiza template simples
+    ctx.fillStyle = paleta.bg;
+    ctx.fillRect(0, 0, 1080, 1080);
+    if (fotoBuf) {
+      await drawPhotoMasked(ctx, fotoBuf, 100, 100, 880, 600, 20);
+    }
+    ctx.fillStyle = '#1a1a1a';
+    ctx.font = 'bold 48px Arial, sans-serif';
+    wrapText(ctx, tituloFinal, 100, 750, 880, 60, 'left');
   }
-
-  const bandY = Math.round(1080 * (1 - layout.fotoRatio));
-  const svg = layout.gerarSVG(tituloFinal, hookFinal, bandY);
-
-  const final = await sharp(baseImg)
-    .composite([{ input: Buffer.from(svg), blend: 'over' }])
-    .webp({ quality: 95 }).toBuffer();
-
-  const base64 = `data:image/webp;base64,${final.toString('base64')}`;
+  
+  // Converte para PNG buffer
+  const pngBuffer = await canvas.encode('png');
+  
+  // Upload Cloudinary
+  const base64 = `data:image/png;base64,${pngBuffer.toString('base64')}`;
   const res = await cloudinary.uploader.upload(base64, {
-    folder: 'fono-inova/branded-v3',
-    public_id: `${especialidadeId}_${layoutKey}_${Date.now()}`,
+    folder: 'fono-inova/lovart',
+    public_id: `${especialidadeId}_${templateKey}_${Date.now()}`,
   });
-
+  
   console.log(`☁️  Cloudinary: ${res.secure_url.substring(0, 60)}...`);
-  return { url: res.secure_url, layout: layoutKey };
+  return { url: res.secure_url, template: templateKey, layout: templateKey };
 }
 
 /**
@@ -391,7 +1010,248 @@ export async function gerarImagemBranded({ fotoUrl, fotoBuffer, titulo, hook, es
 export async function generateImageForEspecialidade(especialidade, postContent = '') {
   const { titulo } = extrairTituloHook(postContent, especialidade);
   
-  const promptBase = `Ultra realistic professional medical photography, Brazilian ${especialidade.nome.toLowerCase()} therapist with child, ${especialidade.foco}, natural skin texture, authentic expressions, bright modern clinic, soft window light, shallow depth of field, documentary style, shot on Sony A7R IV`;
+  // Função para extrair tema específico do post e gerar prompt contextualizado
+  function extrairTemaParaPrompt(postContent, especialidadeId) {
+    if (!postContent) return null;
+    
+    const conteudo = postContent.toLowerCase();
+    const titulo = postContent.split('\n')[0].toLowerCase();
+    
+    // Dicionário de temas por especialidade com palavras-chave e prompts específicos
+    const temas = {
+      'fonoaudiologia': [
+        { 
+          keywords: ['troca letra', 'troca de letra', 'troca os sons', 'substitui', 'errinho'],
+          prompt: 'therapist using mirror to show child mouth position for letter sounds, child looking at mirror practicing correct pronunciation'
+        },
+        { 
+          keywords: ['lisp', 'ceceio', 'chiqueiro', 'l lateral', 'erre'],
+          prompt: 'therapist demonstrating tongue placement for lisp correction, using straw or tongue depressor as visual aid'
+        },
+        { 
+          keywords: ['gagueira', 'gaguejar', 'fluência', 'travar'],
+          prompt: 'patient therapist listening attentively to child speaking, relaxed environment for fluency practice'
+        },
+        { 
+          keywords: ['mamar', 'amamentação', 'peito', 'dificuldade'],
+          prompt: 'speech therapist observing baby feeding, gentle assessment of oral motor skills for feeding therapy'
+        },
+        { 
+          keywords: ['respirar', 'respiração', 'nariz', 'boca aberta'],
+          prompt: 'therapist teaching child nasal breathing exercises, using feather or cotton ball to demonstrate airflow'
+        }
+      ],
+      'psicologia': [
+        { 
+          keywords: ['ansiedade', 'medo', 'preocupação', 'nervoso'],
+          prompt: 'therapist using breathing ball or calm-down jar with anxious child, teaching emotional regulation technique'
+        },
+        { 
+          keywords: ['birra', 'chateação', 'birrete', 'frustração'],
+          prompt: 'therapist helping child identify emotions using emotion chart or feelings wheel, naming the emotion together'
+        },
+        { 
+          keywords: ['autismo', 'tea', 'espectro', 'social'],
+          prompt: 'structured play therapy session with visual schedule cards, therapist and child engaged in turn-taking game'
+        },
+        { 
+          keywords: ['toca', 'brinca sozinho', 'isolado', 'amigos'],
+          prompt: 'therapist facilitating social skills practice through puppet play or role-playing social scenarios'
+        }
+      ],
+      'terapia_ocupacional': [
+        { 
+          keywords: ['escrita', 'lápis', 'segura', 'coordenação motora fina'],
+          prompt: 'child practicing pencil grip with adaptive triangular pencil, therapist guiding hand position for writing readiness'
+        },
+        { 
+          keywords: ['botão', 'abotoar', 'zíper', 'roupa', 'vestir'],
+          prompt: 'child practicing dressing skills on dressing board with buttons and zippers, building independence'
+        },
+        { 
+          keywords: ['pular', 'corda', 'equilíbrio', 'coordenação'],
+          prompt: 'child balancing on one foot or beam, therapist supporting, working on gross motor coordination'
+        },
+        { 
+          keywords: ['alimentação', 'comer', 'garfo', 'colher', 'mastigar'],
+          prompt: 'feeding therapy session with adapted utensils, child practicing scooping with therapist guidance'
+        },
+        { 
+          keywords: ['sensível', 'sensibilidade', 'tato', 'textura'],
+          prompt: 'sensory exploration activity with various textured materials, child touching different fabrics and surfaces'
+        }
+      ],
+      'fisioterapia': [
+        { 
+          keywords: ['engatinhar', 'andar', 'marcha', 'deformidade'],
+          prompt: 'physiotherapist guiding child through crawling or walking exercises, using colorful tunnel or foam blocks'
+        },
+        { 
+          keywords: ['postura', 'sentar', 'coluna', 'fortalecer'],
+          prompt: 'child sitting on therapy ball practicing core stability, therapist supporting proper posture'
+        },
+        { 
+          keywords: ['torticolo', 'pescoço', 'posição', 'assimetria'],
+          prompt: 'gentle neck positioning exercises, therapist using toys to encourage child to turn head symmetrically'
+        }
+      ],
+      'psicomotricidade': [
+        { 
+          keywords: ['espaço', 'direção', 'esquerda', 'direita', 'cima', 'baixo'],
+          prompt: 'body awareness game with obstacles, child navigating through colorful cones following directions'
+        },
+        { 
+          keywords: ['lateralidade', 'mão dominante', 'esquerda', 'direita'],
+          prompt: 'lateralization activity with bean bags, child throwing to target to establish dominant hand preference'
+        }
+      ],
+      'neuropsicologia': [
+        { 
+          keywords: ['memória', 'lembrar', 'esquece', 'atividade'],
+          prompt: 'memory game with picture cards laid out on table, child concentrating on matching pairs'
+        },
+        { 
+          keywords: ['atenção', 'distraído', 'concentração', 'foco'],
+          prompt: 'attention training with sorting activity, child organizing colored objects by category'
+        }
+      ],
+      'musicoterapia': [
+        { 
+          keywords: ['canto', 'voz', 'cantar', 'música'],
+          prompt: 'music therapist and child singing together with simple percussion, child holding shaker or tambourine'
+        },
+        { 
+          keywords: ['ritmo', 'batida', 'tocar', 'instrumento'],
+          prompt: 'rhythm exercise with drums or xylophone, therapist and child playing musical patterns together'
+        }
+      ],
+      'psicopedagogia': [
+        { 
+          keywords: ['leitura', 'ler', 'livro', 'palavra'],
+          prompt: 'reading readiness activity with large print book, child pointing to words while therapist guides with finger'
+        },
+        { 
+          keywords: ['escrita', 'escrever', 'letra', 'alfabeto'],
+          prompt: 'multisensory writing practice, child tracing letters in sand tray or textured surface'
+        },
+        { 
+          keywords: ['número', 'contar', 'matemática', 'contagem'],
+          prompt: 'number concept activity with manipulatives, child counting colorful objects grouped on table'
+        }
+      ],
+      'freio_lingual': [
+        { 
+          keywords: ['mamar', 'succao', 'amamentar', 'peito'],
+          prompt: 'lactation consultant observing breastfeeding, gentle assessment of tongue mobility for feeding'
+        },
+        { 
+          keywords: ['língua', 'lingua presa', 'movimento', 'elevar'],
+          prompt: 'tongue mobility assessment, child sticking tongue out to touch upper lip, therapist observing range'
+        },
+        { 
+          keywords: ['fala', 'pronunciar', 'lateral', 'erre'],
+          prompt: 'tongue placement exercises for speech, using mirror to visualize tongue position for sounds'
+        }
+      ]
+    };
+    
+    const temasEspecialidade = temas[especialidadeId] || [];
+    
+    // Procura por correspondências de keywords no conteúdo completo
+    for (const tema of temasEspecialidade) {
+      if (tema.keywords.some(kw => conteudo.includes(kw))) {
+        return tema.prompt;
+      }
+    }
+    
+    // Fallback: tenta extrair substantivos do título para criar contexto
+    const palavrasChave = titulo.match(/\b(\.?\w{4,})\b/g) || [];
+    const substantivos = palavrasChave.filter(p => 
+      !['como', 'para', 'sobre', 'esse', 'esse', 'aqui', 'quando', 'onde', 'mais', 'muito', 'pode', 'toda'].includes(p)
+    );
+    
+    if (substantivos.length > 0) {
+      return `therapy session addressing ${substantivos.slice(0, 2).join(' and ')}, child engaged in therapeutic activity`;
+    }
+    
+    return null;
+  }
+  
+  // Extrai tema específico do post
+  const temaEspecifico = extrairTemaParaPrompt(postContent, especialidade.id);
+  
+  // Fallback por especialidade se não encontrou tema específico
+  const atividadesPorEspecialidade = {
+    'fonoaudiologia': {
+      atividade: temaEspecifico || 'helping child with speech articulation exercises using mirror and picture cards',
+      materiais: 'speech therapy flashcards, small mirror, colorful foam letters on table',
+      foco: 'speech and language development'
+    },
+    'psicologia': {
+      atividade: temaEspecifico || 'engaged in therapeutic play session using dolls and drawing materials',
+      materiais: 'colorful drawing paper, crayons, stuffed animals, emotion cards',
+      foco: 'emotional and behavioral support'
+    },
+    'terapia_ocupacional': {
+      atividade: temaEspecifico || 'guiding child through fine motor skills exercise using colorful beads',
+      materiais: 'sensory beads, lacing cards, playdough, peg boards on table',
+      foco: 'motor skills development'
+    },
+    'fisioterapia': {
+      atividade: temaEspecifico || 'assisting child with movement therapy using colorful balls',
+      materiais: 'therapy balls, colorful cones, foam rollers, soft mats',
+      foco: 'physical development and mobility'
+    },
+    'psicomotricidade': {
+      atividade: temaEspecifico || 'leading body awareness exercise using scarves',
+      materiais: 'colorful scarves, rhythm instruments, coordination games',
+      foco: 'psychomotor development'
+    },
+    'neuropsicologia': {
+      atividade: temaEspecifico || 'conducting cognitive assessment using puzzle games',
+      materiais: 'wooden puzzles, memory game cards, pattern blocks',
+      foco: 'cognitive development'
+    },
+    'musicoterapia': {
+      atividade: temaEspecifico || 'engaging child in music therapy using percussion instruments',
+      materiais: 'colorful tambourines, maracas, xylophone, music sheets',
+      foco: 'musical and emotional expression'
+    },
+    'psicopedagogia': {
+      atividade: temaEspecifico || 'teaching child pre-reading skills using letter tiles',
+      materiais: 'magnetic letters, word cards, educational board games',
+      foco: 'learning support and literacy'
+    },
+    'psicopedagogia_clinica': {
+      atividade: temaEspecifico || 'working on reading and writing skills',
+      materiais: 'sand tray for letters, textured letter cards, colorful alphabet',
+      foco: 'multisensory learning'
+    },
+    'freio_lingual': {
+      atividade: temaEspecifico || 'evaluating oral motor function',
+      materiais: 'small mirror, wooden tongue depressors, oral motor tools',
+      foco: 'tongue mobility and feeding'
+    }
+  };
+  
+  const atividade = atividadesPorEspecialidade[especialidade.id] || {
+    atividade: temaEspecifico || 'engaged in therapeutic activity',
+    materiais: 'colorful educational toys appropriate for therapy',
+    foco: 'child development support'
+  };
+  
+  // Log do tema detectado
+  if (temaEspecifico) {
+    console.log(`   🎯 Tema detectado do post: "${temaEspecifico.substring(0, 60)}..."`);
+  }
+  
+  // Prompt contextualizado com atividade específica da especialidade
+  const promptBase = `Editorial documentary photo, Canon EOS R5 with 85mm f/1.8 lens, ISO 400, natural soft daylight from large windows, bright white modern pediatric clinic interior with light wood accents, cheerful Brazilian female ${especialidade.nome.toLowerCase()} therapist wearing pastel scrubs (light teal, coral or lavender), ${atividade.atividade}, happy Brazilian child aged 4-6 participating actively, both seated at colorful but clean activity table with ${atividade.materiais}, authentic candid smiles, ${atividade.foco}, sharp focus on faces with shallow depth of field, background softly blurred showing therapy toys and books, warm color balance 5500K, NO green tint, NO neon lighting, NO dark shadows, NO dramatic contrasts, photojournalism quality, realistic skin tones, professional healthcare photography`;
+  
+  console.log(`   📝 Prompt: ${especialidade.nome} - ${atividade.foco}`);
+  
+  // Negative prompt explícito para evitar renders/cartoons
+  const negativePrompt = "3d render, cartoon, illustration, anime, neon lighting, dark background, oversaturated colors, green tint, red tint, blue tint, dramatic chiaroscuro lighting, CGI, animation, painting, sketch, drawing, low quality, blurry faces, distorted hands, extra fingers, plastic skin, doll-like, synthetic, artificial, game screenshot, blender render, unreal engine, 3d model";
 
   const errors = [];
 
@@ -411,6 +1271,7 @@ export async function generateImageForEspecialidade(especialidade, postContent =
         },
         body: JSON.stringify({
           prompt: promptBase,
+          negative_prompt: negativePrompt,
           image_size: 'square',  // 1024x1024 para Instagram
           num_inference_steps: 28,
           guidance_scale: 3.5,
@@ -953,5 +1814,9 @@ function hexToRgb(hex) {
     : { r: 26, g: 77, b: 58 };
 }
 
-export { LAYOUTS, ESPECIALIDADE_LAYOUTS, CORES, LAYOUTS_JSON, layoutEngine, SVGGenerator };
+// ═══════════════════════════════════════════════════════════
+// FIX: Exportações corretas para ESM + compatibilidade
+// ═══════════════════════════════════════════════════════════
+
+export { LAYOUTS, ESPECIALIDADE_LAYOUTS, CORES, LAYOUTS_JSON, layoutEngine, SVGGenerator, PALETAS_LOVART, TPL_MAP };
 export default { gerarImagemBranded, gerarImagemBrandedJSON, generateImageForEspecialidade, gerarPostCompleto, LAYOUTS, ESPECIALIDADE_LAYOUTS };

@@ -62,33 +62,57 @@ export function generatePrompt(tipo, dados) {
  */
 export const PROMPTS_POR_ESPECIALIDADE = {
   fonoaudiologia: {
-    foto: (atividade) => `Ultra realistic professional medical photography, Brazilian speech therapist conducting ${atividade} with a child, articulation therapy session, colorful picture cards on table, mirror on wall, natural window lighting, authentic expressions, documentary style, real clinic environment, warm atmosphere, shot on Sony A7R IV`,
+    foto: (atividade) => `Ultra realistic professional photography, inside Fono Inova clinic, Brazilian speech therapist in colorful scrubs conducting ${atividade} with child, bright therapy room with white walls, colorful alphabet posters, wooden shelves with therapy toys and picture books, large mirror on wall, low white table with colorful picture cards spread out, soft natural window light, authentic candid interaction, documentary style, warm cheerful pediatric clinic atmosphere, shot on Sony A7R IV`,
     arte: (tema) => `Flat modern educational illustration, ${tema}, speech therapy concepts, sound waves, mouth diagrams, pastel green and purple palette, clean vector style, Instagram layout, friendly and approachable`,
     layout: (mensagem) => `Instagram healthcare post, ${mensagem}, vibrant green (#1A4D3A) and yellow (#F4D03F), geometric shapes, speech bubbles, typography-focused, modern medical branding`
   },
   
   psicologia: {
-    foto: (atividade) => `Ultra realistic professional photography, Brazilian child psychologist in session with child, play therapy environment, toys and drawing materials, soft natural light, genuine interaction, cozy office setting, documentary style, authentic emotions`,
+    foto: (atividade) => `Ultra realistic professional photography, inside Fono Inova clinic, Brazilian child psychologist in colorful scrubs with child, warm play therapy room with sage green accent wall, colorful art prints, wooden shelf with dolls stuffed animals and drawing materials, small round white table with toys, soft natural window light with sheer curtains, cozy rug area with cushions, genuine candid interaction, documentary style, welcoming pediatric clinic`,
     arte: (tema) => `Flat illustration, ${tema}, child psychology concepts, emotions icons, brain development graphics, soft purple and blue palette, calming design, educational infographic style`,
     layout: (mensagem) => `Instagram healthcare layout, ${mensagem}, calming purple (#C39BD3) and green tones, soft organic shapes, mental health visuals, professional typography`
   },
   
   terapia_ocupacional: {
-    foto: (atividade) => `Ultra realistic photography, occupational therapist helping child with fine motor activities, colorful beads and puzzles on table, sensory play materials, bright clinic room, natural interaction, documentary style, professional healthcare setting`,
+    foto: (atividade) => `Ultra realistic photography, inside Fono Inova clinic, occupational therapist in colorful scrubs helping child with fine motor activities, bright therapy room with white walls and colorful educational posters, Montessori wooden shelves with colorful beads pegboards puzzles and sensory materials, modern white activity table at child height, colorful foam mat area with climbing structures, natural window light, authentic candid interaction, professional pediatric clinic`,
     arte: (tema) => `Flat educational illustration, ${tema}, motor skills development, hand coordination graphics, sensory integration icons, warm orange and green palette, engaging design`,
     layout: (mensagem) => `Instagram post design, ${mensagem}, energetic orange (#F1948A) and green, dynamic shapes, activity icons, modern healthcare aesthetic`
   },
   
   fisioterapia: {
-    foto: (atividade) => `Ultra realistic photography, pediatric physiotherapist with child doing balance exercises, foam blocks and therapy balls, bright gym space, natural window light, genuine encouragement moment, professional rehabilitation setting`,
+    foto: (atividade) => `Ultra realistic photography, inside Fono Inova clinic, pediatric physiotherapist in colorful scrubs with child doing balance exercises, spacious bright therapy gym with white walls and colorful exercise posters, floor-to-ceiling windows with natural light, colorful foam blocks therapy balls balance beam climbing structures, playful equipment, genuine encouragement moment, cheerful energetic pediatric rehabilitation clinic`,
     arte: (tema) => `Flat illustration, ${tema}, motor development concepts, body posture graphics, movement icons, fresh blue and green palette, dynamic composition`,
     layout: (mensagem) => `Instagram healthcare layout, ${mensagem}, vibrant blue and green (#1A4D3A), movement lines, energetic shapes, professional medical design`
   },
   
   neuropsicologia: {
-    foto: (atividade) => `Ultra realistic photography, neuropsychologist conducting cognitive assessment with child, colorful cognitive blocks on table, focused concentration moment, modern assessment room, natural lighting, professional scientific setting`,
+    foto: (atividade) => `Ultra realistic photography, inside Fono Inova clinic, neuropsychologist in colorful scrubs conducting cognitive assessment with child, clean bright assessment room with white walls and colorful alphabet number prints, modern white desk at child height with colorful cognitive blocks and assessment materials, organized wooden shelves with educational toys puzzles and games, large window with natural light, focused concentration moment, warm professional pediatric clinic`,
     arte: (tema) => `Flat illustration, ${tema}, brain development graphics, cognitive function icons, learning concepts, sophisticated purple and green palette, scientific yet approachable`,
     layout: (mensagem) => `Instagram post, ${mensagem}, elegant purple (#C39BD3) and green, brain icons, neural network patterns, premium medical aesthetic`
+  },
+
+  psicomotricidade: {
+    foto: (atividade) => `Ultra realistic photography, inside Fono Inova clinic, psychomotricity therapist in colorful scrubs with child doing movement activities, large bright therapy room with white walls and colorful movement posters, floor-to-ceiling windows with abundant natural light, colorful foam mats covering floor, foam tunnels steps and soft obstacles, balls and hoops and playful movement equipment, joyful energetic interaction, documentary style, pediatric clinic`,
+    arte: (tema) => `Flat illustration, ${tema}, movement and body awareness graphics, coordination icons, dynamic composition, energetic orange and green palette, playful design`,
+    layout: (mensagem) => `Instagram post, ${mensagem}, energetic orange (#F1948A) and green, movement lines, dynamic shapes, playful pediatric aesthetic`
+  },
+
+  musicoterapia: {
+    foto: (atividade) => `Ultra realistic photography, inside Fono Inova clinic, music therapist with child in music therapy session, warm bright room with white walls and colorful music note illustrations, large window with natural light, light hardwood floor with colorful rug, wooden shelves with drums tambourines xylophone colorful shakers guitar, colorful cushions on floor and scarves, joyful creative musical interaction, documentary style`,
+    arte: (tema) => `Flat illustration, ${tema}, music therapy concepts, musical instruments icons, sound waves, warm yellow and purple palette, creative design`,
+    layout: (mensagem) => `Instagram post, ${mensagem}, warm yellow (#F4D03F) and purple, musical notes, instrument icons, creative artistic aesthetic`
+  },
+
+  psicopedagogia: {
+    foto: (atividade) => `Ultra realistic photography, inside Fono Inova clinic, psychopedagogue in colorful scrubs helping child with learning activities, bright room with white walls and colorful alphabet number and book illustration posters, large window with abundant natural light, modern white desk at child height with books and learning materials, wooden Montessori shelves with educational books wooden puzzles letters numbers and games, warm encouraging interaction`,
+    arte: (tema) => `Flat illustration, ${tema}, learning and literacy concepts, book and pencil icons, educational graphics, warm green and yellow palette, encouraging design`,
+    layout: (mensagem) => `Instagram post, ${mensagem}, warm green (#1A4D3A) and yellow (#F4D03F), book icons, learning symbols, educational aesthetic`
+  },
+
+  freio_lingual: {
+    foto: (atividade) => `Ultra realistic photography, inside Fono Inova clinic, pediatric feeding specialist in colorful scrubs consulting with mother and baby for oral motor therapy, clean warm pediatric consultation room with white walls and colorful children educational prints, large window with soft natural light, light hardwood floor, modern comfortable child-friendly examination area with soft toys, wooden shelf with books and toys, small plant, warm professional pediatric clinic for feeding assessment`,
+    arte: (tema) => `Flat illustration, ${tema}, oral motor concepts, baby feeding graphics, tongue and mouth diagrams, soft pink and green palette, gentle design`,
+    layout: (mensagem) => `Instagram post, ${mensagem}, soft pink (#F1948A) and green, baby care icons, gentle curves, nurturing aesthetic`
   }
 };
 

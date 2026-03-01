@@ -379,7 +379,7 @@ function initFollowupWatcher() {
     startRegressionCron();
     
     // 📍 Inicializa cron do Google Meu Negócio
-    // Marketing crons desabilitados temporariamente
+    await import("./crons/gmb.cron.js");
 
     // Registrar Webhook PIX no Sicoob
     try {
