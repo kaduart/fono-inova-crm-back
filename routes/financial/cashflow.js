@@ -50,12 +50,37 @@ router.get('/summary', auth, async (req, res) => {
       pacotesCriados,
       agendamentosRealizados
     ] = await Promise.all([
-      // 1. Receitas (pagamentos confirmados)
+      // 1. Receitas (particulares + convênios recebidos)
+      // IMPORTANTE: Particulares usam paymentDate, convênios usam insurance.receivedAt
       Payment.aggregate([
         {
           $match: {
-            status: 'paid',
-            paymentDate: { $gte: startDateStr, $lte: endDateStr }
+            $or: [
+              // ========================================
+              // PARTÍCULARES: status='paid' + paymentDate
+              // ========================================
+              {
+                paymentMethod: { $ne: 'convenio' },
+                status: 'paid',
+                paymentDate: { $gte: startDateStr, $lte: endDateStr }
+              },
+              // ========================================
+              // CONVÊNIOS: insurance.status='received' + insurance.receivedAt
+              // ========================================
+              {
+                paymentMethod: 'convenio',
+                'insurance.status': 'received',
+                $or: [
+                  // Preferência: usar insurance.receivedAt
+                  { 'insurance.receivedAt': { $gte: startDateStr, $lte: endDateStr } },
+                  // Fallback: se não tiver receivedAt, usar paymentDate
+                  {
+                    'insurance.receivedAt': { $exists: false },
+                    paymentDate: { $gte: startDateStr, $lte: endDateStr }
+                  }
+                ]
+              }
+            ]
           }
         },
         {

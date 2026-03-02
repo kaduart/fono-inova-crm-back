@@ -1377,6 +1377,49 @@ export async function getOptimizedAmandaResponse({
         return ensureSingleHeart("📍 Estamos na Av. Minas Gerais, 405 - Jundiaí, Anápolis/GO. Tem estacionamento fácil! Quer o link do Maps? 💚");
     }
     
+    // 🧠 INTERPRETAÇÃO: Resposta sobre objetivo da neuropsicologia (laudo vs acompanhamento)
+    const isNeuroContext = lead?.therapyArea === 'neuropsicologia' || amandaAnalysis.extracted.therapyArea === 'neuropsicologia';
+    const isAnsweringNeuroObjective = lead?.stage === 'triagem_neuro_objetivo' || lead?.neuroObjectiveAsked;
+    
+    if (isNeuroContext && isAnsweringNeuroObjective && !lead?.wantsLaudo !== undefined) {
+        const wantsLaudo = /\b(laudo|avaliação completa|neuropsic|10 sessões|dez sessões|2\.000|dois mil|2000)\b/i.test(text);
+        const wantsAcompanhamento = /\b(terapia|terapias|acompanhamento|tratamento|sessões semanais|200 reais|duzentos|semanal)\b/i.test(text);
+        
+        if (wantsLaudo && !wantsAcompanhamento) {
+            console.log('[AMANDA] Quer LAUDO → Continua neuropsicologia');
+            await safeLeadUpdate(lead._id, {
+                $set: { 
+                    wantsLaudo: true,
+                    neuroObjetivo: 'laudo',
+                    stage: 'triagem_agendamento'
+                }
+            }).catch(() => {});
+            // Continua para pedir dados que faltam (nome, idade, período)
+            return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead);
+        } else if (wantsAcompanhamento && !wantsLaudo) {
+            console.log('[AMANDA] Quer ACOMPANHAMENTO → Redireciona para psicologia');
+            await safeLeadUpdate(lead._id, {
+                $set: { 
+                    wantsLaudo: false,
+                    neuroObjetivo: 'acompanhamento',
+                    therapyArea: 'psicologia', // Muda para psicologia
+                    stage: 'triagem_agendamento'
+                }
+            }).catch(() => {});
+            // Atualiza a análise para refletir a mudança de área
+            amandaAnalysis.extracted.therapyArea = 'psicologia';
+            return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead);
+        } else if (wantsLaudo && wantsAcompanhamento) {
+            // Ambos - pede para esclarecer
+            return ensureSingleHeart(
+                `Entendi que vocês querem os dois caminhos 💚\n\n` +
+                `Só pra eu organizar: vocês querem começar pela **avaliação neuropsicológica com laudo** primeiro, ` +
+                `ou já querem iniciar o **acompanhamento terapêutico**?`
+            );
+        }
+        // Se não entendeu, continua com a triagem normal
+    }
+    
     // 3.4 TRIAGEM: Falta dados → Pergunta contextual
     if (amandaAnalysis.serviceStatus === 'available' && !amandaAnalysis.hasAll && amandaAnalysis.extracted.therapyArea) {
         // Salva therapyArea no lead se ainda não tem
@@ -1388,6 +1431,25 @@ export async function getOptimizedAmandaResponse({
                 } 
             });
         }
+        
+        // 🧠 CASO ESPECIAL: Neuropsicologia → Sondar objetivo (laudo vs acompanhamento)
+        const isNeuro = amandaAnalysis.extracted.therapyArea === 'neuropsicologia' || lead?.therapyArea === 'neuropsicologia';
+        const alreadyAskedObjective = lead?.neuroObjectiveAsked || lead?.neuroObjetivoSondado;
+        const hasObjectiveInfo = lead?.neuroObjetivo || lead?.wantsLaudo !== undefined;
+        
+        if (isNeuro && !alreadyAskedObjective && !hasObjectiveInfo) {
+            console.log('[AMANDA] Neuropsicologia detectada - sondando objetivo...');
+            await safeLeadUpdate(lead._id, {
+                $set: { neuroObjectiveAsked: true, stage: 'triagem_neuro_objetivo' }
+            }).catch(() => {});
+            
+            return ensureSingleHeart(
+                `Entendi! Neuropsicologia 💚\n\n` +
+                `Só pra eu direcionar certinho: vocês estão buscando a **avaliação completa com laudo** (~10 sessões, investimento R$ 2.000) ` +
+                `ou **acompanhamento terapêutico** (sessões semanais de R$ 200)?`
+            );
+        }
+        
         return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead);
     }
     
@@ -5497,8 +5559,10 @@ async function processMessageLikeAmanda(text, lead = {}) {
     
     // 3. DERIVA therapyArea da queixa salva (se não detectou na mensagem atual)
     if (!extracted.therapyArea && lead?.complaint) {
+        console.log('[AMANDA-SÊNIOR] Tentando derivar therapyArea da queixa:', lead.complaint);
         try {
             const therapiesFromComplaint = detectAllTherapies(lead.complaint) || [];
+            console.log('[AMANDA-SÊNIOR] Therapies detectadas na queixa:', therapiesFromComplaint);
             if (therapiesFromComplaint.length > 0) {
                 const areaMap = {
                     'neuropsychological': 'neuropsicologia',
@@ -5512,6 +5576,20 @@ async function processMessageLikeAmanda(text, lead = {}) {
                     'psychopedagogy': 'neuropsicologia'
                 };
                 extracted.therapyArea = areaMap[therapiesFromComplaint[0].id] || null;
+                console.log('[AMANDA-SÊNIOR] TherapyArea derivada da queixa:', extracted.therapyArea);
+            } else {
+                // Fallback: verificação direta na string da queixa
+                const complaintLower = lead.complaint.toLowerCase();
+                if (/neuropsi|avaliação neuropsicológica/.test(complaintLower)) {
+                    extracted.therapyArea = 'neuropsicologia';
+                    console.log('[AMANDA-SÊNIOR] TherapyArea derivada via fallback:', extracted.therapyArea);
+                } else if (/fonoaudiologia|fono|avaliação fonoaudiológica/.test(complaintLower)) {
+                    extracted.therapyArea = 'fonoaudiologia';
+                    console.log('[AMANDA-SÊNIOR] TherapyArea derivada via fallback:', extracted.therapyArea);
+                } else if (/psicologia|psicólogo|psicóloga/.test(complaintLower)) {
+                    extracted.therapyArea = 'psicologia';
+                    console.log('[AMANDA-SÊNIOR] TherapyArea derivada via fallback:', extracted.therapyArea);
+                }
             }
         } catch (err) {
             console.warn('[processMessageLikeAmanda] Erro ao derivar therapyArea da queixa:', err.message);
