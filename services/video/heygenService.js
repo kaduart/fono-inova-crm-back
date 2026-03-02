@@ -24,32 +24,33 @@ const HEADERS = {
 };
 
 // ─── Configuração de Avatares (preencher via .env) ─────────────────────
-// 🎙️ Voice IDs HeyGen válidos (Portuguese - Brasil)
-// Lista atualizada via GET /api/videos/voices
+// 🎙️ Voice IDs HeyGen v2 válidos (Portuguese - Brasil)
+// Use /api/videos/voices para listar vozes disponíveis
+// 🎙️ Voice IDs HeyGen - Voz do seu avatar (português)
 export const AVATARES = {
   fono_ana: { 
-    avatar_id: process.env.HEYGEN_AVATAR_FONO   || 'Abigail_expressive_2024112501', 
-    voice_id:  process.env.HEYGEN_VOICE_FONO    || '94ec497104a04c87904a8aa138d6e46c'  // Sofia Brazil
+    avatar_id: process.env.HEYGEN_AVATAR_FONO   || 'a8385a99a1334225819315169e252107', 
+    voice_id:  process.env.HEYGEN_VOICE_FONO    || 'e0aefdc326f34a71afddae5cdae32e5a'
   },
   psico_bia: { 
-    avatar_id: process.env.HEYGEN_AVATAR_PSICO  || 'Abigail_expressive_2024112501', 
-    voice_id:  process.env.HEYGEN_VOICE_PSICO   || '6c0a95599317428a8151293305deceba'  // Ana Carvalho - Friendly
+    avatar_id: process.env.HEYGEN_AVATAR_PSICO  || 'a8385a99a1334225819315169e252107', 
+    voice_id:  process.env.HEYGEN_VOICE_PSICO   || 'e0aefdc326f34a71afddae5cdae32e5a'
   },
   to_carla: { 
-    avatar_id: process.env.HEYGEN_AVATAR_TO     || 'Abigail_expressive_2024112501', 
-    voice_id:  process.env.HEYGEN_VOICE_TO      || '0edbc867be6f48c5be8ff8b0fbca0802'  // Sofia Brazil - Friendly
+    avatar_id: process.env.HEYGEN_AVATAR_TO     || 'a8385a99a1334225819315169e252107', 
+    voice_id:  process.env.HEYGEN_VOICE_TO      || 'e0aefdc326f34a71afddae5cdae32e5a'
   },
   neuro_dani: { 
-    avatar_id: process.env.HEYGEN_AVATAR_NEURO  || 'Abigail_expressive_2024112501', 
-    voice_id:  process.env.HEYGEN_VOICE_NEURO   || '6d282a9f296746568da9d65586935dba'  // Sofia Brazil - Excited
+    avatar_id: process.env.HEYGEN_AVATAR_NEURO  || 'a8385a99a1334225819315169e252107', 
+    voice_id:  process.env.HEYGEN_VOICE_NEURO   || 'e0aefdc326f34a71afddae5cdae32e5a'
   },
   fisio_edu: { 
-    avatar_id: process.env.HEYGEN_AVATAR_FISIO  || 'Abigail_expressive_2024112501', 
-    voice_id:  process.env.HEYGEN_VOICE_FISIO   || '94ec497104a04c87904a8aa138d6e46c'  // Sofia Brazil
+    avatar_id: process.env.HEYGEN_AVATAR_FISIO  || 'a8385a99a1334225819315169e252107', 
+    voice_id:  process.env.HEYGEN_VOICE_FISIO   || 'e0aefdc326f34a71afddae5cdae32e5a'
   },
   musico_fer: { 
-    avatar_id: process.env.HEYGEN_AVATAR_MUSICO || 'Abigail_expressive_2024112501', 
-    voice_id:  process.env.HEYGEN_VOICE_MUSICO  || '6c0a95599317428a8151293305deceba'  // Ana Carvalho
+    avatar_id: process.env.HEYGEN_AVATAR_MUSICO || 'a8385a99a1334225819315169e252107', 
+    voice_id:  process.env.HEYGEN_VOICE_MUSICO  || 'e0aefdc326f34a71afddae5cdae32e5a'
   }
 };
 
@@ -80,7 +81,15 @@ export async function gerarVideo({ profissional, textoFala, titulo }) {
     throw new Error('Texto muito curto para gerar vídeo (mínimo 10 caracteres)');
   }
 
-  // 1. Disparar geração
+  // 1. Construir configuração de voz (sempre requer voice_id na v2)
+  const voiceConfig = {
+    type:       'text',
+    input_text: textoFala,
+    voice_id:   avatar.voice_id,
+    speed:      0.95
+  };
+
+  // 2. Disparar geração
   const { data: createRes } = await axios.post(`${BASE}/v2/video/generate`, {
     video_inputs: [{
       character: {
@@ -88,12 +97,7 @@ export async function gerarVideo({ profissional, textoFala, titulo }) {
         avatar_id:    avatar.avatar_id,
         avatar_style: 'normal'
       },
-      voice: {
-        type:       'text',
-        input_text: textoFala,
-        voice_id:   avatar.voice_id,
-        speed:      0.95  // levemente mais lento = mais autoridade
-      },
+      voice: voiceConfig,
       background: { 
         type:  'color', 
         value: '#FFFFFF' 
@@ -141,7 +145,17 @@ async function _aguardarConclusao(videoId, maxTentativas = 60, intervaloMs = 100
       }
       
       if (status === 'failed') {
-        const errorDetail = error ? (typeof error === 'object' ? JSON.stringify(error) : error) : 'sem detalhe';
+        // 🔥 FIX: Melhor tratamento de erro
+        let errorDetail;
+        if (error) {
+          if (typeof error === 'object') {
+            errorDetail = JSON.stringify(error);
+          } else {
+            errorDetail = String(error);
+          }
+        } else {
+          errorDetail = 'sem detalhe';
+        }
         logger.error(`[HEYGEN] Falha no vídeo ${videoId}: ${errorDetail}`);
         throw new Error(`HeyGen falhou: ${errorDetail}`);
       }

@@ -41,7 +41,8 @@ async function handleGenerateVideo(req, res) {
       duracao = 60, 
       duration,
       publicar = false,
-      targeting = {}
+      targeting = {},
+      modo = 'avatar'  // 'avatar' ou 'ilustrativo'
     } = req.body;
 
     // Usar roteiro como tema se tema não foi enviado (aceita string vazia)
@@ -56,6 +57,8 @@ async function handleGenerateVideo(req, res) {
         error: 'tema (ou roteiro) e especialidadeId são obrigatórios' 
       });
     }
+
+    // Nota: modo profissional tem fallback automático para HeyGen se Pexels não configurado
 
     // ✅ FIX 1: jobId gerado UMA vez só
     const jobId = `vid_${Date.now()}`;
@@ -80,20 +83,27 @@ async function handleGenerateVideo(req, res) {
       duracao: duracaoFinal,
       publicar,
       targeting,
-      userId: req.user?._id
+      userId: req.user?._id,
+      modo
     }, { 
       jobId,  // Usa mesmo ID pro job BullMQ
       priority: 1
     });
 
     // Retornar imediatamente (não espera o pipeline)
+    const modoLabels = {
+      avatar: '🎭 Avatar (HeyGen)',
+      ilustrativo: '🖼️ Ilustrativo (Imagens + TTS)'
+    };
+    
     res.status(202).json({
       success: true,
-      message: 'Pipeline de vídeo iniciado',
+      message: `Pipeline de vídeo iniciado (${modoLabels[modo] || modo})`,
       jobId,
       videoId: videoDoc._id,
       status: 'ROTEIRO',
-      tempo_estimado: '5-10 minutos',
+      modo,
+      tempo_estimado: modo === 'ilustrativo' ? '2-4 minutos' : '5-10 minutos',
       status_url: `/api/videos/status/${jobId}`
     });
 

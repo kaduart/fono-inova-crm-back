@@ -73,16 +73,14 @@ const videoSchema = new mongoose.Schema({
   jobId: {
     type: String,
     unique: true,
-    sparse: true,
-    index: true
+    sparse: true
   },
   
   // Status detalhado do pipeline
   pipelineStatus: {
     type: String,
     enum: ['ROTEIRO', 'HEYGEN', 'POS_PRODUCAO', 'UPLOAD', 'CONCLUIDO', 'ERRO'],
-    default: 'ROTEIRO',
-    index: true
+    default: 'ROTEIRO'
   },
   
   // Roteiro estruturado (ZEUS)
