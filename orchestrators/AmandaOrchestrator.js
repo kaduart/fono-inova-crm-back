@@ -81,6 +81,9 @@ const VALID_SERVICES = {
     to: { alias: "terapia_ocupacional" },
     fisio: { alias: "fisioterapia" },
     neuropsico: { alias: "neuropsicologia" },
+    
+    // Multi terapias (do LEGACY)
+    multiprofissional: { name: "Multiprofissional", available: true, isMulti: true },
 };
 
 // Especialidades médicas que NÃO oferecemos
@@ -1386,7 +1389,7 @@ export async function getOptimizedAmandaResponse({
         const wantsAcompanhamento = /\b(terapia|terapias|acompanhamento|tratamento|sessões semanais|200 reais|duzentos|semanal)\b/i.test(text);
         
         if (wantsLaudo && !wantsAcompanhamento) {
-            console.log('[AMANDA] Quer LAUDO → Continua neuropsicologia');
+            console.log('[AMANDA] Quer LAUDO → Explica e continua neuropsicologia');
             await safeLeadUpdate(lead._id, {
                 $set: { 
                     wantsLaudo: true,
@@ -1394,8 +1397,14 @@ export async function getOptimizedAmandaResponse({
                     stage: 'triagem_agendamento'
                 }
             }).catch(() => {});
-            // Continua para pedir dados que faltam (nome, idade, período)
-            return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead);
+            // Responde com explicação enxuta e continua triagem
+            return ensureSingleHeart(
+                `Perfeito! A **Avaliação Neuropsicológica** avalia funções como atenção, memória, linguagem e raciocínio. ` +
+                `São 10 sessões (1x por semana, 50min cada), a partir de 2 anos. ` +
+                `Ao final emitimos um laudo completo para escola e médicos 💚\n\n` +
+                `💰 *Valores:* R$ 2.000 em até 6x no cartão, ou R$ 1.700 à vista\n\n` +
+                `Pra seguir com o agendamento, qual o **nome completo** do paciente?`
+            );
         } else if (wantsAcompanhamento && !wantsLaudo) {
             console.log('[AMANDA] Quer ACOMPANHAMENTO → Redireciona para psicologia');
             await safeLeadUpdate(lead._id, {
@@ -1410,14 +1419,32 @@ export async function getOptimizedAmandaResponse({
             amandaAnalysis.extracted.therapyArea = 'psicologia';
             return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead);
         } else if (wantsLaudo && wantsAcompanhamento) {
-            // Ambos - pede para esclarecer
+            // Ambos - explica e pergunta prioridade (formato Ana)
             return ensureSingleHeart(
-                `Entendi que vocês querem os dois caminhos 💚\n\n` +
-                `Só pra eu organizar: vocês querem começar pela **avaliação neuropsicológica com laudo** primeiro, ` +
-                `ou já querem iniciar o **acompanhamento terapêutico**?`
+                `Perfeito! 😊💚\n\n` +
+                `A **Avaliação Neuropsicológica** analisa funções como atenção, memória, linguagem e raciocínio.\n\n` +
+                `São 10 sessões (1x por semana, 50 minutos cada), para crianças a partir de 2 anos.\n` +
+                `Ao final, emitimos um laudo completo, que pode ser utilizado na escola e com médicos 💚\n\n` +
+                `💰 *Valores:*\n` +
+                `💳 R$ 2.000,00 em até 6x no cartão\n` +
+                `💵 R$ 1.700,00 à vista\n\n` +
+                `Você prefere já iniciarmos a avaliação com laudo ou deseja começar diretamente o acompanhamento terapêutico? 💚`
             );
         }
         // Se não entendeu, continua com a triagem normal
+    }
+    
+    // 🆕 CASO ESPECIAL: Multi terapias → Resposta específica
+    if (amandaAnalysis.extracted.flags.multidisciplinary || 
+        /precisa\s+de\s+tudo|fono.*psico|psico.*fono|todas.*área|todas.*especialidade/i.test(text)) {
+        console.log('[AMANDA] Multi terapias detectadas - respondendo...');
+        return ensureSingleHeart(
+            `Que bom que vocês estão buscando cuidado completo! 💚\n\n` +
+            `Aqui na Fono Inova temos uma equipe **multiprofissional integrada**: Fono, Psico, TO, Fisio e Neuropsicologia. ` +
+            `Todas se comunicam e trabalham com planos individualizados.\n\n` +
+            `Pra eu direcionar certinho: qual área você quer começar? ` +
+            `A gente pode agendar uma primeira avaliação e, conforme for, integrar com as outras especialidades. Qual faz mais sentido pra vocês agora?`
+        );
     }
     
     // 3.4 TRIAGEM: Falta dados → Pergunta contextual
@@ -4341,9 +4368,8 @@ Em breve nossa equipe entra em contato 😊`
         return ensureSingleHeart(scopedVisit);
     }
 
-    // 1) Manual
-    // 1) [LEGACY] REMOVIDO: Manual Response (retornava "Consulte a equipe")
-    // const manualAnswer = tryManualResponse(normalized, enrichedContext, flags);
+    // 1) Manual Response (desativado - já funciona via entity-driven)
+    // const manualAnswer = tryManualResponse(normalized, enrichedContext, flags, lead);
     // if (manualAnswer) return ensureSingleHeart(manualAnswer);
 
     // 2) TDAH
@@ -4509,7 +4535,7 @@ async function callVisitFunnelAI({ text, lead, context = {}, flags = {} }) {
 /**
  * 📖 MANUAL
  */
-function tryManualResponse(normalizedText, context = {}, flags = {}) {
+function tryManualResponse(normalizedText, context = {}, flags = {}, lead = {}) {
     const { isFirstContact, messageCount = 0 } = context;
 
     // 🌍 ENDEREÇO / LOCALIZAÇÃO
@@ -5535,6 +5561,13 @@ async function processMessageLikeAmanda(text, lead = {}) {
         }
     }
     
+    // 🆕 DETECÇÃO: Multi terapias / Multiprofissional (do LEGACY)
+    if (/precisa\s+de\s+tudo|fono.*psico|psico.*fono|todas.*área|todas.*especialidade|multi.*profissional|equipe\s+mult/i.test(text)) {
+        extracted.flags.multidisciplinary = true;
+        extracted.therapyArea = "multiprofissional"; // 🆕 IGUAL AO LEGACY
+        console.log('[AMANDA-SÊNIOR] Multi terapias detectadas - therapyArea: multiprofissional');
+    }
+    
     // Detecta intenção
     if (extracted.flags.wantsSchedule) extracted.intent = 'agendar';
     else if (extracted.flags.asksPrice) extracted.intent = 'preco';
@@ -5588,6 +5621,12 @@ async function processMessageLikeAmanda(text, lead = {}) {
                     console.log('[AMANDA-SÊNIOR] TherapyArea derivada via fallback:', extracted.therapyArea);
                 } else if (/psicologia|psicólogo|psicóloga/.test(complaintLower)) {
                     extracted.therapyArea = 'psicologia';
+                    console.log('[AMANDA-SÊNIOR] TherapyArea derivada via fallback:', extracted.therapyArea);
+                } else if (/to\b|terapia ocupacional/.test(complaintLower)) {
+                    extracted.therapyArea = 'terapia_ocupacional';
+                    console.log('[AMANDA-SÊNIOR] TherapyArea derivada via fallback:', extracted.therapyArea);
+                } else if (/fisio|fisioterapia/.test(complaintLower)) {
+                    extracted.therapyArea = 'fisioterapia';
                     console.log('[AMANDA-SÊNIOR] TherapyArea derivada via fallback:', extracted.therapyArea);
                 }
             }
