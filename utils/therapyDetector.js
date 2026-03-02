@@ -6,6 +6,7 @@ export const THERAPY_SPECIALTIES = {
         names: ['neuropsicologia', 'neuropsi'],
         patterns: [
             /neuropsi(c(o|ó)l(o|ó)g(a|o|ia))?/i,
+            /n[e3]ur[o0]p[s5][i1](c[o0]l[o0]g[i1][a4])?/i,  // neuropsicolog, neuropsico
             /avalia(ç|c)(ã|a)o\s+neuropsi/i,
             /laudo\s+neuropsi/i
         ],
@@ -19,7 +20,9 @@ export const THERAPY_SPECIALTIES = {
         id: 'speech',
         names: ['fonoaudiologia', 'fono'],
         patterns: [
-            /fono(audi(o|ó)log(a|o|ia))?/i,
+            /f[o0]n[o0](audi[o0]l[o0]g[a4])?/i,  // fono, fino, fini
+            /f[o0]n[o0]d[i1][o0]l[o0]g[o0]/i,  // fonodiologo
+            /f[o0]n[o0]audi[o0]l[o0]g[a4o0]/i,  // fonoaudiologa, fonoaudiologo
             /n[aã]o\s+fala/i,
             /fala\s+(pouco|errado|mal|direito)/i,
             /gaguej(a|o)/i,
@@ -44,42 +47,46 @@ export const THERAPY_SPECIALTIES = {
     psychology: {
         names: ['psicologia', 'psicólogo'],
         patterns: [
-            /psic[oó]l[oó]g(a|o|ia|ica)(?!\s*pedag)/i,
+            /p[s5][i1]c[o0]l[o0]g[a4o0](?![a-z])/i,  // psicologo, psicologa, psicolog (typos)
+            /p[s5][i1]c[o0]l[o0]g[i1][a4](?!\s*pedag)/i,  // psicologia (typos)
             /\btcc\b|ansiedade|depress(ã|a)o/i,
-            /psic[oó]l[oó]g(o|a)\s+infantil/i
+            /p[s5][i1]c[o0]l[o0]g[o0a4]\s+infantil/i
         ]
     },
     occupational: {
         names: ['terapia ocupacional', 'TO'],
         patterns: [
-            /terapia\s+ocupacional|\bTO\b/i,
-            /integra(ç|c)(a|ã)o\s+sensorial/i,
-            /coordena(ç|c)(a|ã)o\s+motora/i
+            /t[e3]r[a4]p[i1][a4]\s+[o0]cup[a4]c[i1][o0]n[a4]l/i,  // terapia ocupacional (typos)
+            /\bTO\b/,
+            /[i1]nt[e3]gr[a4][cç][a4][o0]\s+s[e3]ns[o0]r[i1][a4]l/i,
+            /c[o0][o0]rd[e3]n[a4][cç][a4][o0]\s+m[o0]t[o0]r[a4]/i
         ]
     },
     physiotherapy: {
         names: ['fisioterapia', 'fisio'],
         patterns: [
-            /fisio(terapia)?/i,
+            /f[i1]s[i1][o0](t[e3]r[a4]p[i1][a4])?/i,  // fisio, fisoterapia (typos)
             /\bavc\b|paralisia|desenvolvimento\s+motor/i
         ]
     },
     music: {
         names: ['musicoterapia'],
         patterns: [
-            /musicoterapia|m(ú|u)sica\s+terap(ê|e)utica/i
+            /m[uú]s[i1]c[o0]t[e3]r[a4]p[i1][a4]/i,  // musicoterapia (typos)
+            /m[uú]s[i1]c[a4]\s+t[e3]r[a4]p[eê]ut[i1]c[a4]/i
         ]
     },
     neuropsychopedagogy: {
         names: ['neuropsicopedagogia'],
         patterns: [
-            /neuropsicopedagogia/i,
+            /n[e3]ur[o0]p[s5][i1]c[o0]p[e3]d[a4]g[o0]g[i1][a4]/i,  // neuropsicopedagogia (typos)
             /dislexia|discalculia/i
         ]
     },
     psychopedagogy: {
         names: ['psicopedagogia'],
         patterns: [
+            /p[s5][i1][sc]*[i1]*c[o0]p[e3]d[a4]g[o0]g[ai]/i,  // typo-tolerant: pisicopedagogo, psicopedagoga, etc
             /psicopedagog/i,
             /dificuldade\s+(de\s+)?aprendizagem/i,
             /problema\s+escolar|rendimento\s+escolar/i

@@ -1467,7 +1467,7 @@ export async function getOptimizedAmandaResponse({
         if (isNeuro && !alreadyAskedObjective && !hasObjectiveInfo) {
             console.log('[AMANDA] Neuropsicologia detectada - sondando objetivo...');
             await safeLeadUpdate(lead._id, {
-                $set: { neuroObjectiveAsked: true, stage: 'triagem_neuro_objetivo' }
+                $set: { neuroObjectiveAsked: true, stage: 'triagem_agendamento' }
             }).catch(() => {});
             
             return ensureSingleHeart(
@@ -5590,7 +5590,13 @@ async function processMessageLikeAmanda(text, lead = {}) {
         serviceMessage = 'Atendemos psicologia apenas até 16 anos. Temos neuropsicologia para adultos 💚';
     }
     
-    // 3. DERIVA therapyArea da queixa salva (se não detectou na mensagem atual)
+    // 3. FALLBACK: Se não detectou therapyArea do texto atual, usa a do lead
+    if (!extracted.therapyArea && lead?.therapyArea) {
+        console.log('[AMANDA-SÊNIOR] Usando therapyArea salva no lead:', lead.therapyArea);
+        extracted.therapyArea = lead.therapyArea;
+    }
+    
+    // 4. DERIVA therapyArea da queixa salva (se não detectou na mensagem atual E não tem no lead)
     if (!extracted.therapyArea && lead?.complaint) {
         console.log('[AMANDA-SÊNIOR] Tentando derivar therapyArea da queixa:', lead.complaint);
         try {
