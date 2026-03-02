@@ -696,14 +696,24 @@ class ConvenioMetricsService {
                                  payment.amount || 
                                  0;
 
+            // Garante que o objeto insurance existe
+            if (!payment.insurance) {
+                payment.insurance = {};
+            }
+            
             // Atualiza o payment para recebido
             payment.insurance.status = 'received';
             payment.insurance.receivedAt = dataRecebimento;
             payment.insurance.receivedAmount = valorEfetivo;
-            payment.insurance.grossAmount = payment.insurance?.grossAmount || valorEfetivo; // Garante que tem grossAmount
+            payment.insurance.grossAmount = payment.insurance.grossAmount || valorEfetivo; // Garante que tem grossAmount
             
             if (notaFiscal) {
                 payment.insurance.invoiceNumber = notaFiscal;
+            }
+            
+            // Marca o billingType como convenio se não estiver definido
+            if (!payment.billingType) {
+                payment.billingType = 'convenio';
             }
             
             // 🔹 ATUALIZA O AMOUNT SE ESTIVER ZERO

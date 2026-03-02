@@ -1185,18 +1185,65 @@ router.get("/totals", async (req, res) => {
 
         // ======================================================
         // 💰 3. Agregação principal - CAIXA (dinheiro recebido)
+        // Separa Particular vs Convênio Recebido
         // ======================================================
         const cashAggregation = [
             { $match: matchStage },
             {
                 $group: {
                     _id: null,
+                    // Totais gerais
                     totalReceived: { $sum: { $cond: [{ $eq: ["$status", "paid"] }, "$amount", 0] } },
                     totalPending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, "$amount", 0] } },
                     totalPartial: { $sum: { $cond: [{ $eq: ["$status", "partial"] }, "$amount", 0] } },
                     countReceived: { $sum: { $cond: [{ $eq: ["$status", "paid"] }, 1, 0] } },
                     countPending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } },
                     countPartial: { $sum: { $cond: [{ $eq: ["$status", "partial"] }, 1, 0] } },
+                    // Separado por tipo
+                    particularReceived: { 
+                        $sum: { 
+                            $cond: [
+                                { $and: [
+                                    { $eq: ["$status", "paid"] },
+                                    { $ne: ["$billingType", "convenio"] }
+                                ]}, 
+                                "$amount", 0
+                            ] 
+                        } 
+                    },
+                    particularPending: { 
+                        $sum: { 
+                            $cond: [
+                                { $and: [
+                                    { $eq: ["$status", "pending"] },
+                                    { $ne: ["$billingType", "convenio"] }
+                                ]}, 
+                                "$amount", 0
+                            ] 
+                        } 
+                    },
+                    particularCountReceived: { 
+                        $sum: { 
+                            $cond: [
+                                { $and: [
+                                    { $eq: ["$status", "paid"] },
+                                    { $ne: ["$billingType", "convenio"] }
+                                ]}, 
+                                1, 0
+                            ] 
+                        } 
+                    },
+                    particularCountPending: { 
+                        $sum: { 
+                            $cond: [
+                                { $and: [
+                                    { $eq: ["$status", "pending"] },
+                                    { $ne: ["$billingType", "convenio"] }
+                                ]}, 
+                                1, 0
+                            ] 
+                        } 
+                    },
                 },
             },
         ];
@@ -1210,6 +1257,10 @@ router.get("/totals", async (req, res) => {
             countReceived: 0,
             countPending: 0,
             countPartial: 0,
+            particularReceived: 0,
+            particularPending: 0,
+            particularCountReceived: 0,
+            particularCountPending: 0,
         };
 
         // ======================================================
@@ -1253,7 +1304,7 @@ router.get("/totals", async (req, res) => {
                                 {
                                     $and: [
                                         { $ne: ["$insurance", null] },
-                                        { $eq: ["$insurance.status", "received"] }
+                                        { $in: ["$insurance.status", ["received", "partial"]] }
                                     ]
                                 },
                                 { $ifNull: ["$insurance.receivedAmount", "$amount"] },
@@ -1282,7 +1333,7 @@ router.get("/totals", async (req, res) => {
                                 {
                                     $and: [
                                         { $ne: ["$insurance", null] },
-                                        { $eq: ["$insurance.status", "received"] }
+                                        { $in: ["$insurance.status", ["received", "partial"]] }
                                     ]
                                 },
                                 1,
@@ -1331,16 +1382,23 @@ router.get("/totals", async (req, res) => {
             countPending: cashTotals.countPending,
             countPartial: cashTotals.countPartial,
 
-            // Produção de Convênios (atendimentos realizados)
+            // SEPARADO POR TIPO
+            // Particular (não convênio)
+            particularReceived: cashTotals.particularReceived || 0,
+            particularPending: cashTotals.particularPending || 0,
+            particularCountReceived: cashTotals.particularCountReceived || 0,
+            particularCountPending: cashTotals.particularCountPending || 0,
+
+            // Convênios
             totalInsuranceProduction: insuranceTotals.totalInsuranceProduction,
             totalInsuranceReceived: insuranceTotals.totalInsuranceReceived,
-            totalInsurancePending: insuranceTotals.totalInsurancePending,
+            totalInsurancePending: Math.max(0, insuranceTotals.totalInsuranceProduction - insuranceTotals.totalInsuranceReceived),
             countInsuranceTotal: insuranceTotals.countInsuranceTotal,
             countInsuranceReceived: insuranceTotals.countInsuranceReceived,
-            countInsurancePending: insuranceTotals.countInsurancePending,
+            countInsurancePending: Math.max(0, insuranceTotals.countInsuranceTotal - insuranceTotals.countInsuranceReceived),
 
-            // Total combinado (caixa + produção de convênios)
-            totalCombined: cashTotals.totalReceived + insuranceTotals.totalInsuranceProduction,
+            // Total combinado (caixa + convênios pendentes)
+            totalCombined: cashTotals.totalReceived + Math.max(0, insuranceTotals.totalInsuranceProduction - insuranceTotals.totalInsuranceReceived),
         };
 
         // ======================================================
@@ -2637,8 +2695,13 @@ router.patch('/insurance/:id/receive', auth, async (req, res) => {
             });
         }
 
-        const finalAmount = receivedAmount ?? payment.insurance.grossAmount;
-        const isGlosa = receivedAmount !== undefined && receivedAmount < payment.insurance.grossAmount;
+        // Garante que o objeto insurance existe
+        if (!payment.insurance) {
+            payment.insurance = {};
+        }
+        
+        const finalAmount = receivedAmount ?? payment.insurance.grossAmount ?? 0;
+        const isGlosa = receivedAmount !== undefined && receivedAmount < (payment.insurance.grossAmount || 0);
 
         payment.amount = finalAmount; // ← Agora entra no caixa!
         payment.status = 'paid';
