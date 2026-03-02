@@ -424,9 +424,12 @@ const worker = new Worker(
       // se veio populado (raro no seu código atual)
       if (lead?.contact && typeof lead.contact === "object" && lead.contact.phone) {
         contactDoc = lead.contact;
-      } else if (lead?.contact) {
-        // caso normal: lead.contact é ObjectId
+      } else if (lead?.contact && mongoose.Types.ObjectId.isValid(lead.contact)) {
+        // caso normal: lead.contact é ObjectId válido
         contactDoc = await Contact.findById(lead.contact).lean();
+      } else if (lead?.contact) {
+        // lead.contact existe mas não é ObjectId válido (pode ser {} ou string inválida)
+        console.warn(chalk.yellow(`⚠️ Lead ${lead._id} tem contact inválido: ${JSON.stringify(lead.contact)}`));
       }
 
       const rawPhone = contactDoc?.phone || null;

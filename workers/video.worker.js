@@ -16,6 +16,7 @@ import logger from '../utils/logger.js';
 // Serviços do pipeline
 import { gerarRoteiro } from '../agents/zeus-video.js';
 import { gerarVideo } from '../services/video/heygenService.js';
+import { gerarVideoIlustrativo } from '../services/video/slideshowService.js';
 import { posProducao } from '../services/video/postProduction.js';
 import { publicarVideo } from '../services/meta/videoPublisher.js';
 import { nomearCampanha, FUNIS } from '../agents/heracles.js';
@@ -35,7 +36,8 @@ const videoWorker = new Worker('video-generation', async (job) => {
     duracao = 60, 
     publicar = false, 
     targeting = {},
-    userId 
+    userId,
+    modo = 'avatar'  // 'avatar' (HeyGen) ou 'profissional' (Stock + TTS)
   } = job.data;
 
   logger.info(`[VIDEO WORKER] ▶ ${jobId} — "${tema}"`);
@@ -96,15 +98,28 @@ const videoWorker = new Worker('video-generation', async (job) => {
     logger.info(`[VIDEO WORKER] Roteiro gerado: ${roteiro.profissional} | ${roteiro.titulo}`);
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ETAPA 2: Gerar Vídeo (HeyGen)
+    // ETAPA 2: Gerar Vídeo (Avatar ou Ilustrativo)
     // ═══════════════════════════════════════════════════════════════════════
     await atualizarProgresso('HEYGEN', 30);
 
-    const videoCru = await gerarVideo({
-      profissional: roteiro.profissional,
-      textoFala: roteiro.texto_completo,
-      titulo: roteiro.titulo
-    });
+    let videoCru;
+    
+    if (modo === 'ilustrativo') {
+      logger.info(`[VIDEO WORKER] Modo ILUSTRATIVO - Slideshow de imagens + TTS`);
+      videoCru = await gerarVideoIlustrativo({
+        especialidadeId,
+        roteiro: roteiro.texto_completo,
+        titulo: roteiro.titulo,
+        duracao
+      });
+    } else {
+      logger.info(`[VIDEO WORKER] Modo AVATAR - Usando HeyGen`);
+      videoCru = await gerarVideo({
+        profissional: roteiro.profissional,
+        textoFala: roteiro.texto_completo,
+        titulo: roteiro.titulo
+      });
+    }
 
     await atualizarProgresso('HEYGEN', 60, {
       videoCruUrl: videoCru,
@@ -114,24 +129,37 @@ const videoWorker = new Worker('video-generation', async (job) => {
     logger.info(`[VIDEO WORKER] Vídeo cru gerado: ${videoCru}`);
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ETAPA 3: Pós-Produção (FFmpeg)
+    // ETAPA 3: Pós-Produção (FFmpeg) - Só para avatar
     // ═══════════════════════════════════════════════════════════════════════
-    await atualizarProgresso('POS_PRODUCAO', 65);
+    let videoFinal;
+    
+    if (modo === 'ilustrativo') {
+      // Modo ilustrativo: vídeo já está finalizado (slideshow + narração)
+      logger.info(`[VIDEO WORKER] Modo ilustrativo - pulando pós-produção`);
+      videoFinal = videoCru;
+      await atualizarProgresso('POS_PRODUCAO', 90, {
+        videoFinalUrl: videoFinal,
+        videoUrl: videoFinal
+      });
+    } else {
+      // Modo avatar: aplicar pós-produção (legendas, logo, etc)
+      await atualizarProgresso('POS_PRODUCAO', 65);
+      
+      videoFinal = await posProducao({
+        videoInput: videoCru,
+        hookTexto: roteiro.hook_texto_overlay,
+        ctaTexto: roteiro.cta_texto_overlay,
+        musica: funil === 'TOPO' ? 'calma' : 'esperancosa',
+        titulo: roteiro.titulo
+      });
 
-    const videoFinal = await posProducao({
-      videoInput: videoCru,
-      hookTexto: roteiro.hook_texto_overlay,
-      ctaTexto: roteiro.cta_texto_overlay,
-      musica: funil === 'TOPO' ? 'calma' : 'esperancosa',
-      titulo: roteiro.titulo
-    });
+      await atualizarProgresso('POS_PRODUCAO', 90, {
+        videoFinalUrl: videoFinal,
+        videoUrl: videoFinal  // compatibilidade
+      });
 
-    await atualizarProgresso('POS_PRODUCAO', 90, {
-      videoFinalUrl: videoFinal,
-      videoUrl: videoFinal  // compatibilidade
-    });
-
-    logger.info(`[VIDEO WORKER] Pós-produção concluída: ${videoFinal}`);
+      logger.info(`[VIDEO WORKER] Pós-produção concluída: ${videoFinal}`);
+    }
 
     // ═══════════════════════════════════════════════════════════════════════
     // ETAPA 4: Upload Meta (Opcional)
