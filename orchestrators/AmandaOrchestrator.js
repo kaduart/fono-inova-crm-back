@@ -1311,12 +1311,13 @@ export async function getOptimizedAmandaResponse({
     // =========================================================================
     if (lead?._id) {
         try {
-            const freshLead = await Leads.findById(lead._id).select('+triageStep complaint').lean();
+            const freshLead = await Leads.findById(lead._id).select('+triageStep complaint therapyArea').lean();
             if (freshLead) {
                 lead = freshLead;
                 console.log("🔄 [REFRESH] Lead atualizado:", {
+                    therapyArea: lead.therapyArea || null,
                     pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
-                    pendingPatientInfoStep: lead.pendingPatientInfoStep ?? null, // 🛡️ FIX: Padroniza null
+                    pendingPatientInfoStep: lead.pendingPatientInfoStep ?? null,
                     pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
                     pendingSchedulingSlots: lead.pendingSchedulingSlots?.primary ? "SIM" : "NÃO",
                 });
@@ -1342,9 +1343,12 @@ export async function getOptimizedAmandaResponse({
     
     console.log('📊 [AMANDA] Analysis:', {
         therapyArea: amandaAnalysis.extracted.therapyArea,
+        therapyAreaFromLead: lead?.therapyArea,
         missing: amandaAnalysis.missing,
         status: amandaAnalysis.serviceStatus,
-        hasAll: amandaAnalysis.hasAll
+        hasAll: amandaAnalysis.hasAll,
+        hasSummary: !!lead?.conversationSummary,
+        summaryPreview: lead?.conversationSummary?.substring(0, 100)
     });
     
     // 3.1 SERVIÇO NÃO DISPONÍVEL → Responde direto
@@ -5594,6 +5598,25 @@ async function processMessageLikeAmanda(text, lead = {}) {
     if (!extracted.therapyArea && lead?.therapyArea) {
         console.log('[AMANDA-SÊNIOR] Usando therapyArea salva no lead:', lead.therapyArea);
         extracted.therapyArea = lead.therapyArea;
+    }
+    
+    // 3.5 DERIVA therapyArea do conversationSummary (se ainda não tem)
+    if (!extracted.therapyArea && lead?.conversationSummary) {
+        console.log('[AMANDA-SÊNIOR] Tentando derivar therapyArea do summary...');
+        const summary = lead.conversationSummary.toLowerCase();
+        const inferredArea = 
+            /fonoaudiologia|fono|\bteste da linguinha\b/i.test(summary) ? 'fonoaudiologia' :
+            /neuropsicologia|neuropsi|avaliação neuropsicológica/i.test(summary) ? 'neuropsicologia' :
+            /psicologia(?!.*pedagogia)|\bpsic[oó]logo/i.test(summary) ? 'psicologia' :
+            /terapia ocupacional|\bto\b|ocupacional/i.test(summary) ? 'terapia_ocupacional' :
+            /fisioterapia|\bfisio/i.test(summary) ? 'fisioterapia' :
+            /psicopedagogia|neuropsicopedagogia/i.test(summary) ? 'neuropsicologia' :
+            /musicoterapia/i.test(summary) ? 'musicoterapia' :
+            null;
+        if (inferredArea) {
+            console.log('[AMANDA-SÊNIOR] TherapyArea inferida do summary:', inferredArea);
+            extracted.therapyArea = inferredArea;
+        }
     }
     
     // 4. DERIVA therapyArea da queixa salva (se não detectou na mensagem atual E não tem no lead)
