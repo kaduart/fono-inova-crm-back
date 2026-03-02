@@ -5428,7 +5428,32 @@ async function processMessageLikeAmanda(text, lead = {}) {
     else if (/\btarde\b/i.test(text)) extracted.preferredPeriod = 'tarde';
     else if (/\bnoite\b/i.test(text)) extracted.preferredPeriod = 'noite';
     
-    // Extrai therapyArea da queixa
+    // Extrai therapyArea - PRIMEIRO: usa therapyDetector (detectAllTherapies)
+    let detectedTherapies = [];
+    try {
+        detectedTherapies = detectAllTherapies(text) || [];
+    } catch (err) {
+        console.warn('[processMessageLikeAmanda] Erro em detectAllTherapies:', err.message);
+        detectedTherapies = [];
+    }
+    
+    if (detectedTherapies.length > 0) {
+        // Mapeia ID do therapyDetector para nome da área no banco
+        const areaMap = {
+            'neuropsychological': 'neuropsicologia',
+            'speech': 'fonoaudiologia',
+            'tongue_tie': 'fonoaudiologia',
+            'psychology': 'psicologia',
+            'occupational': 'terapia_ocupacional',
+            'physiotherapy': 'fisioterapia',
+            'music': 'musicoterapia',
+            'neuropsychopedagogy': 'neuropsicologia', // Mapeia para neuro
+            'psychopedagogy': 'neuropsicologia' // Mapeia para neuro
+        };
+        extracted.therapyArea = areaMap[detectedTherapies[0].id] || null;
+    }
+    
+    // SE NÃO detectou pelo therapyDetector, tenta extrair da QUEIXA
     const patterns = [
         { regex: /\b(não fala|fala pouco|atraso na fala)\b/i, area: 'fonoaudiologia' },
         { regex: /\b(dificuldade de aprender|problema na escola|dislexia)\b/i, area: 'psicopedagogia' },
@@ -5470,7 +5495,30 @@ async function processMessageLikeAmanda(text, lead = {}) {
         serviceMessage = 'Atendemos psicologia apenas até 16 anos. Temos neuropsicologia para adultos 💚';
     }
     
-    // 3. O QUE FALTA?
+    // 3. DERIVA therapyArea da queixa salva (se não detectou na mensagem atual)
+    if (!extracted.therapyArea && lead?.complaint) {
+        try {
+            const therapiesFromComplaint = detectAllTherapies(lead.complaint) || [];
+            if (therapiesFromComplaint.length > 0) {
+                const areaMap = {
+                    'neuropsychological': 'neuropsicologia',
+                    'speech': 'fonoaudiologia',
+                    'tongue_tie': 'fonoaudiologia',
+                    'psychology': 'psicologia',
+                    'occupational': 'terapia_ocupacional',
+                    'physiotherapy': 'fisioterapia',
+                    'music': 'musicoterapia',
+                    'neuropsychopedagogy': 'neuropsicologia',
+                    'psychopedagogy': 'neuropsicologia'
+                };
+                extracted.therapyArea = areaMap[therapiesFromComplaint[0].id] || null;
+            }
+        } catch (err) {
+            console.warn('[processMessageLikeAmanda] Erro ao derivar therapyArea da queixa:', err.message);
+        }
+    }
+    
+    // 4. O QUE FALTA?
     const hasPeriod = lead?.pendingPreferredPeriod || extracted.preferredPeriod;
     const hasName = lead?.patientInfo?.fullName || extracted.patientName;
     const hasAge = lead?.patientInfo?.age || extracted.patientAge;
