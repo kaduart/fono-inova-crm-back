@@ -108,13 +108,19 @@ export const createConvenioPackage = async (req, res) => {
     }
 
     // ===================================
-    // 3. CRIAR PACOTE TIPO 'convenio'
+    // 3. BUSCAR VALOR DO CONVÊNIO
+    // ===================================
+    const convenioValue = await Convenio.getSessionValue(guide.insurance);
+    console.log(`💰 Valor do convênio ${guide.insurance}: R$ ${convenioValue}`);
+
+    // ===================================
+    // 4. CRIAR PACOTE TIPO 'convenio'
     // ===================================
     const convenioPackage = new Package({
       type: 'convenio',
       insuranceGuide: guide._id,
       insuranceProvider: guide.insurance,
-      insuranceGrossAmount: 0, // Será preenchido se tiver no guide
+      insuranceGrossAmount: convenioValue || 0, // Valor correto do convênio
 
       // Dados do paciente/profissional
       patient: patientId,

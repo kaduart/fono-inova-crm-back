@@ -151,4 +151,162 @@ router.get('/pacientes', auth, authorize(['admin', 'secretary']), async (req, re
     }
 });
 
+/**
+ * @route   POST /api/financial/convenio/faturar-lote
+ * @desc    Faturar múltiplos atendimentos de convênio em lote
+ * @body    { paymentIds: string[], notaFiscal?: string, dataFaturamento?: string }
+ * @access  Admin/Secretary
+ * 
+ * 💡 Fatura vários atendimentos de uma vez (checkbox no frontend)
+ */
+router.post('/faturar-lote', auth, authorize(['admin', 'secretary']), async (req, res) => {
+    try {
+        const { paymentIds, notaFiscal, dataFaturamento } = req.body;
+
+        if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Array paymentIds é obrigatório'
+            });
+        }
+
+        const result = await ConvenioMetricsService.faturarEmLote({
+            paymentIds,
+            notaFiscal,
+            dataFaturamento: dataFaturamento || new Date().toISOString().split('T')[0]
+        });
+
+        res.json({
+            success: true,
+            message: `${result.faturados} atendimentos faturados com sucesso`,
+            data: result
+        });
+
+    } catch (error) {
+        console.error('[ConvenioRoutes] Erro ao faturar em lote:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao faturar atendimentos',
+            message: error.message
+        });
+    }
+});
+
+/**
+ * @route   POST /api/financial/convenio/faturar-todos-paciente
+ * @desc    Faturar TODOS os atendimentos pendentes de um paciente específico
+ * @body    { patientId: string, notaFiscal?: string }
+ * @access  Admin/Secretary
+ */
+router.post('/faturar-todos-paciente', auth, authorize(['admin', 'secretary']), async (req, res) => {
+    try {
+        const { patientId, notaFiscal } = req.body;
+
+        if (!patientId) {
+            return res.status(400).json({
+                success: false,
+                error: 'patientId é obrigatório'
+            });
+        }
+
+        const result = await ConvenioMetricsService.faturarTodosDoPaciente({
+            patientId,
+            notaFiscal,
+            dataFaturamento: new Date().toISOString().split('T')[0]
+        });
+
+        res.json({
+            success: true,
+            message: `${result.faturados} atendimentos do paciente faturados`,
+            data: result
+        });
+
+    } catch (error) {
+        console.error('[ConvenioRoutes] Erro ao faturar paciente:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao faturar atendimentos do paciente',
+            message: error.message
+        });
+    }
+});
+
+/**
+ * @route   POST /api/financial/convenio/receber
+ * @desc    Receber pagamento de convênio (registra no caixa do dia do recebimento)
+ * @body    { paymentId: string, dataRecebimento: string, valorRecebido: number, notaFiscal?: string }
+ * @access  Admin/Secretary
+ */
+router.post('/receber', auth, authorize(['admin', 'secretary']), async (req, res) => {
+    try {
+        const { paymentId, dataRecebimento, valorRecebido, notaFiscal } = req.body;
+
+        if (!paymentId || !dataRecebimento) {
+            return res.status(400).json({
+                success: false,
+                error: 'paymentId e dataRecebimento são obrigatórios'
+            });
+        }
+
+        const result = await ConvenioMetricsService.receberPagamentoConvenio({
+            paymentId,
+            dataRecebimento,
+            valorRecebido,
+            notaFiscal
+        });
+
+        res.json({
+            success: true,
+            message: 'Recebimento registrado com sucesso',
+            data: result
+        });
+
+    } catch (error) {
+        console.error('[ConvenioRoutes] Erro ao receber pagamento:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao registrar recebimento',
+            message: error.message
+        });
+    }
+});
+
+/**
+ * @route   POST /api/financial/convenio/receber-lote
+ * @desc    Receber múltiplos pagamentos de convênio em lote
+ * @body    { paymentIds: string[], dataRecebimento: string }
+ * @access  Admin/Secretary
+ */
+router.post('/receber-lote', auth, authorize(['admin', 'secretary']), async (req, res) => {
+    try {
+        const { paymentIds, dataRecebimento } = req.body;
+
+        if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0 || !dataRecebimento) {
+            return res.status(400).json({
+                success: false,
+                error: 'paymentIds (array) e dataRecebimento são obrigatórios'
+            });
+        }
+
+        const result = await ConvenioMetricsService.receberEmLote({
+            paymentIds,
+            dataRecebimento
+        });
+
+        res.json({
+            success: true,
+            message: `${result.recebidos} pagamentos recebidos com sucesso`,
+            data: result
+        });
+
+    } catch (error) {
+        console.error('[ConvenioRoutes] Erro ao receber em lote:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao registrar recebimentos',
+            message: error.message
+        });
+    }
+});
+
 export default router;

@@ -543,6 +543,247 @@ class ConvenioMetricsService {
 
         return alertas;
     }
+
+    // ============================================
+    // FATURAMENTO EM LOTE
+    // ============================================
+
+    /**
+     * Fatura múltiplos atendimentos de convênio em lote
+     * @param {Object} params - { paymentIds, notaFiscal, dataFaturamento }
+     * @returns {Object} resultado do faturamento
+     */
+    async faturarEmLote({ paymentIds, notaFiscal, dataFaturamento }) {
+        const Payment = mongoose.model('Payment');
+        const Package = mongoose.model('Package');
+        
+        console.log(`[ConvenioMetrics] Faturando ${paymentIds.length} atendimentos em lote`);
+
+        const result = {
+            faturados: 0,
+            erros: 0,
+            detalhes: [],
+            totalValor: 0
+        };
+
+        for (const paymentId of paymentIds) {
+            try {
+                // 🔹 POPULA O PACKAGE para ter acesso ao valor do convênio
+                const payment = await Payment.findById(paymentId)
+                    .populate('package', 'insuranceProvider insuranceGrossAmount sessionValue')
+                    .populate('patient', 'fullName');
+                
+                if (!payment) {
+                    result.erros++;
+                    result.detalhes.push({ paymentId, status: 'erro', msg: 'Payment não encontrado' });
+                    continue;
+                }
+
+                // Verifica se já está faturado
+                if (payment.insurance?.status === 'billed') {
+                    result.detalhes.push({ paymentId, status: 'ignorado', msg: 'Já faturado' });
+                    continue;
+                }
+
+                // 🔹 DETERMINA O VALOR CORRETO DO CONVÊNIO
+                // Prioridade: 1. insuranceGrossAmount do package, 2. sessionValue do package, 3. valor existente, 4. 0
+                const valorConvenio = payment.package?.insuranceGrossAmount || 
+                                     payment.package?.sessionValue || 
+                                     payment.insurance?.grossAmount || 
+                                     payment.amount || 
+                                     0;
+
+                // Atualiza status para faturado
+                payment.insurance.status = 'billed';
+                payment.insurance.billedAt = dataFaturamento;
+                payment.insurance.grossAmount = valorConvenio; // 🔹 GARANTE QUE TEM VALOR
+                payment.amount = valorConvenio; // 🔹 ATUALIZA O AMOUNT TAMBÉM
+                
+                if (notaFiscal) {
+                    payment.insurance.invoiceNumber = notaFiscal;
+                }
+
+                await payment.save();
+
+                result.faturados++;
+                result.totalValor += valorConvenio;
+                result.detalhes.push({ 
+                    paymentId, 
+                    status: 'faturado', 
+                    valor: valorConvenio,
+                    paciente: payment.patient?.fullName 
+                });
+
+            } catch (error) {
+                console.error(`[ConvenioMetrics] Erro ao faturar ${paymentId}:`, error);
+                result.erros++;
+                result.detalhes.push({ paymentId, status: 'erro', msg: error.message });
+            }
+        }
+
+        console.log(`[ConvenioMetrics] Faturamento em lote concluído: ${result.faturados} sucesso, ${result.erros} erros`);
+        return result;
+    }
+
+    /**
+     * Fatura TODOS os atendimentos pendentes de um paciente específico
+     * @param {Object} params - { patientId, notaFiscal, dataFaturamento }
+     * @returns {Object} resultado do faturamento
+     */
+    async faturarTodosDoPaciente({ patientId, notaFiscal, dataFaturamento }) {
+        const Payment = mongoose.model('Payment');
+        
+        console.log(`[ConvenioMetrics] Buscando atendimentos pendentes do paciente ${patientId}`);
+
+        // Busca todos os payments do paciente que estão pendentes de faturamento
+        const paymentsPendentes = await Payment.find({
+            patient: patientId,
+            'insurance.status': { $in: ['pending_billing', null] },
+            paymentMethod: 'convenio'
+        }).select('_id');
+
+        const paymentIds = paymentsPendentes.map(p => p._id.toString());
+
+        console.log(`[ConvenioMetrics] Encontrados ${paymentIds.length} atendimentos pendentes`);
+
+        if (paymentIds.length === 0) {
+            return {
+                faturados: 0,
+                message: 'Nenhum atendimento pendente de faturamento para este paciente'
+            };
+        }
+
+        // Fatura em lote
+        return await this.faturarEmLote({
+            paymentIds,
+            notaFiscal,
+            dataFaturamento
+        });
+    }
+
+    /**
+     * Recebe pagamento de convênio e registra no caixa
+     * IMPORTANTE: O recebimento aparece no caixa da data de recebimento, não do atendimento!
+     * 
+     * @param {Object} params - { paymentId, dataRecebimento, valorRecebido, notaFiscal }
+     * @returns {Object} resultado
+     */
+    async receberPagamentoConvenio({ paymentId, dataRecebimento, valorRecebido, notaFiscal }) {
+        const Payment = mongoose.model('Payment');
+        
+        console.log(`[ConvenioMetrics] Recebendo pagamento ${paymentId} em ${dataRecebimento}`);
+
+        try {
+            // 🔹 POPULA PARA TER ACESSO AOS DADOS
+            const payment = await Payment.findById(paymentId)
+                .populate('package', 'insuranceProvider insuranceGrossAmount sessionValue')
+                .populate('patient', 'fullName');
+            
+            if (!payment) {
+                throw new Error('Payment não encontrado');
+            }
+
+            // Verifica se já foi recebido
+            if (payment.insurance?.status === 'received') {
+                throw new Error('Pagamento já foi recebido');
+            }
+
+            // 🔹 DETERMINA O VALOR A RECEBER (se não fornecido, pega do insurance.grossAmount ou package)
+            const valorEfetivo = valorRecebido || 
+                                 payment.insurance?.grossAmount || 
+                                 payment.package?.insuranceGrossAmount || 
+                                 payment.package?.sessionValue || 
+                                 payment.amount || 
+                                 0;
+
+            // Atualiza o payment para recebido
+            payment.insurance.status = 'received';
+            payment.insurance.receivedAt = dataRecebimento;
+            payment.insurance.receivedAmount = valorEfetivo;
+            payment.insurance.grossAmount = payment.insurance?.grossAmount || valorEfetivo; // Garante que tem grossAmount
+            
+            if (notaFiscal) {
+                payment.insurance.invoiceNumber = notaFiscal;
+            }
+            
+            // 🔹 ATUALIZA O AMOUNT SE ESTIVER ZERO
+            if (!payment.amount || payment.amount === 0) {
+                payment.amount = valorEfetivo;
+            }
+            
+            // Marca como pago - ISSO FAZ APARECER NO CAIXA DO DIA DO RECEBIMENTO!
+            payment.status = 'paid';
+            payment.paidAt = new Date(dataRecebimento);
+            payment.paymentDate = dataRecebimento;
+
+            await payment.save();
+
+            console.log(`[ConvenioMetrics] Recebimento registrado no caixa de ${dataRecebimento} - Valor: R$${valorEfetivo}`);
+
+            return {
+                success: true,
+                paymentId,
+                valorRecebido: valorEfetivo,
+                dataRecebimento,
+                paciente: payment.patient?.fullName,
+                message: `Recebimento registrado no caixa de ${dataRecebimento}`
+            };
+
+        } catch (error) {
+            console.error('[ConvenioMetrics] Erro ao receber pagamento:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Recebe múltiplos pagamentos de convênio em lote
+     * @param {Object} params - { paymentIds, dataRecebimento }
+     * @returns {Object} resultado
+     */
+    async receberEmLote({ paymentIds, dataRecebimento }) {
+        const result = {
+            recebidos: 0,
+            erros: 0,
+            detalhes: [],
+            totalValor: 0
+        };
+
+        for (const paymentId of paymentIds) {
+            try {
+                const payment = await mongoose.model('Payment').findById(paymentId);
+                
+                if (!payment) {
+                    result.erros++;
+                    result.detalhes.push({ paymentId, status: 'erro', msg: 'Payment não encontrado' });
+                    continue;
+                }
+
+                const valorRecebido = payment.insurance?.grossAmount || 0;
+
+                await this.receberPagamentoConvenio({
+                    paymentId,
+                    dataRecebimento,
+                    valorRecebido,
+                    notaFiscal: payment.insurance?.invoiceNumber
+                });
+
+                result.recebidos++;
+                result.totalValor += valorRecebido;
+                result.detalhes.push({ 
+                    paymentId, 
+                    status: 'recebido', 
+                    valor: valorRecebido 
+                });
+
+            } catch (error) {
+                console.error(`[ConvenioMetrics] Erro ao receber ${paymentId}:`, error);
+                result.erros++;
+                result.detalhes.push({ paymentId, status: 'erro', msg: error.message });
+            }
+        }
+
+        return result;
+    }
 }
 
 export default new ConvenioMetricsService();

@@ -257,6 +257,36 @@ router.get('/', authorize(['admin', 'secretary', 'professional']), async (req, r
 
 
 /**
+ * GET /leads/sheet-metrics
+ * Métricas de importação de planilha
+ * Acesso: admin, secretary
+ */
+router.get('/sheet-metrics',
+    authorize(['admin', 'secretary']),
+    getSheetMetrics
+);
+
+/**
+ * GET /leads/weekly-metrics
+ * Métricas semanais
+ * Acesso: admin, secretary
+ */
+router.get('/weekly-metrics',
+    authorize(['admin', 'secretary']),
+    getWeeklyMetrics
+);
+
+/**
+ * GET /leads/history-metrics
+ * Métricas de leads do histórico (WhatsApp importados)
+ * Acesso: admin, secretary
+ */
+router.get('/history-metrics',
+    authorize(['admin', 'secretary']),
+    getHistoryMetrics
+);
+
+/**
  * GET /leads/:id
  * Detalha um lead específico
  * Acesso: admin, secretary, professional
@@ -558,29 +588,5 @@ router.get('/report/summary',
  * Métricas específicas da planilha
  * Acesso: admin, secretary
  */
-router.get('/sheet-metrics',
-    authorize(['admin', 'secretary']),
-    getSheetMetrics
-);
-
-/**
- * GET /leads/weekly-metrics
- * Métricas semanais
- * Acesso: admin, secretary
- */
-router.get('/weekly-metrics',
-    authorize(['admin', 'secretary']),
-    getWeeklyMetrics
-);
-
-/**
- * GET /leads/history-metrics
- * Métricas de leads do histórico (WhatsApp importados)
- * Acesso: admin, secretary
- */
-router.get('/history-metrics',
-    authorize(['admin', 'secretary']),
-    getHistoryMetrics
-);
 
 export default router;
