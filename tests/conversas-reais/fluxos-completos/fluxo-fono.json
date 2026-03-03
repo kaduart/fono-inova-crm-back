@@ -1,0 +1,124 @@
+{
+  "nome": "Fluxo Completo - Fonoaudiologia (Teste da Linguinha)",
+  "descricao": "Conversa real: Mãe de bebê de 8 meses procurando fonoaudiologia para teste da linguinha. Extraída de conversas reais do WhatsApp.",
+  "tags": ["fonoaudiologia", "teste-da-linguinha", "bebe", "fluxo-completo"],
+  "leadInicial": {
+    "therapyArea": null,
+    "patientInfo": {
+      "fullName": null,
+      "age": null,
+      "ageUnit": null
+    },
+    "complaint": null,
+    "pendingPreferredPeriod": null
+  },
+  "contextoEsperado": {
+    "areaFinal": "fonoaudiologia",
+    "nomeFinal": "Miguel",
+    "idadeFinal": 0.8,
+    "unidadeIdade": "meses",
+    "periodoFinal": "manha"
+  },
+  "mensagens": [
+    {
+      "ordem": 1,
+      "tipo": "usuario",
+      "texto": "Fazem teste da linguinha?",
+      "intencao": "verificar_servico",
+      "dadosSensiveis": false,
+      "esperado": {
+        "respostaContem": ["fazemos", "teste", "linguinha", "200", "avaliação"],
+        "naoDeveConter": ["não fazemos", "não atendemos", "só particular"],
+        "empatia": true,
+        "tom": "acolhedor",
+        "proximoPasso": "explicar_valor_e_pedir_dados",
+        "scoreMinimo": 8
+      },
+      "notas": "Primeiro contato - deve ser acolhedor e direto"
+    },
+    {
+      "ordem": 2,
+      "tipo": "usuario",
+      "texto": "Quanto custa?",
+      "intencao": "perguntar_preco",
+      "contexto": {"jaSabeArea": "fonoaudiologia"},
+      "esperado": {
+        "respostaContem": ["R$", "200", "avaliação"],
+        "naoDeveConter": ["só hoje", "promoção", "desconto"],
+        "empatia": true,
+        "proximoPasso": "pedir_dados_paciente",
+        "scoreMinimo": 7
+      },
+      "notas": "Deve responder preço de forma clara, sem pressão"
+    },
+    {
+      "ordem": 3,
+      "tipo": "usuario",
+      "texto": "Ele se chama Miguel",
+      "intencao": "informar_nome",
+      "dadosExtraidos": {
+        "patientName": "Miguel"
+      },
+      "esperado": {
+        "respostaContem": ["Miguel", "idade", "anos", "meses"],
+        "personalizacao": true,
+        "contextoRecuperado": ["fonoaudiologia"],
+        "proximoPasso": "perguntar_idade",
+        "scoreMinimo": 8
+      },
+      "notas": "DEVE mencionar fonoaudiologia na resposta (contexto recuperado)"
+    },
+    {
+      "ordem": 4,
+      "tipo": "usuario",
+      "texto": "Tem 8 meses",
+      "intencao": "informar_idade",
+      "dadosExtraidos": {
+        "patientAge": 8,
+        "ageUnit": "meses"
+      },
+      "esperado": {
+        "respostaContem": ["8 meses", "manhã", "tarde", "período"],
+        "contextoRecuperado": ["Miguel", "fonoaudiologia"],
+        "proximoPasso": "perguntar_periodo",
+        "scoreMinimo": 8
+      },
+      "notas": "Deve reconhecer '8 meses' corretamente"
+    },
+    {
+      "ordem": 5,
+      "tipo": "usuario",
+      "texto": "De manhã é melhor",
+      "intencao": "informar_periodo",
+      "dadosExtraidos": {
+        "preferredPeriod": "manha"
+      },
+      "esperado": {
+        "respostaContem": ["manhã", "horários", "disponível", "agendar"],
+        "contextoRecuperado": ["Miguel", "8 meses", "fonoaudiologia"],
+        "personalizacao": true,
+        "proximoPasso": "mostrar_horarios",
+        "scoreMinimo": 9
+      },
+      "notas": "Resposta deve contextualizar todos os dados: Miguel, 8 meses, fonoaudiologia, manhã"
+    }
+  ],
+  "validacoesFinais": {
+    "leadDeveTer": {
+      "therapyArea": "fonoaudiologia",
+      "patientInfo.fullName": "Miguel",
+      "patientInfo.age": 8,
+      "pendingPreferredPeriod": "manha"
+    },
+    "naoDeveTer": {
+      "therapyArea": ["psicologia", "neuropsicologia"],
+      "manualControl.active": true
+    }
+  },
+  "metricasEsperadas": {
+    "scoreEmpatia": ">= 8",
+    "scoreContexto": ">= 9",
+    "scoreVendaPsicologica": ">= 8",
+    "tempoRespostaMedia": "< 3000ms"
+  }
+}

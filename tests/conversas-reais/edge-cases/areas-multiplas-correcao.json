@@ -1,0 +1,34 @@
+{
+  "nome": "Edge Case: Correção de Área",
+  "descricao": "Usuário diz uma área, depois corrige. Não deve marcar como multiprofissional.",
+  "tags": ["edge-case", "correcao", "area", "multiprofissional"],
+  "leadInicial": {},
+  "mensagens": [
+    {
+      "ordem": 1,
+      "tipo": "usuario",
+      "texto": "Preciso de fonoaudiologia",
+      "intencao": "definir_area",
+      "esperado": {
+        "respostaContem": ["fonoaudiologia", "fala"],
+        "proximoPasso": "confirmar_area",
+        "scoreMinimo": 7
+      }
+    },
+    {
+      "ordem": 2,
+      "tipo": "usuario",
+      "texto": "Na verdade é neuropsicologia não fono",
+      "intencao": "corrigir_area",
+      "esperado": {
+        "respostaContem": ["neuropsicologia", "corrigido", "aprendizado"],
+        "naoDeveConter": ["multiprofissional", "também", "junto", "ambos"],
+        "entendeuCorrecao": true,
+        "naoMarcouMulti": true,
+        "scoreMinimo": 9,
+        "critico": true
+      },
+      "notas": "PALAVRAS NEGATIVAS + contexto de área = correção, NÃO multiprofissional"
+    }
+  ]
+}
