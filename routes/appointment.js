@@ -941,13 +941,24 @@ router.get('/', flexibleAuth, async (req, res) => {
         });
 
         // 🔹 3. JUNTAR APPOINTMENTS + PRÉ-AGENDAMENTOS (não importados)
-        const preEvents = preAgendamentos.map(pre => mapPreAgendamentoToEvent(pre));
+        // Se excludePreAgendamentos=true, não inclui pré-agendamentos no resultado
+        const shouldExcludePreAgendamentos = excludePreAgendamentos === 'true' || excludePreAgendamentos === true;
         
-        const finalResults = [...calendarEvents, ...preEvents].sort((a, b) => {
-            return (a.date + a.time).localeCompare(b.date + b.time);
-        });
-        
-        console.log(`[GET /appointments] Retornando ${finalResults.length} eventos (${calendarEvents.length} appointments + ${preEvents.length} pré-agendamentos)`);
+        let finalResults;
+        if (shouldExcludePreAgendamentos) {
+            // Só appointments reais (para o calendário)
+            finalResults = calendarEvents.sort((a, b) => {
+                return (a.date + a.time).localeCompare(b.date + b.time);
+            });
+            console.log(`[GET /appointments] Retornando ${finalResults.length} appointments (pré-agendamentos excluídos)`);
+        } else {
+            // Appointments + pré-agendamentos (para o painel de pré-agendamentos)
+            const preEvents = preAgendamentos.map(pre => mapPreAgendamentoToEvent(pre));
+            finalResults = [...calendarEvents, ...preEvents].sort((a, b) => {
+                return (a.date + a.time).localeCompare(b.date + b.time);
+            });
+            console.log(`[GET /appointments] Retornando ${finalResults.length} eventos (${calendarEvents.length} appointments + ${preEvents.length} pré-agendamentos)`);
+        }
 
         res.json(finalResults);
     } catch (error) {

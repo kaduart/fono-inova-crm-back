@@ -1,6 +1,12 @@
 
-> backend@1.0.0 start
-> node -r dotenv/config server.js
+> backend@1.0.0 dev
+> node scripts/start-dev.js
+
+🔧 Iniciando ambiente de desenvolvimento...
+
+✅ Redis já está rodando!
+
+🚀 Iniciando servidor Node.js...
 
 🚀 IORedis conectando via REDIS_URL...
 🌍 Modo detectado: production
@@ -31,10 +37,10 @@ IO INIT: null
 🔄 Iniciando conexão Redis...
 🔄 Iniciando conexão Redis...
 🖥️ Bull Board disponível em: /admin/queues
-(node:132955) [MONGOOSE] Warning: Duplicate schema index on {"status":1,"scheduledAt":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:172970) [MONGOOSE] Warning: Duplicate schema index on {"status":1,"scheduledAt":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:132955) [MONGOOSE] Warning: Duplicate schema index on {"code":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
-(node:132955) [MONGOOSE] Warning: Duplicate schema index on {"jobId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:172970) [MONGOOSE] Warning: Duplicate schema index on {"code":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:172970) [MONGOOSE] Warning: Duplicate schema index on {"jobId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
 ✅ Redis conectado
 ✅ Redis Client conectado!
 🚀 Redis conectado e validado!
@@ -43,9 +49,9 @@ IO INIT: null
 [INACTIVE-CHECK] Verificando leads inativos...
 [INACTIVE-FOLLOWUP] Iniciando verificação de leads inativos...
 ⏰ Follow-up Cron iniciado (scan a cada 3min + inactive check a cada 6h)
-[WARN] 2026-03-03T17:50:32.554Z — [META CLIENT] META_ACCESS_TOKEN não configurado
-[INFO] 2026-03-03T17:50:32.555Z — [VIDEO WORKER] 🎬 Worker inicializado (concurrency: 2)
-[INFO] 2026-03-03T17:50:32.560Z — [POST WORKER] 📝 Worker inicializado (concurrency: 3)
+[WARN] 2026-03-03T19:45:41.845Z — [META CLIENT] META_ACCESS_TOKEN não configurado
+[INFO] 2026-03-03T19:45:41.847Z — [VIDEO WORKER] 🎬 Worker inicializado (concurrency: 2)
+[INFO] 2026-03-03T19:45:41.863Z — [POST WORKER] 📝 Worker inicializado (concurrency: 3)
 📊 Iniciando cron de análise semanal de Follow-ups...
 
 ╔═══════════════════════════════════════════════════════════════╗
@@ -57,7 +63,7 @@ IO INIT: null
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
     
-[03/03/2026, 14:50:32] [INFO] Executando verificações iniciais... {}
+[03/03/2026, 16:45:41] [INFO] Executando verificações iniciais... {}
 ✅ Connected to MongoDB
 🧠 [CRON] Inicializando cron de aprendizado...
 ✅ [CRON] Agendado: todos os dias às 23:00 (America/Sao_Paulo)
@@ -72,18 +78,189 @@ IO INIT: null
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
     
-[03/03/2026, 14:50:32] [GMB] MongoDB conectado 
-[03/03/2026, 14:50:32] [GMB] Agendando tarefas GMB... {"timezone":"America/Sao_Paulo"}
-[03/03/2026, 14:50:32] [GMB] Tarefas GMB agendadas! {"tasks":["generateDaily (8h)","sendToMake (8h05, 12h05, 15h05, 19h05)"]}
-[03/03/2026, 14:50:32] [GMB] GMB Cron iniciado {"makeConfigurado":true}
+[03/03/2026, 16:45:41] [GMB] MongoDB conectado 
+[03/03/2026, 16:45:41] [GMB] Agendando tarefas GMB... {"timezone":"America/Sao_Paulo"}
+[03/03/2026, 16:45:41] [GMB] Tarefas GMB agendadas! {"tasks":["generateDaily (8h)","sendToMake (8h05, 12h05, 15h05, 19h05)"]}
+[03/03/2026, 16:45:41] [GMB] GMB Cron iniciado {"makeConfigurado":true}
 ⚠️ PIX Sicoob desabilitado: certificado não configurado
 🔗 Webhook PIX registrado com sucesso
 👀 Iniciando watcher de Followups...
-[03/03/2026, 14:50:32] [ERROR] Uncaught Exception {
-  error: 'listen EADDRINUSE: address already in use :::5000',
-  stack: 'Error: listen EADDRINUSE: address already in use :::5000\n' +
-    '    at Server.setupListenHandle [as _listen2] (node:net:1908:16)\n' +
-    '    at listenInCluster (node:net:1965:12)\n' +
-    '    at Server.listen (node:net:2067:7)\n' +
-    '    at file:///home/user/projetos/CRM-CLINICA/back/server.js:395:12'
+🚀 Server running on port 5000
+🌐 Environment: production
+[INACTIVE-FOLLOWUP] 1 leads inativos encontrados
+[03/03/2026, 16:45:42] [INFO] ✓ Sistema saudável (DB + socket + atividade recente) {
+  "database": true,
+  "socket": true,
+  "recentActivity": true
 }
+[03/03/2026, 16:45:42] [CRON] checkResponses - START
+[03/03/2026, 16:45:42] [INFO] Iniciando verificação de respostas pendentes... {}
+[INFO] Iniciando processamento de respostas pendentes { batchSize: 50, minAge: '24h' }
+[INACTIVE-FOLLOWUP] Lead 698749d7b1f7de4a3dd23d31 já atingiu limite de 3 follow-ups
+[INACTIVE-FOLLOWUP] Concluído: 0 follow-ups criados
+[INACTIVE-CHECK] Concluído: 0 follow-ups criados
+[INFO] Processando 50 follow-ups... {}
+📬 14 follow-ups prontos para envio (após filtro)
+   🔥 0 quentes
+   🟡 7 mornos
+   🧊 7 frios
+⚡ Novo cliente conectado: 3WW5Kqw6m0Ukbe20AAAB
+👥 Total de clientes: 1
+[WARN] Resposta fora da janela de tempo válida {
+  followupId: new ObjectId('6941a690fbcea767fb2ae5d7'),
+  sentAt: 2025-12-17T18:36:03.749Z,
+  respondedAt: 2026-01-06T20:27:30.000Z
+}
+[WARN] Resposta fora da janela de tempo válida {
+  followupId: new ObjectId('693ff8dfbb6ba6cc3ff61b21'),
+  sentAt: 2026-01-07T20:41:05.022Z,
+  respondedAt: 2026-01-22T14:27:46.000Z
+}
+[WARN] Resposta fora da janela de tempo válida {
+  followupId: new ObjectId('693ff8dfbb6ba6cc3ff61b2e'),
+  sentAt: 2026-01-07T20:41:08.899Z,
+  respondedAt: 2026-01-21T11:41:22.000Z
+}
+✅ 14 follow-ups processados!
+[SUCCESS] Processamento em lote concluído {
+  processed: 50,
+  responded: 0,
+  errors: 0,
+  errorDetails: [],
+  responseRate: '0.0%',
+  duration: '3292ms'
+}
+[03/03/2026, 16:45:46] [SUCCESS] Verificação concluída {
+  "processed": 50,
+  "responded": 0,
+  "errors": 0,
+  "responseRate": "0.0%"
+}
+[03/03/2026, 16:45:46] [CRON] checkResponses - SUCCESS
+[03/03/2026, 16:45:46] [SUCCESS] Tarefa concluída: checkResponses {
+  "duration": "3294ms"
+}
+[03/03/2026, 16:45:46] [SUCCESS] Verificações iniciais concluídas {}
+[03/03/2026, 16:45:46] [INFO] Agendando tarefas cron... {
+  "timezone": "America/Sao_Paulo",
+  "schedules": {
+    "CHECK_RESPONSES": "*/30 * * * *",
+    "IDENTIFY_COLD": "0 20 * * *",
+    "DAILY_REPORT": "0 21 * * *",
+    "HEALTH_CHECK": "*/15 * * * *"
+  }
+}
+[03/03/2026, 16:45:46] [SUCCESS] Tarefas agendadas com sucesso {
+  "tasks": 4
+}
+
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║   ✅ SISTEMA INICIADO COM SUCESSO                            ║
+║                                                               ║
+║   Tarefas ativas:                                            ║
+║   • Verificar respostas: a cada 30min                        ║
+║   • Identificar frios: diariamente 20h                       ║
+║   • Relatório diário: diariamente 21h                        ║
+║   • Health check: a cada 15min                               ║
+║                                                               ║
+║   Pressione Ctrl+C para parar                                ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+        
+⚡ Novo cliente conectado: 1dpWMHQ9_yAgL778AAAE
+👥 Total de clientes: 2
+[2026-03-03T19:45:51.202Z] GET → /api/users/me
+[2026-03-03T19:45:51.219Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 543 contacts
+📊 [CONTACTS] 50/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556295335520',
+  leadId: '69a72ba159a5a3ce66f71ea9',
+  type: 'string'
+}
+⚡ Novo cliente conectado: 0af442wDGjijLDimAAAG
+👥 Total de clientes: 3
+[2026-03-03T19:45:51.781Z] GET → /api/users/me
+[2026-03-03T19:45:51.797Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 543 contacts
+📊 [CONTACTS] 50/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556295335520',
+  leadId: '69a72ba159a5a3ce66f71ea9',
+  type: 'string'
+}
+[2026-03-03T19:45:59.833Z] GET → /api/pre-agendamento
+[2026-03-03T19:45:59.956Z] GET → /api/doctors/appointments/today
+[2026-03-03T19:45:59.963Z] GET → /api/dashboard/overview
+[2026-03-03T19:45:59.969Z] GET → /api/doctors/therapy-sessions
+[2026-03-03T19:45:59.975Z] GET → /api/doctors/appointments/stats
+[2026-03-03T19:45:59.989Z] GET → /api/doctors
+[GET_TODAYS_APPOINTMENTS] doctorId: 6806dd1bb6f92559b49a8a9c
+[GET_TODAYS_APPOINTMENTS] todayStr: 2026-03-03
+[2026-03-03T19:46:00.019Z] GET → /api/admin/profile
+[GET_TODAYS_APPOINTMENTS] encontrados: 0
+[2026-03-03T19:46:00.418Z] GET → /api/pre-agendamento
+[2026-03-03T19:46:00.544Z] GET → /api/admin/appointment/completed-cancelled
+[2026-03-03T19:46:00.566Z] GET → /api/appointments
+[GET /appointments] Query: {
+  patientId: undefined,
+  doctorId: undefined,
+  status: undefined,
+  specialty: undefined,
+  startDate: undefined,
+  endDate: undefined,
+  excludePreAgendamentos: 'true'
+}
+[2026-03-03T19:46:00.585Z] GET → /api/payments
+[2026-03-03T19:46:00.605Z] GET → /api/patients
+[PATIENTS LIST] Search: "undefined", Limit: 50
+[2026-03-03T19:46:00.620Z] GET → /api/users/me
+[2026-03-03T19:46:00.635Z] GET → /api/doctors/patients
+[PATIENTS LIST] Encontrados: 50 pacientes
+[2026-03-03T19:46:01.155Z] GET → /api/admin/total-patients
+[2026-03-03T19:46:01.353Z] GET → /api/admin/patient-overview
+[2026-03-03T19:46:01.361Z] GET → /api/doctors/appointments/today
+[2026-03-03T19:46:01.401Z] GET → /api/doctors/therapy-sessions
+[GET_TODAYS_APPOINTMENTS] doctorId: 6806dd1bb6f92559b49a8a9c
+[GET_TODAYS_APPOINTMENTS] todayStr: 2026-03-03
+[2026-03-03T19:46:01.619Z] GET → /api/patients
+[PATIENTS LIST] Search: "undefined", Limit: 50
+[GET_TODAYS_APPOINTMENTS] encontrados: 0
+[PATIENTS LIST] Encontrados: 50 pacientes
+[2026-03-03T19:46:01.705Z] GET → /api/doctors/appointments/stats
+[2026-03-03T19:46:01.752Z] GET → /api/doctors
+[2026-03-03T19:46:01.777Z] GET → /api/admin/profile
+[2026-03-03T19:46:01.866Z] GET → /api/admin/appointment/completed-cancelled
+[GET /appointments] PreAgendamentos não importados: 45
+[GET /appointments] Retornando 1264 appointments (pré-agendamentos excluídos)
+[2026-03-03T19:46:02.319Z] GET → /api/users/me
+[2026-03-03T19:46:02.325Z] GET → /api/doctors/patients
+[2026-03-03T19:46:02.338Z] GET → /api/payments
+[2026-03-03T19:46:02.374Z] GET → /api/doctors
+[2026-03-03T19:46:02.433Z] GET → /api/doctors/appointments/calendar/6806dd1bb6f92559b49a8a9c
+[2026-03-03T19:46:02.871Z] GET → /api/appointments
+[GET /appointments] Query: {
+  patientId: undefined,
+  doctorId: undefined,
+  status: undefined,
+  specialty: undefined,
+  startDate: undefined,
+  endDate: undefined,
+  excludePreAgendamentos: 'true'
+}
+(node:172970) Warning: Label 'appointments.query' already exists for console.time()
+[2026-03-03T19:46:02.880Z] GET → /api/doctors/appointments/future
+[2026-03-03T19:46:02.923Z] GET → /api/admin/total-doctors
+[2026-03-03T19:46:02.955Z] GET → /api/admin/doctor-overview
+[2026-03-03T19:46:03.004Z] GET → /api/doctors/6806dd1bb6f92559b49a8a9c/attendance-summary
+[2026-03-03T19:46:03.019Z] GET → /api/doctors
+[2026-03-03T19:46:03.472Z] GET → /api/doctors/appointments/calendar/6806dd1bb6f92559b49a8a9c
+[2026-03-03T19:46:03.515Z] GET → /api/doctors/appointments/future
+[2026-03-03T19:46:03.578Z] GET → /api/admin/total-doctors
+[2026-03-03T19:46:03.586Z] GET → /api/admin/doctor-overview
+[2026-03-03T19:46:03.628Z] GET → /api/doctors/6806dd1bb6f92559b49a8a9c/attendance-summary
+[GET /appointments] PreAgendamentos não importados: 45
+[GET /appointments] Retornando 1264 appointments (pré-agendamentos excluídos)
+Killed
+Killed
