@@ -897,43 +897,19 @@ router.get('/', flexibleAuth, async (req, res) => {
             return id === '69964dc81e0e9b385928bb06';
         });
 
-        // 🔹 2. BUSCAR PRÉ-AGENDAMENTOS (INTERESSES) NÃO CONVERTIDOS
-        // Usa o mesmo range de datas da query (startDate/endDate)
+        // 🔹 2. BUSCAR PRÉ-AGENDAMENTOS (INTERESSES) NÃO IMPORTADOS
+        // Só mostra pré-agendamentos que ainda não viraram appointment
         const preFilter = {
-            status: { $nin: ['importado', 'descartado', 'desistiu'] },
-            // 🎯 Não trazer pré-agendamentos que já foram importados
-            // Verifica se é null OU não existe (campo pode existir como null no schema)
-            $or: [
-                { importedToAppointment: { $exists: false } },
-                { importedToAppointment: null }
-            ]
+            status: { $nin: ['importado', 'descartado', 'desistiu'] } // ❌ Não importados
         };
 
-        // Aplicar filtro de data nos pré-agendamentos (preferredDate é string YYYY-MM-DD)
+        // Aplicar filtro de data
         if (startDate && endDate) {
-            preFilter.preferredDate = {
-                $gte: startDate,  // string "2026-02-19"
-                $lte: endDate     // string "2026-02-19"
-            };
+            preFilter.preferredDate = { $gte: startDate, $lte: endDate };
         }
 
-        console.log(`[GET /appointments] DEBUG - Query PreAgendamento:`, JSON.stringify(preFilter));
         const preAgendamentos = await PreAgendamento.find(preFilter).lean();
-        console.log(`[GET /appointments] DEBUG - PreAgendamentos retornados: ${preAgendamentos.length}`);
-        
-        // 🐛 DEBUG: Listar todos os pré-agendamentos encontrados
-        preAgendamentos.forEach(pre => {
-            console.log(`[GET /appointments] DEBUG - Pre encontrado: ${pre._id} | ${pre.patientInfo?.fullName} | ${pre.preferredDate} ${pre.preferredTime} | status: ${pre.status} | imported: ${pre.importedToAppointment}`);
-        });
-        
-        // 🐛 DEBUG: Buscar TODOS os pré-agendamentos do Henre (sem filtros)
-        const henreDebug = await PreAgendamento.find({
-            'patientInfo.fullName': { $regex: /Henre/i }
-        }).lean();
-        console.log(`[GET /appointments] DEBUG - Henre encontrados (sem filtro): ${henreDebug.length}`);
-        henreDebug.forEach(h => {
-            console.log(`[GET /appointments] DEBUG - Henre: ${h._id} | ${h.preferredDate} | imported: ${h.importedToAppointment} | status: ${h.status}`);
-        });
+        console.log(`[GET /appointments] PreAgendamentos não importados: ${preAgendamentos.length}`);
 
         // 🔹 Buscar saldos dos pacientes para mostrar no calendário
         const patientIds = appointments
@@ -964,45 +940,14 @@ router.get('/', flexibleAuth, async (req, res) => {
             return event;
         });
 
-        // 🔹 Mapear PRÉ-AGENDAMENTOS (INTERESSES) - apenas se não estiver excluindo
-        let finalResults = calendarEvents;
-        const shouldExcludePreAgendamentos = excludePreAgendamentos === 'true' || excludePreAgendamentos === true;
-
-        if (!shouldExcludePreAgendamentos) {
-            // 🎯 DEDUPLICAÇÃO: Só remove pré-agendamento se foi importado para appointment ATIVO
-            // Usar importedToAppointment para verificar (não data/hora/nome que pode ter falsos positivos)
-            const activeAppointmentIds = new Set(
-                appointments  // appointments do banco (não calendarEvents)
-                    .filter(appt => !['canceled', 'missed'].includes(appt.operationalStatus))
-                    .map(appt => String(appt._id))
-            );
-
-            console.log(`[GET /appointments] DEBUG - Active appointment IDs:`, [...activeAppointmentIds]);
-
-            const preEvents = preAgendamentos.map(pre => mapPreAgendamentoToEvent(pre));
-
-            // Filtrar pré-agendamentos que já foram importados para appointments ATIVOS
-            const filteredPreEvents = preEvents.filter(pre => {
-                // Encontrar o pré-agendamento original para pegar importedToAppointment
-                const preOriginal = preAgendamentos.find(p => String(p._id) === pre.id);
-                const importedId = preOriginal?.importedToAppointment;
-                
-                // Se foi importado para um appointment ATIVO, filtrar
-                if (importedId && activeAppointmentIds.has(String(importedId))) {
-                    console.log(`[GET /appointments] DEBUG - Filtrando pré ${pre.id} - importado para ${importedId}`);
-                    return false;
-                }
-                return true;
-            });
-
-            // ✅ RETORNA: appointments (todos) + pré-agendamentos (não duplicados com ativos)
-            finalResults = [...calendarEvents, ...filteredPreEvents].sort((a, b) => {
-                return (a.date + a.time).localeCompare(b.date + b.time);
-            });
-            console.log(`[GET /appointments] Retornando ${finalResults.length} eventos (${calendarEvents.length} appointments + ${filteredPreEvents.length}/${preEvents.length} pré-agendamentos)`);
-        } else {
-            console.log(`[GET /appointments] Retornando ${finalResults.length} eventos (apenas appointments, pré-agendamentos excluídos)`);
-        }
+        // 🔹 3. JUNTAR APPOINTMENTS + PRÉ-AGENDAMENTOS (não importados)
+        const preEvents = preAgendamentos.map(pre => mapPreAgendamentoToEvent(pre));
+        
+        const finalResults = [...calendarEvents, ...preEvents].sort((a, b) => {
+            return (a.date + a.time).localeCompare(b.date + b.time);
+        });
+        
+        console.log(`[GET /appointments] Retornando ${finalResults.length} eventos (${calendarEvents.length} appointments + ${preEvents.length} pré-agendamentos)`);
 
         res.json(finalResults);
     } catch (error) {

@@ -149,6 +149,100 @@ async function getNextEspecialidade() {
 }
 
 /**
+ * 🔍 VERIFICA QUAIS ESPECIALIDADES JÁ TIVERAM POST HOJE
+ */
+export async function getEspecialidadesSemPostHoje() {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  const amanha = new Date(hoje);
+  amanha.setDate(amanha.getDate() + 1);
+  
+  // Busca posts de hoje
+  const postsHoje = await GmbPost.find({
+    createdAt: { $gte: hoje, $lt: amanha },
+    status: { $in: ['ready', 'scheduled', 'published', 'processing'] }
+  }).select('theme').lean();
+  
+  const especialidadesComPost = new Set(postsHoje.map(p => p.theme));
+  
+  // Retorna as que ainda não tiveram post
+  return ESPECIALIDADES.filter(esp => !especialidadesComPost.has(esp.id));
+}
+
+/**
+ * 📅 CRIA POSTS PARA TODAS AS ESPECIALIDADES QUE FALTAM NO DIA
+ * Distribui os posts ao longo do dia em horários estratégicos
+ */
+export async function createPostsForAllEspecialidades() {
+  const semPost = await getEspecialidadesSemPostHoje();
+  
+  if (semPost.length === 0) {
+    console.log('✅ [GMB] Todas as especialidades já têm post hoje');
+    return [];
+  }
+  
+  console.log(`🚀 [GMB] Criando posts para ${semPost.length} especialidades:`, 
+    semPost.map(e => e.nome).join(', '));
+  
+  const horarios = ['08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '19:00', '20:00', '21:00'];
+  const funis = ['top', 'top', 'middle', 'middle', 'middle', 'bottom', 'bottom', 'bottom', 'bottom'];
+  const results = [];
+  
+  for (let i = 0; i < semPost.length; i++) {
+    const especialidade = semPost[i];
+    const horario = horarios[i % horarios.length];
+    const funil = funis[i % funis.length];
+    
+    const [hora, minuto] = horario.split(':').map(Number);
+    const scheduledAt = new Date();
+    scheduledAt.setHours(hora, minuto, 0, 0);
+    
+    // Se horário já passou, agenda para amanhã no mesmo horário
+    if (scheduledAt < new Date()) {
+      scheduledAt.setDate(scheduledAt.getDate() + 1);
+    }
+    
+    try {
+      const result = await createDailyPost({
+        especialidade,
+        generateImage: true,
+        scheduledAt,
+        funnelStage: funil,
+        publishedBy: 'cron'
+      });
+      
+      results.push({
+        success: true,
+        especialidade: especialidade.nome,
+        horario,
+        funil,
+        postId: result.post._id
+      });
+      
+      console.log(`✅ [GMB] ${especialidade.nome} → ${horario} (${funil})`);
+      
+      // Delay entre criações
+      if (i < semPost.length - 1) {
+        await new Promise(r => setTimeout(r, 3000));
+      }
+      
+    } catch (error) {
+      results.push({
+        success: false,
+        especialidade: especialidade.nome,
+        error: error.message
+      });
+      console.error(`❌ [GMB] Erro em ${especialidade.nome}:`, error.message);
+    }
+  }
+  
+  const sucessos = results.filter(r => r.success).length;
+  console.log(`📊 [GMB] Resumo: ${sucessos}/${semPost.length} especialidades criadas`);
+  
+  return results;
+}
+
+/**
  * 🎯 PROMPTS ESPECÍFICOS POR ESPECIALIDADE — foco em geração de leads
  */
 const PROMPTS_ESPECIALIDADE = {
@@ -1216,7 +1310,7 @@ export async function createDailyPost(options = {}) {
       title: generated.title,
       content: generated.content,
       theme: especialidade.id,
-      tags: [especialidade.id, 'terapia', 'pediatria'],
+      tags: [especialidade.id, 'terapia', 'pediatria', options.publishedBy === 'cron' ? 'auto' : 'manual'],
       mediaUrl,
       mediaType: mediaUrl ? 'image' : null,
       imageProvider,  // 🖼️ Qual IA gerou a imagem
@@ -1229,7 +1323,8 @@ export async function createDailyPost(options = {}) {
         : `Especialidade: ${especialidade.nome}`,
       status: 'scheduled',
       scheduledAt,
-      createdBy: options.userId
+      createdBy: options.userId,
+      publishedBy: options.publishedBy || null
     });
 
     await post.save();
@@ -1620,6 +1715,8 @@ export default {
   generateCaptionSEO,
   generateHooksViral,
   createDailyPost,
+  createPostsForAllEspecialidades,
+  getEspecialidadesSemPostHoje,
   generateWeekPosts,
   fetchPostMetrics,
   ESPECIALIDADES,
