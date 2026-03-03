@@ -109,7 +109,7 @@ db.followups.find(
 
 // busca apociente pe,o, nomee 
 db.patients.find(
-  { fullName: { $regex: "Nicolas", $options: "i" } }
+  { fullName: { $regex: "Gabriel Alves", $options: "i" } }
 ).pretty()
 
 ///ouuuuu // Buscar agendamentos de hoje - 27/10/2025

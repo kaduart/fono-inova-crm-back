@@ -1998,4 +1998,168 @@ router.get("/import-from-agenda/verificar-daniel", async (req, res) => {
   }
 });
 
+/**
+ * GET /api/import-from-agenda/auditar-gabriel
+ * Verifica o que aconteceu com o Gabriel Soares de Abreu
+ */
+router.get("/import-from-agenda/auditar-gabriel", async (req, res) => {
+  try {
+    const db = mongoose.connection.db;
+
+    // Buscar pré-agendamentos do Gabriel
+    const preAgendamentos = await db.collection('preagendamentos').find({
+      'patientInfo.fullName': { $regex: /Gabriel Soares/i }
+    }).toArray();
+
+    // Buscar appointments do Gabriel
+    const appointments = await db.collection('appointments').find({
+      patientName: { $regex: /Gabriel Soares/i }
+    }).toArray();
+
+    // Buscar pagamentos do Gabriel
+    const payments = await db.collection('payments').find({
+      $or: [
+        { 'patient.fullName': { $regex: /Gabriel Soares/i } },
+        { patientName: { $regex: /Gabriel Soares/i } }
+      ]
+    }).toArray();
+
+    // Buscar sessões do Gabriel
+    const sessions = await db.collection('sessions').find({
+      'patient.fullName': { $regex: /Gabriel Soares/i }
+    }).toArray();
+
+    res.json({
+      success: true,
+      auditoria: {
+        preAgendamentos: preAgendamentos.map(p => ({
+          _id: p._id.toString(),
+          nome: p.patientInfo?.fullName,
+          data: p.preferredDate,
+          hora: p.preferredTime,
+          status: p.status,
+          importedTo: p.importedToAppointment?.toString(),
+          updatedAt: p.updatedAt,
+          createdAt: p.createdAt
+        })),
+        appointments: appointments.map(a => ({
+          _id: a._id.toString(),
+          nome: a.patientName,
+          data: a.date,
+          hora: a.time,
+          status: a.operationalStatus,
+          preAgendamentoId: a.metadata?.origin?.preAgendamentoId,
+          updatedAt: a.updatedAt
+        })),
+        payments: payments.map(p => ({
+          _id: p._id.toString(),
+          amount: p.amount,
+          status: p.status,
+          appointmentId: p.appointment?.toString(),
+          preAgendamentoId: p.preAgendamentoId
+        })),
+        sessions: sessions.map(s => ({
+          _id: s._id.toString(),
+          date: s.date,
+          status: s.status,
+          appointmentId: s.appointmentId?.toString()
+        }))
+      },
+      totalPreAgendamentos: preAgendamentos.length,
+      totalAppointments: appointments.length,
+      totalPayments: payments.length,
+      totalSessions: sessions.length,
+      alerta: preAgendamentos.length === 0 && appointments.length === 0 
+        ? "⚠️ NENHUM REGISTRO ENCONTRADO! Possível deleção." 
+        : null
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/import-from-agenda/auditar-unimed
+ * Consulta pacientes Unimed Anápolis e seus agendamentos
+ */
+router.get("/import-from-agenda/auditar-unimed", async (req, res) => {
+  try {
+    const db = mongoose.connection.db;
+
+    // Buscar pacientes que tenham Unimed Anápolis
+    const pacientes = await db.collection('patients').find({
+      $or: [
+        { healthPlan: { $regex: /Unimed/i } },
+        { insuranceProvider: { $regex: /Unimed/i } },
+        { 'insurance.name': { $regex: /Unimed/i } },
+        { convenio: { $regex: /Unimed/i } }
+      ]
+    }).toArray();
+
+    // Se não encontrou por esses campos, buscar por nome
+    let pacientesPorNome = [];
+    if (pacientes.length === 0) {
+      pacientesPorNome = await db.collection('patients').find({
+        fullName: { $regex: /Unimed|Anápolis/i, $options: 'i' }
+      }).toArray();
+    }
+
+    // Buscar appointments com billingType = insurance ou convenio
+    const appointments = await db.collection('appointments').find({
+      $or: [
+        { billingType: 'insurance' },
+        { billingType: 'convenio' },
+        { insuranceProvider: { $regex: /Unimed|unimed/i } },
+        { 'insurance.name': { $regex: /Unimed|unimed/i } }
+      ]
+    }).sort({ date: -1 }).limit(20).toArray();
+
+    // Buscar pagamentos de convênio
+    const payments = await db.collection('payments').find({
+      $or: [
+        { billingType: 'insurance' },
+        { billingType: 'convenio' },
+        { 'insurance.name': { $regex: /Unimed|unimed/i } }
+      ]
+    }).sort({ createdAt: -1 }).limit(10).toArray();
+
+    res.json({
+      success: true,
+      resumo: {
+        pacientesUnimed: pacientes.length,
+        pacientesPorNome: pacientesPorNome.length,
+        appointmentsConvenio: appointments.length,
+        paymentsConvenio: payments.length
+      },
+      pacientes: pacientes.map(p => ({
+        _id: p._id.toString(),
+        nome: p.fullName,
+        telefone: p.phone,
+        convenio: p.healthPlan || p.insuranceProvider || p.convenio
+      })),
+      appointments: appointments.map(a => ({
+        _id: a._id.toString(),
+        paciente: a.patientName,
+        data: a.date,
+        hora: a.time,
+        billingType: a.billingType,
+        insuranceProvider: a.insuranceProvider,
+        status: a.operationalStatus,
+        metadata: a.metadata
+      })),
+      payments: payments.map(p => ({
+        _id: p._id.toString(),
+        paciente: p.patientName || p.patient?.fullName,
+        valor: p.amount,
+        billingType: p.billingType,
+        insurance: p.insurance?.name
+      }))
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export default router;
