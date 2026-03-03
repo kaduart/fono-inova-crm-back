@@ -18,7 +18,7 @@ import Patient from "../models/Patient.js";
 const router = express.Router();
 
 const API_BASE = process.env.API_BASE || "http://localhost:5000";
-const api = axios.create({ baseURL: API_BASE, timeout: 8000 });
+const api = axios.create({ baseURL: API_BASE, timeout: 30000 });  // ⬆️ Aumentado para 30s - Render é lento
 
 /**
  * 🔍 Helper: Encontra ou cria paciente de forma segura
@@ -179,24 +179,55 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
     
     console.log(`[IMPORT-FROM-AGENDA] ✅ PreAgendamento criado: ${preAgendamento._id}`);
 
-    // ✅ EMITIR SOCKET (novo pré-agendamento)
-    try {
-      const io = getIo();
-      io.emit("preagendamento:new", {
-        id: String(preAgendamento._id),
-        patientName: preAgendamento.patientInfo.fullName,
-        phone: preAgendamento.patientInfo.phone,
-        specialty: preAgendamento.specialty,
-        preferredDate: preAgendamento.preferredDate,
-        preferredTime: preAgendamento.preferredTime,
-        status: preAgendamento.status,
-        urgency: preAgendamento.urgency,
-        createdAt: preAgendamento.createdAt
-      });
-      console.log(`📡 Socket emitido: preagendamento:new ${preAgendamento._id}`);
-    } catch (socketError) {
-      console.error('⚠️ Erro ao emitir socket:', socketError.message);
-    }
+    // ✅ EMITIR SOCKET (novo pré-agendamento) - com retry e broadcast amplo
+    const emitSocketWithRetry = async (attempt = 1) => {
+      try {
+        const io = getIo();
+        const socketData = {
+          id: String(preAgendamento._id),
+          patientName: preAgendamento.patientInfo.fullName,
+          phone: preAgendamento.patientInfo.phone,
+          specialty: preAgendamento.specialty,
+          preferredDate: preAgendamento.preferredDate,
+          preferredTime: preAgendamento.preferredTime,
+          status: preAgendamento.status,
+          urgency: preAgendamento.urgency,
+          createdAt: preAgendamento.createdAt,
+          source: 'agenda_externa'
+        };
+        
+        // Emitir para todos os namespaces/salas relevantes
+        io.emit("preagendamento:new", socketData);
+        io.emit("preAgendamento:created", socketData); // compatibilidade alternativa
+        io.emit("agenda:update", { type: 'new_preagendamento', data: socketData }); // broadcast geral
+        
+        console.log(`📡 Socket emitido (tentativa ${attempt}): preagendamento:new ${preAgendamento._id}`);
+      } catch (socketError) {
+        console.error(`⚠️ Erro ao emitir socket (tentativa ${attempt}):`, socketError.message);
+        if (attempt < 3) {
+          setTimeout(() => emitSocketWithRetry(attempt + 1), 1000 * attempt);
+        }
+      }
+    };
+    
+    // Emitir imediatamente e também com delay para garantir
+    emitSocketWithRetry();
+    setTimeout(() => emitSocketWithRetry(99), 2000); // retry após 2s
+
+    // ✅ FORÇAR REFRESH broadcast após resposta HTTP
+    setTimeout(() => {
+      try {
+        const io = getIo();
+        io.emit("force:refresh", { 
+          target: 'preagendamentos', 
+          preAgendamentoId: String(preAgendamento._id),
+          timestamp: new Date().toISOString()
+        });
+        console.log(`📡 Force refresh emitido para ${preAgendamento._id}`);
+      } catch (e) {
+        // ignora erro no timeout
+      }
+    }, 3000);
 
     return res.status(201).json({
       success: true,
@@ -1620,6 +1651,160 @@ router.get("/import-from-agenda/weekly-availability", agendaAuth, async (req, re
       error: error.message,
       code: "WEEKLY_AVAILABILITY_ERROR"
     });
+  }
+});
+
+/**
+ * GET /api/import-from-agenda/diagnostico/:patientName
+ * Diagnóstico de agendamentos duplicados
+ */
+router.get("/import-from-agenda/diagnostico/:patientName", async (req, res) => {
+  try {
+    const { patientName } = req.params;
+    const searchRegex = new RegExp(patientName, 'i');
+
+    // Buscar appointments
+    const appointments = await Appointment.find({
+      $or: [
+        { patientName: searchRegex },
+        { 'patient.fullName': searchRegex }
+      ]
+    }).populate('patient doctor session payment').lean();
+
+    // Buscar pré-agendamentos
+    const preAgendamentos = await PreAgendamento.find({
+      'patientInfo.fullName': searchRegex
+    }).lean();
+
+    // Analisar duplicatas
+    const analysis = {
+      totalAppointments: appointments.length,
+      totalPreAgendamentos: preAgendamentos.length,
+      appointments: appointments.map(a => ({
+        id: a._id,
+        date: a.date,
+        time: a.time,
+        status: a.operationalStatus,
+        patientName: a.patientName || a.patient?.fullName,
+        hasPayment: !!a.payment,
+        hasSession: !!a.session,
+        preAgendamentoId: a.metadata?.origin?.preAgendamentoId
+      })),
+      preAgendamentos: preAgendamentos.map(p => ({
+        id: p._id,
+        date: p.preferredDate,
+        time: p.preferredTime,
+        status: p.status,
+        importedTo: p.importedToAppointment
+      }))
+    };
+
+    res.json({ success: true, data: analysis });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/import-from-agenda/limpar-henre
+ * Deleta TODOS os pré-agendamentos do Henre e deixa só o mais recente
+ */
+router.post("/import-from-agenda/limpar-henre", async (req, res) => {
+  try {
+    // 1. Buscar TODOS os pré-agendamentos do Henre
+    const preAgendamentos = await PreAgendamento.find({
+      'patientInfo.fullName': { $regex: /Henre/i }
+    }).sort({ createdAt: -1 }); // Mais recente primeiro
+
+    if (preAgendamentos.length === 0) {
+      return res.json({ success: false, message: 'Nenhum pré-agendamento do Henre encontrado' });
+    }
+
+    console.log(`[LIMPAR-HENRE] Encontrados ${preAgendamentos.length} pré-agendamentos`);
+
+    // 2. O primeiro é o mais recente - mantém ele
+    const manter = preAgendamentos[0];
+    const deletar = preAgendamentos.slice(1);
+
+    // 3. Deletar os outros
+    for (const pre of deletar) {
+      await PreAgendamento.findByIdAndDelete(pre._id);
+      console.log(`[LIMPAR-HENRE] DELETADO: ${pre._id}`);
+    }
+
+    res.json({
+      success: true,
+      message: `Pronto! Mantido: ${manter._id}, Deletados: ${deletar.length}`,
+      mantido: {
+        id: manter._id,
+        nome: manter.patientInfo?.fullName,
+        data: manter.preferredDate,
+        hora: manter.preferredTime
+      },
+      deletados: deletar.map(p => p._id)
+    });
+
+  } catch (error) {
+    console.error('[LIMPAR-HENRE] Erro:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/import-from-agenda/validar/:preAgendamentoId
+ * Valida se pré-agendamento importado tem appointment/payment/session criados
+ */
+router.get("/import-from-agenda/validar/:preAgendamentoId", async (req, res) => {
+  try {
+    const { preAgendamentoId } = req.params;
+
+    const pre = await PreAgendamento.findById(preAgendamentoId).lean();
+    if (!pre) {
+      return res.status(404).json({ success: false, error: "Pré-agendamento não encontrado" });
+    }
+
+    // Se foi importado, deve ter esses dados
+    const appointment = pre.importedToAppointment 
+      ? await Appointment.findById(pre.importedToAppointment).populate('payment session').lean()
+      : null;
+
+    const resultado = {
+      preAgendamentoId: pre._id,
+      paciente: pre.patientInfo?.fullName,
+      status: pre.status,
+      // Deve ter se status = 'importado'
+      temAppointment: !!appointment,
+      appointmentId: appointment?._id,
+      appointmentStatus: appointment?.operationalStatus,
+      temPayment: !!appointment?.payment,
+      paymentId: appointment?.payment?._id,
+      paymentStatus: appointment?.payment?.status,
+      temSession: !!appointment?.session,
+      sessionId: appointment?.session?._id,
+      sessionStatus: appointment?.session?.status
+    };
+
+    // Validação
+    const erros = [];
+    if (pre.status === 'importado') {
+      if (!resultado.temAppointment) erros.push("Status='importado' mas não tem appointment");
+      if (!resultado.temPayment) erros.push("Status='importado' mas não tem payment");
+      if (!resultado.temSession) erros.push("Status='importado' mas não tem session");
+    } else if (pre.status === 'novo') {
+      if (resultado.temAppointment) erros.push("Status='novo' mas tem appointment");
+      if (resultado.temPayment) erros.push("Status='novo' mas tem payment");
+      if (resultado.temSession) erros.push("Status='novo' mas tem session");
+    }
+
+    res.json({
+      success: true,
+      valido: erros.length === 0,
+      erros: erros,
+      dados: resultado
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

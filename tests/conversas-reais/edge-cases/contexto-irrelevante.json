@@ -1,0 +1,38 @@
+{
+  "nome": "Edge Case: Mensagem Irrelevante",
+  "descricao": "Usuário envia mensagem fora de contexto. Testa se Amanda mantém foco sem ser rígida demais.",
+  "tags": ["edge-case", "irrelevante", "foco"],
+  "leadInicial": {
+    "therapyArea": "psicologia",
+    "patientInfo": { "fullName": "Ana", "age": 7 }
+  },
+  "mensagens": [
+    {
+      "ordem": 1,
+      "tipo": "usuario",
+      "texto": "Tá chovendo muito aqui em Brasília",
+      "intencao": "irrelevante",
+      "esperado": {
+        "respostaContem": ["entendo", "voltando", "agendamento", "neuropsicologia"],
+        "naoDeveConter": ["chuva", "tempo", "clima", "me conta mais"],
+        "mantemFoco": true,
+        "naoConversa": true,
+        "gentil": true,
+        "scoreMinimo": 7
+      },
+      "notas": "Deve ser gentil mas voltar ao foco do atendimento sem conversar sobre o clima"
+    },
+    {
+      "ordem": 2,
+      "tipo": "usuario",
+      "texto": "Minha mãe tem gato",
+      "intencao": "irrelevante",
+      "esperado": {
+        "respostaContem": ["sobre", "agendamento", "terapia"],
+        "naoDeveConter": ["gato", "bichano", "miau"],
+        "mantemFoco": true,
+        "scoreMinimo": 7
+      }
+    }
+  ]
+}
