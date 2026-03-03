@@ -1,0 +1,92 @@
+{
+  "nome": "Cenário Crítico: Recuperação de Contexto",
+  "descricao": "Testa se Amanda lembra da área terapêutica quando usuário envia mensagens sequenciais sem repetir a área. Cenário que estava quebrado antes.",
+  "tags": ["contexto", "recuperacao", "memoria", "critico"],
+  "leadInicial": {
+    "therapyArea": null,
+    "patientInfo": {}
+  },
+  "contextoEsperado": {
+    "areaFinal": "psicologia",
+    "nomeFinal": "Gabriel",
+    "idadeFinal": 5
+  },
+  "mensagens": [
+    {
+      "ordem": 1,
+      "tipo": "usuario",
+      "texto": "Quero agendar psicologia",
+      "intencao": "definir_area",
+      "dadosExtraidos": {
+        "therapyArea": "psicologia"
+      },
+      "esperado": {
+        "respostaContem": ["psicologia", "nome", "paciente"],
+        "proximoPasso": "pedir_nome",
+        "scoreMinimo": 7
+      },
+      "notas": "Primeira mensagem - define área"
+    },
+    {
+      "ordem": 2,
+      "tipo": "usuario",
+      "texto": "Gabriel",
+      "intencao": "informar_nome",
+      "dadosExtraidos": {
+        "patientName": "Gabriel"
+      },
+      "esperado": {
+        "respostaContem": ["Gabriel", "psicologia", "idade"],
+        "contextoRecuperado": ["psicologia"],
+        "critico": "DEVE mencionar psicologia na resposta!",
+        "scoreMinimo": 9
+      },
+      "notas": "BUG ANTERIOR: Amanda esquecia área e perguntava 'qual área?' novamente. DEVE lembrar que é psicologia."
+    },
+    {
+      "ordem": 3,
+      "tipo": "usuario",
+      "texto": "Ele tem 5 anos",
+      "intencao": "informar_idade",
+      "dadosExtraidos": {
+        "patientAge": 5
+      },
+      "esperado": {
+        "respostaContem": ["Gabriel", "5 anos", "psicologia", "manhã", "tarde"],
+        "contextoRecuperado": ["psicologia", "Gabriel"],
+        "personalizacao": true,
+        "scoreMinimo": 9
+      },
+      "notas": "Deve manter contexto completo: psicologia + Gabriel + 5 anos"
+    },
+    {
+      "ordem": 4,
+      "tipo": "usuario",
+      "texto": "De tarde",
+      "intencao": "informar_periodo",
+      "dadosExtraidos": {
+        "preferredPeriod": "tarde"
+      },
+      "esperado": {
+        "respostaContem": ["Gabriel", "psicologia", "tarde"],
+        "contextoRecuperado": ["psicologia", "Gabriel", "5 anos"],
+        "proximoPasso": "mostrar_horarios",
+        "scoreMinimo": 9
+      },
+      "notas": "Mensagem curta sem contexto - Amanda DEVE recuperar tudo da memória"
+    }
+  ],
+  "validacoesFinais": {
+    "leadDeveTer": {
+      "therapyArea": "psicologia",
+      "patientInfo.fullName": "Gabriel",
+      "patientInfo.age": 5,
+      "pendingPreferredPeriod": "tarde"
+    }
+  },
+  "bugPrevinido": "Amanda esquecia therapyArea entre mensagens e perguntava 'qual área?' repetidamente",
+  "metricasEsperadas": {
+    "scoreRecuperacaoContexto": "= 10",
+    "naoRepetePerguntas": true
+  }
+}

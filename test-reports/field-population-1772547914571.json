@@ -1,0 +1,604 @@
+{
+  "passed": 3,
+  "failed": 7,
+  "total": 10,
+  "results": [
+    {
+      "scenario": "Fluxo Completo - Fono",
+      "passed": false,
+      "conversation": [
+        {
+          "userText": "Oi, quero agendar fonoaudiologia para meu filho",
+          "error": "Operation `leads.findOneAndUpdate()` buffering timed out after 10000ms"
+        },
+        {
+          "userText": "Ele se chama Pedro Henrique",
+          "response": "Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Oc",
+          "validations": [
+            {
+              "field": "patientName",
+              "expected": "Pedro Henrique",
+              "actual": null,
+              "message": "Nome: ❌ não definido"
+            }
+          ],
+          "state": {
+            "_id": "69a6ecc0c529938ba064fb67",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": null,
+            "patientInfo": {
+              "fullName": null,
+              "age": null
+            },
+            "pendingPreferredPeriod": null,
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        },
+        {
+          "userText": "Tem 4 anos",
+          "response": "Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Oc",
+          "validations": [
+            {
+              "field": "patientAge",
+              "expected": 4,
+              "actual": 4,
+              "pass": true,
+              "message": "Idade: 4"
+            }
+          ],
+          "state": {
+            "_id": "69a6ecc0c529938ba064fb67",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": null,
+            "patientInfo": {
+              "fullName": null,
+              "age": 4
+            },
+            "pendingPreferredPeriod": null,
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        },
+        {
+          "userText": "De tarde é melhor pra gente",
+          "response": "Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Oc",
+          "validations": [
+            {
+              "field": "period",
+              "expected": "tarde",
+              "actual": "tarde",
+              "pass": true,
+              "message": "Período: tarde"
+            }
+          ],
+          "state": {
+            "_id": "69a6ecc0c529938ba064fb67",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": null,
+            "patientInfo": {
+              "fullName": null,
+              "age": 4
+            },
+            "pendingPreferredPeriod": "tarde",
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "Fluxo Completo - Neuropsicologia",
+      "passed": false,
+      "conversation": [
+        {
+          "userText": "Preciso de neuropsicologia pra minha filha",
+          "error": "Operation `leads.findOneAndUpdate()` buffering timed out after 10000ms"
+        },
+        {
+          "userText": "O nome dela é Ana Clara",
+          "response": "Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Oc",
+          "validations": [
+            {
+              "field": "patientName",
+              "expected": "Ana Clara",
+              "actual": null,
+              "message": "Nome: ❌ não definido"
+            }
+          ],
+          "state": {
+            "_id": "69a6ed38c529938ba064fb78",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": null,
+            "patientInfo": {
+              "fullName": null,
+              "age": null
+            },
+            "pendingPreferredPeriod": null,
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        },
+        {
+          "userText": "Ela tem 8 anos",
+          "response": "Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Oc",
+          "validations": [
+            {
+              "field": "patientAge",
+              "expected": 8,
+              "actual": 8,
+              "pass": true,
+              "message": "Idade: 8"
+            }
+          ],
+          "state": {
+            "_id": "69a6ed38c529938ba064fb78",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": null,
+            "patientInfo": {
+              "fullName": null,
+              "age": 8
+            },
+            "pendingPreferredPeriod": null,
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        },
+        {
+          "userText": "Pode ser de manhã",
+          "response": "Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Oc",
+          "validations": [
+            {
+              "field": "period",
+              "expected": "manha",
+              "actual": "manha",
+              "pass": true,
+              "message": "Período: manha"
+            }
+          ],
+          "state": {
+            "_id": "69a6ed38c529938ba064fb78",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": null,
+            "patientInfo": {
+              "fullName": null,
+              "age": 8
+            },
+            "pendingPreferredPeriod": "manha",
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "Contexto Recuperado - Área já definida",
+      "passed": true,
+      "conversation": [
+        {
+          "userText": "Oi, tudo bem?",
+          "response": "Oi! Entendi que é para **Psicologia**, João. \n\nPra eu organizar, prefere **manhã ou tarde**? 😊 💚",
+          "validations": [
+            {
+              "field": "context",
+              "pass": true,
+              "message": "✅ Contexto mantido"
+            }
+          ],
+          "state": {
+            "_id": "69a6edbac529938ba064fb8a",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": "psicologia",
+            "patientInfo": {
+              "fullName": "João Pedro",
+              "age": 6
+            },
+            "pendingPreferredPeriod": null,
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        },
+        {
+          "userText": "Quando tem vaga?",
+          "response": "Oi! Entendi que é para **Psicologia**, João. \n\nPra eu organizar, prefere **manhã ou tarde**? 😊 💚",
+          "validations": [],
+          "state": {
+            "_id": "69a6edbac529938ba064fb8a",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": "psicologia",
+            "patientInfo": {
+              "fullName": "João Pedro",
+              "age": 6
+            },
+            "pendingPreferredPeriod": null,
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "Queixa implícita - Atraso de fala",
+      "passed": false,
+      "conversation": [
+        {
+          "userText": "Meu filho ainda não fala direito",
+          "error": "Operation `leads.findOneAndUpdate()` buffering timed out after 10000ms"
+        },
+        {
+          "userText": "Ele tem 3 anos",
+          "response": "Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Oc",
+          "validations": [
+            {
+              "field": "patientAge",
+              "expected": 3,
+              "actual": 3,
+              "pass": true,
+              "message": "Idade: 3"
+            }
+          ],
+          "state": {
+            "_id": "69a6ede2c529938ba064fb91",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": null,
+            "patientInfo": {
+              "fullName": null,
+              "age": 3
+            },
+            "pendingPreferredPeriod": null,
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "Queixa implícita - Dificuldade escolar",
+      "passed": false,
+      "conversation": [
+        {
+          "userText": "Minha filho não está aprendendo na escola",
+          "response": "Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Oc",
+          "validations": [
+            {
+              "field": "therapyArea",
+              "expected": "psicologia",
+              "actual": null,
+              "pass": false,
+              "message": "Área: ❌ não definida"
+            }
+          ],
+          "state": {
+            "_id": "69a6ee28c529938ba064fb9b",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": null,
+            "patientInfo": {
+              "fullName": null,
+              "age": null
+            },
+            "pendingPreferredPeriod": null,
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        },
+        {
+          "userText": "Maria tem 7 anos",
+          "response": "Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Oc",
+          "validations": [
+            {
+              "field": "patientName",
+              "expected": "Maria",
+              "actual": null,
+              "message": "Nome: ❌ não definido"
+            },
+            {
+              "field": "patientAge",
+              "expected": 7,
+              "actual": 7,
+              "pass": true,
+              "message": "Idade: 7"
+            }
+          ],
+          "state": {
+            "_id": "69a6ee28c529938ba064fb9b",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": null,
+            "patientInfo": {
+              "fullName": null,
+              "age": 7
+            },
+            "pendingPreferredPeriod": null,
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "Múltiplas informações de uma vez",
+      "passed": false,
+      "conversation": [
+        {
+          "userText": "Quero agendar psicologia pra minha filha Julia de 5 anos de tarde",
+          "error": "Operation `leads.findOneAndUpdate()` buffering timed out after 10000ms"
+        }
+      ]
+    },
+    {
+      "scenario": "Correção de dados",
+      "passed": false,
+      "conversation": [
+        {
+          "userText": "Desculpe, é neuropsicologia não fono",
+          "response": "Não temos multiprofissional. Temos fonoaudiologia, psicologia, terapia ocupacional... Quer saber mai",
+          "validations": [
+            {
+              "field": "therapyArea",
+              "expected": "neuropsicologia",
+              "actual": "fonoaudiologia",
+              "pass": false,
+              "message": "Área: fonoaudiologia"
+            }
+          ],
+          "state": {
+            "_id": "69a6ee8cc529938ba064fbaa",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": "fonoaudiologia",
+            "patientInfo": {
+              "fullName": "Pedro",
+              "age": 4
+            },
+            "pendingPreferredPeriod": null,
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        },
+        {
+          "userText": "E o nome é Pedro Henrique Souza",
+          "response": "Oi! Entendi que é para **Fonoaudiologia**, za. \n\nPra eu organizar, prefere **manhã ou tarde**? 😊 💚",
+          "validations": [
+            {
+              "field": "patientName",
+              "expected": "Pedro Henrique Souza",
+              "actual": "Pedro",
+              "pass": false,
+              "message": "Nome: Pedro"
+            }
+          ],
+          "state": {
+            "_id": "69a6ee8cc529938ba064fbaa",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": "fonoaudiologia",
+            "patientInfo": {
+              "fullName": "Pedro",
+              "age": 4
+            },
+            "pendingPreferredPeriod": null,
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "Número de anos por extenso",
+      "passed": true,
+      "conversation": [
+        {
+          "userText": "Quero agendar TO para meu filho",
+          "response": "Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Oc",
+          "validations": [
+            {
+              "field": "therapyArea",
+              "expected": "terapia_ocupacional",
+              "actual": "terapia_ocupacional",
+              "pass": true,
+              "message": "Área: terapia_ocupacional"
+            }
+          ],
+          "state": {
+            "_id": "69a6eebec529938ba064fbb2",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": "terapia_ocupacional",
+            "patientInfo": {
+              "fullName": null,
+              "age": null
+            },
+            "pendingPreferredPeriod": null,
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        },
+        {
+          "userText": "Ele tem cinco anos",
+          "response": "Oi! Entendi que é para **Terapia Ocupacional**. Qual o **nome completo** do paciente? 💚",
+          "validations": [
+            {
+              "field": "patientAge",
+              "expected": 5,
+              "actual": 5,
+              "pass": true,
+              "message": "Idade: 5"
+            }
+          ],
+          "state": {
+            "_id": "69a6eebec529938ba064fbb2",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": "terapia_ocupacional",
+            "patientInfo": {
+              "fullName": null,
+              "age": 5
+            },
+            "pendingPreferredPeriod": null,
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "Urgência detectada",
+      "passed": false,
+      "conversation": [
+        {
+          "userText": "Preciso urgente de fono, meu filho não fala e tem 4 anos",
+          "error": "Operation `leads.findOneAndUpdate()` buffering timed out after 10000ms"
+        }
+      ]
+    },
+    {
+      "scenario": "Pergunta sobre preço antes de dados",
+      "passed": true,
+      "conversation": [
+        {
+          "userText": "Quanto custa a avaliação de psicologia?",
+          "response": "A avaliação de psicologia é **R$ 200** 💚",
+          "validations": [
+            {
+              "field": "priceAnswer",
+              "pass": true,
+              "message": "✅ Respondeu preço"
+            }
+          ],
+          "state": {
+            "_id": "69a6ef22c529938ba064fbc1",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": "psicologia",
+            "patientInfo": {
+              "fullName": null,
+              "age": null
+            },
+            "pendingPreferredPeriod": null,
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        },
+        {
+          "userText": "Ok, quero agendar então",
+          "response": "Oi! Entendi que é para **Psicologia**. Qual o **nome completo** do paciente? 💚",
+          "validations": [
+            {
+              "field": "dataCollection",
+              "pass": true,
+              "message": "✅ Iniciou coleta de dados"
+            }
+          ],
+          "state": {
+            "_id": "69a6ef22c529938ba064fbc1",
+            "name": "Responsável Teste",
+            "contact": {
+              "phone": "5561999999999"
+            },
+            "therapyArea": "psicologia",
+            "patientInfo": {
+              "fullName": null,
+              "age": null
+            },
+            "pendingPreferredPeriod": null,
+            "complaint": null,
+            "qualificationData": {
+              "extractedInfo": {}
+            },
+            "interactions": []
+          }
+        }
+      ]
+    }
+  ]
+}

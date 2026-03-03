@@ -1,0 +1,69 @@
+{
+  "nome": "Cenário Crítico: Correção de Área Terapêutica",
+  "descricao": "Usuário inicialmente disse fonoaudiologia mas quer mudar para neuropsicologia. Testa se Amanda não detecta erroneamente 'multiprofissional' e se atualiza corretamente.",
+  "tags": ["correcao", "area", "multiprofissional", "critico"],
+  "leadInicial": {
+    "therapyArea": "fonoaudiologia",
+    "patientInfo": {
+      "fullName": "Ana",
+      "age": 6
+    },
+    "complaint": null
+  },
+  "contextoEsperado": {
+    "areaFinal": "neuropsicologia",
+    "naoDeveSer": "multiprofissional"
+  },
+  "mensagens": [
+    {
+      "ordem": 1,
+      "tipo": "usuario",
+      "texto": "Desculpe, é neuropsicologia não fono",
+      "intencao": "corrigir_area",
+      "contexto": {
+        "areaAtual": "fonoaudiologia",
+        "areaDesejada": "neuropsicologia"
+      },
+      "esperado": {
+        "respostaContem": ["neuropsicologia", "tranquilo", "ajustar"],
+        "naoDeveConter": ["multiprofissional", "fono e neuro", "as duas"],
+        "empatia": true,
+        "correcaoDetectada": true,
+        "scoreMinimo": 9,
+        "critico": true
+      },
+      "notas": "BUG CONHECIDO: Anteriormente detectava 'multiprofissional' erroneamente. Deve detectar 'correcao' e mudar para neuro."
+    },
+    {
+      "ordem": 2,
+      "tipo": "usuario",
+      "texto": "E o nome completo é Ana Carolina Silva",
+      "intencao": "atualizar_nome",
+      "dadosExtraidos": {
+        "patientName": "Ana Carolina Silva"
+      },
+      "esperado": {
+        "respostaContem": ["Ana", "neuropsicologia", "idade"],
+        "contextoRecuperado": ["neuropsicologia", "6 anos"],
+        "personalizacao": true,
+        "scoreMinimo": 8
+      },
+      "notas": "Deve usar nome completo e manter nova área (neuro)"
+    }
+  ],
+  "validacoesFinais": {
+    "leadDeveTer": {
+      "therapyArea": "neuropsicologia",
+      "patientInfo.fullName": "Ana Carolina Silva"
+    },
+    "naoDeveTer": {
+      "therapyArea": "fonoaudiologia",
+      "flags.multidisciplinary": true
+    }
+  },
+  "bugPrevinido": "Detectava 'neuropsicologia + fono' como multiprofissional mesmo quando usuário queria apenas corrigir",
+  "metricasEsperadas": {
+    "scoreCorrecao": "= 10",
+    "mantemContexto": true
+  }
+}

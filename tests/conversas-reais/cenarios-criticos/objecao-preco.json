@@ -1,0 +1,73 @@
+{
+  "nome": "Cenário Crítico: Objeção de Preço",
+  "descricao": "Usuário acha caro. Testa se Amanda responde com empatia, oferece alternativas e não é agressiva/comercial demais.",
+  "tags": ["objecao", "preco", "empatia", "venda-psicologica"],
+  "leadInicial": {
+    "therapyArea": "neuropsicologia",
+    "patientInfo": {
+      "fullName": "Pedro",
+      "age": 8
+    }
+  },
+  "mensagens": [
+    {
+      "ordem": 1,
+      "tipo": "usuario",
+      "texto": "2000 reais é muito caro, não vou conseguir",
+      "intencao": "objecao_preco",
+      "sentimento": "negativo",
+      "esperado": {
+        "respostaContem": ["entendo", "investimento", "parcelamento", "dividir"],
+        "naoDeveConter": ["é barato", "vale a pena", "qualidade custa caro", "só hoje"],
+        "empatia": true,
+        "tom": "acolhedor",
+        "ofereceAlternativas": true,
+        "naoPressiona": true,
+        "vendaPsicologica": true,
+        "scoreMinimo": 8,
+        "critico": true
+      },
+      "notas": "Deve validar sentimento do usuário e oferecer soluções, não argumentar sobre valor"
+    },
+    {
+      "ordem": 2,
+      "tipo": "usuario",
+      "texto": "Em quantas vezes posso dividir?",
+      "intencao": "perguntar_parcelamento",
+      "esperado": {
+        "respostaContem": ["6x", "cartão", "parcela"],
+        "empatia": true,
+        "proximoPasso": "confirmar_interesse",
+        "scoreMinimo": 7
+      },
+      "notas": "Usuário mostrou interesse nas alternativas - deve ser acolhedor"
+    },
+    {
+      "ordem": 3,
+      "tipo": "usuario",
+      "texto": "Vou precisar pensar melhor",
+      "intencao": "adiar_decisao",
+      "sentimento": "indeciso",
+      "esperado": {
+        "respostaContem": ["sem problema", "pensar", "aqui", "quando quiser"],
+        "naoDeveConter": ["corre", "vai acabar", "última vaga", "promoção"],
+        "empatia": true,
+        "respeitaDecisao": true,
+        "deixaPortaAberta": true,
+        "scoreMinimo": 9
+      },
+      "notas": "DEVE respeitar decisão do usuário sem pressionar. Manter relacionamento."
+    }
+  ],
+  "validacoesFinais": {
+    "naoDeveTer": {
+      "stage": "convertido"
+    }
+  },
+  "metricasEsperadas": {
+    "scoreEmpatia": ">= 9",
+    "scoreVendaPsicologica": ">= 9",
+    "pressao": "= 0",
+    "respeito": "= 10"
+  }
+}

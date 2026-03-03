@@ -84,8 +84,8 @@ db.sessions.find({
 //consutla por ceratedat
 db.appointments.find({
   createdAt: {
-    $gte: ISODate("2025-10-27T00:00:00.000Z"),
-    $lt: ISODate("2025-10-28T00:00:00.000Z")
+    $gte: ISODate("2026-03-03:00:00.000Z"),
+    $lt: ISODate("2026-03-04:00:00.000Z")
   }
 })
 

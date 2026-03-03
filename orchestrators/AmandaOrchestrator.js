@@ -1311,15 +1311,16 @@ export async function getOptimizedAmandaResponse({
     // =========================================================================
     if (lead?._id) {
         try {
-            const freshLead = await Leads.findById(lead._id).select('+triageStep complaint therapyArea').lean();
+            const freshLead = await Leads.findById(lead._id).select('+triageStep complaint therapyArea patientInfo qualificationData conversationSummary');
             if (freshLead) {
                 lead = freshLead;
                 console.log("🔄 [REFRESH] Lead atualizado:", {
                     therapyArea: lead.therapyArea || null,
-                    pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
-                    pendingPatientInfoStep: lead.pendingPatientInfoStep ?? null,
-                    pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
-                    pendingSchedulingSlots: lead.pendingSchedulingSlots?.primary ? "SIM" : "NÃO",
+                    patientInfoName: lead.patientInfo?.fullName || null,
+                    patientInfoAge: lead.patientInfo?.age || null,
+                    qualificationNome: lead.qualificationData?.extractedInfo?.nome || null,
+                    qualificationIdade: lead.qualificationData?.extractedInfo?.idade || lead.qualificationData?.idade || null,
+                    hasSummary: !!lead.conversationSummary,
                 });
             } else {
                 console.warn("⚠️ [REFRESH] Lead não encontrado no banco:", lead._id);
@@ -1331,6 +1332,33 @@ export async function getOptimizedAmandaResponse({
         console.warn("⚠️ [REFRESH] Lead sem _id:", lead);
     }
 
+    // 🔄 SINCRONIZAÇÃO: Copia dados do qualificationData para patientInfo se necessário
+    if (lead?.qualificationData?.extractedInfo) {
+        const syncUpdates = {};
+        if (!lead.patientInfo?.fullName && lead.qualificationData.extractedInfo.nome) {
+            syncUpdates['patientInfo.fullName'] = lead.qualificationData.extractedInfo.nome;
+            lead.patientInfo = lead.patientInfo || {};
+            lead.patientInfo.fullName = lead.qualificationData.extractedInfo.nome;
+        }
+        if (!lead.patientInfo?.age && lead.qualificationData.extractedInfo.idade) {
+            syncUpdates['patientInfo.age'] = lead.qualificationData.extractedInfo.idade;
+            lead.patientInfo = lead.patientInfo || {};
+            lead.patientInfo.age = lead.qualificationData.extractedInfo.idade;
+        }
+        if (!lead.complaint && lead.qualificationData.extractedInfo.queixa) {
+            syncUpdates['complaint'] = lead.qualificationData.extractedInfo.queixa;
+            lead.complaint = lead.qualificationData.extractedInfo.queixa;
+        }
+        if (!lead.therapyArea && lead.qualificationData.extractedInfo.especialidade) {
+            syncUpdates['therapyArea'] = lead.qualificationData.extractedInfo.especialidade;
+            lead.therapyArea = lead.qualificationData.extractedInfo.especialidade;
+        }
+        if (Object.keys(syncUpdates).length > 0) {
+            await safeLeadUpdate(lead._id, { $set: syncUpdates });
+            console.log('🔄 [SYNC] Dados sincronizados do qualificationData:', Object.keys(syncUpdates));
+        }
+    }
+    
     // 💾 Persiste dados extraídos ANTES de qualquer early return
     await persistExtractedData(lead._id, text, lead);
 
@@ -1339,7 +1367,56 @@ export async function getOptimizedAmandaResponse({
     // =========================================================================
     console.log(`🧠 [AMANDA-SÊNIOR] Iniciando análise entity-driven...`);
     
-    const amandaAnalysis = await processMessageLikeAmanda(text, lead);
+    // 🧠 RECUPERA CONTEXTO ENRIQUECIDO (memória da Amanda)
+    let enrichedContext = null;
+    if (lead?._id) {
+        try {
+            enrichedContext = await enrichLeadContext(lead._id);
+            console.log('🧠 [CONTEXT] Memória recuperada:', {
+                name: enrichedContext?.name,
+                patientAge: enrichedContext?.patientAge,
+                therapyArea: enrichedContext?.therapyArea,
+                preferredTime: enrichedContext?.preferredTime,
+                primaryComplaint: enrichedContext?.primaryComplaint?.substring(0, 50),
+                hasSummary: !!enrichedContext?.conversationSummary,
+            });
+        } catch (err) {
+            console.warn('[CONTEXT] Erro ao enriquecer contexto:', err.message);
+        }
+    }
+    
+    // 🔄 PRE-ENCHIMENTO: Usa dados da memória se o lead ainda não tem
+    if (enrichedContext) {
+        // Preenche nome do paciente
+        if (!lead.patientInfo?.fullName && enrichedContext.name) {
+            lead.patientInfo = lead.patientInfo || {};
+            lead.patientInfo.fullName = enrichedContext.name;
+            console.log('[CONTEXT] Nome recuperado da memória:', enrichedContext.name);
+        }
+        // Preenche idade
+        if (!lead.patientInfo?.age && enrichedContext.patientAge) {
+            lead.patientInfo = lead.patientInfo || {};
+            lead.patientInfo.age = enrichedContext.patientAge;
+            console.log('[CONTEXT] Idade recuperada da memória:', enrichedContext.patientAge);
+        }
+        // Preenche período
+        if (!lead.pendingPreferredPeriod && enrichedContext.preferredTime) {
+            lead.pendingPreferredPeriod = enrichedContext.preferredTime;
+            console.log('[CONTEXT] Período recuperado da memória:', enrichedContext.preferredTime);
+        }
+        // Preenche therapyArea
+        if (!lead.therapyArea && enrichedContext.therapyArea) {
+            lead.therapyArea = enrichedContext.therapyArea;
+            console.log('[CONTEXT] Área recuperada da memória:', enrichedContext.therapyArea);
+        }
+        // Preenche queixa
+        if (!lead.complaint && enrichedContext.primaryComplaint) {
+            lead.complaint = enrichedContext.primaryComplaint;
+            console.log('[CONTEXT] Queixa recuperada da memória:', enrichedContext.primaryComplaint?.substring(0, 50));
+        }
+    }
+    
+    const amandaAnalysis = await processMessageLikeAmanda(text, lead, enrichedContext);
     
     console.log('📊 [AMANDA] Analysis:', {
         therapyArea: amandaAnalysis.extracted.therapyArea,
@@ -1421,7 +1498,7 @@ export async function getOptimizedAmandaResponse({
             }).catch(() => {});
             // Atualiza a análise para refletir a mudança de área
             amandaAnalysis.extracted.therapyArea = 'psicologia';
-            return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead);
+            return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead, enrichedContext);
         } else if (wantsLaudo && wantsAcompanhamento) {
             // Ambos - explica e pergunta prioridade (formato Ana)
             return ensureSingleHeart(
@@ -1481,7 +1558,7 @@ export async function getOptimizedAmandaResponse({
             );
         }
         
-        return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead);
+        return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead, enrichedContext);
     }
     
     // 3.5 SEM THERAPY AREA → Pergunta qual área
@@ -1499,25 +1576,11 @@ export async function getOptimizedAmandaResponse({
     console.log("🔄 [AMANDA] Usando fluxo legado para casos complexos...");
 
     // =========================================================================
-    // 🆕 PASSO 0.6: CONTEXTO ENRIQUECIDO E FLAGS (Movido para cima - necessário para guards abaixo)
+    // 🆕 PASSO 0.6: CONTEXTO ENRIQUECIDO JÁ RECUPERADO ACIMA
+    // O enrichedContext foi obtido na fase entity-driven
     // =========================================================================
-    // ✅ CONTEXTO UNIFICADO (leadContext.js tem tudo: mode, toneMode, urgencyLevel)
-    const enrichedContext = lead?._id
-        ? await enrichLeadContext(lead._id)
-        : {
-            stage: "novo",
-            isFirstContact: true,
-            messageCount: 0,
-            conversationHistory: [],
-            conversationSummary: null,
-            shouldGreet: true,
-            mode: 'commercial',
-            toneMode: 'acolhimento',
-            urgencyLevel: 'NORMAL',
-            ...context
-        };
-
-    if (enrichedContext.isFirstContact && lead?._id) {
+    
+    if (enrichedContext?.isFirstContact && lead?._id) {
         manageLeadCircuit(lead._id, 'initial').catch(err =>
             console.error('[CIRCUIT] Erro ao agendar initial:', err.message)
         );
@@ -5472,7 +5535,7 @@ const buildSystemContext = (flags, text = "", stage = "novo") => ({
  * 🧠 AMANDA SÊNIOR - Processamento Entity-Driven
  * Extrai tudo → Valida → Decide → Responde
  */
-async function processMessageLikeAmanda(text, lead = {}) {
+async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null) {
     console.log('🧠 [AMANDA-SÊNIOR] Analisando:', text.substring(0, 50));
     
     // 1. EXTRAÇÃO MÁXIMA
@@ -5494,16 +5557,36 @@ async function processMessageLikeAmanda(text, lead = {}) {
         }
     };
     
-    // Extrai nome
-    const nameMatch = text.match(/(?:sou|me chamo|nome[\s:]+)\s*([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)/i);
-    if (nameMatch) {
-        const isParent = /\b(minha filha|meu filho|minha criança)\b/i.test(text);
-        if (isParent) {
-            extracted.responsibleName = nameMatch[1].trim();
-            const childName = text.match(/(?:minha filha|meu filho)\s+([A-Z][a-z]+)/i);
-            if (childName) extracted.patientName = childName[1];
-        } else {
-            extracted.patientName = nameMatch[1].trim();
+    // 🔧 EXTRAÇÃO DE NOME - Múltiplos padrões
+    const namePatterns = [
+        // Padrão 1: "Ele se chama Pedro Henrique"
+        { regex: /(?:ele|ela|a criança|o paciente|meu filho|minha filha|meu bebê|minha bebê)\s+(?:se\s+)?chama\s+([A-ZÀ-Ü][a-zà-ú]+(?:\s+[A-ZÀ-Ü][a-zà-ú]+){0,2})/i, group: 1 },
+        // Padrão 2: "O nome dela é Ana Clara" / "O nome é João" / "O nome dela é Maria"
+        { regex: /(?:o\s+)?nome\s+(?:d[ea]l[ea]|da criança|do paciente)(?:\s+é)?\s+([A-ZÀ-Ü][a-zà-ú]+(?:\s+[A-ZÀ-Ü][a-zà-ú]+){0,2})/i, group: 1 },
+        // Padrão 2b: "O nome é Pedro" (sem "dela/dele")
+        { regex: /(?:o\s+)?nome\s+é\s+([A-ZÀ-Ü][a-zà-ú]+(?:\s+[A-ZÀ-Ü][a-zà-ú]+){0,2})/i, group: 1 },
+        // Padrão 3: "Sou o João" / "Me chamo Maria"
+        { regex: /(?:sou|me chamo)\s+(?:o|a)?\s+([A-ZÀ-Ü][a-zà-ú]+(?:\s+[A-ZÀ-Ü][a-zà-ú]+){0,2})/i, group: 1 },
+        // Padrão 4: "nome: Pedro" / "nome - Maria"
+        { regex: /nome\s*[:\-\.]\s*([A-ZÀ-Ü][a-zà-ú]+(?:\s+[A-ZÀ-Ü][a-zà-ú]+){0,2})/i, group: 1 },
+        // Padrão 5: Nome no início + idade ("Maria tem 7 anos")
+        { regex: /^([A-ZÀ-Ü][a-zà-ú]+(?:\s+[A-ZÀ-Ü][a-zà-ú]+)?)\s+(?:tem|tem\s+|faz|fez|completou|vai fazer)\s+\d+/i, group: 1 },
+        // Padrão 6: "...pra minha filha Julia..."
+        { regex: /(?:pra|para)\s+(?:minha|meu)\s+(?:filha|filho)\s+([A-ZÀ-Ü][a-zà-ú]+)/i, group: 1 },
+        // Padrão 7: "...minha filha se chama Julia..."
+        { regex: /(?:minha|meu)\s+(?:filha|filho|criança)\s+(?:se\s+)?(?:chama|é)\s+([A-ZÀ-Ü][a-zà-ú]+(?:\s+[A-ZÀ-Ü][a-zà-ú]+){0,2})/i, group: 1 }
+    ];
+
+    for (const pattern of namePatterns) {
+        const match = text.match(pattern.regex);
+        if (match && match[pattern.group]) {
+            const name = match[pattern.group].trim();
+            // Valida: nome deve ter pelo menos 2 caracteres e não ser número
+            if (name.length >= 2 && !/^\d+$/.test(name)) {
+                extracted.patientName = name;
+                console.log(`[NAME-EXTRACTION] Nome extraído: "${name}" (padrão: ${pattern.regex.toString().substring(0, 50)}...)`);
+                break;
+            }
         }
     }
     
@@ -5545,31 +5628,49 @@ async function processMessageLikeAmanda(text, lead = {}) {
         extracted.therapyArea = areaMap[detectedTherapies[0].id] || null;
     }
     
-    // SE NÃO detectou pelo therapyDetector, tenta extrair da QUEIXA
-    const patterns = [
-        { regex: /\b(não fala|fala pouco|atraso na fala)\b/i, area: 'fonoaudiologia' },
-        { regex: /\b(dificuldade de aprender|problema na escola|dislexia)\b/i, area: 'psicopedagogia' },
-        { regex: /\b(comportamento|birra|não obedece|agressivo)\b/i, area: 'psicologia' },
-        { regex: /\b(não anda|atraso motor|coordenação)\b/i, area: 'fisioterapia' },
-        { regex: /\b(enurese|xixi na cama)\b/i, area: 'fonoaudiologia' },
-        { regex: /\b(fenda|fissura|lábio|palato)\b/i, area: 'fonoaudiologia' },
-        { regex: /\b(linguinha|freio|frenulo)\b/i, area: 'fonoaudiologia' },
-        { regex: /\b(autismo|tea|tdah|hiperatividade)\b/i, area: 'neuropsicologia' },
-        { regex: /\b(voz|rouquidão|pregas vocais)\b/i, area: 'fonoaudiologia' }
+    // 🔧 EXTRAÇÃO DE QUEIXA → ÁREA TERAPÊUTICA (mapeamento expandido)
+    const complaintToArea = [
+        // FONOAUDIOLOGIA
+        { patterns: [/\b(não fala|fala pouco|atraso na fala|atraso de fala|demora pra falar|demora para falar|não pronuncia|troca letras|troca sons|gaguej|gagueira|engasga|engasgando|baba muito|baba demais|mamar|amamentação|freio da língua|frenulo|linguinha|lábio leporino|fenda palatina|fissura|lábio|palato|respira pela boca|respirar pela boca|nariz aberto|voz rouca|rouquidão|pregas vocais)\b/i], area: 'fonoaudiologia' },
+        // NEUROPSICOLOGIA
+        { patterns: [/\b(autismo|tea\b|transtorno do espectro|espectro autista|tdah|déficit de atenção|hiperativid|desatento|não para quieto|não consegue ficar quieto|agitação|neuropsi|neuropsicologia|avaliação neuropsicológica|avaliação neuropsicologica|laudo|teste de qi|funções executivas|memória|atenção|concentração|dificuldade de aprendizagem|dislexia|discalculia|dificuldade para ler|dificuldade para escrever|problema na escola|rendimento escolar|nota baixa|reprovação|reprovou|superdotação|superdotado|altas habilidades|tdah|tda|deficit de atenção|hiperatividade)\b/i], area: 'neuropsicologia' },
+        // PSICOLOGIA
+        { patterns: [/\b(psicologia|comportamento|birra|birras|não obedece|desobedece|agressivo|agressividade|bate em|bateu|morde|ansiedade|ansiosa|ansioso|medo|temor|fobia|depressão|depressivo|triste|choroso|não dorme|insônia|pesadelo|reclama|reclamação|birra|manha|birração|não aceita|teimosia|birrento|queima roupa|encoprese|enurese|xixi na cama|faz xixi na cama|se borra|autolesão|automutilação|toc|transtorno obsessivo|ritual)\b/i], area: 'psicologia' },
+        // TERAPIA OCUPACIONAL
+        { patterns: [/\b(terapia ocupacional|\bto\b|integração sensorial|sensorial|sensoriais|hipersensível|hipersensibilidade|textura|barulho|luz|cheiro|intolerância sensorial|evita contato|não gosta de toque|coordenação motora|coordenação|motricidade|motora|segurar lápis|amarrar cadarço|botão|zíper|escova dentes|tomar banho|banho|vestir|vestir-se|alimentação|comer sozinho|pinça|lateralidade|esquerda|canhoto|canhota|dominância|reflexos|primitivo)\b/i], area: 'terapia_ocupacional' },
+        // FISIOTERAPIA
+        { patterns: [/\b(fisioterapia|\bfisio\b|fisio|atraso motor|desenvolvimento motor|não engatinhou|não andou|começou a andar tarde|andar na ponta|andar de ponta|pé torto|torto|torticolo|torticolis|assimetria|preferência lateral|prematuro|prematuridade|hipotonia|hipertonia|espasticidade|flacidez|fortalecimento|equilíbrio|cair|cai muito|tropeça|postura|escoliose|cifose|posição sentada|sentar|engatinhar|rolar)\b/i], area: 'fisioterapia' },
+        // PSICOPEDAGOGIA → Mapeia para neuropsicologia
+        { patterns: [/\b(psicopedagogia|psicopedagogo|psicopedagoga|dificuldade escolar|dificuldade de aprendizagem|dificuldade para ler|dificuldade para escrever|dislexia|discalculia|disgrafia|tdah escolar|atraso escolar|baixo rendimento|não aprende|não consegue aprender|repetiu|reprovação|escrita|leitura|matemática|cálculo|interpretação|texto)\b/i], area: 'neuropsicologia' }
     ];
     
-    for (const p of patterns) {
-        if (p.regex.test(text)) {
-            extracted.therapyArea = p.area;
-            break;
+    // Só deriva da queixa se não detectou área explicitamente
+    if (!extracted.therapyArea) {
+        for (const mapping of complaintToArea) {
+            for (const pattern of mapping.patterns) {
+                if (pattern.test(text)) {
+                    extracted.therapyArea = mapping.area;
+                    extracted.complaint = text.substring(0, 100); // Salva a queixa
+                    console.log(`[COMPLAINT-DETECTION] Queixa detectada: "${text.substring(0, 50)}..." → Área: ${mapping.area}`);
+                    break;
+                }
+            }
+            if (extracted.therapyArea) break;
         }
     }
     
-    // 🆕 DETECÇÃO: Multi terapias / Multiprofissional (do LEGACY)
-    if (/precisa\s+de\s+tudo|fono.*psico|psico.*fono|todas.*área|todas.*especialidade|multi.*profissional|equipe\s+mult/i.test(text)) {
+    // 🔧 DETECÇÃO: Multi terapias / Multiprofissional (com validação)
+    // Só ativa se NÃO for uma correção (quando usuário está trocando de área)
+    const isCorrection = /\b(não|correção|troca|mudei|desculpe|errado|queria)\b.*\b(fono|psico|neuro|to|fisio)/i.test(text);
+    const hasMultipleExplicit = /\b(precisa\s+de\s+tudo|todas\s+(?:as\s+)?áreas?|todas\s+(?:as\s+)?especialidades?|equipe\s+mult|multi\s*profissional)\b/i.test(text);
+    const hasMultipleCombination = /\b(fono.*psico|psico.*fono|fono.*to|to.*fono|neuro.*fono|fono.*neuro)\b/i.test(text);
+    
+    if (!isCorrection && (hasMultipleExplicit || hasMultipleCombination)) {
         extracted.flags.multidisciplinary = true;
-        extracted.therapyArea = "multiprofissional"; // 🆕 IGUAL AO LEGACY
+        extracted.therapyArea = "multiprofissional";
         console.log('[AMANDA-SÊNIOR] Multi terapias detectadas - therapyArea: multiprofissional');
+    } else if (isCorrection && hasMultipleCombination) {
+        console.log('[AMANDA-SÊNIOR] Correção de área detectada - ignorando multiprofissional');
     }
     
     // Detecta intenção
@@ -5596,8 +5697,14 @@ async function processMessageLikeAmanda(text, lead = {}) {
     
     // 3. FALLBACK: Se não detectou therapyArea do texto atual, usa a do lead
     if (!extracted.therapyArea && lead?.therapyArea) {
-        console.log('[AMANDA-SÊNIOR] Usando therapyArea salva no lead:', lead.therapyArea);
+        console.log(`[CTX-RECOVERY] therapyArea recuperado do Lead: ${lead.therapyArea}`);
         extracted.therapyArea = lead.therapyArea;
+    }
+    
+    // Fallback para enrichedContext (memória da Amanda)
+    if (!extracted.therapyArea && enrichedContext?.therapyArea) {
+        console.log(`[CTX-RECOVERY] therapyArea recuperado do Contexto: ${enrichedContext.therapyArea}`);
+        extracted.therapyArea = enrichedContext.therapyArea;
     }
     
     // 3.5 DERIVA therapyArea do conversationSummary (se ainda não tem)
@@ -5664,12 +5771,57 @@ async function processMessageLikeAmanda(text, lead = {}) {
         }
     }
     
-    // 4. O QUE FALTA?
-    const hasPeriod = lead?.pendingPreferredPeriod || extracted.preferredPeriod;
-    const hasName = lead?.patientInfo?.fullName || extracted.patientName;
-    const hasAge = lead?.patientInfo?.age || extracted.patientAge;
-    const hasComplaint = lead?.complaint || extracted.complaint;
-    const hasTherapyArea = lead?.therapyArea || extracted.therapyArea;
+    // 4. O QUE FALTA? (Considera dados do lead + contexto enriquecido + extraído do texto)
+    const hasPeriod = lead?.pendingPreferredPeriod || 
+                      lead?.preferredTime ||
+                      lead?.autoBookingContext?.preferredPeriod ||
+                      enrichedContext?.preferredTime || 
+                      lead?.qualificationData?.disponibilidade || 
+                      lead?.qualificationData?.extractedInfo?.preferredPeriod ||
+                      extracted.preferredPeriod;
+    
+    // Log de recuperação de período
+    if (!extracted.preferredPeriod && hasPeriod) {
+        const recoveredPeriod = lead?.pendingPreferredPeriod || lead?.preferredTime || lead?.autoBookingContext?.preferredPeriod || enrichedContext?.preferredTime;
+        console.log(`[CTX-RECOVERY] preferredPeriod recuperado: ${recoveredPeriod}`);
+    }
+    
+    const hasName = lead?.patientInfo?.fullName || 
+                    lead?.patientInfo?.name ||
+                    enrichedContext?.name || 
+                    lead?.qualificationData?.extractedInfo?.nome || 
+                    lead?.qualificationData?.extractedInfo?.name ||
+                    extracted.patientName;
+    
+    // Log de recuperação de nome
+    if (!extracted.patientName && hasName) {
+        const recoveredName = lead?.patientInfo?.fullName || lead?.patientInfo?.name || enrichedContext?.name || lead?.qualificationData?.extractedInfo?.nome;
+        console.log(`[CTX-RECOVERY] patientName recuperado: ${recoveredName}`);
+    }
+    
+    const hasAge = lead?.patientInfo?.age || 
+                   lead?.patientAge ||
+                   enrichedContext?.patientAge || 
+                   lead?.qualificationData?.extractedInfo?.idade || 
+                   lead?.qualificationData?.extractedInfo?.age ||
+                   lead?.qualificationData?.idade || 
+                   extracted.patientAge;
+    
+    // Log de recuperação de idade
+    if (!extracted.patientAge && hasAge) {
+        const recoveredAge = lead?.patientInfo?.age || lead?.patientAge || enrichedContext?.patientAge || lead?.qualificationData?.extractedInfo?.idade;
+        console.log(`[CTX-RECOVERY] patientAge recuperado: ${recoveredAge}`);
+    }
+    
+    const hasComplaint = lead?.complaint || 
+                         enrichedContext?.primaryComplaint || 
+                         lead?.qualificationData?.extractedInfo?.queixa || 
+                         extracted.complaint;
+    
+    const hasTherapyArea = lead?.therapyArea || 
+                           enrichedContext?.therapyArea || 
+                           lead?.qualificationData?.extractedInfo?.especialidade || 
+                           extracted.therapyArea;
     
     const missing = [];
     if (!hasTherapyArea && serviceStatus === 'available') missing.push('therapyArea');
@@ -5677,6 +5829,21 @@ async function processMessageLikeAmanda(text, lead = {}) {
     if (!hasAge) missing.push('age');
     if (!hasPeriod) missing.push('period');
     if (!hasComplaint) missing.push('complaint');
+    
+    console.log('[AMANDA-SÊNIOR] Checking lead data:', {
+        hasName: !!hasName,
+        hasAge: !!hasAge,
+        hasPeriod: !!hasPeriod,
+        hasTherapyArea: !!hasTherapyArea,
+        hasComplaint: !!hasComplaint,
+        patientInfoName: lead?.patientInfo?.fullName,
+        enrichedName: enrichedContext?.name,
+        qualificationNome: lead?.qualificationData?.extractedInfo?.nome,
+        patientInfoAge: lead?.patientInfo?.age,
+        enrichedAge: enrichedContext?.patientAge,
+        qualificationIdade: lead?.qualificationData?.extractedInfo?.idade || lead?.qualificationData?.idade,
+        missing: missing
+    });
     
     return {
         extracted,
@@ -5690,32 +5857,89 @@ async function processMessageLikeAmanda(text, lead = {}) {
 /**
  * Constrói resposta simples baseada no que falta
  */
-function buildSimpleResponse(missing, extracted, lead) {
+function buildSimpleResponse(missing, extracted, lead, enrichedContext = null) {
     const [first] = missing;
     const respName = extracted.responsibleName || lead?.responsibleName;
-    const patientName = extracted.patientName || lead?.patientInfo?.fullName;
-    const age = extracted.patientAge || lead?.patientInfo?.age;
+    const patientName = extracted.patientName || 
+                        lead?.patientInfo?.fullName || 
+                        enrichedContext?.name ||
+                        lead?.qualificationData?.extractedInfo?.nome;
+    const age = extracted.patientAge || 
+                lead?.patientInfo?.age || 
+                enrichedContext?.patientAge ||
+                lead?.qualificationData?.extractedInfo?.idade || 
+                lead?.qualificationData?.idade;
+    
+    // 🔧 NOVO: Recupera área terapêutica do contexto para personalizar respostas
+    const currentArea = extracted.therapyArea || 
+                        lead?.therapyArea || 
+                        enrichedContext?.therapyArea ||
+                        lead?.qualificationData?.extractedInfo?.therapyArea;
+    
+    // Nome amigável da área para exibição
+    const areaDisplayNames = {
+        'psicologia': 'Psicologia',
+        'psicologia_infantil': 'Psicologia Infantil',
+        'fonoaudiologia': 'Fonoaudiologia',
+        'fono': 'Fonoaudiologia',
+        'terapia_ocupacional': 'Terapia Ocupacional',
+        'to': 'Terapia Ocupacional',
+        'fisioterapia': 'Fisioterapia',
+        'fisio': 'Fisioterapia',
+        'neuropsicologia': 'Neuropsicologia',
+        'neuropsi': 'Neuropsicologia',
+        'musicoterapia': 'Musicoterapia'
+    };
+    const areaDisplay = currentArea ? (areaDisplayNames[currentArea] || currentArea) : null;
+    
+    console.log('[buildSimpleResponse] Building response:', { 
+        firstMissing: first, 
+        hasPatientName: !!patientName, 
+        hasAge: !!age,
+        hasArea: !!currentArea,
+        area: areaDisplay,
+        patientNameValue: patientName,
+        ageValue: age
+    });
     
     switch (first) {
         case 'therapyArea':
             return ensureSingleHeart(`Oi${respName ? ' ' + respName : ''}! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚`);
             
         case 'period':
-            const context = respName && age 
-                ? `Oi ${respName}! Entendi que ${patientName || 'o paciente'} tem ${age} anos. 💚\n\n`
-                : `Oi${respName ? ' ' + respName : ''}! 💚\n`;
-            return ensureSingleHeart(context + "Pra eu organizar, prefere **manhã ou tarde**? 😊");
+            // 🔧 Melhorado: Contextualiza com área terapêutica quando disponível
+            let contextMsg = '';
+            if (areaDisplay && patientName) {
+                contextMsg = `Oi! Entendi que é para **${areaDisplay}**, ${patientName.split(' ')[0]}. 💚\n\n`;
+            } else if (areaDisplay) {
+                contextMsg = `Oi! Entendi que é para **${areaDisplay}**. 💚\n\n`;
+            } else if (respName && age) {
+                contextMsg = `Oi ${respName}! Entendi que ${patientName || 'o paciente'} tem ${age} anos. 💚\n\n`;
+            } else {
+                contextMsg = `Oi${respName ? ' ' + respName : ''}! 💚\n`;
+            }
+            return ensureSingleHeart(contextMsg + "Pra eu organizar, prefere **manhã ou tarde**? 😊");
             
         case 'name':
         case 'patientName':
-            if (respName) {
+            // 🔧 Melhorado: Contextualiza com área terapêutica quando disponível
+            if (areaDisplay && respName) {
+                return ensureSingleHeart(`Oi ${respName}! Entendi que é para **${areaDisplay}**. Qual o **nome completo** do paciente? 💚`);
+            } else if (areaDisplay) {
+                return ensureSingleHeart(`Oi! Entendi que é para **${areaDisplay}**. Qual o **nome completo** do paciente? 💚`);
+            } else if (respName) {
                 return ensureSingleHeart(`Oi ${respName}! Entendi que é para seu filho(a). Qual o **nome completo** da criança? 💚`);
             }
             return ensureSingleHeart("Oi! Pra eu organizar, qual o **nome completo** do paciente? 😊");
             
         case 'age':
-            if (patientName) {
+            // 🔧 Melhorado: Contextualiza com área terapêutica quando disponível
+            if (areaDisplay && patientName) {
+                return ensureSingleHeart(`Perfeito, ${patientName}! Entendi que é para **${areaDisplay}**. 💚 E qual a **idade**? (anos ou meses)`);
+            } else if (patientName) {
                 return ensureSingleHeart(`Perfeito, ${patientName}! 💚 E qual a **idade**? (anos ou meses)`);
+            } else if (areaDisplay) {
+                return ensureSingleHeart(`Oi! Entendi que é para **${areaDisplay}**. 💚 Qual a **idade** do paciente? (anos ou meses)`);
             }
             return ensureSingleHeart("Qual a **idade** do paciente? (anos ou meses) 😊");
             

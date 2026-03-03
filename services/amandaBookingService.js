@@ -32,7 +32,7 @@ const ADMIN_TOKEN = process.env.ADMIN_API_TOKEN;
 // ============================================================================
 const api = axios.create({
     baseURL: API_BASE,
-    timeout: 8000,
+    timeout: 30000,  // ⬆️ Aumentado de 8000 para 30000ms (30s) - Render é lento
 });
 
 api.interceptors.request.use((config) => {
