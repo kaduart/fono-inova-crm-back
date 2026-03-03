@@ -1751,56 +1751,246 @@ router.post("/import-from-agenda/limpar-henre", async (req, res) => {
 });
 
 /**
- * GET /api/import-from-agenda/validar/:preAgendamentoId
- * Valida se pré-agendamento importado tem appointment/payment/session criados
+ * GET /api/import-from-agenda/debug-db
+ * Debug direto no banco - mostra exatamente o que está no MongoDB
  */
-router.get("/import-from-agenda/validar/:preAgendamentoId", async (req, res) => {
+router.get("/import-from-agenda/debug-db", async (req, res) => {
   try {
-    const { preAgendamentoId } = req.params;
+    const { date, patientName } = req.query;
+    const db = mongoose.connection.db;
 
-    const pre = await PreAgendamento.findById(preAgendamentoId).lean();
-    if (!pre) {
-      return res.status(404).json({ success: false, error: "Pré-agendamento não encontrado" });
+    // 1. Se tiver patientName, busca em toda a collection
+    let appointments = [];
+    let preAgendamentos = [];
+
+    if (patientName && !date) {
+      // Buscar por nome em todo o banco
+      appointments = await db.collection('appointments').find({
+        patientName: { $regex: patientName, $options: 'i' }
+      }).toArray();
+      preAgendamentos = await db.collection('preagendamentos').find({
+        'patientInfo.fullName': { $regex: patientName, $options: 'i' }
+      }).toArray();
+    } else if (date) {
+      // Buscar por data
+      appointments = await db.collection('appointments').find({ date }).toArray();
+      preAgendamentos = await db.collection('preagendamentos').find({ preferredDate: date }).toArray();
     }
 
-    // Se foi importado, deve ter esses dados
-    const appointment = pre.importedToAppointment 
-      ? await Appointment.findById(pre.importedToAppointment).populate('payment session').lean()
-      : null;
+    // Ver quais pré-agendamentos seriam filtrados pelo backend
+    const preFiltrados = preAgendamentos.filter(p => {
+      return p.status !== 'importado' && 
+             p.status !== 'descartado' && 
+             p.status !== 'desistiu' &&
+             !p.importedToAppointment;
+    });
 
-    const resultado = {
-      preAgendamentoId: pre._id,
-      paciente: pre.patientInfo?.fullName,
-      status: pre.status,
-      // Deve ter se status = 'importado'
-      temAppointment: !!appointment,
-      appointmentId: appointment?._id,
-      appointmentStatus: appointment?.operationalStatus,
-      temPayment: !!appointment?.payment,
-      paymentId: appointment?.payment?._id,
-      paymentStatus: appointment?.payment?.status,
-      temSession: !!appointment?.session,
-      sessionId: appointment?.session?._id,
-      sessionStatus: appointment?.session?.status
-    };
+    res.json({
+      success: true,
+      query: { date, patientName },
+      appointments: appointments.map(a => ({
+        _id: a._id.toString(),
+        patientName: a.patientName,
+        date: a.date,
+        time: a.time,
+        status: a.operationalStatus,
+        preAgendamentoId: a.metadata?.origin?.preAgendamentoId
+      })),
+      preAgendamentos: preAgendamentos.map(p => ({
+        _id: p._id.toString(),
+        nome: p.patientInfo?.fullName,
+        date: p.preferredDate,
+        time: p.preferredTime,
+        status: p.status,
+        imported: !!p.importedToAppointment,
+        importedTo: p.importedToAppointment?.toString()
+      })),
+      preAgendamentosQueAparecemNaAPI: preFiltrados.map(p => ({
+        _id: p._id.toString(),
+        nome: p.patientInfo?.fullName,
+        date: p.preferredDate,
+        time: p.preferredTime
+      }))
+    });
 
-    // Validação
-    const erros = [];
-    if (pre.status === 'importado') {
-      if (!resultado.temAppointment) erros.push("Status='importado' mas não tem appointment");
-      if (!resultado.temPayment) erros.push("Status='importado' mas não tem payment");
-      if (!resultado.temSession) erros.push("Status='importado' mas não tem session");
-    } else if (pre.status === 'novo') {
-      if (resultado.temAppointment) erros.push("Status='novo' mas tem appointment");
-      if (resultado.temPayment) erros.push("Status='novo' mas tem payment");
-      if (resultado.temSession) erros.push("Status='novo' mas tem session");
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/import-from-agenda/limpar-duplicados-paciente
+ * Remove pré-agendamentos duplicados quando já existe appointment para o paciente
+ */
+router.post("/import-from-agenda/limpar-duplicados-paciente", async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { patientName, date } = req.body;
+    
+    // 1. Buscar appointments para esse paciente na data
+    const appointments = await Appointment.find({
+      patientName: { $regex: patientName, $options: 'i' },
+      date: date
+    }).session(session);
+
+    // 2. Buscar pré-agendamentos para o mesmo paciente na mesma data
+    const preAgendamentos = await PreAgendamento.find({
+      'patientInfo.fullName': { $regex: patientName, $options: 'i' },
+      preferredDate: date,
+      status: { $nin: ['importado', 'descartado'] }
+    }).session(session);
+
+    if (appointments.length === 0) {
+      await session.abortTransaction();
+      return res.json({ success: false, message: 'Nenhum appointment encontrado para este paciente nesta data' });
+    }
+
+    if (preAgendamentos.length === 0) {
+      await session.abortTransaction();
+      return res.json({ success: false, message: 'Nenhum pré-agendamento para limpar' });
+    }
+
+    // 3. Marcar pré-agendamentos como descartados (não deletar, só marcar)
+    const deletados = [];
+    for (const pre of preAgendamentos) {
+      pre.status = 'descartado';
+      pre.discardReason = 'Duplicado - já existe appointment confirmado para este paciente';
+      pre.discardedAt = new Date();
+      await pre.save({ session });
+      deletados.push(pre._id);
+    }
+
+    await session.commitTransaction();
+
+    res.json({
+      success: true,
+      message: `Limpo! ${deletados.length} pré-agendamento(s) marcado(s) como descartado(s)`,
+      appointmentsEncontrados: appointments.map(a => ({ id: a._id, date: a.date, time: a.time })),
+      preAgendamentosRemovidos: deletados
+    });
+
+  } catch (error) {
+    await session.abortTransaction();
+    res.status(500).json({ success: false, error: error.message });
+  } finally {
+    session.endSession();
+  }
+});
+
+/**
+ * POST /api/import-from-agenda/corrigir-status-importado
+ * Corrige pré-agendamentos que foram importados mas não têm status atualizado
+ */
+router.post("/import-from-agenda/corrigir-status-importado", async (req, res) => {
+  try {
+    const db = mongoose.connection.db;
+
+    // Buscar todos os appointments que têm preAgendamentoId na metadata
+    const appointments = await db.collection('appointments').find({
+      'metadata.origin.preAgendamentoId': { $exists: true }
+    }).toArray();
+
+    const corrigidos = [];
+    const jaCorretos = [];
+
+    for (const apt of appointments) {
+      const preId = apt.metadata.origin.preAgendamentoId;
+      
+      // Buscar o pré-agendamento
+      const pre = await db.collection('preagendamentos').findOne({
+        _id: new mongoose.Types.ObjectId(preId)
+      });
+
+      if (pre) {
+        // Se o pré-agendamento não está marcado como importado, corrige
+        if (pre.status !== 'importado' || !pre.importedToAppointment) {
+          await db.collection('preagendamentos').updateOne(
+            { _id: pre._id },
+            { 
+              $set: {
+                status: 'importado',
+                importedToAppointment: apt._id,
+                importedAt: apt.metadata.origin.convertedAt || new Date()
+              }
+            }
+          );
+          corrigidos.push({
+            preAgendamentoId: preId,
+            appointmentId: apt._id.toString(),
+            paciente: pre.patientInfo?.fullName,
+            statusAnterior: pre.status
+          });
+        } else {
+          jaCorretos.push(preId);
+        }
+      }
     }
 
     res.json({
       success: true,
-      valido: erros.length === 0,
-      erros: erros,
-      dados: resultado
+      totalAppointmentsVerificados: appointments.length,
+      corrigidos: corrigidos.length,
+      jaEstavamCorretos: jaCorretos.length,
+      detalhes: corrigidos
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/import-from-agenda/verificar-daniel
+ * Verifica especificamente o pré-agendamento do Daniel que está duplicado
+ */
+router.get("/import-from-agenda/verificar-daniel", async (req, res) => {
+  try {
+    const db = mongoose.connection.db;
+
+    // Buscar o pré-agendamento específico
+    const pre = await db.collection('preagendamentos').findOne({
+      _id: new mongoose.Types.ObjectId("699f30125d86d1f6bd342a7a")
+    });
+
+    // Buscar o appointment que deveria estar vinculado
+    const apt = pre?.importedToAppointment 
+      ? await db.collection('appointments').findOne({ _id: pre.importedToAppointment })
+      : null;
+
+    // Buscar pelo metadata.origin.preAgendamentoId também
+    const aptByMetadata = await db.collection('appointments').findOne({
+      'metadata.origin.preAgendamentoId': "699f30125d86d1f6bd342a7a"
+    });
+
+    res.json({
+      preAgendamento: pre ? {
+        _id: pre._id.toString(),
+        status: pre.status,
+        importedToAppointment: pre.importedToAppointment?.toString(),
+        patientName: pre.patientInfo?.fullName,
+        preferredDate: pre.preferredDate,
+        preferredTime: pre.preferredTime
+      } : null,
+      appointmentByImportedId: apt ? {
+        _id: apt._id.toString(),
+        patientName: apt.patientName,
+        date: apt.date,
+        time: apt.time,
+        operationalStatus: apt.operationalStatus
+      } : null,
+      appointmentByMetadata: aptByMetadata ? {
+        _id: aptByMetadata._id.toString(),
+        patientName: aptByMetadata.patientName,
+        date: aptByMetadata.date,
+        time: aptByMetadata.time,
+        operationalStatus: aptByMetadata.operationalStatus,
+        preAgendamentoId: aptByMetadata.metadata?.origin?.preAgendamentoId
+      } : null,
+      problema: pre?.status !== 'importado' && (apt || aptByMetadata) 
+        ? "TEM APPOINTMENT MAS STATUS NAO ESTA IMPORTADO!" 
+        : "OK"
     });
 
   } catch (error) {

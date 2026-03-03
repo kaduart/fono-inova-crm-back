@@ -10,6 +10,8 @@
     "restart": "npm stop && npm run dev",
     "cron": "node -r dotenv/config ./workers/followup.cron.js",
     "cron:gmb": "node -r dotenv/config ./crons/gmb.cron.js",
+    "test:gmb:post": "node -r dotenv/config ./scripts/test-gmb-post.js",
+    "postar:agora": "node -r dotenv/config ./scripts/postar-agora.js",
     "worker": "node -r dotenv/config ./workers/followup.worker.js",
     "test": "vitest",
     "test:run": "vitest run",
