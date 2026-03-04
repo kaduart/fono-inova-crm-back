@@ -10,7 +10,7 @@ import { Readable } from 'stream';
 import Contact from "../models/Contacts.js";
 import Lead from "../models/Leads.js"; // ajuste o path
 import Message from "../models/Message.js";
-import { getMetaToken } from "../utils/metaToken.js";
+import { getMetaToken, clearMetaTokenCache } from "../utils/metaToken.js";
 import { normalizeE164BR } from "../utils/phone.js";
 
 dotenv.config();
@@ -512,6 +512,13 @@ export async function sendTextMessage({
 
                 console.log(`✅ Mensagem enviada com sucesso (tentativa ${attempt})`);
                 return data;
+            }
+
+            // ❌ ERRO 401: Token expirado - Limpa cache e tenta gerar novo
+            if (res.status === 401 && attempt === 1) {
+                console.warn(`⚠️ Token expirado (401). Limpando cache e tentando gerar novo...`);
+                clearMetaTokenCache();
+                continue; // Vai tentar novamente com novo token
             }
 
             // ❌ ERRO RECUPERÁVEL: Rate limit, servidor ocupado

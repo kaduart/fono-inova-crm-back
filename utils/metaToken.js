@@ -4,21 +4,48 @@ import fetch from 'node-fetch';
 
 const cache = new NodeCache({ stdTTL: 3300 }); // 55 minutos
 
-export async function getMetaToken() {
-    // 1️⃣ Verifica cache
-    const cached = cache.get('wa_token');
-    if (cached) {
-        console.log('✅ Token do cache');
-        console.log('🔍 Token (primeiros 50 chars):', cached.substring(0, 50)); // ✅ ADICIONAR
-        return cached;
+export async function getMetaToken(forceRefresh = false) {
+    // 1️⃣ Verifica cache (se não for forçado refresh)
+    if (!forceRefresh) {
+        const cached = cache.get('wa_token');
+        if (cached) {
+            console.log('✅ Token do cache');
+            return cached;
+        }
     }
 
-    // 2️⃣ Tenta SHORT_TOKEN ou META_WABA_TOKEN direto
+    // 2️⃣ Tenta gerar LONG-LIVED token primeiro (se tiver credenciais)
     const shortToken = process.env.META_WABA_TOKEN;
+    const appId = process.env.META_APP_ID || process.env.APP_ID;
+    const appSecret = process.env.META_APP_SECRET || process.env.APP_SECRET;
 
+    if (appId && appSecret && shortToken) {
+        try {
+            console.log('🔄 Tentando gerar token long-lived...');
+            const url =
+                `https://graph.facebook.com/oauth/access_token` +
+                `?grant_type=fb_exchange_token` +
+                `&client_id=${appId}` +
+                `&client_secret=${appSecret}` +
+                `&fb_exchange_token=${shortToken}`;
+
+            const res = await fetch(url);
+            const data = await res.json();
+
+            if (res.ok && data.access_token) {
+                console.log('✅ Token long-lived gerado (60 dias)');
+                cache.set('wa_token', data.access_token);
+                return data.access_token;
+            }
+            console.log('⚠️ Não foi possível gerar long-lived, usando token curto');
+        } catch (err) {
+            console.error('❌ Erro ao gerar long-lived:', err.message);
+        }
+    }
+
+    // 3️⃣ Fallback para token curto direto
     if (shortToken) {
-        console.log('✅ Usando token direto');
-        console.log('🔍 Token do .env (primeiros 50 chars):', shortToken.substring(0, 50)); // ✅ ADICIONAR
+        console.log('✅ Usando token direto do .env');
         cache.set('wa_token', shortToken);
         return shortToken;
     }
@@ -58,4 +85,10 @@ export async function getMetaToken() {
     }
 
     throw new Error('❌ Nenhum token WhatsApp configurado');
+}
+
+// 🆕 Limpa o cache do token (usar quando der erro 401)
+export function clearMetaTokenCache() {
+    cache.del('wa_token');
+    console.log('🗑️ Cache do token limpo');
 }
