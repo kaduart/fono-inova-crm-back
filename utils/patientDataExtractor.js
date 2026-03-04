@@ -99,9 +99,18 @@ export function extractAgeFromText(text) {
         if (num) return { age: num, unit: "meses" };
     }
 
-    // "tem 4", "fez 4", "completou 4", "meu filho de 3"
-    const fezMatch = t.match(/\b(?:tem|fez|completou|de)\s+(\d{1,2})\b/i);
-    if (fezMatch) return { age: parseInt(fezMatch[1]), unit: "anos" };
+    // "tem 4", "fez 4", "completou 4" - COM CONTEXTO OBRIGATÓRIO
+    // REMOVIDO: "de" porque pegava "1 sessão" como idade 1
+    const fezMatch = t.match(/\b(?:tem|fez|completou)\s+(\d{1,2})\b/i);
+    if (fezMatch) {
+        // Verificar se tem contexto de idade (anos/meses) próximo
+        const contextWindow = t.substring(Math.max(0, fezMatch.index - 20), fezMatch.index + 20);
+        const hasAgeContext = /\b(anos?|meses?|aninhos?)\b/i.test(contextWindow);
+        // Só aceita se tiver contexto explícito OU for número isolado na mensagem
+        if (hasAgeContext || t.match(/^\s*(?:tem|fez|completou)?\s*\d{1,2}\s*$/i)) {
+            return { age: parseInt(fezMatch[1]), unit: "anos" };
+        }
+    }
     
     // Abreviatura: "7a", "5a" (anos)
     const abrevMatch = t.match(/\b(\d{1,2})[a]\b/i);

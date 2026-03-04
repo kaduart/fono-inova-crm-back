@@ -46,6 +46,7 @@ import { extractPreferredDateFromText } from "../utils/dateParser.js";
 import { getWisdomForContext, TESTE_LINGUINHA_WISDOM } from "../utils/clinicWisdom.js";
 import ensureSingleHeart from "../utils/helpers.js";
 import { extractAgeFromText, extractBirth, extractComplaint, extractName, extractPeriodFromText, isValidPatientName } from "../utils/patientDataExtractor.js";
+import { safeAgeUpdate } from "../utils/safeDataUpdate.js";
 import { buildSlotMenuMessage } from "../utils/slotMenuBuilder.js";
 import callAI from "../services/IA/Aiproviderservice.js";
 import { clinicalEligibility } from "../domain/policies/ClinicalEligibility.js";
@@ -84,13 +85,13 @@ const VALID_SERVICES = {
     musicoterapia: { name: "Musicoterapia", available: true },
     neuropsicologia: { name: "Neuropsicologia", available: true },
     psicopedagogia: { name: "Psicopedagogia", available: true },
-    
+
     // Mapeamentos comuns
     fono: { alias: "fonoaudiologia" },
     to: { alias: "terapia_ocupacional" },
     fisio: { alias: "fisioterapia" },
     neuropsico: { alias: "neuropsicologia" },
-    
+
     // Multi terapias (do LEGACY)
     multiprofissional: { name: "Multiprofissional", available: true, isMulti: true },
 };
@@ -112,7 +113,7 @@ function validateServiceRequest(text = "") {
     const normalized = text.toLowerCase()
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "");
-    
+
     // 🆕 FIX: Se usuário mencionou serviço VÁLIDO da clínica, não bloquear por especialidade médica
     // Ex: "quero neuropsicóloga mas estou esperando neuropediatra" → deve permitir
     const hasValidService = Object.entries(VALID_SERVICES).some(([key, config]) => {
@@ -120,7 +121,7 @@ function validateServiceRequest(text = "") {
         const terms = [key, config.name?.toLowerCase()].filter(Boolean);
         return config.available !== false && terms.some(term => normalized.includes(term));
     });
-    
+
     // 1. Verificar especialidades médicas primeiro
     for (const medical of MEDICAL_SPECIALTIES) {
         if (medical.terms.some(term => normalized.includes(term))) {
@@ -138,15 +139,15 @@ function validateServiceRequest(text = "") {
             };
         }
     }
-    
+
     // 2. Verificar serviços indisponíveis
     for (const [key, config] of Object.entries(VALID_SERVICES)) {
         if (config.alias) continue; // Pular aliases
-        
+
         // Verificar se mencionou este serviço
         const serviceTerms = [key, config.name?.toLowerCase()].filter(Boolean);
         const mentioned = serviceTerms.some(term => normalized.includes(term));
-        
+
         if (mentioned && config.available === false) {
             return {
                 valid: false,
@@ -157,7 +158,7 @@ function validateServiceRequest(text = "") {
             };
         }
     }
-    
+
     return { valid: true };
 }
 
@@ -169,31 +170,31 @@ function buildMedicalSpecialtyResponse(medical, context = {}) {
     const name = medical.name;
     const redirect = medical.redirect;
     const { leadName, mentionedSymptoms } = context;
-    
+
     // Variações de abertura mais naturais
     const openingVariations = [
         `Oi${leadName ? ` ${leadName}` : ''}! 💚`,
         `Oi! Tudo bem? 💚`,
         `Olá! 😊`,
     ];
-    
+
     const opening = openingVariations[Math.floor(Math.random() * openingVariations.length)];
-    
+
     // Reconhecimento da demanda
     let acknowledgment = '';
     if (mentionedSymptoms) {
         acknowledgment = ` Entendi que vocês estão lidando com ${mentionedSymptoms}. É uma preocupação válida!`;
     }
-    
+
     // Explicação sobre ser clínica de terapias
     const explanations = [
         `\n\nSomos uma clínica de **terapias especializadas** — trabalhamos com fonoaudiologia, psicologia, neuropsicologia, terapia ocupacional e fisioterapia. Não temos médicos na equipe.`,
         `\n\nAqui na Fono Inova somos uma equipe de **terapeutas** (fonoaudiólogas, psicólogas, neuropsicólogas). Não atendemos com médicos.`,
         `\n\nSomos especializados em **terapias** para desenvolvimento infantil. Não temos médicos na equipe, mas trabalhamos em parceria com a área médica quando necessário!`,
     ];
-    
+
     const explanation = explanations[Math.floor(Math.random() * explanations.length)];
-    
+
     let redirectPart = '';
     if (redirect) {
         const redirectOptions = {
@@ -218,7 +219,7 @@ function buildMedicalSpecialtyResponse(medical, context = {}) {
                 details: [`Acompanhamento terapêutico para questões emocionais, comportamentais e desenvolvimento.`],
             }
         };
-        
+
         const info = redirectOptions[redirect];
         if (info) {
             const intro = info.intro[Math.floor(Math.random() * info.intro.length)];
@@ -228,7 +229,7 @@ function buildMedicalSpecialtyResponse(medical, context = {}) {
     } else {
         redirectPart = `\n\nSe quiser, posso explicar como as terapias podem ajudar no desenvolvimento! 💚`;
     }
-    
+
     return opening + acknowledgment + explanation + redirectPart + '\n\nQuer saber mais? 💚';
 }
 
@@ -238,7 +239,7 @@ function buildMedicalSpecialtyResponse(medical, context = {}) {
 function buildUnavailableServiceResponse(config, context = {}) {
     const { leadName, conversationHistory } = context;
     const hasHistory = conversationHistory && conversationHistory.length > 0;
-    
+
     // Abertura mais pessoal se já tem histórico
     let opening = '';
     if (hasHistory) {
@@ -246,7 +247,7 @@ function buildUnavailableServiceResponse(config, context = {}) {
     } else {
         opening = `Oi! 💚 Agradeço o interesse em **${config.name}**!`;
     }
-    
+
     let body = '';
     if (config.reason) {
         const explanations = [
@@ -255,7 +256,7 @@ function buildUnavailableServiceResponse(config, context = {}) {
         ];
         body = explanations[Math.floor(Math.random() * explanations.length)];
     }
-    
+
     let redirectPart = '';
     if (config.redirectTo) {
         const redirectOptions = {
@@ -267,14 +268,14 @@ function buildUnavailableServiceResponse(config, context = {}) {
                 ]
             }
         };
-        
+
         const info = redirectOptions[config.redirectTo];
         if (info) {
             const phrase = info.phrases[Math.floor(Math.random() * info.phrases.length)];
             redirectPart = `\n\n${phrase}`;
         }
     }
-    
+
     // Fechamento acolhedor
     const closings = [
         `\n\nPosso te explicar melhor como funciona? 💚`,
@@ -282,7 +283,7 @@ function buildUnavailableServiceResponse(config, context = {}) {
         `\n\nSe quiser saber mais, é só me perguntar! Estou aqui pra ajudar. 💚`,
     ];
     const closing = closings[Math.floor(Math.random() * closings.length)];
-    
+
     return opening + body + redirectPart + closing;
 }
 
@@ -292,22 +293,22 @@ function buildUnavailableServiceResponse(config, context = {}) {
 function extractContextForResponse(text = "", lead = {}) {
     const normalized = text.toLowerCase();
     const symptoms = [];
-    
+
     // Mapeamento de sintomas comuns
     const symptomMap = {
         'atraso de fala': /n[aã]o fala|fala pouco|demorou pra falar/i,
         'dificuldade escolar': /n[aã]o aprende|dificuldade na escola|nota baixa/i,
-         'problema de comportamento': /birra|agressivo|n[aã]o obedece/i,
+        'problema de comportamento': /birra|agressivo|n[aã]o obedece/i,
         'suspeita de autismo': /autismo|tea|suspeita/i,
         'dificuldade motora': /n[aã]o anda direito|tropeça|coordena[cç][aã]o/i,
     };
-    
+
     for (const [symptom, pattern] of Object.entries(symptomMap)) {
         if (pattern.test(normalized)) {
             symptoms.push(symptom);
         }
     }
-    
+
     return {
         leadName: lead?.patientInfo?.fullName?.split(' ')[0] || lead?.contact?.name?.split(' ')[0],
         mentionedSymptoms: symptoms.length > 0 ? symptoms.join(', ') : null,
@@ -1118,7 +1119,7 @@ function mapComplaintToTherapyArea(complaint) {
         console.warn("[mapComplaintToTherapyArea] Erro em detectAllTherapies:", err.message);
         detectedTherapies = [];
     }
-    
+
     if (detectedTherapies?.length > 0) {
         const primary = detectedTherapies[0];
         // Mapeia ID do therapyDetector para nome da área no banco
@@ -1216,7 +1217,7 @@ async function persistExtractedData(leadId, text, lead) {
         const _a = extractAgeFromText(text);
         const _p = extractPeriodFromText(text);
         let _c = extractComplaint(text);
-        
+
         // ✅ FIX: Se não extraiu padrão específico MAS o texto é descritivo, aceita como queixa
         if (!_c && text && text.length > 20 && !lead?.complaint) {
             const pareceDescricao = /\b(eu|minha|meu|estou|tenho|sinto|está|doente|problema|dificuldade|dor|mal|não consigo|fui ao|médico|otorrino|fenda|vocal|pregas|cantor|voz)\b/i.test(text);
@@ -1225,16 +1226,27 @@ async function persistExtractedData(leadId, text, lead) {
                 console.log('📝 [CTX-PERSIST] Queixa extraída do texto livre:', _c.substring(0, 50));
             }
         }
-        
+
         // 🆕 FIX: Busca fonte SEPARADA do valor existente (evita lógica circular)
-        const _tSource = lead?.autoBookingContext?.therapyArea || 
-                         lead?.qualificationData?.extractedInfo?.therapyArea;
+        const _tSource = lead?.autoBookingContext?.therapyArea ||
+            lead?.qualificationData?.extractedInfo?.therapyArea;
         const _tExisting = lead?.therapyArea;
         const _upd = {};
         if (_n && isValidPatientName(_n) && !lead?.patientInfo?.fullName)
             _upd['patientInfo.fullName'] = _n;
-        if (_a && !lead?.patientInfo?.age)
-            _upd['patientInfo.age'] = typeof _a === 'object' ? _a.age : _a;
+        // 🛡️ SAFE AGE UPDATE: Protege contra corrupção de idade
+        if (_a) {
+            const currentAge = lead?.patientInfo?.age;
+            const newAge = typeof _a === 'object' ? _a.age : _a;
+            const safeResult = safeAgeUpdate(currentAge, newAge, text);
+
+            if (safeResult.age !== currentAge) {
+                _upd['patientInfo.age'] = safeResult.age;
+                console.log(`[SAFE-AGE] Atualizado: ${currentAge} → ${safeResult.age} (${safeResult.reason})`);
+            } else if (safeResult.reason !== 'no_new_data') {
+                console.log(`[SAFE-AGE] Protegido: mantido ${currentAge} (${safeResult.reason})`);
+            }
+        }
         if (_p && !lead?.pendingPreferredPeriod)
             _upd['pendingPreferredPeriod'] = normalizePeriod(_p);
         if (_c && !lead?.complaint)
@@ -1272,7 +1284,7 @@ function getMissingFields(lead, extracted = {}, userText = '') {
     const missing = [];
     const hasName = lead?.patientInfo?.fullName || extracted?.patientName;
     const hasAge = lead?.patientInfo?.age || extracted?.patientAge;
-    
+
     // Coleta dados de identificação primeiro (ordem natural de atendimento)
     if (!hasName) missing.push('nome do paciente');
     if (!hasAge) missing.push('idade');
@@ -1280,13 +1292,37 @@ function getMissingFields(lead, extracted = {}, userText = '') {
         missing.push('período (manhã ou tarde)');
     if (!lead?.therapyArea && !extracted?.therapyArea)
         missing.push('área terapêutica');
-    
+
     // Queixa: só pede se já tem nome + idade E não é pergunta sobre convênio
     const isInsuranceQuery = /\b(unimed|ipasgo|amil|bradesco|sulam[eé]rica|plano|conv[eê]nio|reembolso)\b/i.test(userText || '');
     if (hasName && hasAge && !lead?.complaint && !extracted?.complaint && !isInsuranceQuery)
         missing.push('queixa principal');
-    
+
     return missing;
+}
+
+// ============================================================================
+// 🛡️ ANTI-LOOP: Verifica se triagem está completa
+// ============================================================================
+function isTriageComplete(lead) {
+    if (!lead) return false;
+
+    const hasName = !!(lead.patientInfo?.fullName || lead.patientInfo?.name);
+    const hasAge = lead.patientInfo?.age !== undefined && lead.patientInfo?.age !== null;
+    const hasPeriod = !!(lead.pendingPreferredPeriod || lead.qualificationData?.disponibilidade);
+    const hasComplaint = !!(lead.complaint || lead.primaryComplaint);
+    const hasArea = !!lead.therapyArea;
+
+    const complete = hasName && hasAge && hasPeriod && hasComplaint && hasArea;
+
+    if (complete) {
+        console.log("[ANTI-LOOP] Triagem completa:", {
+            name: hasName, age: hasAge, period: hasPeriod,
+            complaint: hasComplaint, area: hasArea
+        });
+    }
+
+    return complete;
 }
 
 // ============================================================================
@@ -1307,6 +1343,47 @@ export async function getOptimizedAmandaResponse({
         /\b(agendar|marcar|consulta|atendimento|avalia[cç][aã]o)\b|\b(qual\s+dia|qual\s+hor[áa]rio|tem\s+hor[áa]rio|dispon[ií]vel|disponivel|essa\s+semana)\b/i;
 
     console.log(`🎯 [ORCHESTRATOR] Processando: "${text}"`);
+
+    // 🛡️ ANTI-LOOP GUARD: Verifica se triagem já está completa antes de qualquer coisa
+    if (lead?._id && isTriageComplete(lead)) {
+        console.log("🛡️ [ANTI-LOOP] Triagem completa detectada no início - pulando para slots");
+
+        // Atualiza triageStep se necessário
+        if (lead.triageStep !== 'done') {
+            await safeLeadUpdate(lead._id, {
+                $set: { triageStep: 'done', stage: 'engajado' }
+            });
+        }
+
+        // Busca e oferece slots imediatamente
+        const slots = await findAvailableSlots({
+            therapyArea: lead.therapyArea,
+            patientAge: lead.patientInfo?.age,
+            preferredPeriod: lead.pendingPreferredPeriod
+        });
+
+        if (slots && slots.length > 0) {
+            const { message: slotMenu } = buildSlotMenuMessage(slots);
+            return ensureSingleHeart(slotMenu + "\n\nQual funciona melhor? 💚");
+        } else {
+            return ensureSingleHeart(
+                `Perfeito! Já tenho todos os dados 💚\n\n` +
+                `Infelizmente não encontrei horários disponíveis. ` +
+                `Vou pedir para nossa equipe entrar em contato!`
+            );
+        }
+    }
+
+    // 🔍 MONITORAMENTO: Detecta inconsistência estado vs dados (sem bloquear)
+    if (lead?.triageStep === "done" && !isTriageComplete(lead)) {
+        console.warn("⚠️ [STATE-INCONSISTENT] triageStep=done mas dados incompletos:", {
+            therapyArea: !!lead.therapyArea,
+            hasName: !!(lead.patientInfo?.fullName || lead.patientInfo?.name),
+            hasAge: lead.patientInfo?.age != null,
+            hasPeriod: !!(lead.pendingPreferredPeriod || lead.qualificationData?.disponibilidade),
+            hasComplaint: !!(lead.complaint || lead.primaryComplaint)
+        });
+    }
 
     // ➕ integrar inbound do chat com followups
     if (lead?._id) {
@@ -1367,7 +1444,7 @@ export async function getOptimizedAmandaResponse({
             console.log('🔄 [SYNC] Dados sincronizados do qualificationData:', Object.keys(syncUpdates));
         }
     }
-    
+
     // 💾 Persiste dados extraídos ANTES de qualquer early return
     await persistExtractedData(lead._id, text, lead);
 
@@ -1375,7 +1452,7 @@ export async function getOptimizedAmandaResponse({
     // 🆕 ENTITY-DRIVEN SIMPLIFICADO (NOVO FLUXO PRINCIPAL)
     // =========================================================================
     console.log(`🧠 [AMANDA-SÊNIOR] Iniciando análise entity-driven...`);
-    
+
     // 🧠 RECUPERA CONTEXTO ENRIQUECIDO (memória da Amanda)
     let enrichedContext = null;
     if (lead?._id) {
@@ -1393,7 +1470,7 @@ export async function getOptimizedAmandaResponse({
             console.warn('[CONTEXT] Erro ao enriquecer contexto:', err.message);
         }
     }
-    
+
     // 🔄 PRE-ENCHIMENTO: Usa dados da memória se o lead ainda não tem
     if (enrichedContext) {
         // Preenche nome do paciente
@@ -1424,9 +1501,9 @@ export async function getOptimizedAmandaResponse({
             console.log('[CONTEXT] Queixa recuperada da memória:', enrichedContext.primaryComplaint?.substring(0, 50));
         }
     }
-    
+
     const amandaAnalysis = await processMessageLikeAmanda(text, lead, enrichedContext);
-    
+
     console.log('📊 [AMANDA] Analysis:', {
         therapyArea: amandaAnalysis.extracted.therapyArea,
         therapyAreaFromLead: lead?.therapyArea,
@@ -1436,57 +1513,57 @@ export async function getOptimizedAmandaResponse({
         hasSummary: !!lead?.conversationSummary,
         summaryPreview: lead?.conversationSummary?.substring(0, 100)
     });
-    
+
     // 3.1 SERVIÇO NÃO DISPONÍVEL → Responde direto
     if (amandaAnalysis.serviceStatus === 'not_available') {
         return ensureSingleHeart(amandaAnalysis.serviceMessage);
     }
-    
+
     // 3.2 LIMITE DE IDADE → Responde direto
     if (amandaAnalysis.serviceStatus === 'age_limit') {
         return ensureSingleHeart(amandaAnalysis.serviceMessage);
     }
-    
+
     // 3.3 PERGUNTAS SIMPLES (preço, plano, local) → Responde direto
     if (amandaAnalysis.extracted.flags.asksPrice && !amandaAnalysis.extracted.therapyArea) {
         return ensureSingleHeart("A avaliação inicial é **R$ 200**. Se me disser a área (Fono, Psicologia, TO...), passo o valor exato 💚");
     }
-    
+
     if (amandaAnalysis.extracted.flags.asksPrice && amandaAnalysis.extracted.therapyArea) {
         const prices = {
-            fonoaudiologia: "R$ 200", psicologia: "R$ 200", 
+            fonoaudiologia: "R$ 200", psicologia: "R$ 200",
             terapia_ocupacional: "R$ 200", fisioterapia: "R$ 200",
             neuropsicologia: "R$ 2.000 (até 6x)"
         };
         const price = prices[amandaAnalysis.extracted.therapyArea] || "R$ 200";
         return ensureSingleHeart(`A avaliação de ${amandaAnalysis.extracted.therapyArea} é **${price}** 💚`);
     }
-    
+
     if (amandaAnalysis.extracted.flags.asksPlans) {
         return ensureSingleHeart("Trabalhamos com reembolso para a maioria dos planos. Você paga e solicita o reembolso pelo app do plano 💚");
     }
-    
+
     if (amandaAnalysis.extracted.flags.asksLocation) {
         return ensureSingleHeart("📍 Estamos na Av. Minas Gerais, 405 - Jundiaí, Anápolis/GO. Tem estacionamento fácil! Quer o link do Maps? 💚");
     }
-    
+
     // 🧠 INTERPRETAÇÃO: Resposta sobre objetivo da neuropsicologia (laudo vs acompanhamento)
     const isNeuroContext = lead?.therapyArea === 'neuropsicologia' || amandaAnalysis.extracted.therapyArea === 'neuropsicologia';
     const isAnsweringNeuroObjective = lead?.stage === 'triagem_neuro_objetivo' || lead?.neuroObjectiveAsked;
-    
+
     if (isNeuroContext && isAnsweringNeuroObjective && !lead?.wantsLaudo !== undefined) {
         const wantsLaudo = /\b(laudo|avaliação completa|neuropsic|10 sessões|dez sessões|2\.000|dois mil|2000)\b/i.test(text);
         const wantsAcompanhamento = /\b(terapia|terapias|acompanhamento|tratamento|sessões semanais|200 reais|duzentos|semanal)\b/i.test(text);
-        
+
         if (wantsLaudo && !wantsAcompanhamento) {
             console.log('[AMANDA] Quer LAUDO → Explica e continua neuropsicologia');
             await safeLeadUpdate(lead._id, {
-                $set: { 
+                $set: {
                     wantsLaudo: true,
                     neuroObjetivo: 'laudo',
                     stage: 'triagem_agendamento'
                 }
-            }).catch(() => {});
+            }).catch(() => { });
             // Responde com explicação enxuta e continua triagem
             return ensureSingleHeart(
                 `Perfeito! A **Avaliação Neuropsicológica** avalia funções como atenção, memória, linguagem e raciocínio. ` +
@@ -1498,13 +1575,13 @@ export async function getOptimizedAmandaResponse({
         } else if (wantsAcompanhamento && !wantsLaudo) {
             console.log('[AMANDA] Quer ACOMPANHAMENTO → Redireciona para psicologia');
             await safeLeadUpdate(lead._id, {
-                $set: { 
+                $set: {
                     wantsLaudo: false,
                     neuroObjetivo: 'acompanhamento',
                     therapyArea: 'psicologia', // Muda para psicologia
                     stage: 'triagem_agendamento'
                 }
-            }).catch(() => {});
+            }).catch(() => { });
             // Atualiza a análise para refletir a mudança de área
             amandaAnalysis.extracted.therapyArea = 'psicologia';
             return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead, enrichedContext);
@@ -1523,9 +1600,9 @@ export async function getOptimizedAmandaResponse({
         }
         // Se não entendeu, continua com a triagem normal
     }
-    
+
     // 🆕 CASO ESPECIAL: Multi terapias → Resposta específica
-    if (amandaAnalysis.extracted.flags.multidisciplinary || 
+    if (amandaAnalysis.extracted.flags.multidisciplinary ||
         /precisa\s+de\s+tudo|fono.*psico|psico.*fono|todas.*área|todas.*especialidade/i.test(text)) {
         console.log('[AMANDA] Multi terapias detectadas - respondendo...');
         return ensureSingleHeart(
@@ -1536,62 +1613,62 @@ export async function getOptimizedAmandaResponse({
             `A gente pode agendar uma primeira avaliação e, conforme for, integrar com as outras especialidades. Qual faz mais sentido pra vocês agora?`
         );
     }
-    
+
     // 3.4 TRIAGEM: Falta dados → Pergunta contextual
     if (amandaAnalysis.serviceStatus === 'available' && !amandaAnalysis.hasAll && amandaAnalysis.extracted.therapyArea) {
         // Salva therapyArea no lead se ainda não tem
         if (!lead?.therapyArea && amandaAnalysis.extracted.therapyArea) {
-            await safeLeadUpdate(lead._id, { 
-                $set: { 
+            await safeLeadUpdate(lead._id, {
+                $set: {
                     therapyArea: amandaAnalysis.extracted.therapyArea,
                     stage: 'triagem_agendamento'
-                } 
+                }
             });
         }
-        
+
         // 🧠 CASO ESPECIAL: Neuropsicologia → Sondar objetivo (laudo vs acompanhamento)
         const isNeuro = amandaAnalysis.extracted.therapyArea === 'neuropsicologia' || lead?.therapyArea === 'neuropsicologia';
         const alreadyAskedObjective = lead?.neuroObjectiveAsked || lead?.neuroObjetivoSondado;
         const hasObjectiveInfo = lead?.neuroObjetivo || lead?.wantsLaudo !== undefined;
-        
+
         if (isNeuro && !alreadyAskedObjective && !hasObjectiveInfo) {
             console.log('[AMANDA] Neuropsicologia detectada - sondando objetivo...');
             await safeLeadUpdate(lead._id, {
                 $set: { neuroObjectiveAsked: true, stage: 'triagem_agendamento' }
-            }).catch(() => {});
-            
+            }).catch(() => { });
+
             return ensureSingleHeart(
                 `Entendi! Neuropsicologia 💚\n\n` +
-                `Só pra eu direcionar certinho: vocês estão buscando a **avaliação completa com laudo** (~10 sessões, investimento R$ 2.000) ` +
-                `ou **acompanhamento terapêutico** (sessões semanais de R$ 200)?`
+                `Só pra eu direcionar certinho: vocês estão buscando a **avaliação completa com laudo** ` +
+                `ou **acompanhamento terapêutico**?`
             );
         }
-        
+
         return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead, enrichedContext);
     }
-    
+
     // 🆕 VERIFICAÇÃO: Emprego/Currículo (antes de perguntar qual área)
-    if (amandaAnalysis.extracted.flags.wantsPartnershipOrResume || 
+    if (amandaAnalysis.extracted.flags.wantsPartnershipOrResume ||
         amandaAnalysis.extracted.flags.wantsJobOrInternship) {
-        const jobArea = amandaAnalysis.extracted.flags.jobArea || 
-                       amandaAnalysis.extracted.therapyArea || 
-                       'nossa equipe';
-        
+        const jobArea = amandaAnalysis.extracted.flags.jobArea ||
+            amandaAnalysis.extracted.therapyArea ||
+            'nossa equipe';
+
         console.log('[AMANDA] Emprego/Currículo detectado - área:', jobArea);
-        
+
         // Atualiza lead para não perder o contexto
         await safeLeadUpdate(lead._id, {
-            $set: { 
+            $set: {
                 reason: "parceria_profissional",
                 stage: "parceria_profissional",
                 "qualificationData.intent": "parceria_profissional",
                 "qualificationData.areaInteresse": jobArea
             },
             $addToSet: { flags: "parceria_profissional" }
-        }).catch(() => {});
-        
+        }).catch(() => { });
+
         const areaTexto = jobArea !== 'nossa equipe' ? ` (${jobArea})` : '';
-        
+
         return ensureSingleHeart(
             `Que bom que você quer fazer parte da nossa equipe${areaTexto}! 🥰💚\n\n` +
             "Os currículos são recebidos **exclusivamente por e-mail**:\n" +
@@ -1600,26 +1677,46 @@ export async function getOptimizedAmandaResponse({
             "Em breve nossa equipe entra em contato! 😊💚"
         );
     }
-    
+
     // 3.5 SEM THERAPY AREA → Pergunta qual área
     if (!amandaAnalysis.extracted.therapyArea && !lead?.therapyArea) {
         return ensureSingleHeart("Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚");
     }
-    
-    // 3.6 COMPLETO → Continua para oferecer slots (fluxo existente abaixo)
-    if (amandaAnalysis.hasAll) {
-        console.log("✅ [AMANDA] Triagem completa! Continuando para slots...");
-        // Não retorna, deixa o fluxo original continuar
+
+    // 3.6 COMPLETO → HARD RETURN: Oferece slots IMEDIATAMENTE
+    if (amandaAnalysis.hasAll && amandaAnalysis.serviceStatus === 'available') {
+        console.log("✅ [AMANDA] Triagem completa! Oferecendo slots...");
+
+        // Busca slots reais do banco
+        const slots = await findAvailableSlots({
+            therapyArea: amandaAnalysis.extracted.therapyArea || lead?.therapyArea,
+            patientAge: amandaAnalysis.extracted.patientAge || lead?.patientInfo?.age,
+            preferredPeriod: amandaAnalysis.extracted.preferredPeriod || lead?.pendingPreferredPeriod
+        });
+
+        if (slots && slots.length > 0) {
+            const { message: slotMenu } = buildSlotMenuMessage(slots);
+            return ensureSingleHeart(slotMenu + "\n\nQual funciona melhor? 💚");
+        } else {
+            // Sem slots disponíveis - avisa humano
+            return ensureSingleHeart(
+                `Perfeito! Já tenho todos os dados 💚\n\n` +
+                `Infelizmente não encontrei horários disponíveis para ${amandaAnalysis.extracted.therapyArea} ` +
+                `no período da ${amandaAnalysis.extracted.preferredPeriod || 'tarde'}.\n\n` +
+                `Vou pedir para nossa equipe entrar em contato para encontrar o melhor horário!`
+            );
+        }
     }
-    
-    // Se chegou aqui, usa o fluxo legado (mantido para compatibilidade)
-    console.log("🔄 [AMANDA] Usando fluxo legado para casos complexos...");
+
+    // 🚫 BLOQUEIO: Fluxo legado NÃO deve executar quando hasAll=true
+    // Isso previne loops e corrupção de dados
+    console.log("🔄 [AMANDA] Usando fluxo legado apenas para casos parciais...");
 
     // =========================================================================
     // 🆕 PASSO 0.6: CONTEXTO ENRIQUECIDO JÁ RECUPERADO ACIMA
     // O enrichedContext foi obtido na fase entity-driven
     // =========================================================================
-    
+
     if (enrichedContext?.isFirstContact && lead?._id) {
         manageLeadCircuit(lead._id, 'initial').catch(err =>
             console.error('[CIRCUIT] Erro ao agendar initial:', err.message)
@@ -1666,10 +1763,10 @@ export async function getOptimizedAmandaResponse({
     // 🆕 PASSO 0.5: VALIDAÇÃO DE SERVIÇOS (Bloqueia serviços que não existem)
     // =========================================================================
     console.log("🩺 [VALIDATION] Verificando serviço solicitado...");
-    
+
     // Extrai contexto para respostas personalizadas
     const responseContext = extractContextForResponse(text, lead);
-    
+
     // Usa ClinicalEligibility para validação completa
     const age = lead?.patientInfo?.age || extractAgeFromText(text);
     const eligibilityCheck = await clinicalEligibility.validate({
@@ -1678,17 +1775,17 @@ export async function getOptimizedAmandaResponse({
         text: text,
         clinicalHistory: lead?.clinicalHistory || {}
     });
-    
+
     if (eligibilityCheck.blocked) {
         console.log("🚫 [VALIDATION] Serviço bloqueado:", eligibilityCheck.reason);
         return ensureSingleHeart(eligibilityCheck.message);
     }
-    
+
     // Validação adicional de serviços específicos com contexto
     const serviceValidation = validateServiceRequest(text);
     if (!serviceValidation.valid) {
         console.log("🚫 [VALIDATION] Serviço inválido:", serviceValidation.requested);
-        
+
         // Gera mensagem humanizada com contexto
         let humanizedMessage = serviceValidation.message;
         if (serviceValidation.isMedicalSpecialty) {
@@ -1702,7 +1799,7 @@ export async function getOptimizedAmandaResponse({
                 humanizedMessage = buildUnavailableServiceResponse(config, responseContext);
             }
         }
-        
+
         // Se tem redirecionamento, salva no lead para contexto futuro
         if (serviceValidation.redirect && lead?._id) {
             await safeLeadUpdate(lead._id, {
@@ -1711,9 +1808,9 @@ export async function getOptimizedAmandaResponse({
                     "qualificationData.suggestedAlternative": serviceValidation.redirect,
                     "qualificationData.redirectContext": responseContext
                 }
-            }).catch(() => {});
+            }).catch(() => { });
         }
-        
+
         return ensureSingleHeart(humanizedMessage);
     }
 
@@ -1792,7 +1889,7 @@ export async function getOptimizedAmandaResponse({
             // Estado expirado — limpa silenciosamente
             await safeLeadUpdate(lead._id, {
                 $unset: { awaitingResponseFor: "" }
-            }).catch(() => {});
+            }).catch(() => { });
             lead.awaitingResponseFor = null;
             console.log("⏰ [AWAITING] Estado expirado, ignorando");
         }
@@ -1828,15 +1925,15 @@ export async function getOptimizedAmandaResponse({
 
     // ✅ FIX: Usar flags já calculados (mais abrangentes que regex local)
     // Antes: regex própria não capturava "fica em Anápolis", "são de Anápolis", etc.
-    
+
     // ✅ NOVO: Verificar perguntas sobre plano ANTES de localização
-    const asksInsurance = flags?.asksPlans || 
+    const asksInsurance = flags?.asksPlans ||
         flags?.mentionsReembolso ||
         /(conv[eê]nio|plano\s*(de\s*)?sa[uú]de|unimed|ipasgo|hapvida|bradesco|amil|sulamerica|reembolso)/i.test(text.normalize('NFC'));
-    
+
     const asksLocation = flags?.asksAddress || flags?.asksLocation ||
         /(endere[çc]o|onde\s+fica|localiza(?:ç|c)(?:a|ã)o)/i.test(text.normalize('NFC'));
-    
+
     // ✅ NOVO: Se perguntar sobre plano, NÃO envia localização (deixa fluxo normal responder)
     if (asksLocation && !asksInsurance) {
         const coords = {
@@ -2090,7 +2187,7 @@ export async function getOptimizedAmandaResponse({
 
     // Executa tracking em paralelo (non-blocking)
     if (trackingPromises.length > 0) {
-        Promise.all(trackingPromises).catch(() => {}); // Fire and forget
+        Promise.all(trackingPromises).catch(() => { }); // Fire and forget
     }
 
     // 🆕 FASE 3: ENRIQUECIMENTO ESTRATÉGICO DO CONTEXTO
@@ -2106,63 +2203,63 @@ export async function getOptimizedAmandaResponse({
     // =========================================================================
     // 🆕 ENRIQUECIMENTO DE CONTEXTO ADICIONAL (Manual Intent, TEA Status, Scheduling)
     // =========================================================================
-    
+
     // 1. Detecta intenção manual (endereço, planos, preço genérico, saudação)
     const manualIntent = detectManualIntent(text);
     if (manualIntent) {
         enrichedContext.manualIntent = manualIntent;
         console.log("🎯 [MANUAL INTENT] Detectado:", manualIntent);
     }
-    
+
     // 2. Calcula status TEA (laudo_confirmado | suspeita | desconhecido)
     const teaStatus = computeTeaStatus(flags, text);
     if (teaStatus && teaStatus !== "desconhecido") {
         enrichedContext.teaStatus = teaStatus;
         console.log("🧩 [TEA STATUS]:", teaStatus);
     }
-    
+
     // =========================================================================
     // 🩺 DECISÃO CLÍNICA: Investigação TEA - Pergunta objetivo
     // =========================================================================
     // Se detectou investigação/suspeita de TEA, pergunta direto o objetivo
-    const needsTeaQuestion = 
-        flags.mentionsInvestigation && 
-        flags.mentionsTEA_TDAH && 
+    const needsTeaQuestion =
+        flags.mentionsInvestigation &&
+        flags.mentionsTEA_TDAH &&
         !lead?.teaQuestionAsked &&
         !lead?.therapyArea;
-    
+
     if (needsTeaQuestion) {
         console.log("🩺 [CLINICAL DECISION] Investigacao TEA detectada, perguntando objetivo");
-        
+
         await safeLeadUpdate(lead._id, {
             $set: { teaQuestionAsked: true }
-        }).catch(() => {});
-        
+        }).catch(() => { });
+
         return ensureSingleHeart(
             `Entendo que estão em fase de descoberta 💚\n\n` +
             `Vocês querem o **laudo de TEA** ou querem fazer **acompanhamento terapêutico**?`
         );
     }
-    
+
     // 🩺 Interpreta a resposta
     if (lead?.teaQuestionAsked && flags.mentionsTEA_TDAH) {
-        const wantsLaudo = 
+        const wantsLaudo =
             /\b(laudo|neuropsic|avalia[cç][aã]o\s+neuro|neuropediatra|escola|relat[oó]rio|10\s+sess[õo]es|dez\s+sess[õo]es|2000|dois\s+mil)\b/i.test(text);
-        
-        const wantsAcompanhamento = 
+
+        const wantsAcompanhamento =
             /\b(terapia|terapias|psic[oó]loga|acompanhamento|tratamento|sess[õo]es|200\s+reais|duzentos)\b/i.test(text);
-        
+
         if (wantsLaudo && !wantsAcompanhamento) {
             console.log("🩺 [CLINICAL DECISION] Quer LAUDO → Neuropsicológica");
             await safeLeadUpdate(lead._id, {
-                $set: { 
+                $set: {
                     therapyArea: "neuropsicologia",
                     "qualificationData.extractedInfo.especialidade": "neuropsicologia",
                     teaQuestionAsked: null
                 }
-            }).catch(() => {});
+            }).catch(() => { });
             flags.therapyArea = "neuropsicologia";
-            
+
             // Já explica e vai direto pro agendamento
             return ensureSingleHeart(
                 `Perfeito! Pra laudo de TEA, fazemos a avaliação neuropsicológica 💚\n\n` +
@@ -2172,14 +2269,14 @@ export async function getOptimizedAmandaResponse({
         } else if (wantsAcompanhamento && !wantsLaudo) {
             console.log("🩺 [CLINICAL DECISION] Quer ACOMPANHAMENTO → Psicologia");
             await safeLeadUpdate(lead._id, {
-                $set: { 
+                $set: {
                     therapyArea: "psicologia",
                     "qualificationData.extractedInfo.especialidade": "psicologia",
                     teaQuestionAsked: null
                 }
-            }).catch(() => {});
+            }).catch(() => { });
             flags.therapyArea = "psicologia";
-            
+
             return ensureSingleHeart(
                 `Ótimo! O acompanhamento terapêutico é um ótimo caminho 💚\n\n` +
                 `Avaliação inicial R$ 200, sessões R$ 200. Começamos com psicologia e podemos integrar com fono/TO depois.\n\n` +
@@ -2188,7 +2285,7 @@ export async function getOptimizedAmandaResponse({
         }
         // Se ambíguo, deixa o fluxo normal tratar
     }
-    
+
     // 3. Verifica se deve oferecer agendamento (contexto acumulado)
     const shouldOffer = shouldOfferScheduling({
         therapyArea: flags.therapyArea,
@@ -2246,21 +2343,21 @@ export async function getOptimizedAmandaResponse({
         const extractedName = extractName(text);
         const extractedPeriod = extractPeriodFromText(text);
         const extractedComplaint = extractComplaint(text);
-        
+
         console.log("🔄 [TRIAGEM] Iniciando triagem - dados extraídos:", {
             age: extractedAge?.age || extractedAge,
             name: extractedName,
             period: extractedPeriod,
             complaint: extractedComplaint
         });
-        
+
         // Determinar qual step iniciar baseado nos dados já extraídos
         let initialStep = "ask_period";
         const updateData = {
             triageStep: "ask_period",
             stage: "triagem_agendamento"
         };
-        
+
         // Se já tem período, vai direto para ask_name
         if (extractedPeriod) {
             initialStep = "ask_name";
@@ -2268,7 +2365,7 @@ export async function getOptimizedAmandaResponse({
             updateData.pendingPreferredPeriod = normalizePeriod(extractedPeriod);
             console.log("📝 [TRIAGEM] Período já informado, pulando para ask_name");
         }
-        
+
         // Se já tem nome também, salva e continua
         if (extractedName) {
             updateData["patientInfo.fullName"] = extractedName;
@@ -2278,7 +2375,7 @@ export async function getOptimizedAmandaResponse({
                 console.log("📝 [TRIAGEM] Nome já informado, pulando para ask_age");
             }
         }
-        
+
         // Se já tem idade também, salva e continua
         if (extractedAge) {
             const ageValue = typeof extractedAge === 'object' ? extractedAge.age : extractedAge;
@@ -2288,15 +2385,15 @@ export async function getOptimizedAmandaResponse({
             updateData["qualificationData.idade"] = ageValue;
             updateData["qualificationData.idadeRange"] = ageValue <= 3 ? '0-3' :
                 ageValue <= 6 ? '4-6' :
-                ageValue <= 12 ? '7-12' : '13+';
-            
+                    ageValue <= 12 ? '7-12' : '13+';
+
             if (extractedPeriod && extractedName) {
                 initialStep = "ask_complaint";
                 updateData.triageStep = "ask_complaint";
                 console.log("📝 [TRIAGEM] Idade já informada, pulando para ask_complaint");
             }
         }
-        
+
         // Se já tem queixa também, salva e finaliza
         if (extractedComplaint && extractedPeriod && extractedName && extractedAge) {
             updateData.complaint = extractedComplaint;
@@ -2305,10 +2402,10 @@ export async function getOptimizedAmandaResponse({
             updateData.stage = "engajado";
             console.log("📝 [TRIAGEM] Queixa já informada, finalizando triagem");
         }
-        
+
         console.log(`🔄 [TRIAGEM] Iniciando na etapa: ${initialStep}`);
         const updateResult = await safeLeadUpdate(lead._id, { $set: updateData });
-        
+
         if (updateResult) {
             console.log("✅ [TRIAGEM] triageStep salvo com sucesso:", updateResult.triageStep);
             lead.triageStep = initialStep; // ✅ mantém em memória o step correto
@@ -2319,10 +2416,17 @@ export async function getOptimizedAmandaResponse({
     }
 
     // ============================================================
-    // ▶️ CONDUÇÃO DA TRIAGEM (ANTI-LIMBO)
+    // ▶️ CONDUÇÃO DA TRIAGEM (ANTI-LIMBO + ANTI-LOOP)
     // ============================================================
 
     if (lead?.triageStep === "ask_period") {
+        // 🛡️ ANTI-LOOP: Se já tem período, não pergunta de novo
+        if (lead.pendingPreferredPeriod || lead.qualificationData?.disponibilidade) {
+            console.log("🛡️ [ANTI-LOOP] Tem período mas triageStep=ask_period, corrigindo...");
+            await safeLeadUpdate(lead._id, { $set: { triageStep: "ask_name" } });
+            return ensureSingleHeart("Ótimo! 💚 Qual o **nome do paciente**?");
+        }
+
         // 🛡️ Se o lead fez pergunta específica DURANTE a triagem,
         // não retornar "manhã ou tarde?" — deixar o Claude responder
         const hasSpecificIntentNow =
@@ -2368,7 +2472,7 @@ export async function getOptimizedAmandaResponse({
                 updateData["qualificationData.idade"] = ageValue;
                 updateData["qualificationData.idadeRange"] = ageValue <= 3 ? '0-3' :
                     ageValue <= 6 ? '4-6' :
-                    ageValue <= 12 ? '7-12' : '13+';
+                        ageValue <= 12 ? '7-12' : '13+';
                 console.log("📝 [TRIAGEM] Greedy: idade extraída durante ask_period:", ageValue);
             }
             if (nameExtracted && !lead?.patientInfo?.fullName) {
@@ -2384,13 +2488,13 @@ export async function getOptimizedAmandaResponse({
             if (!period) {
                 // ✅ FIX: Detecta saudação pura (ex: "Bom dia!") e responde adequadamente
                 const isPureGreeting = PURE_GREETING_REGEX.test(text.trim());
-                
+
                 if (isPureGreeting) {
                     return ensureSingleHeart(
                         "Olá! 😊 Tudo bem? Pra eu organizar certinho, vocês preferem **manhã ou tarde**?"
                     );
                 }
-                
+
                 return ensureSingleHeart(
                     "Pra eu organizar certinho, vocês preferem **manhã ou tarde**?"
                 );
@@ -2411,6 +2515,15 @@ export async function getOptimizedAmandaResponse({
     // ▶️ STEP: ask_name (coleta nome)
     // ============================================================
     if (lead?.triageStep === "ask_name") {
+        // 🛡️ ANTI-LOOP: Se já tem nome, não pergunta de novo
+        if (lead.patientInfo?.fullName || lead.patientInfo?.name) {
+            console.log("🛡️ [ANTI-LOOP] Tem nome mas triageStep=ask_name, corrigindo...");
+            await safeLeadUpdate(lead._id, { $set: { triageStep: "ask_age" } });
+            return ensureSingleHeart(
+                "Obrigada! 💚 E qual a **idade** dele(a)? (anos ou meses)"
+            );
+        }
+
         const name = extractName(text);
         if (!name) {
             return ensureSingleHeart(
@@ -2434,6 +2547,15 @@ export async function getOptimizedAmandaResponse({
     // ▶️ STEP: ask_age (coleta idade)
     // ============================================================
     if (lead?.triageStep === "ask_age") {
+        // 🛡️ ANTI-LOOP: Se já tem idade, não pergunta de novo
+        if (lead.patientInfo?.age !== undefined && lead.patientInfo?.age !== null) {
+            console.log("🛡️ [ANTI-LOOP] Tem idade mas triageStep=ask_age, corrigindo...");
+            await safeLeadUpdate(lead._id, { $set: { triageStep: "ask_complaint" } });
+            return ensureSingleHeart(
+                "Obrigada! 💚 Agora me conta: qual a principal preocupação/queixa? 💚"
+            );
+        }
+
         const age = extractAgeFromText(text);
         if (!age) {
             return ensureSingleHeart(
@@ -2444,11 +2566,11 @@ export async function getOptimizedAmandaResponse({
         // ✅ FIX: Extrair número do objeto (evita CastError)
         const ageValue = typeof age === 'object' ? age.age : age;
         const ageUnit = typeof age === 'object' ? age.unit : 'anos';
-        
+
         // ✅ FIX: Sincronizar patientInfo.age com qualificationData.idade
         const idadeRange = ageValue <= 3 ? '0-3' :
             ageValue <= 6 ? '4-6' :
-            ageValue <= 12 ? '7-12' : '13+';
+                ageValue <= 12 ? '7-12' : '13+';
 
         await safeLeadUpdate(lead._id, {
             $set: {
@@ -2470,8 +2592,33 @@ export async function getOptimizedAmandaResponse({
     // ▶️ STEP: ask_complaint (coleta queixa - NOVO STEP CORRETO!)
     // ============================================================
     if (lead?.triageStep === "ask_complaint") {
+        // 🛡️ ANTI-LOOP: Se já tem queixa, finaliza triagem
+        if (lead.complaint || lead.primaryComplaint) {
+            console.log("🛡️ [ANTI-LOOP] Tem queixa mas triageStep=ask_complaint, corrigindo...");
+            await safeLeadUpdate(lead._id, {
+                $set: { triageStep: "done", stage: "engajado" }
+            });
+
+            // Busca slots
+            const slots = await findAvailableSlots({
+                therapyArea: lead.therapyArea,
+                patientAge: lead.patientInfo?.age,
+                preferredPeriod: lead.pendingPreferredPeriod
+            });
+
+            if (slots && slots.length > 0) {
+                const { message: slotMenu } = buildSlotMenuMessage(slots);
+                return ensureSingleHeart(slotMenu + "\n\nQual funciona melhor? 💚");
+            } else {
+                return ensureSingleHeart(
+                    `Perfeito! Já tenho todas as informações 💚\n\n` +
+                    `Vou verificar a melhor disponibilidade e retorno já já!`
+                );
+            }
+        }
+
         let complaint = extractComplaint(text);
-        
+
         // ✅ FIX: Se não extraiu padrão específico MAS o texto é descritivo (explicação longa),
         // aceita o próprio texto como queixa
         if (!complaint && text && text.length > 20 && !text.match(/^(sim|não|nao|ok|tá|ta|ok\s|bom|boa|oi|olá|ola|hey)$/i)) {
@@ -2482,14 +2629,14 @@ export async function getOptimizedAmandaResponse({
                 console.log("📝 [TRIAGEM] Queixa extraída do texto livre:", complaint.substring(0, 50));
             }
         }
-        
+
         // Se não extraiu queixa claramente, pergunta
         if (!complaint || complaint.length < 3) {
             return ensureSingleHeart(
                 "Me conta um pouquinho: o que você tem observado no dia a dia que te preocupou? 💚"
             );
         }
-        
+
         // Salva queixa e finaliza triagem
         await safeLeadUpdate(lead._id, {
             $set: {
@@ -2646,14 +2793,14 @@ Em breve nossa equipe entra em contato 😊`
     // 🛡️ VERIFICAÇÃO DE DESAMBIGUAÇÃO: "vaga" pode ser consulta OU emprego
     if (flags.wantsPartnershipOrResume) {
         const normalizedText = flags.normalizedText || text.toLowerCase();
-        
+
         // Se ambos forem detectados, verificar contexto para decidir
         if (flags.wantsSchedule) {
             // Contextos que indicam agendamento de consulta (não emprego)
             const schedulingContext = /\b(dias|hor[áa]rio|consulta|agendar|marcar|disponibilidade|atendimento|tem\s+vaga|quais\s+os\s+dias)\b/i.test(normalizedText);
             // Contextos que indicam emprego/parceria
             const jobContext = /\b(vaga\s+(de\s+)?(trabalho|emprego)|curriculo|cv|parceria|enviar\s+curr[ií]culo|trabalhar\s+(com|na)\s+voc[eê]s)\b/i.test(normalizedText);
-            
+
             if (schedulingContext && !jobContext) {
                 console.log("[DISAMBIGUATION] wantsSchedule + wantsPartnershipOrResume → Contexto indica AGENDAMENTO, ignorando parceria");
                 // Não retorna, deixa o fluxo continuar para busca de slots reais
@@ -2740,7 +2887,7 @@ Em breve nossa equipe entra em contato 😊`
         const toneInstruction = enrichedContext.toneMode === "premium"
             ? DYNAMIC_MODULES.consultoriaModeContext
             : DYNAMIC_MODULES.acolhimentoModeContext;
-            
+
         if (toneInstruction) {
             enrichedContext.customInstruction = [
                 toneInstruction,
@@ -3322,25 +3469,25 @@ Em breve nossa equipe entra em contato 😊`
         // 🔥 HANDLER MODULAR: Usuário quer mais opções / alternativas
         // Detecta: "mais cedo", "outro horário", "nenhuma serve", etc.
         // =========================================================================
-        const isAskingForAlternatives = flags.wantsMoreOptions || 
+        const isAskingForAlternatives = flags.wantsMoreOptions ||
             /\b(mais\s+cedo|mais\s+tarde|outro\s+hor[áa]rio|outra\s+op[çc][aã]o|nenhuma\s+serve|tem\s+outro|tem\s+mais)\b/i.test(normalized);
-        
+
         if (isAskingForAlternatives && slotsCtx?.all?.length > 0) {
             console.log("[ALTERNATIVES] Usuário pediu alternativas. Buscando slots em outro período...");
-            
+
             const requestedPeriod = extractPeriodFromText(text);
-            const currentPeriod = lead?.autoBookingContext?.preferredPeriod || 
+            const currentPeriod = lead?.autoBookingContext?.preferredPeriod ||
                 (slotsCtx.primary ? getTimePeriod(slotsCtx.primary.time) : null);
-            
+
             // Se pediu período específico diferente do atual, busca nesse período
             const targetPeriod = requestedPeriod && requestedPeriod !== currentPeriod ? requestedPeriod : null;
-            
+
             if (targetPeriod || !requestedPeriod) {
                 try {
-                    const therapyArea = lead?.therapyArea || 
-                        lead?.autoBookingContext?.mappedTherapyArea || 
+                    const therapyArea = lead?.therapyArea ||
+                        lead?.autoBookingContext?.mappedTherapyArea ||
                         lead?.autoBookingContext?.therapyArea;
-                    
+
                     if (therapyArea) {
                         const alternativeSlots = await findAvailableSlots({
                             therapyArea,
@@ -3348,21 +3495,21 @@ Em breve nossa equipe entra em contato 😊`
                             daysAhead: 30,
                             maxOptions: 3,
                         });
-                        
+
                         if (alternativeSlots?.primary) {
                             // Salva novos slots
-                            await safeLeadUpdate(lead._id, { 
-                                $set: { 
+                            await safeLeadUpdate(lead._id, {
+                                $set: {
                                     pendingSchedulingSlots: alternativeSlots,
                                     pendingChosenSlot: null,
                                     "autoBookingContext.preferredPeriod": targetPeriod || (currentPeriod === "manhã" ? "tarde" : "manhã"),
                                     "autoBookingContext.lastSlotsShownAt": new Date(), // ← 🆕 timestamp para TTL
-                                } 
+                                }
                             }).catch(err => logSuppressedError("safeLeadUpdate", err));
-                            
+
                             const { optionsText, letters } = buildSlotMenuMessage(alternativeSlots);
                             const periodLabel = targetPeriod === "manhã" ? "de manhã" : targetPeriod === "tarde" ? "à tarde" : "em outros horários";
-                            
+
                             return ensureSingleHeart(
                                 `Claro! Encontrei essas opções ${periodLabel}:\n\n${optionsText}\n\nQual você prefere? (${letters.join(" ou ")}) 💚`
                             );
@@ -3389,19 +3536,19 @@ Em breve nossa equipe entra em contato 😊`
                 try {
                     const therapyArea = lead?.therapyArea || lead?.autoBookingContext?.mappedTherapyArea;
                     const preferredPeriod = lead?.pendingPreferredPeriod || lead?.autoBookingContext?.preferredPeriod;
-                    
+
                     if (therapyArea) {
-                        const freshSlots = await findAvailableSlots({ 
-                            therapyArea, 
-                            preferredPeriod, 
-                            daysAhead: 30, 
-                            maxOptions: 3 
+                        const freshSlots = await findAvailableSlots({
+                            therapyArea,
+                            preferredPeriod,
+                            daysAhead: 30,
+                            maxOptions: 3
                         });
 
                         if (freshSlots?.primary) {
                             // Atualiza slots e timestamp
                             await safeLeadUpdate(lead._id, {
-                                $set: { 
+                                $set: {
                                     pendingSchedulingSlots: freshSlots,
                                     "autoBookingContext.lastSlotsShownAt": new Date(),
                                 }
@@ -3501,16 +3648,16 @@ Em breve nossa equipe entra em contato 😊`
 
         if (!validation.isValid) {
             console.log("⚠️ [PASSO 2] Slot não está mais disponível:", validation.reason);
-            
+
             // Se tem slots frescos, mostra novas opções
             if (validation.freshSlots?.primary) {
                 await safeLeadUpdate(lead._id, {
-                    $set: { 
-                        pendingSchedulingSlots: validation.freshSlots, 
+                    $set: {
+                        pendingSchedulingSlots: validation.freshSlots,
                         pendingChosenSlot: null,
                     },
                 }).catch(err => logSuppressedError('safeLeadUpdate', err));
-                
+
                 const { optionsText: freshOptions, letters } = buildSlotMenuMessage(validation.freshSlots);
                 return ensureSingleHeart(
                     `Essa vaga acabou de ser preenchida 😕\n\n` +
@@ -3518,7 +3665,7 @@ Em breve nossa equipe entra em contato 😊`
                     `Qual você prefere? (${letters.join(", ")}) 💚`
                 );
             }
-            
+
             // Se não tem slots frescos, pede para tentar outro período
             return ensureSingleHeart(
                 `Essa vaga acabou de ser preenchida 😕\n\n` +
@@ -3547,36 +3694,36 @@ Em breve nossa equipe entra em contato 😊`
 
     // 🧠 RECUPERAÇÃO DE CONTEXTO: Se mensagem atual é genérica (só "agendar", "avaliação")
     // mas temos conversationSummary, tenta inferir terapia do histórico
-    const isGenericMessage = 
+    const isGenericMessage =
         /\b(agendar|marcar|avalia[cç][aã]o|consulta|atendimento)\b/i.test(text) &&
         !flags.therapyArea &&
         !bookingProduct?.therapyArea;
-    
+
     if (isGenericMessage && enrichedContext?.conversationSummary && !flags.therapyArea) {
         console.log("🧠 [CONTEXT RECOVERY] Mensagem genérica detectada, tentando recuperar terapia do resumo...");
-        
+
         const summary = enrichedContext.conversationSummary.toLowerCase();
-        
+
         // Mapeia terapias mencionadas no resumo
-        const therapyFromSummary = 
+        const therapyFromSummary =
             /terapia ocupacional|terapeuta ocupacional|\bto\b|ocupacional|integração sensorial|sensorial|coordenação motora|motricidade|avd|pinça|lateralidade|canhoto|reflexos/i.test(summary) ? "terapia_ocupacional" :
-            /fonoaudiologia|\bfono\b|linguagem|fala|voz|deglutição|miofuncional|linguinha|freio|frenulo|gagueira|tartamudez|fluência|engasgar|amamentação|succao|sucção/i.test(summary) ? "fonoaudiologia" :
-            /psicologia(?!.*pedagogia)|\bpsic[oó]logo|comportamento|ansiedade|depressão|birra|agressivo|não dorme|medo|fobia|enurese|encoprese|toc|ritual/i.test(summary) ? "psicologia" :
-            /neuropsicologia|neuropsi|avaliação neuropsicológica|laudo|teste de qi|funções executivas|memória|atenção|dislexia|discalculia|superdotação|tea|autismo|espectro autista/i.test(summary) ? "neuropsicologia" :
-            /fisioterapia|\bfisio\b|atraso motor|não engatinhou|não andou|andar na ponta|pé torto|torticolo|prematuro|hipotonia|hipertonia|espasticidade|equilíbrio/i.test(summary) ? "fisioterapia" :
-            /musicoterapia|música|musical|ritmo|estimulação musical/i.test(summary) ? "musicoterapia" :
-            /psicopedagogia|reforço escolar|dificuldade escolar|alfabetização/i.test(summary) ? "neuropsicologia" :
-            null;
-        
+                /fonoaudiologia|\bfono\b|linguagem|fala|voz|deglutição|miofuncional|linguinha|freio|frenulo|gagueira|tartamudez|fluência|engasgar|amamentação|succao|sucção/i.test(summary) ? "fonoaudiologia" :
+                    /psicologia(?!.*pedagogia)|\bpsic[oó]logo|comportamento|ansiedade|depressão|birra|agressivo|não dorme|medo|fobia|enurese|encoprese|toc|ritual/i.test(summary) ? "psicologia" :
+                        /neuropsicologia|neuropsi|avaliação neuropsicológica|laudo|teste de qi|funções executivas|memória|atenção|dislexia|discalculia|superdotação|tea|autismo|espectro autista/i.test(summary) ? "neuropsicologia" :
+                            /fisioterapia|\bfisio\b|atraso motor|não engatinhou|não andou|andar na ponta|pé torto|torticolo|prematuro|hipotonia|hipertonia|espasticidade|equilíbrio/i.test(summary) ? "fisioterapia" :
+                                /musicoterapia|música|musical|ritmo|estimulação musical/i.test(summary) ? "musicoterapia" :
+                                    /psicopedagogia|reforço escolar|dificuldade escolar|alfabetização/i.test(summary) ? "neuropsicologia" :
+                                        null;
+
         if (therapyFromSummary) {
             console.log(`🧠 [CONTEXT RECOVERY] Terapia recuperada do resumo: ${therapyFromSummary}`);
             flags.therapyArea = therapyFromSummary;
-            
+
             // Também salva no lead para persistir
             if (lead?._id && !lead.therapyArea) {
                 await safeLeadUpdate(lead._id, {
                     $set: { therapyArea: therapyFromSummary }
-                }).catch(() => {});
+                }).catch(() => { });
                 lead.therapyArea = therapyFromSummary;
             }
         }
@@ -3867,23 +4014,23 @@ Em breve nossa equipe entra em contato 😊`
 
         // 🧠 VERIFICAÇÃO DE CONSISTÊNCIA: Se lead tem therapyArea salva mas mensagem atual 
         // não detectou nada específico, confirma se é a mesma área
-        const hasLeadTherapyArea = lead?.therapyArea && 
+        const hasLeadTherapyArea = lead?.therapyArea &&
             lead.therapyArea !== "psicologia" && // Default muitas vezes
             lead.therapyArea !== "avaliacao";
-        
-        const isGenericSchedulingRequest = 
+
+        const isGenericSchedulingRequest =
             /\b(agendar|marcar|avalia[cç][aã]o|consulta)\b/i.test(text) &&
             detectedTherapies.length === 0 &&
             !flags.therapyArea;
-        
+
         if (isGenericSchedulingRequest && hasLeadTherapyArea && !lead?.therapyAreaConfirmed) {
             console.log(`🧠 [AREA CONFIRMATION] Lead tem therapyArea: ${lead.therapyArea}, mensagem genérica, confirmando...`);
-            
+
             // Marca que precisa confirmar
             await safeLeadUpdate(lead._id, {
                 $set: { awaitingTherapyConfirmation: true }
-            }).catch(() => {});
-            
+            }).catch(() => { });
+
             const areaLabels = {
                 fonoaudiologia: "Fonoaudiologia",
                 psicologia: "Psicologia",
@@ -3892,7 +4039,7 @@ Em breve nossa equipe entra em contato 😊`
                 neuropsicologia: "Neuropsicologia",
                 musicoterapia: "Musicoterapia"
             };
-            
+
             return ensureSingleHeart(
                 `Vi aqui que da última vez conversamos sobre **${areaLabels[lead.therapyArea] || lead.therapyArea}** 💚\n\n` +
                 `É isso mesmo que você quer agendar?\n\n` +
@@ -3900,52 +4047,52 @@ Em breve nossa equipe entra em contato 😊`
                 `Isso ajuda a gente a entender melhor como podemos ajudar.`
             );
         }
-        
+
         // Se está confirmando a área e pedido médico
         if (lead?.awaitingTherapyConfirmation) {
             const confirmedYes = /\b(sim|isso|mesmo|correto|certo|yes|s)\b/i.test(text);
             const wantsDifferent = /\b(n[aã]o|outra|diferente|mudar|trocar|psic[oó]loga?|fono|terapia ocupacional|to|fisio|neuro)\b/i.test(text);
-            
+
             // Detecta se tem pedido médico/encaminhamento na resposta
-            const hasMedicalReferral = 
+            const hasMedicalReferral =
                 /\b(tenho|sim|receita|pedido|encaminhamento|relat[oó]rio|laudo|escola|m[eé]dico|neuropediatra|m[eé]dica)\b/i.test(text);
-            
-            const hasNoReferral = 
+
+            const hasNoReferral =
                 /\b(n[aã]o\s+tenho|n[aã]o|sem|ainda\s+n[aã]o)\b/i.test(text);
-            
+
             if (confirmedYes && !wantsDifferent) {
                 console.log(`🧠 [AREA CONFIRMATION] Confirmação positiva, usando: ${lead.therapyArea}`);
-                
+
                 if (hasMedicalReferral) {
                     console.log("🧠 [MEDICAL REFERRAL] Paciente TEM pedido médico/encaminhamento");
                     await safeLeadUpdate(lead._id, {
-                        $set: { 
+                        $set: {
                             therapyAreaConfirmed: true,
                             awaitingTherapyConfirmation: false,
                             hasMedicalReferral: true
                         }
-                    }).catch(() => {});
+                    }).catch(() => { });
                     flags.therapyArea = lead.therapyArea;
                     flags.hasMedicalReferral = true;
-                    
+
                     // Tem pedido médico, pode ir direto para agendamento
                     return ensureSingleHeart(
                         `Perfeito! Com o encaminhamento, conseguimos direcionar melhor o atendimento 💚\n\n` +
                         `Qual período funciona melhor pra vocês: manhã ou tarde?`
                     );
-                    
+
                 } else if (hasNoReferral) {
                     console.log("🧠 [MEDICAL REFERRAL] Paciente NÃO tem pedido médico");
                     await safeLeadUpdate(lead._id, {
-                        $set: { 
+                        $set: {
                             therapyAreaConfirmed: true,
                             awaitingTherapyConfirmation: false,
                             hasMedicalReferral: false
                         }
-                    }).catch(() => {});
+                    }).catch(() => { });
                     flags.therapyArea = lead.therapyArea;
                     flags.hasMedicalReferral = false;
-                    
+
                     // Não tem pedido médico, pergunta a queixa primeiro
                     return ensureSingleHeart(
                         `Entendido! 💚\n\n` +
@@ -3956,19 +4103,19 @@ Em breve nossa equipe entra em contato 😊`
                 } else {
                     // Não respondeu sobre pedido médico, segue normal
                     await safeLeadUpdate(lead._id, {
-                        $set: { 
+                        $set: {
                             therapyAreaConfirmed: true,
                             awaitingTherapyConfirmation: false
                         }
-                    }).catch(() => {});
+                    }).catch(() => { });
                     flags.therapyArea = lead.therapyArea;
                 }
-                
+
             } else if (wantsDifferent) {
                 console.log("🧠 [AREA CONFIRMATION] Usuário quer área diferente, seguindo...");
                 await safeLeadUpdate(lead._id, {
                     $unset: { awaitingTherapyConfirmation: "" }
-                }).catch(() => {});
+                }).catch(() => { });
                 // Deixa o fluxo normal detectar a nova área
             }
         }
@@ -4551,19 +4698,19 @@ Em breve nossa equipe entra em contato 😊`
     }
 
     // 🆕 SIDE INTENT HANDLER: Se está em scheduling e pergunta algo lateral, responde e retoma
-    const inScheduling = lead?.stage === 'interessado_agendamento' || 
-                         ['ask_name', 'ask_age', 'ask_period'].includes(lead?.triageStep);
-    
+    const inScheduling = lead?.stage === 'interessado_agendamento' ||
+        ['ask_name', 'ask_age', 'ask_period'].includes(lead?.triageStep);
+
     if (inScheduling) {
         // SIDE INTENT: Responde pergunta lateral e retoma agendamento
         const isSideIntent = flags.asksPrice || flags.asksPlans || flags.asksAddress || flags.asksLocation;
-        
+
         if (isSideIntent) {
             console.log("🔄 [SIDE-INTENT] Respondendo pergunta lateral durante scheduling");
-            
+
             // Detecta emoção
             const emotionalState = detectEmotionalState(text);
-            
+
             // Determina próximo passo do agendamento
             let nextStep;
             if (lead?.triageStep === 'ask_name') nextStep = "Pode me confirmar o nome completo da criança? 💚";
@@ -4572,17 +4719,17 @@ Em breve nossa equipe entra em contato 😊`
             else if (!lead?.patientInfo?.fullName) nextStep = "Pode me confirmar o nome completo da criança? 💚";
             else if (!lead?.patientInfo?.age) nextStep = "Qual a idade?";
             else nextStep = "Posso confirmar o horário para você?";
-            
+
             // Responde pela IA (com RNs)
             const sideAnswer = await callAmandaAIWithContext(text, lead, enrichedContext, flags, analysis);
-            
+
             // Monta resposta híbrida
             const parts = [];
             if (emotionalState?.isAnxious) parts.push(`Oi! Respira... 🌸`);
             else if (emotionalState?.isSad) parts.push(`Entendo que isso pode ser difícil... 💚`);
             parts.push(sideAnswer.trim());
             parts.push(`\n\n${nextStep}`);
-            
+
             return ensureSingleHeart(enforceClinicScope(parts.join('\n'), text));
         }
     }
@@ -4769,9 +4916,9 @@ function tryManualResponse(normalizedText, context = {}, flags = {}, lead = {}) 
         // Detecta a área mencionada para personalizar
         const areaMatch = normalizedText.match(/\b(fono|psicolog|terapeuta ocupacional|to\b|fisio|neuro|musicoterapia)\b/);
         const areaMencionada = areaMatch ? areaMatch[0] : null;
-        
+
         let areaTexto = areaMencionada ? ` (${areaMencionada})` : '';
-        
+
         return (
             `Que bom que você quer fazer parte da nossa equipe${areaTexto}! 🥰💚\n\n` +
             "Os currículos são recebidos **exclusivamente por e-mail**:\n" +
@@ -4812,33 +4959,33 @@ function inferAreaFromContext(normalizedText, context = {}, flags = {}) {
     );
 
     const AREA_DEFS = [
-        { 
-            id: "fonoaudiologia", 
-            regex: /\b(fono|fonoaudiolog(?:ia|o|a)|fonoaudiólog(?:o|a)|audiolog(?:ia|o|a)|audiólog(?:o|a)|linguagem|fala|voz|deglutição|mastigação|motricidade orofacial|miofuncional|linguinha|freio|frenulo|lábio leporino|fenda palatina|respiração oral|voz rouca|gagueira|tartamudez|fluência|engasgar|amamentação|succao|sucção)\b/i 
+        {
+            id: "fonoaudiologia",
+            regex: /\b(fono|fonoaudiolog(?:ia|o|a)|fonoaudiólog(?:o|a)|audiolog(?:ia|o|a)|audiólog(?:o|a)|linguagem|fala|voz|deglutição|mastigação|motricidade orofacial|miofuncional|linguinha|freio|frenulo|lábio leporino|fenda palatina|respiração oral|voz rouca|gagueira|tartamudez|fluência|engasgar|amamentação|succao|sucção)\b/i
         },
-        { 
-            id: "terapia_ocupacional", 
-            regex: /\b(terapia\s+ocupacional|terapeuta\s+ocupacional|t\.?\s*o\.?|\bto\b|ocupacional|integração sensorial|sensorial|coordenação motora|motricidade|avd|atividades de vida diária|pinça|lateralidade|canhoto|destro|reflexos|alimentação|vestir|banho)\b/i 
+        {
+            id: "terapia_ocupacional",
+            regex: /\b(terapia\s+ocupacional|terapeuta\s+ocupacional|t\.?\s*o\.?|\bto\b|ocupacional|integração sensorial|sensorial|coordenação motora|motricidade|avd|atividades de vida diária|pinça|lateralidade|canhoto|destro|reflexos|alimentação|vestir|banho)\b/i
         },
-        { 
-            id: "fisioterapia", 
-            regex: /\b(fisioterapia|fisio|fisioterapeuta|atraso motor|desenvolvimento motor|não engatinhou|não andou|andar na ponta|pé torto|torticolo|assimetria|prematuro|hipotonia|hipertonia|espasticidade|fortalecimento|equilíbrio|cair|tropeça|postura|escoliose|engatinhar)\b/i 
+        {
+            id: "fisioterapia",
+            regex: /\b(fisioterapia|fisio|fisioterapeuta|atraso motor|desenvolvimento motor|não engatinhou|não andou|andar na ponta|pé torto|torticolo|assimetria|prematuro|hipotonia|hipertonia|espasticidade|fortalecimento|equilíbrio|cair|tropeça|postura|escoliose|engatinhar)\b/i
         },
-        { 
-            id: "psicopedagogia", 
-            regex: /\b(psicopedagogia|psicopedagogo|reforço escolar|acompanhamento escolar|dificuldade escolar|alfabetização|adaptação curricular)\b/i 
+        {
+            id: "psicopedagogia",
+            regex: /\b(psicopedagogia|psicopedagogo|reforço escolar|acompanhamento escolar|dificuldade escolar|alfabetização|adaptação curricular)\b/i
         },
-        { 
-            id: "psicologia", 
-            regex: /\b(psicolog(?:ia|o|a)|psicoterapia|comportamento|ansiedade|depressão|medo|fobia|birra|não obedece|agressivo|não dorme|insônia|pesadelo|enurese|encoprese|autolesão|toc|ritual|hiperativid|tdah|tda)(?!\s*pedagog|.*neuro)\b/i 
+        {
+            id: "psicologia",
+            regex: /\b(psicolog(?:ia|o|a)|psicoterapia|comportamento|ansiedade|depressão|medo|fobia|birra|não obedece|agressivo|não dorme|insônia|pesadelo|enurese|encoprese|autolesão|toc|ritual|hiperativid|tdah|tda)(?!\s*pedagog|.*neuro)\b/i
         },
-        { 
-            id: "neuropsicologia", 
-            regex: /\b(neuropsicolog(?:ia|o|a)|neuropsi|avaliação neuropsicológica|laudo|teste de qi|funções executivas|memória|atenção|dificuldade de aprendizagem|dislexia|discalculia|superdotação|altas habilidades|tea|autismo|espectro autista|neurodesenvolvimento)\b/i 
+        {
+            id: "neuropsicologia",
+            regex: /\b(neuropsicolog(?:ia|o|a)|neuropsi|avaliação neuropsicológica|laudo|teste de qi|funções executivas|memória|atenção|dificuldade de aprendizagem|dislexia|discalculia|superdotação|altas habilidades|tea|autismo|espectro autista|neurodesenvolvimento)\b/i
         },
-        { 
-            id: "musicoterapia", 
-            regex: /\b(musicoterapia|musicoterapeuta|música|musical|ritmo|melodia|instrumento musical|estimulação musical)\b/i 
+        {
+            id: "musicoterapia",
+            regex: /\b(musicoterapia|musicoterapeuta|música|musical|ritmo|melodia|instrumento musical|estimulação musical)\b/i
         },
     ];
 
@@ -5054,7 +5201,7 @@ async function callClaudeWithTherapyData({
         const complaint = ctx.primaryComplaint ?? ctx.complaint ?? lead?.complaint;
         const therapyArea = ctx.therapyArea ?? lead?.therapyArea;
         const period = ctx.preferredTime ?? lead?.pendingPreferredPeriod;
-        
+
         if (fullName) parts.push(`nome: "${fullName}"`);
         if (age) parts.push(`idade: ${age}`);
         if (birthday) parts.push(`nascimento: ${birthday}`);
@@ -5387,11 +5534,11 @@ ${useModule("noNameBeforeSlotRule")}
 
     // 🆕 MONTA CONTEXTO ADICIONAL (Manual Intent, TEA Status, Scheduling Decision)
     let additionalContext = "";
-    
+
     if (safeContext.manualIntent) {
         additionalContext += `\n🎯 INTENÇÃO DETECTADA: ${safeContext.manualIntent.intent} (${safeContext.manualIntent.category})`;
     }
-    
+
     if (safeContext.teaStatus && safeContext.teaStatus !== "desconhecido") {
         const teaContextMap = {
             "laudo_confirmado": "Paciente tem laudo de TEA confirmado - prioridade e acolhimento especial",
@@ -5399,13 +5546,13 @@ ${useModule("noNameBeforeSlotRule")}
         };
         additionalContext += `\n🧩 CONTEXTO TEA: ${teaContextMap[safeContext.teaStatus] || safeContext.teaStatus}`;
     }
-    
+
     if (safeContext.shouldOfferScheduling !== undefined) {
-        additionalContext += safeContext.shouldOfferScheduling 
+        additionalContext += safeContext.shouldOfferScheduling
             ? "\n📅 MOMENTO: Contexto propício para oferecer agendamento se fizer sentido"
             : "\n📅 MOMENTO: Ainda não é hora de pressionar agendamento - foco em informação";
     }
-    
+
     // 🧠 Monta nota sobre dados já coletados (evita perguntar de novo)
     const knownDataNote = (() => {
         const parts = [];
@@ -5642,11 +5789,11 @@ const buildSystemContext = (flags, text = "", stage = "novo") => ({
  */
 async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null) {
     console.log('🧠 [AMANDA-SÊNIOR] Analisando:', text.substring(0, 50));
-    
+
     // 1. EXTRAÇÃO MÁXIMA
     // 🔥 USA flagsDetector.js COMPLETO (não recria localmente)
     const fullFlags = deriveFlagsFromText(text);
-    
+
     const extracted = {
         responsibleName: null,
         patientName: null,
@@ -5663,7 +5810,7 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
             mentionsChild: fullFlags.mentionsChild || fullFlags.ageGroup === 'crianca',
             asksPlans: fullFlags.asksPlans,
             asksLocation: fullFlags.asksLocation,
-            
+
             // 🔥 FLAGS DO flagsDetector.js que estavam sendo IGNORADAS
             wantsPartnershipOrResume: fullFlags.wantsPartnershipOrResume,
             wantsJobOrInternship: fullFlags.wantsJobOrInternship,
@@ -5671,7 +5818,7 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
             hasProfessionalIntro: fullFlags.hasProfessionalIntro,
             hasJobContext: fullFlags.hasJobContext,
             hasCurriculumTerms: fullFlags.hasCurriculumTerms,
-            
+
             // Outras flags importantes
             mentionsTEA_TDAH: fullFlags.mentionsTEA_TDAH,
             mentionsPriceObjection: fullFlags.mentionsPriceObjection,
@@ -5694,22 +5841,22 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
             wantsReschedule: fullFlags.wantsReschedule,
             saysThanks: fullFlags.saysThanks,
             saysBye: fullFlags.saysBye,
-            
+
             // Flags de idade
             mentionsBaby: fullFlags.mentionsBaby,
             mentionsTeen: fullFlags.mentionsTeen,
             mentionsAdult: fullFlags.mentionsAdult,
             ageGroup: fullFlags.ageGroup,
-            
+
             // Logs para debug
             _rawFlags: fullFlags // Mantém referência completa para debug
         }
     };
-    
+
     console.log('[FLAGS-DETECTOR] Flags extraídos:', Object.entries(extracted.flags)
         .filter(([k, v]) => v === true || (typeof v === 'string' && v))
         .reduce((a, [k, v]) => { a[k] = v; return a; }, {}));
-    
+
     // 🔧 EXTRAÇÃO DE NOME - Múltiplos padrões
     const namePatterns = [
         // Padrão 1: "Ele se chama Pedro Henrique"
@@ -5742,7 +5889,7 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
             }
         }
     }
-    
+
     // Extrai idade
     const ageMatch = text.match(/(\d+)\s*(anos?|meses?)/i);
     if (ageMatch) {
@@ -5750,12 +5897,12 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
         extracted.patientAgeUnit = ageMatch[2].toLowerCase().startsWith('m') ? 'meses' : 'anos';
         if (extracted.patientAge <= 12) extracted.flags.mentionsChild = true;
     }
-    
+
     // Extrai período
     if (/\bmanh[ãa]\b/i.test(text)) extracted.preferredPeriod = 'manha';
     else if (/\btarde\b/i.test(text)) extracted.preferredPeriod = 'tarde';
     else if (/\bnoite\b/i.test(text)) extracted.preferredPeriod = 'noite';
-    
+
     // Extrai therapyArea - PRIMEIRO: usa therapyDetector (detectAllTherapies)
     let detectedTherapies = [];
     try {
@@ -5764,7 +5911,7 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
         console.warn('[processMessageLikeAmanda] Erro em detectAllTherapies:', err.message);
         detectedTherapies = [];
     }
-    
+
     if (detectedTherapies.length > 0) {
         // Mapeia ID do therapyDetector para nome da área no banco
         const areaMap = {
@@ -5780,7 +5927,7 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
         };
         extracted.therapyArea = areaMap[detectedTherapies[0].id] || null;
     }
-    
+
     // 🔧 EXTRAÇÃO DE QUEIXA → ÁREA TERAPÊUTICA (mapeamento expandido)
     const complaintToArea = [
         // FONOAUDIOLOGIA
@@ -5796,7 +5943,7 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
         // PSICOPEDAGOGIA → Mapeia para neuropsicologia
         { patterns: [/\b(psicopedagogia|psicopedagogo|psicopedagoga|dificuldade escolar|dificuldade de aprendizagem|dificuldade para ler|dificuldade para escrever|dislexia|discalculia|disgrafia|tdah escolar|atraso escolar|baixo rendimento|não aprende|não consegue aprender|repetiu|reprovação|escrita|leitura|matemática|cálculo|interpretação|texto)\b/i], area: 'neuropsicologia' }
     ];
-    
+
     // Só deriva da queixa se não detectou área explicitamente
     if (!extracted.therapyArea) {
         for (const mapping of complaintToArea) {
@@ -5811,13 +5958,13 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
             if (extracted.therapyArea) break;
         }
     }
-    
+
     // 🔧 DETECÇÃO: Multi terapias / Multiprofissional (com validação)
     // Só ativa se NÃO for uma correção (quando usuário está trocando de área)
     const isCorrection = /\b(não|correção|troca|mudei|desculpe|errado|queria)\b.*\b(fono|psico|neuro|to|fisio)/i.test(text);
     const hasMultipleExplicit = /\b(precisa\s+de\s+tudo|todas\s+(?:as\s+)?áreas?|todas\s+(?:as\s+)?especialidades?|equipe\s+mult|multi\s*profissional)\b/i.test(text);
     const hasMultipleCombination = /\b(fono.*psico|psico.*fono|fono.*to|to.*fono|neuro.*fono|fono.*neuro)\b/i.test(text);
-    
+
     if (!isCorrection && (hasMultipleExplicit || hasMultipleCombination)) {
         extracted.flags.multidisciplinary = true;
         extracted.therapyArea = "multiprofissional";
@@ -5825,60 +5972,60 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
     } else if (isCorrection && hasMultipleCombination) {
         console.log('[AMANDA-SÊNIOR] Correção de área detectada - ignorando multiprofissional');
     }
-    
+
     // Detecta intenção
     if (extracted.flags.wantsSchedule) extracted.intent = 'agendar';
     else if (extracted.flags.asksPrice) extracted.intent = 'preco';
     else if (extracted.flags.asksPlans) extracted.intent = 'plano';
-    
+
     // 2. VALIDAÇÃO DE SERVIÇO
     const VALID_AREAS = ['fonoaudiologia', 'psicologia', 'terapia_ocupacional', 'fisioterapia', 'musicoterapia', 'neuropsicologia', 'psicopedagogia'];
-    
+
     let serviceStatus = 'available';
     let serviceMessage = null;
-    
+
     if (extracted.therapyArea && !VALID_AREAS.includes(extracted.therapyArea)) {
         serviceStatus = 'not_available';
         serviceMessage = `Não temos ${extracted.therapyArea}. Temos fonoaudiologia, psicologia, terapia ocupacional... Quer saber mais?`;
     }
-    
+
     // Validação idade psicologia
     if (extracted.therapyArea === 'psicologia' && extracted.patientAge > 16) {
         serviceStatus = 'age_limit';
         serviceMessage = 'Atendemos psicologia apenas até 16 anos. Temos neuropsicologia para adultos 💚';
     }
-    
+
     // 3. FALLBACK: Se não detectou therapyArea do texto atual, usa a do lead
     if (!extracted.therapyArea && lead?.therapyArea) {
         console.log(`[CTX-RECOVERY] therapyArea recuperado do Lead: ${lead.therapyArea}`);
         extracted.therapyArea = lead.therapyArea;
     }
-    
+
     // Fallback para enrichedContext (memória da Amanda)
     if (!extracted.therapyArea && enrichedContext?.therapyArea) {
         console.log(`[CTX-RECOVERY] therapyArea recuperado do Contexto: ${enrichedContext.therapyArea}`);
         extracted.therapyArea = enrichedContext.therapyArea;
     }
-    
+
     // 3.5 DERIVA therapyArea do conversationSummary (se ainda não tem)
     if (!extracted.therapyArea && lead?.conversationSummary) {
         console.log('[AMANDA-SÊNIOR] Tentando derivar therapyArea do summary...');
         const summary = lead.conversationSummary.toLowerCase();
-        const inferredArea = 
+        const inferredArea =
             /fonoaudiologia|fono|\bteste da linguinha\b/i.test(summary) ? 'fonoaudiologia' :
-            /neuropsicologia|neuropsi|avaliação neuropsicológica/i.test(summary) ? 'neuropsicologia' :
-            /psicologia(?!.*pedagogia)|\bpsic[oó]logo/i.test(summary) ? 'psicologia' :
-            /terapia ocupacional|terapeuta ocupacional|\bto\b|ocupacional/i.test(summary) ? 'terapia_ocupacional' :
-            /fisioterapia|\bfisio/i.test(summary) ? 'fisioterapia' :
-            /psicopedagogia|neuropsicopedagogia/i.test(summary) ? 'neuropsicologia' :
-            /musicoterapia/i.test(summary) ? 'musicoterapia' :
-            null;
+                /neuropsicologia|neuropsi|avaliação neuropsicológica/i.test(summary) ? 'neuropsicologia' :
+                    /psicologia(?!.*pedagogia)|\bpsic[oó]logo/i.test(summary) ? 'psicologia' :
+                        /terapia ocupacional|terapeuta ocupacional|\bto\b|ocupacional/i.test(summary) ? 'terapia_ocupacional' :
+                            /fisioterapia|\bfisio/i.test(summary) ? 'fisioterapia' :
+                                /psicopedagogia|neuropsicopedagogia/i.test(summary) ? 'neuropsicologia' :
+                                    /musicoterapia/i.test(summary) ? 'musicoterapia' :
+                                        null;
         if (inferredArea) {
             console.log('[AMANDA-SÊNIOR] TherapyArea inferida do summary:', inferredArea);
             extracted.therapyArea = inferredArea;
         }
     }
-    
+
     // 4. DERIVA therapyArea da queixa salva (se não detectou na mensagem atual E não tem no lead)
     if (!extracted.therapyArea && lead?.complaint) {
         console.log('[AMANDA-SÊNIOR] Tentando derivar therapyArea da queixa:', lead.complaint);
@@ -5923,66 +6070,66 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
             console.warn('[processMessageLikeAmanda] Erro ao derivar therapyArea da queixa:', err.message);
         }
     }
-    
+
     // 4. O QUE FALTA? (Considera dados do lead + contexto enriquecido + extraído do texto)
-    const hasPeriod = lead?.pendingPreferredPeriod || 
-                      lead?.preferredTime ||
-                      lead?.autoBookingContext?.preferredPeriod ||
-                      enrichedContext?.preferredTime || 
-                      lead?.qualificationData?.disponibilidade || 
-                      lead?.qualificationData?.extractedInfo?.preferredPeriod ||
-                      extracted.preferredPeriod;
-    
+    const hasPeriod = lead?.pendingPreferredPeriod ||
+        lead?.preferredTime ||
+        lead?.autoBookingContext?.preferredPeriod ||
+        enrichedContext?.preferredTime ||
+        lead?.qualificationData?.disponibilidade ||
+        lead?.qualificationData?.extractedInfo?.preferredPeriod ||
+        extracted.preferredPeriod;
+
     // Log de recuperação de período
     if (!extracted.preferredPeriod && hasPeriod) {
         const recoveredPeriod = lead?.pendingPreferredPeriod || lead?.preferredTime || lead?.autoBookingContext?.preferredPeriod || enrichedContext?.preferredTime;
         console.log(`[CTX-RECOVERY] preferredPeriod recuperado: ${recoveredPeriod}`);
     }
-    
-    const hasName = lead?.patientInfo?.fullName || 
-                    lead?.patientInfo?.name ||
-                    enrichedContext?.name || 
-                    lead?.qualificationData?.extractedInfo?.nome || 
-                    lead?.qualificationData?.extractedInfo?.name ||
-                    extracted.patientName;
-    
+
+    const hasName = lead?.patientInfo?.fullName ||
+        lead?.patientInfo?.name ||
+        enrichedContext?.name ||
+        lead?.qualificationData?.extractedInfo?.nome ||
+        lead?.qualificationData?.extractedInfo?.name ||
+        extracted.patientName;
+
     // Log de recuperação de nome
     if (!extracted.patientName && hasName) {
         const recoveredName = lead?.patientInfo?.fullName || lead?.patientInfo?.name || enrichedContext?.name || lead?.qualificationData?.extractedInfo?.nome;
         console.log(`[CTX-RECOVERY] patientName recuperado: ${recoveredName}`);
     }
-    
-    const hasAge = lead?.patientInfo?.age || 
-                   lead?.patientAge ||
-                   enrichedContext?.patientAge || 
-                   lead?.qualificationData?.extractedInfo?.idade || 
-                   lead?.qualificationData?.extractedInfo?.age ||
-                   lead?.qualificationData?.idade || 
-                   extracted.patientAge;
-    
+
+    const hasAge = lead?.patientInfo?.age ||
+        lead?.patientAge ||
+        enrichedContext?.patientAge ||
+        lead?.qualificationData?.extractedInfo?.idade ||
+        lead?.qualificationData?.extractedInfo?.age ||
+        lead?.qualificationData?.idade ||
+        extracted.patientAge;
+
     // Log de recuperação de idade
     if (!extracted.patientAge && hasAge) {
         const recoveredAge = lead?.patientInfo?.age || lead?.patientAge || enrichedContext?.patientAge || lead?.qualificationData?.extractedInfo?.idade;
         console.log(`[CTX-RECOVERY] patientAge recuperado: ${recoveredAge}`);
     }
-    
-    const hasComplaint = lead?.complaint || 
-                         enrichedContext?.primaryComplaint || 
-                         lead?.qualificationData?.extractedInfo?.queixa || 
-                         extracted.complaint;
-    
-    const hasTherapyArea = lead?.therapyArea || 
-                           enrichedContext?.therapyArea || 
-                           lead?.qualificationData?.extractedInfo?.especialidade || 
-                           extracted.therapyArea;
-    
+
+    const hasComplaint = lead?.complaint ||
+        enrichedContext?.primaryComplaint ||
+        lead?.qualificationData?.extractedInfo?.queixa ||
+        extracted.complaint;
+
+    const hasTherapyArea = lead?.therapyArea ||
+        enrichedContext?.therapyArea ||
+        lead?.qualificationData?.extractedInfo?.especialidade ||
+        extracted.therapyArea;
+
     const missing = [];
     if (!hasTherapyArea && serviceStatus === 'available') missing.push('therapyArea');
     if (!hasName) missing.push(extracted.responsibleName ? 'patientName' : 'name');
     if (!hasAge) missing.push('age');
     if (!hasPeriod) missing.push('period');
     if (!hasComplaint) missing.push('complaint');
-    
+
     console.log('[AMANDA-SÊNIOR] Checking lead data:', {
         hasName: !!hasName,
         hasAge: !!hasAge,
@@ -5997,7 +6144,7 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
         qualificationIdade: lead?.qualificationData?.extractedInfo?.idade || lead?.qualificationData?.idade,
         missing: missing
     });
-    
+
     return {
         extracted,
         missing,
@@ -6013,22 +6160,22 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
 function buildSimpleResponse(missing, extracted, lead, enrichedContext = null) {
     const [first] = missing;
     const respName = extracted.responsibleName || lead?.responsibleName;
-    const patientName = extracted.patientName || 
-                        lead?.patientInfo?.fullName || 
-                        enrichedContext?.name ||
-                        lead?.qualificationData?.extractedInfo?.nome;
-    const age = extracted.patientAge || 
-                lead?.patientInfo?.age || 
-                enrichedContext?.patientAge ||
-                lead?.qualificationData?.extractedInfo?.idade || 
-                lead?.qualificationData?.idade;
-    
+    const patientName = extracted.patientName ||
+        lead?.patientInfo?.fullName ||
+        enrichedContext?.name ||
+        lead?.qualificationData?.extractedInfo?.nome;
+    const age = extracted.patientAge ||
+        lead?.patientInfo?.age ||
+        enrichedContext?.patientAge ||
+        lead?.qualificationData?.extractedInfo?.idade ||
+        lead?.qualificationData?.idade;
+
     // 🔧 NOVO: Recupera área terapêutica do contexto para personalizar respostas
-    const currentArea = extracted.therapyArea || 
-                        lead?.therapyArea || 
-                        enrichedContext?.therapyArea ||
-                        lead?.qualificationData?.extractedInfo?.therapyArea;
-    
+    const currentArea = extracted.therapyArea ||
+        lead?.therapyArea ||
+        enrichedContext?.therapyArea ||
+        lead?.qualificationData?.extractedInfo?.therapyArea;
+
     // Nome amigável da área para exibição
     const areaDisplayNames = {
         'psicologia': 'Psicologia',
@@ -6044,21 +6191,21 @@ function buildSimpleResponse(missing, extracted, lead, enrichedContext = null) {
         'musicoterapia': 'Musicoterapia'
     };
     const areaDisplay = currentArea ? (areaDisplayNames[currentArea] || currentArea) : null;
-    
-    console.log('[buildSimpleResponse] Building response:', { 
-        firstMissing: first, 
-        hasPatientName: !!patientName, 
+
+    console.log('[buildSimpleResponse] Building response:', {
+        firstMissing: first,
+        hasPatientName: !!patientName,
         hasAge: !!age,
         hasArea: !!currentArea,
         area: areaDisplay,
         patientNameValue: patientName,
         ageValue: age
     });
-    
+
     switch (first) {
         case 'therapyArea':
             return ensureSingleHeart(`Oi${respName ? ' ' + respName : ''}! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚`);
-            
+
         case 'period':
             // 🔧 Melhorado: Contextualiza com área terapêutica quando disponível
             let contextMsg = '';
@@ -6072,7 +6219,7 @@ function buildSimpleResponse(missing, extracted, lead, enrichedContext = null) {
                 contextMsg = `Oi${respName ? ' ' + respName : ''}! 💚\n`;
             }
             return ensureSingleHeart(contextMsg + "Pra eu organizar, prefere **manhã ou tarde**? 😊");
-            
+
         case 'name':
         case 'patientName':
             // 🔧 Melhorado: Contextualiza com área terapêutica quando disponível
@@ -6084,7 +6231,7 @@ function buildSimpleResponse(missing, extracted, lead, enrichedContext = null) {
                 return ensureSingleHeart(`Oi ${respName}! Entendi que é para seu filho(a). Qual o **nome completo** da criança? 💚`);
             }
             return ensureSingleHeart("Oi! Pra eu organizar, qual o **nome completo** do paciente? 😊");
-            
+
         case 'age':
             // 🔧 Melhorado: Contextualiza com área terapêutica quando disponível
             if (areaDisplay && patientName) {
@@ -6095,10 +6242,10 @@ function buildSimpleResponse(missing, extracted, lead, enrichedContext = null) {
                 return ensureSingleHeart(`Oi! Entendi que é para **${areaDisplay}**. 💚 Qual a **idade** do paciente? (anos ou meses)`);
             }
             return ensureSingleHeart("Qual a **idade** do paciente? (anos ou meses) 😊");
-            
+
         case 'complaint':
             return ensureSingleHeart("Me conta um pouquinho: qual a principal preocupação que vocês têm? 💚");
-            
+
         default:
             return ensureSingleHeart("Pra eu organizar, prefere **manhã ou tarde**? 😊");
     }
