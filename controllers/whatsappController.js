@@ -366,6 +366,14 @@ export const whatsappController = {
             const change = req.body.entry?.[0]?.changes?.[0]; // Pega o change
             const value = change?.value; // GUARDA O VALUE
 
+            // 🆕 PROCESSAR STATUS DE ENTREGA (mensagens enviadas)
+            if (value?.statuses && value.statuses.length > 0) {
+                for (const status of value.statuses) {
+                    await processMessageStatus(status);
+                }
+                return; // Não processa como mensagem recebida
+            }
+
             const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0] || value?.messages?.[0];
             if (!msg) return;
 
@@ -1164,6 +1172,56 @@ export const whatsappController = {
         }
     }
 };
+
+// 🆕 FUNÇÃO PARA PROCESSAR STATUS DE ENTREGA
+async function processMessageStatus(status) {
+    const { id: messageId, status: msgStatus, recipient_id, timestamp, errors } = status;
+    
+    console.log(`[WEBHOOK-STATUS] Mensagem ${messageId} para ${recipient_id}: ${msgStatus}`);
+    
+    try {
+        // Buscar mensagem no banco pelo waMessageId
+        const Message = (await import('../models/Message.js')).default;
+        const msg = await Message.findOne({ waMessageId: messageId });
+        
+        if (!msg) {
+            console.log(`[WEBHOOK-STATUS] Mensagem ${messageId} não encontrada no banco`);
+            return;
+        }
+        
+        // Atualizar status
+        msg.status = msgStatus;
+        
+        // Se falhou, registrar erro e emitir alerta
+        if (msgStatus === 'failed' && errors) {
+            console.error(`[WEBHOOK-STATUS] ❌ FALHA ao entregar para ${recipient_id}:`, errors);
+            
+            // Emitir alerta via socket
+            const { getIo } = await import('../config/socket.js');
+            const io = getIo();
+            if (io) {
+                io.emit('whatsapp:message:failed', {
+                    messageId,
+                    leadId: msg.lead,
+                    phone: recipient_id,
+                    error: errors[0],
+                    content: msg.content?.substring(0, 100),
+                    timestamp: new Date()
+                });
+            }
+        }
+        
+        // Se entregue, logar sucesso
+        if (msgStatus === 'delivered') {
+            console.log(`[WEBHOOK-STATUS] ✅ Mensagem entregue para ${recipient_id}`);
+        }
+        
+        await msg.save();
+        
+    } catch (error) {
+        console.error('[WEBHOOK-STATUS] Erro ao processar status:', error.message);
+    }
+}
 
 // ✅ FUNÇÃO SEPARADA (não depende do this)
 async function processInboundMessage(msg, value) {
