@@ -56,18 +56,15 @@ export const normalizeE164BR = (phone) => {
     // Celulares no Brasil devem ter: 55 (2) + DDD (2) + 9 (1) + número (8) = 13 dígitos
     // Fixos têm: 55 (2) + DDD (2) + número (8) = 12 dígitos
 
-    // Se tem 12 dígitos (55 + DDD + 8 dígitos), pode ser celular sem o 9
+    // Se tem 12 dígitos (55 + DDD + 8 dígitos), pode estar faltando o 9
     if (s.length === 12) {
         const ddd = s.substring(2, 4);
         const primeiroDigito = s.substring(4, 5);
         
-        // Se o primeiro dígito depois do DDD NÃO é 9, provavelmente é celular antigo
-        // Adicionamos o 9 (exceto para números de São Paulo que começam com 9)
-        // Na verdade, na maior parte do Brasil, celulares devem ter 9
-        // Vamos adicionar o 9 se não estiver presente
+        // Se o primeiro dígito depois do DDD é 6,7,8 → é celular SEM o 9
+        // Adicionamos o 9 para celulares
+        // Fixos (2,3,4,5) e celulares que já tem 9 ficam como estão
         if (primeiroDigito !== "9") {
-            // Verifica se é celular (primeiro dígito do número é 6,7,8,9)
-            // ou se é fixo (2,3,4,5)
             const primeiroDigitoNum = parseInt(primeiroDigito);
             
             // Se começa com 6,7,8,9 → é celular, adiciona 9 na frente
@@ -75,7 +72,7 @@ export const normalizeE164BR = (phone) => {
                 s = s.substring(0, 4) + "9" + s.substring(4);
                 console.log(`📞 [PHONE] Adicionado 9 dígito: ${phone} → ${s}`);
             }
-            // Se começa com 2,3,4,5 → é fixo, mantém assim
+            // Se começa com 2,3,4,5 → é fixo, mantém assim (SEM 9)
         }
     }
 
