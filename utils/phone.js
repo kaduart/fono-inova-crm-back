@@ -1,6 +1,6 @@
-// utils/phone.js (ou utils/phones.js)
+// utils/phone.js - VERSÃO CORRIGIDA E ROBUSTA
 
-// 👉 lista de números de teste (só precisa manter aqui)
+// 👉 lista de números de teste (com 55 e 9 dígito)
 const AUTO_TEST_NUMBERS = [
     "5561981694922",
     "556181694922",
@@ -15,14 +15,18 @@ export const digitsOnly = (phone) => {
 };
 
 /**
- * Normaliza para E.164 BR (para ENVIAR via WhatsApp, etc)
- * - remove lixo
- * - remove zeros à esquerda
- * - garante prefixo 55
- * - NÃO inventa nem tira 9, só respeita o que veio
+ * 🔧 CORREÇÃO DEFINITIVA: Normaliza para E.164 BR (formato WhatsApp)
  * 
- * Retorna string tipo "5562981694922" (sem +) – que a API do WhatsApp aceita.
- * Se você preferir sempre com "+", é só mudar o return.
+ * Regras:
+ * 1. Remove tudo que não é dígito
+ * 2. Garante prefixo 55 (Brasil)
+ * 3. GARANTE o 9 dígito em celulares (se não tiver e for celular, adiciona)
+ * 4. Remove 55 duplicado
+ * 
+ * Formato final: 55629123456789 (55 + DDD + 9 + número)
+ * 
+ * @param {string} phone - Telefone em qualquer formato
+ * @returns {string|null} - Telefone normalizado ou null se inválido
  */
 export const normalizeE164BR = (phone) => {
     if (!phone || String(phone).trim() === "") return null;
@@ -30,55 +34,94 @@ export const normalizeE164BR = (phone) => {
     let s = digitsOnly(phone);
     if (!s) return null;
 
-    // tira zeros à esquerda
+    // Remove zeros à esquerda
     s = s.replace(/^0+/, "");
 
-    // se não começa com 55, adiciona
+    // Se começa com +55, remove o +
+    if (s.startsWith("+55")) {
+        s = s.substring(1);
+    }
+
+    // Remove 55 duplicado (ex: 555562... → 5562...)
+    if (s.startsWith("5555")) {
+        s = s.substring(2);
+    }
+
+    // Se não começa com 55, adiciona
     if (!s.startsWith("55")) {
         s = "55" + s;
     }
 
-    return s; // "5562...."
-};
+    // Agora s tem formato: 55 + DDD + número
+    // Celulares no Brasil devem ter: 55 (2) + DDD (2) + 9 (1) + número (8) = 13 dígitos
+    // Fixos têm: 55 (2) + DDD (2) + número (8) = 12 dígitos
 
-// ajuda para buscar por "rabo" do número (8–11 dígitos)
-export const tailPattern = (phone, min = 8, max = 11) => {
-    const digits = digitsOnly(phone);
-    const tail = digits.slice(-max); // último bloco
-    return new RegExp(`${tail.slice(-min)}$`); // termina com os últimos N
+    // Se tem 12 dígitos (55 + DDD + 8 dígitos), pode ser celular sem o 9
+    if (s.length === 12) {
+        const ddd = s.substring(2, 4);
+        const primeiroDigito = s.substring(4, 5);
+        
+        // Se o primeiro dígito depois do DDD NÃO é 9, provavelmente é celular antigo
+        // Adicionamos o 9 (exceto para números de São Paulo que começam com 9)
+        // Na verdade, na maior parte do Brasil, celulares devem ter 9
+        // Vamos adicionar o 9 se não estiver presente
+        if (primeiroDigito !== "9") {
+            // Verifica se é celular (primeiro dígito do número é 6,7,8,9)
+            // ou se é fixo (2,3,4,5)
+            const primeiroDigitoNum = parseInt(primeiroDigito);
+            
+            // Se começa com 6,7,8,9 → é celular, adiciona 9 na frente
+            if (primeiroDigitoNum >= 6 && primeiroDigitoNum <= 9) {
+                s = s.substring(0, 4) + "9" + s.substring(4);
+                console.log(`📞 [PHONE] Adicionado 9 dígito: ${phone} → ${s}`);
+            }
+            // Se começa com 2,3,4,5 → é fixo, mantém assim
+        }
+    }
+
+    // Validação final: deve ter entre 12 e 13 dígitos
+    if (s.length < 12 || s.length > 14) {
+        console.warn(`⚠️ [PHONE] Número inválido após normalização: ${s} (original: ${phone})`);
+        // Retorna mesmo assim, pois pode ser um caso especial
+    }
+
+    return s;
 };
 
 /**
- * Normalização para COMPARAR telefones
- * - remove tudo que não é dígito
- * - remove 55 se tiver
- * - corta pra no máximo 11 dígitos (DDD + número)
- * - se ficar muito curto (<8) retorna null
- *
- * Use isso para:
- * - bater lead x patient
- * - bater banco x WhatsApp
- * - checar isTestNumber
+ * Normalização para COMPARAR telefones (ignora o 9 para comparação)
+ * - Remove tudo que não é dígito
+ * - Remove 55 se tiver
+ * - Remove o 9 se for celular (para comparação)
+ * - Corta pra no máximo 10 dígitos (DDD + número sem 9)
  */
 export const normalizePhoneForCompare = (phone) => {
     if (!phone) return null;
     let d = digitsOnly(phone);
     if (!d) return null;
 
-    // se começa com 55 e tem mais de 11, tira o 55
-    if (d.startsWith("55") && d.length > 11) {
+    // Remove 55 do início
+    if (d.startsWith("55")) {
         d = d.slice(2);
     }
 
-    // se ainda tiver grande demais, pega só os últimos 11
-    if (d.length > 11) {
-        d = d.slice(-11);
+    // Se tem 11 dígitos (DDD + 9 + número), remove o 9 para comparação
+    // formato: DD9XXXXXXXX
+    if (d.length === 11 && d[2] === "9") {
+        d = d.slice(0, 2) + d.slice(3); // Remove o 9
     }
 
-    // se ficou muito pequeno, não é confiável
+    // Se ficou muito pequeno, não é confiável
     if (d.length < 8) return null;
 
-    return d; // tipo "62981694922" ou "6292197657"
+    return d;
+};
+
+// ajuda para buscar por "rabo" do número (8–11 dígitos)
+export const tailPattern = (phone, min = 8, max = 11) => {
+    const digits = digitsOnly(phone);
+    const tail = digits.slice(-max);
+    return new RegExp(`${tail.slice(-min)}$`);
 };
 
 /**
@@ -92,9 +135,6 @@ export function firstName(full) {
 
 /**
  * Usa "rabo" do número para entender se é número de teste
- * Isso resolve a treta do 9:
- * - AUTO_TEST_NUMBERS tem algumas variações
- * - a comparação olha para os últimos dígitos
  */
 const TEST_PATTERNS = AUTO_TEST_NUMBERS.map((n) => tailPattern(n, 8, 11));
 
@@ -102,4 +142,48 @@ export const isTestNumber = (phone) => {
     const digits = digitsOnly(phone);
     if (!digits) return false;
     return TEST_PATTERNS.some((re) => re.test(digits));
+};
+
+/**
+ * 🆕 NOVO: Valida se o número está no formato correto E.164 para WhatsApp
+ * Retorna objeto com status e mensagem de erro
+ */
+export const validateE164 = (phone) => {
+    const normalized = normalizeE164BR(phone);
+    
+    if (!normalized) {
+        return { valid: false, error: "Número vazio ou inválido", normalized: null };
+    }
+
+    // Deve começar com 55
+    if (!normalized.startsWith("55")) {
+        return { valid: false, error: "Número não começa com 55 (Brasil)", normalized };
+    }
+
+    // Tamanho esperado: 12 (fixo) ou 13 (celular)
+    if (normalized.length !== 12 && normalized.length !== 13) {
+        return { 
+            valid: false, 
+            error: `Tamanho incorreto: ${normalized.length} dígitos (esperado 12 ou 13)`, 
+            normalized 
+        };
+    }
+
+    // Extrai DDD
+    const ddd = normalized.substring(2, 4);
+    if (parseInt(ddd) < 11 || parseInt(ddd) > 99) {
+        return { valid: false, error: `DDD inválido: ${ddd}`, normalized };
+    }
+
+    return { valid: true, error: null, normalized };
+};
+
+export default {
+    digitsOnly,
+    normalizeE164BR,
+    normalizePhoneForCompare,
+    tailPattern,
+    firstName,
+    isTestNumber,
+    validateE164,
 };

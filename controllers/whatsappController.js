@@ -1191,8 +1191,19 @@ async function processInboundMessage(msg, value) {
             process.env.CLINIC_PHONE_E164 ||
             "";
 
+        // 🔧 CORREÇÃO: Normalização robusta do telefone
         const from = normalizeE164BR(fromRaw);
         const to = normalizeE164BR(toRaw);
+
+        // 🆕 LOG DEBUG: Mostrar transformação do número
+        console.log("📞 [WEBHOOK PHONE] Normalização:", {
+            fromRaw,
+            fromNormalized: from,
+            toRaw,
+            toNormalized: to,
+            fromLength: from?.length,
+            toLength: to?.length
+        });
 
         // ✅ FIX: define `type` logo no início (antes de qualquer uso)
         const type = msg.type;

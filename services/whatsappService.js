@@ -441,7 +441,22 @@ export async function sendTextMessage({
     const token = await requireToken();
     if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
 
+    // 🔧 CORREÇÃO: Normalização robusta do telefone
+    const originalTo = to;
     const phone = normalizeE164BR(to);
+    
+    // 🆕 LOG DEBUG: Mostrar transformação do número
+    console.log("📞 [SEND PHONE] Normalização:", {
+        originalTo,
+        phoneNormalized: phone,
+        originalLength: originalTo?.length,
+        normalizedLength: phone?.length
+    });
+    
+    if (!phone) {
+        throw new Error(`Número de telefone inválido: ${originalTo}`);
+    }
+    
     const url = `${META_URL}/${PHONE_ID}/messages`;
     const formattedText = formatWhatsAppText(text, { mode: formatMode });
 
