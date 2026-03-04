@@ -33,7 +33,6 @@ const MAX_WAMID_CACHE_SIZE = 1000;
 
 const logger = new Logger('whatsappController');
 
-
 export const whatsappController = {
 
     async sendTemplate(req, res) {
@@ -342,6 +341,14 @@ export const whatsappController = {
     },
 
     async getWebhook(req, res) {
+        // 🆕 LOG IMEDIATO - Confirma que a função foi chamada
+        console.log("[WEBHOOK VERIFY] ➡️ Requisição recebida:", {
+            url: req.url,
+            query: req.query,
+            headers: req.headers['user-agent']?.substring(0, 50),
+            ip: req.ip
+        });
+        
         try {
             // 🆕 Trim para remover espaços acidentais
             const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN?.trim();
@@ -351,6 +358,7 @@ export const whatsappController = {
 
             // 🆕 DEBUG: Log detalhado
             console.log("[WEBHOOK VERIFY] Debug:", {
+                envTokenPresente: !!verifyToken,
                 envToken: verifyToken,
                 receivedToken: token,
                 mode: mode,
