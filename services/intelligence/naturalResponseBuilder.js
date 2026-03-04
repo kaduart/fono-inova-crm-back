@@ -90,7 +90,7 @@ function pickRandom(arr) {
 /**
  * Detecta estado emocional baseado no texto
  */
-function detectEmotionalState(text = '') {
+export function detectEmotionalState(text = '') {
     const anxietyWords = /preocup|ansios|desesper|urgente|muito mal|piorando|não aguento|desesperada/i;
     const sadnessWords = /triste|chorando|sofrimento|sofr|angústi|depress/i;
     
@@ -171,6 +171,7 @@ export function buildFollowUp(context = {}) {
 export default {
     buildResponse,
     buildFollowUp,
+    detectEmotionalState,
     ACOLHIMENTO_TEMPLATES,
     QUESTION_TEMPLATES,
 };
