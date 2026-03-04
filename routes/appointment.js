@@ -1520,6 +1520,26 @@ router.patch('/:id/cancel', validateId, auth, async (req, res) => {
 
             console.log('✅ Appointment cancelado');
 
+            // 🔄 SINCRONIZAR CANCELAMENTO COM PRE-AGENDAMENTO
+            const preAgendamentoId = appointment.metadata?.origin?.preAgendamentoId;
+            if (preAgendamentoId) {
+                try {
+                    const pre = await PreAgendamento.findById(preAgendamentoId).session(session);
+                    if (pre && pre.status === 'importado') {
+                        pre.status = 'descartado';
+                        pre.discardReason = `Cancelado via agenda: ${reason}`;
+                        pre.discardedAt = new Date();
+                        pre.discardedBy = req.user?._id || null;
+                        pre.secretaryNotes = `[CANCELADO VIA AGENDA - ${new Date().toLocaleString('pt-BR')}]\nMotivo: ${reason}\n\n${pre.secretaryNotes || ''}`;
+                        await pre.save({ session });
+                        console.log(`✅ PreAgendamento ${preAgendamentoId} sincronizado para 'descartado'`);
+                    }
+                } catch (preError) {
+                    console.error('⚠️ Erro ao sincronizar PreAgendamento (não crítico):', preError.message);
+                    // Não propaga erro para não quebrar o cancelamento
+                }
+            }
+
             return updated;
         });
 
