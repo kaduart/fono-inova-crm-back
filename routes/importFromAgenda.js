@@ -164,8 +164,7 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
       status: 'novo',
       secretaryNotes: [
         responsible && `Responsável: ${responsible}`,
-        observations && `Obs: ${observations}`,
-        `[IMPORTADO DA AGENDA EXTERNA]`
+        observations && `Obs: ${observations}`
       ].filter(Boolean).join('\n')
     };
 

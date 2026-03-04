@@ -51,6 +51,15 @@ import callAI from "../services/IA/Aiproviderservice.js";
 import { clinicalEligibility } from "../domain/policies/ClinicalEligibility.js";
 import { canAutoRespond, buildResponseFromFlags, getTherapyInfo } from '../services/ResponseBuilder.js';
 import { CLINIC_KNOWLEDGE } from '../knowledge/clinicKnowledge.js';
+// 🆕 Helper interno para detectar emoção (inline para evitar dependência circular)
+function detectEmotionalState(text = '') {
+    const anxietyWords = /preocup|ansios|desesper|urgente|muito mal|piorando|não aguento|desesperada/i;
+    const sadnessWords = /triste|chorando|sofrimento|sofr|angústi|depress/i;
+    return {
+        isAnxious: anxietyWords.test(text),
+        isSad: sadnessWords.test(text),
+    };
+}
 
 const recentResponses = new Map();
 
@@ -1559,6 +1568,37 @@ export async function getOptimizedAmandaResponse({
         }
         
         return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead, enrichedContext);
+    }
+    
+    // 🆕 VERIFICAÇÃO: Emprego/Currículo (antes de perguntar qual área)
+    if (amandaAnalysis.extracted.flags.wantsPartnershipOrResume || 
+        amandaAnalysis.extracted.flags.wantsJobOrInternship) {
+        const jobArea = amandaAnalysis.extracted.flags.jobArea || 
+                       amandaAnalysis.extracted.therapyArea || 
+                       'nossa equipe';
+        
+        console.log('[AMANDA] Emprego/Currículo detectado - área:', jobArea);
+        
+        // Atualiza lead para não perder o contexto
+        await safeLeadUpdate(lead._id, {
+            $set: { 
+                reason: "parceria_profissional",
+                stage: "parceria_profissional",
+                "qualificationData.intent": "parceria_profissional",
+                "qualificationData.areaInteresse": jobArea
+            },
+            $addToSet: { flags: "parceria_profissional" }
+        }).catch(() => {});
+        
+        const areaTexto = jobArea !== 'nossa equipe' ? ` (${jobArea})` : '';
+        
+        return ensureSingleHeart(
+            `Que bom que você quer fazer parte da nossa equipe${areaTexto}! 🥰💚\n\n` +
+            "Os currículos são recebidos **exclusivamente por e-mail**:\n" +
+            "📩 **contato@clinicafonoinova.com.br**\n\n" +
+            "No assunto, coloque sua área de atuação (ex: Terapeuta Ocupacional).\n\n" +
+            "Em breve nossa equipe entra em contato! 😊💚"
+        );
     }
     
     // 3.5 SEM THERAPY AREA → Pergunta qual área
@@ -3519,13 +3559,13 @@ Em breve nossa equipe entra em contato 😊`
         
         // Mapeia terapias mencionadas no resumo
         const therapyFromSummary = 
-            /terapia ocupacional|\bto\b|ocupacional/i.test(summary) ? "terapia_ocupacional" :
-            /fonoaudiologia|\bfono\b/i.test(summary) ? "fonoaudiologia" :
-            /psicologia(?!.*pedagogia)|\bpsic[oó]logo/i.test(summary) ? "psicologia" :
-            /neuropsicologia|neuropsicopedagogia/i.test(summary) ? "neuropsicologia" :
-            /fisioterapia|\bfisio\b/i.test(summary) ? "fisioterapia" :
-            /musicoterapia/i.test(summary) ? "musicoterapia" :
-            /psicopedagogia/i.test(summary) ? "neuropsicologia" :
+            /terapia ocupacional|terapeuta ocupacional|\bto\b|ocupacional|integração sensorial|sensorial|coordenação motora|motricidade|avd|pinça|lateralidade|canhoto|reflexos/i.test(summary) ? "terapia_ocupacional" :
+            /fonoaudiologia|\bfono\b|linguagem|fala|voz|deglutição|miofuncional|linguinha|freio|frenulo|gagueira|tartamudez|fluência|engasgar|amamentação|succao|sucção/i.test(summary) ? "fonoaudiologia" :
+            /psicologia(?!.*pedagogia)|\bpsic[oó]logo|comportamento|ansiedade|depressão|birra|agressivo|não dorme|medo|fobia|enurese|encoprese|toc|ritual/i.test(summary) ? "psicologia" :
+            /neuropsicologia|neuropsi|avaliação neuropsicológica|laudo|teste de qi|funções executivas|memória|atenção|dislexia|discalculia|superdotação|tea|autismo|espectro autista/i.test(summary) ? "neuropsicologia" :
+            /fisioterapia|\bfisio\b|atraso motor|não engatinhou|não andou|andar na ponta|pé torto|torticolo|prematuro|hipotonia|hipertonia|espasticidade|equilíbrio/i.test(summary) ? "fisioterapia" :
+            /musicoterapia|música|musical|ritmo|estimulação musical/i.test(summary) ? "musicoterapia" :
+            /psicopedagogia|reforço escolar|dificuldade escolar|alfabetização/i.test(summary) ? "neuropsicologia" :
             null;
         
         if (therapyFromSummary) {
@@ -4510,6 +4550,43 @@ Em breve nossa equipe entra em contato 😊`
         }
     }
 
+    // 🆕 SIDE INTENT HANDLER: Se está em scheduling e pergunta algo lateral, responde e retoma
+    const inScheduling = lead?.stage === 'interessado_agendamento' || 
+                         ['ask_name', 'ask_age', 'ask_period'].includes(lead?.triageStep);
+    
+    if (inScheduling) {
+        // SIDE INTENT: Responde pergunta lateral e retoma agendamento
+        const isSideIntent = flags.asksPrice || flags.asksPlans || flags.asksAddress || flags.asksLocation;
+        
+        if (isSideIntent) {
+            console.log("🔄 [SIDE-INTENT] Respondendo pergunta lateral durante scheduling");
+            
+            // Detecta emoção
+            const emotionalState = detectEmotionalState(text);
+            
+            // Determina próximo passo do agendamento
+            let nextStep;
+            if (lead?.triageStep === 'ask_name') nextStep = "Pode me confirmar o nome completo da criança? 💚";
+            else if (lead?.triageStep === 'ask_age') nextStep = "Qual a idade dela? (anos ou meses)";
+            else if (lead?.triageStep === 'ask_period') nextStep = "Prefere atendimento de manhã ou tarde?";
+            else if (!lead?.patientInfo?.fullName) nextStep = "Pode me confirmar o nome completo da criança? 💚";
+            else if (!lead?.patientInfo?.age) nextStep = "Qual a idade?";
+            else nextStep = "Posso confirmar o horário para você?";
+            
+            // Responde pela IA (com RNs)
+            const sideAnswer = await callAmandaAIWithContext(text, lead, enrichedContext, flags, analysis);
+            
+            // Monta resposta híbrida
+            const parts = [];
+            if (emotionalState?.isAnxious) parts.push(`Oi! Respira... 🌸`);
+            else if (emotionalState?.isSad) parts.push(`Entendo que isso pode ser difícil... 💚`);
+            parts.push(sideAnswer.trim());
+            parts.push(`\n\n${nextStep}`);
+            
+            return ensureSingleHeart(enforceClinicScope(parts.join('\n'), text));
+        }
+    }
+
     // Fluxo geral
     const genericAnswer = await callAmandaAIWithContext(text, lead, enrichedContext, flags, analysis);
 
@@ -4685,16 +4762,22 @@ function tryManualResponse(normalizedText, context = {}, flags = {}, lead = {}) 
 
     // 💼 CURRÍCULO / VAGA / TRABALHO
     if (
-        /\b(curr[ií]culo|curriculo|cv\b|trabalhar|emprego|trampo)\b/.test(
+        /\b(curr[ií]culo|curriculo|cv\b|trabalhar|emprego|trampo|estágio|estagio)\b/.test(
             normalizedText,
         )
     ) {
+        // Detecta a área mencionada para personalizar
+        const areaMatch = normalizedText.match(/\b(fono|psicolog|terapeuta ocupacional|to\b|fisio|neuro|musicoterapia)\b/);
+        const areaMencionada = areaMatch ? areaMatch[0] : null;
+        
+        let areaTexto = areaMencionada ? ` (${areaMencionada})` : '';
+        
         return (
-            "Que bom que você tem interesse em trabalhar com a gente! 🥰\n\n" +
-            "Os currículos são recebidos **exclusivamente por e-mail**.\n" +
-            "Por favor, envie seu currículo para **contato@clinicafonoinova.com.br**, " +
-            "colocando no assunto a área em que você tem interesse.\n\n" +
-            "Se quiser conhecer melhor nosso trabalho, é só acompanhar a clínica também no Instagram: **@clinicafonoinova** 💚"
+            `Que bom que você quer fazer parte da nossa equipe${areaTexto}! 🥰💚\n\n` +
+            "Os currículos são recebidos **exclusivamente por e-mail**:\n" +
+            "📩 **contato@clinicafonoinova.com.br**\n\n" +
+            "No assunto, coloque sua área de atuação (ex: Terapeuta Ocupacional).\n\n" +
+            "Em breve nossa equipe entra em contato! 😊💚"
         );
     }
 
@@ -4729,12 +4812,34 @@ function inferAreaFromContext(normalizedText, context = {}, flags = {}) {
     );
 
     const AREA_DEFS = [
-        { id: "fonoaudiologia", regex: /\b(fono|fonoaudiolog(?:ia|o)?)\b/ },
-        { id: "terapia_ocupacional", regex: /\b(terapia\s+ocupacional|t\.?\s*o\.?)\b/ },
-        { id: "fisioterapia", regex: /\bfisio|fisioterap\b/ },
-        { id: "psicopedagogia", regex: /\bpsicopedagog\b/ },
-        { id: "psicologia", regex: /\b(psicolog(?:ia|o)?)(?!\s*pedagog|.*neuro)\b/i },
-        { id: "neuropsicologia", regex: /\bneuropsicolog(?:ia|o)?\b/i },
+        { 
+            id: "fonoaudiologia", 
+            regex: /\b(fono|fonoaudiolog(?:ia|o|a)|fonoaudiólog(?:o|a)|audiolog(?:ia|o|a)|audiólog(?:o|a)|linguagem|fala|voz|deglutição|mastigação|motricidade orofacial|miofuncional|linguinha|freio|frenulo|lábio leporino|fenda palatina|respiração oral|voz rouca|gagueira|tartamudez|fluência|engasgar|amamentação|succao|sucção)\b/i 
+        },
+        { 
+            id: "terapia_ocupacional", 
+            regex: /\b(terapia\s+ocupacional|terapeuta\s+ocupacional|t\.?\s*o\.?|\bto\b|ocupacional|integração sensorial|sensorial|coordenação motora|motricidade|avd|atividades de vida diária|pinça|lateralidade|canhoto|destro|reflexos|alimentação|vestir|banho)\b/i 
+        },
+        { 
+            id: "fisioterapia", 
+            regex: /\b(fisioterapia|fisio|fisioterapeuta|atraso motor|desenvolvimento motor|não engatinhou|não andou|andar na ponta|pé torto|torticolo|assimetria|prematuro|hipotonia|hipertonia|espasticidade|fortalecimento|equilíbrio|cair|tropeça|postura|escoliose|engatinhar)\b/i 
+        },
+        { 
+            id: "psicopedagogia", 
+            regex: /\b(psicopedagogia|psicopedagogo|reforço escolar|acompanhamento escolar|dificuldade escolar|alfabetização|adaptação curricular)\b/i 
+        },
+        { 
+            id: "psicologia", 
+            regex: /\b(psicolog(?:ia|o|a)|psicoterapia|comportamento|ansiedade|depressão|medo|fobia|birra|não obedece|agressivo|não dorme|insônia|pesadelo|enurese|encoprese|autolesão|toc|ritual|hiperativid|tdah|tda)(?!\s*pedagog|.*neuro)\b/i 
+        },
+        { 
+            id: "neuropsicologia", 
+            regex: /\b(neuropsicolog(?:ia|o|a)|neuropsi|avaliação neuropsicológica|laudo|teste de qi|funções executivas|memória|atenção|dificuldade de aprendizagem|dislexia|discalculia|superdotação|altas habilidades|tea|autismo|espectro autista|neurodesenvolvimento)\b/i 
+        },
+        { 
+            id: "musicoterapia", 
+            regex: /\b(musicoterapia|musicoterapeuta|música|musical|ritmo|melodia|instrumento musical|estimulação musical)\b/i 
+        },
     ];
 
     const detectAreaInText = (txt) => {
@@ -5539,6 +5644,9 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
     console.log('🧠 [AMANDA-SÊNIOR] Analisando:', text.substring(0, 50));
     
     // 1. EXTRAÇÃO MÁXIMA
+    // 🔥 USA flagsDetector.js COMPLETO (não recria localmente)
+    const fullFlags = deriveFlagsFromText(text);
+    
     const extracted = {
         responsibleName: null,
         patientName: null,
@@ -5549,13 +5657,58 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
         preferredPeriod: null,
         intent: 'informacao',
         flags: {
-            asksPrice: /\b(preço|valor|custa|quanto)\b/i.test(text),
-            wantsSchedule: /\b(agendar|marcar|vaga|consulta)\b/i.test(text),
-            mentionsChild: /\b(filho|filha|criança|bebê|anos)\b/i.test(text),
-            asksPlans: /\b(plano|convênio|unimed|amil)\b/i.test(text),
-            asksLocation: /\b(onde|endereço|fica)\b/i.test(text),
+            // Flags básicas (sempre presentes)
+            asksPrice: fullFlags.asksPrice,
+            wantsSchedule: fullFlags.wantsSchedule,
+            mentionsChild: fullFlags.mentionsChild || fullFlags.ageGroup === 'crianca',
+            asksPlans: fullFlags.asksPlans,
+            asksLocation: fullFlags.asksLocation,
+            
+            // 🔥 FLAGS DO flagsDetector.js que estavam sendo IGNORADAS
+            wantsPartnershipOrResume: fullFlags.wantsPartnershipOrResume,
+            wantsJobOrInternship: fullFlags.wantsJobOrInternship,
+            jobArea: fullFlags.jobArea,
+            hasProfessionalIntro: fullFlags.hasProfessionalIntro,
+            hasJobContext: fullFlags.hasJobContext,
+            hasCurriculumTerms: fullFlags.hasCurriculumTerms,
+            
+            // Outras flags importantes
+            mentionsTEA_TDAH: fullFlags.mentionsTEA_TDAH,
+            mentionsPriceObjection: fullFlags.mentionsPriceObjection,
+            mentionsInsuranceObjection: fullFlags.mentionsInsuranceObjection,
+            mentionsTimeObjection: fullFlags.mentionsTimeObjection,
+            mentionsOtherClinicObjection: fullFlags.mentionsOtherClinicObjection,
+            mentionsDoubtTEA: fullFlags.mentionsDoubtTEA,
+            mentionsInvestigation: fullFlags.mentionsInvestigation,
+            mentionsLaudo: fullFlags.mentionsLaudo,
+            mentionsNeuropediatra: fullFlags.mentionsNeuropediatra,
+            mentionsUrgency: fullFlags.mentionsUrgency,
+            isEmotional: fullFlags.isEmotional,
+            isHotLead: fullFlags.isHotLead,
+            isJustBrowsing: fullFlags.isJustBrowsing,
+            givingUp: fullFlags.givingUp,
+            refusesOrDenies: fullFlags.refusesOrDenies,
+            confirmsData: fullFlags.confirmsData,
+            alreadyScheduled: fullFlags.alreadyScheduled,
+            wantsCancel: fullFlags.wantsCancel,
+            wantsReschedule: fullFlags.wantsReschedule,
+            saysThanks: fullFlags.saysThanks,
+            saysBye: fullFlags.saysBye,
+            
+            // Flags de idade
+            mentionsBaby: fullFlags.mentionsBaby,
+            mentionsTeen: fullFlags.mentionsTeen,
+            mentionsAdult: fullFlags.mentionsAdult,
+            ageGroup: fullFlags.ageGroup,
+            
+            // Logs para debug
+            _rawFlags: fullFlags // Mantém referência completa para debug
         }
     };
+    
+    console.log('[FLAGS-DETECTOR] Flags extraídos:', Object.entries(extracted.flags)
+        .filter(([k, v]) => v === true || (typeof v === 'string' && v))
+        .reduce((a, [k, v]) => { a[k] = v; return a; }, {}));
     
     // 🔧 EXTRAÇÃO DE NOME - Múltiplos padrões
     const namePatterns = [
@@ -5637,7 +5790,7 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
         // PSICOLOGIA
         { patterns: [/\b(psicologia|comportamento|birra|birras|não obedece|desobedece|agressivo|agressividade|bate em|bateu|morde|ansiedade|ansiosa|ansioso|medo|temor|fobia|depressão|depressivo|triste|choroso|não dorme|insônia|pesadelo|reclama|reclamação|birra|manha|birração|não aceita|teimosia|birrento|queima roupa|encoprese|enurese|xixi na cama|faz xixi na cama|se borra|autolesão|automutilação|toc|transtorno obsessivo|ritual)\b/i], area: 'psicologia' },
         // TERAPIA OCUPACIONAL
-        { patterns: [/\b(terapia ocupacional|\bto\b|integração sensorial|sensorial|sensoriais|hipersensível|hipersensibilidade|textura|barulho|luz|cheiro|intolerância sensorial|evita contato|não gosta de toque|coordenação motora|coordenação|motricidade|motora|segurar lápis|amarrar cadarço|botão|zíper|escova dentes|tomar banho|banho|vestir|vestir-se|alimentação|comer sozinho|pinça|lateralidade|esquerda|canhoto|canhota|dominância|reflexos|primitivo)\b/i], area: 'terapia_ocupacional' },
+        { patterns: [/\b(terapia ocupacional|terapeuta ocupacional|\bto\b|integração sensorial|sensorial|sensoriais|hipersensível|hipersensibilidade|textura|barulho|luz|cheiro|intolerância sensorial|evita contato|não gosta de toque|coordenação motora|coordenação|motricidade|motora|segurar lápis|amarrar cadarço|botão|zíper|escova dentes|tomar banho|banho|vestir|vestir-se|alimentação|comer sozinho|pinça|lateralidade|esquerda|canhoto|canhota|dominância|reflexos|primitivo)\b/i], area: 'terapia_ocupacional' },
         // FISIOTERAPIA
         { patterns: [/\b(fisioterapia|\bfisio\b|fisio|atraso motor|desenvolvimento motor|não engatinhou|não andou|começou a andar tarde|andar na ponta|andar de ponta|pé torto|torto|torticolo|torticolis|assimetria|preferência lateral|prematuro|prematuridade|hipotonia|hipertonia|espasticidade|flacidez|fortalecimento|equilíbrio|cair|cai muito|tropeça|postura|escoliose|cifose|posição sentada|sentar|engatinhar|rolar)\b/i], area: 'fisioterapia' },
         // PSICOPEDAGOGIA → Mapeia para neuropsicologia
@@ -5715,7 +5868,7 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
             /fonoaudiologia|fono|\bteste da linguinha\b/i.test(summary) ? 'fonoaudiologia' :
             /neuropsicologia|neuropsi|avaliação neuropsicológica/i.test(summary) ? 'neuropsicologia' :
             /psicologia(?!.*pedagogia)|\bpsic[oó]logo/i.test(summary) ? 'psicologia' :
-            /terapia ocupacional|\bto\b|ocupacional/i.test(summary) ? 'terapia_ocupacional' :
+            /terapia ocupacional|terapeuta ocupacional|\bto\b|ocupacional/i.test(summary) ? 'terapia_ocupacional' :
             /fisioterapia|\bfisio/i.test(summary) ? 'fisioterapia' :
             /psicopedagogia|neuropsicopedagogia/i.test(summary) ? 'neuropsicologia' :
             /musicoterapia/i.test(summary) ? 'musicoterapia' :
@@ -5758,7 +5911,7 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
                 } else if (/psicologia|psicólogo|psicóloga/.test(complaintLower)) {
                     extracted.therapyArea = 'psicologia';
                     console.log('[AMANDA-SÊNIOR] TherapyArea derivada via fallback:', extracted.therapyArea);
-                } else if (/to\b|terapia ocupacional/.test(complaintLower)) {
+                } else if (/to\b|terapia ocupacional|terapeuta ocupacional/.test(complaintLower)) {
                     extracted.therapyArea = 'terapia_ocupacional';
                     console.log('[AMANDA-SÊNIOR] TherapyArea derivada via fallback:', extracted.therapyArea);
                 } else if (/fisio|fisioterapia/.test(complaintLower)) {

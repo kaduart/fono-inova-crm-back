@@ -1,6 +1,7 @@
 // flagsDetector.js
 import { normalizeTherapyTerms } from "./therapyDetector.js";
 import Logger from '../services/utils/Logger.js';
+import { isJobRelated, JOB_SEARCH_REGEX, PROFESSIONAL_INTRO_REGEX, extractJobArea } from '../config/therapyKeywords.js';
 
 const logger = new Logger('FlagsDetector');
 
@@ -37,19 +38,17 @@ export function deriveFlagsFromText(text = "") {
     const mentionsGeneralSurgery =
         /\b(cirurgia|operar|opera[çc][aã]o|cortar|corte|pique|pic|frenectomia|cirurgi[ãa]o|procedimento|fazer.*a[ií]|faz.*a[ií])\b/i.test(normalizedText);
 
-    // 🔥 DETECÇÃO DE PARCERIA/CURRÍCULO - Nunca confundir com "vaga de consulta"
+    // 🔥 DETECÇÃO DE PARCERIA/CURRÍCULO - Usa arquivo central therapyKeywords.js
     const hasCurriculumTerms = /\b(curr[ií]cul|curriculo|curriculum|curr[ií]culo|cv)\b/i.test(normalizedText);
     const hasExplicitPartnership = /\b(parceria|parcerias|credenciamento|prestador|trabalhar\s+com\s+voc[eê]s)\b/i.test(normalizedText);
-    // "vaga" só conta se tiver contexto explícito de trabalho/emprego
-    const hasJobContext = /\b(vaga\s+(de\s+)?(trabalho|emprego|estágio|estagio)|enviar\s+curric|trabalhar\s+(com|na)\s+(voc[eê]s|cl[ií]nica))\b/i.test(normalizedText);
-    const hasProfessionalIntro = /\b(sou|me\s+chamo)\b.*\b(musicoterap|psicopedagog|fonoaudi[oó]log[oa]?|psic[oó]log[oa]?|fisioterap|terapeuta\s+ocupacional|\bto\b|neuropsic)/i.test(normalizedText);
+    const hasJobContext = JOB_SEARCH_REGEX.test(normalizedText);
+    const hasProfessionalIntro = PROFESSIONAL_INTRO_REGEX.test(normalizedText);
 
-    const wantsPartnershipOrResume = hasCurriculumTerms || hasExplicitPartnership || hasJobContext || hasProfessionalIntro;
+    const wantsPartnershipOrResume = hasCurriculumTerms || hasExplicitPartnership || hasJobContext || hasProfessionalIntro || isJobRelated(normalizedText);
     
-    // ✅ NOVO: Detecção específica de busca por emprego/estágio
-    const wantsJobOrInternship = 
-        /\b(estagi[áa]ria?|est[áa]gio|emprego|trabalho|vaga\s+(de\s+)?(trabalho|emprego|est[áa]gio)|curriculo|cv|trabalhar\s+(com|na|para)\s+voc[eê]s?)\b/i.test(normalizedText) ||
-        /\b(sou\s+(estagi[áa]ria?|profissional|formando|formada))\b/i.test(normalizedText);
+    // ✅ NOVO: Detecção específica de busca por emprego/estágio (com área)
+    const wantsJobOrInternship = isJobRelated(normalizedText);
+    const jobArea = extractJobArea(normalizedText); // Extrai área mencionada no contexto de emprego
 
     const ageGroup = extractAgeGroup(normalizedText);
 
@@ -282,6 +281,7 @@ export function deriveFlagsFromText(text = "") {
         mentionsBaby: /\b(beb[eê]|rec[ée]m[-\s]?nascid[oa]|rn\b|meses)\b/i.test(normalizedText),
         wantsPartnershipOrResume,
         wantsJobOrInternship,  // ✅ NOVA FLAG
+        jobArea,                 // ✅ Área mencionada no contexto de emprego
         mentionsTongueTieSurgery,
         mentionsGeneralSurgery,
 
