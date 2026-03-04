@@ -88,7 +88,7 @@ const handleMulterError = (err, req, res, next) => {
 router.post('/upload-media', upload.single('file'), handleMulterError, whatsappController.uploadMedia);
 router.post('/send-media', upload.single('file'), handleMulterError, whatsappController.sendMedia);
 
-// 📩 Webhook
+// 📩 Webhook (mensagens recebidas E status de entrega)
 router.post('/webhook', whatsappController.webhook);
 router.get('/webhook', whatsappController.getWebhook);
 
