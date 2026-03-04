@@ -348,9 +348,23 @@ export const whatsappController = {
             const token = req.query["hub.verify_token"];
             const challenge = req.query["hub.challenge"];
 
+            // 🆕 DEBUG: Log detalhado
+            console.log("[WEBHOOK VERIFY] Debug:", {
+                envToken: verifyToken,
+                receivedToken: token,
+                mode: mode,
+                challenge: challenge,
+                match: token === verifyToken,
+                envTokenLength: verifyToken?.length,
+                receivedTokenLength: token?.length
+            });
+
             if (mode && token && mode === "subscribe" && token === verifyToken) {
+                console.log("[WEBHOOK VERIFY] ✅ Sucesso - retornando challenge");
                 return res.status(200).send(challenge);
             }
+            
+            console.log("[WEBHOOK VERIFY] ❌ Falha na verificação - 403");
             return res.sendStatus(403);
         } catch (err) {
             console.error("❌ Erro na verificação do webhook:", err);
