@@ -343,9 +343,10 @@ export const whatsappController = {
 
     async getWebhook(req, res) {
         try {
-            const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
+            // 🆕 Trim para remover espaços acidentais
+            const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN?.trim();
             const mode = req.query["hub.mode"];
-            const token = req.query["hub.verify_token"];
+            const token = req.query["hub.verify_token"]?.trim();
             const challenge = req.query["hub.challenge"];
 
             // 🆕 DEBUG: Log detalhado
