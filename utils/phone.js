@@ -64,9 +64,13 @@ export const normalizeE164BR = (phone) => {
         const ddd = s.substring(2, 4);
         const numero = s.substring(4); // 8 dígitos sem o 9
         
-        // Se começar com 6-9 é celular, adiciona o 9
-        const primeiroDigito = parseInt(numero.charAt(0));
-        if (primeiroDigito >= 6 && primeiroDigito <= 9) {
+        // Se começar com 9, o número já está com 9 incluído (formato antigo: DD9XXXXXXXX sem 55)
+        // Nesse caso, apenas adicionamos 55 na frente
+        if (numero.startsWith("9")) {
+            s = "55" + ddd + numero; // Já tem 9, só adiciona 55
+            console.log(`📞 [PHONE] já tem 9: ${phone} → ${s}`);
+        } else if (numero.charAt(0) >= "6" && numero.charAt(0) <= "9") {
+            // Começa com 6,7,8 mas não com 9 → adiciona o 9
             s = "55" + ddd + "9" + numero;
             console.log(`📞 [PHONE] +9 (12→13): ${phone} → ${s}`);
         }
@@ -192,6 +196,76 @@ export const validateE164 = (phone) => {
     return { valid: true, error: null, normalized };
 };
 
+/**
+ * 🔧 PRÉ-VALIDAÇÃO ROBUSTA: Sanitiza número antes de enviar para WhatsApp API
+ * - Remove +, espaços, traços
+ * - Corrige 9 duplicado
+ * - Valida tamanho final
+ * - Retorna { success, phone, error }
+ */
+export const sanitizePhoneBeforeSend = (phone) => {
+    if (!phone) {
+        return { success: false, phone: null, error: "Número vazio" };
+    }
+
+    let original = String(phone).trim();
+    
+    // Remove tudo que não é dígito (inclui +, espaços, traços, parênteses)
+    let digits = original.replace(/\D/g, "");
+    
+    // Log para debug
+    console.log(`📞 [SANITIZE] Original: "${original}" → Dígitos: "${digits}"`);
+    
+    // Se começar com 55, mantém. Se não, adiciona
+    if (!digits.startsWith("55")) {
+        // Se começar com +55 (já foi removido o +), adiciona 55
+        if (original.startsWith("+55")) {
+            digits = "55" + digits;
+        } else {
+            digits = "55" + digits;
+        }
+    }
+    
+    // Remove 55 duplicado
+    if (digits.startsWith("5555")) {
+        digits = digits.substring(2);
+    }
+    
+    // 🔧 CORREÇÃO CRÍTICA: Verifica se tem 9 duplicado (14 dígitos = erro)
+    // Formato errado: 55629992013573 (55 + 62 + 99 + 2013573)
+    // Formato certo:  556292013573   (55 + 62 + 9  + 2013573)
+    if (digits.length === 14) {
+        // Extrai partes: 55 + DDD + resto
+        const ddd = digits.substring(2, 4);
+        const resto = digits.substring(4); // Deveria ser 9 + 8 dígitos
+        
+        // Se resto começa com 99, provavelmente é 9 duplicado
+        if (resto.startsWith("99") && resto.length === 10) {
+            // Remove o 9 extra
+            digits = "55" + ddd + "9" + resto.substring(2);
+            console.log(`📞 [SANITIZE] 9 duplicado corrigido: ${digits}`);
+        }
+    }
+    
+    // Validação final
+    if (digits.length !== 12 && digits.length !== 13) {
+        return { 
+            success: false, 
+            phone: digits, 
+            error: `Tamanho inválido: ${digits.length} dígitos (esperado 12 ou 13 após 55)` 
+        };
+    }
+    
+    // Valida DDD
+    const ddd = digits.substring(2, 4);
+    if (parseInt(ddd) < 11 || parseInt(ddd) > 99) {
+        return { success: false, phone: digits, error: `DDD inválido: ${ddd}` };
+    }
+    
+    console.log(`📞 [SANITIZE] Sucesso: ${original} → ${digits}`);
+    return { success: true, phone: digits, error: null };
+};
+
 export default {
     digitsOnly,
     normalizeE164BR,
@@ -200,4 +274,5 @@ export default {
     firstName,
     isTestNumber,
     validateE164,
+    sanitizePhoneBeforeSend,
 };

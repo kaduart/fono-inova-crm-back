@@ -787,33 +787,70 @@ export const getHistoryMetrics = async (req, res) => {
 
 export async function resolveLeadByPhone(phone, defaults = {}) {
     const phoneE164 = normalizeE164BR(phone);
-
-    const lead = await Lead.findOneAndUpdate(
-        { "contact.phone": phoneE164 },
-        {
-            $setOnInsert: {
-                contact: { phone: phoneE164 },
-                origin: defaults.origin || "WhatsApp",
-                status: defaults.status || "novo",
-                appointment: defaults.appointment || {},
-                autoReplyEnabled: true,
-                manualControl: { active: false, autoResumeAfter: 30 },
-                createdAt: new Date()
-            },
-            $set: {
-                lastInteractionAt: new Date()
-            }
-        },
-        { upsert: true, new: true }
-    );
     
-    // 🆕 Garantir que triageStep seja carregado (campo adicionado recentemente ao schema)
-    if (lead && lead.triageStep === undefined) {
-        const freshLead = await Lead.findById(lead._id).select('triageStep').lean();
-        if (freshLead) {
-            lead.triageStep = freshLead.triageStep || null;
+    // 🔧 Array de formatos para tentar encontrar o lead
+    const formatsToTry = [phoneE164];
+    
+    // Adiciona variações
+    if (!phoneE164.startsWith('+')) formatsToTry.push('+' + phoneE164);
+    
+    // Se tem 13 dígitos (com 9), tenta sem o 9 (formato antigo)
+    if (phoneE164.length === 13) {
+        const sem9 = phoneE164.substring(0, 4) + phoneE164.substring(5);
+        formatsToTry.push(sem9);
+        formatsToTry.push('+' + sem9);
+    }
+    
+    // Se tem 12 dígitos (sem 9), tenta com 9
+    if (phoneE164.length === 12) {
+        const ddd = phoneE164.substring(2, 4);
+        const numero = phoneE164.substring(4);
+        const com9 = phoneE164.substring(0, 4) + '9' + numero;
+        formatsToTry.push(com9);
+        formatsToTry.push('+' + com9);
+    }
+    
+    // Tenta sem 55
+    const sem55 = phoneE164.replace(/^55/, '');
+    if (sem55 !== phoneE164) {
+        formatsToTry.push(sem55);
+        formatsToTry.push('+' + sem55);
+    }
+    
+    // 🔎 Busca lead existente com qualquer um dos formatos
+    let existingLead = null;
+    for (const format of formatsToTry) {
+        existingLead = await Lead.findOne({ "contact.phone": format }).lean();
+        if (existingLead) {
+            console.log(`🔍 [resolveLeadByPhone] Lead encontrado com formato: "${format}"`);
+            break;
         }
     }
+    
+    // Se encontrou lead existente, atualiza lastInteractionAt
+    if (existingLead) {
+        await Lead.updateOne(
+            { _id: existingLead._id },
+            { $set: { lastInteractionAt: new Date() } }
+        );
+        
+        // Retorna lead atualizado
+        return await Lead.findById(existingLead._id);
+    }
+    
+    // Se não encontrou, cria novo lead
+    console.log(`🆕 [resolveLeadByPhone] Criando novo lead para: "${phoneE164}"`);
+    
+    const lead = await Lead.create({
+        contact: { phone: phoneE164 },
+        origin: defaults.origin || "WhatsApp",
+        status: defaults.status || "novo",
+        appointment: defaults.appointment || {},
+        autoReplyEnabled: true,
+        manualControl: { active: false, autoResumeAfter: 30 },
+        lastInteractionAt: new Date(),
+        createdAt: new Date()
+    });
     
     return lead;
 }

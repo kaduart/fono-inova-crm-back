@@ -20,7 +20,7 @@ import { getOptimizedAmandaResponse } from '../orchestrators/AmandaOrchestrator.
 import { withLeadLock } from '../services/LockManager.js';
 import { mapFlagsToBookingProduct } from '../utils/bookingProductMapper.js';
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
-import { normalizeE164BR } from "../utils/phone.js";
+import { normalizeE164BR, sanitizePhoneBeforeSend } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
 
 const AUTO_TEST_NUMBERS = [
@@ -101,21 +101,73 @@ export const whatsappController = {
                 });
             }
 
-            const to = normalizeE164BR(phone);
+            // 🔧 PRÉ-VALIDAÇÃO: Sanitiza número antes de enviar
+            const sanitized = sanitizePhoneBeforeSend(phone);
+            if (!sanitized.success) {
+                console.error('❌ [SANITIZE] Número inválido:', sanitized.error, phone);
+                return res.status(400).json({
+                    success: false,
+                    error: `Número de telefone inválido: ${sanitized.error}`,
+                    received: phone,
+                    normalized: sanitized.phone
+                });
+            }
+            
+            const to = sanitized.phone;
+            console.log('📞 [SANITIZE] Número sanitizado:', { original: phone, sanitized: to });
 
-            // 🔎 Tenta achar Contact pelo telefone
-            const contact = await Contacts.findOne({ phone: to }).lean();
+            // 🔎 Tenta achar Contact pelo telefone (tenta vários formatos)
+            let contact = await Contacts.findOne({ phone: to }).lean();
+            if (!contact) {
+                // Tenta sem 55 no início
+                contact = await Contacts.findOne({ phone: to.replace(/^55/, '') }).lean();
+            }
+            if (!contact && to.length === 13) {
+                // Tenta sem o 9 (formato antigo): 556292013573 → 55622013573
+                const sem9 = to.substring(0, 4) + to.substring(5);
+                contact = await Contacts.findOne({ phone: sem9 }).lean();
+            }
 
-            // 🔎 Tenta achar Lead (ou pelo id, ou pelo telefone)
+            // 🔎 Tenta achar Lead (ou pelo id, ou pelo telefone com vários formatos)
             let leadDoc = null;
             if (leadId) {
                 leadDoc = await Lead.findById(leadId).lean();
             } else {
+                // Busca exata
                 leadDoc = await Lead.findOne({ 'contact.phone': to }).lean();
+                
+                // Se não achou, tenta com + na frente
+                if (!leadDoc) {
+                    leadDoc = await Lead.findOne({ 'contact.phone': '+' + to }).lean();
+                }
+                
+                // Se não achou e tem 13 dígitos, tenta sem o 9 (formato antigo da Meta)
+                if (!leadDoc && to.length === 13) {
+                    const sem9 = to.substring(0, 4) + to.substring(5); // 556292013573 → 55622013573
+                    leadDoc = await Lead.findOne({ 'contact.phone': sem9 }).lean();
+                    if (!leadDoc) {
+                        leadDoc = await Lead.findOne({ 'contact.phone': '+' + sem9 }).lean();
+                    }
+                }
+                
+                // Se não achou, tenta sem 55 no início
+                if (!leadDoc) {
+                    const sem55 = to.replace(/^55/, '');
+                    leadDoc = await Lead.findOne({ 'contact.phone': sem55 }).lean();
+                    if (!leadDoc) {
+                        leadDoc = await Lead.findOne({ 'contact.phone': '+' + sem55 }).lean();
+                    }
+                }
             }
 
             const resolvedLeadId = leadDoc?._id || leadId || null;
             const patientId = leadDoc?.convertedToPatient || null;
+            
+            if (leadDoc && leadDoc.contact?.phone !== to) {
+                console.log(`🔍 [LEAD FOUND] Encontrado com formato alternativo: "${leadDoc.contact?.phone}" (buscava: "${to}")`);
+            } else if (!leadDoc) {
+                console.log(`⚠️ [LEAD NOT FOUND] Nenhum lead encontrado para: "${to}"`);
+            }
 
             console.log('📤 Enviando mensagem via service...', {
                 to,

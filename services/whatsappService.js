@@ -11,7 +11,7 @@ import Contact from "../models/Contacts.js";
 import Lead from "../models/Leads.js"; // ajuste o path
 import Message from "../models/Message.js";
 import { getMetaToken, clearMetaTokenCache } from "../utils/metaToken.js";
-import { normalizeE164BR } from "../utils/phone.js";
+import { normalizeE164BR, sanitizePhoneBeforeSend } from "../utils/phone.js";
 
 dotenv.config();
 
@@ -332,7 +332,13 @@ export async function sendTemplateMessage({
     const token = await requireToken();
     if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
 
-    const phone = normalizeE164BR(to);
+    // 🔧 Sanitização do telefone
+    const sanitized = sanitizePhoneBeforeSend(to);
+    if (!sanitized.success) {
+        throw new Error(`Número de telefone inválido: ${sanitized.error} (recebido: ${to})`);
+    }
+    const phone = sanitized.phone;
+    
     const url = `${META_URL}/${PHONE_ID}/messages`;
 
     // ✅ Aceita params como string OU como objeto {type,text}
@@ -441,21 +447,24 @@ export async function sendTextMessage({
     const token = await requireToken();
     if (!PHONE_ID) throw new Error("META_WABA_PHONE_ID ausente.");
 
-    // 🔧 CORREÇÃO: Normalização robusta do telefone
+    // 🔧 CORREÇÃO: Sanitização completa do telefone antes de enviar
     const originalTo = to;
-    const phone = normalizeE164BR(to);
+    const sanitized = sanitizePhoneBeforeSend(to);
+    
+    if (!sanitized.success) {
+        throw new Error(`Número de telefone inválido: ${sanitized.error} (recebido: ${originalTo})`);
+    }
+    
+    const phone = sanitized.phone;
     
     // 🆕 LOG DEBUG: Mostrar transformação do número
-    console.log("📞 [SEND PHONE] Normalização:", {
+    console.log("📞 [SEND PHONE] Sanitização:", {
         originalTo,
         phoneNormalized: phone,
         originalLength: originalTo?.length,
-        normalizedLength: phone?.length
+        normalizedLength: phone?.length,
+        error: sanitized.error
     });
-    
-    if (!phone) {
-        throw new Error(`Número de telefone inválido: ${originalTo}`);
-    }
     
     const url = `${META_URL}/${PHONE_ID}/messages`;
     const formattedText = formatWhatsAppText(text, { mode: formatMode });
