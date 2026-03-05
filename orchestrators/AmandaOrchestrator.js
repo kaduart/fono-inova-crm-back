@@ -1308,18 +1308,20 @@ function getMissingFields(lead, extracted = {}, userText = '') {
 function isTriageComplete(lead) {
     if (!lead) return false;
 
+    // 🎯 ORDEM DE TRIAGEM: área → queixa → nome → nascimento → idade → período
+    const hasArea = !!lead.therapyArea;
+    const hasComplaint = !!(lead.complaint || lead.primaryComplaint);
     const hasName = !!(lead.patientInfo?.fullName || lead.patientInfo?.name);
+    const hasBirthDate = !!(lead.patientInfo?.birthDate);
     const hasAge = lead.patientInfo?.age !== undefined && lead.patientInfo?.age !== null;
     const hasPeriod = !!(lead.pendingPreferredPeriod || lead.qualificationData?.disponibilidade);
-    const hasComplaint = !!(lead.complaint || lead.primaryComplaint);
-    const hasArea = !!lead.therapyArea;
 
-    const complete = hasName && hasAge && hasPeriod && hasComplaint && hasArea;
+    const complete = hasArea && hasComplaint && hasName && hasBirthDate && hasAge && hasPeriod;
 
     if (complete) {
         console.log("[ANTI-LOOP] Triagem completa:", {
-            name: hasName, age: hasAge, period: hasPeriod,
-            complaint: hasComplaint, area: hasArea
+            area: hasArea, complaint: hasComplaint, name: hasName, 
+            birthDate: hasBirthDate, age: hasAge, period: hasPeriod
         });
     }
 
@@ -2339,6 +2341,56 @@ export async function getOptimizedAmandaResponse({
         /escola.*(dificuldade|problema|nota|rendimento)/i.test(text) ||
         /(conv[eê]nio|plano\s*(de\s*)?sa[uú]de|unimed|ipasgo|hapvida|bradesco|amil)/i.test(text);
 
+    // 🎯 INICIALIZAÇÃO DA TRIAGEM: Só roda quando lead não tem triageStep definido
+    const shouldInitTriage = lead?._id && 
+        !lead.triageStep && 
+        !lead.pendingSchedulingSlots && 
+        !lead.pendingPatientInfoForScheduling &&
+        lead.stage !== "paciente";
+    
+    if (shouldInitTriage) {
+        // Verifica se é novo lead ou lead existente sem triagem completa
+        const hasCompleteData = lead.therapyArea && 
+            lead.complaint && 
+            lead.patientInfo?.fullName && 
+            lead.patientInfo?.birthDate &&
+            lead.patientInfo?.age &&
+            lead.pendingPreferredPeriod;
+        
+        // Se já tem dados completos, marca como done
+        if (hasCompleteData) {
+            console.log("📝 [TRIAGEM] Lead com dados completos, marcando como done");
+            await safeLeadUpdate(lead._id, { 
+                $set: { triageStep: "done", stage: "engajado" } 
+            });
+            lead.triageStep = "done";
+        } else if (lead.therapyArea) {
+            // Tem área mas falta dados → inicia triagem na etapa correta
+            let initialStep = "ask_complaint"; // Default: começa perguntando queixa
+            
+            if (!lead.complaint) {
+                initialStep = "ask_complaint";
+            } else if (!lead.patientInfo?.fullName) {
+                initialStep = "ask_name";
+            } else if (!lead.patientInfo?.birthDate) {
+                initialStep = "ask_birthDate";
+            } else if (!lead.patientInfo?.age) {
+                initialStep = "ask_age";
+            } else if (!lead.pendingPreferredPeriod) {
+                initialStep = "ask_period";
+            } else {
+                initialStep = "done";
+            }
+            
+            console.log(`🔄 [TRIAGEM] Lead existente sem triageStep. Iniciando em: ${initialStep}`);
+            await safeLeadUpdate(lead._id, { 
+                $set: { triageStep: initialStep, stage: "triagem_agendamento" } 
+            });
+            lead.triageStep = initialStep;
+        }
+    }
+    
+    // 🎯 Fluxo normal de inicialização para novos leads
     if (
         lead?._id &&
         hasImplicitInterest &&
@@ -2602,9 +2654,40 @@ export async function getOptimizedAmandaResponse({
     // ▶️ STEP: ask_complaint (coleta queixa - NOVO STEP CORRETO!)
     // ============================================================
     if (lead?.triageStep === "ask_complaint") {
-        // 🛡️ ANTI-LOOP: Se já tem queixa, finaliza triagem
+        // 🛡️ ANTI-LOOP: Se já tem queixa, verifica se tem TODOS os dados antes de oferecer slots
         if (lead.complaint || lead.primaryComplaint) {
-            console.log("🛡️ [ANTI-LOOP] Tem queixa mas triageStep=ask_complaint, corrigindo...");
+            console.log("🛡️ [ANTI-LOOP] Tem queixa mas triageStep=ask_complaint, verificando dados completos...");
+            
+            // 🔴 CRITICAL FIX: Verificar se tem nome e data de nascimento antes de oferecer slots
+            const hasName = !!(lead.patientInfo?.fullName || lead.patientInfo?.name);
+            const hasBirthDate = !!(lead.patientInfo?.birthDate);
+            
+            if (!hasName || !hasBirthDate) {
+                console.log("⚠️ [TRIAGEM] Faltam dados obrigatórios:", { 
+                    hasName, 
+                    hasBirthDate,
+                    nome: lead.patientInfo?.fullName,
+                    nascimento: lead.patientInfo?.birthDate 
+                });
+                
+                // Ativa coleta de dados do paciente
+                await safeLeadUpdate(lead._id, { 
+                    $set: { 
+                        triageStep: "done",
+                        stage: "engajado",
+                        pendingPatientInfoForScheduling: true,
+                        pendingPatientInfoStep: hasName ? "birth" : "name"
+                    } 
+                });
+                
+                if (!hasName) {
+                    return ensureSingleHeart("Perfeito! 💚 Pra eu confirmar o agendamento, qual o **nome completo** do paciente?");
+                } else {
+                    return ensureSingleHeart("Obrigado! 💚 Agora me manda a **data de nascimento** (dd/mm/aaaa)");
+                }
+            }
+            
+            // ✅ Tem todos os dados, pode oferecer slots
             await safeLeadUpdate(lead._id, {
                 $set: { triageStep: "done", stage: "engajado" }
             });
@@ -5953,7 +6036,7 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
         // NEUROPSICOLOGIA
         { patterns: [/\b(autismo|tea\b|transtorno do espectro|espectro autista|tdah|déficit de atenção|hiperativid|desatento|não para quieto|não consegue ficar quieto|agitação|neuropsi|neuropsicologia|avaliação neuropsicológica|avaliação neuropsicologica|laudo|teste de qi|funções executivas|memória|atenção|concentração|dificuldade de aprendizagem|dislexia|discalculia|dificuldade para ler|dificuldade para escrever|problema na escola|rendimento escolar|nota baixa|reprovação|reprovou|superdotação|superdotado|altas habilidades|tdah|tda|deficit de atenção|hiperatividade)\b/i], area: 'neuropsicologia' },
         // PSICOLOGIA
-        { patterns: [/\b(psicologia|comportamento|birra|birras|não obedece|desobedece|agressivo|agressividade|bate em|bateu|morde|ansiedade|ansiosa|ansioso|medo|temor|fobia|depressão|depressivo|triste|choroso|não dorme|insônia|pesadelo|reclama|reclamação|birra|manha|birração|não aceita|teimosia|birrento|queima roupa|encoprese|enurese|xixi na cama|faz xixi na cama|se borra|autolesão|automutilação|toc|transtorno obsessivo|ritual)\b/i], area: 'psicologia' },
+        { patterns: [/\b(psicologia|comportamento|birra|birras|não obedece|desobedece|agressivo|agressividade|bate em|bateu|morde|ansiedade|ansiosa|ansioso|medo|temor|fobia|depressão|depressivo|triste|choroso|não dorme|insônia|pesadelo|reclama|reclamação|birra|birração|não aceita|teimosia|birrento|queima roupa|encoprese|enurese|xixi na cama|faz xixi na cama|se borra|autolesão|automutilação|toc|transtorno obsessivo|ritual)\b/i], area: 'psicologia' },
         // TERAPIA OCUPACIONAL
         { patterns: [/\b(terapia ocupacional|terapeuta ocupacional|\bto\b|integração sensorial|sensorial|sensoriais|hipersensível|hipersensibilidade|textura|barulho|luz|cheiro|intolerância sensorial|evita contato|não gosta de toque|coordenação motora|coordenação|motricidade|motora|segurar lápis|amarrar cadarço|botão|zíper|escova dentes|tomar banho|banho|vestir|vestir-se|alimentação|comer sozinho|pinça|lateralidade|esquerda|canhoto|canhota|dominância|reflexos|primitivo)\b/i], area: 'terapia_ocupacional' },
         // FISIOTERAPIA
@@ -6141,12 +6224,17 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
         lead?.qualificationData?.extractedInfo?.especialidade ||
         extracted.therapyArea;
 
+    // 🔴 CRITICAL FIX: Verificar data de nascimento
+    const hasBirthDate = !!(lead?.patientInfo?.birthDate);
+
+    // 🎯 ORDEM DE TRIAGEM (prioridade = acolhimento → dados → agendamento)
     const missing = [];
     if (!hasTherapyArea && serviceStatus === 'available') missing.push('therapyArea');
-    if (!hasName) missing.push(extracted.responsibleName ? 'patientName' : 'name');
-    if (!hasAge) missing.push('age');
-    if (!hasPeriod) missing.push('period');
-    if (!hasComplaint) missing.push('complaint');
+    if (!hasComplaint) missing.push('complaint');        // 1️⃣ Acolhimento: queixa primeiro
+    if (!hasName) missing.push(extracted.responsibleName ? 'patientName' : 'name');  // 2️⃣ Nome
+    if (!hasBirthDate) missing.push('birthDate');        // 3️⃣ Data nascimento
+    if (!hasAge) missing.push('age');                    // 4️⃣ Idade
+    if (!hasPeriod) missing.push('period');              // 5️⃣ Período (último antes de slots)
 
     console.log('[AMANDA-SÊNIOR] Checking lead data:', {
         hasName: !!hasName,
@@ -6262,7 +6350,18 @@ function buildSimpleResponse(missing, extracted, lead, enrichedContext = null) {
             return ensureSingleHeart("Qual a **idade** do paciente? (anos ou meses) 😊");
 
         case 'complaint':
-            return ensureSingleHeart("Me conta um pouquinho: qual a principal preocupação que vocês têm? 💚");
+            // 🎯 PRIMEIRO CONTATO - Acolhimento antes de tudo
+            if (areaDisplay) {
+                return ensureSingleHeart(`Oi! Seja bem-vindo(a) à Fono Inova 💚\n\nEntendi que você busca **${areaDisplay}**. Me conta um pouquinho: o que vocês têm observado que te preocupou? Estou aqui para ouvir e ajudar a encontrar o melhor caminho 😊`);
+            }
+            return ensureSingleHeart(`Oi! Seja bem-vindo(a) à Fono Inova 💚\n\nFique à vontade para me contar: o que te trouxe até aqui? Qual a principal preocupação que vocês têm? Estou aqui para ajudar 😊`);
+        
+        case 'birthDate':
+            // Data de nascimento após nome
+            if (patientName) {
+                return ensureSingleHeart(`Obrigado, ${patientName.split(' ')[0]}! 💚 Agora me manda a **data de nascimento** (dd/mm/aaaa) pra eu organizar certinho 😊`);
+            }
+            return ensureSingleHeart(`Obrigado! 💚 Agora me manda a **data de nascimento** (dd/mm/aaaa)`);
 
         default:
             return ensureSingleHeart("Pra eu organizar, prefere **manhã ou tarde**? 😊");

@@ -41,13 +41,6 @@ router.get('/', (req, res) => {
             sessionDuration: 40
         },
         {
-            id: 'pediatria',
-            name: 'Pediatria',
-            icon: 'child_care',
-            color: '#00BCD4',
-            sessionDuration: 30
-        },
-        {
             id: 'musicoterapia',
             name: 'Musicoterapia',
             icon: 'music_note',
@@ -55,7 +48,7 @@ router.get('/', (req, res) => {
             sessionDuration: 40
         },
         {
-            id: 'psicomotricidade',
+            id: '',
             name: 'Psicomotricidade',
             icon: 'directions_run',
             color: '#FF5722',

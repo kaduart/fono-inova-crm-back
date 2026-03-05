@@ -10,7 +10,8 @@ export function isValidPatientName(str) {
         'oi', 'bom', 'boa', 'tem', 'ela', 'ele', 'não', 'nao', 'sim', 'pode',
         'qual', 'tenho', 'preciso', 'queria', 'fazer', 'agendar', 'marcar',
         'saber', 'info', 'informação', 'obrigado', 'obrigada', 'tudo', 'ok',
-        'vocês', 'voces', 'clínica', 'clinica', 'atende', 'atendem'
+        'vocês', 'voces', 'clínica', 'clinica', 'atende', 'atendem',
+        'contato', 'whatsapp', 'whatsapp Business' // 🆕 FIX: Rejeita nomes genéricos do WhatsApp
     ];
     const primeira = words[0].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     return !naoSaoNomes.includes(primeira);

@@ -215,18 +215,25 @@ export async function findAvailableSlots({
             continue;
         }
 
-        for (const doctor of doctors) {
-            if (++requestCount > MAX_REQUESTS) {
-                console.warn("⚠️ [BOOKING] Limite de requisições atingido — abortando busca.");
-                break;
-            }
+        // Consulta todos os médicos do dia em paralelo (em vez de sequencial)
+        const remainingBudget = MAX_REQUESTS - requestCount;
+        if (remainingBudget <= 0) {
+            console.warn("⚠️ [BOOKING] Limite de requisições atingido — abortando busca.");
+            break;
+        }
+        const doctorsToQuery = doctors.slice(0, remainingBudget);
+        requestCount += doctorsToQuery.length;
 
-            if (validPeriodCount >= targetCandidates) break;
+        const dayResults = await Promise.all(
+            doctorsToQuery.map(doctor =>
+                fetchAvailableSlotsForDoctor({ doctorId: String(doctor._id), date })
+                    .catch(() => null)
+            )
+        );
 
-            const slots = await fetchAvailableSlotsForDoctor({
-                doctorId: String(doctor._id),
-                date,
-            });
+        for (let i = 0; i < doctorsToQuery.length; i++) {
+            const doctor = doctorsToQuery[i];
+            const slots = dayResults[i];
 
             if (!slots?.length) continue;
 
@@ -238,16 +245,14 @@ export async function findAvailableSlots({
                     if (slotDate <= now) continue;
                 }
 
-                const candidate = {
+                allCandidates.push({
                     doctorId: String(doctor._id),
                     doctorName: doctor.fullName,
                     date,
                     time,
                     specialty: therapyArea,
                     requestedSpecialties: specialties,
-                };
-
-                allCandidates.push(candidate);
+                });
 
                 if (matchesPeriod(time)) {
                     validPeriodCount++;
@@ -255,6 +260,8 @@ export async function findAvailableSlots({
 
                 if (validPeriodCount >= targetCandidates) break;
             }
+
+            if (validPeriodCount >= targetCandidates) break;
         }
 
         validDaysChecked++;
