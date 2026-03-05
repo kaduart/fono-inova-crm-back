@@ -1257,10 +1257,25 @@ async function processMessageStatus(status) {
     try {
         // Buscar mensagem no banco pelo waMessageId
         const Message = (await import('../models/Message.js')).default;
-        const msg = await Message.findOne({ waMessageId: messageId });
-        
+        let msg = await Message.findOne({ waMessageId: messageId });
+
+        // Race condition: webhook pode chegar antes de registerMessage salvar no banco
+        // Retenta até 3x com delay crescente
         if (!msg) {
-            console.log(`[WEBHOOK-STATUS] Mensagem ${messageId} não encontrada no banco`);
+            console.log(`[WEBHOOK-STATUS] Mensagem ${messageId} não encontrada no banco — aguardando...`);
+            const delays = [600, 1000, 1500];
+            for (const delay of delays) {
+                await new Promise(r => setTimeout(r, delay));
+                msg = await Message.findOne({ waMessageId: messageId });
+                if (msg) {
+                    console.log(`[WEBHOOK-STATUS] Mensagem ${messageId} encontrada após retry (${delay}ms)`);
+                    break;
+                }
+            }
+        }
+
+        if (!msg) {
+            console.log(`[WEBHOOK-STATUS] Mensagem ${messageId} não encontrada no banco após retries — ignorando`);
             return;
         }
         
@@ -1296,7 +1311,7 @@ async function processMessageStatus(status) {
                         lead: msg.lead || null,
                         contactId: msg.contact || null,
                         patientId: msg.patient || null,
-                        sentBy: 'sistema',
+                        sentBy: 'system',
                     });
                     console.log(`[WEBHOOK-STATUS] ✅ Template recontato_clinica enviado para ${recipient_id}`);
 
