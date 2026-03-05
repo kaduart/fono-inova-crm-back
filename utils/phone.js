@@ -56,24 +56,40 @@ export const normalizeE164BR = (phone) => {
     // Celulares no Brasil devem ter: 55 (2) + DDD (2) + 9 (1) + número (8) = 13 dígitos
     // Fixos têm: 55 (2) + DDD (2) + número (8) = 12 dígitos
 
-    // 🔧 REGRA: Se o número (sem 55 e sem DDD) começar com 6-9, adiciona 9 na frente
-    // Isso garante que números como 92013573 virem 992013573
-    // Ex: 556292013573 → número=92013573 (começa com 9) → vira 992013573 → resultado: 5562992013573
-    // Ex: 556281694922 → número=81694922 (começa com 8) → vira 981694922 → resultado: 5562981694922
-    if (s.length >= 4) {
-        const numeroSemPrefixo = s.substring(4); // Remove 55 + DDD
+    // 🔧 REGRA: Adiciona 9 somente se o número estiver com 12 dígitos (faltando o 9)
+    // Formato atual: 55DDXXXXXXXX (12 dígitos = sem o 9)
+    // Formato alvo:  55DD9XXXXXXXX (13 dígitos = com o 9)
+    if (s.length === 12) {
+        // Tem 12 dígitos: 55 + DDD (2) + número (8) = falta o 9
+        const ddd = s.substring(2, 4);
+        const numero = s.substring(4); // 8 dígitos sem o 9
         
-        if (numeroSemPrefixo.length >= 1) {
-            const primeiroDigito = numeroSemPrefixo.charAt(0);
-            const digitoNum = parseInt(primeiroDigito);
-            
-            // Se começar com 6,7,8,9 → adiciona 9 na frente do número
-            if (digitoNum >= 6 && digitoNum <= 9) {
-                // Reconstroi: 55 + DDD + 9 + número
-                const ddd = s.substring(2, 4);
-                s = "55" + ddd + "9" + numeroSemPrefixo;
-                console.log(`📞 [PHONE] +9: ${phone} → ${s}`);
-            }
+        // Se começar com 6-9 é celular, adiciona o 9
+        const primeiroDigito = parseInt(numero.charAt(0));
+        if (primeiroDigito >= 6 && primeiroDigito <= 9) {
+            s = "55" + ddd + "9" + numero;
+            console.log(`📞 [PHONE] +9 (12→13): ${phone} → ${s}`);
+        }
+    } else if (s.length === 13) {
+        // Já tem 13 dígitos: 55 + DDD + 9 + número = OK
+        console.log(`📞 [PHONE] OK (13): ${phone} → ${s}`);
+    } else if (s.length === 11 && !s.startsWith("55")) {
+        // Não tem 55 no início, tem 11 dígitos: DDD + 9 + número
+        // Adiciona 55 na frente
+        s = "55" + s;
+        console.log(`📞 [PHONE] +55: ${phone} → ${s}`);
+    } else if (s.length === 10 && !s.startsWith("55")) {
+        // Não tem 55 no início, tem 10 dígitos: DDD + número (sem 9)
+        const ddd = s.substring(0, 2);
+        const numero = s.substring(2);
+        const primeiroDigito = parseInt(numero.charAt(0));
+        
+        if (primeiroDigito >= 6 && primeiroDigito <= 9) {
+            s = "55" + ddd + "9" + numero;
+            console.log(`📞 [PHONE] +55+9: ${phone} → ${s}`);
+        } else {
+            s = "55" + s;
+            console.log(`📞 [PHONE] +55 (fixo?): ${phone} → ${s}`);
         }
     }
 
