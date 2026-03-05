@@ -56,23 +56,24 @@ export const normalizeE164BR = (phone) => {
     // Celulares no Brasil devem ter: 55 (2) + DDD (2) + 9 (1) + número (8) = 13 dígitos
     // Fixos têm: 55 (2) + DDD (2) + número (8) = 12 dígitos
 
-    // Se tem 12 dígitos (55 + DDD + 8 dígitos), pode estar faltando o 9
-    if (s.length === 12) {
-        const ddd = s.substring(2, 4);
-        const primeiroDigito = s.substring(4, 5);
+    // 🔧 REGRA: Se o número (sem 55 e sem DDD) começar com 6-9, adiciona 9 na frente
+    // Isso garante que números como 92013573 virem 992013573
+    // Ex: 556292013573 → número=92013573 (começa com 9) → vira 992013573 → resultado: 5562992013573
+    // Ex: 556281694922 → número=81694922 (começa com 8) → vira 981694922 → resultado: 5562981694922
+    if (s.length >= 4) {
+        const numeroSemPrefixo = s.substring(4); // Remove 55 + DDD
         
-        // Se o primeiro dígito depois do DDD é 6,7,8 → é celular SEM o 9
-        // Adicionamos o 9 para celulares
-        // Fixos (2,3,4,5) e celulares que já tem 9 ficam como estão
-        if (primeiroDigito !== "9") {
-            const primeiroDigitoNum = parseInt(primeiroDigito);
+        if (numeroSemPrefixo.length >= 1) {
+            const primeiroDigito = numeroSemPrefixo.charAt(0);
+            const digitoNum = parseInt(primeiroDigito);
             
-            // Se começa com 6,7,8,9 → é celular, adiciona 9 na frente
-            if (primeiroDigitoNum >= 6 && primeiroDigitoNum <= 9) {
-                s = s.substring(0, 4) + "9" + s.substring(4);
-                console.log(`📞 [PHONE] Adicionado 9 dígito: ${phone} → ${s}`);
+            // Se começar com 6,7,8,9 → adiciona 9 na frente do número
+            if (digitoNum >= 6 && digitoNum <= 9) {
+                // Reconstroi: 55 + DDD + 9 + número
+                const ddd = s.substring(2, 4);
+                s = "55" + ddd + "9" + numeroSemPrefixo;
+                console.log(`📞 [PHONE] +9: ${phone} → ${s}`);
             }
-            // Se começa com 2,3,4,5 → é fixo, mantém assim (SEM 9)
         }
     }
 
