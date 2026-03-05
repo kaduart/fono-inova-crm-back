@@ -12,7 +12,7 @@
 // ============================================================
 
 export const PRICING = {
-  // Avaliação inicial (todas as áreas exceto neuropsico)
+  // Avaliação inicial (todas as áreas exceto neuropsico e fonoaudiologia)
   AVALIACAO_INICIAL: 200,
   
   // Sessão avulsa (sem pacote)
@@ -28,7 +28,7 @@ export const PRICING = {
 
 export const THERAPY_PRICING = {
   fonoaudiologia: {
-    avaliacao: 200,
+    avaliacao: 250,
     sessaoAvulsa: 200,
     pacoteMensal: 720, // 4 sessões
     sessaoPacote: 180,
@@ -42,10 +42,10 @@ export const THERAPY_PRICING = {
     descricao: 'Psicologia',
   },
   terapia_ocupacional: {
-    avaliacao: 200,
+    avaliacao: 250,
     sessaoAvulsa: 200,
-    pacoteMensal: 640,
-    sessaoPacote: 160,
+    pacoteMensal: 720,
+    sessaoPacote: 180,
     descricao: 'Terapia Ocupacional',
   },
   fisioterapia: {

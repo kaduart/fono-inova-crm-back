@@ -8,14 +8,29 @@
  * O LLM NUNCA inventa - só usa o que está aqui.
  */
 
+import { THERAPY_PRICING, formatPrice } from '../config/pricing.js';
+
+// Helper para gerar texto de preços dinamicamente
+function getPricingText() {
+  const fono = THERAPY_PRICING.fonoaudiologia;
+  const psico = THERAPY_PRICING.psicologia;
+  const neuro = THERAPY_PRICING.neuropsicologia;
+  
+  return {
+    avaliacao: `${formatPrice(fono.avaliacao)} fonoaudiologia, ${formatPrice(psico.avaliacao)} outras especialidades`,
+    avaliacaoNeuro: `${formatPrice(neuro.avaliacao)} neuropsicologia completa`,
+    sessao: `Sessão avulsa ${formatPrice(fono.sessaoAvulsa)}, pacote mensal ${formatPrice(fono.sessaoPacote)}/sessão`,
+  };
+}
+
 export const CLINIC_KNOWLEDGE = {
   // ═══════════════════════════════════════════════════
-  // 💰 PREÇOS (com gatilhos de valor)
+  // 💰 PREÇOS (com gatilhos de valor) - ATUALIZADOS via pricing.js
   // ═══════════════════════════════════════════════════
   pricing: {
-    avaliacao: "R$ 200 (todas especialidades, exceto neuropsicologia)",
-    avaliacaoNeuro: "R$ 400 (neuropsicologia - avaliação completa)",
-    sessao: "Definido após avaliação, geralmente entre R$ 180 e R$ 200",
+    avaliacao: getPricingText().avaliacao,
+    avaliacaoNeuro: getPricingText().avaliacaoNeuro,
+    sessao: getPricingText().sessao,
     pacotes: "Oferecemos pacotes mensais com desconto (perguntar na avaliação)",
 
     // 🎯 Gatilhos de venda consultiva

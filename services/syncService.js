@@ -4,16 +4,18 @@ import MedicalEvent from '../models/MedicalEvent.js';
 import Package from '../models/Package.js'; // Adicione esta importação
 import Patient from '../models/Patient.js'; // Adicione esta importação
 import Session from '../models/Session.js'; // Adicione esta importação
+import { THERAPY_PRICING, PRICING } from '../config/pricing.js';
 
+// Valores de repasse para profissionais (baseados nos preços de venda)
 const DEFAULT_SPECIALTY_VALUES = {
-    fonoaudiologia: 160,
-    psicologia: 130,
-    'terapia_ocupacional': 160,
-    fisioterapia: 160,
+    fonoaudiologia: THERAPY_PRICING.fonoaudiologia?.sessaoPacote || 180,
+    psicologia: THERAPY_PRICING.psicologia?.sessaoPacote || 160,
+    'terapia_ocupacional': THERAPY_PRICING.terapia_ocupacional?.sessaoPacote || 160,
+    fisioterapia: THERAPY_PRICING.fisioterapia?.sessaoPacote || 160,
     pediatria: 220,
     neuroped: 250,
-    avaliacao: 200,
-    unknown: 200
+    avaliacao: PRICING.AVALIACAO_INICIAL || 200,
+    unknown: PRICING.AVALIACAO_INICIAL || 200
 };
 
 

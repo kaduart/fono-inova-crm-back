@@ -14,12 +14,17 @@ import { THERAPY_PRICING, formatPrice, getTherapyPricing } from '../config/prici
 // 👅 TESTE DA LINGUINHA (AVALIAÇÃO - não é cirurgia!)
 // ================================================================
 
+const getFonoPrice = () => {
+    const fono = getTherapyPricing('fonoaudiologia');
+    return fono ? formatPrice(fono.avaliacao) : 'R$ 250';
+};
+
 const TESTE_LINGUINHA_WISDOM = {
     teste: {
-        regra: 'Teste da Linguinha: R$200 (avaliação fonoaudiológica do frênulo lingual)',
-        script: 'Realizamos o Teste da Linguinha, uma avaliação fonoaudiológica específica para verificar como está o frênulo lingual. O valor é R$200.',
+        get regra() { return `Teste da Linguinha: ${getFonoPrice()} (avaliação fonoaudiológica do frênulo lingual)`; },
+        get script() { return `Realizamos o Teste da Linguinha, uma avaliação fonoaudiológica específica para verificar como está o frênulo lingual. O valor é ${getFonoPrice()}.`; },
         detalhes: 'O teste da linguinha é uma avaliação simples e indolor onde observamos como está o frênulo (aquela membrana que conecta a língua ao céu da boca). Verificamos a mobilidade da língua, a pega do bebê ao mamar, a sucção e se há dificuldades que possam atrapalhar a amamentação ou a fala. É uma avaliação diagnóstica para entender a situação e orientar a família.',
-        explicacao_humanizada: `Oi! 💚
+        get explicacao_humanizada() { return `Oi! 💚
 
 O **Teste da Linguinha** é uma avaliação que fazemos para ver como está o frênulo lingual (aquela "pelinha" que liga a língua ao céu da boca).
 
@@ -31,24 +36,24 @@ Durante a avaliação, observamos:
 
 É um exame simples, indolor e rápido! Serve pra entender se há alguma restrição na mobilidade da língua que possa estar causando dificuldades.
 
-O valor é R$170. Quer agendar? 😊`
+O valor é ${getFonoPrice()}. Quer agendar? 😊`; }
     },
     cirurgia: {
         regra: 'NÃO realizamos cirurgia (frenectomia/pique). Indicamos parceiros.',
         script: 'Nós não realizamos cirurgia no frênulo lingual. Temos parceiros (odontopediatras e cirurgiões) que podemos indicar. Aqui fazemos a avaliação e, depois do procedimento, a reabilitação fonoaudiológica.',
         acolhimento: 'Entendo a preocupação! Não fazemos a cirurgia aqui, mas temos parceiros de confiança que podemos indicar. O ideal é fazer nossa avaliação primeiro para entender a situação, e aí te orientamos sobre os próximos passos.',
-        esclarecimento: `Oi! 💚
+        get esclarecimento() { return `Oi! 💚
 
 Aqui na Fono Inova **não realizamos cirurgia** no frênulo lingual.
 
 O que fazemos:
-✅ **Avaliação** do frênulo (Teste da Linguinha) — R$200
+✅ **Avaliação** do frênulo (Teste da Linguinha) — ${getFonoPrice()}
 ✅ Indicamos **parceiros** (odontopediatras e cirurgiões) se houver necessidade
 ✅ **Fonoterapia** de reabilitação após o procedimento
 
 A avaliação é importante porque nem sempre é necessária a intervenção cirúrgica! E quando é, podemos indicar profissionais de confiança.
 
-Quer agendar a avaliação primeiro? 😊`
+Quer agendar a avaliação primeiro? 😊`; }
     }
 };
 
@@ -57,43 +62,82 @@ Quer agendar a avaliação primeiro? 😊`
 // ================================================================
 
 const PRICE_WISDOM = {
-    // Como a clínica apresenta preços (padrão real)
+    // Como a clínica apresenta preços (padrão real) - valores dinâmicos do pricing.js
     avaliacao: {
-        regra: 'Avaliação inicial: R$200 (valor promocional, normalmente R$250)',
-        anchorDesconto: true,
-        valorDe: 250,
-        valorPor: 200,
-        script: 'A primeira consulta é uma avaliação inicial que de R$250,00 está por R$200,00',
+        get regra() { 
+            const fono = getTherapyPricing('fonoaudiologia');
+            const psico = getTherapyPricing('psicologia');
+            const fonoPrice = fono ? formatPrice(fono.avaliacao) : 'R$ 250';
+            const psicoPrice = psico ? formatPrice(psico.avaliacao) : 'R$ 200';
+            return `Avaliação inicial: fonoaudiologia ${fonoPrice}, outras especialidades ${psicoPrice}`; 
+        },
+        anchorDesconto: false, // Removido - usando preços reais
+        scriptGetter: () => {
+            const fono = getTherapyPricing('fonoaudiologia');
+            const fonoPrice = fono ? formatPrice(fono.avaliacao) : 'R$ 250';
+            return `A avaliação inicial de fonoaudiologia é ${fonoPrice}`;
+        },
         oQueInclui: 'A avaliação consiste em uma anamnese completa, onde realizamos uma entrevista detalhada para conhecer o histórico do paciente, suas queixas, dificuldades e rotina. Esse processo é fundamental para compreendermos melhor as necessidades e traçarmos o plano de tratamento mais adequado.',
         acolhimentoAntes: 'Antes de falar preço, contextualize o VALOR do trabalho. Fale o que a avaliação inclui e como vai ajudar a família.',
     },
 
     pacoteMensal: {
-        regra: 'Pacote mensal (1x/semana): R$640/mês = R$160/sessão',
-        script: 'Se você paga o mês fechado, por exemplo 1 sessão por semana, fica no valor de R$640,00 por mês, que sai R$160,00 cada sessão.',
+        get regra() {
+            const fono = getTherapyPricing('fonoaudiologia');
+            const pacote = fono ? formatPrice(fono.pacoteMensal) : 'R$ 720';
+            const sessao = fono ? formatPrice(fono.sessaoPacote) : 'R$ 180';
+            return `Pacote mensal (1x/semana): ${pacote}/mês = ${sessao}/sessão`;
+        },
+        get script() {
+            const fono = getTherapyPricing('fonoaudiologia');
+            const pacote = fono ? formatPrice(fono.pacoteMensal) : 'R$ 720';
+            const sessao = fono ? formatPrice(fono.sessaoPacote) : 'R$ 180';
+            return `Se você paga o mês fechado, por exemplo 1 sessão por semana, fica no valor de ${pacote} por mês, que sai ${sessao} cada sessão.`;
+        },
     },
 
     sessaoAvulsa: {
-        regra: 'Sessão avulsa: R$180/sessão (pode variar: R$170-R$190 conforme área)',
-        script: 'Sessão avulsa: toda vez que vier para a sessão você paga R$180,00 cada sessão.',
+        get regra() {
+            const fono = getTherapyPricing('fonoaudiologia');
+            const avulso = fono ? formatPrice(fono.sessaoAvulsa) : 'R$ 200';
+            return `Sessão avulsa: ${avulso}/sessão`;
+        },
+        get script() {
+            const fono = getTherapyPricing('fonoaudiologia');
+            const avulso = fono ? formatPrice(fono.sessaoAvulsa) : 'R$ 200';
+            return `Sessão avulsa: toda vez que vier para a sessão você paga ${avulso} cada sessão.`;
+        },
     },
 
     neuropsicologia: {
-        regra: 'Avaliação neuropsicológica completa: R$2.000 em até 6x sem juros. ~10 sessões + laudo.',
+        get regra() {
+            const neuro = getTherapyPricing('neuropsicologia');
+            const price = neuro ? formatPrice(neuro.avaliacao) : 'R$ 2.000';
+            return `Avaliação neuropsicológica completa: ${price} em até 6x sem juros. ~10 sessões + laudo.`;
+        },
         laudoIncluso: true,
         parcelamento: '6x sem juros',
-        script: 'A avaliação neuropsicológica completa é R$2.000 — pode parcelar em até 6x sem juros. Já inclui tudo: as sessões, os testes e o laudo completo.',
+        get script() {
+            const neuro = getTherapyPricing('neuropsicologia');
+            const price = neuro ? formatPrice(neuro.avaliacao) : 'R$ 2.000';
+            return `A avaliação neuropsicológica completa é ${price} — pode parcelar em até 6x sem juros. Já inclui tudo: as sessões, os testes e o laudo completo.`;
+        },
         detalhes: 'O neuropsicólogo observa o comportamento, aplica testes cognitivos e produz um laudo que serve para escola, médicos e planejamento terapêutico.',
     },
 
     // Estratégia de objeção de preço (padrão real)
     objecaoPreco: {
-        regra: 'Quando lead acha caro: mencionar promoção, pacote mais em conta, valor do trabalho',
-        scripts: [
-            'Esse valor continua com a condição especial que estamos mantendo. É uma ótima oportunidade de começar.',
-            'Trabalhamos com pacotes que acabam se tornando mais em conta — cada sessão sai por R$160 no pacote mensal.',
-            'Muitas famílias começam com a avaliação avulsa (R$200) e depois optam pelo pacote, que tem o melhor custo-benefício.',
-        ],
+        regra: 'Quando lead acha caro: mencionar pacote mais em conta, valor do trabalho',
+        get scripts() {
+            const fono = getTherapyPricing('fonoaudiologia');
+            const sessaoPacote = fono ? formatPrice(fono.sessaoPacote) : 'R$ 180';
+            const avaliacao = fono ? formatPrice(fono.avaliacao) : 'R$ 250';
+            return [
+                'O valor reflete a qualidade do nosso trabalho especializado. É um investimento na evolução da criança.',
+                `Trabalhamos com pacotes que acabam se tornando mais em conta — cada sessão sai por ${sessaoPacote} no pacote mensal.`,
+                `Muitas famílias começam com a avaliação (${avaliacao}) e depois optam pelo pacote, que tem o melhor custo-benefício.`,
+            ];
+        },
         acolhimento: 'Entendo que investimento em saúde pesa no orçamento. Mas quando a gente vê a criança evoluindo, cada centavo faz sentido.',
     },
 };
@@ -137,7 +181,10 @@ const CONVENIO_WISDOM = {
 
 const FICHA_CADASTRO_WISDOM = {
     regra: 'Quando lead quer agendar, enviar ficha de pré-cadastro para coletar dados',
-    template: `Por gentileza, preencha essa pré-ficha de cadastro para podermos agendar!
+    get template() {
+        const fono = getTherapyPricing('fonoaudiologia');
+        const avaliacao = fono ? formatPrice(fono.avaliacao) : 'R$ 250';
+        return `Por gentileza, preencha essa pré-ficha de cadastro para podermos agendar!
 
 📋 *Avaliação*
 
@@ -147,7 +194,8 @@ const FICHA_CADASTRO_WISDOM = {
 • Nome do responsável:
 • Principal queixa do paciente:
 
-Valor da avaliação: R$200,00`,
+Valor da avaliação fonoaudiologia: ${avaliacao}`;
+    },
 
     acolhimento: 'Que bom que quer dar esse passo! Vou precisar só de algumas informações para agendar:',
     posAgendamento: 'Seu agendamento foi realizado com sucesso. Agradecemos pela confiança em nosso trabalho e ficamos à disposição caso precise de algo antes da avaliação.',
@@ -410,29 +458,35 @@ export function getWisdomForContext(topic, flags = {}) {
 - ⚠️ SEMPRE mencione que o laudo está incluso
 - ⚠️ Acolha antes: "${PRICE_WISDOM.avaliacao.acolhimentoAntes}"`);
 
+            const neuro = getTherapyPricing('neuropsicologia');
+            const neuroPrice = neuro ? formatPrice(neuro.avaliacao) : 'R$ 2.000';
             wisdom = {
                 tipo: 'price',
-                valorAtual: 'R$2.000 (6x sem juros)',
+                valorAtual: `${neuroPrice} (6x sem juros)`,
                 estrategia: { anchor: false, packageFirst: false, laudoIncluso: true },
                 template: PRICE_WISDOM.neuropsicologia.script,
                 respostaExemplo: PRICE_WISDOM.neuropsicologia.script,
             };
         } else {
             blocks.push(`💰 REGRA DE PREÇO (${(area || 'geral').toUpperCase()}):
-- Avaliação: De R$250 por R$200 (USE esse anchor de desconto!)
-- Pacote mensal (1x/semana): R$640/mês = R$160/sessão
-- Sessão avulsa: R$180/sessão
+- Avaliação fonoaudiologia: consulte valor atualizado no pricing.js
+- Pacote mensal (1x/semana): consulte valor atualizado no pricing.js
+- Sessão avulsa: consulte valor atualizado no pricing.js
 - O que a avaliação inclui: "${PRICE_WISDOM.avaliacao.oQueInclui}"
 - ⚠️ NUNCA mande preço seco. Diga o que INCLUI e o VALOR primeiro.
-- ⚠️ Use o anchor de desconto: "de R$250 está por R$200"` +
+- ⚠️ Use valores reais do pricing.js, não mais anchor de desconto` +
                 (pricing ? `\n- Pacote desta área: ${formatPrice(pricing.pacoteMensal)}/mês (${formatPrice(pricing.sessaoPacote)}/sessão)` : ''));
 
+            const fono2 = getTherapyPricing('fonoaudiologia');
+            const avaliacaoFono2 = fono2 ? formatPrice(fono2.avaliacao) : 'R$ 250';
+            const pacote2 = fono2 ? formatPrice(fono2.pacoteMensal) : 'R$ 720';
+            
             wisdom = {
                 tipo: 'price',
-                valorAtual: `Avaliação R$200 (de R$250). Pacote R$${pricing?.pacoteMensal || 640}/mês`,
-                estrategia: { anchor: true, valorDe: 250, valorPor: 200, packageFirst: false },
-                template: PRICE_WISDOM.avaliacao.script,
-                respostaExemplo: `${PRICE_WISDOM.avaliacao.script}\n\n${PRICE_WISDOM.pacoteMensal.script}\n\n${PRICE_WISDOM.sessaoAvulsa.script}`,
+                valorAtual: `Avaliação fonoaudiologia ${avaliacaoFono2}. Pacote ${pacote2}/mês`,
+                estrategia: { anchor: false, packageFirst: false },
+                template: PRICE_WISDOM.avaliacao.scriptGetter ? PRICE_WISDOM.avaliacao.scriptGetter() : '',
+                respostaExemplo: `${PRICE_WISDOM.avaliacao.scriptGetter ? PRICE_WISDOM.avaliacao.scriptGetter() : ''}\n\n${PRICE_WISDOM.pacoteMensal.script}\n\n${PRICE_WISDOM.sessaoAvulsa.script}`,
             };
         }
     }
@@ -519,7 +573,7 @@ export function getWisdomForContext(topic, flags = {}) {
         blocks.push(`📅 FLUXO DE AGENDAMENTO:
 - Acolher: "${FICHA_CADASTRO_WISDOM.acolhimento}"
 - Coletar: nome da criança + data de nascimento + principal queixa
-- Valor da avaliação: R$200
+- Valor da avaliação: consulte pricing.js (fonoaudiologia R$ 250, outras R$ 200)
 - Após confirmar: "${FICHA_CADASTRO_WISDOM.posAgendamento}"
 - Pedir para avisar em caso de imprevisto`);
     }
@@ -565,7 +619,7 @@ export function getWisdomForContext(topic, flags = {}) {
         blocks.push(`🤔 AMBIGUIDADE DETECTADA (VISÃO CLÍNICA):
 - O lead pediu "Psicologia" ou "Avaliação", mas pode estar buscando DIAGNÓSTICO (Neuropsicologia).
 - Mães muitas vezes confundem "Avaliação Psicológica" (terapia) com "Avaliação Neuropsicológica" (bateria de testes).
-- 🛑 NÃO dê o preço de R$200 direto. Explique a diferença PRIMEIRO.
+- 🛑 NÃO dê o preço direto sem contextualizar. Explique a diferença PRIMEIRO.
 - SCRIPT OBRIGATÓRIO: "Para eu te passar as informações certinhas: você busca a **Psicoterapia** (acompanhamento semanal para questões emocionais/comportamentais) ou a **Avaliação Neuropsicológica** (bateria de testes para investigar TEA/TDAH e fechar diagnóstico)?"`);
     }
 
@@ -588,7 +642,7 @@ export function getWisdomForContext(topic, flags = {}) {
     } else if (topic === 'teste_linguinha') {
         blocks.push(`👅 TESTE DA LINGUINHA:
 - O teste é realizado pela fonoaudióloga.
-- Valor: R$200 (avaliação inicial).
+- Valor: consulte pricing.js para valor atualizado.
 - Script DE RESPOSTA OBRIGATÓRIO (Adapte com o nome da criança se souber): "${TESTE_LINGUINHA_WISDOM.teste.detalhes}"
 - Se já fez cirurgia: "A fonoaudiologia é essencial para reabilitar a função da língua após o procedimento."`);
     }

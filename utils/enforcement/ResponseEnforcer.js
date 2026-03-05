@@ -1,5 +1,7 @@
 // enforcement/ResponseEnforcer.js - NOVO ARQUIVO
 
+import { PRICING } from '../../config/pricing.js';
+
 export class ResponseEnforcer {
     constructor(context) {
         this.context = context;
@@ -37,7 +39,8 @@ export class ResponseEnforcer {
     enforcePriceContext(text) {
         if (!/\bR\$\s*\d+/.test(text)) {
             this.violations.push('MISSING_PRICE_SYMBOL');
-            return text + '\n\nO investimento é R$ 200 (avaliação inicial).';
+            const defaultPrice = PRICING.AVALIACAO_INICIAL || 200;
+            return text + `\n\nO investimento é R$ ${defaultPrice} (avaliação inicial).`;
         }
 
         if (!/(inclui|anamnese|avalia|sessão)/i.test(text)) {

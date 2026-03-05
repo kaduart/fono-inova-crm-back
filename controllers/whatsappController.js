@@ -1213,11 +1213,24 @@ async function processMessageStatus(status) {
         }
         
         // Atualizar status
+        const oldStatus = msg.status;
         msg.status = msgStatus;
         
-        // Se falhou, registrar erro e emitir alerta
+        // Log de transição de status
+        console.log(`[WEBHOOK-STATUS] ${messageId}: ${oldStatus} → ${msgStatus}`);
+        
+        // Se enviada (aceita pelo WhatsApp)
+        if (msgStatus === 'sent') {
+            console.log(`[WEBHOOK-STATUS] ✅ Mensagem aceita pelo WhatsApp para ${recipient_id}`);
+        }
+        
+        // Se falhou, DELETAR mensagem do banco (não entregue = não existe)
         if (msgStatus === 'failed' && errors) {
             console.error(`[WEBHOOK-STATUS] ❌ FALHA ao entregar para ${recipient_id}:`, errors);
+            
+            // Deletar mensagem do banco
+            await Message.deleteOne({ waMessageId: messageId });
+            console.log(`[WEBHOOK-STATUS] 🗑️ Mensagem ${messageId} deletada do BD (não entregue)`);
             
             // Emitir alerta via socket
             const { getIo } = await import('../config/socket.js');
@@ -1232,11 +1245,18 @@ async function processMessageStatus(status) {
                     timestamp: new Date()
                 });
             }
+            
+            return; // Não salva, já deletou
         }
         
         // Se entregue, logar sucesso
         if (msgStatus === 'delivered') {
-            console.log(`[WEBHOOK-STATUS] ✅ Mensagem entregue para ${recipient_id}`);
+            console.log(`[WEBHOOK-STATUS] ✅ Mensagem entregue no dispositivo ${recipient_id}`);
+        }
+        
+        // Se lida, logar
+        if (msgStatus === 'read') {
+            console.log(`[WEBHOOK-STATUS] 👁️ Mensagem lida por ${recipient_id}`);
         }
         
         await msg.save();

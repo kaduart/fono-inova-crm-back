@@ -1,5 +1,32 @@
 // utils/therapyDetector.js - APENAS DETECÇÃO E DADOS
 
+import { getTherapyPricing, formatPrice } from '../config/pricing.js';
+
+// Mapeamento de therapy IDs para chaves do pricing
+const THERAPY_TO_PRICING_KEY = {
+    speech: 'fonoaudiologia',
+    psychology: 'psicologia',
+    occupational_therapy: 'terapia_ocupacional',
+    physiotherapy: 'fisioterapia',
+    music_therapy: 'musicoterapia',
+    psychopedagogy: 'psicopedagogia',
+    neuropsychological: 'neuropsicologia',
+};
+
+// Funcao helper para obter preço dinamico
+function getDynamicPrice(therapyId) {
+    const pricingKey = THERAPY_TO_PRICING_KEY[therapyId];
+    if (!pricingKey) return null;
+    
+    const pricing = getTherapyPricing(pricingKey);
+    if (!pricing) return null;
+    
+    if (pricing.incluiLaudo) {
+        return `${formatPrice(pricing.avaliacao)} (até ${pricing.parcelamento || '6x'})`;
+    }
+    return `${formatPrice(pricing.avaliacao)} a avaliação inicial`;
+}
+
 export const THERAPY_SPECIALTIES = {
     neuropsychological: {
         id: 'neuropsychological',
@@ -209,32 +236,32 @@ export const THERAPY_DATA = {
     },
     speech: {
         explanation: "Avaliação especializada em desenvolvimento da fala e linguagem",
-        price: "R$ 200 a avaliação inicial (de R$250)",
+        get price() { return getDynamicPrice('speech') || 'R$ 250 a avaliação inicial'; },
         details: "40min com fono experiente",
     },
     psychology: {
         explanation: "Acompanhamento psicológico infantil/adolescente — comportamento, emocional, sociabilização",
-        price: "R$ 200 a avaliação inicial (de R$250)",
+        get price() { return getDynamicPrice('psychology') || 'R$ 200 a avaliação inicial'; },
         details: "Sessões semanais de 40min",
     },
     occupational_therapy: {
         explanation: "Terapia ocupacional focada em coordenação motora, integração sensorial e autonomia",
-        price: "R$ 200 a avaliação inicial (de R$250)",
+        get price() { return getDynamicPrice('occupational_therapy') || 'R$ 200 a avaliação inicial'; },
         details: "Sessões semanais de 40min",
     },
     physiotherapy: {
         explanation: "Fisioterapia infantil — desenvolvimento motor, postura, reabilitação",
-        price: "R$ 200 a avaliação inicial (de R$250)",
+        get price() { return getDynamicPrice('physiotherapy') || 'R$ 200 a avaliação inicial'; },
         details: "Sessões de 40min com fisioterapeuta especializado",
     },
     music_therapy: {
         explanation: "Musicoterapia — usa música como ferramenta para socialização, comunicação e regulação emocional",
-        price: "R$ 200 a avaliação inicial (de R$250)",
+        get price() { return getDynamicPrice('music_therapy') || 'R$ 200 a avaliação inicial'; },
         details: "Sessões semanais de 40min",
     },
     psychopedagogy: {
         explanation: "Psicopedagogia — identifica como a criança aprende e trabalha dificuldades escolares (leitura, escrita, dislexia)",
-        price: "R$ 200 a avaliação inicial (de R$250)",
+        get price() { return getDynamicPrice('psychopedagogy') || 'R$ 200 a avaliação inicial'; },
         details: "Sessões semanais de 40min",
     },
 };

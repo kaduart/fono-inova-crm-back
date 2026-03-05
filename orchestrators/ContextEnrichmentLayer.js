@@ -11,7 +11,7 @@
  * @baseado-em 75.008 linhas de conversas reais do WhatsApp
  */
 
-import pricing from '../config/pricing.js';
+import pricing, { getTherapyPricing, PRICING } from '../config/pricing.js';
 
 /**
  * 🧠 Enriquece contexto com insights estratégicos dos detectores
@@ -360,12 +360,12 @@ export function buildStrategicContext(flags, lead, enrichedContext) {
  */
 function getPricingForContext(therapyArea) {
     const area = therapyArea || 'fonoaudiologia';
-    const priceData = pricing[area];
+    const priceData = getTherapyPricing(area);
 
     if (!priceData) {
         // Fallback para avaliação inicial padrão
         return {
-            avaliacao: 200,
+            avaliacao: PRICING.AVALIACAO_INICIAL,
             pacote_mensal: null,
             parcelas: null,
             hasPackage: false
@@ -373,10 +373,10 @@ function getPricingForContext(therapyArea) {
     }
 
     return {
-        avaliacao: priceData.avaliacao || 200,
-        pacote_mensal: priceData.pacote_mensal || null,
-        parcelas: priceData.parcelas || null,
-        hasPackage: !!priceData.pacote_mensal
+        avaliacao: priceData.avaliacao || PRICING.AVALIACAO_INICIAL,
+        pacote_mensal: priceData.pacoteMensal || null,
+        parcelas: priceData.parcelamento || null,
+        hasPackage: !!priceData.pacoteMensal
     };
 }
 
