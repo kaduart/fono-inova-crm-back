@@ -85,6 +85,10 @@ export function extractAgeFromText(text) {
         if (num) return { age: num, unit: "anos" };
     }
 
+    // "7 dias", "10 dias" - recém-nascidos
+    const daysMatch = t.match(/\b(\d{1,3})\s*(dias?)\b/i);
+    if (daysMatch) return { age: parseInt(daysMatch[1]), unit: "dias" };
+
     // "7 meses", "7meses", "cinco meses", "8m"
     const monthsMatch = t.match(/\b(\d{1,2})\s*(m[eê]s|meses|m\b)/i);
     if (monthsMatch) return { age: parseInt(monthsMatch[1]), unit: "meses" };
