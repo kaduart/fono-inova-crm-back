@@ -38,7 +38,7 @@ const messageSchema = new mongoose.Schema({
     templateName: String,
 
     // Status
-    status: { type: String, enum: ['sent', 'delivered', 'read', 'failed', 'received'], default: 'received' },
+    status: { type: String, enum: ['pending', 'sent', 'delivered', 'read', 'failed', 'received'], default: 'received' },
 
     // Quando ocorreu no WhatsApp
     timestamp: { type: Date, default: Date.now },

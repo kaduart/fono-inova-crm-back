@@ -1,5 +1,6 @@
 
 import "dotenv/config";
+import { getTherapyPricing, formatPrice } from "../config/pricing.js";
 import { analyzeLeadMessage } from "../services/intelligence/leadIntelligence.js";
 import { urgencyScheduler } from "../services/intelligence/UrgencyScheduler.js";
 import enrichLeadContext from "../services/leadContext.js";
@@ -617,7 +618,7 @@ Leia o que a pessoa responder e decida a área principal:
 📝 CONTEXTO PSICOPEDAGOGIA:
 - Foco: Dificuldades de aprendizagem, atenção, memória, rendimento escolar.
 - ADULTOS: Preparação para cursos, concursos e faculdade.
-- Anamnese inicial: R$ 200.
+- Anamnese inicial: consulte o valor atualizado (fonoaudiologia R$ 250, outras áreas R$ 200).
 - Pacote mensal: R$ 160/sessão (~R$ 640/mês).
 - DURAÇÃO: Anamnese ~40min–1h. Sessões semanais ~40min.
 `.trim(),
@@ -743,7 +744,7 @@ REGRAS:
     pricePriorityAfterBooking: `
 💰 REGRA: PERGUNTA DE PREÇO TEM PRIORIDADE
 - Mesmo após o agendamento, se o cliente perguntar "valor", "quanto", "preço" etc, responda com o preço da área.
-- Use o tom leve e explicativo: "A avaliação é R$200 e é o primeiro passo pra entender o que a criança precisa 💚"
+- Use o tom leve e explicativo: "A avaliação é o primeiro passo pra entender o que a criança precisa 💚 (valor varia por área: fonoaudiologia R$ 250, outras R$ 200)"
 - Não repita "agendamento realizado" antes de responder o preço.
 `.trim(),
 
@@ -1526,17 +1527,19 @@ export async function getOptimizedAmandaResponse({
 
     // 3.3 PERGUNTAS SIMPLES (preço, plano, local) → Responde direto
     if (amandaAnalysis.extracted.flags.asksPrice && !amandaAnalysis.extracted.therapyArea) {
-        return ensureSingleHeart("A avaliação inicial é **R$ 200**. Se me disser a área (Fono, Psicologia, TO...), passo o valor exato 💚");
+        // Fallback sem área definida
+        return ensureSingleHeart("A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a área exata (Fono, Psicologia, TO...), passo o valor certinho 💚");
     }
 
     if (amandaAnalysis.extracted.flags.asksPrice && amandaAnalysis.extracted.therapyArea) {
-        const prices = {
-            fonoaudiologia: "R$ 200", psicologia: "R$ 200",
-            terapia_ocupacional: "R$ 200", fisioterapia: "R$ 200",
-            neuropsicologia: "R$ 2.000 (até 6x)"
-        };
-        const price = prices[amandaAnalysis.extracted.therapyArea] || "R$ 200";
-        return ensureSingleHeart(`A avaliação de ${amandaAnalysis.extracted.therapyArea} é **${price}** 💚`);
+        const pricing = getTherapyPricing(amandaAnalysis.extracted.therapyArea);
+        let priceText;
+        if (pricing) {
+            priceText = formatPrice(pricing.avaliacao);
+        } else {
+            priceText = "R$ 200";
+        }
+        return ensureSingleHeart(`A avaliação de ${amandaAnalysis.extracted.therapyArea} é **${priceText}** 💚`);
     }
 
     if (amandaAnalysis.extracted.flags.asksPlans) {
@@ -1902,16 +1905,18 @@ export async function getOptimizedAmandaResponse({
     if (asksPrice && lead?.status === "agendado") {
         console.log("[GUARD] Cliente perguntou preço PÓS-agendamento");
         const knownArea = lead?.therapyArea || "avaliacao";
-        const PRICE_AREA = {
-            fonoaudiologia: "A avaliação de fonoaudiologia é **R$ 200**.",
-            psicologia: "A avaliação de psicologia é **R$ 200**.",
-            terapia_ocupacional: "A avaliação de terapia ocupacional é **R$ 200**.",
-            fisioterapia: "A avaliação de fisioterapia é **R$ 200**.",
-            musicoterapia: "A avaliação de musicoterapia é **R$ 200**.",
-            psicopedagogia: "A avaliação psicopedagógica é **R$ 200**.",
-            neuropsicologia: "A avaliação neuropsicológica completa é **R$ 2.000** (até 6x).",
-        };
-        const priceText = PRICE_AREA[knownArea] || "A avaliação inicial é **R$ 200**.";
+        // Busca preço dinâmico da área
+        const pricing = getTherapyPricing(knownArea);
+        let priceText;
+        if (pricing) {
+            if (pricing.incluiLaudo) {
+                priceText = `A avaliação neuropsicológica completa é **${formatPrice(pricing.avaliacao)}** (até 6x).`;
+            } else {
+                priceText = `A avaliação de ${pricing.descricao.toLowerCase()} é **${formatPrice(pricing.avaliacao)}**.`;
+            }
+        } else {
+            priceText = "A avaliação inicial é **R$ 200**.";
+        }
         return ensureSingleHeart(priceText);
     }
 
@@ -1986,14 +1991,15 @@ export async function getOptimizedAmandaResponse({
 
         if (asksPrice) {
             const area = lead?.therapyArea || "avaliacao";
-            const prices = {
-                fonoaudiologia: "R$ 200",
-                psicologia: "R$ 200",
-                neuropsicologia: "R$ 2.000 (até 6x)",
-            };
-            const price = prices[area] || "R$ 200";
+            const pricing = getTherapyPricing(area);
+            let priceText;
+            if (pricing) {
+                priceText = formatPrice(pricing.avaliacao);
+            } else {
+                priceText = "R$ 200";
+            }
             const nextStep = step === "name" ? "nome completo" : "data de nascimento";
-            return ensureSingleHeart(`A avaliação é **${price}**. Pra confirmar o horário, preciso só do **${nextStep}** 💚`);
+            return ensureSingleHeart(`A avaliação é **${priceText}**. Pra confirmar o horário, preciso só do **${nextStep}** 💚`);
         }
 
         if (step === "name") {
@@ -2277,9 +2283,13 @@ export async function getOptimizedAmandaResponse({
             }).catch(() => { });
             flags.therapyArea = "psicologia";
 
+            const psicoPricing = getTherapyPricing('psicologia');
+            const fonoPricing = getTherapyPricing('fonoaudiologia');
+            const psicoPrice = psicoPricing ? formatPrice(psicoPricing.avaliacao) : 'R$ 200';
+            const fonoPrice = fonoPricing ? formatPrice(fonoPricing.avaliacao) : 'R$ 250';
             return ensureSingleHeart(
                 `Ótimo! O acompanhamento terapêutico é um ótimo caminho 💚\n\n` +
-                `Avaliação inicial R$ 200, sessões R$ 200. Começamos com psicologia e podemos integrar com fono/TO depois.\n\n` +
+                `Avaliação inicial psicologia ${psicoPrice}, fonoaudiologia ${fonoPrice}. Começamos com psicologia e podemos integrar com fono/TO depois.\n\n` +
                 `Prefere manhã ou tarde?`
             );
         }
@@ -2685,19 +2695,18 @@ export async function getOptimizedAmandaResponse({
     ) {
         console.log("[FLOW] Comercial ativo (persistido)");
 
-        const PRICE_BY_AREA = {
-            fonoaudiologia: "A avaliação inicial de fonoaudiologia é **R$ 200**.",
-            psicologia: "A avaliação inicial de psicologia é **R$ 200**.",
-            terapia_ocupacional: "A avaliação inicial de terapia ocupacional é **R$ 200**.",
-            fisioterapia: "A avaliação inicial de fisioterapia é **R$ 200**.",
-            musicoterapia: "A avaliação inicial de musicoterapia é **R$ 200**.",
-            psicopedagogia: "A avaliação psicopedagógica é **R$ 200**.",
-            neuropsicologia: "A avaliação neuropsicológica é **R$ 2.000 (até 6x)**.",
-        };
-
-        const priceText =
-            PRICE_BY_AREA[savedArea] ||
-            "A avaliação inicial é **R$ 200**.";
+        // Busca preço dinâmico da área
+        const pricingArea = getTherapyPricing(savedArea);
+        let priceText;
+        if (pricingArea) {
+            if (pricingArea.incluiLaudo) {
+                priceText = `A avaliação neuropsicológica é **${formatPrice(pricingArea.avaliacao)} (até 6x)**.`;
+            } else {
+                priceText = `A avaliação inicial de ${pricingArea.descricao.toLowerCase()} é **${formatPrice(pricingArea.avaliacao)}**.`;
+            }
+        } else {
+            priceText = "A avaliação inicial é **R$ 200**.";
+        }
 
         // ✅ FIX: Salvar estado — quando user confirmar com "Sim", saberemos que é sobre pacotes
         await safeLeadUpdate(lead._id, {
@@ -3825,37 +3834,46 @@ Em breve nossa equipe entra em contato 😊`
             enrichedContext?.therapyArea ||
             null;
 
-        const PRICE_BY_AREA = {
-            fonoaudiologia: "A avaliação inicial de fonoaudiologia é **R$ 200**.",
-            psicologia: "A avaliação inicial de psicologia é **R$ 200**.",
-            terapia_ocupacional: "A avaliação inicial de terapia ocupacional é **R$ 200**.",
-            fisioterapia: "A avaliação inicial de fisioterapia é **R$ 200**.",
-            musicoterapia: "A avaliação inicial de musicoterapia é **R$ 200**.",
-            psicopedagogia: "A avaliação psicopedagógica (anamnese inicial) é **R$ 200**.",
-            neuropsicologia: "A avaliação neuropsicológica completa (pacote) é **R$ 2.000 (até 6x)**.",
-        };
-
-        if (!priceText && knownArea && PRICE_BY_AREA[knownArea]) {
-            priceText = PRICE_BY_AREA[knownArea];
+        // 3) fallback por área conhecida - usando pricing.js
+        if (!priceText && knownArea) {
+            const pricingKnown = getTherapyPricing(knownArea);
+            if (pricingKnown) {
+                if (pricingKnown.incluiLaudo) {
+                    priceText = `A avaliação neuropsicológica completa (pacote) é **${formatPrice(pricingKnown.avaliacao)} (até 6x)**.`;
+                } else {
+                    priceText = `A avaliação inicial de ${pricingKnown.descricao.toLowerCase()} é **${formatPrice(pricingKnown.avaliacao)}**.`;
+                }
+            }
         }
 
         // 4) fallback por ID de terapia detectada (quando detectAllTherapies achou algo mas priceLines veio vazio)
-        const PRICE_BY_THERAPY_ID = {
-            speech: "A avaliação inicial de fonoaudiologia é **R$ 200**.",
-            tongue_tie: "O **Teste da Linguinha** (avaliação do frênulo lingual) custa **R$ 200**.",
-            psychology: "A avaliação inicial de psicologia é **R$ 200**.",
-            occupational: "A avaliação inicial de terapia ocupacional é **R$ 200**.",
-            physiotherapy: "A avaliação inicial de fisioterapia é **R$ 200**.",
-            music: "A avaliação inicial de musicoterapia é **R$ 200**.",
-            psychopedagogy: "A avaliação psicopedagógica (anamnese inicial) é **R$ 200**.",
-            neuropsychological: "A avaliação neuropsicológica completa (pacote) é **R$ 2.000 (até 6x)**.",
-            neuropsychopedagogy: "A avaliação inicial é **R$ 200**.",
+        // Mapeia therapy IDs para chaves do pricing
+        const THERAPY_ID_MAP = {
+            speech: 'fonoaudiologia',
+            tongue_tie: 'fonoaudiologia',
+            psychology: 'psicologia',
+            occupational: 'terapia_ocupacional',
+            physiotherapy: 'fisioterapia',
+            music: 'musicoterapia',
+            psychopedagogy: 'psicopedagogia',
+            neuropsychological: 'neuropsicologia',
+            neuropsychopedagogy: 'fonoaudiologia',
         };
 
         if (!priceText && detectedTherapies.length) {
             const t0 = detectedTherapies[0]?.id;
-            if (t0 && PRICE_BY_THERAPY_ID[t0]) {
-                priceText = PRICE_BY_THERAPY_ID[t0];
+            const pricingKey = THERAPY_ID_MAP[t0];
+            if (pricingKey) {
+                const pricingDetected = getTherapyPricing(pricingKey);
+                if (pricingDetected) {
+                    if (t0 === 'tongue_tie') {
+                        priceText = `O **Teste da Linguinha** (avaliação do frênulo lingual) custa **${formatPrice(pricingDetected.avaliacao)}**.`;
+                    } else if (pricingDetected.incluiLaudo) {
+                        priceText = `A avaliação neuropsicológica completa (pacote) é **${formatPrice(pricingDetected.avaliacao)} (até 6x)**.`;
+                    } else {
+                        priceText = `A avaliação inicial de ${pricingDetected.descricao.toLowerCase()} é **${formatPrice(pricingDetected.avaliacao)}**.`;
+                    }
+                }
             }
         }
 

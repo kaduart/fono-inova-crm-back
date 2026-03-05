@@ -493,7 +493,7 @@ export async function sendTextMessage({
             const data = await res.json();
             const waMessageId = data?.messages?.[0]?.id || null;
 
-            // ✅ SUCESSO: Registra e retorna
+            // ✅ SUCESSO: Registra como PENDING (aguardando confirmação do webhook)
             if (res.ok) {
                 await registerMessage({
                     leadId: lead,
@@ -502,7 +502,7 @@ export async function sendTextMessage({
                     direction: "outbound",
                     text,
                     type: "text",
-                    status: "sent",
+                    status: "pending", // ← ALTERADO: começa como pending
                     waMessageId,
                     timestamp: new Date(),
                     to: phone,
@@ -510,7 +510,7 @@ export async function sendTextMessage({
                     metadata: { sentBy, userId },
                 });
 
-                console.log(`✅ Mensagem enviada com sucesso (tentativa ${attempt})`);
+                console.log(`✅ Mensagem aceita pela API, aguardando webhook (tentativa ${attempt})`);
                 return data;
             }
 
