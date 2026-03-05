@@ -1643,7 +1643,16 @@ router.patch('/:id/complete', auth, async (req, res) => {
 
         // 1️⃣ ATUALIZAR SESSÃO (SEMPRE!)
         console.log(`[complete] Etapa 1: Atualizando sessão (${Date.now() - startTime}ms)`);
+        
+        // 🏥 Verificar se é convênio (precisa estar antes de definir sessionUpdateData)
+        // Usa appointment.package pois packageDoc ainda não foi buscado
+        const isConvenioSession = appointment.billingType === 'convenio' ||
+                                  appointment.insuranceProvider ||
+                                  appointment.insuranceGuide ||
+                                  (appointment.package?.type === 'convenio');
+        
         // 💰 Se for adicionar ao saldo devedor, não marca como pago
+        // 🏥 Se for convênio, também não marca como pago (aguarda recebimento do convênio)
         const sessionUpdateData = addToBalance ? {
             status: 'completed',
             isPaid: false,  // ❌ Não está pago
@@ -1652,7 +1661,15 @@ router.patch('/:id/complete', auth, async (req, res) => {
             balanceAmount: balanceAmount || appointment.sessionValue || 0,
             visualFlag: 'pending',  // 🚩 Visual de pendente
             updatedAt: new Date()
+        } : isConvenioSession ? {
+            // 🏥 CONVÊNIO: Não está pago, aguarda recebimento
+            status: 'completed',
+            isPaid: false,
+            paymentStatus: 'pending_receipt',  // ⏳ Aguardando recebimento do convênio
+            visualFlag: 'pending',
+            updatedAt: new Date()
         } : {
+            // 💰 PARTICULAR: Está pago
             status: 'completed',
             isPaid: true,
             paymentStatus: 'paid',
@@ -1685,7 +1702,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
             // 🆕 CRIAR PAYMENT SE NÃO EXISTIR (e não for pacote NEM convênio)
             const isConvenio = appointment.billingType === 'convenio' ||
                 appointment.insuranceProvider ||
-                appointment.insuranceGuide;
+                appointment.insuranceGuide ||
+                (packageDoc?.type === 'convenio');
 
             if (!finalPaymentId && !packageId && !isConvenio) {
                 console.log(`[complete] ⚠️ Payment não encontrado, criando novo...`);

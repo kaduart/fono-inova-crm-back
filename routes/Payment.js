@@ -1698,21 +1698,34 @@ router.get("/daily-closing", async (req, res) => {
                     totalReceived: 0,
                     byMethod: { dinheiro: 0, pix: 0, cartão: 0 },
                 },
+                // 🏥 NOVO: Seção de convênio
+                insurance: {
+                    production: 0,
+                    sessionsCount: 0,
+                    received: 0,
+                    pending: 0,
+                    byProvider: [],
+                },
             },
             financial: {
                 totalReceived: 0,
                 totalExpected: 0,
                 totalRevenue: 0,
+                totalInsuranceProduction: 0,  // 🏥 NOVO
+                totalInsurancePending: 0,      // 🏥 NOVO
+                grandTotal: 0,                 // 🏥 NOVO (caixa + produção)
                 paymentMethods: {
                     dinheiro: { amount: 0, details: [] },
                     pix: { amount: 0, details: [] },
                     cartão: { amount: 0, details: [] },
                 },
                 packages: { total: 0, details: [] },
+                insurance: { total: 0, byProvider: [] },  // 🏥 NOVO
             },
             timelines: {
                 appointments: [],
                 payments: [],
+                insuranceSessions: [],  // 🏥 NOVO
             },
             professionals: [],
             timeSlots: [],
@@ -1766,6 +1779,15 @@ router.get("/daily-closing", async (req, res) => {
 
             report.summary.appointments.expectedValue += sessionValue;
 
+            // Verificar se é convênio
+            const isConvenioAppt = appt.serviceType === 'convenio_session' ||
+                                   appt.paymentMethod === 'convenio' ||
+                                   appt.insuranceProvider ||
+                                   appt.package?.type === 'convenio';
+            
+            const insuranceValue = isConvenioAppt ? 
+                (appt.package?.insuranceGrossAmount || appt.insuranceValue || 80) : 0;
+
             // Timeline
             report.timelines.appointments.push({
                 id: apptId,
@@ -1783,8 +1805,75 @@ router.get("/daily-closing", async (req, res) => {
                 isPackage,
                 paymentMethod: method,
                 packageId: pkgId || null,
+                // 🏥 NOVO: Campos de convênio
+                isConvenio: isConvenioAppt,
+                insuranceProvider: isConvenioAppt ? (appt.insuranceProvider || appt.package?.insuranceProvider) : null,
+                insuranceValue: isConvenioAppt ? insuranceValue : null,
             });
         }
+
+        // ======================================================
+        // 🏥 PROCESSAR SESSÕES DE CONVÊNIO
+        // ======================================================
+        const insuranceSessions = sessions.filter(s => 
+            s.package?.type === 'convenio' || 
+            s.paymentMethod === 'convenio' ||
+            s.billingType === 'convenio'
+        );
+
+        const insuranceByProvider = {};
+
+        for (const session of insuranceSessions) {
+            const pkg = session.package;
+            const provider = pkg?.insuranceProvider || session.insuranceProvider || 'Convênio';
+            const insuranceValue = pkg?.insuranceGrossAmount || pkg?.sessionValue || 80;
+            const isCompleted = session.status === 'completed';
+            
+            // Timeline de convênio
+            report.timelines.insuranceSessions.push({
+                id: session._id.toString(),
+                time: session.time,
+                patient: session.patient?.fullName || 'N/A',
+                provider: provider,
+                insuranceValue: insuranceValue,
+                status: session.status,
+                paymentStatus: session.paymentStatus || 'pending_receipt',
+                isPaid: session.isPaid || false,
+                guideNumber: session.insuranceGuide?.number || null,
+            });
+
+            // Contabilizar produção
+            if (isCompleted) {
+                report.summary.insurance.production += insuranceValue;
+                report.summary.insurance.sessionsCount += 1;
+                
+                if (session.isPaid) {
+                    report.summary.insurance.received += insuranceValue;
+                } else {
+                    report.summary.insurance.pending += insuranceValue;
+                }
+
+                // Agrupar por provider
+                if (!insuranceByProvider[provider]) {
+                    insuranceByProvider[provider] = { value: 0, sessions: 0 };
+                }
+                insuranceByProvider[provider].value += insuranceValue;
+                insuranceByProvider[provider].sessions += 1;
+            }
+        }
+
+        // Converter byProvider para array
+        report.summary.insurance.byProvider = Object.entries(insuranceByProvider).map(
+            ([provider, data]) => ({ provider, ...data })
+        );
+
+        // 🏥 Adicionar ao financial
+        report.financial.totalInsuranceProduction = report.summary.insurance.production;
+        report.financial.totalInsurancePending = report.summary.insurance.pending;
+        report.financial.insurance = {
+            total: report.summary.insurance.production,
+            byProvider: report.summary.insurance.byProvider,
+        };
 
         // ======================================================
         // 🔹 PROCESSAR PAGAMENTOS
@@ -1865,16 +1954,24 @@ router.get("/daily-closing", async (req, res) => {
             (a) => a.paidStatus === "Pendente"
         ).length;
 
+        // 🏥 Cálculo do Grand Total (caixa + produção de convênio)
+        report.financial.grandTotal = report.financial.totalReceived + 
+                                       report.financial.totalInsuranceProduction;
+
         // ======================================================
         // 🔹 MONTAR RELATÓRIOS POR PROFISSIONAL E HORÁRIOS
         // ======================================================
         const professionalsMap = {};
         const timeSlotsMap = {};
 
+        console.log(`\n🕐 Processando ${report.timelines.appointments.length} appointments para timeSlots...`);
+
         report.timelines.appointments.forEach((appt) => {
             const doctor = appt.doctor || "Não informado";
             const time = (appt.time || "").substring(0, 5);
             const value = appt.sessionValue || 0;
+            
+            console.log(`  📌 ${appt.patient} - ${time} - ${appt.service} - ${doctor}`);
 
             if (!professionalsMap[doctor]) {
                 professionalsMap[doctor] = {
@@ -1944,6 +2041,15 @@ router.get("/daily-closing", async (req, res) => {
                 };
             })
             .sort((a, b) => a.time.localeCompare(b.time));
+        
+        // 🐛 DEBUG: Log dos timeSlots criados
+        console.log(`\n🕐 TimeSlots criados: ${report.timeSlots.length}`);
+        report.timeSlots.forEach(slot => {
+            console.log(`  ${slot.time}: ${slot.count} appointments`);
+            slot.appointments.forEach(a => {
+                console.log(`    - ${a.patient} (${a.service})`);
+            });
+        });
 
         // ======================================================
         // 🔹 LOGS FINAIS
