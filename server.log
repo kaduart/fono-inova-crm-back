@@ -1,18 +1,7 @@
-
-> backend@1.0.0 dev
-> node scripts/start-dev.js
-
-🔧 Iniciando ambiente de desenvolvimento...
-
-✅ Redis já está rodando!
-
-🚀 Iniciando servidor Node.js...
-
-🚀 IORedis conectando via REDIS_URL...
-🌍 Modo detectado: production
-🔍 REDIS_URL existe? SIM
-🔗 REDIS_URL (mascarada): redis://localhost:6379
-🚀 Conectando ao Redis via REDIS_URL...
+🚀 IORedis conectando via HOST/PORT local...
+🌍 Modo detectado: development
+🔍 REDIS_URL existe? NÃO
+🚀 Conectando ao Redis Local: 127.0.0.1:6379
 ⚠️ Certificado Sicoob não encontrado. PIX desabilitado.
 ✅ GA4: Usando arquivo /home/user/projetos/CRM-CLINICA/back/config/ga4-key.json
 ✅ GA4 Client inicializado
@@ -37,21 +26,21 @@ IO INIT: null
 🔄 Iniciando conexão Redis...
 🔄 Iniciando conexão Redis...
 🖥️ Bull Board disponível em: /admin/queues
-(node:172970) [MONGOOSE] Warning: Duplicate schema index on {"status":1,"scheduledAt":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:211944) [MONGOOSE] Warning: Duplicate schema index on {"status":1,"scheduledAt":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:172970) [MONGOOSE] Warning: Duplicate schema index on {"code":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
-(node:172970) [MONGOOSE] Warning: Duplicate schema index on {"jobId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
-✅ Redis conectado
+(node:211944) [MONGOOSE] Warning: Duplicate schema index on {"code":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:211944) [MONGOOSE] Warning: Duplicate schema index on {"jobId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
 ✅ Redis Client conectado!
 🚀 Redis conectado e validado!
+✅ Redis conectado
 💚 Health Check Redis: OK
 👷 Follow-up Worker iniciado com Amanda 2.0!
 [INACTIVE-CHECK] Verificando leads inativos...
 [INACTIVE-FOLLOWUP] Iniciando verificação de leads inativos...
 ⏰ Follow-up Cron iniciado (scan a cada 3min + inactive check a cada 6h)
-[WARN] 2026-03-03T19:45:41.845Z — [META CLIENT] META_ACCESS_TOKEN não configurado
-[INFO] 2026-03-03T19:45:41.847Z — [VIDEO WORKER] 🎬 Worker inicializado (concurrency: 2)
-[INFO] 2026-03-03T19:45:41.863Z — [POST WORKER] 📝 Worker inicializado (concurrency: 3)
+[WARN] 2026-03-05T00:03:37.096Z — [META CLIENT] META_ACCESS_TOKEN não configurado
+[INFO] 2026-03-05T00:03:37.098Z — [VIDEO WORKER] 🎬 Worker inicializado (concurrency: 2)
+[INFO] 2026-03-05T00:03:37.109Z — [POST WORKER] 📝 Worker inicializado (concurrency: 3)
 📊 Iniciando cron de análise semanal de Follow-ups...
 
 ╔═══════════════════════════════════════════════════════════════╗
@@ -63,7 +52,7 @@ IO INIT: null
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
     
-[03/03/2026, 16:45:41] [INFO] Executando verificações iniciais... {}
+[04/03/2026, 21:03:37] [INFO] Executando verificações iniciais... {}
 ✅ Connected to MongoDB
 🧠 [CRON] Inicializando cron de aprendizado...
 ✅ [CRON] Agendado: todos os dias às 23:00 (America/Sao_Paulo)
@@ -78,23 +67,23 @@ IO INIT: null
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
     
-[03/03/2026, 16:45:41] [GMB] MongoDB conectado 
-[03/03/2026, 16:45:41] [GMB] Agendando tarefas GMB... {"timezone":"America/Sao_Paulo"}
-[03/03/2026, 16:45:41] [GMB] Tarefas GMB agendadas! {"tasks":["generateDaily (8h)","sendToMake (8h05, 12h05, 15h05, 19h05)"]}
-[03/03/2026, 16:45:41] [GMB] GMB Cron iniciado {"makeConfigurado":true}
+[04/03/2026, 21:03:37] [GMB] MongoDB conectado 
+[04/03/2026, 21:03:37] [GMB] Agendando tarefas GMB... {"timezone":"America/Sao_Paulo"}
+[04/03/2026, 21:03:37] [GMB] Tarefas GMB agendadas! {"tasks":["generateDaily (8h)","sendToMake (8h05, 12h05, 15h05, 19h05)"]}
+[04/03/2026, 21:03:37] [GMB] GMB Cron iniciado {"makeConfigurado":true}
 ⚠️ PIX Sicoob desabilitado: certificado não configurado
 🔗 Webhook PIX registrado com sucesso
 👀 Iniciando watcher de Followups...
 🚀 Server running on port 5000
 🌐 Environment: production
 [INACTIVE-FOLLOWUP] 1 leads inativos encontrados
-[03/03/2026, 16:45:42] [INFO] ✓ Sistema saudável (DB + socket + atividade recente) {
+[04/03/2026, 21:03:38] [INFO] ✓ Sistema saudável (DB + socket + atividade recente) {
   "database": true,
   "socket": true,
   "recentActivity": true
 }
-[03/03/2026, 16:45:42] [CRON] checkResponses - START
-[03/03/2026, 16:45:42] [INFO] Iniciando verificação de respostas pendentes... {}
+[04/03/2026, 21:03:38] [CRON] checkResponses - START
+[04/03/2026, 21:03:38] [INFO] Iniciando verificação de respostas pendentes... {}
 [INFO] Iniciando processamento de respostas pendentes { batchSize: 50, minAge: '24h' }
 [INACTIVE-FOLLOWUP] Lead 698749d7b1f7de4a3dd23d31 já atingiu limite de 3 follow-ups
 [INACTIVE-FOLLOWUP] Concluído: 0 follow-ups criados
@@ -104,7 +93,7 @@ IO INIT: null
    🔥 0 quentes
    🟡 7 mornos
    🧊 7 frios
-⚡ Novo cliente conectado: 3WW5Kqw6m0Ukbe20AAAB
+⚡ Novo cliente conectado: YYZIwOxOrIQIxK08AAAB
 👥 Total de clientes: 1
 [WARN] Resposta fora da janela de tempo válida {
   followupId: new ObjectId('6941a690fbcea767fb2ae5d7'),
@@ -121,27 +110,26 @@ IO INIT: null
   sentAt: 2026-01-07T20:41:08.899Z,
   respondedAt: 2026-01-21T11:41:22.000Z
 }
-✅ 14 follow-ups processados!
 [SUCCESS] Processamento em lote concluído {
   processed: 50,
   responded: 0,
   errors: 0,
   errorDetails: [],
   responseRate: '0.0%',
-  duration: '3292ms'
+  duration: '3242ms'
 }
-[03/03/2026, 16:45:46] [SUCCESS] Verificação concluída {
+[04/03/2026, 21:03:41] [SUCCESS] Verificação concluída {
   "processed": 50,
   "responded": 0,
   "errors": 0,
   "responseRate": "0.0%"
 }
-[03/03/2026, 16:45:46] [CRON] checkResponses - SUCCESS
-[03/03/2026, 16:45:46] [SUCCESS] Tarefa concluída: checkResponses {
-  "duration": "3294ms"
+[04/03/2026, 21:03:41] [CRON] checkResponses - SUCCESS
+[04/03/2026, 21:03:41] [SUCCESS] Tarefa concluída: checkResponses {
+  "duration": "3245ms"
 }
-[03/03/2026, 16:45:46] [SUCCESS] Verificações iniciais concluídas {}
-[03/03/2026, 16:45:46] [INFO] Agendando tarefas cron... {
+[04/03/2026, 21:03:41] [SUCCESS] Verificações iniciais concluídas {}
+[04/03/2026, 21:03:41] [INFO] Agendando tarefas cron... {
   "timezone": "America/Sao_Paulo",
   "schedules": {
     "CHECK_RESPONSES": "*/30 * * * *",
@@ -150,7 +138,7 @@ IO INIT: null
     "HEALTH_CHECK": "*/15 * * * *"
   }
 }
-[03/03/2026, 16:45:46] [SUCCESS] Tarefas agendadas com sucesso {
+[04/03/2026, 21:03:41] [SUCCESS] Tarefas agendadas com sucesso {
   "tasks": 4
 }
 
@@ -168,41 +156,536 @@ IO INIT: null
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
         
-⚡ Novo cliente conectado: 1dpWMHQ9_yAgL778AAAE
-👥 Total de clientes: 2
-[2026-03-03T19:45:51.202Z] GET → /api/users/me
-[2026-03-03T19:45:51.219Z] GET → /api/whatsapp/contacts
-✅ [CONTACTS] Retornando 50 de 543 contacts
+✅ 14 follow-ups processados!
+[2026-03-05T00:04:02.563Z] GET → /api/pre-agendamento
+[2026-03-05T00:04:33.741Z] GET → /api/pre-agendamento
+[2026-03-05T00:05:03.417Z] GET → /api/pre-agendamento
+[2026-03-05T00:05:03.456Z] GET → /api/health
+[2026-03-05T00:05:12.081Z] GET → /api/payments/daily-closing
+[2026-03-05T00:05:12.107Z] GET → /api/payments/totals
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 6060,
+    totalPending: 180,
+    totalPartial: 0,
+    countReceived: 10,
+    countPending: 6,
+    countPartial: 0,
+    particularReceived: 6060,
+    particularPending: 180,
+    particularCountReceived: 10,
+    particularCountPending: 4
+  }
+]
+🔍 Insurance Match Stage: {
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-03",
+        "$lte": "2026-03-04"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-03T03:00:00.000Z",
+        "$lte": "2026-03-04T02:59:59.999Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+🏥 Insurance Result: [
+  {
+    _id: null,
+    totalInsuranceProduction: 160,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 160,
+    countInsuranceTotal: 2,
+    countInsuranceReceived: 0,
+    countInsurancePending: 2
+  }
+]
+⏱️ Query Sessions: 279.064ms
+📊 /totals response: {
+  totals: {
+    totalReceived: 6060,
+    totalPending: 180,
+    totalPartial: 0,
+    countReceived: 10,
+    countPending: 6,
+    countPartial: 0,
+    particularReceived: 6060,
+    particularPending: 180,
+    particularCountReceived: 10,
+    particularCountPending: 4,
+    totalInsuranceProduction: 160,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 160,
+    countInsuranceTotal: 2,
+    countInsuranceReceived: 0,
+    countInsurancePending: 2,
+    totalCombined: 6220
+  },
+  dateRange: { start: 2026-03-03T03:00:00.000Z, end: 2026-03-04T02:59:59.999Z }
+}
+⏱️ Bulk Update Appointments: 63.134ms
+⏱️ Parallel Queries: 208.001ms
+
+📊 RESUMO PAGAMENTOS:
+   Total buscados: 7
+   Filtrados do dia: 7
+   Total em dinheiro: R$5400
+
+
+📊 FECHAMENTO FINAL 2026-03-04
+✅ Agendamentos válidos: 14
+💰 Recebido: 5400
+📅 Previsto: 1795
+⏳ A receber: 975
+📦 Pagamentos processados: 7
+[2026-03-05T00:05:14.555Z] GET → /api/payments/daily-closing
+⏱️ Query Sessions: 266.06ms
+⏱️ Bulk Update Appointments: 57.063ms
+⏱️ Parallel Queries: 164.119ms
+
+📊 RESUMO PAGAMENTOS:
+   Total buscados: 3
+   Filtrados do dia: 3
+   Total em dinheiro: R$160
+
+
+📊 FECHAMENTO FINAL 2026-03-02
+✅ Agendamentos válidos: 9
+💰 Recebido: 160
+📅 Previsto: 160
+⏳ A receber: 160
+📦 Pagamentos processados: 3
+[2026-03-05T00:05:23.504Z] GET → /api/payments/daily-closing
+[2026-03-05T00:05:23.510Z] GET → /api/payments/totals
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 6060,
+    totalPending: 180,
+    totalPartial: 0,
+    countReceived: 10,
+    countPending: 6,
+    countPartial: 0,
+    particularReceived: 6060,
+    particularPending: 180,
+    particularCountReceived: 10,
+    particularCountPending: 4
+  }
+]
+🔍 Insurance Match Stage: {
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-03",
+        "$lte": "2026-03-04"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-03T03:00:00.000Z",
+        "$lte": "2026-03-04T02:59:59.999Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+🏥 Insurance Result: [
+  {
+    _id: null,
+    totalInsuranceProduction: 160,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 160,
+    countInsuranceTotal: 2,
+    countInsuranceReceived: 0,
+    countInsurancePending: 2
+  }
+]
+📊 /totals response: {
+  totals: {
+    totalReceived: 6060,
+    totalPending: 180,
+    totalPartial: 0,
+    countReceived: 10,
+    countPending: 6,
+    countPartial: 0,
+    particularReceived: 6060,
+    particularPending: 180,
+    particularCountReceived: 10,
+    particularCountPending: 4,
+    totalInsuranceProduction: 160,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 160,
+    countInsuranceTotal: 2,
+    countInsuranceReceived: 0,
+    countInsurancePending: 2,
+    totalCombined: 6220
+  },
+  dateRange: { start: 2026-03-03T03:00:00.000Z, end: 2026-03-04T02:59:59.999Z }
+}
+⏱️ Query Sessions: 310.371ms
+⏱️ Bulk Update Appointments: 41.6ms
+⏱️ Parallel Queries: 209.381ms
+
+📊 RESUMO PAGAMENTOS:
+   Total buscados: 7
+   Filtrados do dia: 7
+   Total em dinheiro: R$5400
+
+
+📊 FECHAMENTO FINAL 2026-03-04
+✅ Agendamentos válidos: 14
+💰 Recebido: 5400
+📅 Previsto: 1795
+⏳ A receber: 975
+📦 Pagamentos processados: 7
+[2026-03-05T00:05:32.861Z] GET → /api/pre-agendamento
+[2026-03-05T00:05:37.325Z] GET → /api/payments/daily-closing
+⏱️ Query Sessions: 305.637ms
+⏱️ Bulk Update Appointments: 71.325ms
+⏱️ Parallel Queries: 189.568ms
+
+📊 RESUMO PAGAMENTOS:
+   Total buscados: 3
+   Filtrados do dia: 3
+   Total em dinheiro: R$160
+
+
+📊 FECHAMENTO FINAL 2026-03-02
+✅ Agendamentos válidos: 9
+💰 Recebido: 160
+📅 Previsto: 160
+⏳ A receber: 160
+📦 Pagamentos processados: 3
+[2026-03-05T00:05:41.997Z] GET → /api/payments/daily-closing
+[2026-03-05T00:05:42.006Z] GET → /api/payments/totals
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 6060,
+    totalPending: 180,
+    totalPartial: 0,
+    countReceived: 10,
+    countPending: 6,
+    countPartial: 0,
+    particularReceived: 6060,
+    particularPending: 180,
+    particularCountReceived: 10,
+    particularCountPending: 4
+  }
+]
+🔍 Insurance Match Stage: {
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-03",
+        "$lte": "2026-03-04"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-03T03:00:00.000Z",
+        "$lte": "2026-03-04T02:59:59.999Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+🏥 Insurance Result: [
+  {
+    _id: null,
+    totalInsuranceProduction: 160,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 160,
+    countInsuranceTotal: 2,
+    countInsuranceReceived: 0,
+    countInsurancePending: 2
+  }
+]
+⏱️ Query Sessions: 422.798ms
+📊 /totals response: {
+  totals: {
+    totalReceived: 6060,
+    totalPending: 180,
+    totalPartial: 0,
+    countReceived: 10,
+    countPending: 6,
+    countPartial: 0,
+    particularReceived: 6060,
+    particularPending: 180,
+    particularCountReceived: 10,
+    particularCountPending: 4,
+    totalInsuranceProduction: 160,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 160,
+    countInsuranceTotal: 2,
+    countInsuranceReceived: 0,
+    countInsurancePending: 2,
+    totalCombined: 6220
+  },
+  dateRange: { start: 2026-03-03T03:00:00.000Z, end: 2026-03-04T02:59:59.999Z }
+}
+⏱️ Bulk Update Appointments: 60.943ms
+⏱️ Parallel Queries: 159.501ms
+
+📊 RESUMO PAGAMENTOS:
+   Total buscados: 7
+   Filtrados do dia: 7
+   Total em dinheiro: R$5400
+
+
+📊 FECHAMENTO FINAL 2026-03-04
+✅ Agendamentos válidos: 14
+💰 Recebido: 5400
+📅 Previsto: 1795
+⏳ A receber: 975
+📦 Pagamentos processados: 7
+[2026-03-05T00:06:00.727Z] GET → /api/payments/daily-closing
+[2026-03-05T00:06:00.755Z] GET → /api/payments/totals
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 6060,
+    totalPending: 180,
+    totalPartial: 0,
+    countReceived: 10,
+    countPending: 6,
+    countPartial: 0,
+    particularReceived: 6060,
+    particularPending: 180,
+    particularCountReceived: 10,
+    particularCountPending: 4
+  }
+]
+🔍 Insurance Match Stage: {
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-03",
+        "$lte": "2026-03-04"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-03T03:00:00.000Z",
+        "$lte": "2026-03-04T02:59:59.999Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+🏥 Insurance Result: [
+  {
+    _id: null,
+    totalInsuranceProduction: 160,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 160,
+    countInsuranceTotal: 2,
+    countInsuranceReceived: 0,
+    countInsurancePending: 2
+  }
+]
+📊 /totals response: {
+  totals: {
+    totalReceived: 6060,
+    totalPending: 180,
+    totalPartial: 0,
+    countReceived: 10,
+    countPending: 6,
+    countPartial: 0,
+    particularReceived: 6060,
+    particularPending: 180,
+    particularCountReceived: 10,
+    particularCountPending: 4,
+    totalInsuranceProduction: 160,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 160,
+    countInsuranceTotal: 2,
+    countInsuranceReceived: 0,
+    countInsurancePending: 2,
+    totalCombined: 6220
+  },
+  dateRange: { start: 2026-03-03T03:00:00.000Z, end: 2026-03-04T02:59:59.999Z }
+}
+⏱️ Query Sessions: 195.978ms
+⏱️ Bulk Update Appointments: 406.944ms
+⏱️ Parallel Queries: 324.564ms
+
+📊 RESUMO PAGAMENTOS:
+   Total buscados: 7
+   Filtrados do dia: 7
+   Total em dinheiro: R$5400
+
+
+📊 FECHAMENTO FINAL 2026-03-04
+✅ Agendamentos válidos: 14
+💰 Recebido: 5400
+📅 Previsto: 1795
+⏳ A receber: 975
+📦 Pagamentos processados: 7
+[2026-03-05T00:06:02.553Z] GET → /api/pre-agendamento
+[2026-03-05T00:06:33.429Z] GET → /api/pre-agendamento
+📬 14 follow-ups prontos para envio (após filtro)
+   🔥 0 quentes
+   🟡 7 mornos
+   🧊 7 frios
+(node:211944) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 close listeners added to [Socket]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+✅ 14 follow-ups processados!
+[2026-03-05T00:06:46.369Z] GET → /api/payments/daily-closing
+[2026-03-05T00:06:46.373Z] GET → /api/payments/totals
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 6060,
+    totalPending: 180,
+    totalPartial: 0,
+    countReceived: 10,
+    countPending: 6,
+    countPartial: 0,
+    particularReceived: 6060,
+    particularPending: 180,
+    particularCountReceived: 10,
+    particularCountPending: 4
+  }
+]
+🔍 Insurance Match Stage: {
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-03",
+        "$lte": "2026-03-04"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-03T03:00:00.000Z",
+        "$lte": "2026-03-04T02:59:59.999Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+🏥 Insurance Result: [
+  {
+    _id: null,
+    totalInsuranceProduction: 160,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 160,
+    countInsuranceTotal: 2,
+    countInsuranceReceived: 0,
+    countInsurancePending: 2
+  }
+]
+⏱️ Query Sessions: 312.325ms
+📊 /totals response: {
+  totals: {
+    totalReceived: 6060,
+    totalPending: 180,
+    totalPartial: 0,
+    countReceived: 10,
+    countPending: 6,
+    countPartial: 0,
+    particularReceived: 6060,
+    particularPending: 180,
+    particularCountReceived: 10,
+    particularCountPending: 4,
+    totalInsuranceProduction: 160,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 160,
+    countInsuranceTotal: 2,
+    countInsuranceReceived: 0,
+    countInsurancePending: 2,
+    totalCombined: 6220
+  },
+  dateRange: { start: 2026-03-03T03:00:00.000Z, end: 2026-03-04T02:59:59.999Z }
+}
+⏱️ Bulk Update Appointments: 51.533ms
+⏱️ Parallel Queries: 291.667ms
+
+📊 RESUMO PAGAMENTOS:
+   Total buscados: 7
+   Filtrados do dia: 7
+   Total em dinheiro: R$5400
+
+
+📊 FECHAMENTO FINAL 2026-03-04
+✅ Agendamentos válidos: 14
+💰 Recebido: 5400
+📅 Previsto: 1795
+⏳ A receber: 975
+📦 Pagamentos processados: 7
+[2026-03-05T00:07:02.558Z] GET → /api/pre-agendamento
+[2026-03-05T00:07:32.874Z] GET → /api/pre-agendamento
+[2026-03-05T00:08:03.423Z] GET → /api/pre-agendamento
+[2026-03-05T00:08:33.752Z] GET → /api/pre-agendamento
+[2026-03-05T00:09:03.420Z] GET → /api/pre-agendamento
+[2026-03-05T00:09:33.743Z] GET → /api/pre-agendamento
+📬 14 follow-ups prontos para envio (após filtro)
+   🔥 0 quentes
+   🟡 7 mornos
+   🧊 7 frios
+(node:211944) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 close listeners added to [Socket]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
+✅ 14 follow-ups processados!
+[2026-03-05T00:10:03.419Z] GET → /api/pre-agendamento
+[2026-03-05T00:10:32.866Z] GET → /api/pre-agendamento
+⚠️ Cliente desconectado (transport close)
+[2026-03-05T00:10:42.208Z] GET → /api/whatsapp/contacts
+[2026-03-05T00:10:42.227Z] GET → /api/users/me
+✅ [CONTACTS] Retornando 50 de 551 contacts
 📊 [CONTACTS] 50/50 têm leadId
 🔍 [FIRST CONTACT] {
-  phone: '556295335520',
-  leadId: '69a72ba159a5a3ce66f71ea9',
+  phone: '556499744493',
+  leadId: '69a89dc959a5a3ce66f757cc',
   type: 'string'
 }
-⚡ Novo cliente conectado: 0af442wDGjijLDimAAAG
-👥 Total de clientes: 3
-[2026-03-03T19:45:51.781Z] GET → /api/users/me
-[2026-03-03T19:45:51.797Z] GET → /api/whatsapp/contacts
-✅ [CONTACTS] Retornando 50 de 543 contacts
+[2026-03-05T00:10:42.783Z] GET → /api/whatsapp/contacts
+[2026-03-05T00:10:42.797Z] GET → /api/users/me
+✅ [CONTACTS] Retornando 50 de 551 contacts
 📊 [CONTACTS] 50/50 têm leadId
 🔍 [FIRST CONTACT] {
-  phone: '556295335520',
-  leadId: '69a72ba159a5a3ce66f71ea9',
+  phone: '556499744493',
+  leadId: '69a89dc959a5a3ce66f757cc',
   type: 'string'
 }
-[2026-03-03T19:45:59.833Z] GET → /api/pre-agendamento
-[2026-03-03T19:45:59.956Z] GET → /api/doctors/appointments/today
-[2026-03-03T19:45:59.963Z] GET → /api/dashboard/overview
-[2026-03-03T19:45:59.969Z] GET → /api/doctors/therapy-sessions
-[2026-03-03T19:45:59.975Z] GET → /api/doctors/appointments/stats
-[2026-03-03T19:45:59.989Z] GET → /api/doctors
+⚡ Novo cliente conectado: kF3I9ud8mV2M4I1WAAAD
+👥 Total de clientes: 1
+[2026-03-05T00:10:50.828Z] GET → /api/pre-agendamento
+[2026-03-05T00:10:50.893Z] GET → /api/dashboard/overview
+[2026-03-05T00:10:50.899Z] GET → /api/patients
+[PATIENTS LIST] Search: "undefined", Limit: 50
+[2026-03-05T00:10:50.905Z] GET → /api/admin/total-patients
+[2026-03-05T00:10:50.917Z] GET → /api/doctors/appointments/today
+[2026-03-05T00:10:50.922Z] GET → /api/doctors/therapy-sessions
+[2026-03-05T00:10:50.926Z] GET → /api/doctors/appointments/stats
 [GET_TODAYS_APPOINTMENTS] doctorId: 6806dd1bb6f92559b49a8a9c
-[GET_TODAYS_APPOINTMENTS] todayStr: 2026-03-03
-[2026-03-03T19:46:00.019Z] GET → /api/admin/profile
+[GET_TODAYS_APPOINTMENTS] todayStr: 2026-03-05
+[PATIENTS LIST] Encontrados: 50 pacientes
 [GET_TODAYS_APPOINTMENTS] encontrados: 0
-[2026-03-03T19:46:00.418Z] GET → /api/pre-agendamento
-[2026-03-03T19:46:00.544Z] GET → /api/admin/appointment/completed-cancelled
-[2026-03-03T19:46:00.566Z] GET → /api/appointments
+[2026-03-05T00:10:51.400Z] GET → /api/pre-agendamento
+[2026-03-05T00:10:51.480Z] GET → /api/doctors
+[2026-03-05T00:10:51.489Z] GET → /api/admin/profile
+[2026-03-05T00:10:51.516Z] GET → /api/admin/appointment/completed-cancelled
+[2026-03-05T00:10:51.533Z] GET → /api/appointments
 [GET /appointments] Query: {
   patientId: undefined,
   doctorId: undefined,
@@ -212,34 +695,26 @@ IO INIT: null
   endDate: undefined,
   excludePreAgendamentos: 'true'
 }
-[2026-03-03T19:46:00.585Z] GET → /api/payments
-[2026-03-03T19:46:00.605Z] GET → /api/patients
-[PATIENTS LIST] Search: "undefined", Limit: 50
-[2026-03-03T19:46:00.620Z] GET → /api/users/me
-[2026-03-03T19:46:00.635Z] GET → /api/doctors/patients
-[PATIENTS LIST] Encontrados: 50 pacientes
-[2026-03-03T19:46:01.155Z] GET → /api/admin/total-patients
-[2026-03-03T19:46:01.353Z] GET → /api/admin/patient-overview
-[2026-03-03T19:46:01.361Z] GET → /api/doctors/appointments/today
-[2026-03-03T19:46:01.401Z] GET → /api/doctors/therapy-sessions
+[2026-03-05T00:10:51.558Z] GET → /api/payments
+[2026-03-05T00:10:51.576Z] GET → /api/users/me
+[2026-03-05T00:10:52.513Z] GET → /api/doctors/patients
+[2026-03-05T00:10:52.519Z] GET → /api/admin/patient-overview
+[2026-03-05T00:10:52.524Z] GET → /api/doctors/appointments/today
+[2026-03-05T00:10:52.529Z] GET → /api/doctors/therapy-sessions
 [GET_TODAYS_APPOINTMENTS] doctorId: 6806dd1bb6f92559b49a8a9c
-[GET_TODAYS_APPOINTMENTS] todayStr: 2026-03-03
-[2026-03-03T19:46:01.619Z] GET → /api/patients
-[PATIENTS LIST] Search: "undefined", Limit: 50
+[GET_TODAYS_APPOINTMENTS] todayStr: 2026-03-05
+[2026-03-05T00:10:52.669Z] GET → /api/doctors/appointments/stats
+[2026-03-05T00:10:52.676Z] GET → /api/doctors
 [GET_TODAYS_APPOINTMENTS] encontrados: 0
-[PATIENTS LIST] Encontrados: 50 pacientes
-[2026-03-03T19:46:01.705Z] GET → /api/doctors/appointments/stats
-[2026-03-03T19:46:01.752Z] GET → /api/doctors
-[2026-03-03T19:46:01.777Z] GET → /api/admin/profile
-[2026-03-03T19:46:01.866Z] GET → /api/admin/appointment/completed-cancelled
-[GET /appointments] PreAgendamentos não importados: 45
-[GET /appointments] Retornando 1264 appointments (pré-agendamentos excluídos)
-[2026-03-03T19:46:02.319Z] GET → /api/users/me
-[2026-03-03T19:46:02.325Z] GET → /api/doctors/patients
-[2026-03-03T19:46:02.338Z] GET → /api/payments
-[2026-03-03T19:46:02.374Z] GET → /api/doctors
-[2026-03-03T19:46:02.433Z] GET → /api/doctors/appointments/calendar/6806dd1bb6f92559b49a8a9c
-[2026-03-03T19:46:02.871Z] GET → /api/appointments
+[2026-03-05T00:10:52.903Z] GET → /api/admin/profile
+[2026-03-05T00:10:52.907Z] GET → /api/admin/appointment/completed-cancelled
+[2026-03-05T00:10:52.911Z] GET → /api/users/me
+[GET /appointments] PreAgendamentos não importados: 42
+[GET /appointments] Retornando 1295 appointments (pré-agendamentos excluídos)
+[2026-03-05T00:10:53.496Z] GET → /api/payments
+[2026-03-05T00:10:53.499Z] GET → /api/doctors/patients
+[2026-03-05T00:10:53.594Z] GET → /api/doctors
+[2026-03-05T00:10:53.617Z] GET → /api/appointments
 [GET /appointments] Query: {
   patientId: undefined,
   doctorId: undefined,
@@ -249,18 +724,189 @@ IO INIT: null
   endDate: undefined,
   excludePreAgendamentos: 'true'
 }
-(node:172970) Warning: Label 'appointments.query' already exists for console.time()
-[2026-03-03T19:46:02.880Z] GET → /api/doctors/appointments/future
-[2026-03-03T19:46:02.923Z] GET → /api/admin/total-doctors
-[2026-03-03T19:46:02.955Z] GET → /api/admin/doctor-overview
-[2026-03-03T19:46:03.004Z] GET → /api/doctors/6806dd1bb6f92559b49a8a9c/attendance-summary
-[2026-03-03T19:46:03.019Z] GET → /api/doctors
-[2026-03-03T19:46:03.472Z] GET → /api/doctors/appointments/calendar/6806dd1bb6f92559b49a8a9c
-[2026-03-03T19:46:03.515Z] GET → /api/doctors/appointments/future
-[2026-03-03T19:46:03.578Z] GET → /api/admin/total-doctors
-[2026-03-03T19:46:03.586Z] GET → /api/admin/doctor-overview
-[2026-03-03T19:46:03.628Z] GET → /api/doctors/6806dd1bb6f92559b49a8a9c/attendance-summary
-[GET /appointments] PreAgendamentos não importados: 45
-[GET /appointments] Retornando 1264 appointments (pré-agendamentos excluídos)
-Killed
-Killed
+(node:211944) Warning: Label 'appointments.query' already exists for console.time()
+[2026-03-05T00:10:53.635Z] GET → /api/doctors/appointments/calendar/6806dd1bb6f92559b49a8a9c
+[2026-03-05T00:10:53.641Z] GET → /api/doctors/appointments/future
+[2026-03-05T00:10:53.817Z] GET → /api/admin/total-doctors
+[2026-03-05T00:10:54.183Z] GET → /api/admin/doctor-overview
+[2026-03-05T00:10:54.388Z] GET → /api/doctors/6806dd1bb6f92559b49a8a9c/attendance-summary
+[2026-03-05T00:10:54.403Z] GET → /api/doctors
+[2026-03-05T00:10:54.557Z] GET → /api/doctors/appointments/calendar/6806dd1bb6f92559b49a8a9c
+[2026-03-05T00:10:54.582Z] GET → /api/doctors/appointments/future
+[2026-03-05T00:10:54.691Z] GET → /api/admin/total-doctors
+[GET /appointments] PreAgendamentos não importados: 42
+[2026-03-05T00:10:54.788Z] GET → /api/admin/doctor-overview
+[2026-03-05T00:10:54.803Z] GET → /api/doctors/6806dd1bb6f92559b49a8a9c/attendance-summary
+[GET /appointments] Retornando 1295 appointments (pré-agendamentos excluídos)
+[2026-03-05T00:10:56.657Z] GET → /api/payments/daily-closing
+[2026-03-05T00:10:56.663Z] GET → /api/payments/totals
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 6060,
+    totalPending: 180,
+    totalPartial: 0,
+    countReceived: 10,
+    countPending: 6,
+    countPartial: 0,
+    particularReceived: 6060,
+    particularPending: 180,
+    particularCountReceived: 10,
+    particularCountPending: 4
+  }
+]
+🔍 Insurance Match Stage: {
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-03",
+        "$lte": "2026-03-04"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-03T03:00:00.000Z",
+        "$lte": "2026-03-04T02:59:59.999Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+🏥 Insurance Result: [
+  {
+    _id: null,
+    totalInsuranceProduction: 160,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 160,
+    countInsuranceTotal: 2,
+    countInsuranceReceived: 0,
+    countInsurancePending: 2
+  }
+]
+📊 /totals response: {
+  totals: {
+    totalReceived: 6060,
+    totalPending: 180,
+    totalPartial: 0,
+    countReceived: 10,
+    countPending: 6,
+    countPartial: 0,
+    particularReceived: 6060,
+    particularPending: 180,
+    particularCountReceived: 10,
+    particularCountPending: 4,
+    totalInsuranceProduction: 160,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 160,
+    countInsuranceTotal: 2,
+    countInsuranceReceived: 0,
+    countInsurancePending: 2,
+    totalCombined: 6220
+  },
+  dateRange: { start: 2026-03-03T03:00:00.000Z, end: 2026-03-04T02:59:59.999Z }
+}
+⏱️ Query Sessions: 151.537ms
+⏱️ Bulk Update Appointments: 45.346ms
+[2026-03-05T00:10:57.253Z] GET → /api/payments/totals
+⏱️ Parallel Queries: 417.901ms
+
+📊 RESUMO PAGAMENTOS:
+   Total buscados: 7
+   Filtrados do dia: 7
+   Total em dinheiro: R$5400
+
+
+📊 FECHAMENTO FINAL 2026-03-04
+✅ Agendamentos válidos: 14
+💰 Recebido: 5400
+📅 Previsto: 1795
+⏳ A receber: 975
+📦 Pagamentos processados: 7
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 6060,
+    totalPending: 180,
+    totalPartial: 0,
+    countReceived: 10,
+    countPending: 6,
+    countPartial: 0,
+    particularReceived: 6060,
+    particularPending: 180,
+    particularCountReceived: 10,
+    particularCountPending: 4
+  }
+]
+🔍 Insurance Match Stage: {
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-03",
+        "$lte": "2026-03-04"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-03T03:00:00.000Z",
+        "$lte": "2026-03-04T02:59:59.999Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+[2026-03-05T00:10:57.296Z] GET → /api/payments/daily-closing
+🏥 Insurance Result: [
+  {
+    _id: null,
+    totalInsuranceProduction: 160,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 160,
+    countInsuranceTotal: 2,
+    countInsuranceReceived: 0,
+    countInsurancePending: 2
+  }
+]
+📊 /totals response: {
+  totals: {
+    totalReceived: 6060,
+    totalPending: 180,
+    totalPartial: 0,
+    countReceived: 10,
+    countPending: 6,
+    countPartial: 0,
+    particularReceived: 6060,
+    particularPending: 180,
+    particularCountReceived: 10,
+    particularCountPending: 4,
+    totalInsuranceProduction: 160,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 160,
+    countInsuranceTotal: 2,
+    countInsuranceReceived: 0,
+    countInsurancePending: 2,
+    totalCombined: 6220
+  },
+  dateRange: { start: 2026-03-03T03:00:00.000Z, end: 2026-03-04T02:59:59.999Z }
+}
+⏱️ Query Sessions: 471.015ms
+⏱️ Bulk Update Appointments: 118.695ms
+⏱️ Parallel Queries: 239.494ms
+
+📊 RESUMO PAGAMENTOS:
+   Total buscados: 7
+   Filtrados do dia: 7
+   Total em dinheiro: R$5400
+
+
+📊 FECHAMENTO FINAL 2026-03-04
+✅ Agendamentos válidos: 14
+💰 Recebido: 5400
+📅 Previsto: 1795
+⏳ A receber: 975
+📦 Pagamentos processados: 7
