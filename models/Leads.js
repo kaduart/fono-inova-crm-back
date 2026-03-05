@@ -30,7 +30,6 @@ const leadSchema = new mongoose.Schema({
   },
   origin: {
     type: String,
-    enum: ['WhatsApp', 'Site', 'Indicação', 'Outro', 'Tráfego pago', 'Google', 'Instagram', 'Meta Ads', 'Agenda Direta'],
     default: 'Outro'
   },
   urgencyApplied: { type: String, default: null },
