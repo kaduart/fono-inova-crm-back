@@ -179,7 +179,9 @@ export function deriveFlagsFromText(text = "") {
             /vou\s+procurar\s+outr[oa]/i,
             // Irritação/saturação
             /(t[oô]|estou)\s+de\s+saco\s+cheio/i,
-            /chega|para|basta/i,
+            /\bbasta\b/i,
+            /(^|\W)chega\s+de\b/i,                          // "chega de esperar" — não confundir com "ela chega às 10h"
+            /\bpara\s+de\b|\bpara\s+com\s+(isso|tudo)\b/i, // "para de me ligar" — não confundir com "para você"
             /n[aã]o\s+tenho\s+paci[eê]ncia/i,
             // Pedido pra parar contato
             /parem?\s+de\s+(me\s+)?(ligar|chamar|mandar)/i,
