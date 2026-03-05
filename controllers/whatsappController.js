@@ -1279,13 +1279,45 @@ async function processMessageStatus(status) {
         // Se falhou, DELETAR mensagem do banco (não entregue = não existe)
         if (msgStatus === 'failed' && errors) {
             console.error(`[WEBHOOK-STATUS] ❌ FALHA ao entregar para ${recipient_id}:`, errors);
-            
+
             // Deletar mensagem do banco
             await Message.deleteOne({ waMessageId: messageId });
             console.log(`[WEBHOOK-STATUS] 🗑️ Mensagem ${messageId} deletada do BD (não entregue)`);
-            
-            // Emitir alerta via socket
-            const { getIo } = await import('../config/socket.js');
+
+            // 🔄 FALLBACK 131047: janela de 24h expirada → envia template de recontato
+            const is24hError = errors.some(e => e.code === 131047);
+            if (is24hError) {
+                console.log(`[WEBHOOK-STATUS] ⏰ Janela 24h expirada para ${recipient_id} — enviando template recontato_clinica`);
+                try {
+                    await sendTemplateMessage({
+                        to: recipient_id,
+                        template: 'recontato_clinica',
+                        params: [],
+                        lead: msg.lead || null,
+                        contactId: msg.contact || null,
+                        patientId: msg.patient || null,
+                        sentBy: 'sistema',
+                    });
+                    console.log(`[WEBHOOK-STATUS] ✅ Template recontato_clinica enviado para ${recipient_id}`);
+
+                    const io = getIo();
+                    if (io) {
+                        io.emit('whatsapp:template:sent', {
+                            phone: recipient_id,
+                            leadId: msg.lead,
+                            template: 'recontato_clinica',
+                            reason: '24h_window_expired',
+                            originalMessage: msg.content?.substring(0, 100),
+                            timestamp: new Date()
+                        });
+                    }
+                } catch (templateErr) {
+                    console.error(`[WEBHOOK-STATUS] ❌ Falha ao enviar template fallback:`, templateErr.message);
+                }
+                return;
+            }
+
+            // Emitir alerta via socket para outros erros
             const io = getIo();
             if (io) {
                 io.emit('whatsapp:message:failed', {
@@ -1297,7 +1329,7 @@ async function processMessageStatus(status) {
                     timestamp: new Date()
                 });
             }
-            
+
             return; // Não salva, já deletou
         }
         
