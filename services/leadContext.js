@@ -83,17 +83,19 @@ export async function enrichLeadContext(leadId) {
             let leadDoc = await Lead.findById(leadId);
 
             if (needsNewSummary(lead, totalMessages, appointments)) {
+                // Usa o resumo existente para esta resposta (não bloqueia o usuário)
+                // e regenera em background para a próxima mensagem
+                summaryContext = lead.conversationSummary;
                 const oldMessages = messages.slice(0, -20);
-                const summary = await generateConversationSummary(oldMessages);
-
-                if (summary) {
-                    await leadDoc.updateOne({
-                        conversationSummary: summary,
-                        summaryGeneratedAt: new Date(),
-                        summaryCoversUntilMessage: totalMessages - 20
-                    });
-                    summaryContext = summary;
-                }
+                generateConversationSummary(oldMessages).then(summary => {
+                    if (summary) {
+                        leadDoc.updateOne({
+                            conversationSummary: summary,
+                            summaryGeneratedAt: new Date(),
+                            summaryCoversUntilMessage: totalMessages - 20
+                        }).catch(e => console.warn('[RESUMO] Erro ao salvar resumo bg:', e.message));
+                    }
+                }).catch(e => console.warn('[RESUMO] Erro ao gerar resumo bg:', e.message));
             } else {
                 summaryContext = lead.conversationSummary;
             }
