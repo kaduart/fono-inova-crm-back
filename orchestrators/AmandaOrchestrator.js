@@ -989,7 +989,7 @@ function getValidQualificationArea(lead) {
  * Calcula ageGroup a partir da idade
  */
 function getAgeGroup(age, unit) {
-    if (unit === "meses") return "crianca";
+    if (unit === "dias" || unit === "meses") return "crianca";
     if (age <= 12) return "crianca";
     if (age <= 17) return "adolescente";
     return "adulto";
@@ -6187,11 +6187,11 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
         console.log(`[CTX-RECOVERY] preferredPeriod recuperado: ${recoveredPeriod}`);
     }
 
-    const hasName = lead?.patientInfo?.fullName ||
-        lead?.patientInfo?.name ||
-        enrichedContext?.name ||
-        lead?.qualificationData?.extractedInfo?.nome ||
-        lead?.qualificationData?.extractedInfo?.name ||
+    const hasName = (isValidPatientName(lead?.patientInfo?.fullName) && lead?.patientInfo?.fullName) ||
+        (isValidPatientName(lead?.patientInfo?.name) && lead?.patientInfo?.name) ||
+        (isValidPatientName(enrichedContext?.name) && enrichedContext?.name) ||
+        (isValidPatientName(lead?.qualificationData?.extractedInfo?.nome) && lead?.qualificationData?.extractedInfo?.nome) ||
+        (isValidPatientName(lead?.qualificationData?.extractedInfo?.name) && lead?.qualificationData?.extractedInfo?.name) ||
         extracted.patientName;
 
     // Log de recuperação de nome

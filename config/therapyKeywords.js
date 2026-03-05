@@ -35,7 +35,7 @@ const THERAPY_KEYWORDS = {
             'psicoterapia', 'psicoterapeuta', 'terapia', 'acompanhamento psicologico'
         ],
         related: [
-            'comportamento', 'comportamental', 'birra', 'birras', 'manha', 'manhãzinha',
+            'comportamento', 'comportamental', 'birra', 'birras', 'manhãzinha',
             'não obedece', 'desobedece', 'obediência', 'agressivo', 'agressividade',
             'bate em', 'bateu', 'morde', 'socou', 'briga', 'brigar',
             'ansiedade', 'ansiosa', 'ansioso', 'nervoso', 'nervosismo',
