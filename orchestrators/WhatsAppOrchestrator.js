@@ -7,7 +7,7 @@ import BookingHandler from '../handlers/BookingHandler.js';
 import { leadRepository } from '../infrastructure/persistence/LeadRepository.js';
 import Leads from '../models/Leads.js';
 import { perceptionService } from '../perception/PerceptionService.js';
-import { findAvailableSlots } from '../services/amandaBookingService.js';
+import { findAvailableSlots, autoBookAppointment } from '../services/amandaBookingService.js';
 import { getLatestInsights } from '../services/amandaLearningService.js';
 import {
   STATES,
@@ -65,7 +65,7 @@ export default class WhatsAppOrchestrator {
       const currentState = freshLead.currentState || STATES.IDLE;
       const stateData = freshLead.stateData || {};
 
-      this.logger.info('V8_PROCESS', { leadId, currentState, text: text.substring(0, 50) });
+      this.logger.info('V8_PROCESS', { leadId, currentState, text: text.substring(0, 80), phone: freshLead.phone || freshLead.whatsapp });
 
       // ══ 1. DETECÇÃO DE INTERRUPÇÃO GLOBAL ══
       // Se está no meio de um fluxo e o lead pergunta preço/local/plano
@@ -73,7 +73,7 @@ export default class WhatsAppOrchestrator {
       const isInFlow = ![STATES.IDLE, STATES.GREETING, STATES.BOOKED, STATES.HANDOFF].includes(currentState);
 
       if (globalIntent && isInFlow && currentState !== STATES.INTERRUPTED) {
-        // Empilha estado atual e responde a dúvida
+        this.logger.info('V8_GLOBAL_INTERRUPT', { leadId, intent: globalIntent, suspendedState: currentState });
         await suspendState(leadId, currentState, stateData, globalIntent);
         const interruptResponse = this._handleGlobalIntent(globalIntent, freshLead);
         const resumeHint = getResumeHint(currentState);
@@ -139,22 +139,24 @@ export default class WhatsAppOrchestrator {
   async _processState(state, text, lead, stateData, services = {}) {
     const leadId = lead._id;
 
+    this.logger.info('V8_STATE_ENTRY', { leadId, state, textLen: text.length, text: text.substring(0, 60) });
+
     switch (state) {
       // ── ESTADO INICIAL ──
       case STATES.IDLE:
       case STATES.GREETING: {
-        // Tenta extrair tudo que puder da primeira mensagem
-        const facts = await this._analyze(text, lead);
-        const therapies = facts?.therapies || detectAllTherapies(text);
+        const therapies = detectAllTherapies(text);
         const therapy = therapies.length > 0 ? therapies[0] : null;
+        const therapyName = therapy?.name || therapy?.id || null;
 
         if (therapy) {
-          // Já disse a terapia na saudação → pula COLLECT_THERAPY
-          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy });
+          this.logger.info('V8_THERAPY_DETECTED_ON_IDLE', { leadId, therapyId: therapy?.id, therapyName });
+          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy: therapy?.id || therapy });
           await this._saveTherapy(leadId, therapy);
-          return this._reply(`Que bom que entrou em contato! 😊\n\nSobre ${THERAPY_DATA[therapy]?.name || therapy} ${THERAPY_DATA[therapy]?.emoji || '💚'}...\n\nMe conta um pouco da situação? O que tá preocupando?`);
+          return this._reply(`Que bom que entrou em contato! 😊\n\nSobre ${therapyName} 💚...\n\nMe conta um pouco da situação? O que tá preocupando?`);
         }
 
+        this.logger.info('V8_NO_THERAPY_ON_IDLE', { leadId, text: text.substring(0, 60) });
         await jumpToState(leadId, STATES.COLLECT_THERAPY);
         return this._reply('Oi! Sou a Amanda da Fono Inova! 😊\n\nQue bom que você entrou em contato!\n\nMe conta: tá procurando fono, psico, fisio, ou qual especialidade?');
       }
@@ -164,41 +166,43 @@ export default class WhatsAppOrchestrator {
         const therapies = detectAllTherapies(text);
         if (therapies.length > 0) {
           const therapy = therapies[0];
-          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy });
+          const therapyName = therapy?.name || therapy?.id || therapy;
+          this.logger.info('V8_THERAPY_COLLECTED', { leadId, therapyId: therapy?.id, therapyName });
+          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy: therapy?.id || therapy });
           await this._saveTherapy(leadId, therapy);
-          return this._reply(`${THERAPY_DATA[therapy]?.name || therapy} ${THERAPY_DATA[therapy]?.emoji || '💚'}, ótima escolha!\n\nMe conta um pouco da situação que tá preocupando?`);
+          return this._reply(`${therapyName} 💚, ótima escolha!\n\nMe conta um pouco da situação que tá preocupando?`);
         }
 
-        // Não entendeu a terapia → retry
-        const { handoff } = await incrementRetry(leadId);
-        if (handoff) return this._handoffReply();
+        const { handoff, retryCount } = await incrementRetry(leadId);
+        this.logger.warn('V8_RETRY', { leadId, state, retryCount, reason: 'therapy_not_detected', text: text.substring(0, 60) });
+        if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
         return this._reply('Hmm, não consegui identificar a especialidade 🤔\n\nTrabalhamos com Fono, Psico, Fisioterapia, Psicopedagogia, Musicoterapia e Neuropsico.\n\nQual dessas você procura?');
       }
 
       // ── COLETA DE QUEIXA ──
       case STATES.COLLECT_COMPLAINT: {
-        // Qualquer texto > 5 chars é aceito como queixa
         if (text.length > 5) {
           const complaint = text.substring(0, 200);
           const newData = { ...stateData, complaint };
 
-          // Tenta extrair idade desta mensagem
           const age = extractAgeFromText(text);
           if (age) {
             newData.age = age;
-            // Pula COLLECT_BIRTH → vai direto pra COLLECT_PERIOD
+            this.logger.info('V8_COMPLAINT_WITH_AGE', { leadId, age, complaint: complaint.substring(0, 60) });
             await jumpToState(leadId, STATES.COLLECT_PERIOD, newData);
             await this._saveComplaintAndAge(leadId, complaint, age);
-            return this._reply(`Entendi! ${age} anos${stateData.therapy ? `, pra ${THERAPY_DATA[stateData.therapy]?.name || stateData.therapy}` : ''}.\n\nQue período funciona melhor: **manhã ou tarde**? ☀️🌙`);
+            return this._reply(`Entendi! ${age} anos${stateData.therapy ? `, pra ${lead.therapyArea || stateData.therapy}` : ''}.\n\nQue período funciona melhor: **manhã ou tarde**? ☀️🌙`);
           }
 
+          this.logger.info('V8_COMPLAINT_NO_AGE', { leadId, complaint: complaint.substring(0, 60) });
           await jumpToState(leadId, STATES.COLLECT_BIRTH, newData);
           await this._saveComplaint(leadId, complaint);
           return this._reply(`Entendi a situação! 💚\n\nE qual a idade do paciente?`);
         }
 
-        const { handoff } = await incrementRetry(leadId);
-        if (handoff) return this._handoffReply();
+        const { handoff, retryCount } = await incrementRetry(leadId);
+        this.logger.warn('V8_RETRY', { leadId, state, retryCount, reason: 'complaint_too_short', textLen: text.length });
+        if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
         return this._reply('Me conta um pouco mais sobre a situação? 😊');
       }
 
@@ -208,14 +212,16 @@ export default class WhatsAppOrchestrator {
         const birth = extractBirth(text);
 
         if (age || birth) {
+          this.logger.info('V8_BIRTH_COLLECTED', { leadId, age, birth });
           const newData = { ...stateData, age: age || null, birthDate: birth || null };
           await jumpToState(leadId, STATES.COLLECT_PERIOD, newData);
           await this._saveAge(leadId, age, birth);
           return this._reply(`${age ? `${age} anos` : 'Anotado'}, perfeito! 📝\n\nQue período funciona melhor: **manhã ou tarde**? ☀️🌙`);
         }
 
-        const { handoff } = await incrementRetry(leadId);
-        if (handoff) return this._handoffReply();
+        const { handoff, retryCount } = await incrementRetry(leadId);
+        this.logger.warn('V8_RETRY', { leadId, state, retryCount, reason: 'birth_not_extracted', text: text.substring(0, 60) });
+        if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
         return this._reply('Preciso só da idade ou data de nascimento pra buscar os horários certinhos 💚');
       }
 
@@ -223,30 +229,32 @@ export default class WhatsAppOrchestrator {
       case STATES.COLLECT_PERIOD: {
         const period = extractPeriodFromText(text);
         if (period) {
+          this.logger.info('V8_PERIOD_COLLECTED', { leadId, period });
           const newData = { ...stateData, period };
           await jumpToState(leadId, STATES.SHOW_SLOTS, newData);
           await this._savePeriod(leadId, period);
-          // Busca slots e mostra
           return this._handleOfferBooking(newData, lead, services);
         }
 
-        const { handoff } = await incrementRetry(leadId);
-        if (handoff) return this._handoffReply();
+        const { handoff, retryCount } = await incrementRetry(leadId);
+        this.logger.warn('V8_RETRY', { leadId, state, retryCount, reason: 'period_not_detected', text: text.substring(0, 60) });
+        if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
         return this._reply('Prefere **manhã** ou **tarde**? (Nosso horário: 8h às 18h) ☀️🌙');
       }
 
       // ── MOSTRANDO SLOTS ──
       case STATES.SHOW_SLOTS: {
-        // Lead escolheu uma opção (A, B, C...)
         const choice = text.trim().charAt(0).toUpperCase();
         if (/^[A-F]$/.test(choice)) {
+          this.logger.info('V8_SLOT_CHOSEN', { leadId, choice });
           const newData = { ...stateData, chosenSlot: choice };
           await jumpToState(leadId, STATES.COLLECT_PATIENT_DATA, newData);
           return this._reply(`Ótima escolha! Opção ${choice} 💚\n\nPra confirmar o agendamento, preciso do nome completo do paciente:`);
         }
 
-        const { handoff } = await incrementRetry(leadId);
-        if (handoff) return this._handoffReply();
+        const { handoff, retryCount } = await incrementRetry(leadId);
+        this.logger.warn('V8_RETRY', { leadId, state, retryCount, reason: 'invalid_slot_choice', text: text.substring(0, 30) });
+        if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
         return this._reply('Pra continuar, é só escolher uma das opções (A, B, C...) 💚');
       }
 
@@ -254,14 +262,16 @@ export default class WhatsAppOrchestrator {
       case STATES.COLLECT_PATIENT_DATA: {
         const name = extractName(text);
         if (name && name.length >= 3) {
+          this.logger.info('V8_PATIENT_NAME_COLLECTED', { leadId, name });
           const newData = { ...stateData, patientName: name };
           await jumpToState(leadId, STATES.CONFIRM_BOOKING, newData);
           await this._savePatientName(leadId, name);
           return this._reply(`Paciente: **${name}**\nHorário: Opção ${stateData.chosenSlot}\n\nPosso confirmar? (Sim/Não) ✅`);
         }
 
-        const { handoff } = await incrementRetry(leadId);
-        if (handoff) return this._handoffReply();
+        const { handoff, retryCount } = await incrementRetry(leadId);
+        this.logger.warn('V8_RETRY', { leadId, state, retryCount, reason: 'name_not_extracted', text: text.substring(0, 60) });
+        if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
         return this._reply('Preciso do nome completo do paciente pra confirmar 💚');
       }
 
@@ -269,22 +279,59 @@ export default class WhatsAppOrchestrator {
       case STATES.CONFIRM_BOOKING: {
         const isYes = /^(sim|confirma|pode|bora|isso|ok|yes|claro)/i.test(text.trim());
         if (isYes) {
+          const savedSlots = lead.pendingSchedulingSlots;
+          const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+          const slotIndex = letters.indexOf(stateData.chosenSlot);
+          const allSlots = [
+            savedSlots?.primary,
+            ...(savedSlots?.alternativesSamePeriod || []),
+            ...(savedSlots?.alternativesOtherPeriod || []),
+          ].filter(Boolean);
+          const actualSlot = allSlots[slotIndex] || null;
+
+          this.logger.info('V8_BOOKING_CONFIRMED', { leadId, patientName: stateData.patientName, chosenSlot: stateData.chosenSlot, slotFound: !!actualSlot });
           await jumpToState(leadId, STATES.BOOKED, stateData);
+
+          if (actualSlot) {
+            autoBookAppointment({
+              lead,
+              chosenSlot: actualSlot,
+              patientInfo: {
+                fullName: stateData.patientName,
+                birthDate: lead.patientInfo?.birthDate || null,
+                phone: lead.phone || lead.whatsapp || '',
+                email: lead.email || undefined,
+              },
+            }).catch(err => this.logger.error('V8_AUTOBOOKING_ERROR', { error: err.message, leadId, patientName: stateData.patientName }));
+          } else {
+            this.logger.warn('V8_SLOT_NOT_FOUND_ON_CONFIRM', { leadId, chosenSlot: stateData.chosenSlot, totalSlots: allSlots.length });
+          }
+
           return this._reply(`✅ Agendamento confirmado!\n\n📋 Paciente: ${stateData.patientName}\n🕐 Horário: Opção ${stateData.chosenSlot}\n\nVou enviar a confirmação com todos os detalhes! Até lá 💚`);
         }
 
         const isNo = /^(não|nao|cancela|desist)/i.test(text.trim());
         if (isNo) {
+          this.logger.info('V8_BOOKING_CANCELLED', { leadId });
           await this._clearState(leadId);
           return this._reply('Sem problema! Se mudar de ideia, é só chamar 💚');
         }
 
+        this.logger.info('V8_CONFIRM_AMBIGUOUS', { leadId, text: text.substring(0, 40) });
         return this._reply('Posso confirmar esse agendamento? Só dizer **Sim** ou **Não** 😊');
       }
 
       // ── AGENDADO ──
       case STATES.BOOKED: {
-        return this._reply('Seu agendamento já foi confirmado! 💚\n\nSe precisar de algo mais, tô aqui! 😊');
+        // Verifica se lead quer marcar NOVO agendamento (caso Hanna)
+        const wantsNew = /novo|outr[ao]|filh[ao]|mais um|segunda consulta|remarc|agend/i.test(text);
+        if (wantsNew) {
+          this.logger.info('V8_BOOKED_NEW_REQUEST', { leadId, text: text.substring(0, 80) });
+          await this._clearState(leadId);
+          return this._processState(STATES.IDLE, text, lead, {}, services);
+        }
+        this.logger.info('V8_BOOKED_RETURN_MSG', { leadId, text: text.substring(0, 60) });
+        return this._reply('Seu agendamento já foi confirmado! 💚\n\nSe quiser marcar para outra criança ou nova consulta, é só me dizer! 😊');
       }
 
       // ── HANDOFF HUMANO ──
@@ -344,10 +391,14 @@ export default class WhatsAppOrchestrator {
   // ═══════════════════════════════════════════
 
   async _handleOfferBooking(stateData, lead, services) {
+    const leadId = lead._id;
     try {
+      const therapyArea = lead.therapyArea || stateData.therapy?.id || stateData.therapy;
+      this.logger.info('V8_SLOT_SEARCH_START', { leadId, therapyArea, period: stateData.period, age: stateData.age });
+
       const slots = await Promise.race([
         findAvailableSlots({
-          therapyArea: stateData.therapy,
+          therapyArea,
           preferredPeriod: stateData.period,
           patientAge: stateData.age,
           maxDoctors: 2,
@@ -359,7 +410,9 @@ export default class WhatsAppOrchestrator {
         )
       ]);
 
-      if (slots?.primary?.length > 0) {
+      if (slots?.primary) {
+        const totalSlots = 1 + (slots.alternativesSamePeriod?.length || 0) + (slots.alternativesOtherPeriod?.length || 0);
+        this.logger.info('V8_SLOTS_FOUND', { leadId, totalSlots, primaryDoctor: slots.primary?.doctor, primaryDate: slots.primary?.date });
         await leadRepository.persistSchedulingSlots(lead._id, slots);
         const decisionContext = buildDecisionContext({
           lead,
@@ -371,10 +424,11 @@ export default class WhatsAppOrchestrator {
         return this._reply(bookingResponse.text);
       }
 
+      this.logger.warn('V8_NO_SLOTS_FOUND', { leadId, therapyArea, period: stateData.period });
       return this._reply(`Hmm, não encontrei horários para ${stateData.period || 'esse período'} agora 😕\n\nQuer que eu busque em outro período? (manhã/tarde)`);
 
     } catch (error) {
-      this.logger.error('V8_SLOT_SEARCH_ERROR', { error: error.message });
+      this.logger.error('V8_SLOT_SEARCH_ERROR', { error: error.message, leadId, therapyArea: lead.therapyArea, isTimeout: error.message === 'SLOT_SEARCH_TIMEOUT' });
       return this._reply(`Estou verificando a agenda... Pode ser que eu precise de mais um instante! 💚\n\nEnquanto isso, prefere atendimento presencial ou online?`);
     }
   }

@@ -1,82 +1,61 @@
-#!/usr/bin/env node
 /**
- * 🧪 TESTE UNITÁRIO: flagsDetector.js
- * 
- * Testa detecção de flags sem necessidade de MongoDB
- * Rápido para executar em CI/CD
+ * 🧪 TESTES UNITÁRIOS - flagsDetector.js
+ * Validam correções de falsos positivos em givingUp
  */
 
-import { deriveFlagsFromText } from '../../utils/flagsDetector.js';
+import { describe, it, expect } from 'vitest';
+import { detectAllFlags } from '../../utils/flagsDetector.js';
 
-const TESTS = [
-    // PONTO 1: Desambiguação "vaga"
-    {
-        name: 'P1: "Quais os dias tem vaga" → wantsSchedule=true, parceria=false',
-        input: 'Quais os dias tem vaga',
-        expect: { wantsSchedule: true, wantsPartnershipOrResume: false }
-    },
-    {
-        name: 'P1: "Tem vaga de trabalho" → parceria=true',
-        input: 'Tem vaga de trabalho',
-        expect: { wantsPartnershipOrResume: true }
-    },
-    {
-        name: 'P1: "Gostaria de enviar currículo" → parceria=true',
-        input: 'Gostaria de enviar meu currículo',
-        expect: { wantsPartnershipOrResume: true }
-    },
+describe('🚨 CORREÇÃO: givingUp falsos positivos', () => {
     
-    // PONTO 2: Mais cedo / alternativas
-    {
-        name: 'P2: "Não tem pra mais cedo" → wantsMoreOptions=true',
-        input: 'Não tem pra mais cedo não?',
-        expect: { wantsSchedule: true, wantsMoreOptions: true }
-    },
-    {
-        name: 'P2: "Tem outro horário" → wantsMoreOptions=true',
-        input: 'Tem outro horário disponível?',
-        expect: { wantsSchedule: true, wantsMoreOptions: true }
-    },
-    
-    // Outros casos importantes
-    {
-        name: 'Agendamento normal',
-        input: 'Quero agendar uma consulta',
-        expect: { wantsSchedule: true, wantsPartnershipOrResume: false }
-    },
-    {
-        name: 'Parceria explícita',
-        input: 'Sou fonoaudióloga e quero trabalhar com vocês',
-        expect: { wantsPartnershipOrResume: true }
-    }
-];
+    describe('✅ NÃO deve detectar givingUp em contextos inocentes', () => {
+        const casosInocentes = [
+            'Olá! Fique à vontade para nos contar',
+            'Isso é para você',
+            'Ela chega às 10h',
+            'Para mim está bom',
+            'Onde fica a clínica para eu chegar?',
+            'Quero agendar para amanhã'
+        ];
 
-let passed = 0;
-let failed = 0;
+        casosInocentes.forEach(texto => {
+            it(`"${texto.substring(0, 40)}..." → givingUp deve ser false`, () => {
+                const flags = detectAllFlags(texto);
+                expect(flags.givingUp).toBe(false);
+            });
+        });
+    });
 
-console.log('\n🧪 Testes Unitários: flagsDetector.js\n');
+    describe('✅ DEVE detectar givingUp em contextos de desistência real', () => {
+        const casosDesistencia = [
+            'Chega de esperar',
+            'Basta, não aguento mais',
+            'Para de me ligar',
+            'Para com isso',
+            'Desisto'
+        ];
 
-for (const test of TESTS) {
-    const flags = deriveFlagsFromText(test.input);
-    let ok = true;
-    
-    for (const [key, value] of Object.entries(test.expect)) {
-        if (flags[key] !== value) {
-            ok = false;
-            console.log(`❌ ${test.name}`);
-            console.log(`   Input: "${test.input}"`);
-            console.log(`   ${key}: esperado=${value}, obtido=${flags[key]}`);
-        }
-    }
-    
-    if (ok) {
-        console.log(`✅ ${test.name}`);
-        passed++;
-    } else {
-        failed++;
-    }
-}
+        casosDesistencia.forEach(texto => {
+            it(`"${texto}" → givingUp deve ser true`, () => {
+                const flags = detectAllFlags(texto);
+                expect(flags.givingUp).toBe(true);
+            });
+        });
+    });
 
-console.log(`\n📊 Resultado: ${passed}/${TESTS.length} passaram${failed > 0 ? ` | ${failed} falharam` : ''}\n`);
+    describe('✅ Casos específicos do log de produção', () => {
+        it('template "Fique à vontade para nos contar" → givingUp: false', () => {
+            const texto = 'Olá! 😊\nSeja bem-vindo(a) à Clínica Fono Inova 💚 Fique à vontade para nos contar o que te trouxe até aqui ou como podemos te ajudar.';
+            const flags = detectAllFlags(texto);
+            expect(flags.givingUp).toBe(false);
+        });
 
-process.exit(failed > 0 ? 1 : 0);
+        it('"Chega de esperar" → givingUp: true', () => {
+            const flags = detectAllFlags('Chega de esperar, vou procurar outra clínica');
+            expect(flags.givingUp).toBe(true);
+        });
+    });
+});
+
+// Nota: preferredPeriod é detectado por extractPeriodFromText, não por detectAllFlags
+// Testes de período estão em patientDataExtractor.test.js

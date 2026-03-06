@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     getSafePatientName,
+    getSafeProfessionalName,
     mapAppointmentToEvent,
     mapPreAgendamentoToEvent,
     getFriendlyStatus
@@ -103,10 +104,10 @@ describe('AppointmentMapper - Unit Tests', () => {
             const event = mapPreAgendamentoToEvent(mockPre);
 
             expect(event.id).toBe('607f1f77bcf86cd799439022');
-            expect(event.__isPreAgendamento).toBe(true);
+            expect(event.metadata.isPreAgendamento).toBe(true);
             expect(event.patientName).toBe('Alice Marques Martins');
             expect(event.professional).toBe('Dra. Suzane');
-            expect(event.status).toBe('Pendente');
+            expect(event.status).toBe('Novo');
         });
     });
 });

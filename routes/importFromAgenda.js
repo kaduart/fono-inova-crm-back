@@ -1038,14 +1038,24 @@ router.post("/import-from-agenda/sync-update", agendaAuth, async (req, res) => {
         // Limpar nome (remover quebras de linha e espaços extras)
         patientUpdate.fullName = patientInfo.fullName.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
       }
-      if (patientInfo.phone) patientUpdate.phone = patientInfo.phone;
+      if (patientInfo.phone) {
+        // Limpar telefone (apenas números)
+        patientUpdate.phone = String(patientInfo.phone).replace(/\D/g, '');
+      }
       if (patientInfo.birthDate) patientUpdate.dateOfBirth = patientInfo.birthDate;
       if (patientInfo.email) patientUpdate.email = patientInfo.email;
       patientUpdate.updatedAt = new Date();
       
       if (Object.keys(patientUpdate).length > 0) {
-        await Patient.findByIdAndUpdate(appointment.patient, patientUpdate, { session });
-        console.log(`[SYNC-UPDATE] ✅ Patient ${appointment.patient} atualizado`);
+        const updatedPatient = await Patient.findByIdAndUpdate(
+          appointment.patient, 
+          patientUpdate, 
+          { session, new: true }
+        );
+        console.log(`[SYNC-UPDATE] ✅ Patient ${appointment.patient} atualizado:`, {
+          name: updatedPatient?.fullName,
+          phone: updatedPatient?.phone
+        });
       }
     }
 
