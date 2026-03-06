@@ -50,9 +50,6 @@ const mockIncrementRetry = vi.fn().mockResolvedValue({ count: 1, handoff: false 
 const mockFindAvailableSlots   = vi.fn().mockResolvedValue(MOCK_SLOTS);
 const mockAutoBookAppointment  = vi.fn().mockResolvedValue({ success: true });
 const mockPersistSchedulingSlots = vi.fn().mockResolvedValue({});
-const mockBookingHandlerExecute  = vi.fn().mockResolvedValue({
-    text: 'Encontrei essas opções:\n\nA) Seg 10/03 às 9h com Dra. Ana\nB) Ter 11/03 às 10h com Dra. Bia',
-});
 const mockLeadsUpdateOne    = vi.fn().mockResolvedValue({});
 const mockLeadsFindByIdAndUpdate = vi.fn().mockResolvedValue({});
 
@@ -111,10 +108,6 @@ vi.mock('../../infrastructure/persistence/LeadRepository.js', () => ({
     },
 }));
 
-vi.mock('../../handlers/BookingHandler.js', () => ({
-    default: { execute: (...args) => mockBookingHandlerExecute(...args) },
-}));
-
 vi.mock('../../perception/PerceptionService.js', () => ({
     perceptionService: {
         analyze: vi.fn().mockResolvedValue({
@@ -126,17 +119,6 @@ vi.mock('../../perception/PerceptionService.js', () => ({
 
 vi.mock('../../services/amandaLearningService.js', () => ({
     getLatestInsights: vi.fn().mockResolvedValue(null),
-}));
-
-vi.mock('../../adapters/BookingContextAdapter.js', () => ({
-    buildDecisionContext: vi.fn((p) => ({
-        message: { text: p.message || '' },
-        lead: p.lead,
-        memory: p.context || {},
-        missing: { needsSlotSelection: true, needsSlot: false, needsName: false },
-        booking: { slots: p.slots, chosenSlot: null },
-        analysis: {},
-    })),
 }));
 
 vi.mock('../../config/pricing.js', () => ({
@@ -274,7 +256,7 @@ describe('WhatsAppOrchestrator — FSM real', () => {
     // COLLECT_COMPLAINT
     // ─────────────────────────────
     describe('ESTADO COLLECT_COMPLAINT', () => {
-        it('aceita queixa e extrai idade → pula para COLLECT_PERIOD', async () => {
+        it('aceita queixa e extrai idade → vai para COLLECT_BIRTH (data de nasc. obrigatória)', async () => {
             currentLeadState = makeLead({
                 currentState: 'COLLECT_COMPLAINT',
                 stateData: { therapy: 'speech' },
@@ -283,10 +265,12 @@ describe('WhatsAppOrchestrator — FSM real', () => {
             const result = await processMsg({ _id: 'lead-123' }, 'meu filho não fala, tem 5 anos');
 
             expect(result.command).toBe('SEND_MESSAGE');
-            const jumpCall = mockJumpToState.mock.calls.find(c => c[1] === 'COLLECT_PERIOD');
+            // Mesmo com idade, vai para COLLECT_BIRTH para coletar data de nascimento
+            const jumpCall = mockJumpToState.mock.calls.find(c => c[1] === 'COLLECT_BIRTH');
             expect(jumpCall).toBeTruthy();
-            expect(jumpCall[2].age).toBeTruthy();
-            expect(result.payload.text).toContain('manhã ou tarde');
+            expect(jumpCall[2].age).toBeTruthy(); // idade foi salva
+            expect(jumpCall[2].complaint).toBeTruthy();
+            expect(result.payload.text).toMatch(/data de nascimento/i);
         });
 
         it('queixa sem idade → vai para COLLECT_BIRTH', async () => {
@@ -388,7 +372,7 @@ describe('WhatsAppOrchestrator — FSM real', () => {
             expect(result.command).toBe('SEND_MESSAGE');
         });
 
-        it('fluxo multi-turn: fono → queixa sem idade → data de nascimento → período', async () => {
+        it('fluxo multi-turn: fono → queixa sem idade → data de nascimento → período → nome → slots', async () => {
             const leadId = 'lead-3777';
             let result;
             vi.clearAllMocks();
@@ -399,17 +383,25 @@ describe('WhatsAppOrchestrator — FSM real', () => {
             expect(mockJumpToState).toHaveBeenCalledWith(leadId, 'COLLECT_BIRTH', expect.any(Object));
             vi.clearAllMocks();
 
-            // Turn 2: usuário manda idade "10 anos" → COLLECT_PERIOD
+            // Turn 2: usuário manda data → COLLECT_PERIOD
             currentLeadState = makeLead({ _id: leadId, currentState: 'COLLECT_BIRTH', stateData: { therapy: 'speech' }, therapyArea: 'fonoaudiologia' });
-            result = await processMsg({ _id: leadId }, 'Para criança de 10 anos');
-            expect(mockJumpToState).toHaveBeenCalledWith(leadId, 'COLLECT_PERIOD', expect.objectContaining({ age: expect.objectContaining({ age: 10 }) }));
+            result = await processMsg({ _id: leadId }, '28/11/2015');
+            expect(mockJumpToState).toHaveBeenCalledWith(leadId, 'COLLECT_PERIOD', expect.objectContaining({ birthDate: '2015-11-28' }));
             vi.clearAllMocks();
 
-            // Turn 3: período → busca slots
-            currentLeadState = makeLead({ _id: leadId, currentState: 'COLLECT_PERIOD', stateData: { therapy: 'speech', age: { age: 10 } }, therapyArea: 'fonoaudiologia' });
+            // Turn 3: período → COLLECT_NAME (pede nome, não busca slots ainda)
+            currentLeadState = makeLead({ _id: leadId, currentState: 'COLLECT_PERIOD', stateData: { therapy: 'speech', birthDate: '2015-11-28' }, therapyArea: 'fonoaudiologia' });
             result = await processMsg({ _id: leadId }, 'manhã');
+            expect(mockJumpToState).toHaveBeenCalledWith(leadId, 'COLLECT_NAME', expect.objectContaining({ period: expect.any(String) }));
+            expect(mockFindAvailableSlots).not.toHaveBeenCalled(); // ainda não buscou slots
+            vi.clearAllMocks();
+
+            // Turn 4: nome → busca slots → SHOW_SLOTS
+            currentLeadState = makeLead({ _id: leadId, currentState: 'COLLECT_NAME', stateData: { therapy: 'speech', period: 'manha' }, therapyArea: 'fonoaudiologia' });
+            result = await processMsg({ _id: leadId }, 'Sofia Lima');
             expect(mockFindAvailableSlots).toHaveBeenCalledWith(expect.objectContaining({ therapyArea: 'fonoaudiologia' }));
             expect(mockPersistSchedulingSlots).toHaveBeenCalled();
+            expect(mockJumpToState).toHaveBeenCalledWith(leadId, 'SHOW_SLOTS', expect.objectContaining({ patientName: 'Sofia Lima' }));
         });
     });
 
@@ -417,51 +409,81 @@ describe('WhatsAppOrchestrator — FSM real', () => {
     // COLLECT_PERIOD
     // ─────────────────────────────
     describe('ESTADO COLLECT_PERIOD', () => {
-        it('extrai período e chama findAvailableSlots com lead.therapyArea', async () => {
+        it('extrai período e vai para COLLECT_NAME (pede nome do paciente)', async () => {
             currentLeadState = makeLead({
                 currentState: 'COLLECT_PERIOD',
                 stateData: { therapy: 'speech', complaint: 'atraso fala', age: { age: 5 } },
-                therapyArea: 'fonoaudiologia', // valor correto para query MongoDB
+                therapyArea: 'fonoaudiologia',
             });
-            await processMsg({ _id: 'lead-123' }, 'prefiro manhã');
+            const result = await processMsg({ _id: 'lead-123' }, 'prefiro manhã');
 
-            expect(mockFindAvailableSlots).toHaveBeenCalledWith(
-                expect.objectContaining({ therapyArea: 'fonoaudiologia' })
-            );
+            const jumpCall = mockJumpToState.mock.calls.find(c => c[1] === 'COLLECT_NAME');
+            expect(jumpCall).toBeTruthy();
+            expect(jumpCall[2].period).toBeTruthy();
+            expect(result.payload.text).toMatch(/nome.*paciente|paciente.*nome/i);
+            // NÃO deve ter chamado findAvailableSlots ainda
+            expect(mockFindAvailableSlots).not.toHaveBeenCalled();
         });
 
-        it('findAvailableSlots NÃO recebe objeto como therapyArea', async () => {
+        it('período não detectado → retry', async () => {
+            currentLeadState = makeLead({ currentState: 'COLLECT_PERIOD', stateData: { therapy: 'speech' } });
+            await processMsg({ _id: 'lead-123' }, 'qualquer horário');
+            expect(mockIncrementRetry).toHaveBeenCalled();
+        });
+    });
+
+    // ─────────────────────────────
+    // COLLECT_NAME (novo estado)
+    // ─────────────────────────────
+    describe('ESTADO COLLECT_NAME', () => {
+        it('nome válido → chama findAvailableSlots e vai para SHOW_SLOTS', async () => {
             currentLeadState = makeLead({
-                currentState: 'COLLECT_PERIOD',
-                stateData: { therapy: { id: 'speech', name: 'Fonoaudiologia' } }, // objeto legado
-                therapyArea: 'fonoaudiologia', // lead.therapyArea tem prioridade
+                currentState: 'COLLECT_NAME',
+                stateData: { therapy: 'speech', period: 'manha', age: { age: 5 } },
+                therapyArea: 'fonoaudiologia',
             });
-            await processMsg({ _id: 'lead-123' }, 'tarde');
+            const result = await processMsg({ _id: 'lead-123' }, 'Lucas Oliveira');
+
+            const jumpCall = mockJumpToState.mock.calls.find(c => c[1] === 'SHOW_SLOTS');
+            expect(jumpCall).toBeTruthy();
+            expect(jumpCall[2].patientName).toBe('Lucas Oliveira');
+            expect(mockFindAvailableSlots).toHaveBeenCalled();
+            expect(mockPersistSchedulingSlots).toHaveBeenCalledWith('lead-123', MOCK_SLOTS);
+            expect(result.payload.text).toMatch(/A\)|opção|funciona/i);
+        });
+
+        it('findAvailableSlots usa lead.therapyArea como string', async () => {
+            currentLeadState = makeLead({
+                currentState: 'COLLECT_NAME',
+                stateData: { therapy: { id: 'speech', name: 'Fonoaudiologia' } },
+                therapyArea: 'fonoaudiologia',
+            });
+            await processMsg({ _id: 'lead-123' }, 'Maria Silva');
 
             const callArgs = mockFindAvailableSlots.mock.calls[0]?.[0];
             expect(typeof callArgs?.therapyArea).toBe('string');
             expect(callArgs?.therapyArea).toBe('fonoaudiologia');
         });
 
-        it('persiste slots após encontrar vagas', async () => {
-            currentLeadState = makeLead({
-                currentState: 'COLLECT_PERIOD',
-                stateData: { therapy: 'speech' },
-                therapyArea: 'fonoaudiologia',
-            });
-            await processMsg({ _id: 'lead-123' }, 'manhã');
-            expect(mockPersistSchedulingSlots).toHaveBeenCalledWith('lead-123', MOCK_SLOTS);
-        });
-
-        it('sem slots disponíveis → mensagem de alternativa', async () => {
+        it('sem slots disponíveis → volta para COLLECT_PERIOD (não fica travado em SHOW_SLOTS)', async () => {
             mockFindAvailableSlots.mockResolvedValueOnce({ primary: null, alternativesSamePeriod: [], alternativesOtherPeriod: [] });
             currentLeadState = makeLead({
-                currentState: 'COLLECT_PERIOD',
-                stateData: { therapy: 'speech' },
+                currentState: 'COLLECT_NAME',
+                stateData: { therapy: 'speech', period: 'manha' },
                 therapyArea: 'fonoaudiologia',
             });
-            const result = await processMsg({ _id: 'lead-123' }, 'manhã');
+            const result = await processMsg({ _id: 'lead-123' }, 'Ana Lima');
+
+            // Deve voltar para COLLECT_PERIOD, não ficar em SHOW_SLOTS
+            const jumpBack = mockJumpToState.mock.calls.find(c => c[1] === 'COLLECT_PERIOD');
+            expect(jumpBack).toBeTruthy();
             expect(result.payload.text).toMatch(/não encontrei|outro período/i);
+        });
+
+        it('texto sem nome válido → retry', async () => {
+            currentLeadState = makeLead({ currentState: 'COLLECT_NAME', stateData: {} });
+            await processMsg({ _id: 'lead-123' }, 'ok');
+            expect(mockIncrementRetry).toHaveBeenCalled();
         });
     });
 
@@ -469,20 +491,29 @@ describe('WhatsAppOrchestrator — FSM real', () => {
     // SHOW_SLOTS
     // ─────────────────────────────
     describe('ESTADO SHOW_SLOTS', () => {
-        it('escolha A → vai para COLLECT_PATIENT_DATA', async () => {
-            currentLeadState = makeLead({ currentState: 'SHOW_SLOTS', stateData: { therapy: 'speech' } });
+        it('escolha A → vai direto para CONFIRM_BOOKING (nome já coletado antes)', async () => {
+            currentLeadState = makeLead({
+                currentState: 'SHOW_SLOTS',
+                stateData: { therapy: 'speech', patientName: 'Lucas Oliveira' },
+            });
             const result = await processMsg({ _id: 'lead-123' }, 'A');
 
-            const jumpCall = mockJumpToState.mock.calls.find(c => c[1] === 'COLLECT_PATIENT_DATA');
+            const jumpCall = mockJumpToState.mock.calls.find(c => c[1] === 'CONFIRM_BOOKING');
             expect(jumpCall).toBeTruthy();
             expect(jumpCall[2].chosenSlot).toBe('A');
-            expect(result.payload.text).toContain('nome completo');
+            // Não deve pedir nome de novo (já foi coletado em COLLECT_NAME)
+            expect(result.payload.text).not.toMatch(/nome.*paciente/i);
+            expect(result.payload.text).toContain('Lucas Oliveira');
+            expect(result.payload.text).toMatch(/confirmar|Sim|Não/i);
         });
 
         it('escolha B também aceita', async () => {
-            currentLeadState = makeLead({ currentState: 'SHOW_SLOTS', stateData: {} });
+            currentLeadState = makeLead({
+                currentState: 'SHOW_SLOTS',
+                stateData: { patientName: 'Ana Lima' },
+            });
             await processMsg({ _id: 'lead-123' }, 'B');
-            const jumpCall = mockJumpToState.mock.calls.find(c => c[1] === 'COLLECT_PATIENT_DATA');
+            const jumpCall = mockJumpToState.mock.calls.find(c => c[1] === 'CONFIRM_BOOKING');
             expect(jumpCall?.[2].chosenSlot).toBe('B');
         });
 
@@ -491,25 +522,14 @@ describe('WhatsAppOrchestrator — FSM real', () => {
             await processMsg({ _id: 'lead-123' }, 'quero outro');
             expect(mockIncrementRetry).toHaveBeenCalled();
         });
-    });
 
-    // ─────────────────────────────
-    // COLLECT_PATIENT_DATA
-    // ─────────────────────────────
-    describe('ESTADO COLLECT_PATIENT_DATA', () => {
-        it('nome válido → vai para CONFIRM_BOOKING', async () => {
-            currentLeadState = makeLead({ currentState: 'COLLECT_PATIENT_DATA', stateData: { chosenSlot: 'A' } });
-            const result = await processMsg({ _id: 'lead-123' }, 'Maria Silva');
-
-            const jumpCall = mockJumpToState.mock.calls.find(c => c[1] === 'CONFIRM_BOOKING');
-            expect(jumpCall).toBeTruthy();
-            expect(jumpCall[2].patientName).toBe('Maria Silva');
-            expect(result.payload.text).toContain('confirmar');
-        });
-
-        it('texto sem nome válido → retry', async () => {
-            currentLeadState = makeLead({ currentState: 'COLLECT_PATIENT_DATA', stateData: { chosenSlot: 'A' } });
-            await processMsg({ _id: 'lead-123' }, 'ok');
+        // Regressão: bug crítico — sem slots → usuário travado em SHOW_SLOTS respondendo "tarde"
+        it('REGRESSÃO: "tarde" em SHOW_SLOTS quando não há slots → não trava (era o bug real)', async () => {
+            // Estado SHOW_SLOTS sem slots (porque no-slots-found mantinha estado SHOW_SLOTS)
+            currentLeadState = makeLead({ currentState: 'SHOW_SLOTS', stateData: {} });
+            const result = await processMsg({ _id: 'lead-123' }, 'tarde');
+            // "tarde" não é A-F → retry, mas ao menos não quebra
+            expect(result.command).toBe('SEND_MESSAGE');
             expect(mockIncrementRetry).toHaveBeenCalled();
         });
     });
@@ -632,7 +652,7 @@ describe('WhatsAppOrchestrator — FSM real', () => {
     // Fluxo completo de ponta a ponta
     // ─────────────────────────────
     describe('Fluxo completo E2E (sem DB real)', () => {
-        it('IDLE → COLLECT_COMPLAINT → COLLECT_PERIOD → SHOW_SLOTS → COLLECT_PATIENT_DATA → CONFIRM_BOOKING → BOOKED', async () => {
+        it('IDLE → COLLECT_COMPLAINT → COLLECT_BIRTH → COLLECT_PERIOD → COLLECT_NAME → SHOW_SLOTS → CONFIRM_BOOKING → BOOKED', async () => {
             const leadId = 'lead-e2e';
 
             // Msg 1: primeiro contato com terapia
@@ -642,32 +662,43 @@ describe('WhatsAppOrchestrator — FSM real', () => {
             expect(mockJumpToState).toHaveBeenCalledWith(leadId, 'COLLECT_COMPLAINT', expect.objectContaining({ therapy: 'speech' }));
             vi.clearAllMocks();
 
-            // Msg 2: queixa com idade
+            // Msg 2: queixa com idade → COLLECT_BIRTH (mesmo com idade, precisa data de nasc.)
             currentLeadState = makeLead({ _id: leadId, currentState: 'COLLECT_COMPLAINT', stateData: { therapy: 'speech' }, therapyArea: 'fonoaudiologia' });
             result = await processMsg({ _id: leadId }, 'meu filho tem 5 anos e não fala');
-            expect(mockJumpToState).toHaveBeenCalledWith(leadId, 'COLLECT_PERIOD', expect.any(Object));
+            expect(mockJumpToState).toHaveBeenCalledWith(leadId, 'COLLECT_BIRTH', expect.objectContaining({ age: expect.any(Object) }));
             vi.clearAllMocks();
 
-            // Msg 3: período
-            currentLeadState = makeLead({ _id: leadId, currentState: 'COLLECT_PERIOD', stateData: { therapy: 'speech', age: { age: 5 } }, therapyArea: 'fonoaudiologia' });
+            // Msg 3: data de nascimento → COLLECT_PERIOD
+            currentLeadState = makeLead({ _id: leadId, currentState: 'COLLECT_BIRTH', stateData: { therapy: 'speech', complaint: '...', age: { age: 5 } }, therapyArea: 'fonoaudiologia' });
+            result = await processMsg({ _id: leadId }, '10/03/2020');
+            expect(mockJumpToState).toHaveBeenCalledWith(leadId, 'COLLECT_PERIOD', expect.objectContaining({ birthDate: '2020-03-10' }));
+            vi.clearAllMocks();
+
+            // Msg 4: período → COLLECT_NAME (pede nome, sem buscar slots)
+            currentLeadState = makeLead({ _id: leadId, currentState: 'COLLECT_PERIOD', stateData: { therapy: 'speech', birthDate: '2020-03-10' }, therapyArea: 'fonoaudiologia' });
             result = await processMsg({ _id: leadId }, 'manhã');
-            expect(mockFindAvailableSlots).toHaveBeenCalledWith(expect.objectContaining({ therapyArea: 'fonoaudiologia' }));
-            expect(mockPersistSchedulingSlots).toHaveBeenCalled();
+            expect(mockJumpToState).toHaveBeenCalledWith(leadId, 'COLLECT_NAME', expect.any(Object));
+            expect(mockFindAvailableSlots).not.toHaveBeenCalled();
+            expect(result.payload.text).toMatch(/nome.*paciente/i);
             vi.clearAllMocks();
 
-            // Msg 4: escolha de slot
-            currentLeadState = makeLead({ _id: leadId, currentState: 'SHOW_SLOTS', stateData: { therapy: 'speech' } });
-            result = await processMsg({ _id: leadId }, 'A');
-            expect(mockJumpToState).toHaveBeenCalledWith(leadId, 'COLLECT_PATIENT_DATA', expect.objectContaining({ chosenSlot: 'A' }));
-            vi.clearAllMocks();
-
-            // Msg 5: nome
-            currentLeadState = makeLead({ _id: leadId, currentState: 'COLLECT_PATIENT_DATA', stateData: { chosenSlot: 'A' } });
+            // Msg 5: nome → busca slots → SHOW_SLOTS
+            currentLeadState = makeLead({ _id: leadId, currentState: 'COLLECT_NAME', stateData: { therapy: 'speech', period: 'manha', birthDate: '2020-03-10' }, therapyArea: 'fonoaudiologia' });
             result = await processMsg({ _id: leadId }, 'Lucas Oliveira');
-            expect(mockJumpToState).toHaveBeenCalledWith(leadId, 'CONFIRM_BOOKING', expect.objectContaining({ patientName: 'Lucas Oliveira' }));
+            expect(mockFindAvailableSlots).toHaveBeenCalled();
+            expect(mockPersistSchedulingSlots).toHaveBeenCalled();
+            expect(mockJumpToState).toHaveBeenCalledWith(leadId, 'SHOW_SLOTS', expect.objectContaining({ patientName: 'Lucas Oliveira' }));
+            expect(result.payload.text).toMatch(/A\)|opção/i);
             vi.clearAllMocks();
 
-            // Msg 6: confirmação
+            // Msg 6: escolha de slot → CONFIRM_BOOKING (com nome já no stateData)
+            currentLeadState = makeLead({ _id: leadId, currentState: 'SHOW_SLOTS', stateData: { therapy: 'speech', patientName: 'Lucas Oliveira' } });
+            result = await processMsg({ _id: leadId }, 'A');
+            expect(mockJumpToState).toHaveBeenCalledWith(leadId, 'CONFIRM_BOOKING', expect.objectContaining({ chosenSlot: 'A', patientName: 'Lucas Oliveira' }));
+            expect(result.payload.text).toContain('Lucas Oliveira');
+            vi.clearAllMocks();
+
+            // Msg 7: confirmação → BOOKED
             currentLeadState = makeLead({
                 _id: leadId,
                 currentState: 'CONFIRM_BOOKING',
@@ -683,6 +714,80 @@ describe('WhatsAppOrchestrator — FSM real', () => {
                 expect.objectContaining({ chosenSlot: SLOT_A })
             );
             expect(result.payload.text).toContain('confirmado');
+        });
+    });
+
+    // ─────────────────────────────────────────────────────
+    // Regressão — Bugs identificados na screenshot 06/03/2026
+    // ─────────────────────────────────────────────────────
+    describe('Regressão — Bugs da screenshot (06/03/2026)', () => {
+        it('BUG 1: queixa com idade → não pula para COLLECT_PERIOD (data de nasc. obrigatória)', async () => {
+            currentLeadState = makeLead({
+                currentState: 'COLLECT_COMPLAINT',
+                stateData: { therapy: 'speech' },
+            });
+            await processMsg({ _id: 'lead-123' }, 'meu filho nao ta comendo direito, 2 anos');
+
+            // NUNCA deve pular para COLLECT_PERIOD direto — deve ir para COLLECT_BIRTH
+            const jumpPeriod = mockJumpToState.mock.calls.find(c => c[1] === 'COLLECT_PERIOD');
+            expect(jumpPeriod).toBeFalsy();
+            const jumpBirth = mockJumpToState.mock.calls.find(c => c[1] === 'COLLECT_BIRTH');
+            expect(jumpBirth).toBeTruthy();
+        });
+
+        it('BUG 2: sem slots para "manha" → volta para COLLECT_PERIOD (usuário pode responder "tarde")', async () => {
+            mockFindAvailableSlots.mockResolvedValueOnce({ primary: null, alternativesSamePeriod: [], alternativesOtherPeriod: [] });
+            currentLeadState = makeLead({
+                currentState: 'COLLECT_NAME',
+                stateData: { therapy: 'speech', period: 'manha' },
+                therapyArea: 'fonoaudiologia',
+            });
+            await processMsg({ _id: 'lead-123' }, 'Maria Silva');
+
+            // Estado deve voltar para COLLECT_PERIOD (não ficar em SHOW_SLOTS)
+            const jumpBack = mockJumpToState.mock.calls.find(c => c[1] === 'COLLECT_PERIOD');
+            expect(jumpBack).toBeTruthy();
+
+            // Agora simula o usuário respondendo "tarde" — deve funcionar
+            vi.clearAllMocks();
+            mockFindAvailableSlots.mockResolvedValueOnce(MOCK_SLOTS); // tarde tem slots
+            currentLeadState = makeLead({
+                currentState: 'COLLECT_PERIOD',
+                stateData: { therapy: 'speech', patientName: 'Maria Silva' },
+                therapyArea: 'fonoaudiologia',
+            });
+            const result = await processMsg({ _id: 'lead-123' }, 'tarde');
+            // Deve ir para COLLECT_NAME (pede nome de novo? não, já tem no stateData)
+            // Na prática vai para COLLECT_NAME porque o período mudou
+            const jumpName = mockJumpToState.mock.calls.find(c => c[1] === 'COLLECT_NAME');
+            expect(jumpName).toBeTruthy();
+        });
+
+        it('BUG 3: nome coletado ANTES dos slots (COLLECT_NAME existe no fluxo)', async () => {
+            // Verifica que COLLECT_PERIOD → COLLECT_NAME (não → SHOW_SLOTS direto)
+            currentLeadState = makeLead({
+                currentState: 'COLLECT_PERIOD',
+                stateData: { therapy: 'speech', birthDate: '2020-03-10' },
+                therapyArea: 'fonoaudiologia',
+            });
+            const result = await processMsg({ _id: 'lead-123' }, 'tarde');
+
+            const jumpCollectName = mockJumpToState.mock.calls.find(c => c[1] === 'COLLECT_NAME');
+            expect(jumpCollectName).toBeTruthy();
+
+            const jumpShowSlots = mockJumpToState.mock.calls.find(c => c[1] === 'SHOW_SLOTS');
+            expect(jumpShowSlots).toBeFalsy(); // sem pular para SHOW_SLOTS ainda
+        });
+
+        it('BOOKED: "precisa remarcar" → limpa estado e reinicia fluxo', async () => {
+            currentLeadState = makeLead({ currentState: 'BOOKED', stateData: {} });
+            const result = await processMsg({ _id: 'lead-123' }, 'precisa remarcar');
+
+            // Deve limpar estado (chamar updateOne com IDLE)
+            expect(mockLeadsUpdateOne).toHaveBeenCalled();
+            // Deve processar no IDLE (pedir terapia)
+            const jumpTherapy = mockJumpToState.mock.calls.find(c => c[1] === 'COLLECT_THERAPY');
+            expect(jumpTherapy).toBeTruthy();
         });
     });
 });

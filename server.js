@@ -93,6 +93,8 @@ import insuranceGuidesRoutes from './routes/insuranceGuides.js';
 import convenioPackagesRoutes from './routes/convenioPackages.js';
 import convenioRoutes from './routes/financial/convenio.routes.js';
 import reminderRoutes from './routes/reminder.js';
+import whatsappWebRoutes from './routes/whatsappWeb.js';
+import whatsappWebService from './services/whatsappWebService.js';
 
 // ======================================================
 // 🧭 Inicialização base
@@ -119,6 +121,9 @@ scheduleMonthlyCommissions();
 iniciarJobConfirmacao();
 scheduleDailyAlerts();
 scheduleGmbCron(); // ← Inicia cron do GMB (geração + envio ao Make)
+
+// 🔹 WhatsApp Web (Puppeteer) - sessao persistente
+whatsappWebService.initialize().catch(err => console.error('[WhatsAppWeb] Erro ao inicializar:', err.message));
 
 const PORT = process.env.PORT || 5000;
 
@@ -292,6 +297,7 @@ app.use('/api/spy', spyRoutes);
 app.use("/api/pix", pixRoutes);
 
 app.use("/api/whatsapp", whatsappRoutes);
+app.use("/api/whatsapp-web", whatsappWebRoutes);
 app.use("/api/followups", followupRoutes);
 
 app.use('/api', importFromAgendaRouter);
