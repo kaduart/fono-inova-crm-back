@@ -93,8 +93,6 @@ import insuranceGuidesRoutes from './routes/insuranceGuides.js';
 import convenioPackagesRoutes from './routes/convenioPackages.js';
 import convenioRoutes from './routes/financial/convenio.routes.js';
 import reminderRoutes from './routes/reminder.js';
-import baileysRoutes from './routes/baileys.js';
-import baileysService from './services/baileysService.js';
 
 // ======================================================
 // 🧭 Inicialização base
@@ -283,7 +281,6 @@ app.use('/api/insurance-guides', insuranceGuidesRoutes);
 app.use('/api/convenio-packages', convenioPackagesRoutes);
 app.use('/api/financial/convenio', convenioRoutes);
 app.use('/api/reminders', reminderRoutes);
-app.use('/api/baileys', baileysRoutes);
 app.use('/api/marketing', marketingRoutes);
 app.use('/api/gmb', gmbRoutes);
 app.use('/api/instagram', instagramRoutes);
@@ -412,12 +409,8 @@ function initFollowupWatcher() {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
       
-      // Inicializa Baileys (WhatsApp) automaticamente
-      // Se já tiver sessão salva no MongoDB, conecta sem QR code
-      console.log("[Server] Inicializando Baileys (WhatsApp)...");
-      baileysService.initialize().catch(err => {
-        console.error("[Server] Erro ao inicializar Baileys:", err.message);
-      });
+      // Baileys desabilitado - usando extensão Chrome para envio via WhatsApp Web
+      // Para reabilitar: chamar baileysService.initialize() e escanear QR no terminal
     });
   } catch (err) {
     console.error("❌ Erro crítico na inicialização:", err);
