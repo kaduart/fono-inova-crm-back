@@ -1703,7 +1703,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
             const isConvenio = appointment.billingType === 'convenio' ||
                 appointment.insuranceProvider ||
                 appointment.insuranceGuide ||
-                (packageDoc?.type === 'convenio');
+                (appointment.package?.type === 'convenio');
 
             if (!finalPaymentId && !packageId && !isConvenio) {
                 console.log(`[complete] ⚠️ Payment não encontrado, criando novo...`);
