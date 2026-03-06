@@ -41,15 +41,22 @@ function processMessageLikeAmanda(text, lead = {}) {
     };
     
     // 1. Extrair todas as entidades
-    const nameMatch = text.match(/(?:sou|me chamo|nome[\sé]+)\s*([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)/i);
+    const nameMatch = text.match(/(?:sou|me chamo|nome[\sé]+)\s*([A-ZÀ-Ú][a-zà-ú]+(?:\s[A-ZÀ-Ú][a-zà-ú]+)?)/i);
     const ageMatch = text.match(/(\d+)\s*(anos?|meses?)/i);
-    const periodMatch = text.match(/\b(manh[ãa]|tarde|noite)\b/i);
-    
+    const periodMatch = text.match(/\b(manh[ãa]|tarde|noite)/i);
+
     // Detecta sujeito
     const isChild = /\b(minha filha|meu filho|minha criança|meu bebê|ela tem|ele tem)\b/i.test(text);
     const isSelf = /\b(eu tenho|eu sou|pra mim|atendimento pra mim)\b/i.test(text);
-    
-    // Extrai nome
+
+    // Extrai nome da criança (ex: "minha filha Ana", "meu filho João")
+    // Captura o token após "minha filha/meu filho" e verifica se começa com maiúscula (nome próprio)
+    const childNameMatch = text.match(/\bminha?\s+filh[ao]\s+([^\s,]+)/i);
+    if (childNameMatch && /^[A-ZÀ-Ú]/.test(childNameMatch[1])) {
+        result.extracted.patientName = childNameMatch[1];
+    }
+
+    // Extrai nome do responsável/paciente
     if (nameMatch) {
         if (isChild) {
             result.extracted.responsibleName = nameMatch[1];
@@ -84,6 +91,8 @@ function processMessageLikeAmanda(text, lead = {}) {
     } else if (/\b(enurese|xixi na cama|micção)\b/i.test(text)) {
         result.extracted.complaint = 'enurese';
         result.extracted.therapyArea = 'fonoaudiologia';
+    } else if (/\bfonoaudiologia\b/i.test(text)) {
+        result.extracted.therapyArea = 'fonoaudiologia';
     }
     
     // 2. Merge com dados existentes do lead
@@ -97,7 +106,10 @@ function processMessageLikeAmanda(text, lead = {}) {
     // 3. Determina o que falta
     if (!hasTherapyArea) result.missing.push('therapyArea');
     if (!hasPeriod) result.missing.push('period');
-    if (!hasPatientName && !hasResponsibleName) result.missing.push('name');
+    // Quando é contexto de criança (isChild detectado ou lead já tem responsável),
+    // precisamos do nome da criança (patientName) mesmo que o responsável já seja conhecido
+    const needsPatientName = isChild || !!lead.responsibleName;
+    if (!hasPatientName && (needsPatientName || !hasResponsibleName)) result.missing.push('name');
     if (!hasAge) result.missing.push('age');
     if (!hasComplaint) result.missing.push('complaint');
     

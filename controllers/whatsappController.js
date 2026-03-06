@@ -17,6 +17,7 @@ import Logger from '../services/utils/Logger.js';
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 
 import { getOptimizedAmandaResponse } from '../orchestrators/AmandaOrchestrator.js';
+import WhatsAppOrchestrator from '../orchestrators/WhatsAppOrchestrator.js';
 import { withLeadLock } from '../services/LockManager.js';
 import { mapFlagsToBookingProduct } from '../utils/bookingProductMapper.js';
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
@@ -32,6 +33,40 @@ const processedWamids = new Set();
 const MAX_WAMID_CACHE_SIZE = 1000;
 
 const logger = new Logger('whatsappController');
+
+// ============================================================
+// ROTEADOR DE ORQUESTRADORES (feature flag USE_STATE_MACHINE)
+// USE_STATE_MACHINE=true  → WhatsAppOrchestrator (FSM nova)
+// USE_STATE_MACHINE=false → AmandaOrchestrator (legado)
+// ============================================================
+const fsmOrchestrator = new WhatsAppOrchestrator(); // singleton — evita overhead por mensagem
+
+async function runOrchestrator(lead, userText, context) {
+    const leadId = lead?._id;
+    if (process.env.USE_STATE_MACHINE === 'true') {
+        const isMidConversationLegacyLead = !lead.currentState && lead.triageStep;
+        if (!isMidConversationLegacyLead) {
+            logger.info('ORCHESTRATOR_FSM', { leadId, currentState: lead.currentState, textLen: userText?.length });
+            try {
+                const result = await fsmOrchestrator.process({
+                    lead,
+                    message: { content: userText },
+                    context,
+                });
+                logger.info('ORCHESTRATOR_FSM_RESULT', { leadId, command: result?.command });
+                return result;
+            } catch (err) {
+                logger.error('FSM_ERROR_FALLBACK', { error: err.message, stack: err.stack, leadId });
+            }
+        } else {
+            logger.warn('ORCHESTRATOR_LEGACY_MID_CONVERSATION', { leadId, triageStep: lead.triageStep, currentState: lead.currentState });
+        }
+    } else {
+        logger.info('ORCHESTRATOR_LEGACY', { leadId, USE_STATE_MACHINE: process.env.USE_STATE_MACHINE });
+    }
+    const text = await getOptimizedAmandaResponse({ content: userText, userText, lead, context });
+    return text ? { command: 'SEND_MESSAGE', payload: { text } } : { command: 'NO_REPLY' };
+}
 
 export const whatsappController = {
 
@@ -932,18 +967,11 @@ export const whatsappController = {
             let result;
             let aiText = null;
 
-            console.log(`🤖 [AMANDA-RESUME] Gerando resposta (Orquestrador Legado)`);
+            console.log(`🤖 [AMANDA-RESUME] Gerando resposta (USE_STATE_MACHINE=${process.env.USE_STATE_MACHINE})`);
 
-            // 🚀 LEGADO COM LOCK ATÔMICO
+            // 🚀 ORQUESTRADOR COM LOCK ATÔMICO (feature flag via runOrchestrator)
             const lockResult = await withLeadLock(leadId, async (lockedLead) => {
-                const text = await getOptimizedAmandaResponse({
-                    content: message.content,
-                    userText: message.content,
-                    lead: lockedLead,
-                    context,
-                    messageId: message.waMessageId,
-                });
-                return text ? { command: 'SEND_MESSAGE', payload: { text } } : { command: 'NO_REPLY' };
+                return runOrchestrator(lockedLead, message.content, context);
             });
 
             if (!lockResult.locked) {
@@ -2033,15 +2061,9 @@ async function handleAutoReply(from, to, content, lead) {
             source: 'whatsapp-inbound'
         };
 
-        // 🚀 LEGADO COM LOCK ATÔMICO
+        // 🚀 ORQUESTRADOR COM LOCK ATÔMICO (feature flag via runOrchestrator)
         const lockResult = await withLeadLock(leadDoc._id, async (lockedLead) => {
-            const text = await getOptimizedAmandaResponse({
-                content: aggregatedContent,
-                userText: aggregatedContent,
-                lead: lockedLead,
-                context: enrichedContext,
-            });
-            return text ? { command: 'SEND_MESSAGE', payload: { text } } : { command: 'NO_REPLY' };
+            return runOrchestrator(lockedLead, aggregatedContent, enrichedContext);
         });
 
         if (!lockResult.locked) {

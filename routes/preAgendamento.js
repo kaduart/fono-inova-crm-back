@@ -319,7 +319,9 @@ router.get('/', async (req, res) => {
     // Se não especificou status, por padrão exclui importados e descartados
     // (só mostra os que precisam de ação)
     if (status) {
-      filters.status = status;
+      // Suporta múltiplos status separados por vírgula
+      const statusList = status.split(',').map(s => s.trim());
+      filters.status = statusList.length > 1 ? { $in: statusList } : status;
     } else {
       filters.status = { $nin: ['importado', 'descartado'] };
     }
@@ -327,6 +329,12 @@ router.get('/', async (req, res) => {
     if (specialty) filters.specialty = specialty;
     if (urgency) filters.urgency = urgency;
     if (assignedTo) filters.assignedTo = assignedTo;
+    
+    // 🆕 Filtro por telefone (para o chat)
+    if (req.query.phone) {
+      const phone = req.query.phone.replace(/\D/g, '');
+      filters['patientInfo.phone'] = { $regex: phone };
+    }
 
     // Filtro de data
     if (from && to) {

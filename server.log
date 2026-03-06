@@ -1,7 +1,12 @@
-🚀 IORedis conectando via HOST/PORT local...
-🌍 Modo detectado: development
-🔍 REDIS_URL existe? NÃO
-🚀 Conectando ao Redis Local: 127.0.0.1:6379
+
+> backend@1.0.0 start
+> node -r dotenv/config server.js
+
+🚀 IORedis conectando via REDIS_URL...
+🌍 Modo detectado: production
+🔍 REDIS_URL existe? SIM
+🔗 REDIS_URL (mascarada): redis://localhost:6379
+🚀 Conectando ao Redis via REDIS_URL...
 ⚠️ Certificado Sicoob não encontrado. PIX desabilitado.
 ✅ GA4: Usando arquivo /home/user/projetos/CRM-CLINICA/back/config/ga4-key.json
 ✅ GA4 Client inicializado
@@ -26,21 +31,21 @@ IO INIT: null
 🔄 Iniciando conexão Redis...
 🔄 Iniciando conexão Redis...
 🖥️ Bull Board disponível em: /admin/queues
-(node:211944) [MONGOOSE] Warning: Duplicate schema index on {"status":1,"scheduledAt":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:218781) [MONGOOSE] Warning: Duplicate schema index on {"status":1,"scheduledAt":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:211944) [MONGOOSE] Warning: Duplicate schema index on {"code":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
-(node:211944) [MONGOOSE] Warning: Duplicate schema index on {"jobId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:218781) [MONGOOSE] Warning: Duplicate schema index on {"code":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:218781) [MONGOOSE] Warning: Duplicate schema index on {"jobId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+✅ Redis conectado
 ✅ Redis Client conectado!
 🚀 Redis conectado e validado!
-✅ Redis conectado
 💚 Health Check Redis: OK
 👷 Follow-up Worker iniciado com Amanda 2.0!
 [INACTIVE-CHECK] Verificando leads inativos...
 [INACTIVE-FOLLOWUP] Iniciando verificação de leads inativos...
 ⏰ Follow-up Cron iniciado (scan a cada 3min + inactive check a cada 6h)
-[WARN] 2026-03-05T00:03:37.096Z — [META CLIENT] META_ACCESS_TOKEN não configurado
-[INFO] 2026-03-05T00:03:37.098Z — [VIDEO WORKER] 🎬 Worker inicializado (concurrency: 2)
-[INFO] 2026-03-05T00:03:37.109Z — [POST WORKER] 📝 Worker inicializado (concurrency: 3)
+[WARN] 2026-03-06T02:22:53.891Z — [META CLIENT] META_ACCESS_TOKEN não configurado
+[INFO] 2026-03-06T02:22:53.892Z — [VIDEO WORKER] 🎬 Worker inicializado (concurrency: 2)
+[INFO] 2026-03-06T02:22:53.897Z — [POST WORKER] 📝 Worker inicializado (concurrency: 3)
 📊 Iniciando cron de análise semanal de Follow-ups...
 
 ╔═══════════════════════════════════════════════════════════════╗
@@ -52,7 +57,7 @@ IO INIT: null
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
     
-[04/03/2026, 21:03:37] [INFO] Executando verificações iniciais... {}
+[05/03/2026, 23:22:53] [INFO] Executando verificações iniciais... {}
 ✅ Connected to MongoDB
 🧠 [CRON] Inicializando cron de aprendizado...
 ✅ [CRON] Agendado: todos os dias às 23:00 (America/Sao_Paulo)
@@ -67,39 +72,60 @@ IO INIT: null
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
     
-[04/03/2026, 21:03:37] [GMB] MongoDB conectado 
-[04/03/2026, 21:03:37] [GMB] Agendando tarefas GMB... {"timezone":"America/Sao_Paulo"}
-[04/03/2026, 21:03:37] [GMB] Tarefas GMB agendadas! {"tasks":["generateDaily (8h)","sendToMake (8h05, 12h05, 15h05, 19h05)"]}
-[04/03/2026, 21:03:37] [GMB] GMB Cron iniciado {"makeConfigurado":true}
+[05/03/2026, 23:22:53] [GMB] MongoDB conectado 
+[05/03/2026, 23:22:53] [GMB] Agendando tarefas GMB... {"timezone":"America/Sao_Paulo"}
+[05/03/2026, 23:22:53] [GMB] Tarefas GMB agendadas! {"tasks":["generateDaily (8h)","sendToMake (8h05, 12h05, 15h05, 19h05)"]}
+[05/03/2026, 23:22:53] [GMB] GMB Cron iniciado {"makeConfigurado":true}
 ⚠️ PIX Sicoob desabilitado: certificado não configurado
 🔗 Webhook PIX registrado com sucesso
 👀 Iniciando watcher de Followups...
 🚀 Server running on port 5000
 🌐 Environment: production
+[Server] Inicializando Baileys (WhatsApp)...
+[Baileys] Inicializando com MongoDB...
+[BaileysAuth] Sem sessão válida, criando novas credenciais...
+[BaileysAuth] Estado: { hasSessionDoc: true, hasValidCreds: null, hasMe: false }
+[Baileys] Estado carregado: { hasCreds: true, hasMe: false, noiseKey: true }
+[Baileys] connection.update: { connection: 'connecting', hasQR: false, qrLength: undefined }
+⚡ Novo cliente conectado: kUUrG0GtQ0PnL25bAAAC
+👥 Total de clientes: 2
 [INACTIVE-FOLLOWUP] 1 leads inativos encontrados
-[04/03/2026, 21:03:38] [INFO] ✓ Sistema saudável (DB + socket + atividade recente) {
+{"level":30,"time":"2026-03-06T02:22:55.328Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","browser":["Chrome (Linux)","",""],"helloMsg":{"clientHello":{"ephemeral":"ssp3d+SwrD3N4lO6R3YTlf2DjkglXzxSIhURoBBHL3o="}},"msg":"connected to WA"}
+[05/03/2026, 23:22:55] [INFO] ✓ Sistema saudável (DB + socket + atividade recente) {
   "database": true,
   "socket": true,
   "recentActivity": true
 }
-[04/03/2026, 21:03:38] [CRON] checkResponses - START
-[04/03/2026, 21:03:38] [INFO] Iniciando verificação de respostas pendentes... {}
+[05/03/2026, 23:22:55] [CRON] checkResponses - START
+[05/03/2026, 23:22:55] [INFO] Iniciando verificação de respostas pendentes... {}
 [INFO] Iniciando processamento de respostas pendentes { batchSize: 50, minAge: '24h' }
+{"level":30,"time":"2026-03-06T02:22:55.504Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","node":{"passive":false,"userAgent":{"platform":"WEB","appVersion":{"primary":2,"secondary":3000,"tertiary":1019707846},"mcc":"000","mnc":"000","osVersion":"0.1","device":"Desktop","osBuildNumber":"0.1","releaseChannel":"RELEASE","localeLanguageIso6391":"en","localeCountryIso31661Alpha2":"US"},"webInfo":{"webSubPlatform":"WEB_BROWSER"},"connectType":"WIFI_UNKNOWN","connectReason":"USER_ACTIVATED","devicePairingData":{"eRegid":"AAAA5w==","eKeytype":"BQ==","eIdent":"s5qWZShT7Qc7cPo2bJkCUWndJsfeFd3E5TClPgX3EFA=","eSkeyId":"AAAB","eSkeyVal":"z77sLWg/dMvokmVCG1kWwX/JZizAfeeXealn0ozEmTc=","eSkeySig":"tnTxQ58toY8jlqtpjy4HQPWZOQ50dy6WR35o3D4T8fMFwY1DJbQaduAEnZi8NaHy5agP66R4Sh0Q4lieKP8SAg==","buildHash":"HCSzKSXabfGx1nK2HeTyOA==","deviceProps":"Cg5DaHJvbWUgKExpbnV4KRgHIAA="},"pull":false},"msg":"not logged in, attempting registration..."}
 [INACTIVE-FOLLOWUP] Lead 698749d7b1f7de4a3dd23d31 já atingiu limite de 3 follow-ups
 [INACTIVE-FOLLOWUP] Concluído: 0 follow-ups criados
 [INACTIVE-CHECK] Concluído: 0 follow-ups criados
 [INFO] Processando 50 follow-ups... {}
+⚡ Novo cliente conectado: KwKLbLRGsdDtcgb5AAAE
+👥 Total de clientes: 3
+[2026-03-06T02:22:55.804Z] GET → /api/whatsapp/chat/556296760648
+📞 [PHONE] já tem 9: 556296760648 → 556296760648
 📬 14 follow-ups prontos para envio (após filtro)
    🔥 0 quentes
    🟡 7 mornos
    🧊 7 frios
-⚡ Novo cliente conectado: YYZIwOxOrIQIxK08AAAB
-👥 Total de clientes: 1
+{"level":30,"time":"2026-03-06T02:22:56.119Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","trace":"Error: Connection Failure\n    at WebSocketClient.<anonymous> (/home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js:524:13)\n    at WebSocketClient.emit (node:events:524:28)\n    at /home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js:236:35\n    at Object.decodeFrame (/home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Utils/noise-handler.js:144:17)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","msg":"connection errored"}
+[Baileys] connection.update: { connection: 'close', hasQR: false, qrLength: undefined }
+[Baileys] Conexão fechada. Reconectar? true Erro: Connection Failure
+[Baileys] Reconectando em 8s...
+⚡ Novo cliente conectado: 4tYCuB_ZixEIXeecAAAG
+👥 Total de clientes: 4
+⚡ Novo cliente conectado: _k_U2KhXqinw-dGGAAAH
+👥 Total de clientes: 4
 [WARN] Resposta fora da janela de tempo válida {
   followupId: new ObjectId('6941a690fbcea767fb2ae5d7'),
   sentAt: 2025-12-17T18:36:03.749Z,
   respondedAt: 2026-01-06T20:27:30.000Z
 }
+✅ 14 follow-ups processados!
 [WARN] Resposta fora da janela de tempo válida {
   followupId: new ObjectId('693ff8dfbb6ba6cc3ff61b21'),
   sentAt: 2026-01-07T20:41:05.022Z,
@@ -116,20 +142,20 @@ IO INIT: null
   errors: 0,
   errorDetails: [],
   responseRate: '0.0%',
-  duration: '3242ms'
+  duration: '3192ms'
 }
-[04/03/2026, 21:03:41] [SUCCESS] Verificação concluída {
+[05/03/2026, 23:22:58] [SUCCESS] Verificação concluída {
   "processed": 50,
   "responded": 0,
   "errors": 0,
   "responseRate": "0.0%"
 }
-[04/03/2026, 21:03:41] [CRON] checkResponses - SUCCESS
-[04/03/2026, 21:03:41] [SUCCESS] Tarefa concluída: checkResponses {
-  "duration": "3245ms"
+[05/03/2026, 23:22:58] [CRON] checkResponses - SUCCESS
+[05/03/2026, 23:22:58] [SUCCESS] Tarefa concluída: checkResponses {
+  "duration": "3193ms"
 }
-[04/03/2026, 21:03:41] [SUCCESS] Verificações iniciais concluídas {}
-[04/03/2026, 21:03:41] [INFO] Agendando tarefas cron... {
+[05/03/2026, 23:22:58] [SUCCESS] Verificações iniciais concluídas {}
+[05/03/2026, 23:22:58] [INFO] Agendando tarefas cron... {
   "timezone": "America/Sao_Paulo",
   "schedules": {
     "CHECK_RESPONSES": "*/30 * * * *",
@@ -138,7 +164,7 @@ IO INIT: null
     "HEALTH_CHECK": "*/15 * * * *"
   }
 }
-[04/03/2026, 21:03:41] [SUCCESS] Tarefas agendadas com sucesso {
+[05/03/2026, 23:22:58] [SUCCESS] Tarefas agendadas com sucesso {
   "tasks": 4
 }
 
@@ -156,757 +182,61 @@ IO INIT: null
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
         
-✅ 14 follow-ups processados!
-[2026-03-05T00:04:02.563Z] GET → /api/pre-agendamento
-[2026-03-05T00:04:33.741Z] GET → /api/pre-agendamento
-[2026-03-05T00:05:03.417Z] GET → /api/pre-agendamento
-[2026-03-05T00:05:03.456Z] GET → /api/health
-[2026-03-05T00:05:12.081Z] GET → /api/payments/daily-closing
-[2026-03-05T00:05:12.107Z] GET → /api/payments/totals
-💰 Cash Result: [
-  {
-    _id: null,
-    totalReceived: 6060,
-    totalPending: 180,
-    totalPartial: 0,
-    countReceived: 10,
-    countPending: 6,
-    countPartial: 0,
-    particularReceived: 6060,
-    particularPending: 180,
-    particularCountReceived: 10,
-    particularCountPending: 4
-  }
-]
-🔍 Insurance Match Stage: {
-  "$or": [
-    {
-      "paymentDate": {
-        "$gte": "2026-03-03",
-        "$lte": "2026-03-04"
-      }
-    },
-    {
-      "paymentDate": {
-        "$exists": false
-      },
-      "createdAt": {
-        "$gte": "2026-03-03T03:00:00.000Z",
-        "$lte": "2026-03-04T02:59:59.999Z"
-      }
-    }
-  ],
-  "billingType": "convenio"
-}
-🏥 Insurance Result: [
-  {
-    _id: null,
-    totalInsuranceProduction: 160,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 160,
-    countInsuranceTotal: 2,
-    countInsuranceReceived: 0,
-    countInsurancePending: 2
-  }
-]
-⏱️ Query Sessions: 279.064ms
-📊 /totals response: {
-  totals: {
-    totalReceived: 6060,
-    totalPending: 180,
-    totalPartial: 0,
-    countReceived: 10,
-    countPending: 6,
-    countPartial: 0,
-    particularReceived: 6060,
-    particularPending: 180,
-    particularCountReceived: 10,
-    particularCountPending: 4,
-    totalInsuranceProduction: 160,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 160,
-    countInsuranceTotal: 2,
-    countInsuranceReceived: 0,
-    countInsurancePending: 2,
-    totalCombined: 6220
-  },
-  dateRange: { start: 2026-03-03T03:00:00.000Z, end: 2026-03-04T02:59:59.999Z }
-}
-⏱️ Bulk Update Appointments: 63.134ms
-⏱️ Parallel Queries: 208.001ms
-
-📊 RESUMO PAGAMENTOS:
-   Total buscados: 7
-   Filtrados do dia: 7
-   Total em dinheiro: R$5400
-
-
-📊 FECHAMENTO FINAL 2026-03-04
-✅ Agendamentos válidos: 14
-💰 Recebido: 5400
-📅 Previsto: 1795
-⏳ A receber: 975
-📦 Pagamentos processados: 7
-[2026-03-05T00:05:14.555Z] GET → /api/payments/daily-closing
-⏱️ Query Sessions: 266.06ms
-⏱️ Bulk Update Appointments: 57.063ms
-⏱️ Parallel Queries: 164.119ms
-
-📊 RESUMO PAGAMENTOS:
-   Total buscados: 3
-   Filtrados do dia: 3
-   Total em dinheiro: R$160
-
-
-📊 FECHAMENTO FINAL 2026-03-02
-✅ Agendamentos válidos: 9
-💰 Recebido: 160
-📅 Previsto: 160
-⏳ A receber: 160
-📦 Pagamentos processados: 3
-[2026-03-05T00:05:23.504Z] GET → /api/payments/daily-closing
-[2026-03-05T00:05:23.510Z] GET → /api/payments/totals
-💰 Cash Result: [
-  {
-    _id: null,
-    totalReceived: 6060,
-    totalPending: 180,
-    totalPartial: 0,
-    countReceived: 10,
-    countPending: 6,
-    countPartial: 0,
-    particularReceived: 6060,
-    particularPending: 180,
-    particularCountReceived: 10,
-    particularCountPending: 4
-  }
-]
-🔍 Insurance Match Stage: {
-  "$or": [
-    {
-      "paymentDate": {
-        "$gte": "2026-03-03",
-        "$lte": "2026-03-04"
-      }
-    },
-    {
-      "paymentDate": {
-        "$exists": false
-      },
-      "createdAt": {
-        "$gte": "2026-03-03T03:00:00.000Z",
-        "$lte": "2026-03-04T02:59:59.999Z"
-      }
-    }
-  ],
-  "billingType": "convenio"
-}
-🏥 Insurance Result: [
-  {
-    _id: null,
-    totalInsuranceProduction: 160,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 160,
-    countInsuranceTotal: 2,
-    countInsuranceReceived: 0,
-    countInsurancePending: 2
-  }
-]
-📊 /totals response: {
-  totals: {
-    totalReceived: 6060,
-    totalPending: 180,
-    totalPartial: 0,
-    countReceived: 10,
-    countPending: 6,
-    countPartial: 0,
-    particularReceived: 6060,
-    particularPending: 180,
-    particularCountReceived: 10,
-    particularCountPending: 4,
-    totalInsuranceProduction: 160,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 160,
-    countInsuranceTotal: 2,
-    countInsuranceReceived: 0,
-    countInsurancePending: 2,
-    totalCombined: 6220
-  },
-  dateRange: { start: 2026-03-03T03:00:00.000Z, end: 2026-03-04T02:59:59.999Z }
-}
-⏱️ Query Sessions: 310.371ms
-⏱️ Bulk Update Appointments: 41.6ms
-⏱️ Parallel Queries: 209.381ms
-
-📊 RESUMO PAGAMENTOS:
-   Total buscados: 7
-   Filtrados do dia: 7
-   Total em dinheiro: R$5400
-
-
-📊 FECHAMENTO FINAL 2026-03-04
-✅ Agendamentos válidos: 14
-💰 Recebido: 5400
-📅 Previsto: 1795
-⏳ A receber: 975
-📦 Pagamentos processados: 7
-[2026-03-05T00:05:32.861Z] GET → /api/pre-agendamento
-[2026-03-05T00:05:37.325Z] GET → /api/payments/daily-closing
-⏱️ Query Sessions: 305.637ms
-⏱️ Bulk Update Appointments: 71.325ms
-⏱️ Parallel Queries: 189.568ms
-
-📊 RESUMO PAGAMENTOS:
-   Total buscados: 3
-   Filtrados do dia: 3
-   Total em dinheiro: R$160
-
-
-📊 FECHAMENTO FINAL 2026-03-02
-✅ Agendamentos válidos: 9
-💰 Recebido: 160
-📅 Previsto: 160
-⏳ A receber: 160
-📦 Pagamentos processados: 3
-[2026-03-05T00:05:41.997Z] GET → /api/payments/daily-closing
-[2026-03-05T00:05:42.006Z] GET → /api/payments/totals
-💰 Cash Result: [
-  {
-    _id: null,
-    totalReceived: 6060,
-    totalPending: 180,
-    totalPartial: 0,
-    countReceived: 10,
-    countPending: 6,
-    countPartial: 0,
-    particularReceived: 6060,
-    particularPending: 180,
-    particularCountReceived: 10,
-    particularCountPending: 4
-  }
-]
-🔍 Insurance Match Stage: {
-  "$or": [
-    {
-      "paymentDate": {
-        "$gte": "2026-03-03",
-        "$lte": "2026-03-04"
-      }
-    },
-    {
-      "paymentDate": {
-        "$exists": false
-      },
-      "createdAt": {
-        "$gte": "2026-03-03T03:00:00.000Z",
-        "$lte": "2026-03-04T02:59:59.999Z"
-      }
-    }
-  ],
-  "billingType": "convenio"
-}
-🏥 Insurance Result: [
-  {
-    _id: null,
-    totalInsuranceProduction: 160,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 160,
-    countInsuranceTotal: 2,
-    countInsuranceReceived: 0,
-    countInsurancePending: 2
-  }
-]
-⏱️ Query Sessions: 422.798ms
-📊 /totals response: {
-  totals: {
-    totalReceived: 6060,
-    totalPending: 180,
-    totalPartial: 0,
-    countReceived: 10,
-    countPending: 6,
-    countPartial: 0,
-    particularReceived: 6060,
-    particularPending: 180,
-    particularCountReceived: 10,
-    particularCountPending: 4,
-    totalInsuranceProduction: 160,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 160,
-    countInsuranceTotal: 2,
-    countInsuranceReceived: 0,
-    countInsurancePending: 2,
-    totalCombined: 6220
-  },
-  dateRange: { start: 2026-03-03T03:00:00.000Z, end: 2026-03-04T02:59:59.999Z }
-}
-⏱️ Bulk Update Appointments: 60.943ms
-⏱️ Parallel Queries: 159.501ms
-
-📊 RESUMO PAGAMENTOS:
-   Total buscados: 7
-   Filtrados do dia: 7
-   Total em dinheiro: R$5400
-
-
-📊 FECHAMENTO FINAL 2026-03-04
-✅ Agendamentos válidos: 14
-💰 Recebido: 5400
-📅 Previsto: 1795
-⏳ A receber: 975
-📦 Pagamentos processados: 7
-[2026-03-05T00:06:00.727Z] GET → /api/payments/daily-closing
-[2026-03-05T00:06:00.755Z] GET → /api/payments/totals
-💰 Cash Result: [
-  {
-    _id: null,
-    totalReceived: 6060,
-    totalPending: 180,
-    totalPartial: 0,
-    countReceived: 10,
-    countPending: 6,
-    countPartial: 0,
-    particularReceived: 6060,
-    particularPending: 180,
-    particularCountReceived: 10,
-    particularCountPending: 4
-  }
-]
-🔍 Insurance Match Stage: {
-  "$or": [
-    {
-      "paymentDate": {
-        "$gte": "2026-03-03",
-        "$lte": "2026-03-04"
-      }
-    },
-    {
-      "paymentDate": {
-        "$exists": false
-      },
-      "createdAt": {
-        "$gte": "2026-03-03T03:00:00.000Z",
-        "$lte": "2026-03-04T02:59:59.999Z"
-      }
-    }
-  ],
-  "billingType": "convenio"
-}
-🏥 Insurance Result: [
-  {
-    _id: null,
-    totalInsuranceProduction: 160,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 160,
-    countInsuranceTotal: 2,
-    countInsuranceReceived: 0,
-    countInsurancePending: 2
-  }
-]
-📊 /totals response: {
-  totals: {
-    totalReceived: 6060,
-    totalPending: 180,
-    totalPartial: 0,
-    countReceived: 10,
-    countPending: 6,
-    countPartial: 0,
-    particularReceived: 6060,
-    particularPending: 180,
-    particularCountReceived: 10,
-    particularCountPending: 4,
-    totalInsuranceProduction: 160,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 160,
-    countInsuranceTotal: 2,
-    countInsuranceReceived: 0,
-    countInsurancePending: 2,
-    totalCombined: 6220
-  },
-  dateRange: { start: 2026-03-03T03:00:00.000Z, end: 2026-03-04T02:59:59.999Z }
-}
-⏱️ Query Sessions: 195.978ms
-⏱️ Bulk Update Appointments: 406.944ms
-⏱️ Parallel Queries: 324.564ms
-
-📊 RESUMO PAGAMENTOS:
-   Total buscados: 7
-   Filtrados do dia: 7
-   Total em dinheiro: R$5400
-
-
-📊 FECHAMENTO FINAL 2026-03-04
-✅ Agendamentos válidos: 14
-💰 Recebido: 5400
-📅 Previsto: 1795
-⏳ A receber: 975
-📦 Pagamentos processados: 7
-[2026-03-05T00:06:02.553Z] GET → /api/pre-agendamento
-[2026-03-05T00:06:33.429Z] GET → /api/pre-agendamento
-📬 14 follow-ups prontos para envio (após filtro)
-   🔥 0 quentes
-   🟡 7 mornos
-   🧊 7 frios
-(node:211944) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 close listeners added to [Socket]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
-✅ 14 follow-ups processados!
-[2026-03-05T00:06:46.369Z] GET → /api/payments/daily-closing
-[2026-03-05T00:06:46.373Z] GET → /api/payments/totals
-💰 Cash Result: [
-  {
-    _id: null,
-    totalReceived: 6060,
-    totalPending: 180,
-    totalPartial: 0,
-    countReceived: 10,
-    countPending: 6,
-    countPartial: 0,
-    particularReceived: 6060,
-    particularPending: 180,
-    particularCountReceived: 10,
-    particularCountPending: 4
-  }
-]
-🔍 Insurance Match Stage: {
-  "$or": [
-    {
-      "paymentDate": {
-        "$gte": "2026-03-03",
-        "$lte": "2026-03-04"
-      }
-    },
-    {
-      "paymentDate": {
-        "$exists": false
-      },
-      "createdAt": {
-        "$gte": "2026-03-03T03:00:00.000Z",
-        "$lte": "2026-03-04T02:59:59.999Z"
-      }
-    }
-  ],
-  "billingType": "convenio"
-}
-🏥 Insurance Result: [
-  {
-    _id: null,
-    totalInsuranceProduction: 160,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 160,
-    countInsuranceTotal: 2,
-    countInsuranceReceived: 0,
-    countInsurancePending: 2
-  }
-]
-⏱️ Query Sessions: 312.325ms
-📊 /totals response: {
-  totals: {
-    totalReceived: 6060,
-    totalPending: 180,
-    totalPartial: 0,
-    countReceived: 10,
-    countPending: 6,
-    countPartial: 0,
-    particularReceived: 6060,
-    particularPending: 180,
-    particularCountReceived: 10,
-    particularCountPending: 4,
-    totalInsuranceProduction: 160,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 160,
-    countInsuranceTotal: 2,
-    countInsuranceReceived: 0,
-    countInsurancePending: 2,
-    totalCombined: 6220
-  },
-  dateRange: { start: 2026-03-03T03:00:00.000Z, end: 2026-03-04T02:59:59.999Z }
-}
-⏱️ Bulk Update Appointments: 51.533ms
-⏱️ Parallel Queries: 291.667ms
-
-📊 RESUMO PAGAMENTOS:
-   Total buscados: 7
-   Filtrados do dia: 7
-   Total em dinheiro: R$5400
-
-
-📊 FECHAMENTO FINAL 2026-03-04
-✅ Agendamentos válidos: 14
-💰 Recebido: 5400
-📅 Previsto: 1795
-⏳ A receber: 975
-📦 Pagamentos processados: 7
-[2026-03-05T00:07:02.558Z] GET → /api/pre-agendamento
-[2026-03-05T00:07:32.874Z] GET → /api/pre-agendamento
-[2026-03-05T00:08:03.423Z] GET → /api/pre-agendamento
-[2026-03-05T00:08:33.752Z] GET → /api/pre-agendamento
-[2026-03-05T00:09:03.420Z] GET → /api/pre-agendamento
-[2026-03-05T00:09:33.743Z] GET → /api/pre-agendamento
-📬 14 follow-ups prontos para envio (após filtro)
-   🔥 0 quentes
-   🟡 7 mornos
-   🧊 7 frios
-(node:211944) MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 close listeners added to [Socket]. MaxListeners is 10. Use emitter.setMaxListeners() to increase limit
-✅ 14 follow-ups processados!
-[2026-03-05T00:10:03.419Z] GET → /api/pre-agendamento
-[2026-03-05T00:10:32.866Z] GET → /api/pre-agendamento
-⚠️ Cliente desconectado (transport close)
-[2026-03-05T00:10:42.208Z] GET → /api/whatsapp/contacts
-[2026-03-05T00:10:42.227Z] GET → /api/users/me
-✅ [CONTACTS] Retornando 50 de 551 contacts
-📊 [CONTACTS] 50/50 têm leadId
-🔍 [FIRST CONTACT] {
-  phone: '556499744493',
-  leadId: '69a89dc959a5a3ce66f757cc',
-  type: 'string'
-}
-[2026-03-05T00:10:42.783Z] GET → /api/whatsapp/contacts
-[2026-03-05T00:10:42.797Z] GET → /api/users/me
-✅ [CONTACTS] Retornando 50 de 551 contacts
-📊 [CONTACTS] 50/50 têm leadId
-🔍 [FIRST CONTACT] {
-  phone: '556499744493',
-  leadId: '69a89dc959a5a3ce66f757cc',
-  type: 'string'
-}
-⚡ Novo cliente conectado: kF3I9ud8mV2M4I1WAAAD
-👥 Total de clientes: 1
-[2026-03-05T00:10:50.828Z] GET → /api/pre-agendamento
-[2026-03-05T00:10:50.893Z] GET → /api/dashboard/overview
-[2026-03-05T00:10:50.899Z] GET → /api/patients
-[PATIENTS LIST] Search: "undefined", Limit: 50
-[2026-03-05T00:10:50.905Z] GET → /api/admin/total-patients
-[2026-03-05T00:10:50.917Z] GET → /api/doctors/appointments/today
-[2026-03-05T00:10:50.922Z] GET → /api/doctors/therapy-sessions
-[2026-03-05T00:10:50.926Z] GET → /api/doctors/appointments/stats
-[GET_TODAYS_APPOINTMENTS] doctorId: 6806dd1bb6f92559b49a8a9c
-[GET_TODAYS_APPOINTMENTS] todayStr: 2026-03-05
-[PATIENTS LIST] Encontrados: 50 pacientes
-[GET_TODAYS_APPOINTMENTS] encontrados: 0
-[2026-03-05T00:10:51.400Z] GET → /api/pre-agendamento
-[2026-03-05T00:10:51.480Z] GET → /api/doctors
-[2026-03-05T00:10:51.489Z] GET → /api/admin/profile
-[2026-03-05T00:10:51.516Z] GET → /api/admin/appointment/completed-cancelled
-[2026-03-05T00:10:51.533Z] GET → /api/appointments
-[GET /appointments] Query: {
-  patientId: undefined,
-  doctorId: undefined,
-  status: undefined,
-  specialty: undefined,
-  startDate: undefined,
-  endDate: undefined,
-  excludePreAgendamentos: 'true'
-}
-[2026-03-05T00:10:51.558Z] GET → /api/payments
-[2026-03-05T00:10:51.576Z] GET → /api/users/me
-[2026-03-05T00:10:52.513Z] GET → /api/doctors/patients
-[2026-03-05T00:10:52.519Z] GET → /api/admin/patient-overview
-[2026-03-05T00:10:52.524Z] GET → /api/doctors/appointments/today
-[2026-03-05T00:10:52.529Z] GET → /api/doctors/therapy-sessions
-[GET_TODAYS_APPOINTMENTS] doctorId: 6806dd1bb6f92559b49a8a9c
-[GET_TODAYS_APPOINTMENTS] todayStr: 2026-03-05
-[2026-03-05T00:10:52.669Z] GET → /api/doctors/appointments/stats
-[2026-03-05T00:10:52.676Z] GET → /api/doctors
-[GET_TODAYS_APPOINTMENTS] encontrados: 0
-[2026-03-05T00:10:52.903Z] GET → /api/admin/profile
-[2026-03-05T00:10:52.907Z] GET → /api/admin/appointment/completed-cancelled
-[2026-03-05T00:10:52.911Z] GET → /api/users/me
-[GET /appointments] PreAgendamentos não importados: 42
-[GET /appointments] Retornando 1295 appointments (pré-agendamentos excluídos)
-[2026-03-05T00:10:53.496Z] GET → /api/payments
-[2026-03-05T00:10:53.499Z] GET → /api/doctors/patients
-[2026-03-05T00:10:53.594Z] GET → /api/doctors
-[2026-03-05T00:10:53.617Z] GET → /api/appointments
-[GET /appointments] Query: {
-  patientId: undefined,
-  doctorId: undefined,
-  status: undefined,
-  specialty: undefined,
-  startDate: undefined,
-  endDate: undefined,
-  excludePreAgendamentos: 'true'
-}
-(node:211944) Warning: Label 'appointments.query' already exists for console.time()
-[2026-03-05T00:10:53.635Z] GET → /api/doctors/appointments/calendar/6806dd1bb6f92559b49a8a9c
-[2026-03-05T00:10:53.641Z] GET → /api/doctors/appointments/future
-[2026-03-05T00:10:53.817Z] GET → /api/admin/total-doctors
-[2026-03-05T00:10:54.183Z] GET → /api/admin/doctor-overview
-[2026-03-05T00:10:54.388Z] GET → /api/doctors/6806dd1bb6f92559b49a8a9c/attendance-summary
-[2026-03-05T00:10:54.403Z] GET → /api/doctors
-[2026-03-05T00:10:54.557Z] GET → /api/doctors/appointments/calendar/6806dd1bb6f92559b49a8a9c
-[2026-03-05T00:10:54.582Z] GET → /api/doctors/appointments/future
-[2026-03-05T00:10:54.691Z] GET → /api/admin/total-doctors
-[GET /appointments] PreAgendamentos não importados: 42
-[2026-03-05T00:10:54.788Z] GET → /api/admin/doctor-overview
-[2026-03-05T00:10:54.803Z] GET → /api/doctors/6806dd1bb6f92559b49a8a9c/attendance-summary
-[GET /appointments] Retornando 1295 appointments (pré-agendamentos excluídos)
-[2026-03-05T00:10:56.657Z] GET → /api/payments/daily-closing
-[2026-03-05T00:10:56.663Z] GET → /api/payments/totals
-💰 Cash Result: [
-  {
-    _id: null,
-    totalReceived: 6060,
-    totalPending: 180,
-    totalPartial: 0,
-    countReceived: 10,
-    countPending: 6,
-    countPartial: 0,
-    particularReceived: 6060,
-    particularPending: 180,
-    particularCountReceived: 10,
-    particularCountPending: 4
-  }
-]
-🔍 Insurance Match Stage: {
-  "$or": [
-    {
-      "paymentDate": {
-        "$gte": "2026-03-03",
-        "$lte": "2026-03-04"
-      }
-    },
-    {
-      "paymentDate": {
-        "$exists": false
-      },
-      "createdAt": {
-        "$gte": "2026-03-03T03:00:00.000Z",
-        "$lte": "2026-03-04T02:59:59.999Z"
-      }
-    }
-  ],
-  "billingType": "convenio"
-}
-🏥 Insurance Result: [
-  {
-    _id: null,
-    totalInsuranceProduction: 160,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 160,
-    countInsuranceTotal: 2,
-    countInsuranceReceived: 0,
-    countInsurancePending: 2
-  }
-]
-📊 /totals response: {
-  totals: {
-    totalReceived: 6060,
-    totalPending: 180,
-    totalPartial: 0,
-    countReceived: 10,
-    countPending: 6,
-    countPartial: 0,
-    particularReceived: 6060,
-    particularPending: 180,
-    particularCountReceived: 10,
-    particularCountPending: 4,
-    totalInsuranceProduction: 160,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 160,
-    countInsuranceTotal: 2,
-    countInsuranceReceived: 0,
-    countInsurancePending: 2,
-    totalCombined: 6220
-  },
-  dateRange: { start: 2026-03-03T03:00:00.000Z, end: 2026-03-04T02:59:59.999Z }
-}
-⏱️ Query Sessions: 151.537ms
-⏱️ Bulk Update Appointments: 45.346ms
-[2026-03-05T00:10:57.253Z] GET → /api/payments/totals
-⏱️ Parallel Queries: 417.901ms
-
-📊 RESUMO PAGAMENTOS:
-   Total buscados: 7
-   Filtrados do dia: 7
-   Total em dinheiro: R$5400
-
-
-📊 FECHAMENTO FINAL 2026-03-04
-✅ Agendamentos válidos: 14
-💰 Recebido: 5400
-📅 Previsto: 1795
-⏳ A receber: 975
-📦 Pagamentos processados: 7
-💰 Cash Result: [
-  {
-    _id: null,
-    totalReceived: 6060,
-    totalPending: 180,
-    totalPartial: 0,
-    countReceived: 10,
-    countPending: 6,
-    countPartial: 0,
-    particularReceived: 6060,
-    particularPending: 180,
-    particularCountReceived: 10,
-    particularCountPending: 4
-  }
-]
-🔍 Insurance Match Stage: {
-  "$or": [
-    {
-      "paymentDate": {
-        "$gte": "2026-03-03",
-        "$lte": "2026-03-04"
-      }
-    },
-    {
-      "paymentDate": {
-        "$exists": false
-      },
-      "createdAt": {
-        "$gte": "2026-03-03T03:00:00.000Z",
-        "$lte": "2026-03-04T02:59:59.999Z"
-      }
-    }
-  ],
-  "billingType": "convenio"
-}
-[2026-03-05T00:10:57.296Z] GET → /api/payments/daily-closing
-🏥 Insurance Result: [
-  {
-    _id: null,
-    totalInsuranceProduction: 160,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 160,
-    countInsuranceTotal: 2,
-    countInsuranceReceived: 0,
-    countInsurancePending: 2
-  }
-]
-📊 /totals response: {
-  totals: {
-    totalReceived: 6060,
-    totalPending: 180,
-    totalPartial: 0,
-    countReceived: 10,
-    countPending: 6,
-    countPartial: 0,
-    particularReceived: 6060,
-    particularPending: 180,
-    particularCountReceived: 10,
-    particularCountPending: 4,
-    totalInsuranceProduction: 160,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 160,
-    countInsuranceTotal: 2,
-    countInsuranceReceived: 0,
-    countInsurancePending: 2,
-    totalCombined: 6220
-  },
-  dateRange: { start: 2026-03-03T03:00:00.000Z, end: 2026-03-04T02:59:59.999Z }
-}
-⏱️ Query Sessions: 471.015ms
-⏱️ Bulk Update Appointments: 118.695ms
-⏱️ Parallel Queries: 239.494ms
-
-📊 RESUMO PAGAMENTOS:
-   Total buscados: 7
-   Filtrados do dia: 7
-   Total em dinheiro: R$5400
-
-
-📊 FECHAMENTO FINAL 2026-03-04
-✅ Agendamentos válidos: 14
-💰 Recebido: 5400
-📅 Previsto: 1795
-⏳ A receber: 975
-📦 Pagamentos processados: 7
+⚡ Novo cliente conectado: IdNtUR3dTDlr7JYVAAAJ
+👥 Total de clientes: 5
+[2026-03-06T02:22:58.987Z] GET → /api/amanda/status
+[2026-03-06T02:22:59.300Z] GET → /api/pre-agendamento
+[Baileys] Inicializando com MongoDB...
+[BaileysAuth] Sem sessão válida, criando novas credenciais...
+[BaileysAuth] Estado: { hasSessionDoc: true, hasValidCreds: null, hasMe: false }
+[Baileys] Estado carregado: { hasCreds: true, hasMe: false, noiseKey: true }
+[Baileys] connection.update: { connection: 'connecting', hasQR: false, qrLength: undefined }
+{"level":30,"time":"2026-03-06T02:23:05.063Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","browser":["Chrome (Linux)","",""],"helloMsg":{"clientHello":{"ephemeral":"ebnCRhlxABnNWOrzO+lwx0R5wUy2QnRzeBQ0wubWUW0="}},"msg":"connected to WA"}
+{"level":30,"time":"2026-03-06T02:23:05.369Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","node":{"passive":false,"userAgent":{"platform":"WEB","appVersion":{"primary":2,"secondary":3000,"tertiary":1019707846},"mcc":"000","mnc":"000","osVersion":"0.1","device":"Desktop","osBuildNumber":"0.1","releaseChannel":"RELEASE","localeLanguageIso6391":"en","localeCountryIso31661Alpha2":"US"},"webInfo":{"webSubPlatform":"WEB_BROWSER"},"connectType":"WIFI_UNKNOWN","connectReason":"USER_ACTIVATED","devicePairingData":{"eRegid":"AAAASw==","eKeytype":"BQ==","eIdent":"3AX96yxc2sqpvXAY9oewdR/TaYmWCpmL58Cs6j8OfBQ=","eSkeyId":"AAAB","eSkeyVal":"bsEFDtFUOHOxYm4ywBal5BmCxPbnkH6+uYzKOc6vVDc=","eSkeySig":"JdffdMeiM3tzwi7w4FwCeL1nfEpFjYy6PooGKue80AjbueEg0BXeTRQB/YUVIY70BEJvX6uv5MtjYweXI3R+Cw==","buildHash":"HCSzKSXabfGx1nK2HeTyOA==","deviceProps":"Cg5DaHJvbWUgKExpbnV4KRgHIAA="},"pull":false},"msg":"not logged in, attempting registration..."}
+{"level":30,"time":"2026-03-06T02:23:09.286Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","trace":"Error: Connection Failure\n    at WebSocketClient.<anonymous> (/home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js:524:13)\n    at WebSocketClient.emit (node:events:524:28)\n    at /home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js:236:35\n    at Object.decodeFrame (/home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Utils/noise-handler.js:144:17)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","msg":"connection errored"}
+[Baileys] connection.update: { connection: 'close', hasQR: false, qrLength: undefined }
+[Baileys] Conexão fechada. Reconectar? true Erro: Connection Failure
+[Baileys] Reconectando em 8s...
+[Baileys] Inicializando com MongoDB...
+[BaileysAuth] Sem sessão válida, criando novas credenciais...
+[BaileysAuth] Estado: { hasSessionDoc: true, hasValidCreds: null, hasMe: false }
+[Baileys] Estado carregado: { hasCreds: true, hasMe: false, noiseKey: true }
+[Baileys] connection.update: { connection: 'connecting', hasQR: false, qrLength: undefined }
+{"level":30,"time":"2026-03-06T02:23:17.697Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","browser":["Chrome (Linux)","",""],"helloMsg":{"clientHello":{"ephemeral":"IEZAQI9+6BicGDBYW3Z/neqYB84YMkokaj1L7HfArWs="}},"msg":"connected to WA"}
+{"level":30,"time":"2026-03-06T02:23:17.852Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","node":{"passive":false,"userAgent":{"platform":"WEB","appVersion":{"primary":2,"secondary":3000,"tertiary":1019707846},"mcc":"000","mnc":"000","osVersion":"0.1","device":"Desktop","osBuildNumber":"0.1","releaseChannel":"RELEASE","localeLanguageIso6391":"en","localeCountryIso31661Alpha2":"US"},"webInfo":{"webSubPlatform":"WEB_BROWSER"},"connectType":"WIFI_UNKNOWN","connectReason":"USER_ACTIVATED","devicePairingData":{"eRegid":"AAAAyQ==","eKeytype":"BQ==","eIdent":"6IvRlj+Omb3z+hKzXQOUqrCWJzcD4XcbBdDeoCcsZlY=","eSkeyId":"AAAB","eSkeyVal":"YrU8JwBb7aJ+VvAHsW+DVmkicaSe55a2AkhI1aQHdkA=","eSkeySig":"C3an1I3A69EG4k8pWMJzWdP5cDdxdbtj3DFtGFOmrcpiBTD0uCw3XebPk5a6RhHpHOZpzYwtX4MaLnCOTddKCQ==","buildHash":"HCSzKSXabfGx1nK2HeTyOA==","deviceProps":"Cg5DaHJvbWUgKExpbnV4KRgHIAA="},"pull":false},"msg":"not logged in, attempting registration..."}
+{"level":30,"time":"2026-03-06T02:23:20.336Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","trace":"Error: Connection Failure\n    at WebSocketClient.<anonymous> (/home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js:524:13)\n    at WebSocketClient.emit (node:events:524:28)\n    at /home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js:236:35\n    at Object.decodeFrame (/home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Utils/noise-handler.js:144:17)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","msg":"connection errored"}
+[Baileys] connection.update: { connection: 'close', hasQR: false, qrLength: undefined }
+[Baileys] Conexão fechada. Reconectar? true Erro: Connection Failure
+[Baileys] Reconectando em 8s...
+[Baileys] Inicializando com MongoDB...
+[BaileysAuth] Sem sessão válida, criando novas credenciais...
+[BaileysAuth] Estado: { hasSessionDoc: true, hasValidCreds: null, hasMe: false }
+[Baileys] Estado carregado: { hasCreds: true, hasMe: false, noiseKey: true }
+[Baileys] connection.update: { connection: 'connecting', hasQR: false, qrLength: undefined }
+{"level":30,"time":"2026-03-06T02:23:28.861Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","browser":["Chrome (Linux)","",""],"helloMsg":{"clientHello":{"ephemeral":"kgUPcbKhjGLS3jh2mI9sOdsJK2PJpfKasLQgSh9JtwM="}},"msg":"connected to WA"}
+{"level":30,"time":"2026-03-06T02:23:29.323Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","node":{"passive":false,"userAgent":{"platform":"WEB","appVersion":{"primary":2,"secondary":3000,"tertiary":1019707846},"mcc":"000","mnc":"000","osVersion":"0.1","device":"Desktop","osBuildNumber":"0.1","releaseChannel":"RELEASE","localeLanguageIso6391":"en","localeCountryIso31661Alpha2":"US"},"webInfo":{"webSubPlatform":"WEB_BROWSER"},"connectType":"WIFI_UNKNOWN","connectReason":"USER_ACTIVATED","devicePairingData":{"eRegid":"AAAAGw==","eKeytype":"BQ==","eIdent":"ZmCh3ai/ug4YJRGNF5QLLbNULlDSaO02YXY0jjWyIws=","eSkeyId":"AAAB","eSkeyVal":"vjkF+zde0XO8g27rg3kuItc3+MzaoMsi6c4zhrmsqjY=","eSkeySig":"+TQAE+33xWeO28b6ihaNb4zWJ/x/PkXKc6s44pDY6M3zUHIrCOiwYfpkOKJ6s6/LRC26sXarrnEDAwOXnZ0dgw==","buildHash":"HCSzKSXabfGx1nK2HeTyOA==","deviceProps":"Cg5DaHJvbWUgKExpbnV4KRgHIAA="},"pull":false},"msg":"not logged in, attempting registration..."}
+{"level":30,"time":"2026-03-06T02:23:31.263Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","trace":"Error: Connection Failure\n    at WebSocketClient.<anonymous> (/home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js:524:13)\n    at WebSocketClient.emit (node:events:524:28)\n    at /home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js:236:35\n    at Object.decodeFrame (/home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Utils/noise-handler.js:144:17)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","msg":"connection errored"}
+[Baileys] connection.update: { connection: 'close', hasQR: false, qrLength: undefined }
+[Baileys] Conexão fechada. Reconectar? true Erro: Connection Failure
+[Baileys] Reconectando em 8s...
+[Baileys] Inicializando com MongoDB...
+[BaileysAuth] Sem sessão válida, criando novas credenciais...
+[BaileysAuth] Estado: { hasSessionDoc: true, hasValidCreds: null, hasMe: false }
+[Baileys] Estado carregado: { hasCreds: true, hasMe: false, noiseKey: true }
+[Baileys] connection.update: { connection: 'connecting', hasQR: false, qrLength: undefined }
+{"level":30,"time":"2026-03-06T02:23:39.751Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","trace":"Error: WebSocket Error ()\n    at WebSocketClient.<anonymous> (/home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js:620:17)\n    at WebSocketClient.emit (node:events:524:28)\n    at WebSocket.<anonymous> (/home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Socket/Client/websocket.js:46:100)\n    at WebSocket.emit (node:events:524:28)\n    at emitErrorAndClose (/home/user/projetos/CRM-CLINICA/back/node_modules/ws/lib/websocket.js:1041:13)\n    at ClientRequest.<anonymous> (/home/user/projetos/CRM-CLINICA/back/node_modules/ws/lib/websocket.js:881:5)\n    at ClientRequest.emit (node:events:524:28)\n    at emitErrorEvent (node:_http_client:101:11)\n    at TLSSocket.socketErrorListener (node:_http_client:504:5)\n    at TLSSocket.emit (node:events:524:28)","msg":"connection errored"}
+[Baileys] connection.update: { connection: 'close', hasQR: false, qrLength: undefined }
+[Baileys] Conexão fechada. Reconectar? true Erro: WebSocket Error ()
+[Baileys] Reconectando em 8s...
+[Baileys] Inicializando com MongoDB...
+[BaileysAuth] Sem sessão válida, criando novas credenciais...
+[BaileysAuth] Estado: { hasSessionDoc: true, hasValidCreds: null, hasMe: false }
+[Baileys] Estado carregado: { hasCreds: true, hasMe: false, noiseKey: true }
+[Baileys] connection.update: { connection: 'connecting', hasQR: false, qrLength: undefined }
+{"level":30,"time":"2026-03-06T02:23:48.034Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","browser":["Chrome (Linux)","",""],"helloMsg":{"clientHello":{"ephemeral":"m993B52DN8pSkitCfdviy6Uac+fEIat4e/hcDJ44Bxw="}},"msg":"connected to WA"}
+{"level":30,"time":"2026-03-06T02:23:48.201Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","node":{"passive":false,"userAgent":{"platform":"WEB","appVersion":{"primary":2,"secondary":3000,"tertiary":1019707846},"mcc":"000","mnc":"000","osVersion":"0.1","device":"Desktop","osBuildNumber":"0.1","releaseChannel":"RELEASE","localeLanguageIso6391":"en","localeCountryIso31661Alpha2":"US"},"webInfo":{"webSubPlatform":"WEB_BROWSER"},"connectType":"WIFI_UNKNOWN","connectReason":"USER_ACTIVATED","devicePairingData":{"eRegid":"AAAA7A==","eKeytype":"BQ==","eIdent":"8dypvJ3L/J6YQrQLFdCkWjKbPKKPQ8qXtGmdwosS6zA=","eSkeyId":"AAAB","eSkeyVal":"5ufuRXt/pP8qloPVZySyBhtLp75m8zJOY47dKasQ+g8=","eSkeySig":"tgdhXfZk+GurXHOUI2DDR0Z9MNeKGWn4RDbvAkC0myz8lSzYCcjsaOG285BXkT36mbmGPepM0I7Q8jdVUYjpgQ==","buildHash":"HCSzKSXabfGx1nK2HeTyOA==","deviceProps":"Cg5DaHJvbWUgKExpbnV4KRgHIAA="},"pull":false},"msg":"not logged in, attempting registration..."}
+{"level":30,"time":"2026-03-06T02:23:50.831Z","pid":218781,"hostname":"DESKTOP-EIURRB0","class":"baileys","trace":"Error: Connection Failure\n    at WebSocketClient.<anonymous> (/home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js:524:13)\n    at WebSocketClient.emit (node:events:524:28)\n    at /home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js:236:35\n    at Object.decodeFrame (/home/user/projetos/CRM-CLINICA/back/node_modules/@whiskeysockets/baileys/lib/Utils/noise-handler.js:144:17)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","msg":"connection errored"}
+[Baileys] connection.update: { connection: 'close', hasQR: false, qrLength: undefined }
+[Baileys] Conexão fechada. Reconectar? true Erro: Connection Failure
+[Baileys] Reconectando em 8s...
+Killed

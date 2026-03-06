@@ -17,7 +17,7 @@ export default defineConfig({
     
     // Padrões de arquivo
     include: [
-      'tests/amanda/**/*.test.js'
+      'tests/amanda/**/*.test.js',
     ],
     exclude: [
       '**/node_modules/**',

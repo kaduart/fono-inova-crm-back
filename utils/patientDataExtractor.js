@@ -1,3 +1,4 @@
+import { parsePtBrDate } from './dateParser.js';
 
 // 🆕 Guard inteligente: rejeita frases-pergunta, aceita nomes
 export function isValidPatientName(str) {
@@ -24,12 +25,23 @@ export function extractName(msg) {
     // Padrão explícito: "nome: João Silva" ou "paciente: Maria"
     const m1 = t.match(/\b(nome|paciente|me chamo|meu nome é|sou o|sou a)\s*[:\-]?\s*([A-ZÀ-Ü][a-zà-ú]+(?:\s+[A-ZÀ-Ü][a-zà-ú]+)+)/i);
     if (m1) return m1[2].trim();
-    
+
+    // Padrão: "sou [Nome]" — introdução direta comum no WhatsApp (aceita nome único)
+    const mSou = t.match(/\bsou\s+([A-ZÀ-Ú][a-zà-ú]{2,})(?:[,.\s!?]|$)/i);
+    if (mSou) return mSou[1].trim();
+
     // 🆕 Padrão: nome seguido de idade (ex: "Maria Luísa 7 anos" ou "José 5 anos")
     // Extrai apenas o nome, ignorando a parte numérica
     const mAge = t.match(/^([A-Za-zÀ-ú]+(?:\s+[A-Za-zÀ-ú]+)+?)\s+\d+\s*(anos?|meses?|m|a)/i);
     if (mAge && isValidPatientName(mAge[1].trim())) {
         return mAge[1].trim();
+    }
+
+    // Padrão: nome capitalizado após dois-pontos seguido de idade
+    // ex: "Tenho dois filhos: Maria Luísa 7 anos e José 5 anos"
+    const mColonAge = t.match(/:\s*([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)+)\s+\d+\s*(anos?|meses?)/);
+    if (mColonAge && isValidPatientName(mColonAge[1].trim())) {
+        return mColonAge[1].trim();
     }
     
     // Padrão de nome próprio (2+ palavras, sem pontuação no final)
@@ -49,11 +61,32 @@ export function extractName(msg) {
     return null;
 };
 
-// Extrai data de nascimento
+// Extrai data de nascimento (aceita dd/mm/yyyy, dd-mm-yyyy, "28 de novembro de 2015", etc.)
 export function extractBirth(msg) {
-    const m = msg.match(/\b(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})\b/);
-    if (!m) return null;
-    return `${m[3]}-${m[2]}-${m[1]}`;
+    const text = (msg || '').trim();
+
+    // Tenta extrair substring de data do texto livre antes de parsear
+    // Ex: "Ela nasceu em 28 de novembro de 2015" → "28 de novembro de 2015"
+    const monthNames = 'jan(?:eiro)?|fev(?:ereiro)?|mar[cç]o?|abr(?:il)?|mai(?:o)?|jun(?:ho)?|jul(?:ho)?|ago(?:sto)?|set(?:embro)?|out(?:ubro)?|nov(?:embro)?|dez(?:embro)?';
+    const longDateRe = new RegExp(
+        `(?:dia\\s+)?(\\d{1,2})\\s+(?:de\\s+)?(${monthNames})(?:\\s+de\\s+|\\s+)(\\d{4})`,
+        'i'
+    );
+    const longMatch = text.match(longDateRe);
+    if (longMatch) {
+        const d = parsePtBrDate(longMatch[0]);
+        if (d) return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    // Numérico: dd/mm/yyyy, dd-mm-yyyy, dd.mm.yyyy
+    const numRe = text.match(/\b(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})\b/);
+    if (numRe) return `${numRe[3]}-${numRe[2]}-${numRe[1]}`;
+
+    // Fallback genérico via parsePtBrDate
+    const d = parsePtBrDate(text);
+    if (d) return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    return null;
 };
 
 /**
@@ -199,7 +232,9 @@ export function extractComplaint(text) {
         // Gagueira / fluência
         [/gagueir|trava\s+falar|repetindo\s+silaba|travar\s+falar/i, 'gagueira / disfluência'],
         // Dificuldade escolar / leitura
-        [/dificuldade.*escola|dificuldade.*ler|dificuldade.*escrever|nao\s+aprende|aprendizagem|leitura|escrita|dislexia/i, 'dificuldade de aprendizagem'],
+        [/dificuldade.*escola|dificuldade.*ler|dificuldade.*escrever|nao\s+aprende|aprendizagem|leitura|escrita|dislexia|nao\s+consegue\s+ler|letras\s+embaralham/i, 'dificuldade de aprendizagem'],
+        // Enurese / xixi na cama
+        [/enurese|xixi\s+na\s+cama|mija\s+na\s+cama|molha\s+(a\s+)?cama|xixi\s+dormindo/i, 'enurese'],
         // Motricidade oral / baba / deglutição
         [/baba\s+muito|baba\s+demais|dificuldade.*engolir|engasgando|degluti|motricidade\s+oral/i, 'motricidade oral'],
         // Voz - PROBLEMAS VOCAIS (adulto e criança)

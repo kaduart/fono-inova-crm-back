@@ -122,7 +122,7 @@ describe('Cálculos Financeiros Críticos', () => {
             
             expect(resultado.impostos).toBe(15.00); // 6%
             expect(resultado.comissao).toBe(25.00); // 10%
-            expect(resultado.taxaCartao).toBe(4.625); // 1.85%
+            expect(resultado.taxaCartao).toBe(4.63); // 1.85% de 250 = 4.625, arredondado para 4.63
             expect(resultado.totalCV).toBe(44.63); // arredondado
         });
 
