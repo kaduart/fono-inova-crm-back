@@ -6,7 +6,7 @@
 import OpenAI from 'openai';
 import { v2 as cloudinary } from 'cloudinary';
 import GmbPost from '../models/GmbPost.js';
-import { gerarImagemBranded } from './brandImageService.js';
+
 
 // OpenAI - GPT-3.5
 const openai = new OpenAI({
@@ -718,21 +718,9 @@ export async function generateImageForEspecialidade(especialidade, postContent =
     }
   };
 
-  // Aplica branding com buffer direto (para Instagram/Facebook)
-  const comBranding = async (fotoBuf) => {
-    if (!withBranding) return uploadFotoLimpa(fotoBuf);
-    try {
-      const result = await gerarImagemBranded({
-        fotoBuffer: fotoBuf,
-        titulo: tituloPost,
-        postContent: postContent,
-        especialidadeId: especialidade.id,
-      });
-      return result.url;
-    } catch (e) {
-      console.warn('⚠️ Branding falhou:', e.message);
-      return null;
-    }
+  // Upload foto sem branding (branding manual via IA externa)
+  const uploadFoto = async (fotoBuf) => {
+    return uploadFotoLimpa(fotoBuf);
   };
 
   // ═══════════════════════════════════════════════════════════
@@ -1021,7 +1009,7 @@ export async function generateImageForEspecialidade(especialidade, postContent =
         if (imgUrl) {
           const fotoBuf = Buffer.from(await (await fetch(imgUrl, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
           console.log(`✅ fal.ai FLUX dev → ${(fotoBuf.length/1024).toFixed(1)}KB`);
-          const url = await comBranding(fotoBuf);
+          const url = await uploadFoto(fotoBuf);
           if (url) {
             console.log(`✅ fal.ai OK: ${url.substring(0, 60)}...`);
             return { url, provider: 'fal-flux-dev' };
@@ -1141,7 +1129,7 @@ TECHNICAL: Shot on Canon EOS R5 camera, 85mm f/1.4 lens, ISO 200, soft window li
             console.warn(`⚠️ Freepik: Arquivo muito pequeno (${kb}KB), parece vetor/ilustração. Pulando...`);
             // Continua para próximo provider
           } else {
-            const url = await comBranding(fotoBuf);
+            const url = await uploadFoto(fotoBuf);
             if (url) {
               console.log(`✅ Freepik OK: ${url.substring(0, 60)}...`);
               return { url, provider: 'freepik-ai' };
@@ -1190,7 +1178,7 @@ TECHNICAL: Shot on Canon EOS R5 camera, 85mm f/1.4 lens, ISO 200, soft window li
       if (response.ok) {
         const fotoBuf = Buffer.from(await response.arrayBuffer());
         console.log(`✅ HuggingFace FLUX.1-dev → ${(fotoBuf.length/1024).toFixed(1)}KB`);
-        const url = await comBranding(fotoBuf);
+        const url = await uploadFoto(fotoBuf);
         if (url) {
           console.log(`✅ HuggingFace OK: ${url.substring(0, 60)}...`);
           return { url, provider: 'hf-flux-dev' };
@@ -1233,7 +1221,7 @@ TECHNICAL: Shot on Canon EOS R5 camera, 85mm f/1.4 lens, ISO 200, soft window li
         }
         
         console.log(`✅ Pollinations → ${(fotoBuf.length/1024).toFixed(1)}KB`);
-        const url = await comBranding(fotoBuf);
+        const url = await uploadFoto(fotoBuf);
         if (url) {
           console.log(`✅ Pollinations OK: ${url.substring(0, 60)}...`);
           return { url, provider: `pollinations-${model}` };

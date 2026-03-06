@@ -8,7 +8,6 @@ import OpenAI from 'openai';
 import { v2 as cloudinary } from 'cloudinary';
 import InstagramPost from '../models/InstagramPost.js';
 import { ESPECIALIDADES } from './gmbService.js';
-import { gerarImagemBranded } from './brandImageService.js';
 import { getPromptPronto, IMAGE_TYPES } from './imagePromptService.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -607,9 +606,7 @@ TECHNICAL: Canon EOS R5, 85mm f/1.4, soft window light, documentary style.`;
 
 /**
  * 📸 GERAR POST COMPLETO (Instagram)
- * Headline curta (imagem) + Legenda estratégica
- * 
- * ⚠️ TEMPORÁRIO: Altere USE_DALLE_TEMPORARIO para false quando tiver crédito no fal.ai
+ * Apenas texto/legenda - imagem é adicionada manualmente (IA externa)
  */
 export async function generateInstagramPost({
   especialidadeId,
@@ -621,7 +618,7 @@ export async function generateInstagramPost({
 
   console.log('📸 Instagram:', especialidade.nome, `(${funnelStage})`);
 
-  // 1. HEADLINE curta (imagem)
+  // 1. HEADLINE curta
   const headline = await gerarHeadline({ especialidade, funnelStage, customTheme });
   console.log('🎯 Headline:', headline);
 
@@ -629,37 +626,7 @@ export async function generateInstagramPost({
   const legenda = await gerarLegenda({ especialidade, headline, funnelStage });
   console.log('📝 Legenda:', legenda.split('\n')[0]);
 
-  // 3. IMAGEM base (com prompt otimizado)
-  const imageResult = await generateImage({ 
-    especialidade, 
-    headline,
-    tipoImagem: IMAGE_TYPES.FOTO_REAL 
-  });
-  const baseImageUrl = imageResult?.url || null;
-  const imageProvider = imageResult?.provider || null;
-  console.log('🤖 Provider:', imageProvider || 'nenhum');
-
-  // 4. Aplicar branding visual (logo + blobs)
-  let mediaUrl = baseImageUrl;
-  if (baseImageUrl) {
-    try {
-      console.log('🎨 Aplicando branding Fono Inova...');
-      const branded = await gerarImagemBranded({
-        fotoUrl: baseImageUrl,
-        titulo: headline,
-        postContent: `${headline}\n\n${legenda}`,
-        especialidadeId: especialidade.id
-      });
-      mediaUrl = branded.url;
-      console.log('✅ Branding aplicado:', branded.layout);
-    } catch (e) {
-      console.error('❌ Branding falhou:', e.message);
-      console.log('⚠️ Usando imagem sem branding');
-      mediaUrl = baseImageUrl;
-    }
-  }
-
-  // 5. SALVAR
+  // 3. SALVAR (sem imagem - usuário adiciona manualmente da IA externa)
   const post = new InstagramPost({
     title: headline,
     headline: headline,
@@ -668,10 +635,10 @@ export async function generateInstagramPost({
     theme: especialidade.id,
     funnelStage,
     status: 'draft',
-    mediaUrl,
-    mediaType: mediaUrl ? 'image' : null,
+    mediaUrl: null,  // Usuário adiciona imagem do Midjourney/etc manualmente
+    mediaType: null,
     aiGenerated: true,
-    imageProvider,  // 🖼️ Qual IA gerou a imagem
+    imageProvider: 'manual',  // 🖼️ Imagem será adicionada manualmente
     createdBy: userId
   });
 
@@ -683,186 +650,47 @@ export async function generateInstagramPost({
     data: {
       headline,
       legenda,
-      mediaUrl,
-      especialidade: especialidade.nome
+      mediaUrl: null,
+      especialidade: especialidade.nome,
+      nota: 'Adicione a imagem gerada em IA externa (Midjourney, etc) manualmente'
     }
   };
 }
 
 /**
  * 🔄 REGENERAR IMAGEM
+ * Apenas limpa a imagem atual - usuário deve adicionar nova manualmente
  */
 export async function regenerateImageForPost(post) {
-  const especialidade = ESPECIALIDADES.find(e => e.id === post.theme) || ESPECIALIDADES[0];
-  
-  const imageResult = await generateImage({ 
-    especialidade,
-    headline: post.headline,
-    tipoImagem: IMAGE_TYPES.FOTO_REAL 
-  });
-  
-  if (imageResult?.url) {
-    try {
-      const branded = await gerarImagemBranded({
-        fotoUrl: imageResult.url,
-        titulo: post.headline,
-        postContent: `${post.headline}\n\n${post.caption}`,
-        especialidadeId: especialidade.id
-      });
-      post.mediaUrl = branded.url;
-      post.imageProvider = imageResult.provider;  // 🖼️ Atualiza provider
-      await post.save();
-      return branded.url;
-    } catch (e) {
-      post.mediaUrl = imageResult.url;
-      post.imageProvider = imageResult.provider;
-      await post.save();
-      return imageResult.url;
-    }
-  }
+  post.mediaUrl = null;
+  post.imageProvider = 'manual';
+  await post.save();
   return null;
 }
 
 export { gerarHeadline, gerarLegenda, generateImage, IMAGE_TYPES };
 
 // ═══════════════════════════════════════════════════════════
-// 🆕 INTEGRAÇÃO COM NOVO SISTEMA DE LAYOUTS (v2)
+// 🆕 V2 - Apenas texto (imagem manual da IA externa)
 // ═══════════════════════════════════════════════════════════
 
-import { gerarPostComRotacao } from './postGeneratorService.js';
-
 /**
- * 🎨 GERAR POST COM SISTEMA DE LAYOUTS V2 (Novo)
- * Usa o motor de renderização genérico com 15+ layouts
- * 
- * @param {Object} options - Opções de geração
- * @param {string} options.especialidadeId - ID da especialidade
- * @param {string} options.funnelStage - Estágio do funil (top/middle/bottom)
- * @param {string} options.customTheme - Tema customizado (opcional)
- * @param {string} options.userId - ID do usuário criador
- * @param {boolean} options.useV2Layouts - Forçar uso do novo sistema
+ * 🎨 GERAR POST V2 (simplificado - sem imagem automática)
+ * Apenas headline + legenda - imagem vem de IA externa
  */
 export async function generateInstagramPostV2({
   especialidadeId,
   funnelStage = 'top',
   customTheme = null,
-  userId = null,
-  useV2Layouts = true,
-  provider = 'auto'
+  userId = null
 }) {
-  if (!useV2Layouts) {
-    // Fallback para sistema antigo
-    return generateInstagramPost({ especialidadeId, customTheme, funnelStage, userId });
-  }
-  
-  const especialidade = ESPECIALIDADES.find(e => e.id === especialidadeId) || ESPECIALIDADES[0];
-  
-  console.log('📸 [v2] Instagram Post com Layouts Dinâmicos:', especialidade.nome);
-  
-  // 1. Gerar headline e legenda (reutiliza funções existentes)
-  const headline = await gerarHeadline({ especialidade, funnelStage, customTheme });
-  const legenda = await gerarLegenda({ especialidade, headline, funnelStage });
-  
-  console.log('🎯 Headline:', headline);
-  console.log('📝 Legenda:', legenda.split('\n')[0]);
-  
-  // 2. Gerar imagem com novo sistema de layouts
-  const hook = legenda.split('\n')[0]?.substring(0, 50);
-  
-  try {
-    const resultado = await gerarPostComRotacao({
-      especialidadeId,
-      conteudo: legenda,
-      headline,
-      hook,
-      categoriaPreferida: null, // Deixa o sistema escolher
-      channel: 'instagram',
-      provider
-    });
-    
-    // 3. Criar post no MongoDB
-    const post = new InstagramPost({
-      title: headline,
-      headline,
-      content: legenda,
-      caption: legenda,
-      theme: especialidade.id,
-      funnelStage,
-      status: 'draft',
-      mediaUrl: resultado.url,
-      mediaType: 'image',
-      aiGenerated: true,
-      imageProvider: resultado.imageProvider,
-      layoutId: resultado.layoutId, // Novo campo
-      createdBy: userId,
-      metadata: {
-        customTheme,
-        headlineStrategy: resultado.layoutCategoria,
-        layoutNome: resultado.layoutNome
-      }
-    });
-    
-    await post.save();
-    
-    console.log('✅ Post v2 criado:', resultado.layoutId, resultado.layoutNome);
-    
-    return {
-      success: true,
-      post,
-      data: {
-        headline,
-        legenda,
-        mediaUrl: resultado.url,
-        especialidade: especialidade.nome,
-        layout: {
-          id: resultado.layoutId,
-          nome: resultado.layoutNome,
-          categoria: resultado.layoutCategoria
-        },
-        provider: resultado.imageProvider,
-        tempo: resultado.tempo,
-        proximoLayoutSugerido: resultado.proximoLayoutSugerido
-      }
-    };
-    
-  } catch (error) {
-    console.error('❌ Erro no sistema v2, fallback para v1:', error.message);
-    
-    // Fallback para sistema antigo em caso de erro
-    return generateInstagramPost({ especialidadeId, customTheme, funnelStage, userId });
-  }
+  // Sempre delega para V1 (agora sem imagem)
+  return generateInstagramPost({ especialidadeId, customTheme, funnelStage, userId });
 }
 
 /**
- * 🔄 REGENERAR IMAGEM COM NOVO SISTEMA (v2)
+ * 🔄 REGENERAR IMAGEM V2 (simplificado)
  */
 export async function regenerateImageForPostV2(post) {
-  try {
-    const { regenerarImagemPost } = await import('./postGeneratorService.js');
-    
-    const hook = post.caption?.split('\n')[0]?.substring(0, 50) || '';
-    
-    const resultado = await regenerarImagemPost({
-      especialidadeId: post.theme,
-      headline: post.headline,
-      hook,
-      // Não passa layoutId para forçar novo layout
-    });
-    
-    // Atualizar post
-    post.mediaUrl = resultado.url;
-    post.imageProvider = resultado.imageProvider;
-    post.layoutId = resultado.layoutId;
-    await post.save();
-    
-    return {
-      url: resultado.url,
-      layoutId: resultado.layoutId,
-      layoutNome: resultado.layoutNome
-    };
-    
-  } catch (error) {
-    console.error('❌ Erro na regeneração v2, fallback para v1:', error.message);
-    return regenerateImageForPost(post);
-  }
+  return regenerateImageForPost(post);
 }

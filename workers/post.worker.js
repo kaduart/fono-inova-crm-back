@@ -20,9 +20,9 @@ import FacebookPost from '../models/FacebookPost.js';
 
 // Services
 import * as gmbService from '../services/gmbService.js';
-import { generateInstagramPost, regenerateImageForPost, gerarHeadline, generateImage as gerarImagemBase, IMAGE_TYPES } from '../services/instagramPostService.js';
+import { gerarHeadline } from '../services/instagramPostService.js';
 import { generateCaptionSEO, generateHooksViral } from '../services/gmbService.js';
-import { gerarImagemBranded } from '../services/brandImageService.js';
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -146,11 +146,11 @@ const postWorker = new Worker('post-generation', async (job) => {
       logger.info(`[POST WORKER] 💾 Post salvo: mediaUrl=${mediaUrl ? '✅ COM IMAGEM' : '❌ SEM IMAGEM'}, provider=${imageProvider || 'N/A'}`);
 
     } else if (channel === 'instagram') {
-      // Instagram: gerar conteúdo baseado no modo selecionado pelo usuário
+      // Instagram: apenas texto/legenda - imagem vem de IA externa (Midjourney/etc)
       const mode = job.data.mode || 'full'; // 'full' | 'caption' | 'hooks'
-      logger.info(`[POST WORKER] Instagram modo: ${mode}`);
+      logger.info(`[POST WORKER] Instagram modo: ${mode} (sem imagem automática)`);
 
-      // Headline curta para a imagem (sempre necessária)
+      // Headline curta
       const headline = await gerarHeadline({ especialidade, funnelStage, customTheme });
 
       let legenda;
@@ -164,32 +164,7 @@ const postWorker = new Worker('post-generation', async (job) => {
         legenda = captionResult.content;
       }
 
-      // Gerar imagem base
-      const imageResult = await gerarImagemBase({
-        especialidade,
-        headline,
-        tipoImagem: IMAGE_TYPES.FOTO_REAL
-      }).catch(e => { logger.warn(`[POST WORKER] Erro imagem IG: ${e.message}`); return null; });
-
-      let mediaUrl = imageResult?.url || null;
-      let imageProvider = imageResult?.provider || null;
-
-      // Aplicar branding visual
-      if (mediaUrl) {
-        try {
-          const branded = await gerarImagemBranded({
-            fotoUrl: mediaUrl,
-            titulo: headline,
-            postContent: `${headline}\n\n${legenda}`,
-            especialidadeId: especialidade.id
-          });
-          mediaUrl = branded.url;
-        } catch (e) {
-          logger.warn(`[POST WORKER] Branding IG falhou: ${e.message}`);
-        }
-      }
-
-      // Atualizar o post EXISTENTE (sem criar novo)
+      // Atualizar o post EXISTENTE (sem imagem - usuário adiciona manualmente)
       const isScheduled = Boolean(scheduledAt);
       await InstagramPost.findByIdAndUpdate(postId, {
         title: headline,
@@ -198,9 +173,9 @@ const postWorker = new Worker('post-generation', async (job) => {
         caption: legenda,
         theme: especialidade.id,
         status: isScheduled ? 'scheduled' : 'draft',
-        mediaUrl,
-        mediaType: mediaUrl ? 'image' : null,
-        imageProvider,
+        mediaUrl: null,  // Usuário adiciona imagem do Midjourney/etc manualmente
+        mediaType: null,
+        imageProvider: 'manual',
         scheduledAt: isScheduled ? new Date(scheduledAt) : null,
         aiGenerated: true,
         processingStatus: 'completed',
