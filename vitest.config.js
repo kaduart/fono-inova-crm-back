@@ -19,6 +19,15 @@ export default defineConfig({
       ],
     },
     include: ['tests/unit/**/*.test.js'],
+    exclude: [
+      '**/node_modules/**',
+      // Scripts que usam process.exit() — não são testes vitest
+      'tests/unit/therapyDetector.test.js',
+      'tests/unit/safeAgeUpdate.test.js',
+      'tests/unit/flagsDetector.p1-p4.test.js',
+      // Precisa de MongoDB rodando — só roda em ambiente de integração
+      'tests/unit/taxaCartao.test.js',
+    ],
     setupFiles: [],
     // Timeout para testes com MongoDB
     testTimeout: 30000,
