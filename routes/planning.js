@@ -57,21 +57,34 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
  */
 router.get('/', auth, async (req, res) => {
   try {
-    const { type, status, startDate, endDate, refresh } = req.query;
+    const { type, status, startDate, endDate, month, year, refresh } = req.query;
 
     const filters = {};
     if (type) filters.type = type;
     if (status) filters['progress.overallStatus'] = status;
-    if (startDate && endDate) {
+    
+    // Se recebeu month/year, converte para startDate/endDate do mês completo
+    if (month && year) {
+      const m = parseInt(month);
+      const y = parseInt(year);
+      const start = `${y}-${String(m).padStart(2, '0')}-01`;
+      const lastDay = new Date(y, m, 0).getDate();
+      const end = `${y}-${String(m).padStart(2, '0')}-${lastDay}`;
+      // Filtra planejamentos que começam no dia 1 e terminam no último dia do mês
+      filters['period.start'] = start;
+      filters['period.end'] = end;
+    } else if (startDate && endDate) {
       filters['period.start'] = { $gte: startDate };
       filters['period.end'] = { $lte: endDate };
     }
 
     // Buscar planejamentos
+    console.log('[Planning GET] 🔍 Filtros:', JSON.stringify(filters));
     let plannings = await Planning.find(filters)
       .populate('byDoctor.doctor', 'fullName specialty')
       .populate('createdBy', 'fullName')
       .sort({ 'period.start': -1 });
+    console.log(`[Planning GET] 📊 Encontrados ${plannings.length} planejamentos`);
 
     // Se solicitado refresh, recalcular todos
     if (refresh === 'true') {

@@ -51,7 +51,7 @@ async function calculateStats() {
         Patient.countDocuments(),
 
         // Total de profissionais
-        Doctor.countDocuments(),
+        Doctor.countDocuments({ active: true }),
 
         // Agendamentos de hoje
         Appointment.countDocuments({
@@ -254,8 +254,8 @@ async function calculateChartData() {
 async function getDoctorsOverview() {
     const last30Days = moment().tz(TIMEZONE).subtract(30, 'days').format('YYYY-MM-DD');
 
-    // 🚀 Busca todos os médicos (1 query)
-    const doctors = await Doctor.find()
+    // 🚀 Busca todos os médicos ativos (1 query)
+    const doctors = await Doctor.find({ active: true })
         .select('fullName specialty')
         .sort({ fullName: 1 })
         .lean();
@@ -414,7 +414,7 @@ router.get('/charts', authorize(['admin', 'secretary']), async (req, res) => {
  */
 router.get('/overview', authorize(['admin', 'secretary']), async (req, res) => {
     try {
-        const cacheKey = `dashboard:overview:${moment().tz(TIMEZONE).format('YYYY-MM-DD:HH:mm')}`;
+        const cacheKey = `dashboard:overview:${moment().tz(TIMEZONE).format('YYYY-MM-DD:HH')}`;
         
         const overview = await cacheFunction(async () => {
             const [stats, charts, doctorsOverview, upcomingAppointments] = await Promise.all([

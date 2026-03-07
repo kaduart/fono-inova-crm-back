@@ -20,6 +20,12 @@ router.get('/appointments/calendar/:id', auth, getCalendarAppointments);
 router.get('/:id/attendance-summary', auth, getAtendencePatient);
 router.get('/:doctorId/financial-report', auth, getDoctorFinancialReport);
 
+// Rotas de ativação/inativação (soft delete) - VEM ANTES das rotas com :id
+router.get('/active/list', flexibleAuth, doctorOperations.getActive);
+router.get('/inactive/list', flexibleAuth, doctorOperations.getInactive);
+router.patch('/:id/deactivate', auth, validateId, doctorOperations.deactivate);
+router.patch('/:id/reactivate', auth, validateId, doctorOperations.reactivate);
+
 // Rotas principais
 router.post('/', auth, doctorOperations.create);
 router.get('/', flexibleAuth, doctorOperations.get.all);

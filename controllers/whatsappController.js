@@ -1679,7 +1679,11 @@ async function processInboundMessage(msg, value) {
         }
 
         // ✅ NOTIFICAR FRONTEND
-        io.emit("message:new", {
+        console.log("📡 [SOCKET] Preparando para emitir message:new...");
+        console.log("📡 [SOCKET] io existe:", !!io);
+        console.log("📡 [SOCKET] io.engine.clientsCount:", io?.engine?.clientsCount || 0);
+        
+        const socketPayload = {
             id: String(savedMessage._id),
             from,
             to,
@@ -1692,9 +1696,16 @@ async function processInboundMessage(msg, value) {
             caption,
             status: "received",
             timestamp,
-            leadId: lead._id,
-            contactId: contact._id
-        });
+            leadId: String(lead._id),
+            contactId: String(contact._id)
+        };
+        
+        console.log("📡 [SOCKET] Emitindo payload:", JSON.stringify(socketPayload, null, 2));
+        
+        io.emit("message:new", socketPayload);
+        io.emit("whatsapp:new_message", socketPayload);
+        
+        console.log("✅ [SOCKET] Eventos emitidos com sucesso!");
 
         // ✅ ATUALIZAR ÚLTIMA INTERAÇÃO DO LEAD
         try {

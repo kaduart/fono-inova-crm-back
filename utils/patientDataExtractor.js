@@ -1,4 +1,76 @@
-import { parsePtBrDate } from './dateParser.js';
+import { parsePtBrDate, parseRelativeDate } from './dateParser.js';
+
+/**
+ * Extrai data preferida a partir do texto do usuário
+ * Ex: "a partir de segunda", "depois do dia 15", "na próxima semana"
+ * @param {string} text - Texto da mensagem
+ * @returns {Date|null} - Data preferida ou null
+ */
+export function extractPreferredDate(text) {
+    if (!text) return null;
+    const t = text.toLowerCase();
+    
+    // Padrões de data relativa
+    const patterns = [
+        // "a partir de segunda/terça/..."
+        { regex: /a partir de\s+(segunda|ter[çc]a|quarta|quinta|sexta|s[aá]bado|domingo)/i, type: 'weekday' },
+        // "depois do dia 15"
+        { regex: /depois do dia\s+(\d{1,2})/i, type: 'day' },
+        // "a partir do dia 15"
+        { regex: /a partir do dia\s+(\d{1,2})/i, type: 'day' },
+        // "próxima semana"
+        { regex: /pr[óo]xima semana/i, type: 'next_week' },
+        // "semana que vem"
+        { regex: /semana que vem/i, type: 'next_week' },
+        // "dia 15/03" ou "15/03"
+        { regex: /(?:dia\s+)?(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/i, type: 'full_date' },
+    ];
+    
+    for (const pattern of patterns) {
+        const match = t.match(pattern.regex);
+        if (match) {
+            const now = new Date();
+            
+            switch (pattern.type) {
+                case 'weekday': {
+                    const weekdays = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+                    const targetDay = weekdays.findIndex(d => match[1].toLowerCase().includes(d));
+                    if (targetDay !== -1) {
+                        const daysUntil = (targetDay - now.getDay() + 7) % 7;
+                        const targetDate = new Date(now);
+                        targetDate.setDate(now.getDate() + (daysUntil === 0 ? 7 : daysUntil));
+                        return targetDate;
+                    }
+                    break;
+                }
+                case 'day': {
+                    const day = parseInt(match[1], 10);
+                    const targetDate = new Date(now);
+                    targetDate.setDate(day);
+                    // Se já passou, vai para o próximo mês
+                    if (targetDate < now) {
+                        targetDate.setMonth(targetDate.getMonth() + 1);
+                    }
+                    return targetDate;
+                }
+                case 'next_week': {
+                    const nextWeek = new Date(now);
+                    nextWeek.setDate(now.getDate() + (7 - now.getDay()) + 1); // Próxima segunda
+                    return nextWeek;
+                }
+                case 'full_date': {
+                    const day = parseInt(match[1], 10);
+                    const month = parseInt(match[2], 10) - 1;
+                    const year = match[3] ? parseInt(match[3], 10) : now.getFullYear();
+                    const fullYear = year < 100 ? 2000 + year : year;
+                    return new Date(fullYear, month, day);
+                }
+            }
+        }
+    }
+    
+    return null;
+}
 
 // 🆕 Guard inteligente: rejeita frases-pergunta, aceita nomes
 export function isValidPatientName(str) {
