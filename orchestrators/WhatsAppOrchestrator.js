@@ -21,7 +21,7 @@ import {
 } from '../services/StateMachine.js';
 import Logger from '../services/utils/Logger.js';
 import { THERAPY_DATA, detectAllTherapies } from '../utils/therapyDetector.js';
-import { extractName, extractBirth, extractAgeFromText, extractPeriodFromText } from '../utils/patientDataExtractor.js';
+import { extractName, extractBirth, extractAgeFromText, extractPeriodFromText, extractPreferredDate } from '../utils/patientDataExtractor.js';
 
 const logger = new Logger('WhatsAppOrchestrator');
 
@@ -62,6 +62,19 @@ export default class WhatsAppOrchestrator {
 
       const currentState = freshLead.currentState || STATES.IDLE;
       const stateData = freshLead.stateData || {};
+
+      // ══ RESET DE retryCount POR SESSÃO ══
+      // Se o lead ficou sem interagir por mais de 4 horas, zera o retryCount.
+      // Isso evita que um retryCount acumulado de ontem cause HANDOFF imediato
+      // quando o lead retorna com "Oi" no dia seguinte.
+      if ((freshLead.retryCount || 0) > 0 && freshLead.lastInteractionAt) {
+        const hoursSinceLastInteraction = (Date.now() - new Date(freshLead.lastInteractionAt).getTime()) / (1000 * 60 * 60);
+        if (hoursSinceLastInteraction > 4) {
+          this.logger.info('V8_RETRY_RESET_SESSION', { leadId, retryCount: freshLead.retryCount, hoursSince: hoursSinceLastInteraction.toFixed(1) });
+          await Leads.updateOne({ _id: leadId }, { $set: { retryCount: 0 } });
+          freshLead.retryCount = 0;
+        }
+      }
 
       this.logger.info('V8_PROCESS', { leadId, currentState, text: text.substring(0, 80), phone: freshLead.contact?.phone || freshLead.phone || freshLead.whatsapp });
 
@@ -234,12 +247,22 @@ export default class WhatsAppOrchestrator {
       // ── COLETA DE PERÍODO ──
       case STATES.COLLECT_PERIOD: {
         const period = extractPeriodFromText(text);
+        const preferredDate = extractPreferredDate(text);
+        
         if (period) {
-          this.logger.info('V8_PERIOD_COLLECTED', { leadId, period });
-          const newData = { ...stateData, period };
+          this.logger.info('V8_PERIOD_COLLECTED', { leadId, period, preferredDate });
+          const newData = { ...stateData, period, preferredDate };
           await jumpToState(leadId, STATES.COLLECT_NAME, newData);
           await this._savePeriod(leadId, period);
           return this._reply(`Perfeito! ☀️\n\nQual o *nome completo do paciente*?`);
+        }
+        
+        // Se não detectou período mas detectou data, ainda assim avança com a data
+        if (preferredDate) {
+          this.logger.info('V8_DATE_COLLECTED', { leadId, preferredDate });
+          const newData = { ...stateData, preferredDate };
+          await jumpToState(leadId, STATES.COLLECT_PERIOD, newData);
+          return this._reply(`Anotado! E prefere **manhã** ou **tarde**? ☀️🌙`);
         }
 
         const { handoff, retryCount } = await incrementRetry(leadId);
@@ -253,6 +276,23 @@ export default class WhatsAppOrchestrator {
         const name = extractName(text);
         if (name && name.length >= 2) {
           this.logger.info('V8_PATIENT_NAME_COLLECTED', { leadId, name });
+          
+          // ✅ VALIDAÇÃO: Precisa ter therapyArea antes de mostrar slots
+          const therapyArea = lead.therapyArea || stateData.therapy?.id || stateData.therapy;
+          if (!therapyArea) {
+            this.logger.warn('V8_NO_THERAPY_AREA', { leadId, name, leadTherapyArea: lead.therapyArea, stateDataTherapy: stateData.therapy });
+            await jumpToState(leadId, STATES.COLLECT_THERAPY, { ...stateData, patientName: name });
+            return this._reply(`Perfeito, *${name}*! 📝
+
+Só preciso confirmar: qual especialidade você precisa?
+
+💚 Fonoaudiologia
+💚 Psicologia  
+💚 Fisioterapia
+💚 Terapia Ocupacional
+💚 Neuropsicologia`);
+          }
+          
           const newData = { ...stateData, patientName: name };
           await jumpToState(leadId, STATES.SHOW_SLOTS, newData);
           await this._savePatientName(leadId, name);
@@ -341,8 +381,11 @@ export default class WhatsAppOrchestrator {
       }
 
       // ── HANDOFF HUMANO ──
+      // Estado terminal — não responde. A mensagem de handoff já foi enviada
+      // quando a transição ocorreu via _handoffReply(). Silenciar aqui evita
+      // o loop de "Vou te transferir..." em toda mensagem subsequente.
       case STATES.HANDOFF: {
-        return this._reply('Vou te transferir para nossa equipe que vai te ajudar pessoalmente! 💚 Aguarda só um minutinho...');
+        return { command: 'NO_REPLY' };
       }
 
       default: {
@@ -400,35 +443,106 @@ export default class WhatsAppOrchestrator {
     const leadId = lead._id;
     try {
       const therapyArea = lead.therapyArea || stateData.therapy?.id || stateData.therapy;
-      this.logger.info('V8_SLOT_SEARCH_START', { leadId, therapyArea, period: stateData.period, age: stateData.age });
+      const patientName = stateData.patientName;
+      const birthDate = stateData.birthDate;
+      const age = stateData.age;
+      
+      // ✅ VALIDAÇÃO: Todos os campos obrigatórios devem estar presentes
+      this.logger.info('V8_SLOT_SEARCH_START', { 
+        leadId, 
+        therapyArea, 
+        period: stateData.period, 
+        age,
+        patientName,
+        birthDate,
+        hasTherapyArea: !!therapyArea,
+        hasPatientName: !!patientName,
+        hasBirthOrAge: !!(birthDate || age)
+      });
+      
+      if (!therapyArea) {
+        this.logger.error('V8_SLOT_SEARCH_MISSING_THERAPY', { leadId, stateData, leadTherapyArea: lead.therapyArea });
+        await jumpToState(leadId, STATES.COLLECT_THERAPY, stateData);
+        return this._reply(`Ops! Preciso confirmar a especialidade primeiro 💚
 
-      const slots = await Promise.race([
-        findAvailableSlots({
-          therapyArea,
-          preferredPeriod: stateData.period,
-          patientAge: stateData.age,
-          maxDoctors: 2,
-          maxDays: 3,
-          timeoutMs: 5000,
-        }),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('SLOT_SEARCH_TIMEOUT')), 5000)
-        )
-      ]);
+Qual área você precisa?
+💚 Fonoaudiologia
+💚 Psicologia  
+💚 Fisioterapia
+💚 Terapia Ocupacional
+💚 Neuropsicologia`);
+      }
+      
+      if (!patientName) {
+        this.logger.error('V8_SLOT_SEARCH_MISSING_NAME', { leadId, stateData });
+        await jumpToState(leadId, STATES.COLLECT_NAME, stateData);
+        return this._reply('Qual o nome completo do paciente? 💚');
+      }
+      
+      if (!birthDate && !age) {
+        this.logger.error('V8_SLOT_SEARCH_MISSING_BIRTH', { leadId, stateData });
+        await jumpToState(leadId, STATES.COLLECT_BIRTH, stateData);
+        return this._reply('Qual a data de nascimento ou idade do paciente? (dd/mm/aaaa) 💚');
+      }
+
+      // 🔍 BUSCA 1: Tenta com data preferida (se houver)
+      let slots = null;
+      const preferredDate = stateData.preferredDate;
+      
+      if (preferredDate) {
+        this.logger.info('V8_SLOT_SEARCH_PREFERRED_DATE', { leadId, preferredDate });
+        slots = await Promise.race([
+          findAvailableSlots({
+            therapyArea,
+            preferredPeriod: stateData.period,
+            preferredDate: preferredDate.toISOString(),
+            patientAge: stateData.age,
+            maxDoctors: 2,
+            maxDays: 7, // Busca em mais dias se tem data preferida
+            timeoutMs: 5000,
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('SLOT_SEARCH_TIMEOUT')), 5000)
+          )
+        ]);
+      }
+      
+      // 🔍 BUSCA 2: Se não encontrou com data preferida, busca sem restrição de data
+      if (!slots?.primary) {
+        this.logger.info('V8_SLOT_SEARCH_FALLBACK', { leadId, preferredDate, reason: preferredDate ? 'no_slots_on_preferred' : 'no_preferred_date' });
+        slots = await Promise.race([
+          findAvailableSlots({
+            therapyArea,
+            preferredPeriod: stateData.period,
+            patientAge: stateData.age,
+            maxDoctors: 2,
+            maxDays: 14, // Busca em até 14 dias à frente
+            timeoutMs: 5000,
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('SLOT_SEARCH_TIMEOUT')), 5000)
+          )
+        ]);
+      }
 
       if (slots?.primary) {
         const options = buildSlotOptions(slots);
         const totalSlots = options.length;
-        this.logger.info('V8_SLOTS_FOUND', { leadId, totalSlots, primaryDoctor: slots.primary?.doctor, primaryDate: slots.primary?.date });
+        const datePrefix = preferredDate ? 'nas próximas datas disponíveis' : 'para você';
+        this.logger.info('V8_SLOTS_FOUND', { leadId, totalSlots, primaryDoctor: slots.primary?.doctor, primaryDate: slots.primary?.date, hadPreferredDate: !!preferredDate });
         await leadRepository.persistSchedulingSlots(lead._id, slots);
         const optionsText = options.map(o => o.text).join('\n');
-        return this._reply(`Encontrei essas opções para ${stateData.period || 'você'} 💚\n\n${optionsText}\n\nQual funciona melhor? (A, B, C...)`);
+        return this._reply(`Encontrei essas opções ${datePrefix} 💚\n\n${optionsText}\n\nQual funciona melhor? (A, B, C...)`);
       }
 
-      this.logger.warn('V8_NO_SLOTS_FOUND', { leadId, therapyArea, period: stateData.period });
-      // Volta para COLLECT_PERIOD para o usuário poder escolher outro período
-      await jumpToState(leadId, STATES.COLLECT_PERIOD, stateData);
-      return this._reply(`Hmm, não encontrei horários para ${stateData.period || 'esse período'} agora 😕\n\nQuer que eu busque em outro período? (manhã/tarde)`);
+      // ❌ NÃO ENCONTROU SLOTS - Handoff para equipe
+      this.logger.warn('V8_NO_SLOTS_FOUND_COMPLETE', { leadId, therapyArea, period: stateData.period, preferredDate });
+      await jumpToState(leadId, STATES.HANDOFF, stateData);
+      return this._reply(`Hmm, não encontrei horários disponíveis para ${stateData.period || 'esse período'} nos próximos dias 😕
+
+Vou transferir para nossa equipe que vai verificar a agenda completa e te retornar com as melhores opções! 💚
+
+Aguarda só um minutinho...`);
 
     } catch (error) {
       this.logger.error('V8_SLOT_SEARCH_ERROR', { error: error.message, leadId, therapyArea: lead.therapyArea, isTimeout: error.message === 'SLOT_SEARCH_TIMEOUT' });

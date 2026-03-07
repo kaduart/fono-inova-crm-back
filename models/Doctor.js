@@ -27,6 +27,9 @@ const doctorSchema = new mongoose.Schema({
 
   weeklyAvailability: { type: [DailyScheduleSchema], default: [] },
 
+  // 🆕 Soft delete tracking
+  deactivatedAt: { type: Date, default: null },
+
   // 🔑 reset de senha
   passwordResetToken: { type: String, index: true, select: false },
   passwordResetExpires: { type: Date, select: false },

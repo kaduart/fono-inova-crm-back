@@ -35,3 +35,23 @@ Thumbs.db
 # IDE
 .idea/
 .vscode/settings.json
+
+# WhatsApp session data
+whatsapp-session/
+.whatsapp-session/
+session/
+*.session
+# WhatsApp cache files
+**/Cache/
+**/Code Cache/
+**/DawnGraphiteCache/
+**/DawnWebGPUCache/
+**/Extension State/
+**/GCM Store/
+**/GPUCache/
+**/IndexedDB/
+*.log
+*.log.old
+*.ldb
+*-wal
+*-shm

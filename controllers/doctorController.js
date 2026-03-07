@@ -129,7 +129,7 @@ export const doctorOperations = {
   get: {
     all: async (req, res) => {
       try {
-        const doctors = await Doctor.find().select('-password').lean();
+        const doctors = await Doctor.find({ active: true }).select('-password').lean();
         res.status(200).json(doctors);
       } catch (error) {
         res.status(500).json({ error: 'Erro ao listar médicos.' });
@@ -194,6 +194,77 @@ export const doctorOperations = {
       }
 
       return res.status(500).json({ error: 'Erro interno' });
+    }
+  },
+
+  // Soft delete - inativa o profissional ao invés de deletar
+  deactivate: async (req, res) => {
+    try {
+      const doctor = await Doctor.findByIdAndUpdate(
+        req.params.id,
+        { active: false, deactivatedAt: new Date() },
+        { new: true, runValidators: true }
+      );
+      
+      if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
+      
+      res.json({ 
+        message: 'Profissional inativado com sucesso',
+        doctor: {
+          _id: doctor._id,
+          fullName: doctor.fullName,
+          active: doctor.active,
+          deactivatedAt: doctor.deactivatedAt
+        }
+      });
+    } catch (error) {
+      console.error('Erro ao inativar profissional:', error);
+      return res.status(500).json({ error: 'Erro interno ao inativar profissional' });
+    }
+  },
+
+  // Reativa um profissional inativado
+  reactivate: async (req, res) => {
+    try {
+      const doctor = await Doctor.findByIdAndUpdate(
+        req.params.id,
+        { active: true, $unset: { deactivatedAt: 1 } },
+        { new: true, runValidators: true }
+      );
+      
+      if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
+      
+      res.json({ 
+        message: 'Profissional reativado com sucesso',
+        doctor: {
+          _id: doctor._id,
+          fullName: doctor.fullName,
+          active: doctor.active
+        }
+      });
+    } catch (error) {
+      console.error('Erro ao reativar profissional:', error);
+      return res.status(500).json({ error: 'Erro interno ao reativar profissional' });
+    }
+  },
+
+  // Lista apenas profissionais ativos
+  getActive: async (req, res) => {
+    try {
+      const doctors = await Doctor.find({ active: true }).select('-password').lean();
+      res.status(200).json(doctors);
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao listar médicos ativos.' });
+    }
+  },
+
+  // Lista apenas profissionais inativos
+  getInactive: async (req, res) => {
+    try {
+      const doctors = await Doctor.find({ active: false }).select('-password').lean();
+      res.status(200).json(doctors);
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao listar médicos inativos.' });
     }
   }
 };
