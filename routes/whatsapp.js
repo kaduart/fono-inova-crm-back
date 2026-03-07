@@ -1,5 +1,6 @@
 import express from 'express';
 import multer from 'multer';
+import { getIo } from '../config/socket.js';
 import { whatsappController } from '../controllers/whatsappController.js';
 
 const router = express.Router();
@@ -91,6 +92,52 @@ router.post('/send-media', upload.single('file'), handleMulterError, whatsappCon
 // 📩 Webhook (mensagens recebidas E status de entrega)
 router.post('/webhook', whatsappController.webhook);
 router.get('/webhook', whatsappController.getWebhook);
+
+// 🧪 Teste de socket
+router.post('/test-socket', (req, res) => {
+    try {
+        const io = getIo();
+        
+        // 🔍 DEBUG: Informações sobre conexões
+        const sockets = Array.from(io.sockets?.sockets || []);
+        console.log('🔍 [TEST SOCKET] Total de clientes conectados:', io.engine?.clientsCount || 0);
+        console.log('🔍 [TEST SOCKET] Socket IDs:', sockets.map(([id]) => id));
+        
+        const testPayload = {
+            id: `test-${Date.now()}`,
+            from: req.body.from || '5511999999999',
+            to: req.body.to || '5511888888888',
+            direction: 'inbound',
+            type: 'text',
+            content: req.body.message || 'Mensagem de teste do socket',
+            text: req.body.message || 'Mensagem de teste do socket',
+            status: 'received',
+            timestamp: Date.now(),
+            leadId: 'test-lead-id',
+            contactId: 'test-contact-id',
+            contactName: req.body.contactName || 'Teste'
+        };
+        
+        console.log('🧪 [TEST SOCKET] Emitindo evento:', testPayload);
+        
+        // Emitir para todos os clientes conectados
+        io.emit('message:new', testPayload);
+        io.emit('whatsapp:new_message', testPayload);
+        
+        console.log('✅ [TEST SOCKET] Eventos emitidos para todos os clientes');
+        
+        res.json({ 
+            success: true, 
+            message: 'Evento emitido', 
+            clientsConnected: io.engine?.clientsCount || 0,
+            socketIds: sockets.map(([id]) => id),
+            payload: testPayload 
+        });
+    } catch (error) {
+        console.error('❌ [TEST SOCKET] Erro ao emitir:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 // 💬 Histórico de chat
 router.get('/chat/:phone', whatsappController.getChat);

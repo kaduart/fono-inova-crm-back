@@ -334,7 +334,7 @@ const distPath = path.resolve(__dirname, "./dist");
 app.use(express.static(distPath));
 app.get("*", (req, res) => {
   // Não interfere nas rotas de API
-  if (req.path.startsWith("/api/") || req.path.startsWith("/admin/")) {
+  if (req.path.startsWith("/api/")) {
     return res.status(404).json({ error: "Not found" });
   }
   res.sendFile(path.join(distPath, "index.html"));
