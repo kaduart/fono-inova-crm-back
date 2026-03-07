@@ -74,6 +74,7 @@ export const THERAPY_SPECIALTIES = {
     psychology: {
         names: ['psicologia', 'psicólogo'],
         patterns: [
+            /\bpsico\b/i,                               // "Psico" — abreviação comum PT-BR
             /p[s5][i1]c[o0]l[o0]g[a4o0](?![a-z])/i,  // psicologo, psicologa, psicolog (typos)
             /p[s5][i1]c[o0]l[o0]g[i1][a4](?!\s*pedag)/i,  // psicologia (typos)
             /\btcc\b|ansiedade|depress(ã|a)o/i,
