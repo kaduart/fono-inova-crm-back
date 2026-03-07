@@ -1,4 +1,4 @@
-import { parsePtBrDate, parseRelativeDate } from './dateParser.js';
+import { parsePtBrDate } from './dateParser.js';
 
 /**
  * Extrai data preferida a partir do texto do usuário
