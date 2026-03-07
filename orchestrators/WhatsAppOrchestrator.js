@@ -171,9 +171,17 @@ export default class WhatsAppOrchestrator {
           return this._reply(`${therapyName} 💚, ótima escolha!\n\nMe conta um pouco da situação que tá preocupando?`);
         }
 
+        // Verifica se tem dado de idade/contexto para resposta mais natural
+        const age = extractAgeFromText(text);
         const { handoff, retryCount } = await incrementRetry(leadId);
         this.logger.warn('V8_RETRY', { leadId, state, retryCount, reason: 'therapy_not_detected', text: text.substring(0, 60) });
         if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
+        if (age) {
+          // Salvou a idade mas falta a terapia — responde reconhecendo a idade
+          await Leads.updateOne({ _id: leadId }, { $set: { 'patientInfo.age': age } });
+          const ageStr = typeof age === 'object' ? `${age.age} anos` : `${age} anos`;
+          return this._reply(`Entendi, ${ageStr}! 💚\n\nE qual especialidade você procura? Fono, Psico, Fisioterapia, Psicopedagogia, Musicoterapia ou Neuropsico?`);
+        }
         return this._reply('Hmm, não consegui identificar a especialidade 🤔\n\nTrabalhamos com Fono, Psico, Fisioterapia, Psicopedagogia, Musicoterapia e Neuropsico.\n\nQual dessas você procura?');
       }
 
