@@ -183,7 +183,7 @@ export async function getCronStatus(req, res) {
 // Gerar post manualmente (trigger admin) — AGORA ASYNC
 export async function triggerManualGeneration(req, res) {
   try {
-    const { especialidadeId, customTheme, generateImage, scheduledAt, provider } = req.body;
+    const { especialidadeId, customTheme, generateImage, scheduledAt, provider, tone = 'emotional' } = req.body;
     const funnelStage = req.body.funnelStage || 'top';
 
     let especialidade = gmbService.ESPECIALIDADES.find(e => e.id === especialidadeId);
@@ -216,6 +216,7 @@ export async function triggerManualGeneration(req, res) {
       especialidadeId: especialidade.id,
       customTheme,
       funnelStage,
+      tone,
       scheduledAt,
       generateImage: generateImage !== false,
       provider: provider || 'auto',
@@ -476,6 +477,30 @@ export async function generateHooks(req, res) {
     });
   } catch (error) {
     console.error('Erro ao gerar ganchos:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 🎯 VARIAÇÕES A/B
+export async function generateVariations(req, res) {
+  try {
+    const { especialidadeId, funnelStage, tone, customTheme } = req.body;
+    const esp = gmbService.ESPECIALIDADES.find(e => e.id === especialidadeId) || gmbService.ESPECIALIDADES[0];
+    const result = await gmbService.generateContentVariations(esp, customTheme, funnelStage || 'top', tone || 'emotional', 3);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 📊 SCORE DE QUALIDADE
+export async function scoreContent(req, res) {
+  try {
+    const { content, funnelStage } = req.body;
+    if (!content) return res.status(400).json({ success: false, error: 'content obrigatório' });
+    const score = await gmbService.scorePostQuality(content, funnelStage || 'top');
+    res.json({ success: true, score });
+  } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 }

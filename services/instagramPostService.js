@@ -219,7 +219,7 @@ async function generateImage({ especialidade, headline, tipoImagem = IMAGE_TYPES
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          prompt: promptBase,
+          prompt: prompt,
           image_size: 'square',
           num_inference_steps: 28,
           guidance_scale: 3.5,
@@ -253,15 +253,6 @@ async function generateImage({ especialidade, headline, tipoImagem = IMAGE_TYPES
     try {
       console.log('🎨 [2/6] Freepik AI Image Generator...');
       
-      const freepikPrompt = `Professional photorealistic photography, 8k uhd, sharp focus.
-NO illustration, NO vector, NO cartoon, NO plants, NO flowers.
-
-SCENE: Brazilian female pediatric therapist in colorful scrubs with young child in bright clinic room.
-
-ENVIRONMENT: Modern pediatric clinic "Fono Inova" - white walls, large windows, light wood floors, colorful posters, wooden shelves with toys, soft foam mats.
-
-TECHNICAL: Canon EOS R5, 85mm f/1.4, soft window light, documentary style.`;
-      
       const freepikRes = await fetch('https://api.freepik.com/v1/ai/text-to-image', {
         method: 'POST',
         headers: {
@@ -270,7 +261,7 @@ TECHNICAL: Canon EOS R5, 85mm f/1.4, soft window light, documentary style.`;
           'Accept': 'application/json'
         },
         body: JSON.stringify({
-          prompt: freepikPrompt,
+          prompt: prompt,
           negative_prompt: 'illustration, vector, cartoon, anime, drawing, 3d render, text, watermark, blurry, low quality',
           num_images: 1,
           image_size: 'square_1024',

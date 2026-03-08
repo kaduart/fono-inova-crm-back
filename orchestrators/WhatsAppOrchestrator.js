@@ -19,6 +19,22 @@ import {
   getResumeHint,
   isAutoResume,
 } from '../services/StateMachine.js';
+
+// Helper: extrai número inteiro de um objeto de idade { age: N, unit: 'anos' } ou número direto
+function resolveAgeNumber(age) {
+  if (age === null || age === undefined) return null;
+  if (typeof age === 'object' && age.age !== undefined) return age.age;
+  return typeof age === 'number' ? age : parseInt(age, 10) || null;
+}
+
+// Helper: formata idade para exibição
+function formatAge(age) {
+  if (age === null || age === undefined) return null;
+  if (typeof age === 'object' && age.age !== undefined) {
+    return `${age.age} ${age.unit || 'anos'}`;
+  }
+  return `${age} anos`;
+}
 import Logger from '../services/utils/Logger.js';
 import { THERAPY_DATA, detectAllTherapies } from '../utils/therapyDetector.js';
 import { extractName, extractBirth, extractAgeFromText, extractPeriodFromText, extractPreferredDate } from '../utils/patientDataExtractor.js';
@@ -162,8 +178,15 @@ export default class WhatsAppOrchestrator {
 
         if (therapy) {
           this.logger.info('V8_THERAPY_DETECTED_ON_IDLE', { leadId, therapyId: therapy?.id, therapyName });
-          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy: therapy?.id || therapy });
           await this._saveTherapy(leadId, therapy);
+
+          // Neuropsicologia tem dois caminhos: laudo ou acompanhamento terapêutico
+          if (therapy.id === 'neuropsychological') {
+            await jumpToState(leadId, STATES.COLLECT_NEURO_TYPE, { therapy: therapy.id });
+            return this._reply(`Que bom que entrou em contato! 😊\n\nAqui atendemos neuropsicologia 💚\n\nPara te ajudar melhor: você está buscando um *laudo neuropsicológico* (avaliação completa com relatório) ou *acompanhamento terapêutico* (sessões regulares)?`);
+          }
+
+          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy: therapy?.id || therapy });
           return this._reply(`Que bom que entrou em contato! 😊\n\nSobre ${therapyName} 💚...\n\nMe conta um pouco da situação? O que tá preocupando?`);
         }
 
@@ -179,8 +202,15 @@ export default class WhatsAppOrchestrator {
           const therapy = therapies[0];
           const therapyName = therapy?.name || therapy?.id || therapy;
           this.logger.info('V8_THERAPY_COLLECTED', { leadId, therapyId: therapy?.id, therapyName });
-          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy: therapy?.id || therapy });
           await this._saveTherapy(leadId, therapy);
+
+          // Neuropsicologia: pergunta laudo vs acompanhamento antes de continuar
+          if (therapy.id === 'neuropsychological') {
+            await jumpToState(leadId, STATES.COLLECT_NEURO_TYPE, { therapy: therapy.id });
+            return this._reply(`Neuropsicologia 💚, ótima escolha!\n\nPara te ajudar melhor: você está buscando um *laudo neuropsicológico* (avaliação completa com relatório) ou *acompanhamento terapêutico* (sessões regulares)?`);
+          }
+
+          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy: therapy?.id || therapy });
           return this._reply(`${therapyName} 💚, ótima escolha!\n\nMe conta um pouco da situação que tá preocupando?`);
         }
 
@@ -190,12 +220,38 @@ export default class WhatsAppOrchestrator {
         this.logger.warn('V8_RETRY', { leadId, state, retryCount, reason: 'therapy_not_detected', text: text.substring(0, 60) });
         if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
         if (age) {
-          // Salvou a idade mas falta a terapia — responde reconhecendo a idade
-          await Leads.updateOne({ _id: leadId }, { $set: { 'patientInfo.age': age } });
-          const ageStr = typeof age === 'object' ? `${age.age} anos` : `${age} anos`;
+          const ageNum = resolveAgeNumber(age);
+          await Leads.updateOne({ _id: leadId }, { $set: { 'patientInfo.age': ageNum } });
+          const ageStr = formatAge(age);
           return this._reply(`Entendi, ${ageStr}! 💚\n\nE qual especialidade você procura? Fono, Psico, Fisioterapia, Psicopedagogia, Musicoterapia ou Neuropsico?`);
         }
         return this._reply('Hmm, não consegui identificar a especialidade 🤔\n\nTrabalhamos com Fono, Psico, Fisioterapia, Psicopedagogia, Musicoterapia e Neuropsico.\n\nQual dessas você procura?');
+      }
+
+      // ── LAUDO VS ACOMPANHAMENTO (apenas neuropsicologia) ──
+      case STATES.COLLECT_NEURO_TYPE: {
+        const tl = text.toLowerCase();
+        const isLaudo = /\b(laudo|relat[oó]rio|diagn[oó]stico|avalia[cç][aã]o\s+completa|fechar\s+diagn)/i.test(tl);
+        const isAcomp = /\b(acompanhamento|terapia|sess[oõ]es?|terapêutico|terapeutico|s[oó]\s+terap)/i.test(tl);
+
+        if (isLaudo) {
+          this.logger.info('V8_NEURO_TYPE_COLLECTED', { leadId, neuroType: 'laudo' });
+          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { ...stateData, neuroType: 'laudo' });
+          await Leads.updateOne({ _id: leadId }, { $set: { 'autoBookingContext.neuroType': 'laudo' } });
+          return this._reply(`Entendido! 💚 Laudo neuropsicológico completo.\n\n💰 *Investimento: R$ 1.700* (parcelamos em até 6x no cartão)\nInclui ~10 sessões de avaliação + laudo completo.\n\nMe conta: qual é a principal dificuldade que você quer investigar?`);
+        }
+
+        if (isAcomp) {
+          this.logger.info('V8_NEURO_TYPE_COLLECTED', { leadId, neuroType: 'acompanhamento' });
+          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { ...stateData, neuroType: 'acompanhamento' });
+          await Leads.updateOne({ _id: leadId }, { $set: { 'autoBookingContext.neuroType': 'acompanhamento' } });
+          return this._reply(`Perfeito! 💚 Acompanhamento terapêutico.\n\n💰 *Investimento:*\n• Avaliação inicial: R$ 200\n• Sessões: R$ 130 cada\n\nMe conta: qual é a principal dificuldade?`);
+        }
+
+        const { handoff, retryCount } = await incrementRetry(leadId);
+        this.logger.warn('V8_RETRY', { leadId, state, retryCount, reason: 'neuro_type_not_detected', text: text.substring(0, 60) });
+        if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
+        return this._reply('Para te ajudar melhor 😊\n\nVocê está buscando um *laudo neuropsicológico* (relatório completo com diagnóstico) ou *acompanhamento terapêutico* (sessões regulares)?\n\n💚 *Laudo* — R$ 1.700 (parcelamos)\n💚 *Acompanhamento* — R$ 200 (avaliação) + R$ 130/sessão');
       }
 
       // ── COLETA DE QUEIXA ──
@@ -209,7 +265,7 @@ export default class WhatsAppOrchestrator {
           if (age) {
             this.logger.info('V8_COMPLAINT_WITH_AGE', { leadId, age, complaint: complaint.substring(0, 60) });
             await jumpToState(leadId, STATES.COLLECT_BIRTH, newData);
-            await this._saveComplaintAndAge(leadId, complaint, age);
+            await this._saveComplaintAndAge(leadId, complaint, resolveAgeNumber(age));
             return this._reply(`Entendi! 💚\n\nAgora preciso da *data de nascimento* do paciente (dd/mm/aaaa):`);
           }
 
@@ -232,10 +288,11 @@ export default class WhatsAppOrchestrator {
 
         if (age || birth) {
           this.logger.info('V8_BIRTH_COLLECTED', { leadId, age, birth });
-          const newData = { ...stateData, age: age || null, birthDate: birth || null };
+          const ageNum = resolveAgeNumber(age);
+          const newData = { ...stateData, age: ageNum || null, birthDate: birth || null };
           await jumpToState(leadId, STATES.COLLECT_PERIOD, newData);
-          await this._saveAge(leadId, age, birth);
-          return this._reply(`${age ? `${age} anos` : 'Anotado'}, perfeito! 📝\n\nQue período funciona melhor: **manhã ou tarde**? ☀️🌙`);
+          await this._saveAge(leadId, ageNum, birth);
+          return this._reply(`${ageNum ? formatAge(age) : 'Anotado'}, perfeito! 📝\n\nQue período funciona melhor: **manhã ou tarde**? ☀️🌙`);
         }
 
         const { handoff, retryCount } = await incrementRetry(leadId);
@@ -282,15 +339,7 @@ export default class WhatsAppOrchestrator {
           if (!therapyArea) {
             this.logger.warn('V8_NO_THERAPY_AREA', { leadId, name, leadTherapyArea: lead.therapyArea, stateDataTherapy: stateData.therapy });
             await jumpToState(leadId, STATES.COLLECT_THERAPY, { ...stateData, patientName: name });
-            return this._reply(`Perfeito, *${name}*! 📝
-
-Só preciso confirmar: qual especialidade você precisa?
-
-💚 Fonoaudiologia
-💚 Psicologia  
-💚 Fisioterapia
-💚 Terapia Ocupacional
-💚 Neuropsicologia`);
+            return this._reply(`Perfeito, *${name}*! 📝\n\nSó preciso confirmar: qual especialidade você precisa?\n\n💚 Fonoaudiologia\n💚 Psicologia  \n💚 Fisioterapia\n💚 Terapia Ocupacional\n💚 Neuropsicologia`);
           }
           
           const newData = { ...stateData, patientName: name };
@@ -463,14 +512,7 @@ Só preciso confirmar: qual especialidade você precisa?
       if (!therapyArea) {
         this.logger.error('V8_SLOT_SEARCH_MISSING_THERAPY', { leadId, stateData, leadTherapyArea: lead.therapyArea });
         await jumpToState(leadId, STATES.COLLECT_THERAPY, stateData);
-        return this._reply(`Ops! Preciso confirmar a especialidade primeiro 💚
-
-Qual área você precisa?
-💚 Fonoaudiologia
-💚 Psicologia  
-💚 Fisioterapia
-💚 Terapia Ocupacional
-💚 Neuropsicologia`);
+        return this._reply(`Ops! Preciso confirmar a especialidade primeiro 💚\n\nQual área você precisa?\n\n💚 Fonoaudiologia\n💚 Psicologia  \n💚 Fisioterapia\n💚 Terapia Ocupacional\n💚 Neuropsicologia`);
       }
       
       if (!patientName) {
@@ -538,11 +580,7 @@ Qual área você precisa?
       // ❌ NÃO ENCONTROU SLOTS - Handoff para equipe
       this.logger.warn('V8_NO_SLOTS_FOUND_COMPLETE', { leadId, therapyArea, period: stateData.period, preferredDate });
       await jumpToState(leadId, STATES.HANDOFF, stateData);
-      return this._reply(`Hmm, não encontrei horários disponíveis para ${stateData.period || 'esse período'} nos próximos dias 😕
-
-Vou transferir para nossa equipe que vai verificar a agenda completa e te retornar com as melhores opções! 💚
-
-Aguarda só um minutinho...`);
+      return this._reply(`Hmm, não encontrei horários disponíveis para ${stateData.period || 'esse período'} nos próximos dias 😕\n\nVou transferir para nossa equipe que vai verificar a agenda completa e te retornar com as melhores opções! 💚\n\nAguarda só um minutinho...`);
 
     } catch (error) {
       this.logger.error('V8_SLOT_SEARCH_ERROR', { error: error.message, leadId, therapyArea: lead.therapyArea, isTimeout: error.message === 'SLOT_SEARCH_TIMEOUT' });
@@ -579,17 +617,16 @@ Aguarda só um minutinho...`);
   }
 
   async _saveComplaintAndAge(leadId, complaint, age) {
-    await Leads.updateOne({ _id: leadId }, {
-      $set: {
-        'autoBookingContext.complaint': complaint,
-        'patientInfo.age': age,
-      }
-    });
+    // age já deve vir resolvido como número (use resolveAgeNumber antes de chamar)
+    const update = { 'autoBookingContext.complaint': complaint };
+    if (age !== null && age !== undefined) update['patientInfo.age'] = age;
+    await Leads.updateOne({ _id: leadId }, { $set: update });
   }
 
   async _saveAge(leadId, age, birth) {
+    // age já deve vir resolvido como número (use resolveAgeNumber antes de chamar)
     const update = {};
-    if (age) update['patientInfo.age'] = age;
+    if (age !== null && age !== undefined) update['patientInfo.age'] = age;
     if (birth) update['patientInfo.birthDate'] = birth;
     await Leads.updateOne({ _id: leadId }, { $set: update });
   }
