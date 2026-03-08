@@ -181,20 +181,26 @@ function criarPlaceholder(outputPath, index) {
 }
 
 /**
- * Gera narração TTS
+ * Gera narração TTS em Português Brasileiro
  */
 async function gerarNarracao({ texto, outputPath }) {
-  logger.info(`[VIDEO ILUST] Gerando narração TTS...`);
+  logger.info(`[VIDEO ILUST] Gerando narração TTS (PT-BR)...`);
   
+  // Usa voz 'onyx' (masculina) ou 'nova' (feminina) - melhores para PT-BR
+  // OpenAI TTS suporta português brasileiro nativamente
   const response = await openai.audio.speech.create({
     model: 'tts-1',
-    voice: 'alloy',
+    voice: 'nova', // voz feminina, boa para conteúdo pediátrico/terapêutico
     input: texto,
-    speed: 0.95
+    speed: 0.95,
+    response_format: 'mp3'
   });
 
   const buffer = Buffer.from(await response.arrayBuffer());
   fs.writeFileSync(outputPath, buffer);
+  
+  const stats = fs.statSync(outputPath);
+  logger.info(`[VIDEO ILUST] ✅ Narração PT-BR gerada: ${(stats.size / 1024).toFixed(1)}KB`);
   
   return outputPath;
 }

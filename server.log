@@ -1,20 +1,164 @@
+🚀 IORedis conectando via HOST/PORT local...
+🌍 Modo detectado: development
+🔍 REDIS_URL existe? NÃO
+🚀 Conectando ao Redis Local: 127.0.0.1:6379
+⚠️ Certificado Sicoob não encontrado. PIX desabilitado.
+✅ GA4: Usando arquivo /home/user/projetos/CRM-CLINICA/back/config/ga4-key.json
+✅ GA4 Client inicializado
+✅ GA4_PROPERTY_ID: 486036516
+✅ Cloudinary: Configurado com sucesso
+[Planning Routes] ✅ Rotas de planejamento carregadas
+IO INIT: null
+🖥️ INSTANCE INFO: {
+  nodeAppInstance: undefined,
+  pmId: undefined,
+  instances: undefined,
+  isCluster: false
+}
+✅ Cron job de comissões mensais agendado (dia 1 às 8h)
+✅ Jobs de confirmação agendados: 9h e 18h (America/Sao_Paulo)
+⏰ Job de Alertas Diários agendado (09:00).
+✅ Cron do GMB agendado:
+   🏥 Especialidades: 06:00 (cria post para cada área que falta)
+   📝 Extras: 07:30(8h) / 11:30(12h) / 14:30(15h) / 18:30(19h)
+   🚀 Envio Make: a cada 30min das 8h às 22h
+[WhatsAppWeb] Inicializando...
+🔄 Iniciando conexão Redis...
+🔄 Iniciando conexão Redis...
+🖥️ Bull Board disponível em: /admin/queues
+(node:76782) [MONGOOSE] Warning: Duplicate schema index on {"status":1,"scheduledAt":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:76782) [MONGOOSE] Warning: Duplicate schema index on {"code":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:76782) [MONGOOSE] Warning: Duplicate schema index on {"jobId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+✅ Redis Client conectado!
+🚀 Redis conectado e validado!
+✅ Redis conectado
+💚 Health Check Redis: OK
+[WhatsAppWeb] Erro ao inicializar: The browser is already running for /home/user/projetos/CRM-CLINICA/back/.whatsapp-session/session. Use a different `userDataDir` or stop the running browser first.
+👷 Follow-up Worker iniciado com Amanda 2.0!
+[INACTIVE-CHECK] Verificando leads inativos...
+[INACTIVE-FOLLOWUP] Iniciando verificação de leads inativos...
+⏰ Follow-up Cron iniciado (scan a cada 3min + inactive check a cada 6h)
+[WARN] 2026-03-08T22:04:22.265Z — [META CLIENT] META_ACCESS_TOKEN não configurado
+[INFO] 2026-03-08T22:04:22.278Z — [VIDEO WORKER] 🎬 Worker inicializado (concurrency: 1)
+[INFO] 2026-03-08T22:04:22.293Z — [POST WORKER] 📝 Worker inicializado (concurrency: 3)
+📊 Iniciando cron de análise semanal de Follow-ups...
 
-> backend@1.0.0 dev
-> node scripts/start-dev.js
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║   📊 RESPONSE TRACKING CRON - AMANDA 2.0                     ║
+║                                                               ║
+║   Status: Inicializando...                                   ║
+║   Timezone: America/Sao_Paulo                               ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+    
+[08/03/2026, 19:04:22] [INFO] Executando verificações iniciais... {}
+✅ Connected to MongoDB
+🧠 [CRON] Inicializando cron de aprendizado...
+✅ [CRON] Agendado: todos os dias às 23:00 (America/Sao_Paulo)
+🧪 [CRON] Inicializando cron de regressão...
+✅ [CRON] Agendado: testes de regressão à meia-noite (America/Sao_Paulo)
 
-🔧 Iniciando ambiente de desenvolvimento...
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║   📍 GMB CRON - Google Meu Negócio                           ║
+║   Publicação via Make (Integromat)                           ║
+║   Timezone: America/Sao_Paulo                               ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+    
+[08/03/2026, 19:04:22] [GMB] MongoDB conectado 
+[08/03/2026, 19:04:22] [GMB] Agendando tarefas GMB... {"timezone":"America/Sao_Paulo"}
+[08/03/2026, 19:04:22] [GMB] Tarefas GMB agendadas! {"tasks":["generateDaily (8h)","sendToMake (8h05, 12h05, 15h05, 19h05)"]}
+[08/03/2026, 19:04:22] [GMB] GMB Cron iniciado {"makeConfigurado":true}
+⚠️ PIX Sicoob desabilitado: certificado não configurado
+🔗 Webhook PIX registrado com sucesso
+👀 Iniciando watcher de Followups...
+🚀 Server running on port 5000
+🌐 Environment: production
+[INACTIVE-FOLLOWUP] 1 leads inativos encontrados
+[08/03/2026, 19:04:23] [INFO] ✓ Sistema saudável (DB + socket + atividade recente) {
+  "database": true,
+  "socket": true,
+  "recentActivity": true
+}
+[08/03/2026, 19:04:23] [CRON] checkResponses - START
+[08/03/2026, 19:04:23] [INFO] Iniciando verificação de respostas pendentes... {}
+[INFO] Iniciando processamento de respostas pendentes { batchSize: 50, minAge: '24h' }
+[INACTIVE-FOLLOWUP] Lead 698749d7b1f7de4a3dd23d31 já atingiu limite de 3 follow-ups
+[INACTIVE-FOLLOWUP] Concluído: 0 follow-ups criados
+[INACTIVE-CHECK] Concluído: 0 follow-ups criados
+[INFO] Processando 50 follow-ups... {}
+⏳ Após filtro, nenhum follow-up válido.
+⚡ Novo cliente conectado: rOIXQsgSHfkXOT9rAAAB
+👥 Total de clientes: 1
+[WARN] Resposta fora da janela de tempo válida {
+  followupId: new ObjectId('6941a690fbcea767fb2ae5d7'),
+  sentAt: 2025-12-17T18:36:03.749Z,
+  respondedAt: 2026-01-06T20:27:30.000Z
+}
+[WARN] Resposta fora da janela de tempo válida {
+  followupId: new ObjectId('693ff8dfbb6ba6cc3ff61b21'),
+  sentAt: 2026-01-07T20:41:05.022Z,
+  respondedAt: 2026-01-22T14:27:46.000Z
+}
+[WARN] Resposta fora da janela de tempo válida {
+  followupId: new ObjectId('693ff8dfbb6ba6cc3ff61b2e'),
+  sentAt: 2026-01-07T20:41:08.899Z,
+  respondedAt: 2026-01-21T11:41:22.000Z
+}
+[SUCCESS] Processamento em lote concluído {
+  processed: 50,
+  responded: 0,
+  errors: 0,
+  errorDetails: [],
+  responseRate: '0.0%',
+  duration: '2419ms'
+}
+[08/03/2026, 19:04:25] [SUCCESS] Verificação concluída {
+  "processed": 50,
+  "responded": 0,
+  "errors": 0,
+  "responseRate": "0.0%"
+}
+[08/03/2026, 19:04:25] [CRON] checkResponses - SUCCESS
+[08/03/2026, 19:04:25] [SUCCESS] Tarefa concluída: checkResponses {
+  "duration": "2419ms"
+}
+[08/03/2026, 19:04:25] [SUCCESS] Verificações iniciais concluídas {}
+[08/03/2026, 19:04:25] [INFO] Agendando tarefas cron... {
+  "timezone": "America/Sao_Paulo",
+  "schedules": {
+    "CHECK_RESPONSES": "*/30 * * * *",
+    "IDENTIFY_COLD": "0 20 * * *",
+    "DAILY_REPORT": "0 21 * * *",
+    "HEALTH_CHECK": "*/15 * * * *"
+  }
+}
+[08/03/2026, 19:04:25] [SUCCESS] Tarefas agendadas com sucesso {
+  "tasks": 4
+}
 
-✅ Redis já está rodando!
-
-🚀 Iniciando servidor Node.js...
-
-file:///home/user/projetos/CRM-CLINICA/back/utils/patientDataExtractor.js:1
-import { parsePtBrDate, parseRelativeDate } from './dateParser.js';
-                        ^^^^^^^^^^^^^^^^^
-SyntaxError: The requested module './dateParser.js' does not provide an export named 'parseRelativeDate'
-    at ModuleJob._instantiate (node:internal/modules/esm/module_job:213:21)
-    at async ModuleJob.run (node:internal/modules/esm/module_job:320:5)
-    at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)
-    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
-
-Node.js v20.20.0
+╔═══════════════════════════════════════════════════════════════╗
+║                                                               ║
+║   ✅ SISTEMA INICIADO COM SUCESSO                            ║
+║                                                               ║
+║   Tarefas ativas:                                            ║
+║   • Verificar respostas: a cada 30min                        ║
+║   • Identificar frios: diariamente 20h                       ║
+║   • Relatório diário: diariamente 21h                        ║
+║   • Health check: a cada 15min                               ║
+║                                                               ║
+║   Pressione Ctrl+C para parar                                ║
+║                                                               ║
+╚═══════════════════════════════════════════════════════════════╝
+        
+[2026-03-08T22:04:35.426Z] GET → /api/pre-agendamento
+[2026-03-08T22:05:03.427Z] GET → /api/pre-agendamento
+⚠️ Cliente desconectado (client namespace disconnect)
+⚡ Novo cliente conectado: kXV8pfEeiZH9u1E2AAAD
+👥 Total de clientes: 1
+[2026-03-08T22:06:23.540Z] GET → /api/pre-agendamento
+[2026-03-08T22:07:21.160Z] GET → /api/pre-agendamento
+⏳ Após filtro, nenhum follow-up válido.

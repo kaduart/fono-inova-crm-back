@@ -113,6 +113,31 @@ const videoSchema = new mongoose.Schema({
     default: null
   },
   
+  // 🆕 Pós-produção manual (editor frontend)
+  videoEditadoUrl: {
+    type: String,
+    default: null
+  },
+  posProducaoStatus: {
+    type: String,
+    enum: ['idle', 'processing', 'ready', 'failed'],
+    default: 'idle'
+  },
+  posProducaoConfig: {
+    legendas:   { type: Boolean, default: true },
+    musica:     { type: String, default: null },
+    cta: {
+      texto:    { type: String, default: null },
+      subtexto: { type: String, default: null },
+      cor:      { type: String, default: '#ef4444' }
+    },
+    aplicadoEm: { type: Date, default: null }
+  },
+  posProducaoError: {
+    type: String,
+    default: null
+  },
+
   // Meta Ads (futuro)
   metaCampaignId: {
     type: String,
