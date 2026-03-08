@@ -1,7 +1,8 @@
-🚀 IORedis conectando via HOST/PORT local...
-🌍 Modo detectado: development
-🔍 REDIS_URL existe? NÃO
-🚀 Conectando ao Redis Local: 127.0.0.1:6379
+🚀 IORedis conectando via REDIS_URL...
+🌍 Modo detectado: production
+🔍 REDIS_URL existe? SIM
+🔗 REDIS_URL (mascarada): redis://localhost:6379
+🚀 Conectando ao Redis via REDIS_URL...
 ⚠️ Certificado Sicoob não encontrado. PIX desabilitado.
 ✅ GA4: Usando arquivo /home/user/projetos/CRM-CLINICA/back/config/ga4-key.json
 ✅ GA4 Client inicializado
@@ -26,22 +27,22 @@ IO INIT: null
 🔄 Iniciando conexão Redis...
 🔄 Iniciando conexão Redis...
 🖥️ Bull Board disponível em: /admin/queues
-(node:76782) [MONGOOSE] Warning: Duplicate schema index on {"status":1,"scheduledAt":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:83392) [MONGOOSE] Warning: Duplicate schema index on {"status":1,"scheduledAt":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:76782) [MONGOOSE] Warning: Duplicate schema index on {"code":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
-(node:76782) [MONGOOSE] Warning: Duplicate schema index on {"jobId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:83392) [MONGOOSE] Warning: Duplicate schema index on {"code":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:83392) [MONGOOSE] Warning: Duplicate schema index on {"jobId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+✅ Redis conectado
 ✅ Redis Client conectado!
 🚀 Redis conectado e validado!
-✅ Redis conectado
 💚 Health Check Redis: OK
 [WhatsAppWeb] Erro ao inicializar: The browser is already running for /home/user/projetos/CRM-CLINICA/back/.whatsapp-session/session. Use a different `userDataDir` or stop the running browser first.
 👷 Follow-up Worker iniciado com Amanda 2.0!
 [INACTIVE-CHECK] Verificando leads inativos...
 [INACTIVE-FOLLOWUP] Iniciando verificação de leads inativos...
 ⏰ Follow-up Cron iniciado (scan a cada 3min + inactive check a cada 6h)
-[WARN] 2026-03-08T22:04:22.265Z — [META CLIENT] META_ACCESS_TOKEN não configurado
-[INFO] 2026-03-08T22:04:22.278Z — [VIDEO WORKER] 🎬 Worker inicializado (concurrency: 1)
-[INFO] 2026-03-08T22:04:22.293Z — [POST WORKER] 📝 Worker inicializado (concurrency: 3)
+[WARN] 2026-03-08T22:25:10.649Z — [META CLIENT] META_ACCESS_TOKEN não configurado
+[INFO] 2026-03-08T22:25:10.672Z — [VIDEO WORKER] 🎬 Worker inicializado (concurrency: 1)
+[INFO] 2026-03-08T22:25:10.681Z — [POST WORKER] 📝 Worker inicializado (concurrency: 3)
 📊 Iniciando cron de análise semanal de Follow-ups...
 
 ╔═══════════════════════════════════════════════════════════════╗
@@ -53,7 +54,7 @@ IO INIT: null
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
     
-[08/03/2026, 19:04:22] [INFO] Executando verificações iniciais... {}
+[08/03/2026, 19:25:10] [INFO] Executando verificações iniciais... {}
 ✅ Connected to MongoDB
 🧠 [CRON] Inicializando cron de aprendizado...
 ✅ [CRON] Agendado: todos os dias às 23:00 (America/Sao_Paulo)
@@ -68,31 +69,29 @@ IO INIT: null
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
     
-[08/03/2026, 19:04:22] [GMB] MongoDB conectado 
-[08/03/2026, 19:04:22] [GMB] Agendando tarefas GMB... {"timezone":"America/Sao_Paulo"}
-[08/03/2026, 19:04:22] [GMB] Tarefas GMB agendadas! {"tasks":["generateDaily (8h)","sendToMake (8h05, 12h05, 15h05, 19h05)"]}
-[08/03/2026, 19:04:22] [GMB] GMB Cron iniciado {"makeConfigurado":true}
+[08/03/2026, 19:25:10] [GMB] MongoDB conectado 
+[08/03/2026, 19:25:10] [GMB] Agendando tarefas GMB... {"timezone":"America/Sao_Paulo"}
+[08/03/2026, 19:25:10] [GMB] Tarefas GMB agendadas! {"tasks":["generateDaily (8h)","sendToMake (8h05, 12h05, 15h05, 19h05)"]}
+[08/03/2026, 19:25:10] [GMB] GMB Cron iniciado {"makeConfigurado":true}
 ⚠️ PIX Sicoob desabilitado: certificado não configurado
 🔗 Webhook PIX registrado com sucesso
 👀 Iniciando watcher de Followups...
 🚀 Server running on port 5000
 🌐 Environment: production
 [INACTIVE-FOLLOWUP] 1 leads inativos encontrados
-[08/03/2026, 19:04:23] [INFO] ✓ Sistema saudável (DB + socket + atividade recente) {
+⏳ Após filtro, nenhum follow-up válido.
+[08/03/2026, 19:25:11] [INFO] ✓ Sistema saudável (DB + socket + atividade recente) {
   "database": true,
   "socket": true,
   "recentActivity": true
 }
-[08/03/2026, 19:04:23] [CRON] checkResponses - START
-[08/03/2026, 19:04:23] [INFO] Iniciando verificação de respostas pendentes... {}
+[08/03/2026, 19:25:11] [CRON] checkResponses - START
+[08/03/2026, 19:25:11] [INFO] Iniciando verificação de respostas pendentes... {}
 [INFO] Iniciando processamento de respostas pendentes { batchSize: 50, minAge: '24h' }
 [INACTIVE-FOLLOWUP] Lead 698749d7b1f7de4a3dd23d31 já atingiu limite de 3 follow-ups
 [INACTIVE-FOLLOWUP] Concluído: 0 follow-ups criados
 [INACTIVE-CHECK] Concluído: 0 follow-ups criados
 [INFO] Processando 50 follow-ups... {}
-⏳ Após filtro, nenhum follow-up válido.
-⚡ Novo cliente conectado: rOIXQsgSHfkXOT9rAAAB
-👥 Total de clientes: 1
 [WARN] Resposta fora da janela de tempo válida {
   followupId: new ObjectId('6941a690fbcea767fb2ae5d7'),
   sentAt: 2025-12-17T18:36:03.749Z,
@@ -114,20 +113,20 @@ IO INIT: null
   errors: 0,
   errorDetails: [],
   responseRate: '0.0%',
-  duration: '2419ms'
+  duration: '2486ms'
 }
-[08/03/2026, 19:04:25] [SUCCESS] Verificação concluída {
+[08/03/2026, 19:25:14] [SUCCESS] Verificação concluída {
   "processed": 50,
   "responded": 0,
   "errors": 0,
   "responseRate": "0.0%"
 }
-[08/03/2026, 19:04:25] [CRON] checkResponses - SUCCESS
-[08/03/2026, 19:04:25] [SUCCESS] Tarefa concluída: checkResponses {
-  "duration": "2419ms"
+[08/03/2026, 19:25:14] [CRON] checkResponses - SUCCESS
+[08/03/2026, 19:25:14] [SUCCESS] Tarefa concluída: checkResponses {
+  "duration": "2487ms"
 }
-[08/03/2026, 19:04:25] [SUCCESS] Verificações iniciais concluídas {}
-[08/03/2026, 19:04:25] [INFO] Agendando tarefas cron... {
+[08/03/2026, 19:25:14] [SUCCESS] Verificações iniciais concluídas {}
+[08/03/2026, 19:25:14] [INFO] Agendando tarefas cron... {
   "timezone": "America/Sao_Paulo",
   "schedules": {
     "CHECK_RESPONSES": "*/30 * * * *",
@@ -136,7 +135,7 @@ IO INIT: null
     "HEALTH_CHECK": "*/15 * * * *"
   }
 }
-[08/03/2026, 19:04:25] [SUCCESS] Tarefas agendadas com sucesso {
+[08/03/2026, 19:25:14] [SUCCESS] Tarefas agendadas com sucesso {
   "tasks": 4
 }
 
@@ -154,11 +153,480 @@ IO INIT: null
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
         
-[2026-03-08T22:04:35.426Z] GET → /api/pre-agendamento
-[2026-03-08T22:05:03.427Z] GET → /api/pre-agendamento
-⚠️ Cliente desconectado (client namespace disconnect)
-⚡ Novo cliente conectado: kXV8pfEeiZH9u1E2AAAD
+⚡ Novo cliente conectado: f4ngaCQfOlq3VbjNAAAB
 👥 Total de clientes: 1
-[2026-03-08T22:06:23.540Z] GET → /api/pre-agendamento
-[2026-03-08T22:07:21.160Z] GET → /api/pre-agendamento
+[2026-03-08T22:25:22.550Z] GET → /api/pre-agendamento
+[2026-03-08T22:26:22.994Z] GET → /api/pre-agendamento
+⚠️ Cliente desconectado (client namespace disconnect)
+⚡ Novo cliente conectado: O_n2dF3DRe8cofEWAAAD
+👥 Total de clientes: 1
+[2026-03-08T22:27:21.285Z] GET → /api/pre-agendamento
+[2026-03-08T22:28:21.829Z] GET → /api/pre-agendamento
 ⏳ Após filtro, nenhum follow-up válido.
+⚠️ Cliente desconectado (client namespace disconnect)
+⚡ Novo cliente conectado: uzE0NxlfrSkaCESqAAAF
+👥 Total de clientes: 1
+[2026-03-08T22:29:23.014Z] GET → /api/pre-agendamento
+[2026-03-08T22:30:23.636Z] GET → /api/pre-agendamento
+[2026-03-08T22:30:32.633Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:30:35.641Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:30:36.587Z] GET → /api/pre-agendamento
+[2026-03-08T22:30:40.257Z] POST → /api/videos/69add270dd6f61e9a5f88005/pos-producao
+[INFO] 2026-03-08T22:30:40.353Z — [POS-PRODUCAO] 🎬 Iniciando edição vídeo 69add270dd6f61e9a5f88005
+[INFO] 2026-03-08T22:30:40.353Z — [POS-PRODUCAO] Config: legendas=true, musica=calma, cta={"texto":"Agende sua consulta agora","subtexto":"Clique no link da bio 💚","cor":"#ef4444"}
+[INFO] 2026-03-08T22:30:40.353Z — [POS-VEO] 1/5 Baixando vídeo: https://res.cloudinary.com/dapgwyfcd/video/upload/v1772999850/fono-inova/ai-videos/veo/veo_narrado_1772999760869.mp4
+[INFO] 2026-03-08T22:30:41.016Z — [POS-VEO] Duração: 40.9s
+[INFO] 2026-03-08T22:30:41.017Z — [POS-VEO] 2/5 Gerando legendas...
+[INFO] 2026-03-08T22:30:41.017Z — [WHISPER] Enviando para OpenAI Whisper API...
+[2026-03-08T22:30:42.207Z] GET → /api/videos
+[INFO] 2026-03-08T22:30:45.042Z — [WHISPER] ✅ 10 segmentos
+[INFO] 2026-03-08T22:30:45.042Z — [ASS] Gerando arquivo: /home/user/projetos/CRM-CLINICA/back/tmp/pos_producao/subs_1773009040353.ass com 10 segmentos
+[INFO] 2026-03-08T22:30:45.042Z — [ASS] ✅ Arquivo criado: /home/user/projetos/CRM-CLINICA/back/tmp/pos_producao/subs_1773009040353.ass (1659 bytes)
+[INFO] 2026-03-08T22:30:45.043Z — [POS-VEO] 3/5 Aplicando edições FFmpeg...
+[INFO] 2026-03-08T22:30:45.043Z — [FFMPEG-POS] ✅ Música: /home/user/projetos/CRM-CLINICA/back/assets/music/musica_calma.mp3
+[INFO] 2026-03-08T22:30:45.044Z — [FFMPEG-POS] ✅ ASS encontrado: /home/user/projetos/CRM-CLINICA/back/tmp/pos_producao/subs_1773009040353.ass (1672 bytes)
+[INFO] 2026-03-08T22:30:45.044Z — [FFMPEG-POS] CTA: texto='Agende sua consulta agora', cor=0xef4444, enable=between(t,0,5)+gte(t,35.92)
+[INFO] 2026-03-08T22:30:45.045Z — [FFMPEG-POS] Filter complex: [0:v]ass='/home/user/projetos/CRM-CLINICA/back/tmp/pos_producao/subs_1773009040353.ass'[vsubs];[vsubs]drawbox=x=0:y=ih-220:w=iw:h=220:color=0xef4444@0.90:t=fill:enable='between(t,0,5)+gte(t,35.92)'[vcta_bg];[vcta_bg]drawtext=text='Agende sua consulta agora':fontsize=56:fontcolor=white:x=(w-text_w)/2...
+[INFO] 2026-03-08T22:30:45.049Z — [FFMPEG-POS] Command: ffmpeg -i /home/user/projetos/CRM-CLINICA/back/tmp/pos_producao/raw_1773009040353.mp4 -i /home/user/projetos/CRM-CLINICA/back/assets/music/musica_calma.mp3 -y -filter_complex [0:v]ass='/home/user/proj...
+[2026-03-08T22:30:50.252Z] GET → /api/videos
+[2026-03-08T22:31:01.442Z] GET → /api/videos
+[INFO] 2026-03-08T22:31:04.429Z — [POS-VEO] 4/5 Validando...
+[INFO] 2026-03-08T22:31:04.520Z — [POS-VEO] ✅ Vídeo gerado: 40.9s / 8.3MB
+[INFO] 2026-03-08T22:31:04.520Z — [POS-VEO] 5/5 Enviando ao Cloudinary...
+[2026-03-08T22:31:06.904Z] GET → /api/pre-agendamento
+[2026-03-08T22:31:09.650Z] GET → /api/videos
+[INFO] 2026-03-08T22:31:16.294Z — [POS-VEO] ✅ Pronto: https://res.cloudinary.com/dapgwyfcd/video/upload/v1773009068/clinica/videos/editados/video_edit_69add270dd6f61e9a5f88005_1773009064520.mp4
+[INFO] 2026-03-08T22:31:16.327Z — [POS-PRODUCAO] ✅ Vídeo 69add270dd6f61e9a5f88005 editado: https://res.cloudinary.com/dapgwyfcd/video/upload/v1773009068/clinica/videos/editados/video_edit_69add270dd6f61e9a5f88005_1773009064520.mp4
+[2026-03-08T22:31:17.905Z] GET → /api/videos
+[2026-03-08T22:31:37.547Z] GET → /api/pre-agendamento
+⏳ Após filtro, nenhum follow-up válido.
+⚠️ Cliente desconectado (client namespace disconnect)
+[2026-03-08T22:32:22.464Z] GET → /api/pre-agendamento
+⚡ Novo cliente conectado: OUosT0pMC9Ha-7IuAAAH
+👥 Total de clientes: 1
+[2026-03-08T22:32:53.698Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:32:53.987Z] GET → /api/pre-agendamento
+[2026-03-08T22:32:55.734Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:33:04.900Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:33:05.552Z] GET → /api/pre-agendamento
+[2026-03-08T22:33:14.067Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:33:36.408Z] GET → /api/pre-agendamento
+[2026-03-08T22:33:44.614Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:34:06.583Z] GET → /api/pre-agendamento
+[2026-03-08T22:34:37.262Z] GET → /api/pre-agendamento
+⏳ Após filtro, nenhum follow-up válido.
+[2026-03-08T22:35:07.424Z] GET → /api/pre-agendamento
+[2026-03-08T22:35:34.763Z] GET → /api/pre-agendamento
+[2026-03-08T22:35:55.429Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:36:04.589Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:36:05.257Z] GET → /api/pre-agendamento
+[2026-03-08T22:36:16.695Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:36:25.854Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:36:35.021Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:36:35.676Z] GET → /api/pre-agendamento
+[2026-03-08T22:36:56.251Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:37:05.406Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:37:06.350Z] GET → /api/pre-agendamento
+[2026-03-08T22:37:33.731Z] GET → /api/pre-agendamento
+⏳ Após filtro, nenhum follow-up válido.
+[2026-03-08T22:38:23.664Z] GET → /api/pre-agendamento
+[2026-03-08T22:38:36.201Z] POST → /api/renew-token
+⚠️ Cliente desconectado (client namespace disconnect)
+[2026-03-08T22:39:23.728Z] GET → /api/pre-agendamento
+⚡ Novo cliente conectado: i89j2mPwTxO9Cqa8AAAJ
+👥 Total de clientes: 1
+[2026-03-08T22:40:21.940Z] GET → /api/pre-agendamento
+⚠️ Cliente desconectado (client namespace disconnect)
+[2026-03-08T22:41:22.518Z] GET → /api/pre-agendamento
+⚡ Novo cliente conectado: IPkphrS_tp-rS9daAAAL
+👥 Total de clientes: 1
+⏳ Após filtro, nenhum follow-up válido.
+[2026-03-08T22:42:23.667Z] GET → /api/pre-agendamento
+⚠️ Cliente desconectado (client namespace disconnect)
+[2026-03-08T22:43:13.842Z] GET → /api/pre-agendamento
+[2026-03-08T22:43:13.852Z] GET → /api/whatsapp/contacts
+⚡ Novo cliente conectado: RFgz5ZHSegwwR_SeAAAN
+👥 Total de clientes: 2
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:43:14.851Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+⚠️ Cliente desconectado (transport close)
+[2026-03-08T22:43:18.400Z] GET → /api/whatsapp/contacts
+[2026-03-08T22:43:18.404Z] GET → /api/patients
+[PATIENTS LIST] Search: "undefined", Limit: 50
+[2026-03-08T22:43:18.409Z] GET → /api/admin/total-patients
+[2026-03-08T22:43:18.413Z] GET → /api/doctors/inactive/list
+[2026-03-08T22:43:18.418Z] GET → /api/admin/patient-overview
+[2026-03-08T22:43:18.423Z] GET → /api/doctors/active/list
+[2026-03-08T22:43:18.441Z] GET → /api/users/me
+[PATIENTS LIST] Encontrados: 50 pacientes
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:43:18.479Z] GET → /api/whatsapp/contacts
+[2026-03-08T22:43:18.498Z] GET → /api/users/me
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+⚡ Novo cliente conectado: NqvLKjOhbUkAMhxJAAAP
+👥 Total de clientes: 1
+[2026-03-08T22:43:19.270Z] GET → /api/pre-agendamento
+[2026-03-08T22:43:19.286Z] GET → /api/admin/profile
+[2026-03-08T22:43:19.291Z] GET → /api/dashboard/overview
+[2026-03-08T22:43:19.299Z] GET → /api/payments
+[2026-03-08T22:43:19.449Z] GET → /api/pre-agendamento
+[2026-03-08T22:43:19.972Z] GET → /api/gmb/posts
+[2026-03-08T22:43:19.978Z] GET → /api/gmb/posts/stats
+[2026-03-08T22:43:19.983Z] GET → /api/instagram/posts
+[2026-03-08T22:43:19.989Z] GET → /api/instagram/posts/stats
+[2026-03-08T22:43:19.994Z] GET → /api/facebook/posts
+[2026-03-08T22:43:20.183Z] GET → /api/facebook/posts/stats
+[2026-03-08T22:43:20.186Z] GET → /api/videos
+[2026-03-08T22:43:20.239Z] GET → /api/payments
+[2026-03-08T22:43:20.244Z] GET → /api/facebook/posts
+[2026-03-08T22:43:20.268Z] GET → /api/instagram/posts
+[2026-03-08T22:43:20.299Z] GET → /api/gmb/posts/stats
+[2026-03-08T22:43:20.346Z] GET → /api/videos
+[2026-03-08T22:43:20.394Z] GET → /api/gmb/posts
+[2026-03-08T22:43:20.399Z] GET → /api/instagram/posts/stats
+[2026-03-08T22:43:20.425Z] GET → /api/facebook/posts/stats
+[2026-03-08T22:43:30.569Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:43:36.289Z] POST → /api/videos/69add270dd6f61e9a5f88005/pos-producao
+[INFO] 2026-03-08T22:43:36.358Z — [POS-PRODUCAO] 🎬 Iniciando edição vídeo 69add270dd6f61e9a5f88005
+[INFO] 2026-03-08T22:43:36.358Z — [POS-PRODUCAO] Config: legendas=true, musica=esperancosa, cta={"texto":"Agende uma consulta","subtexto":"Link na bio 💚","cor":"#10b981"}
+[INFO] 2026-03-08T22:43:36.358Z — [POS-VEO] 1/5 Baixando vídeo: https://res.cloudinary.com/dapgwyfcd/video/upload/v1772999850/fono-inova/ai-videos/veo/veo_narrado_1772999760869.mp4
+[INFO] 2026-03-08T22:43:36.984Z — [POS-VEO] Duração: 40.9s
+[INFO] 2026-03-08T22:43:36.984Z — [POS-VEO] 2/5 Gerando legendas...
+[INFO] 2026-03-08T22:43:36.984Z — [WHISPER] Enviando para OpenAI Whisper API...
+[2026-03-08T22:43:38.870Z] GET → /api/videos
+[INFO] 2026-03-08T22:43:40.397Z — [WHISPER] ✅ 10 segmentos
+[INFO] 2026-03-08T22:43:40.397Z — [ASS] Gerando arquivo: /home/user/projetos/CRM-CLINICA/back/tmp/pos_producao/subs_1773009816358.ass com 10 segmentos
+[INFO] 2026-03-08T22:43:40.398Z — [ASS] ✅ Arquivo criado: /home/user/projetos/CRM-CLINICA/back/tmp/pos_producao/subs_1773009816358.ass (1659 bytes)
+[INFO] 2026-03-08T22:43:40.398Z — [POS-VEO] 3/5 Aplicando edições FFmpeg...
+[INFO] 2026-03-08T22:43:40.399Z — [FFMPEG-POS] ✅ Música: /home/user/projetos/CRM-CLINICA/back/assets/music/musica_esperancosa.mp3
+[INFO] 2026-03-08T22:43:40.399Z — [FFMPEG-POS] ✅ ASS encontrado: /home/user/projetos/CRM-CLINICA/back/tmp/pos_producao/subs_1773009816358.ass (1672 bytes)
+[INFO] 2026-03-08T22:43:40.400Z — [FFMPEG-POS] CTA: texto='Agende uma consulta', cor=0x10b981, enable=between(t,0,5)+gte(t,35.92)
+[INFO] 2026-03-08T22:43:40.400Z — [FFMPEG-POS] Filter complex: [0:v]ass='/home/user/projetos/CRM-CLINICA/back/tmp/pos_producao/subs_1773009816358.ass'[vsubs];[vsubs]drawbox=x=0:y=ih-220:w=iw:h=220:color=0x10b981@0.90:t=fill:enable='between(t,0,5)+gte(t,35.92)'[vcta_bg];[vcta_bg]drawtext=text='Agende uma consulta':fontsize=56:fontcolor=white:x=(w-text_w)/2:y=h-1...
+[INFO] 2026-03-08T22:43:40.409Z — [FFMPEG-POS] Command: ffmpeg -i /home/user/projetos/CRM-CLINICA/back/tmp/pos_producao/raw_1773009816358.mp4 -i /home/user/projetos/CRM-CLINICA/back/assets/music/musica_esperancosa.mp3 -y -filter_complex [0:v]ass='/home/use...
+[2026-03-08T22:43:46.328Z] GET → /api/videos
+[2026-03-08T22:43:48.922Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:43:50.088Z] GET → /api/pre-agendamento
+[2026-03-08T22:43:53.776Z] GET → /api/videos
+[INFO] 2026-03-08T22:43:55.711Z — [POS-VEO] 4/5 Validando...
+[INFO] 2026-03-08T22:43:55.836Z — [POS-VEO] ✅ Vídeo gerado: 40.9s / 8.3MB
+[INFO] 2026-03-08T22:43:55.837Z — [POS-VEO] 5/5 Enviando ao Cloudinary...
+[2026-03-08T22:44:01.790Z] GET → /api/videos
+[2026-03-08T22:44:12.930Z] GET → /api/videos
+[INFO] 2026-03-08T22:44:18.450Z — [POS-VEO] ✅ Pronto: https://res.cloudinary.com/dapgwyfcd/video/upload/v1773009851/clinica/videos/editados/video_edit_69add270dd6f61e9a5f88005_1773009835838.mp4
+[INFO] 2026-03-08T22:44:18.497Z — [POS-PRODUCAO] ✅ Vídeo 69add270dd6f61e9a5f88005 editado: https://res.cloudinary.com/dapgwyfcd/video/upload/v1773009851/clinica/videos/editados/video_edit_69add270dd6f61e9a5f88005_1773009835838.mp4
+[2026-03-08T22:44:20.391Z] GET → /api/pre-agendamento
+[2026-03-08T22:44:21.320Z] GET → /api/videos
+[2026-03-08T22:44:28.601Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:44:40.613Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+⏳ Após filtro, nenhum follow-up válido.
+[2026-03-08T22:44:49.780Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:44:50.663Z] GET → /api/pre-agendamento
+[2026-03-08T22:44:58.950Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:45:08.104Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:45:20.256Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:45:21.426Z] GET → /api/pre-agendamento
+[2026-03-08T22:45:29.422Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:45:51.624Z] GET → /api/pre-agendamento
+[2026-03-08T22:46:12.983Z] [PID: 83392] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Sun Mar 08 2026 19:45:00 GMT-0300 (Brasilia Standard Time)! Possible blocking IO or high CPU user at the same process used by node-cron.
+[2026-03-08T22:46:19.404Z] GET → /api/pre-agendamento
+⚠️ Cliente desconectado (client namespace disconnect)
+[2026-03-08T22:47:18.413Z] GET → /api/whatsapp/contacts
+⚡ Novo cliente conectado: KGjMZCP6ceU9s2VYAAAR
+👥 Total de clientes: 2
+[2026-03-08T22:47:18.418Z] GET → /api/pre-agendamento
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:47:19.131Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:47:20.318Z] GET → /api/pre-agendamento
+[2026-03-08T22:47:28.310Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:47:49.583Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:47:50.450Z] GET → /api/pre-agendamento
+[2026-03-08T22:47:58.736Z] GET → /api/whatsapp/contacts
+⏳ Após filtro, nenhum follow-up válido.
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+⚠️ Cliente desconectado (transport close)
+[2026-03-08T22:48:00.948Z] GET → /api/whatsapp/contacts
+[2026-03-08T22:48:00.952Z] GET → /api/patients
+[PATIENTS LIST] Search: "undefined", Limit: 50
+[2026-03-08T22:48:00.958Z] GET → /api/admin/total-patients
+[2026-03-08T22:48:00.961Z] GET → /api/admin/patient-overview
+[2026-03-08T22:48:00.964Z] GET → /api/users/me
+[2026-03-08T22:48:00.968Z] GET → /api/doctors/active/list
+[PATIENTS LIST] Encontrados: 50 pacientes
+[2026-03-08T22:48:01.014Z] GET → /api/doctors/inactive/list
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:48:01.031Z] GET → /api/whatsapp/contacts
+[2026-03-08T22:48:01.038Z] GET → /api/users/me
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+⚡ Novo cliente conectado: I9rIHar31Z5Kjhv_AAAT
+👥 Total de clientes: 1
+[2026-03-08T22:48:01.727Z] GET → /api/pre-agendamento
+[2026-03-08T22:48:01.742Z] GET → /api/dashboard/overview
+[2026-03-08T22:48:01.746Z] GET → /api/admin/profile
+[2026-03-08T22:48:01.750Z] GET → /api/payments
+[2026-03-08T22:48:01.854Z] GET → /api/pre-agendamento
+[2026-03-08T22:48:02.305Z] GET → /api/instagram/posts
+[2026-03-08T22:48:02.309Z] GET → /api/instagram/posts/stats
+[2026-03-08T22:48:02.313Z] GET → /api/gmb/posts
+[2026-03-08T22:48:02.318Z] GET → /api/gmb/posts/stats
+[2026-03-08T22:48:02.324Z] GET → /api/facebook/posts
+[2026-03-08T22:48:02.557Z] GET → /api/facebook/posts/stats
+[2026-03-08T22:48:02.562Z] GET → /api/videos
+[2026-03-08T22:48:02.565Z] GET → /api/facebook/posts
+[2026-03-08T22:48:02.568Z] GET → /api/instagram/posts
+[2026-03-08T22:48:02.581Z] GET → /api/payments
+[2026-03-08T22:48:02.626Z] GET → /api/gmb/posts/stats
+[2026-03-08T22:48:02.629Z] GET → /api/gmb/posts
+[2026-03-08T22:48:02.675Z] GET → /api/videos
+[2026-03-08T22:48:02.679Z] GET → /api/instagram/posts/stats
+[2026-03-08T22:48:03.009Z] GET → /api/facebook/posts/stats
+[2026-03-08T22:48:13.113Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:48:22.290Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 567 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '556293187795',
+  leadId: '69acab3d18845e6be3c19fd6',
+  type: 'string'
+}
+[2026-03-08T22:48:32.517Z] GET → /api/pre-agendamento
+[2026-03-08T22:49:02.662Z] GET → /api/pre-agendamento
+[2026-03-08T22:49:34.081Z] GET → /api/pre-agendamento
+[2026-03-08T22:50:04.270Z] GET → /api/pre-agendamento
