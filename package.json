@@ -4,8 +4,8 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "node -r dotenv/config server.js",
-    "dev": "node scripts/start-dev.js",
+    "start": "NODE_OPTIONS=--dns-result-order=ipv4first node -r dotenv/config server.js",
+    "dev": "NODE_OPTIONS=--dns-result-order=ipv4first node scripts/start-dev.js",
     "stop": "node scripts/stop-dev.js",
     "restart": "npm stop && npm run dev",
     "cron": "node -r dotenv/config ./workers/followup.cron.js",

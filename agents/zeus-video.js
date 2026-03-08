@@ -62,17 +62,28 @@ Retorne APENAS o JSON solicitado, sem markdown, sem explicações.`;
 /**
  * Gera roteiro de vídeo completo
  */
-export async function gerarRoteiro({ tema, especialidade, funil = 'TOPO', duracao = 60 }) {
+export async function gerarRoteiro({ tema, especialidade, funil = 'TOPO', duracao = 60, tone = 'educativo' }) {
   const profissional = ESPECIALIDADE_PROFISSIONAL[especialidade?.toLowerCase()] || 'fono_ana';
   const nomeProfissional = NOMES_PROFISSIONAL[profissional];
   
-  logger.info(`[ZEUS] Gerando roteiro: "${tema}" | ${nomeProfissional} | ${funil}`);
+  // Definir instruções de tom baseado no parâmetro tone
+  const toneInstructions = {
+    emotional: 'Tom EMOCIONAL: toque na dor, angústia e urgência. Use empatia profunda, fale sobre os desafios emocionais das mães. Crie conexão através da vulnerabilidade.',
+    educativo: 'Tom EDUCATIVO: ensine algo novo de forma clara e acessível. Use exemplos práticos, dados simples e dicas aplicáveis. Mãe deve sair mais informada.',
+    inspiracional: 'Tom INSPIRACIONAL: histórias de superação, transformação e esperança. Mostre que é possível evoluir. Final motivador que eleve a autoestima.',
+    bastidores: 'Tom BASTIDORES: mostre o dia a dia da clínica, equipe em ação, momentos reais. Humanize, mostre proximidade e o ambiente acolhedor.'
+  };
+  
+  const toneInstruction = toneInstructions[tone] || toneInstructions.educativo;
+  
+  logger.info(`[ZEUS] Gerando roteiro: "${tema}" | ${nomeProfissional} | ${funil} | Tom: ${tone}`);
 
   const userPrompt = `Tema: "${tema}"
 Especialidade: ${especialidade}
 Profissional: ${nomeProfissional}
 Funil: ${funil} (${funil === 'TOPO' ? 'educativo/conscientização' : funil === 'MEIO' ? 'institucional/confiança' : 'conversão/agendamento'})
 Duração alvo: ${duracao} segundos (~${Math.floor(duracao * 2.2)} palavras)
+TOM DE VOZ: ${toneInstruction}
 
 Gere o roteiro em formato JSON:
 {

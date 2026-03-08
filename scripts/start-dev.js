@@ -75,7 +75,8 @@ async function main() {
     
     const server = spawn('node', ['-r', 'dotenv/config', 'server.js'], {
         stdio: 'inherit',
-        shell: true
+        shell: true,
+        env: { ...process.env, NODE_OPTIONS: '--dns-result-order=ipv4first' }
     });
     
     server.on('close', (code) => {

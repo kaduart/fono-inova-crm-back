@@ -1,4 +1,10 @@
 // ======================================================
+// 🌐 Fix WSL2: força DNS a preferir IPv4 (resolve ETIMEDOUT no undici/fetch)
+// ======================================================
+import dns from 'node:dns';
+dns.setDefaultResultOrder('ipv4first');
+
+// ======================================================
 // 🧱 Importações principais
 // ======================================================
 // import "./mongooseTrap.js";
