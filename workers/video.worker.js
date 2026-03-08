@@ -82,7 +82,7 @@ async function mixarNarracaoVeo(videoUrl, audioPath, outputPath) {
       cmd.input(LOGO_PATH);
       cmd.complexFilter([
         '[2:v]scale=110:-1[logo]',
-        '[0:v][logo]overlay=15:H-h-15[v]'
+        '[0:v][logo]overlay=W-w-15:H-h-15[v]'
       ]);
       cmd.outputOptions([
         '-map [v]',
@@ -217,12 +217,12 @@ async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil =
     const filters = [];
     let   vLabel  = '[0:v]';
 
-    // Logo overlay
+    // Logo overlay - canto inferior direito
     if (hasLogo) {
       const logoIdx = hasMusic ? 3 : 2;
       filters.push(
         `[${logoIdx}:v]scale=110:-1[logo]`,
-        `${vLabel}[logo]overlay=15:H-h-15[v]`
+        `${vLabel}[logo]overlay=W-w-15:H-h-15[v]`
       );
       vLabel = '[v]';
     }
