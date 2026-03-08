@@ -19,6 +19,7 @@ export const STATES = {
     IDLE: 'IDLE',
     GREETING: 'GREETING',
     COLLECT_THERAPY: 'COLLECT_THERAPY',
+    COLLECT_NEURO_TYPE: 'COLLECT_NEURO_TYPE',  // laudo vs acompanhamento (neuropsico)
     COLLECT_NAME: 'COLLECT_NAME',
     COLLECT_BIRTH: 'COLLECT_BIRTH',
     COLLECT_COMPLAINT: 'COLLECT_COMPLAINT',
@@ -227,10 +228,10 @@ export async function incrementRetry(leadId) {
         await Leads.findByIdAndUpdate(leadId, {
             $set: { currentState: STATES.HANDOFF, retryCount: 0 }
         });
-        return { count, handoff: true };
+        return { count, retryCount: count, handoff: true };
     }
 
-    return { count, handoff: false };
+    return { count, retryCount: count, handoff: false };
 }
 
 // ═══════════════════════════════════════════
@@ -239,6 +240,7 @@ export async function incrementRetry(leadId) {
 
 const RESUME_HINTS = {
     [STATES.COLLECT_THERAPY]: '...voltando ao que importa: qual especialidade você procura? 💚',
+    [STATES.COLLECT_NEURO_TYPE]: '...voltando: você precisa de um *laudo neuropsicológico* ou *acompanhamento terapêutico*? 💚',
     [STATES.COLLECT_NAME]: '...continuando de onde paramos: qual o nome completo do paciente? 💚',
     [STATES.COLLECT_BIRTH]: '...voltando ao agendamento: qual a data de nascimento? 💚',
     [STATES.COLLECT_COMPLAINT]: '...retomando: qual é a situação principal que gostaria de tratar? 💚',
@@ -264,6 +266,11 @@ export function isAutoResume(text, suspendedState) {
     const t = text.trim();
 
     const checks = {
+        // Retomada quando user manda especialidade enquanto estava em COLLECT_THERAPY suspenso
+        // Sem \b no final — "neuropsicologia" contém "neuropsico" como prefixo
+        [STATES.COLLECT_THERAPY]: () => /(^|\s)(fono|psico|fisio|neuropsico|ocupa[cç]|musico|psicopedag|linguinha|freio\s*lingual|neuropsi)/i.test(t),
+        // Retomada quando user responde laudo/acompanhamento enquanto estava em COLLECT_NEURO_TYPE suspenso
+        [STATES.COLLECT_NEURO_TYPE]: () => /\b(laudo|relat[oó]rio|diagn[oó]stico|acompanhamento|terapia|sess[oõ]es?)\b/i.test(t),
         [STATES.COLLECT_NAME]: () => t.length >= 3 && /^[A-Za-zÀ-ÿ\s]+$/.test(t) && !/(preço|valor|endereço|plano)/i.test(t),
         [STATES.COLLECT_BIRTH]: () => /\d{2}[\/-]\d{2}[\/-]\d{2,4}/.test(t) || /\d+\s*anos?/i.test(t),
         [STATES.COLLECT_PERIOD]: () => /\b(manh[aã]|tard|noit)/i.test(t),

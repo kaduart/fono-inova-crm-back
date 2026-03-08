@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { auth } from '../middleware/auth.js';
 import * as instagramController from '../controllers/instagramController.js';
 import * as postGeneratorController from '../controllers/postGeneratorController.js';
+import { generateVariations, scoreContent } from '../controllers/instagramController.js';
 
 const router = Router();
 router.use(auth);
@@ -16,6 +17,10 @@ router.post('/generate', instagramController.generatePost);
 // 🆕 MODOS DE GERAÇÃO ESTRATÉGICA
 router.post('/generate-caption', instagramController.generateCaption);
 router.post('/generate-hooks', instagramController.generateHooks);
+
+// 🎯 A/B VARIAÇÕES E SCORE
+router.post('/generate-variations', generateVariations);
+router.post('/score', scoreContent);
 
 // 🆕 GERAÇÃO V2: Sistema de layouts dinâmicos (15+ formatos)
 router.post('/generate-v2', postGeneratorController.generatePostV2);

@@ -180,17 +180,26 @@ export const checkAppointmentConflicts = async (req, res, next) => {
 // 🔧 FUNÇÃO: Calcular slots disponíveis (reutilizável)
 // ======================================================
 export async function calculateAvailableSlots(doctorId, date) {
+  console.log(`[calculateAvailableSlots] doctorId=${doctorId}, date=${date}`);
+  
   const doctor = await Doctor.findById(doctorId).lean();
   if (!doctor) {
     throw new Error("Médico não encontrado");
   }
 
   const dayKey = getDayKeyFromYMD(date);
+  console.log(`[calculateAvailableSlots] dayKey=${dayKey}, doctorName=${doctor.fullName}`);
+  console.log(`[calculateAvailableSlots] weeklyAvailability=`, JSON.stringify(doctor.weeklyAvailability));
 
   const dailyAvailability = doctor.weeklyAvailability?.find((d) => d.day === dayKey);
   const rawTimes = dailyAvailability?.times || [];
+  
+  console.log(`[calculateAvailableSlots] rawTimes=`, rawTimes);
 
-  if (!rawTimes.length) return [];
+  if (!rawTimes.length) {
+    console.log(`[calculateAvailableSlots] Sem horários configurados para ${dayKey}`);
+    return [];
+  }
 
   // normalize + dedupe + sort + business hours
   const normalizedTimes = Array.from(
@@ -202,7 +211,12 @@ export async function calculateAvailableSlots(doctorId, date) {
     )
   ).sort();
 
-  if (!normalizedTimes.length) return [];
+  if (!normalizedTimes.length) {
+    console.log(`[calculateAvailableSlots] Sem horários normalizados válidos`);
+    return [];
+  }
+  
+  console.log(`[calculateAvailableSlots] normalizedTimes=`, normalizedTimes);
 
   const booked = await Appointment.find({
     doctor: toObjectId(doctorId),
@@ -242,6 +256,9 @@ export async function calculateAvailableSlots(doctorId, date) {
   });
 
   const availableSlots = normalizedTimes.filter((t) => !bookedTimes.has(t));
+  
+  console.log(`[calculateAvailableSlots] bookedTimes=`, Array.from(bookedTimes));
+  console.log(`[calculateAvailableSlots] availableSlots=`, availableSlots);
 
   return availableSlots;
 }

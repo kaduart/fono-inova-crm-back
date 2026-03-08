@@ -9,7 +9,7 @@ import {
   gerarHeadline,
   gerarLegenda
 } from '../services/instagramPostService.js';
-import { ESPECIALIDADES, generateCaptionSEO, generateHooksViral } from '../services/gmbService.js';
+import { ESPECIALIDADES, generateCaptionSEO, generateHooksViral, generateContentVariations, scorePostQuality } from '../services/gmbService.js';
 import InstagramPost from '../models/InstagramPost.js';
 import { postGenerationQueue } from '../config/bullConfig.js';
 
@@ -40,7 +40,7 @@ export async function getStats(req, res) {
 
 export async function generatePost(req, res) {
   try {
-    const { especialidadeId, customTheme, funnelStage, provider = 'auto', mode = 'full' } = req.body;
+    const { especialidadeId, customTheme, funnelStage, provider = 'auto', mode = 'full', tone = 'emotional', scheduledAt } = req.body;
 
     const especialidade = ESPECIALIDADES.find(e => e.id === especialidadeId) || ESPECIALIDADES[0];
 
@@ -74,7 +74,9 @@ export async function generatePost(req, res) {
       provider: provider || 'auto',
       generateImage: true,
       userId: req.user?._id,
-      mode  // 'full' | 'caption' | 'hooks'
+      mode,       // 'full' | 'caption' | 'hooks'
+      tone,       // 'emotional' | 'educativo' | 'inspiracional' | 'bastidores'
+      scheduledAt // ISO string ou undefined
     }, { jobId });
     
     // Retornar imediatamente
@@ -194,6 +196,30 @@ export async function generateHooks(req, res) {
     let especialidade = ESPECIALIDADES.find(e => e.id === especialidadeId) || ESPECIALIDADES[0];
     const result = await generateHooksViral(especialidade, customTheme, funnelStage || 'top', count || 10);
     res.json({ success: true, data: result, message: `🎣 ${count || 10} Ganchos gerados!` });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 🎯 GERAR VARIAÇÕES A/B (3 aberturas diferentes)
+export async function generateVariations(req, res) {
+  try {
+    const { especialidadeId, funnelStage, tone, customTheme } = req.body;
+    const esp = ESPECIALIDADES.find(e => e.id === especialidadeId) || ESPECIALIDADES[0];
+    const result = await generateContentVariations(esp, customTheme, funnelStage || 'top', tone || 'emotional', 3);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 📊 SCORE DE QUALIDADE DE UM POST
+export async function scoreContent(req, res) {
+  try {
+    const { content, funnelStage } = req.body;
+    if (!content) return res.status(400).json({ success: false, error: 'content obrigatório' });
+    const score = await scorePostQuality(content, funnelStage || 'top');
+    res.json({ success: true, score });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

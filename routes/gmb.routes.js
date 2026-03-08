@@ -73,4 +73,8 @@ router.post('/intelligence/accept', gmbController.acceptSuggestion);
 router.post('/generate-caption', gmbController.generateCaption);
 router.post('/generate-hooks', gmbController.generateHooks);
 
+// 🎯 A/B VARIAÇÕES E SCORE
+router.post('/generate-variations', gmbController.generateVariations);
+router.post('/score', gmbController.scoreContent);
+
 export default router;

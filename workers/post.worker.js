@@ -22,6 +22,7 @@ import FacebookPost from '../models/FacebookPost.js';
 import * as gmbService from '../services/gmbService.js';
 import { gerarHeadline } from '../services/instagramPostService.js';
 import { generateCaptionSEO, generateHooksViral } from '../services/gmbService.js';
+import { scorePostQuality } from '../services/gmbService.js';
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,7 +70,7 @@ const atualizarProgresso = async (postId, channel, status, extra = {}) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const postWorker = new Worker('post-generation', async (job) => {
-  const { 
+  const {
     postId,
     channel,  // 'gmb', 'instagram', 'facebook'
     especialidadeId,
@@ -78,6 +79,7 @@ const postWorker = new Worker('post-generation', async (job) => {
     scheduledAt,
     generateImage = true,
     provider = 'auto',
+    tone = 'emotional',
     userId
   } = job.data;
 
@@ -101,8 +103,8 @@ const postWorker = new Worker('post-generation', async (job) => {
     
     if (channel === 'gmb') {
       // GMB: Gera post com conteúdo completo
-      logger.info(`[POST WORKER] Gerando conteúdo GMB para ${especialidade.nome}...`);
-      postData = await gmbService.generatePostForEspecialidade(especialidade, customTheme, funnelStage);
+      logger.info(`[POST WORKER] Gerando conteúdo GMB para ${especialidade.nome} (tom: ${tone})...`);
+      postData = await gmbService.generatePostForEspecialidade(especialidade, customTheme, funnelStage, tone);
       logger.info(`[POST WORKER] Conteúdo gerado: "${postData.title?.substring(0, 50)}..."`);
       
       if (generateImage) {
@@ -140,9 +142,18 @@ const postWorker = new Worker('post-generation', async (job) => {
         scheduledAt: isScheduled ? new Date(scheduledAt) : null,
         aiGenerated: true,
         processingStatus: 'completed',
-        ctaUrl: especialidade.url || null
+        ctaUrl: especialidade.url || null,
+        tone
       });
       
+      // Score de qualidade automático
+      if (postData?.content) {
+        try {
+          const score = await scorePostQuality(postData.content, funnelStage);
+          if (score) await Model.findByIdAndUpdate(postId, { qualityScore: score });
+        } catch { /* score é opcional */ }
+      }
+
       logger.info(`[POST WORKER] 💾 Post salvo: mediaUrl=${mediaUrl ? '✅ COM IMAGEM' : '❌ SEM IMAGEM'}, provider=${imageProvider || 'N/A'}`);
 
     } else if (channel === 'instagram') {
@@ -164,6 +175,12 @@ const postWorker = new Worker('post-generation', async (job) => {
         legenda = captionResult.content;
       }
 
+      // Score de qualidade automático
+      let igScore = null;
+      try {
+        igScore = await scorePostQuality(legenda, funnelStage);
+      } catch { /* score é opcional */ }
+
       // Atualizar o post EXISTENTE (sem imagem - usuário adiciona manualmente)
       const isScheduled = Boolean(scheduledAt);
       await InstagramPost.findByIdAndUpdate(postId, {
@@ -179,16 +196,29 @@ const postWorker = new Worker('post-generation', async (job) => {
         scheduledAt: isScheduled ? new Date(scheduledAt) : null,
         aiGenerated: true,
         processingStatus: 'completed',
-        funnelStage
+        funnelStage,
+        tone,
+        ...(igScore ? { qualityScore: igScore } : {})
       });
 
     } else if (channel === 'facebook') {
-      // Facebook: Similar ao GMB
-      postData = await gmbService.generatePostForEspecialidade(especialidade, customTheme, funnelStage);
-      
-      if (generateImage) {
+      // Facebook: Similar ao GMB, suporta tone e scheduledAt
+      const fbMode = job.data.mode || 'full';
+      logger.info(`[POST WORKER] Facebook modo: ${fbMode}, tom: ${tone}`);
+
+      if (fbMode === 'hooks') {
+        const hooksResult = await generateHooksViral(especialidade, customTheme, funnelStage, 10);
+        postData = { title: `10 Ganchos - ${especialidade.nome}`, content: hooksResult.content };
+      } else if (fbMode === 'caption') {
+        const captionResult = await generateCaptionSEO(especialidade, customTheme, funnelStage);
+        postData = { title: `Legenda SEO - ${especialidade.nome}`, content: captionResult.content };
+      } else {
+        postData = await gmbService.generatePostForEspecialidade(especialidade, customTheme, funnelStage, tone);
+      }
+
+      if (generateImage && fbMode === 'full') {
         try {
-          const imgResult = await gmbService.generateImageForEspecialidade(especialidade, postData.content);
+          const imgResult = await gmbService.generateImageForEspecialidade(especialidade, postData.content, false, provider);
           mediaUrl = imgResult?.url || null;
           imageProvider = imgResult?.provider || null;
         } catch (imgError) {
@@ -196,17 +226,27 @@ const postWorker = new Worker('post-generation', async (job) => {
         }
       }
 
+      // Score de qualidade automático
+      let fbScore = null;
+      try {
+        fbScore = await scorePostQuality(postData.content, funnelStage);
+      } catch { /* score é opcional */ }
+
+      const isFbScheduled = Boolean(scheduledAt);
       await Model.findByIdAndUpdate(postId, {
         title: postData.title,
         content: postData.content,
         theme: especialidade.id,
-        status: 'draft',
+        status: isFbScheduled ? 'scheduled' : 'draft',
         mediaUrl,
         mediaType: mediaUrl ? 'image' : null,
         imageProvider,
+        scheduledAt: isFbScheduled ? new Date(scheduledAt) : null,
         aiGenerated: true,
         processingStatus: 'completed',
-        funnelStage
+        funnelStage,
+        tone,
+        ...(fbScore ? { qualityScore: fbScore } : {})
       });
     }
 

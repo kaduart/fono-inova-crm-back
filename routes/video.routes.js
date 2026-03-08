@@ -93,9 +93,12 @@ async function handleGenerateVideo(req, res) {
     // Retornar imediatamente (não espera o pipeline)
     const modoLabels = {
       avatar: '🎭 Avatar (HeyGen)',
-      ilustrativo: '🖼️ Ilustrativo (Imagens + TTS)'
+      ilustrativo: '🖼️ Ilustrativo (Imagens + TTS)',
+      veo: '🎬 Cinematográfico (Google Veo 3.1)'
     };
-    
+
+    const tempoEstimado = { avatar: '5-10 minutos', ilustrativo: '2-4 minutos', veo: '3-5 minutos' };
+
     res.status(202).json({
       success: true,
       message: `Pipeline de vídeo iniciado (${modoLabels[modo] || modo})`,
@@ -103,7 +106,7 @@ async function handleGenerateVideo(req, res) {
       videoId: videoDoc._id,
       status: 'ROTEIRO',
       modo,
-      tempo_estimado: modo === 'ilustrativo' ? '2-4 minutos' : '5-10 minutos',
+      tempo_estimado: tempoEstimado[modo] || '5-10 minutos',
       status_url: `/api/videos/status/${jobId}`
     });
 

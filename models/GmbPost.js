@@ -86,6 +86,23 @@ const gmbPostSchema = new mongoose.Schema({
     scheduledFor: { type: Date }
   },
   
+  // Tom de voz usado na geração
+  tone: {
+    type: String,
+    enum: ['emotional', 'educativo', 'inspiracional', 'bastidores'],
+    default: 'emotional'
+  },
+
+  // Score de qualidade gerado pela IA
+  qualityScore: {
+    clareza: { type: Number },
+    impacto_emocional: { type: Number },
+    cta: { type: Number },
+    score_geral: { type: Number },
+    ponto_forte: { type: String },
+    sugestao: { type: String }
+  },
+
   // Prioridade/Score do post (para IA)
   priority: { type: Number, default: 0 },
   

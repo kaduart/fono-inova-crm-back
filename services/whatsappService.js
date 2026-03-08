@@ -280,12 +280,12 @@ export async function resolveMediaUrl(mediaId) {
 /** ✉️ Envia template */
 
 /**
- * 🧼 Formata texto para WhatsApp sem destruir parágrafos
- * - mode="preserve": mantém quebras de linha e parágrafos (default recomendado)
- * - mode="bullets": transforma linhas em lista com ▫️
- * - mode="auto": preserva parágrafos; só usa bullets se o texto já parece lista
+ * 🧼 Formata texto para WhatsApp — PRESERVA ESPAÇAMENTO E PARÁGRAFOS
+ * - mode="preserve": mantém quebras de linha e parágrafos (RECOMENDADO)
+ * - mode="bullets": transforma linhas em lista com ▫️ (⚠️ remove espaçamento)
+ * - mode="auto": detecta lista e formata, mas preserva estrutura
  */
-function formatWhatsAppText(text, { mode = "auto" } = {}) {
+function formatWhatsAppText(text, { mode = "preserve" } = {}) {
     const raw = (text ?? "").toString();
 
     // normaliza quebras
@@ -293,7 +293,7 @@ function formatWhatsAppText(text, { mode = "auto" } = {}) {
 
     // Se o caller pediu preservar, faz só um trim suave
     if (mode === "preserve") {
-        // remove espaços no fim de linha, mas mantém linhas vazias
+        // remove espaços no fim de linha, mas mantém linhas vazias (IMPORTANTE!)
         return normalized
             .split("\n")
             .map(line => line.replace(/\s+$/g, ""))
@@ -313,9 +313,37 @@ function formatWhatsAppText(text, { mode = "auto" } = {}) {
         return formatWhatsAppText(normalized, { mode: "preserve" });
     }
 
-    // BULLETS (ou auto + lista)
-    const bulletLines = nonEmpty.map(l => l.trim().replace(/^\s*(?:[-•▫️]|\d+[\)\.]|\*)\s+/, ""));
-    return bulletLines.map((l, idx) => (idx === 0 ? `▫️ ${l}` : `▫️ ${l}`)).join("\n").trim();
+    // BULLETS (ou auto + lista) — MANTÉM estrutura com linhas em branco
+    // Se tem linhas vazias entre itens, preserva essa estrutura
+    const result = [];
+    let prevWasEmpty = true; // início considerado como "após vazio"
+    
+    for (const line of lines) {
+        const trimmed = line.trim();
+        
+        if (trimmed.length === 0) {
+            // Linha vazia = separador de parágrafo
+            result.push("");
+            prevWasEmpty = true;
+            continue;
+        }
+        
+        // Remove bullet original e adiciona novo
+        const content = trimmed.replace(/^\s*(?:[-•▫️]|\d+[\)\.]|\*)\s+/, "");
+        
+        // Se anterior não era vazio, adiciona linha em branco para criar espaçamento
+        if (!prevWasEmpty && result.length > 0 && result[result.length - 1] !== "") {
+            // Verifica se o conteúdo parece ser um parágrafo (longo) ou item de lista (curto)
+            if (content.length > 40 || content.includes('.')) {
+                result.push("");
+            }
+        }
+        
+        result.push(`▫️ ${content}`);
+        prevWasEmpty = false;
+    }
+    
+    return result.join("\n").trim();
 }
 
 export async function sendTemplateMessage({
@@ -431,7 +459,7 @@ export async function sendTextMessage({
     patientId = null,
     sentBy = "amanda",
     userId = null,
-    formatMode = "auto",
+    formatMode = "preserve",
 }) {
     // 🔒 Validação de controle manual (já existe, mantenha)
     if (lead && sentBy !== "manual") {

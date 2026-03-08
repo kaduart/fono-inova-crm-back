@@ -67,7 +67,7 @@ export const THERAPY_SPECIALTIES = {
         patterns: [
             /teste\s+da\s+linguinha/i,
             /fr(e|ê)nulo\s+(lingual)?/i,
-            /freio\s+da\s+l(í|i)ngua/i,
+            /freio\s+(da\s+l[íi]ngua|lingual)/i,  // cobre "freio lingual" e "freio da língua"
             /amamentação|dificuldade.*mamar/i
         ]
     },
@@ -77,6 +77,7 @@ export const THERAPY_SPECIALTIES = {
             /\bpsico\b/i,                               // "Psico" — abreviação comum PT-BR
             /p[s5][i1]c[o0]l[o0]g[a4o0](?![a-z])/i,  // psicologo, psicologa, psicolog (typos)
             /p[s5][i1]c[o0]l[o0]g[i1][a4](?!\s*pedag)/i,  // psicologia (typos)
+            /p[s5][i1]c[o0]l[o0]g[i1]c[a4]/i,         // psicologica (forma adjetiva: "avaliação psicológica")
             /\btcc\b|ansiedade|depress(ã|a)o/i,
             /p[s5][i1]c[o0]l[o0]g[o0a4]\s+infantil/i
         ]

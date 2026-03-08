@@ -46,7 +46,7 @@ const videoSchema = new mongoose.Schema({
   },
   provider: {
     type: String,
-    enum: ['heygen'],
+    enum: ['heygen', 'veo-3.1', 'slideshow'],
     default: 'heygen'
   },
   publishedChannels: [{
@@ -79,7 +79,7 @@ const videoSchema = new mongoose.Schema({
   // Status detalhado do pipeline
   pipelineStatus: {
     type: String,
-    enum: ['ROTEIRO', 'HEYGEN', 'POS_PRODUCAO', 'UPLOAD', 'CONCLUIDO', 'ERRO'],
+    enum: ['ROTEIRO', 'HEYGEN', 'VEO', 'POS_PRODUCAO', 'UPLOAD', 'CONCLUIDO', 'ERRO'],
     default: 'ROTEIRO'
   },
   

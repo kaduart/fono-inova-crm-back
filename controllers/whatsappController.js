@@ -35,6 +35,35 @@ const MAX_WAMID_CACHE_SIZE = 1000;
 const logger = new Logger('whatsappController');
 
 // ============================================================
+// 📝 FORMATAÇÃO DE TEXTO PARA WHATSAPP (melhor legibilidade)
+// ============================================================
+/**
+ * Formata texto para WhatsApp garantindo espaçamento adequado entre parágrafos
+ * Isso melhora a leitura no celular
+ */
+function formatWhatsAppResponse(text) {
+    if (!text || typeof text !== 'string') return text;
+    
+    // 1. Normaliza quebras de linha
+    let formatted = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    
+    // 2. Remove múltiplas quebras consecutivas (mais de 2) → reduz para 2
+    formatted = formatted.replace(/\n{3,}/g, '\n\n');
+    
+    // 3. Adiciona espaçamento após pontos finais seguidos de texto (se não houver quebra)
+    // Detecta padrões como: "...desenvolvimento.El" e converte para "...desenvolvimento.\n\nEl"
+    formatted = formatted.replace(/([.!?])([A-Z][a-z])/g, '$1\n\n$2');
+    
+    // 4. Garante que bullets/listas tenham espaçamento antes
+    formatted = formatted.replace(/([^\n])(\n[•\-\*]\s)/g, '$1\n$2');
+    
+    // 5. Remove espaços extras no final de linhas
+    formatted = formatted.split('\n').map(line => line.trimEnd()).join('\n');
+    
+    return formatted.trim();
+}
+
+// ============================================================
 // ROTEADOR DE ORQUESTRADORES (feature flag USE_STATE_MACHINE)
 // USE_STATE_MACHINE=true  → WhatsAppOrchestrator (FSM nova)
 // USE_STATE_MACHINE=false → AmandaOrchestrator (legado)
@@ -987,14 +1016,17 @@ export const whatsappController = {
                 return res.json({ success: true, responded: false });
             }
 
-            // 6. Envia WhatsApp
+            // 6. Formata texto para melhor legibilidade no WhatsApp
+            const formattedText = formatWhatsAppResponse(aiText.trim());
+
+            // 7. Envia WhatsApp
             const rawPhone = lead.contact?.phone;
             const to = normalizeE164BR(rawPhone);
             const contact = await Contacts.findOne({ phone: to }).lean();
 
             const sendResult = await sendTextMessage({
                 to,
-                text: aiText.trim(),
+                text: formattedText,
                 lead: leadId,
                 contactId: contact?._id || null,
                 patientId: lead.convertedToPatient || null,
@@ -1017,7 +1049,7 @@ export const whatsappController = {
                     to,
                     direction: 'outbound',
                     type: 'text',
-                    content: aiText.trim(),
+                    content: formattedText,
                     status: 'sent',
                     timestamp: new Date(),
                     metadata: { sentBy: 'amanda', source: 'amanda-resume' }
@@ -1973,8 +2005,15 @@ async function handleAutoReply(from, to, content, lead) {
             console.warn("⚠️ Falha ao recuperar msgs pendentes:", e.message);
         }
 
-        // Use o lead que já veio (que já tem as últimas atualizações):
-        let leadDoc = lead;
+        // ✅ FIX: Recarrega lead do banco para garantir dados mais recentes (incluindo manualControl)
+        // O lead passado pode estar desatualizado se manualControl foi ativado após o carregamento inicial
+        let leadDoc = await Lead.findById(lead._id).select('+triageStep').lean();
+        
+        if (!leadDoc) {
+            console.log("⏭️ Lead não encontrado no banco; ignorando mensagem", lead?._id);
+            return;
+        }
+
         // ✅ FIX: Removido lock manual redundante (isProcessing: true sem processingStartedAt)
         // O withLeadLock na L1702 já faz o lock atômico correto com processingStartedAt
 
@@ -1989,11 +2028,16 @@ async function handleAutoReply(from, to, content, lead) {
         // 🔍 DEBUG: Lead carregado do banco no handleAutoReply
         console.log("🔍 [DEBUG HANDLE-AUTO-REPLY] Lead carregado do banco:", {
             leadId: leadDoc?._id,
-            triageStep: leadDoc?.triageStep, // 🆕 LOG do campo crítico
+            triageStep: leadDoc?.triageStep,
             pendingPatientInfoForScheduling: leadDoc?.pendingPatientInfoForScheduling,
             pendingPatientInfoStep: leadDoc?.pendingPatientInfoStep,
             pendingChosenSlot: leadDoc?.pendingChosenSlot ? "SIM" : "NÃO",
             pendingSchedulingSlots: leadDoc?.pendingSchedulingSlots?.primary ? "SIM" : "NÃO",
+            manualControl: leadDoc?.manualControl ? {
+                active: leadDoc.manualControl.active,
+                takenOverAt: leadDoc.manualControl.takenOverAt,
+                autoResumeAfter: leadDoc.manualControl.autoResumeAfter
+            } : 'NÃO DEFINIDO'
         });
 
         if (!leadDoc) {
@@ -2093,7 +2137,8 @@ async function handleAutoReply(from, to, content, lead) {
         // 9. Envia resposta marcada como "amanda"
         // ================================
         if (aiText && aiText.trim()) {
-            const finalText = aiText.trim();
+            // 📝 Formata texto para melhor legibilidade no WhatsApp
+            const finalText = formatWhatsAppResponse(aiText.trim());
 
             // 🔎 Tenta achar o contact pra vincular na mensagem
             const contactDoc = await Contacts.findOne({ phone: from }).lean();
