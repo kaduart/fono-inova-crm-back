@@ -1,4 +1,4 @@
-import { generatePostForEspecialidade, ESPECIALIDADES, generateImageForEspecialidade, generateCaptionSEO, generateHooksViral } from '../services/gmbService.js';
+import { generatePostForEspecialidade, ESPECIALIDADES, generateImageForEspecialidade, generateCaptionSEO, generateHooksViral, generateContentVariations, scorePostQuality } from '../services/gmbService.js';
 import FacebookPost from '../models/FacebookPost.js';
 import { postGenerationQueue } from '../config/bullConfig.js';
 
@@ -41,17 +41,19 @@ export async function getStats(req, res) {
  */
 export async function generatePost(req, res) {
   try {
-    const { especialidadeId, customTheme, funnelStage } = req.body;
-    
+    const { especialidadeId, customTheme, funnelStage, provider = 'auto', mode = 'full', tone = 'emotional', scheduledAt } = req.body;
+
     // Busca especialidade ou usa fonoaudiologia como padrão
     let especialidade = ESPECIALIDADES.find(e => e.id === especialidadeId);
     if (!especialidade) {
       especialidade = ESPECIALIDADES[0];
     }
-    
+
+    const modeLabel = mode === 'caption' ? '📝 Gerando legenda SEO...' : mode === 'hooks' ? '🎣 Gerando ganchos virais...' : '📘 Gerando post...';
+
     // Criar post imediatamente com status 'processing'
     const post = new FacebookPost({
-      title: 'Gerando conteúdo...',
+      title: modeLabel,
       content: 'Nossa IA está criando seu post do Facebook.',
       theme: especialidade.id,
       funnelStage: funnelStage || 'top',
@@ -62,9 +64,9 @@ export async function generatePost(req, res) {
       aiGenerated: true,
       createdBy: req.user?._id
     });
-    
+
     await post.save();
-    
+
     // Enfileirar job para processar em background
     const jobId = `post_fb_${Date.now()}`;
     await postGenerationQueue.add('generate-post', {
@@ -73,8 +75,12 @@ export async function generatePost(req, res) {
       especialidadeId: especialidade.id,
       customTheme,
       funnelStage: funnelStage || 'top',
+      provider: provider || 'auto',
       generateImage: true,
-      userId: req.user?._id
+      userId: req.user?._id,
+      mode,
+      tone,
+      scheduledAt
     }, { jobId });
     
     // Retornar imediatamente
@@ -219,12 +225,12 @@ export async function generateCaption(req, res) {
 export async function generateHooks(req, res) {
   try {
     const { especialidadeId, customTheme, funnelStage, count } = req.body;
-    
+
     let especialidade = ESPECIALIDADES.find(e => e.id === especialidadeId);
     if (!especialidade) especialidade = ESPECIALIDADES[0];
 
     const result = await generateHooksViral(especialidade, customTheme, funnelStage || 'top', count || 10);
-    
+
     res.json({
       success: true,
       data: result,
@@ -232,6 +238,30 @@ export async function generateHooks(req, res) {
     });
   } catch (error) {
     console.error('Erro ao gerar ganchos:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 🎯 VARIAÇÕES A/B
+export async function generateVariations(req, res) {
+  try {
+    const { especialidadeId, funnelStage, tone, customTheme } = req.body;
+    const esp = ESPECIALIDADES.find(e => e.id === especialidadeId) || ESPECIALIDADES[0];
+    const result = await generateContentVariations(esp, customTheme, funnelStage || 'top', tone || 'emotional', 3);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// 📊 SCORE DE QUALIDADE
+export async function scoreContent(req, res) {
+  try {
+    const { content, funnelStage } = req.body;
+    if (!content) return res.status(400).json({ success: false, error: 'content obrigatório' });
+    const score = await scorePostQuality(content, funnelStage || 'top');
+    res.json({ success: true, score });
+  } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 }

@@ -312,7 +312,24 @@ const PROMPTS_ESPECIALIDADE = {
  * 🤖 GERA POST COM GPT - VERSÃO ESTRATÉGICA
  * Prompt turbinado com gatilhos psicológicos por funil
  */
-export async function generatePostForEspecialidade(especialidade, customTheme = null, funnelStage = 'top') {
+// Mapeamento de tons de voz disponíveis
+export const TONES = {
+  emotional: null, // comportamento padrão (dor/urgência)
+  educativo: {
+    instrucao: 'Tom EDUCATIVO: ensine algo valioso, use "Você sabia que...", estatísticas reais, dicas práticas. NÃO foque na dor — foque no conhecimento.',
+    cta: 'Salve esse post para não esquecer!'
+  },
+  inspiracional: {
+    instrucao: 'Tom INSPIRACIONAL: conte uma história de transformação (sem identificar paciente), foque no "depois", nas conquistas, na esperança. Cause emoção positiva.',
+    cta: 'Comente ❤️ se essa história te tocou'
+  },
+  bastidores: {
+    instrucao: 'Tom BASTIDORES: mostre como a equipe trabalha, o ambiente da clínica, um dia na rotina, como são as sessões. Humanize a clínica. Gere curiosidade e proximidade.',
+    cta: 'Venha nos conhecer! Link na bio 👆'
+  }
+};
+
+export async function generatePostForEspecialidade(especialidade, customTheme = null, funnelStage = 'top', tone = 'emotional') {
   try {
     const nicho = PROMPTS_ESPECIALIDADE[especialidade.id] || null;
 
@@ -341,6 +358,11 @@ export async function generatePostForEspecialidade(especialidade, customTheme = 
     const estrategia = estrategiaPorFunil[funnelStage] || estrategiaPorFunil.top;
     const gatilhoPrincipal = estrategia.gatilhos[Math.floor(Math.random() * estrategia.gatilhos.length)];
 
+    // Tom de voz: se não for 'emotional', sobrescreve CTA e adiciona instrução de tom
+    const toneConfig = TONES[tone];
+    const ctaFinal = toneConfig?.cta || estrategia.cta;
+    const instrucaoTom = toneConfig?.instrucao ? `\n\n🎭 TOM OBRIGATÓRIO: ${toneConfig.instrucao}` : '';
+
     const temaTexto = customTheme
       ? `TEMA ESPECÍFICO: "${customTheme}" dentro da área de ${especialidade.nome}`
       : `GANCHO: ${especialidade.gancho}`;
@@ -366,7 +388,7 @@ REGRAS INEGOCIÁVEIS:
 - SEM promessas de cura
 - Tom: técnico mas conversacional (como mãe experiente falando com outra)
 - Proibido usar pontos no meio das frases do hook (frase corrida para vídeos)
-- CTA deve ser CHOCANTE, VIRAL e QUEBRAR PADRÕES (não use "Agende pelo link")`
+- CTA deve ser CHOCANTE, VIRAL e QUEBRAR PADRÕES (não use "Agende pelo link")${instrucaoTom}`
       },
       {
         role: 'user',
@@ -407,7 +429,7 @@ ${nichoInstrucoes}
 - Use termos relacionados: desenvolvimento infantil, Anápolis, terapia infantil
 
 4️⃣ CTA ESTRATÉGICA:
-- Use EXATAMENTE: "${estrategia.cta}"
+- Use EXATAMENTE: "${ctaFinal}"
 - NÃO invente outra CTA
 - Seja específico e gerador de ação
 
@@ -1692,6 +1714,123 @@ Teste ângulos psicológicos distintos.`
   }
 }
 
+/**
+ * 🎯 GERA VARIAÇÕES DE CONTEÚDO (A/B Testing)
+ * Retorna 3 variações de hook/abertura para o usuário escolher
+ */
+export async function generateContentVariations(especialidade, customTheme = null, funnelStage = 'top', tone = 'emotional', count = 3) {
+  try {
+    const nicho = PROMPTS_ESPECIALIDADE[especialidade.id] || null;
+    const toneConfig = TONES[tone];
+    const instrucaoTom = toneConfig?.instrucao ? `\nTOM: ${toneConfig.instrucao}` : '';
+
+    const estrategiaPorFunil = {
+      top: { gatilhos: ['Curiosidade', 'Contradição', 'Identificação'] },
+      middle: { gatilhos: ['Prova Social', 'Autoridade Técnica', 'Benefício'] },
+      bottom: { gatilhos: ['Urgência', 'Escassez', 'Medo Estratégico'] }
+    };
+    const gatilhos = (estrategiaPorFunil[funnelStage] || estrategiaPorFunil.top).gatilhos;
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `Você cria variações de abertura para posts de saúde infantil.
+Cada variação usa um ângulo COMPLETAMENTE DIFERENTE.
+REGRAS: Máximo 40 palavras por variação. Frase corrida sem pontos no meio.
+SEM alarmismo. SEM promessas de cura.${instrucaoTom}`
+        },
+        {
+          role: 'user',
+          content: `Gere ${count} variações de abertura para ${especialidade.nome}.
+TEMA: ${customTheme || especialidade.gancho}
+PÚBLICO: Pais de ${especialidade.publico}
+${nicho ? `DOR: ${nicho.dor?.split(',')[0]}` : ''}
+FUNIL: ${funnelStage}
+GATILHOS A USAR: ${gatilhos.join(', ')}
+
+FORMATO OBRIGATÓRIO (JSON):
+[
+  { "gatilho": "Curiosidade", "angulo": "Identificação emocional", "hook": "Texto da abertura aqui" },
+  { "gatilho": "Contradição", "angulo": "Quebra de expectativa", "hook": "Texto da abertura aqui" },
+  { "gatilho": "Identificação", "angulo": "Espelho do público", "hook": "Texto da abertura aqui" }
+]
+Responda SOMENTE o JSON, sem markdown.`
+        }
+      ],
+      max_tokens: 500,
+      temperature: 0.9
+    });
+
+    const text = response.choices[0].message.content.trim();
+    let variations;
+    try {
+      variations = JSON.parse(text);
+    } catch {
+      // Fallback: extrai manualmente se o JSON vier malformado
+      variations = [
+        { gatilho: 'Curiosidade', angulo: 'Identificação', hook: especialidade.gancho },
+        { gatilho: 'Contradição', angulo: 'Quebra', hook: `Você não sabia, mas ${especialidade.foco.split(',')[0].toLowerCase()} tem solução.` },
+        { gatilho: 'Prova Social', angulo: 'Autoridade', hook: `Centenas de famílias em Anápolis já passaram por isso.` }
+      ];
+    }
+
+    return { success: true, variations, especialidade: especialidade.nome, funnelStage, tone };
+  } catch (error) {
+    console.error('❌ Erro ao gerar variações:', error);
+    throw error;
+  }
+}
+
+/**
+ * 📊 SCORE DE QUALIDADE DO POST
+ * Avalia o conteúdo em 3 dimensões: Clareza, Impacto Emocional, CTA
+ */
+export async function scorePostQuality(content, funnelStage = 'top') {
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `Você é avaliador de conteúdo para redes sociais de saúde infantil.
+Avalie o post em 3 dimensões, cada uma de 0 a 10.
+Responda SOMENTE em JSON, sem markdown ou explicação extra.`
+        },
+        {
+          role: 'user',
+          content: `Avalie este post (funil: ${funnelStage}):
+
+"${content.substring(0, 600)}"
+
+JSON:
+{
+  "clareza": <0-10, se o leitor entende em 3 segundos o que é e pra quem é>,
+  "impacto_emocional": <0-10, se gera identificação ou emoção no pai/mãe>,
+  "cta": <0-10, se o call-to-action é claro, específico e gera ação>,
+  "score_geral": <média das 3 notas, arredondada>,
+  "ponto_forte": "<frase curta do melhor aspecto do post>",
+  "sugestao": "<uma frase com a principal melhoria possível>"
+}`
+        }
+      ],
+      max_tokens: 250,
+      temperature: 0.3
+    });
+
+    const text = response.choices[0].message.content.trim();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { clareza: 7, impacto_emocional: 7, cta: 7, score_geral: 7, ponto_forte: 'Conteúdo relevante', sugestao: 'Adicione um CTA mais específico' };
+    }
+  } catch (error) {
+    console.error('❌ Erro ao avaliar post:', error);
+    return null;
+  }
+}
+
 export {
   uploadToCloudinary
 };
@@ -1702,6 +1841,9 @@ export default {
   generatePostImage,
   generateCaptionSEO,
   generateHooksViral,
+  generateContentVariations,
+  scorePostQuality,
+  TONES,
   createDailyPost,
   createPostsForAllEspecialidades,
   getEspecialidadesSemPostHoje,

@@ -100,6 +100,23 @@ const instagramPostSchema = new mongoose.Schema({
     ref: 'User',
     default: null
   },
+  // Tom de voz usado na geração
+  tone: {
+    type: String,
+    enum: ['emotional', 'educativo', 'inspiracional', 'bastidores'],
+    default: 'emotional'
+  },
+
+  // Score de qualidade gerado pela IA
+  qualityScore: {
+    clareza: { type: Number },
+    impacto_emocional: { type: Number },
+    cta: { type: Number },
+    score_geral: { type: Number },
+    ponto_forte: { type: String },
+    sugestao: { type: String }
+  },
+
   // 📊 Metadados da estratégia
   metadata: {
     headlineStrategy: { type: String, default: null },

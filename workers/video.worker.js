@@ -21,6 +21,7 @@ import { posProducao } from '../services/video/postProduction.js';
 import { publicarVideo } from '../services/meta/videoPublisher.js';
 import { nomearCampanha, FUNIS } from '../agents/heracles.js';
 import Video from '../models/Video.js';
+import VeoService, { isVeoConfigured } from '../services/video/veoService.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // WORKER PRINCIPAL
@@ -37,7 +38,7 @@ const videoWorker = new Worker('video-generation', async (job) => {
     publicar = false, 
     targeting = {},
     userId,
-    modo = 'avatar'  // 'avatar' (HeyGen) ou 'profissional' (Stock + TTS)
+    modo = 'avatar'  // 'avatar' (HeyGen), 'ilustrativo' (Slideshow+TTS), 'veo' (Google Veo 3.1)
   } = job.data;
 
   logger.info(`[VIDEO WORKER] ▶ ${jobId} — "${tema}"`);
@@ -98,13 +99,73 @@ const videoWorker = new Worker('video-generation', async (job) => {
     logger.info(`[VIDEO WORKER] Roteiro gerado: ${roteiro.profissional} | ${roteiro.titulo}`);
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ETAPA 2: Gerar Vídeo (Avatar ou Ilustrativo)
+    // ETAPA 2: Gerar Vídeo (Avatar, Ilustrativo ou Veo 3.1)
     // ═══════════════════════════════════════════════════════════════════════
     await atualizarProgresso('HEYGEN', 30);
 
     let videoCru;
-    
-    if (modo === 'ilustrativo') {
+
+    if (modo === 'veo') {
+      // 🎬 Modo VEO: Google Veo 3.1 — vídeo cinematográfico real
+      logger.info(`[VIDEO WORKER] Modo VEO 3.1 - Google AI (cinematográfico)`);
+
+      if (!isVeoConfigured()) {
+        throw new Error('GOOGLE_AI_API_KEY não configurado. Acesse aistudio.google.com para obter gratuitamente.');
+      }
+
+      const veoService = new VeoService();
+      const durationSec = Math.min(duracao, 8); // Veo grátis: máx 8s
+      const result = await veoService.gerarVideo(
+        especialidadeId,
+        tema || null,
+        { durationSeconds: durationSec, aspectRatio: '9:16' }
+      );
+      videoCru = result.url;
+
+      await atualizarProgresso('HEYGEN', 85, {
+        videoCruUrl: videoCru,
+        videoFinalUrl: videoCru,
+        videoUrl: videoCru,
+        status: 'processing',
+        provider: 'veo-3.1'
+      });
+
+      logger.info(`[VIDEO WORKER] Veo gerou: ${videoCru}`);
+
+      // Veo já gera o vídeo finalizado (não precisa de pós-produção)
+      const videoFinalVeo = videoCru;
+      await atualizarProgresso('POS_PRODUCAO', 90, {
+        videoFinalUrl: videoFinalVeo,
+        videoUrl: videoFinalVeo
+      });
+
+      // Pular para conclusão
+      await atualizarProgresso('CONCLUIDO', 100, {
+        status: 'ready',
+        provider: 'veo-3.1',
+        tempos: { concluidoEm: new Date() }
+      });
+
+      const io = getIo();
+      io.emit(`video-complete-${jobId}`, {
+        jobId,
+        status: 'CONCLUIDO',
+        videoUrl: videoFinalVeo,
+        roteiro: roteiro.titulo,
+        provider: 'veo-3.1'
+      });
+
+      logger.info(`[VIDEO WORKER] ✅ ${jobId} VEO concluído em ${(Date.now() - job.timestamp) / 1000}s`);
+      return {
+        jobId,
+        status: 'CONCLUIDO',
+        roteiro: { titulo: roteiro.titulo, profissional: roteiro.profissional, duracao: roteiro.duracao_estimada },
+        videoFinal: videoFinalVeo,
+        provider: 'veo-3.1',
+        meta: null
+      };
+
+    } else if (modo === 'ilustrativo') {
       logger.info(`[VIDEO WORKER] Modo ILUSTRATIVO - Slideshow de imagens + TTS`);
       videoCru = await gerarVideoIlustrativo({
         especialidadeId,
@@ -132,7 +193,7 @@ const videoWorker = new Worker('video-generation', async (job) => {
     // ETAPA 3: Pós-Produção (FFmpeg) - Só para avatar
     // ═══════════════════════════════════════════════════════════════════════
     let videoFinal;
-    
+
     if (modo === 'ilustrativo') {
       // Modo ilustrativo: vídeo já está finalizado (slideshow + narração)
       logger.info(`[VIDEO WORKER] Modo ilustrativo - pulando pós-produção`);
@@ -144,7 +205,7 @@ const videoWorker = new Worker('video-generation', async (job) => {
     } else {
       // Modo avatar: aplicar pós-produção (legendas, logo, etc)
       await atualizarProgresso('POS_PRODUCAO', 65);
-      
+
       videoFinal = await posProducao({
         videoInput: videoCru,
         hookTexto: roteiro.hook_texto_overlay,
