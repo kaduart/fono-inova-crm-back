@@ -15,6 +15,7 @@ import { auth } from '../middleware/auth.js';
 import { videoGenerationQueue } from '../config/bullConfig.js';
 import Video from '../models/Video.js';
 import logger from '../utils/logger.js';
+import { aplicarPosProducao } from '../services/video/posProducaoVeoService.js';
 
 const router = Router();
 router.use(auth);
@@ -33,21 +34,23 @@ router.get('/', async (req, res) => {
 // 🆕 Função handler para iniciar pipeline
 async function handleGenerateVideo(req, res) {
   try {
-    const { 
-      tema, 
+    const {
+      tema,
       roteiro,
-      especialidadeId, 
-      funil = 'TOPO', 
-      duracao = 60, 
-      duration,
+      especialidadeId,
+      funil = 'TOPO',
+      duracao,         // PT: enviado por clientes antigos
+      duration,        // EN: enviado pelo frontend atual
       publicar = false,
       targeting = {},
-      modo = 'avatar'  // 'avatar' ou 'ilustrativo'
+      modo = 'avatar',  // 'avatar', 'ilustrativo' ou 'veo'
+      tone = 'educativo' // 'emotional', 'educativo', 'inspiracional', 'bastidores'
     } = req.body;
 
     // Usar roteiro como tema se tema não foi enviado (aceita string vazia)
     const temaFinal = tema !== undefined ? tema : roteiro;
-    const duracaoFinal = duracao || duration || 60;
+    // Prioridade: duration (frontend) → duracao (legado) → default 60
+    const duracaoFinal = duration ?? duracao ?? 60;
 
     // Validação: temaFinal pode ser string vazia (geração automática)
     // mas não pode ser undefined/null; especialidadeId é obrigatório
@@ -84,7 +87,8 @@ async function handleGenerateVideo(req, res) {
       publicar,
       targeting,
       userId: req.user?._id,
-      modo
+      modo,
+      tone
     }, { 
       jobId,  // Usa mesmo ID pro job BullMQ
       priority: 1
@@ -298,6 +302,83 @@ router.delete('/:id', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao deletar:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 🆕 POST /:id/pos-producao — Aplica legendas, música e CTA ao vídeo pronto
+router.post('/:id/pos-producao', async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.id);
+    if (!video) {
+      return res.status(404).json({ success: false, error: 'Vídeo não encontrado' });
+    }
+    if (video.status !== 'ready') {
+      return res.status(400).json({ success: false, error: 'Vídeo ainda não está pronto' });
+    }
+
+    const { legendas = true, musica = null, cta = null } = req.body;
+    const videoUrl = video.videoUrl || video.videoFinalUrl;
+
+    if (!videoUrl) {
+      return res.status(400).json({ success: false, error: 'URL do vídeo não encontrada' });
+    }
+
+    // Salvar configuração e marcar como processando edição
+    video.posProducaoConfig = { legendas, musica, cta };
+    video.posProducaoStatus = 'processing';
+    await video.save();
+
+    // Responde imediatamente (202) e processa em background
+    res.status(202).json({
+      success: true,
+      message: 'Pós-produção iniciada — vídeo editado disponível em alguns minutos',
+      videoId: video._id
+    });
+
+    // Processo assíncrono em background
+    (async () => {
+      try {
+        logger.info(`[POS-PRODUCAO] Iniciando para vídeo ${video._id}`);
+        const editadoUrl = await aplicarPosProducao({
+          videoId: video._id.toString(),
+          videoUrl,
+          roteiro: video.roteiro || '',
+          legendas,
+          musica,
+          cta
+        });
+
+        await Video.findByIdAndUpdate(video._id, {
+          videoEditadoUrl: editadoUrl,
+          posProducaoStatus: 'ready',
+          'posProducaoConfig.aplicadoEm': new Date()
+        });
+
+        logger.info(`[POS-PRODUCAO] ✅ Vídeo ${video._id} editado: ${editadoUrl}`);
+      } catch (err) {
+        logger.error(`[POS-PRODUCAO] Erro vídeo ${video._id}: ${err.message}`);
+        await Video.findByIdAndUpdate(video._id, {
+          posProducaoStatus: 'failed',
+          posProducaoError: err.message
+        }).catch(() => {});
+      }
+    })();
+
+  } catch (error) {
+    logger.error('[VIDEO ROUTES] Erro ao iniciar pós-produção:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /:id — Busca vídeo por ID (para polling pós-produção)
+router.get('/:id', async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.id).lean();
+    if (!video) return res.status(404).json({ success: false, error: 'Vídeo não encontrado' });
+    res.json({ success: true, data: video });
+  } catch (error) {
+    logger.error('[VIDEO ROUTES] Erro ao buscar vídeo:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });

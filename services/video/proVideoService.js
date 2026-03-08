@@ -205,14 +205,16 @@ async function buscarVideoStock({ especialidade, duracao, outputPath }) {
 }
 
 /**
- * Gera narração com OpenAI TTS
+ * Gera narração com OpenAI TTS em Português Brasileiro
  */
 async function gerarNarracao({ texto, outputPath }) {
-  logger.info(`[VIDEO PRO] Gerando narração TTS...`);
+  logger.info(`[VIDEO PRO] Gerando narração TTS (PT-BR)...`);
 
+  // 'nova' = voz feminina, ótima para conteúdo terapêutico/pediátrico em PT-BR
+  // 'onyx' = voz masculina alternativa
   const response = await openai.audio.speech.create({
     model: 'tts-1',
-    voice: 'alloy', // alloy, echo, fable, onyx, nova, shimmer
+    voice: 'nova',
     input: texto,
     speed: 0.95
   });
@@ -221,7 +223,7 @@ async function gerarNarracao({ texto, outputPath }) {
   fs.writeFileSync(outputPath, buffer);
 
   const stats = fs.statSync(outputPath);
-  logger.info(`[VIDEO PRO] ✅ Narração gerada: ${(stats.size / 1024).toFixed(1)}KB`);
+  logger.info(`[VIDEO PRO] ✅ Narração PT-BR gerada: ${(stats.size / 1024).toFixed(1)}KB`);
 
   return outputPath;
 }
