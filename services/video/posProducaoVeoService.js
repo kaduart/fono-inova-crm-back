@@ -69,8 +69,10 @@ export async function aplicarPosProducao({ videoId, videoUrl, roteiro, legendas 
 
     // ── 4. Validar output ─────────────────────────────────────────────────
     logger.info('[POS-VEO] 4/5 Validando...');
-    const stats       = fs.statSync(outPath);
+    const stats = fs.statSync(outPath);
     const duracaoFinal = await _getDuracao(outPath);
+    logger.info(`[POS-VEO] ✅ Vídeo gerado: ${duracaoFinal.toFixed(1)}s / ${(stats.size / 1024 / 1024).toFixed(1)}MB`);
+    
     if (duracaoFinal < 3 || stats.size < 200_000) {
       throw new Error(`Vídeo editado inválido: ${duracaoFinal.toFixed(1)}s / ${(stats.size / 1024 / 1024).toFixed(1)}MB`);
     }
@@ -185,6 +187,8 @@ function _segmentarRoteiro(roteiro, duracao) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function _gerarASS(segments, assPath, duracao) {
+  logger.info(`[ASS] Gerando arquivo: ${assPath} com ${segments.length} segmentos`);
+  
   // Estilo TikTok/Reels moderno: texto grande, amarelo/verde neon, sombra forte, centralizado
   const header = `[Script Info]
 ScriptType: v4.00+
@@ -206,7 +210,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\
     return `Dialogue: 0,${start},${end},TikTok,,0,0,0,,${text}`;
   });
 
-  fs.writeFileSync(assPath, header + lines.join('\n'));
+  const content = header + lines.join('\n');
+  fs.writeFileSync(assPath, content);
+  
+  logger.info(`[ASS] ✅ Arquivo criado: ${assPath} (${content.length} bytes)`);
 }
 
 function _formatASSTime(s) {
@@ -238,7 +245,9 @@ function _montarFFmpeg({ inputPath, assPath, musica, cta, duracao, outPath }) {
 
     if (temMusica) {
       cmd = cmd.input(musicaPath);  // [1]: música
-      logger.info(`[FFMPEG-POS] Música: ${musicaPath}`);
+      logger.info(`[FFMPEG-POS] ✅ Música: ${musicaPath}`);
+    } else if (musica) {
+      logger.warn(`[FFMPEG-POS] ⚠️ Música '${musica}' não encontrada: ${musicaPath}`);
     }
 
     const filters    = [];
@@ -248,13 +257,12 @@ function _montarFFmpeg({ inputPath, assPath, musica, cta, duracao, outPath }) {
     // ── Legendas ASS ──────────────────────────────────────────────────────
     if (assPath && fs.existsSync(assPath)) {
       const assSafe = assPath.replace(/\\/g, '/').replace(/'/g, "\\'");
-      const assContent = fs.readFileSync(assPath, 'utf8').substring(0, 200);
-      logger.info(`[FFMPEG-POS] ASS path: ${assSafe}`);
-      logger.info(`[FFMPEG-POS] ASS content (primeiros 200 chars): ${assContent}`);
+      const stats = fs.statSync(assPath);
+      logger.info(`[FFMPEG-POS] ✅ ASS encontrado: ${assSafe} (${stats.size} bytes)`);
       filters.push(`${videoLabel}ass='${assSafe}'[vsubs]`);
       videoLabel = '[vsubs]';
     } else {
-      logger.warn(`[FFMPEG-POS] Arquivo ASS não encontrado: ${assPath}`);
+      logger.warn(`[FFMPEG-POS] ⚠️ Arquivo ASS não encontrado: ${assPath}`);
     }
 
     // ── CTA overlay (primeiros 5s + últimos 5s) ───────────────────────────
@@ -271,18 +279,21 @@ function _montarFFmpeg({ inputPath, assPath, musica, cta, duracao, outPath }) {
       
       logger.info(`[FFMPEG-POS] CTA: texto='${textSafe}', cor=${corHex}, enable=${enableExpr}`);
 
-      // Caixa de fundo CTA com gradiente sutil
+      // CTA minimalista - ao lado da logo (logo ~200px, CTA começa em 230)
+      const ctaWidth = 260;
+      const ctaHeight = subSafe ? 50 : 32;
+      const ctaX = 230; // depois da logo
       filters.push(
-        `${videoLabel}drawbox=x=0:y=ih-220:w=iw:h=220:color=${corHex}@0.90:t=fill:enable='${enableExpr}'[vcta_bg]`
+        `${videoLabel}drawbox=x=${ctaX}:y=ih-${ctaHeight+8}:w=${ctaWidth}:h=${ctaHeight}:color=${corHex}@0.80:t=fill:enable='${enableExpr}'[vcta_bg]`
       );
       videoLabel = '[vcta_bg]';
 
-      // Texto principal CTA (maior, com borda)
+      // Texto principal CTA
       filters.push(
         `${videoLabel}drawtext=text='${textSafe}':` +
-        `fontsize=56:fontcolor=white:x=(w-text_w)/2:y=h-185:` +
-        `borderw=3:bordercolor=0x00000080:` +
-        `shadowx=3:shadowy=3:shadowcolor=0x000000CC:` +
+        `fontsize=20:fontcolor=white:x=${ctaX+10}:y=h-${ctaHeight+6}:` +
+        `borderw=1:bordercolor=0x00000060:` +
+        `shadowx=1:shadowy=1:shadowcolor=0x00000080:` +
         `enable='${enableExpr}'[vcta_txt]`
       );
       videoLabel = '[vcta_txt]';
@@ -291,8 +302,8 @@ function _montarFFmpeg({ inputPath, assPath, musica, cta, duracao, outPath }) {
       if (subSafe) {
         filters.push(
           `${videoLabel}drawtext=text='${subSafe}':` +
-          `fontsize=40:fontcolor=white@0.90:x=(w-text_w)/2:y=h-120:` +
-          `borderw=2:bordercolor=0x00000060:` +
+          `fontsize=14:fontcolor=white@0.85:x=${ctaX+10}:y=h-26:` +
+          `borderw=1:bordercolor=0x00000040:` +
           `enable='${enableExpr}'[vcta_sub]`
         );
         videoLabel = '[vcta_sub]';

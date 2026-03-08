@@ -339,7 +339,9 @@ router.post('/:id/pos-producao', async (req, res) => {
     // Processo assíncrono em background
     (async () => {
       try {
-        logger.info(`[POS-PRODUCAO] Iniciando para vídeo ${video._id}`);
+        logger.info(`[POS-PRODUCAO] 🎬 Iniciando edição vídeo ${video._id}`);
+        logger.info(`[POS-PRODUCAO] Config: legendas=${legendas}, musica=${musica}, cta=${JSON.stringify(cta)}`);
+        
         const editadoUrl = await aplicarPosProducao({
           videoId: video._id.toString(),
           videoUrl,
@@ -357,7 +359,8 @@ router.post('/:id/pos-producao', async (req, res) => {
 
         logger.info(`[POS-PRODUCAO] ✅ Vídeo ${video._id} editado: ${editadoUrl}`);
       } catch (err) {
-        logger.error(`[POS-PRODUCAO] Erro vídeo ${video._id}: ${err.message}`);
+        logger.error(`[POS-PRODUCAO] ❌ Erro vídeo ${video._id}: ${err.message}`);
+        logger.error(`[POS-PRODUCAO] Stack: ${err.stack}`);
         await Video.findByIdAndUpdate(video._id, {
           posProducaoStatus: 'failed',
           posProducaoError: err.message
