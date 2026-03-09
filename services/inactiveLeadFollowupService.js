@@ -34,34 +34,40 @@ export async function findInactiveLeadsForFollowup() {
 
     const leads = await Lead.find({
         // Lead ativo (não convertido e não descartado)
-        status: { 
-            $nin: ["agendado", "converted", "sem_interesse", "nao_interessado", "descartado"] 
+        status: {
+            $nin: ["agendado", "converted", "sem_interesse", "nao_interessado", "descartado"]
         },
-        // Lead não convertido (convertedToPatient é null ou não existe)
-        $or: [
-            { convertedToPatient: { $exists: false } },
-            { convertedToPatient: null }
-        ],
-        
         // Tem último contato registrado
         lastContactAt: { $exists: true, $lte: fortyEightHoursAgo },
-        
-        // Não tem agendamento futuro
-        $or: [
-            { nextAppointment: { $exists: false } },
-            { nextAppointment: null },
-            { nextAppointment: { $lte: new Date() } }
-        ],
-        
-        // Não recebeu follow-up nas últimas 48h
-        $or: [
-            { lastFollowUpAt: { $exists: false } },
-            { lastFollowUpAt: null },
-            { lastFollowUpAt: { $lte: fortyEightHoursAgo } }
-        ],
-        
         // Automação não foi desligada
-        stopAutomation: { $ne: true }
+        stopAutomation: { $ne: true },
+        // BUG FIX: múltiplos $or em JS usam a ÚLTIMA declaração (as anteriores são ignoradas)
+        // Usar $and para combinar todas as condições OR corretamente
+        $and: [
+            // Lead não convertido (convertedToPatient é null ou não existe)
+            {
+                $or: [
+                    { convertedToPatient: { $exists: false } },
+                    { convertedToPatient: null }
+                ]
+            },
+            // Não tem agendamento futuro
+            {
+                $or: [
+                    { nextAppointment: { $exists: false } },
+                    { nextAppointment: null },
+                    { nextAppointment: { $lte: new Date() } }
+                ]
+            },
+            // Não recebeu follow-up nas últimas 48h
+            {
+                $or: [
+                    { lastFollowUpAt: { $exists: false } },
+                    { lastFollowUpAt: null },
+                    { lastFollowUpAt: { $lte: fortyEightHoursAgo } }
+                ]
+            }
+        ]
     })
     .select("name childData knownFacts qualificationData therapyArea lastContactAt lastFollowUpAt conversionScore")
     .limit(100)
