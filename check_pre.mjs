@@ -34,7 +34,7 @@ mongoose.connect(MONGODB_URI)
     console.log('\n🔍 Buscando pré-agendamentos para 2026-03-04:\n');
     const preDoDia = await PreAgendamento.find({
       preferredDate: '2026-03-04',
-      status: { $nin: ['importado', 'descartado'] }
+      status: { $nin: ['agendado', 'descartado'] }
     }).lean();
     
     console.log(`Encontrados ${preDoDia.length} pré-agendamentos para 04/03:`);

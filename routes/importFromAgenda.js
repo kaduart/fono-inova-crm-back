@@ -281,7 +281,7 @@ router.post("/import-from-agenda/confirmar-por-id", agendaAuth, async (req, res)
       });
     }
 
-    if (pre.status === 'importado') {
+    if (pre.status === 'agendado') {
       console.log('[SYNC-UPDATE] 📋 updateData:', updateData);
     console.log('[SYNC-UPDATE] 📋 doctor encontrado:', doctor ? doctor._id : 'null');
     
@@ -371,7 +371,7 @@ router.post("/import-from-agenda/confirmar-por-id", agendaAuth, async (req, res)
     io.emit("appointmentCreated", result.appointment);
 
     // Atualizar pré-agendamento
-    pre.status = 'importado';
+    pre.status = 'agendado';
     pre.importedToAppointment = result.appointment._id;
     pre.importedAt = new Date();
     pre.patientId = result.patientId; // ✅ Garante o vínculo final
@@ -449,7 +449,7 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
       console.log(`[CRIAR-E-CONFIRMAR] ⚠️ PreAgendamento ${existingPre._id} já existe`);
 
       // Se já foi importado E já tem appointment
-      if (existingPre.status === 'importado' && existingPre.importedToAppointment) {
+      if (existingPre.status === 'agendado' && existingPre.importedToAppointment) {
         // Buscar appointment existente
         const existingAppointment = await Appointment.findById(existingPre.importedToAppointment).session(session);
 
@@ -642,7 +642,7 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
     }
 
     // 5) Atualiza pré-agendamento como importado
-    pre.status = 'importado';
+    pre.status = 'agendado';
     pre.importedToAppointment = result.appointment._id;
     pre.importedAt = new Date();
     pre.patientId = result.patientId; // ✅ Garante o vínculo final
@@ -1375,7 +1375,7 @@ router.post("/import-from-agenda/confirmar-agendamento", agendaAuth, async (req,
     }
 
     // Verificar se já foi importado
-    if (preAgendamento.status !== 'importado' || !preAgendamento.importedToAppointment) {
+    if (preAgendamento.status !== 'agendado' || !preAgendamento.importedToAppointment) {
       await session.abortTransaction();
       return res.status(400).json({
         success: false,
@@ -1579,7 +1579,7 @@ router.get("/import-from-agenda/weekly-availability", agendaAuth, async (req, re
     const preAgendamentos = await PreAgendamento.find({
       preferredDate: { $in: dates },
       professionalId: { $in: doctorIds },
-      status: { $nin: ['importado', 'desistiu', 'descartado', 'cancelado'] }
+      status: { $nin: ['agendado', 'desistiu', 'descartado', 'cancelado'] }
     }).select('professionalId preferredDate preferredTime').lean();
 
     // 4. Indexar agendamentos por doutor e data para acesso rápido
@@ -1788,7 +1788,7 @@ router.get("/import-from-agenda/debug-db", async (req, res) => {
 
     // Ver quais pré-agendamentos seriam filtrados pelo backend
     const preFiltrados = preAgendamentos.filter(p => {
-      return p.status !== 'importado' && 
+      return p.status !== 'agendado' && 
              p.status !== 'descartado' && 
              p.status !== 'desistiu' &&
              !p.importedToAppointment;
@@ -1848,7 +1848,7 @@ router.post("/import-from-agenda/limpar-duplicados-paciente", async (req, res) =
     const preAgendamentos = await PreAgendamento.find({
       'patientInfo.fullName': { $regex: patientName, $options: 'i' },
       preferredDate: date,
-      status: { $nin: ['importado', 'descartado'] }
+      status: { $nin: ['agendado', 'descartado'] }
     }).session(session);
 
     if (appointments.length === 0) {
@@ -1914,12 +1914,12 @@ router.post("/import-from-agenda/corrigir-status-importado", async (req, res) =>
 
       if (pre) {
         // Se o pré-agendamento não está marcado como importado, corrige
-        if (pre.status !== 'importado' || !pre.importedToAppointment) {
+        if (pre.status !== 'agendado' || !pre.importedToAppointment) {
           await db.collection('preagendamentos').updateOne(
             { _id: pre._id },
             { 
               $set: {
-                status: 'importado',
+                status: 'agendado',
                 importedToAppointment: apt._id,
                 importedAt: apt.metadata.origin.convertedAt || new Date()
               }
@@ -1997,7 +1997,7 @@ router.get("/import-from-agenda/verificar-daniel", async (req, res) => {
         operationalStatus: aptByMetadata.operationalStatus,
         preAgendamentoId: aptByMetadata.metadata?.origin?.preAgendamentoId
       } : null,
-      problema: pre?.status !== 'importado' && (apt || aptByMetadata) 
+      problema: pre?.status !== 'agendado' && (apt || aptByMetadata) 
         ? "TEM APPOINTMENT MAS STATUS NAO ESTA IMPORTADO!" 
         : "OK"
     });

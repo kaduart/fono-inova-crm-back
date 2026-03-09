@@ -230,7 +230,7 @@ export async function calculateAvailableSlots(doctorId, date) {
   // Busca por professionalId OU por professionalName (compatibilidade com registros antigos)
   const preAgendamentosAtivos = await PreAgendamento.find({
     preferredDate: date,
-    status: { $nin: ['importado', 'descartado', 'desistiu', 'expirado'] },
+    status: { $nin: ['agendado', 'descartado', 'desistiu', 'expirado'] },
     preferredTime: { $exists: true, $ne: null },
     $or: [
       { professionalId: toObjectId(doctorId) },
