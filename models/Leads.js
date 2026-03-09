@@ -213,7 +213,7 @@ const leadSchema = new mongoose.Schema({
     },
     autoResumeAfter: {
       type: Number,
-      default: 720
+      default: null  // 🔧 FIX: null = não volta sozinha, só quando clicar no botão "Ativar"
     }
   },
   awaitingResponse: { type: String, default: null },

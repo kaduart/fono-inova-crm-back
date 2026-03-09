@@ -29,7 +29,7 @@ import Convenio from '../models/Convenio.js';
 import { normalizeE164BR } from '../utils/phone.js';
 
 // 🆕 HELPER: Cria lead automaticamente quando agendamento é feito direto
-// SEMPRE cria novo lead (mesmo telefone pode ser pai com múltiplos filhos)
+// 🔧 FIX: Agora verifica duplicados primeiro para evitar erro de índice único
 async function ensureLeadForAppointment(patientId, appointmentData, source = 'agenda_direta') {
     try {
         // Buscar dados do paciente
@@ -41,52 +41,75 @@ async function ensureLeadForAppointment(patientId, appointmentData, source = 'ag
 
         const phoneE164 = patient.phone ? normalizeE164BR(patient.phone) : null;
 
-        // 🆕 SEMPRE cria novo lead - não verifica duplicados
-        // (mesmo telefone pode ser pai agendando para filhos diferentes)
-        const newLead = await Leads.create({
-            name: patient.fullName || patient.name || 'Paciente',
-            contact: {
-                phone: phoneE164,
-                email: patient.email || null
-            },
-            origin: source === 'whatsapp' ? 'WhatsApp' : 'Agenda Direta',
-            status: 'agendado',
-            stage: 'interessado_agendamento',
-            circuit: 'Circuito Padrão',
-            conversionScore: 50,
-            responded: true,
-            autoReplyEnabled: false,
-            patientInfo: {
-                fullName: patient.fullName,
-                phone: phoneE164,
-                email: patient.email
-            },
-            appointment: {
-                seekingFor: 'Adulto +18 anos',
-                modality: 'Presencial',
-                healthPlan: 'Mensalidade'
-            },
-            interactions: [{
-                date: new Date(),
-                channel: 'manual',
-                direction: 'inbound',
-                message: `Lead criado do agendamento direto - ${appointmentData.serviceType || 'consulta'} em ${appointmentData.date}`,
-                status: 'completed'
-            }],
-            scoreHistory: [{
-                score: 50,
-                reason: 'Agendamento direto na agenda externa',
-                date: new Date()
-            }],
-            lastInteractionAt: new Date(),
-            lastContactAt: new Date(),
-            autoCreatedFromAppointment: true,
-            appointmentSource: source,
-            linkedPatientId: patientId // 🆕 Link para o paciente
-        });
+        // 🔧 FIX: Primeiro verifica se já existe lead com este telefone
+        // Isso evita o erro E11000 duplicate key error
+        if (phoneE164) {
+            const existingLead = await Leads.findOne({ 'contact.phone': phoneE164 }).lean();
+            if (existingLead) {
+                console.log('[ensureLeadForAppointment] ✅ Lead existente encontrado:', existingLead._id);
+                return existingLead._id;
+            }
+        }
 
-        console.log('[ensureLeadForAppointment] ✅ Novo lead criado:', newLead._id);
-        return newLead._id;
+        // 🔧 FIX: Se não encontrou, cria novo com try-catch para race condition
+        try {
+            const newLead = await Leads.create({
+                name: patient.fullName || patient.name || 'Paciente',
+                contact: {
+                    phone: phoneE164,
+                    email: patient.email || null
+                },
+                origin: source === 'whatsapp' ? 'WhatsApp' : 'Agenda Direta',
+                status: 'agendado',
+                stage: 'interessado_agendamento',
+                circuit: 'Circuito Padrão',
+                conversionScore: 50,
+                responded: true,
+                autoReplyEnabled: false,
+                manualControl: { active: false, autoResumeAfter: null }, // 🔧 FIX: não volta sozinha
+                patientInfo: {
+                    fullName: patient.fullName,
+                    phone: phoneE164,
+                    email: patient.email
+                },
+                appointment: {
+                    seekingFor: 'Adulto +18 anos',
+                    modality: 'Presencial',
+                    healthPlan: 'Mensalidade'
+                },
+                interactions: [{
+                    date: new Date(),
+                    channel: 'manual',
+                    direction: 'inbound',
+                    message: `Lead criado do agendamento direto - ${appointmentData.serviceType || 'consulta'} em ${appointmentData.date}`,
+                    status: 'completed'
+                }],
+                scoreHistory: [{
+                    score: 50,
+                    reason: 'Agendamento direto na agenda externa',
+                    date: new Date()
+                }],
+                lastInteractionAt: new Date(),
+                lastContactAt: new Date(),
+                autoCreatedFromAppointment: true,
+                appointmentSource: source,
+                linkedPatientId: patientId
+            });
+
+            console.log('[ensureLeadForAppointment] ✅ Novo lead criado:', newLead._id);
+            return newLead._id;
+        } catch (createError) {
+            // 🔧 FIX: Se der erro de duplicata (race condition), busca o lead que foi criado
+            if (createError.code === 11000 && phoneE164) {
+                console.log('[ensureLeadForAppointment] ⚠️ Race condition detectada, buscando lead existente...');
+                const raceLead = await Leads.findOne({ 'contact.phone': phoneE164 }).lean();
+                if (raceLead) {
+                    console.log('[ensureLeadForAppointment] ✅ Lead encontrado após race condition:', raceLead._id);
+                    return raceLead._id;
+                }
+            }
+            throw createError; // Re-lança se não for erro de duplicata
+        }
 
     } catch (error) {
         console.error('[ensureLeadForAppointment] Erro:', error);
