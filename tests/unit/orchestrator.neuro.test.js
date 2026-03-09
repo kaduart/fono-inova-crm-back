@@ -266,10 +266,13 @@ describe('[FEAT] COLLECT_NEURO_TYPE — escolha de laudo', () => {
             message: makeMsg('laudo neuropsicológico'),
         });
 
-        const updateCall = mockLeadsUpdateOne.mock.calls.find(
-            c => c[1]?.$set?.['autoBookingContext.neuroType'] === 'laudo'
+        // BUG 1 FIX: updateOne agora usa pipeline (array) para não falhar com autoBookingContext null
+        const updateCall = mockLeadsUpdateOne.mock.calls.find(call =>
+            Array.isArray(call[1]) &&
+            JSON.stringify(call[1]).includes('neuroType') &&
+            JSON.stringify(call[1]).includes('laudo')
         );
-        expect(updateCall, 'Deve ter salvo neuroType=laudo no banco').toBeTruthy();
+        expect(updateCall, 'Deve ter salvo neuroType=laudo no banco (pipeline)').toBeTruthy();
     });
 
     it('responde com valor R$ 1.700 quando usuário diz "relatório"', async () => {
@@ -330,10 +333,13 @@ describe('[FEAT] COLLECT_NEURO_TYPE — escolha de acompanhamento', () => {
             message: makeMsg('acompanhamento terapêutico'),
         });
 
-        const updateCall = mockLeadsUpdateOne.mock.calls.find(
-            c => c[1]?.$set?.['autoBookingContext.neuroType'] === 'acompanhamento'
+        // BUG 1 FIX: updateOne agora usa pipeline (array) para não falhar com autoBookingContext null
+        const updateCall = mockLeadsUpdateOne.mock.calls.find(call =>
+            Array.isArray(call[1]) &&
+            JSON.stringify(call[1]).includes('neuroType') &&
+            JSON.stringify(call[1]).includes('acompanhamento')
         );
-        expect(updateCall, 'Deve ter salvo neuroType=acompanhamento no banco').toBeTruthy();
+        expect(updateCall, 'Deve ter salvo neuroType=acompanhamento no banco (pipeline)').toBeTruthy();
     });
 
     it('responde com R$ 200 e R$ 130 quando usuário diz "terapia"', async () => {

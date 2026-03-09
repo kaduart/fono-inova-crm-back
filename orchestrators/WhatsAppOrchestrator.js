@@ -172,6 +172,31 @@ export default class WhatsAppOrchestrator {
       // ── ESTADO INICIAL ──
       case STATES.IDLE:
       case STATES.GREETING: {
+        // BUG 2 FIX: lead retornando após gap — verificar dados existentes antes de iniciar do zero
+        const hasExistingTherapy = lead.therapyArea;
+        const hasExistingName = lead.patientInfo?.fullName;
+        const hasExistingComplaint = lead.autoBookingContext?.complaint;
+
+        if (hasExistingTherapy) {
+          this.logger.info('V8_RETURNING_LEAD_HAS_DATA', { leadId, therapyArea: hasExistingTherapy, hasName: !!hasExistingName, hasComplaint: !!hasExistingComplaint });
+          if (hasExistingName) {
+            // Tem terapia + nome → oferecer horários direto
+            const resumeData = { ...stateData, therapy: hasExistingTherapy, patientName: hasExistingName };
+            await jumpToState(leadId, STATES.SHOW_SLOTS, resumeData);
+            return this._handleOfferBooking(resumeData, lead, services);
+          }
+          if (hasExistingComplaint) {
+            // Tem terapia + queixa, falta período/nome → retomar no período
+            const resumeData = { ...stateData, therapy: hasExistingTherapy, complaint: hasExistingComplaint };
+            await jumpToState(leadId, STATES.COLLECT_PERIOD, resumeData);
+            return this._reply(`Oi! 😊 Que bom que voltou!\n\nEstava coletando as informações para *${hasExistingTherapy}*.\n\nQue período funciona melhor: **manhã ou tarde**? ☀️🌙`);
+          }
+          // Tem terapia mas sem queixa → retomar na queixa
+          const resumeData = { ...stateData, therapy: hasExistingTherapy };
+          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, resumeData);
+          return this._reply(`Oi! 😊 Bem-vindo(a) de volta!\n\nContinuando sobre *${hasExistingTherapy}* — me conta um pouco sobre a situação que está preocupando?`);
+        }
+
         const therapies = detectAllTherapies(text);
         const therapy = therapies.length > 0 ? therapies[0] : null;
         const therapyName = therapy?.name || therapy?.id || null;
@@ -197,6 +222,16 @@ export default class WhatsAppOrchestrator {
 
       // ── COLETA DE TERAPIA ──
       case STATES.COLLECT_THERAPY: {
+        // BUG 2 FIX: se lead já tem therapyArea salva no banco mas FSM está neste estado
+        // (ex: retornou no dia seguinte), usar o dado existente e avançar
+        if (lead.therapyArea && detectAllTherapies(text).length === 0) {
+          const restoredTherapy = lead.therapyArea;
+          this.logger.info('V8_THERAPY_RESTORED_FROM_DB', { leadId, therapyArea: restoredTherapy });
+          const resumeData = { ...stateData, therapy: restoredTherapy };
+          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, resumeData);
+          return this._reply(`Bem-vindo(a) de volta! 😊\n\nContinuando sobre *${restoredTherapy}* — me conta um pouco sobre a situação que está preocupando?`);
+        }
+
         const therapies = detectAllTherapies(text);
         if (therapies.length > 0) {
           const therapy = therapies[0];
@@ -212,6 +247,15 @@ export default class WhatsAppOrchestrator {
 
           await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy: therapy?.id || therapy });
           return this._reply(`${therapyName} 💚, ótima escolha!\n\nMe conta um pouco da situação que tá preocupando?`);
+        }
+
+        // BUG 10 FIX: neuropediatria é especialidade médica — a clínica não atende, mas deve responder com clareza
+        const isNeuropediatria = /neuro\s*pediatr/i.test(text);
+        if (isNeuropediatria) {
+          this.logger.info('V8_NEUROPEDIATRIA_NOT_OFFERED', { leadId, text: text.substring(0, 60) });
+          const { handoff } = await incrementRetry(leadId);
+          if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
+          return this._reply(`Neuropediatria é uma especialidade médica e não oferecemos esse atendimento aqui na Fono Inova 🤔\n\nMas trabalhamos com *Neuropsicologia*, que faz avaliação cognitiva, comportamental e emocional — muitas vezes é o que as famílias estão buscando! 💚\n\nVocê gostaria de saber mais sobre *Neuropsicologia*? Ou procura outra especialidade:\n\n💚 Fonoaudiologia\n💚 Psicologia\n💚 Fisioterapia\n💚 Terapia Ocupacional\n💚 Psicopedagogia`);
         }
 
         // Verifica se tem dado de idade/contexto para resposta mais natural
@@ -237,14 +281,20 @@ export default class WhatsAppOrchestrator {
         if (isLaudo) {
           this.logger.info('V8_NEURO_TYPE_COLLECTED', { leadId, neuroType: 'laudo' });
           await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { ...stateData, neuroType: 'laudo' });
-          await Leads.updateOne({ _id: leadId }, { $set: { 'autoBookingContext.neuroType': 'laudo' } });
+          await Leads.updateOne({ _id: leadId }, [
+            { $set: { autoBookingContext: { $ifNull: ['$autoBookingContext', {}] } } },
+            { $set: { 'autoBookingContext.neuroType': 'laudo' } },
+          ]);
           return this._reply(`Entendido! 💚 Laudo neuropsicológico completo.\n\n💰 *Investimento: R$ 1.700* (parcelamos em até 6x no cartão)\nInclui ~10 sessões de avaliação + laudo completo.\n\nMe conta: qual é a principal dificuldade que você quer investigar?`);
         }
 
         if (isAcomp) {
           this.logger.info('V8_NEURO_TYPE_COLLECTED', { leadId, neuroType: 'acompanhamento' });
           await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { ...stateData, neuroType: 'acompanhamento' });
-          await Leads.updateOne({ _id: leadId }, { $set: { 'autoBookingContext.neuroType': 'acompanhamento' } });
+          await Leads.updateOne({ _id: leadId }, [
+            { $set: { autoBookingContext: { $ifNull: ['$autoBookingContext', {}] } } },
+            { $set: { 'autoBookingContext.neuroType': 'acompanhamento' } },
+          ]);
           return this._reply(`Perfeito! 💚 Acompanhamento terapêutico.\n\n💰 *Investimento:*\n• Avaliação inicial: R$ 200\n• Sessões: R$ 130 cada\n\nMe conta: qual é a principal dificuldade?`);
         }
 
@@ -286,6 +336,20 @@ export default class WhatsAppOrchestrator {
         const age = extractAgeFromText(text);
         const birth = extractBirth(text);
 
+        // BUG 8 FIX: detecta se o texto parece um nome próprio (sem dígitos, 2+ palavras iniciando com maiúscula)
+        // Ocorre quando lead envia nome do paciente enquanto FSM aguarda data de nascimento
+        if (!age && !birth) {
+          const words = text.trim().split(/\s+/);
+          const looksLikeName = words.length >= 2 &&
+            words.every(w => /^[A-ZÀ-ÚÃÕ]/u.test(w)) &&
+            !/\d/.test(text);
+          if (looksLikeName) {
+            this.logger.info('V8_BIRTH_GOT_NAME_INSTEAD', { leadId, name: text.trim() });
+            await this._savePatientName(leadId, text.trim());
+            return this._reply(`Anotado, *${text.trim()}*! 📝\n\nAgora preciso da *data de nascimento* do paciente (dd/mm/aaaa):`);
+          }
+        }
+
         if (age || birth) {
           this.logger.info('V8_BIRTH_COLLECTED', { leadId, age, birth });
           const ageNum = resolveAgeNumber(age);
@@ -308,9 +372,19 @@ export default class WhatsAppOrchestrator {
         
         if (period) {
           this.logger.info('V8_PERIOD_COLLECTED', { leadId, period, preferredDate });
+          await this._savePeriod(leadId, period);
+
+          // BUG 7 FIX: se lead já tem nome, pular COLLECT_NAME direto para SHOW_SLOTS
+          const existingName = lead.patientInfo?.fullName;
+          if (existingName) {
+            this.logger.info('V8_NAME_ALREADY_EXISTS_SKIP_COLLECT', { leadId, existingName });
+            const newData = { ...stateData, period, preferredDate, patientName: existingName };
+            await jumpToState(leadId, STATES.SHOW_SLOTS, newData);
+            return this._handleOfferBooking(newData, lead, services);
+          }
+
           const newData = { ...stateData, period, preferredDate };
           await jumpToState(leadId, STATES.COLLECT_NAME, newData);
-          await this._savePeriod(leadId, period);
           return this._reply(`Perfeito! ☀️\n\nQual o *nome completo do paciente*?`);
         }
         
@@ -330,6 +404,15 @@ export default class WhatsAppOrchestrator {
 
       // ── COLETA DE NOME DO PACIENTE ──
       case STATES.COLLECT_NAME: {
+        // BUG 4 FIX: se lead já tem nome salvo no banco, não perguntar de novo
+        const existingName = lead.patientInfo?.fullName;
+        if (existingName) {
+          this.logger.info('V8_NAME_ALREADY_IN_DB_SKIP', { leadId, existingName });
+          const newData = { ...stateData, patientName: existingName };
+          await jumpToState(leadId, STATES.SHOW_SLOTS, newData);
+          return this._handleOfferBooking(newData, lead, services);
+        }
+
         const name = extractName(text);
         if (name && name.length >= 2) {
           this.logger.info('V8_PATIENT_NAME_COLLECTED', { leadId, name });
@@ -613,14 +696,23 @@ export default class WhatsAppOrchestrator {
   }
 
   async _saveComplaint(leadId, complaint) {
-    await Leads.updateOne({ _id: leadId }, { $set: { 'autoBookingContext.complaint': complaint } });
+    // BUG 1 FIX: autoBookingContext pode ser null no MongoDB — usar pipeline para inicializar antes de settar subcampo
+    await Leads.updateOne({ _id: leadId }, [
+      { $set: { autoBookingContext: { $ifNull: ['$autoBookingContext', {}] } } },
+      { $set: { 'autoBookingContext.complaint': complaint } },
+    ]);
   }
 
   async _saveComplaintAndAge(leadId, complaint, age) {
     // age já deve vir resolvido como número (use resolveAgeNumber antes de chamar)
-    const update = { 'autoBookingContext.complaint': complaint };
-    if (age !== null && age !== undefined) update['patientInfo.age'] = age;
-    await Leads.updateOne({ _id: leadId }, { $set: update });
+    // BUG 1 FIX: usar pipeline para não falhar quando autoBookingContext é null
+    await Leads.updateOne({ _id: leadId }, [
+      { $set: { autoBookingContext: { $ifNull: ['$autoBookingContext', {}] } } },
+      { $set: { 'autoBookingContext.complaint': complaint } },
+    ]);
+    if (age !== null && age !== undefined) {
+      await Leads.updateOne({ _id: leadId }, { $set: { 'patientInfo.age': age } });
+    }
   }
 
   async _saveAge(leadId, age, birth) {
@@ -632,7 +724,11 @@ export default class WhatsAppOrchestrator {
   }
 
   async _savePeriod(leadId, period) {
-    await Leads.updateOne({ _id: leadId }, { $set: { 'autoBookingContext.preferredPeriod': period } });
+    // BUG 1 FIX: usar pipeline para não falhar quando autoBookingContext é null
+    await Leads.updateOne({ _id: leadId }, [
+      { $set: { autoBookingContext: { $ifNull: ['$autoBookingContext', {}] } } },
+      { $set: { 'autoBookingContext.preferredPeriod': period } },
+    ]);
   }
 
   async _savePatientName(leadId, name) {

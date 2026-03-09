@@ -1362,6 +1362,17 @@ async function processMessageStatus(status) {
             // 🔄 FALLBACK 131047: janela de 24h expirada → envia template de recontato
             const is24hError = errors.some(e => e.code === 131047);
             if (is24hError) {
+                // 🛡️ DEDUP: evitar envio múltiplo do mesmo template para o mesmo número
+                // (pode ocorrer se várias msgs falharem com 131047 quase ao mesmo tempo)
+                const dedupKey = `recontato_sent:${recipient_id}`;
+                const alreadySent = await redis?.get(dedupKey);
+                if (alreadySent) {
+                    console.log(`[WEBHOOK-STATUS] ⏭️ Template recontato_clinica JÁ enviado recentemente para ${recipient_id} — ignorando duplicata`);
+                    return;
+                }
+                // Marca como enviado por 4 horas (evita spam)
+                await redis?.set(dedupKey, '1', 'EX', 4 * 60 * 60);
+
                 console.log(`[WEBHOOK-STATUS] ⏰ Janela 24h expirada para ${recipient_id} — enviando template recontato_clinica`);
                 try {
                     await sendTemplateMessage({
