@@ -97,7 +97,7 @@ const preAgendamentoSchema = new mongoose.Schema({
       'em_analise',     // Alguém está trabalhando nisso
       'contatado',      // Tentativa de contato feita
       'confirmado',     // Paciente confirmou interesse
-      'importado',      // Convertido para Appointment
+      'agendado',       // Convertido para Appointment
       'descartado',     // Não vai prosseguir
       'desistiu',       // Paciente desistiu explicitamente (Métrica de Perda)
       'expirado'        // Data passou sem ação
@@ -183,7 +183,7 @@ preAgendamentoSchema.pre('save', function (next) {
     else if (days <= 7) this.urgency = 'media';
     else this.urgency = 'baixa';
 
-    // Expira em 30 dias se não for importado
+    // Expira em 30 dias se não for agendado
     if (!this.expiresAt) {
       const expires = new Date();
       expires.setDate(expires.getDate() + 30);

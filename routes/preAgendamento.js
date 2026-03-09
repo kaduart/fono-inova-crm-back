@@ -187,7 +187,7 @@ router.post('/:id/importar-externo', agendaAuth, async (req, res) => {
     // 1. Buscar pré-agendamento
     const pre = await PreAgendamento.findById(id).session(session);
     if (!pre) throw new Error('Pré-agendamento não encontrado');
-    if (pre.status === 'importado') {
+    if (pre.status === 'agendado') {
       return res.json({ success: true, message: 'Já importado', appointmentId: pre.importedToAppointment });
     }
 
@@ -251,8 +251,8 @@ router.post('/:id/importar-externo', agendaAuth, async (req, res) => {
       throw new Error(result.error || 'Erro ao criar agendamento');
     }
 
-    // 4. Atualizar pré-agendamento
-    pre.status = 'importado';
+    // 4. Marcar pré-agendamento como importado (mantém para analytics)
+    pre.status = 'agendado';
     pre.importedToAppointment = result.appointment._id;
     pre.importedAt = new Date();
     await pre.save({ session });
@@ -323,7 +323,7 @@ router.get('/', async (req, res) => {
       const statusList = status.split(',').map(s => s.trim());
       filters.status = statusList.length > 1 ? { $in: statusList } : status;
     } else {
-      filters.status = { $nin: ['importado', 'descartado'] };
+      filters.status = { $nin: ['agendado', 'descartado'] };
     }
 
     if (specialty) filters.specialty = specialty;
@@ -359,7 +359,7 @@ router.get('/', async (req, res) => {
       PreAgendamento.countDocuments(filters),
 
       PreAgendamento.aggregate([
-        { $match: { status: { $ne: 'importado' } } },
+        { $match: { status: { $ne: 'agendado' } } },
         {
           $group: {
             _id: '$status',
@@ -371,7 +371,7 @@ router.get('/', async (req, res) => {
 
     // Estatísticas por urgência
     const urgencias = await PreAgendamento.aggregate([
-      { $match: { status: { $nin: ['importado', 'descartado'] } } },
+      { $match: { status: { $nin: ['agendado', 'descartado'] } } },
       {
         $group: {
           _id: '$urgency',
@@ -567,7 +567,10 @@ router.post('/:id/importar', async (req, res) => {
     // 1. Buscar pré-agendamento
     const pre = await PreAgendamento.findById(id).session(session);
     if (!pre) throw new Error('Pré-agendamento não encontrado');
-    if (pre.status === 'importado') throw new Error('Já foi importado');
+    if (pre.status === 'agendado') throw new Error('Já foi importado');
+    if (['cancelado', 'descartado', 'desistiu'].includes(pre.status)) {
+      throw new Error(`Não pode importar: Pré-agendamento está ${pre.status}`);
+    }
 
     console.log('[IMPORTAR] Dados atuais do pré-agendamento:', {
       patientInfo: pre.patientInfo
@@ -617,12 +620,10 @@ router.post('/:id/importar', async (req, res) => {
       throw new Error(result.error || 'Erro ao criar agendamento');
     }
 
-    // 4. Atualizar pré-agendamento
-    pre.status = 'importado';
+    // 4. Marcar pré-agendamento como importado (mantém para analytics)
+    pre.status = 'agendado';
     pre.importedToAppointment = result.appointment._id;
     pre.importedAt = new Date();
-
-    // Verifica se é um usuário real (ObjectId) ou serviço
     if (mongoose.Types.ObjectId.isValid(req.user.id)) {
       pre.importedBy = req.user.id;
     }
@@ -738,13 +739,13 @@ router.get('/stats/dashboard', async (req, res) => {
     const stats = await Promise.all([
       // Total por status
       PreAgendamento.aggregate([
-        { $match: { status: { $ne: 'importado' } } },
+        { $match: { status: { $ne: 'agendado' } } },
         { $group: { _id: '$status', count: { $sum: 1 } } }
       ]),
 
       // Urgentes (próximos 2 dias)
       PreAgendamento.countDocuments({
-        status: { $nin: ['importado', 'descartado'] },
+        status: { $nin: ['agendado', 'descartado'] },
         preferredDate: { $gte: hoje },
         $or: [
           { urgency: 'alta' },
@@ -754,7 +755,7 @@ router.get('/stats/dashboard', async (req, res) => {
 
       // Por especialidade
       PreAgendamento.aggregate([
-        { $match: { status: { $nin: ['importado', 'descartado'] } } },
+        { $match: { status: { $nin: ['agendado', 'descartado'] } } },
         { $group: { _id: '$specialty', count: { $sum: 1 } } }
       ]),
 
@@ -770,7 +771,7 @@ router.get('/stats/dashboard', async (req, res) => {
             _id: null,
             total: { $sum: 1 },
             importados: {
-              $sum: { $cond: [{ $eq: ['$status', 'importado'] }, 1, 0] }
+              $sum: { $cond: [{ $eq: ['$status', 'agendado'] }, 1, 0] }
             }
           }
         }

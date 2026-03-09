@@ -163,7 +163,7 @@ export const mapPreAgendamentoToEvent = (pre) => {
         'em_analise': 'Em Análise', 
         'contatado': 'Contatado',
         'confirmado': 'Confirmado',
-        'importado': 'Importado',
+        'agendado': 'Agendado',
         'descartado': 'Descartado'
     };
 

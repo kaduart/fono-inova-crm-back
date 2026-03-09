@@ -1362,15 +1362,27 @@ async function processMessageStatus(status) {
             // 🔄 FALLBACK 131047: janela de 24h expirada → envia template de recontato
             const is24hError = errors.some(e => e.code === 131047);
             if (is24hError) {
-                // 🛡️ DEDUP: evitar envio múltiplo do mesmo template para o mesmo número
-                // (pode ocorrer se várias msgs falharem com 131047 quase ao mesmo tempo)
+                // 🛡️ DEDUP duplo: Redis (curto prazo) + banco (24h) — nunca spam
                 const dedupKey = `recontato_sent:${recipient_id}`;
-                const alreadySent = await redis?.get(dedupKey);
-                if (alreadySent) {
-                    console.log(`[WEBHOOK-STATUS] ⏭️ Template recontato_clinica JÁ enviado recentemente para ${recipient_id} — ignorando duplicata`);
+                const redisBlock = await redis?.get(dedupKey);
+                if (redisBlock) {
+                    console.log(`[WEBHOOK-STATUS] ⏭️ [REDIS] Template recontato_clinica já enviado recentemente para ${recipient_id} — ignorando`);
                     return;
                 }
-                // Marca como enviado por 4 horas (evita spam)
+                // Verifica também no banco: se já enviou o mesmo template nas últimas 24h
+                const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+                const recentTemplate = await Message.findOne({
+                    to: recipient_id,
+                    templateName: 'recontato_clinica',
+                    direction: 'outbound',
+                    timestamp: { $gte: oneDayAgo },
+                }).lean();
+                if (recentTemplate) {
+                    console.log(`[WEBHOOK-STATUS] ⏭️ [DB] Template recontato_clinica já enviado nas últimas 24h para ${recipient_id} — ignorando`);
+                    await redis?.set(dedupKey, '1', 'EX', 4 * 60 * 60); // sincroniza Redis
+                    return;
+                }
+                // Marca no Redis por 4 horas (guard rápido para rajadas)
                 await redis?.set(dedupKey, '1', 'EX', 4 * 60 * 60);
 
                 console.log(`[WEBHOOK-STATUS] ⏰ Janela 24h expirada para ${recipient_id} — enviando template recontato_clinica`);
