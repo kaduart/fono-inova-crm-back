@@ -551,19 +551,47 @@ router.post('/:id/importar', async (req, res) => {
       sessionValue,
       serviceType = 'evaluation',
       paymentMethod = 'pix',
-      notes
+      notes,
+      // Dados do paciente que podem vir do frontend
+      birthDate,
+      phone,
+      email,
+      responsible
     } = req.body;
+
+    console.log('[IMPORTAR] Dados recebidos do frontend:', { 
+      birthDate, phone, email, responsible,
+      body: req.body 
+    });
 
     // 1. Buscar pré-agendamento
     const pre = await PreAgendamento.findById(id).session(session);
     if (!pre) throw new Error('Pré-agendamento não encontrado');
     if (pre.status === 'importado') throw new Error('Já foi importado');
 
+    console.log('[IMPORTAR] Dados atuais do pré-agendamento:', {
+      patientInfo: pre.patientInfo
+    });
+
     // 2. Buscar doutor
     const doctor = await Doctor.findById(doctorId).session(session);
     if (!doctor) throw new Error('Doutor não encontrado');
 
-    // 3. Importar usando bookFixedSlot
+    // 3. Atualizar dados do paciente no pré-agendamento (se vieram do frontend)
+    if (birthDate) {
+      console.log('[IMPORTAR] Atualizando birthDate:', birthDate);
+      pre.patientInfo.birthDate = birthDate;
+    }
+    if (phone) pre.patientInfo.phone = phone;
+    if (email) pre.patientInfo.email = email;
+    if (responsible) pre.patientInfo.responsible = responsible;
+    await pre.save({ session });
+    
+    console.log('[IMPORTAR] Dados após atualização:', {
+      patientInfo: pre.patientInfo
+    });
+
+    // 4. Importar usando bookFixedSlot
     const result = await bookFixedSlot({
       patientInfo: {
         fullName: pre.patientInfo.fullName,

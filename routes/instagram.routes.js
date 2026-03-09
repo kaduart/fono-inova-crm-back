@@ -3,6 +3,7 @@ import { auth } from '../middleware/auth.js';
 import * as instagramController from '../controllers/instagramController.js';
 import * as postGeneratorController from '../controllers/postGeneratorController.js';
 import { generateVariations, scoreContent } from '../controllers/instagramController.js';
+import { uploadMiddleware } from '../services/media/mediaUploadService.js';
 
 const router = Router();
 router.use(auth);
@@ -42,6 +43,8 @@ router.get('/especialidades', postGeneratorController.listEspecialidadesComLayou
 
 // 🎨 Ações em posts específicos
 router.post('/posts/:id/image', instagramController.generateImageForPost);
+router.post('/posts/:id/upload-media', uploadMiddleware, instagramController.uploadMedia);
+router.post('/posts/:id/approve', instagramController.approvePost);
 router.post('/posts/:id/publish', instagramController.publishPost);
 router.delete('/posts/:id', instagramController.deletePost);
 router.put('/posts/:id', instagramController.updatePost);
