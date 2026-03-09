@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { auth } from '../middleware/auth.js';
 import * as facebookController from '../controllers/facebookController.js';
 import { generateVariations, scoreContent } from '../controllers/facebookController.js';
+import { uploadMiddleware } from '../services/media/mediaUploadService.js';
 
 const router = Router();
 router.use(auth);
@@ -21,6 +22,8 @@ router.post('/score', scoreContent);
 
 // Rotas com parâmetros - ORDEM IMPORTANTE: mais específicas primeiro
 router.post('/posts/:id/image', facebookController.generateImageForPost);
+router.post('/posts/:id/upload-media', uploadMiddleware, facebookController.uploadMedia);
+router.post('/posts/:id/approve', facebookController.approvePost);
 router.post('/posts/:id/publish', facebookController.publishPost);
 router.delete('/posts/:id', facebookController.deletePost);
 router.put('/posts/:id', facebookController.updatePost);
