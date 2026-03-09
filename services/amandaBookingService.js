@@ -802,7 +802,7 @@ export async function bookFixedSlot({
                     `🩺 *Especialidade:* ${specialty || 'N/A'}\n` +
                     `📋 *Tipo:* ${sessionType}`;
 
-                await sendTextMessage({ to: ownerPhone, text: msg, sentBy: 'sistema' });
+                await sendTextMessage({ to: ownerPhone, text: msg, sentBy: 'system' });
                 console.log('[bookFixedSlot] ✅ Notificação WPP enviada ao dono');
             } catch (notifyErr) {
                 console.warn('[bookFixedSlot] ⚠️ Falha ao notificar dono via WPP:', notifyErr.message);

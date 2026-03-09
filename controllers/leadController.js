@@ -847,7 +847,7 @@ export async function resolveLeadByPhone(phone, defaults = {}) {
         status: defaults.status || "novo",
         appointment: defaults.appointment || {},
         autoReplyEnabled: true,
-        manualControl: { active: false, autoResumeAfter: 30 },
+        manualControl: { active: false, autoResumeAfter: null },  // 🔧 FIX: null = não volta sozinha
         lastInteractionAt: new Date(),
         createdAt: new Date()
     });
