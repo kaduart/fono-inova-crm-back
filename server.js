@@ -406,6 +406,10 @@ function initFollowupWatcher() {
     // 📍 Inicializa cron do Google Meu Negócio
     await import("./crons/gmb.cron.js");
 
+    // 📲 Worker de publicação agendada — Instagram + Facebook
+    const { startScheduledPublisher } = await import("./jobs/publishScheduled.js");
+    startScheduledPublisher();
+
     // Registrar Webhook PIX no Sicoob
     try {
       await registerWebhook();

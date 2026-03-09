@@ -33,7 +33,7 @@ const facebookPostSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['draft', 'scheduled', 'published', 'failed', 'processing'],
+    enum: ['draft', 'approved', 'scheduled', 'published', 'failed', 'processing'],
     default: 'draft'
   },
   processingStatus: {

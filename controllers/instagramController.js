@@ -12,6 +12,8 @@ import {
 import { ESPECIALIDADES, generateCaptionSEO, generateHooksViral, generateContentVariations, scorePostQuality } from '../services/gmbService.js';
 import InstagramPost from '../models/InstagramPost.js';
 import { postGenerationQueue } from '../config/bullConfig.js';
+import { publishToInstagram } from '../services/meta/metaPublisher.js';
+import { uploadToCloudinary } from '../services/media/mediaUploadService.js';
 
 export async function listPosts(req, res) {
   try {
@@ -93,21 +95,75 @@ export async function generatePost(req, res) {
   }
 }
 
-export async function publishPost(req, res) {
+export async function approvePost(req, res) {
   try {
     const post = await InstagramPost.findById(req.params.id);
     if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
-    
-    post.status = 'published';
-    post.publishedAt = new Date();
+    if (!['draft', 'failed'].includes(post.status)) {
+      return res.status(400).json({ success: false, error: `Post com status '${post.status}' não pode ser aprovado` });
+    }
+
+    post.status = 'approved';
     await post.save();
-    
-    res.json({ 
-      success: true, 
-      data: post,
-      copyText: `${post.headline}\n\n${post.caption}`
-    });
+
+    res.json({ success: true, data: post, message: '✅ Post aprovado — pronto para publicar' });
   } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+export async function publishPost(req, res) {
+  try {
+    // target: 'organic' | 'paid' | 'both' (default: 'organic')
+    const { target = 'organic', campaign } = req.body;
+
+    const post = await InstagramPost.findById(req.params.id);
+    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+    if (!['approved', 'draft'].includes(post.status)) {
+      return res.status(400).json({ success: false, error: `Post com status '${post.status}' não pode ser publicado` });
+    }
+    if (!post.mediaUrl) {
+      return res.status(400).json({ success: false, error: 'Post sem imagem — gere ou faça upload de uma imagem antes de publicar' });
+    }
+
+    const caption = post.caption || `${post.headline}\n\n${post.content}`;
+    const result = { success: true, data: post };
+
+    // 1️⃣ Orgânico — publica no feed do Instagram
+    if (target === 'organic' || target === 'both') {
+      const igPostId = await publishToInstagram({ imageUrl: post.mediaUrl, caption });
+      await post.markPublished(igPostId);
+      result.igPostId = igPostId;
+      result.message = '📸 Post publicado no Instagram!';
+    }
+
+    // 2️⃣ Pago — cria campanha na Meta Ads
+    if (target === 'paid' || target === 'both') {
+      try {
+        const { publicarVideo } = await import('../services/meta/videoPublisher.js');
+        const adResult = await publicarVideo({
+          videoPath: post.mediaUrl, // URL pública (Cloudinary)
+          copy: {
+            texto_primario: caption,
+            headline: post.headline || 'Agende sua consulta',
+            descricao: post.subheadline || ''
+          },
+          nomeCampanha: campaign?.name || `CRM - ${post.theme} - ${new Date().toLocaleDateString('pt-BR')}`,
+          targeting: campaign?.targeting || {}
+        });
+        result.campaign = adResult;
+        result.message = target === 'both'
+          ? '📸 Publicado + campanha criada!'
+          : '📢 Campanha criada na Meta Ads!';
+      } catch (adErr) {
+        // Campanha falhou mas não bloqueia o orgânico
+        result.campaignError = adErr.message;
+      }
+    }
+
+    res.json(result);
+  } catch (error) {
+    await InstagramPost.findByIdAndUpdate(req.params.id, { status: 'failed', errorMessage: error.message });
     res.status(500).json({ success: false, error: error.message });
   }
 }
@@ -130,6 +186,31 @@ export async function deletePost(req, res) {
   try {
     await InstagramPost.findByIdAndDelete(req.params.id);
     res.json({ success: true, message: 'Post deletado' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+// Upload de mídia externa (imagem/vídeo criado fora do CRM)
+export async function uploadMedia(req, res) {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
+
+    const post = await InstagramPost.findById(req.params.id);
+    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+
+    const { url, resourceType } = await uploadToCloudinary(
+      req.file.buffer,
+      req.file.mimetype,
+      'instagram'
+    );
+
+    post.mediaUrl = url;
+    post.mediaType = resourceType === 'video' ? 'video' : 'image';
+    post.imageProvider = 'upload-externo';
+    await post.save();
+
+    res.json({ success: true, data: { mediaUrl: url, mediaType: post.mediaType }, message: '✅ Arquivo enviado com sucesso' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
