@@ -261,7 +261,7 @@ export const whatsappController = {
                         'manualControl.active': true,
                         'manualControl.takenOverAt': new Date(),
                         'manualControl.takenOverBy': userId || null,
-                        'manualControl.autoResumeAfter': 30
+                        'manualControl.autoResumeAfter': null  // 🔧 FIX: Não volta sozinha - só ativa quando clicar no botão
                     }
                 });
                 
@@ -839,12 +839,12 @@ export const whatsappController = {
             const patientId = lead.convertedToPatient || null;
 
             // 🧠 Ativa controle manual (Amanda PAUSADA) — FAÇA ANTES DO ENVIO
-            // 🔧 CORREÇÃO: Adicionar autoResumeAfter padrão de 30 minutos
+            // 🔧 FIX: Amanda só volta quando clicar no botão "Ativar" - não automaticamente
             await Lead.findByIdAndUpdate(lead._id, {
                 'manualControl.active': true,
                 'manualControl.takenOverAt': new Date(),
                 'manualControl.takenOverBy': userId,
-                'manualControl.autoResumeAfter': 30  // 30 minutos padrão
+                'manualControl.autoResumeAfter': null  // null = não volta sozinha
             });
             console.log(`✅ Mensagem manual enviada - Amanda pausada para o lead ${lead._id}`);
 
@@ -1129,7 +1129,7 @@ export const whatsappController = {
                     'manualControl.active': true,
                     'manualControl.takenOverAt': new Date(),
                     'manualControl.takenOverBy': req.user?._id || null,
-                    'manualControl.autoResumeAfter': 30  // 30 minutos padrão
+                    'manualControl.autoResumeAfter': null  // 🔧 FIX: Só volta quando clicar em "Ativar"
                 }
             });
 
@@ -2058,16 +2058,25 @@ async function handleAutoReply(from, to, content, lead) {
                 : null;
 
             let aindaPausada = true;
-            // 🔧 CORREÇÃO: Usar 30 minutos como padrão se não especificado
-            const timeout = leadDoc.manualControl?.autoResumeAfter ?? 30;
-            if (takenAt && typeof timeout === "number" && timeout > 0) {
-                const minutesSince = (Date.now() - takenAt.getTime()) / (1000 * 60);
-                if (minutesSince > timeout) {
-                    await Lead.findByIdAndUpdate(lead._id, { 'manualControl.active': false });
-                    aindaPausada = false;  // 🔧 CORREÇÃO: Atualizar a variável local!
+            // 🔧 FIX: Só reativa automaticamente se autoResumeAfter for um número positivo
+            // Se for null/undefined/0, mantém pausado indefinidamente (só volta clicando no botão "Ativar")
+            const timeout = leadDoc.manualControl?.autoResumeAfter;
+            if (typeof timeout === "number" && timeout > 0) {
+                // 🔄 Modo com timeout: verifica se já passou o tempo
+                if (takenAt) {
+                    const minutesSince = (Date.now() - takenAt.getTime()) / (1000 * 60);
+                    if (minutesSince > timeout) {
+                        await Lead.findByIdAndUpdate(lead._id, { 'manualControl.active': false });
+                        aindaPausada = false;
+                    }
                 }
+            } else if (timeout === null || timeout === undefined) {
+                // 🔒 Modo sem timeout: mantém pausado indefinidamente
+                // Só volta quando o usuário clicar no botão "Ativar"
+                console.log('🔒 [CONTROLE MANUAL] Modo permanente ativo - Amanda não volta sozinha');
+                aindaPausada = true;
             } else if (!takenAt) {
-                // 🔧 CORREÇÃO: Se não tem takenAt, desativa manualControl automaticamente
+                // ⚠️ Se não tem takenAt e não tem timeout definido, desativa por segurança
                 await Lead.findByIdAndUpdate(lead._id, { 'manualControl.active': false });
                 aindaPausada = false;
             }
