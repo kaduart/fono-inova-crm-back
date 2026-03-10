@@ -649,8 +649,35 @@ videoWorker.on('completed', (job, result) => {
   logger.info(`[VIDEO WORKER] ✅ Job ${job.id} finalizado: ${result?.jobId}`);
 });
 
-videoWorker.on('failed', (job, err) => {
-  logger.error(`[VIDEO WORKER] ❌ Job ${job?.id} falhou: ${err.message}`);
+videoWorker.on('failed', async (job, err) => {
+  const errorMsg = err?.message || err?.toString() || 'Erro desconhecido';
+  logger.error(`[VIDEO WORKER] ❌ Job ${job?.id} falhou: ${errorMsg}`);
+  
+  // Atualizar status no MongoDB quando job falha (incluindo stalled jobs)
+  if (job?.data?.videoDocId) {
+    try {
+      await Video.findByIdAndUpdate(job.data.videoDocId, {
+        status: 'failed',
+        pipelineStatus: 'ERRO',
+        errorMessage: `[WORKER FAILED] ${errorMsg.substring(0, 500)}`,
+        'progresso.etapa': 'ERRO',
+        'progresso.percentual': 0,
+        'progresso.atualizadoEm': new Date()
+      });
+      logger.info(`[VIDEO WORKER] ✅ Status do vídeo ${job.data.videoDocId} atualizado para 'failed'`);
+      
+      // Emitir evento de erro via socket
+      const io = getIo();
+      io.emit(`video-progress-${job.data.jobId}`, {
+        jobId: job.data.jobId,
+        etapa: 'ERRO',
+        percentual: 0,
+        erro: errorMsg
+      });
+    } catch (dbErr) {
+      logger.error(`[VIDEO WORKER] ❌ Falha ao atualizar status no MongoDB: ${dbErr.message}`);
+    }
+  }
 });
 
 videoWorker.on('error', (err) => {

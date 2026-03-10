@@ -923,7 +923,7 @@ router.get('/', flexibleAuth, async (req, res) => {
         // 🔹 2. BUSCAR PRÉ-AGENDAMENTOS (INTERESSES) NÃO IMPORTADOS
         // Só mostra pré-agendamentos que ainda não viraram appointment
         const preFilter = {
-            status: { $nin: ['agendado', 'descartado', 'desistiu'] } // ❌ Não importados
+            status: { $nin: ['agendado', 'descartado', 'desistiu', 'cancelado', 'expirado'] }
         };
 
         // Aplicar filtro de data
@@ -2215,7 +2215,7 @@ router.get('/count-by-status', auth, async (req, res) => {
 
         // 🎯 CONTAR PRÉ-AGENDAMENTOS (para mostrar na mesma contagem)
         const preFilter = {
-            status: { $nin: ['agendado', 'descartado'] }
+            status: { $nin: ['agendado', 'descartado', 'cancelado', 'desistiu', 'expirado'] }
         };
         if (dateFrom || dateTo) {
             preFilter.preferredDate = {};
