@@ -257,7 +257,7 @@ export function deriveFlagsFromText(text = "") {
         saysBye: /\b(tchau|até\s+mais|até\s+logo|até\s+amanhã|até)\b/i.test(normalizedText),
 
         asksSpecialtyAvailability:
-            /(voc[eê]\s*tem\s+(psicolog|fono|fonoaudiolog|terapia\s+ocupacional|fisioterap|neuropsico|musicoterap)|\btem\s+(psicolog|fono|fonoaudiolog|terapia\s+ocupacional|fisioterap|neuropsico|musicoterap))/i.test(normalizedText),
+            /(voc[eê]s?\s*(t[eê]m|atende|possu|oferece)|\b(t[eê]m|atende|possu|oferece)[^?]*\b(psicolog|fono|fonoaudiolog|terapia\s+ocupacional|fisioterap|neuropsico|musicoterap|to\b)|\b(psicolog|fono|fonoaudiolog|terapia\s+ocupacional|fisioterap|neuropsico|musicoterap)[^?]*(t[eê]m|atende|possu|oferece))/i.test(normalizedText),
 
         // objeções
         mentionsPriceObjection:
@@ -611,7 +611,7 @@ export function detectManualIntent(text = "") {
 export const MEDICAL_SPECIALTIES_MAP = [
     {
         id: 'neurologista',
-        terms: ['neuropediatra', 'neurologista', 'neurologia', 'neurologo', 'neuro pediatra'],
+        terms: ['neuropediatra', 'neuropediatria', 'neurologista', 'neurologia', 'neurologo', 'neuro pediatra', 'neuro pediatria'],
         redirectTo: 'neuropsicologia',
         message: 'Somos uma clínica de terapias. Não temos médicos neurologistas, mas oferecemos Neuropsicologia (avaliação das funções cognitivas).'
     },
@@ -643,11 +643,37 @@ export const MEDICAL_SPECIALTIES_MAP = [
 export function detectMedicalSpecialty(text = "") {
     const normalized = text.toLowerCase().trim();
     
-    for (const medical of MEDICAL_SPECIALTIES_MAP) {
+    // 🔧 FIX: Verificar primeiro se é neurologista/neuropediatra (evita confusão com pediatra)
+    // Se contém "neuro" + "pediatra" ou variações, é neurologista
+    const hasNeuro = /\bneuro/i.test(normalized);
+    const hasPediatra = /\bpediatr/i.test(normalized);
+    if (hasNeuro && hasPediatra) {
+        const neuroEntry = MEDICAL_SPECIALTIES_MAP.find(m => m.id === 'neurologista');
+        if (neuroEntry) {
+            return {
+                isMedical: true,
+                specialty: neuroEntry.id,
+                specialtyName: neuroEntry.terms[0],
+                redirectTo: neuroEntry.redirectTo,
+                message: neuroEntry.message
+            };
+        }
+    }
+    
+    // Ordena as especialidades por especificidade (termos mais longos primeiro)
+    const sortedSpecialties = [...MEDICAL_SPECIALTIES_MAP].sort((a, b) => {
+        const maxLenA = Math.max(...a.terms.map(t => t.length));
+        const maxLenB = Math.max(...b.terms.map(t => t.length));
+        return maxLenB - maxLenA; // Maior primeiro
+    });
+    
+    for (const medical of sortedSpecialties) {
         const matched = medical.terms.some(term => {
-            // Verifica palavra completa ou parcial
-            const pattern = new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-            return pattern.test(normalized) || normalized.includes(term.toLowerCase());
+            const termLower = term.toLowerCase();
+            // Verifica word boundary para evitar match parcial incorreto
+            const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const pattern = new RegExp(`(^|[^a-záéíóúâêîôûãõç])${escapedTerm}([^a-záéíóúâêîôûãõç]|$)`, 'i');
+            return pattern.test(normalized);
         });
         
         if (matched) {

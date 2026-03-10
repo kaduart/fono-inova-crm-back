@@ -36,8 +36,21 @@ function formatAge(age) {
   return `${age} anos`;
 }
 import Logger from '../services/utils/Logger.js';
-import { THERAPY_DATA, detectAllTherapies } from '../utils/therapyDetector.js';
+import { 
+  THERAPY_DATA, 
+  detectAllTherapies, 
+  detectTherapyBySymptoms,
+  normalizeTherapyTerms,
+  detectNegativeScopes,
+  pickPrimaryTherapy
+} from '../utils/therapyDetector.js';
 import { extractName, extractBirth, extractAgeFromText, extractPeriodFromText, extractPreferredDate } from '../utils/patientDataExtractor.js';
+import { 
+  deriveFlagsFromText, 
+  detectMedicalSpecialty, 
+  validateServiceAvailability,
+  MEDICAL_SPECIALTIES_MAP 
+} from '../utils/flagsDetector.js';
 
 const logger = new Logger('WhatsAppOrchestrator');
 
@@ -197,7 +210,35 @@ export default class WhatsAppOrchestrator {
           return this._reply(`Oi! 😊 Bem-vindo(a) de volta!\n\nContinuando sobre *${hasExistingTherapy}* — me conta um pouco sobre a situação que está preocupando?`);
         }
 
-        const therapies = detectAllTherapies(text);
+        // 🔧 FIX: Verificar especialidades médicas primeiro (neuropediatra, pediatra, psiquiatra)
+        const medicalSpecialty = detectMedicalSpecialty(text);
+        if (medicalSpecialty) {
+          this.logger.info('V8_MEDICAL_SPECIALTY_IDLE', { leadId, specialty: medicalSpecialty.specialty });
+          await jumpToState(leadId, STATES.COLLECT_THERAPY);
+          return this._reply(`${medicalSpecialty.message}\n\nPosso te ajudar com *${medicalSpecialty.redirectTo}* ou outra especialidade que oferecemos? 💚\n\n💚 Fonoaudiologia\n💚 Psicologia\n💚 Fisioterapia\n💚 Terapia Ocupacional\n💚 Neuropsicologia\n💚 Psicopedagogia\n💚 Musicoterapia`);
+        }
+
+        // 🔧 FIX: Verificar serviços fora de escopo (teste da orelhinha, audiometria)
+        const negativeScopes = detectNegativeScopes(text);
+        if (negativeScopes.mentionsOrelhinha) {
+          this.logger.info('V8_OUT_OF_SCOPE_IDLE', { leadId, scope: 'orelhinha' });
+          await jumpToState(leadId, STATES.COLLECT_THERAPY);
+          return this._reply(`Não realizamos teste da orelhinha/triagem auditiva aqui na Fono Inova 🤔\n\nEsse é um exame médico que geralmente é feito em hospitais ou clínicas de fonoaudiologia especializadas em audiologia.\n\nSe você busca Fonoaudiologia para *desenvolvimento da fala* (criança que não fala, troca letras, gagueira), aí sim podemos ajudar! 💚\n\nQual especialidade você procura?`);
+        }
+
+        // Detectar terapias por nome
+        let therapies = detectAllTherapies(text);
+        
+        // 🔧 FIX: Se não detectou por nome, tentar por sintomas
+        if (therapies.length === 0) {
+          const therapiesBySymptom = detectTherapyBySymptoms(text);
+          if (therapiesBySymptom.length > 0) {
+            const primaryId = therapiesBySymptom[0];
+            therapies = [{ id: primaryId, name: this._getTherapyDisplayName(primaryId) }];
+            this.logger.info('V8_THERAPY_DETECTED_BY_SYMPTOM_IDLE', { leadId, therapyId: primaryId });
+          }
+        }
+        
         const therapy = therapies.length > 0 ? therapies[0] : null;
         const therapyName = therapy?.name || therapy?.id || null;
 
@@ -205,13 +246,21 @@ export default class WhatsAppOrchestrator {
           this.logger.info('V8_THERAPY_DETECTED_ON_IDLE', { leadId, therapyId: therapy?.id, therapyName });
           await this._saveTherapy(leadId, therapy);
 
+          const isAvailQuestion = this._isAvailabilityQuestion(text);
+
           // Neuropsicologia tem dois caminhos: laudo ou acompanhamento terapêutico
           if (therapy.id === 'neuropsychological') {
             await jumpToState(leadId, STATES.COLLECT_NEURO_TYPE, { therapy: therapy.id });
-            return this._reply(`Que bom que entrou em contato! 😊\n\nAqui atendemos neuropsicologia 💚\n\nPara te ajudar melhor: você está buscando um *laudo neuropsicológico* (avaliação completa com relatório) ou *acompanhamento terapêutico* (sessões regulares)?`);
+            const neuroIntro = isAvailQuestion
+              ? `Sim, atendemos com Neuropsicologia! 😊\n\n`
+              : `Que bom que entrou em contato! 😊\n\nAqui atendemos neuropsicologia 💚\n\n`;
+            return this._reply(`${neuroIntro}Para te ajudar melhor: você está buscando um *laudo neuropsicológico* (avaliação completa com relatório) ou *acompanhamento terapêutico* (sessões regulares)?`);
           }
 
           await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy: therapy?.id || therapy });
+          if (isAvailQuestion) {
+            return this._reply(`Sim, atendemos com *${therapyName}*! 😊\n\nMe conta: qual é a principal queixa ou dificuldade?`);
+          }
           return this._reply(`Que bom que entrou em contato! 😊\n\nSobre ${therapyName} 💚...\n\nMe conta um pouco da situação? O que tá preocupando?`);
         }
 
@@ -239,23 +288,49 @@ export default class WhatsAppOrchestrator {
           this.logger.info('V8_THERAPY_COLLECTED', { leadId, therapyId: therapy?.id, therapyName });
           await this._saveTherapy(leadId, therapy);
 
+          const isAvailQuestion = this._isAvailabilityQuestion(text);
+
           // Neuropsicologia: pergunta laudo vs acompanhamento antes de continuar
           if (therapy.id === 'neuropsychological') {
             await jumpToState(leadId, STATES.COLLECT_NEURO_TYPE, { therapy: therapy.id });
-            return this._reply(`Neuropsicologia 💚, ótima escolha!\n\nPara te ajudar melhor: você está buscando um *laudo neuropsicológico* (avaliação completa com relatório) ou *acompanhamento terapêutico* (sessões regulares)?`);
+            const neuroIntro = isAvailQuestion
+              ? `Sim, atendemos com Neuropsicologia! 😊\n\n`
+              : `Neuropsicologia 💚, ótima escolha!\n\n`;
+            return this._reply(`${neuroIntro}Para te ajudar melhor: você está buscando um *laudo neuropsicológico* (avaliação completa com relatório) ou *acompanhamento terapêutico* (sessões regulares)?`);
           }
 
           await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy: therapy?.id || therapy });
-          return this._reply(`${therapyName} 💚, ótima escolha!\n\nMe conta um pouco da situação que tá preocupando?`);
+          if (isAvailQuestion) {
+            return this._reply(`Sim, atendemos com *${therapyName}*! 😊\n\nMe conta: qual é a principal queixa ou dificuldade?`);
+          }
+          return this._reply(`*${therapyName}* 💚, ótima escolha!\n\nMe conta um pouco da situação que tá preocupando?`);
         }
 
-        // BUG 10 FIX: neuropediatria é especialidade médica — a clínica não atende, mas deve responder com clareza
-        const isNeuropediatria = /neuro\s*pediatr/i.test(text);
-        if (isNeuropediatria) {
-          this.logger.info('V8_NEUROPEDIATRIA_NOT_OFFERED', { leadId, text: text.substring(0, 60) });
+        // 🔧 FIX: Detectar terapia por sintomas quando não detectou por nome
+        const therapiesBySymptom = detectTherapyBySymptoms(text);
+        if (therapiesBySymptom.length > 0) {
+          const primaryId = therapiesBySymptom[0];
+          const therapyFromSymptom = { id: primaryId, name: this._getTherapyDisplayName(primaryId) };
+          this.logger.info('V8_THERAPY_COLLECTED_BY_SYMPTOM', { leadId, therapyId: primaryId });
+          await this._saveTherapy(leadId, therapyFromSymptom);
+          
+          const isAvailQuestion = this._isAvailabilityQuestion(text);
+          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy: primaryId });
+          
+          const therapyName = therapyFromSymptom.name;
+          if (isAvailQuestion) {
+            return this._reply(`Sim, atendemos com *${therapyName}*! 😊\n\nMe conta: qual é a principal queixa ou dificuldade?`);
+          }
+          return this._reply(`*${therapyName}* 💚, ótima escolha!\n\nMe conta um pouco da situação que tá preocupando?`);
+        }
+
+        // 🔧 FIX: Especialidades médicas (neuropediatra, pediatra, psiquiatra)
+        const medicalSpecialty = detectMedicalSpecialty(text);
+        if (medicalSpecialty) {
+          this.logger.info('V8_MEDICAL_SPECIALTY_DETECTED', { leadId, specialty: medicalSpecialty.specialty });
           const { handoff } = await incrementRetry(leadId);
           if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
-          return this._reply(`Neuropediatria é uma especialidade médica e não oferecemos esse atendimento aqui na Fono Inova 🤔\n\nMas trabalhamos com *Neuropsicologia*, que faz avaliação cognitiva, comportamental e emocional — muitas vezes é o que as famílias estão buscando! 💚\n\nVocê gostaria de saber mais sobre *Neuropsicologia*? Ou procura outra especialidade:\n\n💚 Fonoaudiologia\n💚 Psicologia\n💚 Fisioterapia\n💚 Terapia Ocupacional\n💚 Psicopedagogia`);
+          return this._reply(`${medicalSpecialty.message}\n\nPosso te ajudar com *${medicalSpecialty.redirectTo}* ou outra especialidade que oferecemos? 💚\n\n💚 Fonoaudiologia\n💚 Psicologia\n💚 Fisioterapia\n💚 Terapia Ocupacional\n💚 Psicopedagogia`);
         }
 
         // Verifica se tem dado de idade/contexto para resposta mais natural
@@ -783,6 +858,49 @@ export default class WhatsAppOrchestrator {
   // ═══════════════════════════════════════════
   // UTIL
   // ═══════════════════════════════════════════
+
+  // Retorna true quando o lead está PERGUNTANDO se a clínica oferece determinada área
+  // Ex: "Vocês têm fisio?", "possuem terapeuta ocupacional?", "tem fono aí?"
+  _isAvailabilityQuestion(text = '') {
+    const t = text.trim();
+    
+    // Método 1: Verificação básica (pergunta + palavras de disponibilidade)
+    const basicCheck = t.endsWith('?') &&
+      /\b(t[eê]m|possu[ei]m?|ofere[cç]e[mn]?|atend[ei]m?|h[aá]|existe[m]?|voc[eê]s?\s+tem|voc[eê]s?\s+possu)\b/i.test(t);
+    
+    if (basicCheck) return true;
+    
+    // Método 2: Usar flagsDetector para detecção mais robusta
+    const flags = deriveFlagsFromText(text);
+    if (flags.asksSpecialtyAvailability) return true;
+    
+    // Método 3: Padrões de pergunta de disponibilidade mais amplos
+    const availabilityPatterns = [
+      /gostaria\s+de\s+saber\s+se\s+(voc[eê]s?\s+)?(atende|tem)/i,
+      /(voc[eê]s?|a\s+cl[ií]nica)\s+(atende|trabalha)\s+com/i,
+      /preciso\s+de\s+\w+.*voc[eê]s?\s+t[eê]m/i,
+      /tem\s+\w+\s+a[ií]/i,
+      /(faz|fazem)\s+\w+\s+(aqui|na\s+cl[ií]nica)/i,
+    ];
+    
+    return availabilityPatterns.some(p => p.test(t));
+  }
+
+  // Helper para converter ID de terapia em nome amigável
+  _getTherapyDisplayName(therapyId) {
+    const names = {
+      neuropsychological: 'Neuropsicologia',
+      speech: 'Fonoaudiologia',
+      psychology: 'Psicologia',
+      occupational: 'Terapia Ocupacional',
+      physiotherapy: 'Fisioterapia',
+      music: 'Musicoterapia',
+      psychopedagogy: 'Psicopedagogia',
+      neuropsychopedagogy: 'Neuropsicopedagogia',
+      tongue_tie: 'Avaliação da Linguinha'
+    };
+    return names[therapyId] || therapyId;
+  }
 
   _reply(text) {
     return { command: 'SEND_MESSAGE', payload: { text } };
