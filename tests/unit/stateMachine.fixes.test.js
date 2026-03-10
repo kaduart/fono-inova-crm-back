@@ -275,3 +275,44 @@ describe('[REG] detectGlobalIntent — especialidades não disparam intent', () 
         expect(detectGlobalIntent('aceita plano de saúde?')).toBe('INSURANCE_QUERY');
     });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// [FEAT] detectGlobalIntent — LAUDO_QUERY
+// ═══════════════════════════════════════════════════════════════
+describe('[FEAT] detectGlobalIntent — LAUDO_QUERY', () => {
+    it('"psicólogos emitem laudo?" dispara LAUDO_QUERY', () => {
+        expect(detectGlobalIntent('As psicólogas ou psicólogos emitem laudo?')).toBe('LAUDO_QUERY');
+    });
+
+    it('"quem emite laudo?" dispara LAUDO_QUERY', () => {
+        expect(detectGlobalIntent('quem emite laudo?')).toBe('LAUDO_QUERY');
+    });
+
+    it('"vocês emitem laudo?" dispara LAUDO_QUERY', () => {
+        expect(detectGlobalIntent('vocês emitem laudo?')).toBe('LAUDO_QUERY');
+    });
+
+    it('"faz laudo?" dispara LAUDO_QUERY', () => {
+        expect(detectGlobalIntent('faz laudo?')).toBe('LAUDO_QUERY');
+    });
+
+    it('"precisa de laudo?" dispara LAUDO_QUERY', () => {
+        expect(detectGlobalIntent('precisa de laudo?')).toBe('LAUDO_QUERY');
+    });
+
+    it('"tem laudo?" dispara LAUDO_QUERY', () => {
+        expect(detectGlobalIntent('tem laudo?')).toBe('LAUDO_QUERY');
+    });
+
+    it('"laudo é emitido?" dispara LAUDO_QUERY', () => {
+        expect(detectGlobalIntent('laudo é emitido pela neuropsicóloga?')).toBe('LAUDO_QUERY');
+    });
+
+    it('texto sem menção a laudo não dispara LAUDO_QUERY', () => {
+        expect(detectGlobalIntent('quero agendar uma consulta')).toBeNull();
+    });
+
+    it('"laudo" isolado dispara LAUDO_QUERY', () => {
+        expect(detectGlobalIntent('laudo')).toBe('LAUDO_QUERY');
+    });
+});

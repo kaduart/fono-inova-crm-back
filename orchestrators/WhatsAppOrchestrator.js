@@ -107,17 +107,36 @@ export default class WhatsAppOrchestrator {
 
       this.logger.info('V8_PROCESS', { leadId, currentState, text: text.substring(0, 80), phone: freshLead.contact?.phone || freshLead.phone || freshLead.whatsapp });
 
+      // ══ DETECÇÃO DE FLAGS PARA ENRIQUECIMENTO ══
+      // Detecta flags que serão usadas para enriquecer respostas
+      const flags = deriveFlagsFromText(text);
+      this.currentContext = { flags, lead: freshLead, state: currentState, stateData };
+
       // ══ 1. DETECÇÃO DE INTERRUPÇÃO GLOBAL ══
-      // Se está no meio de um fluxo e o lead pergunta preço/local/plano
+      // Verifica se o lead fez uma pergunta que precisa ser respondida ANTES de continuar
       const globalIntent = detectGlobalIntent(text);
       const isInFlow = ![STATES.IDLE, STATES.GREETING, STATES.BOOKED, STATES.HANDOFF].includes(currentState);
 
-      if (globalIntent && isInFlow && currentState !== STATES.INTERRUPTED) {
-        this.logger.info('V8_GLOBAL_INTERRUPT', { leadId, intent: globalIntent, suspendedState: currentState });
-        await suspendState(leadId, currentState, stateData, globalIntent);
+      // 🔥 CORREÇÃO: Interrupção funciona em QUALQUER estado (incluindo IDLE)
+      // exceto quando já está interrompido
+      if (globalIntent && currentState !== STATES.INTERRUPTED) {
+        this.logger.info('V8_GLOBAL_INTERRUPT', { leadId, intent: globalIntent, suspendedState: currentState, wasInFlow: isInFlow });
+        
+        // Se está em fluxo, suspende. Se está em IDLE/GREETING, apenas responde e continua de onde estava
+        if (isInFlow) {
+          await suspendState(leadId, currentState, stateData, globalIntent);
+        }
+        
         const interruptResponse = this._handleGlobalIntent(globalIntent, freshLead);
-        const resumeHint = getResumeHint(currentState);
-        return this._reply(`${interruptResponse}\n\n${resumeHint}`);
+        
+        // Se está em fluxo, dá hint de retomada. Se não, apenas responde
+        if (isInFlow) {
+          const resumeHint = getResumeHint(currentState);
+          return this._reply(`${interruptResponse}\n\n${resumeHint}`);
+        } else {
+          // Em IDLE/GREETING: responde a pergunta e continua o processamento normal
+          return this._reply(interruptResponse);
+        }
       }
 
       // ══ 2. RETOMADA PÓS-INTERRUPÇÃO ══
@@ -381,6 +400,27 @@ export default class WhatsAppOrchestrator {
 
       // ── COLETA DE QUEIXA ──
       case STATES.COLLECT_COMPLAINT: {
+        // 🔥 CAMADA DE SEGURANÇA: Detecta se o texto é uma pergunta não mapeada
+        // Se termina com ? ou começa com palavras interrogativas, não é uma queixa
+        const looksLikeQuestion = 
+          text.trim().endsWith('?') ||
+          /^(qual|quais|quanto|quantos|como|onde|quando|por que|porquê|vocês?|tem|faz|atende)/i.test(text.trim());
+        
+        if (looksLikeQuestion) {
+          this.logger.info('V8_COMPLAINT_QUESTION_DETECTED', { leadId, text: text.substring(0, 60) });
+          
+          // ✅ Se é uma pergunta já mapeada, responde normalmente
+          const globalIntent = detectGlobalIntent(text);
+          if (globalIntent) {
+            const answer = this._handleGlobalIntent(globalIntent, freshLead);
+            const resumeHint = getResumeHint(state);
+            return this._reply(`${answer}\n\n${resumeHint}`);
+          }
+          
+          // Se é pergunta NÃO mapeada, redireciona SEM parecer falha
+          return this._reply(`Boa pergunta! 💚 Vou verificar isso pra você.\n\nMe conta primeiro: qual é a principal queixa ou dificuldade que vocês estão observando?`);
+        }
+
         if (text.length > 5) {
           const complaint = text.substring(0, 200);
           const age = extractAgeFromText(text);
@@ -624,9 +664,24 @@ export default class WhatsAppOrchestrator {
       case 'HOURS_QUERY':
         return '🕐 Funcionamos de Segunda a Sexta, das 8h às 18h!\n\nSábados com agendamento prévio 😊';
 
+      case 'LAUDO_QUERY':
+        return this._handleLaudoInquiry(lead);
+
       default:
         return 'Claro, posso ajudar com isso! 💚';
     }
+  }
+
+  _handleLaudoInquiry(lead) {
+    const therapy = lead.therapyArea || lead.stateData?.therapy;
+    const isNeuro = therapy === 'neuropsychological' || therapy === 'neuropsicologia';
+    
+    if (isNeuro) {
+      return '📝 A **avaliação neuropsicológica** é realizada pela nossa neuropsicóloga e inclui a **emissão do laudo completo** ao final das aproximadamente 10 sessões de avaliação.\n\nO laudo neuropsicológico documenta todos os achados sobre atenção, memória, comportamento, aprendizagem e outras habilidades cognitivas. 💚';
+    }
+    
+    // Se não é neuropsicologia ou não tem terapia definida, explica geral
+    return '📝 Na **Neuropsicologia** emitimos laudo completo após a avaliação (aprox. 10 sessões).\n\nNas outras especialidades (Psicologia, Fonoaudiologia, Terapia Ocupacional), os profissionais fazem relatórios de acompanhamento, mas *não* emitimos laudos médicos — esses são emitidos apenas por médicos (neuropediatra, psiquiatra, etc.).\n\nVocê está buscando avaliação com laudo? 💚';
   }
 
   _handlePriceInquiry(lead) {
@@ -902,7 +957,37 @@ export default class WhatsAppOrchestrator {
     return names[therapyId] || therapyId;
   }
 
-  _reply(text) {
+  _reply(text, options = {}) {
+    // 🔥 ENRIQUECIMENTO: Se tem contexto atual, enriquece a resposta
+    if (this.currentContext && !options.skipEnrichment) {
+      const { flags, lead, state, stateData } = this.currentContext;
+      
+      // Aplica enriquecimentos baseados em flags
+      let enrichedText = text;
+      
+      // Adiciona acolhimento para casos emocionais
+      if (flags.isEmotional && !enrichedText.includes('preocupad')) {
+        const emojis = ['💚', '🤗', '💚'];
+        const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+        enrichedText = `Entendo que você está preocupad${lead?.patientGender === 'F' ? 'a' : 'o'}. ${randomEmoji}\n\n${enrichedText}`;
+      }
+      
+      // Ajusta para dúvidas de TEA (mais acolhedor)
+      if (flags.mentionsDoubtTEA && !enrichedText.includes('tempo')) {
+        enrichedText = enrichedText.replace(
+          /me conta um pouco da situação/i,
+          'cada criança tem seu tempo, e é normal ter dúvidas. Me conta o que você tem observado'
+        );
+      }
+      
+      // Prioriza para quem quer agendar rápido
+      if (flags.wantsFastSolution && state !== 'SHOW_SLOTS') {
+        enrichedText = enrichedText.replace(/💚/, '🚀');
+      }
+      
+      return { command: 'SEND_MESSAGE', payload: { text: enrichedText } };
+    }
+    
     return { command: 'SEND_MESSAGE', payload: { text } };
   }
 

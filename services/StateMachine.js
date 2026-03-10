@@ -53,6 +53,7 @@ const GLOBAL_INTENTS = {
     INSURANCE_QUERY: /(plano|conv[eê]nio|unimed|amil|bradesco\s*sa[uú]de|sulam[eé]rica|aceita)/i,
     CONTACT_QUERY: /(whatsapp|telefone|contato|ligar)/i,
     HOURS_QUERY: /(hor[aá]rio\s*de\s*funcionamento|que\s*horas\s*(abre|fecha)|funciona)/i,
+    LAUDO_QUERY: /(emite|faz|elabora|precisa\s*de|tem)\s*laudo|laudo\s*(é|são|emitido|feito)|quem\s*emite\s*laudo|psic[oó]log[oa]\s*emite|emitem\s*laudo|\blaudo\b/i,
 };
 
 const MAX_RETRIES = 3; // Após 3 erros no mesmo estado → handoff humano
