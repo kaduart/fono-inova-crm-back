@@ -85,7 +85,8 @@ export const THERAPY_SPECIALTIES = {
     occupational: {
         names: ['terapia ocupacional', 'TO'],
         patterns: [
-            /t[e3]r[a4]p[i1][a4]\s+[o0]cup[a4]c[i1][o0]n[a4]l/i,  // terapia ocupacional (typos)
+            /t[e3]r[a4]p[i1][a4]\s+[o0]cup[a4]c[i1][o0]n[a4]l/i,   // terapia ocupacional (typos)
+            /t[e3]r[a4]p[e3]ut[a4]\s+[o0]cup[a4]c[i1][o0]n[a4]l/i,  // terapeuta ocupacional
             /\bTO\b/,
             /[i1]nt[e3]gr[a4][cç][a4][o0]\s+s[e3]ns[o0]r[i1][a4]l/i,
             /c[o0][o0]rd[e3]n[a4][cç][a4][o0]\s+m[o0]t[o0]r[a4]/i
@@ -101,7 +102,8 @@ export const THERAPY_SPECIALTIES = {
     music: {
         names: ['musicoterapia'],
         patterns: [
-            /m[uú]s[i1]c[o0]t[e3]r[a4]p[i1][a4]/i,  // musicoterapia (typos)
+            /m[uú]s[i1]c[o0]t[e3]r[a4]p[i1][a4]/i,      // musicoterapia (typos)
+            /m[uú]s[i1]c[o0]t[e3]r[a4]p[e3]ut[a4]/i,     // musicoterapeuta
             /m[uú]s[i1]c[a4]\s+t[e3]r[a4]p[eê]ut[i1]c[a4]/i
         ]
     },
