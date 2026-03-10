@@ -940,12 +940,23 @@ export const whatsappController = {
             console.log(`🔄 [AMANDA-RESUME] Reativando para lead ${leadId}`);
 
             // 🔥 LIMPA ESTADO QUE ESTÁ TRAVANDO A AMANDA
+            // Se estava em HANDOFF (estado terminal), reseta para GREETING para Amanda poder responder
+            const leadBeforeResume = await Lead.findById(leadId).select('currentState').lean();
+            const wasHandoff = leadBeforeResume?.currentState === 'HANDOFF';
+
+            const updateSet = {
+                'manualControl.active': false,
+                autoReplyEnabled: true,
+                lastAmandaInteraction: new Date()
+            };
+            if (wasHandoff) {
+                updateSet.currentState = 'GREETING';
+                updateSet.retryCount = 0;
+                console.log(`🔄 [AMANDA-RESUME] Lead estava em HANDOFF — resetando FSM para GREETING`);
+            }
+
             await Lead.findByIdAndUpdate(leadId, {
-                $set: {
-                    'manualControl.active': false,
-                    autoReplyEnabled: true,
-                    lastAmandaInteraction: new Date()
-                },
+                $set: updateSet,
                 $unset: {
                     'manualControl.takenOverAt': "",
                     'manualControl.takenOverBy': "",

@@ -98,6 +98,7 @@ const preAgendamentoSchema = new mongoose.Schema({
       'contatado',      // Tentativa de contato feita
       'confirmado',     // Paciente confirmou interesse
       'agendado',       // Convertido para Appointment
+      'cancelado',      // Cancelado antes de virar appointment
       'descartado',     // Não vai prosseguir
       'desistiu',       // Paciente desistiu explicitamente (Métrica de Perda)
       'expirado'        // Data passou sem ação

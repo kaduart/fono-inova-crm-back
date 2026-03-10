@@ -142,7 +142,44 @@ router.post("/import-from-agenda", agendaAuth, async (req, res) => {
       console.error("[IMPORT-FROM-AGENDA] Erro ao buscar paciente:", searchError.message);
     }
 
-    // 3) Criar PRÉ-AGENDAMENTO (_id gerado automaticamente pelo MongoDB)
+    // 3) Verificar duplicata por externalId OU _id direto OU por (phone + date + time) em status final
+    const FINAL_STATUSES = ['agendado', 'cancelado', 'descartado', 'desistiu', 'expirado'];
+
+    if (_id) {
+      // Verifica tanto por externalId (docs criados via importFromAgenda)
+      // quanto por _id direto (docs criados via webhook que usam o ID externo como _id MongoDB)
+      const orQuery = [{ externalId: _id }];
+      if (mongoose.Types.ObjectId.isValid(_id)) {
+        orQuery.push({ _id });
+      }
+      const existing = await PreAgendamento.findOne({
+        $or: orQuery,
+        status: { $in: FINAL_STATUSES }
+      }).lean();
+
+      if (existing) {
+        console.log(`[IMPORT-FROM-AGENDA] ⏭️ Ignorando duplicata (id/externalId): ${_id} já está como '${existing.status}'`);
+        return res.json({ success: true, skipped: true, message: `Já processado (${existing.status})` });
+      }
+    }
+
+    // Checa por phone + date + time apenas em status ATIVOS (evita duplicatas sem bloquear novas criações após cancel/import)
+    if (cleanPhone && date && time) {
+      const ACTIVE_STATUSES = ['novo', 'em_analise', 'contatado', 'confirmado'];
+      const existingBySlot = await PreAgendamento.findOne({
+        'patientInfo.phone': { $regex: cleanPhone.slice(-10) },
+        preferredDate: date,
+        preferredTime: time,
+        status: { $in: ACTIVE_STATUSES }
+      }).lean();
+
+      if (existingBySlot) {
+        console.log(`[IMPORT-FROM-AGENDA] ⏭️ Ignorando duplicata (slot ativo): ${cleanPhone} ${date} ${time} já existe como '${existingBySlot.status}'`);
+        return res.json({ success: true, skipped: true, message: `Já existe (${existingBySlot.status})`, preAgendamentoId: existingBySlot._id });
+      }
+    }
+
+    // 4) Criar PRÉ-AGENDAMENTO (_id gerado automaticamente pelo MongoDB)
     const preAgendamentoData = {
       source: 'agenda_externa',
       // Se _id foi enviado, salva em externalId para rastreamento

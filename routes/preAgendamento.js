@@ -184,11 +184,34 @@ router.post('/:id/importar-externo', agendaAuth, async (req, res) => {
 
     console.log(`[IMPORTAR-EXTERNO] Importando pré-agendamento ${id}`);
 
-    // 1. Buscar pré-agendamento
-    const pre = await PreAgendamento.findById(id).session(session);
-    if (!pre) throw new Error('Pré-agendamento não encontrado');
-    if (pre.status === 'agendado') {
-      return res.json({ success: true, message: 'Já importado', appointmentId: pre.importedToAppointment });
+    // 1. Buscar pré-agendamento com LOCK para evitar duplicatas (race condition)
+    // Usando findOneAndUpdate para garantir atomicidade - só um request "pega" o documento
+    const pre = await PreAgendamento.findOneAndUpdate(
+      { 
+        _id: id, 
+        status: { $nin: ['agendado', 'descartado', 'desistiu', 'cancelado'] } // Só processa se não estiver finalizado
+      },
+      { 
+        $set: { status: 'em_analise' } // Marca como em processamento
+      },
+      { 
+        session,
+        new: true, // Retorna o documento atualizado
+        runValidators: false
+      }
+    );
+    
+    if (!pre) {
+      // Verifica se já foi importado
+      const alreadyImported = await PreAgendamento.findById(id).session(session);
+      if (alreadyImported?.status === 'agendado') {
+        return res.json({ 
+          success: true, 
+          message: 'Já importado anteriormente', 
+          appointmentId: alreadyImported.importedToAppointment 
+        });
+      }
+      throw new Error('Pré-agendamento não encontrado ou já processado');
     }
 
     // 2. Buscar doutor (por ID ou por nome)
@@ -323,7 +346,7 @@ router.get('/', async (req, res) => {
       const statusList = status.split(',').map(s => s.trim());
       filters.status = statusList.length > 1 ? { $in: statusList } : status;
     } else {
-      filters.status = { $nin: ['agendado', 'descartado'] };
+      filters.status = { $nin: ['agendado', 'descartado', 'cancelado', 'desistiu', 'expirado'] };
     }
 
     if (specialty) filters.specialty = specialty;
@@ -371,7 +394,7 @@ router.get('/', async (req, res) => {
 
     // Estatísticas por urgência
     const urgencias = await PreAgendamento.aggregate([
-      { $match: { status: { $nin: ['agendado', 'descartado'] } } },
+      { $match: { status: { $nin: ['agendado', 'descartado', 'cancelado', 'desistiu', 'expirado'] } } },
       {
         $group: {
           _id: '$urgency',
@@ -564,12 +587,28 @@ router.post('/:id/importar', async (req, res) => {
       body: req.body 
     });
 
-    // 1. Buscar pré-agendamento
-    const pre = await PreAgendamento.findById(id).session(session);
-    if (!pre) throw new Error('Pré-agendamento não encontrado');
-    if (pre.status === 'agendado') throw new Error('Já foi importado');
-    if (['cancelado', 'descartado', 'desistiu'].includes(pre.status)) {
-      throw new Error(`Não pode importar: Pré-agendamento está ${pre.status}`);
+    // 1. Buscar pré-agendamento com LOCK para evitar duplicatas (race condition)
+    const pre = await PreAgendamento.findOneAndUpdate(
+      { 
+        _id: id, 
+        status: { $nin: ['agendado', 'descartado', 'desistiu', 'cancelado'] }
+      },
+      { 
+        $set: { status: 'em_analise' }
+      },
+      { 
+        session,
+        new: true,
+        runValidators: false
+      }
+    );
+    
+    if (!pre) {
+      const alreadyImported = await PreAgendamento.findById(id).session(session);
+      if (alreadyImported?.status === 'agendado') {
+        throw new Error('Já foi importado anteriormente');
+      }
+      throw new Error('Pré-agendamento não encontrado ou não pode ser importado');
     }
 
     console.log('[IMPORTAR] Dados atuais do pré-agendamento:', {
@@ -663,6 +702,41 @@ router.post('/:id/importar', async (req, res) => {
 });
 
 /**
+ * POST /api/pre-agendamento/:id/cancelar
+ * Cancelar pré-agendamento - apenas altera o status para 'cancelado'
+ */
+router.post('/:id/cancelar', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const pre = await PreAgendamento.findByIdAndUpdate(
+      id,
+      { $set: { status: 'cancelado' } },
+      { new: true }
+    );
+
+    if (!pre) {
+      return res.status(404).json({ success: false, error: 'Pré-agendamento não encontrado' });
+    }
+
+    // Emite socket para o frontend atualizar a agenda
+    try {
+      const io = getIo();
+      io.emit('preagendamento:updated', { id: String(pre._id), status: 'cancelado' });
+      io.emit('preagendamento:discarded', { id: String(pre._id), status: 'cancelado' });
+    } catch (socketErr) {
+      console.warn('[CANCELAR] Erro ao emitir socket:', socketErr.message);
+    }
+
+    res.json({ success: true, message: 'Pré-agendamento cancelado' });
+
+  } catch (error) {
+    console.error('[CANCELAR] Erro:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * POST /api/pre-agendamento/:id/descartar
  * Descartar pré-agendamento
  */
@@ -712,8 +786,7 @@ router.post('/:id/descartar', async (req, res) => {
 router.patch('/:id', async (req, res) => {
   try {
     const updates = req.body;
-    delete updates.status; // Não permitir mudar status diretamente
-    delete updates.importedToAppointment;
+    delete updates.importedToAppointment; // Proteger campo interno
 
     const pre = await PreAgendamento.findByIdAndUpdate(
       req.params.id,
