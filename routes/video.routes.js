@@ -20,11 +20,35 @@ import { aplicarPosProducao } from '../services/video/posProducaoVeoService.js';
 const router = Router();
 router.use(auth);
 
-// Listar vídeos
+// Listar vídeos (com detecção de vídeos travados)
 router.get('/', async (req, res) => {
   try {
     const videos = await Video.find().sort({ createdAt: -1 }).lean();
-    res.json({ success: true, data: videos });
+    
+    // Detectar vídeos "stale" (processando há mais de 30 minutos sem atualização)
+    const THIRTY_MINUTES = 30 * 60 * 1000;
+    const now = new Date();
+    
+    const processedVideos = videos.map(video => {
+      // Se está processando há mais de 30 min, marca como possivelmente travado
+      if (video.status === 'processing') {
+        const lastUpdate = video.progresso?.atualizadoEm 
+          ? new Date(video.progresso.atualizadoEm) 
+          : new Date(video.createdAt);
+        const timeSinceUpdate = now.getTime() - lastUpdate.getTime();
+        
+        if (timeSinceUpdate > THIRTY_MINUTES) {
+          return {
+            ...video,
+            _staleWarning: true,
+            _minutesProcessing: Math.floor(timeSinceUpdate / 60000)
+          };
+        }
+      }
+      return video;
+    });
+    
+    res.json({ success: true, data: processedVideos });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao listar:', error.message);
     res.status(500).json({ success: false, error: error.message });
@@ -382,6 +406,67 @@ router.get('/:id', async (req, res) => {
     res.json({ success: true, data: video });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao buscar vídeo:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /:id/force-fail — Força a marcação de um vídeo como falho (para vídeos travados)
+router.post('/:id/force-fail', async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.id);
+    if (!video) {
+      return res.status(404).json({ success: false, error: 'Vídeo não encontrado' });
+    }
+    
+    if (video.status !== 'processing') {
+      return res.status(400).json({ success: false, error: 'Vídeo não está em processamento' });
+    }
+    
+    await Video.findByIdAndUpdate(req.params.id, {
+      status: 'failed',
+      pipelineStatus: 'ERRO',
+      errorMessage: 'Marcado como falho manualmente (vídeo travado em processamento)',
+      'progresso.etapa': 'ERRO',
+      'progresso.percentual': 0,
+      'progresso.atualizadoEm': new Date()
+    });
+    
+    logger.info(`[VIDEO ROUTES] Vídeo ${req.params.id} marcado como falho manualmente`);
+    res.json({ success: true, message: 'Vídeo marcado como falho' });
+  } catch (error) {
+    logger.error('[VIDEO ROUTES] Erro ao forçar falha:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /cleanup-stalled — Limpa todos os vídeos travados há mais de 30 min
+router.post('/admin/cleanup-stalled', async (req, res) => {
+  try {
+    const THIRTY_MINUTES = 30 * 60 * 1000;
+    const cutoff = new Date(Date.now() - THIRTY_MINUTES);
+    
+    const stalledVideos = await Video.find({
+      status: 'processing',
+      createdAt: { $lt: cutoff }
+    });
+    
+    let updated = 0;
+    for (const video of stalledVideos) {
+      await Video.findByIdAndUpdate(video._id, {
+        status: 'failed',
+        pipelineStatus: 'ERRO',
+        errorMessage: 'Job stalled - processamento excedeu 30 minutos',
+        'progresso.etapa': 'ERRO',
+        'progresso.percentual': 0,
+        'progresso.atualizadoEm': new Date()
+      });
+      updated++;
+    }
+    
+    logger.info(`[VIDEO ROUTES] Cleanup concluído: ${updated} vídeos travados marcados como falhos`);
+    res.json({ success: true, message: `${updated} vídeos atualizados` });
+  } catch (error) {
+    logger.error('[VIDEO ROUTES] Erro no cleanup:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });

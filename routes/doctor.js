@@ -26,6 +26,27 @@ router.get('/inactive/list', flexibleAuth, doctorOperations.getInactive);
 router.patch('/:id/deactivate', auth, validateId, doctorOperations.deactivate);
 router.patch('/:id/reactivate', auth, validateId, doctorOperations.reactivate);
 
+// TEMP: Rota para listar todos os médicos (ativos e inativos) - para debug
+router.get('/debug/all', flexibleAuth, async (req, res) => {
+  try {
+    const Doctor = (await import('../models/Doctor.js')).default;
+    const doctors = await Doctor.find().select('_id fullName email active specialty').lean();
+    res.json({ 
+      success: true, 
+      count: doctors.length,
+      doctors: doctors.map(d => ({
+        id: d._id,
+        name: d.fullName,
+        email: d.email,
+        active: d.active,
+        specialty: d.specialty
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Rotas principais
 router.post('/', auth, doctorOperations.create);
 router.get('/', flexibleAuth, doctorOperations.get.all);
