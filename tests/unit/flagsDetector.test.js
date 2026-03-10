@@ -154,3 +154,81 @@ describe('🩺 Detecção de Especialidades Médicas', () => {
     });
 });
 // Testes de período estão em patientDataExtractor.test.js
+
+
+// ═══════════════════════════════════════════════════════════════
+// [FEAT] Novas flags de perfil comportamental
+// isEmotional, isJustBrowsing, isHotLead
+// ═══════════════════════════════════════════════════════════════
+
+describe('[FEAT] Flags de perfil comportamental', () => {
+    
+    describe('isEmotional - detecta leads preocupados/ansiosos', () => {
+        const casosEmocionais = [
+            { texto: 'estou preocupada com meu filho', desc: 'preocupada' },
+            { texto: 'Não sei o que fazer, estou desesperada', desc: 'desesperada' },
+            { texto: 'Me ajuda, estou chorando aqui', desc: 'chorando' },
+            { texto: 'estou ansiosa demais com isso', desc: 'ansiosa' },
+            { texto: 'estou angustiada, preciso de ajuda', desc: 'angustiada' },
+            { texto: 'desesperada, não aguento mais', desc: 'nao aguento mais' },
+            { texto: 'estou perdida, não sei por onde começar', desc: 'perdida' },
+        ];
+
+        casosEmocionais.forEach(({ texto, desc }) => {
+            it(`${desc} → isEmotional: true`, () => {
+                const flags = detectAllFlags(texto);
+                expect(flags.isEmotional).toBe(true);
+            });
+        });
+
+        const casosNaoEmocionais = [
+            'Quero agendar uma avaliação',
+            'Qual o preço da consulta?',
+            'Bom dia, gostaria de saber mais',
+        ];
+
+        casosNaoEmocionais.forEach(texto => {
+            it(`"${texto.substring(0, 40)}..." → isEmotional: false`, () => {
+                const flags = detectAllFlags(texto);
+                expect(flags.isEmotional).toBe(false);
+            });
+        });
+    });
+
+    describe('isJustBrowsing - detecta leads só pesquisando', () => {
+        const casosPesquisando = [
+            'só olhando as opções',
+            'só pesquisando por enquanto',
+            'tirando dúvida',
+            'só queria saber o preço',
+            'ainda não decidi nada',
+            'só vi no instagram e resolvi perguntar',
+        ];
+
+        casosPesquisando.forEach(texto => {
+            it(`"${texto.substring(0, 40)}..." → isJustBrowsing: true`, () => {
+                const flags = detectAllFlags(texto);
+                expect(flags.isJustBrowsing).toBe(true);
+            });
+        });
+    });
+
+    describe('isHotLead - detecta leads prontos para agendar', () => {
+        const casosHotLead = [
+            'quero agendar logo',
+            'pode marcar para essa semana',
+            'quando tem vaga',
+            'quero começar o quanto antes',
+            'vamos fazer isso',
+            'quero marcar hoje',
+            'pode fechar o horário',
+        ];
+
+        casosHotLead.forEach(texto => {
+            it(`"${texto.substring(0, 40)}..." → isHotLead: true`, () => {
+                const flags = detectAllFlags(texto);
+                expect(flags.isHotLead).toBe(true);
+            });
+        });
+    });
+});

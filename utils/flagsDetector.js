@@ -295,6 +295,16 @@ export function deriveFlagsFromText(text = "") {
             /\b(desconfio\s+que\s+(seja|é)|escola\s+levantou\s+hip[oó]tese|hip[oó]tese\s+de\s+(tea|autismo|tdah))\b/i.test(normalizedText) ||
             /\b(possibilidade\s+de\s+(tea|autismo|tdah)|pode\s+ser\s+(tea|autismo|tdah))\b/i.test(normalizedText) ||
             /\b(meu\s+filho\s+tem)\b/i.test(normalizedText), // ex: "meu filho tem x, preciso de avaliacao" -> geralmente é neuro
+
+        // 🔥 FLAGS DE PERFIL COMPORTAMENTAL (faltavam no código)
+        isEmotional:
+            /\b(preocupad[oa]?|ansios[oa]?|desesperad[oa]?|chorando|n[aã]o\s+sei\s+o\s+que\s+fazer|me\s+ajuda|urgente|desespero|angustiad[oa]?|aflit[oa]?|apavorad[oa]?|perdid[oa]?|desamparad[oa]?|sem\s+sairda|n[aã]o\s+aguento\s+mais|estou\s+acabad[oa]?|preciso\s+de\s+ajuda\s+urgente|muito\s+preocupad[oa]?|t[oô]\s+preocupad[oa]?|estou\s+preocupad[oa]?|me\s+sinto\s+perdid[oa]?)\b/i.test(normalizedText),
+
+        isJustBrowsing:
+            /\b(s[oó]\s+olhando|s[oó]\s+pesquisando|tirando\s+d[uú]vida|s[oó]\s+queria\s+saber|ainda\s+n[aã]o\s+decidi|s[oó]\s+informa[cç][aã]o|pesquisando\s+op[cç][oõ]es|vendo\s+op[cç][oõ]es|conhecendo|s[oó]\s+vi\s+no\s+instagram|s[oó]\s+vi\s+no\s+google|vi\s+o\s+an[uú]ncio|s[oó]\s+quero\s+saber\s+o\s+pre[cç]o|tirar\s+uma\s+d[uú]vida|s[oó]\s+estou\s+olhando|apenas\s+pesquisando)\b/i.test(normalizedText),
+
+        isHotLead:
+            /\b(quero\s+agendar|pode\s+marcar|quando\s+tem\s+vaga|quero\s+come[çc]ar|vamos\s+fazer|quero\s+marcar\s+logo|quero\s+agendar\s+logo|pode\s+agendar|quero\s+saber\s+os\s+hor[aá]rios|tem\s+vaga\s+pra\s+quando|quero\s+agendar\s+hj|quero\s+agendar\s+hoje|vamos\s+marcar|fecha\s+o\s+hor[aá]rio|quero\s+fechar|pode\s+fechar|quero\s+marcar\s+hoje|queria\s+marcar)\b/i.test(normalizedText),
     };
 
     // ✅ FIX: Se for sobre emprego/estágio, NÃO é givingUp (desistência)
