@@ -58,4 +58,99 @@ describe('🚨 CORREÇÃO: givingUp falsos positivos', () => {
 });
 
 // Nota: preferredPeriod é detectado por extractPeriodFromText, não por detectAllFlags
+
+import { detectMedicalSpecialty, validateServiceAvailability, asksSpecialtyAvailability } from '../../utils/flagsDetector.js';
+
+describe('🩺 Detecção de Especialidades Médicas', () => {
+    
+    describe('detectMedicalSpecialty', () => {
+        const testCases = [
+            { text: 'Vocês têm neuropediatra?', expected: 'neurologista', redirectTo: 'neuropsicologia' },
+            { text: 'Preciso de neuro pediatra', expected: 'neurologista', redirectTo: 'neuropsicologia' },
+            { text: 'Tem neuropediatria?', expected: 'neurologista', redirectTo: 'neuropsicologia' },
+            { text: 'Gostaria de consulta com pediatra', expected: 'pediatra', redirectTo: 'fonoaudiologia' },
+            { text: 'Preciso de psiquiatra para meu filho', expected: 'psiquiatra', redirectTo: 'psicologia' },
+            { text: 'Quero fazer fonoaudiologia', expected: null }, // não é médica
+            { text: 'Psicologia infantil', expected: null }, // não é médica
+        ];
+
+        testCases.forEach(({ text, expected, redirectTo }) => {
+            it(`"${text.substring(0, 40)}..." → ${expected || 'não é médica'}`, () => {
+                const result = detectMedicalSpecialty(text);
+                if (expected) {
+                    expect(result).not.toBeNull();
+                    expect(result.specialty).toBe(expected);
+                    expect(result.redirectTo).toBe(redirectTo);
+                    expect(result.message).toBeTruthy();
+                } else {
+                    expect(result).toBeNull();
+                }
+            });
+        });
+
+        it('não deve confundir neuropediatra com pediatra', () => {
+            const result = detectMedicalSpecialty('neuropediatria');
+            expect(result).not.toBeNull();
+            expect(result.specialty).toBe('neurologista');
+            expect(result.specialty).not.toBe('pediatra');
+        });
+
+        it('não deve confundir neuropsicologia com neuropediatra', () => {
+            const result = detectMedicalSpecialty('neuropsicologia');
+            // Neuropsicologia NÃO deve ser detectada como especialidade médica
+            // (é uma terapia válida da clínica)
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('validateServiceAvailability', () => {
+        it('deve validar fonoaudiologia como disponível', () => {
+            const result = validateServiceAvailability('Quero fonoaudiologia');
+            expect(result.valid).toBe(true);
+            expect(result.service).toBe('fonoaudiologia');
+        });
+
+        it('deve validar terapia ocupacional como disponível', () => {
+            const result = validateServiceAvailability('Tem terapeuta ocupacional?');
+            expect(result.valid).toBe(true);
+            expect(result.service).toBe('terapia_ocupacional');
+        });
+
+        it('deve detectar neuropediatra como indisponível', () => {
+            const result = validateServiceAvailability('Preciso de neuropediatra');
+            expect(result.valid).toBe(false);
+            expect(result.isMedicalSpecialty).toBe(true);
+            expect(result.redirect).toBe('neuropsicologia');
+        });
+    });
+
+    describe('asksSpecialtyAvailability', () => {
+        const availabilityQuestions = [
+            'Vocês têm psicólogo?',
+            'Tem fono aí?',
+            'Vocês tem fonoaudiologia?',
+            'Vocês atendem neuropsicologia?',
+        ];
+
+        availabilityQuestions.forEach(text => {
+            it(`"${text}" → deve detectar pergunta de disponibilidade`, () => {
+                const flags = detectAllFlags(text);
+                expect(flags.asksSpecialtyAvailability).toBe(true);
+            });
+        });
+
+        const nonQuestions = [
+            'Quero fono',
+            'Preciso de psicologia',
+            'Fisioterapia',
+        ];
+
+        nonQuestions.forEach(text => {
+            it(`"${text}" → NÃO deve detectar como pergunta de disponibilidade`, () => {
+                const flags = detectAllFlags(text);
+                expect(flags.asksSpecialtyAvailability).toBeFalsy();
+            });
+        });
+    });
+});
 // Testes de período estão em patientDataExtractor.test.js

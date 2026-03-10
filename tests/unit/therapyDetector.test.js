@@ -61,6 +61,37 @@ const TEST_CASES = [
         name: 'Neuropsicologia - deve detectar',
         text: 'Quero avaliação neuropsicológica',
         expectContains: 'neuropsychological'
+    },
+    // 🆕 TESTES PARA NOVOS PATTERNS (terapeuta vs terapia)
+    {
+        name: 'Terapia Ocupacional - forma completa',
+        text: 'Quero terapia ocupacional',
+        expectContains: 'occupational'
+    },
+    {
+        name: 'Terapeuta Ocupacional - variação com euta',
+        text: 'Vocês têm terapeuta ocupacional?',
+        expectContains: 'occupational'
+    },
+    {
+        name: 'Musicoterapia - forma completa',
+        text: 'Gostaria de musicoterapia',
+        expectContains: 'music'
+    },
+    {
+        name: 'Musicoterapeuta - variação',
+        text: 'Tem musicoterapeuta na clínica?',
+        expectContains: 'music'
+    },
+    {
+        name: 'TO - abreviação',
+        text: 'Preciso de TO',
+        expectContains: 'occupational'
+    },
+    {
+        name: 'Psicopedagogia - com typo comum',
+        text: 'Preciso de psicopedagogo',
+        expectContains: 'psychopedagogy'
     }
 ];
 

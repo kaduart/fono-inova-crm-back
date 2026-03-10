@@ -476,8 +476,8 @@ describe('[BUG-10] COLLECT_THERAPY — neuropediatra não é especialidade da cl
 
         expect(result.command).toBe('SEND_MESSAGE');
 
-        // Deve mencionar que não oferece neuropediatria
-        expect(result.payload.text).toMatch(/neuropediatria/i);
+        // Deve mencionar que não oferece neurologistas/neuropediatria
+        expect(result.payload.text).toMatch(/não temos médicos|neurologistas/i);
 
         // Deve sugerir Neuropsicologia como alternativa
         expect(result.payload.text).toMatch(/neuropsicologia/i);
@@ -495,7 +495,7 @@ describe('[BUG-10] COLLECT_THERAPY — neuropediatra não é especialidade da cl
         });
 
         expect(result.command).toBe('SEND_MESSAGE');
-        expect(result.payload.text).toMatch(/neuropediatria/i);
+        expect(result.payload.text).toMatch(/não temos médicos|neurologistas/i);
         expect(result.payload.text).toMatch(/neuropsicologia/i);
     });
 
@@ -508,7 +508,7 @@ describe('[BUG-10] COLLECT_THERAPY — neuropediatra não é especialidade da cl
         });
 
         expect(result.command).toBe('SEND_MESSAGE');
-        expect(result.payload.text).toMatch(/neuropediatria/i);
+        expect(result.payload.text).toMatch(/não temos médicos|neurologistas/i);
     });
 
     it('Neuropsicologia real ainda deve ser detectada normalmente', async () => {
@@ -525,7 +525,7 @@ describe('[BUG-10] COLLECT_THERAPY — neuropediatra não é especialidade da cl
         const jumpCall = mockJumpToState.mock.calls.find(c => c[1] === 'COLLECT_NEURO_TYPE');
         expect(jumpCall, 'Neuropsicologia real deve ir para COLLECT_NEURO_TYPE').toBeTruthy();
 
-        // NÃO deve mencionar "não oferecemos neuropediatria"
-        expect(result.payload.text).not.toMatch(/não oferecemos neuropediatria/i);
+        // NÃO deve mencionar que não temos médicos (pois neuropsicologia é oferecida)
+        expect(result.payload.text).not.toMatch(/não temos médicos/i);
     });
 });

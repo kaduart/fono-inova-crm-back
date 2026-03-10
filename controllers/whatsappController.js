@@ -1560,7 +1560,7 @@ async function processInboundMessage(msg, value) {
 
             try {
                 console.log(`🖼️ Gerando descrição para imagem: ${mediaId}`);
-                const description = await describeWaImage(mediaId, caption);
+                const description = await describeWaImage({ mediaId, mediaUrl, mimeType: msg.image?.mime_type });
 
                 if (caption) {
                     // legenda + descrição → vira texto rico pra Amanda
