@@ -33,6 +33,133 @@ if (!cloudinaryConfig.cloud_name || !cloudinaryConfig.api_key || !cloudinaryConf
 cloudinary.config(cloudinaryConfig);
 
 /**
+ * 🎯 PROBLEMAS REAIS DE BUSCA (SEO Local)
+ * Pais digitam isso no Google, não os nomes das especialidades
+ * EXPANDIDO para acelerar ranqueamento de especialidades com zero views
+ */
+const PROBLEMAS_REAIS = {
+  fonoaudiologia: [
+    'criança de 2 anos não fala',
+    'criança de 3 anos não forma frases',
+    'criança troca letras ao falar',
+    'gagueira infantil',
+    'fala enrolada',
+    'criança não pronuncia o R',
+    'criança não pronuncia o L',
+    'ceceio infantil',
+    'criança fala muito baixo',
+    'atraso na fala 2 anos'
+  ],
+  psicologia: [
+    'criança bate na mãe',
+    'criança muito agressiva',
+    'filho não quer ir para escola',
+    'medo de separação infantil',
+    'criança muito ansiosa',
+    'criança birra excessiva',
+    'criança chora sem motivo',
+    'criança isolada não brinca',
+    'criança irritada o tempo todo',
+    'sinais de autismo bebe',
+    'bebe nao olha nos olhos',
+    'bebe nao responde ao nome',
+    'criança de 3 anos birra',
+    'filho batendo em outros',
+    'medo escolar infantil'
+  ],
+  terapia_ocupacional: [
+    'criança não consegue segurar lápis',
+    'criança tropeça muito',
+    'dificuldade coordenação motora fina',
+    'criança desajeitada',
+    'criança não consegue abotoar roupa',
+    'criança recusa comer texturas',
+    'criança muito dependente',
+    'dificuldade para vestir sozinha',
+    'criança sensibilidade ao toque',
+    'criança não consegue usar tesoura',
+    'escrita muito grande',
+    'desorganização motora infantil'
+  ],
+  fisioterapia: [
+    'postura curvada criança',
+    'criança anda torto',
+    'fraqueza muscular infantil',
+    'hipotonia muscular infantil',
+    'criança cansa fácil',
+    'dificuldade para correr pular',
+    'torticolo infantil',
+    'pé torto criança',
+    'joelho valgo infantil',
+    'escoliose infantil sinais',
+    'criança sempre sentada curvada',
+    'reabilitação cirurgia infantil'
+  ],
+  psicomotricidade: [
+    'criança confunde letras',
+    'dificuldade coordenação motora escola',
+    'criança troca b e d',
+    'criança não sabe direita esquerda',
+    'caligrafia ilegível',
+    'criança desatenta na escola',
+    'dificuldade coordenação esportes',
+    'psicomotricidade relacional',
+    'esquema corporal infantil',
+    'lateralidade infantil'
+  ],
+  psicopedagogia_clinica: [
+    'criança troca letras escrevendo',
+    'dificuldade leitura infantil',
+    'dislexia sinais criança',
+    'leitura muito lenta',
+    'criança não consegue ler sozinha',
+    'dificuldade ortografia infantil',
+    'criança repetiu de ano',
+    'baixo rendimento escolar',
+    'dificuldade matemática infantil',
+    'discalculia infantil sinais'
+  ],
+  neuropsicologia: [
+    'suspeita tdah criança',
+    'criança não consegue se concentrar',
+    'criança esquece o que aprendeu',
+    'criança muito dispersa',
+    'dificuldade concentração escola',
+    'avaliação neuropsicológica infantil',
+    'funções executivas criança',
+    'memória de trabalho infantil',
+    'criança desorganizada escola',
+    'processamento auditivo lento'
+  ],
+  freio_lingual: [
+    'bebe não consegue mamar direito',
+    'dor ao amamentar',
+    'bebe larga peito rápido',
+    'freio lingual bebe',
+    'dificuldade sucção',
+    'lingua presa bebe',
+    'teste da linguinha anapolis'
+  ],
+  psicopedagogia: [
+    'criança não tem interesse estudar',
+    'não consegue se organizar lição',
+    'dificuldade matemática infantil',
+    'estilo aprendizagem criança',
+    'dificuldade raciocínio lógico',
+    'procrastinação infantil',
+    'baixa autoestima escolar'
+  ],
+  musicoterapia: [
+    'autismo comunicação não verbal',
+    'criança não fala expressa emoção',
+    'terapia som autismo',
+    'ritmo musical autismo',
+    'expressão emocional música',
+    'desenvolvimento musical infantil'
+  ]
+};
+
+/**
  * 🏥 ESPECIALIDADES DA FONO INOVA
  */
 export const ESPECIALIDADES = [
@@ -373,8 +500,22 @@ URGÊNCIA: ${nicho.urgencia}
 DIFERENCIAL DA CLÍNICA: ${nicho.diferencial}
 GATILHO EMOCIONAL: ${nicho.gatilho}` : '';
 
-    // 🎯 KEYWORD SEO DINÂMICA
-    const keywordSEO = `${especialidade.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')} infantil`;
+    // 🎯 KEYWORD SEO DINÂMICA - Usando problemas reais de busca
+    const listaProblemas = PROBLEMAS_REAIS[especialidade.id];
+    let keywordSEO;
+    
+    if (listaProblemas && listaProblemas.length) {
+      keywordSEO = listaProblemas[Math.floor(Math.random() * listaProblemas.length)];
+    } else {
+      keywordSEO = `${especialidade.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')} infantil`;
+    }
+    
+    console.log('🎯 SEO keyword escolhida:', keywordSEO);
+    
+    // 🎯 Extrai idade do problema para uso no prompt
+    const matchIdade = keywordSEO.match(/(\d)\s*anos?/);
+    const idadeCrianca = matchIdade ? matchIdade[1] : (Math.floor(Math.random() * 4) + 2); // fallback 2-5 anos
+    console.log('👶 Idade extraída:', idadeCrianca);
 
     const messages = [
       {
@@ -388,8 +529,15 @@ REGRAS INEGOCIÁVEIS:
 - SEM promessas de cura
 - Tom: técnico mas conversacional (como mãe experiente falando com outra)
 - Proibido usar pontos no meio das frases do hook (frase corrida para vídeos)
-- CTA deve ser CHOCANTE, VIRAL e QUEBRAR PADRÕES (não use "Agende pelo link")${instrucaoTom}`
-      },
+- CTA deve ser CHOCANTE, VIRAL e QUEBRAR PADRÕES (não use "Agende pelo link")${instrucaoTom}
+
+🎯 REGRAS DE SEO LOCAL OBRIGATÓRIAS:
+1. Começar o texto com uma pergunta baseada no problema pesquisado: "${keywordSEO} em Anápolis?"
+2. Usar a cidade "Anápolis" na primeira ou segunda frase
+3. Mencionar idade ${idadeCrianca} anos no hook (obrigatório)
+4. Escrever como se estivesse respondendo uma busca do Google
+5. Usar frases que pais realmente digitam no Google
+``}`},
       {
         role: 'user',
         content: `Crie post estratégico para ${especialidade.nome}.
@@ -407,17 +555,22 @@ ${nichoInstrucoes}
 
 🎯 SEO OBRIGATÓRIO:
 - Inclua a palavra-chave "${keywordSEO}" naturalmente no meio do texto (densidade 1-2%)
-- NÃO comece com a keyword
-- Primeiras 125 caracteres devem conter o hook principal
+- COMECE com a pergunta: "${keywordSEO} em Anápolis?"
+- Primeiras 125 caracteres devem conter o hook principal com o problema real
+- Mencione "Anápolis" nas primeiras 2 frases
+- Use idade ${idadeCrianca} anos no hook (obrigatório)
 
 📋 ESTRUTURA OBRIGATÓRIA:
 
 1️⃣ HOOK (2 frases curtas, máx 25 palavras):
-- Use o gatilho ${gatilhoPrincipal}
+- COMECE OBRIGATORIAMENTE com: "${keywordSEO} em Anápolis?"
+- NA MESMA FRASE ou na segunda, aplique o gatilho ${gatilhoPrincipal}
+- Mencione a idade "${idadeCrianca} anos" no hook
 - Frase corrida (evite pontos no meio)
 - Interrompa o scroll imediatamente
-- Exemplo se Curiosidade: "Tem uma coisa sobre ${especialidade.nome.toLowerCase()} que ninguém te contou e que pode estar prejudicando seu filho sem você perceber"
-- Exemplo se Contradição: "Pare de fazer isso com seu filho - você está atrasando o desenvolvimento sem saber"
+- Exemplo otimizado: "${keywordSEO} em Anápolis? Saiba o que fazer para crianças de ${idadeCrianca} anos"
+- Exemplo se Curiosidade: "${keywordSEO} em Anápolis? Tem uma coisa sobre crianças de ${idadeCrianca} anos que ninguém te contou..."
+- Exemplo se Contradição: "${keywordSEO} em Anápolis? Pare de fazer isso com seu filho de ${idadeCrianca} anos agora..."
 
 2️⃣ VALOR + CONEXÃO:
 - Valide a dor: "Você não está sozinha, isso é mais comum do que parece"
@@ -427,6 +580,8 @@ ${nichoInstrucoes}
 3️⃣ SEO NATURAL:
 - Insira "${keywordSEO}" no meio do texto
 - Use termos relacionados: desenvolvimento infantil, Anápolis, terapia infantil
+- Mencione "Anápolis" pelo menos 2 vezes no texto
+- Mencione idade ${idadeCrianca} anos no texto (obrigatório)
 
 4️⃣ CTA ESTRATÉGICA:
 - Use EXATAMENTE: "${ctaFinal}"
@@ -1540,7 +1695,16 @@ export async function createAssistedPost(options = {}) {
 export async function generateCaptionSEO(especialidade, customTheme = null, funnelStage = 'top') {
   try {
     const nicho = PROMPTS_ESPECIALIDADE[especialidade.id] || null;
-    const keywordSEO = `${especialidade.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')} infantil`;
+    const listaProblemas = PROBLEMAS_REAIS[especialidade.id];
+    let keywordSEO;
+    
+    if (listaProblemas && listaProblemas.length) {
+      keywordSEO = listaProblemas[Math.floor(Math.random() * listaProblemas.length)];
+    } else {
+      keywordSEO = `${especialidade.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')} infantil`;
+    }
+    
+    console.log('🎯 SEO keyword escolhida (caption):', keywordSEO);
     
     const estrategiaPorFunil = {
       top: { cta: 'Comente "SIM" se você passou por isso', tom: 'conversacional, empático' },
@@ -1558,7 +1722,9 @@ Crie uma LEGENDA otimizada para Instagram e Google.
 REGRAS DE SEO:
 - Palavra-chave principal: "${keywordSEO}"
 - Densidade: 1-2% (use naturalmente no meio do texto)
-- Primeiras 125 caracteres: hook que prenda atenção
+- Comece com: "${keywordSEO} em Anápolis?" - hook que prenda atenção
+- Mencione "Anápolis" nas primeiras 2 frases
+- Use idade da criança quando possível (ex: "2 anos", "3 anos")
 - Parágrafos curtos (máx 2 linhas cada)
 - Máximo 2 emojis
 - CTA claro no final
@@ -1577,11 +1743,12 @@ PÚBLICO: Pais de ${especialidade.publico}
 ${nicho ? `DOR: ${nicho.dor}` : ''}
 
 ESTRUTURA OBRIGATÓRIA:
-1. Hook (primeiras 2 frases) - chame atenção imediatamente
-2. Desenvolvimento - valor educativo + emocional
+1. Hook (primeiras 2 frases) - comece com "${keywordSEO} em Anápolis?"
+2. Desenvolvimento - valor educativo + emocional, mencione "Anápolis"
 3. SEO - insira "${keywordSEO}" naturalmente no meio
-4. CTA: "${estrategia.cta}"
-5. Hashtags: 5-8 tags (mix nicho + local + amplo)
+4. Mencione idade da criança quando possível
+5. CTA: "${estrategia.cta}"
+6. Hashtags: 5-8 tags (mix nicho + local + amplo)
 
 OUTPUT: Apenas a legenda pronta para copiar e colar.`
       }
