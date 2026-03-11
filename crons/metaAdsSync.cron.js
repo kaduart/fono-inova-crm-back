@@ -45,6 +45,35 @@ async function syncJob() {
 }
 
 /**
+ * Verifica expiração do token e alerta se necessário
+ */
+async function checkTokenExpiry() {
+  try {
+    const debug = await adsService.debugToken();
+    
+    if (debug.error) {
+      logger.error('[MetaAds Token] Erro ao verificar token:', debug.error);
+      return;
+    }
+    
+    if (debug.days_until_expiry !== null) {
+      logger.info(`[MetaAds Token] Token válido. Expira em ${debug.days_until_expiry} dias (${debug.expires_at})`);
+      
+      // Alerta se faltarem menos de 7 dias
+      if (debug.days_until_expiry < 7) {
+        logger.warn(`🚨 [MetaAds Token] ATENÇÃO: Token expira em ${debug.days_until_expiry} dias!`);
+        logger.warn(`🚨 Renove em: https://developers.facebook.com/tools/explorer/`);
+        
+        // Aqui poderia enviar email/Slack/notificação
+        // await sendNotification('Token Meta Ads expirando em ' + debug.days_until_expiry + ' dias');
+      }
+    }
+  } catch (error) {
+    logger.error('[MetaAds Token] Erro ao verificar expiração:', error.message);
+  }
+}
+
+/**
  * Inicia o cron job
  * Roda todos os dias às 6:00 da manhã
  */
@@ -56,6 +85,11 @@ export function startMetaAdsCron() {
   });
   
   logger.info('[MetaAds Cron] Agendamento configurado: todos os dias às 6h00 (America/Sao_Paulo)');
+  
+  // Verifica token na inicialização
+  setTimeout(() => {
+    checkTokenExpiry();
+  }, 3000);
   
   // Executa uma vez na inicialização (se não tiver dados)
   // Mas respeita o rate limit (só sincroniza se cache expirou)
