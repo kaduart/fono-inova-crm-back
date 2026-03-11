@@ -1,340 +1,189 @@
-installHook.js:1 MUI Grid: The `item` prop has been removed and is no longer necessary. You can safely remove it.
- Error Component Stack
-    at Grid3 (chunk-HGXLER4Z.js?v=e1e12a96:7111:19)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Grid3 (chunk-HGXLER4Z.js?v=e1e12a96:7111:19)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Box3 (chunk-HGXLER4Z.js?v=e1e12a96:4731:19)
-    at FinancialLoading (FinancialLoading.tsx:44:5)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Box3 (chunk-HGXLER4Z.js?v=e1e12a96:4731:19)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Box3 (chunk-HGXLER4Z.js?v=e1e12a96:4731:19)
-    at LoadingOverlay (LoadingOverlay.tsx:11:5)
-    at ChatNavigationProvider (ChatNavigationContext.tsx:12:83)
-    at App (App.tsx:23:25)
-    at ContactsProvider (ContactsContext.tsx:56:36)
-    at NotificationProvider (NotificationContext.tsx:72:75)
-    at AuthProvider (AuthContext.tsx:46:32)
-    at Router (react-router-dom.js?v=e1e12a96:4014:15)
-    at BrowserRouter (react-router-dom.js?v=e1e12a96:4754:5)
-overrideMethod @ installHook.js:1
-(anonymous) @ chunk-HGXLER4Z.js?v=e1e12a96:7044
-deleteLegacyGridProps @ chunk-HGXLER4Z.js?v=e1e12a96:7041
-Grid3 @ chunk-HGXLER4Z.js?v=e1e12a96:7114
-renderWithHooks @ chunk-KPD4VVXB.js?v=e1e12a96:11596
-updateForwardRef @ chunk-KPD4VVXB.js?v=e1e12a96:14373
-beginWork @ chunk-KPD4VVXB.js?v=e1e12a96:15994
-beginWork$1 @ chunk-KPD4VVXB.js?v=e1e12a96:19806
-performUnitOfWork @ chunk-KPD4VVXB.js?v=e1e12a96:19251
-workLoopSync @ chunk-KPD4VVXB.js?v=e1e12a96:19190
-renderRootSync @ chunk-KPD4VVXB.js?v=e1e12a96:19169
-performConcurrentWorkOnRoot @ chunk-KPD4VVXB.js?v=e1e12a96:18728
-workLoop @ chunk-KPD4VVXB.js?v=e1e12a96:197
-flushWork @ chunk-KPD4VVXB.js?v=e1e12a96:176
-performWorkUntilDeadline @ chunk-KPD4VVXB.js?v=e1e12a96:384
-installHook.js:1 MUI Grid: The `xs` prop has been removed. See https://mui.com/material-ui/migration/upgrade-to-grid-v2/ for migration instructions.
- Error Component Stack
-    at Grid3 (chunk-HGXLER4Z.js?v=e1e12a96:7111:19)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Grid3 (chunk-HGXLER4Z.js?v=e1e12a96:7111:19)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Box3 (chunk-HGXLER4Z.js?v=e1e12a96:4731:19)
-    at FinancialLoading (FinancialLoading.tsx:44:5)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Box3 (chunk-HGXLER4Z.js?v=e1e12a96:4731:19)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Box3 (chunk-HGXLER4Z.js?v=e1e12a96:4731:19)
-    at LoadingOverlay (LoadingOverlay.tsx:11:5)
-    at ChatNavigationProvider (ChatNavigationContext.tsx:12:83)
-    at App (App.tsx:23:25)
-    at ContactsProvider (ContactsContext.tsx:56:36)
-    at NotificationProvider (NotificationContext.tsx:72:75)
-    at AuthProvider (AuthContext.tsx:46:32)
-    at Router (react-router-dom.js?v=e1e12a96:4014:15)
-    at BrowserRouter (react-router-dom.js?v=e1e12a96:4754:5)
-overrideMethod @ installHook.js:1
-(anonymous) @ chunk-HGXLER4Z.js?v=e1e12a96:7044
-deleteLegacyGridProps @ chunk-HGXLER4Z.js?v=e1e12a96:7041
-Grid3 @ chunk-HGXLER4Z.js?v=e1e12a96:7114
-renderWithHooks @ chunk-KPD4VVXB.js?v=e1e12a96:11596
-updateForwardRef @ chunk-KPD4VVXB.js?v=e1e12a96:14373
-beginWork @ chunk-KPD4VVXB.js?v=e1e12a96:15994
-beginWork$1 @ chunk-KPD4VVXB.js?v=e1e12a96:19806
-performUnitOfWork @ chunk-KPD4VVXB.js?v=e1e12a96:19251
-workLoopSync @ chunk-KPD4VVXB.js?v=e1e12a96:19190
-renderRootSync @ chunk-KPD4VVXB.js?v=e1e12a96:19169
-performConcurrentWorkOnRoot @ chunk-KPD4VVXB.js?v=e1e12a96:18728
-workLoop @ chunk-KPD4VVXB.js?v=e1e12a96:197
-flushWork @ chunk-KPD4VVXB.js?v=e1e12a96:176
-performWorkUntilDeadline @ chunk-KPD4VVXB.js?v=e1e12a96:384
-installHook.js:1 MUI Grid: The `sm` prop has been removed. See https://mui.com/material-ui/migration/upgrade-to-grid-v2/ for migration instructions.
- Error Component Stack
-    at Grid3 (chunk-HGXLER4Z.js?v=e1e12a96:7111:19)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Grid3 (chunk-HGXLER4Z.js?v=e1e12a96:7111:19)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Box3 (chunk-HGXLER4Z.js?v=e1e12a96:4731:19)
-    at FinancialLoading (FinancialLoading.tsx:44:5)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Box3 (chunk-HGXLER4Z.js?v=e1e12a96:4731:19)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Box3 (chunk-HGXLER4Z.js?v=e1e12a96:4731:19)
-    at LoadingOverlay (LoadingOverlay.tsx:11:5)
-    at ChatNavigationProvider (ChatNavigationContext.tsx:12:83)
-    at App (App.tsx:23:25)
-    at ContactsProvider (ContactsContext.tsx:56:36)
-    at NotificationProvider (NotificationContext.tsx:72:75)
-    at AuthProvider (AuthContext.tsx:46:32)
-    at Router (react-router-dom.js?v=e1e12a96:4014:15)
-    at BrowserRouter (react-router-dom.js?v=e1e12a96:4754:5)
-overrideMethod @ installHook.js:1
-(anonymous) @ chunk-HGXLER4Z.js?v=e1e12a96:7044
-deleteLegacyGridProps @ chunk-HGXLER4Z.js?v=e1e12a96:7041
-Grid3 @ chunk-HGXLER4Z.js?v=e1e12a96:7114
-renderWithHooks @ chunk-KPD4VVXB.js?v=e1e12a96:11596
-updateForwardRef @ chunk-KPD4VVXB.js?v=e1e12a96:14373
-beginWork @ chunk-KPD4VVXB.js?v=e1e12a96:15994
-beginWork$1 @ chunk-KPD4VVXB.js?v=e1e12a96:19806
-performUnitOfWork @ chunk-KPD4VVXB.js?v=e1e12a96:19251
-workLoopSync @ chunk-KPD4VVXB.js?v=e1e12a96:19190
-renderRootSync @ chunk-KPD4VVXB.js?v=e1e12a96:19169
-performConcurrentWorkOnRoot @ chunk-KPD4VVXB.js?v=e1e12a96:18728
-workLoop @ chunk-KPD4VVXB.js?v=e1e12a96:197
-flushWork @ chunk-KPD4VVXB.js?v=e1e12a96:176
-performWorkUntilDeadline @ chunk-KPD4VVXB.js?v=e1e12a96:384
-installHook.js:1 MUI Grid: The `md` prop has been removed. See https://mui.com/material-ui/migration/upgrade-to-grid-v2/ for migration instructions.
- Error Component Stack
-    at Grid3 (chunk-HGXLER4Z.js?v=e1e12a96:7111:19)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Grid3 (chunk-HGXLER4Z.js?v=e1e12a96:7111:19)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Box3 (chunk-HGXLER4Z.js?v=e1e12a96:4731:19)
-    at FinancialLoading (FinancialLoading.tsx:44:5)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Box3 (chunk-HGXLER4Z.js?v=e1e12a96:4731:19)
-    at div (<anonymous>)
-    at chunk-HGXLER4Z.js?v=e1e12a96:1729:45
-    at Box3 (chunk-HGXLER4Z.js?v=e1e12a96:4731:19)
-    at LoadingOverlay (LoadingOverlay.tsx:11:5)
-    at ChatNavigationProvider (ChatNavigationContext.tsx:12:83)
-    at App (App.tsx:23:25)
-    at ContactsProvider (ContactsContext.tsx:56:36)
-    at NotificationProvider (NotificationContext.tsx:72:75)
-    at AuthProvider (AuthContext.tsx:46:32)
-    at Router (react-router-dom.js?v=e1e12a96:4014:15)
-    at BrowserRouter (react-router-dom.js?v=e1e12a96:4754:5)
-overrideMethod @ installHook.js:1
-(anonymous) @ chunk-HGXLER4Z.js?v=e1e12a96:7044
-deleteLegacyGridProps @ chunk-HGXLER4Z.js?v=e1e12a96:7041
-Grid3 @ chunk-HGXLER4Z.js?v=e1e12a96:7114
-renderWithHooks @ chunk-KPD4VVXB.js?v=e1e12a96:11596
-updateForwardRef @ chunk-KPD4VVXB.js?v=e1e12a96:14373
-beginWork @ chunk-KPD4VVXB.js?v=e1e12a96:15994
-beginWork$1 @ chunk-KPD4VVXB.js?v=e1e12a96:19806
-performUnitOfWork @ chunk-KPD4VVXB.js?v=e1e12a96:19251
-workLoopSync @ chunk-KPD4VVXB.js?v=e1e12a96:19190
-renderRootSync @ chunk-KPD4VVXB.js?v=e1e12a96:19169
-performConcurrentWorkOnRoot @ chunk-KPD4VVXB.js?v=e1e12a96:18728
-workLoop @ chunk-KPD4VVXB.js?v=e1e12a96:197
-flushWork @ chunk-KPD4VVXB.js?v=e1e12a96:176
-performWorkUntilDeadline @ chunk-KPD4VVXB.js?v=e1e12a96:384
-AppointmentsContext.tsx:81 🔌 [AppointmentsContext] Configurando listeners de socket...
-logger.ts:13 🔌 [socket] Usando VITE_URL: http://localhost:5000
-logger.ts:13 🔌 [socket] Conectando em: http://localhost:5000
-logger.ts:13 🔄 [socket] 1 handlers replicados após reconnect
-PatientsContext.tsx:101 🔄 PatientsContext: Buscando pacientes...
-DoctorsContext.tsx:76 🔄 DoctorsContext: Buscando médicos...
-ContactsContext.tsx:199 [ContactsContext] 🔌 Registrando listener de socket...
-ContactsContext.tsx:165 [ContactsContext] Logout detected, clearing contacts...
-AppointmentsContext.tsx:95 🔌 [AppointmentsContext] Removendo listeners de socket...
-AppointmentsContext.tsx:81 🔌 [AppointmentsContext] Configurando listeners de socket...
-ContactsContext.tsx:199 [ContactsContext] 🔌 Registrando listener de socket...
-ContactsContext.tsx:165 [ContactsContext] Logout detected, clearing contacts...
-ContactsContext.tsx:165 [ContactsContext] Logout detected, clearing contacts...
-ContactsContext.tsx:165 [ContactsContext] Logout detected, clearing contacts...
-installHook.js:1 Token não encontrado para: /patients
-overrideMethod @ installHook.js:1
-(anonymous) @ api.ts:31
-Promise.then
-_request @ axios.js?v=e1e12a96:2288
-request @ axios.js?v=e1e12a96:2197
-Axios.<computed> @ axios.js?v=e1e12a96:2324
-wrap @ axios.js?v=e1e12a96:8
-fetchAll @ patientService.ts:33
-(anonymous) @ PatientsContext.tsx:105
-(anonymous) @ PatientsContext.tsx:134
-(anonymous) @ PatientsContext.tsx:285
-commitHookEffectListMount @ chunk-KPD4VVXB.js?v=e1e12a96:16963
-commitPassiveMountOnFiber @ chunk-KPD4VVXB.js?v=e1e12a96:18206
-commitPassiveMountEffects_complete @ chunk-KPD4VVXB.js?v=e1e12a96:18179
-commitPassiveMountEffects_begin @ chunk-KPD4VVXB.js?v=e1e12a96:18169
-commitPassiveMountEffects @ chunk-KPD4VVXB.js?v=e1e12a96:18159
-flushPassiveEffectsImpl @ chunk-KPD4VVXB.js?v=e1e12a96:19543
-flushPassiveEffects @ chunk-KPD4VVXB.js?v=e1e12a96:19500
-(anonymous) @ chunk-KPD4VVXB.js?v=e1e12a96:19381
-workLoop @ chunk-KPD4VVXB.js?v=e1e12a96:197
-flushWork @ chunk-KPD4VVXB.js?v=e1e12a96:176
-performWorkUntilDeadline @ chunk-KPD4VVXB.js?v=e1e12a96:384
-installHook.js:1 Token não encontrado para: /admin/total-patients
-overrideMethod @ installHook.js:1
-(anonymous) @ api.ts:31
-Promise.then
-_request @ axios.js?v=e1e12a96:2288
-request @ axios.js?v=e1e12a96:2197
-Axios.<computed> @ axios.js?v=e1e12a96:2324
-wrap @ axios.js?v=e1e12a96:8
-getTotalPatients @ patientService.ts:90
-(anonymous) @ PatientsContext.tsx:106
-(anonymous) @ PatientsContext.tsx:134
-(anonymous) @ PatientsContext.tsx:285
-commitHookEffectListMount @ chunk-KPD4VVXB.js?v=e1e12a96:16963
-commitPassiveMountOnFiber @ chunk-KPD4VVXB.js?v=e1e12a96:18206
-commitPassiveMountEffects_complete @ chunk-KPD4VVXB.js?v=e1e12a96:18179
-commitPassiveMountEffects_begin @ chunk-KPD4VVXB.js?v=e1e12a96:18169
-commitPassiveMountEffects @ chunk-KPD4VVXB.js?v=e1e12a96:18159
-flushPassiveEffectsImpl @ chunk-KPD4VVXB.js?v=e1e12a96:19543
-flushPassiveEffects @ chunk-KPD4VVXB.js?v=e1e12a96:19500
-(anonymous) @ chunk-KPD4VVXB.js?v=e1e12a96:19381
-workLoop @ chunk-KPD4VVXB.js?v=e1e12a96:197
-flushWork @ chunk-KPD4VVXB.js?v=e1e12a96:176
-performWorkUntilDeadline @ chunk-KPD4VVXB.js?v=e1e12a96:384
-installHook.js:1 Token não encontrado para: /admin/patient-overview
-overrideMethod @ installHook.js:1
-(anonymous) @ api.ts:31
-Promise.then
-_request @ axios.js?v=e1e12a96:2288
-request @ axios.js?v=e1e12a96:2197
-Axios.<computed> @ axios.js?v=e1e12a96:2324
-wrap @ axios.js?v=e1e12a96:8
-getPatientOverview @ patientService.ts:95
-(anonymous) @ PatientsContext.tsx:107
-(anonymous) @ PatientsContext.tsx:134
-(anonymous) @ PatientsContext.tsx:285
-commitHookEffectListMount @ chunk-KPD4VVXB.js?v=e1e12a96:16963
-commitPassiveMountOnFiber @ chunk-KPD4VVXB.js?v=e1e12a96:18206
-commitPassiveMountEffects_complete @ chunk-KPD4VVXB.js?v=e1e12a96:18179
-commitPassiveMountEffects_begin @ chunk-KPD4VVXB.js?v=e1e12a96:18169
-commitPassiveMountEffects @ chunk-KPD4VVXB.js?v=e1e12a96:18159
-flushPassiveEffectsImpl @ chunk-KPD4VVXB.js?v=e1e12a96:19543
-flushPassiveEffects @ chunk-KPD4VVXB.js?v=e1e12a96:19500
-(anonymous) @ chunk-KPD4VVXB.js?v=e1e12a96:19381
-workLoop @ chunk-KPD4VVXB.js?v=e1e12a96:197
-flushWork @ chunk-KPD4VVXB.js?v=e1e12a96:176
-performWorkUntilDeadline @ chunk-KPD4VVXB.js?v=e1e12a96:384
-installHook.js:1 Token não encontrado para: /doctors/active/list
-overrideMethod @ installHook.js:1
-(anonymous) @ api.ts:31
-Promise.then
-_request @ axios.js?v=e1e12a96:2288
-request @ axios.js?v=e1e12a96:2197
-Axios.<computed> @ axios.js?v=e1e12a96:2324
-wrap @ axios.js?v=e1e12a96:8
-getActiveDoctors @ doctorService.ts:68
-(anonymous) @ DoctorsContext.tsx:78
-(anonymous) @ DoctorsContext.tsx:102
-(anonymous) @ DoctorsContext.tsx:158
-commitHookEffectListMount @ chunk-KPD4VVXB.js?v=e1e12a96:16963
-commitPassiveMountOnFiber @ chunk-KPD4VVXB.js?v=e1e12a96:18206
-commitPassiveMountEffects_complete @ chunk-KPD4VVXB.js?v=e1e12a96:18179
-commitPassiveMountEffects_begin @ chunk-KPD4VVXB.js?v=e1e12a96:18169
-commitPassiveMountEffects @ chunk-KPD4VVXB.js?v=e1e12a96:18159
-flushPassiveEffectsImpl @ chunk-KPD4VVXB.js?v=e1e12a96:19543
-flushPassiveEffects @ chunk-KPD4VVXB.js?v=e1e12a96:19500
-(anonymous) @ chunk-KPD4VVXB.js?v=e1e12a96:19381
-workLoop @ chunk-KPD4VVXB.js?v=e1e12a96:197
-flushWork @ chunk-KPD4VVXB.js?v=e1e12a96:176
-performWorkUntilDeadline @ chunk-KPD4VVXB.js?v=e1e12a96:384
-installHook.js:1 Token não encontrado para: /doctors/inactive/list
-overrideMethod @ installHook.js:1
-(anonymous) @ api.ts:31
-Promise.then
-_request @ axios.js?v=e1e12a96:2288
-request @ axios.js?v=e1e12a96:2197
-Axios.<computed> @ axios.js?v=e1e12a96:2324
-wrap @ axios.js?v=e1e12a96:8
-getInactiveDoctors @ doctorService.ts:73
-(anonymous) @ DoctorsContext.tsx:79
-(anonymous) @ DoctorsContext.tsx:102
-(anonymous) @ DoctorsContext.tsx:158
-commitHookEffectListMount @ chunk-KPD4VVXB.js?v=e1e12a96:16963
-commitPassiveMountOnFiber @ chunk-KPD4VVXB.js?v=e1e12a96:18206
-commitPassiveMountEffects_complete @ chunk-KPD4VVXB.js?v=e1e12a96:18179
-commitPassiveMountEffects_begin @ chunk-KPD4VVXB.js?v=e1e12a96:18169
-commitPassiveMountEffects @ chunk-KPD4VVXB.js?v=e1e12a96:18159
-flushPassiveEffectsImpl @ chunk-KPD4VVXB.js?v=e1e12a96:19543
-flushPassiveEffects @ chunk-KPD4VVXB.js?v=e1e12a96:19500
-(anonymous) @ chunk-KPD4VVXB.js?v=e1e12a96:19381
-workLoop @ chunk-KPD4VVXB.js?v=e1e12a96:197
-flushWork @ chunk-KPD4VVXB.js?v=e1e12a96:176
-performWorkUntilDeadline @ chunk-KPD4VVXB.js?v=e1e12a96:384
-installHook.js:1 ❌ PatientsContext: Erro ao buscar pacientes: Error: Token não disponível
-    at api.ts:33:27
-    at async Axios.request (axios.js?v=e1e12a96:2197:14)
-    at async Object.getTotalPatients (patientService.ts:90:26)
-    at async Promise.all (index 1)
-    at async PatientsContext.tsx:104:57
-    at async PatientsContext.tsx:137:5
-overrideMethod @ installHook.js:1
-(anonymous) @ PatientsContext.tsx:126
-await in (anonymous)
-(anonymous) @ PatientsContext.tsx:134
-(anonymous) @ PatientsContext.tsx:285
-commitHookEffectListMount @ chunk-KPD4VVXB.js?v=e1e12a96:16963
-commitPassiveMountOnFiber @ chunk-KPD4VVXB.js?v=e1e12a96:18206
-commitPassiveMountEffects_complete @ chunk-KPD4VVXB.js?v=e1e12a96:18179
-commitPassiveMountEffects_begin @ chunk-KPD4VVXB.js?v=e1e12a96:18169
-commitPassiveMountEffects @ chunk-KPD4VVXB.js?v=e1e12a96:18159
-flushPassiveEffectsImpl @ chunk-KPD4VVXB.js?v=e1e12a96:19543
-flushPassiveEffects @ chunk-KPD4VVXB.js?v=e1e12a96:19500
-(anonymous) @ chunk-KPD4VVXB.js?v=e1e12a96:19381
-workLoop @ chunk-KPD4VVXB.js?v=e1e12a96:197
-flushWork @ chunk-KPD4VVXB.js?v=e1e12a96:176
-performWorkUntilDeadline @ chunk-KPD4VVXB.js?v=e1e12a96:384
-installHook.js:1 ❌ DoctorsContext: Erro ao buscar médicos: Error: Token não disponível
-    at api.ts:33:27
-    at async Axios.request (axios.js?v=e1e12a96:2197:14)
-    at async Promise.all (index 0)
-    at async DoctorsContext.tsx:77:42
-    at async DoctorsContext.tsx:105:5
-overrideMethod @ installHook.js:1
-(anonymous) @ DoctorsContext.tsx:94
-await in (anonymous)
-(anonymous) @ DoctorsContext.tsx:102
-(anonymous) @ DoctorsContext.tsx:158
-commitHookEffectListMount @ chunk-KPD4VVXB.js?v=e1e12a96:16963
-commitPassiveMountOnFiber @ chunk-KPD4VVXB.js?v=e1e12a96:18206
-commitPassiveMountEffects_complete @ chunk-KPD4VVXB.js?v=e1e12a96:18179
-commitPassiveMountEffects_begin @ chunk-KPD4VVXB.js?v=e1e12a96:18169
-commitPassiveMountEffects @ chunk-KPD4VVXB.js?v=e1e12a96:18159
-flushPassiveEffectsImpl @ chunk-KPD4VVXB.js?v=e1e12a96:19543
-flushPassiveEffects @ chunk-KPD4VVXB.js?v=e1e12a96:19500
-(anonymous) @ chunk-KPD4VVXB.js?v=e1e12a96:19381
-workLoop @ chunk-KPD4VVXB.js?v=e1e12a96:197
-flushWork @ chunk-KPD4VVXB.js?v=e1e12a96:176
-performWorkUntilDeadline @ chunk-KPD4VVXB.js?v=e1e12a96:384
-logger.ts:13 🔌 [socket] Conectado: 8O6HH27QZbHgnDpwAAAB
+Ricardo, vou te entregar um prompt pronto para usar no Kimi / Claude / Cursor para editar automaticamente seu gmbService.js sem quebrar nada do sistema (Make, Mongo, scheduler etc.).
 
+A ideia do prompt é:
+	•	não mudar arquitetura
+	•	não mudar schema
+	•	não mudar campos do Mongo
+	•	apenas melhorar SEO do conteúdo
 
-ponto 2: com nosso refactory apra peformance, qdo vou para a aca gestao/profissionais nao ta carregadno os profissionais ativos ta , nao ta chamadno o endpoit..analise
+Ou seja: edição cirúrgica.
 
+⸻
 
+🧠 PROMPT PARA KIMI (copiar e colar)
 
-ponto 3
-o EditPaymentModal.tsx e payemnt action nao ta atualiado qdo e chamado masi ocorreu alguma coisa altero de avalaicao para sessao nao altera valor tb nao  ta sentadno as vezes e status tb verifica o flow completo e depois ajuste osmente deposi de entender
+Use exatamente isso no Kimi dentro do VSCode.
 
+:::writing{variant=“standard” id=“48211”}
+Você é um engenheiro Node.js especialista em SEO Local e Google Business Profile.
+
+Preciso que você modifique meu arquivo gmbService.js com alterações mínimas e seguras.
+
+⚠️ REGRAS IMPORTANTES (NÃO QUEBRAR O SISTEMA):
+	1.	NÃO alterar estrutura do banco MongoDB
+	2.	NÃO alterar schema de GmbPost
+	3.	NÃO alterar campo “theme”
+	4.	NÃO alterar integração com Make/Integromat
+	5.	NÃO alterar scheduler existente
+	6.	NÃO remover nenhuma função existente
+	7.	NÃO mudar assinatura de funções
+	8.	Apenas ADICIONAR melhorias SEO no conteúdo
+
+⸻
+
+OBJETIVO
+
+Hoje os posts usam keywords genéricas como:
+
+“psicologia infantil”
+“fisioterapia infantil”
+
+Isso gera pouco tráfego no Google Business.
+
+Precisamos usar problemas reais que pais pesquisam como:
+
+“criança de 3 anos não fala”
+“criança bate na mãe”
+“bebê não olha nos olhos”
+
+⸻
+
+MODIFICAÇÕES NECESSÁRIAS
+
+1️⃣ Criar um mapa de PROBLEMAS_REAIS no topo do arquivo
+
+Adicionar logo após os imports:
+
+const PROBLEMAS_REAIS = {
+fonoaudiologia: [
+“criança de 2 anos não fala”,
+“criança de 3 anos não forma frases”,
+“criança troca letras ao falar”,
+“gagueira infantil”,
+“fala enrolada”
+],
+
+psicologia: [
+“criança bate na mãe”,
+“criança muito agressiva”,
+“filho não quer ir para escola”,
+“medo de separação infantil”,
+“criança muito ansiosa”
+],
+
+terapia_ocupacional: [
+“criança não consegue segurar lápis”,
+“criança tropeça muito”,
+“dificuldade coordenação motora fina”,
+“criança desajeitada”
+],
+
+fisioterapia: [
+“postura curvada criança”,
+“criança anda torto”,
+“fraqueza muscular infantil”
+],
+
+psicomotricidade: [
+“criança confunde letras”,
+“dificuldade coordenação motora escola”
+],
+
+psicopedagogia_clinica: [
+“criança troca letras escrevendo”,
+“dificuldade leitura infantil”
+],
+
+neuropsicologia: [
+“suspeita tdah criança”,
+“criança não consegue se concentrar”
+]
+};
+
+⸻
+
+2️⃣ Alterar a lógica de keywordSEO
+
+Localizar no código onde existe algo parecido com:
+
+const keywordSEO = ${especialidade.nome.toLowerCase()} infantil;
+
+Substituir por:
+
+const listaProblemas = PROBLEMAS_REAIS[especialidade.id];
+
+let keywordSEO;
+
+if (listaProblemas && listaProblemas.length) {
+keywordSEO =
+listaProblemas[Math.floor(Math.random() * listaProblemas.length)];
+} else {
+keywordSEO = especialidade.nome;
+}
+
+console.log(“SEO keyword escolhida:”, keywordSEO);
+
+⸻
+
+3️⃣ Melhorar o prompt de geração de conteúdo
+
+No prompt usado para gerar o post (system ou user message), adicionar as seguintes regras:
+
+REGRAS DE SEO LOCAL:
+	1.	Começar o texto com uma pergunta baseada no problema pesquisado.
+	2.	Usar a cidade “Anápolis” na primeira ou segunda frase.
+	3.	Mencionar idade da criança quando possível.
+	4.	Escrever como se estivesse respondendo uma busca do Google.
+
+Exemplo esperado:
+
+“Seu filho de 3 anos ainda não fala em Anápolis?”
+
+“Muitos pais aqui em Anápolis ficam preocupados quando a criança demora para formar frases…”
+
+⸻
+
+IMPORTANTE
+
+NÃO mudar:
+	•	estrutura ESPECIALIDADES
+	•	scheduler de posts
+	•	retorno da função generatePostForEspecialidade
+	•	integração com Make
+	•	campos salvos no Mongo
+
+⸻
+
+RESULTADO ESPERADO
+
+Antes:
+
+Post: “Psicologia Infantil na Clínica”
+
+Depois:
+
+Post: “Criança de 3 anos bate na mãe em Anápolis? Saiba o que fazer”
+
+⸻
+
+Agora analise o arquivo gmbService.js completo e aplique essas modificações de forma segura.
+:::
+
+⸻
+
+💡 Dica importante para usar no Kimi
+
+Depois que ele editar o arquivo, peça:
+
+mostre somente o diff das mudanças
+
+Isso evita que ele reescreva o arquivo inteiro.
+
+⸻
+
+🚀 Se quiser, eu também posso te dar
+	•	Prompt para gerar 300 temas de posts automaticamente
+	•	Sistema que aprende quais posts dão mais visitas
+	•	Automação que cria calendário de posts por 6 meses
+
+Isso deixaria seu Google Business rodando praticamente sozinho.
