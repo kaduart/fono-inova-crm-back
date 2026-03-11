@@ -5,6 +5,10 @@
  */
 
 import { FacebookAdsApi, AdAccount, Campaign } from 'facebook-nodejs-business-sdk';
+
+// Instância cacheada da API
+let apiInstance = null;
+let lastToken = null;
 import MetaCampaign from '../../models/MetaCampaign.js';
 import Leads from '../../models/Leads.js';
 import { detectSpecialtyFromCampaignName, calculateCPL } from '../../utils/campaignDetector.js';
@@ -15,6 +19,7 @@ const ACCOUNT_ID = process.env.META_AD_ACCOUNT_ID || 'act_976430640058336';
 
 /**
  * Inicializa a API do Meta com o token configurado
+ * Gerencia instância cacheada e recria se o token mudar
  */
 function initApi() {
   const token = process.env.META_ACCESS_TOKEN;
@@ -25,7 +30,61 @@ function initApi() {
   // Debug: mostrar primeiros caracteres do token (nunca logar token completo!)
   logger.info(`[MetaAds] Token encontrado: ${token.substring(0, 15)}... (${token.length} chars)`);
   
-  return FacebookAdsApi.init(token);
+  // Se token mudou desde a última chamada, força recriação
+  if (apiInstance && lastToken !== token) {
+    logger.info('[MetaAds] Token alterado detectado, recriando instância da API...');
+    apiInstance = null;
+  }
+  
+  // Cria nova instância se não existir
+  if (!apiInstance) {
+    apiInstance = FacebookAdsApi.init(token);
+    lastToken = token;
+  }
+  
+  return apiInstance;
+}
+
+/**
+ * Verifica informações do token (debug)
+ */
+export async function debugToken() {
+  const token = process.env.META_ACCESS_TOKEN;
+  if (!token) {
+    return { error: 'Token não configurado' };
+  }
+  
+  try {
+    // Token de acesso do app para debug
+    const appToken = `${process.env.META_APP_ID}|${process.env.META_APP_SECRET}`;
+    
+    const response = await fetch(
+      `https://graph.facebook.com/debug_token?input_token=${token}&access_token=${appToken}`
+    );
+    
+    const data = await response.json();
+    
+    if (data.data) {
+      const expiresAt = data.data.expires_at ? new Date(data.data.expires_at * 1000) : null;
+      const now = new Date();
+      const daysUntilExpiry = expiresAt ? Math.floor((expiresAt - now) / (1000 * 60 * 60 * 24)) : null;
+      
+      return {
+        app_id: data.data.app_id,
+        is_valid: data.data.is_valid,
+        type: data.data.type,
+        issued_at: data.data.issued_at ? new Date(data.data.issued_at * 1000) : null,
+        expires_at: expiresAt,
+        days_until_expiry: daysUntilExpiry,
+        scopes: data.data.scopes,
+        error: data.data.error
+      };
+    }
+    
+    return { error: data.error?.message || 'Erro desconhecido' };
+  } catch (error) {
+    return { error: error.message };
+  }
 }
 
 /**

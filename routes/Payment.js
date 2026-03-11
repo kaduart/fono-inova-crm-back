@@ -410,7 +410,7 @@ router.get('/', async (req, res) => {
 
 router.patch('/:id', auth, async (req, res) => {
     const { id } = req.params;
-    const { amount, paymentMethod, status, advanceServices = [] } = req.body;
+    const { amount, paymentMethod, status, serviceType, specialty, advanceServices = [] } = req.body;
     const MAX_RETRIES = 8;
     let retryCount = 0;
     let result;
@@ -475,11 +475,13 @@ router.patch('/:id', auth, async (req, res) => {
 
             console.log('📋 Pagamento encontrado:', payment._id);
 
-            // 2. 🔥 ATUALIZAÇÃO DO PAGAMENTO PRINCIPAL (MANTÉM LÓGICA ORIGINAL)
+            // 2. 🔥 ATUALIZAÇÃO DO PAGAMENTO PRINCIPAL
             const updateData = {
                 ...(amount !== undefined && { amount }),
                 ...(paymentMethod !== undefined && { paymentMethod }),
                 ...(status !== undefined && { status }),
+                ...(serviceType !== undefined && { serviceType }),      // ✅ Atualiza serviceType
+                ...(specialty !== undefined && { specialty }),          // ✅ Atualiza specialty
                 updatedAt: currentDate
             };
 

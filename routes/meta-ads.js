@@ -334,4 +334,34 @@ router.get('/by-specialty', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/meta-ads/debug-token
+ * Debug do token - mostra validade, escopos e expiração
+ * Requer: admin
+ */
+router.get('/debug-token', async (req, res) => {
+  try {
+    const debug = await adsService.debugToken();
+    
+    res.json({
+      success: true,
+      debug,
+      env_check: {
+        has_token: !!process.env.META_ACCESS_TOKEN,
+        has_app_id: !!process.env.META_APP_ID,
+        has_app_secret: !!process.env.META_APP_SECRET,
+        account_id: process.env.META_AD_ACCOUNT_ID
+      }
+    });
+    
+  } catch (error) {
+    logger.error('[MetaAds API] Erro no debug:', error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Erro ao verificar token',
+      message: error.message
+    });
+  }
+});
+
 export default router;
