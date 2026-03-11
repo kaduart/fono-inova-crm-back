@@ -23,6 +23,7 @@ import { mapFlagsToBookingProduct } from '../utils/bookingProductMapper.js';
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
 import { normalizeE164BR, sanitizePhoneBeforeSend } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
+import { cancelRecovery } from '../services/leadRecoveryService.js';
 
 const AUTO_TEST_NUMBERS = [
     "5561981694922", "5561981694922", "556292013573", "5562992013573"
@@ -1639,20 +1640,22 @@ async function processInboundMessage(msg, value) {
             console.log("ℹ️ Model Patient não disponível");
         }
 
-        const lead = await resolveLeadByPhone(
-            from,
-            patient
-                ? {
-                    name: patient.fullName,
-                    status: "virou_paciente",
-                    convertedToPatient: patient._id,
-                    conversionScore: 100
-                }
-                : {
-                    status: "novo",
-                    conversionScore: 0
-                }
-        );
+        // 🎯 PASSAR METADADOS PARA DETECÇÃO DE CAMPANHA
+        const leadDefaults = patient
+            ? {
+                name: patient.fullName,
+                status: "virou_paciente",
+                convertedToPatient: patient._id,
+                conversionScore: 100,
+                firstMessage: contentToSave  // Passa primeira mensagem para detecção
+            }
+            : {
+                status: "novo",
+                conversionScore: 0,
+                firstMessage: contentToSave  // Passa primeira mensagem para detecção
+            };
+        
+        const lead = await resolveLeadByPhone(from, leadDefaults);
 
         if (!lead?._id) {
             console.error("❌ resolveLeadByPhone retornou lead inválido", { from, patientId: patient?._id });
@@ -1793,6 +1796,12 @@ async function processInboundMessage(msg, value) {
             });
             await lead.save();
             console.log("📅 Interação atualizada no lead");
+
+            // 🔁 CANCELAR LEAD RECOVERY se estiver ativo (lead respondeu)
+            if (lead.recovery && !lead.recovery.finishedAt && !lead.recovery.cancelledAt) {
+                cancelRecovery(lead._id, 'lead_respondeu')
+                    .catch(err => console.warn("⚠️ Falha ao cancelar recovery (não crítico):", err.message));
+            }
 
             // 🧠 Amanda 2.0: atualizar "memória" estruturada a cada inbound
             try {

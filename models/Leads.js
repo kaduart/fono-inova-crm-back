@@ -269,6 +269,43 @@ const leadSchema = new mongoose.Schema({
   pendingChosenSlot: { type: mongoose.Schema.Types.Mixed, default: null },
   pendingPatientInfoStep: { type: String, default: null },
 
+  // 🎯 META ADS TRACKING (Fase 1 - MVP)
+  metaTracking: {
+    source: {
+      type: String,
+      enum: ['meta_ads', 'google_ads', 'organic', 'indication', 'instagram', 'facebook', ''],
+      default: ''
+    },
+    campaign: { type: String, default: null },        // Ex: "[vd-trafego]-[psico]"
+    campaignId: { type: String, default: null },      // ID da campanha no Meta (act_xxx)
+    adsetId: { type: String, default: null },         // ID do adset
+    adId: { type: String, default: null },            // ID do anúncio específico
+    fbclid: { type: String, default: null },          // Facebook Click ID
+    specialty: {
+      type: String,
+      enum: ['psicologia', 'fono', 'fisio', 'neuropsicologia', 'psicopedagogia', 'geral', ''],
+      default: ''
+    },
+    firstMessage: { type: String, default: null },    // Texto inicial do WhatsApp
+    utmSource: { type: String, default: null },
+    utmCampaign: { type: String, default: null },
+    utmMedium: { type: String, default: null },
+    detectedAt: { type: Date, default: Date.now },
+    // Métricas calculadas (denormalizadas para performance)
+    leadCost: { type: Number, default: null },        // CPL quando convertido
+  },
+
+  // 🔁 LEAD RECOVERY - Recuperação de leads que não agendaram
+  recovery: {
+    stage: { type: Number, default: 0 },              // 0=novo, 1=6h, 2=24h
+    nextAttemptAt: { type: Date, default: null },     // Próximo envio agendado
+    lastAttemptAt: { type: Date, default: null },     // Último envio realizado
+    cancelledAt: { type: Date, default: null },       // Cancelado (lead respondeu)
+    finishedAt: { type: Date, default: null },        // Finalizado (stage 2 concluído)
+    startedAt: { type: Date, default: null }          // Quando recovery iniciou
+  },
+  recoveryEnabled: { type: Boolean, default: true },  // Pode desligar por lead
+
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -281,6 +318,10 @@ leadSchema.index({ origin: 1, createdAt: -1 });
 leadSchema.index({ createdAt: -1 });
 leadSchema.index({ conversionScore: -1 });
 leadSchema.index({ 'contact.phone': 1 });
+
+// 🔁 ÍNDICES PARA LEAD RECOVERY (performance na query de recuperação)
+leadSchema.index({ recoveryEnabled: 1, 'recovery.finishedAt': 1, 'recovery.nextAttemptAt': 1 });
+leadSchema.index({ recoveryEnabled: 1, convertedToPatient: 1, 'recovery.cancelledAt': 1 });
 
 leadSchema.virtual('phone').get(function () {
   return this.contact?.phone || null;
