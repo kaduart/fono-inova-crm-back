@@ -30,6 +30,7 @@ import { registerWebhook } from "./services/sicoobService.js";
 import { sanitizeStack } from './middleware/sanitize.js';
 import salesRoutes from './routes/sales.js';
 import { startLearningCron } from "./crons/learningCron.js";
+import { startMetaAdsCron } from "./crons/metaAdsSync.cron.js";
 
 // ======================================================
 // 🧩 BullMQ e Painel Bull Board
@@ -85,6 +86,7 @@ import instagramRoutes from './routes/instagram.routes.js';
 import facebookRoutes from './routes/facebook.routes.js';
 import videoRoutes from './routes/video.routes.js';
 import spyRoutes from './routes/spy.routes.js';
+import metaAdsRoutes from './routes/meta-ads.js';
 
 import provisionamentoRoutes from './routes/provisionamento.js';
 import preAgendamentoRoutes from './routes/preAgendamento.js';
@@ -298,6 +300,7 @@ app.use('/api/instagram', instagramRoutes);
 app.use('/api/facebook', facebookRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/spy', spyRoutes);
+app.use('/api/meta-ads', metaAdsRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);
@@ -405,6 +408,13 @@ function initFollowupWatcher() {
     
     // 📍 Inicializa cron do Google Meu Negócio
     await import("./crons/gmb.cron.js");
+    
+    // 🎯 Meta Ads Sync - Sincronização diária de campanhas
+    startMetaAdsCron();
+    
+    // 🔁 Lead Recovery - Recuperação automática de leads (a cada 30 min)
+    const { initLeadRecoveryCron } = await import("./crons/leadRecovery.cron.js");
+    initLeadRecoveryCron();
 
     // 📲 Worker de publicação agendada — Instagram + Facebook
     const { startScheduledPublisher } = await import("./jobs/publishScheduled.js");

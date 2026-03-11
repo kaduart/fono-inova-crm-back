@@ -6,6 +6,8 @@ import Patient from '../models/Patient.js';
 import { calculateOptimalFollowupTime } from '../services/intelligence/smartFollowup.js';
 import { sendLeadToMeta } from '../services/metaConversionsService.js';
 import { normalizeE164BR } from "../utils/phone.js";
+import { parseLeadSource, detectSpecialtyFromMessage } from "../utils/campaignDetector.js";
+import { startRecoveryForLead } from "../services/leadRecoveryService.js";
 
 // =====================================================================
 // 🆕 FUNÇÕES DE ANÚNCIOS (META/GOOGLE ADS) - AMANDA 2.0
@@ -838,19 +840,76 @@ export async function resolveLeadByPhone(phone, defaults = {}) {
         return await Lead.findById(existingLead._id);
     }
     
+    // 🎯 DETECTAR ORIGEM DO LEAD (Meta Ads tracking)
+    // Tenta extrair informações de campanha dos metadados ou primeira mensagem
+    let metaTracking = {};
+    
+    if (defaults.firstMessage || defaults.fbclid || defaults.utmCampaign) {
+        const detection = parseLeadSource({
+            message: defaults.firstMessage,
+            fbclid: defaults.fbclid,
+            utmCampaign: defaults.utmCampaign,
+            utmSource: defaults.utmSource,
+            utmMedium: defaults.utmMedium
+        });
+        
+        metaTracking = {
+            source: detection.source || 'whatsapp',
+            campaign: detection.campaign,
+            specialty: detection.specialty || detectSpecialtyFromMessage(defaults.firstMessage) || 'geral',
+            firstMessage: defaults.firstMessage,
+            fbclid: detection.fbclid,
+            utmSource: detection.utmSource,
+            utmCampaign: detection.utmCampaign,
+            utmMedium: detection.utmMedium,
+            detectedAt: new Date()
+        };
+        
+        console.log(`🎯 [resolveLeadByPhone] Tracking detectado:`, {
+            source: metaTracking.source,
+            specialty: metaTracking.specialty,
+            hasCampaign: !!metaTracking.campaign
+        });
+    }
+    
+    // Se não detectou specialty, tenta inferir do texto
+    if (!metaTracking.specialty && defaults.firstMessage) {
+        metaTracking.specialty = detectSpecialtyFromMessage(defaults.firstMessage);
+    }
+    
+    // Se não tem source mas tem firstMessage, assume whatsapp
+    if (!metaTracking.source && defaults.firstMessage) {
+        metaTracking.source = 'whatsapp';
+        metaTracking.firstMessage = defaults.firstMessage;
+        metaTracking.detectedAt = new Date();
+    }
+    
     // Se não encontrou, cria novo lead
     console.log(`🆕 [resolveLeadByPhone] Criando novo lead para: "${phoneE164}"`);
     
-    const lead = await Lead.create({
+    const leadData = {
         contact: { phone: phoneE164 },
-        origin: defaults.origin || "WhatsApp",
+        origin: metaTracking.source || defaults.origin || "WhatsApp",
         status: defaults.status || "novo",
         appointment: defaults.appointment || {},
         autoReplyEnabled: true,
-        manualControl: { active: false, autoResumeAfter: null },  // 🔧 FIX: null = não volta sozinha
+        manualControl: { active: false, autoResumeAfter: null },
         lastInteractionAt: new Date(),
         createdAt: new Date()
-    });
+    };
+    
+    // Adiciona metaTracking se houver dados
+    if (Object.keys(metaTracking).length > 0) {
+        leadData.metaTracking = metaTracking;
+    }
+    
+    const lead = await Lead.create(leadData);
+    
+    console.log(`✅ [resolveLeadByPhone] Lead criado: ${lead._id} | Origem: ${leadData.origin}${metaTracking.specialty ? ' | Especialidade: ' + metaTracking.specialty : ''}`);
+    
+    // 🔁 Inicia Lead Recovery automaticamente
+    startRecoveryForLead(lead._id)
+        .catch(err => console.warn("⚠️ Falha ao iniciar recovery (não crítico):", err.message));
     
     return lead;
 }
