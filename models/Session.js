@@ -100,6 +100,49 @@ const sessionSchema = new mongoose.Schema({
         type: Boolean,
         default: false,
         description: 'Flag de idempotência - true se a guia já foi consumida'
+    },
+    paidAt: {
+        type: Date,
+        default: null,
+        description: 'Data do recebimento do pagamento (para cash flow)'
+    },
+    paymentId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Payment',
+        default: null,
+        description: 'Referência ao Payment associado (futuro: unificação financeira)'
+    },
+    
+    // ⭐ CAMPOS PARA ARQUITETURA FINANCEIRA ROBUSTA
+    
+    sessionConsumed: {
+        type: Boolean,
+        default: false,
+        description: 'Define se a sessão consome do pacote/saldo (true para completed/missed, false para canceled)'
+    },
+    
+    commissionRate: {
+        type: Number,
+        default: null,
+        description: 'Percentual de comissão do profissional (ex: 0.5 para 50%)'
+    },
+    
+    commissionValue: {
+        type: Number,
+        default: null,
+        description: 'Valor calculado da comissão (sessionValue * commissionRate)'
+    },
+    
+    statusHistory: [{
+        status: { type: String },
+        at: { type: Date, default: Date.now },
+        by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    }],
+    
+    revenueRecognizedAt: {
+        type: Date,
+        default: null,
+        description: 'Data em que a receita foi reconhecida (para DRE mensal)'
     }
 
 }, {
@@ -222,6 +265,88 @@ sessionSchema.post('findOneAndUpdate', async function (doc) {
         console.warn(`⚠️ Guia ${doc.insuranceGuide} NÃO será revertida automaticamente.`);
         // NÃO reverte automaticamente conforme especificação
     }
+});
+
+// 🏗️ Hook para gerenciar statusHistory, commission e sessionConsumed
+sessionSchema.pre('save', function(next) {
+    if (this.isModified('status')) {
+        // Adicionar ao histórico
+        if (!this.statusHistory) this.statusHistory = [];
+        this.statusHistory.push({
+            status: this.status,
+            at: new Date()
+        });
+        
+        // Atualizar sessionConsumed baseado no status
+        if (this.status === 'completed') {
+            this.sessionConsumed = true;
+            
+            // Calcular comissão se temos rate e value
+            if (this.commissionRate && this.sessionValue && !this.commissionValue) {
+                this.commissionValue = this.sessionValue * this.commissionRate;
+            }
+            
+            // Marcar revenue recognized
+            if (!this.revenueRecognizedAt) {
+                this.revenueRecognizedAt = new Date();
+            }
+        } else if (this.status === 'missed') {
+            // Falta consome sessão mas não gera comissão
+            this.sessionConsumed = true;
+        } else if (this.status === 'canceled') {
+            // Cancelamento não consome
+            this.sessionConsumed = false;
+            
+            // Zerar comissão se estava completed antes
+            if (this.commissionValue) {
+                this.commissionValue = 0;
+            }
+        }
+    }
+    next();
+});
+
+sessionSchema.pre('findOneAndUpdate', async function(next) {
+    const update = this.getUpdate();
+    const doc = await this.model.findOne(this.getQuery());
+    
+    if (update.$set && update.$set.status && doc && doc.status !== update.$set.status) {
+        const newStatus = update.$set.status;
+        const oldStatus = doc.status;
+        
+        // Adicionar ao histórico
+        if (!update.$push) update.$push = {};
+        if (!update.$push.statusHistory) update.$push.statusHistory = {};
+        update.$push.statusHistory = {
+            status: newStatus,
+            at: new Date()
+        };
+        
+        // Detectar reversão (completed → canceled)
+        if (oldStatus === 'completed' && newStatus === 'canceled') {
+            console.warn(`🔄 REVERSÃO: Sessão ${doc._id} de completed para canceled`);
+            update.$set.sessionConsumed = false;
+            update.$set.commissionValue = 0;
+            // Aqui poderia gerar uma entrada de reversão no ledger
+        }
+        
+        // Novo completed
+        if (newStatus === 'completed') {
+            update.$set.sessionConsumed = true;
+            
+            // Calcular comissão
+            const sessionValue = update.$set.sessionValue || doc.sessionValue;
+            const commissionRate = update.$set.commissionRate || doc.commissionRate;
+            if (commissionRate && sessionValue) {
+                update.$set.commissionValue = sessionValue * commissionRate;
+            }
+            
+            if (!doc.revenueRecognizedAt) {
+                update.$set.revenueRecognizedAt = new Date();
+            }
+        }
+    }
+    next();
 });
 
 sessionSchema.add({

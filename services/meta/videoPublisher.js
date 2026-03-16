@@ -17,7 +17,8 @@ import fs from 'fs';
 import logger from '../../utils/logger.js';
 
 const ACCESS_TOKEN = process.env.META_ACCESS_TOKEN;
-const AD_ACCOUNT   = process.env.META_AD_ACCOUNT_ID;
+// Suporta META_AD_ACCOUNT_IDS (plural, com múltiplas contas) ou META_AD_ACCOUNT_ID (singular)
+const AD_ACCOUNT   = (process.env.META_AD_ACCOUNT_IDS || process.env.META_AD_ACCOUNT_ID || '').split(',')[0].trim();
 const PAGE_ID      = process.env.META_PAGE_ID;
 const API_VERSION  = process.env.META_API_VERSION || 'v21.0';
 
@@ -30,9 +31,9 @@ const API_VERSION  = process.env.META_API_VERSION || 'v21.0';
  * @param {Object} params.targeting - Configurações de targeting (opcional)
  * @returns {Object} IDs da campanha criada
  */
-export async function publicarVideo({ videoPath, copy, nomeCampanha, targeting = {} }) {
+export async function publicarVideo({ videoPath, videoUrl, copy, nomeCampanha, targeting = {} }) {
   if (!ACCESS_TOKEN || !AD_ACCOUNT) {
-    throw new Error('Meta Ads não configurado (META_ACCESS_TOKEN ou META_AD_ACCOUNT_ID)');
+    throw new Error(`Meta Ads não configurado. ACCESS_TOKEN=${ACCESS_TOKEN ? 'OK' : 'MISSING'}, AD_ACCOUNT=${AD_ACCOUNT || 'MISSING'}. Verifique META_ACCESS_TOKEN e META_AD_ACCOUNT_IDS no .env`);
   }
 
   logger.info(`[META] Iniciando publicação: ${nomeCampanha}`);

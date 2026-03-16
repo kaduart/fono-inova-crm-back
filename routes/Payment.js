@@ -1148,6 +1148,11 @@ router.get("/totals", async (req, res) => {
                 rangeStart = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
                 rangeEnd = endDate ? new Date(endDate) : new Date();
                 break;
+            case "all":
+                // 🔄 Todos os registros - sem filtro de data
+                rangeStart = new Date('2000-01-01');
+                rangeEnd = new Date('2099-12-31');
+                break;
             default:
                 rangeStart = new Date(now.getFullYear(), now.getMonth(), 1);
                 rangeEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -1159,6 +1164,8 @@ router.get("/totals", async (req, res) => {
         // 🔹 Filtro por data de pagamento/atendimento (paymentDate) quando disponível
         // ou createdAt como fallback para registros antigos
         const matchStage = {
+            // ❌ EXCLUIR PAGAMENTOS CANCELADOS SEMPRE
+            status: { $ne: 'canceled' },
             $or: [
                 // Preferência: paymentDate (data do atendimento)
                 {
@@ -1273,10 +1280,14 @@ router.get("/totals", async (req, res) => {
             ...matchStage,
             billingType: 'convenio',
             // Inclui todos os convênios do período: pending, billed, received, etc.
+            // ❌ MAS SEMPRE EXCLUI CANCELADOS (herdado do matchStage)
         };
 
-        // Remove filtro de status para incluir todos os convênios
-        delete insuranceMatchStage.status;
+        // Remove apenas filtro específico de status se usuário passou um,
+        // mas mantém a exclusão de cancelados
+        if (status && status !== 'canceled') {
+            delete insuranceMatchStage.status;
+        }
 
         console.log("🔍 Insurance Match Stage:", JSON.stringify(insuranceMatchStage, null, 2));
 
@@ -1467,7 +1478,69 @@ router.get("/totals", async (req, res) => {
         ]);
 
         // ======================================================
-        // ✅ 7. Retorno final
+        // 💰 7. A RECEBER ACUMULADO (independente do período)
+        // Todos os pagamentos pendentes, não apenas do mês selecionado
+        // ======================================================
+        const accumulatedMatchStage = {
+            status: { $in: ['pending', 'partial', 'billed'] },
+            // NÃO filtra por data - pega todos
+        };
+        if (doctorId) accumulatedMatchStage.doctor = new mongoose.Types.ObjectId(doctorId);
+
+        const accumulatedReceivables = await Payment.aggregate([
+            { $match: accumulatedMatchStage },
+            {
+                $group: {
+                    _id: null,
+                    // Particular pendentes
+                    particularPendingAccumulated: {
+                        $sum: {
+                            $cond: [
+                                { $and: [
+                                    { $in: ["$status", ["pending", "partial"]] },
+                                    { $ne: ["$billingType", "convenio"] }
+                                ]},
+                                "$amount",
+                                0
+                            ]
+                        }
+                    },
+                    // Convênios pendentes (produção - recebido)
+                    insurancePendingAccumulated: {
+                        $sum: {
+                            $cond: [
+                                { $and: [
+                                    { $eq: ["$billingType", "convenio"] },
+                                    { $in: ["$insurance.status", ["pending_billing", "billed", null, ""]] }
+                                ]},
+                                { $ifNull: ["$insurance.grossAmount", "$amount"] },
+                                0
+                            ]
+                        }
+                    },
+                    countPending: { $sum: 1 }
+                }
+            }
+        ]);
+
+        const accumulated = accumulatedReceivables[0] || {
+            particularPendingAccumulated: 0,
+            insurancePendingAccumulated: 0,
+            countPending: 0
+        };
+
+        const totalAReceberAcumulado = 
+            (accumulated.particularPendingAccumulated || 0) + 
+            (accumulated.insurancePendingAccumulated || 0);
+
+        // Adiciona ao objeto totals
+        totals.totalAReceberAcumulado = totalAReceberAcumulado;
+        totals.particularPendingAccumulated = accumulated.particularPendingAccumulated || 0;
+        totals.insurancePendingAccumulated = accumulated.insurancePendingAccumulated || 0;
+        totals.aReceberMes = totals.totalPending + totals.totalInsurancePending; // Do mês selecionado
+
+        // ======================================================
+        // ✅ 8. Retorno final
         // ======================================================
         console.log("📊 /totals response:", { totals, dateRange: { start: rangeStart, end: rangeEnd } });
         res.status(200).json({
@@ -3214,6 +3287,104 @@ router.post('/cleanup-isis', auth, async (req, res) => {
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
+    }
+});
+
+// DELETE /api/payments/balance/:patientId/transaction/:transactionId
+// Exclui uma transação do saldo — requer motivo obrigatório
+router.delete('/balance/:patientId/transaction/:transactionId', auth, async (req, res) => {
+    try {
+        const { patientId, transactionId } = req.params;
+        const { reason } = req.body;
+
+        if (!reason || reason.trim().length < 5) {
+            return res.status(400).json({ success: false, message: 'Motivo da exclusão é obrigatório (mínimo 5 caracteres)' });
+        }
+
+        const balance = await PatientBalance.findOne({ patient: patientId });
+        if (!balance) return res.status(404).json({ success: false, message: 'Saldo não encontrado' });
+
+        const transaction = balance.transactions.id(transactionId);
+        if (!transaction) return res.status(404).json({ success: false, message: 'Transação não encontrada' });
+
+        if (transaction.isPaid) {
+            return res.status(400).json({ success: false, message: 'Não é possível excluir uma transação já quitada' });
+        }
+
+        const amount = transaction.amount;
+        const type = transaction.type;
+
+        // Reverte o saldo conforme tipo
+        if (type === 'debit') {
+            balance.currentBalance -= amount;
+            balance.totalDebited -= amount;
+        } else if (type === 'payment' || type === 'credit') {
+            balance.currentBalance += amount;
+            balance.totalCredited -= amount;
+        }
+
+        // Registra log de exclusão no histórico
+        balance.transactions.push({
+            type: 'credit',
+            amount: 0,
+            description: `[EXCLUSÃO CORRETIVA] Transação ${transactionId} removida. Motivo: ${reason.trim()}`,
+            registeredBy: req.user?._id,
+            transactionDate: new Date()
+        });
+
+        balance.transactions.pull(transactionId);
+        balance.lastTransactionAt = new Date();
+        await balance.save();
+
+        res.json({ success: true, message: 'Transação excluída com sucesso', data: { currentBalance: balance.currentBalance } });
+    } catch (error) {
+        console.error('[balance/delete-transaction]', error);
+        res.status(500).json({ success: false, message: 'Erro ao excluir transação' });
+    }
+});
+
+// PATCH /api/payments/balance/:patientId/transaction/:transactionId
+// Edita valor e/ou descrição de uma transação pendente
+router.patch('/balance/:patientId/transaction/:transactionId', auth, async (req, res) => {
+    try {
+        const { patientId, transactionId } = req.params;
+        const { amount, description } = req.body;
+
+        if (amount !== undefined && (isNaN(amount) || amount < 0)) {
+            return res.status(400).json({ success: false, message: 'Valor inválido' });
+        }
+
+        const balance = await PatientBalance.findOne({ patient: patientId });
+        if (!balance) return res.status(404).json({ success: false, message: 'Saldo não encontrado' });
+
+        const transaction = balance.transactions.id(transactionId);
+        if (!transaction) return res.status(404).json({ success: false, message: 'Transação não encontrada' });
+
+        if (transaction.isPaid) {
+            return res.status(400).json({ success: false, message: 'Não é possível editar uma transação já quitada' });
+        }
+
+        // Ajusta saldo pela diferença
+        if (amount !== undefined && amount !== transaction.amount) {
+            const diff = amount - transaction.amount;
+            if (transaction.type === 'debit') {
+                balance.currentBalance += diff;
+                balance.totalDebited += diff;
+            }
+            transaction.amount = amount;
+        }
+
+        if (description !== undefined && description.trim()) {
+            transaction.description = description.trim();
+        }
+
+        balance.lastTransactionAt = new Date();
+        await balance.save();
+
+        res.json({ success: true, message: 'Transação atualizada', data: { currentBalance: balance.currentBalance, transaction } });
+    } catch (error) {
+        console.error('[balance/edit-transaction]', error);
+        res.status(500).json({ success: false, message: 'Erro ao editar transação' });
     }
 });
 

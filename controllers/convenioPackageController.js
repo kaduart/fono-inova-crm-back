@@ -172,7 +172,7 @@ export const createConvenioPackage = async (req, res) => {
         insuranceGuide: guide._id,
         guideConsumed: false, // Será true quando status = 'completed'
 
-        sessionValue: 0,
+        sessionValue: convenioValue || 0,  // ⭐ Valor histórico imutável do convênio
         sessionType: guide.specialty,
         specialty: guide.specialty,
         status: 'scheduled',
@@ -623,6 +623,8 @@ export const markConvenioSessionsAsPaid = async (req, res) => {
     // ===================================
     // 3. ATUALIZAR SESSÕES
     // ===================================
+    const paymentDateObj = new Date(paymentDate);
+    
     const updateResult = await Session.updateMany(
       {
         _id: { $in: sessionIds },
@@ -633,6 +635,7 @@ export const markConvenioSessionsAsPaid = async (req, res) => {
       {
         $set: {
           isPaid: true,
+          paidAt: paymentDateObj,
           paymentStatus: 'paid',
           visualFlag: 'ok',
           notes: notes ? `${notes} | Pago em ${paymentDate}` : `Pago em ${paymentDate}`
@@ -817,7 +820,7 @@ export const addConvenioSession = async (req, res) => {
       insuranceGuide: guide._id,
       guideConsumed: false,
 
-      sessionValue: 0,
+      sessionValue: pkg.insuranceGrossAmount || 0,  // ⭐ Valor histórico imutável
       sessionType: pkg.sessionType,
       specialty: pkg.specialty,
       status: 'scheduled',

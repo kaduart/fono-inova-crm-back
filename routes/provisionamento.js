@@ -553,13 +553,45 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
     console.log(`Mês: ${mes}/${ano} | Início: ${inicioMes} | Fim: ${fimMes} | Hoje: ${hoje}`);
     console.log(`Status: ${ehMesPassado ? 'PASSADO' : ehMesAtual ? 'ATUAL' : 'FUTURO'}`);
 
-    // 1. REALIZADOS (tudo que foi atendido no mês)
-    const realizados = await Appointment.find({
-      date: { $gte: inicioMes, $lte: fimMes },
-      clinicalStatus: 'completed'
-    }).select('sessionValue');
-
-    const valorRealizados = realizados.reduce((sum, apt) => sum + (apt.sessionValue || 0), 0);
+    // 1. BUSCAR PAGAMENTOS DO MÊS (fonte verdade para valores)
+    const Payment = (await import('../models/Payment.js')).default;
+    
+    // Todos os pagamentos do mês (exceto cancelados)
+    const pagamentosDoMes = await Payment.find({
+      paymentDate: { $gte: inicioMes, $lte: fimMes },
+      status: { $ne: 'canceled' }
+    });
+    
+    // Separar por tipo
+    const pagamentosParticular = pagamentosDoMes.filter(p => p.billingType !== 'convenio');
+    const pagamentosConvenio = pagamentosDoMes.filter(p => p.billingType === 'convenio');
+    
+    // Valores
+    const valorParticular = pagamentosParticular.reduce((sum, p) => sum + (p.amount || 0), 0);
+    const valorConvenio = pagamentosConvenio.reduce((sum, p) => {
+      // Para convênio, usa insurance.grossAmount se existir, senão amount
+      const val = p.insurance?.grossAmount || p.amount || 0;
+      return sum + val;
+    }, 0);
+    
+    const valorRealizados = valorParticular + valorConvenio;
+    
+    // Quantidade = soma de particular + convênio
+    const quantidadeRealizados = pagamentosDoMes.length;
+    
+    // Já recebido = pagamentos com status 'paid'
+    const pagamentosRecebidos = pagamentosDoMes.filter(p => p.status === 'paid');
+    const valorJaRecebido = pagamentosRecebidos.reduce((sum, p) => sum + (p.amount || 0), 0);
+    
+    // Detalhes dos atendimentos realizados (para a tabela)
+    const detalhesRealizados = pagamentosDoMes.map(p => ({
+      _id: p._id,
+      data: p.paymentDate,
+      hora: p.createdAt ? p.createdAt.toISOString().slice(11, 16) : '--:--',
+      valor: p.billingType === 'convenio' ? (p.insurance?.grossAmount || p.amount || 0) : (p.amount || 0),
+      paciente: p.patientName || 'N/A',
+      tipo: p.billingType === 'convenio' ? 'Convênio' : 'Particular'
+    }));
 
     let valorAgendados = 0;
     let valorPendentes = 0;
@@ -647,9 +679,15 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
       valorOtimista = valorRealizados + (valorAgendados * 0.95) + (valorPendentes * 0.7);
     }
 
-    // Meta (só faz sentida para atual e futuro, passado mostra real vs meta)
-    const metaSugerida = ehMesPassado ? valorRealizados * 1.1 : valorRealista * 1.1;
-    const percentualAtual = metaSugerida > 0 ? (valorRealizados / metaSugerida) * 100 : 0;
+    // Meta real do Planning — se não houver, nenhuma meta é exibida
+    const Planning = (await import('../models/Planning.js')).default;
+    const planningDoMes = await Planning.findOne({
+      type: 'monthly',
+      'period.start': { $lte: fimMes },
+      'period.end': { $gte: inicioMes }
+    });
+    const metaReal = planningDoMes?.targets?.expectedRevenue || 0;
+    const percentualAtual = metaReal > 0 ? (valorRealizados / metaReal) * 100 : 0;
 
     // Insights
     const insights = [];
@@ -670,7 +708,7 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
       }
     } else {
       // Insights para atual/futuro
-      const gapMeta = metaSugerida - valorRealizados - valorAgendados;
+      const gapMeta = metaReal - valorRealizados - valorAgendados;
       if (gapMeta > 0) {
         insights.push({
           tipo: 'warning',
@@ -709,6 +747,13 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
       },
       resumo: {
         jaFaturado: valorRealizados,
+        jaRecebido: valorJaRecebido,
+        aReceber: valorRealizados - valorJaRecebido,
+        atendimentosRealizados: quantidadeRealizados,
+        valorProduzido: valorRealizados,
+        ticketMedio: quantidadeRealizados > 0 ? valorRealizados / quantidadeRealizados : 0,
+        particular: valorParticular,
+        convenio: valorConvenio,
         agendadoConfirmado: valorAgendados,
         pendenteConfirmacao: valorPendentes,
         totalPotencial: valorRealizados + valorAgendados + valorPendentes
@@ -719,13 +764,14 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
         otimista: { valor: Math.round(valorOtimista), probabilidade: ehMesPassado ? 'Potencial' : '30%' }
       },
       metas: {
-        sugerida: Math.round(metaSugerida),
-        gapParaMeta: ehMesPassado ? 0 : Math.max(0, metaSugerida - valorRealizados - valorAgendados),
+        sugerida: Math.round(metaReal),
+        gapParaMeta: ehMesPassado ? 0 : Math.max(0, metaReal - valorRealizados - valorAgendados),
         percentualAtual: Math.round(percentualAtual * 100) / 100
       },
       taxaConversaoHistorica: taxaConversao,
       insights,
       detalhes: {
+        realizados: detalhesRealizados,
         agendados: agendados.map(a => ({
           _id: a._id,
           data: a.date,

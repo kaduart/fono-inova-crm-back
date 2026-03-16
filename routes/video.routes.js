@@ -16,6 +16,7 @@ import { videoGenerationQueue } from '../config/bullConfig.js';
 import Video from '../models/Video.js';
 import logger from '../utils/logger.js';
 import { aplicarPosProducao } from '../services/video/posProducaoVeoService.js';
+import fs from 'fs';
 
 const router = Router();
 router.use(auth);
@@ -467,6 +468,74 @@ router.post('/admin/cleanup-stalled', async (req, res) => {
     res.json({ success: true, message: `${updated} vídeos atualizados` });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro no cleanup:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /:id/publish-meta — Publica vídeo no Meta Ads (Tráfego Pago)
+router.post('/:id/publish-meta', async (req, res) => {
+  try {
+    const { copy, nomeCampanha, targeting } = req.body;
+    
+    const video = await Video.findById(req.params.id);
+    if (!video) {
+      return res.status(404).json({ success: false, error: 'Vídeo não encontrado' });
+    }
+    
+    if (video.status !== 'ready') {
+      return res.status(400).json({ success: false, error: 'Vídeo ainda não está pronto' });
+    }
+    
+    // Verificar se tem URL do vídeo
+    const videoUrl = video.videoUrl || video.videoFinalUrl || video.videoEditadoUrl;
+    if (!videoUrl) {
+      return res.status(400).json({ success: false, error: 'URL do vídeo não disponível' });
+    }
+    
+    // Importar serviço de publicação Meta
+    const { publicarVideo } = await import('../services/meta/videoPublisher.js');
+    
+    // Baixar vídeo temporariamente
+    const response = await fetch(videoUrl);
+    if (!response.ok) {
+      throw new Error('Falha ao baixar vídeo');
+    }
+    
+    const videoBuffer = Buffer.from(await response.arrayBuffer());
+    const tempPath = `/tmp/video_${video._id}.mp4`;
+    await fs.promises.writeFile(tempPath, videoBuffer);
+    
+    // Publicar no Meta
+    const resultado = await publicarVideo({
+      videoPath: tempPath,
+      copy: copy || {
+        texto_primario: video.roteiro?.substring(0, 500) || 'Assista agora!',
+        headline: nomeCampanha || `Campanha ${video.especialidadeId || 'Video'}`,
+        descricao: 'Clique para saber mais no WhatsApp'
+      },
+      nomeCampanha: nomeCampanha || `[VIDEO] ${video.especialidadeId || 'Campanha'}_${Date.now()}`,
+      targeting: targeting || {}
+    });
+    
+    // Limpar arquivo temporário
+    await fs.promises.unlink(tempPath).catch(() => {});
+    
+    // Atualizar vídeo com info da campanha
+    video.publishedChannels = [...(video.publishedChannels || []), 'meta_ads'];
+    video.metaCampaignId = resultado.campaign_id;
+    video.metaAdId = resultado.ad_id;
+    await video.save();
+    
+    logger.info(`[VIDEO ROUTES] ✅ Vídeo publicado no Meta Ads: ${resultado.campaign_id}`);
+    
+    res.json({
+      success: true,
+      message: 'Vídeo publicado no Meta Ads!',
+      data: resultado
+    });
+    
+  } catch (error) {
+    logger.error('[VIDEO ROUTES] Erro ao publicar no Meta:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });

@@ -47,6 +47,7 @@ export const distributePayments = async (packageId, amount, mongoSession = null,
 
       if (s.partialAmount >= sessionValue) {
         s.isPaid = true;
+        s.paidAt = s.paidAt || new Date();  // ⭐ Consistência de dados
         s.paymentStatus = 'paid';
         s.visualFlag = 'ok';
       } else if (s.partialAmount > 0) {

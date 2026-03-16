@@ -77,10 +77,13 @@ import protocolRoutes from './routes/protocol.js';
 import expenseRoutes from './routes/financial/expense.js';
 import cashflowRoutes from './routes/financial/cashflow.js';
 import financialOverviewRoutes from './routes/financial/overview.routes.js';
+import financialMetricsRoutes from './routes/financial/metrics.routes.js';
 import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
 import { scheduleGmbCron } from './jobs/gmbScheduledTasks.js';
+import { scheduleLandingPageDailyPosts } from './crons/landingPageDailyPost.js';
 import planningRoutes from './routes/planning.js';
 import marketingRoutes from './routes/marketing.js';
+import landingPageRoutes from './routes/landingPage.routes.js';
 import gmbRoutes from './routes/gmb.routes.js';
 import instagramRoutes from './routes/instagram.routes.js';
 import facebookRoutes from './routes/facebook.routes.js';
@@ -129,6 +132,7 @@ scheduleMonthlyCommissions();
 iniciarJobConfirmacao();
 scheduleDailyAlerts();
 scheduleGmbCron(); // ← Inicia cron do GMB (geração + envio ao Make)
+scheduleLandingPageDailyPosts(); // ← Inicia cron de posts automáticos para LPs
 
 // 🔹 WhatsApp Web (Puppeteer) - sessao persistente
 whatsappWebService.initialize().catch(err => console.error('[WhatsAppWeb] Erro ao inicializar:', err.message));
@@ -283,6 +287,7 @@ app.use('/api/protocols', protocolRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/cashflow', cashflowRoutes);
 app.use('/api/financial', financialOverviewRoutes);
+app.use('/api/financial/v2', financialMetricsRoutes);
 app.use('/api/planning', planningRoutes);
 app.use('/api/pre-agendamento', preAgendamentoRoutes);
 app.use('/api/notifications', notificationRoutes);
@@ -295,6 +300,7 @@ app.use('/api/convenio-packages', convenioPackagesRoutes);
 app.use('/api/financial/convenio', convenioRoutes);
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/marketing', marketingRoutes);
+app.use('/api/landing-pages', landingPageRoutes);
 app.use('/api/gmb', gmbRoutes);
 app.use('/api/instagram', instagramRoutes);
 app.use('/api/facebook', facebookRoutes);

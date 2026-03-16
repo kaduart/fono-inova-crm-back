@@ -144,6 +144,19 @@ const appointmentSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  // 💰 Sessão fiada (conta corrente)
+  addedToBalance: {
+    type: Boolean,
+    default: false
+  },
+  balanceAmount: {
+    type: Number,
+    default: 0
+  },
+  balanceDescription: {
+    type: String,
+    default: null
+  },
   // 📈 Metadados de Origem (ROI)
   metadata: {
     origin: {

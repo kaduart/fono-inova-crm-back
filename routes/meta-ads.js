@@ -20,11 +20,14 @@ router.use(auth);
 /**
  * GET /api/meta-ads/campaigns
  * Lista campanhas ativas do Meta Ads com métricas
- * Query params: specialty, status
+ * Query params: specialty, status, page, limit
  */
 router.get('/campaigns', async (req, res) => {
   try {
-    const { specialty, status, refresh } = req.query;
+    const { specialty, status, refresh, page = 1, limit = 20 } = req.query;
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
     
     // Se solicitado refresh, sincroniza com Meta primeiro
     if (refresh === 'true') {
@@ -33,16 +36,32 @@ router.get('/campaigns', async (req, res) => {
       await adsService.updateCampaignLeadCounts();
     }
     
-    // Busca campanhas do cache
-    const campaigns = await adsService.getCampaignsFromCache({ 
-      specialty, 
-      status 
-    });
+    // Build query
+    const query = {};
+    if (specialty) query.specialty = specialty;
+    if (status) query.status = status.toUpperCase();
+    
+    // Busca campanhas do cache com paginação
+    const [campaigns, total] = await Promise.all([
+      MetaCampaign.find(query)
+        .sort({ lastSyncedAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      MetaCampaign.countDocuments(query)
+    ]);
     
     res.json({
       success: true,
       count: campaigns.length,
       campaigns,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+        hasMore: pageNum * limitNum < total
+      },
       lastSync: new Date().toISOString()
     });
     
