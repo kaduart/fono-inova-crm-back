@@ -3,11 +3,29 @@ import * as gmbService from '../services/gmbService.js';
 import * as makeService from '../services/makeService.js';
 import { postGenerationQueue } from '../config/bullConfig.js';
 
-// Listar posts
+// Listar posts com paginação
 export async function listPosts(req, res) {
   try {
-    const posts = await GmbPost.find().sort({ createdAt: -1 }).lean();
-    res.json({ success: true, data: posts });
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+    
+    const [posts, total] = await Promise.all([
+      GmbPost.find().sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      GmbPost.countDocuments()
+    ]);
+    
+    res.json({ 
+      success: true, 
+      data: posts,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasMore: page * limit < total
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

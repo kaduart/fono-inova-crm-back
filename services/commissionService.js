@@ -1,4 +1,4 @@
-// services/commissionService.js (SUBSTITUIR TUDO)
+// services/commissionService.js
 import moment from 'moment-timezone';
 import mongoose from 'mongoose';
 import Doctor from '../models/Doctor.js';
@@ -8,7 +8,7 @@ import Session from '../models/Session.js';
 /**
  * Calcula comissão personalizada por profissional
  * Regras:
- * 1. Sessões regulares: valor fixo por sessão (ex: R$ 60 ou R$ 65)
+ * 1. Sessões regulares: valor fixo por sessão (ex: R$ 60) ou específico por convênio (ex: Unimed = R$ 50)
  * 2. Avaliação neuropsicológica: R$ 1.200 ao completar 10 sessões
  * 3. Outros tipos: conforme customRules do profissional
  */
@@ -22,18 +22,40 @@ export const calculateDoctorCommission = async (doctorId, startDate, endDate) =>
       throw new Error('Profissional não encontrado');
     }
 
-    // Buscar todas as sessões COMPLETADAS no período
-    const sessions = await Session.find({
+    // 🚨 IMPORTANTE: Buscar APENAS sessões REALMENTE completadas (não canceladas)
+    const allSessions = await Session.find({
       doctor: doctorId,
-      status: 'completed',
-      date: { $gte: startDate, $lte: endDate }
+      date: { $gte: startDate, $lte: endDate },
+      status: 'completed'
     })
-      .populate('package', 'sessionType totalSessions')
+      .populate('package', 'sessionType totalSessions insuranceProvider')
+      .populate('insuranceGuide', 'insurance')
       .lean();
+    
+    // Filtrar manualmente sessões canceladas (garantia extra)
+    const sessions = allSessions.filter(s => {
+      // Excluir se tem canceledAt preenchido
+      if (s.canceledAt && s.canceledAt !== null) {
+        console.log(`[Commission] EXCLUÍDA (canceledAt): ${s.date} | ${s._id}`);
+        return false;
+      }
+      // Excluir se status for canceled (redundante mas seguro)
+      if (s.status === 'canceled') {
+        console.log(`[Commission] EXCLUÍDA (status canceled): ${s.date} | ${s._id}`);
+        return false;
+      }
+      return true;
+    });
+    
+    console.log(`[Commission] Dr. ${doctorId}: ${sessions.length}/${allSessions.length} sessões válidas (após filtro)`);
+    sessions.forEach(s => {
+      const insurance = s.insuranceGuide?.insurance || s.package?.insuranceProvider || 'particular';
+      console.log(`  ✓ ${s.date} | ${insurance} | Valor: ${s.sessionValue || 60}`);
+    });
 
     let totalCommission = 0;
     const breakdown = {
-      standardSessions: { count: 0, value: 0 },
+      standardSessions: { count: 0, value: 0, byInsurance: {} },
       evaluations: { count: 0, value: 0 },
       neuropsychEvaluations: { count: 0, value: 0 },
       custom: []
@@ -70,11 +92,31 @@ export const calculateDoctorCommission = async (doctorId, startDate, endDate) =>
         continue;
       }
 
-      // 🔹 SESSÃO PADRÃO
-      const standardValue = doctor.commissionRules?.standardSession || 60;
+      // 🔹 SESSÃO PADRÃO - Verificar convênio
+      const insuranceName = getInsuranceName(session);
+      
+      // Verificar se tem regra específica para este convênio
+      const byInsuranceRules = doctor.commissionRules?.byInsurance || {};
+      const insuranceValue = byInsuranceRules[insuranceName?.toLowerCase()];
+      
+      // Usar valor do convênio se existir, senão usar valor padrão
+      const sessionValue = insuranceValue || doctor.commissionRules?.standardSession || 60;
+      
       breakdown.standardSessions.count++;
-      breakdown.standardSessions.value += standardValue;
-      totalCommission += standardValue;
+      breakdown.standardSessions.value += sessionValue;
+      totalCommission += sessionValue;
+
+      // Registrar por convênio
+      const insuranceKey = insuranceName || 'particular';
+      if (!breakdown.standardSessions.byInsurance[insuranceKey]) {
+        breakdown.standardSessions.byInsurance[insuranceKey] = {
+          count: 0,
+          value: 0,
+          rate: insuranceValue || doctor.commissionRules?.standardSession || 60
+        };
+      }
+      breakdown.standardSessions.byInsurance[insuranceKey].count++;
+      breakdown.standardSessions.byInsurance[insuranceKey].value += sessionValue;
     }
 
     // 🔹 PROCESSAR AVALIAÇÕES NEUROPSICOLÓGICAS COMPLETAS
@@ -102,6 +144,28 @@ export const calculateDoctorCommission = async (doctorId, startDate, endDate) =>
     throw error;
   }
 };
+
+/**
+ * Extrai o nome do convênio da sessão
+ */
+function getInsuranceName(session) {
+  // Prioridade 1: insuranceGuide.populated
+  if (session.insuranceGuide?.insurance) {
+    return session.insuranceGuide.insurance;
+  }
+  
+  // Prioridade 2: package.insuranceProvider
+  if (session.package?.insuranceProvider) {
+    return session.package.insuranceProvider;
+  }
+  
+  // Prioridade 3: paymentMethod
+  if (session.paymentMethod === 'convenio') {
+    return 'convenio';
+  }
+  
+  return null; // Particular
+}
 
 /**
  * Gera despesas de comissão para todos os profissionais ativos
@@ -136,6 +200,12 @@ export const generateMonthlyCommissions = async () => {
       const commission = await calculateDoctorCommission(doctor._id, startDate, endDate);
 
       if (commission.totalCommission > 0) {
+        // Criar notas detalhadas incluindo breakdown por convênio
+        const notes = {
+          ...commission.breakdown,
+          byInsurance: commission.breakdown.standardSessions.byInsurance
+        };
+
         const expense = await Expense.create([{
           description: `Comissão ${doctor.fullName} - ${monthRef}`,
           category: 'commission',
@@ -147,11 +217,11 @@ export const generateMonthlyCommissions = async () => {
             start: startDate,
             end: endDate,
             sessionsCount: commission.totalSessions,
-            revenueGenerated: 0 // não usado nesse modelo
+            revenueGenerated: 0
           },
           paymentMethod: 'transferencia_bancaria',
           status: 'pending',
-          notes: JSON.stringify(commission.breakdown, null, 2), // detalhamento
+          notes: JSON.stringify(notes, null, 2),
           createdBy: new mongoose.Types.ObjectId('000000000000000000000000')
         }], { session });
 
@@ -164,7 +234,13 @@ export const generateMonthlyCommissions = async () => {
         });
 
         console.log(`✅ ${doctor.fullName}: R$ ${commission.totalCommission.toFixed(2)}`);
-        console.log(`   - Sessões padrão: ${commission.breakdown.standardSessions.count} × R$ ${doctor.commissionRules?.standardSession || 60}`);
+        console.log(`   - Sessões: ${commission.breakdown.standardSessions.count}`);
+        
+        // Mostrar por convênio
+        for (const [ins, data] of Object.entries(commission.breakdown.standardSessions.byInsurance || {})) {
+          console.log(`     • ${ins}: ${data.count} × R$ ${data.rate} = R$ ${data.value}`);
+        }
+        
         console.log(`   - Avaliações: ${commission.breakdown.evaluations.count}`);
         console.log(`   - Neuro completas: ${commission.breakdown.neuropsychEvaluations.count} × R$ ${doctor.commissionRules?.neuropsychEvaluation || 1200}`);
       }
@@ -190,3 +266,5 @@ export const generateMonthlyCommissions = async () => {
     session.endSession();
   }
 };
+
+export default { calculateDoctorCommission, generateMonthlyCommissions };

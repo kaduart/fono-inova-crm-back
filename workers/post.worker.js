@@ -20,7 +20,7 @@ import FacebookPost from '../models/FacebookPost.js';
 
 // Services
 import * as gmbService from '../services/gmbService.js';
-import { gerarHeadline } from '../services/instagramPostService.js';
+import { gerarHeadline, generateImage as generateInstagramImage } from '../services/instagramPostService.js';
 import { generateCaptionSEO, generateHooksViral } from '../services/gmbService.js';
 import { scorePostQuality } from '../services/gmbService.js';
 
@@ -157,9 +157,9 @@ const postWorker = new Worker('post-generation', async (job) => {
       logger.info(`[POST WORKER] 💾 Post salvo: mediaUrl=${mediaUrl ? '✅ COM IMAGEM' : '❌ SEM IMAGEM'}, provider=${imageProvider || 'N/A'}`);
 
     } else if (channel === 'instagram') {
-      // Instagram: apenas texto/legenda - imagem vem de IA externa (Midjourney/etc)
+      // Instagram: texto + imagem automática
       const mode = job.data.mode || 'full'; // 'full' | 'caption' | 'hooks'
-      logger.info(`[POST WORKER] Instagram modo: ${mode} (sem imagem automática)`);
+      logger.info(`[POST WORKER] Instagram modo: ${mode} (com imagem automática)`);
 
       // Headline curta
       const headline = await gerarHeadline({ especialidade, funnelStage, customTheme });
@@ -181,7 +181,46 @@ const postWorker = new Worker('post-generation', async (job) => {
         igScore = await scorePostQuality(legenda, funnelStage);
       } catch { /* score é opcional */ }
 
-      // Atualizar o post EXISTENTE (sem imagem - usuário adiciona manualmente)
+      // 🎨 GERAR IMAGEM AUTOMATICAMENTE (se modo full)
+      let mediaUrl = null;
+      let imageProvider = null;
+      
+      if (mode === 'full' && generateImage) {
+        try {
+          logger.info(`[POST WORKER] Gerando imagem Instagram (provider: ${provider || 'auto'})...`);
+          
+          const promptData = {
+            especialidade,
+            headline,
+            tipoImagem: 'foto_real'
+          };
+          
+          const imgResult = await generateInstagramImage(promptData);
+          
+          if (imgResult?.url) {
+            mediaUrl = imgResult.url;
+            imageProvider = imgResult.provider;
+            logger.info(`[POST WORKER] ✅ IMAGEM GERADA: ${imageProvider}`);
+          } else if (imgResult?.buffer) {
+            // Upload para Cloudinary se veio buffer
+            const { v2: cloudinary } = await import('cloudinary');
+            const base64 = `data:image/jpeg;base64,${imgResult.buffer.toString('base64')}`;
+            const uploadResult = await cloudinary.uploader.upload(base64, {
+              folder: 'fono-inova/instagram/worker',
+              public_id: `ig_${postId}_${Date.now()}`,
+            });
+            mediaUrl = uploadResult.secure_url;
+            imageProvider = imgResult.provider;
+            logger.info(`[POST WORKER] ✅ IMAGEM UPLOADED: ${imageProvider}`);
+          } else {
+            logger.warn(`[POST WORKER] ⚠️ Nenhuma imagem retornada`);
+          }
+        } catch (imgError) {
+          logger.error(`[POST WORKER] ❌ Erro ao gerar imagem Instagram: ${imgError.message}`);
+        }
+      }
+
+      // Atualizar o post
       const isScheduled = Boolean(scheduledAt);
       await InstagramPost.findByIdAndUpdate(postId, {
         title: headline,
@@ -190,9 +229,9 @@ const postWorker = new Worker('post-generation', async (job) => {
         caption: legenda,
         theme: especialidade.id,
         status: isScheduled ? 'scheduled' : 'draft',
-        mediaUrl: null,  // Usuário adiciona imagem do Midjourney/etc manualmente
-        mediaType: null,
-        imageProvider: 'manual',
+        mediaUrl,
+        mediaType: mediaUrl ? 'image' : null,
+        imageProvider: imageProvider || (generateImage && mode === 'full' ? 'failed' : 'manual'),
         scheduledAt: isScheduled ? new Date(scheduledAt) : null,
         aiGenerated: true,
         processingStatus: 'completed',

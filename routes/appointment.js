@@ -1659,10 +1659,27 @@ router.patch('/:id/complete', auth, async (req, res) => {
         session = await mongoose.startSession();
         session.startTransaction();
 
-        /* if (appointment.operationalStatus === 'confirmed') {
+        // Guard de idempotência: se já foi completado com saldo devedor, não duplica
+        if (addToBalance && appointment.addedToBalance === true) {
             await session.abortTransaction();
-            return res.status(400).json({ error: 'Este agendamento já está concluído' });
-        } */
+            const existingAppointment = await Appointment.findById(id).populate('session package patient doctor payment');
+            const balanceDoc = await PatientBalance.findOne({ patient: patientId });
+            const responseData = existingAppointment.toObject ? existingAppointment.toObject() : existingAppointment;
+            responseData.patientBalance = balanceDoc?.currentBalance || 0;
+            console.log(`[complete] ⚠️ Sessão fiada já registrada, retornando sem duplicar`);
+            return res.json(responseData);
+        }
+
+        // Guard para sessão já confirmada sem saldo devedor
+        if (!addToBalance && appointment.operationalStatus === 'confirmed' && appointment.clinicalStatus === 'completed') {
+            await session.abortTransaction();
+            const existingAppointment = await Appointment.findById(id).populate('session package patient doctor payment');
+            const balanceDoc = await PatientBalance.findOne({ patient: patientId });
+            const responseData = existingAppointment.toObject ? existingAppointment.toObject() : existingAppointment;
+            responseData.patientBalance = balanceDoc?.currentBalance || 0;
+            console.log(`[complete] ⚠️ Agendamento já concluído, retornando sem duplicar`);
+            return res.json(responseData);
+        }
 
         // 1️⃣ ATUALIZAR SESSÃO (SEMPRE!)
         console.log(`[complete] Etapa 1: Atualizando sessão (${Date.now() - startTime}ms)`);
@@ -1849,14 +1866,16 @@ router.patch('/:id/complete', auth, async (req, res) => {
             updateData.paymentStatus = 'paid';
         }
 
-        // 💰 Atualizar sessionValue se estiver vazio
-        if (!appointment.sessionValue || appointment.sessionValue === 0) {
+        // 💰 Atualizar sessionValue — para fiada, sempre sincroniza com balanceAmount
+        if (addToBalance && balanceAmount > 0) {
+            updateData.sessionValue = balanceAmount;
+        }
+
+        // 💰 Atualizar sessionValue se estiver vazio (fluxo não-fiada)
+        if (!addToBalance && (!appointment.sessionValue || appointment.sessionValue === 0)) {
             let valueToSet = 0;
 
-            if (addToBalance && balanceAmount > 0) {
-                // 💳 Saldo devedor: usar o valor informado
-                valueToSet = balanceAmount;
-            } else if (finalPaymentId) {
+            if (finalPaymentId) {
                 // 💳 Pagamento normal: usar valor do payment
                 const paymentDoc = await Payment.findOne(
                     { _id: finalPaymentId },

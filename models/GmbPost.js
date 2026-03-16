@@ -60,6 +60,17 @@ const gmbPostSchema = new mongoose.Schema({
   },
   ctaUrl: { type: String },
   
+  // 🎯 Landing Page vinculada
+  landingPageRef: { 
+    type: String, 
+    index: true,
+    description: 'Slug da landing page vinculada'
+  },
+  landingPageUrl: { 
+    type: String,
+    description: 'URL completa da landing page'
+  },
+  
   // Resposta da API do Google
   gmbPostId: { type: String },
   gmbAccountId: { type: String },

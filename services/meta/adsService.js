@@ -1,68 +1,67 @@
 /**
  * 💼 Meta Ads Service
- * Serviço de integração com Meta Marketing API
+ * Serviço de integração com Meta Marketing API usando REST (sem SDK problemático)
  * Busca campanhas, insights e sincroniza com banco local
  */
 
-import { FacebookAdsApi, AdAccount, Campaign } from 'facebook-nodejs-business-sdk';
-
-// Instância cacheada da API
-let apiInstance = null;
-let lastToken = null;
 import MetaCampaign from '../../models/MetaCampaign.js';
 import Leads from '../../models/Leads.js';
 import { detectSpecialtyFromCampaignName, calculateCPL } from '../../utils/campaignDetector.js';
 import logger from '../../utils/logger.js';
 
 // Configurações
-const ACCOUNT_ID = process.env.META_AD_ACCOUNT_ID || 'act_976430640058336';
+const API_VERSION = 'v18.0';
+const BASE_URL = `https://graph.facebook.com/${API_VERSION}`;
 
-/**
- * Inicializa a API do Meta com o token configurado
- * Gerencia instância cacheada e recria se o token mudar
- */
-function initApi() {
+function getToken() {
   const token = process.env.META_ACCESS_TOKEN;
   if (!token) {
     throw new Error('META_ACCESS_TOKEN não configurado no .env');
   }
+  return token;
+}
+
+function getAccountIds() {
+  const ids = process.env.META_AD_ACCOUNT_IDS || process.env.META_AD_ACCOUNT_ID || 'act_976430640058336';
+  return ids.split(',').map(id => id.trim());
+}
+
+/**
+ * Faz requisição para API do Meta
+ */
+async function metaApiRequest(endpoint, params = {}) {
+  const token = getToken();
+  const url = new URL(`${BASE_URL}/${endpoint}`);
   
-  // Debug: mostrar primeiros caracteres do token (nunca logar token completo!)
-  logger.info(`[MetaAds] Token encontrado: ${token.substring(0, 15)}... (${token.length} chars)`);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      url.searchParams.append(key, value);
+    }
+  });
+  url.searchParams.append('access_token', token);
   
-  // Se token mudou desde a última chamada, força recriação
-  if (apiInstance && lastToken !== token) {
-    logger.info('[MetaAds] Token alterado detectado, recriando instância da API...');
-    apiInstance = null;
+  const response = await fetch(url.toString());
+  const data = await response.json();
+  
+  if (data.error) {
+    throw new Error(data.error.message || 'Erro na API do Meta');
   }
   
-  // Cria nova instância se não existir
-  if (!apiInstance) {
-    apiInstance = FacebookAdsApi.init(token);
-    lastToken = token;
-  }
-  
-  return apiInstance;
+  return data;
 }
 
 /**
  * Verifica informações do token (debug)
  */
 export async function debugToken() {
-  const token = process.env.META_ACCESS_TOKEN;
-  if (!token) {
-    return { error: 'Token não configurado' };
-  }
+  const token = getToken();
   
   try {
-    // Token de acesso do app para debug
     const appToken = `${process.env.META_APP_ID}|${process.env.META_APP_SECRET}`;
-    
-    const response = await fetch(
-      `https://graph.facebook.com/debug_token?input_token=${token}&access_token=${appToken}`
-    );
-    
-    const data = await response.json();
+    const data = await metaApiRequest('debug_token', {
+      input_token: token,
+      access_token: appToken
+    });
     
     if (data.data) {
       const expiresAt = data.data.expires_at ? new Date(data.data.expires_at * 1000) : null;
@@ -81,397 +80,262 @@ export async function debugToken() {
       };
     }
     
-    return { error: data.error?.message || 'Erro desconhecido' };
+    return { error: 'Erro desconhecido' };
   } catch (error) {
     return { error: error.message };
   }
 }
 
 /**
- * Busca campanhas ativas da conta
+ * Busca campanhas de todas as contas configuradas
  * @returns {Promise<Array>} - Lista de campanhas
  */
 export async function fetchCampaigns() {
-  try {
-    const api = initApi();
-    const account = new AdAccount(ACCOUNT_ID);
-    
-    logger.info(`[MetaAds] Buscando campanhas da conta ${ACCOUNT_ID}`);
-    
-    // Adicionar timeout e tratamento de erro mais detalhado
-    let campaigns;
+  const token = getToken();
+  const accountIds = getAccountIds();
+  
+  logger.info(`[MetaAds] Token carregado: ${token.substring(0, 30)}... (${token.length} chars)`);
+  logger.info(`[MetaAds] Buscando campanhas de ${accountIds.length} conta(s): ${accountIds.join(', ')}`);
+  
+  const allCampaigns = [];
+  
+  for (const accountId of accountIds) {
     try {
-      campaigns = await Promise.race([
-        account.getCampaigns([
-          Campaign.Fields.ID,
-          Campaign.Fields.NAME,
-          Campaign.Fields.STATUS,
-          Campaign.Fields.OBJECTIVE,
-          Campaign.Fields.DAILY_BUDGET,
-          Campaign.Fields.LIFETIME_BUDGET,
-          Campaign.Fields.START_TIME,
-          Campaign.Fields.STOP_TIME,
-        ], {
-          limit: 50
-        }),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout ao buscar campanhas')), 30000)
-        )
-      ]);
-    } catch (apiError) {
-      logger.error('[MetaAds] Erro na chamada da API:', apiError.message);
+      logger.info(`[MetaAds] Buscando da conta ${accountId}...`);
       
-      // Verificar se é erro de autenticação
-      if (apiError.message?.includes('Syntax error') || apiError.message?.includes('Expected name')) {
-        throw new Error('Token inválido ou expirado. Verifique o META_ACCESS_TOKEN no .env. O token pode ter sido gerado para outro app ou expirado.');
-      }
+      const data = await metaApiRequest(`${accountId}/campaigns`, {
+        fields: 'id,name,status,objective,daily_budget,lifetime_budget,start_time,stop_time',
+        limit: 50
+      });
       
-      throw apiError;
+      const campaigns = data.data || [];
+      logger.info(`[MetaAds] Conta ${accountId}: ${campaigns.length} campanhas`);
+      
+      // Adiciona accountId aos dados da campanha
+      const campaignsWithAccount = campaigns.map(campaign => ({
+        campaignId: campaign.id,
+        name: campaign.name,
+        status: campaign.status,
+        objective: campaign.objective,
+        dailyBudget: campaign.daily_budget ? parseInt(campaign.daily_budget) / 100 : null,
+        lifetimeBudget: campaign.lifetime_budget ? parseInt(campaign.lifetime_budget) / 100 : null,
+        startTime: campaign.start_time,
+        stopTime: campaign.stop_time,
+        accountId: accountId // Identifica qual conta
+      }));
+      
+      allCampaigns.push(...campaignsWithAccount);
+      
+    } catch (error) {
+      logger.error(`[MetaAds] Erro ao buscar da conta ${accountId}:`, error.message);
+      // Continua para próxima conta em caso de erro
     }
-    
-    logger.info(`[MetaAds] ${campaigns.length} campanhas encontradas`);
-    
-    return campaigns.map(campaign => ({
-      campaignId: campaign.id,
-      name: campaign.name,
-      status: campaign.status,
-      objective: campaign.objective,
-      dailyBudget: campaign.daily_budget ? parseInt(campaign.daily_budget) / 100 : null, // API retorna em centavos
-      lifetimeBudget: campaign.lifetime_budget ? parseInt(campaign.lifetime_budget) / 100 : null,
-      startTime: campaign.start_time,
-      stopTime: campaign.stop_time
-    }));
-    
-  } catch (error) {
-    logger.error('[MetaAds] Erro ao buscar campanhas:', error.message);
-    throw error;
   }
+  
+  logger.info(`[MetaAds] Total: ${allCampaigns.length} campanhas de ${accountIds.length} conta(s)`);
+  return allCampaigns;
 }
 
 /**
- * Busca insights (métricas) de uma campanha específica
- * @param {string} campaignId - ID da campanha
- * @param {string} datePreset - Período (last_7d, last_30d, this_month, etc)
- * @returns {Promise<object>} - Insights da campanha
+ * Busca insights (métricas) de uma campanha
  */
 export async function fetchCampaignInsights(campaignId, datePreset = 'last_30d') {
+  const token = getToken();
+  
+  logger.info(`[MetaAds] Buscando insights da campanha ${campaignId} (${datePreset})`);
+  
   try {
-    const api = initApi();
-    const campaign = new Campaign(campaignId);
-    
-    const insights = await campaign.getInsights([
-      'spend',
-      'clicks',
-      'impressions',
-      'reach',
-      'cpc',
-      'ctr',
-      'cpm',
-      'conversions',
-      'cost_per_conversion'
-    ], {
-      date_preset: datePreset
+    const data = await metaApiRequest(`${campaignId}/insights`, {
+      fields: 'spend,impressions,clicks,ctr,cpc,cpp,actions,action_values',
+      date_preset: datePreset,
+      limit: 1
     });
     
-    if (!insights || insights.length === 0) {
+    const insights = data.data?.[0];
+    
+    if (!insights) {
       return null;
     }
     
-    const data = insights[0];
+    // Extrai leads do actions
+    const leadsAction = insights.actions?.find(a => a.action_type === 'lead');
+    const leads = leadsAction ? parseInt(leadsAction.value) : 0;
     
     return {
-      spend: parseFloat(data.spend || 0),
-      clicks: parseInt(data.clicks || 0),
-      impressions: parseInt(data.impressions || 0),
-      reach: parseInt(data.reach || 0),
-      cpc: parseFloat(data.cpc || 0),
-      ctr: parseFloat(data.ctr || 0),
-      cpm: parseFloat(data.cpm || 0),
-      conversions: parseInt(data.conversions || 0),
-      costPerConversion: parseFloat(data.cost_per_conversion || 0)
+      spend: parseFloat(insights.spend) || 0,
+      impressions: parseInt(insights.impressions) || 0,
+      clicks: parseInt(insights.clicks) || 0,
+      ctr: parseFloat(insights.ctr) || 0,
+      cpc: parseFloat(insights.cpc) || 0,
+      leads
     };
     
   } catch (error) {
-    logger.error(`[MetaAds] Erro ao buscar insights da campanha ${campaignId}:`, error.message);
+    logger.error(`[MetaAds] Erro ao buscar insights de ${campaignId}:`, error.message);
     return null;
   }
 }
 
 /**
- * Verifica se precisa sincronizar (rate limit protection)
- * Só sincroniza se última sync foi há mais de 30 minutos
- * @returns {Promise<boolean>} - true se deve sincronizar
- */
-export async function shouldSync() {
-  const lastSync = await MetaCampaign.findOne().sort({ lastSyncAt: -1 });
-  
-  if (!lastSync) {
-    return true; // Nunca sincronizou
-  }
-  
-  const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
-  
-  return lastSync.lastSyncAt < thirtyMinutesAgo;
-}
-
-/**
- * Sincroniza campanhas do Meta com banco local (cache)
- * Atualiza ou cria registros na collection MetaCampaign
- * @param {boolean} force - Força sincronização ignorando cache
- * @returns {Promise<object>} - Resultado da sincronização
+ * Sincroniza campanhas com cache local
  */
 export async function syncCampaignsWithCache(force = false) {
-  try {
-    // Rate limit protection
-    if (!force) {
-      const should = await shouldSync();
-      if (!should) {
-        logger.info('[MetaAds] Usando cache (sincronizado há menos de 30 min)');
-        return {
-          success: true,
-          cached: true,
-          message: 'Usando cache local (sincronizado recentemente)'
-        };
-      }
+  logger.info('[MetaAds] Iniciando sincronização de campanhas...');
+  
+  const campaigns = await fetchCampaigns();
+  let synced = 0;
+  let errors = 0;
+  
+  for (const campaign of campaigns) {
+    try {
+      // Detecta especialidade do nome
+      const specialty = detectSpecialtyFromCampaignName(campaign.name);
+      
+      // Busca ou cria no banco
+      await MetaCampaign.findOneAndUpdate(
+        { campaignId: campaign.campaignId },
+        {
+          ...campaign,
+          specialty,
+          lastSyncedAt: new Date()
+        },
+        { upsert: true, new: true }
+      );
+      
+      synced++;
+    } catch (error) {
+      logger.error(`[MetaAds] Erro ao sincronizar campanha ${campaign.campaignId}:`, error.message);
+      errors++;
     }
-    
-    logger.info('[MetaAds] Iniciando sincronização de campanhas...');
-    
-    // 1. Busca campanhas do Meta
-    const campaigns = await fetchCampaigns();
-    
-    // 2. Para cada campanha, busca insights e salva no banco
-    const results = await Promise.all(
-      campaigns.map(async (campaign) => {
-        try {
-          // Busca insights dos últimos 30 dias
-          const insights = await fetchCampaignInsights(campaign.campaignId, 'last_30d');
-          
-          // Detecta especialidade pelo nome
-          const specialty = detectSpecialtyFromCampaignName(campaign.name);
-          
-          // Atualiza ou cria no banco
-          const updated = await MetaCampaign.findOneAndUpdate(
-            { campaignId: campaign.campaignId },
-            {
-              $set: {
-                name: campaign.name,
-                status: campaign.status,
-                objective: campaign.objective,
-                dailyBudget: campaign.dailyBudget,
-                lifetimeBudget: campaign.lifetimeBudget,
-                specialty: specialty,
-                isActive: campaign.status === 'ACTIVE',
-                lastSyncAt: new Date(),
-                syncStatus: 'synced',
-                ...(insights && {
-                  'insights.spend': insights.spend,
-                  'insights.clicks': insights.clicks,
-                  'insights.impressions': insights.impressions,
-                  'insights.reach': insights.reach,
-                  'insights.cpc': insights.cpc,
-                  'insights.ctr': insights.ctr,
-                  'insights.cpm': insights.cpm,
-                  'insights.conversions': insights.conversions,
-                  'insights.costPerConversion': insights.costPerConversion
-                })
-              }
-            },
-            { upsert: true, new: true }
-          );
-          
-          return { success: true, campaignId: campaign.campaignId, name: campaign.name };
-          
-        } catch (err) {
-          logger.error(`[MetaAds] Erro ao sincronizar campanha ${campaign.campaignId}:`, err.message);
-          return { success: false, campaignId: campaign.campaignId, error: err.message };
-        }
-      })
-    );
-    
-    const successCount = results.filter(r => r.success).length;
-    const errorCount = results.filter(r => !r.success).length;
-    
-    logger.info(`[MetaAds] Sincronização concluída: ${successCount} sucesso, ${errorCount} erros`);
-    
-    return {
-      success: true,
-      synced: successCount,
-      errors: errorCount,
-      campaigns: results
-    };
-    
-  } catch (error) {
-    logger.error('[MetaAds] Erro na sincronização:', error.message);
-    throw error;
   }
+  
+  logger.info(`[MetaAds] Sincronização concluída: ${synced} sincronizadas, ${errors} erros`);
+  
+  return { synced, total: campaigns.length, errors };
 }
 
 /**
- * Atualiza contagem de leads por campanha (denormalização)
- * Calcula quantos leads cada campanha gerou
- * @returns {Promise<void>}
+ * Atualiza contagem de leads por campanha
  */
 export async function updateCampaignLeadCounts() {
-  try {
-    logger.info('[MetaAds] Atualizando contagem de leads por campanha...');
-    
-    // Busca todas as campanhas do banco
-    const campaigns = await MetaCampaign.find({});
-    
-    for (const campaign of campaigns) {
-      // Conta leads que têm este campaignId
+  logger.info('[MetaAds] Atualizando contagem de leads...');
+  
+  const campaigns = await MetaCampaign.find({ status: 'ACTIVE' });
+  
+  for (const campaign of campaigns) {
+    try {
+      // Conta leads que vieram desta campanha
       const leadsCount = await Leads.countDocuments({
         'metaTracking.campaignId': campaign.campaignId
       });
       
-      // Conta leads que viraram pacientes (status específico)
+      // Conta pacientes convertidos
       const patientsCount = await Leads.countDocuments({
         'metaTracking.campaignId': campaign.campaignId,
-        status: { $in: ['virou_paciente', 'paciente', 'convertido'] }
+        convertedToPatient: { $ne: null }
       });
       
-      // Atualiza no documento da campanha
+      // Calcula CPL
+      const cpl = campaign.insights?.spend && leadsCount > 0
+        ? campaign.insights.spend / leadsCount
+        : null;
+      
       await MetaCampaign.updateOne(
         { _id: campaign._id },
-        { 
-          $set: { 
-            leadsCount,
-            patientsCount
-          } 
+        {
+          leadsCount,
+          patientsCount,
+          cpl,
+          updatedAt: new Date()
         }
       );
+      
+    } catch (error) {
+      logger.error(`[MetaAds] Erro ao atualizar leads de ${campaign.campaignId}:`, error.message);
     }
-    
-    logger.info('[MetaAds] Contagem de leads atualizada');
-    
-  } catch (error) {
-    logger.error('[MetaAds] Erro ao atualizar contagem de leads:', error.message);
-    throw error;
   }
+  
+  logger.info('[MetaAds] Contagem de leads atualizada');
 }
 
 /**
- * Busca campanhas do cache local com métricas calculadas
- * @param {object} filters - Filtros (specialty, status, etc)
- * @returns {Promise<Array>} - Campanhas com métricas
+ * Retorna campanhas do cache
  */
-export async function getCampaignsFromCache(filters = {}) {
-  try {
-    const query = { isActive: true };
-    
-    if (filters.specialty) {
-      query.specialty = filters.specialty;
-    }
-    
-    if (filters.status) {
-      query.status = filters.status;
-    }
-    
-    const campaigns = await MetaCampaign.find(query)
-      .sort({ 'insights.spend': -1 })  // Ordena por gasto (maior primeiro)
-      .lean();
-    
-    // Adiciona métricas calculadas
-    return campaigns.map(campaign => ({
-      ...campaign,
-      cpl: campaign.leadsCount > 0 && campaign.insights?.spend 
-        ? campaign.insights.spend / campaign.leadsCount 
-        : null,
-      cpa: campaign.patientsCount > 0 && campaign.insights?.spend
-        ? campaign.insights.spend / campaign.patientsCount
-        : null,
-      formattedSpend: campaign.insights?.spend 
-        ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(campaign.insights.spend)
-        : 'R$ 0,00'
-    }));
-    
-  } catch (error) {
-    logger.error('[MetaAds] Erro ao buscar campanhas do cache:', error.message);
-    throw error;
+export async function getCampaignsFromCache({ specialty, status } = {}) {
+  const query = {};
+  
+  if (specialty) {
+    query.specialty = specialty;
   }
+  
+  if (status) {
+    query.status = status.toUpperCase();
+  }
+  
+  return await MetaCampaign.find(query)
+    .sort({ lastSyncedAt: -1 })
+    .lean();
 }
 
 /**
- * Busca métricas agregadas de todas as campanhas
- * @returns {Promise<object>} - Métricas totais
+ * Verifica se deve sincronizar (cache expirou)
+ */
+export async function shouldSync() {
+  const lastCampaign = await MetaCampaign.findOne().sort({ lastSyncedAt: -1 });
+  
+  if (!lastCampaign || !lastCampaign.lastSyncedAt) {
+    return true;
+  }
+  
+  const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+  return lastCampaign.lastSyncedAt < thirtyMinutesAgo;
+}
+
+/**
+ * Retorna métricas agregadas
  */
 export async function getAggregatedMetrics() {
-  try {
-    const campaigns = await MetaCampaign.find({ isActive: true });
-    
-    const totals = campaigns.reduce((acc, campaign) => {
-      acc.totalSpend += campaign.insights?.spend || 0;
-      acc.totalClicks += campaign.insights?.clicks || 0;
-      acc.totalImpressions += campaign.insights?.impressions || 0;
-      acc.totalLeads += campaign.leadsCount || 0;
-      acc.totalPatients += campaign.patientsCount || 0;
-      return acc;
-    }, {
-      totalSpend: 0,
-      totalClicks: 0,
-      totalImpressions: 0,
-      totalLeads: 0,
-      totalPatients: 0
-    });
-    
-    return {
-      ...totals,
-      avgCPL: totals.totalLeads > 0 ? totals.totalSpend / totals.totalLeads : null,
-      avgCPA: totals.totalPatients > 0 ? totals.totalSpend / totals.totalPatients : null,
-      avgCTR: totals.totalImpressions > 0 ? (totals.totalClicks / totals.totalImpressions) * 100 : null,
-      campaignCount: campaigns.length
-    };
-    
-  } catch (error) {
-    logger.error('[MetaAds] Erro ao calcular métricas agregadas:', error.message);
-    throw error;
-  }
+  const campaigns = await MetaCampaign.find({ status: 'ACTIVE' });
+  
+  const totalSpend = campaigns.reduce((sum, c) => sum + (c.insights?.spend || 0), 0);
+  const totalLeads = campaigns.reduce((sum, c) => sum + (c.leadsCount || 0), 0);
+  const totalPatients = campaigns.reduce((sum, c) => sum + (c.patientsCount || 0), 0);
+  
+  return {
+    totalSpend,
+    totalLeads,
+    totalPatients,
+    avgCpl: totalLeads > 0 ? totalSpend / totalLeads : null,
+    avgCpa: totalPatients > 0 ? totalSpend / totalPatients : null,
+    campaignCount: campaigns.length
+  };
 }
 
 /**
- * Associa um lead a uma campanha específica
- * Usado quando queremos vincular manualmente ou corrigir
- * @param {string} leadId - ID do lead
- * @param {string} campaignId - ID da campanha
- * @returns {Promise<object>} - Lead atualizado
+ * Associa lead a campanha manualmente
  */
 export async function associateLeadToCampaign(leadId, campaignId) {
-  try {
-    // Busca a campanha no cache
-    const campaign = await MetaCampaign.findOne({ campaignId });
-    
-    if (!campaign) {
-      throw new Error('Campanha não encontrada');
-    }
-    
-    // Atualiza o lead
-    const lead = await Leads.findByIdAndUpdate(
-      leadId,
-      {
-        $set: {
-          'metaTracking.source': 'meta_ads',
-          'metaTracking.campaignId': campaignId,
-          'metaTracking.campaign': campaign.name,
-          'metaTracking.specialty': campaign.specialty
-        }
-      },
-      { new: true }
-    );
-    
-    if (!lead) {
-      throw new Error('Lead não encontrado');
-    }
-    
-    // Atualiza contagem na campanha
-    await updateCampaignLeadCounts();
-    
-    return lead;
-    
-  } catch (error) {
-    logger.error('[MetaAds] Erro ao associar lead à campanha:', error.message);
-    throw error;
+  const campaign = await MetaCampaign.findOne({ campaignId });
+  
+  if (!campaign) {
+    throw new Error('Campanha não encontrada');
   }
+  
+  const lead = await Leads.findByIdAndUpdate(
+    leadId,
+    {
+      'metaTracking.campaignId': campaignId,
+      'metaTracking.campaign': campaign.name,
+      'metaTracking.source': 'meta_ads'
+    },
+    { new: true }
+  );
+  
+  if (!lead) {
+    throw new Error('Lead não encontrado');
+  }
+  
+  return lead;
 }
 
 export default {
@@ -480,6 +344,8 @@ export default {
   syncCampaignsWithCache,
   updateCampaignLeadCounts,
   getCampaignsFromCache,
+  shouldSync,
   getAggregatedMetrics,
-  associateLeadToCampaign
+  associateLeadToCampaign,
+  debugToken
 };

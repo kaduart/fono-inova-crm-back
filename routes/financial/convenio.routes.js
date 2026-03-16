@@ -2,6 +2,7 @@
 // Rotas para métricas de convênio - SEPARA receita realizada de caixa
 
 import express from 'express';
+import moment from 'moment-timezone';
 import { auth, authorize } from '../../middleware/auth.js';
 import ConvenioMetricsService from '../../services/financial/ConvenioMetricsService.js';
 
@@ -46,6 +47,49 @@ router.get('/metrics', auth, authorize(['admin', 'secretary']), async (req, res)
         res.status(500).json({
             success: false,
             error: 'Erro ao calcular métricas de convênio',
+            message: error.message
+        });
+    }
+});
+
+/**
+ * @route   GET /api/financial/convenio/faturamentos
+ * @desc    Lista faturamentos de convênio no período (baseado em insurance.billedAt)
+ * @query   month (number), year (number)
+ * @access  Admin/Secretary
+ * 
+ * 💡 IMPORTANTE: Este endpoint retorna o valor das GUIAS ENVIADAS no período,
+ * não o valor recebido (caixa). O faturamento pode acontecer em mês diferente 
+ * do atendimento.
+ */
+router.get('/faturamentos', auth, authorize(['admin', 'secretary']), async (req, res) => {
+    try {
+        const { month, year } = req.query;
+
+        if (!month || !year) {
+            return res.status(400).json({
+                success: false,
+                error: 'Parâmetros obrigatórios: month e year'
+            });
+        }
+
+        console.log(`[ConvenioRoutes] Buscando faturamentos para ${month}/${year}`);
+
+        const faturamentos = await ConvenioMetricsService.getFaturamentosPorPeriodo(
+            parseInt(month),
+            parseInt(year)
+        );
+
+        res.json({
+            success: true,
+            data: faturamentos
+        });
+
+    } catch (error) {
+        console.error('[ConvenioRoutes] Erro ao buscar faturamentos:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao buscar faturamentos',
             message: error.message
         });
     }
@@ -304,6 +348,100 @@ router.post('/receber-lote', auth, authorize(['admin', 'secretary']), async (req
         res.status(500).json({
             success: false,
             error: 'Erro ao registrar recebimentos',
+            message: error.message
+        });
+    }
+});
+
+/**
+ * @route   PUT /api/financial/convenio/commission-rules/:doctorId
+ * @desc    Configurar regras de comissão por convênio para um profissional
+ * @body    { byInsurance: { unimed: 50, amil: 55, ... } }
+ * @access  Admin
+ */
+router.put('/commission-rules/:doctorId', auth, authorize(['admin']), async (req, res) => {
+    try {
+        const { doctorId } = req.params;
+        const { byInsurance } = req.body;
+
+        if (!byInsurance || typeof byInsurance !== 'object') {
+            return res.status(400).json({
+                success: false,
+                error: 'byInsurance deve ser um objeto com { convenio: valor }'
+            });
+        }
+
+        const Doctor = (await import('../../models/Doctor.js')).default;
+        
+        const doctor = await Doctor.findByIdAndUpdate(
+            doctorId,
+            { $set: { 'commissionRules.byInsurance': byInsurance } },
+            { new: true }
+        );
+
+        if (!doctor) {
+            return res.status(404).json({
+                success: false,
+                error: 'Profissional não encontrado'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Regras de comissão atualizadas',
+            data: {
+                doctorId: doctor._id,
+                doctorName: doctor.fullName,
+                commissionRules: doctor.commissionRules
+            }
+        });
+
+    } catch (error) {
+        console.error('[ConvenioRoutes] Erro ao atualizar regras:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao atualizar regras de comissão',
+            message: error.message
+        });
+    }
+});
+
+/**
+ * @route   GET /api/financial/convenio/commission-rules/:doctorId
+ * @desc    Buscar regras de comissão de um profissional
+ * @access  Admin
+ */
+router.get('/commission-rules/:doctorId', auth, authorize(['admin']), async (req, res) => {
+    try {
+        const { doctorId } = req.params;
+
+        const Doctor = (await import('../../models/Doctor.js')).default;
+        
+        const doctor = await Doctor.findById(doctorId)
+            .select('fullName commissionRules');
+
+        if (!doctor) {
+            return res.status(404).json({
+                success: false,
+                error: 'Profissional não encontrado'
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                doctorId: doctor._id,
+                doctorName: doctor.fullName,
+                standardSession: doctor.commissionRules?.standardSession || 60,
+                byInsurance: doctor.commissionRules?.byInsurance || {}
+            }
+        });
+
+    } catch (error) {
+        console.error('[ConvenioRoutes] Erro ao buscar regras:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao buscar regras de comissão',
             message: error.message
         });
     }

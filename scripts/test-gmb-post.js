@@ -1,99 +1,99 @@
-// =====================================================================
-// 🧪 TESTE RÁPIDO DE POST GMB
-// Cria um post de teste agendado para 14:30 (ou horário atual + 5min)
-// 
-// Uso: node -r dotenv/config scripts/test-gmb-post.js
-// =====================================================================
+#!/usr/bin/env node
+/**
+ * 🧪 Teste de Geração de Post GMB
+ * 
+ * Executa:
+ *   node scripts/test-gmb-post.js [especialidade] [provider]
+ * 
+ * Exemplos:
+ *   node scripts/test-gmb-post.js fonoaudiologia auto
+ *   node scripts/test-gmb-post.js psicologia fal
+ *   node scripts/test-gmb-post.js terapia_ocupacional
+ */
 
-import mongoose from 'mongoose';
-import * as gmbService from '../services/gmbService.js';
-import * as makeService from '../services/makeService.js';
-import GmbPost from '../models/GmbPost.js';
+const ESPECIALIDADES = [
+  'fonoaudiologia',
+  'psicologia', 
+  'terapia_ocupacional',
+  'fisioterapia',
+  'psicomotricidade',
+  'neuropsicologia',
+  'musicoterapia',
+  'psicopedagogia',
+  'freio_lingual'
+];
 
 async function main() {
-  console.log('🧪 [TESTE] Iniciando criação de post de teste...\n');
+  const especialidade = process.argv[2] || 'fonoaudiologia';
+  const provider = process.argv[3] || 'auto';
   
-  // Conecta ao banco
-  if (!process.env.MONGO_URI) {
-    console.error('❌ MONGO_URI não configurado');
+  if (!ESPECIALIDADES.includes(especialidade)) {
+    console.log('❌ Especialidade inválida!');
+    console.log('   Opções válidas:', ESPECIALIDADES.join(', '));
     process.exit(1);
   }
   
-  await mongoose.connect(process.env.MONGO_URI);
-  console.log('✅ MongoDB conectado\n');
+  console.log('🧪 Teste de Geração de Post GMB');
+  console.log('================================');
+  console.log('');
+  console.log(`📍 Especialidade: ${especialidade}`);
+  console.log(`🤖 Provider: ${provider}`);
+  console.log(`   Ordem: fal.ai → Freepik → HuggingFace → Pollinations`);
+  console.log('');
   
-  // Define horário do post (14:30 ou próximo horário válido)
-  const agora = new Date();
-  const scheduledAt = new Date();
-  scheduledAt.setHours(14, 30, 0, 0);
-  
-  // Se 14:30 já passou hoje, agenda para amanhã
-  if (scheduledAt < agora) {
-    scheduledAt.setDate(scheduledAt.getDate() + 1);
-    console.log(`⏰ Horário 14:30 já passou. Agendando para amanhã às 14:30\n`);
-  } else {
-    console.log(`⏰ Agendando post para hoje às 14:30\n`);
-  }
+  const API_URL = process.env.API_URL || 'http://localhost:3000/api';
   
   try {
-    // Cria o post
-    console.log('📝 Criando post...');
-    const result = await gmbService.createDailyPost({
-      especialidade: gmbService.ESPECIALIDADES[0], // Fonoaudiologia
-      generateImage: true,
-      scheduledAt,
-      funnelStage: 'top',
-      customTheme: 'TESTE - Post de validação do sistema GMB'
+    const startTime = Date.now();
+    
+    console.log('🚀 Enviando requisição...');
+    const response = await fetch(`${API_URL}/gmb/admin/trigger-generation`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        especialidadeId: especialidade,
+        generateImage: true,
+        provider: provider,
+        funnelStage: 'top'
+      })
     });
     
-    if (result.success) {
-      console.log('✅ Post criado com sucesso!');
-      console.log(`   📌 ID: ${result.post._id}`);
-      console.log(`   🏥 Especialidade: ${result.especialidade.nome}`);
-      console.log(`   📝 Título: ${result.post.title.substring(0, 60)}...`);
-      console.log(`   🖼️  Imagem: ${result.post.mediaUrl ? '✅ Gerada' : '❌ Sem imagem'}`);
-      console.log(`   ⏰ Agendado para: ${scheduledAt.toLocaleString('pt-BR')}`);
-      console.log(`   📊 Status: ${result.post.status}\n`);
-      
-      // Pergunta se quer publicar imediatamente via Make
-      console.log('🔗 Verificando Make...');
-      
-      if (makeService.isMakeConfigured()) {
-        console.log('✅ Make configurado');
-        console.log('   Enviando post para o Make agora...\n');
-        
-        try {
-          await makeService.sendPostToMake(result.post);
-          
-          result.post.status = 'published';
-          result.post.publishedAt = new Date();
-          await result.post.save();
-          
-          console.log('🎉 POST PUBLICADO COM SUCESSO!');
-          console.log('   📢 Verifique o Google Meu Negócio em alguns minutos');
-          
-        } catch (makeError) {
-          console.error('❌ Erro ao enviar ao Make:', makeError.message);
-          console.log('   ℹ️  O post ficou agendado no banco. O cron enviará mais tarde.');
-        }
-        
-      } else {
-        console.log('⚠️  Make NÃO configurado (MAKE_WEBHOOK_URL ausente)');
-        console.log('   ℹ️  O post foi criado e agendado. Configure o Make para publicar automaticamente.');
-      }
-      
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+    
+    console.log(`\n✅ Resposta recebida em ${elapsed}s`);
+    console.log(`   Status HTTP: ${response.status}`);
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('');
+      console.log('📋 Resultado:');
+      console.log(`   Post ID: ${data.postId || data.id || 'N/A'}`);
+      console.log(`   Status: ${data.status || 'processing'}`);
+      console.log(`   Message: ${data.message || 'OK'}`);
+      console.log('');
+      console.log('⏳ O post está sendo processado em background!');
+      console.log('   Acompanhe nos logs do servidor:');
+      console.log('   - Geração de conteúdo (GPT-4o-mini)');
+      console.log('   - Geração de imagem (fal.ai #1)');
+      console.log('   - Upload Cloudinary');
+      console.log('   - Status final no MongoDB');
     } else {
-      console.error('❌ Falha ao criar post');
+      const error = await response.text();
+      console.log('');
+      console.log('❌ Erro:', error);
     }
     
   } catch (error) {
-    console.error('❌ Erro:', error.message);
-    console.error(error.stack);
+    console.log('');
+    console.log('❌ Erro na requisição:', error.message);
+    console.log('');
+    console.log('💡 Dicas:');
+    console.log('   - Verifique se o servidor está rodando (npm run dev)');
+    console.log('   - Verifique se a porta 3000 está correta');
+    console.log('   - Verifique se há autenticação necessária');
   }
-  
-  await mongoose.disconnect();
-  console.log('\n👋 Disconectado. Fim do teste.');
-  process.exit(0);
 }
 
 main();

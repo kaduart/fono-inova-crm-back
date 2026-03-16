@@ -227,15 +227,20 @@ class ConvenioMetricsService {
         // que ainda não foram pagas
         const sessoes = await Session.find({
             status: 'completed',
-            date: { $lte: ultimoDiaMes }, // Até o último dia do mês pesquisado
-            $or: [
-                { paymentMethod: 'convenio' },
-                { insuranceGuide: { $exists: true, $ne: null } }
-            ],
-            // Ainda não recebido
-            $or: [
-                { isPaid: false },
-                { paymentStatus: { $in: ['pending', 'pending_receipt'] } }
+            date: { $lte: ultimoDiaMes },
+            $and: [
+                {
+                    $or: [
+                        { paymentMethod: 'convenio' },
+                        { insuranceGuide: { $exists: true, $ne: null } }
+                    ]
+                },
+                {
+                    $or: [
+                        { isPaid: false },
+                        { paymentStatus: { $in: ['pending', 'pending_receipt'] } }
+                    ]
+                }
             ]
         })
         .populate('package', 'insuranceProvider insuranceGrossAmount')
@@ -464,6 +469,75 @@ class ConvenioMetricsService {
             .format('YYYY-MM-DD');
         
         return { start, end };
+    }
+
+    /**
+     * Busca FATURAMENTOS de convênio no período (baseado em insurance.billedAt)
+     * Retorna o valor das guias que foram enviadas/faturadas no mês
+     */
+    async getFaturamentosPorPeriodo(month, year) {
+        const start = moment(`${year}-${String(month).padStart(2, '0')}-01`).startOf('month').toDate();
+        const end = moment(`${year}-${String(month).padStart(2, '0')}-01`).endOf('month').toDate();
+
+        console.log(`[ConvenioMetrics] Buscando faturamentos de ${month}/${year}`);
+
+        // Importar Payment
+        const { default: Payment } = await import('../../models/Payment.js');
+
+        // Buscar payments faturados no período (baseado em insurance.billedAt)
+        const faturamentos = await Payment.find({
+            billingType: 'convenio',
+            'insurance.billedAt': { $gte: start, $lte: end },
+            'insurance.status': { $in: ['billed', 'received', 'partial'] }
+        })
+        .populate('patient', 'fullName')
+        .populate('appointment', 'date')
+        .lean();
+
+        // Calcular totais
+        let total = 0;
+        const porConvenio = {};
+        const porStatus = {
+            billed: { valor: 0, quantidade: 0, descricao: 'Faturado, aguardando pagamento' },
+            received: { valor: 0, quantidade: 0, descricao: 'Pago pelo convênio' },
+            partial: { valor: 0, quantidade: 0, descricao: 'Pago parcialmente' }
+        };
+
+        for (const fat of faturamentos) {
+            const valor = fat.insurance?.grossAmount || fat.amount || 0;
+            total += valor;
+
+            // Por convênio
+            const convenio = fat.insuranceProvider || 'nao_informado';
+            if (!porConvenio[convenio]) {
+                porConvenio[convenio] = { valor: 0, quantidade: 0 };
+            }
+            porConvenio[convenio].valor += valor;
+            porConvenio[convenio].quantidade += 1;
+
+            // Por status
+            const status = fat.insurance?.status || 'billed';
+            if (porStatus[status]) {
+                porStatus[status].valor += valor;
+                porStatus[status].quantidade += 1;
+            }
+        }
+
+        return {
+            total,
+            quantidade: faturamentos.length,
+            porConvenio,
+            porStatus,
+            faturamentos: faturamentos.map(f => ({
+                _id: f._id,
+                patient: f.patient?.fullName,
+                valor: f.insurance?.grossAmount || f.amount,
+                status: f.insurance?.status,
+                billedAt: f.insurance?.billedAt,
+                receivedAt: f.insurance?.receivedAt,
+                convenio: f.insuranceProvider
+            }))
+        };
     }
 
     // ============================================
