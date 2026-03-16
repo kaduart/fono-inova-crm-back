@@ -1,6 +1,7 @@
 // backend/services/financial/financialAnalytics.service.js
 import mongoose from 'mongoose';
 import Payment from '../../models/Payment.js';
+import Session from '../../models/Session.js';
 import Appointment from '../../models/Appointment.js';
 import Patient from '../../models/Patient.js';
 import Package from '../../models/Package.js';
@@ -43,27 +44,59 @@ class FinancialAnalyticsService {
     }
 
     /**
-     * 1. Revenue por Especialidade (com Fallback para Doctor Specialty)
+     * Helper: valor real de uma sessão de convênio (sessionValue ou pkg.insuranceGrossAmount)
+     */
+    _valorConvenio() {
+        return {
+            $cond: {
+                if: { $gt: ['$sessionValue', 0] },
+                then: '$sessionValue',
+                else: { $ifNull: ['$pkg.insuranceGrossAmount', 0] }
+            }
+        };
+    }
+
+    /**
+     * Helper: merge de resultados de specialty de duas fontes (Payment + Session)
+     */
+    _mergeSpecialties(paymentData, sessionData) {
+        const map = new Map();
+        for (const item of paymentData) {
+            map.set(item.specialty, { ...item });
+        }
+        for (const item of sessionData) {
+            const existing = map.get(item.specialty);
+            if (existing) {
+                existing.totalRevenue += item.totalRevenue;
+                existing.totalSessions += item.totalSessions;
+                existing.uniquePatientCount += item.uniquePatientCount;
+                existing.averageTicket = existing.totalSessions > 0
+                    ? Math.round((existing.totalRevenue / existing.totalSessions) * 100) / 100
+                    : 0;
+            } else {
+                map.set(item.specialty, { ...item });
+            }
+        }
+        return Array.from(map.values()).sort((a, b) => b.totalRevenue - a.totalRevenue);
+    }
+
+    /**
+     * 1. Revenue por Especialidade — Payment (particular) + Session (convênio)
      */
     async getRevenueBySpecialty({ from, to, doctorId = null }) {
         const cacheKey = `spec_${from}_${to}_${doctorId || 'all'}`;
         const cached = this._getCache(cacheKey);
         if (cached) return cached;
 
-        const pipeline = [
-            {
-                $match: {
-                    status: 'paid',
-                    ...this._getDateMatch(from, to)
-                }
-            },
-            ...(doctorId ? [{ $match: { doctor: new mongoose.Types.ObjectId(doctorId) } }] : []),
+        const doctorFilter = doctorId ? [{ $match: { doctor: new mongoose.Types.ObjectId(doctorId) } }] : [];
+
+        // --- Particular: Payment model ---
+        const paymentPipeline = [
+            { $match: { status: 'paid', ...this._getDateMatch(from, to) } },
+            ...doctorFilter,
             {
                 $lookup: {
-                    from: 'doctors',
-                    localField: 'doctor',
-                    foreignField: '_id',
-                    as: 'doc'
+                    from: 'doctors', localField: 'doctor', foreignField: '_id', as: 'doc'
                 }
             },
             { $unwind: { path: '$doc', preserveNullAndEmptyArrays: true } },
@@ -91,36 +124,87 @@ class FinancialAnalyticsService {
                     averageTicket: { $round: ['$averageTicket', 2] },
                     uniquePatientCount: { $size: '$uniquePatients' }
                 }
-            },
-            { $sort: { totalRevenue: -1 } }
+            }
         ];
 
-        const result = await Payment.aggregate(pipeline);
+        // --- Convênio: Session model ---
+        const sessionPipeline = [
+            {
+                $match: {
+                    status: 'completed',
+                    date: { $gte: from, $lte: to },
+                    $or: [
+                        { paymentMethod: 'convenio' },
+                        { package: { $exists: true, $ne: null } }
+                    ]
+                }
+            },
+            ...doctorFilter,
+            {
+                $lookup: {
+                    from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg'
+                }
+            },
+            { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+            {
+                $lookup: {
+                    from: 'doctors', localField: 'doctor', foreignField: '_id', as: 'doc'
+                }
+            },
+            { $unwind: { path: '$doc', preserveNullAndEmptyArrays: true } },
+            {
+                $project: {
+                    amount: this._valorConvenio(),
+                    patient: 1,
+                    specialty: { $ifNull: ['$sessionType', '$doc.specialty', 'Outros'] }
+                }
+            },
+            {
+                $group: {
+                    _id: '$specialty',
+                    totalRevenue: { $sum: '$amount' },
+                    totalSessions: { $sum: 1 },
+                    averageTicket: { $avg: '$amount' },
+                    uniquePatients: { $addToSet: '$patient' }
+                }
+            },
+            {
+                $project: {
+                    specialty: '$_id',
+                    totalRevenue: 1,
+                    totalSessions: 1,
+                    averageTicket: { $round: ['$averageTicket', 2] },
+                    uniquePatientCount: { $size: '$uniquePatients' }
+                }
+            }
+        ];
+
+        const [paymentData, sessionData] = await Promise.all([
+            Payment.aggregate(paymentPipeline),
+            Session.aggregate(sessionPipeline)
+        ]);
+
+        const result = this._mergeSpecialties(paymentData, sessionData);
         this._setCache(cacheKey, result);
         return result;
     }
 
     /**
-     * 2. Revenue por Profissional
+     * 2. Revenue por Profissional — Payment (particular) + Session (convênio)
      */
     async getRevenueByDoctor({ from, to, sessionType = null }) {
         const cacheKey = `doc_${from}_${to}_${sessionType || 'all'}`;
         const cached = this._getCache(cacheKey);
         if (cached) return cached;
 
-        const pipeline = [
-            {
-                $match: {
-                    status: 'paid',
-                    ...this._getDateMatch(from, to)
-                }
-            },
+        const specFilter = sessionType ? [{ $match: { specialty: sessionType } }] : [];
+
+        // --- Particular: Payment model ---
+        const paymentPipeline = [
+            { $match: { status: 'paid', ...this._getDateMatch(from, to) } },
             {
                 $lookup: {
-                    from: 'doctors',
-                    localField: 'doctor',
-                    foreignField: '_id',
-                    as: 'docInfo'
+                    from: 'doctors', localField: 'doctor', foreignField: '_id', as: 'docInfo'
                 }
             },
             { $unwind: '$docInfo' },
@@ -133,7 +217,7 @@ class FinancialAnalyticsService {
                     specialty: { $ifNull: ['$sessionType', '$docInfo.specialty', 'Outros'] }
                 }
             },
-            ...(sessionType ? [{ $match: { specialty: sessionType } }] : []),
+            ...specFilter,
             {
                 $group: {
                     _id: '$doctor',
@@ -146,7 +230,7 @@ class FinancialAnalyticsService {
             },
             {
                 $project: {
-                    doctorId: '$_id',
+                    doctorId: { $toString: '$_id' },
                     doctorName: 1,
                     specialty: 1,
                     totalRevenue: 1,
@@ -154,11 +238,91 @@ class FinancialAnalyticsService {
                     uniquePatients: { $size: '$uniquePatients' },
                     averageTicket: { $round: [{ $divide: ['$totalRevenue', '$sessionsCount'] }, 2] }
                 }
-            },
-            { $sort: { totalRevenue: -1 } }
+            }
         ];
 
-        const result = await Payment.aggregate(pipeline);
+        // --- Convênio: Session model ---
+        const sessionPipeline = [
+            {
+                $match: {
+                    status: 'completed',
+                    date: { $gte: from, $lte: to },
+                    $or: [
+                        { paymentMethod: 'convenio' },
+                        { package: { $exists: true, $ne: null } }
+                    ]
+                }
+            },
+            {
+                $lookup: {
+                    from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg'
+                }
+            },
+            { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+            {
+                $lookup: {
+                    from: 'doctors', localField: 'doctor', foreignField: '_id', as: 'docInfo'
+                }
+            },
+            { $unwind: { path: '$docInfo', preserveNullAndEmptyArrays: true } },
+            {
+                $project: {
+                    amount: this._valorConvenio(),
+                    patient: 1,
+                    doctor: 1,
+                    fullName: '$docInfo.fullName',
+                    specialty: { $ifNull: ['$sessionType', '$docInfo.specialty', 'Outros'] }
+                }
+            },
+            ...specFilter,
+            {
+                $group: {
+                    _id: '$doctor',
+                    doctorName: { $first: '$fullName' },
+                    specialty: { $first: '$specialty' },
+                    totalRevenue: { $sum: '$amount' },
+                    sessionsCount: { $sum: 1 },
+                    uniquePatients: { $addToSet: '$patient' }
+                }
+            },
+            {
+                $project: {
+                    doctorId: { $toString: '$_id' },
+                    doctorName: 1,
+                    specialty: 1,
+                    totalRevenue: 1,
+                    sessionsCount: 1,
+                    uniquePatients: { $size: '$uniquePatients' },
+                    averageTicket: { $round: [{ $divide: ['$totalRevenue', '$sessionsCount'] }, 2] }
+                }
+            }
+        ];
+
+        const [paymentData, sessionData] = await Promise.all([
+            Payment.aggregate(paymentPipeline),
+            Session.aggregate(sessionPipeline)
+        ]);
+
+        // Merge por doctorId
+        const map = new Map();
+        for (const d of paymentData) {
+            map.set(d.doctorId, { ...d });
+        }
+        for (const d of sessionData) {
+            const existing = map.get(d.doctorId);
+            if (existing) {
+                existing.totalRevenue += d.totalRevenue;
+                existing.sessionsCount += d.sessionsCount;
+                existing.uniquePatients += d.uniquePatients;
+                existing.averageTicket = existing.sessionsCount > 0
+                    ? Math.round((existing.totalRevenue / existing.sessionsCount) * 100) / 100
+                    : 0;
+            } else {
+                map.set(d.doctorId, { ...d });
+            }
+        }
+
+        const result = Array.from(map.values()).sort((a, b) => b.totalRevenue - a.totalRevenue);
         this._setCache(cacheKey, result);
         return result;
     }
@@ -253,12 +417,13 @@ class FinancialAnalyticsService {
     }
 
     /**
-     * 4. Lista de pacientes com filtros (paginada)
+     * 4. Lista de pacientes com filtros (paginada) — Payment (particular) + Session (convênio)
      */
     async getPatientsFinancialList({ page = 1, limit = 20, sortBy = 'totalSpent', order = 'desc' }) {
         const skipValue = (parseInt(page) - 1) * parseInt(limit);
 
-        const pipeline = [
+        // --- Particular: Payment model ---
+        const paymentPipeline = [
             { $match: { status: 'paid' } },
             {
                 $group: {
@@ -267,44 +432,110 @@ class FinancialAnalyticsService {
                     lastPayment: { $max: '$createdAt' },
                     paymentsCount: { $sum: 1 }
                 }
+            }
+        ];
+
+        // --- Convênio: Session model ---
+        const sessionConvenioPipeline = [
+            {
+                $match: {
+                    status: 'completed',
+                    $or: [
+                        { paymentMethod: 'convenio' },
+                        { package: { $exists: true, $ne: null } }
+                    ]
+                }
             },
             {
                 $lookup: {
-                    from: 'patients',
-                    localField: '_id',
-                    foreignField: '_id',
-                    as: 'patientInfo'
+                    from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg'
                 }
             },
-            { $unwind: '$patientInfo' },
+            { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
             {
                 $project: {
-                    patientId: '$_id',
-                    name: { $ifNull: ['$patientInfo.fullName', '$patientInfo.name'] },
-                    phone: { $ifNull: ['$patientInfo.phoneNumber', '$patientInfo.phone'] },
-                    totalSpent: 1,
-                    lastPayment: 1,
-                    paymentsCount: 1,
-                    averageTicket: { $round: [{ $divide: ['$totalSpent', '$paymentsCount'] }, 2] }
+                    patient: 1,
+                    amount: this._valorConvenio(),
+                    date: 1
                 }
             },
-            { $sort: { [sortBy]: order === 'desc' ? -1 : 1 } },
-            { $skip: skipValue },
-            { $limit: parseInt(limit) }
+            {
+                $group: {
+                    _id: '$patient',
+                    convenioTotal: { $sum: '$amount' },
+                    lastSession: { $max: '$date' },
+                    sessionCount: { $sum: 1 }
+                }
+            }
         ];
 
-        const countPipeline = [
-            { $match: { status: 'paid' } },
-            { $group: { _id: '$patient' } },
-            { $count: 'total' }
-        ];
-
-        const [data, countResult] = await Promise.all([
-            Payment.aggregate(pipeline),
-            Payment.aggregate(countPipeline)
+        const [paymentData, convenioData] = await Promise.all([
+            Payment.aggregate(paymentPipeline),
+            Session.aggregate(sessionConvenioPipeline)
         ]);
 
-        const totalCount = countResult[0]?.total || 0;
+        // Merge por patient ID
+        const map = new Map();
+        for (const p of paymentData) {
+            const id = p._id.toString();
+            map.set(id, {
+                patientId: p._id,
+                totalSpent: p.totalSpent,
+                lastPayment: p.lastPayment,
+                paymentsCount: p.paymentsCount
+            });
+        }
+        for (const s of convenioData) {
+            const id = s._id.toString();
+            const existing = map.get(id);
+            if (existing) {
+                existing.totalSpent += s.convenioTotal;
+                existing.paymentsCount += s.sessionCount;
+                // Keep latest date
+                const sessDate = new Date(s.lastSession);
+                if (!existing.lastPayment || sessDate > existing.lastPayment) {
+                    existing.lastPayment = sessDate;
+                }
+            } else {
+                map.set(id, {
+                    patientId: s._id,
+                    totalSpent: s.convenioTotal,
+                    lastPayment: new Date(s.lastSession),
+                    paymentsCount: s.sessionCount
+                });
+            }
+        }
+
+        // Lookup patient info and compute averageTicket
+        const merged = Array.from(map.values());
+        const patientIds = merged.map(m => m.patientId);
+        const patients = await Patient.find({ _id: { $in: patientIds } }, { fullName: 1, name: 1, phoneNumber: 1, phone: 1 }).lean();
+        const patientMap = new Map(patients.map(p => [p._id.toString(), p]));
+
+        const enriched = merged
+            .map(m => {
+                const info = patientMap.get(m.patientId.toString());
+                if (!info) return null;
+                return {
+                    patientId: m.patientId,
+                    name: info.fullName || info.name,
+                    phone: info.phoneNumber || info.phone,
+                    totalSpent: Math.round(m.totalSpent * 100) / 100,
+                    lastPayment: m.lastPayment,
+                    paymentsCount: m.paymentsCount,
+                    averageTicket: m.paymentsCount > 0
+                        ? Math.round((m.totalSpent / m.paymentsCount) * 100) / 100
+                        : 0
+                };
+            })
+            .filter(Boolean);
+
+        // Sort
+        const sortKey = sortBy === 'totalSpent' ? 'totalSpent' : sortBy;
+        enriched.sort((a, b) => order === 'desc' ? b[sortKey] - a[sortKey] : a[sortKey] - b[sortKey]);
+
+        const totalCount = enriched.length;
+        const data = enriched.slice(skipValue, skipValue + parseInt(limit));
 
         return {
             data,

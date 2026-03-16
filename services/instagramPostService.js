@@ -206,7 +206,54 @@ async function generateImage({ especialidade, headline, tipoImagem = IMAGE_TYPES
   console.log('🎨 Prompt:', prompt.substring(0, 80) + '...');
 
   // ═══════════════════════════════════════════════════════════
-  // TENTATIVA 1: fal.ai FLUX dev (PRIORIDADE #1)
+  // TENTATIVA 0: Google Imagen 3 / Veo (PRIORIDADE #1 🥇)
+  // ═══════════════════════════════════════════════════════════
+  if (process.env.GOOGLE_AI_API_KEY) {
+    try {
+      console.log('🎨 [0/6] Google Imagen 3 (Veo tech)...');
+      
+      const { GoogleGenAI } = await import('@google/genai');
+      const genAI = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY });
+      
+      // Prompt enriquecido para Imagen 3
+      const imagenPrompt = `${prompt}
+
+Professional photography style, high quality, 4K resolution, photorealistic, warm lighting, Brazilian context, suitable for Instagram post, square format 1:1.`;
+
+      const response = await genAI.models.generateImages({
+        model: 'imagen-3.0-generate-002',
+        prompt: imagenPrompt,
+        config: {
+          numberOfImages: 1,
+          aspectRatio: '1:1',
+          safetyFilterLevel: 'block_only_high',
+          personGeneration: 'allow_adult',
+        },
+      });
+      
+      if (response?.generatedImages?.[0]?.image?.imageBytes) {
+        const base64Data = response.generatedImages[0].image.imageBytes;
+        const fotoBuf = Buffer.from(base64Data, 'base64');
+        console.log(`✅ Google Imagen 3 → ${(fotoBuf.length/1024).toFixed(1)}KB`);
+        
+        // Upload to Cloudinary
+        const base64 = `data:image/jpeg;base64,${fotoBuf.toString('base64')}`;
+        const result = await cloudinary.uploader.upload(base64, {
+          folder: 'fono-inova/instagram/imagen3',
+          public_id: `${especialidade.id}_${Date.now()}`,
+        });
+        console.log('✅ Imagen 3 OK:', result.secure_url);
+        return { url: result.secure_url, provider: 'google-imagen-3' };
+      }
+    } catch (e) {
+      console.warn('⚠️ Google Imagen 3 falhou:', e.message);
+    }
+  } else {
+    console.log('⏭️  GOOGLE_AI_API_KEY não configurada');
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 1: fal.ai FLUX dev (PRIORIDADE #2)
   // ═══════════════════════════════════════════════════════════
   if (process.env.FAL_API_KEY) {
     try {
@@ -597,17 +644,18 @@ async function generateImage({ especialidade, headline, tipoImagem = IMAGE_TYPES
 
 /**
  * 📸 GERAR POST COMPLETO (Instagram)
- * Apenas texto/legenda - imagem é adicionada manualmente (IA externa)
+ * Texto + Imagem gerada automaticamente
  */
 export async function generateInstagramPost({
   especialidadeId,
   customTheme = null,
   funnelStage = 'top',
-  userId = null
+  userId = null,
+  provider = null // 🎨 Provedor de imagem (fal, freepik, dalle, together, replicate, pollinations)
 }) {
   const especialidade = ESPECIALIDADES.find(e => e.id === especialidadeId) || ESPECIALIDADES[0];
 
-  console.log('📸 Instagram:', especialidade.nome, `(${funnelStage})`);
+  console.log('📸 Instagram:', especialidade.nome, `(${funnelStage})`, provider ? `[${provider}]` : '[auto]');
 
   // 1. HEADLINE curta
   const headline = await gerarHeadline({ especialidade, funnelStage, customTheme });
@@ -617,7 +665,7 @@ export async function generateInstagramPost({
   const legenda = await gerarLegenda({ especialidade, headline, funnelStage });
   console.log('📝 Legenda:', legenda.split('\n')[0]);
 
-  // 3. SALVAR (sem imagem - usuário adiciona manualmente da IA externa)
+  // 3. CRIAR POST
   const post = new InstagramPost({
     title: headline,
     headline: headline,
@@ -625,15 +673,20 @@ export async function generateInstagramPost({
     caption: legenda,
     theme: especialidade.id,
     funnelStage,
-    status: 'draft',
-    mediaUrl: null,  // Usuário adiciona imagem do Midjourney/etc manualmente
+    status: 'processing', // 🔄 Começa como processing enquanto gera imagem
+    mediaUrl: null,
     mediaType: null,
     aiGenerated: true,
-    imageProvider: 'manual',  // 🖼️ Imagem será adicionada manualmente
+    imageProvider: provider || 'auto',
     createdBy: userId
   });
 
   await post.save();
+
+  // 4. GERAR IMAGEM AUTOMATICAMENTE (background)
+  generateImageForInstagramPost(post, headline, especialidade, provider).catch(err => {
+    console.error('❌ Erro ao gerar imagem do Instagram:', err.message);
+  });
 
   return {
     success: true,
@@ -643,20 +696,141 @@ export async function generateInstagramPost({
       legenda,
       mediaUrl: null,
       especialidade: especialidade.nome,
-      nota: 'Adicione a imagem gerada em IA externa (Midjourney, etc) manualmente'
+      status: 'processing',
+      nota: 'Imagem sendo gerada automaticamente...'
     }
   };
 }
 
 /**
- * 🔄 REGENERAR IMAGEM
- * Apenas limpa a imagem atual - usuário deve adicionar nova manualmente
+ * 🎨 GERAR IMAGEM PARA POST DO INSTAGRAM
+ * Gera imagem em background e atualiza o post
  */
-export async function regenerateImageForPost(post) {
+async function generateImageForInstagramPost(post, headline, especialidade, provider = null) {
+  try {
+    console.log(`🎨 Gerando imagem para Instagram post ${post._id}...`);
+    
+    // Define tipo de imagem baseado na especialidade
+    const tipoImagem = IMAGE_TYPES.FOTO_REAL;
+    
+    let result = null;
+    
+    // Se provider especificado, tenta ele primeiro
+    if (provider && provider !== 'auto') {
+      result = await generateImageWithProvider({
+        especialidade,
+        headline,
+        tipoImagem,
+        provider
+      });
+    }
+    
+    // Se não especificou ou falhou, usa pipeline padrão
+    if (!result) {
+      result = await generateImage({
+        especialidade,
+        headline,
+        tipoImagem
+      });
+    }
+    
+    if (!result) {
+      throw new Error('Falha ao gerar imagem em todas as fontes');
+    }
+    
+    // Fazer upload da imagem
+    let mediaUrl;
+    if (result.buffer) {
+      // Upload para Cloudinary
+      const cloudinaryResult = await uploadToCloudinary(result.buffer, {
+        folder: 'instagram/posts',
+        public_id: `instagram_${post._id}_${Date.now()}`,
+        resource_type: 'image'
+      });
+      mediaUrl = cloudinaryResult.secure_url;
+    } else if (result.url) {
+      // URL direta (Pollinations)
+      mediaUrl = result.url;
+    }
+    
+    if (!mediaUrl) {
+      throw new Error('Não foi possível obter URL da imagem');
+    }
+    
+    // Atualizar post com a imagem
+    post.mediaUrl = mediaUrl;
+    post.mediaType = 'image';
+    post.imageProvider = result.provider || 'unknown';
+    post.status = 'draft'; // ✅ Pronto para revisão
+    await post.save();
+    
+    console.log(`✅ Imagem gerada para Instagram post ${post._id}: ${result.provider}`);
+    
+  } catch (error) {
+    console.error(`❌ Erro ao gerar imagem para post ${post._id}:`, error.message);
+    post.status = 'draft';
+    post.imageProvider = 'failed';
+    await post.save();
+  }
+}
+
+/**
+ * 🎨 Gerar imagem com provedor específico
+ */
+async function generateImageWithProvider({ especialidade, headline, tipoImagem, provider }) {
+  const prompt = getPromptPronto(
+    especialidade.id,
+    tipoImagem,
+    {
+      atividade: `${especialidade.foco.split(',')[0]} session`,
+      tema: especialidade.foco,
+      mensagem: headline
+    }
+  );
+  
+  console.log(`🎨 Tentando provider específico: ${provider}`);
+  
+  switch (provider) {
+    case 'google':
+    case 'imagen':
+    case 'veo':
+      // Para Google/Imagen/Veo, usamos a função generateImage completa
+      // que já tem Imagen 3 como prioridade #0
+      return await generateImage({ especialidade, headline, tipoImagem });
+    case 'fal':
+      return await generateWithFal(prompt);
+    case 'freepik':
+      return await generateWithFreepik(prompt);
+    case 'dalle':
+      return await generateWithDalle(prompt);
+    case 'together':
+      return await generateWithTogether(prompt);
+    case 'replicate':
+      return await generateWithReplicate(prompt);
+    case 'pollinations':
+      return await generateWithPollinations(prompt);
+    default:
+      return null;
+  }
+}
+
+/**
+ * 🔄 REGENERAR IMAGEM
+ * Gera nova imagem automaticamente
+ */
+export async function regenerateImageForPost(post, provider = null) {
+  const especialidade = ESPECIALIDADES.find(e => e.id === post.theme) || ESPECIALIDADES[0];
+  
+  post.status = 'processing';
   post.mediaUrl = null;
-  post.imageProvider = 'manual';
   await post.save();
-  return null;
+  
+  // Gera nova imagem em background
+  generateImageForInstagramPost(post, post.headline, especialidade, provider).catch(err => {
+    console.error('❌ Erro ao regenerar imagem:', err.message);
+  });
+  
+  return { status: 'processing', message: 'Nova imagem sendo gerada...' };
 }
 
 export { gerarHeadline, gerarLegenda, generateImage, IMAGE_TYPES };

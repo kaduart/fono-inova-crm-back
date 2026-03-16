@@ -52,6 +52,13 @@ const doctorSchema = new mongoose.Schema({
       min: 0,
       description: 'Valor total ao completar 10 sessões de aval. neuropsicológica'
     },
+    // 🆕 REGRAS ESPECÍFICAS POR CONVÊNIO
+    byInsurance: {
+      type: Map,
+      of: Number,
+      default: {},
+      description: 'Valor por sessão específico para cada convênio (ex: unimed: 50, amil: 55)'
+    },
     customRules: [{
       serviceType: { type: String },  // ex: 'tongue_tie_test'
       value: { type: Number },
