@@ -780,33 +780,30 @@ export async function bookFixedSlot({
         const appointmentData = appointmentResponse.data.data;
         bookingStats.successful++;
 
-        // 📲 NOTIFICAÇÃO WPP AO DONO
+        // 📲 NOTIFICAÇÃO WPP AO DONO — fire-and-forget, não bloqueia resposta
         const ownerPhone = process.env.OWNER_NOTIFY_PHONE;
         if (ownerPhone) {
-            try {
-                const doctorDoc = await Doctor.findById(doctorId).select('fullName').lean();
-                const doctorName = doctorDoc?.fullName || 'N/A';
-                const patientName = patientInfo?.fullName || 'Paciente';
-                const formattedDate = date ? format(parseISO(date), 'dd/MM/yyyy') : date;
-                const sourceLabel =
-                    source === 'amandaAI' ? 'Amanda AI' :
-                    source === 'agenda_externa' ? 'Agenda Externa' :
-                    source;
-
-                const msg =
-                    `🗓️ *Novo agendamento* via ${sourceLabel}\n\n` +
-                    `👤 *Paciente:* ${patientName}\n` +
-                    `📅 *Data:* ${formattedDate}\n` +
-                    `⏰ *Horário:* ${time}\n` +
-                    `👩‍⚕️ *Profissional:* ${doctorName}\n` +
-                    `🩺 *Especialidade:* ${specialty || 'N/A'}\n` +
-                    `📋 *Tipo:* ${sessionType}`;
-
-                await sendTextMessage({ to: ownerPhone, text: msg, sentBy: 'system' });
-                console.log('[bookFixedSlot] ✅ Notificação WPP enviada ao dono');
-            } catch (notifyErr) {
-                console.warn('[bookFixedSlot] ⚠️ Falha ao notificar dono via WPP:', notifyErr.message);
-            }
+            Doctor.findById(doctorId).select('fullName').lean()
+                .then(doctorDoc => {
+                    const doctorName = doctorDoc?.fullName || 'N/A';
+                    const patientName = patientInfo?.fullName || 'Paciente';
+                    const formattedDate = date ? format(parseISO(date), 'dd/MM/yyyy') : date;
+                    const sourceLabel =
+                        source === 'amandaAI' ? 'Amanda AI' :
+                        source === 'agenda_externa' ? 'Agenda Externa' :
+                        source;
+                    const msg =
+                        `🗓️ *Novo agendamento* via ${sourceLabel}\n\n` +
+                        `👤 *Paciente:* ${patientName}\n` +
+                        `📅 *Data:* ${formattedDate}\n` +
+                        `⏰ *Horário:* ${time}\n` +
+                        `👩‍⚕️ *Profissional:* ${doctorName}\n` +
+                        `🩺 *Especialidade:* ${specialty || 'N/A'}\n` +
+                        `📋 *Tipo:* ${sessionType}`;
+                    return sendTextMessage({ to: ownerPhone, text: msg, sentBy: 'system' });
+                })
+                .then(() => console.log('[bookFixedSlot] ✅ Notificação WPP enviada ao dono'))
+                .catch(e => console.warn('[bookFixedSlot] ⚠️ WPP falhou (ignorado):', e.message));
         }
 
         // 🔹 O payment retornado tem o campo 'appointment' com o ID do agendamento criado

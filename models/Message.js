@@ -35,7 +35,7 @@ const messageSchema = new mongoose.Schema({
     },
 
     // Template (saída outbound)
-    templateName: String,
+    templateName: { type: String, index: true },
 
     // Status
     status: { type: String, enum: ['pending', 'sent', 'delivered', 'read', 'failed', 'received'], default: 'received' },
@@ -71,5 +71,6 @@ const messageSchema = new mongoose.Schema({
 messageSchema.index({ from: 1, to: 1, timestamp: 1 });
 messageSchema.index({ lead: 1, timestamp: 1 });
 messageSchema.index({ contact: 1, timestamp: 1 });
+messageSchema.index({ templateName: 1, to: 1, timestamp: 1 }); // Para deduplicação de templates
 
 export default mongoose.model('Message', messageSchema);

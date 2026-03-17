@@ -161,8 +161,40 @@ export const getProduction = async (req, res) => {
 };
 
 /**
+ * GET /api/financial/v2/receivable-detail
+ *
+ * Detalhe das guias convênio faturadas não recebidas
+ */
+export const getReceivableDetail = async (req, res) => {
+  try {
+    const Payment = (await import('../models/Payment.js')).default;
+
+    const payments = await Payment.find({
+      billingType: 'convenio',
+      'insurance.status': 'billed'
+    })
+      .populate('patient', 'fullName')
+      .sort({ 'insurance.billedAt': -1 })
+      .lean();
+
+    const items = payments.map(p => ({
+      _id: p._id,
+      patientName: p.patient?.fullName || '—',
+      convenio: p.insurance?.name || p.convenioName || '—',
+      grossAmount: p.insurance?.grossAmount || 0,
+      billedAt: p.insurance?.billedAt,
+      status: p.insurance?.status
+    }));
+
+    res.json({ success: true, data: { items, total: items.reduce((s, i) => s + i.grossAmount, 0), count: items.length } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
  * GET /api/financial/v2/receivable
- * 
+ *
  * Apenas a receber (contas a receber)
  */
 export const getReceivable = async (req, res) => {
