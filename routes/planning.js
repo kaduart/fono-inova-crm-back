@@ -240,6 +240,65 @@ router.post('/quick/monthly', auth, authorize(['admin']), async (req, res) => {
 });
 
 /**
+ * @route   POST /api/planning/generate-weekly-for-month
+ * @desc    Gera automaticamente todas as semanas de um mês dividindo a meta mensal
+ *          Semanas: 01-07 | 08-14 | 15-21 | 22-lastDay
+ */
+router.post('/generate-weekly-for-month', auth, authorize(['admin']), async (req, res) => {
+  try {
+    const { month, year, monthlyRevenue, totalSessions, workHours } = req.body;
+
+    if (!month || !year || !monthlyRevenue) {
+      return res.status(400).json({ success: false, message: 'month, year e monthlyRevenue são obrigatórios' });
+    }
+
+    const lastDay = new Date(year, month, 0).getDate();
+    const pad = (n) => String(n).padStart(2, '0');
+    const base = `${year}-${pad(month)}`;
+
+    // 4 semanas fixas: proporcional aos dias de cada semana
+    const weeks = [
+      { start: `${base}-01`, end: `${base}-07`, days: 7 },
+      { start: `${base}-08`, end: `${base}-14`, days: 7 },
+      { start: `${base}-15`, end: `${base}-21`, days: 7 },
+      { start: `${base}-22`, end: `${base}-${pad(lastDay)}`, days: lastDay - 21 }
+    ];
+
+    const totalDays = weeks.reduce((s, w) => s + w.days, 0); // = lastDay
+
+    // Deletar semanas existentes para este mês para evitar duplicatas
+    await Planning.deleteMany({
+      type: 'weekly',
+      'period.start': { $gte: `${base}-01` },
+      'period.end': { $lte: `${base}-${pad(lastDay)}` }
+    });
+
+    const created = await Promise.all(weeks.map(w => {
+      const frac = w.days / totalDays;
+      return Planning.create({
+        type: 'weekly',
+        period: { start: w.start, end: w.end },
+        targets: {
+          expectedRevenue: Math.round(monthlyRevenue * frac),
+          totalSessions: Math.round((totalSessions || 0) * frac),
+          workHours: parseFloat(((workHours || 0) * frac).toFixed(1))
+        },
+        createdBy: req.user.id
+      });
+    }));
+
+    res.status(201).json({
+      success: true,
+      message: `${created.length} semanas criadas para ${month}/${year}`,
+      data: created
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
  * @route   PUT /api/planning/:id
  * @desc    Atualizar planejamento existente
  */

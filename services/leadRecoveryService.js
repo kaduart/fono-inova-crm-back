@@ -3,7 +3,8 @@
 // Fase 1: 2 estágios (6h + 24h) - otimizado para conversão sem spam
 
 import Leads from '../models/Leads.js';
-import { sendTextMessage } from './whatsappService.js';
+import Message from '../models/Message.js';
+import { sendTextMessage, sendTemplateMessage } from './whatsappService.js';
 import { detectSpecialtyFromMessage } from '../utils/campaignDetector.js';
 
 // Templates de mensagens por especialidade
@@ -130,6 +131,21 @@ export async function processRecoveryQueue() {
 }
 
 /**
+ * Verifica se lead está dentro da janela de 24h do WhatsApp
+ */
+async function isWithin24hWindow(leadId) {
+  const lastInbound = await Message.findOne({
+    lead: leadId,
+    direction: 'inbound'
+  }).sort({ timestamp: -1 }).lean();
+  
+  if (!lastInbound) return false;
+  
+  const hoursSince = (Date.now() - new Date(lastInbound.timestamp).getTime()) / (1000 * 60 * 60);
+  return hoursSince < 24;
+}
+
+/**
  * Envia mensagem de recovery para um lead específico
  */
 async function sendRecoveryMessage(lead) {
@@ -155,12 +171,42 @@ async function sendRecoveryMessage(lead) {
       return { success: false, error: 'Telefone não encontrado', leadId: lead._id };
     }
 
-    await sendTextMessage({
-      to: phone,
-      text: message,
-      lead: lead._id,
-      sentBy: 'amanda'
-    });
+    // 🎯 VERIFICA JANELA DE 24h ANTES DE ENVIAR
+    const in24hWindow = await isWithin24hWindow(lead._id);
+    
+    if (in24hWindow) {
+      // Dentro da janela: envia texto normal
+      console.log(`[RECOVERY] Lead ${lead._id} dentro da janela 24h - enviando texto`);
+      await sendTextMessage({
+        to: phone,
+        text: message,
+        lead: lead._id,
+        sentBy: 'amanda'
+      });
+    } else {
+      // Fora da janela: envia template de recontato primeiro
+      console.log(`[RECOVERY] Lead ${lead._id} FORA da janela 24h - enviando template recontato`);
+      await sendTemplateMessage({
+        to: phone,
+        template: 'recontato_clinica',
+        params: [],
+        lead: lead._id,
+        sentBy: 'amanda_recovery'
+      });
+      
+      // Se stage 2, envia também o texto como follow-up (após template abrir a janela)
+      if (nextStage === 2) {
+        console.log(`[RECOVERY] Stage 2 - enviando texto complementar após template`);
+        // Pequeno delay para garantir que o template chegue primeiro
+        await new Promise(r => setTimeout(r, 2000));
+        await sendTextMessage({
+          to: phone,
+          text: message,
+          lead: lead._id,
+          sentBy: 'amanda'
+        });
+      }
+    }
 
     // Atualiza estado do recovery
     const updateData = {

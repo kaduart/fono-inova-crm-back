@@ -23,14 +23,16 @@ IO INIT: null
    🏥 Especialidades: 06:00 (cria post para cada área que falta)
    📝 Extras: 07:30(8h) / 11:30(12h) / 14:30(15h) / 18:30(19h)
    🚀 Envio Make: a cada 30min das 8h às 22h
+📅 [LandingPage Cron] Agendando job diário...
+✅ [LandingPage Cron] Job agendado para 7h diariamente
 [WhatsAppWeb] Inicializando...
 🔄 Iniciando conexão Redis...
 🔄 Iniciando conexão Redis...
 🖥️ Bull Board disponível em: /admin/queues
-(node:53175) [MONGOOSE] Warning: Duplicate schema index on {"status":1,"scheduledAt":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:158487) [MONGOOSE] Warning: Duplicate schema index on {"status":1,"scheduledAt":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:53175) [MONGOOSE] Warning: Duplicate schema index on {"code":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
-(node:53175) [MONGOOSE] Warning: Duplicate schema index on {"jobId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:158487) [MONGOOSE] Warning: Duplicate schema index on {"code":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
+(node:158487) [MONGOOSE] Warning: Duplicate schema index on {"jobId":1} found. This is often due to declaring an index using both "index: true" and "schema.index()". Please remove the duplicate index definition.
 ✅ Redis conectado
 ✅ Redis Client conectado!
 🚀 Redis conectado e validado!
@@ -39,9 +41,9 @@ IO INIT: null
 [INACTIVE-CHECK] Verificando leads inativos...
 [INACTIVE-FOLLOWUP] Iniciando verificação de leads inativos...
 ⏰ Follow-up Cron iniciado (scan a cada 3min + inactive check a cada 6h)
-[INFO] 2026-03-11T20:40:08.158Z — [META CLIENT] API inicializada com sucesso
-[INFO] 2026-03-11T20:40:08.194Z — [VIDEO WORKER] 🎬 Worker inicializado (concurrency: 1)
-[INFO] 2026-03-11T20:40:08.233Z — [POST WORKER] 📝 Worker inicializado (concurrency: 3)
+[INFO] 2026-03-17T15:58:37.854Z — [META CLIENT] API inicializada com sucesso
+[INFO] 2026-03-17T15:58:37.963Z — [VIDEO WORKER] 🎬 Worker inicializado (concurrency: 1)
+[INFO] 2026-03-17T15:58:38.011Z — [POST WORKER] 📝 Worker inicializado (concurrency: 3)
 📊 Iniciando cron de análise semanal de Follow-ups...
 
 ╔═══════════════════════════════════════════════════════════════╗
@@ -53,7 +55,7 @@ IO INIT: null
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
     
-[11/03/2026, 17:40:08] [INFO] Executando verificações iniciais... {}
+[17/03/2026, 12:58:38] [INFO] Executando verificações iniciais... {}
 ✅ Connected to MongoDB
 🧠 [CRON] Inicializando cron de aprendizado...
 ✅ [CRON] Agendado: todos os dias às 23:00 (America/Sao_Paulo)
@@ -68,31 +70,32 @@ IO INIT: null
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
     
-[11/03/2026, 17:40:08] [GMB] MongoDB conectado 
-[11/03/2026, 17:40:08] [GMB] Agendando tarefas GMB... {"timezone":"America/Sao_Paulo"}
-[11/03/2026, 17:40:08] [GMB] Tarefas GMB agendadas! {"tasks":["generateDaily (8h)","sendToMake (8h05, 12h05, 15h05, 19h05)"]}
-[11/03/2026, 17:40:08] [GMB] GMB Cron iniciado {"makeConfigurado":true}
-[INFO] 2026-03-11T20:40:08.357Z — [MetaAds Cron] Agendamento configurado: todos os dias às 6h00 (America/Sao_Paulo)
+[17/03/2026, 12:58:38] [GMB] MongoDB conectado 
+[17/03/2026, 12:58:38] [GMB] Agendando tarefas GMB... {"timezone":"America/Sao_Paulo"}
+[17/03/2026, 12:58:38] [GMB] Tarefas GMB agendadas! {"tasks":["generateDaily (8h)","sendToMake (8h05, 12h05, 15h05, 19h05)"]}
+[17/03/2026, 12:58:38] [GMB] GMB Cron iniciado {"makeConfigurado":true}
+[INFO] 2026-03-17T15:58:38.210Z — [MetaAds Cron] Agendamento configurado: todos os dias às 6h00 (America/Sao_Paulo)
 🔁 Inicializando Lead Recovery Cron...
 ✅ Lead Recovery Cron inicializado (a cada 30 min)
-[INFO] 2026-03-11T20:40:08.402Z — [SCHEDULER] Worker de publicação agendada iniciado (intervalo: 60s)
+[INFO] 2026-03-17T15:58:38.265Z — [SCHEDULER] Worker de publicação agendada iniciado (intervalo: 60s)
 ⚠️ PIX Sicoob desabilitado: certificado não configurado
 🔗 Webhook PIX registrado com sucesso
 👀 Iniciando watcher de Followups...
 🚀 Server running on port 5000
 🌐 Environment: production
 [INACTIVE-FOLLOWUP] 1 leads inativos encontrados
-[11/03/2026, 17:40:09] [INFO] ✓ Sistema saudável (DB + socket + atividade recente) {
+⏳ Após filtro, nenhum follow-up válido.
+[INACTIVE-FOLLOWUP] Lead 698749d7b1f7de4a3dd23d31 já atingiu limite de 3 follow-ups
+[INACTIVE-FOLLOWUP] Concluído: 0 follow-ups criados
+[INACTIVE-CHECK] Concluído: 0 follow-ups criados
+[17/03/2026, 12:58:39] [INFO] ✓ Sistema saudável (DB + socket + atividade recente) {
   "database": true,
   "socket": true,
   "recentActivity": true
 }
-[11/03/2026, 17:40:09] [CRON] checkResponses - START
-[11/03/2026, 17:40:09] [INFO] Iniciando verificação de respostas pendentes... {}
+[17/03/2026, 12:58:39] [CRON] checkResponses - START
+[17/03/2026, 12:58:39] [INFO] Iniciando verificação de respostas pendentes... {}
 [INFO] Iniciando processamento de respostas pendentes { batchSize: 50, minAge: '24h' }
-[INACTIVE-FOLLOWUP] Lead 698749d7b1f7de4a3dd23d31 já atingiu limite de 3 follow-ups
-[INACTIVE-FOLLOWUP] Concluído: 0 follow-ups criados
-[INACTIVE-CHECK] Concluído: 0 follow-ups criados
 [INFO] Processando 50 follow-ups... {}
 [WARN] Resposta fora da janela de tempo válida {
   followupId: new ObjectId('6941a690fbcea767fb2ae5d7'),
@@ -109,27 +112,27 @@ IO INIT: null
   sentAt: 2026-01-07T20:41:08.899Z,
   respondedAt: 2026-01-21T11:41:22.000Z
 }
-[ERROR] 2026-03-11T20:40:11.656Z — [MetaAds Token] Erro ao verificar token: (#100) The App_id in the input_token did not match the Viewing App
+[INFO] 2026-03-17T15:58:42.197Z — [MetaAds Token] Token válido. Expira em 53 dias (Sun May 10 2026 10:29:15 GMT-0300 (Brasilia Standard Time))
 [SUCCESS] Processamento em lote concluído {
   processed: 50,
   responded: 0,
   errors: 0,
   errorDetails: [],
   responseRate: '0.0%',
-  duration: '3025ms'
+  duration: '3053ms'
 }
-[11/03/2026, 17:40:12] [SUCCESS] Verificação concluída {
+[17/03/2026, 12:58:42] [SUCCESS] Verificação concluída {
   "processed": 50,
   "responded": 0,
   "errors": 0,
   "responseRate": "0.0%"
 }
-[11/03/2026, 17:40:12] [CRON] checkResponses - SUCCESS
-[11/03/2026, 17:40:12] [SUCCESS] Tarefa concluída: checkResponses {
-  "duration": "3032ms"
+[17/03/2026, 12:58:42] [CRON] checkResponses - SUCCESS
+[17/03/2026, 12:58:42] [SUCCESS] Tarefa concluída: checkResponses {
+  "duration": "3056ms"
 }
-[11/03/2026, 17:40:12] [SUCCESS] Verificações iniciais concluídas {}
-[11/03/2026, 17:40:12] [INFO] Agendando tarefas cron... {
+[17/03/2026, 12:58:42] [SUCCESS] Verificações iniciais concluídas {}
+[17/03/2026, 12:58:42] [INFO] Agendando tarefas cron... {
   "timezone": "America/Sao_Paulo",
   "schedules": {
     "CHECK_RESPONSES": "*/30 * * * *",
@@ -138,7 +141,7 @@ IO INIT: null
     "HEALTH_CHECK": "*/15 * * * *"
   }
 }
-[11/03/2026, 17:40:12] [SUCCESS] Tarefas agendadas com sucesso {
+[17/03/2026, 12:58:42] [SUCCESS] Tarefas agendadas com sucesso {
   "tasks": 4
 }
 
@@ -156,331 +159,246 @@ IO INIT: null
 ║                                                               ║
 ╚═══════════════════════════════════════════════════════════════╝
         
-[INFO] 2026-03-11T20:40:13.389Z — [MetaAds Cron] Primeira sincronização (cache vazio ou expirado)...
-[INFO] 2026-03-11T20:40:13.390Z — [MetaAds Cron] Iniciando sincronização diária...
-[INFO] 2026-03-11T20:40:13.391Z — [MetaAds] Iniciando sincronização de campanhas...
-[INFO] 2026-03-11T20:40:13.391Z — [MetaAds] Token encontrado: EAF47VGixPlgBQy... (196 chars)
-[INFO] 2026-03-11T20:40:13.392Z — [MetaAds] Buscando campanhas da conta act_1799697107304744
-[2026-03-11T20:40:13.513Z] GET → /api/payments/daily-closing
-[2026-03-11T20:40:13.561Z] GET → /api/payments/totals
-💰 Cash Result: [
-  {
-    _id: null,
-    totalReceived: 790,
-    totalPending: 0,
-    totalPartial: 0,
-    countReceived: 4,
-    countPending: 1,
-    countPartial: 0,
-    particularReceived: 790,
-    particularPending: 0,
-    particularCountReceived: 4,
-    particularCountPending: 1
-  }
-]
-🔍 Insurance Match Stage: {
-  "$or": [
-    {
-      "paymentDate": {
-        "$gte": "2026-03-10",
-        "$lte": "2026-03-11"
-      }
-    },
-    {
-      "paymentDate": {
-        "$exists": false
-      },
-      "createdAt": {
-        "$gte": "2026-03-10T03:00:00.000Z",
-        "$lte": "2026-03-11T02:59:59.999Z"
-      }
-    }
-  ],
-  "billingType": "convenio"
-}
-🏥 Insurance Result: []
-⏱️ Query Sessions: 169.425ms
-⏱️ Bulk Update Appointments: 86.375ms
-📊 /totals response: {
-  totals: {
-    totalReceived: 790,
-    totalPending: 0,
-    totalPartial: 0,
-    countReceived: 4,
-    countPending: 1,
-    countPartial: 0,
-    particularReceived: 790,
-    particularPending: 0,
-    particularCountReceived: 4,
-    particularCountPending: 1,
-    totalInsuranceProduction: 0,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 0,
-    countInsuranceTotal: 0,
-    countInsuranceReceived: 0,
-    countInsurancePending: 0,
-    totalCombined: 790
-  },
-  dateRange: { start: 2026-03-10T03:00:00.000Z, end: 2026-03-11T02:59:59.999Z }
-}
-[ERROR] 2026-03-11T20:40:13.912Z — [MetaAds] Erro na chamada da API: Syntax error "Expected name." at character 0: ,,,,,,,
-[ERROR] 2026-03-11T20:40:13.913Z — [MetaAds] Erro ao buscar campanhas: Token inválido ou expirado. Verifique o META_ACCESS_TOKEN no .env. O token pode ter sido gerado para outro app ou expirado.
-[ERROR] 2026-03-11T20:40:13.913Z — [MetaAds] Erro na sincronização: Token inválido ou expirado. Verifique o META_ACCESS_TOKEN no .env. O token pode ter sido gerado para outro app ou expirado.
-[ERROR] 2026-03-11T20:40:13.914Z — [MetaAds Cron] Erro na sincronização: Token inválido ou expirado. Verifique o META_ACCESS_TOKEN no .env. O token pode ter sido gerado para outro app ou expirado.
-⏱️ Parallel Queries: 182.489ms
-
-📊 RESUMO PAGAMENTOS:
-   Total buscados: 2
-   Filtrados do dia: 2
-   Total em dinheiro: R$360
-
-
-🕐 Processando 16 appointments para timeSlots...
-  📌 Victor Gabriel Dos Santos Ribeiro - 15:20 - package_session - Lorrany Siqueira Marques
-  📌 Théo Alves Ribeiro - 16:40 - package_session - Lorrany Siqueira Marques
-  📌 Murilo Ribeiro Silva Carvalho - 10:40 - individual_session - Lorrany Siqueira Marques
-  📌 Shopia Pires da Silva - 11:20 - individual_session - Lorrany Siqueira Marques
-  📌 Nicolas Lucca - 16:00 - convenio_session - Luis Henrique
-  📌 Alice Marques Martins - 08:40 - package_session - Lorrany Siqueira Marques
-  📌 Lavínia Da Silva Borges - 09:20 - package_session - Lorrany Siqueira Marques
-  📌 Issac Moreira Ribeiro - 10:00 - package_session - Lorrany Siqueira Marques
-  📌 Cristiano da Silva Pereira - 14:00 - package_session - Victoria Amorim
-  📌 Heloísa Ágda de Souza - 14:00 - package_session - Lorrany Siqueira Marques
-  📌 Agatha Beatriz da Silva Almeida - 17:20 - package_session - Lorrany Siqueira Marques
-  📌 Zion Aires Araújo Oliveira - 16:00 - package_session - Lorrany Siqueira Marques
-  📌 Henre Gabriel Jacinto Da Silva - 08:00 - evaluation - Lorrany Siqueira Marques
-  📌 Helena Pedro Bezerra - 14:40 - evaluation - Lorrany Siqueira Marques
-  📌 Rafael Barros Santos - 18:00 - evaluation - Lorrany Siqueira Marques
-  📌 Helena Pedro Bezerra - 14:40 - package_session - Lorrany Siqueira Marques
-
-🕐 TimeSlots criados: 13
-  08:00: 1 appointments
-    - Henre Gabriel Jacinto Da Silva (evaluation)
-  08:40: 1 appointments
-    - Alice Marques Martins (package_session)
-  09:20: 1 appointments
-    - Lavínia Da Silva Borges (package_session)
-  10:00: 1 appointments
-    - Issac Moreira Ribeiro (package_session)
-  10:40: 1 appointments
-    - Murilo Ribeiro Silva Carvalho (individual_session)
-  11:20: 1 appointments
-    - Shopia Pires da Silva (individual_session)
-  14:00: 2 appointments
-    - Cristiano da Silva Pereira (package_session)
-    - Heloísa Ágda de Souza (package_session)
-  14:40: 2 appointments
-    - Helena Pedro Bezerra (evaluation)
-    - Helena Pedro Bezerra (package_session)
-  15:20: 1 appointments
-    - Victor Gabriel Dos Santos Ribeiro (package_session)
-  16:00: 2 appointments
-    - Nicolas Lucca (convenio_session)
-    - Zion Aires Araújo Oliveira (package_session)
-  16:40: 1 appointments
-    - Théo Alves Ribeiro (package_session)
-  17:20: 1 appointments
-    - Agatha Beatriz da Silva Almeida (package_session)
-  18:00: 1 appointments
-    - Rafael Barros Santos (evaluation)
-
-📊 FECHAMENTO FINAL 2026-03-11
-✅ Agendamentos válidos: 13
-💰 Recebido: 360
-📅 Previsto: 1635
-⏳ A receber: 1635
-📦 Pagamentos processados: 2
-[2026-03-11T20:40:14.068Z] GET → /api/payments/daily-closing
-[2026-03-11T20:40:14.121Z] GET → /api/payments/totals
-⏱️ Query Sessions: 100.509ms
-💰 Cash Result: [
-  {
-    _id: null,
-    totalReceived: 790,
-    totalPending: 0,
-    totalPartial: 0,
-    countReceived: 4,
-    countPending: 1,
-    countPartial: 0,
-    particularReceived: 790,
-    particularPending: 0,
-    particularCountReceived: 4,
-    particularCountPending: 1
-  }
-]
-🔍 Insurance Match Stage: {
-  "$or": [
-    {
-      "paymentDate": {
-        "$gte": "2026-03-10",
-        "$lte": "2026-03-11"
-      }
-    },
-    {
-      "paymentDate": {
-        "$exists": false
-      },
-      "createdAt": {
-        "$gte": "2026-03-10T03:00:00.000Z",
-        "$lte": "2026-03-11T02:59:59.999Z"
-      }
-    }
-  ],
-  "billingType": "convenio"
-}
-🏥 Insurance Result: []
-⏱️ Bulk Update Appointments: 53.191ms
-📊 /totals response: {
-  totals: {
-    totalReceived: 790,
-    totalPending: 0,
-    totalPartial: 0,
-    countReceived: 4,
-    countPending: 1,
-    countPartial: 0,
-    particularReceived: 790,
-    particularPending: 0,
-    particularCountReceived: 4,
-    particularCountPending: 1,
-    totalInsuranceProduction: 0,
-    totalInsuranceReceived: 0,
-    totalInsurancePending: 0,
-    countInsuranceTotal: 0,
-    countInsuranceReceived: 0,
-    countInsurancePending: 0,
-    totalCombined: 790
-  },
-  dateRange: { start: 2026-03-10T03:00:00.000Z, end: 2026-03-11T02:59:59.999Z }
-}
-⏱️ Parallel Queries: 165.292ms
-
-📊 RESUMO PAGAMENTOS:
-   Total buscados: 2
-   Filtrados do dia: 2
-   Total em dinheiro: R$360
-
-
-🕐 Processando 16 appointments para timeSlots...
-  📌 Victor Gabriel Dos Santos Ribeiro - 15:20 - package_session - Lorrany Siqueira Marques
-  📌 Théo Alves Ribeiro - 16:40 - package_session - Lorrany Siqueira Marques
-  📌 Murilo Ribeiro Silva Carvalho - 10:40 - individual_session - Lorrany Siqueira Marques
-  📌 Shopia Pires da Silva - 11:20 - individual_session - Lorrany Siqueira Marques
-  📌 Nicolas Lucca - 16:00 - convenio_session - Luis Henrique
-  📌 Alice Marques Martins - 08:40 - package_session - Lorrany Siqueira Marques
-  📌 Lavínia Da Silva Borges - 09:20 - package_session - Lorrany Siqueira Marques
-  📌 Issac Moreira Ribeiro - 10:00 - package_session - Lorrany Siqueira Marques
-  📌 Cristiano da Silva Pereira - 14:00 - package_session - Victoria Amorim
-  📌 Heloísa Ágda de Souza - 14:00 - package_session - Lorrany Siqueira Marques
-  📌 Agatha Beatriz da Silva Almeida - 17:20 - package_session - Lorrany Siqueira Marques
-  📌 Zion Aires Araújo Oliveira - 16:00 - package_session - Lorrany Siqueira Marques
-  📌 Henre Gabriel Jacinto Da Silva - 08:00 - evaluation - Lorrany Siqueira Marques
-  📌 Helena Pedro Bezerra - 14:40 - evaluation - Lorrany Siqueira Marques
-  📌 Rafael Barros Santos - 18:00 - evaluation - Lorrany Siqueira Marques
-  📌 Helena Pedro Bezerra - 14:40 - package_session - Lorrany Siqueira Marques
-
-🕐 TimeSlots criados: 13
-  08:00: 1 appointments
-    - Henre Gabriel Jacinto Da Silva (evaluation)
-  08:40: 1 appointments
-    - Alice Marques Martins (package_session)
-  09:20: 1 appointments
-    - Lavínia Da Silva Borges (package_session)
-  10:00: 1 appointments
-    - Issac Moreira Ribeiro (package_session)
-  10:40: 1 appointments
-    - Murilo Ribeiro Silva Carvalho (individual_session)
-  11:20: 1 appointments
-    - Shopia Pires da Silva (individual_session)
-  14:00: 2 appointments
-    - Cristiano da Silva Pereira (package_session)
-    - Heloísa Ágda de Souza (package_session)
-  14:40: 2 appointments
-    - Helena Pedro Bezerra (evaluation)
-    - Helena Pedro Bezerra (package_session)
-  15:20: 1 appointments
-    - Victor Gabriel Dos Santos Ribeiro (package_session)
-  16:00: 2 appointments
-    - Nicolas Lucca (convenio_session)
-    - Zion Aires Araújo Oliveira (package_session)
-  16:40: 1 appointments
-    - Théo Alves Ribeiro (package_session)
-  17:20: 1 appointments
-    - Agatha Beatriz da Silva Almeida (package_session)
-  18:00: 1 appointments
-    - Rafael Barros Santos (evaluation)
-
-📊 FECHAMENTO FINAL 2026-03-11
-✅ Agendamentos válidos: 13
-💰 Recebido: 360
-📅 Previsto: 1635
-⏳ A receber: 1635
-📦 Pagamentos processados: 2
+[INFO] 2026-03-17T15:58:43.245Z — [MetaAds Cron] Primeira sincronização (cache vazio ou expirado)...
+[INFO] 2026-03-17T15:58:43.246Z — [MetaAds Cron] Iniciando sincronização diária...
+[INFO] 2026-03-17T15:58:43.246Z — [MetaAds] Iniciando sincronização de campanhas...
+[INFO] 2026-03-17T15:58:43.246Z — [MetaAds] Token carregado: EAF47VGixPlgBQyv38l2p34ZAGmiWJ... (196 chars)
+[INFO] 2026-03-17T15:58:43.246Z — [MetaAds] Buscando campanhas de 2 conta(s): act_976430640058336, act_1313865209694265
+[INFO] 2026-03-17T15:58:43.246Z — [MetaAds] Buscando da conta act_976430640058336...
+[INFO] 2026-03-17T15:58:43.625Z — [MetaAds] Conta act_976430640058336: 17 campanhas
+[INFO] 2026-03-17T15:58:43.626Z — [MetaAds] Buscando da conta act_1313865209694265...
+[INFO] 2026-03-17T15:58:43.961Z — [MetaAds] Conta act_1313865209694265: 18 campanhas
+[INFO] 2026-03-17T15:58:43.962Z — [MetaAds] Total: 35 campanhas de 2 conta(s)
+⚡ Novo cliente conectado: _CHmNy03n29lDZNFAAAB
+👥 Total de clientes: 1
+[INFO] 2026-03-17T15:58:45.098Z — [MetaAds] Sincronização concluída: 35 sincronizadas, 0 erros
+[INFO] 2026-03-17T15:58:45.099Z — [MetaAds] Atualizando contagem de leads...
+[INFO] 2026-03-17T15:58:45.825Z — [MetaAds] Contagem de leads atualizada
+[INFO] 2026-03-17T15:58:45.826Z — [MetaAds Cron] Sincronização concluída: { synced: 35, cached: undefined, errors: 0 }
 [WhatsAppWeb] Autenticado!
 [WhatsAppWeb] Conectado e pronto para enviar mensagens!
-[2026-03-11T20:40:20.283Z] GET → /api/patients
-[PATIENTS LIST] Search: "undefined", Limit: 50
-[2026-03-11T20:40:20.301Z] GET → /api/admin/total-patients
-[2026-03-11T20:40:20.319Z] GET → /api/whatsapp/contacts
-[2026-03-11T20:40:20.330Z] GET → /api/admin/patient-overview
-[2026-03-11T20:40:20.342Z] GET → /api/users/me
-[2026-03-11T20:40:20.353Z] GET → /api/doctors/inactive/list
-[PATIENTS LIST] Encontrados: 50 pacientes
-✅ [CONTACTS] Retornando 50 de 582 contacts
-📊 [CONTACTS] 48/50 têm leadId
-🔍 [FIRST CONTACT] {
-  phone: '556292013573',
-  leadId: '6914b7473bd5036d01a7c5fb',
-  type: 'string'
-}
-[2026-03-11T20:40:20.830Z] GET → /api/doctors/active/list
-[2026-03-11T20:40:20.877Z] GET → /api/whatsapp/contacts
-[2026-03-11T20:40:20.882Z] GET → /api/users/me
-✅ [CONTACTS] Retornando 50 de 582 contacts
-📊 [CONTACTS] 48/50 têm leadId
-🔍 [FIRST CONTACT] {
-  phone: '556292013573',
-  leadId: '6914b7473bd5036d01a7c5fb',
-  type: 'string'
-}
-⚡ Novo cliente conectado: AtZADSOAEHcrERSxAAAC
+[2026-03-17T15:59:37.741Z] GET → /api/pre-agendamento
+⚠️ Cliente desconectado (client namespace disconnect)
+[2026-03-17T16:00:36.664Z] GET → /api/pre-agendamento
+⚡ Novo cliente conectado: J3GYtdXm5GmhplGUAAAD
 👥 Total de clientes: 1
-[2026-03-11T20:40:28.501Z] GET → /api/pre-agendamento
-[2026-03-11T20:40:28.587Z] GET → /api/admin/profile
-[2026-03-11T20:40:28.615Z] GET → /api/payments
-[2026-03-11T20:40:28.665Z] GET → /api/dashboard/overview
-[2026-03-11T20:40:29.805Z] GET → /api/pre-agendamento
-[2026-03-11T20:40:30.183Z] GET → /api/payments
-[2026-03-11T20:40:31.413Z] GET → /api/whatsapp/contacts
-✅ [CONTACTS] Retornando 50 de 582 contacts
-📊 [CONTACTS] 48/50 têm leadId
+🚀 Primeira execução do Lead Recovery (warmup)...
+🔁 Recovery habilitado para 0 leads existentes
+[2026-03-17T16:01:37.136Z] GET → /api/pre-agendamento
+⏳ Após filtro, nenhum follow-up válido.
+⚠️ Cliente desconectado (client namespace disconnect)
+⚡ Novo cliente conectado: OGb9gkB8Jn_xoAK9AAAF
+👥 Total de clientes: 1
+[2026-03-17T16:02:37.317Z] GET → /api/pre-agendamento
+[2026-03-17T16:02:38.955Z] POST → /api/renew-token
+[2026-03-17T16:03:37.181Z] GET → /api/pre-agendamento
+⚠️ Cliente desconectado (client namespace disconnect)
+⚡ Novo cliente conectado: yVbK31zE3K7jx_HsAAAH
+👥 Total de clientes: 1
+[2026-03-17T16:04:37.654Z] GET → /api/pre-agendamento
+⏳ Após filtro, nenhum follow-up válido.
+[2026-03-17T16:05:36.577Z] GET → /api/pre-agendamento
+⚠️ Cliente desconectado (client namespace disconnect)
+⚡ Novo cliente conectado: OLcNnjUtJPlgLarWAAAJ
+👥 Total de clientes: 1
+[2026-03-17T16:06:37.030Z] GET → /api/pre-agendamento
+[2026-03-17T16:07:36.801Z] GET → /api/pre-agendamento
+⏳ Após filtro, nenhum follow-up válido.
+⚠️ Cliente desconectado (client namespace disconnect)
+⚡ Novo cliente conectado: fw-L-hRB5qVbWgojAAAL
+👥 Total de clientes: 1
+[2026-03-17T16:08:37.445Z] GET → /api/pre-agendamento
+[2026-03-17T16:09:37.317Z] GET → /api/pre-agendamento
+⚠️ Cliente desconectado (client namespace disconnect)
+⚡ Novo cliente conectado: tvROTgXNi1LBxZi-AAAN
+👥 Total de clientes: 1
+[2026-03-17T16:10:36.858Z] GET → /api/pre-agendamento
+⏳ Após filtro, nenhum follow-up válido.
+[2026-03-17T16:11:36.730Z] GET → /api/pre-agendamento
+⚠️ Cliente desconectado (client namespace disconnect)
+⚡ Novo cliente conectado: rgwmo9qa_MU6UOcoAAAP
+👥 Total de clientes: 1
+[2026-03-17T16:12:37.183Z] GET → /api/pre-agendamento
+[2026-03-17T16:13:37.149Z] GET → /api/pre-agendamento
+⏳ Após filtro, nenhum follow-up válido.
+⚠️ Cliente desconectado (client namespace disconnect)
+⚡ Novo cliente conectado: A8tqN4i0Do3ScXqeAAAR
+👥 Total de clientes: 1
+[2026-03-17T16:14:37.646Z] GET → /api/pre-agendamento
+[2026-03-17T16:15:26.079Z] [PID: 158487] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Tue Mar 17 2026 13:15:00 GMT-0300 (Brasilia Standard Time)! Possible blocking IO or high CPU user at the same process used by node-cron.
+[2026-03-17T16:15:36.443Z] GET → /api/pre-agendamento
+⚠️ Cliente desconectado (client namespace disconnect)
+⚡ Novo cliente conectado: jHiZZMQqHHTO9_4ZAAAT
+👥 Total de clientes: 1
+[2026-03-17T16:16:36.873Z] GET → /api/pre-agendamento
+⏳ Após filtro, nenhum follow-up válido.
+[2026-03-17T16:17:36.839Z] GET → /api/pre-agendamento
+⚠️ Cliente desconectado (client namespace disconnect)
+⚡ Novo cliente conectado: BACSHfAJe6uUI4mQAAAV
+👥 Total de clientes: 1
+[2026-03-17T16:18:37.403Z] GET → /api/pre-agendamento
+[2026-03-17T16:19:37.274Z] GET → /api/pre-agendamento
+[2026-03-17T16:20:01.982Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
 🔍 [FIRST CONTACT] {
-  phone: '556292013573',
-  leadId: '6914b7473bd5036d01a7c5fb',
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
   type: 'string'
 }
-[2026-03-11T20:40:33.789Z] GET → /api/payments/daily-closing
-[2026-03-11T20:40:33.799Z] GET → /api/payments/totals
+[2026-03-17T16:20:02.250Z] GET → /api/pre-agendamento
+[2026-03-17T16:20:06.913Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:20:09.599Z] GET → /api/pre-agendamento
+⏳ Após filtro, nenhum follow-up válido.
+[2026-03-17T16:20:16.623Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:20:26.342Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:20:36.051Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:20:40.001Z] GET → /api/pre-agendamento
+[2026-03-17T16:20:46.738Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:20:56.445Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:21:06.164Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:21:08.839Z] GET → /api/pre-agendamento
+[2026-03-17T16:21:16.750Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:21:26.411Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:21:36.110Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:21:39.117Z] GET → /api/pre-agendamento
+[2026-03-17T16:21:46.876Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+⚠️ Cliente desconectado (transport close)
+[2026-03-17T16:21:49.583Z] GET → /api/whatsapp/contacts
+[2026-03-17T16:21:49.587Z] GET → /api/patients
+[PATIENTS LIST] Search: "undefined", Limit: 50
+[2026-03-17T16:21:49.597Z] GET → /api/admin/total-patients
+[2026-03-17T16:21:49.608Z] GET → /api/admin/patient-overview
+[2026-03-17T16:21:49.611Z] GET → /api/doctors/inactive/list
+[2026-03-17T16:21:49.616Z] GET → /api/doctors/active/list
+[2026-03-17T16:21:49.649Z] GET → /api/users/me
+[PATIENTS LIST] Encontrados: 50 pacientes
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:21:49.665Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:21:49.744Z] GET → /api/users/me
+⚡ Novo cliente conectado: V5XS0alFnOGHV3CwAAAX
+👥 Total de clientes: 1
+[2026-03-17T16:21:50.710Z] GET → /api/pre-agendamento
+[2026-03-17T16:21:50.717Z] GET → /api/dashboard/overview
+[2026-03-17T16:21:50.721Z] GET → /api/payments
+[2026-03-17T16:21:50.726Z] GET → /api/admin/profile
+[2026-03-17T16:21:50.858Z] GET → /api/pre-agendamento
+[2026-03-17T16:21:51.505Z] GET → /api/payments/daily-closing
+[2026-03-17T16:21:51.510Z] GET → /api/payments/totals
 💰 Cash Result: [
   {
     _id: null,
-    totalReceived: 790,
-    totalPending: 0,
+    totalReceived: 2080,
+    totalPending: 160,
     totalPartial: 0,
     countReceived: 4,
-    countPending: 1,
+    countPending: 3,
     countPartial: 0,
-    particularReceived: 790,
-    particularPending: 0,
+    particularReceived: 2080,
+    particularPending: 160,
     particularCountReceived: 4,
-    particularCountPending: 1
+    particularCountPending: 3
   }
 ]
 🔍 Insurance Match Stage: {
+  "status": {
+    "$ne": "canceled"
+  },
   "$or": [
     {
       "paymentDate": {
-        "$gte": "2026-03-10",
-        "$lte": "2026-03-11"
+        "$gte": "2026-03-16",
+        "$lte": "2026-03-17"
       }
     },
     {
@@ -488,124 +406,93 @@ IO INIT: null
         "$exists": false
       },
       "createdAt": {
-        "$gte": "2026-03-10T03:00:00.000Z",
-        "$lte": "2026-03-11T02:59:59.999Z"
+        "$gte": "2026-03-16T03:00:00.000Z",
+        "$lte": "2026-03-17T02:59:59.999Z"
       }
     }
   ],
   "billingType": "convenio"
 }
 🏥 Insurance Result: []
-⏱️ Query Sessions: 153.106ms
+⏱️ Query Sessions: 160.994ms
+⏱️ Bulk Update Appointments: 58.109ms
+[2026-03-17T16:21:51.730Z] GET → /api/payments
 📊 /totals response: {
   totals: {
-    totalReceived: 790,
-    totalPending: 0,
+    totalReceived: 2080,
+    totalPending: 160,
     totalPartial: 0,
     countReceived: 4,
-    countPending: 1,
+    countPending: 3,
     countPartial: 0,
-    particularReceived: 790,
-    particularPending: 0,
+    particularReceived: 2080,
+    particularPending: 160,
     particularCountReceived: 4,
-    particularCountPending: 1,
+    particularCountPending: 3,
     totalInsuranceProduction: 0,
     totalInsuranceReceived: 0,
     totalInsurancePending: 0,
     countInsuranceTotal: 0,
     countInsuranceReceived: 0,
     countInsurancePending: 0,
-    totalCombined: 790
+    totalCombined: 2080,
+    totalAReceberAcumulado: 17812.010000000002,
+    particularPendingAccumulated: 12432.01,
+    insurancePendingAccumulated: 5380,
+    aReceberMes: 160
   },
-  dateRange: { start: 2026-03-10T03:00:00.000Z, end: 2026-03-11T02:59:59.999Z }
+  dateRange: { start: 2026-03-16T03:00:00.000Z, end: 2026-03-17T02:59:59.999Z }
 }
-⏱️ Bulk Update Appointments: 52.948ms
-⏱️ Parallel Queries: 120.659ms
+[2026-03-17T16:21:51.789Z] GET → /api/payments/totals
+⏱️ Parallel Queries: 77.419ms
 
 📊 RESUMO PAGAMENTOS:
-   Total buscados: 2
-   Filtrados do dia: 2
-   Total em dinheiro: R$360
+   Total buscados: 0
+   Filtrados do dia: 0
+   Total em dinheiro: R$0
 
 
-🕐 Processando 16 appointments para timeSlots...
-  📌 Victor Gabriel Dos Santos Ribeiro - 15:20 - package_session - Lorrany Siqueira Marques
-  📌 Théo Alves Ribeiro - 16:40 - package_session - Lorrany Siqueira Marques
-  📌 Murilo Ribeiro Silva Carvalho - 10:40 - individual_session - Lorrany Siqueira Marques
-  📌 Shopia Pires da Silva - 11:20 - individual_session - Lorrany Siqueira Marques
-  📌 Nicolas Lucca - 16:00 - convenio_session - Luis Henrique
-  📌 Alice Marques Martins - 08:40 - package_session - Lorrany Siqueira Marques
-  📌 Lavínia Da Silva Borges - 09:20 - package_session - Lorrany Siqueira Marques
-  📌 Issac Moreira Ribeiro - 10:00 - package_session - Lorrany Siqueira Marques
-  📌 Cristiano da Silva Pereira - 14:00 - package_session - Victoria Amorim
-  📌 Heloísa Ágda de Souza - 14:00 - package_session - Lorrany Siqueira Marques
-  📌 Agatha Beatriz da Silva Almeida - 17:20 - package_session - Lorrany Siqueira Marques
-  📌 Zion Aires Araújo Oliveira - 16:00 - package_session - Lorrany Siqueira Marques
-  📌 Henre Gabriel Jacinto Da Silva - 08:00 - evaluation - Lorrany Siqueira Marques
-  📌 Helena Pedro Bezerra - 14:40 - evaluation - Lorrany Siqueira Marques
-  📌 Rafael Barros Santos - 18:00 - evaluation - Lorrany Siqueira Marques
-  📌 Helena Pedro Bezerra - 14:40 - package_session - Lorrany Siqueira Marques
+🕐 Processando 2 appointments para timeSlots...
+  📌 Leandro Fernandes da Silva - 17:20 - individual_session - Tatiana Celuta Peres
+  📌 Joaquim Henrique de Assis Tavares - 15:20 - evaluation - Mayra Magda Mendes Oliveira
 
-🕐 TimeSlots criados: 13
-  08:00: 1 appointments
-    - Henre Gabriel Jacinto Da Silva (evaluation)
-  08:40: 1 appointments
-    - Alice Marques Martins (package_session)
-  09:20: 1 appointments
-    - Lavínia Da Silva Borges (package_session)
-  10:00: 1 appointments
-    - Issac Moreira Ribeiro (package_session)
-  10:40: 1 appointments
-    - Murilo Ribeiro Silva Carvalho (individual_session)
-  11:20: 1 appointments
-    - Shopia Pires da Silva (individual_session)
-  14:00: 2 appointments
-    - Cristiano da Silva Pereira (package_session)
-    - Heloísa Ágda de Souza (package_session)
-  14:40: 2 appointments
-    - Helena Pedro Bezerra (evaluation)
-    - Helena Pedro Bezerra (package_session)
+🕐 TimeSlots criados: 2
   15:20: 1 appointments
-    - Victor Gabriel Dos Santos Ribeiro (package_session)
-  16:00: 2 appointments
-    - Nicolas Lucca (convenio_session)
-    - Zion Aires Araújo Oliveira (package_session)
-  16:40: 1 appointments
-    - Théo Alves Ribeiro (package_session)
+    - Joaquim Henrique de Assis Tavares (evaluation)
   17:20: 1 appointments
-    - Agatha Beatriz da Silva Almeida (package_session)
-  18:00: 1 appointments
-    - Rafael Barros Santos (evaluation)
+    - Leandro Fernandes da Silva (individual_session)
 
-📊 FECHAMENTO FINAL 2026-03-11
-✅ Agendamentos válidos: 13
-💰 Recebido: 360
-📅 Previsto: 1635
-⏳ A receber: 1635
-📦 Pagamentos processados: 2
-[2026-03-11T20:40:34.355Z] GET → /api/payments/totals
-[2026-03-11T20:40:34.358Z] GET → /api/payments/daily-closing
+📊 FECHAMENTO FINAL 2026-03-17
+✅ Agendamentos válidos: 2
+💰 Recebido: 0
+📅 Previsto: 0
+⏳ A receber: 0
+📦 Pagamentos processados: 0
+[2026-03-17T16:21:51.815Z] GET → /api/payments/daily-closing
 💰 Cash Result: [
   {
     _id: null,
-    totalReceived: 790,
-    totalPending: 0,
+    totalReceived: 2080,
+    totalPending: 160,
     totalPartial: 0,
     countReceived: 4,
-    countPending: 1,
+    countPending: 3,
     countPartial: 0,
-    particularReceived: 790,
-    particularPending: 0,
+    particularReceived: 2080,
+    particularPending: 160,
     particularCountReceived: 4,
-    particularCountPending: 1
+    particularCountPending: 3
   }
 ]
 🔍 Insurance Match Stage: {
+  "status": {
+    "$ne": "canceled"
+  },
   "$or": [
     {
       "paymentDate": {
-        "$gte": "2026-03-10",
-        "$lte": "2026-03-11"
+        "$gte": "2026-03-16",
+        "$lte": "2026-03-17"
       }
     },
     {
@@ -613,114 +500,2001 @@ IO INIT: null
         "$exists": false
       },
       "createdAt": {
-        "$gte": "2026-03-10T03:00:00.000Z",
-        "$lte": "2026-03-11T02:59:59.999Z"
+        "$gte": "2026-03-16T03:00:00.000Z",
+        "$lte": "2026-03-17T02:59:59.999Z"
       }
     }
   ],
   "billingType": "convenio"
 }
 🏥 Insurance Result: []
-⏱️ Query Sessions: 148.644ms
+⏱️ Query Sessions: 258.454ms
+⏱️ Bulk Update Appointments: 32.008ms
 📊 /totals response: {
   totals: {
-    totalReceived: 790,
-    totalPending: 0,
+    totalReceived: 2080,
+    totalPending: 160,
     totalPartial: 0,
     countReceived: 4,
-    countPending: 1,
+    countPending: 3,
     countPartial: 0,
-    particularReceived: 790,
-    particularPending: 0,
+    particularReceived: 2080,
+    particularPending: 160,
     particularCountReceived: 4,
-    particularCountPending: 1,
+    particularCountPending: 3,
     totalInsuranceProduction: 0,
     totalInsuranceReceived: 0,
     totalInsurancePending: 0,
     countInsuranceTotal: 0,
     countInsuranceReceived: 0,
     countInsurancePending: 0,
-    totalCombined: 790
+    totalCombined: 2080,
+    totalAReceberAcumulado: 17812.010000000002,
+    particularPendingAccumulated: 12432.01,
+    insurancePendingAccumulated: 5380,
+    aReceberMes: 160
   },
-  dateRange: { start: 2026-03-10T03:00:00.000Z, end: 2026-03-11T02:59:59.999Z }
+  dateRange: { start: 2026-03-16T03:00:00.000Z, end: 2026-03-17T02:59:59.999Z }
 }
-⏱️ Bulk Update Appointments: 64.952ms
-⏱️ Parallel Queries: 310.1ms
+⏱️ Parallel Queries: 110.297ms
 
 📊 RESUMO PAGAMENTOS:
-   Total buscados: 2
-   Filtrados do dia: 2
-   Total em dinheiro: R$360
+   Total buscados: 0
+   Filtrados do dia: 0
+   Total em dinheiro: R$0
 
 
-🕐 Processando 16 appointments para timeSlots...
-  📌 Victor Gabriel Dos Santos Ribeiro - 15:20 - package_session - Lorrany Siqueira Marques
-  📌 Théo Alves Ribeiro - 16:40 - package_session - Lorrany Siqueira Marques
-  📌 Murilo Ribeiro Silva Carvalho - 10:40 - individual_session - Lorrany Siqueira Marques
-  📌 Shopia Pires da Silva - 11:20 - individual_session - Lorrany Siqueira Marques
-  📌 Nicolas Lucca - 16:00 - convenio_session - Luis Henrique
-  📌 Alice Marques Martins - 08:40 - package_session - Lorrany Siqueira Marques
-  📌 Lavínia Da Silva Borges - 09:20 - package_session - Lorrany Siqueira Marques
-  📌 Issac Moreira Ribeiro - 10:00 - package_session - Lorrany Siqueira Marques
-  📌 Cristiano da Silva Pereira - 14:00 - package_session - Victoria Amorim
-  📌 Heloísa Ágda de Souza - 14:00 - package_session - Lorrany Siqueira Marques
-  📌 Agatha Beatriz da Silva Almeida - 17:20 - package_session - Lorrany Siqueira Marques
-  📌 Zion Aires Araújo Oliveira - 16:00 - package_session - Lorrany Siqueira Marques
-  📌 Henre Gabriel Jacinto Da Silva - 08:00 - evaluation - Lorrany Siqueira Marques
-  📌 Helena Pedro Bezerra - 14:40 - evaluation - Lorrany Siqueira Marques
-  📌 Rafael Barros Santos - 18:00 - evaluation - Lorrany Siqueira Marques
-  📌 Helena Pedro Bezerra - 14:40 - package_session - Lorrany Siqueira Marques
+🕐 Processando 2 appointments para timeSlots...
+  📌 Leandro Fernandes da Silva - 17:20 - individual_session - Tatiana Celuta Peres
+  📌 Joaquim Henrique de Assis Tavares - 15:20 - evaluation - Mayra Magda Mendes Oliveira
 
-🕐 TimeSlots criados: 13
-  08:00: 1 appointments
-    - Henre Gabriel Jacinto Da Silva (evaluation)
-  08:40: 1 appointments
-    - Alice Marques Martins (package_session)
-  09:20: 1 appointments
-    - Lavínia Da Silva Borges (package_session)
-  10:00: 1 appointments
-    - Issac Moreira Ribeiro (package_session)
-  10:40: 1 appointments
-    - Murilo Ribeiro Silva Carvalho (individual_session)
-  11:20: 1 appointments
-    - Shopia Pires da Silva (individual_session)
-  14:00: 2 appointments
-    - Cristiano da Silva Pereira (package_session)
-    - Heloísa Ágda de Souza (package_session)
-  14:40: 2 appointments
-    - Helena Pedro Bezerra (evaluation)
-    - Helena Pedro Bezerra (package_session)
+🕐 TimeSlots criados: 2
   15:20: 1 appointments
-    - Victor Gabriel Dos Santos Ribeiro (package_session)
-  16:00: 2 appointments
-    - Nicolas Lucca (convenio_session)
-    - Zion Aires Araújo Oliveira (package_session)
-  16:40: 1 appointments
-    - Théo Alves Ribeiro (package_session)
+    - Joaquim Henrique de Assis Tavares (evaluation)
   17:20: 1 appointments
-    - Agatha Beatriz da Silva Almeida (package_session)
-  18:00: 1 appointments
-    - Rafael Barros Santos (evaluation)
+    - Leandro Fernandes da Silva (individual_session)
 
-📊 FECHAMENTO FINAL 2026-03-11
-✅ Agendamentos válidos: 13
-💰 Recebido: 360
-📅 Previsto: 1635
-⏳ A receber: 1635
-📦 Pagamentos processados: 2
-[2026-03-11T20:40:40.894Z] GET → /api/whatsapp/contacts
-✅ [CONTACTS] Retornando 50 de 582 contacts
-📊 [CONTACTS] 48/50 têm leadId
+📊 FECHAMENTO FINAL 2026-03-17
+✅ Agendamentos válidos: 2
+💰 Recebido: 0
+📅 Previsto: 0
+⏳ A receber: 0
+📦 Pagamentos processados: 0
+[2026-03-17T16:21:52.236Z] GET → /api/payments
+[2026-03-17T16:21:52.565Z] GET → /api/payments
+[2026-03-17T16:21:52.579Z] GET → /api/payments/totals
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 10350,
+    totalPending: 321,
+    totalPartial: 0,
+    countReceived: 23,
+    countPending: 48,
+    countPartial: 0,
+    particularReceived: 10350,
+    particularPending: 321,
+    particularCountReceived: 23,
+    particularCountPending: 42
+  }
+]
+🔍 Insurance Match Stage: {
+  "status": {
+    "$ne": "canceled"
+  },
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-01",
+        "$lte": "2026-04-01"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-01T03:00:00.000Z",
+        "$lte": "2026-04-01T02:59:59.999Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+🏥 Insurance Result: [
+  {
+    _id: null,
+    totalInsuranceProduction: 480,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 480,
+    countInsuranceTotal: 6,
+    countInsuranceReceived: 0,
+    countInsurancePending: 6
+  }
+]
+📊 /totals response: {
+  totals: {
+    totalReceived: 10350,
+    totalPending: 321,
+    totalPartial: 0,
+    countReceived: 23,
+    countPending: 48,
+    countPartial: 0,
+    particularReceived: 10350,
+    particularPending: 321,
+    particularCountReceived: 23,
+    particularCountPending: 42,
+    totalInsuranceProduction: 480,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 480,
+    countInsuranceTotal: 6,
+    countInsuranceReceived: 0,
+    countInsurancePending: 6,
+    totalCombined: 10830,
+    totalAReceberAcumulado: 17812.010000000002,
+    particularPendingAccumulated: 12432.01,
+    insurancePendingAccumulated: 5380,
+    aReceberMes: 801
+  },
+  dateRange: { start: 2026-03-01T03:00:00.000Z, end: 2026-04-01T02:59:59.999Z }
+}
+[2026-03-17T16:21:52.898Z] GET → /api/payments/totals
+[2026-03-17T16:21:52.900Z] GET → /api/payments
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 10350,
+    totalPending: 321,
+    totalPartial: 0,
+    countReceived: 23,
+    countPending: 48,
+    countPartial: 0,
+    particularReceived: 10350,
+    particularPending: 321,
+    particularCountReceived: 23,
+    particularCountPending: 42
+  }
+]
+🔍 Insurance Match Stage: {
+  "status": {
+    "$ne": "canceled"
+  },
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-01",
+        "$lte": "2026-04-01"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-01T03:00:00.000Z",
+        "$lte": "2026-04-01T02:59:59.999Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+🏥 Insurance Result: [
+  {
+    _id: null,
+    totalInsuranceProduction: 480,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 480,
+    countInsuranceTotal: 6,
+    countInsuranceReceived: 0,
+    countInsurancePending: 6
+  }
+]
+📊 /totals response: {
+  totals: {
+    totalReceived: 10350,
+    totalPending: 321,
+    totalPartial: 0,
+    countReceived: 23,
+    countPending: 48,
+    countPartial: 0,
+    particularReceived: 10350,
+    particularPending: 321,
+    particularCountReceived: 23,
+    particularCountPending: 42,
+    totalInsuranceProduction: 480,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 480,
+    countInsuranceTotal: 6,
+    countInsuranceReceived: 0,
+    countInsurancePending: 6,
+    totalCombined: 10830,
+    totalAReceberAcumulado: 17812.010000000002,
+    particularPendingAccumulated: 12432.01,
+    insurancePendingAccumulated: 5380,
+    aReceberMes: 801
+  },
+  dateRange: { start: 2026-03-01T03:00:00.000Z, end: 2026-04-01T02:59:59.999Z }
+}
+[2026-03-17T16:21:56.772Z] GET → /api/financial/v2/overview
+[2026-03-17T16:21:56.774Z] GET → /api/expenses
+[2026-03-17T16:21:57.178Z] GET → /api/expenses
+[2026-03-17T16:21:57.286Z] GET → /api/financial/v2/overview
+[2026-03-17T16:21:59.289Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
 🔍 [FIRST CONTACT] {
-  phone: '556292013573',
-  leadId: '6914b7473bd5036d01a7c5fb',
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
   type: 'string'
 }
-[2026-03-11T20:40:50.429Z] GET → /api/whatsapp/contacts
-✅ [CONTACTS] Retornando 50 de 582 contacts
-📊 [CONTACTS] 48/50 têm leadId
+[2026-03-17T16:21:59.737Z] GET → /api/financial/v2/overview
+[2026-03-17T16:21:59.745Z] GET → /api/provisionamento/projecao-mes
+[2026-03-17T16:21:59.747Z] GET → /api/planning
+[2026-03-17T16:21:59.749Z] GET → /api/provisionamento
+Mês: 3/2026 | Início: 2026-03-01 | Fim: 2026-03-31 | Hoje: 2026-03-17
+Status: ATUAL
+[Planning GET] 🔍 Filtros: {}
+[Planning GET] 📊 Encontrados 3 planejamentos
+[Planning GET] 🔄 Recalculando todos os planejamentos...
+[Planning Update] 📊 Atualizando planejamento 69ab7c23678f0935eafa7538
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[2026-03-17T16:22:00.043Z] GET → /api/financial/v2/overview
+[2026-03-17T16:22:00.075Z] GET → /api/provisionamento/projecao-mes
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+Mês: 3/2026 | Início: 2026-03-01 | Fim: 2026-03-31 | Hoje: 2026-03-17
+Status: ATUAL
+[Planning Update] 📊 Atualizando planejamento 69ab7c82678f0935eafa755b
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 699660c046f84a6ecf38a464
+[Planning Update] 📅 Período: 2026-02-01 a 2026-02-28
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 166
+[Planning Update]    - Receita Total (inclui a receber): R$ 23940.1
+[Planning Update]      ├─ Particular: R$ 16520.1
+[Planning Update]      ├─ Convênio (recebido): R$ 1820
+[Planning Update]      └─ Convênio (a receber): R$ 5600
+[Planning Update]    - Horas: 100.00h
+[2026-03-17T16:22:00.953Z] GET → /api/planning
+[Planning GET] 🔍 Filtros: {}
+[Planning GET] 📊 Encontrados 3 planejamentos
+[Planning GET] 🔄 Recalculando todos os planejamentos...
+[Planning Update] 📊 Atualizando planejamento 69ab7c23678f0935eafa7538
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 69ab7c82678f0935eafa755b
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 699660c046f84a6ecf38a464
+[Planning Update] 📅 Período: 2026-02-01 a 2026-02-28
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 166
+[Planning Update]    - Receita Total (inclui a receber): R$ 23940.1
+[Planning Update]      ├─ Particular: R$ 16520.1
+[Planning Update]      ├─ Convênio (recebido): R$ 1820
+[Planning Update]      └─ Convênio (a receber): R$ 5600
+[Planning Update]    - Horas: 100.00h
+[2026-03-17T16:22:01.932Z] GET → /api/provisionamento
+[2026-03-17T16:22:09.002Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
 🔍 [FIRST CONTACT] {
-  phone: '556292013573',
-  leadId: '6914b7473bd5036d01a7c5fb',
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:22:18.719Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:22:21.098Z] GET → /api/pre-agendamento
+[2026-03-17T16:22:29.385Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:22:39.087Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:22:48.800Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:22:49.927Z] GET → /api/pre-agendamento
+[2026-03-17T16:22:59.549Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:23:09.258Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:23:18.900Z] GET → /api/payments/daily-closing
+[2026-03-17T16:23:18.912Z] GET → /api/payments/totals
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 2080,
+    totalPending: 160,
+    totalPartial: 0,
+    countReceived: 4,
+    countPending: 3,
+    countPartial: 0,
+    particularReceived: 2080,
+    particularPending: 160,
+    particularCountReceived: 4,
+    particularCountPending: 3
+  }
+]
+🔍 Insurance Match Stage: {
+  "status": {
+    "$ne": "canceled"
+  },
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-16",
+        "$lte": "2026-03-17"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-16T03:00:00.000Z",
+        "$lte": "2026-03-17T02:59:59.999Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+[2026-03-17T16:23:18.981Z] GET → /api/whatsapp/contacts
+🏥 Insurance Result: []
+⏳ Após filtro, nenhum follow-up válido.
+⏱️ Query Sessions: 116.441ms
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+⏱️ Bulk Update Appointments: 42.883ms
+📊 /totals response: {
+  totals: {
+    totalReceived: 2080,
+    totalPending: 160,
+    totalPartial: 0,
+    countReceived: 4,
+    countPending: 3,
+    countPartial: 0,
+    particularReceived: 2080,
+    particularPending: 160,
+    particularCountReceived: 4,
+    particularCountPending: 3,
+    totalInsuranceProduction: 0,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 0,
+    countInsuranceTotal: 0,
+    countInsuranceReceived: 0,
+    countInsurancePending: 0,
+    totalCombined: 2080,
+    totalAReceberAcumulado: 17812.010000000002,
+    particularPendingAccumulated: 12432.01,
+    insurancePendingAccumulated: 5380,
+    aReceberMes: 160
+  },
+  dateRange: { start: 2026-03-16T03:00:00.000Z, end: 2026-03-17T02:59:59.999Z }
+}
+[2026-03-17T16:23:19.110Z] GET → /api/payments/totals
+⏱️ Parallel Queries: 75.731ms
+
+📊 RESUMO PAGAMENTOS:
+   Total buscados: 0
+   Filtrados do dia: 0
+   Total em dinheiro: R$0
+
+
+🕐 Processando 2 appointments para timeSlots...
+  📌 Leandro Fernandes da Silva - 17:20 - individual_session - Tatiana Celuta Peres
+  📌 Joaquim Henrique de Assis Tavares - 15:20 - evaluation - Mayra Magda Mendes Oliveira
+
+🕐 TimeSlots criados: 2
+  15:20: 1 appointments
+    - Joaquim Henrique de Assis Tavares (evaluation)
+  17:20: 1 appointments
+    - Leandro Fernandes da Silva (individual_session)
+
+📊 FECHAMENTO FINAL 2026-03-17
+✅ Agendamentos válidos: 2
+💰 Recebido: 0
+📅 Previsto: 0
+⏳ A receber: 0
+📦 Pagamentos processados: 0
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 2080,
+    totalPending: 160,
+    totalPartial: 0,
+    countReceived: 4,
+    countPending: 3,
+    countPartial: 0,
+    particularReceived: 2080,
+    particularPending: 160,
+    particularCountReceived: 4,
+    particularCountPending: 3
+  }
+]
+🔍 Insurance Match Stage: {
+  "status": {
+    "$ne": "canceled"
+  },
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-16",
+        "$lte": "2026-03-17"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-16T03:00:00.000Z",
+        "$lte": "2026-03-17T02:59:59.999Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+[2026-03-17T16:23:19.143Z] GET → /api/payments/daily-closing
+🏥 Insurance Result: []
+⏱️ Query Sessions: 64.72ms
+⏱️ Bulk Update Appointments: 27.235ms
+📊 /totals response: {
+  totals: {
+    totalReceived: 2080,
+    totalPending: 160,
+    totalPartial: 0,
+    countReceived: 4,
+    countPending: 3,
+    countPartial: 0,
+    particularReceived: 2080,
+    particularPending: 160,
+    particularCountReceived: 4,
+    particularCountPending: 3,
+    totalInsuranceProduction: 0,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 0,
+    countInsuranceTotal: 0,
+    countInsuranceReceived: 0,
+    countInsurancePending: 0,
+    totalCombined: 2080,
+    totalAReceberAcumulado: 17812.010000000002,
+    particularPendingAccumulated: 12432.01,
+    insurancePendingAccumulated: 5380,
+    aReceberMes: 160
+  },
+  dateRange: { start: 2026-03-16T03:00:00.000Z, end: 2026-03-17T02:59:59.999Z }
+}
+⏱️ Parallel Queries: 54.104ms
+
+📊 RESUMO PAGAMENTOS:
+   Total buscados: 0
+   Filtrados do dia: 0
+   Total em dinheiro: R$0
+
+
+🕐 Processando 2 appointments para timeSlots...
+  📌 Leandro Fernandes da Silva - 17:20 - individual_session - Tatiana Celuta Peres
+  📌 Joaquim Henrique de Assis Tavares - 15:20 - evaluation - Mayra Magda Mendes Oliveira
+
+🕐 TimeSlots criados: 2
+  15:20: 1 appointments
+    - Joaquim Henrique de Assis Tavares (evaluation)
+  17:20: 1 appointments
+    - Leandro Fernandes da Silva (individual_session)
+
+📊 FECHAMENTO FINAL 2026-03-17
+✅ Agendamentos válidos: 2
+💰 Recebido: 0
+📅 Previsto: 0
+⏳ A receber: 0
+📦 Pagamentos processados: 0
+[2026-03-17T16:23:20.391Z] GET → /api/pre-agendamento
+[2026-03-17T16:23:23.089Z] GET → /api/financial/v2/overview
+[2026-03-17T16:23:23.096Z] GET → /api/payments/totals
+[2026-03-17T16:23:23.098Z] GET → /api/financial/convenio/metrics
+[2026-03-17T16:23:23.104Z] GET → /api/expenses
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 10350,
+    totalPending: 321,
+    totalPartial: 0,
+    countReceived: 23,
+    countPending: 48,
+    countPartial: 0,
+    particularReceived: 10350,
+    particularPending: 321,
+    particularCountReceived: 23,
+    particularCountPending: 42
+  }
+]
+🔍 Insurance Match Stage: {
+  "status": {
+    "$ne": "canceled"
+  },
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-01",
+        "$lte": "2026-03-31"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-01T00:00:00.000Z",
+        "$lte": "2026-03-31T00:00:00.000Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+[ConvenioRoutes] Buscando métricas para 3/2026
+[ConvenioMetrics] Calculando métricas para 3/2026
+🏥 Insurance Result: [
+  {
+    _id: null,
+    totalInsuranceProduction: 480,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 480,
+    countInsuranceTotal: 6,
+    countInsuranceReceived: 0,
+    countInsurancePending: 6
+  }
+]
+[2026-03-17T16:23:23.264Z] GET → /api/expenses
+[2026-03-17T16:23:23.287Z] GET → /api/financial/convenio/metrics
+📊 /totals response: {
+  totals: {
+    totalReceived: 10350,
+    totalPending: 321,
+    totalPartial: 0,
+    countReceived: 23,
+    countPending: 48,
+    countPartial: 0,
+    particularReceived: 10350,
+    particularPending: 321,
+    particularCountReceived: 23,
+    particularCountPending: 42,
+    totalInsuranceProduction: 480,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 480,
+    countInsuranceTotal: 6,
+    countInsuranceReceived: 0,
+    countInsurancePending: 6,
+    totalCombined: 10830,
+    totalAReceberAcumulado: 17812.010000000002,
+    particularPendingAccumulated: 12432.01,
+    insurancePendingAccumulated: 5380,
+    aReceberMes: 801
+  },
+  dateRange: { start: 2026-03-01T00:00:00.000Z, end: 2026-03-31T00:00:00.000Z }
+}
+[2026-03-17T16:23:23.311Z] GET → /api/payments/totals
+[ConvenioRoutes] Buscando métricas para 3/2026
+[ConvenioMetrics] Calculando métricas para 3/2026
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 10350,
+    totalPending: 321,
+    totalPartial: 0,
+    countReceived: 23,
+    countPending: 48,
+    countPartial: 0,
+    particularReceived: 10350,
+    particularPending: 321,
+    particularCountReceived: 23,
+    particularCountPending: 42
+  }
+]
+🔍 Insurance Match Stage: {
+  "status": {
+    "$ne": "canceled"
+  },
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-01",
+        "$lte": "2026-03-31"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-01T00:00:00.000Z",
+        "$lte": "2026-03-31T00:00:00.000Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+[2026-03-17T16:23:23.390Z] GET → /api/financial/convenio/faturamentos
+🏥 Insurance Result: [
+  {
+    _id: null,
+    totalInsuranceProduction: 480,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 480,
+    countInsuranceTotal: 6,
+    countInsuranceReceived: 0,
+    countInsurancePending: 6
+  }
+]
+[2026-03-17T16:23:23.409Z] GET → /api/financial/v2/overview
+[ConvenioRoutes] Buscando faturamentos para 3/2026
+[ConvenioMetrics] Buscando faturamentos de 3/2026
+📊 /totals response: {
+  totals: {
+    totalReceived: 10350,
+    totalPending: 321,
+    totalPartial: 0,
+    countReceived: 23,
+    countPending: 48,
+    countPartial: 0,
+    particularReceived: 10350,
+    particularPending: 321,
+    particularCountReceived: 23,
+    particularCountPending: 42,
+    totalInsuranceProduction: 480,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 480,
+    countInsuranceTotal: 6,
+    countInsuranceReceived: 0,
+    countInsurancePending: 6,
+    totalCombined: 10830,
+    totalAReceberAcumulado: 17812.010000000002,
+    particularPendingAccumulated: 12432.01,
+    insurancePendingAccumulated: 5380,
+    aReceberMes: 801
+  },
+  dateRange: { start: 2026-03-01T00:00:00.000Z, end: 2026-03-31T00:00:00.000Z }
+}
+[2026-03-17T16:23:23.590Z] GET → /api/financial/convenio/faturamentos
+[ConvenioRoutes] Buscando faturamentos para 3/2026
+[ConvenioMetrics] Buscando faturamentos de 3/2026
+[2026-03-17T16:23:29.624Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:23:39.341Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:23:49.056Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:23:50.173Z] GET → /api/pre-agendamento
+[2026-03-17T16:23:58.762Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:24:09.041Z] GET → /api/expenses
+[2026-03-17T16:24:09.045Z] GET → /api/financial/v2/overview
+[2026-03-17T16:24:09.222Z] GET → /api/expenses
+[2026-03-17T16:24:09.375Z] GET → /api/financial/v2/overview
+[2026-03-17T16:24:09.473Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:24:15.499Z] GET → /api/planning
+[2026-03-17T16:24:15.501Z] GET → /api/financial/v2/overview
+[2026-03-17T16:24:15.503Z] GET → /api/provisionamento/projecao-mes
+[2026-03-17T16:24:15.505Z] GET → /api/provisionamento
+Mês: 3/2026 | Início: 2026-03-01 | Fim: 2026-03-31 | Hoje: 2026-03-17
+Status: ATUAL
+[Planning GET] 🔍 Filtros: {}
+[Planning GET] 📊 Encontrados 3 planejamentos
+[Planning GET] 🔄 Recalculando todos os planejamentos...
+[Planning Update] 📊 Atualizando planejamento 69ab7c23678f0935eafa7538
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[2026-03-17T16:24:15.952Z] GET → /api/financial/v2/overview
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[2026-03-17T16:24:16.232Z] GET → /api/provisionamento/projecao-mes
+Mês: 3/2026 | Início: 2026-03-01 | Fim: 2026-03-31 | Hoje: 2026-03-17
+Status: ATUAL
+[Planning Update] 📊 Atualizando planejamento 69ab7c82678f0935eafa755b
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 699660c046f84a6ecf38a464
+[Planning Update] 📅 Período: 2026-02-01 a 2026-02-28
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 166
+[Planning Update]    - Receita Total (inclui a receber): R$ 23940.1
+[Planning Update]      ├─ Particular: R$ 16520.1
+[Planning Update]      ├─ Convênio (recebido): R$ 1820
+[Planning Update]      └─ Convênio (a receber): R$ 5600
+[Planning Update]    - Horas: 100.00h
+[2026-03-17T16:24:16.971Z] GET → /api/planning
+[Planning GET] 🔍 Filtros: {}
+[Planning GET] 📊 Encontrados 3 planejamentos
+[Planning GET] 🔄 Recalculando todos os planejamentos...
+[Planning Update] 📊 Atualizando planejamento 69ab7c23678f0935eafa7538
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 69ab7c82678f0935eafa755b
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 699660c046f84a6ecf38a464
+[Planning Update] 📅 Período: 2026-02-01 a 2026-02-28
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 166
+[Planning Update]    - Receita Total (inclui a receber): R$ 23940.1
+[Planning Update]      ├─ Particular: R$ 16520.1
+[Planning Update]      ├─ Convênio (recebido): R$ 1820
+[Planning Update]      └─ Convênio (a receber): R$ 5600
+[Planning Update]    - Horas: 100.00h
+[2026-03-17T16:24:17.810Z] GET → /api/provisionamento
+[2026-03-17T16:24:19.150Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:24:20.569Z] GET → /api/pre-agendamento
+[2026-03-17T16:24:28.864Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:24:39.534Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:24:49.243Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:24:50.368Z] GET → /api/pre-agendamento
+[2026-03-17T16:24:58.953Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:25:09.550Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:25:19.261Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:25:20.695Z] GET → /api/pre-agendamento
+[2026-03-17T16:25:28.965Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:25:39.720Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:25:49.401Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:25:50.529Z] GET → /api/pre-agendamento
+[2026-03-17T16:25:59.086Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:26:08.844Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:26:19.466Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:26:20.898Z] GET → /api/pre-agendamento
+⏳ Após filtro, nenhum follow-up válido.
+[2026-03-17T16:26:38.678Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:26:49.634Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:26:50.747Z] GET → /api/pre-agendamento
+[2026-03-17T16:26:59.341Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:27:09.051Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:27:19.749Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:27:21.167Z] GET → /api/pre-agendamento
+[2026-03-17T16:27:29.431Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:27:39.133Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:27:48.839Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:27:49.958Z] GET → /api/pre-agendamento
+[2026-03-17T16:27:59.545Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:28:09.196Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:28:18.891Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:28:20.317Z] GET → /api/pre-agendamento
+[2026-03-17T16:28:29.644Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:28:39.298Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:28:48.996Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:28:50.120Z] GET → /api/pre-agendamento
+[2026-03-17T16:28:59.666Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:29:09.485Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:29:19.138Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:29:20.529Z] GET → /api/pre-agendamento
+[2026-03-17T16:29:28.834Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+⏳ Após filtro, nenhum follow-up válido.
+[2026-03-17T16:29:39.390Z] GET → /api/payments/daily-closing
+[2026-03-17T16:29:39.393Z] GET → /api/payments/totals
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 2080,
+    totalPending: 160,
+    totalPartial: 0,
+    countReceived: 4,
+    countPending: 3,
+    countPartial: 0,
+    particularReceived: 2080,
+    particularPending: 160,
+    particularCountReceived: 4,
+    particularCountPending: 3
+  }
+]
+🔍 Insurance Match Stage: {
+  "status": {
+    "$ne": "canceled"
+  },
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-16",
+        "$lte": "2026-03-17"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-16T03:00:00.000Z",
+        "$lte": "2026-03-17T02:59:59.999Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+🏥 Insurance Result: []
+⏱️ Query Sessions: 122.785ms
+⏱️ Bulk Update Appointments: 80.693ms
+[2026-03-17T16:29:39.611Z] GET → /api/whatsapp/contacts
+📊 /totals response: {
+  totals: {
+    totalReceived: 2080,
+    totalPending: 160,
+    totalPartial: 0,
+    countReceived: 4,
+    countPending: 3,
+    countPartial: 0,
+    particularReceived: 2080,
+    particularPending: 160,
+    particularCountReceived: 4,
+    particularCountPending: 3,
+    totalInsuranceProduction: 0,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 0,
+    countInsuranceTotal: 0,
+    countInsuranceReceived: 0,
+    countInsurancePending: 0,
+    totalCombined: 2080,
+    totalAReceberAcumulado: 17812.010000000002,
+    particularPendingAccumulated: 12432.01,
+    insurancePendingAccumulated: 5380,
+    aReceberMes: 160
+  },
+  dateRange: { start: 2026-03-16T03:00:00.000Z, end: 2026-03-17T02:59:59.999Z }
+}
+[2026-03-17T16:29:39.666Z] GET → /api/payments/totals
+⏱️ Parallel Queries: 100.423ms
+
+📊 RESUMO PAGAMENTOS:
+   Total buscados: 0
+   Filtrados do dia: 0
+   Total em dinheiro: R$0
+
+
+🕐 Processando 2 appointments para timeSlots...
+  📌 Leandro Fernandes da Silva - 17:20 - individual_session - Tatiana Celuta Peres
+  📌 Joaquim Henrique de Assis Tavares - 15:20 - evaluation - Mayra Magda Mendes Oliveira
+
+🕐 TimeSlots criados: 2
+  15:20: 1 appointments
+    - Joaquim Henrique de Assis Tavares (evaluation)
+  17:20: 1 appointments
+    - Leandro Fernandes da Silva (individual_session)
+
+📊 FECHAMENTO FINAL 2026-03-17
+✅ Agendamentos válidos: 2
+💰 Recebido: 0
+📅 Previsto: 0
+⏳ A receber: 0
+📦 Pagamentos processados: 0
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:29:39.705Z] GET → /api/payments/daily-closing
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 2080,
+    totalPending: 160,
+    totalPartial: 0,
+    countReceived: 4,
+    countPending: 3,
+    countPartial: 0,
+    particularReceived: 2080,
+    particularPending: 160,
+    particularCountReceived: 4,
+    particularCountPending: 3
+  }
+]
+🔍 Insurance Match Stage: {
+  "status": {
+    "$ne": "canceled"
+  },
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-16",
+        "$lte": "2026-03-17"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-16T03:00:00.000Z",
+        "$lte": "2026-03-17T02:59:59.999Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+🏥 Insurance Result: []
+⏱️ Query Sessions: 61.432ms
+⏱️ Bulk Update Appointments: 53.794ms
+📊 /totals response: {
+  totals: {
+    totalReceived: 2080,
+    totalPending: 160,
+    totalPartial: 0,
+    countReceived: 4,
+    countPending: 3,
+    countPartial: 0,
+    particularReceived: 2080,
+    particularPending: 160,
+    particularCountReceived: 4,
+    particularCountPending: 3,
+    totalInsuranceProduction: 0,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 0,
+    countInsuranceTotal: 0,
+    countInsuranceReceived: 0,
+    countInsurancePending: 0,
+    totalCombined: 2080,
+    totalAReceberAcumulado: 17812.010000000002,
+    particularPendingAccumulated: 12432.01,
+    insurancePendingAccumulated: 5380,
+    aReceberMes: 160
+  },
+  dateRange: { start: 2026-03-16T03:00:00.000Z, end: 2026-03-17T02:59:59.999Z }
+}
+⏱️ Parallel Queries: 285.32ms
+
+📊 RESUMO PAGAMENTOS:
+   Total buscados: 0
+   Filtrados do dia: 0
+   Total em dinheiro: R$0
+
+
+🕐 Processando 2 appointments para timeSlots...
+  📌 Leandro Fernandes da Silva - 17:20 - individual_session - Tatiana Celuta Peres
+  📌 Joaquim Henrique de Assis Tavares - 15:20 - evaluation - Mayra Magda Mendes Oliveira
+
+🕐 TimeSlots criados: 2
+  15:20: 1 appointments
+    - Joaquim Henrique de Assis Tavares (evaluation)
+  17:20: 1 appointments
+    - Leandro Fernandes da Silva (individual_session)
+
+📊 FECHAMENTO FINAL 2026-03-17
+✅ Agendamentos válidos: 2
+💰 Recebido: 0
+📅 Previsto: 0
+⏳ A receber: 0
+📦 Pagamentos processados: 0
+[2026-03-17T16:29:40.792Z] GET → /api/financial/v2/overview
+[2026-03-17T16:29:40.795Z] GET → /api/financial/convenio/metrics
+[2026-03-17T16:29:40.796Z] GET → /api/payments/totals
+[2026-03-17T16:29:40.799Z] GET → /api/expenses
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 10350,
+    totalPending: 321,
+    totalPartial: 0,
+    countReceived: 23,
+    countPending: 48,
+    countPartial: 0,
+    particularReceived: 10350,
+    particularPending: 321,
+    particularCountReceived: 23,
+    particularCountPending: 42
+  }
+]
+🔍 Insurance Match Stage: {
+  "status": {
+    "$ne": "canceled"
+  },
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-01",
+        "$lte": "2026-03-31"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-01T00:00:00.000Z",
+        "$lte": "2026-03-31T00:00:00.000Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+🏥 Insurance Result: [
+  {
+    _id: null,
+    totalInsuranceProduction: 480,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 480,
+    countInsuranceTotal: 6,
+    countInsuranceReceived: 0,
+    countInsurancePending: 6
+  }
+]
+[2026-03-17T16:29:41.060Z] GET → /api/expenses
+[ConvenioRoutes] Buscando métricas para 3/2026
+[ConvenioMetrics] Calculando métricas para 3/2026
+📊 /totals response: {
+  totals: {
+    totalReceived: 10350,
+    totalPending: 321,
+    totalPartial: 0,
+    countReceived: 23,
+    countPending: 48,
+    countPartial: 0,
+    particularReceived: 10350,
+    particularPending: 321,
+    particularCountReceived: 23,
+    particularCountPending: 42,
+    totalInsuranceProduction: 480,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 480,
+    countInsuranceTotal: 6,
+    countInsuranceReceived: 0,
+    countInsurancePending: 6,
+    totalCombined: 10830,
+    totalAReceberAcumulado: 17812.010000000002,
+    particularPendingAccumulated: 12432.01,
+    insurancePendingAccumulated: 5380,
+    aReceberMes: 801
+  },
+  dateRange: { start: 2026-03-01T00:00:00.000Z, end: 2026-03-31T00:00:00.000Z }
+}
+[2026-03-17T16:29:41.120Z] GET → /api/payments/totals
+💰 Cash Result: [
+  {
+    _id: null,
+    totalReceived: 10350,
+    totalPending: 321,
+    totalPartial: 0,
+    countReceived: 23,
+    countPending: 48,
+    countPartial: 0,
+    particularReceived: 10350,
+    particularPending: 321,
+    particularCountReceived: 23,
+    particularCountPending: 42
+  }
+]
+🔍 Insurance Match Stage: {
+  "status": {
+    "$ne": "canceled"
+  },
+  "$or": [
+    {
+      "paymentDate": {
+        "$gte": "2026-03-01",
+        "$lte": "2026-03-31"
+      }
+    },
+    {
+      "paymentDate": {
+        "$exists": false
+      },
+      "createdAt": {
+        "$gte": "2026-03-01T00:00:00.000Z",
+        "$lte": "2026-03-31T00:00:00.000Z"
+      }
+    }
+  ],
+  "billingType": "convenio"
+}
+🏥 Insurance Result: [
+  {
+    _id: null,
+    totalInsuranceProduction: 480,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 480,
+    countInsuranceTotal: 6,
+    countInsuranceReceived: 0,
+    countInsurancePending: 6
+  }
+]
+[2026-03-17T16:29:41.259Z] GET → /api/financial/convenio/metrics
+[2026-03-17T16:29:41.270Z] GET → /api/financial/convenio/faturamentos
+[ConvenioRoutes] Buscando faturamentos para 3/2026
+[ConvenioMetrics] Buscando faturamentos de 3/2026
+[ConvenioRoutes] Buscando métricas para 3/2026
+[ConvenioMetrics] Calculando métricas para 3/2026
+📊 /totals response: {
+  totals: {
+    totalReceived: 10350,
+    totalPending: 321,
+    totalPartial: 0,
+    countReceived: 23,
+    countPending: 48,
+    countPartial: 0,
+    particularReceived: 10350,
+    particularPending: 321,
+    particularCountReceived: 23,
+    particularCountPending: 42,
+    totalInsuranceProduction: 480,
+    totalInsuranceReceived: 0,
+    totalInsurancePending: 480,
+    countInsuranceTotal: 6,
+    countInsuranceReceived: 0,
+    countInsurancePending: 6,
+    totalCombined: 10830,
+    totalAReceberAcumulado: 17812.010000000002,
+    particularPendingAccumulated: 12432.01,
+    insurancePendingAccumulated: 5380,
+    aReceberMes: 801
+  },
+  dateRange: { start: 2026-03-01T00:00:00.000Z, end: 2026-03-31T00:00:00.000Z }
+}
+[2026-03-17T16:29:41.431Z] GET → /api/financial/v2/overview
+[2026-03-17T16:29:41.487Z] GET → /api/financial/convenio/faturamentos
+[ConvenioRoutes] Buscando faturamentos para 3/2026
+[ConvenioMetrics] Buscando faturamentos de 3/2026
+[2026-03-17T16:29:49.256Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:29:50.385Z] GET → /api/pre-agendamento
+[2026-03-17T16:29:58.969Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:30:00.785Z] GET → /api/financial/v2/overview
+[2026-03-17T16:30:00.794Z] GET → /api/expenses
+[2026-03-17T16:30:00.928Z] GET → /api/expenses
+[2026-03-17T16:30:01.113Z] GET → /api/financial/v2/overview
+[2026-03-17T16:30:02.102Z] GET → /api/financial/v2/overview
+[2026-03-17T16:30:02.112Z] GET → /api/planning
+[2026-03-17T16:30:02.117Z] GET → /api/provisionamento/projecao-mes
+[2026-03-17T16:30:02.119Z] GET → /api/provisionamento
+[Planning GET] 🔍 Filtros: {}
+Mês: 3/2026 | Início: 2026-03-01 | Fim: 2026-03-31 | Hoje: 2026-03-17
+Status: ATUAL
+[Planning GET] 📊 Encontrados 3 planejamentos
+[Planning GET] 🔄 Recalculando todos os planejamentos...
+[Planning Update] 📊 Atualizando planejamento 69ab7c23678f0935eafa7538
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[2026-03-17T16:30:02.362Z] GET → /api/financial/v2/overview
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[2026-03-17T16:30:02.445Z] GET → /api/provisionamento/projecao-mes
+Mês: 3/2026 | Início: 2026-03-01 | Fim: 2026-03-31 | Hoje: 2026-03-17
+Status: ATUAL
+[Planning Update] 📊 Atualizando planejamento 69ab7c82678f0935eafa755b
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 699660c046f84a6ecf38a464
+[Planning Update] 📅 Período: 2026-02-01 a 2026-02-28
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 166
+[Planning Update]    - Receita Total (inclui a receber): R$ 23940.1
+[Planning Update]      ├─ Particular: R$ 16520.1
+[Planning Update]      ├─ Convênio (recebido): R$ 1820
+[Planning Update]      └─ Convênio (a receber): R$ 5600
+[Planning Update]    - Horas: 100.00h
+[2026-03-17T16:30:03.353Z] GET → /api/planning
+[Planning GET] 🔍 Filtros: {}
+[Planning GET] 📊 Encontrados 3 planejamentos
+[Planning GET] 🔄 Recalculando todos os planejamentos...
+[Planning Update] 📊 Atualizando planejamento 69ab7c23678f0935eafa7538
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 69ab7c82678f0935eafa755b
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 699660c046f84a6ecf38a464
+[Planning Update] 📅 Período: 2026-02-01 a 2026-02-28
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 166
+[Planning Update]    - Receita Total (inclui a receber): R$ 23940.1
+[Planning Update]      ├─ Particular: R$ 16520.1
+[Planning Update]      ├─ Convênio (recebido): R$ 1820
+[Planning Update]      └─ Convênio (a receber): R$ 5600
+[Planning Update]    - Horas: 100.00h
+[2026-03-17T16:30:04.149Z] GET → /api/provisionamento
+[2026-03-17T16:30:09.655Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:30:17.719Z] GET → /api/provisionamento/projecao-mes
+[2026-03-17T16:30:17.721Z] GET → /api/provisionamento
+Mês: 3/2026 | Início: 2026-03-01 | Fim: 2026-03-31 | Hoje: 2026-03-17
+Status: ATUAL
+[2026-03-17T16:30:18.244Z] GET → /api/provisionamento/projecao-mes
+Mês: 3/2026 | Início: 2026-03-01 | Fim: 2026-03-31 | Hoje: 2026-03-17
+Status: ATUAL
+[2026-03-17T16:30:19.377Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:30:20.789Z] GET → /api/pre-agendamento
+[2026-03-17T16:30:20.855Z] GET → /api/provisionamento
+[2026-03-17T16:30:26.178Z] [PID: 158487] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Tue Mar 17 2026 13:30:00 GMT-0300 (Brasilia Standard Time)! Possible blocking IO or high CPU user at the same process used by node-cron.
+[2026-03-17T16:30:28.987Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:30:39.723Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:30:45.532Z] GET → /api/analytics/financial/patients/list
+[2026-03-17T16:30:45.535Z] GET → /api/analytics/financial/specialties
+[2026-03-17T16:30:45.537Z] GET → /api/analytics/financial/doctors
+[2026-03-17T16:30:45.604Z] GET → /api/analytics/financial/doctors
+[2026-03-17T16:30:45.609Z] GET → /api/analytics/financial/specialties
+[2026-03-17T16:30:45.705Z] GET → /api/analytics/financial/patients/list
+[2026-03-17T16:30:49.490Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:30:50.593Z] GET → /api/pre-agendamento
+[2026-03-17T16:30:53.252Z] [PID: 158487] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Tue Mar 17 2026 13:30:00 GMT-0300 (Brasilia Standard Time)! Possible blocking IO or high CPU user at the same process used by node-cron.
+[2026-03-17T16:30:53.264Z] [PID: 158487] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Tue Mar 17 2026 13:30:00 GMT-0300 (Brasilia Standard Time)! Possible blocking IO or high CPU user at the same process used by node-cron.
+[2026-03-17T16:30:53.271Z] [PID: 158487] [32m[NODE-CRON][32m [33m[WARN][0m missed execution at Tue Mar 17 2026 13:30:00 GMT-0300 (Brasilia Standard Time)! Possible blocking IO or high CPU user at the same process used by node-cron.
+[2026-03-17T16:30:59.206Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:31:08.854Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:31:19.609Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:31:21.007Z] GET → /api/pre-agendamento
+[2026-03-17T16:31:29.225Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:31:37.270Z] GET → /api/planning
+[Planning GET] 🔍 Filtros: {}
+[Planning GET] 📊 Encontrados 3 planejamentos
+[Planning GET] 🔄 Recalculando todos os planejamentos...
+[Planning Update] 📊 Atualizando planejamento 69ab7c23678f0935eafa7538
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 69ab7c82678f0935eafa755b
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 699660c046f84a6ecf38a464
+[Planning Update] 📅 Período: 2026-02-01 a 2026-02-28
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 166
+[Planning Update]    - Receita Total (inclui a receber): R$ 23940.1
+[Planning Update]      ├─ Particular: R$ 16520.1
+[Planning Update]      ├─ Convênio (recebido): R$ 1820
+[Planning Update]      └─ Convênio (a receber): R$ 5600
+[Planning Update]    - Horas: 100.00h
+[2026-03-17T16:31:38.187Z] GET → /api/planning
+[Planning GET] 🔍 Filtros: {}
+[Planning GET] 📊 Encontrados 3 planejamentos
+[Planning GET] 🔄 Recalculando todos os planejamentos...
+[Planning Update] 📊 Atualizando planejamento 69ab7c23678f0935eafa7538
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 69ab7c82678f0935eafa755b
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 699660c046f84a6ecf38a464
+[Planning Update] 📅 Período: 2026-02-01 a 2026-02-28
+[2026-03-17T16:31:38.980Z] GET → /api/whatsapp/contacts
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 166
+[Planning Update]    - Receita Total (inclui a receber): R$ 23940.1
+[Planning Update]      ├─ Particular: R$ 16520.1
+[Planning Update]      ├─ Convênio (recebido): R$ 1820
+[Planning Update]      └─ Convênio (a receber): R$ 5600
+[Planning Update]    - Horas: 100.00h
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:31:49.708Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:31:50.834Z] GET → /api/pre-agendamento
+[2026-03-17T16:31:59.348Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:32:08.982Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:32:19.615Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:32:21.090Z] GET → /api/pre-agendamento
+[2026-03-17T16:32:29.389Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+⏳ Após filtro, nenhum follow-up válido.
+[2026-03-17T16:32:39.006Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:32:46.264Z] DELETE → /api/planning/69ab7c82678f0935eafa755b
+[Planning DELETE] 🗑️ Excluindo planejamento: 69ab7c82678f0935eafa755b
+[2026-03-17T16:32:46.362Z] GET → /api/planning
+[Planning GET] 🔍 Filtros: {}
+[Planning GET] 📊 Encontrados 2 planejamentos
+[Planning GET] 🔄 Recalculando todos os planejamentos...
+[Planning Update] 📊 Atualizando planejamento 69ab7c23678f0935eafa7538
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 699660c046f84a6ecf38a464
+[Planning Update] 📅 Período: 2026-02-01 a 2026-02-28
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 166
+[Planning Update]    - Receita Total (inclui a receber): R$ 23940.1
+[Planning Update]      ├─ Particular: R$ 16520.1
+[Planning Update]      ├─ Convênio (recebido): R$ 1820
+[Planning Update]      └─ Convênio (a receber): R$ 5600
+[Planning Update]    - Horas: 100.00h
+[2026-03-17T16:32:48.716Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:32:49.454Z] GET → /api/provisionamento/projecao-mes
+[2026-03-17T16:32:49.464Z] GET → /api/provisionamento
+Mês: 3/2026 | Início: 2026-03-01 | Fim: 2026-03-31 | Hoje: 2026-03-17
+Status: ATUAL
+[2026-03-17T16:32:49.837Z] GET → /api/provisionamento/projecao-mes
+Mês: 3/2026 | Início: 2026-03-01 | Fim: 2026-03-31 | Hoje: 2026-03-17
+Status: ATUAL
+[2026-03-17T16:32:50.166Z] GET → /api/pre-agendamento
+[2026-03-17T16:32:50.366Z] GET → /api/planning
+[2026-03-17T16:32:50.372Z] GET → /api/financial/v2/overview
+[2026-03-17T16:32:50.374Z] GET → /api/provisionamento/projecao-mes
+[Planning GET] 🔍 Filtros: {}
+Mês: 3/2026 | Início: 2026-03-01 | Fim: 2026-03-31 | Hoje: 2026-03-17
+Status: ATUAL
+[Planning GET] 📊 Encontrados 2 planejamentos
+[Planning GET] 🔄 Recalculando todos os planejamentos...
+[Planning Update] 📊 Atualizando planejamento 69ab7c23678f0935eafa7538
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[2026-03-17T16:32:50.721Z] GET → /api/financial/v2/overview
+[2026-03-17T16:32:50.749Z] GET → /api/provisionamento/projecao-mes
+[Planning Update] 📊 Atualizando planejamento 699660c046f84a6ecf38a464
+[Planning Update] 📅 Período: 2026-02-01 a 2026-02-28
+Mês: 3/2026 | Início: 2026-03-01 | Fim: 2026-03-31 | Hoje: 2026-03-17
+Status: ATUAL
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 166
+[Planning Update]    - Receita Total (inclui a receber): R$ 23940.1
+[Planning Update]      ├─ Particular: R$ 16520.1
+[Planning Update]      ├─ Convênio (recebido): R$ 1820
+[Planning Update]      └─ Convênio (a receber): R$ 5600
+[Planning Update]    - Horas: 100.00h
+[2026-03-17T16:32:52.116Z] GET → /api/planning
+[Planning GET] 🔍 Filtros: {}
+[Planning GET] 📊 Encontrados 2 planejamentos
+[Planning GET] 🔄 Recalculando todos os planejamentos...
+[Planning Update] 📊 Atualizando planejamento 69ab7c23678f0935eafa7538
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 699660c046f84a6ecf38a464
+[Planning Update] 📅 Período: 2026-02-01 a 2026-02-28
+[2026-03-17T16:32:52.511Z] GET → /api/provisionamento
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 166
+[Planning Update]    - Receita Total (inclui a receber): R$ 23940.1
+[Planning Update]      ├─ Particular: R$ 16520.1
+[Planning Update]      ├─ Convênio (recebido): R$ 1820
+[Planning Update]      └─ Convênio (a receber): R$ 5600
+[Planning Update]    - Horas: 100.00h
+[2026-03-17T16:32:54.410Z] GET → /api/provisionamento
+[2026-03-17T16:32:54.878Z] GET → /api/planning
+[Planning GET] 🔍 Filtros: {}
+[Planning GET] 📊 Encontrados 2 planejamentos
+[Planning GET] 🔄 Recalculando todos os planejamentos...
+[Planning Update] 📊 Atualizando planejamento 69ab7c23678f0935eafa7538
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 699660c046f84a6ecf38a464
+[Planning Update] 📅 Período: 2026-02-01 a 2026-02-28
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 166
+[Planning Update]    - Receita Total (inclui a receber): R$ 23940.1
+[Planning Update]      ├─ Particular: R$ 16520.1
+[Planning Update]      ├─ Convênio (recebido): R$ 1820
+[Planning Update]      └─ Convênio (a receber): R$ 5600
+[Planning Update]    - Horas: 100.00h
+[2026-03-17T16:32:55.588Z] GET → /api/planning
+[Planning GET] 🔍 Filtros: {}
+[Planning GET] 📊 Encontrados 2 planejamentos
+[Planning GET] 🔄 Recalculando todos os planejamentos...
+[Planning Update] 📊 Atualizando planejamento 69ab7c23678f0935eafa7538
+[Planning Update] 📅 Período: 2026-03-01 a 2026-03-31
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 65
+[Planning Update]    - Receita Total (inclui a receber): R$ 10830
+[Planning Update]      ├─ Particular: R$ 10350
+[Planning Update]      ├─ Convênio (recebido): R$ 0
+[Planning Update]      └─ Convênio (a receber): R$ 480
+[Planning Update]    - Horas: 43.33h
+[Planning Update] 📊 Atualizando planejamento 699660c046f84a6ecf38a464
+[Planning Update] 📅 Período: 2026-02-01 a 2026-02-28
+[Planning Update] ✅ Dados atualizados:
+[Planning Update]    - Sessões: 166
+[Planning Update]    - Receita Total (inclui a receber): R$ 23940.1
+[Planning Update]      ├─ Particular: R$ 16520.1
+[Planning Update]      ├─ Convênio (recebido): R$ 1820
+[Planning Update]      └─ Convênio (a receber): R$ 5600
+[Planning Update]    - Horas: 100.00h
+[2026-03-17T16:32:56.159Z] GET → /api/provisionamento
+[2026-03-17T16:32:59.634Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:33:09.196Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:33:18.790Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:33:19.910Z] GET → /api/pre-agendamento
+[2026-03-17T16:33:29.747Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:33:39.305Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:33:48.859Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:33:49.984Z] GET → /api/pre-agendamento
+[2026-03-17T16:33:59.744Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:34:09.480Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:34:18.991Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:34:20.376Z] GET → /api/pre-agendamento
+[2026-03-17T16:34:28.692Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
+  type: 'string'
+}
+[2026-03-17T16:34:39.538Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 597 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5562985040188',
+  leadId: '695520def60604a665b0b228',
   type: 'string'
 }

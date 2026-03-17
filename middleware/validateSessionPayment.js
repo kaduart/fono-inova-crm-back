@@ -20,12 +20,12 @@ export const validateSessionPayment = async (req, res, next) => {
             });
         }
 
-        if (session.status !== 'paid') {
+        if (!session.isPaid && session.paymentStatus !== 'paid') {
             return res.status(403).json({
                 error: "Sessão não paga",
                 message: "Efetue o pagamento para utilizar esta sessão",
                 sessionId: sessionId,
-                currentStatus: session.status
+                currentStatus: session.paymentStatus
             });
         }
 

@@ -48,22 +48,48 @@ async function dispatchPendingFollowups() {
     }
 
     // filtra followups que NÃO devem ser enviados
+    let skippedCount = { noLead: 0, agendado: 0, converted: 0, convertedToPatient: 0, stopAutomation: 0, recentInbound: 0 };
+    
     const checks = await Promise.all(
       pend.map(async (f) => {
         const lead = f.lead;
 
         // se populate falhou ou lead nulo -> joga fora (evita crash)
-        if (!lead?._id) return null;
+        if (!lead?._id) {
+          skippedCount.noLead++;
+          console.log(chalk.yellow(`[FOLLOWUP-SKIP] ${f._id}: Lead não encontrado`));
+          return null;
+        }
 
         // regras de exclusão
-        if (lead.status === "agendado") return null;
-        if (lead.status === "converted") return null;
-        if (lead.convertedToPatient) return null;
+        if (lead.status === "agendado") {
+          skippedCount.agendado++;
+          console.log(chalk.yellow(`[FOLLOWUP-SKIP] ${f._id}: Lead status='agendado'`));
+          return null;
+        }
+        if (lead.status === "converted") {
+          skippedCount.converted++;
+          console.log(chalk.yellow(`[FOLLOWUP-SKIP] ${f._id}: Lead status='converted'`));
+          return null;
+        }
+        if (lead.convertedToPatient) {
+          skippedCount.convertedToPatient++;
+          console.log(chalk.yellow(`[FOLLOWUP-SKIP] ${f._id}: Lead convertedToPatient=true`));
+          return null;
+        }
 
         // ⚠️ se stopAutomation é do LEAD, usa lead.stopAutomation
         // se for do contact embedado, usa lead.contact?.stopAutomation
-        if (lead.stopAutomation === true) return null;
-        if (lead.contact?.stopAutomation === true) return null;
+        if (lead.stopAutomation === true) {
+          skippedCount.stopAutomation++;
+          console.log(chalk.yellow(`[FOLLOWUP-SKIP] ${f._id}: Lead stopAutomation=true`));
+          return null;
+        }
+        if (lead.contact?.stopAutomation === true) {
+          skippedCount.stopAutomation++;
+          console.log(chalk.yellow(`[FOLLOWUP-SKIP] ${f._id}: Contact stopAutomation=true`));
+          return null;
+        }
 
         const recentInbound = await Message.findOne({
           lead: lead._id,
@@ -71,7 +97,12 @@ async function dispatchPendingFollowups() {
           timestamp: { $gte: new Date(Date.now() - 1000 * 60 * 60 * 12) }
         }).lean();
 
-        if (recentInbound) return null;
+        if (recentInbound) {
+          skippedCount.recentInbound++;
+          const minsAgo = Math.round((Date.now() - new Date(recentInbound.timestamp).getTime()) / 60000);
+          console.log(chalk.yellow(`[FOLLOWUP-SKIP] ${f._id}: Mensagem inbound recente (${minsAgo}min atrás)`));
+          return null;
+        }
 
         return f;
       })
@@ -79,9 +110,8 @@ async function dispatchPendingFollowups() {
 
     const filtered = checks.filter(Boolean);
 
-
     if (!filtered.length) {
-      console.log(chalk.gray("⏳ Após filtro, nenhum follow-up válido."));
+      console.log(chalk.gray(`⏳ Após filtro, nenhum follow-up válido. Skipped:`, skippedCount));
       return;
     }
 
