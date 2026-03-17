@@ -37,16 +37,10 @@ router.post('/add', flexibleAuth, async (req, res) => {
       });
     }
 
-    // Check for duplicate
-    const normalizedName = fullName.trim().toLowerCase();
+    // Duplicata apenas por CPF (telefone/email/nome NÃO são únicos: mãe com vários filhos, homônimos)
     let existing = null;
-    
-    const query = [{ fullName: { $regex: new RegExp(`^${normalizedName}$`, 'i') } }];
-    if (cpf) query.push({ cpf });
-    if (phone) query.push({ phone: phone.replace(/\D/g, '') });
-    
-    if (query.length > 0) {
-      existing = await Patient.findOne({ $or: query });
+    if (cpf) {
+      existing = await Patient.findOne({ cpf });
     }
 
     if (existing) {
@@ -75,6 +69,7 @@ router.post('/add', flexibleAuth, async (req, res) => {
     return res.status(201).json({
       success: true,
       message: 'Paciente adicionado com sucesso!',
+      data: newPatient,
       patient: newPatient
     });
   } catch (err) {
