@@ -106,7 +106,7 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     const patientObjectId = toObjectId(patientId);
     const excludeSelf = appointmentId ? { _id: { $ne: toObjectId(appointmentId) } } : {};
 
-    const [doctorConflict, patientConflict, preConflict] = await Promise.all([
+    const [doctorConflict, patientConflict] = await Promise.all([
       Appointment.findOne({
         doctor: doctorObjectId,
         date,
@@ -126,13 +126,6 @@ export const checkAppointmentConflicts = async (req, res, next) => {
       })
         .populate("doctor", "fullName")
         .lean(),
-
-      PreAgendamento.findOne({
-        professionalId: doctorObjectId,
-        preferredDate: date,
-        preferredTime: timeHHmm,
-        status: { $nin: ['agendado', 'descartado', 'desistiu', 'cancelado', 'expirado'] },
-      }).lean(),
     ]);
 
     if (doctorConflict) {
@@ -158,18 +151,6 @@ export const checkAppointmentConflicts = async (req, res, next) => {
           existingAppointment: patientConflict,
         },
         suggestion: "Por favor, escolha outro horário ou paciente",
-      });
-    }
-
-    if (preConflict) {
-      return res.status(409).json({
-        error: "Conflito com pré-agendamento",
-        message: "O médico já possui um pré-agendamento pendente neste horário",
-        conflict: {
-          preAgendamentoId: preConflict._id,
-          patientName: preConflict.patientInfo?.fullName || "Nome não disponível",
-        },
-        suggestion: "Por favor, escolha outro horário",
       });
     }
 

@@ -184,8 +184,9 @@ export const mapPreAgendamentoToEvent = (pre) => {
         responsible: "",
         phone: pre.patientInfo?.phone || "",
         visualFlag: 'pending',
+        suggestedValue: pre.suggestedValue || 0,
         // ❌ Removido: __isPreAgendamento - agora é tratado como agendamento normal
-        patient: { 
+        patient: {
             fullName: pName,
             phone: pre.patientInfo?.phone || "",
             dateOfBirth: pre.patientInfo?.birthDate || "",
