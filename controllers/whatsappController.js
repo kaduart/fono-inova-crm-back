@@ -1363,13 +1363,16 @@ async function processMessageStatus(status) {
             console.log(`[WEBHOOK-STATUS] ✅ Mensagem aceita pelo WhatsApp para ${recipient_id}`);
         }
         
-        // Se falhou, DELETAR mensagem do banco (não entregue = não existe)
+        // Se falhou, marcar como failed e tentar fallback
         if (msgStatus === 'failed' && errors) {
             console.error(`[WEBHOOK-STATUS] ❌ FALHA ao entregar para ${recipient_id}:`, errors);
 
-            // Deletar mensagem do banco
-            await Message.deleteOne({ waMessageId: messageId });
-            console.log(`[WEBHOOK-STATUS] 🗑️ Mensagem ${messageId} deletada do BD (não entregue)`);
+            // Atualizar status da mensagem para failed (não deletar - usuário precisa ver)
+            msg.status = 'failed';
+            msg.error = errors[0]?.title || errors[0]?.message || 'Unknown error';
+            msg.errorCode = errors[0]?.code || null;
+            await msg.save();
+            console.log(`[WEBHOOK-STATUS] ⚠️ Mensagem ${messageId} marcada como 'failed' no BD`);
 
             // 🔄 FALLBACK 131047: janela de 24h expirada → envia template de recontato
             const is24hError = errors.some(e => e.code === 131047);

@@ -12,6 +12,7 @@ import Lead from "../models/Leads.js"; // ajuste o path
 import Message from "../models/Message.js";
 import { getMetaToken, clearMetaTokenCache } from "../utils/metaToken.js";
 import { normalizeE164BR, sanitizePhoneBeforeSend } from "../utils/phone.js";
+import { getIo } from "../config/socket.js";
 
 dotenv.config();
 
@@ -419,8 +420,9 @@ export async function sendTemplateMessage({
     // }
 
     // 💾 Registra a mensagem no CRM (Message)
+    let savedMessage = null;
     if (lead) {
-        await registerMessage({
+        savedMessage = await registerMessage({
             leadId: lead,
             contactId,
             patientId,
@@ -438,6 +440,31 @@ export async function sendTemplateMessage({
                 userId
             },
         });
+
+        // 🔄 EMITE SOCKET para atualizar o chat em tempo real
+        try {
+            const io = getIo();
+            if (io && savedMessage) {
+                io.emit("message:new", {
+                    id: String(savedMessage._id),
+                    from: savedMessage.from,
+                    to: savedMessage.to,
+                    direction: savedMessage.direction,
+                    type: savedMessage.type,
+                    content: savedMessage.content,
+                    text: savedMessage.content,
+                    status: savedMessage.status,
+                    timestamp: savedMessage.timestamp,
+                    leadId: String(savedMessage.lead || lead),
+                    contactId: String(savedMessage.contact || contactId || ""),
+                    metadata: savedMessage.metadata || { templateName: template, sentBy, userId },
+                    templateName: template
+                });
+                console.log(`[SOCKET] Template '${template}' emitido para o chat em tempo real`);
+            }
+        } catch (socketError) {
+            console.warn("⚠️ Erro ao emitir socket (não crítico):", socketError.message);
+        }
     }
 
     if (!res.ok) {
@@ -445,7 +472,7 @@ export async function sendTemplateMessage({
         throw new Error(data.error?.message || "Erro ao enviar template WhatsApp");
     }
 
-    return { ...data, waMessageId };
+    return { ...data, waMessageId, savedMessage };
 }
 
 

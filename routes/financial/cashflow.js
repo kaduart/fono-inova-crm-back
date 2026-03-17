@@ -115,9 +115,10 @@ router.get('/summary', auth, async (req, res) => {
         }
       ]),
 
-      // 3. Agendamentos CRIADOS no período (novas entradas no sistema)
+      // 3. Agendamentos CRIADOS no período (novas entradas no sistema - EXCLUI PACOTES)
       Appointment.find({
-        createdAt: { $gte: startDateTime, $lte: endDateTime }
+        createdAt: { $gte: startDateTime, $lte: endDateTime },
+        package: { $exists: false }  // Exclui appointments de pacote (já contado nos pacotes)
       })
         .populate('patient', 'fullName phoneNumber')
         .populate('doctor', 'fullName specialty')

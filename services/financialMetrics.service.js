@@ -15,6 +15,7 @@ import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import Package from '../models/Package.js';
 import Appointment from '../models/Appointment.js';
+import PatientBalance from '../models/PatientBalance.js';
 
 class FinancialMetricsService {
   
@@ -95,14 +96,38 @@ class FinancialMetricsService {
     const start = period.startDate;
     const end = period.endDate;
 
-    // Helper para calcular valor real: sessionValue se > 0, senão pkg.insuranceGrossAmount
+    // Helper: sessionValue → pkg.insuranceGrossAmount → payment.insurance.grossAmount
     const valorReal = {
       $cond: {
         if: { $gt: ['$sessionValue', 0] },
         then: '$sessionValue',
-        else: { $ifNull: ['$pkg.insuranceGrossAmount', 0] }
+        else: {
+          $cond: {
+            if: { $gt: ['$pkg.insuranceGrossAmount', 0] },
+            then: '$pkg.insuranceGrossAmount',
+            else: { $ifNull: [{ $arrayElemAt: ['$linkedPayment.grossAmount', 0] }, 0] }
+          }
+        }
       }
     };
+
+    // Stages comuns para lookup de package + payment (triple-fallback)
+    const lookupStages = [
+      { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg' } },
+      { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: 'payments',
+          let: { sid: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$session', '$$sid'] }, status: { $ne: 'canceled' } } },
+            { $project: { grossAmount: '$insurance.grossAmount' } },
+            { $limit: 1 }
+          ],
+          as: 'linkedPayment'
+        }
+      }
+    ];
 
     // 1️⃣ CONVÊNIO ATENDIDO (Produção) - Sessões realizadas de convênio
     const atendidoAgg = await Session.aggregate([
@@ -113,8 +138,7 @@ class FinancialMetricsService {
           date: { $gte: start.toISOString().split('T')[0], $lte: end.toISOString().split('T')[0] }
         }
       },
-      { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg' } },
-      { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+      ...lookupStages,
       {
         $group: {
           _id: null,
@@ -134,10 +158,11 @@ class FinancialMetricsService {
           date: { $gte: start.toISOString().split('T')[0], $lte: end.toISOString().split('T')[0] }
         }
       },
+      ...lookupStages,
       {
         $group: {
           _id: null,
-          total: { $sum: '$sessionValue' },
+          total: { $sum: valorReal },
           count: { $sum: 1 }
         }
       }
@@ -152,8 +177,7 @@ class FinancialMetricsService {
           date: { $gte: start.toISOString().split('T')[0], $lte: end.toISOString().split('T')[0] }
         }
       },
-      { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg' } },
-      { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+      ...lookupStages,
       {
         $group: {
           _id: null,
@@ -229,24 +253,11 @@ class FinancialMetricsService {
           ]
         }
       },
-      {
-        $lookup: {
-          from: 'packages',
-          localField: 'package',
-          foreignField: '_id',
-          as: 'pkg'
-        }
-      },
-      {
-        $unwind: {
-          path: '$pkg',
-          preserveNullAndEmptyArrays: true
-        }
-      },
+      ...lookupStages,
       {
         $group: {
           _id: null,
-          total: { $sum: { $ifNull: ['$pkg.insuranceGrossAmount', 0] } },
+          total: { $sum: valorReal },
           count: { $sum: 1 }
         }
       }
@@ -296,6 +307,10 @@ class FinancialMetricsService {
 
   // ... (resto do arquivo permanece igual)
   async _calculateCashFromPayments(start, end) {
+    // Converte Date objects para 'YYYY-MM-DD' para comparar com o campo paymentDate (String)
+    const startStr = start.toISOString().split('T')[0];
+    const endStr = end.toISOString().split('T')[0];
+
     // Convênio recebido
     const convenioPayments = await Payment.aggregate([
       {
@@ -319,8 +334,8 @@ class FinancialMetricsService {
       {
         $match: {
           billingType: 'particular',
-          status: 'completed',
-          date: { $gte: start, $lte: end }
+          status: 'paid',
+          paymentDate: { $gte: startStr, $lte: endStr }
         }
       },
       {
@@ -434,7 +449,21 @@ class FinancialMetricsService {
     const start = period.startDate;
     const end = period.endDate;
 
-    // Agregar por tipo de pagamento para análise
+    // Valor real de uma sessão: sessionValue → pkg.insuranceGrossAmount → payment.insurance.grossAmount
+    const valorReal = {
+      $cond: {
+        if: { $gt: ['$sessionValue', 0] },
+        then: '$sessionValue',
+        else: {
+          $cond: {
+            if: { $gt: ['$pkg.insuranceGrossAmount', 0] },
+            then: '$pkg.insuranceGrossAmount',
+            else: { $ifNull: [{ $arrayElemAt: ['$linkedPayment.grossAmount', 0] }, 0] }
+          }
+        }
+      }
+    };
+
     const byPaymentMethod = await Session.aggregate([
       {
         $match: {
@@ -450,24 +479,24 @@ class FinancialMetricsService {
           as: 'pkg'
         }
       },
+      { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+      // Fallback: busca o grossAmount no Payment vinculado
       {
-        $unwind: {
-          path: '$pkg',
-          preserveNullAndEmptyArrays: true
+        $lookup: {
+          from: 'payments',
+          let: { sid: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$session', '$$sid'] }, status: { $ne: 'canceled' } } },
+            { $project: { grossAmount: '$insurance.grossAmount' } },
+            { $limit: 1 }
+          ],
+          as: 'linkedPayment'
         }
       },
       {
         $group: {
           _id: '$paymentMethod',
-          total: {
-            $sum: {
-              $cond: {
-                if: { $gt: ['$sessionValue', 0] },
-                then: '$sessionValue',
-                else: { $ifNull: ['$pkg.insuranceGrossAmount', 0] }
-              }
-            }
-          },
+          total: { $sum: valorReal },
           count: { $sum: 1 }
         }
       }
@@ -595,21 +624,23 @@ class FinancialMetricsService {
 
   /**
    * 📥 A RECEBER (Receivable)
-   * 
-   * Valor faturado mas ainda não recebido.
-   * Base: Payment com status 'billed' (não 'received' nem 'glosa').
+   *
+   * Convênio: Payment.insurance.status = 'billed' no período
+   * Particular do mês: Session.status='completed', paymentMethod!='convenio', isPaid=false, date no período
+   * Saldo devedor total: sum(PatientBalance.currentBalance > 0) — acumulado histórico
    */
   async calculateReceivable(period) {
     const start = period.startDate;
     const end = period.endDate;
+    const startStr = start.toISOString().split('T')[0];
+    const endStr = end.toISOString().split('T')[0];
 
-    // Convênio avulso faturado mas não recebido
+    // 1️⃣ Convênio avulso faturado mas não recebido (acumulado — todos os meses)
     const avulsoReceivable = await Payment.aggregate([
       {
         $match: {
           billingType: 'convenio',
-          'insurance.status': 'billed',
-          'insurance.billedAt': { $gte: start, $lte: end }
+          'insurance.status': 'billed'
         }
       },
       {
@@ -621,32 +652,19 @@ class FinancialMetricsService {
       }
     ]);
 
-    // Sessões de pacote completadas mas não pagas (pending_receipt)
+    // 2️⃣ Convênio pacote: sessões completadas não pagas pelo plano (acumulado — todos os meses)
     const sessionReceivable = await Session.aggregate([
       {
         $match: {
           status: 'completed',
           paymentMethod: 'convenio',
-          $or: [
-            { isPaid: false },
-            { isPaid: { $exists: false } }
-          ]
+          $or: [{ isPaid: false }, { isPaid: { $exists: false } }]
         }
       },
       {
-        $lookup: {
-          from: 'packages',
-          localField: 'package',
-          foreignField: '_id',
-          as: 'pkg'
-        }
+        $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg' }
       },
-      {
-        $unwind: {
-          path: '$pkg',
-          preserveNullAndEmptyArrays: true
-        }
-      },
+      { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
       {
         $group: {
           _id: null,
@@ -656,20 +674,56 @@ class FinancialMetricsService {
       }
     ]);
 
+    // 3️⃣ Particular do mês: débitos do PatientBalance lançados no período e ainda não pagos
+    const particularReceivable = await PatientBalance.aggregate([
+      { $unwind: '$transactions' },
+      {
+        $match: {
+          'transactions.type': 'debit',
+          'transactions.isPaid': false,
+          'transactions.transactionDate': { $gte: start, $lte: end }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$transactions.amount' },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // 4️⃣ Saldo devedor acumulado histórico (PatientBalance)
+    const balanceResult = await PatientBalance.aggregate([
+      { $match: { currentBalance: { $gt: 0 } } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$currentBalance' },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
     const avulsoTotal = avulsoReceivable[0]?.total || 0;
     const sessionTotal = sessionReceivable[0]?.total || 0;
+    const particularTotal = particularReceivable[0]?.total || 0;
+    const balanceTotal = balanceResult[0]?.total || 0;
+    const balanceCount = balanceResult[0]?.count || 0;
 
     return {
-      total: avulsoTotal + sessionTotal,
-      byType: {
-        avulso: { 
-          total: avulsoTotal, 
-          count: avulsoReceivable[0]?.count || 0 
-        },
-        pacote: { 
-          total: sessionTotal, 
-          count: sessionReceivable[0]?.count || 0 
-        }
+      total: avulsoTotal + sessionTotal + particularTotal,
+      convenio: {
+        total: avulsoTotal + sessionTotal,
+        avulso: { total: avulsoTotal, count: avulsoReceivable[0]?.count || 0 },
+        pacote: { total: sessionTotal, count: sessionReceivable[0]?.count || 0 }
+      },
+      particular: {
+        doMes: { total: particularTotal, count: particularReceivable[0]?.count || 0 }
+      },
+      saldoDevedorTotal: {
+        total: balanceTotal,
+        count: balanceCount
       }
     };
   }

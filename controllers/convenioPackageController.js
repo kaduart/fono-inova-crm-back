@@ -214,7 +214,8 @@ export const createConvenioPackage = async (req, res) => {
       paymentMethod: 'convenio',
       visualFlag: 'pending', // Reflete status pendente
       insuranceProvider: guide.insurance,
-      insuranceValue: 0
+      insuranceValue: convenioValue || 0,
+      sessionValue: convenioValue || 0  // ⭐ VALOR PARA PROJEÇÃO FINANCEIRA
     }));
 
     const insertedAppointments = await Appointment.insertMany(appointments, {

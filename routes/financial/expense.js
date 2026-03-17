@@ -155,9 +155,9 @@ router.get('/', auth, async (req, res) => {
                 $group: {
                     _id: null,
                     totalPaid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } },
-                    totalPending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
+                    totalPending: { $sum: { $cond: [{ $in: ['$status', ['pending', 'scheduled']] }, '$amount', 0] } },
                     countPaid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } },
-                    countPending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } }
+                    countPending: { $sum: { $cond: [{ $in: ['$status', ['pending', 'scheduled']] }, 1, 0] } }
                 }
             }
         ]);

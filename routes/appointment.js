@@ -923,7 +923,7 @@ router.get('/', flexibleAuth, async (req, res) => {
         // 🔹 2. BUSCAR PRÉ-AGENDAMENTOS (INTERESSES) NÃO IMPORTADOS
         // Só mostra pré-agendamentos que ainda não viraram appointment
         const preFilter = {
-            status: { $nin: ['agendado', 'descartado', 'desistiu', 'cancelado', 'expirado'] }
+            status: { $nin: ['agendado', 'descartado', 'desistiu', 'expirado'] } // 'cancelado' incluído para aparecer no histórico
         };
 
         // Aplicar filtro de data
@@ -1027,7 +1027,7 @@ router.get('/:id', flexibleAuth, async (req, res) => {
     }
 });
 
-router.get('/with-appointments', async (req, res) => {
+router.get('/with-appointments', flexibleAuth, async (req, res) => {
     try {
         const patients = await Patient.find(/* seu filtro */)
             .select('-__v')
@@ -1385,7 +1385,7 @@ router.delete('/:id', validateId, flexibleAuth, async (req, res) => {
 });
 
 // Histórico de agendamentos por paciente
-router.get('/history/:patientId', async (req, res) => {
+router.get('/history/:patientId', flexibleAuth, async (req, res) => {
     try {
         const { patientId } = req.params;
         const history = await Appointment.find({ patient: patientId }).sort({ date: -1 });
@@ -1408,7 +1408,7 @@ router.get('/history/:patientId', async (req, res) => {
 });
 
 // Cancela um agendamento
-router.patch('/:id/cancel', validateId, auth, async (req, res) => {
+router.patch('/:id/cancel', validateId, flexibleAuth, async (req, res) => {
     try {
         const { reason, confirmedAbsence = false } = req.body;
         console.log('🔍 [Cancel] ID recebido:', req.params.id);
@@ -2467,7 +2467,7 @@ router.patch('/:id/clinical-status', validateId, auth, async (req, res) => {
 });
 
 // NOVO: Confirmação direta de agendamento (Pendente -> Confirmado)
-router.patch('/:id/confirm', validateId, auth, async (req, res) => {
+router.patch('/:id/confirm', validateId, flexibleAuth, async (req, res) => {
     const session = await mongoose.startSession();
     try {
         await session.startTransaction();
@@ -2504,8 +2504,7 @@ router.patch('/:id/confirm', validateId, auth, async (req, res) => {
         if (appointment.session) {
             await Session.findByIdAndUpdate(appointment.session, {
                 $set: {
-                    status: 'confirmed',
-                    // isPaid: true, // REMOVIDO
+                    status: 'completed',
                     updatedAt: new Date()
                 }
             }, { session });

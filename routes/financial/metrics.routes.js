@@ -15,7 +15,8 @@ import {
   getOverview,
   getCash,
   getProduction,
-  getReceivable
+  getReceivable,
+  getReceivableDetail
 } from '../../controllers/financialMetricsController.js';
 
 const router = express.Router();
@@ -60,5 +61,6 @@ router.get('/production', getProduction);
  * Apenas contas a receber
  */
 router.get('/receivable', getReceivable);
+router.get('/receivable-detail', getReceivableDetail);
 
 export default router;

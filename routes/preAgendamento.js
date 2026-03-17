@@ -562,87 +562,96 @@ router.post('/:id/contact', async (req, res) => {
  * Converter para Appointment definitivo
  */
 router.post('/:id/importar', async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  const { id } = req.params;
+  const {
+    doctorId,
+    date,
+    time,
+    sessionValue,
+    serviceType = 'evaluation',
+    paymentMethod = 'pix',
+    notes,
+    birthDate,
+    phone,
+    email,
+    responsible
+  } = req.body;
+
+  // Status original para rollback em caso de falha
+  let originalStatus = null;
 
   try {
-    const { id } = req.params;
-    const {
-      doctorId,
-      date,
-      time,
-      sessionValue,
-      serviceType = 'evaluation',
-      paymentMethod = 'pix',
-      notes,
-      // Dados do paciente que podem vir do frontend
-      birthDate,
-      phone,
-      email,
-      responsible
-    } = req.body;
-
-    console.log('[IMPORTAR] Dados recebidos do frontend:', { 
+    console.log('[IMPORTAR] Dados recebidos do frontend:', {
       birthDate, phone, email, responsible,
-      body: req.body 
+      body: req.body
     });
 
-    // 1. Buscar pré-agendamento com LOCK para evitar duplicatas (race condition)
+    // 1. Lock atômico SEM transação — evita duplicatas e timeout de sessão
+    // Usa status interno 'importando' (nunca setado manualmente) como lock mutex
+    // new: false retorna o doc ANTES da atualização (preserva status original para rollback)
     const pre = await PreAgendamento.findOneAndUpdate(
-      { 
-        _id: id, 
-        status: { $nin: ['agendado', 'descartado', 'desistiu', 'cancelado'] }
+      {
+        _id: id,
+        // 'importando' é status interno de lock — nunca setado pela secretária
+        // Mantém 'em_analise' fora do $nin para não bloquear pré-agendamentos nesse status
+        status: { $nin: ['agendado', 'descartado', 'desistiu', 'cancelado', 'importando'] }
       },
-      { 
-        $set: { status: 'em_analise' }
-      },
-      { 
-        session,
-        new: true,
-        runValidators: false
-      }
+      { $set: { status: 'importando' } },
+      { new: false, runValidators: false }
     );
-    
+
     if (!pre) {
-      const alreadyImported = await PreAgendamento.findById(id).session(session);
-      if (alreadyImported?.status === 'agendado') {
-        throw new Error('Já foi importado anteriormente');
+      const existing = await PreAgendamento.findById(id).lean();
+      if (existing?.status === 'agendado') {
+        // Já importado com sucesso — retorna idempotente
+        return res.json({
+          success: true,
+          message: 'Já foi importado anteriormente',
+          appointmentId: existing.importedToAppointment
+        });
       }
-      throw new Error('Pré-agendamento não encontrado ou não pode ser importado');
+      if (existing?.status === 'importando') {
+        return res.status(409).json({ success: false, error: 'Importação já em andamento, aguarde alguns segundos' });
+      }
+      return res.status(404).json({ success: false, error: 'Pré-agendamento não encontrado ou não pode ser importado' });
     }
 
-    console.log('[IMPORTAR] Dados atuais do pré-agendamento:', {
-      patientInfo: pre.patientInfo
-    });
+    // Guarda status original para rollback em caso de erro
+    originalStatus = pre.status;
 
-    // 2. Buscar doutor
-    const doctor = await Doctor.findById(doctorId).session(session);
-    if (!doctor) throw new Error('Doutor não encontrado');
+    console.log('[IMPORTAR] Dados atuais do pré-agendamento:', { patientInfo: pre.patientInfo });
 
-    // 3. Atualizar dados do paciente no pré-agendamento (se vieram do frontend)
-    if (birthDate) {
-      console.log('[IMPORTAR] Atualizando birthDate:', birthDate);
-      pre.patientInfo.birthDate = birthDate;
+    // 2. Buscar doutor (sem session — fora de transação)
+    const doctor = await Doctor.findById(doctorId);
+    if (!doctor) {
+      await PreAgendamento.findByIdAndUpdate(id, { $set: { status: originalStatus } });
+      return res.status(404).json({ success: false, error: 'Doutor não encontrado' });
     }
-    if (phone) pre.patientInfo.phone = phone;
-    if (email) pre.patientInfo.email = email;
-    if (responsible) pre.patientInfo.responsible = responsible;
-    await pre.save({ session });
-    
-    console.log('[IMPORTAR] Dados após atualização:', {
-      patientInfo: pre.patientInfo
-    });
 
-    // 4. Importar usando bookFixedSlot
+    // 3. Atualizar dados do paciente (se vieram do frontend)
+    const patientUpdate = {};
+    if (birthDate) { patientUpdate['patientInfo.birthDate'] = birthDate; console.log('[IMPORTAR] Atualizando birthDate:', birthDate); }
+    if (phone)     patientUpdate['patientInfo.phone'] = phone;
+    if (email)     patientUpdate['patientInfo.email'] = email;
+    if (responsible) patientUpdate['patientInfo.responsible'] = responsible;
+
+    let updatedPre = pre;
+    if (Object.keys(patientUpdate).length > 0) {
+      updatedPre = await PreAgendamento.findByIdAndUpdate(id, { $set: patientUpdate }, { new: true, runValidators: false });
+    }
+
+    console.log('[IMPORTAR] Dados após atualização:', { patientInfo: updatedPre.patientInfo });
+
+    // 4. Criar agendamento — completamente fora de transação MongoDB
     const result = await bookFixedSlot({
       patientInfo: {
-        fullName: pre.patientInfo.fullName,
-        birthDate: pre.patientInfo.birthDate,
-        phone: pre.patientInfo.phone,
-        email: pre.patientInfo.email
+        fullName: updatedPre.patientInfo.fullName,
+        birthDate: updatedPre.patientInfo.birthDate,
+        phone: updatedPre.patientInfo.phone,
+        email: updatedPre.patientInfo.email
       },
       doctorId,
-      specialty: pre.specialty,
+      specialty: updatedPre.specialty,
       date,
       time,
       sessionType: serviceType === 'evaluation' ? 'avaliacao' : 'sessao',
@@ -650,33 +659,35 @@ router.post('/:id/importar', async (req, res) => {
       paymentMethod,
       sessionValue: Number(sessionValue),
       operationalStatus: 'scheduled',
-      notes: `[IMPORTADO DO PRE-AGENDAMENTO] ${notes || ''}\n${pre.secretaryNotes || ''}`,
-      source: pre.source || 'outro', // 📈 ROI
-      preAgendamentoId: String(pre._id) // 📈 ROI
+      notes: `[IMPORTADO DO PRE-AGENDAMENTO] ${notes || ''}\n${updatedPre.secretaryNotes || ''}`,
+      source: updatedPre.source || 'outro',
+      preAgendamentoId: String(updatedPre._id)
     });
 
     if (!result.success) {
-      throw new Error(result.error || 'Erro ao criar agendamento');
+      // Rollback status para o original
+      await PreAgendamento.findByIdAndUpdate(id, { $set: { status: originalStatus } });
+      return res.status(400).json({ success: false, error: result.error || 'Erro ao criar agendamento' });
     }
 
-    // 4. Marcar pré-agendamento como importado (mantém para analytics)
-    pre.status = 'agendado';
-    pre.importedToAppointment = result.appointment._id;
-    pre.importedAt = new Date();
-    if (mongoose.Types.ObjectId.isValid(req.user.id)) {
-      pre.importedBy = req.user.id;
+    // 5. Marcar como importado (mantém para analytics)
+    const finalUpdate = {
+      status: 'agendado',
+      importedToAppointment: result.appointment._id,
+      importedAt: new Date()
+    };
+    if (req.user?.id && mongoose.Types.ObjectId.isValid(req.user.id)) {
+      finalUpdate.importedBy = req.user.id;
     }
-    await pre.save({ session });
+    await PreAgendamento.findByIdAndUpdate(id, { $set: finalUpdate });
 
-    await session.commitTransaction();
-
-    // 🤖 Feedback para AmandaAI/Bots
+    // 6. Socket fire-and-forget (não bloqueia a resposta)
     try {
       const io = getIo();
       io.emit("preagendamento:confirmed", {
-        id: String(pre._id),
+        id: String(updatedPre._id),
         appointmentId: result.appointment._id,
-        source: pre.source
+        source: updatedPre.source
       });
     } catch (e) {
       console.error('⚠️ AmandaAI Feedback Socket error:', e.message);
@@ -690,14 +701,19 @@ router.post('/:id/importar', async (req, res) => {
     });
 
   } catch (error) {
-    await session.abortTransaction();
+    // Tenta restaurar status original se algo inesperado aconteceu
+    if (originalStatus) {
+      try {
+        await PreAgendamento.findOneAndUpdate(
+          { _id: id, status: 'importando' },
+          { $set: { status: originalStatus } }
+        );
+      } catch (rollbackErr) {
+        console.error('[IMPORTAR] Falha no rollback de status:', rollbackErr.message);
+      }
+    }
     console.error('Erro ao importar:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  } finally {
-    session.endSession();
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

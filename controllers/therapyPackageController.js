@@ -383,7 +383,8 @@ export const packageOperations = {
                     serviceType: 'package_session',
                     operationalStatus: 'scheduled',
                     clinicalStatus: 'pending',
-                    paymentStatus: 'pending'
+                    paymentStatus: 'pending',
+                    sessionValue: numericSessionValue  // ⭐ VALOR PARA PROJEÇÃO FINANCEIRA
                 });
             }
 

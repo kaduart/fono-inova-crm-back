@@ -26,6 +26,7 @@ export const calcularProvisionamento = async (mes, ano) => {
     creditoPacotes,
     agendadoConfirmado,
     agendadoPendente,
+    convenioAgendado,
     pipeline,
     custosFixos,
     metricasHistoricas
@@ -34,6 +35,7 @@ export const calcularProvisionamento = async (mes, ano) => {
     calcularCreditoPacotes(periodo),
     calcularAgendadoConfirmado(periodo),
     calcularAgendadoPendente(periodo),
+    calcularConvenioAgendado(periodo),
     calcularPipeline(periodo),
     calcularCustosFixos(periodo),
     calcularMetricasHistoricas()
@@ -72,7 +74,17 @@ export const calcularProvisionamento = async (mes, ano) => {
         percentual: totalProvisionado > 0 ? Math.round((agendadoAltoRisco / totalProvisionado) * 100) : 0,
         quantidade: agendadoConfirmado.quantidade,
         certeza: 0.80,
-        cor: 'warning'
+        cor: 'warning',
+        detalhe: agendadoConfirmado.detalhe || { particular: 0, convenio: 0 }
+      },
+      convenioAgendado: {
+        valor: Math.round(convenioAgendado.total),
+        valorBruto: Math.round(convenioAgendado.total),
+        quantidade: convenioAgendado.quantidade,
+        porConvenio: convenioAgendado.porConvenio || {},
+        detalhes: convenioAgendado.detalhes || [],
+        certeza: 0.85,
+        cor: 'info'
       },
       agendadoPendente: {
         valor: Math.round(agendadoMedioRisco),
@@ -142,10 +154,12 @@ const calcularGarantido = async (periodo) => {
 
 /**
  * Crédito em Pacotes (dinheiro "preso" em sessões pagas não utilizadas)
- * - Sessões já pagas mas ainda não consumidas
- * - Não é caixa do mês, mas é dinheiro que o cliente pode usar
+ * - Sessões já pagas mas ainda não consumidas E NÃO CANCELADAS
+ * - Para projeção: só conta sessões que realmente vão acontecer
  */
 const calcularCreditoPacotes = async (periodo) => {
+  const Session = (await import('../models/Session.js')).default;
+  
   const pacotes = await Package.find({
     financialStatus: { $in: ['paid', 'partially_paid'] },
     status: { $in: ['active', 'in-progress'] }
@@ -153,10 +167,32 @@ const calcularCreditoPacotes = async (periodo) => {
 
   const detalhes = [];
   
-  const total = pacotes.reduce((sum, pkg) => {
-    const sessoesPagas = pkg.paidSessions || 0;
-    const sessoesFeitas = pkg.sessionsDone || 0;
-    const sessoesRemanescentes = Math.max(0, sessoesPagas - sessoesFeitas);
+  let total = 0;
+  
+  for (const pkg of pacotes) {
+    // Buscar todas as sessões do pacote
+    const sessoes = await Session.find({
+      package: pkg._id,
+      status: { $nin: ['canceled'] } // Exclui canceladas
+    });
+    
+    // Contar sessões válidas (scheduled, confirmed, completed)
+    const sessoesValidas = sessoes.filter(s => 
+      ['scheduled', 'confirmed', 'completed'].includes(s.status)
+    );
+    
+    const sessoesFeitas = sessoesValidas.filter(s => s.status === 'completed').length;
+    const sessoesAgendadas = sessoesValidas.filter(s => 
+      ['scheduled', 'confirmed'].includes(s.status)
+    ).length;
+    
+    // Crédito = sessões pagas - sessões feitas (mas limitado às sessões agendadas)
+    // Se o paciente tem mais crédito do que sessões agendadas, limitamos ao agendado
+    const sessoesPagas = pkg.paidSessions || 
+                         Math.floor((pkg.totalPaid || 0) / (pkg.sessionValue || 1));
+    const creditoCalculado = Math.max(0, sessoesPagas - sessoesFeitas);
+    const sessoesRemanescentes = Math.min(creditoCalculado, sessoesAgendadas);
+    
     const valor = sessoesRemanescentes * (pkg.sessionValue || 0);
     
     if (valor > 0) {
@@ -167,34 +203,54 @@ const calcularCreditoPacotes = async (periodo) => {
         valorPorSessao: pkg.sessionValue,
         valorTotal: valor
       });
+      
+      total += valor;
     }
-    
-    return sum + valor;
-  }, 0);
+  }
 
   return { total, detalhes };
 };
 
 /**
  * Camada 2: AGENDADO CONFIRMADO (operationalStatus: confirmed/scheduled)
+ * Inclui: particulares pendentes + convênios agendados
+ * NÃO inclui: pacotes particulares já pagos (vão no creditoPacotes)
  */
 const calcularAgendadoConfirmado = async (periodo) => {
-  const agendamentos = await Appointment.find({
+  // 2a. Appointments particulares confirmados (não pagos ainda)
+  const agendamentosParticular = await Appointment.find({
     date: { $gte: periodo.inicio, $lte: periodo.fim },
     operationalStatus: { $in: ['confirmed', 'scheduled'] },
-    paymentStatus: { $nin: ['paid', 'package_paid'] } // Não contar já pagos
+    clinicalStatus: { $nin: ['completed', 'cancelled'] },
+    paymentMethod: { $ne: 'convenio' },
+    paymentStatus: { $nin: ['paid', 'package_paid'] }
   }).select('sessionValue specialty serviceType');
 
+  // 2b. Appointments de convênio (avulso ou pacote) - sempre contam para produção
+  const agendamentosConvenio = await Appointment.find({
+    date: { $gte: periodo.inicio, $lte: periodo.fim },
+    operationalStatus: { $in: ['confirmed', 'scheduled'] },
+    clinicalStatus: { $nin: ['completed', 'cancelled'] },
+    paymentMethod: 'convenio'
+  }).select('sessionValue specialty serviceType');
+
+  // Consolidar por especialidade
   const porEspecialidade = {};
-  agendamentos.forEach(apt => {
+  const todosAgendamentos = [...agendamentosParticular, ...agendamentosConvenio];
+  
+  todosAgendamentos.forEach(apt => {
     const key = `${apt.specialty}_${apt.serviceType}`;
     porEspecialidade[key] = (porEspecialidade[key] || 0) + (apt.sessionValue || 0);
   });
 
   return {
-    total: agendamentos.reduce((sum, a) => sum + (a.sessionValue || 0), 0),
-    quantidade: agendamentos.length,
-    porEspecialidade
+    total: todosAgendamentos.reduce((sum, a) => sum + (a.sessionValue || 0), 0),
+    quantidade: todosAgendamentos.length,
+    porEspecialidade,
+    detalhe: {
+      particular: agendamentosParticular.reduce((sum, a) => sum + (a.sessionValue || 0), 0),
+      convenio: agendamentosConvenio.reduce((sum, a) => sum + (a.sessionValue || 0), 0)
+    }
   };
 };
 
@@ -244,6 +300,55 @@ const calcularAgendadoPendente = async (periodo) => {
     total: pendentes.reduce((sum, a) => sum + (a.sessionValue || 0), 0),
     quantidade: pendentes.length,
     porEspecialidade,
+    detalhes
+  };
+};
+
+/**
+ * PACOTES DE CONVÊNIO AGENDADOS no período
+ * Sessões de pacotes tipo='convenio' agendadas para o mês
+ */
+const calcularConvenioAgendado = async (periodo) => {
+  const Session = (await import('../models/Session.js')).default;
+  
+  // Buscar sessões de pacotes de convênio agendadas no período
+  const sessoesConvenio = await Session.find({
+    date: { $gte: periodo.inicio, $lte: periodo.fim },
+    status: { $in: ['scheduled', 'confirmed'] },
+    paymentMethod: 'convenio'
+  }).populate('package', 'insuranceGrossAmount insuranceProvider');
+
+  let total = 0;
+  const porConvenio = {};
+  const detalhes = [];
+
+  sessoesConvenio.forEach(sessao => {
+    const valor = sessao.sessionValue || 
+                  sessao.package?.insuranceGrossAmount || 
+                  0;
+    
+    total += valor;
+
+    const convenio = sessao.package?.insuranceProvider || 'nao_informado';
+    if (!porConvenio[convenio]) {
+      porConvenio[convenio] = { valor: 0, quantidade: 0 };
+    }
+    porConvenio[convenio].valor += valor;
+    porConvenio[convenio].quantidade += 1;
+
+    detalhes.push({
+      sessaoId: sessao._id,
+      data: sessao.date,
+      hora: sessao.time,
+      convenio,
+      valor
+    });
+  });
+
+  return {
+    total,
+    quantidade: sessoesConvenio.length,
+    porConvenio,
     detalhes
   };
 };

@@ -160,11 +160,12 @@ export const mapPreAgendamentoToEvent = (pre) => {
     const preStatus = pre.status || 'novo';
     const statusLabels = {
         'novo': 'Novo',
-        'em_analise': 'Em Análise', 
+        'em_analise': 'Em Análise',
         'contatado': 'Contatado',
         'confirmado': 'Confirmado',
         'agendado': 'Agendado',
-        'descartado': 'Descartado'
+        'descartado': 'Descartado',
+        'cancelado': 'Cancelado'
     };
 
     return {
