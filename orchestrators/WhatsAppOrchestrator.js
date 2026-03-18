@@ -5,6 +5,7 @@
 import { PRICES, formatPrice, getTherapyPricing } from '../config/pricing.js';
 import { leadRepository } from '../infrastructure/persistence/LeadRepository.js';
 import Leads from '../models/Leads.js';
+import Message from '../models/Message.js';
 import { perceptionService } from '../perception/PerceptionService.js';
 import { findAvailableSlots, autoBookAppointment, buildSlotOptions } from '../services/amandaBookingService.js';
 import { getLatestInsights } from '../services/amandaLearningService.js';
@@ -127,7 +128,7 @@ export default class WhatsAppOrchestrator {
           await suspendState(leadId, currentState, stateData, globalIntent);
         }
         
-        const interruptResponse = this._handleGlobalIntent(globalIntent, freshLead);
+        const interruptResponse = await this._handleGlobalIntent(globalIntent, freshLead);
         
         // Se está em fluxo, dá hint de retomada. Se não, apenas responde
         if (isInFlow) {
@@ -148,7 +149,7 @@ export default class WhatsAppOrchestrator {
           // Verifica se o lead perguntou OUTRA coisa lateral (interrupção em cima de interrupção)
           const anotherGlobal = detectGlobalIntent(text);
           if (anotherGlobal) {
-            const interruptResponse = this._handleGlobalIntent(anotherGlobal, freshLead);
+            const interruptResponse = await this._handleGlobalIntent(anotherGlobal, freshLead);
             const resumeHint = getResumeHint(lastSuspended.state);
             return this._reply(`${interruptResponse}\n\n${resumeHint}`);
           }
@@ -412,7 +413,7 @@ export default class WhatsAppOrchestrator {
           // ✅ Se é uma pergunta já mapeada, responde normalmente
           const globalIntent = detectGlobalIntent(text);
           if (globalIntent) {
-            const answer = this._handleGlobalIntent(globalIntent, freshLead);
+            const answer = await this._handleGlobalIntent(globalIntent, freshLead);
             const resumeHint = getResumeHint(state);
             return this._reply(`${answer}\n\n${resumeHint}`);
           }
@@ -647,10 +648,10 @@ export default class WhatsAppOrchestrator {
   // HANDLERS DE INTERRUPÇÃO GLOBAL
   // ═══════════════════════════════════════════
 
-  _handleGlobalIntent(intentType, lead) {
+  async _handleGlobalIntent(intentType, lead) {
     switch (intentType) {
       case 'PRICE_QUERY':
-        return this._handlePriceInquiry(lead);
+        return await this._handlePriceInquiry(lead);
 
       case 'LOCATION_QUERY':
         return '📍 Ficamos na Av. Brasil, 1234 - Centro de Anápolis/GO.\n\nTem estacionamento fácil na rua! 🚗';
@@ -684,7 +685,7 @@ export default class WhatsAppOrchestrator {
     return '📝 Na **Neuropsicologia** emitimos laudo completo após a avaliação (aprox. 10 sessões).\n\nNas outras especialidades (Psicologia, Fonoaudiologia, Terapia Ocupacional), os profissionais fazem relatórios de acompanhamento, mas *não* emitimos laudos médicos — esses são emitidos apenas por médicos (neuropediatra, psiquiatra, etc.).\n\nVocê está buscando avaliação com laudo? 💚';
   }
 
-  _handlePriceInquiry(lead) {
+  async _handlePriceInquiry(lead) {
     const therapy = lead.therapyArea || lead.stateData?.therapy;
     const info = therapy ? THERAPY_DATA[therapy] : null;
 
@@ -694,7 +695,77 @@ export default class WhatsAppOrchestrator {
       return `Pra ${info.name} ${info.emoji}:\n\n💰 Avaliação: ${valor}\n\nÉ ${info.investimento || 'investimento acessível'} (${info.duracao || '50min'}).\n\nE o melhor: trabalhamos com reembolso de plano! 💚`;
     }
 
-    return `Nossos valores:\n\n💬 Fonoaudiologia: ${PRICES.avaliacaoInicial}\n🧠 Psicologia: ${PRICES.avaliacaoInicial}\n🏃 Fisioterapia: ${PRICES.avaliacaoInicial}\n📚 Psicopedagogia: ${PRICES.avaliacaoInicial}\n🎵 Musicoterapia: ${PRICES.sessaoAvulsa}\n🧩 Neuropsicologia: ${PRICES.neuropsicologica}\n\nTrabalhamos com reembolso de plano! 💚`;
+    // FIX: Buscar mensagens do lead para detectar terapias mencionadas
+    try {
+      const messages = await Message.find({
+        lead: lead._id,
+        direction: 'inbound'
+      }).sort({ timestamp: -1 }).limit(10).lean();
+      
+      const allText = messages.map(m => m.content || '').join(' ');
+      const detectedTherapies = detectAllTherapies(allText);
+      
+      // Se detectou 1-3 terapias, mostrar preços apenas dessas
+      if (detectedTherapies.length > 0 && detectedTherapies.length <= 3) {
+        let priceText = 'Claro! Aqui os valores:\n\n';
+        
+        for (const therapy of detectedTherapies) {
+          const therapyId = typeof therapy === 'object' ? therapy.id : therapy;
+          const therapyKey = therapyId?.toLowerCase();
+          
+          // Mapear nomes para emojis
+          const emojiMap = {
+            'fonoaudiologia': '💬',
+            'speech': '💬',
+            'psicologia': '🧠',
+            'psychology': '🧠',
+            'terapia_ocupacional': '🤲',
+            'occupational_therapy': '🤲',
+            'fisioterapia': '🏃',
+            'physiotherapy': '🏃',
+            'psicopedagogia': '📚',
+            'psychopedagogy': '📚',
+            'musicoterapia': '🎵',
+            'music_therapy': '🎵',
+            'neuropsicologia': '🧩',
+            'neuropsychological': '🧩'
+          };
+          
+          const emoji = emojiMap[therapyKey] || '💚';
+          const pricing = getTherapyPricing(therapyKey) || { avaliacao: 200 };
+          const valor = formatPrice(pricing.avaliacao);
+          
+          // Nome amigável
+          const nameMap = {
+            'fonoaudiologia': 'Fonoaudiologia',
+            'speech': 'Fonoaudiologia',
+            'psicologia': 'Psicologia',
+            'psychology': 'Psicologia',
+            'terapia_ocupacional': 'Terapia Ocupacional',
+            'occupational_therapy': 'Terapia Ocupacional',
+            'fisioterapia': 'Fisioterapia',
+            'physiotherapy': 'Fisioterapia',
+            'psicopedagogia': 'Psicopedagogia',
+            'psychopedagogy': 'Psicopedagogia',
+            'musicoterapia': 'Musicoterapia',
+            'music_therapy': 'Musicoterapia',
+            'neuropsicologia': 'Neuropsicologia',
+            'neuropsychological': 'Neuropsicologia'
+          };
+          const name = nameMap[therapyKey] || therapyKey;
+          
+          priceText += `${emoji} ${name}: ${valor}\n`;
+        }
+        
+        priceText += '\nTrabalhamos com reembolso de plano! 💚\n\nQuer que eu verifique horários pra alguma dessas?';
+        return priceText;
+      }
+    } catch (e) {
+      this.logger.warn('Erro ao buscar terapias para preço:', e.message);
+    }
+
+    // Se não detectou terapias específicas, perguntar qual
+    return `Claro! Pra te passar o valor certinho, qual especialidade você precisa?\n\n💬 Fonoaudiologia\n🧠 Psicologia\n🏃 Fisioterapia\n📚 Psicopedagogia\n🎵 Musicoterapia\n🧩 Neuropsicologia\n\nA avaliação inicial é o primeiro passo pra entender como podemos ajudar 💚`;
   }
 
   // ═══════════════════════════════════════════

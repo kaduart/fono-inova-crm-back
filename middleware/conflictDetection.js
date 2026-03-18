@@ -2,7 +2,6 @@ import mongoose from "mongoose";
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from "../constants/appointmentStatus.js";
 import Appointment from "../models/Appointment.js";
 import Doctor from "../models/Doctor.js";
-import PreAgendamento from "../models/PreAgendamento.js";
 
 /**
  * ✅ SAFE AVAILABILITY + CONFLICT CHECK (drop-in)
@@ -226,19 +225,18 @@ export async function calculateAvailableSlots(doctorId, date) {
     .select("time -_id")
     .lean();
 
-  // 🔒 Bloquear horários que têm pré-agendamentos pendentes
-  // Busca por professionalId OU por professionalName (compatibilidade com registros antigos)
-  const preAgendamentosAtivos = await PreAgendamento.find({
-    preferredDate: date,
-    status: { $nin: ['agendado', 'descartado', 'desistiu', 'cancelado', 'expirado'] },
-    preferredTime: { $exists: true, $ne: null },
+  // pre_agendados já estão incluídos na query acima (operationalStatus: 'pre_agendado'
+  // está dentro de NON_BLOCKING_OPERATIONAL_STATUSES, portanto não bloqueia o slot do doutor)
+  // Mas bloqueamos visualmente para o paciente não ver o slot como livre:
+  const preAgendadosAtivos = await Appointment.find({
+    date,
+    operationalStatus: 'pre_agendado',
     $or: [
-      { professionalId: toObjectId(doctorId) },
-      { professionalId: { $eq: null }, professionalName: { $regex: new RegExp(doctor.fullName, 'i') } },
-      { professionalId: { $exists: false }, professionalName: { $regex: new RegExp(doctor.fullName, 'i') } }
+      { doctor: toObjectId(doctorId) },
+      { professionalName: { $regex: new RegExp(doctor.fullName, 'i') } }
     ]
   })
-    .select("preferredTime -_id")
+    .select("time -_id")
     .lean();
 
   const bookedTimes = new Set(
@@ -247,9 +245,9 @@ export async function calculateAvailableSlots(doctorId, date) {
       .filter(Boolean)
   );
 
-  // Adicionar horários dos pré-agendamentos ao conjunto de bloqueados
-  preAgendamentosAtivos.forEach((pa) => {
-    const normalizedTime = normalizeTimeHHmm(pa.preferredTime);
+  // Adicionar horários dos pré-agendamentos ao conjunto de bloqueados visualmente
+  preAgendadosAtivos.forEach((pa) => {
+    const normalizedTime = normalizeTimeHHmm(pa.time);
     if (normalizedTime) {
       bookedTimes.add(normalizedTime);
     }

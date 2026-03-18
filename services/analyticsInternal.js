@@ -6,7 +6,6 @@
 import Leads from '../models/Leads.js';
 import Appointment from '../models/Appointment.js';
 import Patient from '../models/Patient.js';
-import PreAgendamento from '../models/PreAgendamento.js';
 
 /**
  * Busca eventos/métricas internas do sistema
@@ -33,7 +32,8 @@ export const getInternalAnalytics = async (startDate, endDate) => {
     });
 
     // Contagem de pré-agendamentos
-    const preAgendamentos = await PreAgendamento.countDocuments({
+    const preAgendamentos = await Appointment.countDocuments({
+      operationalStatus: 'pre_agendado',
       createdAt: { $gte: start, $lte: end }
     });
 
