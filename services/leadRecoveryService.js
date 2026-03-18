@@ -45,6 +45,7 @@ export async function startRecoveryForLead(leadId) {
 
     await Leads.findByIdAndUpdate(leadId, {
       $set: {
+        recoveryEnabled: true,  // FIX: Habilitar recovery
         'recovery.stage': 0,
         'recovery.nextAttemptAt': nextAttemptAt,
         'recovery.startedAt': new Date(),
@@ -284,7 +285,8 @@ export async function enableRecoveryForExistingLeads(hoursSinceCreation = 24) {
         status: { $ne: 'agendado' },
         $or: [
           { recovery: { $exists: false } },
-          { 'recovery.stage': { $exists: false } }
+          { 'recovery.stage': { $exists: false } },
+          { recoveryEnabled: { $ne: true } }  // FIX: Também ativa leads sem recoveryEnabled
         ]
       },
       {
