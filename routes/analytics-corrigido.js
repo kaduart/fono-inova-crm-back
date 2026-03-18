@@ -9,7 +9,7 @@
 
 import dotenv from 'dotenv';
 import express from 'express';
-import { getGA4Events, getGA4Metrics, getGA4Pages } from '../services/analytics.js';
+import { getGA4Events, getGA4Metrics } from '../services/analytics.js';
 import { getInternalAnalytics } from '../services/analyticsInternal.js';
 
 dotenv.config();
@@ -51,18 +51,19 @@ router.get('/dashboard', async (req, res) => {
         
         console.log('📊 Dashboard solicitado:', { startDate, endDate });
 
-        // Buscar dados GA4 primeiro
-        const [ga4Metrics, ga4Events, ga4Pages] = await Promise.all([
+        // Buscar todos os dados em paralelo
+        const [
+            ga4Metrics,
+            ga4Events,
+            internalData,
+            lpData,           // 🆕 Dados das Landing Pages
+            leadsData         // 🆕 Dados de leads por dia
+        ] = await Promise.all([
             getGA4Metrics(startDate, endDate).catch(() => null),
             getGA4Events(startDate, endDate).catch(() => []),
-            getGA4Pages(startDate, endDate).catch(() => [])
-        ]);
-
-        // Buscar dados internos e LPs (com dados GA4)
-        const [internalData, lpData, leadsData] = await Promise.all([
             getInternalAnalytics(startDate, endDate).catch(() => null),
-            getLandingPagesData(startDate, endDate, ga4Pages),  // 🆕 Passa dados GA4
-            getLeadsByDay(startDate, endDate)
+            getLandingPagesData(startDate, endDate),  // 🆕 Nova função
+            getLeadsByDay(startDate, endDate)         // 🆕 Nova função
         ]);
 
         // Métricas finais (prioriza GA4, fallback para internal)
@@ -145,10 +146,10 @@ router.get('/dashboard', async (req, res) => {
 });
 
 // ============================================
-// 🆕 FUNÇÃO: Mesclar dados GA4 + Landing Pages
+// 🆕 FUNÇÃO: Buscar dados das Landing Pages
 // ============================================
 
-async function getLandingPagesData(startDate, endDate, ga4Pages = []) {
+async function getLandingPagesData(startDate, endDate) {
     try {
         // Buscar LPs do banco de dados
         const LandingPage = (await import('../models/LandingPage.js')).default;
@@ -157,82 +158,36 @@ async function getLandingPagesData(startDate, endDate, ga4Pages = []) {
             status: 'active'
         }).select('slug title category metrics views leads').lean();
 
-        console.log(`📄 ${landingPages.length} Landing Pages encontradas no DB`);
-        console.log(`📄 ${ga4Pages.length} Páginas do GA4`);
+        console.log(`📄 ${landingPages.length} Landing Pages encontradas`);
 
-        // Mapear páginas do GA4 por path
-        const ga4PagesMap = new Map();
-        ga4Pages.forEach(p => {
-            ga4PagesMap.set(p.path, p);
-            // Também mapear por título normalizado
-            if (p.title) {
-                const key = p.title.toLowerCase().replace(/[^a-z0-9]/g, '');
-                ga4PagesMap.set(key, p);
-            }
-        });
+        // Formatar para o dashboard
+        const lpPages = landingPages.map(lp => ({
+            title: lp.title || lp.slug,
+            path: `/lp/${lp.slug}`,
+            slug: lp.slug,
+            category: lp.category,
+            views: lp.metrics?.views || 0,
+            leads: lp.metrics?.leads || 0,
+            users: Math.floor((lp.metrics?.views || 0) * 0.7), // Estimativa
+            avgEngagementTime: 120,
+            bounceRate: 35,
+            isLandingPage: true
+        }));
 
-        // Formatar Landing Pages com dados do GA4 se disponível
-        const lpPages = landingPages.map(lp => {
-            const lpPath = `/lp/${lp.slug}`;
-            const ga4Data = ga4PagesMap.get(lpPath);
-            
-            return {
-                title: lp.title || lp.slug,
-                path: lpPath,
-                slug: lp.slug,
-                category: lp.category,
-                views: ga4Data?.views || lp.metrics?.views || 0,
-                leads: lp.metrics?.leads || 0,
-                users: ga4Data?.users || Math.floor((lp.metrics?.views || 0) * 0.7),
-                avgEngagementTime: ga4Data?.avgEngagementTime || 120,
-                bounceRate: ga4Data?.bounceRate || 35,
-                isLandingPage: true
-            };
-        });
-
-        // Páginas regulares (serviços) - usar dados do GA4
-        const servicePages = [
-            { title: 'Home', path: '/', id: 'home' },
-            { title: 'Fonoaudiologia', path: '/fonoaudiologia', id: 'fonoaudiologia' },
-            { title: 'Psicologia', path: '/psicologia', id: 'psicologia' },
-            { title: 'Fisioterapia', path: '/fisioterapia', id: 'fisioterapia' },
-            { title: 'Terapia Ocupacional', path: '/terapia-ocupacional', id: 'terapia-ocupacional' },
-            { title: 'Freio Lingual', path: '/freio-lingual', id: 'freio-lingual' },
-            { title: 'Psicopedagogia', path: '/psicopedagogia', id: 'psicopedagogia' },
-            { title: 'Neuropsicologia', path: '/avaliacao-neuropsicologica', id: 'neuropsicologia' },
-            { title: 'Autismo (TEA)', path: '/avaliacao-autismo-infantil', id: 'tea' },
-            { title: 'Fala Tardia', path: '/fala-tardia', id: 'fala-tardia' },
-            { title: 'Dificuldade Escolar', path: '/avaliacao-neuropsicologica-dificuldade-escolar', id: 'dificuldade-escolar' }
+        // Páginas regulares (serviços)
+        const regularPages = [
+            { title: 'Home', path: '/', views: 0, users: 0, avgEngagementTime: 0, bounceRate: 0 },
+            { title: 'Fonoaudiologia', path: '/fonoaudiologia', views: 0, users: 0, avgEngagementTime: 0, bounceRate: 0 },
+            { title: 'Psicologia', path: '/psicologia', views: 0, users: 0, avgEngagementTime: 0, bounceRate: 0 },
+            { title: 'Freio Lingual', path: '/freio-lingual', views: 0, users: 0, avgEngagementTime: 0, bounceRate: 0 },
+            { title: 'Fala Tardia', path: '/fala-tardia', views: 0, users: 0, avgEngagementTime: 0, bounceRate: 0 },
+            { title: 'Autismo', path: '/avaliacao-autismo-infantil', views: 0, users: 0, avgEngagementTime: 0, bounceRate: 0 },
+            { title: 'Dificuldade Escolar', path: '/avaliacao-neuropsicologica-dificuldade-escolar', views: 0, users: 0, avgEngagementTime: 0, bounceRate: 0 }
         ];
-
-        const regularPages = servicePages.map(service => {
-            // Buscar dados do GA4 por path
-            let ga4Data = ga4PagesMap.get(service.path);
-            
-            // Se não encontrou, tentar por título
-            if (!ga4Data && service.title) {
-                ga4Data = ga4Pages.find(p => 
-                    p.title?.toLowerCase().includes(service.title.toLowerCase()) ||
-                    service.title.toLowerCase().includes(p.title?.toLowerCase())
-                );
-            }
-
-            return {
-                title: service.title,
-                path: service.path,
-                views: ga4Data?.views || 0,
-                users: ga4Data?.users || 0,
-                avgEngagementTime: ga4Data?.avgEngagementTime || 0,
-                bounceRate: ga4Data?.bounceRate || 0,
-                isLandingPage: false
-            };
-        });
 
         // Combinar e ordenar por views
         const allPages = [...lpPages, ...regularPages]
             .sort((a, b) => b.views - a.views);
-
-        console.log(`✅ Total de páginas: ${allPages.length} (${lpPages.length} LPs + ${regularPages.length} regulares)`);
 
         return {
             pages: allPages,
