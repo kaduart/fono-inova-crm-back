@@ -37,6 +37,10 @@ router.post("/agenda-externa/pre-agendar", agendaAuth, async (req, res) => {
       isNewPatient,
       responsible,
       observations,
+      billingType,
+      insuranceProvider,
+      insuranceValue,
+      authorizationCode,
       crm: crmRaw,
     } = req.body;
 
@@ -140,7 +144,10 @@ router.post("/agenda-externa/pre-agendar", agendaAuth, async (req, res) => {
       serviceType: crm.serviceType || 'evaluation',
       sessionValue: Number(crm.paymentAmount || req.body.sessionValue || 0),
       paymentMethod: crm.paymentMethod || 'pix',
-      billingType: 'particular',
+      billingType: billingType || 'particular',
+      insuranceProvider: insuranceProvider || null,
+      insuranceValue: Number(insuranceValue || 0),
+      authorizationCode: authorizationCode || null,
       // Status — padrão CRM
       operationalStatus: 'pre_agendado',
       clinicalStatus: 'pending',
@@ -148,6 +155,7 @@ router.post("/agenda-externa/pre-agendar", agendaAuth, async (req, res) => {
       visualFlag: 'pending',
       // Notas
       notes: observations || '',
+      responsible: responsible || '',
       secretaryNotes: responsible ? `Responsável: ${responsible}` : '',
       // Origem
       metadata: { origin: { source: 'agenda_externa' } }
@@ -632,6 +640,11 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
       observations,
       status,
       operationalStatus,
+      billingType,
+      paymentStatus,
+      insuranceProvider,
+      insuranceValue,
+      authorizationCode,
       crm: crmRaw,
       responsible
     } = req.body;
@@ -712,18 +725,30 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
     if (time) updateData.time = time;
     if (observations) updateData.notes = observations;
     if (specialty) updateData.specialty = specialty.toLowerCase();
+    if (responsible !== undefined) updateData.responsible = responsible;
+    if (billingType) updateData.billingType = billingType;
+    if (paymentStatus) updateData.paymentStatus = paymentStatus;
+    if (insuranceProvider !== undefined) updateData.insuranceProvider = insuranceProvider || null;
+    if (insuranceValue !== undefined) updateData.insuranceValue = Number(insuranceValue || 0);
+    if (authorizationCode !== undefined) updateData.authorizationCode = authorizationCode || null;
 
     // Prioridade para operationalStatus (unificado)
     if (operationalStatus) {
       updateData.operationalStatus = operationalStatus;
     } else if (status) {
-      const statusMap = { "pendente": "scheduled", "confirmado": "confirmed", "cancelado": "canceled", "pago": "confirmed", "faltou": "missed" };
+      const statusMap = { "pendente": "scheduled", "confirmado": "confirmed", "cancelado": "canceled", "pago": "paid", "faltou": "missed" };
       const mapped = statusMap[status.toLowerCase()];
       if (mapped) updateData.operationalStatus = mapped;
     }
 
     // Adiciona doctor ao updateData se encontrado
     if (doctor) updateData.doctor = doctor._id;
+    if (crmRaw?.paymentMethod) updateData.paymentMethod = crmRaw.paymentMethod;
+    if (crmRaw?.paymentAmount !== undefined) updateData.sessionValue = Number(crmRaw.paymentAmount || 0);
+    if (crmRaw?.serviceType) {
+      const APPT_SERVICE_TYPES = ['evaluation','session','package_session','individual_session','meet','alignment','return','tongue_tie_test','neuropsych_evaluation','convenio_session'];
+      if (APPT_SERVICE_TYPES.includes(crmRaw.serviceType)) updateData.serviceType = crmRaw.serviceType;
+    }
 
     // ─── PROMOÇÃO pre_agendado → scheduled/confirmed ──────────────────────────
     // Atualiza o appointment existente e cria Session + Payment (mesmo padrão do POST /api/appointments)
@@ -755,13 +780,21 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
       const appointmentTime = time || appointment.time;
       const sessionValue = Number(crm.paymentAmount || appointment.sessionValue || 0);
       const paymentMethod = crm.paymentMethod || appointment.paymentMethod || 'pix';
-      const serviceType = crm.serviceType === 'session' ? 'individual_session' : (crm.serviceType || appointment.serviceType || 'evaluation');
+      // Session.paymentMethod enum: ['dinheiro','pix','cartão','convenio']
+      const sessionPaymentMethod = ['dinheiro', 'pix', 'cartão', 'convenio'].includes(paymentMethod)
+        ? paymentMethod
+        : paymentMethod.startsWith('cartao') ? 'cartão' : null;
+      // Payment.serviceType enum não inclui 'return','convenio_session' etc → mapa seguro
+      const PAYMENT_SERVICE_TYPES = ['evaluation', 'session', 'package_session', 'tongue_tie_test', 'neuropsych_evaluation', 'individual_session', 'meet', 'alignment'];
+      const rawServiceType = crm.serviceType === 'session' ? 'individual_session' : (crm.serviceType || appointment.serviceType || 'evaluation');
+      const serviceType = PAYMENT_SERVICE_TYPES.includes(rawServiceType) ? rawServiceType : 'individual_session';
       const sessionType = crm.sessionType || appointment.sessionType || 'avaliacao';
+      const resolvedBillingType = billingType || appointment.billingType || 'particular';
 
       const newSession = await Session.create([{
         patient: patientId,
         doctor: doctorId,
-        serviceType,
+        appointmentId: appointment._id,
         sessionType,
         notes: observations || appointment.notes || '',
         status: 'scheduled',
@@ -771,10 +804,10 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
         date: appointmentDate,
         time: appointmentTime,
         sessionValue,
-        billingType: 'particular',
+        ...(sessionPaymentMethod && { paymentMethod: sessionPaymentMethod }),
       }]);
 
-      const newPayment = await Payment.create([{
+      const paymentData = {
         patient: patientId,
         doctor: doctorId,
         session: newSession[0]._id,
@@ -782,13 +815,23 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
         serviceType,
         amount: sessionValue,
         paymentMethod,
-        billingType: 'particular',
+        billingType: resolvedBillingType,
         status: 'pending',
         paymentDate: appointmentDate,
         serviceDate: appointmentDate,
-      }]);
+      };
+      // Convenio: popula sub-doc insurance
+      if (resolvedBillingType === 'convenio') {
+        paymentData.insurance = {
+          provider: insuranceProvider || appointment.insuranceProvider || '',
+          authorizationCode: authorizationCode || appointment.authorizationCode || '',
+          status: 'pending_billing',
+          grossAmount: Number(insuranceValue || appointment.insuranceValue || 0),
+        };
+      }
+      const newPayment = await Payment.create([paymentData]);
 
-      await Session.findByIdAndUpdate(newSession[0]._id, { appointmentId: appointment._id });
+      await Session.findByIdAndUpdate(newSession[0]._id, { paymentId: newPayment[0]._id });
 
       updateData.session = newSession[0]._id;
       updateData.payment = newPayment[0]._id;
@@ -878,8 +921,9 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
         $push: {
           history: {
             action: "sync_externo_completo",
+            newStatus: updateData.operationalStatus,
             timestamp: new Date(),
-            details: { source: 'agenda_externa', operationalStatus: updateData.operationalStatus }
+            context: `source: agenda_externa | status: ${updateData.operationalStatus || appointment.operationalStatus}`
           }
         }
       },
