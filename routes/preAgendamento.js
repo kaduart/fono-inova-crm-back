@@ -1,48 +1,34 @@
 import express from 'express';
 import mongoose from 'mongoose';
-import { auth, authorize } from '../middleware/auth.js';
-import { flexibleAuth } from '../middleware/amandaAuth.js';
+import { auth } from '../middleware/auth.js';
 import { agendaAuth } from '../middleware/agendaAuth.js';
-import PreAgendamento from '../models/PreAgendamento.js';
 import Appointment from '../models/Appointment.js';
-import Patient from '../models/Patient.js';
 import Doctor from '../models/Doctor.js';
-import Notification from '../models/Notification.js';
 import { bookFixedSlot } from '../services/amandaBookingService.js';
 import { findDoctorByName } from '../utils/doctorHelper.js';
 import { getIo } from '../config/socket.js';
-import { isBusinessHours } from '../utils/businessHours.js';
 
 const router = express.Router();
 
 /**
  * POST /api/pre-agendamento/webhook
- * Recebe da agenda externa - usa agendaAuth
+ * Recebe da agenda externa — cria Appointment com operationalStatus: 'pre_agendado'
  */
 router.post('/webhook', agendaAuth, async (req, res) => {
   try {
-    console.log('[WEBHOOK] Payload recebido:', JSON.stringify(req.body, null, 2));
-
-    // Suporta dois formatos de payload:
-    // 1. Formato antigo: patientName, patientPhone, preferredDate, etc.
-    // 2. Formato agenda externa: patientInfo { fullName, phone }, date, time, etc.
-
     const payload = req.body;
-
-    // Dados direto no formato MongoDB (sem conversões!)
-    const { 
-      _id, 
-      patientInfo, 
-      preferredDate, 
-      preferredTime, 
-      specialty, 
-      professionalName, 
-      professionalId: payloadProfessionalId,  // ← ID do médico vindo da agenda externa (mesmo ID do CRM!)
-      doctorId,  // ← Alternativa: agenda externa pode enviar como doctorId
-      source = 'agenda_externa' 
+    const {
+      _id,
+      patientInfo,
+      preferredDate,
+      preferredTime,
+      specialty,
+      professionalName,
+      professionalId: payloadProfessionalId,
+      doctorId,
+      source = 'agenda_externa'
     } = payload;
 
-    // Validação simples
     if (!_id || !patientInfo?.fullName || !patientInfo?.phone || !preferredDate) {
       return res.status(400).json({
         success: false,
@@ -52,277 +38,123 @@ router.post('/webhook', agendaAuth, async (req, res) => {
     }
 
     // Verificar se já existe
-    const existe = await PreAgendamento.findById(_id);
+    const existe = await Appointment.findById(_id);
     if (existe) {
       return res.json({ success: true, message: 'Já existe', id: existe._id });
     }
 
-    // 🔍 Determinar o professionalId
-    // Prioridade: 1) doctorId do payload, 2) professionalId do payload, 3) busca pelo nome
-    let professionalId = null;
-    
-    if (doctorId && mongoose.Types.ObjectId.isValid(doctorId)) {
-      // ✅ Agenda externa enviou o ID do médico (mesmo ID do CRM)
-      professionalId = new mongoose.Types.ObjectId(doctorId);
-      console.log(`[WEBHOOK] ✅ Usando doctorId do payload: ${professionalId}`);
-    } else if (payloadProfessionalId && mongoose.Types.ObjectId.isValid(payloadProfessionalId)) {
-      // ✅ Alternativa: professionalId no payload
-      professionalId = new mongoose.Types.ObjectId(payloadProfessionalId);
-      console.log(`[WEBHOOK] ✅ Usando professionalId do payload: ${professionalId}`);
-    } else if (professionalName) {
-      // 🔍 Fallback: buscar pelo nome (para compatibilidade)
-      try {
-        const doctorData = await findDoctorByName(professionalName);
-        if (doctorData) {
-          professionalId = doctorData._id;
-          console.log(`[WEBHOOK] 🔍 Doutor encontrado por nome: ${professionalName} → ${professionalId}`);
-        }
-      } catch (err) {
-        console.log(`[WEBHOOK] ⚠️ Não encontrou doutor: ${professionalName}`);
-      }
+    // Determinar doctor
+    const resolvedDoctorId = payloadProfessionalId || doctorId;
+    let doctor = null;
+    if (resolvedDoctorId && mongoose.Types.ObjectId.isValid(resolvedDoctorId)) {
+      doctor = await Doctor.findById(resolvedDoctorId);
+    }
+    if (!doctor && professionalName) {
+      doctor = await findDoctorByName(professionalName);
     }
 
-    // Criar pré-agendamento direto (mesmo ID da agenda externa)
-    const pre = await PreAgendamento.create({
+    const cleanPhone = (patientInfo.phone || '').replace(/\D/g, '');
+    const appointmentData = {
       _id,
-      source,
+      operationalStatus: 'pre_agendado',
       patientInfo: {
         fullName: patientInfo.fullName,
-        phone: String(patientInfo.phone).replace(/\D/g, ''),
+        phone: cleanPhone,
         email: patientInfo.email,
         birthDate: patientInfo.birthDate
       },
-      specialty: specialty?.toLowerCase(),
-      preferredDate,
-      preferredTime,
+      specialty: (specialty || doctor?.specialty || 'fonoaudiologia').toLowerCase(),
+      date: preferredDate,
+      time: preferredTime,
       professionalName,
-      professionalId,  // ← Agora com o ID do médico!
-      status: 'novo'
-    });
+      doctor: doctor?._id || undefined,
+      metadata: { origin: { source } }
+    };
 
-    console.log(`[WEBHOOK] ✅ PreAgendamento criado: ${pre._id} - ${patientInfo.fullName} (Profissional: ${professionalId || 'N/A'})`);
-
-    // 🔔 SISTEMA DE NOTIFICAÇÃO INTELIGENTE
-    const businessHours = isBusinessHours();
-    console.log(`[WEBHOOK] Horário comercial: ${businessHours ? 'SIM' : 'NÃO (fora do horário)'}`);
+    const appointment = await Appointment.create(appointmentData);
 
     try {
       const io = getIo();
+      io.emit('preagendamento:new', {
+        id: String(appointment._id),
+        patientName: appointment.patientInfo.fullName,
+        phone: appointment.patientInfo.phone,
+        specialty: appointment.specialty,
+        preferredDate: appointment.date,
+        operationalStatus: 'pre_agendado',
+        urgency: appointment.urgency,
+        createdAt: appointment.createdAt
+      });
+    } catch (e) {}
 
-      if (businessHours) {
-        // 🟢 HORÁRIO COMERCIAL: Emite socket em tempo real
-        console.log("📡 Emitindo socket em tempo real (horário comercial)...");
-        io.emit("preagendamento:new", {
-          id: String(pre._id),
-          patientName: pre.patientInfo.fullName,
-          phone: pre.patientInfo.phone,
-          specialty: pre.specialty,
-          preferredDate: pre.preferredDate,
-          preferredTime: pre.preferredTime,
-          status: pre.status,
-          urgency: pre.urgency,
-          createdAt: pre.createdAt,
-          isBusinessHours: true
-        });
-        console.log(`✅ Socket emitido: preagendamento:new ${pre._id}`);
-      } else {
-        // 🔴 FORA DO HORÁRIO: Cria notificação persistente
-        console.log("🔔 Criando notificação persistente (fora do horário)...");
-
-        const notification = await Notification.createFromPreAgendamento(pre);
-
-        // Emite apenas para usuários online (silencioso)
-        io.emit("notification:new", {
-          id: String(notification._id),
-          type: 'preagendamento',
-          data: notification.data,
-          priority: notification.priority,
-          isBusinessHours: false,
-          message: 'Novo pré-agendamento (fora do horário comercial)'
-        });
-
-        console.log(`✅ Notificação criada: ${notification._id}`);
-      }
-    } catch (error) {
-      console.error('⚠️ Erro no sistema de notificação:', error.message);
-      // Não falha a requisição se notificação falhar
-    }
-
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
-      id: pre._id,
-      message: 'Pré-agendamento recebido',
-      urgency: pre.urgency
+      message: 'Pré-agendamento criado',
+      id: appointment._id
     });
 
   } catch (error) {
-    console.error('[PRE-AGENDAMENTO WEBHOOK] Erro:', error);
+    console.error('[WEBHOOK] Erro:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 /**
  * POST /api/pre-agendamento/:id/importar-externo
- * Importar diretamente pela agenda externa (usa agendaAuth, não JWT)
- * A agenda externa confirma e já converte em Appointment definitivo
+ * Confirma pré-agendamento vindo da agenda externa
  */
 router.post('/:id/importar-externo', agendaAuth, async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const { id } = req.params;
-    const {
-      doctorId,
-      date,
-      time,
-      sessionValue,
-      serviceType = 'evaluation',
-      paymentMethod = 'pix',
-      notes
-    } = req.body;
+    const { doctorId, date, time, sessionValue, serviceType = 'evaluation', paymentMethod = 'pix', notes } = req.body;
 
-    console.log(`[IMPORTAR-EXTERNO] Importando pré-agendamento ${id}`);
+    const pre = await Appointment.findById(id).lean();
+    if (!pre) return res.status(404).json({ success: false, error: 'Não encontrado' });
 
-    // 1. Buscar pré-agendamento com LOCK para evitar duplicatas (race condition)
-    // Usando findOneAndUpdate para garantir atomicidade - só um request "pega" o documento
-    const pre = await PreAgendamento.findOneAndUpdate(
-      { 
-        _id: id, 
-        status: { $nin: ['agendado', 'descartado', 'desistiu', 'cancelado'] } // Só processa se não estiver finalizado
-      },
-      { 
-        $set: { status: 'em_analise' } // Marca como em processamento
-      },
-      { 
-        session,
-        new: true, // Retorna o documento atualizado
-        runValidators: false
-      }
-    );
-    
-    if (!pre) {
-      // Verifica se já foi importado
-      const alreadyImported = await PreAgendamento.findById(id).session(session);
-      if (alreadyImported?.status === 'agendado') {
-        return res.json({ 
-          success: true, 
-          message: 'Já importado anteriormente', 
-          appointmentId: alreadyImported.importedToAppointment 
-        });
-      }
-      throw new Error('Pré-agendamento não encontrado ou já processado');
+    if (['scheduled', 'confirmed', 'paid'].includes(pre.operationalStatus)) {
+      return res.json({ success: true, message: 'Já confirmado', appointmentId: pre._id });
     }
 
-    // 2. Buscar doutor (por ID ou por nome)
     let doctor = null;
+    if (doctorId) doctor = await Doctor.findById(doctorId);
+    if (!doctor && pre.professionalName) doctor = await findDoctorByName(pre.professionalName);
+    if (!doctor) return res.status(404).json({ success: false, error: 'Doutor não encontrado' });
 
-    if (doctorId) {
-      doctor = await Doctor.findById(doctorId).session(session);
-    }
-
-    // Se não achou por ID, tenta por nome usando o helper existente
-    if (!doctor && pre.professionalName) {
-      const doctorData = await findDoctorByName(pre.professionalName);
-      if (doctorData) {
-        doctor = await Doctor.findById(doctorData._id).session(session);
-      }
-    }
-
-    if (!doctor) {
-      throw new Error(`Doutor não encontrado. ID: ${doctorId}, Nome: ${pre.professionalName}`);
-    }
-
-    console.log(`[IMPORTAR-EXTERNO] Doutor encontrado: ${doctor.fullName} (${doctor._id})`);
-
-    // 3. Importar usando bookFixedSlot
-    const bookParams = {
-      patientInfo: {
-        fullName: pre.patientInfo.fullName,
-        birthDate: pre.patientInfo.birthDate,
-        phone: pre.patientInfo.phone,
-        email: pre.patientInfo.email
-      },
-      doctorId: doctor._id.toString(),  // ✅ Usa o ID do doutor encontrado
+    const normalizedServiceType = serviceType === 'session' ? 'individual_session' : serviceType;
+    const result = await bookFixedSlot({
+      patientInfo: pre.patientInfo,
+      doctorId: doctor._id.toString(),
       specialty: pre.specialty,
-      date,
-      time,
+      date: date || pre.date,
+      time: time || pre.time,
       sessionType: serviceType === 'evaluation' ? 'avaliacao' : 'sessao',
-      serviceType,
+      serviceType: normalizedServiceType,
       paymentMethod,
-      sessionValue: Number(sessionValue),
-      operationalStatus: 'scheduled',
-      notes: `[IMPORTADO DA AGENDA EXTERNA] ${notes || ''}\n${pre.secretaryNotes || ''}`,
-      source: pre.source || 'agenda_externa', // 📈 ROI
-      preAgendamentoId: String(pre._id) // 📈 ROI
-    };
-
-    console.log('[IMPORTAR-EXTERNO] bookFixedSlot params:', JSON.stringify(bookParams, null, 2));
-
-    const result = await bookFixedSlot(bookParams);
-    
-    console.log(`[IMPORTAR-EXTERNO] 📊 Resultado bookFixedSlot:`, {
-      success: result.success,
-      appointmentId: result.appointment?._id,
-      paymentId: result.payment?._id,
-      hasPayment: !!result.payment,
-      patientId: result.patientId
+      sessionValue: Number(sessionValue || pre.sessionValue || 0),
+      status: 'scheduled',
+      notes: `[IMPORTADO DA AGENDA EXTERNA] ${notes || ''}\n${pre.secretaryNotes || ''}`
     });
 
-    if (!result.success) {
-      console.error('[IMPORTAR-EXTERNO] bookFixedSlot erro:', result);
-      throw new Error(result.error || 'Erro ao criar agendamento');
-    }
+    if (!result.success) return res.status(400).json({ success: false, error: result.error });
 
-    // 4. Marcar pré-agendamento como importado (mantém para analytics)
-    pre.status = 'agendado';
-    pre.importedToAppointment = result.appointment._id;
-    pre.importedAt = new Date();
-    await pre.save({ session });
+    await Appointment.findByIdAndDelete(id);
 
-    await session.commitTransaction();
-
-    console.log(`[IMPORTAR-EXTERNO] ✅ Importado: ${result.appointment._id} com payment: ${result.payment?._id || 'SEM PAYMENT'}`);
-
-    // ✅ EMITIR SOCKET
     try {
       const io = getIo();
-      io.emit("preagendamento:imported", {
-        preAgendamentoId: id,
-        appointmentId: result.appointment._id,
-        patientId: result.patientId,
-        timestamp: new Date()
-      });
-    } catch (socketError) {
-      console.error('⚠️ Erro ao emitir socket:', socketError.message);
-    }
+      io.emit('appointmentCreated', result.appointment);
+      io.emit('preagendamento:imported', { preAgendamentoId: String(id), appointmentId: result.appointment._id });
+    } catch (e) {}
 
-    res.json({
-      success: true,
-      message: 'Importado com sucesso!',
-      appointmentId: result.appointment._id,
-      patientId: result.patientId
-    });
+    return res.json({ success: true, appointmentId: result.appointment._id, patientId: result.patientId });
 
   } catch (error) {
-    await session.abortTransaction();
-    console.error('[IMPORTAR-EXTERNO] Erro:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  } finally {
-    session.endSession();
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Middleware de auth para rotas protegidas (após as rotas públicas)
-// Mudando para flexibleAuth para permitir acesso via AGENDA_EXPORT_TOKEN
-router.use(flexibleAuth);
-
 /**
  * GET /api/pre-agendamento
- * Lista para a secretária (com filtros e paginação)
+ * Lista Appointments com operationalStatus: 'pre_agendado'
  */
 router.get('/', async (req, res) => {
   try {
@@ -333,79 +165,86 @@ router.get('/', async (req, res) => {
       assignedTo,
       from,
       to,
+      phone,
+      search,
       page = 1,
       limit = 20
     } = req.query;
 
-    const filters = {};
+    const filters = { operationalStatus: 'pre_agendado' };
 
-    // Se não especificou status, por padrão exclui importados e descartados
-    // (só mostra os que precisam de ação)
+    // status override: se passar status explícito, usa ele
     if (status) {
-      // Suporta múltiplos status separados por vírgula
       const statusList = status.split(',').map(s => s.trim());
-      filters.status = statusList.length > 1 ? { $in: statusList } : status;
-    } else {
-      filters.status = { $nin: ['agendado', 'descartado', 'cancelado', 'desistiu', 'expirado'] };
+      filters.operationalStatus = statusList.length > 1 ? { $in: statusList } : status;
     }
 
     if (specialty) filters.specialty = specialty;
     if (urgency) filters.urgency = urgency;
     if (assignedTo) filters.assignedTo = assignedTo;
-    
-    // 🆕 Filtro por telefone (para o chat)
-    if (req.query.phone) {
-      const phone = req.query.phone.replace(/\D/g, '');
-      filters['patientInfo.phone'] = { $regex: phone };
+
+    if (phone) {
+      const cleanPhone = phone.replace(/\D/g, '');
+      filters['patientInfo.phone'] = { $regex: cleanPhone };
     }
 
-    // Filtro de data
+    if (search) {
+      const regex = { $regex: search, $options: 'i' };
+      filters.$or = [
+        { 'patientInfo.fullName': regex },
+        { 'patientInfo.phone': { $regex: search.replace(/\D/g, '') || search } },
+        { professionalName: regex }
+      ];
+    }
+
     if (from && to) {
-      filters.preferredDate = { $gte: from, $lte: to };
+      filters.date = { $gte: from, $lte: to };
     } else if (from) {
-      filters.preferredDate = { $gte: from };
+      filters.date = { $gte: from };
     } else if (to) {
-      filters.preferredDate = { $lte: to };
+      filters.date = { $lte: to };
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const [preAgendamentos, total, resumo] = await Promise.all([
-      PreAgendamento.find(filters)
-        .populate('patientId', 'fullName phone')
+    const [preAgendamentos, total, resumo, urgencias] = await Promise.all([
+      Appointment.find(filters)
+        .populate('patient', 'fullName phone')
+        .populate('doctor', 'fullName specialty')
         .populate('assignedTo', 'fullName')
-        .sort({ urgency: -1, preferredDate: 1 })
+        .sort({ urgency: -1, date: 1 })
         .skip(skip)
         .limit(parseInt(limit))
         .lean(),
 
-      PreAgendamento.countDocuments(filters),
+      Appointment.countDocuments(filters),
 
-      PreAgendamento.aggregate([
-        { $match: { status: { $ne: 'agendado' } } },
-        {
-          $group: {
-            _id: '$status',
-            count: { $sum: 1 }
-          }
-        }
+      Appointment.aggregate([
+        { $match: { operationalStatus: 'pre_agendado' } },
+        { $group: { _id: '$urgency', count: { $sum: 1 } } }
+      ]),
+
+      Appointment.aggregate([
+        { $match: { operationalStatus: 'pre_agendado' } },
+        { $group: { _id: '$specialty', count: { $sum: 1 } } }
       ])
     ]);
 
-    // Estatísticas por urgência
-    const urgencias = await PreAgendamento.aggregate([
-      { $match: { status: { $nin: ['agendado', 'descartado', 'cancelado', 'desistiu', 'expirado'] } } },
-      {
-        $group: {
-          _id: '$urgency',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
+    // Compatibilidade: adicionar aliases de campo para o frontend antigo
+    const data = preAgendamentos.map(a => ({
+      ...a,
+      patientName: a.patient?.fullName || a.patientInfo?.fullName || '',
+      preferredDate: a.date,
+      preferredTime: a.time,
+      status: a.operationalStatus,
+      patientId: a.patient,
+      professionalId: a.doctor,
+      suggestedValue: a.sessionValue
+    }));
 
     res.json({
       success: true,
-      data: preAgendamentos,
+      data,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -413,14 +252,8 @@ router.get('/', async (req, res) => {
         pages: Math.ceil(total / parseInt(limit))
       },
       resumo: {
-        porStatus: resumo.reduce((acc, item) => {
-          acc[item._id] = item.count;
-          return acc;
-        }, {}),
-        porUrgencia: urgencias.reduce((acc, item) => {
-          acc[item._id] = item.count;
-          return acc;
-        }, {})
+        porUrgencia: resumo.reduce((acc, item) => { acc[item._id] = item.count; return acc; }, {}),
+        porEspecialidade: urgencias.reduce((acc, item) => { acc[item._id] = item.count; return acc; }, {})
       }
     });
 
@@ -431,30 +264,96 @@ router.get('/', async (req, res) => {
 });
 
 /**
- * GET /api/pre-agendamento/:id
- * Detalhes de um pré-agendamento
+ * GET /api/pre-agendamento/stats/dashboard
  */
-router.get('/:id', async (req, res) => {
+router.get('/stats/dashboard', async (req, res) => {
   try {
-    const pre = await PreAgendamento.findById(req.params.id)
-      .populate('patientId')
-      .populate('assignedTo', 'fullName')
-      .populate('importedToAppointment')
-      .populate('contactAttempts.madeBy', 'fullName');
+    const hoje = new Date().toISOString().split('T')[0];
 
-    if (!pre) {
-      return res.status(404).json({ success: false, error: 'Não encontrado' });
-    }
+    const [porUrgencia, urgentes, porEspecialidade, conversao] = await Promise.all([
+      Appointment.aggregate([
+        { $match: { operationalStatus: 'pre_agendado' } },
+        { $group: { _id: '$urgency', count: { $sum: 1 } } }
+      ]),
 
-    // Buscar médicos disponíveis para a especialidade
-    const doctors = await Doctor.find({
-      specialty: pre.specialty,
-      active: true
-    }).select('fullName specialty');
+      Appointment.countDocuments({
+        operationalStatus: 'pre_agendado',
+        date: { $gte: hoje },
+        urgency: { $in: ['alta', 'critica'] }
+      }),
+
+      Appointment.aggregate([
+        { $match: { operationalStatus: 'pre_agendado' } },
+        { $group: { _id: '$specialty', count: { $sum: 1 } } }
+      ]),
+
+      Appointment.aggregate([
+        {
+          $match: {
+            'metadata.origin.source': 'agenda_externa',
+            createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            importados: {
+              $sum: { $cond: [{ $in: ['$operationalStatus', ['scheduled', 'confirmed', 'paid']] }, 1, 0] }
+            }
+          }
+        }
+      ])
+    ]);
+
+    const conv = conversao[0] || { total: 0, importados: 0 };
 
     res.json({
       success: true,
-      data: pre,
+      data: {
+        porStatus: porUrgencia.reduce((acc, item) => { acc[item._id] = item.count; return acc; }, {}),
+        urgentes,
+        porEspecialidade,
+        conversao: {
+          taxa: conv.total > 0 ? Math.round((conv.importados / conv.total) * 100) : 0,
+          total: conv.total,
+          importados: conv.importados
+        }
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/pre-agendamento/:id
+ */
+router.get('/:id', async (req, res) => {
+  try {
+    const pre = await Appointment.findById(req.params.id)
+      .populate('patient', 'fullName phone dateOfBirth')
+      .populate('doctor', 'fullName specialty')
+      .populate('assignedTo', 'fullName')
+      .lean();
+
+    if (!pre) return res.status(404).json({ success: false, error: 'Não encontrado' });
+
+    const doctors = await Doctor.find({ specialty: pre.specialty, active: true }).select('fullName specialty');
+
+    res.json({
+      success: true,
+      data: {
+        ...pre,
+        patientName: pre.patient?.fullName || pre.patientInfo?.fullName || '',
+        preferredDate: pre.date,
+        preferredTime: pre.time,
+        status: pre.operationalStatus,
+        patientId: pre.patient,
+        professionalId: pre.doctor,
+        suggestedValue: pre.sessionValue
+      },
       availableDoctors: doctors
     });
 
@@ -465,42 +364,25 @@ router.get('/:id', async (req, res) => {
 
 /**
  * POST /api/pre-agendamento/:id/assign
- * Atribuir a um usuário
  */
 router.post('/:id/assign', async (req, res) => {
   try {
     const { userId } = req.body;
-
-    // Verifica se é um ObjectId válido (usuário real) ou token de serviço
     const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
     const assignedUserId = (userId && isValidObjectId(userId)) ? userId :
       (isValidObjectId(req.user?.id) ? req.user.id : null);
 
-    const pre = await PreAgendamento.findByIdAndUpdate(
+    const pre = await Appointment.findByIdAndUpdate(
       req.params.id,
-      {
-        assignedTo: assignedUserId,
-        status: 'em_analise',
-        updatedAt: new Date()
-      },
+      { assignedTo: assignedUserId, updatedAt: new Date() },
       { new: true }
     );
 
-    // ✅ EMITIR SOCKET
     try {
-      const io = getIo();
-      io.emit("preagendamento:updated", {
-        id: String(pre._id),
-        status: pre.status,
-        assignedTo: pre.assignedTo?.fullName || req.user?.fullName || 'Sistema',
-        action: 'assigned'
-      });
-    } catch (e) {
-      console.error('⚠️ Socket error:', e.message);
-    }
+      getIo().emit('preagendamento:updated', { id: String(pre._id), operationalStatus: pre.operationalStatus, action: 'assigned' });
+    } catch (e) {}
 
     res.json({ success: true, data: pre });
-
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -508,50 +390,36 @@ router.post('/:id/assign', async (req, res) => {
 
 /**
  * POST /api/pre-agendamento/:id/contact
- * Registrar tentativa de contato
  */
 router.post('/:id/contact', async (req, res) => {
   try {
     const { channel, success, notes } = req.body;
-
-    // Verifica se é um ObjectId válido
     const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
     const madeByUserId = isValidObjectId(req.user?.id) ? req.user.id : null;
 
-    const pre = await PreAgendamento.findByIdAndUpdate(
+    const pre = await Appointment.findByIdAndUpdate(
       req.params.id,
       {
         $push: {
           contactAttempts: {
             date: new Date(),
             channel,
-            success,
+            success: !!success,
             notes,
             madeBy: madeByUserId
           }
         },
         $inc: { attemptCount: 1 },
-        status: success ? 'contatado' : 'em_analise',
         updatedAt: new Date()
       },
       { new: true }
     );
 
-    // ✅ EMITIR SOCKET
     try {
-      const io = getIo();
-      io.emit("preagendamento:contact", {
-        id: String(pre._id),
-        attemptCount: pre.attemptCount,
-        status: pre.status,
-        lastContact: new Date()
-      });
-    } catch (e) {
-      console.error('⚠️ Socket error:', e.message);
-    }
+      getIo().emit('preagendamento:contact', { id: String(pre._id), attemptCount: pre.attemptCount });
+    } catch (e) {}
 
     res.json({ success: true, data: pre });
-
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -559,99 +427,44 @@ router.post('/:id/contact', async (req, res) => {
 
 /**
  * POST /api/pre-agendamento/:id/importar
- * Converter para Appointment definitivo
+ * Converter pré-agendamento em Appointment definitivo (Session + Payment)
  */
 router.post('/:id/importar', async (req, res) => {
   const { id } = req.params;
   const {
-    doctorId,
-    date,
-    time,
-    sessionValue,
-    serviceType = 'evaluation',
-    paymentMethod = 'pix',
-    notes,
-    birthDate,
-    phone,
-    email,
-    responsible
+    doctorId, date, time, sessionValue,
+    serviceType = 'evaluation', paymentMethod = 'pix',
+    notes, birthDate, phone, email, responsible
   } = req.body;
 
-  // Status original para rollback em caso de falha
-  let originalStatus = null;
-
   try {
-    console.log('[IMPORTAR] Dados recebidos do frontend:', {
-      birthDate, phone, email, responsible,
-      body: req.body
-    });
+    const pre = await Appointment.findById(id).lean();
 
-    // 1. Lock atômico SEM transação — evita duplicatas e timeout de sessão
-    // Usa status interno 'importando' (nunca setado manualmente) como lock mutex
-    // new: false retorna o doc ANTES da atualização (preserva status original para rollback)
-    const pre = await PreAgendamento.findOneAndUpdate(
-      {
-        _id: id,
-        // 'importando' é status interno de lock — nunca setado pela secretária
-        // Mantém 'em_analise' fora do $nin para não bloquear pré-agendamentos nesse status
-        status: { $nin: ['agendado', 'descartado', 'desistiu', 'cancelado', 'importando'] }
-      },
-      { $set: { status: 'importando' } },
-      { new: false, runValidators: false }
-    );
+    if (!pre) return res.status(404).json({ success: false, error: 'Pré-agendamento não encontrado' });
 
-    if (!pre) {
-      const existing = await PreAgendamento.findById(id).lean();
-      if (existing?.status === 'agendado') {
-        // Já importado com sucesso — retorna idempotente
-        return res.json({
-          success: true,
-          message: 'Já foi importado anteriormente',
-          appointmentId: existing.importedToAppointment
-        });
-      }
-      if (existing?.status === 'importando') {
-        return res.status(409).json({ success: false, error: 'Importação já em andamento, aguarde alguns segundos' });
-      }
-      return res.status(404).json({ success: false, error: 'Pré-agendamento não encontrado ou não pode ser importado' });
+    if (['scheduled', 'confirmed', 'paid'].includes(pre.operationalStatus)) {
+      return res.json({ success: true, message: 'Já foi importado anteriormente', appointmentId: pre._id });
     }
 
-    // Guarda status original para rollback em caso de erro
-    originalStatus = pre.status;
+    if (pre.operationalStatus !== 'pre_agendado') {
+      return res.status(400).json({ success: false, error: `Status inválido para importação: ${pre.operationalStatus}` });
+    }
 
-    console.log('[IMPORTAR] Dados atuais do pré-agendamento:', { patientInfo: pre.patientInfo });
-
-    // 2. Buscar doutor (sem session — fora de transação)
     const doctor = await Doctor.findById(doctorId);
-    if (!doctor) {
-      await PreAgendamento.findByIdAndUpdate(id, { $set: { status: originalStatus } });
-      return res.status(404).json({ success: false, error: 'Doutor não encontrado' });
-    }
+    if (!doctor) return res.status(404).json({ success: false, error: 'Doutor não encontrado' });
 
-    // 3. Atualizar dados do paciente (se vieram do frontend)
-    const patientUpdate = {};
-    if (birthDate) { patientUpdate['patientInfo.birthDate'] = birthDate; console.log('[IMPORTAR] Atualizando birthDate:', birthDate); }
-    if (phone)     patientUpdate['patientInfo.phone'] = phone;
-    if (email)     patientUpdate['patientInfo.email'] = email;
-    if (responsible) patientUpdate['patientInfo.responsible'] = responsible;
+    // Mesclar dados atualizados do formulário
+    const patientInfo = {
+      fullName: pre.patientInfo?.fullName,
+      birthDate: birthDate || pre.patientInfo?.birthDate,
+      phone: phone || pre.patientInfo?.phone,
+      email: email || pre.patientInfo?.email
+    };
 
-    let updatedPre = pre;
-    if (Object.keys(patientUpdate).length > 0) {
-      updatedPre = await PreAgendamento.findByIdAndUpdate(id, { $set: patientUpdate }, { new: true, runValidators: false });
-    }
-
-    console.log('[IMPORTAR] Dados após atualização:', { patientInfo: updatedPre.patientInfo });
-
-    // 4. Criar agendamento — completamente fora de transação MongoDB
     const result = await bookFixedSlot({
-      patientInfo: {
-        fullName: updatedPre.patientInfo.fullName,
-        birthDate: updatedPre.patientInfo.birthDate,
-        phone: updatedPre.patientInfo.phone,
-        email: updatedPre.patientInfo.email
-      },
+      patientInfo,
       doctorId,
-      specialty: updatedPre.specialty,
+      specialty: pre.specialty,
       date,
       time,
       sessionType: serviceType === 'evaluation' ? 'avaliacao' : 'sessao',
@@ -659,39 +472,22 @@ router.post('/:id/importar', async (req, res) => {
       paymentMethod,
       sessionValue: Number(sessionValue),
       operationalStatus: 'scheduled',
-      notes: `[IMPORTADO DO PRE-AGENDAMENTO] ${notes || ''}\n${updatedPre.secretaryNotes || ''}`,
-      source: updatedPre.source || 'outro',
-      preAgendamentoId: String(updatedPre._id)
+      notes: `[IMPORTADO DO PRE-AGENDAMENTO] ${notes || ''}\n${pre.secretaryNotes || ''}`,
+      source: pre.metadata?.origin?.source || 'outro'
     });
 
     if (!result.success) {
-      // Rollback status para o original
-      await PreAgendamento.findByIdAndUpdate(id, { $set: { status: originalStatus } });
       return res.status(400).json({ success: false, error: result.error || 'Erro ao criar agendamento' });
     }
 
-    // 5. Marcar como importado (mantém para analytics)
-    const finalUpdate = {
-      status: 'agendado',
-      importedToAppointment: result.appointment._id,
-      importedAt: new Date()
-    };
-    if (req.user?.id && mongoose.Types.ObjectId.isValid(req.user.id)) {
-      finalUpdate.importedBy = req.user.id;
-    }
-    await PreAgendamento.findByIdAndUpdate(id, { $set: finalUpdate });
+    // Deletar o pré-agendamento original (agora existe o appointment real)
+    await Appointment.findByIdAndDelete(id);
 
-    // 6. Socket fire-and-forget (não bloqueia a resposta)
     try {
       const io = getIo();
-      io.emit("preagendamento:confirmed", {
-        id: String(updatedPre._id),
-        appointmentId: result.appointment._id,
-        source: updatedPre.source
-      });
-    } catch (e) {
-      console.error('⚠️ AmandaAI Feedback Socket error:', e.message);
-    }
+      io.emit('preagendamento:confirmed', { id: String(id), appointmentId: result.appointment._id });
+      io.emit('appointmentCreated', result.appointment);
+    } catch (e) {}
 
     res.json({
       success: true,
@@ -701,94 +497,60 @@ router.post('/:id/importar', async (req, res) => {
     });
 
   } catch (error) {
-    // Tenta restaurar status original se algo inesperado aconteceu
-    if (originalStatus) {
-      try {
-        await PreAgendamento.findOneAndUpdate(
-          { _id: id, status: 'importando' },
-          { $set: { status: originalStatus } }
-        );
-      } catch (rollbackErr) {
-        console.error('[IMPORTAR] Falha no rollback de status:', rollbackErr.message);
-      }
-    }
-    console.error('Erro ao importar:', error);
+    console.error('[IMPORTAR] Erro:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 /**
  * POST /api/pre-agendamento/:id/cancelar
- * Cancelar pré-agendamento - apenas altera o status para 'cancelado'
  */
 router.post('/:id/cancelar', async (req, res) => {
   try {
-    const { id } = req.params;
-
-    const pre = await PreAgendamento.findByIdAndUpdate(
-      id,
-      { $set: { status: 'cancelado' } },
+    const pre = await Appointment.findByIdAndUpdate(
+      req.params.id,
+      { operationalStatus: 'canceled' },
       { new: true }
     );
 
-    if (!pre) {
-      return res.status(404).json({ success: false, error: 'Pré-agendamento não encontrado' });
-    }
+    if (!pre) return res.status(404).json({ success: false, error: 'Não encontrado' });
 
-    // Emite socket para o frontend atualizar a agenda
     try {
       const io = getIo();
       io.emit('preagendamento:updated', { id: String(pre._id), status: 'cancelado' });
       io.emit('preagendamento:discarded', { id: String(pre._id), status: 'cancelado' });
-    } catch (socketErr) {
-      console.warn('[CANCELAR] Erro ao emitir socket:', socketErr.message);
-    }
+    } catch (e) {}
 
     res.json({ success: true, message: 'Pré-agendamento cancelado' });
-
   } catch (error) {
-    console.error('[CANCELAR] Erro:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 /**
  * POST /api/pre-agendamento/:id/descartar
- * Descartar pré-agendamento
  */
 router.post('/:id/descartar', async (req, res) => {
   try {
     const { reason } = req.body;
+    const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
-    const pre = await PreAgendamento.findByIdAndUpdate(
+    const pre = await Appointment.findByIdAndUpdate(
       req.params.id,
       {
-        status: 'desistiu', // 📈 ROI: Diferenciar descarte manual de desistência do paciente
+        operationalStatus: 'canceled',
         discardReason: reason,
         discardedAt: new Date(),
-        discardedBy: (req.user.id && mongoose.Types.ObjectId.isValid(req.user.id)) ? req.user.id : undefined,
-        updatedAt: new Date()
+        discardedBy: (req.user?.id && isValidObjectId(req.user.id)) ? req.user.id : undefined
       },
       { new: true }
     );
 
-    res.json({
-      success: true,
-      message: 'Descartado com sucesso',
-      data: pre
-    });
+    res.json({ success: true, message: 'Descartado com sucesso', data: pre });
 
-    // 🚀 Emitir Socket para o Front e AmandaAI
     try {
-      const io = getIo();
-      io.emit("preagendamento:discarded", {
-        id: String(pre._id),
-        reason,
-        source: pre.source
-      });
-    } catch (e) {
-      console.error('⚠️ Socket error:', e.message);
-    }
+      getIo().emit('preagendamento:discarded', { id: String(pre._id), reason });
+    } catch (e) {}
 
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -797,95 +559,77 @@ router.post('/:id/descartar', async (req, res) => {
 
 /**
  * PATCH /api/pre-agendamento/:id
- * Atualizar dados do pré-agendamento
  */
 router.patch('/:id', async (req, res) => {
   try {
     const updates = req.body;
-    delete updates.importedToAppointment; // Proteger campo interno
+    // Mapear campos do formato antigo para o novo
+    if (updates.preferredDate) { updates.date = updates.preferredDate; delete updates.preferredDate; }
+    if (updates.preferredTime) { updates.time = updates.preferredTime; delete updates.preferredTime; }
+    if (updates.status) { updates.operationalStatus = updates.status; delete updates.status; }
+    if (updates.suggestedValue !== undefined) { updates.sessionValue = updates.suggestedValue; delete updates.suggestedValue; }
 
-    const pre = await PreAgendamento.findByIdAndUpdate(
+    const pre = await Appointment.findByIdAndUpdate(
       req.params.id,
       { ...updates, updatedAt: new Date() },
-      { new: true, runValidators: true }
+      { new: true, runValidators: false }
     );
 
     res.json({ success: true, data: pre });
-
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
 /**
- * GET /api/pre-agendamento/stats/dashboard
- * Estatísticas para dashboard
+ * POST /api/pre-agendamento/migrar-novos
+ * Migra PreAgendamentos com status 'novo' (e similares) para Appointments com operationalStatus 'pre_agendado'
+ * Idempotente: pula se já existe Appointment com mesmo _id
  */
-router.get('/stats/dashboard', async (req, res) => {
+router.post('/migrar-novos', async (req, res) => {
   try {
-    const hoje = new Date().toISOString().split('T')[0];
+    const db = mongoose.connection.db;
+    const preAgs = await db.collection('preagendamentos')
+      .find({ status: { $in: ['novo', 'em_analise', 'contatado', 'confirmado'] } })
+      .toArray();
 
-    const stats = await Promise.all([
-      // Total por status
-      PreAgendamento.aggregate([
-        { $match: { status: { $ne: 'agendado' } } },
-        { $group: { _id: '$status', count: { $sum: 1 } } }
-      ]),
+    const results = { migrated: 0, skipped: 0, errors: [] };
 
-      // Urgentes (próximos 2 dias)
-      PreAgendamento.countDocuments({
-        status: { $nin: ['agendado', 'descartado'] },
-        preferredDate: { $gte: hoje },
-        $or: [
-          { urgency: 'alta' },
-          { urgency: 'critica' }
-        ]
-      }),
+    for (const pre of preAgs) {
+      try {
+        const exists = await Appointment.findById(pre._id);
+        if (exists) { results.skipped++; continue; }
 
-      // Por especialidade
-      PreAgendamento.aggregate([
-        { $match: { status: { $nin: ['agendado', 'descartado'] } } },
-        { $group: { _id: '$specialty', count: { $sum: 1 } } }
-      ]),
-
-      // Taxa de conversão (últimos 30 dias)
-      PreAgendamento.aggregate([
-        {
-          $match: {
-            createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
-          }
-        },
-        {
-          $group: {
-            _id: null,
-            total: { $sum: 1 },
-            importados: {
-              $sum: { $cond: [{ $eq: ['$status', 'agendado'] }, 1, 0] }
-            }
-          }
-        }
-      ])
-    ]);
-
-    const conversao = stats[3][0] || { total: 0, importados: 0 };
-
-    res.json({
-      success: true,
-      data: {
-        porStatus: stats[0].reduce((acc, item) => {
-          acc[item._id] = item.count;
-          return acc;
-        }, {}),
-        urgentes: stats[1],
-        porEspecialidade: stats[2],
-        conversao: {
-          taxa: conversao.total > 0 ? Math.round((conversao.importados / conversao.total) * 100) : 0,
-          total: conversao.total,
-          importados: conversao.importados
-        }
+        await Appointment.create({
+          _id: pre._id,
+          operationalStatus: 'pre_agendado',
+          patientInfo: pre.patientInfo,
+          patient: (pre.patientId && mongoose.Types.ObjectId.isValid(pre.patientId)) ? pre.patientId : undefined,
+          specialty: pre.specialty,
+          date: pre.preferredDate,
+          time: pre.preferredTime,
+          preferredPeriod: pre.preferredPeriod,
+          professionalName: pre.professionalName,
+          doctor: (pre.professionalId && mongoose.Types.ObjectId.isValid(pre.professionalId)) ? pre.professionalId : undefined,
+          serviceType: pre.serviceType,
+          sessionValue: pre.suggestedValue || 0,
+          urgency: pre.urgency || 'media',
+          assignedTo: (pre.assignedTo && mongoose.Types.ObjectId.isValid(pre.assignedTo)) ? pre.assignedTo : undefined,
+          contactAttempts: pre.contactAttempts || [],
+          attemptCount: pre.attemptCount || 0,
+          secretaryNotes: pre.secretaryNotes,
+          expiresAt: pre.expiresAt,
+          metadata: { origin: { source: pre.source || 'agenda_externa' } },
+          createdAt: pre.createdAt,
+          updatedAt: pre.updatedAt
+        });
+        results.migrated++;
+      } catch (err) {
+        results.errors.push({ id: String(pre._id), error: err.message });
       }
-    });
+    }
 
+    res.json({ success: true, total: preAgs.length, ...results });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

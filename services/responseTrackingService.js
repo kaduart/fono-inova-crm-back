@@ -20,7 +20,7 @@ import { analyzeLeadMessage } from './intelligence/leadIntelligence.js';
 // =====================================================================
 
 const CONFIG = {
-    RESPONSE_WINDOW_HOURS: 72, // Janela para considerar resposta válida
+    RESPONSE_WINDOW_HOURS: 720, // Janela para considerar resposta válida (30 dias)
     BATCH_SIZE: 50, // Leads processados por lote
     NON_RESPONDER_THRESHOLD_HOURS: 48, // Tempo para considerar lead frio
     MIN_FOLLOWUPS_FOR_COLD: 2, // Mínimo de follow-ups para marcar como frio

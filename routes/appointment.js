@@ -13,7 +13,6 @@ import Appointment from '../models/Appointment.js';
 import Leads from '../models/Leads.js';
 import Package from '../models/Package.js';
 import Patient from '../models/Patient.js';
-import PreAgendamento from '../models/PreAgendamento.js'; // 👈 Importado para unificação
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import { runJourneyFollowups } from '../services/journeyFollowupEngine.js';
@@ -21,7 +20,7 @@ import { handlePackageSessionUpdate, syncEvent } from '../services/syncService.j
 import { updateAppointmentFromSession, updatePatientAppointments } from '../utils/appointmentUpdater.js';
 import { runTransactionWithRetry } from '../utils/transactionRetry.js';
 import billingOrchestrator from '../services/billing/BillingOrchestrator.js';
-import { mapAppointmentToEvent, mapPreAgendamentoToEvent } from '../utils/appointmentMapper.js';
+import { mapAppointmentToEvent } from '../utils/appointmentMapper.js';
 import PatientBalance from '../models/PatientBalance.js';
 import { getIo } from '../config/socket.js';
 import guideService from '../services/billing/guideService.js';
@@ -863,8 +862,6 @@ router.get('/', flexibleAuth, async (req, res) => {
     try {
         const { patientId, doctorId, status, specialty, startDate, endDate, excludePreAgendamentos } = req.query;
 
-        console.log(`[GET /appointments] Query:`, { patientId, doctorId, status, specialty, startDate, endDate, excludePreAgendamentos });
-
         const filter = {};
         let individualSessionId = null;
         let createdAppointmentId = null; // 👈 novo
@@ -905,7 +902,7 @@ router.get('/', flexibleAuth, async (req, res) => {
         // 🔹 Buscar agendamentos com relacionamentos importantes (otimizado)
         // Removido limit default para garantir que todos os appointments do período venham
         const appointments = await Appointment.find(filter)
-            .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus visualFlag patient doctor package session payment metadata billingType insuranceProvider insuranceValue authorizationCode serviceType sessionType sessionValue reason')
+            .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus visualFlag patient patientInfo professionalName doctor package session payment metadata billingType insuranceProvider insuranceValue authorizationCode serviceType sessionType sessionValue reason urgency assignedTo secretaryNotes')
             .populate({ path: 'doctor', select: 'fullName specialty email phoneNumber specialties' })
             .populate({ path: 'patient', select: 'fullName dateOfBirth gender phone email cpf rg address' })
             .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue' })
@@ -920,19 +917,7 @@ router.get('/', flexibleAuth, async (req, res) => {
             return id === '69964dc81e0e9b385928bb06';
         });
 
-        // 🔹 2. BUSCAR PRÉ-AGENDAMENTOS (INTERESSES) NÃO IMPORTADOS
-        // Só mostra pré-agendamentos que ainda não viraram appointment
-        const preFilter = {
-            status: { $nin: ['agendado', 'descartado', 'desistiu', 'expirado'] } // 'cancelado' incluído para aparecer no histórico
-        };
-
-        // Aplicar filtro de data
-        if (startDate && endDate) {
-            preFilter.preferredDate = { $gte: startDate, $lte: endDate };
-        }
-
-        const preAgendamentos = await PreAgendamento.find(preFilter).lean();
-        console.log(`[GET /appointments] PreAgendamentos não importados: ${preAgendamentos.length}`);
+        // pre_agendados agora são Appointments — já incluídos na query acima
 
         // 🔹 Buscar saldos dos pacientes para mostrar no calendário
         const patientIds = appointments
@@ -963,25 +948,15 @@ router.get('/', flexibleAuth, async (req, res) => {
             return event;
         });
 
-        // 🔹 3. JUNTAR APPOINTMENTS + PRÉ-AGENDAMENTOS (não importados)
-        // Se excludePreAgendamentos=true, não inclui pré-agendamentos no resultado
-        const shouldExcludePreAgendamentos = excludePreAgendamentos === 'true' || excludePreAgendamentos === true;
-        
-        let finalResults;
+        // 🔹 3. ORDENAR E RETORNAR
+        const shouldExcludePreAgendamentos = excludePreAgendamentos === 'true';
+
+        let finalResults = calendarEvents;
         if (shouldExcludePreAgendamentos) {
-            // Só appointments reais (para o calendário)
-            finalResults = calendarEvents.sort((a, b) => {
-                return (a.date + a.time).localeCompare(b.date + b.time);
-            });
-            console.log(`[GET /appointments] Retornando ${finalResults.length} appointments (pré-agendamentos excluídos)`);
-        } else {
-            // Appointments + pré-agendamentos (para o painel de pré-agendamentos)
-            const preEvents = preAgendamentos.map(pre => mapPreAgendamentoToEvent(pre));
-            finalResults = [...calendarEvents, ...preEvents].sort((a, b) => {
-                return (a.date + a.time).localeCompare(b.date + b.time);
-            });
-            console.log(`[GET /appointments] Retornando ${finalResults.length} eventos (${calendarEvents.length} appointments + ${preEvents.length} pré-agendamentos)`);
+            finalResults = calendarEvents.filter(e => e.operationalStatus !== 'pre_agendado');
         }
+
+        finalResults.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
 
         res.json(finalResults);
     } catch (error) {
@@ -1543,25 +1518,7 @@ router.patch('/:id/cancel', validateId, flexibleAuth, async (req, res) => {
 
             console.log('✅ Appointment cancelado');
 
-            // 🔄 SINCRONIZAR CANCELAMENTO COM PRE-AGENDAMENTO
-            const preAgendamentoId = appointment.metadata?.origin?.preAgendamentoId;
-            if (preAgendamentoId) {
-                try {
-                    const pre = await PreAgendamento.findById(preAgendamentoId).session(session);
-                    if (pre && pre.status === 'agendado') {
-                        pre.status = 'descartado';
-                        pre.discardReason = `Cancelado via agenda: ${reason}`;
-                        pre.discardedAt = new Date();
-                        pre.discardedBy = req.user?._id || null;
-                        pre.secretaryNotes = `[CANCELADO VIA AGENDA - ${new Date().toLocaleString('pt-BR')}]\nMotivo: ${reason}\n\n${pre.secretaryNotes || ''}`;
-                        await pre.save({ session });
-                        console.log(`✅ PreAgendamento ${preAgendamentoId} sincronizado para 'descartado'`);
-                    }
-                } catch (preError) {
-                    console.error('⚠️ Erro ao sincronizar PreAgendamento (não crítico):', preError.message);
-                    // Não propaga erro para não quebrar o cancelamento
-                }
-            }
+            // pre_agendados agora são Appointments — sem sync externo necessário
 
             return updated;
         });
@@ -2232,21 +2189,7 @@ router.get('/count-by-status', auth, async (req, res) => {
             }
         ]);
 
-        // 🎯 CONTAR PRÉ-AGENDAMENTOS (para mostrar na mesma contagem)
-        const preFilter = {
-            status: { $nin: ['agendado', 'descartado', 'cancelado', 'desistiu', 'expirado'] }
-        };
-        if (dateFrom || dateTo) {
-            preFilter.preferredDate = {};
-            if (dateFrom) preFilter.preferredDate.$gte = dateFrom;
-            if (dateTo) preFilter.preferredDate.$lte = dateTo;
-        }
-        if (specialty && specialty !== 'all') {
-            preFilter.specialty = specialty;
-        }
-
-        const preAgendamentosCount = await PreAgendamento.countDocuments(preFilter);
-
+        // pre_agendados já contados na query counts acima (operationalStatus: 'pre_agendado')
         // Formatar resultado
         const result = {
             agendado: 0,
@@ -2254,7 +2197,7 @@ router.get('/count-by-status', auth, async (req, res) => {
             cancelado: 0,
             pago: 0,
             faltou: 0,
-            pre_agendado: preAgendamentosCount // 🎯 NOVO: Contagem de pré-agendamentos
+            pre_agendado: 0
         };
 
         counts.forEach(item => {

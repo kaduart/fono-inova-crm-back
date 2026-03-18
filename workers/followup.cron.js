@@ -141,13 +141,14 @@ async function dispatchPendingFollowups() {
       if (!lead?._id) continue;
 
       // ============================================================
-      // 🔹 Verificação de contexto antes de enfileirar follow-up
+      // 🔹 Verificação de contexto (relaxada - permite leads antigos)
       // ============================================================
       const leadContext = await enrichLeadContext(lead._id).catch(() => null);
 
-      if (!leadContext?.toneMode || !leadContext?.mode) {
-        console.log(`[FOLLOWUP-CRON] Lead ${lead._id} ignorado (sem contexto válido)`);
-        continue;
+      // FIX: Leads antigos podem não ter toneMode/mode - não bloquear
+      if (!leadContext) {
+        console.log(`[FOLLOWUP-CRON] Lead ${lead._id} sem contexto enriquecido, mas prosseguindo mesmo assim`);
+        // Não faz continue - permite prosseguir com contexto básico
       }
 
       await followupQueue.add(
