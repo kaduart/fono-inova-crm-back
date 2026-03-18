@@ -40,16 +40,16 @@ const CENAS_ESPECIALIDADE = {
   },
 
   psicologia: {
-    estilo: `Cozy therapy office, warm natural light through curtains, green plants, calm blue and beige tones. Brazilian Latin features, warm brown skin. Emotional documentary style, 24fps.`,
+    estilo: `Cozy child therapy office, warm natural light through curtains, green plants, calm blue and beige tones, colorful toys and books on low shelves. Brazilian Latin features, warm brown skin. Gentle emotional documentary style, 24fps.`,
     cenas: [
-      `8-second shot: 13-year-old Brazilian boy walks slowly into a cozy therapy office, sits across from a caring Brazilian female psychologist, arms crossed, eyes down, body tense. Camera wide, slowly pushing in to show both in frame.`,
-      `8-second shot: Brazilian female psychologist listens attentively as a 13-year-old boy begins talking, hands in lap, voice quiet; therapist nods gently without interrupting, creating safe space. Camera holds on boy's guarded but opening expression.`,
-      `8-second shot: 13-year-old Brazilian boy starts gesturing expressively with his hands while speaking, body language more open; therapist reflects something back and boy nods quickly — feeling understood. Camera follows his hands then his face.`,
-      `8-second shot: Brazilian female psychologist hands a journal and pen to a 13-year-old boy; he takes it, opens it slowly and begins writing, brow furrowed, tongue slightly out. Camera overhead slowly tilts down to page then to his focused face.`,
-      `8-second shot: 13-year-old Brazilian boy pauses mid-sentence, looks down thinking, touches his chin; Brazilian female psychologist waits patiently, leaning slightly forward. Camera holds on boy's thoughtful introspective face in a quiet meaningful moment.`,
-      `8-second shot: Brazilian female psychologist asks a question; 13-year-old boy's eyes widen slightly with recognition — he nods slowly, making real eye contact for the first time in the session. Camera pushes in gently on this moment of connection.`,
-      `8-second shot: 13-year-old Brazilian boy slowly uncrosses his arms, leans forward, and breaks into a small relieved genuine smile — the emotional breakthrough moment. Camera begins wide then does a slow rack focus to the boy's expressive face.`,
-      `8-second shot: Session ending — 13-year-old Brazilian boy stands, looks taller and lighter; Brazilian female psychologist walks him to the door, he pauses and says something; she smiles warmly. Camera frames both in doorway, boy's posture visibly more open.`
+      `8-second shot: 7-year-old Brazilian child walks slowly into a cozy child therapy office, holding a stuffed animal tightly, eyes scanning the room cautiously. Brazilian female psychologist kneels to child's level and smiles warmly. Camera wide, gently pushing in on child's curious face.`,
+      `8-second shot: Brazilian female psychologist sits on the floor beside a 7-year-old child surrounded by colorful toys, listening attentively as the child begins to talk quietly, pointing at a toy house. Therapist nods softly without interrupting. Camera holds on child's opening expression.`,
+      `8-second shot: 7-year-old Brazilian child uses small figurines to act out a story on a play mat, gesturing expressively; Brazilian female psychologist watches closely and reflects back gently — child nods, feeling understood. Camera follows child's hands then face.`,
+      `8-second shot: Brazilian female psychologist hands a large drawing pad and crayons to a 7-year-old child; child takes it eagerly, opens it and begins drawing with focused concentration, tongue slightly out. Camera overhead tilts down to drawing then to child's absorbed face.`,
+      `8-second shot: 7-year-old Brazilian child pauses while drawing, looks up thoughtfully, hugs stuffed animal — a quiet introspective moment. Brazilian female psychologist waits patiently, leaning gently forward. Camera holds on child's soft contemplative expression.`,
+      `8-second shot: Brazilian female psychologist asks a gentle question; 7-year-old child's eyes light up with recognition — child nods slowly and makes warm genuine eye contact, a small smile beginning. Camera pushes in softly on this moment of real connection.`,
+      `8-second shot: 7-year-old Brazilian child puts down the stuffed animal freely, leans forward and breaks into a warm relieved genuine smile — the emotional breakthrough moment. Camera begins wide then slow rack focus to child's open joyful face.`,
+      `8-second shot: Session ending — 7-year-old Brazilian child skips toward the waiting Brazilian mother, face lighter and brighter. Brazilian female psychologist watches from the doorway smiling warmly. Camera frames the joyful reunion and therapist's quiet pride.`
     ]
   },
 
@@ -70,14 +70,14 @@ const CENAS_ESPECIALIDADE = {
   fisioterapia: {
     estilo: `Modern bright pediatric physiotherapy clinic, colorful equipment, balance beams and therapy mats. Brazilian Latin features, warm brown skin. Motivational documentary style, 24fps.`,
     cenas: [
-      `8-second shot: 9-year-old Brazilian child walks into physiotherapy clinic with a slight limp; parent holds hand. Brazilian female pediatric physiotherapist greets them warmly, kneels to child's level, child manages a small brave smile. Camera wide, push in on child.`,
-      `8-second shot: Brazilian female physiotherapist gently moves 9-year-old child's leg on exam table, watching range of motion carefully; child's face shows trust as therapist works gently and explains each step. Camera close on hands and child's trusting face.`,
-      `8-second shot: 9-year-old Brazilian child does slow careful stretching exercises on a therapy mat, Brazilian female physiotherapist demonstrates each move with patience, child copies seriously. Camera tracks from therapist demonstrating to child trying.`,
-      `8-second shot: 9-year-old Brazilian child walks carefully along colorful balance beam steps, arms out, face showing intense determination. Brazilian female physiotherapist walks beside, one hand gently hovering near child's shoulder. Camera tracks at child's eye level.`,
-      `8-second shot: 9-year-old Brazilian child kicks a large therapeutic ball repeatedly against padded wall, leg getting stronger with each kick. Brazilian female physiotherapist counts repetitions encouragingly. Camera side-on tracking the moving leg and determined face.`,
-      `8-second shot: 9-year-old Brazilian child climbs therapy steps holding a rail, each step more confident than the last. Brazilian female physiotherapist watches from below nodding encouragingly. Camera low angle making child look powerful and improving.`,
-      `8-second shot: 9-year-old Brazilian child walks the length of the clinic hallway this time without limping, upright and confident. Brazilian female physiotherapist watches with visible pride. Camera tracks from behind then swings to front to catch child's smile.`,
-      `8-second shot: Brazilian female physiotherapist gives a high five to a 9-year-old child who just completed the session. Child's parent watches from doorway clapping. All three celebrate the visible progress together. Camera captures the warm genuine celebration.`
+      `8-second shot: 6-year-old Brazilian child walks into physiotherapy clinic holding parent's hand, looking around curiously at the colorful equipment. Brazilian female pediatric physiotherapist kneels to child's level, greets warmly, child manages a small brave smile. Camera wide, push in on child.`,
+      `8-second shot: Brazilian female physiotherapist gently moves 6-year-old child's small leg on a colorful exam table, watching carefully; child's face shows complete trust as therapist works gently and explains each step in simple words. Camera close on hands and child's trusting face.`,
+      `8-second shot: 6-year-old Brazilian child does slow careful stretching exercises on a bright therapy mat, Brazilian female physiotherapist demonstrates each movement with patience and fun, child copies seriously with tongue out. Camera tracks from therapist demonstrating to child trying.`,
+      `8-second shot: 6-year-old Brazilian child walks carefully along colorful balance beam steps, small arms spread wide, face showing intense adorable determination. Brazilian female physiotherapist walks close beside, one hand hovering gently near child's shoulder. Camera at child's eye level.`,
+      `8-second shot: 6-year-old Brazilian child kicks a large colorful therapeutic ball with growing strength, leg moving more confidently with each kick. Brazilian female physiotherapist counts repetitions with cheerful enthusiasm. Camera side-on tracking child's determined little face.`,
+      `8-second shot: 6-year-old Brazilian child climbs colorful therapy steps holding a rail, each step more sure-footed than the last. Brazilian female physiotherapist watches from below nodding with encouragement. Camera low angle making child look strong and capable.`,
+      `8-second shot: 6-year-old Brazilian child walks the clinic hallway upright and confident, no longer unsteady. Brazilian female physiotherapist watches with visible proud emotion. Camera tracks from behind then swings to front to catch child's beaming proud smile.`,
+      `8-second shot: Brazilian female physiotherapist gives an enthusiastic high five to a 6-year-old child who just completed the session. Child's parent rushes in from doorway clapping, scoops child up. All three celebrate the visible progress together. Camera captures warm joyful celebration.`
     ]
   },
 
@@ -110,16 +110,16 @@ const CENAS_ESPECIALIDADE = {
   },
 
   neuropsicologia: {
-    estilo: `Cozy neuropsychology assessment office, warm amber lighting, colorful brain model on shelf, assessment materials on table. Brazilian Latin features, warm brown skin. Scientific documentary style, 24fps.`,
+    estilo: `Cozy neuropsychology assessment office, warm amber lighting, colorful brain model on shelf, assessment materials on table, child-friendly decor. Brazilian Latin features, warm brown skin. Scientific documentary style, 24fps.`,
     cenas: [
-      `8-second shot: 10-year-old Brazilian child enters assessment office, immediately notices a colorful brain model on the shelf and walks toward it with intense curiosity. Brazilian female neuropsychologist watches with a warm smile, letting the child explore freely.`,
-      `8-second shot: Brazilian female neuropsychologist and 10-year-old Brazilian child play a visual memory card game, child flips cards with focus, trying to find pairs, face showing intense concentration. Camera close on hands flipping cards then on child's thinking face.`,
-      `8-second shot: 10-year-old Brazilian child arranges colored blocks to match a pattern shown on a card, brow deeply furrowed, moving blocks methodically. Brazilian female neuropsychologist observes quietly without interfering. Camera overhead shows pattern emerging.`,
-      `8-second shot: 10-year-old Brazilian child draws a figure of a person on assessment paper, tongue slightly out, completely absorbed in the task. Camera starts overhead then tilts to capture both the drawing and child's concentrated expression.`,
-      `8-second shot: 10-year-old Brazilian child stares at an attention assessment worksheet, pencil poised, eyes scanning carefully down the page. Brazilian female neuropsychologist times the task quietly. Camera holds on child's intense focused expression.`,
-      `8-second shot: 10-year-old Brazilian child's hands move a colorful puzzle piece around, trying different rotations, hesitates — then places it precisely in the correct spot. Child looks up with a proud concentrated smile. Brazilian female neuropsychologist nods approvingly.`,
-      `8-second shot: 10-year-old Brazilian child uses a tablet for a cognitive assessment game, tapping carefully, Brazilian female neuropsychologist observes the screen data. Child's face shows full engagement. Camera alternates between screen and child's focused face.`,
-      `8-second shot: Brazilian female neuropsychologist sits across from a parent and 10-year-old child, opening a results folder, explaining with warmth and clarity. Parent and child both lean forward nodding — faces showing understanding and relief.`
+      `8-second shot: 7-year-old Brazilian child enters assessment office, immediately spots a colorful brain model on the shelf and walks toward it with wide-eyed curiosity, reaching out to touch it. Brazilian female neuropsychologist watches with a warm smile, letting the child explore freely.`,
+      `8-second shot: Brazilian female neuropsychologist and 7-year-old Brazilian child play a colorful visual memory card game at a low table, child flips cards with small focused hands, trying to find pairs, face scrunched in concentration. Camera close on hands then on child's thinking face.`,
+      `8-second shot: 7-year-old Brazilian child arranges colored blocks to match a pattern on a card, tongue peeking out, moving blocks with careful small hands. Brazilian female neuropsychologist observes quietly without interfering. Camera overhead shows pattern emerging under little hands.`,
+      `8-second shot: 7-year-old Brazilian child draws a person on large assessment paper, tongue slightly out, completely absorbed, grip tight on crayon. Camera starts overhead then tilts to capture both the drawing and child's fully concentrated expression.`,
+      `8-second shot: 7-year-old Brazilian child stares at a colorful attention assessment sheet, crayon poised, eyes scanning each row carefully. Brazilian female neuropsychologist times the task quietly with a stopwatch. Camera holds on child's intensely focused little face.`,
+      `8-second shot: 7-year-old Brazilian child's small hands turn a colorful puzzle piece, trying each rotation, brow furrowed — then the piece clicks in perfectly. Child's face bursts into a proud delighted smile and looks up. Brazilian female neuropsychologist nods with warm approval.`,
+      `8-second shot: 7-year-old Brazilian child taps a bright child-friendly tablet for a cognitive assessment game, fully engaged, face lit by the screen. Brazilian female neuropsychologist observes the results quietly. Camera alternates between the colorful screen and child's absorbed face.`,
+      `8-second shot: Brazilian female neuropsychologist sits warmly with a parent and 7-year-old child, opening a colorful results folder, explaining gently and clearly. Parent leans forward with relief; child sits beside proudly. Camera captures the family's visible reassurance.`
     ]
   },
 

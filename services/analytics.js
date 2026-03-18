@@ -193,6 +193,64 @@ function generateMockMetrics(startDate, endDate) {
     };
 }
 
+// --- Buscar dados de páginas ---
+export const getGA4Pages = async (startDate, endDate, timeout = 30000) => {
+    const cacheKey = `ga4-pages-${startDate}-${endDate}`;
+    const cached = analyticsCache.get(cacheKey);
+    if (cached) {
+        console.log('♻️ Retornando páginas do cache');
+        return cached;
+    }
+
+    try {
+        console.log('📄 Chamando GA4 Pages:', startDate, endDate);
+
+        if (!credentials) {
+            console.log('⚠️ GA4 não configurado, retornando páginas vazias');
+            return [];
+        }
+
+        const [response] = await withRetry(() =>
+            client.runReport(
+                {
+                    property: `properties/${propertyId}`,
+                    dimensions: [
+                        { name: 'pageTitle' },
+                        { name: 'pagePath' }
+                    ],
+                    metrics: [
+                        { name: 'screenPageViews' },
+                        { name: 'totalUsers' },
+                        { name: 'userEngagementDuration' },
+                        { name: 'bounceRate' }
+                    ],
+                    dateRanges: [{ startDate, endDate }],
+                    limit: 50,
+                    orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }]
+                },
+                { timeout }
+            )
+        );
+
+        const rows = response.rows || [];
+        const pages = rows.map(row => ({
+            title: row.dimensionValues?.[0]?.value || '',
+            path: row.dimensionValues?.[1]?.value || '',
+            views: parseInt(row.metricValues?.[0]?.value || 0),
+            users: parseInt(row.metricValues?.[1]?.value || 0),
+            avgEngagementTime: parseFloat(row.metricValues?.[2]?.value || 0),
+            bounceRate: parseFloat(row.metricValues?.[3]?.value || 0) * 100, // Converter para %
+        }));
+
+        console.log(`📄 ${pages.length} páginas encontradas no GA4`);
+        analyticsCache.set(cacheKey, pages);
+        return pages;
+    } catch (err) {
+        console.error('❌ Erro em getGA4Pages:', err.message);
+        return [];
+    }
+};
+
 // --- Buscar métricas gerais ---
 export const getGA4Metrics = async (startDate, endDate, timeout = 30000) => {
     const cacheKey = `ga4-metrics-${startDate}-${endDate}`;
@@ -220,6 +278,7 @@ export const getGA4Metrics = async (startDate, endDate, timeout = 30000) => {
                         { name: 'sessions' },
                         { name: 'engagedSessions' },
                         { name: 'averageSessionDuration' },
+                        { name: 'screenPageViews' },
                     ],
                     dateRanges: [{ startDate, endDate }],
                 },
@@ -235,6 +294,7 @@ export const getGA4Metrics = async (startDate, endDate, timeout = 30000) => {
             sessions: parseInt(values[2]?.value || 0),
             engagedSessions: parseInt(values[3]?.value || 0),
             avgSessionDuration: parseFloat(values[4]?.value || 0),
+            pageViews: parseInt(values[5]?.value || 0),
         };
 
         analyticsCache.set(cacheKey, metrics);

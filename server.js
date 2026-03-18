@@ -235,7 +235,9 @@ const allowedOrigins = [
   "https://fono-inova-crm-front.vercel.app",
   "http://localhost:5000",
   "http://localhost:5173",
-  "https://agenda-clinica-fono-inova.web.app", // ← ADICIONAR ISSO!
+  "https://agenda-clinica-fono-inova.web.app",
+  "https://clinicafonoinova.com.br",           // ← Site principal (Vercel)
+  "https://www.clinicafonoinova.com.br",       // ← WWW variant
   // Firebase removido - MongoDB é fonte única de verdade
 ];
 
