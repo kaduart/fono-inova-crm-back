@@ -341,7 +341,7 @@ export async function analyzeHistoricalConversations() {
 export async function getLatestInsights() {
     return await LearningInsight.findOne({ type: 'conversation_patterns' })
         .sort({ generatedAt: -1 })
-        .lean(); c
+        .lean();
 }
 
 export default analyzeHistoricalConversations;

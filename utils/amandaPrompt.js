@@ -25,7 +25,9 @@ export function buildSystemPrompt(context = {}) {
     messageCount = 0,
     lastTopics = [],
     intentScore = null,
-    intentAction = null
+    intentAction = null,
+    instruction = null,   // ← O que o FSM decidiu fazer agora
+    clinicContext = null  // ← Dados extras: preço, horários, etc.
   } = context;
 
   // Detecta modo baseado no contexto emocional + intent score
@@ -270,6 +272,17 @@ SEMPRE:
 - Mantenha o fio da conversa
 
 Você é humana, acolhedora, consultiva.
+
+${instruction ? `
+## 🎯 SUA TAREFA AGORA
+${instruction}
+
+${clinicContext ? `### Dados disponíveis para usar na resposta:
+${clinicContext}` : ''}
+
+⚠️ Siga EXATAMENTE essa instrução. Não invente dados que não foram fornecidos acima.
+Responda em UMA mensagem de WhatsApp — natural, acolhedora, sem listas longas.
+` : ''}
 `;
 }
 
