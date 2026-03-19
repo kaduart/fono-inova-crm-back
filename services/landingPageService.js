@@ -1007,19 +1007,28 @@ export async function generatePostContent(slug) {
     throw new Error('Landing page não encontrada');
   }
   
-  // Gera sugestão de post baseado na LP
+  // 🎯 Gera sugestão de post baseado na LP com SEO otimizado
+  // Usa dados de SEO da landing page para melhor ranqueamento
+  const seoTitle = lp.seo?.title || lp.title;
+  const seoDescription = lp.seo?.description || lp.subheadline;
+  const keywords = lp.keywords?.slice(0, 3).join(', ') || '';
+  const whatsappNumber = '(62) 99337-7726'; // Número correto da clínica
+  
   const postTemplates = [
     {
-      title: `${lp.headline} 🤔`,
-      content: `${lp.subheadline}\n\n${lp.sinaisAlerta.slice(0, 3).map(s => `${s.icon} ${s.text}`).join('\n')}\n\n👉 Saiba mais: clinicafonoinova.com.br/lp/${lp.slug}\n\n📱 Agende sua avaliação gratuita pelo WhatsApp!`
+      // Template 1: Foco em SEO com headline + keywords
+      title: `${lp.headline} | ${lp.category.charAt(0).toUpperCase() + lp.category.slice(1)} em Anápolis`,
+      content: `${seoDescription}\n\n${lp.sinaisAlerta.slice(0, 3).map(s => `${s.icon} ${s.text}`).join('\n')}\n\n✅ ${lp.content.comoFunciona?.substring(0, 100) || 'Avaliação especializada para entender as necessidades da sua criança.'}\n\n🔍 Palavras-chave: ${keywords}\n\n👉 Saiba mais: clinicafonoinova.com.br/lp/${lp.slug}\n\n📱 Agende sua avaliação gratuita: ${whatsappNumber}`
     },
     {
-      title: `Você sabia? ${lp.title}`,
-      content: `Muitos pais em Anápolis têm essa mesma dúvida.\n\n${lp.content.quandoProcurar?.substring(0, 150)}...\n\n🔗 Conheça mais: clinicafonoinova.com.br/lp/${lp.slug}\n\n💚 Estamos aqui para ajudar sua família!`
+      // Template 2: Educativo com foco em beneficios
+      title: `Você sabia? ${lp.title} em Anápolis`,
+      content: `Muitos pais em Anápolis têm essa mesma dúvida sobre ${lp.category.toLowerCase()}.\n\n${lp.content.quandoProcurar?.substring(0, 120) || seoDescription.substring(0, 120)}...\n\n💡 ${lp.content.beneficios?.[0] || 'Diagnóstico precoce é fundamental para o desenvolvimento infantil.'}\n\n🎯 Especialistas em: ${keywords}\n\n🔗 Conheça nossa LP: clinicafonoinova.com.br/lp/${lp.slug}\n\n💚 Clínica Fono Inova - Centro de Desenvolvimento Infantil\n📍 Anápolis - GO\n📞 ${whatsappNumber}`
     },
     {
-      title: `Cuidado com ${lp.title.toLowerCase()} ⚠️`,
-      content: `Fique atento aos sinais:\n\n${lp.sinaisAlerta.map(s => `${s.icon} ${s.text}`).join('\n')}\n\nSe identificou algum desses sinais?\n\n📋 Saiba mais em: clinicafonoinova.com.br/lp/${lp.slug}\n\n📞 WhatsApp: (62) 98888-0000`
+      // Template 3: Urgência + CTA forte
+      title: `⚠️ ${lp.headline} - Não ignore os sinais`,
+      content: `Fique atento aos sinais de alerta em ${lp.category.toLowerCase()}:\n\n${lp.sinaisAlerta.map(s => `${s.icon} ${s.text}`).join('\n')}\n\n🚨 Se identificou algum desses sinais, procure ajuda especializada!\n\n✨ ${lp.content.beneficios?.slice(0, 2).join(' ').substring(0, 100) || 'Nossa equipe está preparada para ajudar seu filho.'}\n\n📋 Mais informações: clinicafonoinova.com.br/lp/${lp.slug}\n\n📞 WhatsApp para agendamento: ${whatsappNumber}\n\n#${lp.category.replace(/_/g, '')} #Anápolis #DesenvolvimentoInfantil #${lp.keywords?.[0]?.replace(/\s+/g, '') || 'FonoInova'}`
     }
   ];
   
