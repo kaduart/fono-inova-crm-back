@@ -140,6 +140,12 @@ export const mapAppointmentToEvent = (appt) => {
             ...(typeof appt.doctor === 'object' ? appt.doctor : {}),
             fullName: professionalName
         },
+        // 💰 Valor da sessão
+        sessionValue: appt.sessionValue || appt.payment?.amount || 0,
+        paymentAmount: appt.sessionValue || appt.payment?.amount || 0,
+        // 🔗 IDs de referência
+        session: appt.session?._id?.toString() || appt.session?.toString() || null,
+        payment: appt.payment?._id?.toString() || appt.payment?.toString() || null,
         metadata: appt.metadata || null
     };
 };
