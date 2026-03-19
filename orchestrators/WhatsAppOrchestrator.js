@@ -2,13 +2,15 @@
 // FSM Determinística + Context Stack + Handlers preservados do V7
 // IA = APENAS NLU (interpretar texto). Caminho = 100% determinístico.
 
-import { PRICES, formatPrice, getTherapyPricing } from '../config/pricing.js';
+import { getTherapyPricing, getPriceText, buildValueFirstResponse, getPriceComparison } from '../config/pricing.js';
+import { determinePricingStrategy } from '../services/intelligence/pricingStrategy.js';
 import { leadRepository } from '../infrastructure/persistence/LeadRepository.js';
 import Leads from '../models/Leads.js';
 import Message from '../models/Message.js';
 import { perceptionService } from '../perception/PerceptionService.js';
 import { findAvailableSlots, autoBookAppointment, buildSlotOptions } from '../services/amandaBookingService.js';
 import { getLatestInsights } from '../services/amandaLearningService.js';
+import { enrichLeadContext } from '../services/leadContext.js';
 import {
   STATES,
   advanceState,
@@ -37,21 +39,27 @@ function formatAge(age) {
   return `${age} anos`;
 }
 import Logger from '../services/utils/Logger.js';
-import { 
-  THERAPY_DATA, 
-  detectAllTherapies, 
+import {
+  THERAPY_DATA,
+  detectAllTherapies,
   detectTherapyBySymptoms,
   normalizeTherapyTerms,
   detectNegativeScopes,
-  pickPrimaryTherapy
+  pickPrimaryTherapy,
+  isAskingAboutEquivalence,
+  getTDAHResponse,
 } from '../utils/therapyDetector.js';
 import { extractName, extractBirth, extractAgeFromText, extractPeriodFromText, extractPreferredDate } from '../utils/patientDataExtractor.js';
-import { 
-  deriveFlagsFromText, 
-  detectMedicalSpecialty, 
+import {
+  deriveFlagsFromText,
+  detectMedicalSpecialty,
   validateServiceAvailability,
-  MEDICAL_SPECIALTIES_MAP 
+  MEDICAL_SPECIALTIES_MAP,
+  resolveTopicFromFlags,
 } from '../utils/flagsDetector.js';
+import { getSpecialHoursResponse, buildSystemPrompt, buildUserPrompt } from '../utils/amandaPrompt.js';
+import { callAI } from '../services/IA/Aiproviderservice.js';
+import { buildMessageContext } from '../services/messageContextBuilder.js';
 
 const logger = new Logger('WhatsAppOrchestrator');
 
@@ -108,14 +116,103 @@ export default class WhatsAppOrchestrator {
 
       this.logger.info('V8_PROCESS', { leadId, currentState, text: text.substring(0, 80), phone: freshLead.contact?.phone || freshLead.phone || freshLead.whatsapp });
 
-      // ══ DETECÇÃO DE FLAGS PARA ENRIQUECIMENTO ══
-      // Detecta flags que serão usadas para enriquecer respostas
-      const flags = deriveFlagsFromText(text);
-      this.currentContext = { flags, lead: freshLead, state: currentState, stateData };
+      // ══ INSIGHTS DE CONVERSAS REAIS (cache 1h) ══
+      const insights = await this._getInsights();
+
+      // ══ PIPELINE DE INTELIGÊNCIA (roda para toda mensagem) ══
+      // Todos os detectores são chamados aqui, antes de qualquer decisão de estado.
+      // O FSM decide com contexto rico, não no escuro.
+      const ctx = await buildMessageContext(text, freshLead, currentState, stateData, insights);
+      const { flags, globalIntent, manualIntent } = ctx;
+      // Armazena ctx completo: leadData, canOfferScheduling, promptMode, flags, etc.
+      this.currentContext = { ...ctx, lead: freshLead, state: currentState, stateData, insights };
+
+      // ══ PRÉ-ROUTING: intenções que cortam qualquer estado ══
+
+      // Pedido de humano — a detecção existia no flagsDetector mas nunca roteava
+      if (flags.wantsHumanAgent && currentState !== STATES.HANDOFF) {
+        this.logger.info('V8_HUMAN_REQUESTED', { leadId, state: currentState });
+        await jumpToState(leadId, STATES.HANDOFF);
+        return this._reply(
+          'Claro! 💚 Vou chamar um(a) atendente pra te ajudar pessoalmente.\n\nAguarda só um minutinho...',
+          { skipEnrichment: true }
+        );
+      }
+
+      // Lead desistindo — resposta empática antes de escalar
+      if (flags.givingUp && currentState !== STATES.HANDOFF) {
+        this.logger.info('V8_GIVING_UP', { leadId, state: currentState });
+        await jumpToState(leadId, STATES.HANDOFF);
+        return this._reply(
+          'Entendo você 💚\n\nSe quiser, posso pedir pra alguém da nossa equipe te chamar pra conversar com mais calma.',
+          { skipEnrichment: true }
+        );
+      }
+
+      // Lead que já agendou retornando — encerra o fluxo sem perguntar de novo
+      if (flags.alreadyScheduled && currentState !== STATES.BOOKED) {
+        this.logger.info('V8_ALREADY_SCHEDULED', { leadId, state: currentState });
+        await jumpToState(leadId, STATES.BOOKED);
+        return this._reply('Ótimo! Seu agendamento já está confirmado 💚\n\nQualquer dúvida antes do dia, pode me chamar!');
+      }
+
+      // Currículo/parceria — não é lead, não iniciar triagem
+      if (flags.wantsPartnershipOrResume) {
+        this.logger.info('V8_NOT_A_LEAD_JOB', { leadId });
+        return this._reply(
+          'Que legal seu interesse! 😊\n\nPara parcerias e oportunidades, o melhor caminho é enviar diretamente para o nosso e-mail ou falar com nossa equipe administrativa. Eles vão te orientar melhor! 💚'
+        );
+      }
+
+      // Agradecimento — responde e permanece no estado atual
+      if (flags.saysThanks && ![STATES.HANDOFF, STATES.BOOKED].includes(currentState)) {
+        this.logger.info('V8_THANKS', { leadId, state: currentState });
+        return this._reply('De nada! 😊 Qualquer coisa é só chamar 💚', { skipEnrichment: true });
+      }
+
+      // Despedida — responde e permanece (lead pode voltar)
+      if (flags.saysBye && ![STATES.HANDOFF, STATES.BOOKED].includes(currentState)) {
+        this.logger.info('V8_BYE', { leadId, state: currentState });
+        return this._reply('Até logo! 😊 Quando precisar, estarei por aqui 💚', { skipEnrichment: true });
+      }
+
+      // Horário especial — já existe getSpecialHoursResponse() mas nunca era chamada
+      if (flags.asksAboutAfterHours && !globalIntent) {
+        this.logger.info('V8_AFTER_HOURS', { leadId });
+        return this._reply(getSpecialHoursResponse(), { skipEnrichment: true });
+      }
+
+      // Reagendamento/cancelamento — precisa de humano (não temos sistema de cancelamento via bot)
+      if ((flags.wantsReschedule || flags.wantsCancel) && currentState !== STATES.HANDOFF) {
+        this.logger.info('V8_RESCHEDULE_OR_CANCEL', { leadId, wantsReschedule: flags.wantsReschedule, wantsCancel: flags.wantsCancel });
+        await jumpToState(leadId, STATES.HANDOFF);
+        return this._reply(
+          'Claro! Para reagendamentos e cancelamentos preciso chamar um(a) atendente para te ajudar direitinho 💚\n\nAguarda só um momento...',
+          { skipEnrichment: true }
+        );
+      }
+
+      // Paciente adulto — clínica é especializada em infantil/adolescente
+      // Critério conservador: "para mim" + sem menção a filho/criança, ou declaração explícita de adulto
+      const isAdultPatient =
+        !flags.mentionsChild &&
+        !flags.mentionsBaby &&
+        (
+          /\b(é\s+para\s+mim|pra\s+mim\s+mesmo[a]?|sou\s+eu\s+(mesmo[a]?|que\s+preciso|que\s+quero)|eu\s+que\s+(preciso|quero|busco)|sou\s+adulto[a]?)\b/i.test(text) ||
+          (flags.mentionsAdult && flags.ageGroup === 'adulto')
+        );
+
+      if (isAdultPatient && ![STATES.HANDOFF, STATES.BOOKED].includes(currentState)) {
+        this.logger.info('V8_ADULT_PATIENT', { leadId });
+        await jumpToState(leadId, STATES.HANDOFF);
+        return this._reply(
+          'Oi! 😊\n\nAqui na Fono Inova somos especializados em atendimento infantil e para adolescentes.\n\nPara atendimento adulto, nossa equipe vai te orientar melhor sobre as opções 💚\n\nJá vou chamar alguém para te ajudar!',
+          { skipEnrichment: true }
+        );
+      }
 
       // ══ 1. DETECÇÃO DE INTERRUPÇÃO GLOBAL ══
       // Verifica se o lead fez uma pergunta que precisa ser respondida ANTES de continuar
-      const globalIntent = detectGlobalIntent(text);
       const isInFlow = ![STATES.IDLE, STATES.GREETING, STATES.BOOKED, STATES.HANDOFF].includes(currentState);
 
       // 🔥 CORREÇÃO: Interrupção funciona em QUALQUER estado (incluindo IDLE)
@@ -138,6 +235,40 @@ export default class WhatsAppOrchestrator {
           // Em IDLE/GREETING: responde a pergunta e continua o processamento normal
           return this._reply(interruptResponse);
         }
+      }
+
+      // ══ 1b. MANUAL INTENT (fallback quando globalIntent não detectou) ══
+      // detectManualIntent cobre padrões mais simples: endereço, planos, saudação, despedida
+      if (!globalIntent && manualIntent && currentState !== STATES.INTERRUPTED) {
+        const { intent } = manualIntent;
+        if (intent === 'address') {
+          this.logger.info('V8_MANUAL_INTENT_ADDRESS', { leadId });
+          const resp = await this._handleGlobalIntent('LOCATION_QUERY', freshLead);
+          if (isInFlow) {
+            await suspendState(leadId, currentState, stateData, 'LOCATION_QUERY');
+            return this._reply(`${resp}\n\n${getResumeHint(currentState)}`);
+          }
+          return this._reply(resp);
+        }
+        if (intent === 'plans') {
+          this.logger.info('V8_MANUAL_INTENT_PLANS', { leadId });
+          const resp = await this._handleGlobalIntent('INSURANCE_QUERY', freshLead);
+          if (isInFlow) {
+            await suspendState(leadId, currentState, stateData, 'INSURANCE_QUERY');
+            return this._reply(`${resp}\n\n${getResumeHint(currentState)}`);
+          }
+          return this._reply(resp);
+        }
+        if (intent === 'price_generic') {
+          this.logger.info('V8_MANUAL_INTENT_PRICE_GENERIC', { leadId });
+          const resp = await this._handleGlobalIntent('PRICE_QUERY', freshLead);
+          if (isInFlow) {
+            await suspendState(leadId, currentState, stateData, 'PRICE_QUERY');
+            return this._reply(`${resp}\n\n${getResumeHint(currentState)}`);
+          }
+          return this._reply(resp);
+        }
+        // 'greeting' e 'goodbye' já são tratados por flags.saysThanks/saysBye acima
       }
 
       // ══ 2. RETOMADA PÓS-INTERRUPÇÃO ══
@@ -184,7 +315,7 @@ export default class WhatsAppOrchestrator {
       }
 
       // ══ 3. FSM DETERMINÍSTICA ══
-      return this._processState(currentState, text, freshLead, stateData, services);
+      return this._processState(currentState, text, freshLead, stateData, services, ctx);
 
     } catch (error) {
       this.logger.error('V8_CRITICAL_ERROR', { error: error.message, stack: error.stack });
@@ -196,7 +327,7 @@ export default class WhatsAppOrchestrator {
   // FSM: SWITCH DETERMINÍSTICO
   // ═══════════════════════════════════════════
 
-  async _processState(state, text, lead, stateData, services = {}) {
+  async _processState(state, text, lead, stateData, services = {}, ctx = null) {
     const leadId = lead._id;
 
     this.logger.info('V8_STATE_ENTRY', { leadId, state, textLen: text.length, text: text.substring(0, 60) });
@@ -205,58 +336,125 @@ export default class WhatsAppOrchestrator {
       // ── ESTADO INICIAL ──
       case STATES.IDLE:
       case STATES.GREETING: {
-        // BUG 2 FIX: lead retornando após gap — verificar dados existentes antes de iniciar do zero
-        const hasExistingTherapy = lead.therapyArea;
-        const hasExistingName = lead.patientInfo?.fullName;
-        const hasExistingComplaint = lead.autoBookingContext?.complaint;
+        // Usa ctx.leadData como fonte única — resolve fragmentação entre patientInfo, stateData, qualificationData
+        const hasExistingTherapy = ctx.leadData?.therapy;
+        const hasExistingName = ctx.leadData?.name;
+        const hasExistingComplaint = ctx.leadData?.complaint;
 
         if (hasExistingTherapy) {
           this.logger.info('V8_RETURNING_LEAD_HAS_DATA', { leadId, therapyArea: hasExistingTherapy, hasName: !!hasExistingName, hasComplaint: !!hasExistingComplaint });
+
+          // ── WARM RECALL: enriquece contexto apenas se lead ficou afastado ────
+          // Evita chamar enrichLeadContext em toda mensagem — só quando voltou depois de ≥1 dia
+          const quickHoursSince = freshLead.lastInteractionAt
+            ? (Date.now() - new Date(freshLead.lastInteractionAt).getTime()) / (1000 * 60 * 60)
+            : 0;
+          const isReturningAfterGap = quickHoursSince >= 24;
+
+          if (isReturningAfterGap) {
+            let leadCtx = null;
+            try {
+              leadCtx = await enrichLeadContext(leadId);
+            } catch (e) {
+              this.logger.warn('V8_ENRICH_CTX_FAILED', { leadId, error: e.message });
+            }
+
+            if (leadCtx?.shouldGreet) {
+              const lastTopics = leadCtx.lastTopics ?? [];
+              const days = leadCtx.daysSinceLastContact ?? 1;
+              const childNameTopic = lastTopics.find(t => t.type === 'child_name');
+              const complaintTopic = lastTopics.find(t => t.type === 'complaint');
+
+              const childRef = childNameTopic?.value ? `o ${childNameTopic.value}` : null;
+              const complaintRef = complaintTopic?.value ? `*${complaintTopic.value}*` : null;
+              const timeRef = days >= 7 ? 'semana passada' : days >= 2 ? 'há alguns dias' : 'ontem';
+
+              // Monta a referência contextual (só se tiver algo real para mencionar)
+              let contextLine = '';
+              if (childRef && complaintRef) {
+                contextLine = `Da última vez conversamos sobre ${complaintRef} ${childRef ? `para ${childRef}` : ''}.\n\n`;
+              } else if (complaintRef) {
+                contextLine = `Da última vez você mencionou ${complaintRef}.\n\n`;
+              } else if (childRef) {
+                contextLine = `Da última vez conversamos sobre ${childRef}.\n\n`;
+              }
+
+              this.logger.info('V8_WARM_RECALL', { leadId, days, hasChildRef: !!childRef, hasComplaintRef: !!complaintRef });
+
+              if (hasExistingName) {
+                // Tem tudo — confirma retomada sem jogar slots direto (lead estava longe)
+                // Próxima mensagem do lead → IDLE → hasExistingName → SHOW_SLOTS
+                return this._reply(
+                  `Que bom que voltou${childRef ? `, ${childRef} por aqui` : ''}! 😊💚\n\n` +
+                  `${contextLine}` +
+                  `Já tenho as informações aqui. Quer que eu verifique os horários disponíveis para *${hasExistingTherapy}*? 💚`
+                );
+              }
+
+              if (hasExistingComplaint) {
+                const resumeData = { ...stateData, therapy: hasExistingTherapy, complaint: hasExistingComplaint };
+                await jumpToState(leadId, STATES.COLLECT_PERIOD, resumeData);
+                return this._reply(
+                  `Que bom que voltou! 😊💚\n\n` +
+                  `${contextLine}` +
+                  `Estávamos quase lá! Que período funciona melhor: *manhã ou tarde*? ☀️🌙`
+                );
+              }
+
+              // Tem terapia mas não tem queixa — retoma com contexto
+              const resumeData = { ...stateData, therapy: hasExistingTherapy };
+              await jumpToState(leadId, STATES.COLLECT_COMPLAINT, resumeData);
+              return this._reply(
+                `Que bom que voltou! 😊💚\n\n` +
+                `${contextLine}` +
+                `Me conta um pouco mais sobre a situação para eu poder ajudar melhor 💚`
+              );
+            }
+          }
+
+          // ── MESMA SESSÃO (< 24h) — retoma silenciosamente sem warm recall ───
           if (hasExistingName) {
-            // Tem terapia + nome → oferecer horários direto
+            // canOfferScheduling: falso se bookingOffersCount >= 1 (já recebeu slots)
+            if (!ctx.canOfferScheduling) {
+              this.logger.info('V8_SLOT_SKIP_ALREADY_OFFERED', { leadId, bookingOffersCount: freshLead.bookingOffersCount });
+              return this._reply('Você já recebeu os horários disponíveis 😊 Conseguiu verificar? Se precisar de outros dias ou turnos é só me contar 💚');
+            }
             const resumeData = { ...stateData, therapy: hasExistingTherapy, patientName: hasExistingName };
             await jumpToState(leadId, STATES.SHOW_SLOTS, resumeData);
             return this._handleOfferBooking(resumeData, lead, services);
           }
           if (hasExistingComplaint) {
-            // Tem terapia + queixa, falta período/nome → retomar no período
             const resumeData = { ...stateData, therapy: hasExistingTherapy, complaint: hasExistingComplaint };
             await jumpToState(leadId, STATES.COLLECT_PERIOD, resumeData);
-            return this._reply(`Oi! 😊 Que bom que voltou!\n\nEstava coletando as informações para *${hasExistingTherapy}*.\n\nQue período funciona melhor: **manhã ou tarde**? ☀️🌙`);
+            return await this._replyWithAI(ctx, 'Lead retornou na mesma sessão com terapia e queixa já registradas. Retome naturalmente e pergunte qual período funciona melhor: manhã ou tarde.');
           }
-          // Tem terapia mas sem queixa → retomar na queixa
           const resumeData = { ...stateData, therapy: hasExistingTherapy };
           await jumpToState(leadId, STATES.COLLECT_COMPLAINT, resumeData);
-          return this._reply(`Oi! 😊 Bem-vindo(a) de volta!\n\nContinuando sobre *${hasExistingTherapy}* — me conta um pouco sobre a situação que está preocupando?`);
+          return await this._replyWithAI(ctx, 'Lead retornou na mesma sessão com terapia já registrada mas sem queixa. Retome de forma calorosa e pergunte sobre a situação que está preocupando.');
         }
 
-        // 🔧 FIX: Verificar especialidades médicas primeiro (neuropediatra, pediatra, psiquiatra)
-        const medicalSpecialty = detectMedicalSpecialty(text);
+        // Usar ctx (já computado pelo buildMessageContext — sem chamar detectors de novo)
+        const medicalSpecialty = ctx.medicalSpecialty;
         if (medicalSpecialty) {
           this.logger.info('V8_MEDICAL_SPECIALTY_IDLE', { leadId, specialty: medicalSpecialty.specialty });
           await jumpToState(leadId, STATES.COLLECT_THERAPY);
           return this._reply(`${medicalSpecialty.message}\n\nPosso te ajudar com *${medicalSpecialty.redirectTo}* ou outra especialidade que oferecemos? 💚\n\n💚 Fonoaudiologia\n💚 Psicologia\n💚 Fisioterapia\n💚 Terapia Ocupacional\n💚 Neuropsicologia\n💚 Psicopedagogia\n💚 Musicoterapia`);
         }
 
-        // 🔧 FIX: Verificar serviços fora de escopo (teste da orelhinha, audiometria)
-        const negativeScopes = detectNegativeScopes(text);
-        if (negativeScopes.mentionsOrelhinha) {
+        if (ctx.negativeScope?.mentionsOrelhinha) {
           this.logger.info('V8_OUT_OF_SCOPE_IDLE', { leadId, scope: 'orelhinha' });
           await jumpToState(leadId, STATES.COLLECT_THERAPY);
           return this._reply(`Não realizamos teste da orelhinha/triagem auditiva aqui na Fono Inova 🤔\n\nEsse é um exame médico que geralmente é feito em hospitais ou clínicas de fonoaudiologia especializadas em audiologia.\n\nSe você busca Fonoaudiologia para *desenvolvimento da fala* (criança que não fala, troca letras, gagueira), aí sim podemos ajudar! 💚\n\nQual especialidade você procura?`);
         }
 
-        // Detectar terapias por nome
-        let therapies = detectAllTherapies(text);
+        // Usar therapies já detectadas pelo ctx
+        let therapies = ctx.therapies?.length > 0 ? ctx.therapies : [];
         
-        // 🔧 FIX: Se não detectou por nome, tentar por sintomas
-        if (therapies.length === 0) {
-          const therapiesBySymptom = detectTherapyBySymptoms(text);
-          if (therapiesBySymptom.length > 0) {
-            const primaryId = therapiesBySymptom[0];
-            therapies = [{ id: primaryId, name: this._getTherapyDisplayName(primaryId) }];
-            this.logger.info('V8_THERAPY_DETECTED_BY_SYMPTOM_IDLE', { leadId, therapyId: primaryId });
-          }
+        // Fallback por sintoma (ctx.symptomTherapies já computado)
+        if (therapies.length === 0 && ctx.symptomTherapies?.length > 0) {
+          const primaryId = ctx.symptomTherapies[0];
+          therapies = [{ id: primaryId, name: this._getTherapyDisplayName(primaryId) }];
+          this.logger.info('V8_THERAPY_DETECTED_BY_SYMPTOM_IDLE', { leadId, therapyId: primaryId });
         }
         
         const therapy = therapies.length > 0 ? therapies[0] : null;
@@ -277,28 +475,60 @@ export default class WhatsAppOrchestrator {
             return this._reply(`${neuroIntro}Para te ajudar melhor: você está buscando um *laudo neuropsicológico* (avaliação completa com relatório) ou *acompanhamento terapêutico* (sessões regulares)?`);
           }
 
+          // Queixa embutida na mesma mensagem que a terapia?
+          // Ex: "quero psicologia meu filho tem ansiedade" → não perguntar de novo
+          const hasEmbeddedComplaint = text.length > 30 && (
+            flags.isEmotional ||
+            ctx.symptomTherapies?.length > 0 ||
+            /\b(meu\s+filho|minha\s+filha|ele\s+(não|tá|está)|ela\s+(não|tá|está)|queixa|dificuldade|não\s+(fala|para|consegue|anda|aprende)|ansios|agitado|agressiv|atraso|escola\s+(pediu|disse)|médico\s+(pediu|disse))\b/i.test(text)
+          );
+
+          if (hasEmbeddedComplaint && !isAvailQuestion) {
+            const complaint = text.substring(0, 200);
+            await this._saveComplaint(leadId, complaint);
+            await jumpToState(leadId, STATES.COLLECT_BIRTH, { therapy: therapy?.id || therapy, complaint });
+            return await this._replyWithAI(ctx, `Lead já descreveu a queixa junto com a terapia (${therapyName}). Confirme que entendeu a situação e peça a data de nascimento do paciente.`);
+          }
+
           await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy: therapy?.id || therapy });
           if (isAvailQuestion) {
-            return this._reply(`Sim, atendemos com *${therapyName}*! 😊\n\nMe conta: qual é a principal queixa ou dificuldade?`);
+            return await this._replyWithAI(ctx, `Lead perguntou se a clínica atende ${therapyName}. Confirme positivamente e pergunte qual é a principal queixa ou dificuldade.`);
           }
-          return this._reply(`Que bom que entrou em contato! 😊\n\nSobre ${therapyName} 💚...\n\nMe conta um pouco da situação? O que tá preocupando?`);
+          return await this._replyWithAI(ctx, `Lead demonstrou interesse em ${therapyName}. Acolha e pergunte sobre a situação — o que está preocupando.`);
         }
 
         this.logger.info('V8_NO_THERAPY_ON_IDLE', { leadId, text: text.substring(0, 60) });
+
+        // ── Detecta o tipo de abertura para responder de forma adequada ──────
+
+        // 1. Abridor vago: "oi", "olá", "quero mais informações", "preciso de ajuda"
+        const isVagueOpener = /^(oi|olá|ola|hey|bom\s+dia|boa\s+tarde|boa\s+noite|tudo\s+bem|tudo\s+bom|quero\s+(mais\s+)?info|preciso\s+de\s+ajuda|me\s+ajuda|pode\s+me\s+ajudar|gostaria\s+de\s+saber|vim\s+saber|quero\s+saber|boa)/i.test(text.trim());
+
+        // 2. Queixa/dor/relato sem terapia mapeada: "meu filho tem dor", "tô preocupada"
+        const mentionsComplaint = flags.isEmotional
+          || /\b(dor|dific[ui]ldade|preocup|sofr|chora|medo|ansios|problem|recla|escola\s+(disse|pediu|falou)|médico\s+(disse|pediu|falou)|não\s+(consegue|faz|fala|anda|aprende|para)|atras[ao]|atraso|comportamento)\b/i.test(text);
+
         await jumpToState(leadId, STATES.COLLECT_THERAPY);
-        return this._reply('Oi! Sou a Amanda da Fono Inova! 😊\n\nQue bom que você entrou em contato!\n\nMe conta: tá procurando fono, psico, fisio, ou qual especialidade?');
+
+        if (isVagueOpener || mentionsComplaint) {
+          const hour = new Date().getHours();
+          const saudacao = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+          return await this._replyWithAI(ctx, `${saudacao}! Primeiro contato. Apresente-se como Amanda da Fono Inova e pergunte se o atendimento é para a própria pessoa ou para alguém da família.`);
+        }
+
+        // Mensagem mista ou sem contexto claro
+        return await this._replyWithAI(ctx, 'Primeiro contato sem contexto claro. Apresente-se como Amanda da Fono Inova e peça para contar o que está procurando ou qual situação está preocupando.');
       }
 
       // ── COLETA DE TERAPIA ──
       case STATES.COLLECT_THERAPY: {
-        // BUG 2 FIX: se lead já tem therapyArea salva no banco mas FSM está neste estado
-        // (ex: retornou no dia seguinte), usar o dado existente e avançar
-        if (lead.therapyArea && detectAllTherapies(text).length === 0) {
-          const restoredTherapy = lead.therapyArea;
+        // Lead retornou com terapia já salva mas FSM em COLLECT_THERAPY (ex: voltou no dia seguinte)
+        if (ctx.leadData?.therapy && detectAllTherapies(text).length === 0) {
+          const restoredTherapy = ctx.leadData.therapy;
           this.logger.info('V8_THERAPY_RESTORED_FROM_DB', { leadId, therapyArea: restoredTherapy });
           const resumeData = { ...stateData, therapy: restoredTherapy };
           await jumpToState(leadId, STATES.COLLECT_COMPLAINT, resumeData);
-          return this._reply(`Bem-vindo(a) de volta! 😊\n\nContinuando sobre *${restoredTherapy}* — me conta um pouco sobre a situação que está preocupando?`);
+          return await this._replyWithAI(ctx, `Lead voltou com terapia ${restoredTherapy} já registrada. Dê boas-vindas de volta e retome perguntando sobre a situação que está preocupando.`);
         }
 
         const therapies = detectAllTherapies(text);
@@ -344,13 +574,66 @@ export default class WhatsAppOrchestrator {
           return this._reply(`*${therapyName}* 💚, ótima escolha!\n\nMe conta um pouco da situação que tá preocupando?`);
         }
 
-        // 🔧 FIX: Especialidades médicas (neuropediatra, pediatra, psiquiatra)
-        const medicalSpecialty = detectMedicalSpecialty(text);
+        // ── "Psicologia é o mesmo que psicopedagogia?" ────────────────────
+        if (isAskingAboutEquivalence(text)) {
+          this.logger.info('V8_EQUIVALENCE_QUESTION', { leadId, text: text.substring(0, 60) });
+          return this._reply(
+            `Boa pergunta! 😊\n\n` +
+            `*Psicologia* trabalha emoções, comportamento e saúde mental — ansiedade, medos, desenvolvimento emocional.\n\n` +
+            `*Psicopedagogia* foca especificamente em como a criança aprende — dificuldades escolares, dislexia, TDAH, ritmo de aprendizagem.\n\n` +
+            `Me conta mais sobre o que está acontecendo com a criança? Assim consigo indicar o caminho certo 💚`
+          );
+        }
+
+        // ── TDAH com resposta específica ──────────────────────────────────
+        if (ctx.isTDAH) {
+          const leadName = ctx.leadData?.name;
+          const tdahResponse = getTDAHResponse(leadName);
+          if (tdahResponse) {
+            this.logger.info('V8_TDAH_QUESTION', { leadId });
+            // Terapia mais provável: neuropsicologia ou psicologia
+            await this._saveTherapy(leadId, { id: 'neuropsychological', name: 'Neuropsicologia' });
+            await jumpToState(leadId, STATES.COLLECT_NEURO_TYPE, { therapy: 'neuropsychological' });
+            return this._reply(tdahResponse);
+          }
+        }
+
+        // ── Fallback por flags quando nenhuma terapia foi detectada ───────
+        // resolveTopicFromFlags mapeia flags → área terapêutica mesmo sem keyword explícita
+        const topicFromFlags = resolveTopicFromFlags(flags, text);
+        if (topicFromFlags) {
+          this.logger.info('V8_THERAPY_FROM_FLAGS', { leadId, topic: topicFromFlags });
+          const topicTherapy = { id: topicFromFlags, name: this._getTherapyDisplayName(topicFromFlags) };
+          await this._saveTherapy(leadId, topicTherapy);
+          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy: topicFromFlags });
+          return await this._replyWithAI(ctx, `Lead demonstrou interesse relacionado a ${topicFromFlags}. Confirme que entendeu e pergunte mais sobre a situação.`);
+        }
+
+        // ── Especialidades médicas (neuropediatra, pediatra, psiquiatra) ──
+        const medicalSpecialty = ctx.medicalSpecialty || detectMedicalSpecialty(text);
         if (medicalSpecialty) {
           this.logger.info('V8_MEDICAL_SPECIALTY_DETECTED', { leadId, specialty: medicalSpecialty.specialty });
           const { handoff } = await incrementRetry(leadId);
           if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
           return this._reply(`${medicalSpecialty.message}\n\nPosso te ajudar com *${medicalSpecialty.redirectTo}* ou outra especialidade que oferecemos? 💚\n\n💚 Fonoaudiologia\n💚 Psicologia\n💚 Fisioterapia\n💚 Terapia Ocupacional\n💚 Psicopedagogia`);
+        }
+
+        // ── Queixa descrita mas sem terapia detectada ─────────────────────
+        // Mãe contou a situação mas não usou nome de especialidade nem sintoma mapeado.
+        // Em vez de pedir "qual terapia?", acolhe e salva a queixa — terapia será
+        // inferida no próximo turno ou na triagem humana.
+        const looksLikeComplaint =
+          flags.isEmotional ||
+          /\b(meu\s+filho|minha\s+filha|ele\s+(não|tá|está)|ela\s+(não|tá|está)|criança|bebê|escola\s+(pediu|falou|disse)|médico\s+(pediu|disse|indicou)|dor|preocup|dificuldade|problem|sofr|chora|não\s+(para|consegue|faz|fala|anda|aprende))\b/i.test(text);
+
+        if (looksLikeComplaint && text.length > 15) {
+          this.logger.info('V8_COMPLAINT_WITHOUT_THERAPY', { leadId, text: text.substring(0, 80) });
+          // Salva queixa e avança pra entender mais — não força escolha de terapia
+          await Leads.updateOne({ _id: leadId }, {
+            $set: { 'autoBookingContext.complaint': text.trim() }
+          });
+          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { ...stateData, complaint: text.trim() });
+          return await this._replyWithAI(ctx, 'Lead descreveu uma queixa mas não mencionou especialidade. Acolha o relato e pergunte se é com uma criança e com que idade.');
         }
 
         // Verifica se tem dado de idade/contexto para resposta mais natural
@@ -362,41 +645,80 @@ export default class WhatsAppOrchestrator {
           const ageNum = resolveAgeNumber(age);
           await Leads.updateOne({ _id: leadId }, { $set: { 'patientInfo.age': ageNum } });
           const ageStr = formatAge(age);
-          return this._reply(`Entendi, ${ageStr}! 💚\n\nE qual especialidade você procura? Fono, Psico, Fisioterapia, Psicopedagogia, Musicoterapia ou Neuropsico?`);
+          return this._reply(`Entendi, ${ageStr}! 💚\n\n${this._retryMessage(STATES.COLLECT_THERAPY, retryCount)}`);
         }
-        return this._reply('Hmm, não consegui identificar a especialidade 🤔\n\nTrabalhamos com Fono, Psico, Fisioterapia, Psicopedagogia, Musicoterapia e Neuropsico.\n\nQual dessas você procura?');
+        return this._reply(this._retryMessage(STATES.COLLECT_THERAPY, retryCount));
       }
 
       // ── LAUDO VS ACOMPANHAMENTO (apenas neuropsicologia) ──
       case STATES.COLLECT_NEURO_TYPE: {
         const tl = text.toLowerCase();
+
+        // ── Detecção explícita ─────────────────────────────────────────────
         const isLaudo = /\b(laudo|relat[oó]rio|diagn[oó]stico|avalia[cç][aã]o\s+completa|fechar\s+diagn)/i.test(tl);
         const isAcomp = /\b(acompanhamento|terapia|sess[oõ]es?|terapêutico|terapeutico|s[oó]\s+terap)/i.test(tl);
 
-        if (isLaudo) {
-          this.logger.info('V8_NEURO_TYPE_COLLECTED', { leadId, neuroType: 'laudo' });
+        // ── Sinais implícitos de LAUDO ─────────────────────────────────────
+        // Mãe não sabe o nome "laudo" mas claramente quer investigar/descobrir
+        const impliesLaudo =
+          /\b(suspeita|n[aã]o\s+sei\s+(o\s+que|se)|quero\s+(saber|entender|descobrir)|investiga|fechar|o\s+que\s+(ele|ela)\s+tem|o\s+que\s+est[aá]\s+(acontecendo|errado)|m[eé]dico\s+(pediu|indicou|recomendou)|escola\s+(pediu|indicou|sugeriu)|avali[ao]r|primeira\s+vez|nunca\s+fiz)/i.test(tl)
+          || (ctx?.flags?.mentionsInvestigation)
+          || (ctx?.flags?.mentionsDoubtTEA)
+          || ctx?.teaStatus === 'suspeita'; // computeTeaStatus: TEA+suspeita detectados
+
+        // ── Sinais implícitos de ACOMPANHAMENTO ───────────────────────────
+        // Mãe já tem diagnóstico, quer continuar ou iniciar tratamento
+        const impliesAcomp =
+          /\b(j[aá]\s+tem\s+(diagn[oó]stico|laudo|o\s+laudo)|j[aá]\s+foi\s+(diagnosticad|avaliado)|j[aá]\s+sab(e|emos)|tem\s+(tea|tdah|autismo)\s+confirmado|diagnosticad[oa]\s+com|continuar\s+(o\s+)?tratamento|continuar\s+(as\s+)?sess[oõ]es|quero\s+(come[cç]ar|iniciar)\s+(as\s+)?sess[oõ]es)/i.test(tl)
+          || ctx?.teaStatus === 'laudo_confirmado'; // computeTeaStatus: TEA+laudo confirmados
+
+        // Resolve implícito como se fosse explícito
+        const resolvedLaudo = isLaudo || impliesLaudo;
+        const resolvedAcomp = isAcomp || impliesAcomp;
+
+        if (resolvedLaudo && !resolvedAcomp) {
+          this.logger.info('V8_NEURO_TYPE_COLLECTED', { leadId, neuroType: 'laudo', implicit: !isLaudo });
           await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { ...stateData, neuroType: 'laudo' });
           await Leads.updateOne({ _id: leadId }, [
             { $set: { autoBookingContext: { $ifNull: ['$autoBookingContext', {}] } } },
             { $set: { 'autoBookingContext.neuroType': 'laudo' } },
           ]);
-          return this._reply(`Entendido! 💚 Laudo neuropsicológico completo.\n\n💰 *Investimento: R$ 1.700* (parcelamos em até 6x no cartão)\nInclui ~10 sessões de avaliação + laudo completo.\n\nMe conta: qual é a principal dificuldade que você quer investigar?`);
+          return await this._replyWithAI(ctx, 'Lead escolheu laudo neuropsicológico. Explique brevemente o que é (avaliação completa + relatório), mencione o investimento e pergunte a principal dificuldade.', `Investimento laudo neuropsicológico: ${getPriceText('neuropsicologia')}`);
         }
 
-        if (isAcomp) {
-          this.logger.info('V8_NEURO_TYPE_COLLECTED', { leadId, neuroType: 'acompanhamento' });
+        if (resolvedAcomp && !resolvedLaudo) {
+          this.logger.info('V8_NEURO_TYPE_COLLECTED', { leadId, neuroType: 'acompanhamento', implicit: !isAcomp });
           await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { ...stateData, neuroType: 'acompanhamento' });
           await Leads.updateOne({ _id: leadId }, [
             { $set: { autoBookingContext: { $ifNull: ['$autoBookingContext', {}] } } },
             { $set: { 'autoBookingContext.neuroType': 'acompanhamento' } },
           ]);
-          return this._reply(`Perfeito! 💚 Acompanhamento terapêutico.\n\n💰 *Investimento:*\n• Avaliação inicial: R$ 200\n• Sessões: R$ 130 cada\n\nMe conta: qual é a principal dificuldade?`);
+          return await this._replyWithAI(ctx, 'Lead escolheu acompanhamento terapêutico em neuropsicologia. Confirme a escolha, mencione o investimento e pergunte a principal dificuldade.', `Investimento acompanhamento: ${getPriceText('psicopedagogia')}`);
         }
 
+        // ── Genuinamente não sabe — explica a diferença de forma natural ──
         const { handoff, retryCount } = await incrementRetry(leadId);
         this.logger.warn('V8_RETRY', { leadId, state, retryCount, reason: 'neuro_type_not_detected', text: text.substring(0, 60) });
         if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
-        return this._reply('Para te ajudar melhor 😊\n\nVocê está buscando um *laudo neuropsicológico* (relatório completo com diagnóstico) ou *acompanhamento terapêutico* (sessões regulares)?\n\n💚 *Laudo* — R$ 1.700 (parcelamos)\n💚 *Acompanhamento* — R$ 200 (avaliação) + R$ 130/sessão');
+
+        if (retryCount === 1) {
+          return this._reply(
+            `Deixa eu te explicar a diferença pra ficar mais fácil 💚\n\n` +
+            `*Laudo neuropsicológico* — para quem quer *entender* o que está acontecendo. ` +
+            `São ~10 sessões de avaliação e ao final você recebe um relatório completo com o perfil da criança. ` +
+            `Muito usado quando há suspeita de TEA, TDAH ou dificuldades de aprendizado.\n\n` +
+            `*Acompanhamento terapêutico* — para quem já tem diagnóstico e quer *trabalhar* as dificuldades em sessões regulares.\n\n` +
+            `Qual das duas situações é mais parecida com a de vocês?`
+          );
+        }
+
+        // retryCount >= 2: oferece escolha direta A ou B
+        return this._reply(
+          `Sem problemas, vou simplificar 😊\n\n` +
+          `*A)* Ainda não sei o que meu filho tem — quero investigar\n` +
+          `*B)* Já sei o que ele tem — quero iniciar o tratamento\n\n` +
+          `Qual é a situação de vocês?`
+        );
       }
 
       // ── COLETA DE QUEIXA ──
@@ -419,7 +741,7 @@ export default class WhatsAppOrchestrator {
           }
           
           // Se é pergunta NÃO mapeada, redireciona SEM parecer falha
-          return this._reply(`Boa pergunta! 💚 Vou verificar isso pra você.\n\nMe conta primeiro: qual é a principal queixa ou dificuldade que vocês estão observando?`);
+          return await this._replyWithAI(ctx, 'Lead fez uma pergunta fora do escopo direto. Responda brevemente que vai verificar e redirecione para a queixa principal — o que está observando na criança.');
         }
 
         if (text.length > 5) {
@@ -432,19 +754,19 @@ export default class WhatsAppOrchestrator {
             this.logger.info('V8_COMPLAINT_WITH_AGE', { leadId, age, complaint: complaint.substring(0, 60) });
             await jumpToState(leadId, STATES.COLLECT_BIRTH, newData);
             await this._saveComplaintAndAge(leadId, complaint, resolveAgeNumber(age));
-            return this._reply(`Entendi! 💚\n\nAgora preciso da *data de nascimento* do paciente (dd/mm/aaaa):`);
+            return await this._replyWithAI(ctx, 'Lead descreveu a queixa e já mencionou a idade. Confirme que entendeu e peça a data de nascimento no formato dd/mm/aaaa.');
           }
 
           this.logger.info('V8_COMPLAINT_NO_AGE', { leadId, complaint: complaint.substring(0, 60) });
           await jumpToState(leadId, STATES.COLLECT_BIRTH, newData);
           await this._saveComplaint(leadId, complaint);
-          return this._reply(`Entendi a situação! 💚\n\nQual a *data de nascimento* do paciente? (dd/mm/aaaa)`);
+          return await this._replyWithAI(ctx, 'Lead descreveu a queixa. Confirme que entendeu de forma acolhedora e peça a data de nascimento do paciente (dd/mm/aaaa).');
         }
 
         const { handoff, retryCount } = await incrementRetry(leadId);
         this.logger.warn('V8_RETRY', { leadId, state, retryCount, reason: 'complaint_too_short', textLen: text.length });
         if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
-        return this._reply('Me conta um pouco mais sobre a situação? 😊');
+        return this._reply(this._retryMessage(STATES.COLLECT_COMPLAINT, retryCount));
       }
 
       // ── COLETA DE IDADE/NASCIMENTO ──
@@ -472,7 +794,7 @@ export default class WhatsAppOrchestrator {
           const newData = { ...stateData, age: ageNum || null, birthDate: birth || null };
           await jumpToState(leadId, STATES.COLLECT_PERIOD, newData);
           await this._saveAge(leadId, ageNum, birth);
-          return this._reply(`${ageNum ? formatAge(age) : 'Anotado'}, perfeito! 📝\n\nQue período funciona melhor: **manhã ou tarde**? ☀️🌙`);
+          return await this._replyWithAI(ctx, `Lead informou idade/nascimento${ageNum ? ` (${formatAge(age)})` : ''}. Confirme o dado e pergunte qual período funciona melhor: manhã ou tarde.`);
         }
 
         const { handoff, retryCount } = await incrementRetry(leadId);
@@ -490,8 +812,8 @@ export default class WhatsAppOrchestrator {
           this.logger.info('V8_PERIOD_COLLECTED', { leadId, period, preferredDate });
           await this._savePeriod(leadId, period);
 
-          // BUG 7 FIX: se lead já tem nome, pular COLLECT_NAME direto para SHOW_SLOTS
-          const existingName = lead.patientInfo?.fullName;
+          // Se lead já tem nome (ctx.leadData resolve de qualquer fonte), pular COLLECT_NAME
+          const existingName = ctx.leadData?.name;
           if (existingName) {
             this.logger.info('V8_NAME_ALREADY_EXISTS_SKIP_COLLECT', { leadId, existingName });
             const newData = { ...stateData, period, preferredDate, patientName: existingName };
@@ -515,13 +837,13 @@ export default class WhatsAppOrchestrator {
         const { handoff, retryCount } = await incrementRetry(leadId);
         this.logger.warn('V8_RETRY', { leadId, state, retryCount, reason: 'period_not_detected', text: text.substring(0, 60) });
         if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
-        return this._reply('Prefere **manhã** ou **tarde**? (Nosso horário: 8h às 18h) ☀️🌙');
+        return this._reply(this._retryMessage(STATES.COLLECT_PERIOD, retryCount));
       }
 
       // ── COLETA DE NOME DO PACIENTE ──
       case STATES.COLLECT_NAME: {
-        // BUG 4 FIX: se lead já tem nome salvo no banco, não perguntar de novo
-        const existingName = lead.patientInfo?.fullName;
+        // ctx.leadData resolve nome de qualquer fonte (patientInfo, stateData, qualificationData)
+        const existingName = ctx.leadData?.name;
         if (existingName) {
           this.logger.info('V8_NAME_ALREADY_IN_DB_SKIP', { leadId, existingName });
           const newData = { ...stateData, patientName: existingName };
@@ -532,9 +854,9 @@ export default class WhatsAppOrchestrator {
         const name = extractName(text);
         if (name && name.length >= 2) {
           this.logger.info('V8_PATIENT_NAME_COLLECTED', { leadId, name });
-          
-          // ✅ VALIDAÇÃO: Precisa ter therapyArea antes de mostrar slots
-          const therapyArea = lead.therapyArea || stateData.therapy?.id || stateData.therapy;
+
+          // ctx.leadData.therapy resolve de qualquer fonte (therapyArea, stateData, qualificationData)
+          const therapyArea = ctx.leadData?.therapy || stateData.therapy?.id || stateData.therapy;
           if (!therapyArea) {
             this.logger.warn('V8_NO_THERAPY_AREA', { leadId, name, leadTherapyArea: lead.therapyArea, stateDataTherapy: stateData.therapy });
             await jumpToState(leadId, STATES.COLLECT_THERAPY, { ...stateData, patientName: name });
@@ -550,7 +872,7 @@ export default class WhatsAppOrchestrator {
         const { handoff, retryCount } = await incrementRetry(leadId);
         this.logger.warn('V8_RETRY', { leadId, state, retryCount, reason: 'name_not_extracted', text: text.substring(0, 60) });
         if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
-        return this._reply('Qual o nome completo do paciente? 💚');
+        return this._reply(this._retryMessage(STATES.COLLECT_NAME, retryCount));
       }
 
       // ── MOSTRANDO SLOTS ──
@@ -686,85 +1008,64 @@ export default class WhatsAppOrchestrator {
   }
 
   async _handlePriceInquiry(lead) {
-    const therapy = lead.therapyArea || lead.stateData?.therapy;
-    const info = therapy ? THERAPY_DATA[therapy] : null;
+    const ctx = this.currentContext;
+    const flags = ctx?.flags || {};
+    const intentScore = ctx?.promptMode?.intentScore ?? 20;
 
-    if (info) {
-      const pricing = getTherapyPricing(therapy) || { avaliacao: 200 };
-      const valor = formatPrice(pricing.avaliacao);
-      return `Pra ${info.name} ${info.emoji}:\n\n💰 Avaliação: ${valor}\n\nÉ ${info.investimento || 'investimento acessível'} (${info.duracao || '50min'}).\n\nE o melhor: trabalhamos com reembolso de plano! 💚`;
+    // Terapia conhecida: resposta estratégica personalizada
+    const therapy = lead.therapyArea || lead.stateData?.therapy || ctx?.leadData?.therapy;
+    if (therapy) {
+      const strategy = determinePricingStrategy(intentScore, flags);
+      const pricing = getTherapyPricing(therapy);
+
+      if (strategy === 'package_first' && pricing && !pricing.incluiLaudo) {
+        // Lead quente: valor primeiro, depois preço, CTA direto
+        const childAge = ctx?.leadData?.age;
+        return buildValueFirstResponse(therapy, { childAge, includeUrgency: !!childAge && childAge <= 6 });
+      }
+
+      const priceComparison = getPriceComparison(therapy);
+      const mainPrice = getPriceText(therapy);
+      const base = `💰 ${mainPrice}`;
+      const comparison = priceComparison ? `\n\n${priceComparison}` : '';
+      return `${base}${comparison}\n\nTrabalhamos com reembolso de plano! 💚\n\nQuer verificar horários disponíveis?`;
     }
 
-    // FIX: Buscar mensagens do lead para detectar terapias mencionadas
+    // Sem terapia definida: detectar nas últimas mensagens
     try {
-      const messages = await Message.find({
-        lead: lead._id,
-        direction: 'inbound'
-      }).sort({ timestamp: -1 }).limit(10).lean();
-      
+      const messages = await Message.find({ lead: lead._id, direction: 'inbound' })
+        .sort({ timestamp: -1 }).limit(10).lean();
+
       const allText = messages.map(m => m.content || '').join(' ');
       const detectedTherapies = detectAllTherapies(allText);
-      
-      // Se detectou 1-3 terapias, mostrar preços apenas dessas
+
       if (detectedTherapies.length > 0 && detectedTherapies.length <= 3) {
+        const EMOJI = {
+          fonoaudiologia: '💬', speech: '💬',
+          psicologia: '🧠', psychology: '🧠',
+          terapia_ocupacional: '🤲', occupational: '🤲',
+          fisioterapia: '🏃', physiotherapy: '🏃',
+          psicopedagogia: '📚', psychopedagogy: '📚',
+          musicoterapia: '🎵', music: '🎵',
+          neuropsicologia: '🧩', neuropsychological: '🧩',
+        };
+
         let priceText = 'Claro! Aqui os valores:\n\n';
-        
-        for (const therapy of detectedTherapies) {
-          const therapyId = typeof therapy === 'object' ? therapy.id : therapy;
-          const therapyKey = therapyId?.toLowerCase();
-          
-          // Mapear nomes para emojis
-          const emojiMap = {
-            'fonoaudiologia': '💬',
-            'speech': '💬',
-            'psicologia': '🧠',
-            'psychology': '🧠',
-            'terapia_ocupacional': '🤲',
-            'occupational_therapy': '🤲',
-            'fisioterapia': '🏃',
-            'physiotherapy': '🏃',
-            'psicopedagogia': '📚',
-            'psychopedagogy': '📚',
-            'musicoterapia': '🎵',
-            'music_therapy': '🎵',
-            'neuropsicologia': '🧩',
-            'neuropsychological': '🧩'
-          };
-          
-          const emoji = emojiMap[therapyKey] || '💚';
-          const pricing = getTherapyPricing(therapyKey) || { avaliacao: 200 };
-          const valor = formatPrice(pricing.avaliacao);
-          
-          // Nome amigável
-          const nameMap = {
-            'fonoaudiologia': 'Fonoaudiologia',
-            'speech': 'Fonoaudiologia',
-            'psicologia': 'Psicologia',
-            'psychology': 'Psicologia',
-            'terapia_ocupacional': 'Terapia Ocupacional',
-            'occupational_therapy': 'Terapia Ocupacional',
-            'fisioterapia': 'Fisioterapia',
-            'physiotherapy': 'Fisioterapia',
-            'psicopedagogia': 'Psicopedagogia',
-            'psychopedagogy': 'Psicopedagogia',
-            'musicoterapia': 'Musicoterapia',
-            'music_therapy': 'Musicoterapia',
-            'neuropsicologia': 'Neuropsicologia',
-            'neuropsychological': 'Neuropsicologia'
-          };
-          const name = nameMap[therapyKey] || therapyKey;
-          
-          priceText += `${emoji} ${name}: ${valor}\n`;
+        for (const t of detectedTherapies) {
+          const key = (typeof t === 'object' ? t.id : t)?.toLowerCase();
+          const pricing = getTherapyPricing(key);
+          if (!pricing) continue;
+          const emoji = EMOJI[key] || '💚';
+          priceText += `${emoji} ${pricing.descricao}: ${getPriceText(key)}\n`;
         }
-        
-        priceText += '\nTrabalhamos com reembolso de plano! 💚\n\nQuer que eu verifique horários pra alguma dessas?';
+        priceText += '\nTrabalhamos com reembolso de plano! 💚\n\nQuer que eu verifique horários?';
         return priceText;
       }
     } catch (e) {
       this.logger.warn('Erro ao buscar terapias para preço:', e.message);
     }
 
-    // Se não detectou terapias específicas, perguntar qual
+    // Sem terapia detectada: perguntar qual
     return `Claro! Pra te passar o valor certinho, qual especialidade você precisa?\n\n💬 Fonoaudiologia\n🧠 Psicologia\n🏃 Fisioterapia\n📚 Psicopedagogia\n🎵 Musicoterapia\n🧩 Neuropsicologia\n\nA avaliação inicial é o primeiro passo pra entender como podemos ajudar 💚`;
   }
 
@@ -775,10 +1076,11 @@ export default class WhatsAppOrchestrator {
   async _handleOfferBooking(stateData, lead, services) {
     const leadId = lead._id;
     try {
-      const therapyArea = lead.therapyArea || stateData.therapy?.id || stateData.therapy;
-      const patientName = stateData.patientName;
+      const ctx = this.currentContext;
+      const therapyArea = ctx?.leadData?.therapy || lead.therapyArea || stateData.therapy?.id || stateData.therapy;
+      const patientName = stateData.patientName || ctx?.leadData?.name;
       const birthDate = stateData.birthDate;
-      const age = stateData.age;
+      const age = stateData.age || ctx?.leadData?.age;
       
       // ✅ VALIDAÇÃO: Todos os campos obrigatórios devem estar presentes
       this.logger.info('V8_SLOT_SEARCH_START', { 
@@ -1028,41 +1330,178 @@ export default class WhatsAppOrchestrator {
     return names[therapyId] || therapyId;
   }
 
-  _reply(text, options = {}) {
-    // 🔥 ENRIQUECIMENTO: Se tem contexto atual, enriquece a resposta
-    if (this.currentContext && !options.skipEnrichment) {
-      const { flags, lead, state, stateData } = this.currentContext;
-      
-      // Aplica enriquecimentos baseados em flags
-      let enrichedText = text;
-      
-      // Adiciona acolhimento para casos emocionais
-      if (flags.isEmotional && !enrichedText.includes('preocupad')) {
-        const emojis = ['💚', '🤗', '💚'];
-        const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
-        enrichedText = `Entendo que você está preocupad${lead?.patientGender === 'F' ? 'a' : 'o'}. ${randomEmoji}\n\n${enrichedText}`;
+  // ═══════════════════════════════════════════
+  // INSIGHTS: carrega do banco com cache de 1h
+  // ═══════════════════════════════════════════
+
+  async _getInsights() {
+    const ONE_HOUR = 60 * 60 * 1000;
+    if (this.insightsCache && (Date.now() - this.cacheTime) < ONE_HOUR) {
+      return this.insightsCache;
+    }
+    try {
+      const insights = await getLatestInsights();
+      this.insightsCache = insights;
+      this.cacheTime = Date.now();
+      if (insights) {
+        this.logger.info('V8_INSIGHTS_LOADED', {
+          openings: insights.data?.bestOpeningLines?.length || 0,
+          priceResponses: insights.data?.effectivePriceResponses?.length || 0,
+          closingQuestions: insights.data?.successfulClosingQuestions?.length || 0,
+        });
       }
-      
-      // Ajusta para dúvidas de TEA (mais acolhedor)
+      return insights;
+    } catch (e) {
+      this.logger.warn('V8_INSIGHTS_LOAD_FAILED', { error: e.message });
+      return null;
+    }
+  }
+
+  // ═══════════════════════════════════════════
+  // REPLY: enriquece texto com flags + insights
+  // ═══════════════════════════════════════════
+
+  _reply(text, options = {}) {
+    if (this.currentContext && !options.skipEnrichment) {
+      const { flags, lead, state, insights } = this.currentContext;
+      let enrichedText = text;
+
+      // ── URGÊNCIA: prefixo de priorização ──────────────────────────────────
+      if (flags.mentionsUrgency && !enrichedText.toLowerCase().includes('priorid') && !enrichedText.toLowerCase().includes('r[aá]pido')) {
+        enrichedText = `Entendo a urgência 💚 Vou priorizar sua situação!\n\n${enrichedText}`;
+      }
+
+      // ── EMOCIONAL: acolhimento antes de qualquer informação ───────────────
+      else if (flags.isEmotional && !enrichedText.includes('preocupad') && !enrichedText.includes('Entendo')) {
+        enrichedText = `Entendo como você deve estar se sentindo 💚\n\n${enrichedText}`;
+      }
+
+      // ── TEA/TDAH: validação específica ────────────────────────────────────
+      if (flags.mentionsTEA_TDAH && !enrichedText.includes('passo')) {
+        enrichedText = enrichedText + '\n\n💚 Buscar ajuda especializada é um passo muito importante para o desenvolvimento do seu filho.';
+      }
+
+      // ── DÚVIDA DE TEA: reformula pergunta aberta ──────────────────────────
       if (flags.mentionsDoubtTEA && !enrichedText.includes('tempo')) {
         enrichedText = enrichedText.replace(
           /me conta um pouco da situação/i,
           'cada criança tem seu tempo, e é normal ter dúvidas. Me conta o que você tem observado'
         );
       }
-      
-      // Prioriza para quem quer agendar rápido
-      if (flags.wantsFastSolution && state !== 'SHOW_SLOTS') {
-        enrichedText = enrichedText.replace(/💚/, '🚀');
+
+      // ── OBJEÇÃO DE PREÇO: contextualiza antes de informar ────────────────
+      if (flags.mentionsPriceObjection && !enrichedText.includes('investimento')) {
+        enrichedText = enrichedText + '\n\n💚 Também temos opções de parcelamento que facilitam bastante.';
       }
-      
+
+      // ── HOT LEAD + insights reais de fechamento ───────────────────────────
+      if (flags.isHotLead && insights?.data?.successfulClosingQuestions?.length > 0 && state !== STATES.SHOW_SLOTS && state !== STATES.CONFIRM_BOOKING) {
+        const closingQ = insights.data.successfulClosingQuestions[0];
+        if (closingQ?.question && !enrichedText.includes(closingQ.question.substring(0, 20))) {
+          enrichedText = enrichedText + `\n\n${closingQ.question}`;
+        }
+      }
+
+      // ── SÓ PESQUISANDO: tom educativo, sem pressão ────────────────────────
+      if (flags.isJustBrowsing && enrichedText.toLowerCase().includes('agendar')) {
+        enrichedText = enrichedText.replace(/agendar/gi, 'saber mais');
+      }
+
+      // ── OBJEÇÃO DE CONVÊNIO: bridge para particular ───────────────────────
+      if (flags.mentionsInsuranceObjection && !enrichedText.includes('reembolso')) {
+        enrichedText = enrichedText + '\n\n💡 Muitas famílias optam pelo particular e solicitam reembolso ao plano — posso te explicar como funciona se quiser!';
+      }
+
       return { command: 'SEND_MESSAGE', payload: { text: enrichedText } };
     }
-    
+
     return { command: 'SEND_MESSAGE', payload: { text } };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LLM RESPONSE — FSM decide o caminho, LLM formula a resposta
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Gera resposta via LLM (Groq → OpenAI fallback).
+   * buildSystemPrompt: todas as RNs da clínica + modo emocional + aprendizados reais
+   * buildUserPrompt: histórico da conversa + contexto do lead + mensagem atual
+   *
+   * @param {object} ctx        - Contexto da mensagem (this.currentContext)
+   * @param {string} instruction- Estado FSM atual: o que a Amanda precisa coletar/fazer agora
+   * @param {string} [clinicData]- Dados concretos para incluir na resposta (preço, horários, etc.)
+   */
+  async _replyWithAI(ctx, instruction = null, clinicData = null) {
+    const promptMode = ctx?.promptMode || {};
+    const userText = ctx?.text || '';
+    const lead = ctx?.lead || {};
+
+    const systemPrompt = buildSystemPrompt({
+      ...promptMode,
+      instruction,
+      clinicContext: clinicData,
+    });
+
+    const userPrompt = buildUserPrompt(userText, {
+      therapyArea: promptMode.therapyArea,
+      patientAge: promptMode.patientAge,
+      patientName: promptMode.patientName,
+      complaint: promptMode.complaint,
+      emotionalContext: promptMode.emotionalContext,
+      conversationHistory: lead.recentMessages || [],
+    });
+
+    const aiText = await callAI({
+      systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+      maxTokens: 350,
+      temperature: 0.7,
+    });
+
+    // LLM já aplica tom/empatia/RNs — skipEnrichment evita duplicação
+    return this._reply(aiText, { skipEnrichment: true });
   }
 
   _handoffReply() {
     return this._reply('Hmm, acho que seria melhor um(a) atendente conversar com você pessoalmente! 💚\n\nVou transferir sua conversa. Aguarda só um minutinho...');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RETRY INTELIGENTE: reformula a pergunta a cada tentativa
+  // retryCount=1 → pergunta direta com exemplos
+  // retryCount=2 → oferece opções concretas para escolher
+  // ─────────────────────────────────────────────────────────────────────────
+
+  _retryMessage(state, retryCount) {
+    const messages = {
+      [STATES.COLLECT_THERAPY]: [
+        'Qual especialidade você busca? Pode ser fono, psico, fisio, TO, neuropsico ou psicopedagogia 💚',
+        'Me ajuda a entender: é mais sobre *fala*, *comportamento*, *aprendizado* ou *desenvolvimento motor*? Assim consigo indicar o caminho certo 💚',
+        'Pode escolher uma das opções abaixo?\n\n• Fono (fala, linguagem)\n• Psico (comportamento, emoção)\n• Fisio (motor)\n• TO (integração sensorial)\n• Neuropsico (laudo/diagnóstico)\n• Psicopedagogia (escola, leitura)',
+      ],
+      [STATES.COLLECT_COMPLAINT]: [
+        'Me conta um pouco mais — o que chamou atenção no dia a dia que trouxe você até aqui? 💚',
+        'O que você tem observado? Pode ser comportamento, fala, aprendizado, qualquer coisa que te preocupou 💚',
+      ],
+      [STATES.COLLECT_BIRTH]: [
+        'Preciso da idade ou data de nascimento para buscar os horários certinhos 💚 Pode ser só a idade mesmo!',
+        'Pode ser direto: "5 anos" ou "12/03/2020" — qualquer formato serve 💚',
+      ],
+      [STATES.COLLECT_PERIOD]: [
+        'Qual horário funciona melhor: **manhã** (8h-12h) ou **tarde** (13h-18h)? ☀️🌙',
+        'Prefere de manhã ou à tarde? Se tiver preferência de horário específico pode falar também 💚',
+      ],
+      [STATES.COLLECT_NAME]: [
+        'Qual o nome completo do paciente? 💚',
+        'Pode me passar o nome completo? É para confirmar o agendamento 💚',
+      ],
+    };
+
+    const options = messages[state];
+    if (!options) return null;
+
+    // retryCount começa em 1 após o primeiro incremento
+    const idx = Math.min(retryCount - 1, options.length - 1);
+    return options[idx];
   }
 }

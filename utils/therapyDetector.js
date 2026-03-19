@@ -311,7 +311,36 @@ export const THERAPY_PROFILES = {
         hasReport: false,
         priceTier: 'standard'
     },
-    // ... etc
+    psychology: {
+        id: 'psychology',
+        names: ['psicologia', 'psicólogo'],
+        patterns: [/psico/i],
+        symptoms: ['comportamento', 'birra', 'agressividade', 'ansiedade', 'emocional', 'isolamento_social'],
+        ageRange: ['crianca', 'adolescente', 'adulto'],
+        duration: 'sessao_40min',
+        hasReport: false,
+        priceTier: 'standard'
+    },
+    psychopedagogy: {
+        id: 'psychopedagogy',
+        names: ['psicopedagogia'],
+        patterns: [/psicopedagog/i],
+        symptoms: ['dificuldade_aprendizado', 'dislexia', 'nao_aprende', 'lento_escola'],
+        ageRange: ['crianca', 'adolescente'],
+        duration: 'sessao_40min',
+        hasReport: false,
+        priceTier: 'standard'
+    },
+    occupational: {
+        id: 'occupational',
+        names: ['terapia ocupacional', 'TO'],
+        patterns: [/terapia\s+ocupacional|\bTO\b/i],
+        symptoms: ['motor', 'coordenacao', 'sensorial', 'autonomia'],
+        ageRange: ['crianca'],
+        duration: 'sessao_40min',
+        hasReport: false,
+        priceTier: 'standard'
+    },
 };
 
 // NOVO: Detecta por SINTOMA, não palavra
@@ -330,19 +359,54 @@ export function detectTherapyBySymptoms(text = "") {
         .map(([id]) => id);
 }
 
-// Helper: Extrai sintomas do texto (heurística melhorada)
+// Helper: Extrai sintomas do texto — vocabulário popular de mães/responsáveis
 function extractSymptoms(text) {
-     const symptoms = [];
+    const symptoms = [];
     const t = text.toLowerCase();
-    
-    // Mapeamento semântico, não literal
-    if (/(n[aã]o\s+fala|fala\s+pouco|balbucia|n[aã]o\s+consegue\s+se\s+expressar)/.test(t))
-        symptoms.push('atraso_fala');
-    
-    if (/(troca\s+letras|fala\s+errado|pronuncia\s+errado)/.test(t))
+
+    // ── FALA / FONOAUDIOLOGIA ─────────────────────────────────────────────
+    if (/(n[aã]o\s+fala|fala\s+pouco|balbucia|n[aã]o\s+consegue\s+se\s+expressar|n[aã]o\s+fala\s+nada|ainda\s+n[aã]o\s+fala|quase\s+n[aã]o\s+fala)/.test(t))
+        symptoms.push('nao_fala', 'atraso_fala');
+
+    if (/(troca\s+letras|fala\s+errado|pronuncia\s+errado|n[aã]o\s+fala\s+(certo|direito)|fala\s+enrolado|n[aã]o\s+entende\s+o\s+que\s+fala)/.test(t))
         symptoms.push('troca_letras');
-        
-    if (/(suspeita|investiga|laudo|diagn[oó]stico|fechar\s+diagn)/.test(t))
+
+    if (/(gaguej|trava\s+(na\s+)?fala|repete\s+(as\s+)?palavras|trava\s+pra\s+falar)/.test(t))
+        symptoms.push('gagueira');
+
+    // ── COMPORTAMENTO / PSICOLOGIA ────────────────────────────────────────
+    if (/(agitad|n[aã]o\s+para\s+quieto|n[aã]o\s+para|muito\s+el[eé]tric|muito\s+inquiet|impulsiv|n[aã]o\s+consegue\s+parar|vive\s+correndo|vive\s+pulando|n[aã]o\s+sossega)/.test(t))
+        symptoms.push('comportamento');
+
+    if (/(muita\s+birra|bate|morde|chuta|machuca|agressiv|n[aã]o\s+obedece|desafia\s+tudo|muito\s+teimoso|faz\s+o\s+que\s+quer)/.test(t))
+        symptoms.push('agressividade', 'comportamento');
+
+    if (/(ansios|com\s+medo|muito\s+t[ií]mid|chora\s+muito|insegur|n[aã]o\s+consegue\s+se\s+separar|muito\s+apegad|sep[ae]ra[cç][aã]o)/.test(t))
+        symptoms.push('ansiedade', 'emocional');
+
+    if (/(n[aã]o\s+olha\s+nos\s+olhos|evita\s+contato|n[aã]o\s+interage|n[aã]o\s+brinca\s+com\s+(outra|crian)|isolado|se\s+isola|mundo\s+pr[oó]prio|vive\s+no\s+mundo\s+dele)/.test(t))
+        symptoms.push('isolamento_social');
+
+    // ── ATENÇÃO / TDAH ────────────────────────────────────────────────────
+    if (/(n[aã]o\s+presta\s+aten[cç][aã]o|desatento|mundo\s+da\s+lua|distrai\s+f[aá]cil|n[aã]o\s+foca|n[aã]o\s+consegue\s+focar|se\s+distrai\s+f[aá]cil|n[aã]o\s+consegue\s+se\s+concentrar)/.test(t))
+        symptoms.push('comportamento');
+
+    // ── APRENDIZADO / PSICOPEDAGOGIA ──────────────────────────────────────
+    if (/(lento|devagar|demora\s+pra\s+aprender|n[aã]o\s+acompanha|fica\s+pra\s+tr[aá]s|n[aã]o\s+aprende|dificuldade\s+na\s+escola|reprovad|dificuldade\s+(de\s+)?leitura|n[aã]o\s+consegue\s+ler|troca\s+n[uú]meros)/.test(t))
+        symptoms.push('dificuldade_aprendizado', 'nao_aprende');
+
+    if (/(dislexia|discalculia|disgrafia)/.test(t))
+        symptoms.push('dislexia', 'dificuldade_aprendizado');
+
+    // ── MOTOR / TERAPIA OCUPACIONAL ───────────────────────────────────────
+    if (/(n[aã]o\s+anda|dificuldade\s+(de\s+)?equil[ií]brio|cai\s+muito|coordena[cç][aã]o\s+motor|n[aã]o\s+consegue\s+andar|demora\s+pra\s+andar)/.test(t))
+        symptoms.push('motor', 'coordenacao');
+
+    if (/(sens[oó]rio|sensorial|muito\s+sensível\s+a\s+(barulho|toque|luz)|n[aã]o\s+gosta\s+de\s+ser\s+tocad|odi[ao]\s+barulho)/.test(t))
+        symptoms.push('sensorial');
+
+    // ── INVESTIGAÇÃO / NEUROPSICOLOGIA ────────────────────────────────────
+    if (/(suspeita|investiga|laudo|diagn[oó]stico|fechar\s+diagn|avalia[cç][aã]o\s+completa|relat[oó]rio)/.test(t))
         symptoms.push('investigacao');
 
     return symptoms;

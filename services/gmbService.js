@@ -166,7 +166,7 @@ export const ESPECIALIDADES = [
   {
     id: 'fonoaudiologia',
     nome: 'Fonoaudiologia',
-    url: 'https://www.clinicafonoinova.com.br/fonoaudiologia',
+    url: 'https://www.clinicafonoinova.com.br/fala-tardia',
     foco: 'Fala, linguagem, pronúncia, gagueira, autismo, TDAH, atraso de fala',
     publico: 'crianças com dificuldades de comunicação',
     gancho: 'Sua criança não fala ainda?'
@@ -214,15 +214,15 @@ export const ESPECIALIDADES = [
   {
     id: 'neuropsicologia',
     nome: 'Avaliação Neuropsicológica',
-    url: 'https://www.clinicafonoinova.com.br/avaliacao-neuropsicologica',
-    foco: 'Memória, atenção, concentração, funções executivas, cognição',
+    url: 'https://www.clinicafonoinova.com.br/avaliacao-neuropsicologica-dificuldade-escolar',
+    foco: 'Memória, atenção, concentração, funções executivas, cognição, TDAH',
     publico: 'crianças com dificuldades de aprendizagem ou TDAH',
     gancho: 'Seu filho esquece o que acabou de aprender?'
   },
   {
     id: 'psicopedagogia_clinica',
     nome: 'Psicopedagogia Clínica',
-    url: 'https://www.clinicafonoinova.com.br/psicopedagogia-clinica',
+    url: 'https://www.clinicafonoinova.com.br/dislexia-infantil',
     foco: 'Alfabetização, leitura, escrita, matemática, dislexia, disortografia',
     publico: 'crianças com dificuldades escolares',
     gancho: 'Sua criança tem dificuldade para ler ou escrever?'
@@ -230,7 +230,7 @@ export const ESPECIALIDADES = [
   {
     id: 'psicopedagogia',
     nome: 'Psicopedagogia',
-    url: 'https://www.clinicafonoinova.com.br/psicopedagogia',
+    url: 'https://www.clinicafonoinova.com.br/dificuldade-escolar',
     foco: 'Desenvolvimento cognitivo, aprendizagem escolar, raciocínio lógico',
     publico: 'crianças em desenvolvimento escolar',
     gancho: 'O desenvolvimento da sua criança está na idade certa?'
@@ -242,6 +242,30 @@ export const ESPECIALIDADES = [
     foco: 'Expressão emocional, comunicação não verbal, ritmo, som, autismo',
     publico: 'crianças com dificuldades de expressão ou autismo',
     gancho: 'Sua criança se fecha ou não se expressa?'
+  },
+  {
+    id: 'tdah',
+    nome: 'TDAH Infantil',
+    url: 'https://www.clinicafonoinova.com.br/tdah-infantil',
+    foco: 'TDAH, desatenção, hiperatividade, impulsividade, funções executivas',
+    publico: 'crianças com TDAH ou suspeita',
+    gancho: 'Seu filho é muito inquieto e não consegue se concentrar?'
+  },
+  {
+    id: 'autismo',
+    nome: 'Avaliação Autismo Infantil',
+    url: 'https://www.clinicafonoinova.com.br/avaliacao-autismo-infantil',
+    foco: 'Autismo, TEA, diagnóstico precoce, intervenção especializada',
+    publico: 'crianças com suspeita ou diagnóstico de autismo',
+    gancho: 'Seu filho não olha nos olhos ou não responde ao nome?'
+  },
+  {
+    id: 'fono_adulto',
+    nome: 'Fonoaudiologia Adulto',
+    url: 'https://www.clinicafonoinova.com.br/fonoaudiologia-adulto',
+    foco: 'Voz, fluência, fala, comunicação em adultos',
+    publico: 'adultos com problemas de voz ou fala',
+    gancho: 'Problemas com a voz ou fala?'
   }
 ];
 
@@ -378,6 +402,24 @@ const PROMPTS_ESPECIALIDADE = {
     urgencia: 'cada mês sem intervenção é um mês de atraso no desenvolvimento da fala — quanto antes, melhores os resultados',
     diferencial: 'a Fono Inova tem fonoaudiólogos especializados em linguagem infantil que identificam a causa real do atraso e montam um plano individualizado',
     gatilho: 'pais que estão em dúvida se devem buscar ajuda agora ou esperar mais',
+  },
+  tdah: {
+    dor: 'a criança não consegue se concentrar, é muito inquieta, não para quieto, age sem pensar, esquece o que acabou de aprender, tem dificuldade na escola',
+    urgencia: 'TDAH não tratado gera baixa autoestima, dificuldade de socialização e conflitos familiares — a intervenção precoce transforma a vida da criança',
+    diferencial: 'a Fono Inova tem neuropsicóloga especializada em TDAH que faz avaliação completa de atenção e funções executivas, com laudo detalhado e plano de intervenção personalizado',
+    gatilho: 'pais exaustos porque o filho não obedece, não concentra e os professores reclamam constantemente',
+  },
+  autismo: {
+    dor: 'a criança não olha nos olhos, não responde ao nome, não aponta para objetos, tem comportamentos repetitivos, não brinca com outras crianças',
+    urgencia: 'o diagnóstico precoce de autismo (antes dos 3 anos) pode mudar completamente o prognóstico — quanto antes a intervenção, melhores os resultados',
+    diferencial: 'a Fono Inova faz avaliação multiprofissional completa (psicólogo + fonoaudiólogo) com protocolos validados, laudo válido e acolhimento familiar',
+    gatilho: 'pais que suspeitam de autismo mas não sabem onde fazer uma avaliação confiável e recebem apenas "vamos esperar"',
+  },
+  fono_adulto: {
+    dor: 'a pessoa tem rouquidão persistente, dificuldade para falar em público, gagueira, voz fraca ou cansada, problemas de comunicação no trabalho',
+    urgencia: 'problemas de voz e fala podem indicar alterações graves e afetam a qualidade de vida e autoestima do adulto',
+    diferencial: 'a Fono Inova oferece atendimento fonoaudiológico especializado para adultos, com técnicas modernas para voz, fluência e linguagem',
+    gatilho: 'adultos que evitam falar em reuniões ou apresentações por vergonha da voz ou da fala',
   },
   psicologia: {
     dor: 'a criança tem crises de choro sem motivo, agressividade, ansiedade, dificuldade de socializar, medo excessivo, comportamentos repetitivos ou tristeza',

@@ -6,7 +6,7 @@
  * Aumenta ticket médio automaticamente.
  */
 
-import { PRICES, formatPrice } from '../../config/pricing.js';
+import { getTherapyPricing, formatPrice, THERAPY_ALIASES } from '../../config/pricing.js';
 
 // Thresholds para estratégia de preço
 const HOT_LEAD_THRESHOLD = 60;  // Mostra pacote primeiro
@@ -40,62 +40,73 @@ export function determinePricingStrategy(intentScore = 0, flags = {}) {
  * @param {Object} options - Opções adicionais
  * @returns {Object} Texto e metadata
  */
-export function buildStrategicPriceText(therapyKey = 'FONOAUDIOLOGIA', strategy, options = {}) {
-    const avulso = PRICES.AVULSO[therapyKey];
-    const pacote2x = PRICES.PACOTE_2X[therapyKey];
-    const pacote4x = PRICES.PACOTE_4X[therapyKey];
-    
-    const economia2x = avulso - pacote2x;
-    const economia4x = (avulso * 4) - (pacote4x * 4);
-    
+export function buildStrategicPriceText(therapyKey = 'fonoaudiologia', strategy, options = {}) {
+    const pricing = getTherapyPricing(therapyKey);
+    if (!pricing) return null;
+
+    // Neuropsicologia: sem avulso/pacote, só o bundle completo
+    if (pricing.incluiLaudo) {
+        return {
+            headline: `💰 Investimento:`,
+            body: `• Avaliação completa: ${formatPrice(pricing.avaliacao)} em ${pricing.parcelamento}\n  (${pricing.sessoesPacote} sessões + laudo neuropsicológico)`,
+            emphasis: 'single',
+            cta: 'Quer verificar disponibilidade de horários?',
+            strategy,
+            prices: { avaliacao: pricing.avaliacao },
+            savings: {}
+        };
+    }
+
+    const avulso = pricing.sessaoAvulsa;
+    const pacote = pricing.sessaoPacote;
+    const mensalTotal = pricing.pacoteMensal;
+    const economia = (avulso - pacote) * 4;
+
     const texts = {
         package_first: {
-            headline: `💚 Investimento no pacote (melhor valor):`,
+            headline: `💚 Investimento (melhor valor):`,
             body: [
-                `• Pacote 4x: ${formatPrice(pacote4x)}/sessão → economia de ${formatPrice(economia4x)} no total`,
-                `• Pacote 2x: ${formatPrice(pacote2x)}/sessão → economia de ${formatPrice(economia2x)}`,
-                `• Avulso: ${formatPrice(avulso)}/sessão (avaliação individual)`,
+                `• Pacote mensal: ${formatPrice(pacote)}/sessão (${formatPrice(mensalTotal)}/mês) → economia de ${formatPrice(economia)}`,
+                `• Avulso: ${formatPrice(avulso)}/sessão`,
                 ``,
                 `A maioria dos pais escolhe o pacote porque o acompanhamento contínuo traz resultados mais rápidos 💚`
             ].join('\n'),
             emphasis: 'package',
-            cta: 'Quer que eu reserve um pacote para você?'
+            cta: 'Quer que eu reserve um horário essa semana?'
         },
-        
         balanced: {
             headline: `💰 Investimento:`,
             body: [
-                `• Avulso: ${formatPrice(avulso)} (avaliação individual)`,
-                `• Pacote 2x: ${formatPrice(pacote2x)}/sessão 💚`,
-                `• Pacote 4x: ${formatPrice(pacote4x)}/sessão (melhor custo-benefício) 💚💚`,
+                `• Avaliação inicial: ${formatPrice(pricing.avaliacao)}`,
+                `• Sessão avulsa: ${formatPrice(avulso)}`,
+                `• Pacote mensal: ${formatPrice(pacote)}/sessão (melhor custo-benefício) 💚`,
                 ``,
-                `O pacote 4x tem o melhor valor e é o mais escolhido pelos pais.`
+                `O pacote mensal é o mais escolhido pelos pais.`
             ].join('\n'),
             emphasis: 'both',
             cta: 'Qual opção faz mais sentido para vocês?'
         },
-        
         single_first: {
             headline: `💰 Investimento:`,
             body: [
-                `• Avulso: ${formatPrice(avulso)} (avaliação individual, sem compromisso)`,
-                `• Pacote 2x: ${formatPrice(pacote2x)}/sessão`,
-                `• Pacote 4x: ${formatPrice(pacote4x)}/sessão (economia no acompanhamento)`,
+                `• Avaliação inicial: ${formatPrice(pricing.avaliacao)} (sem compromisso)`,
+                `• Sessões a partir de ${formatPrice(avulso)}/avulso`,
+                `• Pacote mensal: ${formatPrice(pacote)}/sessão (economia de ${formatPrice(economia)}/mês)`,
                 ``,
-                `Muitos pais começam com uma sessão avulsa e, vendo o resultado, migram para o pacote.`
+                `Muitos pais começam com a avaliação e, vendo o resultado, seguem com o pacote.`
             ].join('\n'),
             emphasis: 'single',
-            cta: 'Quer começar com uma avaliação avulsa?'
+            cta: 'Quer começar com uma avaliação?'
         }
     };
-    
+
     const selected = texts[strategy] || texts.balanced;
-    
+
     return {
         ...selected,
         strategy,
-        prices: { avulso, pacote2x, pacote4x },
-        savings: { pacote2x: economia2x, pacote4x: economia4x }
+        prices: { avaliacao: pricing.avaliacao, avulso, pacote, mensalTotal },
+        savings: { economia }
     };
 }
 
@@ -104,10 +115,15 @@ export function buildStrategicPriceText(therapyKey = 'FONOAUDIOLOGIA', strategy,
  * @param {string} therapyKey - Área terapêutica
  * @returns {string} Texto curto e direto
  */
-export function buildClosingPriceText(therapyKey = 'FONOAUDIOLOGIA') {
-    const pacote4x = PRICES.PACOTE_4X[therapyKey];
-    
-    return `Pacote 4 sessões: ${formatPrice(pacote4x)}/sessão (melhor valor). Quer que eu reserve essa semana? 💚`;
+export function buildClosingPriceText(therapyKey = 'fonoaudiologia') {
+    const pricing = getTherapyPricing(therapyKey);
+    if (!pricing) return null;
+
+    if (pricing.incluiLaudo) {
+        return `Avaliação completa: ${formatPrice(pricing.avaliacao)} em ${pricing.parcelamento}. Quer verificar horários? 💚`;
+    }
+
+    return `Pacote mensal: ${formatPrice(pricing.sessaoPacote)}/sessão (melhor valor). Quer que eu reserve essa semana? 💚`;
 }
 
 /**
@@ -189,14 +205,17 @@ export function getPricingTone(intentScore, memory = {}) {
  * @returns {Object} Economia calculada
  */
 export function calculateSavingsDisplay(therapyKey, sessions = 4) {
-    const avulso = PRICES.AVULSO[therapyKey];
-    const pacote = sessions === 2 ? PRICES.PACOTE_2X[therapyKey] : PRICES.PACOTE_4X[therapyKey];
-    
+    const pricing = getTherapyPricing(therapyKey);
+    if (!pricing || pricing.incluiLaudo) return null;
+
+    const avulso = pricing.sessaoAvulsa;
+    const pacote = pricing.sessaoPacote;
+
     const avulsoTotal = avulso * sessions;
     const pacoteTotal = pacote * sessions;
     const economia = avulsoTotal - pacoteTotal;
     const percentual = Math.round((economia / avulsoTotal) * 100);
-    
+
     return {
         avulsoTotal,
         pacoteTotal,

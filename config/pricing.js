@@ -70,10 +70,10 @@ export const THERAPY_PRICING = {
     descricao: 'Psicopedagogia',
   },
   neuropsicologia: {
-    avaliacao: 2000, // Pacote completo ~10 sessões
+    avaliacao: 1700, // Pacote completo ~10 sessões
     sessaoAvulsa: null, // Não vende avulso
     pacoteMensal: null,
-    sessaoPacote: 200, // implícito no pacote
+    sessaoPacote: 170, // implícito no pacote
     descricao: 'Neuropsicologia',
     parcelamento: 'até 6x',
     incluiLaudo: true,

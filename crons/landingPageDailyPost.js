@@ -15,9 +15,11 @@ import { findExistingImage } from '../services/imageBankService.js';
 const CATEGORY_TO_ESPECIALIDADE = {
   'fonoaudiologia': { id: 'fonoaudiologia', nome: 'Fonoaudiologia', foco: 'desenvolvimento da fala e linguagem' },
   'psicologia': { id: 'psicologia', nome: 'Psicologia', foco: 'saúde mental infantil' },
-  'autismo': { id: 'autismo', nome: 'Autismo', foco: 'avaliação e acompanhamento TEA' },
+  'autismo': { id: 'autismo', nome: 'Avaliação Autismo', foco: 'avaliação e acompanhamento TEA' },
   'terapia_ocupacional': { id: 'terapia_ocupacional', nome: 'Terapia Ocupacional', foco: 'coordenação motora e independência' },
   'aprendizagem': { id: 'psicopedagogia', nome: 'Psicopedagogia', foco: 'dificuldades de aprendizagem' },
+  'neuropsicologia': { id: 'tdah', nome: 'TDAH', foco: 'avaliação neuropsicológica e TDAH' },
+  'desenvolvimento': { id: 'fonoaudiologia', nome: 'Fonoaudiologia', foco: 'desenvolvimento infantil' },
   'geografica': { id: 'fonoaudiologia', nome: 'Fonoaudiologia', foco: 'atendimento em Anápolis' },
   'fisioterapia': { id: 'fisioterapia', nome: 'Fisioterapia', foco: 'desenvolvimento motor' },
   'freio_lingual': { id: 'freio_lingual', nome: 'Freio Lingual', foco: 'avaliação de frenulo' },
