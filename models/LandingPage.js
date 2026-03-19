@@ -51,8 +51,8 @@ const LandingPageSchema = new mongoose.Schema({
   // CTA
   cta: {
     text: { type: String, default: 'Agendar avaliação no WhatsApp' },
-    link: { type: String, default: 'https://wa.me/5562988880000' },
-    phone: { type: String, default: '62988880000' }
+    link: { type: String, default: 'https://wa.me/5562993377726' },
+    phone: { type: String, default: '62993377726' }
   },
   
   // SEO
