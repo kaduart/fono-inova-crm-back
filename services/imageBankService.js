@@ -14,16 +14,29 @@ cloudinary.config({
 
 /**
  * 🔍 Busca imagem no banco por especialidade e tema
+ * Retorna apenas imagens com pouco uso (reuseCount < 3)
  */
 export async function findExistingImage(especialidade, tema = '', options = {}) {
-  console.log(`🔍 [ImageBank] Buscando: ${especialidade}/${tema}`);
+  const { limit = 5, maxUsage = 2 } = options;
+  console.log(`🔍 [ImageBank] Buscando: ${especialidade}/${tema} (maxUsage: ${maxUsage})`);
   
-  const image = await ImageBank.getRandomImage(especialidade, tema);
+  // Busca várias imagens e filtra por uso
+  const images = await ImageBank.findByEspecialidadeETema(especialidade, tema, { limit });
   
-  if (image) {
+  // Filtra apenas imagens pouco usadas
+  const availableImages = images.filter(img => img.usageCount <= maxUsage);
+  
+  if (availableImages.length > 0) {
+    // Seleciona uma aleatória das disponíveis
+    const image = availableImages[Math.floor(Math.random() * availableImages.length)];
+    
     console.log(`✅ [ImageBank] Imagem encontrada: ${image.url.substring(0, 60)}...`);
     console.log(`   → Usada ${image.usageCount} vezes`);
     console.log(`   → Último uso: ${image.lastUsed ? new Date(image.lastUsed).toLocaleDateString() : 'nunca'}`);
+    
+    // Marca uso
+    await image.markUsage();
+    
     return {
       url: image.url,
       publicId: image.publicId,
@@ -33,7 +46,7 @@ export async function findExistingImage(especialidade, tema = '', options = {}) 
     };
   }
   
-  console.log(`⚠️ [ImageBank] Nenhuma imagem encontrada para ${especialidade}/${tema}`);
+  console.log(`⚠️ [ImageBank] Nenhuma imagem disponível (todas usadas > ${maxUsage}x)`);
   return null;
 }
 

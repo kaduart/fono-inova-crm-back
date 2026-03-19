@@ -415,7 +415,14 @@ export async function regenerateImage(req, res) {
       gmbService.ESPECIALIDADES.find(e => e.id === post.theme) ||
       gmbService.ESPECIALIDADES[0];
 
-    const imgResult = await gmbService.generateImageForEspecialidade(especialidade, post.content, false);
+    // 🆕 forceNew: true - sempre gera imagem nova, nunca reutiliza
+    const imgResult = await gmbService.generateImageForEspecialidade(
+      especialidade, 
+      post.content, 
+      false, 
+      'auto',
+      { forceNew: true }  // Força geração de imagem nova
+    );
 
     if (!imgResult?.url) {
       return res.status(500).json({ success: false, error: 'Falha ao gerar imagem' });
@@ -426,7 +433,15 @@ export async function regenerateImage(req, res) {
     post.mediaType = 'image';
     await post.save();
 
-    res.json({ success: true, data: { mediaUrl: imgResult.url }, message: 'Imagem regenerada!' });
+    res.json({ 
+      success: true, 
+      data: { 
+        mediaUrl: imgResult.url,
+        provider: imgResult.provider,
+        isNew: !imgResult.reused 
+      }, 
+      message: imgResult.reused ? 'Imagem do banco' : 'Imagem nova gerada!' 
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
