@@ -487,7 +487,11 @@ export default class WhatsAppOrchestrator {
             const complaint = text.substring(0, 200);
             await this._saveComplaint(leadId, complaint);
             await jumpToState(leadId, STATES.COLLECT_BIRTH, { therapy: therapy?.id || therapy, complaint });
-            return await this._replyWithAI(ctx, `Lead já descreveu a queixa junto com a terapia (${therapyName}). Confirme que entendeu a situação e peça a data de nascimento do paciente.`);
+            const isAskingHow = /\b(como\s+(funciona|é|acontece|é\s+feita?|seria)|pode\s+me\s+explicar|me\s+explica|quero\s+entender|como\s+é\s+o\s+processo|como\s+funciona\s+a\s+avalia[cç][aã]o)\b/i.test(text);
+            const instruction = isAskingHow
+              ? `Lead veio de uma LP e perguntou como funciona a avaliação de ${therapyName}, além de descrever a queixa. Explique brevemente como funciona (avaliação inicial, sessões, o que esperar), acolha a situação descrita e, ao final, peça a data de nascimento do paciente para verificar os horários.`
+              : `Lead já descreveu a queixa junto com a terapia (${therapyName}). Confirme que entendeu a situação e peça a data de nascimento do paciente.`;
+            return await this._replyWithAI(ctx, instruction);
           }
 
           await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy: therapy?.id || therapy });
