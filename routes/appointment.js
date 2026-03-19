@@ -1602,6 +1602,17 @@ router.patch('/:id/complete', auth, async (req, res) => {
         const packageId = appointment.package?._id || appointment.package;
         const patientId = appointment.patient?._id || appointment.patient;
 
+        // 🔍 DEBUG PAYMENT
+        console.log(`[complete] 🔍 IDs extraídos:`, {
+            sessionId: sessionId?.toString() || 'NULL',
+            paymentId: paymentId?.toString() || 'NULL',
+            packageId: packageId?.toString() || 'NULL',
+            'appointment.session (raw)': appointment.session ? 'SET' : 'NULL',
+            'appointment.payment (raw)': appointment.payment ? JSON.stringify({ _id: appointment.payment?._id, status: appointment.payment?.status }) : 'NULL',
+            operationalStatus: appointment.operationalStatus,
+            clinicalStatus: appointment.clinicalStatus,
+        });
+
         // ✅ Só incrementa pacote se ainda não estiver concluído
         const shouldIncrementPackage =
             appointment.package &&
@@ -1735,12 +1746,15 @@ router.patch('/:id/complete', auth, async (req, res) => {
                 console.log(`[complete] ℹ️ Convênio detectado - não criando payment`);
             }
 
+            console.log(`[complete] 🔍 finalPaymentId antes do update: ${finalPaymentId?.toString() || 'NULL'}`);
             if (finalPaymentId) {
                 const existingPayment = await Payment.findOne(
                     { _id: finalPaymentId },
                     { status: 1 },
                     { session }
                 );
+
+                console.log(`[complete] 🔍 existingPayment encontrado: ${existingPayment ? `status=${existingPayment.status}` : 'NULL - não encontrado no DB'}`);
 
                 const paymentUpdateData = existingPayment?.status === 'paid'
                     ? { status: 'paid', updatedAt: new Date() }
@@ -1750,11 +1764,14 @@ router.patch('/:id/complete', auth, async (req, res) => {
                         updatedAt: new Date()
                     };
 
-                await Payment.updateOne(
+                const updateResult = await Payment.updateOne(
                     { _id: finalPaymentId },
                     { $set: paymentUpdateData },
                     { session }
                 );
+                console.log(`[complete] 🔍 Payment.updateOne result: matched=${updateResult.matchedCount}, modified=${updateResult.modifiedCount}`);
+            } else {
+                console.log(`[complete] ⚠️ finalPaymentId é NULL — payment NÃO será atualizado`);
             }
         } else {
             console.log(`[complete] Pulando atualização de payment (saldo devedor)`);

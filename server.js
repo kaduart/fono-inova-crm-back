@@ -107,6 +107,7 @@ import convenioRoutes from './routes/financial/convenio.routes.js';
 import reminderRoutes from './routes/reminder.js';
 import whatsappWebRoutes from './routes/whatsappWeb.js';
 import whatsappWebService from './services/whatsappWebService.js';
+import imageBankRoutes from './routes/imageBank.routes.js';
 
 // ======================================================
 // 🧭 Inicialização base
@@ -311,6 +312,7 @@ app.use('/api/facebook', facebookRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/spy', spyRoutes);
 app.use('/api/meta-ads', metaAdsRoutes);
+app.use('/api/imagebank', imageBankRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);

@@ -60,12 +60,19 @@ export const getInternalAnalytics = async (startDate, endDate) => {
 
     // Métricas calculadas
     const metrics = {
+      // 🆕 Dados CRM separados (não misturar com métricas web)
+      crmLeads: leadsCount,
+      crmAppointments: appointmentsCount,
+      crmNewPatients: newPatients,
+      crmPreAgendamentos: preAgendamentos,
+      
+      // Mantido para compatibilidade (deprecated)
       totalUsers: leadsCount + newPatients,
       activeUsers: appointmentsCount,
       sessions: leadsCount + preAgendamentos,
       engagedSessions: appointmentsCount,
-      avgSessionDuration: 180, // 3 minutos em segundos
-      source: 'internal' // Indica que é dados internos
+      avgSessionDuration: 180,
+      source: 'internal'
     };
 
     return { events, metrics };

@@ -65,10 +65,31 @@ router.get('/dashboard', async (req, res) => {
             getLeadsByDay(startDate, endDate)
         ]);
 
-        // Métricas finais (prioriza GA4, fallback para internal)
-        const finalMetrics = ga4Metrics?.totalUsers > 0 
-            ? ga4Metrics 
-            : internalData?.metrics || getEmptyMetrics();
+        // 🆕 LÓGICA CORRIGIDA: Dados GA4 vazios = usar estimativas, não zeros!
+        let finalMetrics;
+        if (ga4Metrics && ga4Metrics.totalUsers > 0) {
+            // ✅ GA4 tem dados reais
+            finalMetrics = { ...ga4Metrics, _source: 'ga4' };
+        } else if (internalData?.metrics) {
+            // ⚠️ GA4 vazio - usar estimativas baseadas em leads
+            const leadsCount = internalData.metrics.crmLeads || 0;
+            finalMetrics = {
+                totalUsers: Math.round(leadsCount * 8),      // Estimativa: 1 lead a cada 8 visitantes
+                activeUsers: Math.round(leadsCount * 5),     // Estimativa conservadora
+                sessions: Math.round(leadsCount * 12),       // ~1.5 sessões por usuário
+                engagedSessions: Math.round(leadsCount * 6), // Metade engajada
+                avgSessionDuration: 120,                     // 2 minutos média
+                pageViews: Math.round(leadsCount * 15),      // ~2.5 page views por sessão
+                bounceRate: null,                            // Não dá para estimar
+                conversions: leadsCount,                     // Leads = conversões
+                eventCount: leadsCount * 3,                  // Estimativa de eventos
+                _source: 'estimated',
+                _note: 'GA4 sem dados para este período. Valores estimados baseados em leads do CRM.'
+            };
+        } else {
+            // ❌ Sem dados de nenhuma fonte
+            finalMetrics = { ...getEmptyMetrics(), _source: 'empty' };
+        }
 
         // Eventos finais
         const finalEvents = ga4Events?.length > 0 
@@ -185,7 +206,7 @@ async function getLandingPagesData(startDate, endDate, ga4Pages = []) {
                 leads: lp.metrics?.leads || 0,
                 users: ga4Data?.users || Math.floor((lp.metrics?.views || 0) * 0.7),
                 avgEngagementTime: ga4Data?.avgEngagementTime || 120,
-                bounceRate: ga4Data?.bounceRate || 35,
+                bounceRate: ga4Data?.bounceRate ?? null, // null quando sem dados (não 35!)
                 isLandingPage: true
             };
         });
@@ -223,7 +244,7 @@ async function getLandingPagesData(startDate, endDate, ga4Pages = []) {
                 views: ga4Data?.views || 0,
                 users: ga4Data?.users || 0,
                 avgEngagementTime: ga4Data?.avgEngagementTime || 0,
-                bounceRate: ga4Data?.bounceRate || 0,
+                bounceRate: ga4Data?.bounceRate ?? null, // null quando sem dados
                 isLandingPage: false
             };
         });

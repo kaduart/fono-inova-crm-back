@@ -856,8 +856,10 @@ async function uploadToCloudinary(imageBlob, especialidadeId) {
 }
 
 // ─────────────────────────────────────────────
-// GERA IMAGEM — Múltiplos providers → Cloudinary
+// GERA IMAGEM — ImageBank → Múltiplos providers → Cloudinary
 // ─────────────────────────────────────────────
+import { findExistingImage, saveImageToBank } from './imageBankService.js';
+
 export async function generateImageForEspecialidade(especialidade, postContent = '', withBranding = true, provider = 'auto') {
   // Limpar conteúdo para evitar confusões da IA (ex: "freio lingual" -> planta!)
   const conteudoLimpo = (postContent || especialidade.foco)
@@ -866,6 +868,28 @@ export async function generateImageForEspecialidade(especialidade, postContent =
   
   const prompt = generateImagePromptFromContent(conteudoLimpo, especialidade);
   console.log(`🎨 Prompt [branding=${withBranding}] [provider=${provider}]:`, prompt.substring(0, 100) + '...');
+  
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 0: ImageBank (reúso de imagens existentes)
+  // ═══════════════════════════════════════════════════════════
+  if (provider === 'auto' || provider === 'imagebank') {
+    try {
+      console.log('🔍 [0/3] Verificando ImageBank...');
+      const tema = postContent.split('\n')[0].substring(0, 50);
+      const existingImage = await findExistingImage(especialidade.id, tema);
+      
+      if (existingImage) {
+        console.log(`✅ [ImageBank] Reutilizando imagem! (usada ${existingImage.reuseCount}x)`);
+        return {
+          url: existingImage.url,
+          provider: 'imagebank-reused',
+          reused: true
+        };
+      }
+    } catch (e) {
+      console.warn('⚠️ ImageBank falhou:', e.message);
+    }
+  }
 
   // Título extraído do conteúdo para o SVG de branding
   const tituloPost = (postContent.split('\n')[0] || '')
@@ -1189,6 +1213,22 @@ export async function generateImageForEspecialidade(especialidade, postContent =
           const url = await uploadFoto(fotoBuf);
           if (url) {
             console.log(`✅ fal.ai OK: ${url.substring(0, 60)}...`);
+            
+            // Salva no ImageBank para reúso futuro
+            try {
+              const publicId = url.split('/').pop().split('.')[0];
+              await saveImageToBank({
+                url,
+                publicId: `fono-inova/gmb/${publicId}`,
+                especialidade: especialidade.id,
+                tema: postContent.split('\n')[0].substring(0, 50) || 'general',
+                provider: 'fal-flux-dev',
+                prompt: falPrompt
+              });
+            } catch (e) {
+              console.warn('⚠️ Não foi possível salvar no ImageBank:', e.message);
+            }
+            
             return { url, provider: 'fal-flux-dev' };
           }
           console.warn('⚠️ fal.ai: Upload Cloudinary falhou, tentando próximo provider...');
@@ -1421,24 +1461,77 @@ TECHNICAL: Shot on Canon EOS R5 camera, 85mm f/1.4 lens, ISO 200, soft window li
     }
   }
 
-  // FALLBACK: URL direta (sem upload para Cloudinary - usa URL direta da Pollinations)
-  console.log('🔄 Fallback: URL direta Pollinations...');
+  // ═══════════════════════════════════════════════════════════
+  // FALLBACK FINAL: Unsplash Source (imagens reais de qualidade)
+  // ═══════════════════════════════════════════════════════════
+  console.log('🔄 Fallback Final: Unsplash Source...');
+  
+  const UNSPLASH_IMAGES = {
+    'fonoaudiologia': [
+      'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1559757175-5700dde675bc?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1516302752625-fcc3c50ae61f?w=1024&h=1024&fit=crop'
+    ],
+    'psicologia': [
+      'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1590650153855-d9e808231d41?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?w=1024&h=1024&fit=crop'
+    ],
+    'terapia_ocupacional': [
+      'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1544776193-352d25ca82cd?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1587654780291-39c9404d746b?w=1024&h=1024&fit=crop'
+    ],
+    'fisioterapia': [
+      'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1574680096141-1cddd32e042a?w=1024&h=1024&fit=crop'
+    ],
+    'psicomotricidade': [
+      'https://images.unsplash.com/photo-1596908181055-e10301e29561?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1587654780291-39c9404d746b?w=1024&h=1024&fit=crop'
+    ],
+    'neuropsicologia': [
+      'https://images.unsplash.com/photo-1559757175-5700dde675bc?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?w=1024&h=1024&fit=crop'
+    ],
+    'musicoterapia': [
+      'https://images.unsplash.com/photo-1516280440614-6697288d5d38?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1465847899078-b413929f7120?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=1024&h=1024&fit=crop'
+    ],
+    'psicopedagogia': [
+      'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1588072432836-e10032774350?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=1024&h=1024&fit=crop'
+    ],
+    'default': [
+      'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1596908181055-e10301e29561?w=1024&h=1024&fit=crop'
+    ]
+  };
+  
   try {
-    const encoded = encodeURIComponent(prompt);
-    const seed = Math.floor(Math.random() * 999999);
-    const directUrl = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true`;
+    // Seleciona imagem aleatória da especialidade ou default
+    const images = UNSPLASH_IMAGES[especialidade.id] || UNSPLASH_IMAGES['default'];
+    const randomImage = images[Math.floor(Math.random() * images.length)];
     
-    const check = await fetch(directUrl, { method: 'HEAD', signal: AbortSignal.timeout(30000) });
-    if (check.ok) {
-      console.log('✅ URL direta OK:', directUrl.substring(0, 60) + '...');
-      return { url: directUrl, provider: 'pollinations-direct' };
-    }
+    console.log('✅ Usando imagem Unsplash:', randomImage.substring(0, 60) + '...');
+    return { url: randomImage, provider: 'unsplash-fallback' };
   } catch (e) {
-    console.error('❌ Fallback falhou:', e.message);
+    console.error('❌ Fallback Unsplash falhou:', e.message);
   }
 
-  console.error('❌ Todas as opções falharam - post será salvo sem imagem');
-  return null;
+  // ÚLTIMO RECURSO: URL direta Pollinations (nunca deve chegar aqui)
+  console.log('🔄 Último recurso: Pollinations direto...');
+  const encoded = encodeURIComponent(prompt);
+  const seed = Math.floor(Math.random() * 999999);
+  const directUrl = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true`;
+  
+  return { url: directUrl, provider: 'pollinations-last-resort' };
 }
 
 

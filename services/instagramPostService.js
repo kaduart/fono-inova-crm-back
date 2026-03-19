@@ -192,6 +192,8 @@ Escreva a legenda completa (4-5 parágrafos curtos):`
  * 🎨 GERAR IMAGEM 
  * Ordem: fal.ai → Freepik → DALL-E → Together.ai → Replicate → Pollinations
  */
+import { findExistingImage, saveImageToBank } from './imageBankService.js';
+
 async function generateImage({ especialidade, headline, tipoImagem = IMAGE_TYPES.FOTO_REAL, useDalleTemp = false }) {
   const prompt = getPromptPronto(
     especialidade.id,
@@ -204,6 +206,24 @@ async function generateImage({ especialidade, headline, tipoImagem = IMAGE_TYPES
   );
 
   console.log('🎨 Prompt:', prompt.substring(0, 80) + '...');
+
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA -1: ImageBank (reúso de imagens existentes)
+  // ═══════════════════════════════════════════════════════════
+  try {
+    console.log('🔍 [ImageBank] Buscando imagem existente...');
+    const existingImage = await findExistingImage(especialidade.id, headline);
+    
+    if (existingImage) {
+      console.log(`✅ [ImageBank] Reutilizando! (usada ${existingImage.reuseCount}x)`);
+      return {
+        url: existingImage.url,
+        provider: 'imagebank-reused'
+      };
+    }
+  } catch (e) {
+    console.warn('⚠️ ImageBank:', e.message);
+  }
 
   // ═══════════════════════════════════════════════════════════
   // TENTATIVA 0: Google Imagen 3 / Veo (PRIORIDADE #1 🥇)
@@ -603,6 +623,23 @@ Professional photography style, high quality, 4K resolution, photorealistic, war
           public_id: `${especialidade.id}_${Date.now()}`,
         });
         console.log('✅ Pollinations:', result.secure_url);
+        
+        // Salva no ImageBank
+        try {
+          await saveImageToBank({
+            url: result.secure_url,
+            publicId: result.public_id,
+            especialidade: especialidade.id,
+            tema: headline.substring(0, 50) || 'general',
+            provider: `pollinations-${model}`,
+            prompt,
+            width: result.width,
+            height: result.height
+          });
+        } catch (e) {
+          console.warn('⚠️ ImageBank save failed:', e.message);
+        }
+        
         return { url: result.secure_url, provider: `pollinations-${model}` };
       } else {
         const status = res.status;
@@ -625,21 +662,52 @@ Professional photography style, high quality, 4K resolution, photorealistic, war
     }
   }
 
-  // FALLBACK FINAL: URL direta do Pollinations (sem verificação)
-  console.log('🔄 Fallback: URL direta do Pollinations...');
+  // ═══════════════════════════════════════════════════════════
+  // FALLBACK FINAL: Unsplash Source (imagens reais de qualidade)
+  // ═══════════════════════════════════════════════════════════
+  console.log('🔄 Fallback Final: Unsplash Source...');
+  
+  const UNSPLASH_IMAGES = {
+    'fonoaudiologia': [
+      'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1559757175-5700dde675bc?w=1024&h=1024&fit=crop'
+    ],
+    'psicologia': [
+      'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1590650153855-d9e808231d41?w=1024&h=1024&fit=crop'
+    ],
+    'terapia_ocupacional': [
+      'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1544776193-352d25ca82cd?w=1024&h=1024&fit=crop'
+    ],
+    'fisioterapia': [
+      'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=1024&h=1024&fit=crop'
+    ],
+    'default': [
+      'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1596908181055-e10301e29561?w=1024&h=1024&fit=crop'
+    ]
+  };
+  
   try {
-    const encoded = encodeURIComponent(prompt);
-    const seed = Math.floor(Math.random() * 999999);
-    const directUrl = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true`;
+    const images = UNSPLASH_IMAGES[especialidade.id] || UNSPLASH_IMAGES['default'];
+    const randomImage = images[Math.floor(Math.random() * images.length)];
     
-    console.log('⚠️ Retornando URL direta (tentativa final):', directUrl.substring(0, 50) + '...');
-    return { url: directUrl, provider: 'pollinations-direct', warning: 'URL direta - pode não carregar' };
+    console.log('✅ Usando imagem Unsplash:', randomImage.substring(0, 60) + '...');
+    return { url: randomImage, provider: 'unsplash-fallback' };
   } catch (e) {
-    console.error('❌ Erro ao gerar URL:', e.message);
+    console.error('❌ Fallback Unsplash falhou:', e.message);
   }
 
-  console.error('❌ Todas as fontes de imagem falharam');
-  return null;
+  // ÚLTIMO RECURSO: URL direta Pollinations
+  console.log('🔄 Último recurso: Pollinations direto...');
+  const encoded = encodeURIComponent(prompt);
+  const seed = Math.floor(Math.random() * 999999);
+  const directUrl = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true`;
+  
+  return { url: directUrl, provider: 'pollinations-last-resort' };
 }
 
 /**
