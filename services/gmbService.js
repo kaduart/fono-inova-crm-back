@@ -860,35 +860,45 @@ async function uploadToCloudinary(imageBlob, especialidadeId) {
 // ─────────────────────────────────────────────
 import { findExistingImage, saveImageToBank } from './imageBankService.js';
 
-export async function generateImageForEspecialidade(especialidade, postContent = '', withBranding = true, provider = 'auto') {
+export async function generateImageForEspecialidade(especialidade, postContent = '', withBranding = true, provider = 'auto', options = {}) {
   // Limpar conteúdo para evitar confusões da IA (ex: "freio lingual" -> planta!)
   const conteudoLimpo = (postContent || especialidade.foco)
     .replace(/freio lingual/gi, 'tongue tie feeding therapy')
     .replace(/freio/gi, 'oral motor');
   
-  const prompt = generateImagePromptFromContent(conteudoLimpo, especialidade);
-  console.log(`🎨 Prompt [branding=${withBranding}] [provider=${provider}]:`, prompt.substring(0, 100) + '...');
+  // 🎲 Adiciona seed aleatório ao prompt para garantir variação
+  const randomSeed = Math.floor(Math.random() * 10000);
+  const variationPrompt = `${conteudoLimpo} [variation:${randomSeed}]`;
+  
+  const prompt = generateImagePromptFromContent(variationPrompt, especialidade);
+  console.log(`🎨 Prompt [branding=${withBranding}] [provider=${provider}] [seed=${randomSeed}]:`, prompt.substring(0, 100) + '...');
   
   // ═══════════════════════════════════════════════════════════
   // TENTATIVA 0: ImageBank (reúso de imagens existentes)
+  // Só usa ImageBank se NÃO for para regenerar (forceNew = false)
   // ═══════════════════════════════════════════════════════════
-  if (provider === 'auto' || provider === 'imagebank') {
+  if (!options.forceNew && (provider === 'auto' || provider === 'imagebank')) {
     try {
       console.log('🔍 [0/3] Verificando ImageBank...');
       const tema = postContent.split('\n')[0].substring(0, 50);
-      const existingImage = await findExistingImage(especialidade.id, tema);
       
-      if (existingImage) {
-        console.log(`✅ [ImageBank] Reutilizando imagem! (usada ${existingImage.reuseCount}x)`);
+      // Busca imagem diferente da última usada (pula a última usada)
+      const existingImages = await (await import('./imageBankService.js')).findExistingImage(especialidade.id, tema, { limit: 5 });
+      
+      if (existingImages && existingImages.reuseCount < 3) {
+        console.log(`✅ [ImageBank] Reutilizando imagem! (usada ${existingImages.reuseCount}x)`);
         return {
-          url: existingImage.url,
+          url: existingImages.url,
           provider: 'imagebank-reused',
           reused: true
         };
       }
+      console.log('⚠️ [ImageBank] Imagem já usada muitas vezes, gerando nova...');
     } catch (e) {
       console.warn('⚠️ ImageBank falhou:', e.message);
     }
+  } else if (options.forceNew) {
+    console.log('🆕 [ImageBank] Pulando reúso - gerando imagem nova...');
   }
 
   // Título extraído do conteúdo para o SVG de branding

@@ -224,6 +224,111 @@ router.get('/:slug/post-suggestion', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/landing-pages/:slug/create-post
+ * 🎯 Cria post completo no GMB a partir de uma landing page
+ * Busca imagem no ImageBank ou gera nova
+ */
+router.post('/:slug/create-post', async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const { scheduledAt } = req.body;
+    
+    // Busca a landing page
+    const lp = await LandingPage.findOne({ slug });
+    if (!lp) {
+      return res.status(404).json({
+        success: false,
+        error: 'Landing page não encontrada'
+      });
+    }
+    
+    // Gera conteúdo do post
+    const suggestion = await landingPageService.generatePostContent(slug);
+    
+    // Importa serviços necessários
+    const { generateImageForEspecialidade } = await import('../services/gmbService.js');
+    const { findExistingImage } = await import('../services/imageBankService.js');
+    
+    // Mapeamento de categorias
+    const CATEGORY_MAP = {
+      'fonoaudiologia': { id: 'fonoaudiologia', nome: 'Fonoaudiologia', foco: 'desenvolvimento da fala' },
+      'psicologia': { id: 'psicologia', nome: 'Psicologia', foco: 'saúde mental infantil' },
+      'autismo': { id: 'autismo', nome: 'Autismo', foco: 'avaliação TEA' },
+      'terapia_ocupacional': { id: 'terapia_ocupacional', nome: 'Terapia Ocupacional', foco: 'coordenação motora' },
+      'aprendizagem': { id: 'psicopedagogia', nome: 'Psicopedagogia', foco: 'dificuldades de aprendizagem' },
+      'geografica': { id: 'fonoaudiologia', nome: 'Fonoaudiologia', foco: 'atendimento em Anápolis' },
+      'fisioterapia': { id: 'fisioterapia', nome: 'Fisioterapia', foco: 'desenvolvimento motor' }
+    };
+    
+    const especialidade = CATEGORY_MAP[lp.category] || CATEGORY_MAP['fonoaudiologia'];
+    
+    // 🎨 Busca ou gera imagem
+    let imageResult = null;
+    try {
+      // Tenta ImageBank primeiro
+      const existingImage = await findExistingImage(especialidade.id, lp.title);
+      if (existingImage) {
+        imageResult = {
+          url: existingImage.url,
+          provider: 'imagebank-reused'
+        };
+      } else {
+        // Gera nova imagem
+        imageResult = await generateImageForEspecialidade(
+          especialidade,
+          suggestion.content,
+          false,
+          'auto'
+        );
+      }
+    } catch (imgError) {
+      console.warn('⚠️ Erro ao obter imagem:', imgError.message);
+    }
+    
+    // Cria o post no banco (GMB)
+    const GmbPost = (await import('../models/GmbPost.js')).default;
+    const post = new GmbPost({
+      platform: 'gmb',
+      content: suggestion.content,
+      title: suggestion.title,
+      funnelStage: 'top',
+      theme: lp.category,
+      status: scheduledAt ? 'scheduled' : 'draft',
+      scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+      landingPageRef: lp.slug,
+      landingPageUrl: suggestion.landingPageUrl,
+      tags: ['landing-page', 'auto-generated', 'seo-optimized'],
+      mediaUrl: imageResult?.url || null,
+      mediaType: imageResult?.url ? 'image' : null,
+      imageProvider: imageResult?.provider || null,
+      autoPublish: false
+    });
+    
+    await post.save();
+    
+    // Marca LP como usada
+    await landingPageService.markAsUsed(slug);
+    
+    res.json({
+      success: true,
+      message: 'Post criado com sucesso!',
+      data: {
+        postId: post._id,
+        title: post.title,
+        hasImage: !!imageResult?.url,
+        imageProvider: imageResult?.provider,
+        status: post.status,
+        scheduledAt: post.scheduledAt
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Erro ao criar post:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ✍️ AÇÕES
 // ═══════════════════════════════════════════════════════════════════════════════

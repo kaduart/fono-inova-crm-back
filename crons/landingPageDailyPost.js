@@ -1,12 +1,28 @@
 /**
  * 🔄 Landing Page Daily Post Cron
  * Cria posts automáticos no GMB linkando para landing pages
+ * Com SEO otimizado e geração de imagens via ImageBank
  * Roda diariamente às 8h da manhã
  */
 
 import cron from 'node-cron';
 import GmbPost from '../models/GmbPost.js';
 import * as landingPageService from '../services/landingPageService.js';
+import { generateImageForEspecialidade } from '../services/gmbService.js';
+import { findExistingImage } from '../services/imageBankService.js';
+
+// Mapeamento de categorias para especialidades do GMB
+const CATEGORY_TO_ESPECIALIDADE = {
+  'fonoaudiologia': { id: 'fonoaudiologia', nome: 'Fonoaudiologia', foco: 'desenvolvimento da fala e linguagem' },
+  'psicologia': { id: 'psicologia', nome: 'Psicologia', foco: 'saúde mental infantil' },
+  'autismo': { id: 'autismo', nome: 'Autismo', foco: 'avaliação e acompanhamento TEA' },
+  'terapia_ocupacional': { id: 'terapia_ocupacional', nome: 'Terapia Ocupacional', foco: 'coordenação motora e independência' },
+  'aprendizagem': { id: 'psicopedagogia', nome: 'Psicopedagogia', foco: 'dificuldades de aprendizagem' },
+  'geografica': { id: 'fonoaudiologia', nome: 'Fonoaudiologia', foco: 'atendimento em Anápolis' },
+  'fisioterapia': { id: 'fisioterapia', nome: 'Fisioterapia', foco: 'desenvolvimento motor' },
+  'freio_lingual': { id: 'freio_lingual', nome: 'Freio Lingual', foco: 'avaliação de frenulo' },
+  'default': { id: 'fonoaudiologia', nome: 'Fonoaudiologia', foco: 'desenvolvimento infantil' }
+};
 
 // Horários estratégicos para postagem
 const POSTING_SCHEDULE = [
@@ -17,12 +33,62 @@ const POSTING_SCHEDULE = [
 ];
 
 /**
+ * 🎨 Busca ou gera imagem para a landing page
+ */
+async function getImageForLandingPage(landingPage, suggestion) {
+  const category = landingPage.category || 'default';
+  const especialidade = CATEGORY_TO_ESPECIALIDADE[category] || CATEGORY_TO_ESPECIALIDADE['default'];
+  
+  try {
+    // TENTATIVA 1: ImageBank (reutilizar imagens existentes)
+    console.log(`🔍 [LP ${landingPage.slug}] Buscando no ImageBank...`);
+    const existingImage = await findExistingImage(especialidade.id, landingPage.title);
+    
+    if (existingImage) {
+      console.log(`✅ [LP ${landingPage.slug}] Imagem do ImageBank encontrada!`);
+      return {
+        url: existingImage.url,
+        provider: 'imagebank-reused'
+      };
+    }
+    
+    // TENTATIVA 2: Gerar nova imagem
+    console.log(`🎨 [LP ${landingPage.slug}] Gerando nova imagem...`);
+    const imgResult = await generateImageForEspecialidade(
+      especialidade,
+      suggestion.content,
+      false, // sem branding
+      'auto' // usa melhor provider disponível
+    );
+    
+    if (imgResult?.url) {
+      console.log(`✅ [LP ${landingPage.slug}] Imagem gerada: ${imgResult.provider}`);
+      return imgResult;
+    }
+  } catch (error) {
+    console.warn(`⚠️ [LP ${landingPage.slug}] Erro na imagem:`, error.message);
+  }
+  
+  return null;
+}
+
+/**
  * 🎯 Cria post no GMB para uma landing page
  */
 async function createGmbPostForLandingPage(landingPage, scheduledTime = null) {
   try {
-    // Gera conteúdo baseado na LP
+    // Gera conteúdo baseado na LP (com SEO otimizado)
     const suggestion = await landingPageService.generatePostContent(landingPage.slug);
+    
+    // 🎨 Busca ou gera imagem
+    console.log(`🖼️ [LP ${landingPage.slug}] Processando imagem...`);
+    const imageResult = await getImageForLandingPage(landingPage, suggestion);
+    
+    if (imageResult) {
+      console.log(`✅ [LP ${landingPage.slug}] Imagem OK: ${imageResult.provider}`);
+    } else {
+      console.warn(`⚠️ [LP ${landingPage.slug}] Sem imagem - post será criado sem mídia`);
+    }
     
     // Cria o post no banco
     const post = new GmbPost({
@@ -35,9 +101,11 @@ async function createGmbPostForLandingPage(landingPage, scheduledTime = null) {
       scheduledAt: scheduledTime,
       landingPageRef: landingPage.slug,
       landingPageUrl: suggestion.landingPageUrl,
-      tags: ['auto', 'landing-page', 'daily'],
-      // Tenta gerar imagem se for post imediato
-      generateImage: !scheduledTime,
+      tags: ['auto', 'landing-page', 'daily', 'seo-optimized'],
+      // Dados da imagem
+      mediaUrl: imageResult?.url || null,
+      mediaType: imageResult?.url ? 'image' : null,
+      imageProvider: imageResult?.provider || null,
       autoPublish: false // Sempre precisa de aprovação humana
     });
     
@@ -46,13 +114,15 @@ async function createGmbPostForLandingPage(landingPage, scheduledTime = null) {
     // Marca a LP como usada
     await landingPageService.markAsUsed(landingPage.slug);
     
-    console.log(`✅ Post criado para LP: ${landingPage.slug}`);
+    console.log(`✅ Post criado para LP: ${landingPage.slug} (imagem: ${imageResult?.provider || 'sem imagem'})`);
     
     return {
       success: true,
       postId: post._id,
       landingPage: landingPage.slug,
-      scheduledAt: scheduledTime
+      scheduledAt: scheduledTime,
+      hasImage: !!imageResult?.url,
+      imageProvider: imageResult?.provider
     };
   } catch (error) {
     console.error(`❌ Erro ao criar post para ${landingPage.slug}:`, error);

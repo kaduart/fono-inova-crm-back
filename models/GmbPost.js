@@ -51,6 +51,10 @@ const gmbPostSchema = new mongoose.Schema({
     enum: ['image', 'video', null],
     default: null 
   },
+  imageProvider: { 
+    type: String,
+    description: 'Provedor da imagem (fal.ai, imagebank, etc)'
+  },
   
   // CTA (Call to Action)
   ctaType: {
