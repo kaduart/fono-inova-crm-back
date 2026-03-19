@@ -105,8 +105,6 @@ import insuranceGuidesRoutes from './routes/insuranceGuides.js';
 import convenioPackagesRoutes from './routes/convenioPackages.js';
 import convenioRoutes from './routes/financial/convenio.routes.js';
 import reminderRoutes from './routes/reminder.js';
-import baileysRoutes from './routes/baileys.js';
-
 // 🖥️ whatsapp-web.js só para LOCAL (Render não tem Chrome)
 let whatsappWebRoutes = null;
 let whatsappWebService = null;
@@ -330,12 +328,12 @@ app.use('/api/imagebank', imageBankRoutes);
 app.use("/api/pix", pixRoutes);
 
 app.use("/api/whatsapp", whatsappRoutes);
-// ✅ API alternativa: Baileys (sem Puppeteer) - FUNCIONA NO RENDER
-app.use("/api/baileys", baileysRoutes);
-
 // 🔹 whatsapp-web.js só local
 if (whatsappWebRoutes) {
   app.use("/api/whatsapp-web", whatsappWebRoutes);
+  console.log('📱 WhatsApp: whatsapp-web.js ATIVO (modo local)');
+} else {
+  console.log('📱 WhatsApp: API Oficial da Meta ATIVA (modo produção)');
 }
 app.use("/api/followups", followupRoutes);
 
