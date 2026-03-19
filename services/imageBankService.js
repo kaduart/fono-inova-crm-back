@@ -30,18 +30,19 @@ export async function findExistingImage(especialidade, tema = '', options = {}) 
     // Seleciona uma aleatória das disponíveis
     const image = availableImages[Math.floor(Math.random() * availableImages.length)];
     
+    const previousUsage = image.usageCount;
     console.log(`✅ [ImageBank] Imagem encontrada: ${image.url.substring(0, 60)}...`);
-    console.log(`   → Usada ${image.usageCount} vezes`);
+    console.log(`   → Usada ${previousUsage} vezes anteriormente`);
     console.log(`   → Último uso: ${image.lastUsed ? new Date(image.lastUsed).toLocaleDateString() : 'nunca'}`);
     
-    // Marca uso
+    // Marca uso (incrementa no banco)
     await image.markUsage();
     
     return {
       url: image.url,
       publicId: image.publicId,
       provider: 'imagebank',
-      reuseCount: image.usageCount,
+      reuseCount: previousUsage, // Retorna valor ANTES do incremento
       isReused: true
     };
   }
