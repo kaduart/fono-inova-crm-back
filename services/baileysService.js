@@ -75,9 +75,10 @@ class BaileysService {
 
       this.sock = makeWASocket({
         auth: state,
-        browser: ["Chrome (Linux)", "", ""],
+        browser: ["Ubuntu", "Chrome", "20.0.04"],
         syncFullHistory: false,
         markOnlineOnConnect: false,
+        version: [2, 3000, 1015901307],
       });
 
       // Evento de conexão

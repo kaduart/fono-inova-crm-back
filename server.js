@@ -105,8 +105,15 @@ import insuranceGuidesRoutes from './routes/insuranceGuides.js';
 import convenioPackagesRoutes from './routes/convenioPackages.js';
 import convenioRoutes from './routes/financial/convenio.routes.js';
 import reminderRoutes from './routes/reminder.js';
-import whatsappWebRoutes from './routes/whatsappWeb.js';
-import whatsappWebService from './services/whatsappWebService.js';
+import baileysRoutes from './routes/baileys.js';
+
+// 🖥️ whatsapp-web.js só para LOCAL (Render não tem Chrome)
+let whatsappWebRoutes = null;
+let whatsappWebService = null;
+if (process.env.NODE_ENV !== 'production' && process.env.ENABLE_WWWEB === 'true') {
+  whatsappWebRoutes = await import('./routes/whatsappWeb.js').then(m => m.default);
+  whatsappWebService = await import('./services/whatsappWebService.js').then(m => m.default);
+}
 import imageBankRoutes from './routes/imageBank.routes.js';
 
 // ======================================================
@@ -136,8 +143,13 @@ scheduleDailyAlerts();
 scheduleGmbCron(); // ← Inicia cron do GMB (geração + envio ao Make)
 scheduleLandingPageDailyPosts(); // ← Inicia cron de posts automáticos para LPs
 
-// 🔹 WhatsApp Web (Puppeteer) - sessao persistente
-whatsappWebService.initialize().catch(err => console.error('[WhatsAppWeb] Erro ao inicializar:', err.message));
+// 🔹 WhatsApp Web (Puppeteer) - só local onde tem Chrome
+if (whatsappWebService) {
+  whatsappWebService.initialize().catch(err => console.error('[WhatsAppWeb] Erro ao inicializar:', err.message));
+  console.log('📱 WhatsApp: whatsapp-web.js ATIVO (modo local)');
+} else {
+  console.log('📱 WhatsApp: whatsapp-web.js DESATIVADO (modo produção - use Baileys ou API Meta)');
+}
 
 const PORT = process.env.PORT || 5000;
 
@@ -318,7 +330,13 @@ app.use('/api/imagebank', imageBankRoutes);
 app.use("/api/pix", pixRoutes);
 
 app.use("/api/whatsapp", whatsappRoutes);
-app.use("/api/whatsapp-web", whatsappWebRoutes);
+// ✅ API alternativa: Baileys (sem Puppeteer) - FUNCIONA NO RENDER
+app.use("/api/baileys", baileysRoutes);
+
+// 🔹 whatsapp-web.js só local
+if (whatsappWebRoutes) {
+  app.use("/api/whatsapp-web", whatsappWebRoutes);
+}
 app.use("/api/followups", followupRoutes);
 
 app.use('/api', importFromAgendaRouter);

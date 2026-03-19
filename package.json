@@ -39,6 +39,7 @@
     "@google/genai": "^1.44.0",
     "@napi-rs/canvas": "^0.1.95",
     "@sendgrid/mail": "^8.1.5",
+    "@whiskeysockets/baileys": "^6.7.12",
     "bcryptjs": "^3.0.2",
     "bullmq": "^5.61.0",
     "chalk": "^5.6.2",
