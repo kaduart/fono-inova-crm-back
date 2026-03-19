@@ -21,13 +21,34 @@ class WhatsAppWebService {
     if (this.initCalled) return;
     this.initCalled = true;
 
+    // Detecta caminho do Chrome (local vs Render)
+    const chromePath = process.env.PUPPETEER_EXECUTABLE_PATH || 
+                       process.env.CHROME_PATH ||
+                       '/usr/bin/chromium-browser';
+    
+    console.log('[WhatsAppWeb] Usando Chrome em:', chromePath);
+
+    // Caminho da sessão (persistente no Render)
+    const sessionPath = process.env.WHATSAPP_SESSION_PATH || 
+                        path.join(__dirname, '../.whatsapp-session');
+    
+    console.log('[WhatsAppWeb] Sessão em:', sessionPath);
+
     this.client = new Client({
       authStrategy: new LocalAuth({
-        dataPath: path.join(__dirname, '../.whatsapp-session')
+        dataPath: sessionPath
       }),
       puppeteer: {
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        executablePath: chromePath,
+        args: [
+          '--no-sandbox', 
+          '--disable-setuid-sandbox', 
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process'
+        ]
       }
     });
 

@@ -20,6 +20,11 @@ import { fileURLToPath } from "url";
 import { followupEvents, followupQueue, videoGenerationQueue, videoGenerationEvents } from "./config/bullConfig.js";
 process.env.TZ = 'America/Sao_Paulo';
 
+// 🔧 Carregar .env ANTES de tudo (para ENABLE_WWWEB funcionar)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, "./.env") });
+
 // ======================================================
 // 🔧 Configurações internas e serviços
 // ======================================================
@@ -105,22 +110,14 @@ import insuranceGuidesRoutes from './routes/insuranceGuides.js';
 import convenioPackagesRoutes from './routes/convenioPackages.js';
 import convenioRoutes from './routes/financial/convenio.routes.js';
 import reminderRoutes from './routes/reminder.js';
-// 🖥️ whatsapp-web.js só para LOCAL (Render não tem Chrome)
-let whatsappWebRoutes = null;
-let whatsappWebService = null;
-if (process.env.NODE_ENV !== 'production' && process.env.ENABLE_WWWEB === 'true') {
-  whatsappWebRoutes = await import('./routes/whatsappWeb.js').then(m => m.default);
-  whatsappWebService = await import('./services/whatsappWebService.js').then(m => m.default);
-}
+// 🖥️ whatsapp-web.js ATIVO em todos os ambientes (Chrome instalado via render-build.sh)
+import whatsappWebRoutes from './routes/whatsappWeb.js';
+import whatsappWebService from './services/whatsappWebService.js';
 import imageBankRoutes from './routes/imageBank.routes.js';
 
 // ======================================================
 // 🧭 Inicialização base
 // ======================================================
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, "./.env") });
-
 const app = express();
 const server = http.createServer(app);
 const io = initializeSocket(server);
@@ -328,13 +325,8 @@ app.use('/api/imagebank', imageBankRoutes);
 app.use("/api/pix", pixRoutes);
 
 app.use("/api/whatsapp", whatsappRoutes);
-// 🔹 whatsapp-web.js só local
-if (whatsappWebRoutes) {
-  app.use("/api/whatsapp-web", whatsappWebRoutes);
-  console.log('📱 WhatsApp: whatsapp-web.js ATIVO (modo local)');
-} else {
-  console.log('📱 WhatsApp: API Oficial da Meta ATIVA (modo produção)');
-}
+// 🔹 whatsapp-web.js ATIVO
+app.use("/api/whatsapp-web", whatsappWebRoutes);
 app.use("/api/followups", followupRoutes);
 
 app.use('/api', importFromAgendaRouter);

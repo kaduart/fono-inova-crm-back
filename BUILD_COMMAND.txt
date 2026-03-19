@@ -1,0 +1,1 @@
+chmod +x render-build.sh && ./render-build.sh && npm install
