@@ -77,6 +77,7 @@
     "pdfkit": "^0.17.1",
     "pino": "^10.3.1",
     "puppeteer": "^24.30.0",
+    "qrcode": "^1.5.4",
     "redis": "^5.8.3",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
