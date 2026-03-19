@@ -37,6 +37,7 @@
       "MILLI_SECS": "{{duration}} milisaniye"
     },
     "SHOW_DATA_BTN": "Veriyi göster",
+    "SHOW_PROGRESS_BTN": "İlerlemeyi göster",
     "SHOW_OPTIONS_BTN": "Seçenekleri göster",
     "SHOW_ERRORS_BTN": "Hataları göster",
     "NA": "Mevcut değil",
@@ -58,9 +59,11 @@
     "TABS": {
       "DEFAULT": "Varsayılan",
       "DATA": "Veri",
+      "PROGRESS": "İlerleme",
       "OPTIONS": "Seçenekler",
       "LOGS": "Kayıtlar",
-      "ERROR": "Hata"
+      "ERROR": "Hata",
+      "TIMELINE": "Zaman çizelgesi"
     }
   },
   "QUEUE": {
@@ -75,13 +78,16 @@
       "RESUME_ALL": "Tümünü devam ettir",
       "PAUSE_ALL": "Tümünü durdur",
       "EMPTY": "Boşalt",
+      "OBLITERATE": "Tamamen Sil",
       "ADD_JOB": "İş ekle",
+      "SET_CONCURRENCY": "Eşzamanlılığı ayarla",
       "CONFIRM": {
         "RETRY_ALL": "Tüm {{status}} işleri yeniden denemek istediğinizden emin misiniz?",
         "CLEAN_ALL": "Tüm {{status}} işleri temizlemek istediğinizden emin misiniz?",
         "PROMOTE_ALL": "Tüm gecikmiş işleri terfi ettirmek istediğinizden emin misiniz?",
         "PAUSE_QUEUE": "Kuyruk işlemini durdurmak istediğinizden emin misiniz?",
         "EMPTY_QUEUE": "Kuyruğu boşaltmak istediğinizden emin misiniz?",
+        "OBLITERATE_QUEUE": "Bu kuyruğu tamamen silmek istediğinizden emin misiniz?\n\nBu işlem kuyruğu ve tüm Redis anahtarlarını tamamen kaldıracaktır.\nKuyruk önce durdurulmalıdır.",
         "RESUME_QUEUE": "Kuyruk işlemini devam ettirmek istediğinizden emin misiniz?",
         "PAUSE_ALL": "Tüm kuyrukları durdurmak istediğinizden emin misiniz?",
         "RESUME_ALL": "Tüm kuyrukları devam ettirmek istediğinizden emin misiniz?"
@@ -138,9 +144,16 @@
     "CONFIRM_JOB_ACTIONS": "İş işlemlerini onayla",
     "COLLAPSE_JOB": "İşi daralt",
     "COLLAPSE_JOB_DATA": "İş verisini daralt",
+    "COLLAPSE_JOB_PROGRESS": "İş ilerlemesini daralt",
     "COLLAPSE_JOB_OPTIONS": "İş seçeneklerini daralt",
     "COLLAPSE_JOB_ERROR": "İş hatasını daralt",
     "DARK_MODE": "Karanlık mod"
+  },
+  "CONCURRENCY": {
+    "TITLE": "Genel eşzamanlılık",
+    "DESCRIPTION": "Tüm işçilerde paralel olarak işlenen maksimum iş sayısı. Sınırı kaldırmak için 0 olarak ayarlayın.",
+    "CONCURRENCY": "Eşzamanlılık",
+    "SAVE": "Kaydet"
   },
   "ADD_JOB": {
     "TITLE": "İş ekle",
