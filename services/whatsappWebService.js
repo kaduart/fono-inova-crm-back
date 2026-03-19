@@ -86,7 +86,14 @@ class WhatsAppWebService {
       throw new Error(`Numero ${cleanPhone} nao encontrado no WhatsApp. Verifique se o numero esta correto.`);
     }
 
-    await this.client.sendMessage(numberId._serialized, message);
+    // Garante que quebras de linha sejam preservadas
+    // Substitui \n literal por quebras de linha reais se necessário
+    let formattedMessage = message;
+    if (typeof message === 'string' && message.includes('\\n')) {
+      formattedMessage = message.replace(/\\n/g, '\n');
+    }
+
+    await this.client.sendMessage(numberId._serialized, formattedMessage);
     return { success: true };
   }
 

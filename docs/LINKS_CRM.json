@@ -1,0 +1,259 @@
+{
+  "meta": {
+    "versao": "2.0",
+    "data_atualizacao": "2024-03-19",
+    "clinica": "Fono Inova - Centro de Desenvolvimento Infantil",
+    "whatsapp": "(62) 99337-7726",
+    "cidade": "Anápolis - GO",
+    "total_lps": 7
+  },
+  "landing_pages": [
+    {
+      "id": "fala-tardia",
+      "nome": "Fala Tardia Infantil",
+      "url_completa": "https://www.clinicafonoinova.com.br/fala-tardia",
+      "url_curta": "fonoinova.com.br/fala-tardia",
+      "categoria": "fonoaudiologia",
+      "prioridade_campanha": "alta",
+      "mensagem_whatsapp": "Oi, vi no site sobre fala tardia e gostaria de agendar uma avaliação.",
+      "link_whatsapp": "https://wa.me/5562993377726?text=Oi, vi no site sobre fala tardia e gostaria de agendar uma avaliação.",
+      "keywords_seo": [
+        "fala tardia",
+        "atraso fala infantil",
+        "criança não fala",
+        "2 anos não fala",
+        "3 anos não fala",
+        "fono Anápolis"
+      ],
+      "gancho": "Sua criança não fala ainda?",
+      "publico_alvo": "Pais de crianças com atraso na fala",
+      "indicadores": {
+        "idade_ideal": "2-4 anos",
+        "sinais": [
+          "Não fala pelo menos 20 palavras aos 2 anos",
+          "Não junta duas palavras aos 2 anos"
+        ]
+      }
+    },
+    {
+      "id": "avaliacao-autismo-infantil",
+      "nome": "Avaliação de Autismo Infantil",
+      "url_completa": "https://www.clinicafonoinova.com.br/avaliacao-autismo-infantil",
+      "url_curta": "fonoinova.com.br/avaliacao-autismo-infantil",
+      "categoria": "autismo",
+      "prioridade_campanha": "alta",
+      "mensagem_whatsapp": "Oi, vi no site sobre avaliação de autismo e gostaria de agendar.",
+      "link_whatsapp": "https://wa.me/5562993377726?text=Oi, vi no site sobre avaliação de autismo e gostaria de agendar.",
+      "keywords_seo": [
+        "autismo infantil",
+        "avaliação autismo",
+        "TEA",
+        "sinais autismo bebê",
+        "diagnóstico autismo Anápolis"
+      ],
+      "gancho": "Sinais de autismo no seu filho?",
+      "publico_alvo": "Pais com suspeita de autismo no filho",
+      "indicadores": {
+        "idade_ideal": "1-5 anos",
+        "sinais": [
+          "Não mantém contato visual",
+          "Não responde ao nome",
+          "Não aponta para objetos"
+        ]
+      }
+    },
+    {
+      "id": "dislexia-infantil",
+      "nome": "Dislexia Infantil",
+      "url_completa": "https://www.clinicafonoinova.com.br/dislexia-infantil",
+      "url_curta": "fonoinova.com.br/dislexia-infantil",
+      "categoria": "aprendizagem",
+      "prioridade_campanha": "alta",
+      "mensagem_whatsapp": "Oi, vi no site sobre dislexia infantil e gostaria de agendar uma avaliação.",
+      "link_whatsapp": "https://wa.me/5562993377726?text=Oi, vi no site sobre dislexia infantil e gostaria de agendar uma avaliação.",
+      "keywords_seo": [
+        "dislexia infantil",
+        "troca b/d",
+        "leitura espelhada",
+        "dificuldade leitura",
+        "dislexia tratamento Anápolis"
+      ],
+      "gancho": "Seu filho confunde letras?",
+      "publico_alvo": "Pais de crianças em fase de alfabetização com dificuldades",
+      "indicadores": {
+        "idade_ideal": "6-10 anos",
+        "sinais": [
+          "Troca letras parecidas (b/d, p/q)",
+          "Leitura espelhada",
+          "Leitura lenta e cansativa"
+        ]
+      }
+    },
+    {
+      "id": "tdah-infantil",
+      "nome": "TDAH Infantil",
+      "url_completa": "https://www.clinicafonoinova.com.br/tdah-infantil",
+      "url_curta": "fonoinova.com.br/tdah-infantil",
+      "categoria": "neuropsicologia",
+      "prioridade_campanha": "alta",
+      "mensagem_whatsapp": "Oi, vi no site sobre TDAH infantil e gostaria de agendar uma avaliação.",
+      "link_whatsapp": "https://wa.me/5562993377726?text=Oi, vi no site sobre TDAH infantil e gostaria de agendar uma avaliação.",
+      "keywords_seo": [
+        "TDAH infantil",
+        "hiperatividade",
+        "criança dispersa",
+        "falta atenção",
+        "TDAH tratamento Anápolis"
+      ],
+      "gancho": "Seu filho é muito inquieto, não para?",
+      "publico_alvo": "Pais de crianças com desatenção, hiperatividade ou impulsividade",
+      "indicadores": {
+        "idade_ideal": "5-12 anos",
+        "sinais": [
+          "Não consegue se concentrar",
+          "Muito inquieto",
+          "Age sem pensar"
+        ]
+      }
+    },
+    {
+      "id": "dificuldade-escolar",
+      "nome": "Dificuldade Escolar",
+      "url_completa": "https://www.clinicafonoinova.com.br/avaliacao-neuropsicologica-dificuldade-escolar",
+      "url_curta": "fonoinova.com.br/avaliacao-neuropsicologica-dificuldade-escolar",
+      "categoria": "aprendizagem",
+      "prioridade_campanha": "media",
+      "mensagem_whatsapp": "Oi, vi no site sobre dificuldade escolar e gostaria de agendar uma avaliação.",
+      "link_whatsapp": "https://wa.me/5562993377726?text=Oi, vi no site sobre dificuldade escolar e gostaria de agendar uma avaliação.",
+      "keywords_seo": [
+        "dificuldade escolar",
+        "baixo rendimento",
+        "dislexia",
+        "TDAH escola",
+        "psicopedagogia Anápolis"
+      ],
+      "gancho": "Seu filho tem dificuldade na escola?",
+      "publico_alvo": "Pais de crianças com baixo rendimento escolar",
+      "indicadores": {
+        "idade_ideal": "6-12 anos",
+        "sinais": [
+          "Notas baixas mesmo estudando",
+          "Troca letras ao ler/escrever",
+          "Dificuldade de concentração"
+        ]
+      }
+    },
+    {
+      "id": "freio-lingual",
+      "nome": "Freio Lingual",
+      "url_completa": "https://www.clinicafonoinova.com.br/freio-lingual",
+      "url_curta": "fonoinova.com.br/freio-lingual",
+      "categoria": "fonoaudiologia",
+      "prioridade_campanha": "media",
+      "mensagem_whatsapp": "Oi, vi no site sobre freio lingual e gostaria de agendar uma avaliação.",
+      "link_whatsapp": "https://wa.me/5562993377726?text=Oi, vi no site sobre freio lingual e gostaria de agendar uma avaliação.",
+      "keywords_seo": [
+        "freio lingual",
+        "língua presa",
+        "dificuldade amamentação",
+        "freio curto bebê"
+      ],
+      "gancho": "Seu bebê tem dificuldade para mamar?",
+      "publico_alvo": "Mães de bebês com dificuldade para amamentar",
+      "indicadores": {
+        "idade_ideal": "0-3 anos",
+        "sinais": [
+          "Dificuldade para sugar",
+          "Mamadas prolongadas",
+          "Dor ao amamentar"
+        ]
+      }
+    },
+    {
+      "id": "fonoaudiologia-adulto",
+      "nome": "Fonoaudiologia Adulto",
+      "url_completa": "https://www.clinicafonoinova.com.br/fonoaudiologia-adulto",
+      "url_curta": "fonoinova.com.br/fonoaudiologia-adulto",
+      "categoria": "fonoaudiologia",
+      "prioridade_campanha": "baixa",
+      "mensagem_whatsapp": "Oi, vi no site sobre fonoaudiologia adulto e gostaria de agendar uma avaliação.",
+      "link_whatsapp": "https://wa.me/5562993377726?text=Oi, vi no site sobre fonoaudiologia adulto e gostaria de agendar uma avaliação.",
+      "keywords_seo": [
+        "fonoaudiologia adulto",
+        "problemas voz",
+        "gagueira adulto",
+        "fono adulto Anápolis"
+      ],
+      "gancho": "Problemas de voz ou fala?",
+      "publico_alvo": "Adultos com problemas de voz ou fala",
+      "indicadores": {
+        "idade_ideal": "18+ anos",
+        "sinais": [
+          "Rouquidão persistente",
+          "Dificuldade de falar em público",
+          "Gagueira"
+        ]
+      }
+    }
+  ],
+  "lps_futuras": [
+    {
+      "id": "sindrome-de-down",
+      "nome": "Síndrome de Down",
+      "url_completa": "https://www.clinicafonoinova.com.br/sindrome-de-down",
+      "status": "em_construcao",
+      "prioridade": "media"
+    },
+    {
+      "id": "prematuridade-desenvolvimento",
+      "nome": "Prematuridade e Desenvolvimento",
+      "url_completa": "https://www.clinicafonoinova.com.br/prematuridade-desenvolvimento",
+      "status": "em_construcao",
+      "prioridade": "media"
+    },
+    {
+      "id": "seletividade-alimentar",
+      "nome": "Seletividade Alimentar Infantil",
+      "url_completa": "https://www.clinicafonoinova.com.br/seletividade-alimentar",
+      "status": "em_construcao",
+      "prioridade": "alta"
+    }
+  ],
+  "urls_consolidadas": [
+    {
+      "url_antiga": "/lp/crianca-2-anos-nao-fala",
+      "url_nova": "/fala-tardia",
+      "tipo": "redirect_301"
+    },
+    {
+      "url_antiga": "/lp/atraso-na-fala-infantil",
+      "url_nova": "/fala-tardia",
+      "tipo": "redirect_301"
+    },
+    {
+      "url_antiga": "/lp/sinais-autismo-bebe",
+      "url_nova": "/avaliacao-autismo-infantil",
+      "tipo": "redirect_301"
+    },
+    {
+      "url_antiga": "/lp/sinais-dislexia",
+      "url_nova": "/dificuldade-escolar",
+      "tipo": "redirect_301"
+    },
+    {
+      "url_antiga": "/lp/crianca-nao-aprende-ler",
+      "url_nova": "/dificuldade-escolar",
+      "tipo": "redirect_301"
+    },
+    {
+      "url_antiga": "/lp/crianca-troca-letras-escrita",
+      "url_nova": "/dificuldade-escolar",
+      "tipo": "redirect_301"
+    }
+  ],
+  "whatsapp_padrao": {
+    "numero": "5562993377726",
+    "formatado": "(62) 99337-7726",
+    "mensagem_base": "Oi, vi no site sobre {tema} e gostaria de agendar uma avaliação."
+  }
+}

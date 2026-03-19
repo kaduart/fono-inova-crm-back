@@ -817,7 +817,7 @@ export const LANDING_PAGES_DATA = [
     content: {
       quandoProcurar: 'Se seu filho apresenta dificuldades persistentes na escola apesar de se esforçar, uma avaliação neuropsicológica pode identificar condições como dislexia, TDAH ou discalculia.',
       comoFunciona: 'A avaliação neuropsicológica é realizada por uma neuropsicóloga especializada e inclui testes padronizados, entrevistas e relatório completo com plano de intervenção.',
-      benefícios: [
+      beneficios: [
         'Diagnóstico preciso das dificuldades',
         'Relatório completo com laudo',
         'Plano de intervenção personalizado',
@@ -827,7 +827,7 @@ export const LANDING_PAGES_DATA = [
     },
     cta: {
       text: 'Agendar Avaliação',
-      link: 'https://wa.me/5562993377726?text=Olá! Gostaria de agendar uma avaliação neuropsicológica para meu filho.',
+      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre avaliação neuropsicológica e gostaria de agendar.',
       phone: '62993377726'
     },
     seo: {
@@ -837,6 +837,439 @@ export const LANDING_PAGES_DATA = [
     },
     location: { city: 'Anápolis', state: 'GO' },
     priority: 8,
+    isDefault: true
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🆕 NOVAS LPs 2024 - CONSOLIDAÇÃO E ESPECIALIZAÇÃO
+  // ═══════════════════════════════════════════════════════════════════════════
+  
+  // ✅ LP CONSOLIDADA: Fala Tardia (unificada)
+  {
+    slug: 'fala-tardia',
+    title: 'Fala Tardia Infantil',
+    headline: 'Criança com atraso na fala?',
+    subheadline: 'Saiba quando se preocupar e como ajudar seu filho a falar',
+    category: 'fonoaudiologia',
+    keywords: ['fala tardia', 'atraso fala infantil', 'criança não fala', '2 anos não fala', '3 anos não fala', 'fono Anápolis'],
+    sinaisAlerta: [
+      { icon: '🔇', text: 'Não fala pelo menos 20 palavras aos 2 anos' },
+      { icon: '🔇', text: 'Não junta duas palavras aos 2 anos' },
+      { icon: '🔇', text: 'Vocabulário muito limitado aos 3 anos' },
+      { icon: '🔇', text: 'Não forma frases completas aos 3 anos' }
+    ],
+    content: {
+      quandoProcurar: 'O atraso na fala pode ser identificado desde cedo. Aos 18 meses, a criança já deve dizer algumas palavras. Aos 2 anos, deve ter vocabulário de 50+ palavras e juntar duas palavras.',
+      comoFunciona: 'Realizamos uma avaliação completa do desenvolvimento da linguagem, identificamos as dificuldades e criamos um plano terapêutico individualizado com fonoaudióloga especializada.',
+      beneficios: [
+        'Diagnóstico precoce do atraso na fala',
+        'Plano terapêutico personalizado',
+        'Acompanhamento com fonoaudióloga especializada',
+        'Ambiente lúdico e acolhedor',
+        'Orientação aos pais para estimulação em casa'
+      ]
+    },
+    cta: {
+      text: 'Agendar avaliação gratuita',
+      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre fala tardia e gostaria de agendar uma avaliação.',
+      phone: '62993377726'
+    },
+    seo: {
+      title: 'Fala Tardia Infantil | Fonoaudiólogo em Anápolis | Fono Inova',
+      description: 'Criança com atraso na fala? Saiba quando se preocupar e como a fonoaudiologia pode ajudar. Avaliação gratuita em Anápolis.',
+      ogImage: '/images/og/fala-tardia.jpg'
+    },
+    priority: 10,
+    isDefault: true,
+    consolidada: true,
+    urlsRedirecionadas: ['/lp/crianca-2-anos-nao-fala', '/lp/atraso-na-fala-infantil']
+  },
+
+  // ✅ LP CONSOLIDADA: Avaliação Autismo Infantil
+  {
+    slug: 'avaliacao-autismo-infantil',
+    title: 'Avaliação de Autismo Infantil',
+    headline: 'Sinais de autismo no seu filho?',
+    subheadline: 'Diagnóstico precoce e intervenção especializada em Anápolis',
+    category: 'autismo',
+    keywords: ['autismo infantil', 'avaliação autismo', 'TEA', 'sinais autismo bebê', 'diagnóstico autismo Anápolis'],
+    sinaisAlerta: [
+      { icon: '👶', text: 'Não mantém contato visual' },
+      { icon: '👶', text: 'Não responde ao nome' },
+      { icon: '👶', text: 'Não aponta para objetos' },
+      { icon: '👶', text: 'Não faz sons de balbucio' },
+      { icon: '👶', text: 'Evita contato com outras crianças' },
+      { icon: '👶', text: 'Movimentos repetitivos' }
+    ],
+    content: {
+      quandoProcurar: 'Sinais de autismo podem aparecer antes dos 2 anos. Se observar comportamentos diferentes, procure uma avaliação especializada. Quanto antes o diagnóstico, melhores os resultados.',
+      comoFunciona: 'Realizamos avaliação multiprofissional com psicólogo e fonoaudiólogo para diagnóstico precoce do TEA. Processo acolhedor e respeitoso com a família.',
+      beneficios: [
+        'Diagnóstico precoce e preciso',
+        'Intervenção especializada',
+        'Equipe multiprofissional',
+        'Laudo válido para encaminhamentos',
+        'Ambiente acolhedor'
+      ]
+    },
+    cta: {
+      text: 'Avaliação especializada',
+      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre avaliação de autismo e gostaria de agendar.',
+      phone: '62993377726'
+    },
+    seo: {
+      title: 'Avaliação de Autismo Infantil | Diagnóstico TEA em Anápolis | Fono Inova',
+      description: 'Sinais de autismo no seu filho? Diagnóstico precoce e intervenção especializada em Anápolis. Equipe multiprofissional e laudo válido.',
+      ogImage: '/images/og/avaliacao-autismo.jpg'
+    },
+    priority: 10,
+    isDefault: true,
+    consolidada: true,
+    urlsRedirecionadas: ['/lp/sinais-autismo-bebe', '/lp/sinais-autismo-2-anos']
+  },
+
+  // ✅ LP CONSOLIDADA: Dificuldade Escolar
+  {
+    slug: 'dificuldade-escolar',
+    title: 'Dificuldade Escolar',
+    headline: 'Seu filho tem dificuldade na escola?',
+    subheadline: 'Identificamos as causas e criamos um plano para melhorar o desempenho escolar',
+    category: 'aprendizagem',
+    keywords: ['dificuldade escolar', 'baixo rendimento', 'dislexia', 'TDAH escola', 'psicopedagogia Anápolis'],
+    sinaisAlerta: [
+      { icon: '📚', text: 'Notas baixas mesmo estudando' },
+      { icon: '📚', text: 'Troca letras ao ler/escrever' },
+      { icon: '📚', text: 'Dificuldade de concentração' },
+      { icon: '📚', text: 'Evita fazer lição de casa' },
+      { icon: '📚', text: 'Frustração com estudos' }
+    ],
+    content: {
+      quandoProcurar: 'Se seu filho apresenta dificuldades persistentes na escola, troca letras, tem dificuldade de concentração ou baixo rendimento, uma avaliação pode identificar dislexia, TDAH ou outras condições.',
+      comoFunciona: 'Avaliação completa com neuropsicóloga e psicopedagoga para identificar as causas da dificuldade escolar e criar um plano de intervenção personalizado.',
+      beneficios: [
+        'Diagnóstico preciso das dificuldades',
+        'Plano de intervenção personalizado',
+        'Orientação para pais e escola',
+        'Acompanhamento especializado',
+        'Melhora no rendimento escolar'
+      ]
+    },
+    cta: {
+      text: 'Agendar avaliação',
+      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre dificuldade escolar e gostaria de agendar uma avaliação.',
+      phone: '62993377726'
+    },
+    seo: {
+      title: 'Dificuldade Escolar | Avaliação em Anápolis | Fono Inova',
+      description: 'Seu filho tem dificuldade na escola? Identificamos dislexia, TDAH e outras condições. Avaliação especializada em Anápolis.',
+      ogImage: '/images/og/dificuldade-escolar.jpg'
+    },
+    priority: 9,
+    isDefault: true,
+    consolidada: true,
+    urlsRedirecionadas: ['/lp/sinais-dislexia', '/lp/crianca-nao-aprende-ler', '/lp/crianca-troca-letras-escrita']
+  },
+
+  // 🆕 NOVA LP: Dislexia Infantil
+  {
+    slug: 'dislexia-infantil',
+    title: 'Dislexia Infantil',
+    headline: 'Seu filho confunde letras?',
+    subheadline: 'Dislexia tem tratamento. Avaliação especializada em Anápolis',
+    category: 'aprendizagem',
+    keywords: ['dislexia infantil', 'troca b/d', 'leitura espelhada', 'dificuldade leitura', 'dislexia tratamento Anápolis'],
+    sinaisAlerta: [
+      { icon: '🔤', text: 'Troca letras parecidas (b/d, p/q)' },
+      { icon: '🔤', text: 'Leitura espelhada' },
+      { icon: '🔤', text: 'Dificuldade com ordem das letras' },
+      { icon: '🔤', text: 'Leitura lenta e cansativa' },
+      { icon: '🔤', text: 'Escrita com muitos erros ortográficos' }
+    ],
+    selecaoSerie: {
+      titulo: 'Identificamos dislexia em qualquer fase:',
+      opcoes: [
+        { serie: '1º ano', sinais: 'Dificuldade para reconhecer letras, confunde sons parecidos' },
+        { serie: '2º ano', sinais: 'Troca b/d/p/q, leitura truncada, inverte sílabas' },
+        { serie: '3º ano+', sinais: 'Leitura lenta, omite palavras, compreensão baixa' }
+      ]
+    },
+    content: {
+      quandoProcurar: 'Se seu filho troca letras (b/d, p/q), tem leitura lenta e cansativa, ou dificuldade persistente com a escrita, pode ser dislexia. A intervenção antes dos 9 anos tem 90% de sucesso.',
+      comoFunciona: 'Realizamos avaliação psicopedagógica completa para diagnóstico de dislexia. Usamos método fônico estruturado e terapia cognitiva adaptada ao perfil da criança.',
+      beneficios: [
+        'Diagnóstico preciso da dislexia',
+        'Método fônico estruturado',
+        'Terapia cognitiva personalizada',
+        'Melhora significativa na leitura',
+        'Acompanhamento escolar',
+        'Maior autoestima do aluno'
+      ],
+      resultados: [
+        { idade: '7 anos', antes: 'Não reconhecia todas as letras', depois: 'Lê textos simples com fluência', tempo: '6 meses' },
+        { idade: '8 anos', antes: 'Trocava b/d constantemente', depois: 'Leitura correta e compreensão boa', tempo: '8 meses' },
+        { idade: '9 anos', antes: 'Evitava ler em voz alta', depois: 'Lê com confiança na escola', tempo: '10 meses' }
+      ]
+    },
+    cta: {
+      text: 'Agendar avaliação de dislexia',
+      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre dislexia infantil e gostaria de agendar uma avaliação.',
+      phone: '62993377726'
+    },
+    seo: {
+      title: 'Dislexia Infantil | Tratamento em Anápolis | Fono Inova',
+      description: 'Seu filho confunde letras? Dislexia tem tratamento. Avaliação especializada e terapia personalizada em Anápolis.',
+      ogImage: '/images/og/dislexia-infantil.jpg'
+    },
+    priority: 10,
+    isDefault: true
+  },
+
+  // 🆕 NOVA LP: TDAH Infantil
+  {
+    slug: 'tdah-infantil',
+    title: 'TDAH Infantil',
+    headline: 'Seu filho é muito inquieto, não para?',
+    subheadline: 'TDAH tem tratamento. Avaliação neuropsicológica especializada em Anápolis',
+    category: 'neuropsicologia',
+    keywords: ['TDAH infantil', 'hiperatividade', 'criança dispersa', 'falta atenção', 'TDAH tratamento Anápolis'],
+    pilares: [
+      { titulo: 'Desatenção', icon: '👀', descricao: 'Distrai-se fácil, esquece tarefas, dificuldade para organizar' },
+      { titulo: 'Hiperatividade', icon: '⚡', descricao: 'Inquietação constante, fala excessivamente, não para quieto' },
+      { titulo: 'Impulsividade', icon: '🎯', descricao: 'Age sem pensar, interrompe conversas, impaciência' }
+    ],
+    impactos: {
+      titulo: 'Quando não tratado:',
+      lista: [
+        'Baixo rendimento escolar',
+        'Dificuldade de socialização',
+        'Frustração e baixa autoestima',
+        'Conflitos familiares frequentes'
+      ]
+    },
+    sinaisAlerta: [
+      { icon: '🎯', text: 'Não consegue se concentrar nas tarefas' },
+      { icon: '🎯', text: 'Esquece o que acabou de aprender' },
+      { icon: '🎯', text: 'Muito inquieto, não para quieto' },
+      { icon: '🎯', text: 'Age sem pensar nas consequências' },
+      { icon: '🎯', text: 'Dificuldade para seguir instruções' }
+    ],
+    content: {
+      quandoProcurar: 'Se seu filho apresenta desatenção persistente, hiperatividade ou impulsividade que afetam o desempenho escolar e as relações sociais, uma avaliação neuropsicológica pode confirmar TDAH.',
+      comoFunciona: 'Avaliação completa com neuropsicóloga especializada em TDAH. Inclui testes padronizados de atenção e funções executivas, entrevistas e relatório completo com orientações.',
+      beneficios: [
+        'Diagnóstico preciso do TDAH',
+        'Avaliação de atenção e funções executivas',
+        'Plano de intervenção personalizado',
+        'Orientação para pais e escola',
+        'Acompanhamento especializado'
+      ],
+      transformacoes: [
+        { titulo: 'Concentração', descricao: 'De 5 min de atenção para 30+ min nas tarefas' },
+        { titulo: 'Organização', descricao: 'Aprende a organizar tarefas e materiais escolares' },
+        { titulo: 'Relacionamentos', descricao: 'Melhora na interação com colegas e familiares' }
+      ]
+    },
+    cta: {
+      text: 'Agendar avaliação TDAH',
+      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre TDAH infantil e gostaria de agendar uma avaliação.',
+      phone: '62993377726'
+    },
+    seo: {
+      title: 'TDAH Infantil | Avaliação em Anápolis | Fono Inova',
+      description: 'Seu filho é inquieto, não consegue se concentrar? TDAH tem tratamento. Avaliação neuropsicológica especializada em Anápolis.',
+      ogImage: '/images/og/tdah-infantil.jpg'
+    },
+    priority: 10,
+    isDefault: true
+  },
+
+  // 🆕 NOVAS LPs (futuras - no sitemap)
+  {
+    slug: 'sindrome-de-down',
+    title: 'Síndrome de Down - Acompanhamento Terapêutico',
+    headline: 'Acompanhamento terapêutico para Síndrome de Down',
+    subheadline: 'Intervenção precoce e multidisciplinar em Anápolis',
+    category: 'desenvolvimento',
+    keywords: ['síndrome de down', 'acompanhamento terapêutico', 'intervenção precoce', 'fono down'],
+    sinaisAlerta: [
+      { icon: '💚', text: 'Atraso no desenvolvimento da fala' },
+      { icon: '💚', text: 'Dificuldade motora' },
+      { icon: '💚', text: 'Atraso na alfabetização' },
+      { icon: '💚', text: 'Dificuldade de socialização' }
+    ],
+    content: {
+      quandoProcurar: 'Crianças com Síndrome de Down se beneficiam de acompanhamento multiprofissional desde o primeiro ano de vida. Quanto mais cedo começar, melhores os resultados.',
+      comoFunciona: 'Oferecemos acompanhamento com fonoaudiologia, psicologia, terapia ocupacional e psicopedagogia em equipe integrada.',
+      beneficios: [
+        'Acompanhamento multiprofissional',
+        'Intervenção precoce',
+        'Desenvolvimento da fala e linguagem',
+        'Autonomia e independência'
+      ]
+    },
+    cta: {
+      text: 'Agendar avaliação',
+      link: 'https://wa.me/5562993377726?text=Oi, gostaria de informações sobre acompanhamento para Síndrome de Down.',
+      phone: '62993377726'
+    },
+    seo: {
+      title: 'Síndrome de Down | Acompanhamento em Anápolis | Fono Inova',
+      description: 'Acompanhamento terapêutico multidisciplinar para crianças com Síndrome de Down em Anápolis.',
+      ogImage: '/images/og/sindrome-down.jpg'
+    },
+    priority: 7,
+    isDefault: true,
+    emConstrucao: true
+  },
+
+  {
+    slug: 'prematuridade-desenvolvimento',
+    title: 'Prematuridade e Desenvolvimento Infantil',
+    headline: 'Acompanhamento para bebês prematuros',
+    subheadline: 'Intervenção precoce para estimular o desenvolvimento',
+    category: 'desenvolvimento',
+    keywords: ['prematuridade', 'bebê prematuro', 'acompanhamento prematuro', 'desenvolvimento motor'],
+    sinaisAlerta: [
+      { icon: '👶', text: 'Atraso no desenvolvimento motor' },
+      { icon: '👶', text: 'Dificuldade de alimentação' },
+      { icon: '👶', text: 'Atraso na fala' },
+      { icon: '👶', text: 'Hipersensibilidade ao toque' }
+    ],
+    content: {
+      quandoProcurar: 'Bebês prematuros precisam de acompanhamento especializado para acompanhar o desenvolvimento corrigido. A intervenção precoce é fundamental.',
+      comoFunciona: 'Avaliamos o desenvolvimento neuropsicomotor e oferecemos terapias específicas para estimular as áreas que precisam de apoio.',
+      beneficios: [
+        'Acompanhamento do desenvolvimento corrigido',
+        'Estimulação precoce',
+        'Prevenção de sequelas',
+        'Orientação aos pais'
+      ]
+    },
+    cta: {
+      text: 'Agendar avaliação',
+      link: 'https://wa.me/5562993377726?text=Oi, gostaria de informações sobre acompanhamento para prematuridade.',
+      phone: '62993377726'
+    },
+    seo: {
+      title: 'Prematuridade | Acompanhamento em Anápolis | Fono Inova',
+      description: 'Acompanhamento terapêutico especializado para bebês prematuros em Anápolis.',
+      ogImage: '/images/og/prematuridade.jpg'
+    },
+    priority: 6,
+    isDefault: true,
+    emConstrucao: true
+  },
+
+  {
+    slug: 'seletividade-alimentar',
+    title: 'Seletividade Alimentar Infantil',
+    headline: 'Criança muito seletiva na alimentação?',
+    subheadline: 'Tratamento para crianças que recusam alimentos e têm dieta restrita',
+    category: 'terapia_ocupacional',
+    keywords: ['seletividade alimentar', 'criança não come', 'recusa alimentar', 'terapia alimentação'],
+    sinaisAlerta: [
+      { icon: '🍽️', text: 'Recusa consistente de alimentos' },
+      { icon: '🍽️', text: 'Dieta restrita a poucos alimentos' },
+      { icon: '🍽️', text: 'Reação negativa a novas texturas' },
+      { icon: '🍽️', text: 'Perda de peso ou baixo crescimento' }
+    ],
+    content: {
+      quandoProcurar: 'Se sua criança recusa alimentos de forma consistente, tem dieta restrita a menos de 20 alimentos ou apresenta estresse na hora das refeições.',
+      comoFunciona: 'Avaliação da integração sensorial e processo de alimentação. Terapia ocupacional com abordagem de integração sensorial.',
+      beneficios: [
+        'Avaliação da integração sensorial',
+        'Expansão da dieta alimentar',
+        'Redução do estresse nas refeições',
+        'Orientação aos pais'
+      ]
+    },
+    cta: {
+      text: 'Agendar avaliação',
+      link: 'https://wa.me/5562993377726?text=Oi, gostaria de informações sobre seletividade alimentar.',
+      phone: '62993377726'
+    },
+    seo: {
+      title: 'Seletividade Alimentar | Tratamento em Anápolis | Fono Inova',
+      description: 'Tratamento para crianças com seletividade alimentar em Anápolis.',
+      ogImage: '/images/og/seletividade-alimentar.jpg'
+    },
+    priority: 7,
+    isDefault: true,
+    emConstrucao: true
+  },
+
+  // 🔗 LPs EXISTENTES (links atualizados)
+  {
+    slug: 'freio-lingual',
+    title: 'Freio Lingual',
+    headline: 'Seu bebê tem dificuldade para mamar?',
+    subheadline: 'Avaliação e tratamento do freio lingual em Anápolis',
+    category: 'fonoaudiologia',
+    keywords: ['freio lingual', 'língua presa', 'dificuldade amamentação', 'freio curto bebê'],
+    sinaisAlerta: [
+      { icon: '👅', text: 'Dificuldade para sugar' },
+      { icon: '👅', text: 'Mamadas prolongadas' },
+      { icon: '👅', text: 'Dor ao amamentar' },
+      { icon: '👅', text: 'Bebê não ganha peso' }
+    ],
+    content: {
+      quandoProcurar: 'Se seu bebê tem dificuldade para mamar, a avaliação do freio lingual pode identificar se há restrição da língua.',
+      comoFunciona: 'Avaliação completa com protocolo MBGR para identificar restrição do freio lingual e orientação sobre o tratamento mais adequado.',
+      beneficios: [
+        'Avaliação com protocolo MBGR',
+        'Orientação especializada',
+        'Melhora na amamentação',
+        'Prevenção de problemas futuros'
+      ]
+    },
+    cta: {
+      text: 'Agendar avaliação',
+      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre freio lingual e gostaria de agendar uma avaliação.',
+      phone: '62993377726'
+    },
+    seo: {
+      title: 'Freio Lingual | Avaliação em Anápolis | Fono Inova',
+      description: 'Avaliação e tratamento do freio lingual em Anápolis. Protocolo MBGR e orientação especializada.',
+      ogImage: '/images/og/freio-lingual.jpg'
+    },
+    priority: 8,
+    isDefault: true
+  },
+
+  {
+    slug: 'fonoaudiologia-adulto',
+    title: 'Fonoaudiologia Adulto',
+    headline: 'Problemas de voz ou fala?',
+    subheadline: 'Atendimento fonoaudiológico para adultos em Anápolis',
+    category: 'fonoaudiologia',
+    keywords: ['fonoaudiologia adulto', 'problemas voz', 'gagueira adulto', 'fono adulto Anápolis'],
+    sinaisAlerta: [
+      { icon: '🗣️', text: 'Rouquidão persistente' },
+      { icon: '🗣️', text: 'Dificuldade de falar em público' },
+      { icon: '🗣️', text: 'Gagueira' },
+      { icon: '🗣️', text: 'Voz fraca ou cansada' }
+    ],
+    content: {
+      quandoProcurar: 'Problemas de voz, fala ou linguagem em adultos também têm tratamento fonoaudiológico.',
+      comoFunciona: 'Avaliação e tratamento personalizado para cada necessidade, seja voz, fluência ou linguagem.',
+      beneficios: [
+        'Avaliação especializada',
+        'Tratamento personalizado',
+        'Melhora da comunicação',
+        'Qualidade de vida'
+      ]
+    },
+    cta: {
+      text: 'Agendar avaliação',
+      link: 'https://wa.me/5562993377726?text=Oi, vi no site sobre fonoaudiologia adulto e gostaria de agendar uma avaliação.',
+      phone: '62993377726'
+    },
+    seo: {
+      title: 'Fonoaudiologia Adulto | Atendimento em Anápolis | Fono Inova',
+      description: 'Fonoaudiologia para adultos em Anápolis. Tratamento de voz, fluência e linguagem.',
+      ogImage: '/images/og/fono-adulto.jpg'
+    },
+    priority: 6,
     isDefault: true
   }
 ];
@@ -880,7 +1313,7 @@ export async function seedLandingPages() {
  * Busca LP do dia (uma de cada categoria)
  */
 export async function getLandingPageOfTheDay() {
-  const categories = ['fonoaudiologia', 'autismo', 'psicologia', 'aprendizagem', 'terapia_ocupacional'];
+  const categories = ['fonoaudiologia', 'autismo', 'psicologia', 'aprendizagem', 'terapia_ocupacional', 'neuropsicologia', 'desenvolvimento'];
   const dailyPages = {};
   
   // Usa o dia do ano para manter consistente durante o dia
@@ -903,7 +1336,7 @@ export async function getLandingPageOfTheDay() {
  * Busca rotação semanal
  */
 export async function getRotationForWeek() {
-  const categories = ['fonoaudiologia', 'autismo', 'psicologia', 'aprendizagem', 'terapia_ocupacional'];
+  const categories = ['fonoaudiologia', 'autismo', 'psicologia', 'aprendizagem', 'terapia_ocupacional', 'neuropsicologia', 'desenvolvimento'];
   const weekPlan = [];
   
   // Gera plano para os próximos 7 dias
