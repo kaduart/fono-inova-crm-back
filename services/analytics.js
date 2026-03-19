@@ -91,34 +91,9 @@ async function withRetry(fn, retries = 2, delay = 2000) {
     }
 }
 
-// Gerar dados mockados distribuídos no período
-function generateMockEvents(startDate, endDate) {
-    const events = [];
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-    
-    const eventTypes = ['page_view', 'session_start', 'user_engagement', 'scroll', 'click', 'service_view', 'button_click'];
-    
-    // Gerar eventos para cada dia do período
-    for (let i = 0; i <= daysDiff; i++) {
-        const currentDate = new Date(start);
-        currentDate.setDate(start.getDate() + i);
-        
-        // Gerar vários eventos por dia
-        eventTypes.forEach(eventType => {
-            const count = Math.floor(Math.random() * 50) + 10; // 10-60 eventos por tipo
-            for (let j = 0; j < count; j++) {
-                events.push({
-                    action: eventType,
-                    value: 1,
-                    timestamp: currentDate.toISOString(),
-                });
-            }
-        });
-    }
-    
-    return events;
+// Dados vazios quando não há GA4 configurado
+function getEmptyEvents() {
+    return [];
 }
 
 // --- Buscar eventos detalhados ---
@@ -133,12 +108,10 @@ export const getGA4Events = async (startDate, endDate, timeout = 30000) => {
     try {
         console.log('📊 Chamando GA4 Events:', startDate, endDate);
 
-        // Se não tiver credenciais GA4 configuradas, retorna dados mockados
+        // Se não tiver credenciais GA4 configuradas, retorna array vazio
         if (!credentials) {
-            console.log('⚠️ GA4 não configurado, gerando dados mockados para o período');
-            const mockEvents = generateMockEvents(startDate, endDate);
-            analyticsCache.set(cacheKey, mockEvents);
-            return mockEvents;
+            console.log('⚠️ GA4 não configurado, retornando eventos vazios');
+            return [];
         }
 
         const [response] = await withRetry(() =>
@@ -164,32 +137,23 @@ export const getGA4Events = async (startDate, endDate, timeout = 30000) => {
         return events;
     } catch (err) {
         console.error('❌ Erro em getGA4Events:', err.message);
-        // Gera dados mockados em caso de erro
-        const mockEvents = generateMockEvents(startDate, endDate);
-        analyticsCache.set(cacheKey, mockEvents);
-        return mockEvents;
+        // Retorna array vazio em caso de erro
+        return [];
     }
 };
 
-// Gerar métricas mockadas baseadas no período
-function generateMockMetrics(startDate, endDate) {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-    
-    // Baseado no número de dias, gerar métricas proporcionais
-    const multiplier = daysDiff / 7; // Base: 7 dias
-    
+// Retornar métricas vazias quando não há GA4 configurado
+function getEmptyMetrics() {
     return {
-        totalUsers: Math.floor(600 * multiplier),
-        activeUsers: Math.floor(600 * multiplier),
-        sessions: Math.floor(690 * multiplier),
-        engagedSessions: Math.floor(500 * multiplier),
-        avgSessionDuration: 145.5,
-        pageViews: Math.floor(1200 * multiplier),
-        bounceRate: 42.3,
-        conversions: Math.floor(15 * multiplier),
-        eventCount: Math.floor(5000 * multiplier),
+        totalUsers: 0,
+        activeUsers: 0,
+        sessions: 0,
+        engagedSessions: 0,
+        avgSessionDuration: 0,
+        pageViews: 0,
+        bounceRate: 0,
+        conversions: 0,
+        eventCount: 0,
     };
 }
 
@@ -260,12 +224,10 @@ export const getGA4Metrics = async (startDate, endDate, timeout = 30000) => {
     try {
         console.log('📈 Chamando GA4 Metrics:', startDate, endDate);
         
-        // Se não tiver credenciais GA4 configuradas, retorna dados mockados
+        // Se não tiver credenciais GA4 configuradas, retorna métricas vazias
         if (!credentials) {
-            console.log('⚠️ GA4 não configurado, gerando métricas mockadas');
-            const mockMetrics = generateMockMetrics(startDate, endDate);
-            analyticsCache.set(cacheKey, mockMetrics);
-            return mockMetrics;
+            console.log('⚠️ GA4 não configurado, retornando métricas vazias');
+            return getEmptyMetrics();
         }
 
         const [response] = await withRetry(() =>
@@ -301,8 +263,6 @@ export const getGA4Metrics = async (startDate, endDate, timeout = 30000) => {
         return metrics;
     } catch (err) {
         console.error('❌ Erro em getGA4Metrics:', err.message);
-        const mockMetrics = generateMockMetrics(startDate, endDate);
-        analyticsCache.set(cacheKey, mockMetrics);
-        return mockMetrics;
+        return getEmptyMetrics();
     }
 };

@@ -303,9 +303,11 @@ router.post("/agenda-externa/confirmar", agendaAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: result.error || 'Erro ao criar agendamento' });
     }
 
-    // bookFixedSlot criou novo appointment — deletar o pre_agendado original
-    await Appointment.findByIdAndDelete(_id);
-    console.log(`[CONFIRMAR-POR-EXTERNAL-ID] ✅ Appointment pre_agendado ${_id} removido`);
+    // REMOVIDO: no novo fluxo unificado, o pre_agendado já é um Appointment real (mesmo _id)
+    // O bookFixedSlot cria um appointment novo — mas agora a agenda chama /update que mantém o ID
+    // await Appointment.findByIdAndDelete(_id);
+    console.log(`[CONFIRMAR-POR-EXTERNAL-ID] ℹ️ delete removido (fluxo unificado — mesmo _id)`);
+    console.log(`[CONFIRMAR-POR-EXTERNAL-ID] ⚠️ ATENÇÃO: bookFixedSlot criou appointment ${result.appointment?._id} mas o original ${_id} FOI MANTIDO`);
 
     try {
       const io = getIo();

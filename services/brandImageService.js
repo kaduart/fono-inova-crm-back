@@ -1004,10 +1004,30 @@ export async function gerarImagemBranded({ fotoUrl, fotoBuffer, titulo, hook, es
   return { url: res.secure_url, template: templateKey, layout: templateKey };
 }
 
+import { findExistingImage, saveImageToBank } from './imageBankService.js';
+
 /**
- * Gera imagem base: fal.ai FLUX → HuggingFace → Pollinations
+ * Gera imagem base: ImageBank → fal.ai FLUX → HuggingFace → Pollinations
  */
 export async function generateImageForEspecialidade(especialidade, postContent = '') {
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 0: ImageBank (reúso de imagens existentes)
+  // ═══════════════════════════════════════════════════════════
+  try {
+    console.log('🔍 [ImageBank] Buscando imagem existente...');
+    const tema = postContent?.split('\n')[0].substring(0, 50) || '';
+    const existingImage = await findExistingImage(especialidade.id, tema);
+    
+    if (existingImage) {
+      console.log(`✅ [ImageBank] Reutilizando imagem! (usada ${existingImage.reuseCount}x)`);
+      // Download da imagem para retornar buffer
+      const fotoBuf = Buffer.from(await (await fetch(existingImage.url, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
+      return { buffer: fotoBuf, provider: 'imagebank-reused' };
+    }
+  } catch (e) {
+    console.warn('⚠️ ImageBank:', e.message);
+  }
+  
   const { titulo } = extrairTituloHook(postContent, especialidade);
   
   // Função para extrair tema específico do post e gerar prompt contextualizado
@@ -1357,7 +1377,51 @@ export async function generateImageForEspecialidade(especialidade, postContent =
   }
 
   // ═══════════════════════════════════════════════════════════
-  // TENTATIVA 3: Replicate (se tiver token)
+  // TENTATIVA 3: OpenAI DALL-E (se tiver token)
+  // ═══════════════════════════════════════════════════════════
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      console.log('🚀 [3/4] OpenAI DALL-E 3...');
+      
+      const response = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'dall-e-3',
+          prompt: promptBase,
+          size: '1024x1024',
+          quality: 'standard',
+          n: 1,
+        }),
+        signal: AbortSignal.timeout(60000),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const imgUrl = data.data?.[0]?.url;
+        if (imgUrl) {
+          const fotoBuf = Buffer.from(await (await fetch(imgUrl, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
+          console.log(`✅ OpenAI DALL-E: ${(fotoBuf.length/1024).toFixed(1)}KB`);
+          return { buffer: fotoBuf, provider: 'openai-dalle' };
+        }
+      } else {
+        const err = await response.text();
+        console.error('❌ OpenAI erro:', response.status, err.substring(0, 200));
+        errors.push(`OpenAI: ${response.status}`);
+      }
+    } catch (e) {
+      console.error('❌ OpenAI exception:', e.message);
+      errors.push(`OpenAI: ${e.message}`);
+    }
+  } else {
+    console.log('⏭️  [3/4] OPENAI_API_KEY não configurada');
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // TENTATIVA 4: Replicate (se tiver token)
   // ═══════════════════════════════════════════════════════════
   if (process.env.REPLICATE_API_TOKEN) {
     try {
@@ -1414,13 +1478,61 @@ export async function generateImageForEspecialidade(especialidade, postContent =
   // ═══════════════════════════════════════════════════════════
   const delay = ms => new Promise(r => setTimeout(r, ms));
   
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  // 🎨 Prompt enhancer para melhorar qualidade do Pollinations
+  const enhancePromptForPollinations = (basePrompt) => {
+    const qualityModifiers = [
+      'professional photography',
+      'high quality',
+      'detailed',
+      'sharp focus',
+      'well lit',
+      'professional lighting',
+      '8k resolution',
+      'photorealistic'
+    ];
+    
+    // Se já tiver modifiers, não adiciona duplicado
+    const hasModifiers = qualityModifiers.some(m => 
+      basePrompt.toLowerCase().includes(m.toLowerCase())
+    );
+    
+    if (hasModifiers) return basePrompt;
+    
+    return `${basePrompt}, ${qualityModifiers.join(', ')}, professional color grading, crisp details`;
+  };
+  
+  const negativePrompt = 'blurry, low quality, distorted, deformed, ugly, bad anatomy, watermark, signature, text, logo, cropped, worst quality, low resolution, amateur, oversaturated, underexposed';
+  
+  for (let attempt = 1; attempt <= 5; attempt++) {
     try {
-      console.log(`🔄 [4/4] Pollinations (tentativa ${attempt}/3)...`);
-      const encoded = encodeURIComponent(promptBase);
-      const seed = Math.floor(Math.random() * 999999);
-      const model = attempt === 1 ? 'flux' : attempt === 2 ? 'turbo' : 'default';
-      const pollUrl = `https://image.pollinations.ai/prompt/${encoded}?width=1024&height=1024&seed=${seed}&nologo=true&model=${model}`;
+      console.log(`🔄 [4/5] Pollinations (tentativa ${attempt}/5)...`);
+      
+      // Melhora o prompt para qualidade superior
+      const enhancedPrompt = enhancePromptForPollinations(promptBase);
+      const encoded = encodeURIComponent(enhancedPrompt);
+      const encodedNegative = encodeURIComponent(negativePrompt);
+      
+      // Seed consistente ou random baseado na tentativa
+      const seed = attempt === 1 ? 42 : Math.floor(Math.random() * 999999);
+      
+      // Modelos por ordem de qualidade: flux > turbo > pixart
+      const models = ['flux', 'flux', 'turbo', 'pixart', 'default'];
+      const model = models[attempt - 1] || 'flux';
+      
+      // Parâmetros de qualidade adicionais
+      const pollUrl = `https://image.pollinations.ai/prompt/${encoded}?` + new URLSearchParams({
+        width: '1024',
+        height: '1024',
+        seed: seed.toString(),
+        nologo: 'true',
+        model: model,
+        negative_prompt: encodedNegative,
+        enhance: 'true',
+        safety: 'off'
+      }).toString();
+      
+      console.log(`   Modelo: ${model}, Seed: ${seed}`);
+      console.log(`   Prompt: ${enhancedPrompt.substring(0, 80)}...`);
       
       const res = await fetch(pollUrl, { 
         signal: AbortSignal.timeout(90000),
@@ -1436,6 +1548,27 @@ export async function generateImageForEspecialidade(especialidade, postContent =
         if (fotoBuf.length < 1024) throw new Error('Image too small');
         
         console.log(`✅ Pollinations: ${(fotoBuf.length/1024).toFixed(1)}KB`);
+        
+        // Salva no ImageBank (upload para Cloudinary primeiro)
+        try {
+          const base64 = `data:image/jpeg;base64,${fotoBuf.toString('base64')}`;
+          const cloudResult = await cloudinary.uploader.upload(base64, {
+            folder: 'fono-inova/imagebank',
+            public_id: `${especialidade.id}_${Date.now()}`,
+          });
+          
+          await saveImageToBank({
+            url: cloudResult.secure_url,
+            publicId: cloudResult.public_id,
+            especialidade: especialidade.id,
+            tema: postContent?.split('\n')[0].substring(0, 50) || 'general',
+            provider: `pollinations-${model}`,
+            prompt: promptBase
+          });
+        } catch (e) {
+          console.warn('⚠️ ImageBank save failed:', e.message);
+        }
+        
         return { buffer: fotoBuf, provider: `pollinations-${model}` };
       } else {
         const status = res.status;
@@ -1453,28 +1586,63 @@ export async function generateImageForEspecialidade(especialidade, postContent =
   }
 
   // ═══════════════════════════════════════════════════════════
-  // FALHOU TUDO - Último recurso: URL direta do Pollinations
+  // FALLBACK FINAL: Unsplash Source (imagens reais de qualidade)
   // ═══════════════════════════════════════════════════════════
-  console.error('❌ Todas as fontes falharam:');
-  errors.forEach(e => console.error(`   • ${e}`));
+  console.log('🔄 Fallback Final: Unsplash Source...');
   
-  // Fallback: retorna URL direta do Pollinations (pode funcionar no frontend)
-  console.log('🔄 Fallback final: URL direta do Pollinations...');
+  const UNSPLASH_IMAGES = {
+    'fonoaudiologia': [
+      'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1559757175-5700dde675bc?w=1024&h=1024&fit=crop'
+    ],
+    'psicologia': [
+      'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1590650153855-d9e808231d41?w=1024&h=1024&fit=crop'
+    ],
+    'terapia_ocupacional': [
+      'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1544776193-352d25ca82cd?w=1024&h=1024&fit=crop'
+    ],
+    'fisioterapia': [
+      'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=1024&h=1024&fit=crop'
+    ],
+    'default': [
+      'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=1024&h=1024&fit=crop',
+      'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=1024&h=1024&fit=crop'
+    ]
+  };
+  
+  try {
+    // Extrai especialidade do prompt ou usa default
+    const espMatch = promptBase.match(/fonoaudiologia|psicologia|terapia|fisioterapia|neuro|musicoterapia/i);
+    const espKey = espMatch ? espMatch[0].toLowerCase() : 'default';
+    const images = UNSPLASH_IMAGES[espKey] || UNSPLASH_IMAGES['default'];
+    const randomImage = images[Math.floor(Math.random() * images.length)];
+    
+    console.log('✅ Usando imagem Unsplash:', randomImage.substring(0, 60) + '...');
+    const fotoBuf = Buffer.from(await (await fetch(randomImage, { signal: AbortSignal.timeout(30000) })).arrayBuffer());
+    console.log(`✅ Unsplash: ${(fotoBuf.length/1024).toFixed(1)}KB`);
+    return { buffer: fotoBuf, provider: 'unsplash-fallback' };
+  } catch (e) {
+    console.warn('⚠️ Unsplash falhou:', e.message);
+  }
+  
+  // ÚLTIMO RECURSO: URL direta Pollinations
+  console.log('🔄 Último recurso: Pollinations direto...');
   const directUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(promptBase)}?width=1024&height=1024&seed=${Date.now()}&nologo=true`;
-  console.log('⚠️ URL direta gerada (pode não carregar):', directUrl.substring(0, 60) + '...');
   
-  // Tenta fazer download da URL direta
   try {
     const res = await fetch(directUrl, { signal: AbortSignal.timeout(60000) });
     if (res.ok) {
       const fotoBuf = Buffer.from(await res.arrayBuffer());
       if (fotoBuf.length > 1024) {
-        console.log(`✅ Pollinations direto: ${(fotoBuf.length/1024).toFixed(1)}KB`);
-        return { buffer: fotoBuf, provider: 'pollinations-direct' };
+        console.log(`✅ Pollinations: ${(fotoBuf.length/1024).toFixed(1)}KB`);
+        return { buffer: fotoBuf, provider: 'pollinations-last-resort' };
       }
     }
   } catch (e) {
-    console.warn('⚠️ Download direto falhou:', e.message);
+    console.warn('⚠️ Pollinations direto falhou:', e.message);
   }
   
   throw new Error(`Image generation failed: ${errors.join('; ')}`);
