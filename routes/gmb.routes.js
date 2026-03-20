@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import * as gmbController from '../controllers/gmbController.js';
 import * as makeService from '../services/makeService.js';
+import { gmbPublishRetryQueue } from '../config/bullConfigGmbRetry.js';
 import { auth } from '../middleware/auth.js';
 
 const router = Router();
@@ -52,6 +53,30 @@ router.get('/make/status', (req, res) => {
 router.post('/make/test', async (req, res) => {
   const result = await makeService.testMakeConnection();
   res.status(result.success ? 200 : 503).json(result);
+});
+
+// 🔄 Status da fila de retry
+router.get('/retry-queue/status', async (req, res) => {
+  try {
+    const [waiting, active, completed, failed] = await Promise.all([
+      gmbPublishRetryQueue.getWaitingCount(),
+      gmbPublishRetryQueue.getActiveCount(),
+      gmbPublishRetryQueue.getCompletedCount(),
+      gmbPublishRetryQueue.getFailedCount()
+    ]);
+    
+    res.json({
+      success: true,
+      queue: 'gmb-publish-retry',
+      pending: waiting + active,
+      waiting,
+      active,
+      completed,
+      failed
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // 🤖 Modo Assistido
