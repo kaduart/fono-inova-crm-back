@@ -1373,6 +1373,32 @@ router.get("/totals", async (req, res) => {
         if (period === 'all') delete patientTypeMatch.createdAt;
         if (doctorId) patientTypeMatch.doctor = new mongoose.Types.ObjectId(doctorId);
 
+        // ======================================================
+        // 📊 Receita Realizada — sessões efetivamente entregues no período
+        // Usa date da sessão (competência), não paymentDate do pacote
+        // ======================================================
+        const sessionDateStart = rangeStart.toISOString().split('T')[0];
+        const sessionDateEnd   = rangeEnd.toISOString().split('T')[0];
+
+        const receitaRealizadaAgg = [
+            {
+                $match: {
+                    status: 'completed',
+                    ...(period !== 'all' ? { date: { $gte: sessionDateStart, $lte: sessionDateEnd } } : {}),
+                    ...(doctorId ? { doctor: new mongoose.Types.ObjectId(doctorId) } : {}),
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total:        { $sum: '$sessionValue' },
+                    totalRecebido: { $sum: { $cond: ['$isPaid', '$sessionValue', 0] } },
+                    totalPendente: { $sum: { $cond: ['$isPaid', 0, '$sessionValue'] } },
+                    count:        { $sum: 1 },
+                }
+            }
+        ];
+
         const [
             cashResult,
             insuranceResult,
@@ -1381,6 +1407,7 @@ router.get("/totals", async (req, res) => {
             byServiceType,
             accumulatedReceivables,
             patientTypeResult,
+            receitaRealizadaResult,
         ] = await Promise.all([
             Payment.aggregate(cashAggregation),
             Payment.aggregate(insuranceAggregation),
@@ -1470,6 +1497,7 @@ router.get("/totals", async (req, res) => {
                 { $match: patientTypeMatch },
                 { $group: { _id: '$patientType', count: { $sum: 1 } } }
             ]),
+            Session.aggregate(receitaRealizadaAgg),
         ]);
 
         const cashTotals = cashResult[0] || {
@@ -1498,6 +1526,14 @@ router.get("/totals", async (req, res) => {
             particularPendingAccumulated: 0,
             insurancePendingAccumulated: 0,
             countPending: 0
+        };
+
+        const rr = receitaRealizadaResult[0] || { total: 0, totalRecebido: 0, totalPendente: 0, count: 0 };
+        const receitaRealizada = {
+            total:         rr.total,
+            totalRecebido: rr.totalRecebido,
+            totalPendente: rr.totalPendente,
+            count:         rr.count,
         };
 
         const ptMap = (patientTypeResult || []).reduce((acc, i) => { acc[i._id] = i.count; return acc; }, {});
@@ -1557,6 +1593,7 @@ router.get("/totals", async (req, res) => {
                 byServiceType,
                 breakdown,
                 patientTypes,
+                receitaRealizada,
             },
         });
     } catch (err) {

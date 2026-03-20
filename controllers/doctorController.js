@@ -403,7 +403,9 @@ export const getDoctorPatients = async (req, res) => {
     }
 
     // Passo 2: pegar IDs únicos dos pacientes
-    const patientIds = [...new Set(appointments.map(a => a.patient.toString()))];
+    const patientIds = [...new Set(appointments
+      .filter(a => a.patient)  // Filtra appointments sem paciente
+      .map(a => a.patient.toString()))];
 
     // Passo 3: buscar os pacientes
     const patients = await Patient.find({ _id: { $in: patientIds } })
@@ -414,7 +416,7 @@ export const getDoctorPatients = async (req, res) => {
     const today = new Date(); today.setHours(0, 0, 0, 0);
 
     const enriched = patients.map(p => {
-      const apptsThisPatient = appointments.filter(a => a.patient.toString() === p._id.toString());
+      const apptsThisPatient = appointments.filter(a => a.patient && a.patient.toString() === p._id.toString());
 
       const future = apptsThisPatient.filter(a => new Date(a.date) >= today)
         .sort((a, b) => new Date(a.date) - new Date(b.date));

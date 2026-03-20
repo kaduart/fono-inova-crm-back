@@ -18,6 +18,8 @@
 
 const MAKE_WEBHOOK_URL = process.env.MAKE_WEBHOOK_URL;
 const MAKE_TIMEOUT_MS = 15000; // 15s
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 2000; // 2s inicial
 
 // Hashtags por especialidade
 function gerarHashtags(tema) {
@@ -45,11 +47,12 @@ export function isMakeConfigured() {
 }
 
 /**
- * Envia um post ao Make via webhook
+ * Envia um post ao Make via webhook (com retry automático)
  * @param {object} post - Documento GmbPost
+ * @param {number} attempt - Tentativa atual (para retry)
  * @returns {Promise<object>} Resposta do Make
  */
-export async function sendPostToMake(post) {
+export async function sendPostToMake(post, attempt = 1) {
   if (!MAKE_WEBHOOK_URL) {
     throw new Error('MAKE_WEBHOOK_URL não configurado no .env');
   }
@@ -91,7 +94,7 @@ export async function sendPostToMake(post) {
     copyText: post.assistData?.copyText || post.content || '',
   };
 
-  console.log(`🔗 [Make] Enviando post "${post.title?.substring(0, 40)}"...`);
+  console.log(`🔗 [Make] Enviando post "${post.title?.substring(0, 40)}"... (tentativa ${attempt}/${MAX_RETRIES})`);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), MAKE_TIMEOUT_MS);
@@ -106,6 +109,22 @@ export async function sendPostToMake(post) {
 
     clearTimeout(timeoutId);
 
+    // 🔄 Se fila cheia (HTTP 400) e ainda tem tentativas, faz retry
+    if (response.status === 400) {
+      const text = await response.text().catch(() => response.statusText);
+      const isQueueFull = text.toLowerCase().includes('queue') && text.toLowerCase().includes('full');
+      
+      if (isQueueFull && attempt < MAX_RETRIES) {
+        const delay = RETRY_DELAY_MS * Math.pow(2, attempt - 1); // Backoff exponencial: 2s, 4s, 8s
+        console.log(`⚠️ [Make] Fila cheia, tentando novamente em ${delay/1000}s... (${attempt}/${MAX_RETRIES})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return sendPostToMake(post, attempt + 1);
+      }
+      
+      // Última tentativa ou outro erro 400
+      throw new Error(`Make retornou HTTP ${response.status}: ${text.substring(0, 200)}`);
+    }
+
     if (!response.ok) {
       const text = await response.text().catch(() => response.statusText);
       throw new Error(`Make retornou HTTP ${response.status}: ${text.substring(0, 200)}`);
@@ -118,13 +137,22 @@ export async function sendPostToMake(post) {
       try { result = JSON.parse(text); } catch { /* resposta não é JSON — normal no Make */ }
     }
 
-    console.log(`✅ [Make] Post enviado com sucesso!`);
-    return { success: true, makeResponse: result };
+    console.log(`✅ [Make] Post enviado com sucesso! (tentativa ${attempt})`);
+    return { success: true, makeResponse: result, attempts: attempt };
 
   } catch (error) {
     clearTimeout(timeoutId);
+    
+    // 🔄 Retry em caso de timeout ou erro de rede
+    if ((error.name === 'AbortError' || error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') && attempt < MAX_RETRIES) {
+      const delay = RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+      console.log(`⚠️ [Make] Timeout/rede, tentando novamente em ${delay/1000}s... (${attempt}/${MAX_RETRIES})`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return sendPostToMake(post, attempt + 1);
+    }
+    
     if (error.name === 'AbortError') {
-      throw new Error(`Make não respondeu em ${MAKE_TIMEOUT_MS / 1000}s (timeout)`);
+      throw new Error(`Make não respondeu em ${MAKE_TIMEOUT_MS / 1000}s (timeout após ${attempt} tentativas)`);
     }
     throw error;
   }
