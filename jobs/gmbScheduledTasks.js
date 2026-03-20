@@ -3,6 +3,7 @@ import cron from 'node-cron';
 import * as gmbService from '../services/gmbService.js';
 import * as makeService from '../services/makeService.js';
 import GmbPost from '../models/GmbPost.js';
+import { gmbPublishRetryQueue } from '../config/bullConfigGmbRetry.js';
 
 /**
  * 🕐 Agenda tarefas do GMB no servidor principal
@@ -135,8 +136,26 @@ export const scheduleGmbCron = () => {
                     await post.save();
                     console.log(`✅ [GMB] Enviado ao Make: ${post.title?.substring(0, 40)}`);
                 } catch (err) {
-                    await post.markFailed(err.message);
-                    console.error(`❌ [GMB] Falha Make: ${err.message}`);
+                    const isQueueFull = err.message?.toLowerCase().includes('queue') && err.message?.toLowerCase().includes('full');
+                    
+                    if (isQueueFull) {
+                        // 🔄 Fila cheia - adiciona à fila de retry local
+                        console.log(`🔄 [GMB] Fila Make cheia, adicionando à retry queue: ${post.title?.substring(0, 40)}`);
+                        await gmbPublishRetryQueue.add('publish', {
+                            postId: post._id.toString(),
+                            channel: 'gmb'
+                        }, {
+                            delay: 60000 * (post.retryCount || 1), // Espera aumenta a cada tentativa
+                            attempts: 5,
+                            backoff: { type: 'exponential', delay: 60000 }
+                        });
+                        post.status = 'publishing_retry';
+                        await post.save();
+                    } else {
+                        // Outro erro - marca como falho
+                        await post.markFailed(err.message);
+                        console.error(`❌ [GMB] Falha Make: ${err.message}`);
+                    }
                 }
                 await new Promise(r => setTimeout(r, 2000));
             }

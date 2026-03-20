@@ -2,6 +2,7 @@ import GmbPost from '../models/GmbPost.js';
 import * as gmbService from '../services/gmbService.js';
 import * as makeService from '../services/makeService.js';
 import { postGenerationQueue } from '../config/bullConfig.js';
+import { gmbPublishRetryQueue } from '../config/bullConfigGmbRetry.js';
 
 // Listar posts com paginação
 export async function listPosts(req, res) {
@@ -87,16 +88,63 @@ export async function publishPost(req, res) {
       });
     }
 
-    await makeService.sendPostToMake(post);
+    try {
+      const result = await makeService.sendPostToMake(post);
 
-    post.status = 'published';
-    post.publishedAt = new Date();
-    post.publishedBy = 'api';
-    await post.save();
+      post.status = 'published';
+      post.publishedAt = new Date();
+      post.publishedBy = 'api';
+      await post.save();
 
-    res.json({ success: true, message: 'Post enviado ao Make para publicação!' });
+      res.json({ 
+        success: true, 
+        message: 'Post enviado ao Make para publicação!',
+        attempts: result.attempts || 1
+      });
+    } catch (makeError) {
+      // Se fila cheia, adiciona à fila de retry
+      const isQueueFull = makeError.message?.toLowerCase().includes('queue') && makeError.message?.toLowerCase().includes('full');
+      
+      if (isQueueFull) {
+        console.log(`🔄 [GMB] Fila cheia, adicionando à fila de retry: ${post._id}`);
+        
+        await gmbPublishRetryQueue.add('publish', {
+          postId: post._id.toString(),
+          channel: 'gmb'
+        }, {
+          delay: 60000,  // Tenta daqui 1 minuto
+          attempts: 5,
+          backoff: {
+            type: 'exponential',
+            delay: 60000
+          }
+        });
+        
+        // Atualiza status do post
+        post.status = 'publishing_retry';
+        await post.save();
+        
+        return res.status(202).json({ 
+          success: true, 
+          message: 'Post adicionado à fila de retry. Será publicado automaticamente quando o Make estiver disponível.',
+          queued: true,
+          retryAt: new Date(Date.now() + 60000)
+        });
+      }
+      
+      // Outro erro, propaga
+      throw makeError;
+    }
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    const isQueueFull = error.message?.toLowerCase().includes('queue') && error.message?.toLowerCase().includes('full');
+    const statusCode = isQueueFull ? 429 : 500;
+    
+    res.status(statusCode).json({ 
+      success: false, 
+      error: error.message,
+      isQueueFull,
+      suggestion: isQueueFull ? 'A fila do Make está muito cheia. O post foi adicionado à fila de retry automática.' : undefined
+    });
   }
 }
 
@@ -113,7 +161,7 @@ export async function republishPost(req, res) {
       });
     }
 
-    await makeService.sendPostToMake(post);
+    const result = await makeService.sendPostToMake(post);
 
     post.status = 'published';
     post.publishedAt = new Date();
@@ -121,7 +169,52 @@ export async function republishPost(req, res) {
     post.retryCount = (post.retryCount || 0) + 1;
     await post.save();
 
-    res.json({ success: true, message: 'Post reenviado ao Make para republicação!' });
+    res.json({ 
+      success: true, 
+      message: 'Post reenviado ao Make para republicação!',
+      attempts: result.attempts || 1
+    });
+  } catch (error) {
+    // Se erro for fila cheia, retorna status específico
+    const isQueueFull = error.message?.toLowerCase().includes('queue') && error.message?.toLowerCase().includes('full');
+    const statusCode = isQueueFull ? 429 : 500;
+    
+    res.status(statusCode).json({ 
+      success: false, 
+      error: error.message,
+      isQueueFull,
+      suggestion: isQueueFull ? 'A fila do Make está muito cheia. Tente novamente em alguns minutos ou verifique seu plano no Make.' : undefined
+    });
+  }
+}
+
+// Forçar retry de um post (adiciona à fila de retry)
+export async function retryPost(req, res) {
+  try {
+    const post = await GmbPost.findById(req.params.id);
+    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+
+    // Adiciona à fila de retry
+    await gmbPublishRetryQueue.add('publish', {
+      postId: post._id.toString(),
+      channel: 'gmb'
+    }, {
+      delay: 0,  // Tenta imediatamente
+      attempts: 5,
+      backoff: {
+        type: 'exponential',
+        delay: 60000
+      }
+    });
+    
+    post.status = 'publishing_retry';
+    await post.save();
+
+    res.json({ 
+      success: true, 
+      message: 'Post adicionado à fila de retry prioritária.',
+      queued: true
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -295,27 +388,6 @@ export async function triggerManualPublish(req, res) {
     await post.save();
 
     res.json({ success: true, message: 'Post enviado ao Make!', postId: post._id });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-}
-
-// Retry post
-export async function retryPost(req, res) {
-  try {
-    const post = await GmbPost.findById(req.params.id);
-    if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
-
-    if (!makeService.isMakeConfigured()) {
-      return res.status(503).json({ success: false, error: 'Make não configurado' });
-    }
-
-    await makeService.sendPostToMake(post);
-    post.status = 'published';
-    post.publishedAt = new Date();
-    await post.save();
-
-    res.json({ success: true, message: 'Post reenviado ao Make!' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
