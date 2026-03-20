@@ -140,24 +140,6 @@ export const Factories = {
     });
   },
   
-  async createPreAgendamento(overrides = {}) {
-    const PreAgendamento = (await import('../../models/PreAgendamento.js')).default;
-    return PreAgendamento.create({
-      externalId: `test_${Date.now()}`,
-      patientInfo: {
-        fullName: 'Paciente Pré-Agendamento',
-        phone: '11999997777',
-        birthDate: '1992-08-10',
-      },
-      professionalName: 'Dra. Teste',
-      preferredDate: '2026-03-15',
-      preferredTime: '10:00',
-      specialty: 'fonoaudiologia',
-      status: 'novo',
-      ...overrides
-    });
-  },
-  
   async createSession(overrides = {}) {
     const Session = (await import('../../models/Session.js')).default;
     const doctor = overrides.doctor || (await this.createDoctor())._id;

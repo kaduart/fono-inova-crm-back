@@ -574,6 +574,22 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 }
             }
 
+            // 🆕 Buscar dados do lead para snapshot (se houver)
+            let leadSnapshotData = null;
+            if (effectiveLeadId) {
+                const leadDoc = await Leads.findById(effectiveLeadId).lean();
+                if (leadDoc) {
+                    leadSnapshotData = {
+                        source: leadDoc.source || leadDoc.origin || null,
+                        campaign: leadDoc.campaign || null,
+                        origin: leadDoc.origin || null,
+                        conversionScore: leadDoc.conversionScore || null,
+                        capturedAt: leadDoc.createdAt || null
+                    };
+                    console.log('[POST Appointment] Lead snapshot capturado:', leadSnapshotData);
+                }
+            }
+
             const appointment = await Appointment.create({
                 patient: safeId(patientId),
                 doctor: safeId(doctorId),
@@ -589,6 +605,9 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 serviceType,
                 specialty,
                 notes,
+                // 🆕 NOVO: Atribuição de lead para tracking de receita
+                lead: effectiveLeadId || null,
+                leadSnapshot: leadSnapshotData || undefined,
                 metadata: {
                     origin: {
                         source: source || 'outro',
@@ -905,7 +924,7 @@ router.get('/', flexibleAuth, async (req, res) => {
             .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus visualFlag patient patientInfo professionalName doctor package session payment metadata billingType insuranceProvider insuranceValue authorizationCode serviceType sessionType sessionValue reason urgency assignedTo secretaryNotes')
             .populate({ path: 'doctor', select: 'fullName specialty email phoneNumber specialties' })
             .populate({ path: 'patient', select: 'fullName dateOfBirth gender phone email cpf rg address' })
-            .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue' })
+            .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue type liminarProcessNumber liminarCourt' })
             .populate({ path: 'session', select: 'isPaid paymentStatus partialAmount' })
             .populate({ path: 'payment', select: 'status amount paymentMethod' })
             .sort({ date: -1, time: 1 }) // Mais recentes primeiro, depois por hora
@@ -1781,12 +1800,23 @@ router.patch('/:id/complete', auth, async (req, res) => {
         console.log(`[complete] Etapa 3: Verificando pacote (${Date.now() - startTime}ms)`);
         let packageDoc = null;
         if (packageId) {
-            // Buscar packageDoc sempre que tiver pacote (necessário para convênio)
+            // Buscar packageDoc sempre que tiver pacote (necessário para convênio e liminar)
             packageDoc = await Package.findOne(
                 { _id: packageId },
-                { type: 1, sessionsDone: 1, totalSessions: 1, insuranceProvider: 1, insuranceGuide: 1 },
+                { 
+                    type: 1, sessionsDone: 1, totalSessions: 1, 
+                    insuranceProvider: 1, insuranceGuide: 1, sessionValue: 1,
+                    // ⚖️ Campos para liminar
+                    liminarProcessNumber: 1, liminarCreditBalance: 1, 
+                    recognizedRevenue: 1, totalPaid: 1
+                },
                 { session }
             );
+            console.log(`[complete] 📦 Package carregado:`, {
+                type: packageDoc?.type,
+                sessionValue: packageDoc?.sessionValue,
+                isLiminar: packageDoc?.type === 'liminar'
+            });
 
             // Só incrementa sessionsDone se ainda não estiver concluído
             if (shouldIncrementPackage) {
@@ -1893,6 +1923,55 @@ router.patch('/:id/complete', auth, async (req, res) => {
         // ============================================================
         // FASE 3: OPERAÇÕES PÓS-COMMIT (não bloqueiam resposta)
         // ============================================================
+
+        // ⚖️ RECONHECER RECEITA LIMINAR (se for pacote liminar)
+        console.log(`[complete] 🔍 Verificando liminar: packageId=${packageId}, type=${packageDoc?.type}, shouldIncrement=${shouldIncrementPackage}`);
+        if (packageId && packageDoc?.type === 'liminar' && shouldIncrementPackage) {
+            try {
+                console.log(`[complete] ⚖️ Reconhecendo receita liminar... (${Date.now() - startTime}ms)`);
+                
+                const sessionRevenue = appointment.sessionValue || packageDoc.sessionValue || 0;
+                console.log(`[complete] 💰 Valor da sessão: ${sessionRevenue} (appointment=${appointment.sessionValue}, package=${packageDoc.sessionValue})`);
+                
+                // Atualizar saldo de crédito e receita reconhecida
+                await Package.updateOne(
+                    { _id: packageId },
+                    {
+                        $inc: { 
+                            liminarCreditBalance: -sessionRevenue,
+                            recognizedRevenue: sessionRevenue,
+                            totalPaid: sessionRevenue
+                        }
+                    }
+                );
+
+                // Criar registro de receita reconhecida (usa 'paid' para aparecer no financeiro)
+                const revenueDoc = new Payment({
+                    patient: patientId,
+                    doctor: appointment.doctor?._id || appointment.doctor,
+                    appointment: appointment._id,
+                    session: sessionId,
+                    package: packageId,
+                    amount: sessionRevenue,
+                    paymentMethod: 'liminar_credit',
+                    status: 'paid',  // ← Usa 'paid' igual particular!
+                    kind: 'revenue_recognition',
+                    serviceDate: appointment.date,
+                    notes: `Receita reconhecida - Processo: ${packageDoc.liminarProcessNumber || 'N/A'}`
+                });
+                await revenueDoc.save();
+
+                // Vincular payment ao agendamento
+                await Appointment.updateOne(
+                    { _id: id },
+                    { $set: { payment: revenueDoc._id, paymentStatus: 'package_paid' } }  // ← Igual pacote normal
+                );
+
+                console.log(`[complete] ✅ Receita liminar reconhecida: R$ ${sessionRevenue} (${Date.now() - startTime}ms)`);
+            } catch (liminarError) {
+                console.error(`[complete] ❌ Erro ao processar liminar (não crítico): ${liminarError.message}`);
+            }
+        }
 
         // 🏥 CONSUMIR GUIA DE CONVÊNIO e CRIAR PAYMENT (se for pacote de convênio)
         if (packageId && packageDoc?.type === 'convenio') {

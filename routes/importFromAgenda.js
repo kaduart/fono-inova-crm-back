@@ -210,8 +210,8 @@ router.post("/agenda-externa/pre-agendar", agendaAuth, async (req, res) => {
 });
 
 /**
- * POST /api/import-from-agenda/confirmar-por-external-id
- * Confirma um Appointment pre_agendado (chamado pela agenda-clinica-web)
+ * POST /api/agenda-externa/confirmar
+ * Confirma um Appointment pre_agendado — atualiza in-place (mesmo _id preservado)
  */
 router.post("/agenda-externa/confirmar", agendaAuth, async (req, res) => {
   try {
@@ -230,17 +230,14 @@ router.post("/agenda-externa/confirmar", agendaAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: '_id é obrigatório' });
     }
 
-    console.log(`[CONFIRMAR-POR-EXTERNAL-ID] Buscando appointment pre_agendado: ${_id}`);
-
-    const pre = await Appointment.findById(_id).lean();
+    const pre = await Appointment.findById(_id);
 
     if (!pre) {
       return res.status(404).json({ success: false, error: 'Agendamento não encontrado', _id });
     }
 
-    // Se já foi confirmado, retornar idempotente
+    // Idempotente: já confirmado
     if (['scheduled', 'confirmed', 'paid'].includes(pre.operationalStatus)) {
-      console.log(`[CONFIRMAR-POR-EXTERNAL-ID] ⚠️ Appointment ${_id} já confirmado: ${pre.operationalStatus}`);
       return res.json({
         success: true,
         message: 'Já foi confirmado anteriormente',
@@ -254,72 +251,140 @@ router.post("/agenda-externa/confirmar", agendaAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: `Status inválido para confirmação: ${pre.operationalStatus}` });
     }
 
-    // Buscar doutor
+    // Resolver doutor
     let doctor = null;
-    if (doctorId) {
-      doctor = await Doctor.findById(doctorId);
-    }
+    if (doctorId) doctor = await Doctor.findById(doctorId);
     if (!doctor && pre.professionalName) {
-      const doctorData = await findDoctorByName(pre.professionalName);
-      if (doctorData) doctor = await Doctor.findById(doctorData._id);
+      const d = await findDoctorByName(pre.professionalName);
+      if (d) doctor = await Doctor.findById(d._id);
     }
     if (!doctor) {
       return res.status(404).json({ success: false, error: `Doutor não encontrado. ID: ${doctorId}, Nome: ${pre.professionalName}` });
     }
 
-    console.log(`[CONFIRMAR-POR-EXTERNAL-ID] Confirmando: ${pre.patientInfo?.fullName} com ${doctor.fullName}`);
-
-    // 🚨 IMPORTANTE: Nunca usar 'session' como serviceType — ativa modo payment fantasma
-    const normalizedServiceType = serviceType === 'session' ? 'individual_session' : serviceType;
-
-    const bookParams = {
-      patientInfo: {
-        fullName: pre.patientInfo?.fullName,
-        birthDate: pre.patientInfo?.birthDate,
-        phone: pre.patientInfo?.phone,
-        email: pre.patientInfo?.email
-      },
-      doctorId: doctor._id.toString(),
-      specialty: pre.specialty,
-      date: date || pre.date,
-      time: time || pre.time,
-      sessionType: serviceType === 'evaluation' ? 'avaliacao' : 'sessao',
-      serviceType: normalizedServiceType,
-      paymentMethod,
-      sessionValue: Number(sessionValue || pre.sessionValue || 0),
-      status: 'scheduled',
-      notes: `[IMPORTADO DA AGENDA EXTERNA] ${notes || ''}\n${pre.secretaryNotes || ''}`
-    };
-
-    const result = await bookFixedSlot(bookParams);
-
-    console.log(`[CONFIRMAR-POR-EXTERNAL-ID] 📊 bookFixedSlot:`, {
-      success: result.success,
-      appointmentId: result.appointment?._id,
-      patientId: result.patientId
-    });
-
-    if (!result.success) {
-      return res.status(400).json({ success: false, error: result.error || 'Erro ao criar agendamento' });
+    // Resolver paciente: usa existente ou cria novo pelo telefone
+    let patientId = pre.patient || null;
+    if (!patientId && pre.patientInfo?.phone) {
+      const cleanPhone = pre.patientInfo.phone.replace(/\D/g, '');
+      const existing = await Patient.findOne({ phone: { $regex: cleanPhone.slice(-10) } }).lean();
+      if (existing) {
+        patientId = existing._id;
+      } else if (pre.patientInfo?.fullName) {
+        const created = await Patient.create({
+          fullName: pre.patientInfo.fullName,
+          phone: cleanPhone || undefined,
+          email: pre.patientInfo.email || undefined,
+          dateOfBirth: pre.patientInfo.birthDate || undefined,
+          source: 'agenda_externa'
+        });
+        patientId = created._id;
+      }
     }
 
-    // REMOVIDO: no novo fluxo unificado, o pre_agendado já é um Appointment real (mesmo _id)
-    // O bookFixedSlot cria um appointment novo — mas agora a agenda chama /update que mantém o ID
-    // await Appointment.findByIdAndDelete(_id);
-    console.log(`[CONFIRMAR-POR-EXTERNAL-ID] ℹ️ delete removido (fluxo unificado — mesmo _id)`);
-    console.log(`[CONFIRMAR-POR-EXTERNAL-ID] ⚠️ ATENÇÃO: bookFixedSlot criou appointment ${result.appointment?._id} mas o original ${_id} FOI MANTIDO`);
+    // Classificar tipo de paciente (novo / retorno / recorrente)
+    // Limiar: sem appointment real há mais de 6 meses = retorno
+    const MONTHS_INACTIVE_THRESHOLD = 6;
+    let patientType = null;
+    let patientTypeMonthsInactive = null;
+    if (patientId) {
+      const lastReal = await Appointment.findOne({
+        patient: patientId,
+        operationalStatus: { $in: ['scheduled', 'confirmed', 'paid', 'missed'] },
+        _id: { $ne: pre._id }
+      }).sort({ date: -1 }).select('date').lean();
+
+      if (!lastReal) {
+        patientType = 'novo';
+      } else {
+        const lastDate = new Date(lastReal.date);
+        const now = new Date();
+        const diffMonths = (now.getFullYear() - lastDate.getFullYear()) * 12 +
+          (now.getMonth() - lastDate.getMonth());
+        patientTypeMonthsInactive = diffMonths;
+        patientType = diffMonths >= MONTHS_INACTIVE_THRESHOLD ? 'retorno' : 'recorrente';
+      }
+    }
+
+    const resolvedDate = date || pre.date;
+    const resolvedTime = time || pre.time;
+    const resolvedValue = Number(sessionValue || pre.sessionValue || 0);
+    // 🚨 Nunca 'session' como serviceType — ativa modo payment fantasma
+    const normalizedServiceType = serviceType === 'session' ? 'individual_session' : serviceType;
+    const sessionType = serviceType === 'evaluation' ? 'avaliacao' : 'sessao';
+
+    // Criar Session
+    const newSession = await Session.create({
+      patient: patientId,
+      doctor: doctor._id,
+      appointmentId: pre._id,
+      sessionType,
+      date: resolvedDate,
+      time: resolvedTime,
+      sessionValue: resolvedValue,
+      status: 'scheduled',
+      isPaid: false,
+      paymentStatus: 'pending',
+      visualFlag: 'pending',
+      notes: notes || pre.notes || ''
+    });
+
+    // Criar Payment
+    const newPayment = await Payment.create({
+      patient: patientId,
+      doctor: doctor._id,
+      session: newSession._id,
+      appointment: pre._id,
+      serviceType: normalizedServiceType,
+      amount: resolvedValue,
+      paymentMethod,
+      billingType: pre.billingType || 'particular',
+      status: 'pending',
+      paymentDate: resolvedDate,
+      serviceDate: resolvedDate
+    });
+
+    await Session.findByIdAndUpdate(newSession._id, { paymentId: newPayment._id });
+
+    // Atualizar Appointment in-place
+    pre.operationalStatus = 'scheduled';
+    pre.doctor = doctor._id;
+    if (patientId) pre.patient = patientId;
+    pre.date = resolvedDate;
+    pre.time = resolvedTime;
+    pre.sessionValue = resolvedValue;
+    pre.paymentMethod = paymentMethod;
+    pre.serviceType = normalizedServiceType;
+    pre.session = newSession._id;
+    pre.payment = newPayment._id;
+    if (notes) pre.notes = notes;
+    if (patientType) pre.patientType = patientType;
+    if (patientTypeMonthsInactive !== null) pre.patientTypeMonthsInactive = patientTypeMonthsInactive;
+    if (!pre.metadata) pre.metadata = {};
+    if (!pre.metadata.origin) pre.metadata.origin = {};
+    pre.metadata.origin.convertedAt = new Date();
+    pre.history = pre.history || [];
+    pre.history.push({
+      action: 'confirmado_via_agenda_externa',
+      newStatus: 'scheduled',
+      changedBy: null,
+      timestamp: new Date(),
+      context: 'operacional'
+    });
+
+    await pre.save({ validateBeforeSave: false });
+
+    console.log(`[CONFIRMAR] ✅ Appointment ${pre._id} atualizado in-place → scheduled`);
 
     try {
       const io = getIo();
-      io.emit("appointmentCreated", result.appointment);
+      io.emit("appointmentUpdated", { _id: pre._id, operationalStatus: 'scheduled' });
       io.emit("preagendamento:imported", {
-        preAgendamentoId: String(_id),
-        appointmentId: result.appointment._id,
-        patientId: result.patientId,
+        preAgendamentoId: String(pre._id),
+        appointmentId: String(pre._id),
+        patientId,
         patientName: pre.patientInfo?.fullName,
         timestamp: new Date()
       });
-      console.log(`📡 Socket emitido: appointmentCreated + preagendamento:imported`);
     } catch (socketError) {
       console.error('⚠️ Erro ao emitir socket:', socketError.message);
     }
@@ -327,13 +392,13 @@ router.post("/agenda-externa/confirmar", agendaAuth, async (req, res) => {
     return res.json({
       success: true,
       message: 'Importado com sucesso!',
-      appointmentId: result.appointment._id,
-      patientId: result.patientId,
-      preAgendamentoId: _id
+      appointmentId: pre._id,
+      patientId,
+      preAgendamentoId: pre._id
     });
 
   } catch (error) {
-    console.error('[CONFIRMAR-POR-EXTERNAL-ID] Erro:', error);
+    console.error('[CONFIRMAR] Erro:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -1475,73 +1540,6 @@ router.post("/import-from-agenda/limpar-henre", async (req, res) => {
   }
 });
 
-/**
- * GET /api/import-from-agenda/debug-db
- * Debug direto no banco - mostra exatamente o que está no MongoDB
- */
-router.get("/import-from-agenda/debug-db", async (req, res) => {
-  try {
-    const { date, patientName } = req.query;
-    const db = mongoose.connection.db;
-
-    // 1. Se tiver patientName, busca em toda a collection
-    let appointments = [];
-    let preAgendamentos = [];
-
-    if (patientName && !date) {
-      // Buscar por nome em todo o banco
-      appointments = await db.collection('appointments').find({
-        patientName: { $regex: patientName, $options: 'i' }
-      }).toArray();
-      preAgendamentos = await db.collection('preagendamentos').find({
-        'patientInfo.fullName': { $regex: patientName, $options: 'i' }
-      }).toArray();
-    } else if (date) {
-      // Buscar por data
-      appointments = await db.collection('appointments').find({ date }).toArray();
-      preAgendamentos = await db.collection('preagendamentos').find({ preferredDate: date }).toArray();
-    }
-
-    // Ver quais pré-agendamentos seriam filtrados pelo backend
-    const preFiltrados = preAgendamentos.filter(p => {
-      return p.status !== 'agendado' && 
-             p.status !== 'descartado' && 
-             p.status !== 'desistiu' &&
-             !p.importedToAppointment;
-    });
-
-    res.json({
-      success: true,
-      query: { date, patientName },
-      appointments: appointments.map(a => ({
-        _id: a._id.toString(),
-        patientName: a.patientName,
-        date: a.date,
-        time: a.time,
-        status: a.operationalStatus,
-        preAgendamentoId: a.metadata?.origin?.preAgendamentoId
-      })),
-      preAgendamentos: preAgendamentos.map(p => ({
-        _id: p._id.toString(),
-        nome: p.patientInfo?.fullName,
-        date: p.preferredDate,
-        time: p.preferredTime,
-        status: p.status,
-        imported: !!p.importedToAppointment,
-        importedTo: p.importedToAppointment?.toString()
-      })),
-      preAgendamentosQueAparecemNaAPI: preFiltrados.map(p => ({
-        _id: p._id.toString(),
-        nome: p.patientInfo?.fullName,
-        date: p.preferredDate,
-        time: p.preferredTime
-      }))
-    });
-
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
 /**
  * POST /api/import-from-agenda/limpar-duplicados-paciente
@@ -1561,7 +1559,7 @@ router.post("/import-from-agenda/limpar-duplicados-paciente", async (req, res) =
     }).session(session);
 
     // 2. Buscar pre_agendados duplicados para o mesmo paciente na mesma data
-    const preAgendamentos = await Appointment.find({
+    const preAgendadosDuplicados = await Appointment.find({
       'patientInfo.fullName': { $regex: patientName, $options: 'i' },
       date,
       operationalStatus: 'pre_agendado'
@@ -1572,14 +1570,14 @@ router.post("/import-from-agenda/limpar-duplicados-paciente", async (req, res) =
       return res.json({ success: false, message: 'Nenhum appointment encontrado para este paciente nesta data' });
     }
 
-    if (preAgendamentos.length === 0) {
+    if (preAgendadosDuplicados.length === 0) {
       await session.abortTransaction();
       return res.json({ success: false, message: 'Nenhum pré-agendamento para limpar' });
     }
 
     // 3. Marcar pre_agendados como cancelados (descartados)
     const deletados = [];
-    for (const pre of preAgendamentos) {
+    for (const pre of preAgendadosDuplicados) {
       pre.operationalStatus = 'canceled';
       pre.discardReason = 'Duplicado - já existe appointment confirmado para este paciente';
       pre.discardedAt = new Date();
@@ -1604,205 +1602,6 @@ router.post("/import-from-agenda/limpar-duplicados-paciente", async (req, res) =
   }
 });
 
-/**
- * POST /api/import-from-agenda/corrigir-status-importado
- * Corrige pré-agendamentos que foram importados mas não têm status atualizado
- */
-router.post("/import-from-agenda/corrigir-status-importado", async (req, res) => {
-  try {
-    const db = mongoose.connection.db;
-
-    // Buscar todos os appointments que têm preAgendamentoId na metadata
-    const appointments = await db.collection('appointments').find({
-      'metadata.origin.preAgendamentoId': { $exists: true }
-    }).toArray();
-
-    const corrigidos = [];
-    const jaCorretos = [];
-
-    for (const apt of appointments) {
-      const preId = apt.metadata.origin.preAgendamentoId;
-      
-      // Buscar o pré-agendamento
-      const pre = await db.collection('preagendamentos').findOne({
-        _id: new mongoose.Types.ObjectId(preId)
-      });
-
-      if (pre) {
-        // Se o pré-agendamento não está marcado como importado, corrige
-        if (pre.status !== 'agendado' || !pre.importedToAppointment) {
-          await db.collection('preagendamentos').updateOne(
-            { _id: pre._id },
-            { 
-              $set: {
-                status: 'agendado',
-                importedToAppointment: apt._id,
-                importedAt: apt.metadata.origin.convertedAt || new Date()
-              }
-            }
-          );
-          corrigidos.push({
-            preAgendamentoId: preId,
-            appointmentId: apt._id.toString(),
-            paciente: pre.patientInfo?.fullName,
-            statusAnterior: pre.status
-          });
-        } else {
-          jaCorretos.push(preId);
-        }
-      }
-    }
-
-    res.json({
-      success: true,
-      totalAppointmentsVerificados: appointments.length,
-      corrigidos: corrigidos.length,
-      jaEstavamCorretos: jaCorretos.length,
-      detalhes: corrigidos
-    });
-
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * GET /api/import-from-agenda/verificar-daniel
- * Verifica especificamente o pré-agendamento do Daniel que está duplicado
- */
-router.get("/import-from-agenda/verificar-daniel", async (req, res) => {
-  try {
-    const db = mongoose.connection.db;
-
-    // Buscar o pré-agendamento específico
-    const pre = await db.collection('preagendamentos').findOne({
-      _id: new mongoose.Types.ObjectId("699f30125d86d1f6bd342a7a")
-    });
-
-    // Buscar o appointment que deveria estar vinculado
-    const apt = pre?.importedToAppointment 
-      ? await db.collection('appointments').findOne({ _id: pre.importedToAppointment })
-      : null;
-
-    // Buscar pelo metadata.origin.preAgendamentoId também
-    const aptByMetadata = await db.collection('appointments').findOne({
-      'metadata.origin.preAgendamentoId': "699f30125d86d1f6bd342a7a"
-    });
-
-    res.json({
-      preAgendamento: pre ? {
-        _id: pre._id.toString(),
-        status: pre.status,
-        importedToAppointment: pre.importedToAppointment?.toString(),
-        patientName: pre.patientInfo?.fullName,
-        preferredDate: pre.preferredDate,
-        preferredTime: pre.preferredTime
-      } : null,
-      appointmentByImportedId: apt ? {
-        _id: apt._id.toString(),
-        patientName: apt.patientName,
-        date: apt.date,
-        time: apt.time,
-        operationalStatus: apt.operationalStatus
-      } : null,
-      appointmentByMetadata: aptByMetadata ? {
-        _id: aptByMetadata._id.toString(),
-        patientName: aptByMetadata.patientName,
-        date: aptByMetadata.date,
-        time: aptByMetadata.time,
-        operationalStatus: aptByMetadata.operationalStatus,
-        preAgendamentoId: aptByMetadata.metadata?.origin?.preAgendamentoId
-      } : null,
-      problema: pre?.status !== 'agendado' && (apt || aptByMetadata) 
-        ? "TEM APPOINTMENT MAS STATUS NAO ESTA IMPORTADO!" 
-        : "OK"
-    });
-
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * GET /api/import-from-agenda/auditar-gabriel
- * Verifica o que aconteceu com o Gabriel Soares de Abreu
- */
-router.get("/import-from-agenda/auditar-gabriel", async (req, res) => {
-  try {
-    const db = mongoose.connection.db;
-
-    // Buscar pré-agendamentos do Gabriel
-    const preAgendamentos = await db.collection('preagendamentos').find({
-      'patientInfo.fullName': { $regex: /Gabriel Soares/i }
-    }).toArray();
-
-    // Buscar appointments do Gabriel
-    const appointments = await db.collection('appointments').find({
-      patientName: { $regex: /Gabriel Soares/i }
-    }).toArray();
-
-    // Buscar pagamentos do Gabriel
-    const payments = await db.collection('payments').find({
-      $or: [
-        { 'patient.fullName': { $regex: /Gabriel Soares/i } },
-        { patientName: { $regex: /Gabriel Soares/i } }
-      ]
-    }).toArray();
-
-    // Buscar sessões do Gabriel
-    const sessions = await db.collection('sessions').find({
-      'patient.fullName': { $regex: /Gabriel Soares/i }
-    }).toArray();
-
-    res.json({
-      success: true,
-      auditoria: {
-        preAgendamentos: preAgendamentos.map(p => ({
-          _id: p._id.toString(),
-          nome: p.patientInfo?.fullName,
-          data: p.preferredDate,
-          hora: p.preferredTime,
-          status: p.status,
-          importedTo: p.importedToAppointment?.toString(),
-          updatedAt: p.updatedAt,
-          createdAt: p.createdAt
-        })),
-        appointments: appointments.map(a => ({
-          _id: a._id.toString(),
-          nome: a.patientName,
-          data: a.date,
-          hora: a.time,
-          status: a.operationalStatus,
-          preAgendamentoId: a.metadata?.origin?.preAgendamentoId,
-          updatedAt: a.updatedAt
-        })),
-        payments: payments.map(p => ({
-          _id: p._id.toString(),
-          amount: p.amount,
-          status: p.status,
-          appointmentId: p.appointment?.toString(),
-          preAgendamentoId: p.preAgendamentoId
-        })),
-        sessions: sessions.map(s => ({
-          _id: s._id.toString(),
-          date: s.date,
-          status: s.status,
-          appointmentId: s.appointmentId?.toString()
-        }))
-      },
-      totalPreAgendamentos: preAgendamentos.length,
-      totalAppointments: appointments.length,
-      totalPayments: payments.length,
-      totalSessions: sessions.length,
-      alerta: preAgendamentos.length === 0 && appointments.length === 0 
-        ? "⚠️ NENHUM REGISTRO ENCONTRADO! Possível deleção." 
-        : null
-    });
-
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
 /**
  * GET /api/import-from-agenda/auditar-unimed

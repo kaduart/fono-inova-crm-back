@@ -75,14 +75,64 @@ const packageSchema = new mongoose.Schema({
   txid: { type: String, unique: true, sparse: true },
 
   // ========================================
-  // 🏥 CAMPOS PARA PACOTES DE CONVÊNIO
+  // 🏥 CAMPOS PARA PACOTES DE CONVÊNIO E LIMINAR
   // (Opcionais - default null = zero impacto em pacotes therapy)
   // ========================================
   type: {
     type: String,
-    enum: ['therapy', 'convenio'],
+    enum: ['therapy', 'convenio', 'liminar'],
     default: 'therapy',
-    description: 'Tipo de pacote: therapy (particular) ou convenio (plano de saúde)'
+    description: 'Tipo de pacote: therapy (particular), convenio (plano de saúde) ou liminar (judicial)'
+  },
+  
+  // ========================================
+  // ⚖️ CAMPOS ESPECÍFICOS PARA PACOTES LIMINAR
+  // ========================================
+  // NOTA: Todos os campos são OPCIONAIS. O sistema não exige processo ou vara.
+  // O crédito é consumido quando a sessão é marcada como 'completed'.
+  // Se alterar o status de 'completed' para outro, o crédito VOLTA automaticamente.
+  // Não é necessário cancelar a sessão para restaurar o crédito!
+  liminarProcessNumber: {
+    type: String,
+    default: null,
+    description: 'Número do processo judicial (opcional)'
+  },
+  liminarCourt: {
+    type: String,
+    default: null,
+    description: 'Vara ou cartório responsável (opcional)'
+  },
+  liminarExpirationDate: {
+    type: Date,
+    default: null,
+    description: 'Data de validade da liminar (se houver)'
+  },
+  liminarMode: {
+    type: String,
+    enum: ['deferred', 'immediate', 'hybrid'],
+    default: 'hybrid',
+    description: 'Modo de reconhecimento de receita: deferred (diferida), immediate (imediata) ou hybrid (híbrida)'
+  },
+  liminarAuthorized: {
+    type: Boolean,
+    default: true,
+    description: 'Se a liminar está autorizada para uso'
+  },
+  liminarCreditBalance: {
+    type: Number,
+    default: 0,
+    description: 'Saldo de crédito da liminar para consumo por sessão'
+  },
+  liminarTotalCredit: {
+    type: Number,
+    default: 0,
+    description: 'Valor total do crédito liberado pela liminar'
+  },
+  // Campo para rastrear receita já reconhecida (quando usar deferred/hybrid)
+  recognizedRevenue: {
+    type: Number,
+    default: 0,
+    description: 'Valor da receita já reconhecida (para liminar deferred/hybrid)'
   },
   insuranceGuide: {
     type: mongoose.Schema.Types.ObjectId,
