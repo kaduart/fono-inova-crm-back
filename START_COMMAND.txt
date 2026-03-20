@@ -1,1 +1,0 @@
-NODE_OPTIONS=--dns-result-order=ipv4first node -r dotenv/config server.js

@@ -180,6 +180,34 @@ const appointmentSchema = new mongoose.Schema({
     context: String
   }],
 
+  // ─── ATRIBUIÇÃO DE LEAD (REVENUE TRACKING) ─────────────────
+  // 🆕 NOVO: Conexão com Lead para rastreamento completo de origem → receita
+  lead: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Lead',
+    index: true 
+  },
+  
+  // 🆕 NOVO: Snapshot imutável do lead no momento do agendamento
+  // (evita perda de dados se lead for editado/mergeado depois)
+  leadSnapshot: {
+    source: { type: String, default: null },           // 'gmb', 'instagram', etc
+    campaign: { type: String, default: null },         // 'fala_tardia_2anos'
+    origin: { type: String, default: null },           // origem original
+    conversionScore: { type: Number, default: null },  // score no momento
+    capturedAt: { type: Date, default: null }          // quando o lead entrou
+  },
+
+  // ─── CLASSIFICAÇÃO DE PACIENTE (preenchido na importação) ──
+  // novo: primeiro contato ever; retorno: voltou após meses; recorrente: já ativo
+  patientType: {
+    type: String,
+    enum: ['novo', 'retorno', 'recorrente'],
+    default: null
+  },
+  // Limiar usado na classificação (em meses — salvo para auditoria)
+  patientTypeMonthsInactive: { type: Number, default: null },
+
   // ─── ORIGEM (ROI) ──────────────────────────────────────────
   metadata: {
     origin: {

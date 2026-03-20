@@ -76,6 +76,7 @@ import signupRoutes from "./routes/signup.js";
 import specialtyRouter from "./routes/specialty.js";
 import UserRoutes from "./routes/user.js";
 import whatsappRoutes from "./routes/whatsapp.js";
+import whatsappVPSRoutes from "./routes/whatsappVPS.js";
 import aiRoutes from "./routes/ai.js";
 import diagnosticRouter from './routes/whatsapp/diagnostic.js';
 import protocolRoutes from './routes/protocol.js';
@@ -106,13 +107,12 @@ import compression from 'compression';
 import importFromAgendaRouter from './routes/importFromAgenda.js';
 import dashboardRoutes from './routes/dashboard.js';
 import financialAnalyticsRoutes from './routes/analytics/financial.routes.js';
+import revenueAnalyticsRoutes from './routes/analytics.js';
 import insuranceGuidesRoutes from './routes/insuranceGuides.js';
 import convenioPackagesRoutes from './routes/convenioPackages.js';
 import convenioRoutes from './routes/financial/convenio.routes.js';
 import reminderRoutes from './routes/reminder.js';
-// 🖥️ whatsapp-web.js ATIVO em todos os ambientes (Chrome instalado via render-build.sh)
-import whatsappWebRoutes from './routes/whatsappWeb.js';
-import whatsappWebService from './services/whatsappWebService.js';
+
 import imageBankRoutes from './routes/imageBank.routes.js';
 
 // ======================================================
@@ -138,13 +138,7 @@ scheduleDailyAlerts();
 scheduleGmbCron(); // ← Inicia cron do GMB (geração + envio ao Make)
 scheduleLandingPageDailyPosts(); // ← Inicia cron de posts automáticos para LPs
 
-// 🔹 WhatsApp Web (Puppeteer) - só local onde tem Chrome
-if (whatsappWebService) {
-  whatsappWebService.initialize().catch(err => console.error('[WhatsAppWeb] Erro ao inicializar:', err.message));
-  console.log('📱 WhatsApp: whatsapp-web.js ATIVO (modo local)');
-} else {
-  console.log('📱 WhatsApp: whatsapp-web.js DESATIVADO (modo produção - use Baileys ou API Meta)');
-}
+
 
 const PORT = process.env.PORT || 5000;
 
@@ -307,6 +301,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/provisionamento', provisionamentoRoutes);
 app.use('/api/analytics/financial', financialAnalyticsRoutes);
+app.use('/api/analytics/revenue', revenueAnalyticsRoutes);
 app.use('/api/insurance-guides', insuranceGuidesRoutes);
 app.use('/api/convenio-packages', convenioPackagesRoutes);
 app.use('/api/financial/convenio', convenioRoutes);
@@ -325,8 +320,8 @@ app.use('/api/imagebank', imageBankRoutes);
 app.use("/api/pix", pixRoutes);
 
 app.use("/api/whatsapp", whatsappRoutes);
-// 🔹 whatsapp-web.js ATIVO
-app.use("/api/whatsapp-web", whatsappWebRoutes);
+app.use("/api/whatsapp-vps", whatsappVPSRoutes);
+
 app.use("/api/followups", followupRoutes);
 
 app.use('/api', importFromAgendaRouter);

@@ -6,8 +6,6 @@
  */
 
 import { calcularProvisionamento } from '../services/provisionamentoService.js';
-import Package from '../models/Package.js';
-import Session from '../models/Session.js';
 import moment from 'moment-timezone';
 
 const TIMEZONE = 'America/Sao_Paulo';
@@ -162,7 +160,7 @@ async function calcularAnalitico(inicio, fim) {
   const sessoes = await Session.find({
     status: 'completed',
     date: { $gte: inicio, $lte: fim }
-  }).populate('doctor', 'fullName specialty').lean();
+  }).populate('doctor', 'fullName specialty').populate('package', 'insuranceGrossAmount').lean();
 
   // Por especialidade
   const porEspecialidade = {};
@@ -342,18 +340,27 @@ export const getComparativo = async (req, res) => {
     const hoje = moment().tz(TIMEZONE);
     const resultados = [];
     
+    const Session = (await import('../models/Session.js')).default;
+
     for (let i = numMeses - 1; i >= 0; i--) {
       const data = moment(hoje).subtract(i, 'months');
       const mes = data.month() + 1;
       const ano = data.year();
-      
-      const provisionamento = await calcularProvisionamento(mes, ano);
-      
+      const inicio = moment.tz({ year: ano, month: mes - 1, day: 1 }, TIMEZONE).format('YYYY-MM-DD');
+      const fim = moment.tz({ year: ano, month: mes - 1, day: 1 }, TIMEZONE).endOf('month').format('YYYY-MM-DD');
+
+      const [provisionamento, sessoes] = await Promise.all([
+        calcularProvisionamento(mes, ano),
+        Session.find({ status: 'completed', date: { $gte: inicio, $lte: fim } }).lean()
+      ]);
+
+      const producao = sessoes.reduce((sum, s) => sum + (s.sessionValue || 0), 0);
+
       resultados.push({
         mes,
         ano,
         label: data.format('MMM/YYYY'),
-        producao: 0, // Calculado separadamente se necessário
+        producao,
         caixa: provisionamento.camadas?.garantido?.valor || 0,
         provisionamento: provisionamento.total || 0
       });

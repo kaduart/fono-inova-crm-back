@@ -41,7 +41,6 @@ import Patient from '../../models/Patient.js';
 import Doctor from '../../models/Doctor.js';
 import Session from '../../models/Session.js';
 import Payment from '../../models/Payment.js';
-import PreAgendamento from '../../models/PreAgendamento.js';
 
 // Criar app Express para testes
 const createTestApp = () => {
@@ -97,8 +96,6 @@ describe('🔄 APIs de Integração - Agenda Externa', () => {
     await Doctor.deleteMany({});
     await Session.deleteMany({});
     await Payment.deleteMany({});
-    await PreAgendamento.deleteMany({});
-    
     // Criar dados base
     testDoctor = await Doctor.create({
       fullName: 'Dra. Teste Integração',
@@ -304,7 +301,7 @@ describe('🔄 APIs de Integração - Agenda Externa', () => {
   });
   
   describe('POST /api/import-from-agenda', () => {
-    it('✅ deve criar novo pré-agendamento', async () => {
+    it('✅ deve criar novo pré-agendamento como Appointment', async () => {
       const payload = {
         externalId: `test_${Date.now()}`,
         patientInfo: {
@@ -324,20 +321,21 @@ describe('🔄 APIs de Integração - Agenda Externa', () => {
           paymentAmount: 200
         }
       };
-      
+
       const response = await request(app)
         .post('/api/import-from-agenda')
         .set('Authorization', `Bearer ${TEST_TOKEN}`)
         .send(payload)
         .expect(200);
-      
+
       expect(response.body.success).toBe(true);
       expect(response.body.preAgendamentoId).toBeDefined();
-      
-      // Verificar se foi criado
-      const pre = await PreAgendamento.findById(response.body.preAgendamentoId);
+
+      // Verificar se foi criado como Appointment com status pre_agendado
+      const pre = await Appointment.findById(response.body.preAgendamentoId);
       expect(pre).toBeDefined();
       expect(pre.patientInfo.fullName).toBe('Novo Paciente');
+      expect(pre.operationalStatus).toBe('pre_agendado');
     });
     
     it('❌ deve retornar erro quando profissional não existe', async () => {
@@ -361,22 +359,24 @@ describe('🔄 APIs de Integração - Agenda Externa', () => {
   });
   
   describe('POST /api/import-from-agenda/confirmar-por-external-id', () => {
-    it('✅ deve confirmar pré-agendamento e criar appointment', async () => {
-      // Criar pré-agendamento
-      const pre = await PreAgendamento.create({
-        externalId: `test_${Date.now()}`,
+    it('✅ deve confirmar pré-agendamento e atualizar para scheduled', async () => {
+      // Criar pré-agendamento como Appointment com status pre_agendado
+      const externalId = `test_${Date.now()}`;
+      const pre = await Appointment.create({
+        externalId,
         patientInfo: {
           fullName: 'Paciente Confirmar',
           phone: '11999994444',
           birthDate: '1992-08-10'
         },
         professionalName: 'Dra. Teste Integração',
-        preferredDate: '2026-03-15',
-        preferredTime: '10:00',
+        date: '2026-03-15',
+        time: '10:00',
         specialty: 'fonoaudiologia',
-        status: 'novo'
+        operationalStatus: 'pre_agendado',
+        duration: 40
       });
-      
+
       const response = await request(app)
         .post('/api/import-from-agenda/confirmar-por-external-id')
         .set('Authorization', `Bearer ${TEST_TOKEN}`)
@@ -390,13 +390,13 @@ describe('🔄 APIs de Integração - Agenda Externa', () => {
           paymentMethod: 'pix'
         })
         .expect(200);
-      
+
       expect(response.body.success).toBe(true);
       expect(response.body.appointmentId).toBeDefined();
-      
-      // Verificar se foi importado
-      const updatedPre = await PreAgendamento.findById(pre._id);
-      expect(updatedPre.status).toBe('importado');
+
+      // Verificar se foi atualizado in-place para scheduled
+      const updated = await Appointment.findById(pre._id);
+      expect(updated.operationalStatus).toBe('scheduled');
     });
   });
   

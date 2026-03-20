@@ -1257,21 +1257,6 @@ router.get("/totals", async (req, res) => {
             },
         ];
 
-        const cashResult = await Payment.aggregate(cashAggregation);
-        console.log("💰 Cash Result:", cashResult);
-        const cashTotals = cashResult[0] || {
-            totalReceived: 0,
-            totalPending: 0,
-            totalPartial: 0,
-            countReceived: 0,
-            countPending: 0,
-            countPartial: 0,
-            particularReceived: 0,
-            particularPending: 0,
-            particularCountReceived: 0,
-            particularCountPending: 0,
-        };
-
         // ======================================================
         // 🏥 4. Agregação de PRODUÇÃO DE CONVÊNIOS
         // Busca convênios realizados no período (independentemente de pagamento)
@@ -1279,8 +1264,6 @@ router.get("/totals", async (req, res) => {
         const insuranceMatchStage = {
             ...matchStage,
             billingType: 'convenio',
-            // Inclui todos os convênios do período: pending, billed, received, etc.
-            // ❌ MAS SEMPRE EXCLUI CANCELADOS (herdado do matchStage)
         };
 
         // Remove apenas filtro específico de status se usuário passou um,
@@ -1288,8 +1271,6 @@ router.get("/totals", async (req, res) => {
         if (status && status !== 'canceled') {
             delete insuranceMatchStage.status;
         }
-
-        console.log("🔍 Insurance Match Stage:", JSON.stringify(insuranceMatchStage, null, 2));
 
         const insuranceAggregation = [
             { $match: insuranceMatchStage },
@@ -1372,8 +1353,138 @@ router.get("/totals", async (req, res) => {
             },
         ];
 
-        const insuranceResult = await Payment.aggregate(insuranceAggregation);
-        console.log("🏥 Insurance Result:", insuranceResult);
+        // ======================================================
+        // 💰 7. A RECEBER ACUMULADO (independente do período)
+        // Todos os pagamentos pendentes, não apenas do mês selecionado
+        // ======================================================
+        const accumulatedMatchStage = {
+            status: { $in: ['pending', 'partial', 'billed'] },
+        };
+        if (doctorId) accumulatedMatchStage.doctor = new mongoose.Types.ObjectId(doctorId);
+
+        // ======================================================
+        // 🚀 Executa todas as agregações em paralelo
+        // ======================================================
+        // Filtro de data para patientType (createdAt = quando o paciente entrou no sistema)
+        const patientTypeMatch = {
+            patientType: { $in: ['novo', 'retorno', 'recorrente'] },
+            createdAt: { $gte: rangeStart, $lte: rangeEnd }
+        };
+        if (period === 'all') delete patientTypeMatch.createdAt;
+        if (doctorId) patientTypeMatch.doctor = new mongoose.Types.ObjectId(doctorId);
+
+        const [
+            cashResult,
+            insuranceResult,
+            breakdown,
+            byMethod,
+            byServiceType,
+            accumulatedReceivables,
+            patientTypeResult,
+        ] = await Promise.all([
+            Payment.aggregate(cashAggregation),
+            Payment.aggregate(insuranceAggregation),
+            Payment.aggregate([
+                { $match: matchStage },
+                {
+                    $addFields: {
+                        effectiveDate: {
+                            $cond: [
+                                { $and: [{ $ne: ["$paymentDate", null] }, { $ne: ["$paymentDate", ""] }] },
+                                { $dateFromString: { dateString: "$paymentDate", onError: "$createdAt" } },
+                                "$createdAt"
+                            ]
+                        }
+                    }
+                },
+                {
+                    $group: {
+                        _id: {
+                            year: { $year: "$effectiveDate" },
+                            month: { $month: "$effectiveDate" },
+                            day: { $dayOfMonth: "$effectiveDate" },
+                        },
+                        totalPaid: { $sum: { $cond: [{ $eq: ["$status", "paid"] }, "$amount", 0] } },
+                        totalPending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, "$amount", 0] } },
+                        totalPartial: { $sum: { $cond: [{ $eq: ["$status", "partial"] }, "$amount", 0] } },
+                    },
+                },
+                { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 } },
+            ]),
+            Payment.aggregate([
+                { $match: matchStage },
+                {
+                    $group: {
+                        _id: "$paymentMethod",
+                        total: { $sum: "$amount" },
+                        count: { $sum: 1 },
+                    },
+                },
+                { $sort: { total: -1 } },
+            ]),
+            Payment.aggregate([
+                { $match: matchStage },
+                {
+                    $group: {
+                        _id: "$serviceType",
+                        total: { $sum: "$amount" },
+                        count: { $sum: 1 },
+                    },
+                },
+                { $sort: { total: -1 } },
+            ]),
+            Payment.aggregate([
+                { $match: accumulatedMatchStage },
+                {
+                    $group: {
+                        _id: null,
+                        particularPendingAccumulated: {
+                            $sum: {
+                                $cond: [
+                                    { $and: [
+                                        { $in: ["$status", ["pending", "partial"]] },
+                                        { $ne: ["$billingType", "convenio"] }
+                                    ]},
+                                    "$amount",
+                                    0
+                                ]
+                            }
+                        },
+                        insurancePendingAccumulated: {
+                            $sum: {
+                                $cond: [
+                                    { $and: [
+                                        { $eq: ["$billingType", "convenio"] },
+                                        { $in: ["$insurance.status", ["pending_billing", "billed", null, ""]] }
+                                    ]},
+                                    { $ifNull: ["$insurance.grossAmount", "$amount"] },
+                                    0
+                                ]
+                            }
+                        },
+                        countPending: { $sum: 1 }
+                    }
+                }
+            ]),
+            Appointment.aggregate([
+                { $match: patientTypeMatch },
+                { $group: { _id: '$patientType', count: { $sum: 1 } } }
+            ]),
+        ]);
+
+        const cashTotals = cashResult[0] || {
+            totalReceived: 0,
+            totalPending: 0,
+            totalPartial: 0,
+            countReceived: 0,
+            countPending: 0,
+            countPartial: 0,
+            particularReceived: 0,
+            particularPending: 0,
+            particularCountReceived: 0,
+            particularCountPending: 0,
+        };
+
         const insuranceTotals = insuranceResult[0] || {
             totalInsuranceProduction: 0,
             totalInsuranceReceived: 0,
@@ -1383,166 +1494,50 @@ router.get("/totals", async (req, res) => {
             countInsurancePending: 0,
         };
 
-        // ======================================================
-        // 📊 Totals consolidados
-        // ======================================================
-        const totals = {
-            // Caixa (dinheiro efetivamente recebido)
-            totalReceived: cashTotals.totalReceived,
-            totalPending: cashTotals.totalPending,
-            totalPartial: cashTotals.totalPartial,
-            countReceived: cashTotals.countReceived,
-            countPending: cashTotals.countPending,
-            countPartial: cashTotals.countPartial,
-
-            // SEPARADO POR TIPO
-            // Particular (não convênio)
-            particularReceived: cashTotals.particularReceived || 0,
-            particularPending: cashTotals.particularPending || 0,
-            particularCountReceived: cashTotals.particularCountReceived || 0,
-            particularCountPending: cashTotals.particularCountPending || 0,
-
-            // Convênios
-            totalInsuranceProduction: insuranceTotals.totalInsuranceProduction,
-            totalInsuranceReceived: insuranceTotals.totalInsuranceReceived,
-            totalInsurancePending: Math.max(0, insuranceTotals.totalInsuranceProduction - insuranceTotals.totalInsuranceReceived),
-            countInsuranceTotal: insuranceTotals.countInsuranceTotal,
-            countInsuranceReceived: insuranceTotals.countInsuranceReceived,
-            countInsurancePending: Math.max(0, insuranceTotals.countInsuranceTotal - insuranceTotals.countInsuranceReceived),
-
-            // Total combinado (caixa + convênios pendentes)
-            totalCombined: cashTotals.totalReceived + Math.max(0, insuranceTotals.totalInsuranceProduction - insuranceTotals.totalInsuranceReceived),
-        };
-
-        // ======================================================
-        // 📊 4. Agrupamento temporal (para gráficos)
-        // Usa paymentDate como string e extrai ano/mês/dia
-        // ======================================================
-        const breakdown = await Payment.aggregate([
-            { $match: matchStage },
-            {
-                $addFields: {
-                    // Converte paymentDate (string) para Date se existir, senão usa createdAt
-                    effectiveDate: {
-                        $cond: [
-                            { $and: [{ $ne: ["$paymentDate", null] }, { $ne: ["$paymentDate", ""] }] },
-                            { $dateFromString: { dateString: "$paymentDate", onError: "$createdAt" } },
-                            "$createdAt"
-                        ]
-                    }
-                }
-            },
-            {
-                $group: {
-                    _id: {
-                        year: { $year: "$effectiveDate" },
-                        month: { $month: "$effectiveDate" },
-                        day: { $dayOfMonth: "$effectiveDate" },
-                    },
-                    totalPaid: { $sum: { $cond: [{ $eq: ["$status", "paid"] }, "$amount", 0] } },
-                    totalPending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, "$amount", 0] } },
-                    totalPartial: { $sum: { $cond: [{ $eq: ["$status", "partial"] }, "$amount", 0] } },
-                },
-            },
-            { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 } },
-        ]);
-
-        // ======================================================
-        // 🧾 5. Agrupamento por método de pagamento
-        // ======================================================
-        const byMethod = await Payment.aggregate([
-            { $match: matchStage },
-            {
-                $group: {
-                    _id: "$paymentMethod",
-                    total: { $sum: "$amount" },
-                    count: { $sum: 1 },
-                },
-            },
-            { $sort: { total: -1 } },
-        ]);
-
-        // ======================================================
-        // 🎯 6. Agrupamento por tipo de serviço
-        // ======================================================
-        const byServiceType = await Payment.aggregate([
-            { $match: matchStage },
-            {
-                $group: {
-                    _id: "$serviceType",
-                    total: { $sum: "$amount" },
-                    count: { $sum: 1 },
-                },
-            },
-            { $sort: { total: -1 } },
-        ]);
-
-        // ======================================================
-        // 💰 7. A RECEBER ACUMULADO (independente do período)
-        // Todos os pagamentos pendentes, não apenas do mês selecionado
-        // ======================================================
-        const accumulatedMatchStage = {
-            status: { $in: ['pending', 'partial', 'billed'] },
-            // NÃO filtra por data - pega todos
-        };
-        if (doctorId) accumulatedMatchStage.doctor = new mongoose.Types.ObjectId(doctorId);
-
-        const accumulatedReceivables = await Payment.aggregate([
-            { $match: accumulatedMatchStage },
-            {
-                $group: {
-                    _id: null,
-                    // Particular pendentes
-                    particularPendingAccumulated: {
-                        $sum: {
-                            $cond: [
-                                { $and: [
-                                    { $in: ["$status", ["pending", "partial"]] },
-                                    { $ne: ["$billingType", "convenio"] }
-                                ]},
-                                "$amount",
-                                0
-                            ]
-                        }
-                    },
-                    // Convênios pendentes (produção - recebido)
-                    insurancePendingAccumulated: {
-                        $sum: {
-                            $cond: [
-                                { $and: [
-                                    { $eq: ["$billingType", "convenio"] },
-                                    { $in: ["$insurance.status", ["pending_billing", "billed", null, ""]] }
-                                ]},
-                                { $ifNull: ["$insurance.grossAmount", "$amount"] },
-                                0
-                            ]
-                        }
-                    },
-                    countPending: { $sum: 1 }
-                }
-            }
-        ]);
-
         const accumulated = accumulatedReceivables[0] || {
             particularPendingAccumulated: 0,
             insurancePendingAccumulated: 0,
             countPending: 0
         };
 
-        const totalAReceberAcumulado = 
-            (accumulated.particularPendingAccumulated || 0) + 
-            (accumulated.insurancePendingAccumulated || 0);
+        const ptMap = (patientTypeResult || []).reduce((acc, i) => { acc[i._id] = i.count; return acc; }, {});
+        const patientTypes = {
+            novos: ptMap['novo'] || 0,
+            retornos: ptMap['retorno'] || 0,
+            recorrentes: ptMap['recorrente'] || 0
+        };
 
-        // Adiciona ao objeto totals
-        totals.totalAReceberAcumulado = totalAReceberAcumulado;
-        totals.particularPendingAccumulated = accumulated.particularPendingAccumulated || 0;
-        totals.insurancePendingAccumulated = accumulated.insurancePendingAccumulated || 0;
-        totals.aReceberMes = totals.totalPending + totals.totalInsurancePending; // Do mês selecionado
+        // ======================================================
+        // 📊 Totals consolidados
+        // ======================================================
+        const totals = {
+            totalReceived: cashTotals.totalReceived,
+            totalPending: cashTotals.totalPending,
+            totalPartial: cashTotals.totalPartial,
+            countReceived: cashTotals.countReceived,
+            countPending: cashTotals.countPending,
+            countPartial: cashTotals.countPartial,
+            particularReceived: cashTotals.particularReceived || 0,
+            particularPending: cashTotals.particularPending || 0,
+            particularCountReceived: cashTotals.particularCountReceived || 0,
+            particularCountPending: cashTotals.particularCountPending || 0,
+            totalInsuranceProduction: insuranceTotals.totalInsuranceProduction,
+            totalInsuranceReceived: insuranceTotals.totalInsuranceReceived,
+            totalInsurancePending: Math.max(0, insuranceTotals.totalInsuranceProduction - insuranceTotals.totalInsuranceReceived),
+            countInsuranceTotal: insuranceTotals.countInsuranceTotal,
+            countInsuranceReceived: insuranceTotals.countInsuranceReceived,
+            countInsurancePending: Math.max(0, insuranceTotals.countInsuranceTotal - insuranceTotals.countInsuranceReceived),
+            totalCombined: cashTotals.totalReceived + Math.max(0, insuranceTotals.totalInsuranceProduction - insuranceTotals.totalInsuranceReceived),
+            totalAReceberAcumulado: (accumulated.particularPendingAccumulated || 0) + (accumulated.insurancePendingAccumulated || 0),
+            particularPendingAccumulated: accumulated.particularPendingAccumulated || 0,
+            insurancePendingAccumulated: accumulated.insurancePendingAccumulated || 0,
+            aReceberMes: 0, // set below after insurance calc
+        };
+        totals.aReceberMes = totals.totalPending + totals.totalInsurancePending;
 
         // ======================================================
         // ✅ 8. Retorno final
         // ======================================================
-        console.log("📊 /totals response:", { totals, dateRange: { start: rangeStart, end: rangeEnd } });
         res.status(200).json({
             success: true,
             filters: {
@@ -1561,6 +1556,7 @@ router.get("/totals", async (req, res) => {
                 byMethod,
                 byServiceType,
                 breakdown,
+                patientTypes,
             },
         });
     } catch (err) {
@@ -1600,13 +1596,10 @@ router.get("/daily-closing", async (req, res) => {
             .tz(`${targetDate}T23:59:59`, "America/Sao_Paulo")
             .toDate();
 
-        console.time("⏱️ Query Sessions");
         const sessions = await Session.find({ date: targetDate })
             .populate("package patient doctor appointmentId")
             .lean();
-        console.timeEnd("⏱️ Query Sessions");
 
-        console.time("⏱️ Bulk Update Appointments");
         if (sessions.length > 0) {
             const bulkOps = sessions
                 .filter(s => s.appointmentId)
@@ -1632,17 +1625,19 @@ router.get("/daily-closing", async (req, res) => {
                 });
 
             if (bulkOps.length > 0) {
-                await Appointment.bulkWrite(bulkOps, { ordered: false });
+                Appointment.bulkWrite(bulkOps, { ordered: false })
+                    .catch(e => console.error('[daily-closing] bulkWrite error:', e.message));
             }
         }
-        console.timeEnd("⏱️ Bulk Update Appointments");
 
         // ======================================================
         // 🔹 QUERIES PARALELAS (mantém performance)
         // ======================================================
-        console.time("⏱️ Parallel Queries");
         const [appointments, payments] = await Promise.all([
-            Appointment.find({ date: targetDate })
+            Appointment.find({
+                createdAt: { $gte: startOfDay, $lte: endOfDay },
+                serviceType: { $ne: 'package_session' }
+            })
                 .populate("doctor patient package")
                 .lean(),
 
@@ -1667,8 +1662,6 @@ router.get("/daily-closing", async (req, res) => {
                 .populate("patient doctor package appointment")
                 .lean()
         ]);
-
-        console.timeEnd("⏱️ Parallel Queries");
 
         // ======================================================
         // 🔹 HELPERS
@@ -1813,7 +1806,7 @@ router.get("/daily-closing", async (req, res) => {
             const opStatus = (appt.operationalStatus || "").toLowerCase();
             const clinicalStatus = (appt.clinicalStatus || "").toLowerCase();
             const doctorName = appt.doctor?.fullName || "Não informado";
-            const patientName = appt.patient?.fullName || "Não informado";
+            const patientName = appt.patient?.fullName || appt.patientInfo?.fullName || "Não informado";
             const isPackage = appt.serviceType === "package_session";
 
             // 🔗 Buscar pagamentos relacionados (3 vias)
@@ -1867,6 +1860,8 @@ router.get("/daily-closing", async (req, res) => {
             report.timelines.appointments.push({
                 id: apptId,
                 patient: patientName,
+                phone: appt.patient?.phone || appt.patientInfo?.phone || null,
+                patientType: appt.patientType || null,
                 service: appt.serviceType,
                 doctor: doctorName,
                 sessionValue,
@@ -2042,6 +2037,9 @@ router.get("/daily-closing", async (req, res) => {
         console.log(`\n🕐 Processando ${report.timelines.appointments.length} appointments para timeSlots...`);
 
         report.timelines.appointments.forEach((appt) => {
+            // Pre-agendamentos são leads ainda não confirmados — excluir dos slots/profissionais
+            if (appt.operationalStatus === 'pre_agendado') return;
+
             const doctor = appt.doctor || "Não informado";
             const time = (appt.time || "").substring(0, 5);
             const value = appt.sessionValue || 0;
@@ -2076,7 +2074,8 @@ router.get("/daily-closing", async (req, res) => {
                         confirmed: 0,
                         canceled: 0,
                         scheduled: 0,
-                        revenueReceived: 0,
+                        revenue: 0,         // valor esperado (sessões não canceladas)
+                        revenueReceived: 0, // apenas "Pago no dia"
                         professionals: [],
                     },
                 };
@@ -2088,6 +2087,8 @@ router.get("/daily-closing", async (req, res) => {
             if (isConfirmed(appt.operationalStatus)) slot.stats.confirmed++;
             else if (isCanceled(appt.operationalStatus)) slot.stats.canceled++;
             else slot.stats.scheduled++;
+            if (!isCanceled(appt.operationalStatus))
+                slot.stats.revenue += value;
             if (appt.paidStatus === "Pago no dia")
                 slot.stats.revenueReceived += value;
             if (!slot.stats.professionals.includes(doctor))
