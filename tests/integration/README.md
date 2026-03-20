@@ -111,7 +111,7 @@ MONGODB_URI=mongodb://localhost:27017/crm_test
 const doctor = await Factories.createDoctor({ specialty: 'psicologia' });
 const patient = await Factories.createPatient({ dateOfBirth: '1990-01-01' });
 const appointment = await Factories.createAppointment({ doctor, patient });
-const pre = await Factories.createPreAgendamento();
+const pre = await Factories.createAppointment({ operationalStatus: 'pre_agendado' });
 const session = await Factories.createSession();
 ```
 

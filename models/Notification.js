@@ -26,8 +26,8 @@ const notificationSchema = new mongoose.Schema({
   },
   refModel: {
     type: String,
-    enum: ['PreAgendamento', 'Appointment'],
-    default: 'PreAgendamento'
+    enum: ['Appointment'],
+    default: 'Appointment'
   },
 
   // Dados enriquecidos para exibição rápida (evita populate)

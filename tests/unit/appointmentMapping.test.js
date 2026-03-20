@@ -3,7 +3,6 @@ import {
     getSafePatientName,
     getSafeProfessionalName,
     mapAppointmentToEvent,
-    mapPreAgendamentoToEvent,
     getFriendlyStatus
 } from '../../utils/appointmentMapper.js';
 
@@ -89,25 +88,4 @@ describe('AppointmentMapper - Unit Tests', () => {
         });
     });
 
-    describe('mapPreAgendamentoToEvent', () => {
-        it('should correctly map an interest (pre-appointment)', () => {
-            const mockPre = {
-                _id: '607f1f77bcf86cd799439022',
-                preferredDate: '2026-02-17',
-                preferredTime: '10:00',
-                status: 'novo',
-                specialty: 'fonoaudiologia',
-                patientInfo: { fullName: 'Alice Marques Martins', phone: '11888888888' },
-                professionalName: 'Dra. Suzane'
-            };
-
-            const event = mapPreAgendamentoToEvent(mockPre);
-
-            expect(event.id).toBe('607f1f77bcf86cd799439022');
-            expect(event.metadata.isPreAgendamento).toBe(true);
-            expect(event.patientName).toBe('Alice Marques Martins');
-            expect(event.professional).toBe('Dra. Suzane');
-            expect(event.status).toBe('Novo');
-        });
-    });
 });

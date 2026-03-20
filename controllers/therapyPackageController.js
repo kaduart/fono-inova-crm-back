@@ -108,7 +108,14 @@ export const packageOperations = {
                 calculationMode,
                 totalSessions,
                 selectedSlots = [], // 💡 novo campo
-                payments = []
+                payments = [],
+                // ⚖️ Campos específicos para liminar
+                type = 'therapy',
+                liminarProcessNumber,
+                liminarCourt,
+                liminarExpirationDate,
+                liminarMode = 'hybrid',
+                liminarAuthorized = true
             } = req.body;
 
             if (date === 'Invalid date' || !moment(date, 'YYYY-MM-DD', true).isValid()) {
@@ -126,6 +133,15 @@ export const packageOperations = {
             }
             if (!selectedSlots.length) {
                 throw new Error('Nenhum horário selecionado (selectedSlots está vazio)');
+            }
+
+            // ⚖️ Log para pacotes liminar (campos opcionais)
+            if (type === 'liminar') {
+                console.log('⚖️ Criando pacote LIMINAR:', {
+                    processo: liminarProcessNumber || 'Não informado',
+                    vara: liminarCourt || 'Não informada',
+                    modo: liminarMode
+                });
             }
 
             // ==========================================================
@@ -232,7 +248,7 @@ export const packageOperations = {
             // ==========================================================
             // 4️⃣ CRIAR O PACOTE
             // ==========================================================
-            const newPackage = new Package({
+            const packageData = {
                 patient: patientId,
                 doctor: doctorId,
                 date,
@@ -248,8 +264,25 @@ export const packageOperations = {
                 totalPaid: 0,
                 balance: totalValue,
                 status: 'active',
-                calculationMode
-            });
+                calculationMode,
+                type
+            };
+
+            // ⚖️ Adicionar campos específicos do liminar
+            if (type === 'liminar') {
+                packageData.liminarProcessNumber = liminarProcessNumber;
+                packageData.liminarCourt = liminarCourt;
+                packageData.liminarExpirationDate = liminarExpirationDate || null;
+                packageData.liminarMode = liminarMode;
+                packageData.liminarAuthorized = liminarAuthorized;
+                packageData.liminarTotalCredit = totalValue;
+                packageData.liminarCreditBalance = totalValue;
+                packageData.recognizedRevenue = 0;
+                // Para liminar, o financialStatus inicia como 'unpaid' até reconhecer a receita
+                packageData.financialStatus = 'unpaid';
+            }
+
+            const newPackage = new Package(packageData);
 
             await newPackage.save({ session: mongoSession });
             // 🔧 Reconciliação mínima de pagamentos herdados da sessão/appointment avulso
@@ -927,11 +960,62 @@ export const packageOperations = {
                         // 🔧 CORREÇÃO: Usar sessionValue ao invés de value
                         // 🏥 CONVÊNIO: Criar recebível (não entra no caixa ainda)
                         // 💰 PARTICULAR: Criar pagamento normal (entra no caixa)
+                        // ⚖️ LIMINAR: Reconhece receita diferida (crédito por sessão)
                         const isConvenio = sessionDoc.package.type === 'convenio' || 
                                           sessionDoc.paymentMethod === 'convenio' ||
                                           sessionDoc.billingType === 'convenio';
+                        const isLiminar = sessionDoc.package.type === 'liminar';
 
-                        if (isConvenio) {
+                        if (isLiminar) {
+                            // ⚖️ LIMINAR: Reconhecer receita diferida por sessão
+                            const sessionRevenue = sessionDoc.sessionValue || sessionDoc.package.sessionValue || 0;
+                            
+                            // Atualizar saldo de crédito e receita reconhecida
+                            const updatedPackage = await Package.findByIdAndUpdate(
+                                pkgId,
+                                {
+                                    $inc: { 
+                                        liminarCreditBalance: -sessionRevenue,
+                                        recognizedRevenue: sessionRevenue
+                                    }
+                                },
+                                { new: true, session: mongoSession }
+                            );
+
+                            // Criar registro de receita reconhecida
+                            const revenueDoc = new Payment({
+                                patient: sessionDoc.patient,
+                                doctor: sessionDoc.doctor,
+                                serviceType: 'package_session',
+                                amount: sessionRevenue,
+                                paymentMethod: 'liminar_credit',
+                                session: sessionDoc._id,
+                                package: pkgId,
+                                serviceDate: sessionDoc.date,
+                                status: 'recognized', // Status especial para receita reconhecida
+                                kind: 'revenue_recognition',
+                                notes: `Receita reconhecida - Processo: ${sessionDoc.package.liminarProcessNumber}`
+                            });
+                            await revenueDoc.save({ session: mongoSession });
+
+                            // Atualizar totalPaid do pacote (receita reconhecida)
+                            await Package.findByIdAndUpdate(
+                                pkgId,
+                                {
+                                    $inc: { totalPaid: sessionRevenue },
+                                    $push: { payments: revenueDoc._id }
+                                },
+                                { session: mongoSession }
+                            );
+
+                            sessionDoc.isPaid = true;
+                            sessionDoc.paymentStatus = 'recognized';
+                            sessionDoc.visualFlag = 'ok';
+
+                            console.log(`⚖️ Receita liminar reconhecida: R$ ${sessionRevenue} - Processo: ${sessionDoc.package.liminarProcessNumber}`);
+                            console.log(`💳 Saldo de crédito restante: R$ ${updatedPackage.liminarCreditBalance - sessionRevenue}`);
+
+                        } else if (isConvenio) {
                             // 🏥 Criar recebível de convênio
                             await criarRecebivelConvenio(sessionDoc, sessionDoc.package, mongoSession);
                             
@@ -1002,12 +1086,53 @@ export const packageOperations = {
                         // LÓGICA REFINADA DE REMOÇÃO DE PAGAMENTO
                         // ============================================
 
+                        // ⚖️ LIMINAR: Reverter reconhecimento de receita
+                        const isLiminar = sessionDoc.package.type === 'liminar';
+                        
                         // 🏥 CONVÊNIO: Remover recebível se existir
                         const isConvenio = sessionDoc.package.type === 'convenio' || 
                                           sessionDoc.paymentMethod === 'convenio' ||
                                           sessionDoc.billingType === 'convenio';
 
-                        if (isConvenio) {
+                        if (isLiminar) {
+                            // ⚖️ LIMINAR: Reverter receita reconhecida
+                            // 💡 IMPORTANTE: Não é necessário cancelar a sessão! 
+                            // Ao alterar o status de 'completed' para outro, o crédito volta automaticamente.
+                            const sessionRevenue = sessionDoc.sessionValue || sessionDoc.package.sessionValue || 0;
+                            
+                            // Buscar e remover o registro de receita reconhecida
+                            const revenueRecord = await Payment.findOne({
+                                session: sessionDoc._id,
+                                kind: 'revenue_recognition',
+                                status: 'recognized'
+                            }).session(mongoSession);
+
+                            if (revenueRecord) {
+                                // Restaurar saldo de crédito
+                                await Package.findByIdAndUpdate(
+                                    pkgId,
+                                    {
+                                        $inc: { 
+                                            liminarCreditBalance: sessionRevenue,
+                                            recognizedRevenue: -sessionRevenue,
+                                            totalPaid: -sessionRevenue
+                                        },
+                                        $pull: { payments: revenueRecord._id }
+                                    },
+                                    { session: mongoSession }
+                                );
+
+                                await Payment.deleteOne({ _id: revenueRecord._id })
+                                    .session(mongoSession);
+
+                                console.log(`⚖️ Receita liminar revertida: R$ ${sessionRevenue}`);
+                                console.log(`💡 Crédito restaurado! Status alterado de 'completed' para '${status}'. Não foi necessário cancelar a sessão.`);
+                            }
+                            
+                            sessionDoc.isPaid = false;
+                            sessionDoc.paymentStatus = 'pending';
+                            sessionDoc.visualFlag = 'pending';
+                        } else if (isConvenio) {
                             // Buscar e remover recebível de convênio
                             const recebivelConvenio = await Payment.findOne({
                                 session: sessionDoc._id,

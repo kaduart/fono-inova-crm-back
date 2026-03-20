@@ -336,6 +336,18 @@ export default class WhatsAppOrchestrator {
       // ── ESTADO INICIAL ──
       case STATES.IDLE:
       case STATES.GREETING: {
+        // 🆕 TRACKING: Detectar origem GMB (se veio de post do Google)
+        if (text.includes('Vi o post sobre') || text.includes('Vi sobre')) {
+          await Leads.updateOne({ _id: leadId }, { 
+            $set: { 
+              source: 'gmb', 
+              utmSource: 'google_business_profile',
+              gmbDetectedAt: new Date()
+            } 
+          });
+          this.logger.info('V8_GMB_SOURCE_DETECTED', { leadId, text: text.substring(0, 60) });
+        }
+        
         // Usa ctx.leadData como fonte única — resolve fragmentação entre patientInfo, stateData, qualificationData
         const hasExistingTherapy = ctx.leadData?.therapy;
         const hasExistingName = ctx.leadData?.name;

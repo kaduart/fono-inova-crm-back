@@ -51,9 +51,9 @@ const paymentSchema = new mongoose.Schema({
     // 🔹 NOVOS CAMPOS
     kind: {
         type: String,
-        enum: ['package_receipt', 'session_payment', 'manual', 'auto'],
+        enum: ['package_receipt', 'session_payment', 'manual', 'auto', 'session_completion', 'revenue_recognition'],
         default: 'manual',
-        description: 'Tipo de pagamento para rastreabilidade (ex: recibo do pacote ou pagamento unitário)'
+        description: 'Tipo de pagamento para rastreabilidade (ex: recibo do pacote, pagamento unitário, conclusão de sessão ou reconhecimento de receita)'
     },
     parentPayment: {
         type: mongoose.Schema.Types.ObjectId,
@@ -66,14 +66,15 @@ const paymentSchema = new mongoose.Schema({
         type: String,
         enum: [
             'dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'cartão',
-            'transferencia_bancaria', 'plano-unimed', 'convenio', 'outro'
+            'transferencia_bancaria', 'plano-unimed', 'convenio', 'liminar_credit', 'outro'
         ],
         required: true
     },
     status: {
         type: String,
-        enum: ['pending', 'attended', 'billed', 'paid', 'partial', 'canceled', 'advanced', 'package_paid'],
-        default: 'pending'
+        enum: ['pending', 'attended', 'billed', 'paid', 'partial', 'canceled', 'advanced', 'package_paid', 'recognized'],
+        default: 'pending',
+        description: 'Status do pagamento. "recognized" é usado para receita reconhecida de liminar'
     },
     notes: {
         type: String,
@@ -200,7 +201,7 @@ paymentSchema.post('save', async function (doc) {
                     return;
                 }
 
-                const statusMap = { paid: 'paid', pending: 'pending', canceled: 'canceled' };
+                const statusMap = { paid: 'paid', pending: 'pending', canceled: 'canceled', recognized: 'recognized' };
                 await Appointment.findByIdAndUpdate(
                     doc.appointment,
                     { paymentStatus: statusMap[doc.status] || 'pending' },

@@ -519,7 +519,7 @@ export async function generatePostForEspecialidade(especialidade, customTheme = 
       bottom: {
         objetivo: 'conversão/agendamento',
         gatilhos: ['Urgência', 'Escassez', 'Medo Estratégico'],
-        cta: 'Me chame com a palavra AVALIAÇÃO no WhatsApp - temos apenas 3 vagas esta semana',
+        cta: 'Quer entender o caso do seu filho? Me chama no WhatsApp 💚',
         tom: 'urgente mas ético'
       }
     };
@@ -1786,12 +1786,19 @@ export async function createAssistedPost(options = {}) {
     const mediaUrl = imgResult?.url || null;
 
     // Formata texto para copiar
+    // 🆕 Link WhatsApp contextualizado com especialidade
+    const especialidadeNome = especialidade.nome.toLowerCase();
+    const whatsappMessage = encodeURIComponent(
+      `Oi! Vi o post sobre ${especialidadeNome} 💚 Quero entender melhor`
+    );
+    const whatsappLink = `https://wa.me/5562993377726?text=${whatsappMessage}`;
+    
     const copyText = `${postData.content}
 
 ---
 💚 Fono Inova - Centro de Desenvolvimento Infantil
 📍 Anápolis - GO
-📲 WhatsApp: (62) 99331-5240
+📲 ${whatsappLink}
 🌐 www.clinicafonoinova.com.br`;
 
     // Salva no banco

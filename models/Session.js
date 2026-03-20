@@ -36,7 +36,7 @@ const sessionSchema = new mongoose.Schema({
     isPaid: { type: Boolean, default: false },
     paymentMethod: {
         type: String,
-        enum: ['dinheiro', 'pix', 'cartão', 'convenio'], // ← Adicionado 'convenio'
+        enum: ['dinheiro', 'pix', 'cartão', 'convenio', 'liminar_credit'], // ← Adicionado 'convenio' e 'liminar_credit'
         default: null
     },
     session: String,
@@ -51,7 +51,7 @@ const sessionSchema = new mongoose.Schema({
     notes: { type: String },
     paymentStatus: {
         type: String,
-        enum: ['paid', 'partial', 'pending', 'pending_receipt'], // ← Adicionado 'pending_receipt' para convênio
+        enum: ['paid', 'partial', 'pending', 'pending_receipt', 'recognized'], // ← Adicionado 'pending_receipt' para convênio e 'recognized' para liminar
         default: 'pending',
         description: 'Situação financeira específica desta sessão'
     },
@@ -79,7 +79,7 @@ const sessionSchema = new mongoose.Schema({
     },
     originalPaymentMethod: {
         type: String,
-        enum: ['dinheiro', 'pix', 'cartão', 'convenio'], // ← Adicionado 'convenio'
+        enum: ['dinheiro', 'pix', 'cartão', 'convenio', 'liminar_credit'], // ← Adicionado 'convenio' e 'liminar_credit'
         description: 'Método de pagamento original'
     },
     originalIsPaid: {

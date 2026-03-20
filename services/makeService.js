@@ -65,14 +65,14 @@ export async function sendPostToMake(post) {
     `${textoShort.substring(0, 220)}\n\n` +
     `🔗 Agende uma avaliação gratuita — link na bio!\n` +
     `📍 Fono Inova · Anápolis-GO\n` +
-    `📲 (62) 9933-15240\n\n` +
+    `📲 (62) 99337-7726\n\n` +
     `${hashtags}`;
 
   // Facebook: texto completo + link explícito + WhatsApp
   const facebookCaption =
     `${textoBase.substring(0, 900)}\n\n` +
     `👉 Saiba mais ou agende: ${ctaUrl}\n` +
-    `📲 WhatsApp: (62) 99331-5240\n` +
+    `📲 WhatsApp: (62) 99337-7726\n` +
     `📍 Fono Inova · Centro de Desenvolvimento Infantil · Anápolis-GO`;
 
   const payload = {
