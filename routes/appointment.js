@@ -1954,9 +1954,11 @@ router.patch('/:id/complete', auth, async (req, res) => {
                     package: packageId,
                     amount: sessionRevenue,
                     paymentMethod: 'liminar_credit',
-                    status: 'paid',  // ← Usa 'paid' igual particular!
+                    billingType: 'particular',  // ← Entra no caixa como receita particular
+                    status: 'paid',
                     kind: 'revenue_recognition',
                     serviceDate: appointment.date,
+                    paymentDate: appointment.date,  // ← Entra no caixa no dia do atendimento
                     notes: `Receita reconhecida - Processo: ${packageDoc.liminarProcessNumber || 'N/A'}`
                 });
                 await revenueDoc.save();
@@ -2017,11 +2019,14 @@ router.patch('/:id/complete', auth, async (req, res) => {
 
                 await newPayment.save();
 
-                // Vincular payment ao agendamento
+                // Vincular payment ao agendamento e à sessão
                 await Appointment.updateOne(
                     { _id: id },
                     { $set: { payment: newPayment._id } }
                 );
+                if (sessionId) {
+                    await Session.findByIdAndUpdate(sessionId, { $set: { paymentId: newPayment._id } });
+                }
 
                 // Atualizar pacote com o valor do convênio (para relatórios de receita)
                 if (convenioValue > 0 && packageId) {

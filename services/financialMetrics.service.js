@@ -154,7 +154,7 @@ class FinancialMetricsService {
         $match: {
           status: 'completed',
           paymentMethod: 'convenio',
-          package: { $exists: false }, // Sem pacote = avulso
+          $or: [{ package: { $exists: false } }, { package: null }], // Sem pacote = avulso
           date: { $gte: start.toISOString().split('T')[0], $lte: end.toISOString().split('T')[0] }
         }
       },
@@ -173,7 +173,7 @@ class FinancialMetricsService {
         $match: {
           status: 'completed',
           paymentMethod: 'convenio',
-          package: { $exists: true }, // Com pacote
+          package: { $exists: true, $ne: null }, // Com pacote
           date: { $gte: start.toISOString().split('T')[0], $lte: end.toISOString().split('T')[0] }
         }
       },
@@ -267,7 +267,12 @@ class FinancialMetricsService {
     const faturadoTotal = faturadoAgg[0]?.total || 0;
     const recebidoAvulso = recebidoAgg[0]?.total || 0;
     const recebidoPacoteTotal = recebidoPacote[0]?.total || 0;
-    const aReceberTotal = aReceberAgg[0]?.total || 0;
+    const recebidoTotal = recebidoAvulso + recebidoPacoteTotal;
+    const aReceberPaymentTotal = aReceberAgg[0]?.total || 0;
+
+    // A Receber = derivado de Atendido - Recebido (fonte única, sem ambiguidade)
+    // Cobre tanto avulso quanto pacote, igual à lógica do EntradasSaidasTab
+    const aReceberTotal = Math.max(0, atendidoTotal - recebidoTotal);
 
     return {
       atendido: {
@@ -287,20 +292,22 @@ class FinancialMetricsService {
         count: faturadoAgg[0]?.count || 0
       },
       recebido: {
-        total: recebidoAvulso + recebidoPacoteTotal,
+        total: recebidoTotal,
         avulso: recebidoAvulso,
         pacote: recebidoPacoteTotal,
         count: (recebidoAgg[0]?.count || 0) + (recebidoPacote[0]?.count || 0)
       },
       aReceber: {
         total: aReceberTotal,
+        // guias formalmente faturadas não recebidas (avulso, referência extra)
+        guiasPendentes: aReceberPaymentTotal,
         count: aReceberAgg[0]?.count || 0
       },
       // Status de comparação
       status: {
         faturadoVsAtendido: faturadoTotal - atendidoTotal,
-        recebidoVsFaturado: (recebidoAvulso + recebidoPacoteTotal) - faturadoTotal,
-        glosaPotencial: aReceberTotal > 0 ? 'Existem guias pendentes de recebimento' : null
+        recebidoVsFaturado: recebidoTotal - faturadoTotal,
+        glosaPotencial: aReceberPaymentTotal > 0 ? 'Existem guias pendentes de recebimento' : null
       }
     };
   }
@@ -652,12 +659,14 @@ class FinancialMetricsService {
       }
     ]);
 
-    // 2️⃣ Convênio pacote: sessões completadas não pagas pelo plano (acumulado — todos os meses)
+    // 2️⃣ Convênio PACOTE: sessões de pacote completadas não pagas pelo plano (acumulado — todos os meses)
+    // Apenas pacote (com package definido) — avulso já é coberto via Payment em avulsoReceivable
     const sessionReceivable = await Session.aggregate([
       {
         $match: {
           status: 'completed',
           paymentMethod: 'convenio',
+          package: { $exists: true, $ne: null },
           $or: [{ isPaid: false }, { isPaid: { $exists: false } }]
         }
       },
@@ -666,9 +675,35 @@ class FinancialMetricsService {
       },
       { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
       {
+        $lookup: {
+          from: 'payments',
+          let: { sid: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$session', '$$sid'] }, status: { $ne: 'canceled' } } },
+            { $project: { grossAmount: '$insurance.grossAmount' } },
+            { $limit: 1 }
+          ],
+          as: 'linkedPayment'
+        }
+      },
+      {
         $group: {
           _id: null,
-          total: { $sum: { $ifNull: ['$pkg.insuranceGrossAmount', 0] } },
+          total: {
+            $sum: {
+              $cond: {
+                if: { $gt: ['$sessionValue', 0] },
+                then: '$sessionValue',
+                else: {
+                  $cond: {
+                    if: { $gt: ['$pkg.insuranceGrossAmount', 0] },
+                    then: '$pkg.insuranceGrossAmount',
+                    else: { $ifNull: [{ $arrayElemAt: ['$linkedPayment.grossAmount', 0] }, 0] }
+                  }
+                }
+              }
+            }
+          },
           count: { $sum: 1 }
         }
       }
@@ -680,7 +715,7 @@ class FinancialMetricsService {
       {
         $match: {
           'transactions.type': 'debit',
-          'transactions.isPaid': false,
+          $or: [{ 'transactions.isPaid': false }, { 'transactions.isPaid': { $exists: false } }],
           'transactions.transactionDate': { $gte: start, $lte: end }
         }
       },

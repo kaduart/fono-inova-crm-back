@@ -104,28 +104,71 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     const doctorObjectId = toObjectId(doctorId);
     const patientObjectId = toObjectId(patientId);
     const excludeSelf = appointmentId ? { _id: { $ne: toObjectId(appointmentId) } } : {};
+    
+    // 🆕 NOVO: Duração do novo agendamento (padrão 40 min)
+    const newDuration = parseInt(req.body.duration) || 40;
+    const newStartMinutes = timeToMinutes(timeHHmm);
+    const newEndMinutes = newStartMinutes + newDuration;
 
-    const [doctorConflict, patientConflict] = await Promise.all([
-      Appointment.findOne({
+    // 🆕 NOVO: Buscar TODOS os agendamentos do dia para verificar sobreposição
+    const [doctorAppointments, patientAppointments] = await Promise.all([
+      Appointment.find({
         doctor: doctorObjectId,
         date,
-        time: timeHHmm,
         operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
         ...excludeSelf,
       })
+        .select("time duration patient")
         .populate("patient", "fullName")
         .lean(),
 
-      Appointment.findOne({
+      Appointment.find({
         patient: patientObjectId,
         date,
-        time: timeHHmm,
         operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
         ...excludeSelf,
       })
+        .select("time duration doctor")
         .populate("doctor", "fullName")
         .lean(),
     ]);
+
+    // 🆕 NOVO: Verificar sobreposição de intervalos para o médico
+    const doctorConflict = doctorAppointments.find((appt) => {
+      const apptTime = normalizeTimeHHmm(appt.time);
+      if (!apptTime) return false;
+      
+      const apptDuration = appt.duration || 40;
+      const apptStart = timeToMinutes(apptTime);
+      const apptEnd = apptStart + apptDuration;
+      
+      // Verifica sobreposição: [newStart, newEnd) intersect [apptStart, apptEnd)
+      const overlaps = newStartMinutes < apptEnd && newEndMinutes > apptStart;
+      
+      if (overlaps) {
+        console.log(`[checkAppointmentConflicts] CONFLITO MÉDICO: Novo ${timeHHmm}-${newEndMinutes} sobrepõe existente ${apptTime}-${apptEnd}`);
+      }
+      
+      return overlaps;
+    });
+
+    // 🆕 NOVO: Verificar sobreposição de intervalos para o paciente
+    const patientConflict = patientAppointments.find((appt) => {
+      const apptTime = normalizeTimeHHmm(appt.time);
+      if (!apptTime) return false;
+      
+      const apptDuration = appt.duration || 40;
+      const apptStart = timeToMinutes(apptTime);
+      const apptEnd = apptStart + apptDuration;
+      
+      const overlaps = newStartMinutes < apptEnd && newEndMinutes > apptStart;
+      
+      if (overlaps) {
+        console.log(`[checkAppointmentConflicts] CONFLITO PACIENTE: Novo ${timeHHmm}-${newEndMinutes} sobrepõe existente ${apptTime}-${apptEnd}`);
+      }
+      
+      return overlaps;
+    });
 
     if (doctorConflict) {
       return res.status(409).json({
@@ -176,6 +219,41 @@ export const checkAppointmentConflicts = async (req, res, next) => {
 };
 
 // ======================================================
+// 🔧 HELPERS: Cálculo de intervalos de tempo
+// ======================================================
+
+/**
+ * Converte "HH:mm" para minutos desde meia-noite
+ */
+function timeToMinutes(timeStr) {
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+/**
+ * Verifica se dois intervalos de tempo se sobrepõem
+ * slotStart/slotEnd: intervalo do slot disponível
+ * apptStart/apptEnd: intervalo do agendamento existente
+ */
+function intervalsOverlap(slotStart, slotEnd, apptStart, apptEnd) {
+  return slotStart < apptEnd && slotEnd > apptStart;
+}
+
+/**
+ * Verifica se um agendamento ocupa um slot
+ * Considerando duração padrão de 40 minutos
+ */
+function appointmentBlocksSlot(slotTime, appointmentTime, durationMinutes = 40) {
+  const slotStart = timeToMinutes(slotTime);
+  const slotEnd = slotStart + durationMinutes;
+  
+  const apptStart = timeToMinutes(appointmentTime);
+  const apptEnd = apptStart + durationMinutes;
+  
+  return intervalsOverlap(slotStart, slotEnd, apptStart, apptEnd);
+}
+
+// ======================================================
 // 🔧 FUNÇÃO: Calcular slots disponíveis (reutilizável)
 // ======================================================
 export async function calculateAvailableSlots(doctorId, date) {
@@ -217,17 +295,16 @@ export async function calculateAvailableSlots(doctorId, date) {
   
   console.log(`[calculateAvailableSlots] normalizedTimes=`, normalizedTimes);
 
-  const booked = await Appointment.find({
+  // 🚨 FIX: Buscar agendamentos COM DURAÇÃO para verificar sobreposição
+  const bookedAppointments = await Appointment.find({
     doctor: toObjectId(doctorId),
     date,
     operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
   })
-    .select("time -_id")
+    .select("time duration -_id")
     .lean();
 
-  // pre_agendados já estão incluídos na query acima (operationalStatus: 'pre_agendado'
-  // está dentro de NON_BLOCKING_OPERATIONAL_STATUSES, portanto não bloqueia o slot do doutor)
-  // Mas bloqueamos visualmente para o paciente não ver o slot como livre:
+  // 🚨 FIX: pre_agendado agora BLOQUEIA o slot (removido de NON_BLOCKING_OPERATIONAL_STATUSES)
   const preAgendadosAtivos = await Appointment.find({
     date,
     operationalStatus: 'pre_agendado',
@@ -236,26 +313,35 @@ export async function calculateAvailableSlots(doctorId, date) {
       { professionalName: { $regex: new RegExp(doctor.fullName, 'i') } }
     ]
   })
-    .select("time -_id")
+    .select("time duration -_id")
     .lean();
 
-  const bookedTimes = new Set(
-    booked
-      .map((a) => normalizeTimeHHmm(a.time))
-      .filter(Boolean)
-  );
+  // Combinar todos os agendamentos
+  const allAppointments = [...bookedAppointments, ...preAgendadosAtivos];
 
-  // Adicionar horários dos pré-agendamentos ao conjunto de bloqueados visualmente
-  preAgendadosAtivos.forEach((pa) => {
-    const normalizedTime = normalizeTimeHHmm(pa.time);
-    if (normalizedTime) {
-      bookedTimes.add(normalizedTime);
-    }
+  // 🆕 NOVO: Verificar disponibilidade por intervalo, não por hora exata
+  const availableSlots = normalizedTimes.filter((slotTime) => {
+    // Verifica se algum agendamento ocupa este slot
+    const isBlocked = allAppointments.some((appt) => {
+      const apptTime = normalizeTimeHHmm(appt.time);
+      if (!apptTime) return false;
+      
+      // Usa duração do agendamento ou padrão de 40 min
+      const apptDuration = appt.duration || 40;
+      
+      const blocks = appointmentBlocksSlot(slotTime, apptTime, apptDuration);
+      
+      if (blocks) {
+        console.log(`[calculateAvailableSlots] Slot ${slotTime} BLOQUEADO por agendamento às ${apptTime} (duração: ${apptDuration}min)`);
+      }
+      
+      return blocks;
+    });
+    
+    return !isBlocked;
   });
-
-  const availableSlots = normalizedTimes.filter((t) => !bookedTimes.has(t));
   
-  console.log(`[calculateAvailableSlots] bookedTimes=`, Array.from(bookedTimes));
+  console.log(`[calculateAvailableSlots] totalAppointments=${allAppointments.length}`);
   console.log(`[calculateAvailableSlots] availableSlots=`, availableSlots);
 
   return availableSlots;

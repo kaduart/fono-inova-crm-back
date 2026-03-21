@@ -5,12 +5,10 @@ import Appointment from '../models/Appointment.js';
 import TaxaCartao from '../models/TaxaCartao.js';
 import {
   calcularProvisionamento,
-  confirmarAgendamentosMassa,
   exportarExcel,
   gerarRelatorioAnalitico,
   getPacotesEmAndamento,
   getPacotesConcluidos,
-  liberarVagasMassa,
   simularVenda
 } from '../services/provisionamentoService.js';
 import Payment from '../models/Payment.js';
@@ -47,106 +45,6 @@ router.get('/', authorize(['admin', 'secretary']), async (req, res) => {
   }
 });
 
-/**
- * GET /api/provisionamento/atividade-hoje
- * Dashboard em tempo real: agendamentos do dia, pacotes criados, vendas
- */
-router.get('/atividade-hoje', authorize(['admin', 'secretary']), async (req, res) => {
-  try {
-    const hoje = moment().tz(TIMEZONE).format('YYYY-MM-DD');
-    const inicioDia = moment().tz(TIMEZONE).startOf('day').toDate();
-    const fimDia = moment().tz(TIMEZONE).endOf('day').toDate();
-
-    console.log('Buscando atividade do dia:', hoje);
-
-    // 1. Agendamentos de hoje (clínicaStatus pending = ainda não atendidos)
-    const agendamentosHoje = await Appointment.find({
-      date: hoje,
-      clinicalStatus: { $in: ['pending', 'scheduled'] },
-      operationalStatus: { $in: ['confirmed', 'scheduled'] }
-    })
-      .populate('patient', 'fullName phoneNumber')
-      .populate('doctor', 'fullName specialty')
-      .sort({ time: 1 })
-      .lean();
-
-    // 2. Pacotes criados hoje
-    const Package = (await import('../models/Package.js')).default;
-    const pacotesCriadosHoje = await Package.find({
-      createdAt: { $gte: inicioDia, $lte: fimDia }
-    })
-      .populate('patient', 'fullName')
-      .populate('doctor', 'fullName specialty')
-      .lean();
-
-    // 3. Agendamentos criados hoje (novos na plataforma)
-    const agendamentosCriadosHoje = await Appointment.find({
-      createdAt: { $gte: inicioDia, $lte: fimDia },
-      date: { $gte: hoje }
-    })
-      .populate('patient', 'fullName')
-      .lean();
-
-    // 4. Calcular valores
-    const valorAgendamentosHoje = agendamentosHoje.reduce((sum, apt) => sum + (apt.sessionValue || 0), 0);
-    const valorPacotesHoje = pacotesCriadosHoje.reduce((sum, pkg) => sum + (pkg.totalValue || 0), 0);
-
-    // Enriquecer dados para o front
-    const agora = moment().tz(TIMEZONE);
-    const agendaEnriquecida = agendamentosHoje.map(apt => {
-      const horaApt = moment.tz(`${apt.date}T${apt.time || '00:00'}:00`, TIMEZONE);
-      const horasRestantes = horaApt.diff(agora, 'hours');
-      const minutosRestantes = horaApt.diff(agora, 'minutes');
-
-      return {
-        ...apt,
-        statusTempo: minutosRestantes < 0 ? 'atrasado' :
-          minutosRestantes < 60 ? 'proximo' :
-            horasRestantes < 24 ? 'hoje' : 'futuro',
-        minutosAteAtendimento: minutosRestantes
-      };
-    });
-
-    res.json({
-      success: true,
-      data: {
-        data: hoje,
-        resumo: {
-          totalAgendamentosHoje: agendamentosHoje.length,
-          totalPacotesCriados: pacotesCriadosHoje.length,
-          totalNovosAgendamentos: agendamentosCriadosHoje.length,
-          valorTotalAgendado: valorAgendamentosHoje,
-          valorTotalPacotes: valorPacotesHoje,
-          faturamentoPotencialDia: valorAgendamentosHoje + valorPacotesHoje
-        },
-        agendaHoje: agendaEnriquecida,
-        pacotesCriados: pacotesCriadosHoje.map(pkg => ({
-          _id: pkg._id,
-          paciente: pkg.patient?.fullName,
-          especialidade: pkg.doctor?.specialty,
-          sessoes: pkg.totalSessions,
-          valor: pkg.totalValue,
-          statusPagamento: pkg.financialStatus,
-          horaCriacao: moment(pkg.createdAt).format('HH:mm')
-        })),
-        novosAgendamentos: agendamentosCriadosHoje.map(apt => ({
-          _id: apt._id,
-          paciente: apt.patient?.fullName,
-          data: apt.date,
-          hora: apt.time,
-          horaCriacao: moment(apt.createdAt).format('HH:mm:ss')
-        }))
-      }
-    });
-  } catch (error) {
-    console.error('Erro ao buscar atividade do dia:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao buscar atividade do dia',
-      error: error.message
-    });
-  }
-});
 
 /**
  * GET /api/provisionamento/agenda-temporaria (CORRIGIDO)
@@ -226,123 +124,7 @@ router.get('/agenda-temporaria', authorize(['admin', 'secretary']), async (req, 
   }
 });
 
-/**
- * POST /api/provisionamento/confirmar-massa (ANTIGO - mantido)
- */
-router.post('/confirmar-massa', authorize(['admin', 'secretary']), async (req, res) => {
-  try {
-    const { ids } = req.body;
 
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'IDs dos agendamentos são obrigatórios'
-      });
-    }
-
-    const resultado = await confirmarAgendamentosMassa(ids);
-
-    res.json({
-      success: true,
-      message: `${resultado.quantidade} agendamentos confirmados com sucesso`,
-      data: resultado
-    });
-  } catch (error) {
-    console.error('Erro ao confirmar agendamentos:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao confirmar agendamentos',
-      error: error.message
-    });
-  }
-});
-
-/**
- * POST /api/provisionamento/liberar-vagas (ANTIGO - mantido)
- */
-router.post('/liberar-vagas', authorize(['admin', 'secretary']), async (req, res) => {
-  try {
-    const { ids, motivo } = req.body;
-
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'IDs dos agendamentos são obrigatórios'
-      });
-    }
-
-    const resultado = await liberarVagasMassa(ids, motivo || 'Não confirmou');
-
-    res.json({
-      success: true,
-      message: `${resultado.quantidade} vagas liberadas com sucesso`,
-      data: resultado
-    });
-  } catch (error) {
-    console.error('Erro ao liberar vagas:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erro ao liberar vagas',
-      error: error.message
-    });
-  }
-});
-
-/**
- * GET /api/provisionamento/dashboard?month=03&year=2024
- * Dashboard com indicadores principais
- */
-router.get('/dashboard', authorize(['admin', 'secretary']), async (req, res) => {
-  try {
-    const { month, year } = req.query;
-
-    if (!month || !year) {
-      return res.status(400).json({
-        success: false,
-        message: 'Parâmetros obrigatórios: month e year'
-      });
-    }
-
-    const dados = await gerarRelatorioAnalitico(parseInt(month), parseInt(year));
-
-    const cards = {
-      faturamentoTotal: dados.dashboard['FATURAMENTO TOTAL'] || 0,
-      margemContribuicao: dados.dashboard['MARGEM DE CONTRIBUIÇÃO'] || 0,
-      percentualMargem: parseFloat(dados.dashboard['% MARGEM'] || 0),
-      ticketMedio: parseFloat(dados.dashboard['TICKET MÉDIO'] || 0),
-      totalVendas: dados.dashboard['TOTAL DE VENDAS'] || 0,
-      pacotesAtivos: dados.pacotesAndamento.length,
-      custosVariaveis: dados.faturamentoMes.find(m => m.Mes === moment().month(parseInt(month) - 1).format('MMMM'))?.['Total CV'] || 0
-    };
-
-    const evolucaoMensal = dados.faturamentoMes
-      .filter(m => m.Mes !== 'TOTAL ANO')
-      .map(m => ({
-        mes: m.Mes,
-        faturamento: m['Faturamento Líquido'],
-        margem: m['Margem Contrib.'],
-        custos: m['Total CV']
-      }));
-
-    const porCategoria = dados.faturamentoCategoria.map(c => ({
-      categoria: c.Categoria,
-      valor: c['Faturamento Líquido'],
-      margem: c['Margem Contrib.']
-    }));
-
-    res.json({
-      success: true,
-      periodo: { mes: parseInt(month), ano: parseInt(year), label: `${moment().month(parseInt(month) - 1).format('MMMM')}/${year}` },
-      cards,
-      evolucaoMensal,
-      porCategoria,
-      alertas: dados.pacotesAndamento.length > 0 ? `${dados.pacotesAndamento.length} pacotes em andamento` : null
-    });
-  } catch (error) {
-    console.error('Erro dashboard:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
 
 /**
  * GET /api/provisionamento/analitico?month=03&year=2024
@@ -553,19 +335,45 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
     console.log(`Mês: ${mes}/${ano} | Início: ${inicioMes} | Fim: ${fimMes} | Hoje: ${hoje}`);
     console.log(`Status: ${ehMesPassado ? 'PASSADO' : ehMesAtual ? 'ATUAL' : 'FUTURO'}`);
 
-    // 1. PRODUÇÃO = Sessões REALIZADAS no período (Session model — correto)
+    // Importar modelos
     const Payment = (await import('../models/Payment.js')).default;
     const Session = (await import('../models/Session.js')).default;
+    const Package = (await import('../models/Package.js')).default;
 
-    const sessoesDoMes = await Session.find({
-      status: 'completed',
-      date: { $gte: inicioMes, $lte: fimMes }
-    }).populate('package', 'insuranceGrossAmount').lean();
+    // 1-4. Queries independentes em paralelo
+    const [sessoesDoMes, pagamentosRecebidos, pacotesCredito, sessoesConvenioAgendadas] = await Promise.all([
+      // 1. PRODUÇÃO = Sessões realizadas no mês
+      Session.find({
+        status: 'completed',
+        date: { $gte: inicioMes, $lte: fimMes }
+      }).populate('package', 'insuranceGrossAmount sessionValue').populate('patient', 'fullName').lean(),
 
-    // Valor de cada sessão: sessionValue → pkg.insuranceGrossAmount
+      // 2. CAIXA REAL = pagamentos recebidos
+      Payment.find({
+        paymentDate: { $gte: inicioMes, $lte: fimMes },
+        status: 'paid'
+      }).lean(),
+
+      // 3. CRÉDITO DE PACOTES ativos pagos
+      Package.find({
+        type: { $ne: 'convenio' },
+        financialStatus: { $in: ['paid', 'partially_paid'] },
+        status: { $in: ['active', 'in-progress'] }
+      }).populate('patient', 'fullName').lean(),
+
+      // 4. CONVÊNIO AGENDADO no mês
+      Session.find({
+        date: { $gte: inicioMes, $lte: fimMes },
+        status: { $in: ['scheduled', 'confirmed'] },
+        paymentMethod: 'convenio'
+      }).populate('package', 'insuranceGrossAmount insuranceProvider').populate('patient', 'fullName').lean()
+    ]);
+
+    // Valor de cada sessão: sessionValue → pkg.insuranceGrossAmount → pkg.sessionValue
     const valorSessao = (s) => {
       if (s.sessionValue > 0) return s.sessionValue;
       if (s.package?.insuranceGrossAmount > 0) return s.package.insuranceGrossAmount;
+      if (s.package?.sessionValue > 0) return s.package.sessionValue;
       return 0;
     };
 
@@ -577,39 +385,33 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
     const valorRealizados = valorParticular + valorConvenio;
     const quantidadeRealizados = sessoesDoMes.length;
 
-    // 2. CAIXA REAL = pagamentos efetivamente recebidos (Payment model)
-    const pagamentosRecebidos = await Payment.find({
-      paymentDate: { $gte: inicioMes, $lte: fimMes },
-      status: 'paid'
-    });
-    
-    // 3. CRÉDITO DE PACOTES (sessões pagas não utilizadas - excluindo canceladas)
-    const Package = (await import('../models/Package.js')).default;
-    const pacotesCredito = await Package.find({
-      type: { $ne: 'convenio' },
-      financialStatus: { $in: ['paid', 'partially_paid'] },
-      status: { $in: ['active', 'in-progress'] }
-    }).populate('patient', 'fullName');
-    
+    // Crédito de pacotes: buscar sessões de todos os pacotes de uma vez (evita N+1)
     let valorCreditoPacotes = 0;
     const detalhesCreditoPacotes = [];
-    
+
+    const pacoteIds = pacotesCredito.map(p => p._id);
+    const todasSessoesPacotes = pacoteIds.length > 0
+      ? await Session.find({ package: { $in: pacoteIds }, status: { $nin: ['canceled'] } }).select('package status').lean()
+      : [];
+
+    const sessoesPorPacote = {};
+    for (const s of todasSessoesPacotes) {
+      const id = s.package.toString();
+      if (!sessoesPorPacote[id]) sessoesPorPacote[id] = [];
+      sessoesPorPacote[id].push(s);
+    }
+
     for (const pkg of pacotesCredito) {
-      // Buscar sessões não canceladas do pacote
-      const sessoesPkg = await Session.find({
-        package: pkg._id,
-        status: { $nin: ['canceled'] }
-      });
-      
+      const sessoesPkg = sessoesPorPacote[pkg._id.toString()] || [];
       const sessoesValidas = sessoesPkg.filter(s => ['scheduled', 'confirmed', 'completed'].includes(s.status));
       const sessoesFeitas = sessoesValidas.filter(s => s.status === 'completed').length;
       const sessoesAgendadas = sessoesValidas.filter(s => ['scheduled', 'confirmed'].includes(s.status)).length;
-      
+
       const sessoesPagas = pkg.paidSessions || Math.floor((pkg.totalPaid || 0) / (pkg.sessionValue || 1));
       const creditoCalculado = Math.max(0, sessoesPagas - sessoesFeitas);
       const sessoesRemanescentes = Math.min(creditoCalculado, sessoesAgendadas);
       const valor = sessoesRemanescentes * (pkg.sessionValue || 0);
-      
+
       if (valor > 0) {
         valorCreditoPacotes += valor;
         detalhesCreditoPacotes.push({
@@ -621,13 +423,6 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
         });
       }
     }
-    
-    // 4. CONVÊNIO AGENDADO (sessões de pacotes de convênio agendadas no mês)
-    const sessoesConvenioAgendadas = await Session.find({
-      date: { $gte: inicioMes, $lte: fimMes },
-      status: { $in: ['scheduled', 'confirmed'] },
-      paymentMethod: 'convenio'
-    }).populate('package', 'insuranceGrossAmount insuranceProvider').populate('patient', 'fullName');
     
     let valorConvenioAgendado = 0;
     const detalhesConvenioAgendado = sessoesConvenioAgendadas.map(s => {
@@ -650,7 +445,7 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
       data: s.date,
       hora: s.time || '--:--',
       valor: valorSessao(s),
-      paciente: s.patientName || 'Paciente',
+      paciente: s.patient?.fullName || 'Paciente',
       tipo: s.paymentMethod === 'convenio'
         ? (s.package ? 'Convênio Pacote' : 'Convênio Avulso')
         : 'Particular'
@@ -661,34 +456,36 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
     let agendados = [];
     let pendentes = [];
 
+    // Apenas agendamentos avulsos (sem pacote) — sessões de pacote são informativas via creditoPacotes
+    // e convênios agendados são contados separadamente via valorConvenioAgendado
+    const filtroAvulso = { $or: [{ package: { $exists: false } }, { package: null }] };
+
     if (ehMesPassado) {
       // MÊS PASSADO: Buscar o que foi agendado e realizado na época (histórico)
-      // Não tem projeção, só o que realmente aconteceu
       agendados = await Appointment.find({
         date: { $gte: inicioMes, $lte: fimMes },
         operationalStatus: { $in: ['confirmed', 'scheduled'] },
-        clinicalStatus: 'completed', // No passado, só conta o que foi atendido
-        package: { $exists: false }  // Exclui appointments de pacote
+        clinicalStatus: 'completed',
+        ...filtroAvulso
       }).populate('patient', 'fullName').select('sessionValue date time');
 
       valorAgendados = agendados.reduce((sum, apt) => sum + (apt.sessionValue || 0), 0);
 
-      // Pendentes do passado = agendamentos que não viraram atendimento
       pendentes = await Appointment.find({
         date: { $gte: inicioMes, $lte: fimMes },
-        clinicalStatus: { $in: ['pending', 'cancelled', 'no_show'] }
+        clinicalStatus: { $in: ['pending', 'cancelled', 'no_show'] },
+        ...filtroAvulso
       }).populate('patient', 'fullName').select('sessionValue date time');
 
       valorPendentes = pendentes.reduce((sum, apt) => sum + (apt.sessionValue || 0), 0);
 
     } else if (ehMesAtual) {
       // MÊS ATUAL: Projeção normal (restante do mês)
-      // Inclui package_paid: sessão de pacote já pago ainda vai acontecer (produção real)
       agendados = await Appointment.find({
         date: { $gt: hoje, $lte: fimMes },
         operationalStatus: { $in: ['confirmed', 'scheduled'] },
         clinicalStatus: { $nin: ['completed', 'cancelled'] },
-        package: { $exists: false }  // Exclui appointments de pacote (já contado nos pacotes)
+        ...filtroAvulso
       }).populate('patient', 'fullName').select('sessionValue date time');
 
       valorAgendados = agendados.reduce((sum, apt) => sum + (apt.sessionValue || 0), 0);
@@ -697,7 +494,7 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
         date: { $gt: hoje, $lte: fimMes },
         $or: [{ operationalStatus: 'pending' }, { operationalStatus: { $exists: false } }],
         clinicalStatus: { $ne: 'completed' },
-        package: { $exists: false }  // Exclui appointments de pacote
+        ...filtroAvulso
       }).populate('patient', 'fullName').select('sessionValue date time');
 
       valorPendentes = pendentes.reduce((sum, apt) => sum + (apt.sessionValue || 0), 0);
@@ -707,29 +504,26 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
       agendados = await Appointment.find({
         date: { $gte: inicioMes, $lte: fimMes },
         operationalStatus: { $in: ['confirmed', 'scheduled'] },
-        package: { $exists: false }  // Exclui appointments de pacote
+        ...filtroAvulso
       }).populate('patient', 'fullName').select('sessionValue date time');
 
       valorAgendados = agendados.reduce((sum, apt) => sum + (apt.sessionValue || 0), 0);
 
       pendentes = await Appointment.find({
         date: { $gte: inicioMes, $lte: fimMes },
-        $or: [{ operationalStatus: 'pending' }, { operationalStatus: { $exists: false } }]
+        $or: [{ operationalStatus: 'pending' }, { operationalStatus: { $exists: false } }],
+        ...filtroAvulso
       }).populate('patient', 'fullName').select('sessionValue date time');
 
       valorPendentes = pendentes.reduce((sum, apt) => sum + (apt.sessionValue || 0), 0);
     }
 
-    // Calcular taxa de conversão histórica (últimos 90 dias)
+    // Calcular taxa de conversão histórica (últimos 90 dias) — paralelo
     const dataCorte = moment().subtract(90, 'days').format('YYYY-MM-DD');
-    const totalHistorico = await Appointment.countDocuments({
-      date: { $gte: dataCorte, $lte: hoje },
-      operationalStatus: { $in: ['confirmed', 'scheduled'] }
-    });
-    const convertidosHistorico = await Appointment.countDocuments({
-      date: { $gte: dataCorte, $lte: hoje },
-      clinicalStatus: 'completed'
-    });
+    const [totalHistorico, convertidosHistorico] = await Promise.all([
+      Appointment.countDocuments({ date: { $gte: dataCorte, $lte: hoje }, operationalStatus: { $in: ['confirmed', 'scheduled'] } }),
+      Appointment.countDocuments({ date: { $gte: dataCorte, $lte: hoje }, clinicalStatus: 'completed' })
+    ]);
     const taxaConversao = totalHistorico > 0 ? convertidosHistorico / totalHistorico : 0.85;
 
     // Cenários
@@ -755,7 +549,8 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
       'period.end': { $gte: inicioMes }
     });
     const metaReal = planningDoMes?.targets?.expectedRevenue || 0;
-    const percentualAtual = metaReal > 0 ? (valorRealizados / metaReal) * 100 : 0;
+    // percentualAtual baseado em caixa (valorJaRecebido), não em produção (valorRealizados)
+    const percentualAtual = metaReal > 0 ? (valorJaRecebido / metaReal) * 100 : 0;
 
     // Insights
     const insights = [];
@@ -776,12 +571,13 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
       }
     } else {
       // Insights para atual/futuro
-      const gapMeta = metaReal - valorRealizados - valorAgendados;
+      // gapMeta usa valorRealista (inclui creditoPacotes e convenioAgendado) para evitar falso alarme
+      const gapMeta = metaReal - valorRealista;
       if (gapMeta > 0) {
         insights.push({
           tipo: 'warning',
           titulo: 'Meta em risco',
-          mensagem: `Faltam ${gapMeta.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} em agendamentos para bater a meta`,
+          mensagem: `Faltam ${gapMeta.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} na projeção realista para bater a meta`,
           acao: 'Agendar mais pacientes'
         });
       }
@@ -828,24 +624,24 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
         convenioAgendado: valorConvenioAgendado,
         totalPotencial: valorRealizados + valorAgendados + valorPendentes + valorCreditoPacotes + valorConvenioAgendado
       },
-      // Cenários atualizados incluindo crédito pacotes (90%) e convênio agendado (85%)
+      // creditoPacotes é informativo (dinheiro já recebido em meses anteriores) — não entra na projeção
       cenarios: {
-        pessimista: { 
-          valor: Math.round(valorRealizados + (valorAgendados * 0.7) + (valorPendentes * 0.2) + (valorCreditoPacotes * 0.8) + (valorConvenioAgendado * 0.7)), 
-          probabilidade: ehMesPassado ? 'Realizado' : '70%' 
+        pessimista: {
+          valor: Math.round(valorRealizados + (valorAgendados * 0.7) + (valorPendentes * 0.2) + (valorConvenioAgendado * 0.7)),
+          probabilidade: ehMesPassado ? 'Realizado' : '70%'
         },
-        realista: { 
-          valor: Math.round(valorRealizados + (valorAgendados * 0.85) + (valorPendentes * (taxaConversao * 0.6)) + (valorCreditoPacotes * 0.90) + (valorConvenioAgendado * 0.85)), 
-          probabilidade: ehMesPassado ? 'Realizado' : 'Mais provável' 
+        realista: {
+          valor: Math.round(valorRealizados + (valorAgendados * 0.85) + (valorPendentes * (taxaConversao * 0.6)) + (valorConvenioAgendado * 0.85)),
+          probabilidade: ehMesPassado ? 'Realizado' : 'Mais provável'
         },
-        otimista: { 
-          valor: Math.round(valorRealizados + (valorAgendados * 0.95) + (valorPendentes * 0.7) + (valorCreditoPacotes * 0.95) + (valorConvenioAgendado * 0.95)), 
-          probabilidade: ehMesPassado ? 'Potencial' : '30%' 
+        otimista: {
+          valor: Math.round(valorRealizados + (valorAgendados * 0.95) + (valorPendentes * 0.7) + (valorConvenioAgendado * 0.95)),
+          probabilidade: ehMesPassado ? 'Potencial' : '30%'
         }
       },
       metas: {
         sugerida: Math.round(metaReal),
-        gapParaMeta: ehMesPassado ? 0 : Math.max(0, metaReal - valorRealizados - valorAgendados - valorCreditoPacotes - valorConvenioAgendado),
+        gapParaMeta: ehMesPassado ? 0 : Math.max(0, metaReal - valorRealista),
         percentualAtual: Math.round(percentualAtual * 100) / 100
       },
       taxaConversaoHistorica: taxaConversao,
@@ -1037,52 +833,4 @@ router.get('/metricas-mes', authorize(['admin', 'secretary']), async (req, res) 
   }
 });
 
-/**
- * GET /api/provisionamento/paciente/:id/resumo
- * Resumo financeiro de um paciente específico
- */
-router.get('/paciente/:id/resumo', authorize(['admin', 'secretary']), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const Patient = (await import('../models/Patient.js')).default;
-    const Payment = (await import('../models/Payment.js')).default;
-    const Package = (await import('../models/Package.js')).default;
-
-    const [patient, payments, packages] = await Promise.all([
-      Patient.findById(id).select('fullName'),
-      Payment.find({ patient: id, status: 'paid' }).lean(),
-      Package.find({ patient: id }).populate('doctor', 'specialty').lean()
-    ]);
-
-    if (!patient) return res.status(404).json({ success: false, message: 'Paciente não encontrado' });
-
-    const totalPago = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
-    const pacotesAtivos = packages.filter(p => p.status !== 'completed');
-    const pacotesConcluidos = packages.filter(p => p.status === 'completed');
-
-    res.json({
-      success: true,
-      data: {
-        paciente: patient.fullName,
-        estatisticas: {
-          totalPago,
-          qtdPagamentos: payments.length,
-          pacotesAtivos: pacotesAtivos.length,
-          pacotesConcluidos: pacotesConcluidos.length
-        },
-        pacotes: packages.map(p => ({
-          _id: p._id,
-          tipo: p.sessionType,
-          status: p.status,
-          totalSessoes: p.totalSessions,
-          sessoesFeitas: p.sessionsDone,
-          valorTotal: p.totalValue,
-          pago: p.totalPaid
-        }))
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
 export default router;

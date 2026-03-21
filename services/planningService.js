@@ -41,35 +41,72 @@ export const updatePlanningProgress = async (planningId) => {
 
         // Calcular totais e separar por tipo de receita
         const completedSessions = sessions.length;
-        
-        // 1. Calcular convênio a receber (deve ser antes de calcular a receita total)
+
+        // 1. Convênio a receber (informativo apenas — NÃO entra em "Realizado")
         const pagamentosConvenioPendentes = await Payment.find({
             paymentDate: { $gte: start, $lte: end },
             billingType: 'convenio',
             'insurance.status': { $in: ['pending_billing', 'billed'] }
         }).lean();
-        
+
         const actualRevenueConvenioAReceber = pagamentosConvenioPendentes.reduce(
             (sum, p) => sum + (p.insurance?.grossAmount || 0), 0
         );
-        
-        // 2. Calcular particular e convênio recebido
+
+        // 2. Particular e convênio efetivamente recebidos (Payment status: 'paid')
         let actualRevenueParticular = 0;
         let actualRevenueConvenio = 0;
-        
+
         payments.forEach(pag => {
             const valor = pag.amount || 0;
-            // Se for convênio (billingType ou paymentMethod ou insurance.received)
-            if (pag.billingType === 'convenio' || pag.paymentMethod === 'convenio' || 
+            if (pag.billingType === 'convenio' || pag.paymentMethod === 'convenio' ||
                 pag.insurance?.status === 'received') {
                 actualRevenueConvenio += valor;
             } else {
                 actualRevenueParticular += valor;
             }
         });
-        
-        // 3. Receita total inclui: particular + convênio recebido + convênio a receber
-        const actualRevenue = actualRevenueParticular + actualRevenueConvenio + actualRevenueConvenioAReceber;
+
+        // 3. Sessões de pacote pagas diretamente (Session.isPaid=true, sem Payment vinculado)
+        // Mesma fonte que financialMetrics.service.js usa para caixa de pacote
+        const sessionsPacotePagas = await Session.aggregate([
+            {
+                $match: {
+                    isPaid: true,
+                    paidAt: { $gte: new Date(`${start}T00:00:00.000Z`), $lte: new Date(`${end}T23:59:59.999Z`) },
+                    $or: [{ paymentId: { $exists: false } }, { paymentId: null }]
+                }
+            },
+            {
+                $lookup: {
+                    from: 'payments',
+                    let: { sid: '$_id' },
+                    pipeline: [
+                        { $match: { $expr: { $or: [
+                            { $eq: ['$session', '$$sid'] },
+                            { $in: ['$$sid', { $ifNull: ['$sessions', []] }] }
+                        ]}}},
+                        { $limit: 1 }
+                    ],
+                    as: 'linkedPayment'
+                }
+            },
+            { $match: { linkedPayment: { $size: 0 } } },
+            {
+                $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg' }
+            },
+            { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: { $ifNull: ['$sessionValue', '$pkg.sessionValue'] } }
+                }
+            }
+        ]);
+        const actualRevenuePacote = sessionsPacotePagas[0]?.total || 0;
+
+        // "Realizado" = apenas receita efetivamente recebida (caixa real)
+        const actualRevenue = actualRevenueParticular + actualRevenueConvenio + actualRevenuePacote;
         
         // Calcular horas trabalhadas (baseado na duração dos agendamentos ou 40min padrão)
         const workedHours = appointments.length > 0 
@@ -87,10 +124,11 @@ export const updatePlanningProgress = async (planningId) => {
 
         console.log(`[Planning Update] ✅ Dados atualizados:`);
         console.log(`[Planning Update]    - Sessões: ${completedSessions}`);
-        console.log(`[Planning Update]    - Receita Total (inclui a receber): R$ ${actualRevenue}`);
-        console.log(`[Planning Update]      ├─ Particular: R$ ${actualRevenueParticular}`);
+        console.log(`[Planning Update]    - Receita Realizada (caixa real): R$ ${actualRevenue}`);
+        console.log(`[Planning Update]      ├─ Particular (Payment): R$ ${actualRevenueParticular}`);
         console.log(`[Planning Update]      ├─ Convênio (recebido): R$ ${actualRevenueConvenio}`);
-        console.log(`[Planning Update]      └─ Convênio (a receber): R$ ${actualRevenueConvenioAReceber}`);
+        console.log(`[Planning Update]      ├─ Pacote (Session.isPaid): R$ ${actualRevenuePacote}`);
+        console.log(`[Planning Update]      └─ Convênio (a receber — informativo): R$ ${actualRevenueConvenioAReceber}`);
         console.log(`[Planning Update]    - Horas: ${workedHours.toFixed(2)}h`);
 
         await planning.save(); // Middleware calcula progresso automaticamente
@@ -253,39 +291,38 @@ export const calculateDetailedProgress = async (planningId) => {
             criadoEm: pkg.date
         }));
 
-        // 3. Calcular totais gerais e separar por tipo
+        // 3. Calcular totais gerais e separar por tipo (apenas receita efetivamente recebida)
         let totalRevenueParticular = 0;
         let totalRevenueConvenio = 0;
-        
+
         pagamentos.forEach(pag => {
             const valor = pag.amount || 0;
-            // Se for convênio (billingType ou paymentMethod)
-            if (pag.billingType === 'convenio' || pag.paymentMethod === 'convenio' || 
+            if (pag.billingType === 'convenio' || pag.paymentMethod === 'convenio' ||
                 pag.insurance?.status === 'received') {
                 totalRevenueConvenio += valor;
             } else {
                 totalRevenueParticular += valor;
             }
         });
-        
-        // Total inclui particular + convênio recebido + convênio a receber
-        const totalRevenue = totalRevenueParticular + totalRevenueConvenio + totalConvenioAReceber;
-        
+
         const totalSessions = await Session.countDocuments({
             date: { $gte: start, $lte: end },
             status: 'completed'
         });
-        
-        // 3.1 Buscar receita de convênios a receber (não recebida ainda)
+
+        // 3.1 Convênio a receber (informativo — não entra em totalRevenue)
         const pagamentosConvenioPendentes = await Payment.find({
             paymentDate: { $gte: start, $lte: end },
             billingType: 'convenio',
             'insurance.status': { $in: ['pending_billing', 'billed'] }
         }).lean();
-        
+
         const totalConvenioAReceber = pagamentosConvenioPendentes.reduce(
             (sum, p) => sum + (p.insurance?.grossAmount || 0), 0
         );
+
+        // "Realizado" = apenas caixa real recebido (Payment + sessões de pacote sem Payment)
+        const totalRevenue = totalRevenueParticular + totalRevenueConvenio;
 
         // 4. Calcular gap (quanto falta) - baseado na receita total incluindo a receber
         const gapRevenue = Math.max(0, planning.targets.expectedRevenue - totalRevenue);

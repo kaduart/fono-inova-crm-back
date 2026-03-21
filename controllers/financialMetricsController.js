@@ -11,6 +11,7 @@
  */
 
 import financialMetricsService from '../services/financialMetrics.service.js';
+import historicalRatesService from '../services/historicalRates.service.js';
 
 /**
  * GET /api/financial/v2/overview
@@ -168,7 +169,10 @@ export const getProduction = async (req, res) => {
 export const getReceivableDetail = async (req, res) => {
   try {
     const Payment = (await import('../models/Payment.js')).default;
+    const Session = (await import('../models/Session.js')).default;
+    const Package = (await import('../models/Package.js')).default;
 
+    // 1. Guias formalmente faturadas (Payment com insurance.status: 'billed')
     const payments = await Payment.find({
       billingType: 'convenio',
       'insurance.status': 'billed'
@@ -177,18 +181,99 @@ export const getReceivableDetail = async (req, res) => {
       .sort({ 'insurance.billedAt': -1 })
       .lean();
 
-    const items = payments.map(p => ({
+    const paymentItems = payments.map(p => ({
       _id: p._id,
       patientName: p.patient?.fullName || '—',
       convenio: p.insurance?.name || p.convenioName || '—',
       grossAmount: p.insurance?.grossAmount || 0,
       billedAt: p.insurance?.billedAt,
-      status: p.insurance?.status
+      status: 'Guia faturada',
+      source: 'payment'
     }));
 
-    res.json({ success: true, data: { items, total: items.reduce((s, i) => s + i.grossAmount, 0), count: items.length } });
+    // 2. Sessões de pacote convênio completadas não pagas (sem Payment vinculado)
+    const sessionsPendentes = await Session.aggregate([
+      {
+        $match: {
+          status: 'completed',
+          paymentMethod: 'convenio',
+          package: { $exists: true, $ne: null },
+          $or: [{ isPaid: false }, { isPaid: { $exists: false } }]
+        }
+      },
+      {
+        $lookup: {
+          from: 'payments',
+          let: { sid: '$_id' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$session', '$$sid'] }, status: { $ne: 'canceled' } } },
+            { $limit: 1 }
+          ],
+          as: 'linkedPayment'
+        }
+      },
+      { $match: { linkedPayment: { $size: 0 } } },
+      { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg' } },
+      { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+      { $lookup: { from: 'patients', localField: 'patient', foreignField: '_id', as: 'patientDoc' } },
+      { $unwind: { path: '$patientDoc', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          _id: 1,
+          patientName: { $ifNull: ['$patientDoc.fullName', '—'] },
+          convenio: { $ifNull: ['$pkg.insuranceProvider', '—'] },
+          grossAmount: {
+            $cond: {
+              if: { $gt: ['$sessionValue', 0] },
+              then: '$sessionValue',
+              else: { $ifNull: ['$pkg.insuranceGrossAmount', 0] }
+            }
+          },
+          date: '$date',
+          status: { $literal: 'Sessão não paga' },
+          source: { $literal: 'session' }
+        }
+      }
+    ]);
+
+    const items = [...paymentItems, ...sessionsPendentes]
+      .sort((a, b) => (b.billedAt || b.date || '') > (a.billedAt || a.date || '') ? 1 : -1);
+
+    res.json({ success: true, data: { items, total: items.reduce((s, i) => s + (i.grossAmount || 0), 0), count: items.length } });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * GET /api/financial/v2/historical-rates
+ *
+ * Taxas históricas de comparecimento e pagamento (últimos N dias)
+ * Usadas para calcular cenários de projeção com dados reais
+ */
+export const getHistoricalRates = async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 90;
+
+    if (days < 7 || days > 365) {
+      return res.status(400).json({
+        success: false,
+        error: 'INVALID_DAYS',
+        message: 'days deve estar entre 7 e 365'
+      });
+    }
+
+    const rates = await historicalRatesService.getHistoricalRates(days);
+
+    res.json({ success: true, data: rates });
+
+  } catch (error) {
+    console.error('❌ Erro ao calcular taxas históricas:', error);
+    res.status(500).json({
+      success: false,
+      error: 'INTERNAL_ERROR',
+      message: error.message
+    });
   }
 };
 
