@@ -16,6 +16,8 @@ import express from 'express';
 import moment from 'moment-timezone';
 import NodeCache from 'node-cache';
 import { auth, authorize } from '../../middleware/auth.js';
+import financialMetricsService from '../../services/financialMetrics.service.js';
+import historicalRatesService from '../../services/historicalRates.service.js';
 
 const router = express.Router();
 const TIMEZONE = 'America/Sao_Paulo';
@@ -125,40 +127,159 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     const ehPeriodoPassado = fimPeriodo < hoje;
     const ehPeriodoAtual = (inicioPeriodo <= hoje && fimPeriodo >= hoje);
 
-    // Importar models
+    // Importar models (apenas os que não são cobertos pelo serviço)
     const { default: Session } = await import('../../models/Session.js');
-    const { default: Payment } = await import('../../models/Payment.js');
-    const { default: Package } = await import('../../models/Package.js');
     const { default: Appointment } = await import('../../models/Appointment.js');
     const { default: Planning } = await import('../../models/Planning.js');
-    const { default: Doctor } = await import('../../models/Doctor.js');
+    const { default: Package } = await import('../../models/Package.js');
+    const { default: Payment } = await import('../../models/Payment.js');
 
     // ========================================
-    // 1. PRODUÇÃO (Sessões completed)
+    // 1+2. PRODUÇÃO, CAIXA e A RECEBER — via financialMetricsService (source of truth)
     // ========================================
+    const period = { startDate: new Date(inicioPeriodo), endDate: new Date(fimPeriodo) };
+    const overview = await financialMetricsService.getOverview(period);
+
+    const producaoTotal = overview.production.total;
+    const producaoConvenio = overview.production.byPaymentMethod?.convenio?.total || 0;
+    const producaoParticular = overview.production.byPaymentMethod?.particular?.total || 0;
+    const producaoPacotes = producaoTotal - producaoConvenio - producaoParticular;
+
+    // ========================================
+    // 2. CAIXA (Pagamentos recebidos) — Cálculo manual correto
+    // ========================================
+    // Parte 1: Particular (Payment model)
+    // Particular: status paid + billingType particular + paymentDate no período
+    // paymentDate é string 'YYYY-MM-DD'
+    const particularPayments = await Payment.aggregate([
+      {
+        $match: {
+          billingType: 'particular',
+          status: 'paid',
+          paymentDate: { $gte: inicioPeriodo, $lte: fimPeriodo }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+    const particularTotal = particularPayments[0]?.total || 0;
+
+    // Parte 2: Convênio (Payment model)
+    // Convênio: insurance.receivedAt no período (data que o dinheiro chegou)
+    // Converte inicioPeriodo/fimPeriodo para Date
+    const inicioDate = new Date(inicioPeriodo);
+    const fimDate = new Date(fimPeriodo);
+    // Ajusta fimDate para o final do dia
+    fimDate.setHours(23, 59, 59, 999);
+
+    const convenioPayments = await Payment.aggregate([
+      {
+        $match: {
+          billingType: 'convenio',
+          'insurance.status': { $in: ['received', 'partial'] },
+          'insurance.receivedAt': { $gte: inicioDate, $lte: fimDate }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$insurance.receivedAmount' },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+    const convenioTotal = convenioPayments[0]?.total || 0;
+
+    // Parte 3: Sessões de pacote convênio (Session model)
+    // Sessões pagas sem Payment associado (FASE 1 híbrido)
+    // Proteção anti-duplicação: lookup em payments verificando se existe Payment vinculado
+    const sessoesResult = await Session.aggregate([
+      {
+        $match: {
+          isPaid: true,
+          paidAt: { $gte: inicioDate, $lte: fimDate },
+          paymentMethod: 'convenio',
+          $or: [
+            { paymentId: { $exists: false } },
+            { paymentId: null }
+          ]
+        }
+      },
+      {
+        // 🛡️ PROTEÇÃO: Lookup em Payment para garantir não existe
+        $lookup: {
+          from: 'payments',
+          let: { sessionId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $or: [
+                    { $eq: ['$session', '$$sessionId'] },
+                    { $in: ['$$sessionId', { $ifNull: ['$sessions', []] }] }
+                  ]
+                }
+              }
+            },
+            { $limit: 1 }
+          ],
+          as: 'linkedPayment'
+        }
+      },
+      {
+        // Só inclui se NÃO existe Payment vinculado
+        $match: {
+          linkedPayment: { $size: 0 }
+        }
+      },
+      {
+        $lookup: {
+          from: 'packages',
+          localField: 'package',
+          foreignField: '_id',
+          as: 'pkg'
+        }
+      },
+      {
+        $unwind: {
+          path: '$pkg',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        // Usa sessionValue (histórico imutável) ou fallback para package
+        $group: {
+          _id: null,
+          total: {
+            $sum: {
+              $ifNull: ['$sessionValue', '$pkg.insuranceGrossAmount']
+            }
+          },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+    const sessoesTotal = sessoesResult[0]?.total || 0;
+
+    // Resultado final: caixaTotal
+    const caixaTotal = particularTotal + convenioTotal + sessoesTotal;
+
+    const aReceberTotal = overview.receivable.total;
+    const aReceberConvenio = overview.receivable.convenio?.total || 0;
+    const aReceberParticular = overview.receivable.particular?.doMes?.total || 0;
+
+    // Sessões do mês — apenas para analytics/detalhes (produção já calculada pelo serviço)
     const sessoesDoMes = await Session.find({
       status: 'completed',
       date: { $gte: inicioPeriodo, $lte: fimPeriodo }
     }).populate('package', 'insuranceGrossAmount type').populate('doctor', 'fullName specialty').lean();
 
     const valorSessao = (s) => s.sessionValue || s.package?.insuranceGrossAmount || 0;
-
-    let producaoParticular = 0;
-    let producaoPacotes = 0;
-    let producaoConvenio = 0;
-
-    sessoesDoMes.forEach(s => {
-      const valor = valorSessao(s);
-      if (s.paymentMethod === 'convenio') {
-        producaoConvenio += valor;
-      } else if (s.package) {
-        producaoPacotes += valor;
-      } else {
-        producaoParticular += valor;
-      }
-    });
-
-    const producaoTotal = producaoParticular + producaoPacotes + producaoConvenio;
 
     // Detalhes por especialidade
     const porEspecialidade = {};
@@ -171,16 +292,6 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
       porEspecialidade[esp].count += 1;
       if (s.patient) porEspecialidade[esp].pacientesUnicos.add(s.patient.toString());
     });
-
-    // ========================================
-    // 2. CAIXA (Pagamentos recebidos)
-    // ========================================
-    const pagamentosRecebidos = await Payment.find({
-      paymentDate: { $gte: inicioPeriodo, $lte: fimPeriodo },
-      status: 'paid'
-    });
-
-    const caixaTotal = pagamentosRecebidos.reduce((sum, p) => sum + (p.amount || 0), 0);
 
     // ========================================
     // 3. CRÉDITO PACOTES (Sessões pagas não utilizadas)
@@ -244,41 +355,77 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     }));
 
     // ========================================
-    // 5. AGENDADOS E PENDENTES (Avulsos - sem pacote)
+    // 5. AGENDADOS E PENDENTES (todos os tipos: avulso, pacote, avaliação, etc.)
     // ========================================
-    const agendadosAvulsos = await Appointment.find({
+    const agendadosTodos = await Appointment.find({
       date: { $gte: inicioPeriodo, $lte: fimPeriodo },
       operationalStatus: { $in: ['confirmed', 'scheduled'] },
-      clinicalStatus: { $nin: ['completed', 'cancelled'] },
-      package: { $exists: false }
+      clinicalStatus: { $nin: ['completed', 'cancelled'] }
     });
 
-    const pendentesAvulsos = await Appointment.find({
+    const pendentesTodos = await Appointment.find({
       date: { $gte: inicioPeriodo, $lte: fimPeriodo },
       $or: [{ operationalStatus: 'pending' }, { operationalStatus: { $exists: false } }],
-      clinicalStatus: { $ne: 'completed' },
-      package: { $exists: false }
+      clinicalStatus: { $ne: 'completed' }
     });
 
-    const agendadosValor = agendadosAvulsos.reduce((sum, a) => sum + (a.sessionValue || 0), 0);
-    const pendentesValor = pendentesAvulsos.reduce((sum, a) => sum + (a.sessionValue || 0), 0);
+    // Total (todos os tipos) — usado no Provisionamento
+    const agendadosValor = agendadosTodos.reduce((sum, a) => sum + (a.sessionValue || 0), 0);
+    const pendentesValor = pendentesTodos.reduce((sum, a) => sum + (a.sessionValue || 0), 0);
+
+    // Avulso (sem pacote) — usado nos Cenários: sessões de pacote não geram novo caixa
+    const agendadosAvulsoValor = agendadosTodos
+      .filter(a => !a.package)
+      .reduce((sum, a) => sum + (a.sessionValue || 0), 0);
+    const pendentesAvulsoValor = pendentesTodos
+      .filter(a => !a.package)
+      .reduce((sum, a) => sum + (a.sessionValue || 0), 0);
 
     // ========================================
-    // 6. CENÁRIOS DE PROJEÇÃO
+    // 6. CENÁRIOS DE PROJEÇÃO (taxas históricas reais)
     // ========================================
-    const taxaConversao = 0.85;
+
+    // Busca taxas históricas dos últimos 90 dias (cache 1h)
+    const rates = await historicalRatesService.getHistoricalRates(90);
+    const { attendanceRate, paymentRate, conversionRate } = rates;
+
+    // Variações por cenário (cap em 1.0 para evitar > 100%)
+    const cap = (v) => Math.min(v, 1);
+
+    // Base garantida = caixa já recebido + a receber do mês (trabalho feito, dinheiro pendente)
+    // Cenários só adicionam probabilidade sobre o futuro (avulso + convênio agendado + pendentes)
+    // Sessões de pacote não entram nos cenários: cash já foi recebido no pacote
+    const baseGarantida = caixaTotal + aReceberTotal;
 
     const cenarios = {
       pessimista: {
-        valor: Math.round(producaoTotal + (agendadosValor * 0.7) + (pendentesValor * 0.2) + (creditoPacotesValor * 0.8) + (convenioAgendadoValor * 0.7)),
+        // Taxas reduzidas: -15% comparecimento, -10% pagamento, -20% conversão
+        valor: Math.round(
+          baseGarantida
+          + (agendadosAvulsoValor  * cap(attendanceRate * 0.85) * cap(paymentRate * 0.90))
+          + (pendentesAvulsoValor  * cap(conversionRate * 0.80) * cap(attendanceRate * 0.85) * cap(paymentRate * 0.90))
+          + (convenioAgendadoValor * cap(attendanceRate * 0.85))
+        ),
         probabilidade: ehPeriodoPassado ? 'Realizado' : 'Baixa'
       },
       realista: {
-        valor: Math.round(producaoTotal + (agendadosValor * 0.85) + (pendentesValor * taxaConversao * 0.6) + (creditoPacotesValor * 0.90) + (convenioAgendadoValor * 0.85)),
+        // Taxas históricas reais sem ajuste
+        valor: Math.round(
+          baseGarantida
+          + (agendadosAvulsoValor  * attendanceRate * paymentRate)
+          + (pendentesAvulsoValor  * conversionRate * attendanceRate * paymentRate)
+          + (convenioAgendadoValor * attendanceRate)
+        ),
         probabilidade: ehPeriodoPassado ? 'Realizado' : 'Alta'
       },
       otimista: {
-        valor: Math.round(producaoTotal + (agendadosValor * 0.95) + (pendentesValor * 0.7) + (creditoPacotesValor * 0.95) + (convenioAgendadoValor * 0.95)),
+        // Taxas aumentadas: +5% comparecimento, +2% pagamento, +10% conversão
+        valor: Math.round(
+          baseGarantida
+          + (agendadosAvulsoValor  * cap(attendanceRate * 1.05) * cap(paymentRate * 1.02))
+          + (pendentesAvulsoValor  * cap(conversionRate * 1.10) * cap(attendanceRate * 1.05) * cap(paymentRate * 1.02))
+          + (convenioAgendadoValor * cap(attendanceRate * 1.05))
+        ),
         probabilidade: ehPeriodoPassado ? 'Potencial' : 'Média'
       }
     };
@@ -300,7 +447,7 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     // ========================================
     const insights = [];
     if (ehPeriodoAtual && metaMensal > 0) {
-      const gap = metaMensal - producaoTotal - agendadosValor - creditoPacotesValor - convenioAgendadoValor;
+      const gap = metaMensal - producaoTotal - agendadosValor - convenioAgendadoValor;
       if (gap > 0) {
         insights.push({
           tipo: 'warning',
@@ -376,14 +523,28 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
           convenio: producaoConvenio
         },
         caixa: caixaTotal,
+        aReceber: {
+          total: aReceberTotal,
+          convenio: aReceberConvenio,
+          particular: aReceberParticular
+        },
         creditoPacotes: creditoPacotesValor,
         convenioAgendado: convenioAgendadoValor,
-        agendadoConfirmado: agendadosValor,
+        agendadoConfirmado: agendadosValor,        // todos os tipos (para provisionamento)
         pendenteConfirmacao: pendentesValor,
-        provisionamento: producaoTotal + creditoPacotesValor + convenioAgendadoValor + agendadosValor
+        // Provisionamento = caixa + a receber + todos os agendamentos futuros do mês (qqr tipo)
+        provisionamento: caixaTotal + aReceberTotal + agendadosValor + convenioAgendadoValor
       },
       // Para Inteligência Financeira
       cenarios,
+      taxasProjecao: {
+        attendanceRate: rates.attendanceRate,
+        paymentRate: rates.paymentRate,
+        conversionRate: rates.conversionRate,
+        conversionRateSource: rates.conversionRateSource,
+        confidence: rates.confidence,
+        basePeriodDays: rates.basePeriodDays
+      },
       meta: {
         valor: metaMensal,
         percentualAtual: Math.round(percentualMeta * 100) / 100,
@@ -422,14 +583,14 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
         })),
         creditoPacotes: creditoPacotesDetalhes,
         convenioAgendado: convenioAgendadoDetalhes,
-        agendados: agendadosAvulsos.map(a => ({
+        agendados: agendadosTodos.filter(a => !a.package).map(a => ({
           _id: a._id,
           data: a.date,
           hora: a.time,
           paciente: a.patient?.fullName || 'N/A',
           valor: a.sessionValue || 0
         })),
-        pendentes: pendentesAvulsos.map(p => ({
+        pendentes: pendentesTodos.filter(p => !p.package).map(p => ({
           _id: p._id,
           data: p.date,
           hora: p.time,
@@ -458,6 +619,116 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
       message: 'Erro ao carregar dashboard', 
       error: error.message 
     });
+  }
+});
+
+/**
+ * @route   GET /api/financial/dashboard/projection-daily
+ * @desc    Projeção acumulada dia a dia: real passado + meta ideal + estimativa futura
+ * @query   month, year, projecaoFinal (opcional — valor do cenário esperado já calculado)
+ */
+router.get('/projection-daily', auth, authorize(['admin', 'secretary']), async (req, res) => {
+  try {
+    const { month, year, projecaoFinal: projecaoParam } = req.query;
+    const mes = parseInt(month) || moment().tz(TIMEZONE).month() + 1;
+    const ano = parseInt(year)  || moment().tz(TIMEZONE).year();
+
+    const diasNoMes = new Date(ano, mes, 0).getDate();
+    const startStr  = `${ano}-${String(mes).padStart(2, '0')}-01`;
+    const endStr    = `${ano}-${String(mes).padStart(2, '0')}-${diasNoMes}`;
+    const hoje      = moment().tz(TIMEZONE).format('YYYY-MM-DD');
+
+    const { default: Payment  } = await import('../../models/Payment.js');
+    const { default: Planning } = await import('../../models/Planning.js');
+
+    // 1. Aggregate pagamentos por dia (todos os pagamentos pagos do mês)
+    const dailyRaw = await Payment.aggregate([
+      { $match: { status: 'paid', paymentDate: { $gte: startStr, $lte: endStr } } },
+      { $group: { _id: '$paymentDate', total: { $sum: '$amount' } } }
+    ]);
+
+    const dailyMap = {};
+    dailyRaw.forEach(d => { dailyMap[d._id] = d.total; });
+
+    // 2. Meta mensal do Planning
+    const planning = await Planning.findOne({
+      type: 'monthly',
+      'period.start': { $lte: endStr },
+      'period.end':   { $gte: startStr }
+    }).lean();
+    const meta = planning?.targets?.expectedRevenue || 0;
+
+    // 3. Montar array dia a dia com acumulado real
+    let cumReal = 0;
+    let diasDecorridos = 0;
+    const days = [];
+
+    for (let d = 1; d <= diasNoMes; d++) {
+      const dateStr  = `${ano}-${String(mes).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const isToday  = dateStr === hoje;
+      const isFuture = dateStr > hoje;
+
+      if (!isFuture) {
+        cumReal += dailyMap[dateStr] || 0;
+        diasDecorridos = d;
+      }
+
+      days.push({
+        date:             dateStr,
+        dayOfMonth:       d,
+        metaIdeal:        meta > 0 ? Math.round(meta * d / diasNoMes) : null,
+        realAcumulado:    isFuture ? null : Math.round(cumReal),
+        projecaoAcumulada: null, // preenchido abaixo
+        isToday
+      });
+    }
+
+    // 4. projecaoFinal: usa param do frontend (cenário esperado) ou extrapola pelo ritmo atual
+    const realHoje = cumReal;
+    let projecaoFinal;
+    if (projecaoParam && !isNaN(parseFloat(projecaoParam))) {
+      projecaoFinal = parseFloat(projecaoParam);
+    } else if (diasDecorridos >= 7) {
+      projecaoFinal = Math.round((realHoje / diasDecorridos) * diasNoMes);
+    } else {
+      projecaoFinal = meta || Math.round((realHoje / Math.max(diasDecorridos, 1)) * diasNoMes);
+    }
+
+    // 5. Distribuir o restante linearmente pelos dias futuros
+    const diasRestantes      = diasNoMes - diasDecorridos;
+    const remainingProjected = Math.max(0, projecaoFinal - realHoje);
+    const perDay             = diasRestantes > 0 ? remainingProjected / diasRestantes : 0;
+
+    let diasFuturosContados = 0;
+    days.forEach(d => {
+      if (d.realAcumulado !== null) {
+        d.projecaoAcumulada = d.realAcumulado;
+      } else {
+        diasFuturosContados++;
+        d.projecaoAcumulada = Math.round(realHoje + perDay * diasFuturosContados);
+      }
+    });
+
+    const metaIdealHoje = meta > 0 ? Math.round(meta * diasDecorridos / diasNoMes) : 0;
+
+    res.json({
+      success: true,
+      data: days,
+      meta: {
+        metaMensal: meta,
+        realHoje,
+        projecaoFinal,
+        diasDecorridos,
+        diasRestantes,
+        metaIdealHoje,
+        isBehind: meta > 0 && realHoje < metaIdealHoje,
+        gapPercent: metaIdealHoje > 0 ? Number(((realHoje / metaIdealHoje) - 1).toFixed(4)) : 0
+      }
+    });
+
+  } catch (error) {
+    console.error('[Dashboard] Erro projection-daily:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

@@ -1006,6 +1006,22 @@ export default class WhatsAppOrchestrator {
       case 'LAUDO_QUERY':
         return this._handleLaudoInquiry(lead);
 
+      // 🆕 NOVOS: Respostas específicas para LPs
+      case 'LP_AUTISMO':
+        return this._handleAutismoInquiry(lead);
+        
+      case 'LP_DISLEXIA':
+        return this._handleDislexiaInquiry(lead);
+        
+      case 'LP_TDAH':
+        return this._handleTDAHInquiry(lead);
+        
+      case 'LP_FALA_TARDIA':
+        return this._handleFalaTardiaInquiry(lead);
+        
+      case 'LP_DIFICULDADE_ESCOLAR':
+        return this._handleDificuldadeEscolarInquiry(lead);
+
       default:
         return 'Claro, posso ajudar com isso! 💚';
     }
@@ -1021,6 +1037,88 @@ export default class WhatsAppOrchestrator {
     
     // Se não é neuropsicologia ou não tem terapia definida, explica geral
     return '📝 Na **Neuropsicologia** emitimos laudo completo após a avaliação (aprox. 10 sessões).\n\nNas outras especialidades (Psicologia, Fonoaudiologia, Terapia Ocupacional), os profissionais fazem relatórios de acompanhamento, mas *não* emitimos laudos médicos — esses são emitidos apenas por médicos (neuropediatra, psiquiatra, etc.).\n\nVocê está buscando avaliação com laudo? 💚';
+  }
+
+  // 🆕 NOVOS HANDLERS PARA LPs
+  
+  _handleAutismoInquiry(lead) {
+    return `🧩 Oi! Que bom que entrou em contato sobre **avaliação de autismo**! 💚
+
+A avaliação é feita por uma equipe multiprofissional (psicólogo + fonoaudiólogo) e inclui:
+• Entrevista com os pais
+• Observação da criança
+• Aplicação de protocolos validados
+• Emissão de laudo completo (se necessário)
+
+⏰ Quanto mais cedo o diagnóstico, melhores os resultados da intervenção!
+
+Me conta: qual a idade da criança e quais comportamentos você tem observado? 😊`;
+  }
+
+  _handleDislexiaInquiry(lead) {
+    return `📚 Oi! Vamos falar sobre **dislexia**! 💚
+
+A dislexia tem tratamento e quanto antes identificarmos, melhor! 
+
+**Sinais comuns:**
+• Troca letras parecidas (b/d, p/q)
+• Leitura espelhada ou truncada
+• Leitura muito lenta
+
+**Como funciona:**
+Fazemos avaliação psicopedagógica completa e criamos um plano terapêutico personalizado com método fônico estruturado.
+
+⏰ Intervenção antes dos 9 anos tem 90% de sucesso!
+
+Qual a idade da criança e em qual série está? 😊`;
+  }
+
+  _handleTDAHInquiry(lead) {
+    return `🎯 Oi! Entrou em contato sobre **TDAH**! 💚
+
+O TDAH tem 3 pilares principais:
+1️⃣ Desatenção (distrai-se fácil)
+2️⃣ Hiperatividade (inquietação)
+3️⃣ Impulsividade (age sem pensar)
+
+**Avaliação:**
+Fazemos avaliação neuropsicológica completa com testes de atenção e funções executivas.
+
+⚠️ Sem tratamento pode gerar baixo rendimento escolar e baixa autoestima.
+
+Qual a idade da criança e quais desses sinais você tem observado? 😊`;
+  }
+
+  _handleFalaTardiaInquiry(lead) {
+    return `🗣️ Oi! Vamos conversar sobre **fala tardia**! 💚
+
+**Sinais de alerta:**
+• Aos 2 anos: não junta 2 palavras
+• Vocabulário muito limitado
+• Aos 3 anos: não forma frases
+
+⏰ Cada mês sem intervenção é um mês de atraso que pode ser evitado!
+
+**Como funciona:**
+Avaliamos o desenvolvimento da linguagem e criamos um plano terapêutico individualizado.
+
+Qual a idade da criança e como está a fala dela hoje? 😊`;
+  }
+
+  _handleDificuldadeEscolarInquiry(lead) {
+    return `📖 Oi! Entrou em contato sobre **dificuldade escolar**! 💚
+
+Isso pode ser dislexia, TDAH ou outra condição — a avaliação neuropsicológica identifica exatamente onde está a dificuldade.
+
+**Sinais:**
+• Notas baixas mesmo estudando
+• Troca letras ao ler/escrever
+• Dificuldade de concentração
+
+**Processo:**
+Avaliação completa → Laudo detalhado → Plano de intervenção personalizado
+
+Em qual série está a criança e qual a principal dificuldade? 😊`;
   }
 
   async _handlePriceInquiry(lead) {

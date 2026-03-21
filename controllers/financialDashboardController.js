@@ -86,17 +86,18 @@ export const getDashboard = async (req, res) => {
     const creditoPacotes = camadas.creditoPacotes?.valor || 0;
     const convenioAgendado = camadas.convenioAgendado?.valor || 0;
 
+    // creditoPacotes é informativo — não entra na projeção (dinheiro já recebido em meses anteriores)
     const cenarios = {
       pessimista: {
-        valor: Math.round(producaoTotal + (agendadoConfirmado * 0.7) + (agendadoPendente * 0.2) + (creditoPacotes * 0.8) + (convenioAgendado * 0.7)),
+        valor: Math.round(producaoTotal + (agendadoConfirmado * 0.7) + (agendadoPendente * 0.2) + (convenioAgendado * 0.7)),
         probabilidade: 'Baixa'
       },
       realista: {
-        valor: Math.round(producaoTotal + (agendadoConfirmado * 0.85) + (agendadoPendente * 0.40) + (creditoPacotes * 0.90) + (convenioAgendado * 0.85)),
+        valor: Math.round(producaoTotal + (agendadoConfirmado * 0.85) + (agendadoPendente * 0.40) + (convenioAgendado * 0.85)),
         probabilidade: 'Alta'
       },
       otimista: {
-        valor: Math.round(producaoTotal + (agendadoConfirmado * 0.95) + (agendadoPendente * 0.70) + (creditoPacotes * 0.95) + (convenioAgendado * 0.95)),
+        valor: Math.round(producaoTotal + (agendadoConfirmado * 0.95) + (agendadoPendente * 0.70) + (convenioAgendado * 0.95)),
         probabilidade: 'Média'
       }
     };

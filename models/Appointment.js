@@ -234,7 +234,7 @@ appointmentSchema.index(
     unique: true,
     name: 'unique_appointment_slot',
     partialFilterExpression: {
-      // pre_agendado e canceled não bloqueiam o slot
+      // 🚨 APENAS canceled não bloqueia o slot (pre_agendado agora BLOQUEIA para evitar duplicatas)
       operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
       doctor: { $exists: true, $ne: null }
     }

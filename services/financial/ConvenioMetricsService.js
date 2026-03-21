@@ -251,10 +251,8 @@ class ConvenioMetricsService {
         const porMes = {};
 
         for (const sessao of sessoes) {
-            const valor = sessao.package?.insuranceGrossAmount || 
-                         sessao.sessionValue || 
-                         180; // fallback
-            
+            const valor = sessao.package?.insuranceGrossAmount || sessao.sessionValue || 0;
+            if (valor === 0) continue;
             total += valor;
 
             // Agrupa por mês da sessão (não do recebimento)
@@ -311,10 +309,8 @@ class ConvenioMetricsService {
         const porConvenio = {};
 
         for (const sessao of sessoes) {
-            const valor = sessao.package?.insuranceGrossAmount || 
-                         sessao.sessionValue || 
-                         180; // fallback
-            
+            const valor = sessao.package?.insuranceGrossAmount || sessao.sessionValue || 0;
+            if (valor === 0) continue;
             total += valor;
 
             // Agrupa por mês da sessão
@@ -359,10 +355,7 @@ class ConvenioMetricsService {
         const porEspecialidade = {};
 
         for (const sessao of sessoes) {
-            // Valor da sessão (do pacote ou fallback)
-            const valor = sessao.package?.insuranceGrossAmount || 
-                         sessao.sessionValue || 
-                         180; // fallback
+            const valor = sessao.package?.insuranceGrossAmount || sessao.sessionValue || 0;
 
             total += valor;
 
@@ -410,15 +403,15 @@ class ConvenioMetricsService {
         };
 
         for (const sessao of sessoes) {
-            const valor = sessao.package?.insuranceGrossAmount || 
-                         sessao.sessionValue || 
-                         180;
+            // Só conta sessões efetivamente não pagas
+            if (sessao.isPaid === true) continue;
+
+            const valor = sessao.package?.insuranceGrossAmount || sessao.sessionValue || 0;
+            if (valor === 0) continue; // ignora sessões sem valor real cadastrado
 
             total += valor;
 
-            // Determina status (simplificado - idealmente viria do Payment)
-            const status = sessao.isPaid ? 'partial' : 'pending_billing';
-            
+            const status = 'pending_billing';
             porStatus[status].valor += valor;
             porStatus[status].quantidade += 1;
         }

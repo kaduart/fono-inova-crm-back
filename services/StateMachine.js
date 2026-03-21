@@ -52,8 +52,15 @@ const GLOBAL_INTENTS = {
     LOCATION_QUERY: /(endere[çc]o|onde\s*fica|localiza[çc][ãa]o|como\s*cheg)/i,
     INSURANCE_QUERY: /(plano|conv[eê]nio|unimed|amil|bradesco\s*sa[uú]de|sulam[eé]rica|aceita)/i,
     CONTACT_QUERY: /(whatsapp|telefone|contato|ligar)/i,
-    HOURS_QUERY: /(hor[aá]rio\s*de\s*funcionamento|que\s*horas\s*(abre|fecha)|funciona)/i,
+    HOURS_QUERY: /(hor[aá]rio\s*(de\s*funcionamento|que\s*voc[êe]s\s*(atende|funciona))|que\s*horas\s*(abre|fecha|são|atende)|quando\s*(abre|fecha|atende)|dias\s*e\s*hor[áa]rios)/i,
     LAUDO_QUERY: /(emite|faz|elabora|precisa\s*de|tem)\s*laudo|laudo\s*(é|são|emitido|feito)|quem\s*emite\s*laudo|psic[oó]log[oa]\s*emite|emitem\s*laudo|\blaudo\b/i,
+    
+    // 🆕 NOVO: Detectar quando vem de LP específica (GMB/Instagram Ads)
+    LP_AUTISMO: /avalia[çc][aã]o\s+(de\s+)?autismo|sinais\s+de\s+autismo|suspeita\s+(de\s+)?autismo|meu\s+filho\s+n[aã]o\s+olha\s+nos\s+olhos|n[aã]o\s+responde\s+ao\s+nome|tea\b|\bautismo\b/i,
+    LP_DISLEXIA: /dislexia|troca\s+(b\/d|letras)|leitura\s+espelhada|confunde\s+letras|dificuldade\s+para\s+ler/i,
+    LP_TDAH: /tdah|hiperativid|desaten[çc][aã]o|n[aã]o\s+consegue\s+ficar\s+quieto|muito\s+agitado|falta\s+aten[çc][aã]o/i,
+    LP_FALA_TARDIA: /fala\s+tardia|atraso\s+na\s+fala|crian[çc]a\s+n[aã]o\s+fala|2\s+anos\s+n[aã]o\s+fala|n[aã]o\s+fala\s+ainda/i,
+    LP_DIFICULDADE_ESCOLAR: /dificuldade\s+escolar|baixo\s+rendimento|notas\s+baixas|repetiu\s+de\s+ano|problemas\s+na\s+escola/i,
 };
 
 const MAX_RETRIES = 3; // Após 3 erros no mesmo estado → handoff humano

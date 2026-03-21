@@ -13,6 +13,7 @@ import Appointment from "../models/Appointment.js";
 import Session from "../models/Session.js";
 import Payment from "../models/Payment.js";
 import Patient from "../models/Patient.js";
+import { NON_BLOCKING_OPERATIONAL_STATUSES } from "../constants/appointmentStatus.js";
 
 const router = express.Router();
 
@@ -441,7 +442,7 @@ router.post("/import-from-agenda/criar-e-confirmar", agendaAuth, async (req, res
         doctor: doctor._id,
         date,
         time,
-        operationalStatus: { $nin: ['canceled', 'pre_agendado'] }
+        operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES }
       }).lean();
 
       if (existing) {
@@ -1402,6 +1403,28 @@ router.get("/agenda-externa/disponibilidade", agendaAuth, async (req, res) => {
       bookedMap[docId][appt.date].add(String(appt.time).slice(0, 5));
     });
 
+    // 🆕 FUNÇÃO HELPER: Verificar se slot está bloqueado por agendamento
+    function timeToMinutes(timeStr) {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      return hours * 60 + minutes;
+    }
+
+    function slotIsBlocked(slotTime, bookedTimes, slotDuration = 40) {
+      const slotStart = timeToMinutes(slotTime);
+      const slotEnd = slotStart + slotDuration;
+      
+      for (const bookedTime of bookedTimes) {
+        const apptStart = timeToMinutes(bookedTime);
+        const apptEnd = apptStart + slotDuration; // Assume mesma duração
+        
+        // Verifica sobreposição
+        if (slotStart < apptEnd && slotEnd > apptStart) {
+          return true;
+        }
+      }
+      return false;
+    }
+
     // 5. Calcular disponibilidade para cada dia
     const result = [];
 
@@ -1424,9 +1447,9 @@ router.get("/agenda-externa/disponibilidade", agendaAuth, async (req, res) => {
           .filter(t => /^\d{2}:\d{2}$/.test(t))
           .sort();
 
-        // Remover ocupados
-        const bookedSlots = bookedMap[String(doctor._id)]?.[day.date] || new Set();
-        const availableSlots = allSlots.filter(slot => !bookedSlots.has(slot));
+        // 🆕 NOVO: Verificar ocupados por INTERVALO, não por hora exata
+        const bookedTimes = Array.from(bookedMap[String(doctor._id)]?.[day.date] || []);
+        const availableSlots = allSlots.filter(slot => !slotIsBlocked(slot, bookedTimes));
 
         if (availableSlots.length > 0) {
           dayResult.professionals.push({

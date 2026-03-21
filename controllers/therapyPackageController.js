@@ -989,10 +989,12 @@ export const packageOperations = {
                                 serviceType: 'package_session',
                                 amount: sessionRevenue,
                                 paymentMethod: 'liminar_credit',
+                                billingType: 'particular',  // ← Entra no caixa como receita particular
                                 session: sessionDoc._id,
                                 package: pkgId,
                                 serviceDate: sessionDoc.date,
-                                status: 'recognized', // Status especial para receita reconhecida
+                                paymentDate: sessionDoc.date,  // ← Entra no caixa no dia do atendimento
+                                status: 'paid',  // ← 'recognized' não é pego pela query de caixa
                                 kind: 'revenue_recognition',
                                 notes: `Receita reconhecida - Processo: ${sessionDoc.package.liminarProcessNumber}`
                             });
