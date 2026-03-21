@@ -13,10 +13,8 @@ import express from 'express';
 import { auth, authorize } from '../../middleware/auth.js';
 import {
   getOverview,
-  getCash,
-  getProduction,
-  getReceivable,
-  getReceivableDetail
+  getReceivableDetail,
+  getHistoricalRates
 } from '../../controllers/financialMetricsController.js';
 
 const router = express.Router();
@@ -41,26 +39,14 @@ router.use(authorize(['admin', 'secretary', 'financial']));
  */
 router.get('/overview', getOverview);
 
-/**
- * GET /api/financial/v2/cash
- * 
- * Apenas caixa (recebimentos)
- */
-router.get('/cash', getCash);
-
-/**
- * GET /api/financial/v2/production
- * 
- * Apenas produção (serviços realizados)
- */
-router.get('/production', getProduction);
-
-/**
- * GET /api/financial/v2/receivable
- * 
- * Apenas contas a receber
- */
-router.get('/receivable', getReceivable);
 router.get('/receivable-detail', getReceivableDetail);
+
+/**
+ * GET /api/financial/v2/historical-rates
+ *
+ * Taxas históricas (últimos N dias) para cálculo de projeções
+ * Query: ?days=90 (default: 90, range: 7-365)
+ */
+router.get('/historical-rates', getHistoricalRates);
 
 export default router;

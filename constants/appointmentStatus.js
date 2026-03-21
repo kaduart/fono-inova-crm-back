@@ -2,5 +2,6 @@ export const NON_BLOCKING_OPERATIONAL_STATUSES = [
   'canceled',
   'cancelado',
   'cancelada',
-  'pre_agendado', // Pré-agendamento não bloqueia horário (ainda não confirmado)
+  // 🚨 FIX: pre_agendado foi removido - agora pré-agendamentos BLOQUEIAM o slot
+  // para evitar duplicatas e race conditions no agendamento
 ];

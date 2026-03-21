@@ -7,6 +7,7 @@ import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
+import PatientBalance from '../models/PatientBalance.js';
 import { distributePayments } from '../services/distributePayments.js';
 import { createNextPackageFromPrevious } from '../utils/createNextPackageFromPrevious.js';
 import { mapStatusToClinical, mapStatusToOperational } from "../utils/statusMappers.js";
@@ -1220,38 +1221,16 @@ router.get("/totals", async (req, res) => {
                             ] 
                         } 
                     },
-                    particularPending: { 
-                        $sum: { 
-                            $cond: [
-                                { $and: [
-                                    { $eq: ["$status", "pending"] },
-                                    { $ne: ["$billingType", "convenio"] }
-                                ]}, 
-                                "$amount", 0
-                            ] 
-                        } 
-                    },
-                    particularCountReceived: { 
-                        $sum: { 
+                    particularCountReceived: {
+                        $sum: {
                             $cond: [
                                 { $and: [
                                     { $eq: ["$status", "paid"] },
                                     { $ne: ["$billingType", "convenio"] }
-                                ]}, 
+                                ]},
                                 1, 0
-                            ] 
-                        } 
-                    },
-                    particularCountPending: { 
-                        $sum: { 
-                            $cond: [
-                                { $and: [
-                                    { $eq: ["$status", "pending"] },
-                                    { $ne: ["$billingType", "convenio"] }
-                                ]}, 
-                                1, 0
-                            ] 
-                        } 
+                            ]
+                        }
                     },
                 },
             },
@@ -1354,15 +1333,6 @@ router.get("/totals", async (req, res) => {
         ];
 
         // ======================================================
-        // 💰 7. A RECEBER ACUMULADO (independente do período)
-        // Todos os pagamentos pendentes, não apenas do mês selecionado
-        // ======================================================
-        const accumulatedMatchStage = {
-            status: { $in: ['pending', 'partial', 'billed'] },
-        };
-        if (doctorId) accumulatedMatchStage.doctor = new mongoose.Types.ObjectId(doctorId);
-
-        // ======================================================
         // 🚀 Executa todas as agregações em paralelo
         // ======================================================
         // Filtro de data para patientType (createdAt = quando o paciente entrou no sistema)
@@ -1399,15 +1369,93 @@ router.get("/totals", async (req, res) => {
             }
         ];
 
+        // ======================================================
+        // 💳 Débito particular do período — fonte correta: PatientBalance
+        // Payment.status=pending não reflete o saldo real por paciente
+        // ======================================================
+        const particularDebtAgg = [
+            { $unwind: '$transactions' },
+            {
+                $match: {
+                    'transactions.type': 'debit',
+                    'transactions.isPaid': false,
+                    ...(period !== 'all' ? {
+                        'transactions.transactionDate': { $gte: rangeStart, $lte: rangeEnd }
+                    } : {}),
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: '$transactions.amount' },
+                    count: { $sum: 1 },
+                }
+            }
+        ];
+
+        // ======================================================
+        // 🏥 Convênio pendente — fonte única: Sessions com triple-fallback
+        // Igual ao financialMetrics.calculateConvenioDetail (convenioAtendido)
+        // Garante que Lançamentos e Extrato mostrem o mesmo valor
+        // ======================================================
+        const convenioPacotePendingAgg = [
+            {
+                $match: {
+                    status: 'completed',
+                    paymentMethod: 'convenio',
+                    $or: [{ isPaid: false }, { isPaid: { $exists: false } }],
+                    ...(period !== 'all' ? { date: { $gte: sessionDateStart, $lte: sessionDateEnd } } : {}),
+                    ...(doctorId ? { doctor: new mongoose.Types.ObjectId(doctorId) } : {}),
+                }
+            },
+            { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg' } },
+            { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+            // Triple-fallback: sessionValue → pkg.insuranceGrossAmount → payment.insurance.grossAmount
+            {
+                $lookup: {
+                    from: 'payments',
+                    let: { sid: '$_id' },
+                    pipeline: [
+                        { $match: { $expr: { $eq: ['$session', '$$sid'] }, status: { $ne: 'canceled' } } },
+                        { $project: { grossAmount: '$insurance.grossAmount' } },
+                        { $limit: 1 }
+                    ],
+                    as: 'linkedPayment'
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total: {
+                        $sum: {
+                            $cond: {
+                                if: { $gt: ['$sessionValue', 0] },
+                                then: '$sessionValue',
+                                else: {
+                                    $cond: {
+                                        if: { $gt: ['$pkg.insuranceGrossAmount', 0] },
+                                        then: '$pkg.insuranceGrossAmount',
+                                        else: { $ifNull: [{ $arrayElemAt: ['$linkedPayment.grossAmount', 0] }, 0] }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    count: { $sum: 1 },
+                }
+            }
+        ];
+
         const [
             cashResult,
             insuranceResult,
             breakdown,
             byMethod,
             byServiceType,
-            accumulatedReceivables,
             patientTypeResult,
             receitaRealizadaResult,
+            particularDebtResult,
+            convenioPacotePendingResult,
         ] = await Promise.all([
             Payment.aggregate(cashAggregation),
             Payment.aggregate(insuranceAggregation),
@@ -1460,44 +1508,13 @@ router.get("/totals", async (req, res) => {
                 },
                 { $sort: { total: -1 } },
             ]),
-            Payment.aggregate([
-                { $match: accumulatedMatchStage },
-                {
-                    $group: {
-                        _id: null,
-                        particularPendingAccumulated: {
-                            $sum: {
-                                $cond: [
-                                    { $and: [
-                                        { $in: ["$status", ["pending", "partial"]] },
-                                        { $ne: ["$billingType", "convenio"] }
-                                    ]},
-                                    "$amount",
-                                    0
-                                ]
-                            }
-                        },
-                        insurancePendingAccumulated: {
-                            $sum: {
-                                $cond: [
-                                    { $and: [
-                                        { $eq: ["$billingType", "convenio"] },
-                                        { $in: ["$insurance.status", ["pending_billing", "billed", null, ""]] }
-                                    ]},
-                                    { $ifNull: ["$insurance.grossAmount", "$amount"] },
-                                    0
-                                ]
-                            }
-                        },
-                        countPending: { $sum: 1 }
-                    }
-                }
-            ]),
             Appointment.aggregate([
                 { $match: patientTypeMatch },
                 { $group: { _id: '$patientType', count: { $sum: 1 } } }
             ]),
             Session.aggregate(receitaRealizadaAgg),
+            PatientBalance.aggregate(particularDebtAgg),
+            Session.aggregate(convenioPacotePendingAgg),
         ]);
 
         const cashTotals = cashResult[0] || {
@@ -1508,9 +1525,7 @@ router.get("/totals", async (req, res) => {
             countPending: 0,
             countPartial: 0,
             particularReceived: 0,
-            particularPending: 0,
             particularCountReceived: 0,
-            particularCountPending: 0,
         };
 
         const insuranceTotals = insuranceResult[0] || {
@@ -1522,11 +1537,11 @@ router.get("/totals", async (req, res) => {
             countInsurancePending: 0,
         };
 
-        const accumulated = accumulatedReceivables[0] || {
-            particularPendingAccumulated: 0,
-            insurancePendingAccumulated: 0,
-            countPending: 0
-        };
+        // Débito particular do período via PatientBalance (fonte correta)
+        const particularDebt = particularDebtResult[0] || { total: 0, count: 0 };
+
+        // Convênio pendente — fonte única: Sessions com triple-fallback (igual ao convenioAtendido)
+        const convenioPacotePending = convenioPacotePendingResult[0] || { total: 0, count: 0 };
 
         const rr = receitaRealizadaResult[0] || { total: 0, totalRecebido: 0, totalPendente: 0, count: 0 };
         const receitaRealizada = {
@@ -1546,6 +1561,9 @@ router.get("/totals", async (req, res) => {
         // ======================================================
         // 📊 Totals consolidados
         // ======================================================
+        const totalInsurancePending = convenioPacotePending.total || 0;
+        const countInsurancePending = convenioPacotePending.count || 0;
+
         const totals = {
             totalReceived: cashTotals.totalReceived,
             totalPending: cashTotals.totalPending,
@@ -1554,22 +1572,18 @@ router.get("/totals", async (req, res) => {
             countPending: cashTotals.countPending,
             countPartial: cashTotals.countPartial,
             particularReceived: cashTotals.particularReceived || 0,
-            particularPending: cashTotals.particularPending || 0,
+            particularPending: particularDebt.total || 0,
             particularCountReceived: cashTotals.particularCountReceived || 0,
-            particularCountPending: cashTotals.particularCountPending || 0,
+            particularCountPending: particularDebt.count || 0,
             totalInsuranceProduction: insuranceTotals.totalInsuranceProduction,
             totalInsuranceReceived: insuranceTotals.totalInsuranceReceived,
-            totalInsurancePending: Math.max(0, insuranceTotals.totalInsuranceProduction - insuranceTotals.totalInsuranceReceived),
+            totalInsurancePending,
             countInsuranceTotal: insuranceTotals.countInsuranceTotal,
             countInsuranceReceived: insuranceTotals.countInsuranceReceived,
-            countInsurancePending: Math.max(0, insuranceTotals.countInsuranceTotal - insuranceTotals.countInsuranceReceived),
-            totalCombined: cashTotals.totalReceived + Math.max(0, insuranceTotals.totalInsuranceProduction - insuranceTotals.totalInsuranceReceived),
-            totalAReceberAcumulado: (accumulated.particularPendingAccumulated || 0) + (accumulated.insurancePendingAccumulated || 0),
-            particularPendingAccumulated: accumulated.particularPendingAccumulated || 0,
-            insurancePendingAccumulated: accumulated.insurancePendingAccumulated || 0,
-            aReceberMes: 0, // set below after insurance calc
+            countInsurancePending,
+            totalCombined: cashTotals.totalReceived + (particularDebt.total || 0) + totalInsurancePending,
+            aReceberMes: (particularDebt.total || 0) + totalInsurancePending,
         };
-        totals.aReceberMes = totals.totalPending + totals.totalInsurancePending;
 
         // ======================================================
         // ✅ 8. Retorno final
@@ -2676,7 +2690,8 @@ router.get('/insurance/receivables', auth, async (req, res) => {
     try {
         const { provider, status, month } = req.query;
 
-        const match = {
+        // ── 1. Payment-based receivables (avulso / guias) ──────────────────────
+        const paymentMatch = {
             billingType: 'convenio',
             'insurance.status': {
                 $in: status
@@ -2686,116 +2701,117 @@ router.get('/insurance/receivables', auth, async (req, res) => {
                         : ['pending_billing', 'billed']
             }
         };
+        if (month) paymentMatch['paymentDate'] = { $regex: `^${month}` };
+        if (provider) paymentMatch['insurance.provider'] = provider;
 
-        // Filtro de mês (paymentDate no formato YYYY-MM-DD)
-        if (month) match['paymentDate'] = { $regex: `^${month}` };
-        if (provider) match['insurance.provider'] = provider;
-
-        const receivables = await Payment.aggregate([
-            { $match: match },
-            // Fazer lookup do paciente
-            {
-                $lookup: {
-                    from: 'patients',
-                    localField: 'patient',
-                    foreignField: '_id',
-                    as: 'patientInfo'
-                }
-            },
-            // Fazer lookup do agendamento para pegar especialidade
-            {
-                $lookup: {
-                    from: 'appointments',
-                    localField: 'appointment',
-                    foreignField: '_id',
-                    as: 'appointmentInfo'
-                }
-            },
-            // Fazer lookup do pacote para pegar dados da guia
-            {
-                $lookup: {
-                    from: 'packages',
-                    localField: 'package',
-                    foreignField: '_id',
-                    as: 'packageInfo'
-                }
-            },
-            // Fazer lookup da guia para pegar número
-            {
-                $lookup: {
-                    from: 'insuranceguides',
-                    localField: 'packageInfo.insuranceGuide',
-                    foreignField: '_id',
-                    as: 'guideInfo'
-                }
-            },
-            // Desestruturar os arrays do lookup
+        const paymentReceivables = await Payment.aggregate([
+            { $match: paymentMatch },
+            { $lookup: { from: 'patients', localField: 'patient', foreignField: '_id', as: 'patientInfo' } },
+            { $lookup: { from: 'appointments', localField: 'appointment', foreignField: '_id', as: 'appointmentInfo' } },
+            { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'packageInfo' } },
+            { $lookup: { from: 'insuranceguides', localField: 'packageInfo.insuranceGuide', foreignField: '_id', as: 'guideInfo' } },
             {
                 $addFields: {
-                    patientName: {
-                        $ifNull: [
-                            { $arrayElemAt: ['$patientInfo.fullName', 0] },
-                            'Paciente não identificado'
-                        ]
-                    },
-                    specialty: {
-                        $ifNull: [
-                            { $arrayElemAt: ['$appointmentInfo.specialty', 0] },
-                            { $arrayElemAt: ['$packageInfo.specialty', 0] },
-                            'N/A'
-                        ]
-                    },
-                    guideNumber: {
-                        $ifNull: [
-                            { $arrayElemAt: ['$guideInfo.number', 0] },
-                            'N/A'
-                        ]
-                    }
+                    patientName: { $ifNull: [{ $arrayElemAt: ['$patientInfo.fullName', 0] }, 'Paciente não identificado'] },
+                    specialty: { $ifNull: [{ $arrayElemAt: ['$appointmentInfo.specialty', 0] }, { $arrayElemAt: ['$packageInfo.specialty', 0] }, 'N/A'] },
+                    guideNumber: { $ifNull: [{ $arrayElemAt: ['$guideInfo.number', 0] }, 'N/A'] }
                 }
             },
-            // Agrupar por convênio E paciente
             {
                 $group: {
-                    _id: {
-                        provider: '$insurance.provider',
-                        patient: '$patient',
-                        patientName: '$patientName'
-                    },
+                    _id: { provider: '$insurance.provider', patient: '$patient', patientName: '$patientName' },
                     patientTotal: { $sum: '$insurance.grossAmount' },
                     patientCount: { $sum: 1 },
-                    payments: {
-                        $push: {
-                            paymentId: '$_id',
-                            grossAmount: '$insurance.grossAmount',
-                            status: '$insurance.status',
-                            paymentDate: '$paymentDate',
-                            authorizationCode: '$insurance.authorizationCode',
-                            specialty: '$specialty',
-                            guideNumber: '$guideNumber'
-                        }
-                    }
+                    payments: { $push: { paymentId: '$_id', grossAmount: '$insurance.grossAmount', status: '$insurance.status', paymentDate: '$paymentDate', authorizationCode: '$insurance.authorizationCode', specialty: '$specialty', guideNumber: '$guideNumber' } }
                 }
             },
-            // Agrupar por convênio (nível superior)
             {
                 $group: {
                     _id: '$_id.provider',
                     totalPending: { $sum: '$patientTotal' },
                     count: { $sum: '$patientCount' },
-                    patients: {
-                        $push: {
-                            patientId: '$_id.patient',
-                            patientName: '$_id.patientName',
-                            total: '$patientTotal',
-                            count: '$patientCount',
-                            payments: '$payments'
-                        }
-                    }
+                    patients: { $push: { patientId: '$_id.patient', patientName: '$_id.patientName', total: '$patientTotal', count: '$patientCount', payments: '$payments' } }
                 }
-            },
-            { $sort: { totalPending: -1 } }
+            }
         ]);
 
+        // ── 2. Session-based receivables (pacote convênio sem Payment) ──────────
+        // Sessões de pacote não geram Payment record. São identificadas por paymentId: null.
+        const sessionMatch = {
+            status: 'completed',
+            paymentMethod: 'convenio',
+            isPaid: { $ne: true },
+            $or: [{ paymentId: null }, { paymentId: { $exists: false } }]
+        };
+        if (month) sessionMatch['date'] = { $regex: `^${month}` };
+
+        const sessionReceivables = await Session.aggregate([
+            { $match: sessionMatch },
+            { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg' } },
+            { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+            { $lookup: { from: 'patients', localField: 'patient', foreignField: '_id', as: 'patientInfo' } },
+            { $lookup: { from: 'insuranceguides', localField: 'insuranceGuide', foreignField: '_id', as: 'guideInfo' } },
+            {
+                $addFields: {
+                    _provider: { $ifNull: ['$pkg.insuranceProvider', 'Convênio'] },
+                    _grossAmount: {
+                        $cond: {
+                            if: { $gt: ['$pkg.insuranceGrossAmount', 0] },
+                            then: '$pkg.insuranceGrossAmount',
+                            else: { $ifNull: ['$sessionValue', 0] }
+                        }
+                    },
+                    _patientName: { $ifNull: [{ $arrayElemAt: ['$patientInfo.fullName', 0] }, 'Paciente não identificado'] },
+                    _guideNumber: { $ifNull: [{ $arrayElemAt: ['$guideInfo.number', 0] }, null] }
+                }
+            },
+            // Filtro de provider (se informado)
+            ...(provider ? [{ $match: { _provider: provider } }] : []),
+            // Ignora sessões sem valor cadastrado
+            { $match: { _grossAmount: { $gt: 0 } } },
+            {
+                $group: {
+                    _id: { provider: '$_provider', patient: '$patient', patientName: '$_patientName' },
+                    patientTotal: { $sum: '$_grossAmount' },
+                    patientCount: { $sum: 1 },
+                    payments: { $push: { paymentId: '$_id', grossAmount: '$_grossAmount', status: 'pending_billing', paymentDate: '$date', authorizationCode: null, specialty: '$sessionType', guideNumber: '$_guideNumber', isFromSession: true } }
+                }
+            },
+            {
+                $group: {
+                    _id: '$_id.provider',
+                    totalPending: { $sum: '$patientTotal' },
+                    count: { $sum: '$patientCount' },
+                    patients: { $push: { patientId: '$_id.patient', patientName: '$_id.patientName', total: '$patientTotal', count: '$patientCount', payments: '$payments' } }
+                }
+            }
+        ]);
+
+        // ── 3. Mescla por provider ───────────────────────────────────────────────
+        const mergedMap = new Map();
+        for (const r of paymentReceivables) mergedMap.set(r._id, r);
+
+        for (const r of sessionReceivables) {
+            if (mergedMap.has(r._id)) {
+                const existing = mergedMap.get(r._id);
+                existing.totalPending += r.totalPending;
+                existing.count += r.count;
+                for (const sp of r.patients) {
+                    const ep = existing.patients.find(p => p.patientId?.toString() === sp.patientId?.toString());
+                    if (ep) {
+                        ep.total += sp.total;
+                        ep.count += sp.count;
+                        ep.payments.push(...sp.payments);
+                    } else {
+                        existing.patients.push(sp);
+                    }
+                }
+            } else {
+                mergedMap.set(r._id, r);
+            }
+        }
+
+        const receivables = Array.from(mergedMap.values()).sort((a, b) => b.totalPending - a.totalPending);
         const grandTotal = receivables.reduce((sum, r) => sum + r.totalPending, 0);
 
         res.json({
@@ -2990,7 +3006,6 @@ router.patch('/insurance/:id/bill', auth, async (req, res) => {
 // SALDO DEVEDOR / CONTA CORRENTE (consolidado de patientBalance.js)
 // ======================================================================
 
-import PatientBalance from '../models/PatientBalance.js';
 
 // Helper
 async function getOrCreateBalance(patientId) {
