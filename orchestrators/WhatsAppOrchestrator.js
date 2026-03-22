@@ -60,6 +60,7 @@ import {
 import { getSpecialHoursResponse, buildSystemPrompt, buildUserPrompt } from '../utils/amandaPrompt.js';
 import { callAI } from '../services/IA/Aiproviderservice.js';
 import { buildMessageContext } from '../services/messageContextBuilder.js';
+import { parseIncomingMessage } from '../services/whatsappLinkService.js';
 
 const logger = new Logger('WhatsAppOrchestrator');
 
@@ -124,8 +125,29 @@ export default class WhatsAppOrchestrator {
       // O FSM decide com contexto rico, não no escuro.
       const ctx = await buildMessageContext(text, freshLead, currentState, stateData, insights);
       const { flags, globalIntent, manualIntent } = ctx;
+      
+      // 🆕 Parse de mensagem para detectar origem (WhatsApp link, GMB, etc)
+      const parsedMessage = parseIncomingMessage(text, freshLead.contact?.phone);
+      if (parsedMessage?.detectedSpecialty || parsedMessage?.extractedData?.source) {
+        this.logger.info('V8_MESSAGE_ORIGIN_DETECTED', { 
+          leadId, 
+          specialty: parsedMessage.detectedSpecialty,
+          source: parsedMessage.extractedData?.source 
+        });
+        
+        // Salvar origem detectada no lead se ainda não estiver definida
+        if (!freshLead.therapyArea && parsedMessage.detectedSpecialty) {
+          await Leads.findByIdAndUpdate(leadId, {
+            $set: { 
+              therapyArea: parsedMessage.detectedSpecialty,
+              'metaTracking.source': parsedMessage.extractedData?.source || 'website'
+            }
+          });
+        }
+      }
+      
       // Armazena ctx completo: leadData, canOfferScheduling, promptMode, flags, etc.
-      this.currentContext = { ...ctx, lead: freshLead, state: currentState, stateData, insights };
+      this.currentContext = { ...ctx, lead: freshLead, state: currentState, stateData, insights, parsedMessage };
 
       // ══ PRÉ-ROUTING: intenções que cortam qualquer estado ══
 
@@ -1021,6 +1043,10 @@ export default class WhatsAppOrchestrator {
         
       case 'LP_DIFICULDADE_ESCOLAR':
         return this._handleDificuldadeEscolarInquiry(lead);
+        
+      // 🆕 NOVO: Detector de origem GMB
+      case 'GMB_ORIGIN':
+        return this._handleGMBOrigin(lead);
 
       default:
         return 'Claro, posso ajudar com isso! 💚';
@@ -1119,6 +1145,51 @@ Isso pode ser dislexia, TDAH ou outra condição — a avaliação neuropsicoló
 Avaliação completa → Laudo detalhado → Plano de intervenção personalizado
 
 Em qual série está a criança e qual a principal dificuldade? 😊`;
+  }
+
+  /**
+   * 🆕 Handler para leads vindos do GMB (Google Meu Negócio)
+   * Detectado quando lead diz "vi o post sobre..."
+   */
+  _handleGMBOrigin(lead) {
+    // Registrar origem no lead
+    this._trackGMBOrigin(lead);
+    
+    return `💚 Oi! Que bom que você viu nosso post no Google!
+
+Sou a Amanda, assistente virtual da Fono Inova. Vou te ajudar a encontrar o melhor atendimento para você.
+
+**Como posso te ajudar hoje?**
+• Agendar uma avaliação
+• Tirar dúvidas sobre nossos serviços
+• Informações sobre valores
+
+Me conta um pouco sobre o que você precisa! 😊`;
+  }
+
+  /**
+   * Registra origem GMB no lead para analytics
+   */
+  async _trackGMBOrigin(lead) {
+    try {
+      await Leads.findByIdAndUpdate(lead._id, {
+        $set: { 
+          'metaTracking.source': 'google_gmb',
+          'metaTracking.detectedAt': new Date()
+        },
+        $push: {
+          interactions: {
+            date: new Date(),
+            channel: 'whatsapp',
+            direction: 'inbound',
+            message: '[DETECTADO: Origem GMB]',
+            note: 'Lead mencionou ter visto post no Google Meu Negócio'
+          }
+        }
+      });
+    } catch (error) {
+      this.logger.warn('GMB_TRACKING_ERROR', { leadId: lead._id, error: error.message });
+    }
   }
 
   async _handlePriceInquiry(lead) {

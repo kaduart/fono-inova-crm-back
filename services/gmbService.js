@@ -2034,7 +2034,7 @@ export async function generateCaptionSEO(especialidade, customTheme = null, funn
     const estrategiaPorFunil = {
       top: { cta: 'Comente "SIM" se você passou por isso', tom: 'conversacional, empático' },
       middle: { cta: 'Siga para parte 2 nos comentários', tom: 'educativo, especialista' },
-      bottom: { cta: 'Me chame com a palavra AVALIAÇÃO - apenas 3 vagas', tom: 'urgente mas ético' }
+      bottom: { cta: 'Quer entender como podemos ajudar? Me chama no WhatsApp com a palavra AVALIAÇÃO', tom: 'conversacional, acolhedor' }
     };
     const estrategia = estrategiaPorFunil[funnelStage] || estrategiaPorFunil.top;
 

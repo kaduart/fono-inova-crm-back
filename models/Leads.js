@@ -306,6 +306,62 @@ const leadSchema = new mongoose.Schema({
   },
   recoveryEnabled: { type: Boolean, default: true },  // Pode desligar por lead
 
+  // 🛤️ JOURNEY TRACKING - Rastreamento completo do lead
+  journeyId: { type: String, index: true, sparse: true },           // 'jny_xxx' - persistente
+  sessionId: { type: String, index: true, sparse: true },           // 'sess_xxx' - por sessão
+  sessionCount: { type: Number, default: 1 },                       // Número de sessões
+  
+  // Origem detalhada
+  journeySource: { type: String, default: null },                   // 'organic', 'facebook_ads'
+  utmSource: { type: String, default: null },
+  utmMedium: { type: String, default: null },
+  utmCampaign: { type: String, default: null },
+  utmContent: { type: String, default: null },
+  
+  // Páginas visitadas
+  landingPage: { type: String, default: null },                     // Primeira página
+  lastPage: { type: String, default: null },                        // Última página
+  pagesVisited: [{                                                   // Histórico de páginas
+    url: String,
+    title: String,
+    timestamp: { type: Date, default: Date.now }
+  }],
+  
+  // Timeline de interações
+  journeyTimeline: [{
+    type: { type: String, enum: ['page_view', 'whatsapp_click', 'form_start', 'form_submit', 'scroll_depth', 'cta_click', 'journey_started'] },
+    page: String,
+    timestamp: { type: Date, default: Date.now },
+    metadata: { type: mongoose.Schema.Types.Mixed, default: {} }
+  }],
+  
+  // Flags de comportamento
+  hasClickedWhatsapp: { type: Boolean, default: false },
+  hasStartedForm: { type: Boolean, default: false },
+  hasSubmittedForm: { type: Boolean, default: false },
+  maxScrollDepth: { type: Number, default: 0 },                     // % máximo de scroll
+  
+  // Contadores
+  pageViews: { type: Number, default: 0 },
+  whatsappClicks: { type: Number, default: 0 },
+  
+  // Identificação
+  isIdentified: { type: Boolean, default: false },
+  identifiedAt: { type: Date, default: null },
+  
+  // Referrer e técnico
+  referrer: { type: String, default: null },
+  userAgent: { type: String, default: null },
+  ip: { type: String, default: null },
+  
+  // Scoring
+  lpScore: { type: Number, default: null },                         // Score da landing page
+  lpScoreGrade: { type: String, default: null },                    // 'A', 'B', 'C'...
+  scoreCalculatedAt: { type: Date, default: null },
+  
+  // Última atividade (para expiração de sessão)
+  lastJourneyActivityAt: { type: Date, default: Date.now },
+
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -322,6 +378,14 @@ leadSchema.index({ 'contact.phone': 1 });
 // 🔁 ÍNDICES PARA LEAD RECOVERY (performance na query de recuperação)
 leadSchema.index({ recoveryEnabled: 1, 'recovery.finishedAt': 1, 'recovery.nextAttemptAt': 1 });
 leadSchema.index({ recoveryEnabled: 1, convertedToPatient: 1, 'recovery.cancelledAt': 1 });
+
+// 🛤️ ÍNDICES PARA JOURNEY TRACKING
+leadSchema.index({ journeyId: 1 });
+leadSchema.index({ sessionId: 1 });
+leadSchema.index({ landingPage: 1, createdAt: -1 });
+leadSchema.index({ utmSource: 1, utmCampaign: 1 });
+leadSchema.index({ journeySource: 1, createdAt: -1 });
+leadSchema.index({ isIdentified: 1, createdAt: -1 });
 
 leadSchema.virtual('phone').get(function () {
   return this.contact?.phone || null;

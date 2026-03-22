@@ -103,6 +103,7 @@ import preAgendamentoRoutes from './routes/preAgendamento.js';
 import notificationRoutes from './routes/notifications.js';
 import { iniciarJobConfirmacao } from './jobs/confirmacaoJob.js';
 import { scheduleDailyAlerts } from './jobs/dailyAlerts.js';
+import { scheduleDailyScoring } from './crons/dailyScoring.js';
 import compression from 'compression';
 import importFromAgendaRouter from './routes/importFromAgenda.js';
 import dashboardRoutes from './routes/dashboard.js';
@@ -114,6 +115,9 @@ import convenioRoutes from './routes/financial/convenio.routes.js';
 import reminderRoutes from './routes/reminder.js';
 
 import imageBankRoutes from './routes/imageBank.routes.js';
+import alertsRoutes from './routes/alerts.routes.js';
+import journeyRoutes from './routes/journey.routes.js';
+import scoringRoutes from './routes/scoring.routes.js';
 
 // ======================================================
 // 🧭 Inicialização base
@@ -137,6 +141,7 @@ iniciarJobConfirmacao();
 scheduleDailyAlerts();
 scheduleGmbCron(); // ← Inicia cron do GMB (geração + envio ao Make)
 scheduleLandingPageDailyPosts(); // ← Inicia cron de posts automáticos para LPs
+scheduleDailyScoring(); // ← Inicia cron de cálculo diário de scores
 
 
 
@@ -315,6 +320,9 @@ app.use('/api/videos', videoRoutes);
 app.use('/api/spy', spyRoutes);
 app.use('/api/meta-ads', metaAdsRoutes);
 app.use('/api/imagebank', imageBankRoutes);
+app.use('/api/alerts', alertsRoutes);
+app.use('/api/journey', journeyRoutes);
+app.use('/api/scoring', scoringRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);
