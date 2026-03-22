@@ -419,8 +419,16 @@ router.post('/seed', async (req, res) => {
       data: result
     });
   } catch (error) {
-    console.error('Erro no seed:', error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Erro detalhado no seed:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      details: error.errors ? Object.keys(error.errors).map(k => ({
+        field: k,
+        message: error.errors[k].message
+      })) : null,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 

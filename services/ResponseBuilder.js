@@ -3,7 +3,8 @@ import { CLINIC_KNOWLEDGE } from '../knowledge/clinicKnowledge.js';
 export function canAutoRespond(flags) {
   const autoFlags = [
     'asksPrice', 'asksPlans', 'mentionsReembolso',
-    'asksAddress', 'asksLocation', 'asksAboutAfterHours'
+    'asksAddress', 'asksLocation', 'asksAboutAfterHours',
+    'asksPayment'
   ];
   return autoFlags.some(f => flags[f]);
 }
@@ -44,7 +45,15 @@ export function buildResponseFromFlags(flags, context = {}) {
       `${CLINIC_KNOWLEDGE.schedule.horarioFuncionamento}. 💚`
     );
   }
-  
+
+  if (flags.asksPayment) {
+    parts.push(
+      `Sim! Trabalhamos com **PIX, cartão de crédito/débito e dinheiro** 💚\n\n` +
+      `A avaliação é o primeiro passo pra entender o caso e montar o plano ideal para seu filho(a).\n\n` +
+      `Se quiser, já posso te explicar como funciona ou verificar os horários disponíveis 😊`
+    );
+  }
+
   return parts.join('\n\n');
 }
 
