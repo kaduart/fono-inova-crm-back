@@ -3,7 +3,6 @@
  * Fórmula avançada considerando conversionRate, growthRate e múltiplos fatores
  */
 
-import Lead from '../models/Lead.js';
 
 // Pesos da fórmula (ajustáveis)
 const SCORE_WEIGHTS = {

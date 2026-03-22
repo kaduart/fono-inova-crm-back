@@ -9,7 +9,7 @@
 
 import dotenv from 'dotenv';
 import express from 'express';
-import { getGA4Events, getGA4Metrics, getGA4Pages, getGA4Sources, formatEventsWithPeriodDate } from '../services/analytics.js';
+import { getGA4Events, getGA4Metrics, getGA4Pages, getGA4Sources, getGA4AnapolisPages, getGA4PagesByPaths, getGA4Realtime, formatEventsWithPeriodDate } from '../services/analytics.js';
 import { getInternalAnalytics } from '../services/analyticsInternal.js';
 import { auth } from '../middleware/auth.js';
 import revenueAnalytics from '../services/revenueAnalyticsService.js';
@@ -53,72 +53,104 @@ router.get('/dashboard', async (req, res) => {
         
         console.log('📊 Dashboard solicitado:', { startDate, endDate });
 
-        // Buscar todos os dados em paralelo
+        const ANAPOLIS_PATHS = [
+            '/fonoaudiologia-anapolis', '/psicologia-infantil-anapolis',
+            '/terapia-ocupacional-anapolis', '/psicomotricidade-anapolis',
+            '/teste-da-linguinha-anapolis', '/fisioterapia-infantil-anapolis',
+            '/avaliacao-neuropsicologica-anapolis'
+        ];
+
+        // FASE 1: buscar lista de LPs do MongoDB (rápido) para ter os caminhos
+        const lpData = await getLandingPagesData(startDate, endDate);
+        const lpPaths = (lpData.landingPages || []).map(lp => lp.path);
+
+        // FASE 2: todas as chamadas GA4 em paralelo, incluindo queries dedicadas por período
         const [
             ga4Metrics,
             ga4Events,
-            ga4Pages,         // 🆕 Dados reais das páginas do GA4
-            ga4Sources,       // 🆕 Fontes de tráfego do GA4
+            ga4Pages,
+            ga4Sources,
+            ga4AnapolisPages,   // query com dimensionFilter → sem limite top-50
+            ga4LpPages,         // query com dimensionFilter → sem limite top-50
+            ga4Realtime,
             internalData,
-            lpData,           // 🆕 Dados das Landing Pages
-            leadsData         // 🆕 Dados de leads por dia
+            leadsData
         ] = await Promise.all([
             getGA4Metrics(startDate, endDate).catch(() => null),
             getGA4Events(startDate, endDate).catch(() => []),
-            getGA4Pages(startDate, endDate).catch(() => []),  // 🆕 Buscar páginas reais do GA4
-            getGA4Sources(startDate, endDate).catch(() => []), // 🆕 Buscar sources do GA4
+            getGA4Pages(startDate, endDate).catch(() => []),
+            getGA4Sources(startDate, endDate).catch(() => []),
+            getGA4AnapolisPages(startDate, endDate).catch(() => []),
+            lpPaths.length > 0
+                ? getGA4PagesByPaths(lpPaths, startDate, endDate).catch(() => [])
+                : Promise.resolve([]),
+            getGA4Realtime().catch(() => null),
             getInternalAnalytics(startDate, endDate).catch(() => null),
-            getLandingPagesData(startDate, endDate),  // 🆕 Nova função
-            getLeadsByDay(startDate, endDate)         // 🆕 Nova função
+            getLeadsByDay(startDate, endDate)
         ]);
 
-        // Formatar eventos com data do período (não new Date())
-        const formattedEvents = formatEventsWithPeriodDate(ga4Events, startDate, endDate);
-
-        // Métricas finais (prioriza GA4, fallback para internal)
-        const finalMetrics = ga4Metrics?.totalUsers > 0 
-            ? ga4Metrics 
+        const finalMetrics = ga4Metrics?.totalUsers > 0
+            ? ga4Metrics
             : internalData?.metrics || getEmptyMetrics();
 
-        // Eventos finais
-        const finalEvents = ga4Events?.length > 0 
-            ? ga4Events 
+        // ga4Events agora tem timestamp real (dimensão date do GA4) — não precisa de formatEventsWithPeriodDate
+        const finalEvents = ga4Events?.length > 0
+            ? ga4Events
             : internalData?.events || [];
 
-        // 🆕 Agrupar dados por dia para o relatório diário
-        const dailyReport = generateDailyReport(
-            finalEvents, 
-            leadsData, 
-            startDate, 
-            endDate
-        );
+        const dailyReport = generateDailyReport(finalEvents, leadsData, startDate, endDate);
+
+        // Leads por página do CRM (período selecionado)
+        const allPagePaths = [...ANAPOLIS_PATHS, ...lpPaths];
+        const leadsPerPage = await getLeadsByPage(allPagePaths, startDate, endDate);
+
+        // Anápolis: GA4 dedicado (período) + leads CRM
+        const anapolisPages = ANAPOLIS_PATHS.map(path => {
+            const ga4 = ga4AnapolisPages.find(p => p.path === path) || {};
+            return {
+                path,
+                title: ga4.title || '',
+                views: ga4.views || 0,
+                users: ga4.users || 0,
+                bounceRate: ga4.bounceRate || 0,
+                avgEngagementTime: ga4.avgEngagementTime || 0,
+                leads: leadsPerPage[path] || 0,
+            };
+        });
 
         // Construir resposta completa
         const dashboardData = {
-            // Métricas principais
             metrics: {
                 ...finalMetrics,
+                leadsPeriod: leadsData.total || 0,
                 leadsToday: leadsData.today || 0,
                 leadsThisWeek: leadsData.week || 0,
                 leadsThisMonth: leadsData.month || 0
             },
-            
-            // Eventos
-            events: formattedEvents,
-            
-            // Fontes de tráfego (prioriza GA4, fallback para internal)
+
+            events: finalEvents,
+
             sources: ga4Sources?.length > 0 ? ga4Sources : internalData?.sources || [],
-            
-            // 🆕 Páginas: merge GA4 + LPs
+
             pages: mergePagesData(ga4Pages, lpData.pages) || [],
-            
-            // 🆕 Landing Pages específicas
-            landingPages: lpData.landingPages || [],
-            
-            // 🆕 Relatório diário
+
+            // LPs: views da query dedicada GA4 (período filtrado), leads do CRM
+            landingPages: (lpData.landingPages || []).map(lp => {
+                const ga4Page = ga4LpPages.find(p => p.path === lp.path);
+                return {
+                    ...lp,
+                    views: ga4Page?.views ?? 0,     // 0 se sem acesso no período (não inventar)
+                    users: ga4Page?.users ?? 0,
+                    bounceRate: ga4Page?.bounceRate ?? 0,
+                    leads: leadsPerPage[lp.path] || 0,
+                };
+            }),
+
+            // Páginas Anápolis SEO com dados GA4 por período + leads CRM
+            anapolisPages,
+
             dailyReport,
-            
-            // Conversões
+
             conversions: finalEvents
                 .filter(e => ['generate_lead', 'whatsapp_click', 'form_submission'].includes(e.action))
                 .map(e => ({
@@ -126,13 +158,9 @@ router.get('/dashboard', async (req, res) => {
                     conversions: e.value || 1,
                     timestamp: e.timestamp
                 })),
-            
-            // Realtime
-            realtime: {
-                activeUsers: Math.floor(Math.random() * 15) + 3,
-                pageViews: Math.floor(Math.random() * 50) + 20
-            },
-            
+
+            realtime: ga4Realtime || { activeUsers: 0, pageViews: 0, events: 0 },
+
             lastUpdated: new Date().toISOString()
         };
 
@@ -140,6 +168,8 @@ router.get('/dashboard', async (req, res) => {
             events: finalEvents.length,
             pages: dashboardData.pages.length,
             landingPages: dashboardData.landingPages.length,
+            anapolisPages: anapolisPages.length,
+            leadsPerPage: Object.keys(leadsPerPage).length,
             dailyReportDays: dailyReport.length
         });
 
@@ -215,7 +245,7 @@ async function getLandingPagesData(startDate, endDate) {
             category: lp.category,
             views: lp.metrics?.views || 0,
             leads: lp.metrics?.leads || 0,
-            users: Math.floor((lp.metrics?.views || 0) * 0.7), // Estimativa
+            users: 0,
             avgEngagementTime: 120,
             bounceRate: 35,
             isLandingPage: true
@@ -229,6 +259,30 @@ async function getLandingPagesData(startDate, endDate) {
     } catch (err) {
         console.error('❌ Erro ao buscar LPs:', err);
         return { pages: [], landingPages: [] }
+    }
+}
+
+// ============================================
+// FUNÇÃO: Buscar leads por página (filtrado por data)
+// ============================================
+
+async function getLeadsByPage(paths, startDate, endDate) {
+    try {
+        if (!paths || paths.length === 0) return {};
+        const Lead = (await import('../models/Leads.js')).default;
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+
+        const result = await Lead.aggregate([
+            { $match: { landingPage: { $in: paths }, createdAt: { $gte: start, $lte: end } } },
+            { $group: { _id: '$landingPage', count: { $sum: 1 } } }
+        ]);
+
+        return result.reduce((map, r) => ({ ...map, [r._id]: r.count }), {});
+    } catch (err) {
+        console.error('❌ Erro em getLeadsByPage:', err.message);
+        return {};
     }
 }
 

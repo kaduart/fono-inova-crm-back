@@ -29,7 +29,7 @@ const LandingPageSchema = new mongoose.Schema({
   category: {
     type: String,
     required: true,
-    enum: ['fonoaudiologia', 'autismo', 'psicologia', 'aprendizagem', 'terapia_ocupacional', 'geografica']
+    enum: ['fonoaudiologia', 'autismo', 'psicologia', 'aprendizagem', 'terapia_ocupacional', 'geografica', 'neuropsicologia', 'desenvolvimento']
   },
   
   // Keywords para SEO

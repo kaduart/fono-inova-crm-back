@@ -44,9 +44,8 @@ export const getInternalAnalytics = async (startDate, endDate) => {
       { $sort: { count: -1 } }
     ]);
 
-    // Eventos simulados baseados em dados reais
+    // Eventos baseados em dados reais do CRM (sem page_view — esse vem do GA4)
     const events = [
-      { action: 'page_view', value: Math.floor(Math.random() * 500) + 100, timestamp: new Date() },
       { action: 'lead_created', value: leadsCount, timestamp: new Date() },
       { action: 'appointment_scheduled', value: appointmentsCount, timestamp: new Date() },
       { action: 'new_patient', value: newPatients, timestamp: new Date() },
