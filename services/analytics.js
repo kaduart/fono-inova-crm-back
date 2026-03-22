@@ -118,20 +118,32 @@ export const getGA4Events = async (startDate, endDate, timeout = 30000) => {
             client.runReport(
                 {
                     property: `properties/${propertyId}`,
-                    dimensions: [{ name: 'eventName' }],
+                    dimensions: [
+                        { name: 'eventName' },
+                        { name: 'date' }   // breakdown diário real
+                    ],
                     metrics: [{ name: 'eventCount' }],
                     dateRanges: [{ startDate, endDate }],
+                    orderBys: [{ dimension: { orderType: 'ALPHANUMERIC', dimensionName: 'date' } }],
+                    limit: 10000,
                 },
                 { timeout }
             )
         );
 
         const rows = response.rows || [];
-        const events = rows.map(row => ({
-            action: row.dimensionValues?.[0]?.value || '',
-            value: parseInt(row.metricValues?.[0]?.value || 0),
-            timestamp: new Date(),
-        }));
+        // date do GA4 vem como 'YYYYMMDD', converter para 'YYYY-MM-DD' + meio-dia local
+        const events = rows.map(row => {
+            const raw = row.dimensionValues?.[1]?.value || '';
+            const dateStr = raw.length === 8
+                ? `${raw.slice(0,4)}-${raw.slice(4,6)}-${raw.slice(6,8)}T12:00:00`
+                : new Date().toISOString();
+            return {
+                action: row.dimensionValues?.[0]?.value || '',
+                value: parseInt(row.metricValues?.[0]?.value || 0),
+                timestamp: new Date(dateStr),
+            };
+        });
 
         analyticsCache.set(cacheKey, events);
         return events;
@@ -189,7 +201,7 @@ export const getGA4Pages = async (startDate, endDate, timeout = 30000) => {
                         { name: 'bounceRate' }
                     ],
                     dateRanges: [{ startDate, endDate }],
-                    limit: 50,
+                    limit: 100,
                     orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }]
                 },
                 { timeout }
@@ -317,6 +329,168 @@ export const getGA4Metrics = async (startDate, endDate, timeout = 30000) => {
     } catch (err) {
         console.error('❌ Erro em getGA4Metrics:', err.message);
         return getEmptyMetrics();
+    }
+};
+
+// Caminhos das páginas SEO de Anápolis
+const ANAPOLIS_PATHS = [
+    '/fonoaudiologia-anapolis',
+    '/psicologia-infantil-anapolis',
+    '/terapia-ocupacional-anapolis',
+    '/psicomotricidade-anapolis',
+    '/teste-da-linguinha-anapolis',
+    '/fisioterapia-infantil-anapolis',
+    '/avaliacao-neuropsicologica-anapolis',
+];
+
+// --- Buscar páginas SEO de Anápolis com dimensionFilter (evita limite dos top 50) ---
+export const getGA4AnapolisPages = async (startDate, endDate, timeout = 30000) => {
+    const cacheKey = `ga4-anapolis-${startDate}-${endDate}`;
+    const cached = analyticsCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+        console.log('📍 Chamando GA4 Anápolis Pages:', startDate, endDate);
+
+        if (!credentials) {
+            console.log('⚠️ GA4 não configurado, retornando páginas de Anápolis vazias');
+            return [];
+        }
+
+        const [response] = await withRetry(() =>
+            client.runReport(
+                {
+                    property: `properties/${propertyId}`,
+                    dimensions: [
+                        { name: 'pageTitle' },
+                        { name: 'pagePath' }
+                    ],
+                    metrics: [
+                        { name: 'screenPageViews' },
+                        { name: 'totalUsers' },
+                        { name: 'userEngagementDuration' },
+                        { name: 'bounceRate' }
+                    ],
+                    dateRanges: [{ startDate, endDate }],
+                    dimensionFilter: {
+                        filter: {
+                            fieldName: 'pagePath',
+                            inListFilter: { values: ANAPOLIS_PATHS }
+                        }
+                    }
+                },
+                { timeout }
+            )
+        );
+
+        const rows = response.rows || [];
+        const pages = rows.map(row => ({
+            title: row.dimensionValues?.[0]?.value || '',
+            path: row.dimensionValues?.[1]?.value || '',
+            views: parseInt(row.metricValues?.[0]?.value || 0),
+            users: parseInt(row.metricValues?.[1]?.value || 0),
+            avgEngagementTime: parseFloat(row.metricValues?.[2]?.value || 0),
+            bounceRate: parseFloat(row.metricValues?.[3]?.value || 0) * 100,
+        }));
+
+        console.log(`📍 ${pages.length} páginas de Anápolis encontradas no GA4`);
+        analyticsCache.set(cacheKey, pages);
+        return pages;
+    } catch (err) {
+        console.error('❌ Erro em getGA4AnapolisPages:', err.message);
+        return [];
+    }
+};
+
+// --- Buscar páginas por lista de caminhos (dimensionFilter genérico) ---
+export const getGA4PagesByPaths = async (paths, startDate, endDate, timeout = 30000) => {
+    if (!paths || paths.length === 0) return [];
+
+    const cacheKey = `ga4-paths-${paths.join(',')}-${startDate}-${endDate}`;
+    const cached = analyticsCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+        if (!credentials) return [];
+
+        const [response] = await withRetry(() =>
+            client.runReport(
+                {
+                    property: `properties/${propertyId}`,
+                    dimensions: [
+                        { name: 'pageTitle' },
+                        { name: 'pagePath' }
+                    ],
+                    metrics: [
+                        { name: 'screenPageViews' },
+                        { name: 'totalUsers' },
+                        { name: 'userEngagementDuration' },
+                        { name: 'bounceRate' }
+                    ],
+                    dateRanges: [{ startDate, endDate }],
+                    dimensionFilter: {
+                        filter: {
+                            fieldName: 'pagePath',
+                            inListFilter: { values: paths }
+                        }
+                    }
+                },
+                { timeout }
+            )
+        );
+
+        const rows = response.rows || [];
+        const pages = rows.map(row => ({
+            title: row.dimensionValues?.[0]?.value || '',
+            path: row.dimensionValues?.[1]?.value || '',
+            views: parseInt(row.metricValues?.[0]?.value || 0),
+            users: parseInt(row.metricValues?.[1]?.value || 0),
+            avgEngagementTime: parseFloat(row.metricValues?.[2]?.value || 0),
+            bounceRate: parseFloat(row.metricValues?.[3]?.value || 0) * 100,
+        }));
+
+        analyticsCache.set(cacheKey, pages);
+        return pages;
+    } catch (err) {
+        console.error('❌ Erro em getGA4PagesByPaths:', err.message);
+        return [];
+    }
+};
+
+// --- Buscar dados em tempo real (GA4 Realtime API) ---
+export const getGA4Realtime = async (timeout = 15000) => {
+    const cacheKey = 'ga4-realtime';
+    const cached = analyticsCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+        if (!credentials) return null;
+
+        const [response] = await client.runRealtimeReport(
+            {
+                property: `properties/${propertyId}`,
+                metrics: [
+                    { name: 'activeUsers' },
+                    { name: 'screenPageViews' },
+                    { name: 'eventCount' }
+                ]
+            },
+            { timeout }
+        );
+
+        const values = response.rows?.[0]?.metricValues || [];
+        const result = {
+            activeUsers: parseInt(values[0]?.value || 0),
+            pageViews: parseInt(values[1]?.value || 0),
+            events: parseInt(values[2]?.value || 0),
+        };
+
+        // Cache curto: 2 minutos para realtime
+        analyticsCache.set(cacheKey, result, 120);
+        return result;
+    } catch (err) {
+        console.error('❌ Erro em getGA4Realtime:', err.message);
+        return null;
     }
 };
 

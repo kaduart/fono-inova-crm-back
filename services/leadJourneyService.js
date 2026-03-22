@@ -4,7 +4,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import Lead from '../models/Lead.js';
+import Lead from '../models/Leads.js';
 
 // Configurações
 const JOURNEY_COOKIE_NAME = 'fono_journey_id';

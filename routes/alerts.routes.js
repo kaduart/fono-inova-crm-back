@@ -66,7 +66,7 @@ router.get('/', async (req, res) => {
  */
 router.get('/dashboard', async (req, res) => {
   try {
-    const dashboard = await alertService.getDashboardResumo();
+    const dashboard = await alertService.getAlertsDashboard();
     res.json({
       success: true,
       data: dashboard

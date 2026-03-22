@@ -61,6 +61,7 @@ import { getSpecialHoursResponse, buildSystemPrompt, buildUserPrompt } from '../
 import { callAI } from '../services/IA/Aiproviderservice.js';
 import { buildMessageContext } from '../services/messageContextBuilder.js';
 import { parseIncomingMessage } from '../services/whatsappLinkService.js';
+import { extractLPContext } from '../utils/lpContextParser.js';
 
 const logger = new Logger('WhatsAppOrchestrator');
 
@@ -467,6 +468,27 @@ export default class WhatsAppOrchestrator {
           return await this._replyWithAI(ctx, 'Lead retornou na mesma sessão com terapia já registrada mas sem queixa. Retome de forma calorosa e pergunte sobre a situação que está preocupando.');
         }
 
+        // ── LP CONTEXT: detectar LP de origem pelo texto do CTA pré-preenchido ──
+        if (!freshLead.lpContextApplied) {
+          const lpContext = extractLPContext(text);
+          if (lpContext) {
+            const { therapy, complaint, slug, lpData } = lpContext;
+            this.logger.info('V8_LP_CONTEXT_DETECTED', { leadId, slug, therapy });
+            await this._saveTherapy(leadId, { id: therapy, name: therapy });
+            await Leads.updateOne({ _id: leadId }, {
+              $set: {
+                lpContextApplied: true,
+                'autoBookingContext.complaint': complaint,
+                utmSource: 'landing_page',
+                utmMedium: slug,
+                'metaTracking.firstMessage': text,
+              },
+            });
+            await jumpToState(leadId, STATES.COLLECT_PERIOD, { therapy, complaint });
+            return this._reply(this._buildLPGreeting(lpData));
+          }
+        }
+
         // Usar ctx (já computado pelo buildMessageContext — sem chamar detectors de novo)
         const medicalSpecialty = ctx.medicalSpecialty;
         if (medicalSpecialty) {
@@ -843,6 +865,28 @@ export default class WhatsAppOrchestrator {
 
       // ── COLETA DE PERÍODO ──
       case STATES.COLLECT_PERIOD: {
+        // ── Age interceptor: captura idade quando vinda de LP greeting ──────
+        // _buildLPGreeting pergunta "quantos anos?" antes de pedir período
+        // Só captura se ainda não temos idade registrada
+        {
+          const existingAge = freshLead.patientInfo?.age || freshLead.patientInfo?.ageInMonths;
+          if (!existingAge) {
+            const ageResult = extractAgeFromText(text);
+            const ageNum = resolveAgeNumber(ageResult);
+            if (ageNum !== null && ageNum > 0) {
+              const unit = ageResult?.unit || 'anos';
+              const isMonths = unit === 'meses' || unit === 'dias';
+              const maxAge = isMonths ? 216 : 18; // 18 anos ou 216 meses
+              if (ageNum <= maxAge) {
+                const ageField = isMonths ? 'patientInfo.ageInMonths' : 'patientInfo.age';
+                await Leads.updateOne({ _id: leadId }, { $set: { [ageField]: ageNum } });
+                this.logger.info('V8_LP_AGE_INTERCEPTED', { leadId, ageNum, unit });
+                return this._reply(`Perfeito, *${ageNum} ${unit}* 💚\n\nPrefere atendimento pela manhã ☀️ ou à tarde 🌙?`);
+              }
+            }
+          }
+        }
+
         const period = extractPeriodFromText(text);
         const preferredDate = extractPreferredDate(text);
         
@@ -1028,22 +1072,6 @@ export default class WhatsAppOrchestrator {
       case 'LAUDO_QUERY':
         return this._handleLaudoInquiry(lead);
 
-      // 🆕 NOVOS: Respostas específicas para LPs
-      case 'LP_AUTISMO':
-        return this._handleAutismoInquiry(lead);
-        
-      case 'LP_DISLEXIA':
-        return this._handleDislexiaInquiry(lead);
-        
-      case 'LP_TDAH':
-        return this._handleTDAHInquiry(lead);
-        
-      case 'LP_FALA_TARDIA':
-        return this._handleFalaTardiaInquiry(lead);
-        
-      case 'LP_DIFICULDADE_ESCOLAR':
-        return this._handleDificuldadeEscolarInquiry(lead);
-        
       // 🆕 NOVO: Detector de origem GMB
       case 'GMB_ORIGIN':
         return this._handleGMBOrigin(lead);
@@ -1063,88 +1091,6 @@ export default class WhatsAppOrchestrator {
     
     // Se não é neuropsicologia ou não tem terapia definida, explica geral
     return '📝 Na **Neuropsicologia** emitimos laudo completo após a avaliação (aprox. 10 sessões).\n\nNas outras especialidades (Psicologia, Fonoaudiologia, Terapia Ocupacional), os profissionais fazem relatórios de acompanhamento, mas *não* emitimos laudos médicos — esses são emitidos apenas por médicos (neuropediatra, psiquiatra, etc.).\n\nVocê está buscando avaliação com laudo? 💚';
-  }
-
-  // 🆕 NOVOS HANDLERS PARA LPs
-  
-  _handleAutismoInquiry(lead) {
-    return `🧩 Oi! Que bom que entrou em contato sobre **avaliação de autismo**! 💚
-
-A avaliação é feita por uma equipe multiprofissional (psicólogo + fonoaudiólogo) e inclui:
-• Entrevista com os pais
-• Observação da criança
-• Aplicação de protocolos validados
-• Emissão de laudo completo (se necessário)
-
-⏰ Quanto mais cedo o diagnóstico, melhores os resultados da intervenção!
-
-Me conta: qual a idade da criança e quais comportamentos você tem observado? 😊`;
-  }
-
-  _handleDislexiaInquiry(lead) {
-    return `📚 Oi! Vamos falar sobre **dislexia**! 💚
-
-A dislexia tem tratamento e quanto antes identificarmos, melhor! 
-
-**Sinais comuns:**
-• Troca letras parecidas (b/d, p/q)
-• Leitura espelhada ou truncada
-• Leitura muito lenta
-
-**Como funciona:**
-Fazemos avaliação psicopedagógica completa e criamos um plano terapêutico personalizado com método fônico estruturado.
-
-⏰ Intervenção antes dos 9 anos tem 90% de sucesso!
-
-Qual a idade da criança e em qual série está? 😊`;
-  }
-
-  _handleTDAHInquiry(lead) {
-    return `🎯 Oi! Entrou em contato sobre **TDAH**! 💚
-
-O TDAH tem 3 pilares principais:
-1️⃣ Desatenção (distrai-se fácil)
-2️⃣ Hiperatividade (inquietação)
-3️⃣ Impulsividade (age sem pensar)
-
-**Avaliação:**
-Fazemos avaliação neuropsicológica completa com testes de atenção e funções executivas.
-
-⚠️ Sem tratamento pode gerar baixo rendimento escolar e baixa autoestima.
-
-Qual a idade da criança e quais desses sinais você tem observado? 😊`;
-  }
-
-  _handleFalaTardiaInquiry(lead) {
-    return `🗣️ Oi! Vamos conversar sobre **fala tardia**! 💚
-
-**Sinais de alerta:**
-• Aos 2 anos: não junta 2 palavras
-• Vocabulário muito limitado
-• Aos 3 anos: não forma frases
-
-⏰ Cada mês sem intervenção é um mês de atraso que pode ser evitado!
-
-**Como funciona:**
-Avaliamos o desenvolvimento da linguagem e criamos um plano terapêutico individualizado.
-
-Qual a idade da criança e como está a fala dela hoje? 😊`;
-  }
-
-  _handleDificuldadeEscolarInquiry(lead) {
-    return `📖 Oi! Entrou em contato sobre **dificuldade escolar**! 💚
-
-Isso pode ser dislexia, TDAH ou outra condição — a avaliação neuropsicológica identifica exatamente onde está a dificuldade.
-
-**Sinais:**
-• Notas baixas mesmo estudando
-• Troca letras ao ler/escrever
-• Dificuldade de concentração
-
-**Processo:**
-Avaliação completa → Laudo detalhado → Plano de intervenção personalizado
-
-Em qual série está a criança e qual a principal dificuldade? 😊`;
   }
 
   /**
@@ -1376,7 +1322,8 @@ Me conta um pouco sobre o que você precisa! 😊`;
         "physiotherapy": "fisioterapia",
         "music": "musicoterapia",
         "neuropsychopedagogy": "neuropsicologia",
-        "psychopedagogy": "neuropsicologia",
+        "psychopedagogy": "psicopedagogia",
+        "occupational_therapy": "terapia_ocupacional",
       };
       therapyString = areaMap[therapy.id] || therapy.name || therapy;
     }
@@ -1645,6 +1592,14 @@ Me conta um pouco sobre o que você precisa! 😊`;
 
     // LLM já aplica tom/empatia/RNs — skipEnrichment evita duplicação
     return this._reply(aiText, { skipEnrichment: true });
+  }
+
+  _buildLPGreeting(lpData) {
+    // Usa campos do lpData para montar saudação dinâmica — sem texto hardcoded por LP
+    const intro = lpData.content?.quandoProcurar || lpData.subheadline || lpData.headline || '';
+    const firstPain = lpData.sinaisAlerta?.[0]?.text;
+    const painLine = firstPain ? `\n\n_(${firstPain})_` : '';
+    return `Que bom que você entrou em contato! 💚\n\n${intro}${painLine}\n\nMe conta: quantos anos tem seu filho ou filha? 😊`;
   }
 
   _handoffReply() {
