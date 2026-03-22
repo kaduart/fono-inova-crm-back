@@ -61,6 +61,9 @@ const GLOBAL_INTENTS = {
     LP_TDAH: /tdah|hiperativid|desaten[çc][aã]o|n[aã]o\s+consegue\s+ficar\s+quieto|muito\s+agitado|falta\s+aten[çc][aã]o/i,
     LP_FALA_TARDIA: /fala\s+tardia|atraso\s+na\s+fala|crian[çc]a\s+n[aã]o\s+fala|2\s+anos\s+n[aã]o\s+fala|n[aã]o\s+fala\s+ainda/i,
     LP_DIFICULDADE_ESCOLAR: /dificuldade\s+escolar|baixo\s+rendimento|notas\s+baixas|repetiu\s+de\s+ano|problemas\s+na\s+escola/i,
+    
+    // 🆕 NOVO: Detectar origem GMB (Google Meu Negócio)
+    GMB_ORIGIN: /vi\s+(o\s+)?post\s+(sobre|de|no)|vi\s+no\s+post|vi\s+(o\s+)?post\s+do\s+google|vi\s+no\s+google\s+meu\s+negocio|vim\s+pelo?\s+(post|google)|encontrei\s+no\s+google/i,
 };
 
 const MAX_RETRIES = 3; // Após 3 erros no mesmo estado → handoff humano

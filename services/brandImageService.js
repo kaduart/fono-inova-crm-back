@@ -875,7 +875,7 @@ async function tplBottomCta(ctx, fotoBuffer, titulo, subtitulo, paleta) {
   ctx.font = 'bold 32px Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('💬 (62) 99331-5240', btnX + btnW / 2, btnY + btnH / 2);
+  ctx.fillText('💬 (62) 99337-7726', btnX + btnW / 2, btnY + btnH / 2);
   
   // Subtítulo
   ctx.fillStyle = '#333333';
