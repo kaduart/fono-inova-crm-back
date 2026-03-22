@@ -215,6 +215,59 @@ export const getGA4Pages = async (startDate, endDate, timeout = 30000) => {
     }
 };
 
+// --- Buscar fontes de tráfego (sources) ---
+export const getGA4Sources = async (startDate, endDate, timeout = 30000) => {
+    const cacheKey = `ga4-sources-${startDate}-${endDate}`;
+    const cached = analyticsCache.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+        console.log('🌐 Chamando GA4 Sources:', startDate, endDate);
+        
+        if (!credentials) {
+            console.log('⚠️ GA4 não configurado, retornando sources vazios');
+            return [];
+        }
+
+        const [response] = await withRetry(() =>
+            client.runReport(
+                {
+                    property: `properties/${propertyId}`,
+                    dimensions: [
+                        { name: 'sessionSource' },
+                        { name: 'sessionMedium' }
+                    ],
+                    metrics: [
+                        { name: 'sessions' },
+                        { name: 'totalUsers' },
+                        { name: 'conversions' }
+                    ],
+                    dateRanges: [{ startDate, endDate }],
+                    limit: 20,
+                    orderBys: [{ metric: { metricName: 'sessions' }, desc: true }]
+                },
+                { timeout }
+            )
+        );
+
+        const rows = response.rows || [];
+        const sources = rows.map(row => ({
+            source: row.dimensionValues?.[0]?.value || 'direct',
+            medium: row.dimensionValues?.[1]?.value || 'none',
+            sessions: parseInt(row.metricValues?.[0]?.value || 0),
+            users: parseInt(row.metricValues?.[1]?.value || 0),
+            conversions: parseInt(row.metricValues?.[2]?.value || 0)
+        }));
+
+        console.log(`🌐 ${sources.length} sources encontradas no GA4`);
+        analyticsCache.set(cacheKey, sources);
+        return sources;
+    } catch (err) {
+        console.error('❌ Erro em getGA4Sources:', err.message);
+        return [];
+    }
+};
+
 // --- Buscar métricas gerais ---
 export const getGA4Metrics = async (startDate, endDate, timeout = 30000) => {
     const cacheKey = `ga4-metrics-${startDate}-${endDate}`;
@@ -265,4 +318,15 @@ export const getGA4Metrics = async (startDate, endDate, timeout = 30000) => {
         console.error('❌ Erro em getGA4Metrics:', err.message);
         return getEmptyMetrics();
     }
+};
+
+// Função auxiliar para formatar eventos com data do período
+export const formatEventsWithPeriodDate = (events, startDate, endDate) => {
+    return events.map(event => ({
+        ...event,
+        // Usar a data de início do período ao invés de new Date()
+        timestamp: new Date(startDate + 'T12:00:00'),
+        // Adicionar info do período
+        period: { startDate, endDate }
+    }));
 };

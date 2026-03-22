@@ -6,6 +6,7 @@ import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
+import financialMetricsService from './financialMetrics.service.js';
 
 /**
  * Atualiza automaticamente o progresso do planejamento
@@ -39,74 +40,19 @@ export const updatePlanningProgress = async (planningId) => {
             clinicalStatus: 'completed'
         }).lean();
 
-        // Calcular totais e separar por tipo de receita
         const completedSessions = sessions.length;
 
-        // 1. Convênio a receber (informativo apenas — NÃO entra em "Realizado")
-        const pagamentosConvenioPendentes = await Payment.find({
-            paymentDate: { $gte: start, $lte: end },
-            billingType: 'convenio',
-            'insurance.status': { $in: ['pending_billing', 'billed'] }
-        }).lean();
+        // Particular: caixa do período (avulso pago + pacote pago — o que entrou em dinheiro)
+        // Convênio: produção do período (sessões feitas × valor, independente de quando paga)
+        const startDate = new Date(start + 'T00:00:00.000Z');
+        const endDate = new Date(end + 'T23:59:59.999Z');
+        const productionResult = await financialMetricsService.calculateProduction({ startDate, endDate });
+        const cashResult = await financialMetricsService.calculateCash({ startDate, endDate });
 
-        const actualRevenueConvenioAReceber = pagamentosConvenioPendentes.reduce(
-            (sum, p) => sum + (p.insurance?.grossAmount || 0), 0
-        );
-
-        // 2. Particular e convênio efetivamente recebidos (Payment status: 'paid')
-        let actualRevenueParticular = 0;
-        let actualRevenueConvenio = 0;
-
-        payments.forEach(pag => {
-            const valor = pag.amount || 0;
-            if (pag.billingType === 'convenio' || pag.paymentMethod === 'convenio' ||
-                pag.insurance?.status === 'received') {
-                actualRevenueConvenio += valor;
-            } else {
-                actualRevenueParticular += valor;
-            }
-        });
-
-        // 3. Sessões de pacote pagas diretamente (Session.isPaid=true, sem Payment vinculado)
-        // Mesma fonte que financialMetrics.service.js usa para caixa de pacote
-        const sessionsPacotePagas = await Session.aggregate([
-            {
-                $match: {
-                    isPaid: true,
-                    paidAt: { $gte: new Date(`${start}T00:00:00.000Z`), $lte: new Date(`${end}T23:59:59.999Z`) },
-                    $or: [{ paymentId: { $exists: false } }, { paymentId: null }]
-                }
-            },
-            {
-                $lookup: {
-                    from: 'payments',
-                    let: { sid: '$_id' },
-                    pipeline: [
-                        { $match: { $expr: { $or: [
-                            { $eq: ['$session', '$$sid'] },
-                            { $in: ['$$sid', { $ifNull: ['$sessions', []] }] }
-                        ]}}},
-                        { $limit: 1 }
-                    ],
-                    as: 'linkedPayment'
-                }
-            },
-            { $match: { linkedPayment: { $size: 0 } } },
-            {
-                $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg' }
-            },
-            { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
-            {
-                $group: {
-                    _id: null,
-                    total: { $sum: { $ifNull: ['$sessionValue', '$pkg.sessionValue'] } }
-                }
-            }
-        ]);
-        const actualRevenuePacote = sessionsPacotePagas[0]?.total || 0;
-
-        // "Realizado" = apenas receita efetivamente recebida (caixa real)
-        const actualRevenue = actualRevenueParticular + actualRevenueConvenio + actualRevenuePacote;
+        const actualRevenueParticular = cashResult.breakdown?.particular || 0;
+        const actualRevenueConvenio = productionResult.byPaymentMethod?.['convenio']?.total || 0;
+        const actualRevenueConvenioAReceber = 0;
+        const actualRevenue = actualRevenueParticular + actualRevenueConvenio;
         
         // Calcular horas trabalhadas (baseado na duração dos agendamentos ou 40min padrão)
         const workedHours = appointments.length > 0 
@@ -124,11 +70,9 @@ export const updatePlanningProgress = async (planningId) => {
 
         console.log(`[Planning Update] ✅ Dados atualizados:`);
         console.log(`[Planning Update]    - Sessões: ${completedSessions}`);
-        console.log(`[Planning Update]    - Receita Realizada (caixa real): R$ ${actualRevenue}`);
-        console.log(`[Planning Update]      ├─ Particular (Payment): R$ ${actualRevenueParticular}`);
-        console.log(`[Planning Update]      ├─ Convênio (recebido): R$ ${actualRevenueConvenio}`);
-        console.log(`[Planning Update]      ├─ Pacote (Session.isPaid): R$ ${actualRevenuePacote}`);
-        console.log(`[Planning Update]      └─ Convênio (a receber — informativo): R$ ${actualRevenueConvenioAReceber}`);
+        console.log(`[Planning Update]    - Receita Total: R$ ${actualRevenue}`);
+        console.log(`[Planning Update]      ├─ Particular (caixa): R$ ${actualRevenueParticular}`);
+        console.log(`[Planning Update]      └─ Convênio (produção): R$ ${actualRevenueConvenio}`);
         console.log(`[Planning Update]    - Horas: ${workedHours.toFixed(2)}h`);
 
         await planning.save(); // Middleware calcula progresso automaticamente

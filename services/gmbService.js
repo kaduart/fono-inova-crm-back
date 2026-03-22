@@ -156,6 +156,67 @@ const PROBLEMAS_REAIS = {
     'ritmo musical autismo',
     'expressão emocional música',
     'desenvolvimento musical infantil'
+  ],
+  // ═══════════════════════════════════════════════════════════
+  // 🎯 PROBLEMAS SEO LOCAL - NOVAS ESPECIALIDADES (Mar/2026)
+  // ═══════════════════════════════════════════════════════════
+  fonoaudiologia_anapolis: [
+    'fonoaudiologia infantil anapolis',
+    'atraso de fala anapolis',
+    'criança não fala anapolis',
+    'terapia fala infantil anapolis',
+    'fonoaudiólogo infantil anapolis',
+    'desenvolvimento da fala anapolis',
+    'gagueira infantil anapolis',
+    'autismo fala anapolis'
+  ],
+  psicologia_infantil_anapolis: [
+    'psicologia infantil anapolis',
+    'psicólogo infantil anapolis',
+    'terapia criança anapolis',
+    'comportamento infantil anapolis',
+    'ansiedade infantil anapolis',
+    'TDAH anapolis',
+    'ajuda emocional criança anapolis'
+  ],
+  terapia_ocupacional_anapolis: [
+    'terapia ocupacional infantil anapolis',
+    'terapeuta ocupacional anapolis',
+    'coordenação motora criança anapolis',
+    'desenvolvimento motor infantil anapolis',
+    'autonomia infantil anapolis',
+    'integração sensorial anapolis'
+  ],
+  psicomotricidade_anapolis: [
+    'psicomotricidade infantil anapolis',
+    'equilíbrio criança anapolis',
+    'coordenação motora infantil anapolis',
+    'aula psicomotricidade anapolis',
+    'desenvolvimento corporal infantil anapolis'
+  ],
+  teste_da_linguinha_anapolis: [
+    'teste da linguinha anapolis',
+    'freio lingual anapolis',
+    'língua presa bebê anapolis',
+    'frenotomia anapolis',
+    'dificuldade amamentação anapolis',
+    'freio curto anapolis'
+  ],
+  fisioterapia_infantil_anapolis: [
+    'fisioterapia infantil anapolis',
+    'fisioterapeuta pediátrico anapolis',
+    'reabilitação infantil anapolis',
+    'desenvolvimento motor anapolis',
+    'estimulação precoce anapolis',
+    'fisioterapia bebê anapolis'
+  ],
+  avaliacao_neuropsicologica_anapolis: [
+    'avaliação neuropsicológica infantil anapolis',
+    'neuropsicólogo infantil anapolis',
+    'teste TDAH anapolis',
+    'diagnóstico autismo anapolis',
+    'avaliação cognitiva infantil anapolis',
+    'laudo psicológico infantil anapolis'
   ]
 };
 
@@ -266,6 +327,65 @@ export const ESPECIALIDADES = [
     foco: 'Voz, fluência, fala, comunicação em adultos',
     publico: 'adultos com problemas de voz ou fala',
     gancho: 'Problemas com a voz ou fala?'
+  },
+  // ═══════════════════════════════════════════════════════════
+  // 🎯 ESPECIALIDADES SEO LOCAL - NOVAS PÁGINAS (Mar/2026)
+  // ═══════════════════════════════════════════════════════════
+  {
+    id: 'fonoaudiologia_anapolis',
+    nome: 'Fonoaudiologia Infantil em Anápolis',
+    url: 'https://www.clinicafonoinova.com.br/fonoaudiologia-anapolis',
+    foco: 'Atraso de fala, autismo, TDAH, desenvolvimento da linguagem em Anápolis',
+    publico: 'crianças em Anápolis com dificuldades de fala',
+    gancho: 'Seu filho tem dificuldade para falar ou atraso na fala em Anápolis?'
+  },
+  {
+    id: 'psicologia_infantil_anapolis',
+    nome: 'Psicologia Infantil em Anápolis',
+    url: 'https://www.clinicafonoinova.com.br/psicologia-infantil-anapolis',
+    foco: 'Comportamento, ansiedade, TDAH, desenvolvimento emocional em Anápolis',
+    publico: 'crianças em Anápolis com dificuldades emocionais',
+    gancho: 'Seu filho apresenta dificuldades emocionais ou comportamentais em Anápolis?'
+  },
+  {
+    id: 'terapia_ocupacional_anapolis',
+    nome: 'Terapia Ocupacional em Anápolis',
+    url: 'https://www.clinicafonoinova.com.br/terapia-ocupacional-anapolis',
+    foco: 'Desenvolvimento motor, coordenação, autonomia infantil em Anápolis',
+    publico: 'crianças em Anápolis com dificuldades motoras',
+    gancho: 'Seu filho tem dificuldade de coordenação ou equilíbrio em Anápolis?'
+  },
+  {
+    id: 'psicomotricidade_anapolis',
+    nome: 'Psicomotricidade Infantil em Anápolis',
+    url: 'https://www.clinicafonoinova.com.br/psicomotricidade-anapolis',
+    foco: 'Coordenação motora, equilíbrio, planejamento motor em Anápolis',
+    publico: 'crianças em Anápolis com dificuldades de psicomotricidade',
+    gancho: 'Seu filho apresenta dificuldade de coordenação ou postura em Anápolis?'
+  },
+  {
+    id: 'teste_da_linguinha_anapolis',
+    nome: 'Teste da Linguinha em Anápolis',
+    url: 'https://www.clinicafonoinova.com.br/teste-da-linguinha-anapolis',
+    foco: 'Diagnóstico precoce de freio lingual, amamentação, fala em Anápolis',
+    publico: 'bebês e crianças em Anápolis com suspeita de freio lingual',
+    gancho: 'Seu bebê tem dificuldade para sugar ou sua criança tem "língua presa" em Anápolis?'
+  },
+  {
+    id: 'fisioterapia_infantil_anapolis',
+    nome: 'Fisioterapia Infantil em Anápolis',
+    url: 'https://www.clinicafonoinova.com.br/fisioterapia-infantil-anapolis',
+    foco: 'Reabilitação motora, postura, desenvolvimento físico infantil em Anápolis',
+    publico: 'crianças em Anápolis com necessidade de fisioterapia pediátrica',
+    gancho: 'Seu filho tem dificuldade de postura, movimento ou força muscular em Anápolis?'
+  },
+  {
+    id: 'avaliacao_neuropsicologica_anapolis',
+    nome: 'Avaliação Neuropsicológica em Anápolis',
+    url: 'https://www.clinicafonoinova.com.br/avaliacao-neuropsicologica-anapolis',
+    foco: 'Diagnóstico TDAH, TEA, déficit de atenção, desenvolvimento cognitivo em Anápolis',
+    publico: 'crianças em Anápolis com dificuldades de aprendizagem ou atenção',
+    gancho: 'Seu filho apresenta dificuldade de atenção, concentração ou aprendizagem em Anápolis?'
   }
 ];
 
@@ -474,6 +594,51 @@ const PROMPTS_ESPECIALIDADE = {
     urgencia: 'a música acessa áreas do cérebro que outras terapias não alcançam — especialmente em crianças com TEA e dificuldades de comunicação não verbal',
     diferencial: 'a Fono Inova usa musicoterapia receptiva e ativa — a criança se conecta através do ritmo e do som quando as palavras ainda não chegaram',
     gatilho: 'pais de crianças com autismo que já tentaram várias terapias e estão buscando algo diferente',
+  },
+  // ═══════════════════════════════════════════════════════════
+  // 🎯 PROMPTS SEO LOCAL - NOVAS ESPECIALIDADES (Mar/2026)
+  // ═══════════════════════════════════════════════════════════
+  fonoaudiologia_anapolis: {
+    dor: 'a criança tem atraso na fala, não pronuncia direito, troca letras, tem dificuldade para se expressar ou os outros não entendem o que ela fala',
+    urgencia: 'cada mês sem fonoaudiologia é um mês de atraso no desenvolvimento da linguagem — e a janela de oportunidade na infância é curta',
+    diferencial: 'na Fono Inova em Anápolis, os fonoaudiólogos especializados identificam a causa real do atraso e criam um plano terapêutico individualizado para cada criança',
+    gatilho: 'pais de Anápolis que buscam fonoaudiologia infantil de qualidade e não sabem onde encontrar especialistas confiáveis',
+  },
+  psicologia_infantil_anapolis: {
+    dor: 'a criança apresenta dificuldades emocionais, comportamentais, ansiedade, medo excessivo, agressividade ou isolamento social',
+    urgencia: 'problemas emocionais não tratados na infância se tornam padrões de comportamento difíceis de mudar na adolescência e vida adulta',
+    diferencial: 'a Fono Inova em Anápolis oferece psicologia infantil especializada com abordagem lúdica — a criança se expressa enquanto brinca, sem sentir que está em terapia',
+    gatilho: 'pais de Anápolis preocupados com o comportamento ou desenvolvimento emocional do filho e que buscam ajuda especializada',
+  },
+  terapia_ocupacional_anapolis: {
+    dor: 'a criança tem dificuldade de coordenação motora, não consegue realizar atividades do dia a dia sozinha, é muito dependente ou tem problemas sensoriais',
+    urgencia: 'a falta de autonomia afeta a autoestima da criança e pode gerar frustração e comportamentos de dependência excessiva',
+    diferencial: 'na Fono Inova em Anápolis, a terapia ocupacional trabalha a autonomia de forma lúdica — a criança aprende a se vestir, comer e brincar de forma independente',
+    gatilho: 'pais de Anápolis que notam que o filho tem dificuldade para fazer coisas sozinho comparado a outras crianças da mesma idade',
+  },
+  psicomotricidade_anapolis: {
+    dor: 'a criança confunde letras (b/d, p/q), tem dificuldade de equilíbrio, desconhece o próprio corpo, é desatenta ou tem problemas de coordenação motora',
+    urgencia: 'o desenvolvimento psicomotor é base para a alfabetização — sem um bom esquema corporal, a criança terá dificuldades na escola',
+    diferencial: 'a Fono Inova em Anápolis trabalha psicomotricidade relacional — desenvolvimento do corpo, movimento e aprendizagem escolar integrados',
+    gatilho: 'pais de Anápolis com crianças em fase pré-escolar ou início da alfabetização que notam dificuldades de coordenação ou atenção',
+  },
+  teste_da_linguinha_anapolis: {
+    dor: 'o bebê tem dificuldade para mamar, a mãe sente dor na amamentação, ou a criança maior tem dificuldade para pronunciar certos sons',
+    urgencia: 'o freio lingual (língua presa) não diagnosticado pode causar problemas de amamentação, alimentação, fala e até respiração',
+    diferencial: 'na Fono Inova em Anápolis fazemos o teste da linguinha completo — avaliação do freio lingual com protocolo especializado e encaminhamento quando necessário',
+    gatilho: 'mães de Anápolis que sofrem com amamentação difícil ou pais que suspeitam que o filho tem a língua presa',
+  },
+  fisioterapia_infantil_anapolis: {
+    dor: 'a criança tem dificuldade de postura, movimento, força muscular, tropeça muito, tem hipotonia ou sequela de alguma condição médica',
+    urgencia: 'a fisioterapia infantil precisa começar o quanto antes — o cérebro infantil tem maior plasticidade e responde melhor às intervenções',
+    diferencial: 'a Fono Inova em Anápolis oferece fisioterapia pediátrica especializada com ambiente lúdico — a criança se exercita brincando',
+    gatilho: 'pais de Anápolis que notam que o desenvolvimento motor do filho está abaixo do esperado para a idade',
+  },
+  avaliacao_neuropsicologica_anapolis: {
+    dor: 'a criança tem dificuldade de atenção, concentração, memória, aprendizagem escolar, ou há suspeita de TDAH, dislexia ou TEA',
+    urgencia: 'sem uma avaliação neuropsicológica completa, qualquer intervenção é um tiro no escuro — o diagnóstico preciso é fundamental',
+    diferencial: 'na Fono Inova em Anápolis a avaliação neuropsicológica é completa — emitimos laudo detalhado com orientações para escola, família e outros profissionais',
+    gatilho: 'pais de Anápolis que já ouviram várias opiniões diferentes sobre o filho e precisam de um diagnóstico claro e profissional',
   },
 };
 
@@ -812,6 +977,14 @@ function generateImagePromptFromContent(content, especialidade) {
       'large window with soft natural light, light hardwood floor, ' +
       'modern comfortable child-friendly examination area with toys, ' +
       'wooden shelf with soft toys and books, small plant, warm professional pediatric clinic',
+    // Ambientes para especialidades SEO Local (reutilizam os mesmos espaços)
+    fono_anapolis: null, // usa fono
+    psico_anapolis: null, // usa psico
+    to_anapolis: null, // usa to
+    fisio_anapolis: null, // usa fisio
+    psicomotri_anapolis: null, // usa psicomotri
+    neuro_anapolis: null, // usa neuro
+    freio_anapolis: null, // usa freio
   };
 
   // INTERAÇÃO obrigatória — força engajamento mútuo
