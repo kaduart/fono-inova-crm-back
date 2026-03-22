@@ -9,8 +9,10 @@
 
 import dotenv from 'dotenv';
 import express from 'express';
-import { getGA4Events, getGA4Metrics } from '../services/analytics.js';
+import { getGA4Events, getGA4Metrics, getGA4Pages, getGA4Sources, formatEventsWithPeriodDate } from '../services/analytics.js';
 import { getInternalAnalytics } from '../services/analyticsInternal.js';
+import { auth } from '../middleware/auth.js';
+import revenueAnalytics from '../services/revenueAnalyticsService.js';
 
 dotenv.config();
 
@@ -55,16 +57,23 @@ router.get('/dashboard', async (req, res) => {
         const [
             ga4Metrics,
             ga4Events,
+            ga4Pages,         // 🆕 Dados reais das páginas do GA4
+            ga4Sources,       // 🆕 Fontes de tráfego do GA4
             internalData,
             lpData,           // 🆕 Dados das Landing Pages
             leadsData         // 🆕 Dados de leads por dia
         ] = await Promise.all([
             getGA4Metrics(startDate, endDate).catch(() => null),
             getGA4Events(startDate, endDate).catch(() => []),
+            getGA4Pages(startDate, endDate).catch(() => []),  // 🆕 Buscar páginas reais do GA4
+            getGA4Sources(startDate, endDate).catch(() => []), // 🆕 Buscar sources do GA4
             getInternalAnalytics(startDate, endDate).catch(() => null),
             getLandingPagesData(startDate, endDate),  // 🆕 Nova função
             getLeadsByDay(startDate, endDate)         // 🆕 Nova função
         ]);
+
+        // Formatar eventos com data do período (não new Date())
+        const formattedEvents = formatEventsWithPeriodDate(ga4Events, startDate, endDate);
 
         // Métricas finais (prioriza GA4, fallback para internal)
         const finalMetrics = ga4Metrics?.totalUsers > 0 
@@ -95,13 +104,13 @@ router.get('/dashboard', async (req, res) => {
             },
             
             // Eventos
-            events: finalEvents,
+            events: formattedEvents,
             
-            // Fontes de tráfego
-            sources: internalData?.sources || [],
+            // Fontes de tráfego (prioriza GA4, fallback para internal)
+            sources: ga4Sources?.length > 0 ? ga4Sources : internalData?.sources || [],
             
-            // 🆕 Páginas incluindo LPs
-            pages: lpData.pages || [],
+            // 🆕 Páginas: merge GA4 + LPs
+            pages: mergePagesData(ga4Pages, lpData.pages) || [],
             
             // 🆕 Landing Pages específicas
             landingPages: lpData.landingPages || [],
@@ -146,6 +155,44 @@ router.get('/dashboard', async (req, res) => {
 });
 
 // ============================================
+// 🆕 FUNÇÃO: Mesclar dados GA4 + Landing Pages
+// ============================================
+
+function mergePagesData(ga4Pages, lpPages) {
+    if (!ga4Pages || ga4Pages.length === 0) {
+        return lpPages || [];
+    }
+    
+    // 🎯 INCLUIR TODAS as páginas do GA4 (são as reais!)
+    // Isso inclui: Home, WhatsApp, Contato, Blog, etc.
+    const allGa4Pages = ga4Pages.map(page => ({
+        ...page,
+        isLandingPage: page.path?.startsWith('/lp/') || false
+    }));
+    
+    // Criar mapa para evitar duplicados
+    const pageMap = new Map();
+    
+    // 1. Primeiro adicionar todas as páginas do GA4 (prioridade máxima - dados reais!)
+    allGa4Pages.forEach(page => {
+        pageMap.set(page.path, page);
+    });
+    
+    // 2. Adicionar LPs que não estão no GA4 ainda (ou enriquecer as existentes)
+    (lpPages || []).forEach(lp => {
+        if (!pageMap.has(lp.path)) {
+            pageMap.set(lp.path, lp);
+        }
+    });
+    
+    // Converter para array e ordenar por views (mais acessadas primeiro)
+    const allPages = Array.from(pageMap.values())
+        .sort((a, b) => (b.views || 0) - (a.views || 0));
+    
+    return allPages;
+}
+
+// ============================================
 // 🆕 FUNÇÃO: Buscar dados das Landing Pages
 // ============================================
 
@@ -174,29 +221,14 @@ async function getLandingPagesData(startDate, endDate) {
             isLandingPage: true
         }));
 
-        // Páginas regulares (serviços)
-        const regularPages = [
-            { title: 'Home', path: '/', views: 0, users: 0, avgEngagementTime: 0, bounceRate: 0 },
-            { title: 'Fonoaudiologia', path: '/fonoaudiologia', views: 0, users: 0, avgEngagementTime: 0, bounceRate: 0 },
-            { title: 'Psicologia', path: '/psicologia', views: 0, users: 0, avgEngagementTime: 0, bounceRate: 0 },
-            { title: 'Freio Lingual', path: '/freio-lingual', views: 0, users: 0, avgEngagementTime: 0, bounceRate: 0 },
-            { title: 'Fala Tardia', path: '/fala-tardia', views: 0, users: 0, avgEngagementTime: 0, bounceRate: 0 },
-            { title: 'Autismo', path: '/avaliacao-autismo-infantil', views: 0, users: 0, avgEngagementTime: 0, bounceRate: 0 },
-            { title: 'Dificuldade Escolar', path: '/avaliacao-neuropsicologica-dificuldade-escolar', views: 0, users: 0, avgEngagementTime: 0, bounceRate: 0 }
-        ];
-
-        // Combinar e ordenar por views
-        const allPages = [...lpPages, ...regularPages]
-            .sort((a, b) => b.views - a.views);
-
         return {
-            pages: allPages,
+            pages: lpPages,
             landingPages: lpPages
         };
 
     } catch (err) {
         console.error('❌ Erro ao buscar LPs:', err);
-        return { pages: [], landingPages: [] };
+        return { pages: [], landingPages: [] }
     }
 }
 
@@ -417,6 +449,87 @@ router.get('/metrics', async (req, res) => {
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+});
+
+/**
+ * GET /api/analytics/revenue/revenue-by-source
+ */
+router.get('/revenue/revenue-by-source', auth, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const data = await revenueAnalytics.getRevenueBySource(startDate, endDate);
+    res.json({ success: true, data, meta: { startDate, endDate } });
+  } catch (error) {
+    console.error('[Analytics] Error in revenue-by-source:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/analytics/revenue/revenue-by-campaign
+ */
+router.get('/revenue/revenue-by-campaign', auth, async (req, res) => {
+  try {
+    const { startDate, endDate, source } = req.query;
+    const data = await revenueAnalytics.getRevenueByCampaign(startDate, endDate, source);
+    res.json({ success: true, data, meta: { startDate, endDate, source } });
+  } catch (error) {
+    console.error('[Analytics] Error in revenue-by-campaign:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/analytics/revenue/gmb-revenue
+ */
+router.get('/revenue/gmb-revenue', auth, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const data = await revenueAnalytics.getGMBRevenue(startDate, endDate);
+    res.json({ success: true, data, meta: { startDate, endDate, source: 'gmb' } });
+  } catch (error) {
+    console.error('[Analytics] Error in gmb-revenue:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/analytics/revenue/dashboard
+ */
+router.get('/revenue/dashboard', auth, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const data = await revenueAnalytics.getRevenueDashboard(startDate, endDate);
+    res.json({ success: true, data, meta: { startDate, endDate } });
+  } catch (error) {
+    console.error('[Analytics] Error in revenue/dashboard:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/analytics/revenue/conversion-funnel
+ *
+ * Retorna funnel de conversão: Leads → Appointments → Paid
+ * Query params: startDate, endDate, source (opcional)
+ */
+router.get('/revenue/conversion-funnel', auth, async (req, res) => {
+  try {
+    const { startDate, endDate, source } = req.query;
+    const data = await revenueAnalytics.getConversionFunnel(startDate, endDate, source);
+    
+    res.json({
+      success: true,
+      data,
+      meta: { startDate, endDate, source }
+    });
+  } catch (error) {
+    console.error('[Analytics] Error in conversion-funnel:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 export default router;

@@ -440,7 +440,7 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
     });
 
     const metaMensal = planningDoMes?.targets?.expectedRevenue || 0;
-    const percentualMeta = metaMensal > 0 ? (producaoTotal / metaMensal) * 100 : 0;
+    const percentualMeta = metaMensal > 0 ? (caixaTotal / metaMensal) * 100 : 0;
 
     // ========================================
     // 8. INSIGHTS
@@ -548,7 +548,7 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
       meta: {
         valor: metaMensal,
         percentualAtual: Math.round(percentualMeta * 100) / 100,
-        gap: metaMensal > 0 ? Math.max(0, metaMensal - producaoTotal) : 0
+        gap: metaMensal > 0 ? Math.max(0, metaMensal - caixaTotal) : 0
       },
       // Para Business Intelligence
       analitico: {
