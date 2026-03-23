@@ -192,6 +192,172 @@ async function concatenarClipsVeo(videoUrls, outputPath) {
 
 const MUSIC_DIR = path.join(__dirname, '../assets/music');
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MODO ECONÔMICO — Slideshow Ken Burns + TTS + pós-produção premium
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PEXELS_KEYWORDS_ECO = {
+  fonoaudiologia:     ['speech therapy children colorful', 'kids language development games', 'child speech exercises'],
+  psicologia:         ['child psychology therapy caring', 'children mental health support', 'kids counseling safe space'],
+  terapia_ocupacional:['children occupational therapy sensory', 'kids therapy toys educational', 'child development activities'],
+  fisioterapia:       ['pediatric physiotherapy exercises fun', 'children physical therapy', 'kids rehabilitation playing'],
+  psicomotricidade:   ['children movement activities', 'kids motor skills play', 'child physical development'],
+  musicoterapia:      ['music therapy children instruments', 'kids playing music therapy', 'children musical activities'],
+  neuropsicologia:    ['child neurological therapy', 'kids cognitive development', 'children brain therapy'],
+  psicopedagogia:     ['children learning support education', 'kids study help teacher', 'child reading learning'],
+  freio_lingual:      ['speech therapy children smiling', 'oral health children dentist', 'kids mouth therapy'],
+};
+
+async function buscarImagensEco(especialidade, count, tmpDir, baseName) {
+  const imagens = [];
+  const apiKey = process.env.PEXELS_API_KEY;
+
+  if (apiKey && apiKey !== 'sua_chave_aqui') {
+    try {
+      const keywords = PEXELS_KEYWORDS_ECO[especialidade] || ['children therapy clinic colorful', 'kids healthcare professional', 'child development activities'];
+      const keyword  = keywords[Math.floor(Math.random() * keywords.length)];
+
+      const resp = await axios.get('https://api.pexels.com/v1/search', {
+        headers: { Authorization: apiKey },
+        params:  { query: keyword, orientation: 'portrait', per_page: count + 5 }
+      });
+
+      const photos = resp.data.photos || [];
+      for (let i = 0; i < Math.min(count, photos.length); i++) {
+        const url     = photos[i].src.portrait || photos[i].src.medium;
+        const imgPath = path.join(tmpDir, `${baseName}_img_${i}.jpg`);
+        const img     = await axios.get(url, { responseType: 'arraybuffer' });
+        fs.writeFileSync(imgPath, Buffer.from(img.data));
+        imagens.push(imgPath);
+      }
+      logger.info(`[ECO] ${imagens.length} imagens baixadas do Pexels (${keyword})`);
+    } catch (e) {
+      logger.warn(`[ECO] Erro Pexels: ${e.message}`);
+    }
+  }
+
+  // Fallback: frames coloridos via FFmpeg
+  if (imagens.length === 0) {
+    const cores = ['#1a5276', '#1e8449', '#7b241c', '#6c3483', '#117a65', '#935116'];
+    for (let i = 0; i < count; i++) {
+      const imgPath = path.join(tmpDir, `${baseName}_img_${i}.jpg`);
+      await new Promise((res, rej) => {
+        ffmpeg()
+          .input(`color=c=${cores[i % cores.length]}:s=1080x1920:d=1`)
+          .inputFormat('lavfi')
+          .frames(1)
+          .output(imgPath)
+          .on('end', res).on('error', rej).run();
+      });
+      imagens.push(imgPath);
+    }
+    logger.info(`[ECO] ${count} frames coloridos criados como fallback`);
+  }
+
+  return imagens;
+}
+
+async function gerarSlideshowKenBurns(especialidade, duracao, tmpDir, baseName) {
+  const count          = Math.max(4, Math.ceil(duracao / 6)); // 1 imagem a cada ~6s
+  const duracaoPorImg  = duracao / count;
+  const frames         = Math.round(duracaoPorImg * 30);
+
+  const imagens  = await buscarImagensEco(especialidade, count, tmpDir, baseName);
+  const segments = [];
+
+  for (let i = 0; i < imagens.length; i++) {
+    const segPath = path.join(tmpDir, `${baseName}_seg_${i}.mp4`);
+
+    // Alterna: zoom-in vs zoom-out + drift horizontal leve
+    const zExpr = i % 2 === 0
+      ? `min(zoom+0.0006,1.06)`
+      : `if(lte(zoom,1.0),1.06,zoom-0.0006)`;
+
+    const xExpr = i % 4 === 0 ? `iw/2-(iw/zoom/2)+8*on/${frames}`
+                : i % 4 === 2 ? `iw/2-(iw/zoom/2)-8*on/${frames}`
+                : `iw/2-(iw/zoom/2)`;
+
+    await new Promise((res, rej) => {
+      ffmpeg()
+        .input(imagens[i])
+        .inputOptions(['-loop 1'])
+        .outputOptions([
+          '-t', String(duracaoPorImg),
+          '-vf',
+          `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,` +
+          `zoompan=z='${zExpr}':x='${xExpr}':y='ih/2-(ih/zoom/2)':d=${frames}:s=1080x1920:fps=30,` +
+          `format=yuv420p`,
+          '-c:v', 'libx264',
+          '-preset', 'fast',
+          '-crf', '22',
+          '-pix_fmt', 'yuv420p',
+          '-r', '30',
+          '-an'
+        ])
+        .on('end', res)
+        .on('error', (err) => {
+          logger.warn(`[ECO] Erro no segmento ${i}: ${err.message} — usando cópia direta`);
+          // Fallback: imagem estática sem Ken Burns
+          ffmpeg()
+            .input(imagens[i])
+            .inputOptions(['-loop 1'])
+            .outputOptions([
+              '-t', String(duracaoPorImg),
+              '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,format=yuv420p',
+              '-c:v', 'libx264', '-preset', 'fast', '-crf', '22', '-r', '30', '-an'
+            ])
+            .on('end', res).on('error', rej)
+            .save(segPath);
+        })
+        .save(segPath);
+    });
+    segments.push(segPath);
+    logger.info(`[ECO] Segmento ${i + 1}/${imagens.length} criado (Ken Burns)`);
+  }
+
+  // Concatenar com xfade suave
+  const FADE         = 0.4;
+  const outputPath   = path.join(tmpDir, `${baseName}_slideshow.mp4`);
+
+  await new Promise((res, rej) => {
+    const cmd = ffmpeg();
+    segments.forEach(s => cmd.input(s));
+
+    if (segments.length === 1) {
+      cmd.outputOptions(['-c:v copy', '-an']).save(outputPath)
+        .on('end', () => {
+          imagens.forEach(p => { try { fs.unlinkSync(p); } catch {} });
+          segments.forEach(p => { try { fs.unlinkSync(p); } catch {} });
+          res(null);
+        })
+        .on('error', rej);
+      return;
+    }
+
+    const filters = [];
+    let prev = '[0:v]';
+    for (let i = 1; i < segments.length; i++) {
+      const offset = i * (duracaoPorImg - FADE);
+      const out    = i === segments.length - 1 ? '[vout]' : `[v${i}]`;
+      filters.push(`${prev}[${i}:v]xfade=transition=fade:duration=${FADE}:offset=${offset}${out}`);
+      prev = out;
+    }
+
+    cmd.complexFilter(filters.join(';'))
+      .outputOptions(['-map [vout]', '-c:v libx264', '-preset fast', '-crf 22', '-r 30', '-pix_fmt yuv420p', '-an'])
+      .on('end', () => {
+        imagens.forEach(p => { try { fs.unlinkSync(p); } catch {} });
+        segments.forEach(p => { try { fs.unlinkSync(p); } catch {} });
+        logger.info(`[ECO] Slideshow montado: ${segments.length} imagens`);
+        res(null);
+      })
+      .on('error', rej)
+      .save(outputPath);
+  });
+
+  return outputPath;
+}
+
 /**
  * Seleciona música de acordo com o contexto do vídeo:
  * hookStyle + funil + especialidade → tom emocional correto
@@ -455,7 +621,7 @@ const videoWorker = new Worker('video-generation', async (job) => {
     publicar = false,
     targeting = {},
     userId,
-    modo = 'avatar',       // 'avatar' | 'ilustrativo' | 'veo'
+    modo = 'avatar',       // 'avatar' | 'ilustrativo' | 'veo' | 'economico'
     tone = 'educativo',    // 'emotional' | 'educativo' | 'inspiracional' | 'bastidores'
     // 🧠 Campos de inteligência de conteúdo
     platform = 'instagram',
@@ -464,7 +630,8 @@ const videoWorker = new Worker('video-generation', async (job) => {
     hookStyle = 'dor',
     objetivo = 'salvar',
     variacao,
-    intensidade = 'viral'
+    intensidade = 'viral',
+    roteiroEditado = null  // roteiro pré-gerado pelo preview (pula ZEUS se fornecido)
   } = job.data;
 
   logger.info(`[VIDEO WORKER] ▶ ${jobId} — "${tema}"`);
@@ -501,23 +668,31 @@ const videoWorker = new Worker('video-generation', async (job) => {
 
   try {
     // ═══════════════════════════════════════════════════════════════════════
-    // ETAPA 1: Gerar Roteiro (ZEUS)
+    // ETAPA 1: Gerar Roteiro (ZEUS) — ou usar roteiro pré-gerado do preview
     // ═══════════════════════════════════════════════════════════════════════
     await atualizarProgresso('ROTEIRO', 10);
-    
-    const { roteiro } = await gerarRoteiro({
-      tema,
-      especialidade: especialidadeId,
-      funil,
-      duracao,
-      tone,
-      platform,
-      subTema,
-      hookStyle,
-      objetivo,
-      variacao: variacao !== undefined ? Number(variacao) : Math.random(),
-      intensidade
-    });
+
+    let roteiro;
+    if (roteiroEditado && roteiroEditado.texto_completo) {
+      // Roteiro já veio do frontend (usuário editou no modal de preview)
+      roteiro = roteiroEditado;
+      logger.info(`[VIDEO WORKER] Usando roteiro editado pelo usuário: "${roteiro.titulo}"`);
+    } else {
+      const result = await gerarRoteiro({
+        tema,
+        especialidade: especialidadeId,
+        funil,
+        duracao,
+        tone,
+        platform,
+        subTema,
+        hookStyle,
+        objetivo,
+        variacao: variacao !== undefined ? Number(variacao) : Math.random(),
+        intensidade
+      });
+      roteiro = result.roteiro;
+    }
 
     await atualizarProgresso('ROTEIRO', 25, {
       roteiro: roteiro.texto_completo,
@@ -782,6 +957,59 @@ const videoWorker = new Worker('video-generation', async (job) => {
         roteiro: { titulo: roteiro.titulo, profissional: roteiro.profissional, duracao: roteiro.duracao_estimada },
         videoFinal: videoFinalKling,
         provider: 'runway',
+        meta: null
+      };
+
+    } else if (modo === 'economico') {
+      // Imagens Ken Burns + TTS narração + pós-produção premium (~R$0,20/video)
+      logger.info(`[VIDEO WORKER] Modo ECONOMICO - Slideshow Ken Burns + TTS + premium`);
+
+      const tmpDirEco = path.join(__dirname, '../tmp/videos');
+      fs.mkdirSync(tmpDirEco, { recursive: true });
+      const tsEco     = Date.now();
+      const baseEco   = `eco_${tsEco}`;
+
+      await atualizarProgresso('HEYGEN', 35);
+      const slideshowPath = await gerarSlideshowKenBurns(especialidadeId, duracao, tmpDirEco, baseEco);
+
+      await atualizarProgresso('HEYGEN', 55);
+      const audioEcoPath = path.join(tmpDirEco, `${baseEco}_audio.mp3`);
+      await gerarNarracaoPTBR(roteiro.texto_completo, audioEcoPath);
+
+      await atualizarProgresso('POS_PRODUCAO', 65);
+      const videoEcoFinalPath = path.join(tmpDirEco, `${baseEco}_final.mp4`);
+      await mixarNarracaoLocal(slideshowPath, audioEcoPath, videoEcoFinalPath, funil, {
+        hookTexto:     roteiro.hook_texto_overlay,
+        textoCompleto: roteiro.texto_completo,
+        hookStyle,
+        especialidade: especialidadeId
+      });
+      try { fs.unlinkSync(slideshowPath); fs.unlinkSync(audioEcoPath); } catch {}
+
+      await atualizarProgresso('POS_PRODUCAO', 90);
+      const cloudinaryEco = (await import('cloudinary')).default;
+      const uploadEco     = await cloudinaryEco.v2.uploader.upload(videoEcoFinalPath, {
+        resource_type: 'video',
+        folder: 'fono-inova/ai-videos/economico',
+        public_id: baseEco,
+        overwrite: false
+      });
+      const videoFinalEcoUrl = uploadEco.secure_url;
+      try { fs.unlinkSync(videoEcoFinalPath); } catch {}
+
+      await atualizarProgresso('POS_PRODUCAO', 95, { videoFinalUrl: videoFinalEcoUrl, videoUrl: videoFinalEcoUrl });
+      await atualizarProgresso('CONCLUIDO', 100, { status: 'ready', provider: 'economico', 'tempos.concluidoEm': new Date() });
+
+      const ioEco = getIo();
+      ioEco.emit(`video-complete-${jobId}`, { jobId, status: 'CONCLUIDO', videoUrl: videoFinalEcoUrl, roteiro: roteiro.titulo, provider: 'economico' });
+
+      logger.info(`[VIDEO WORKER] ✅ ${jobId} ECONOMICO concluido (${Math.round((Date.now() - job.timestamp) / 1000)}s)`);
+      return {
+        jobId,
+        status: 'CONCLUIDO',
+        roteiro: { titulo: roteiro.titulo, profissional: roteiro.profissional, duracao: roteiro.duracao_estimada },
+        videoFinal: videoFinalEcoUrl,
+        provider: 'economico',
         meta: null
       };
 

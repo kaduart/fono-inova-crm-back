@@ -68,7 +68,7 @@ async function handleGenerateVideo(req, res) {
       duration,             // EN: enviado pelo frontend atual
       publicar = false,
       targeting = {},
-      modo = 'avatar',      // 'avatar', 'ilustrativo' ou 'veo'
+      modo = 'avatar',      // 'avatar', 'ilustrativo', 'veo', 'economico'
       tone = 'educativo',   // 'emotional', 'educativo', 'inspiracional', 'bastidores'
       // 🧠 Campos de inteligência de conteúdo
       platform = 'instagram',   // 'instagram' | 'meta_ads'
@@ -77,7 +77,8 @@ async function handleGenerateVideo(req, res) {
       hookStyle = 'dor',        // 'dor' | 'alerta' | 'curiosidade' | 'erro_comum' | 'autoridade'
       objetivo = 'salvar',      // 'salvar' | 'compartilhar' | 'comentar' | 'agendar'
       variacao,                 // 0..1 — anti-repetição (gerado automaticamente se omitido)
-      intensidade = 'viral'     // 'leve' | 'moderado' | 'forte' | 'viral'
+      intensidade = 'viral',    // 'leve' | 'moderado' | 'forte' | 'viral'
+      roteiroEditado = null     // roteiro pré-gerado (do modal de preview), pula ZEUS
     } = req.body;
 
     logger.info(`[VIDEO ROUTE] body recebido: modo=${modo} | especialidade=${especialidadeId} | duration=${duration}`);
@@ -137,7 +138,8 @@ async function handleGenerateVideo(req, res) {
       hookStyle,
       objetivo,
       variacao: variacaoFinal,
-      intensidade
+      intensidade,
+      roteiroEditado: roteiroEditado || null
     }, {
       jobId,
       priority: 1
@@ -172,6 +174,61 @@ async function handleGenerateVideo(req, res) {
 // 🆕 POST / (raiz) e /gerar — ambos iniciam pipeline
 router.post('/', handleGenerateVideo);
 router.post('/gerar', handleGenerateVideo);
+
+// 🆕 POST /preview-roteiro — Gera apenas o roteiro (ZEUS), sem iniciar o pipeline de vídeo
+// Usado pelo frontend para mostrar/editar o roteiro antes de gerar
+router.post('/preview-roteiro', async (req, res) => {
+  try {
+    const {
+      tema = '',
+      especialidadeId,
+      funil = 'TOPO',
+      duracao = 60,
+      tone = 'educativo',
+      platform = 'instagram',
+      subTema,
+      hookStyle = 'dor',
+      objetivo = 'salvar',
+      intensidade = 'viral'
+    } = req.body;
+
+    if (!especialidadeId) {
+      return res.status(400).json({ success: false, error: 'especialidadeId obrigatório' });
+    }
+
+    const { gerarRoteiro } = await import('../agents/zeus-video.js');
+    const { roteiro } = await gerarRoteiro({
+      tema,
+      especialidade: especialidadeId,
+      funil,
+      duracao,
+      tone,
+      platform,
+      subTema,
+      hookStyle,
+      objetivo,
+      variacao: Math.random(),
+      intensidade
+    });
+
+    res.json({
+      success: true,
+      roteiro: {
+        titulo: roteiro.titulo,
+        texto_completo: roteiro.texto_completo,
+        hook_texto_overlay: roteiro.hook_texto_overlay,
+        cta_texto_overlay: roteiro.cta_texto_overlay,
+        hashtags: roteiro.hashtags,
+        legenda_instagram: roteiro.legenda_instagram,
+        profissional: roteiro.profissional,
+        duracao_estimada: roteiro.duracao_estimada
+      }
+    });
+  } catch (error) {
+    logger.error('[VIDEO ROUTES] Erro ao gerar preview roteiro:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // 🆕 GET /voices — Lista vozes disponíveis do HeyGen
 router.get('/voices', async (req, res) => {
