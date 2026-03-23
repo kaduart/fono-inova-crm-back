@@ -25,13 +25,16 @@ const ipv4HttpsAgent = new https.Agent({ family: 4 });
 
 // Serviços do pipeline
 import { gerarRoteiro } from '../agents/zeus-video.js';
+import { postGenerationQueue } from '../config/bullConfig.js';
 import { gerarVideo } from '../services/video/heygenService.js';
 import { gerarVideoIlustrativo } from '../services/video/slideshowService.js';
-import { posProducao } from '../services/video/postProduction.js';
+import { posProducao, gerarSRTdoRoteiro } from '../services/video/postProduction.js';
 import { publicarVideo } from '../services/meta/videoPublisher.js';
 import { nomearCampanha, FUNIS } from '../agents/heracles.js';
 import Video from '../models/Video.js';
+import InstagramPost from '../models/InstagramPost.js';
 import VeoService, { isVeoConfigured } from '../services/video/veoService.js';
+import RunwayService, { isRunwayConfigured, CLIP_DURATION as RUNWAY_CLIP_DURATION } from '../services/video/runwayService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -58,7 +61,13 @@ async function gerarNarracaoPTBR(texto, outputPath) {
   return outputPath;
 }
 
-const LOGO_PATH = path.join(__dirname, '../assets/logo-overlay.png');
+const LOGO_PATH       = path.join(__dirname, '../assets/logo-overlay.png');
+const CTA_PATH        = path.join(__dirname, '../assets/cta_card.png');
+const LOGO_UNICA_PATH = path.join(__dirname, '../../front/public/images/logo-unica.png');
+const OUTRO_SFX_PATH  = path.join(__dirname, '../assets/outro-sfx.mp3'); // whoosh/ding de transição para o outro
+const FONT_PATH = fs.existsSync('/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf')
+  ? '/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf'
+  : '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf';
 
 /**
  * Adiciona narração + logo ao vídeo VEO usando FFmpeg
@@ -183,84 +192,250 @@ async function concatenarClipsVeo(videoUrls, outputPath) {
 
 const MUSIC_DIR = path.join(__dirname, '../assets/music');
 
-function getMusicPath(funil) {
-  const mapa = { TOPO: 'calma', MEIO: 'esperancosa', FUNDO: 'emocional' };
-  const nome = mapa[funil] || 'calma';
-  const p = path.join(MUSIC_DIR, `musica_${nome}.mp3`);
-  return fs.existsSync(p) ? p : null;
+/**
+ * Seleciona música de acordo com o contexto do vídeo:
+ * hookStyle + funil + especialidade → tom emocional correto
+ */
+function getMusicPath(funil, hookStyle = 'dor', especialidade = '') {
+  // Mapeamento por contexto emocional
+  // autoridade / curiosidade → mais clássico/profissional
+  // dor / alerta → esperançoso (contraste: problema → solução)
+  // erro_comum → leve, positivo
+  const porHook = {
+    autoridade:   ['mixkit-classical-vibes-2-682.mp3', 'mixkit-bridge-n-98-621.mp3', 'musica_calma.mp3'],
+    curiosidade:  ['mixkit-magical-moment-813.mp3', 'mixkit-its-april-847.mp3', 'mixkit-summers-here-91.mp3'],
+    dor:          ['musica_esperancosa.mp3', 'mixkit-forever-love-38.mp3', 'mixkit-thats-the-way-of-life-840.mp3'],
+    alerta:       ['musica_esperancosa.mp3', 'mixkit-keep-smiling-15.mp3', 'mixkit-feeling-happy-5.mp3'],
+    erro_comum:   ['mixkit-smile-1076.mp3', 'mixkit-be-happy-2-823.mp3', 'mixkit-keep-smiling-15.mp3'],
+  };
+
+  // Especialidades com conteúdo infantil ganham trilhas mais acolhedoras
+  const especialidadeInfantil = ['fonoaudiologia', 'pediatria', 'psicologia_infantil'].some(
+    e => especialidade.toLowerCase().includes(e)
+  );
+  if (especialidadeInfantil) {
+    const infantis = ['mixkit-i-love-you-mommy-831.mp3', 'musica_esperancosa.mp3', 'mixkit-magical-moment-813.mp3'];
+    const candidatos = hookStyle === 'autoridade'
+      ? ['musica_calma.mp3', 'mixkit-classical-vibes-2-682.mp3']
+      : infantis;
+    const lista = candidatos.filter(f => fs.existsSync(path.join(MUSIC_DIR, f)));
+    if (lista.length > 0) {
+      const escolhida = lista[Math.floor(Math.random() * lista.length)];
+      logger.info(`[VIDEO WORKER] 🎵 Música (infantil/${hookStyle}): ${escolhida}`);
+      return path.join(MUSIC_DIR, escolhida);
+    }
+  }
+
+  const lista = (porHook[hookStyle] || porHook['dor'])
+    .filter(f => fs.existsSync(path.join(MUSIC_DIR, f)));
+
+  if (lista.length === 0) return null;
+
+  const escolhida = lista[Math.floor(Math.random() * lista.length)];
+  logger.info(`[VIDEO WORKER] 🎵 Música (${hookStyle}/${funil}): ${escolhida}`);
+  return path.join(MUSIC_DIR, escolhida);
 }
 
 /**
- * Adiciona narração TTS + logo + música de fundo a um vídeo local
+ * Pós-produção premium: narração + legendas + hook + CTA + color grade + fade + logo + música
  */
-async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil = 'TOPO') {
+async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil = 'TOPO', extras = {}) {
+  const { hookTexto = '', textoCompleto = '', hookStyle = 'dor', especialidade = '' } = extras;
+
   logger.info(`[VIDEO WORKER] Mixando narração ao vídeo concatenado...`);
   const hasLogo   = fs.existsSync(LOGO_PATH);
-  const musicPath = getMusicPath(funil);
+  const hasCta    = fs.existsSync(CTA_PATH);
+  const musicPath = getMusicPath(funil, hookStyle, especialidade);
   const hasMusic  = !!musicPath;
 
   if (hasMusic) logger.info(`[VIDEO WORKER] 🎵 Adicionando música: ${path.basename(musicPath)}`);
 
-  // Descobrir duração do vídeo para fade-out da música
   const duracao = await new Promise((res, rej) => {
     ffmpeg.ffprobe(localVideoPath, (err, meta) => err ? rej(err) : res(meta.format.duration || 60));
   });
 
+  // Gerar SRT a partir do roteiro
+  const tmpDir  = path.dirname(outputPath);
+  const srtPath = path.join(tmpDir, `srt_${Date.now()}.srt`);
+  let hasSrt = false;
+  if (textoCompleto) {
+    try {
+      const srtContent = gerarSRTdoRoteiro(textoCompleto, duracao);
+      if (srtContent && srtContent.trim()) {
+        fs.writeFileSync(srtPath, srtContent, 'utf8');
+        hasSrt = true;
+      }
+    } catch (e) {
+      logger.warn(`[VIDEO WORKER] Falha ao gerar SRT: ${e.message}`);
+    }
+  }
+
+  // Quebrar hook em no máximo 2 linhas de ~32 chars (cabe na tela sem overflow)
+  const hookLinhas = (() => {
+    const raw = (hookTexto || '').replace(/\n/g, ' ').trim().substring(0, 80);
+    if (!raw) return [];
+    const palavras = raw.split(' ');
+    const linhas = [];
+    let atual = '';
+    for (const p of palavras) {
+      if (linhas.length >= 2) break;
+      if ((atual ? atual + ' ' + p : p).length <= 32) {
+        atual = atual ? atual + ' ' + p : p;
+      } else {
+        if (atual) linhas.push(atual);
+        atual = p;
+      }
+    }
+    if (atual && linhas.length < 2) linhas.push(atual);
+    return linhas;
+  })();
+
+  const sanitizarLinha = (t) => t
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g,  '\u2019')
+    .replace(/:/g,  '\\:');
+
+  const ctaInicio    = Math.max(0, duracao - 5);
+  const fadeOutStart = Math.max(0, duracao - 0.5);
+
+  const hasOutroLogo = fs.existsSync(LOGO_UNICA_PATH);
+
   return new Promise((resolve, reject) => {
     const cmd = ffmpeg()
-      .input(localVideoPath)   // [0]: vídeo sem áudio
-      .input(audioPath);       // [1]: narração TTS
+      .input(localVideoPath)  // [0]
+      .input(audioPath);      // [1]
 
-    if (hasMusic)  cmd.input(musicPath);  // [2]: música
-    if (hasLogo)   cmd.input(LOGO_PATH);  // [2] ou [3]: logo
+    const hasOutroSfx = fs.existsSync(OUTRO_SFX_PATH);
+
+    let nextIdx = 2;
+    let musicIdx = -1, logoIdx = -1, ctaIdx = -1, outroLogoIdx = -1, sfxIdx = -1;
+    if (hasMusic)     { cmd.input(musicPath);       musicIdx     = nextIdx++; }
+    if (hasLogo)      { cmd.input(LOGO_PATH);       logoIdx      = nextIdx++; }
+    if (hasCta)       { cmd.input(CTA_PATH);        ctaIdx       = nextIdx++; }
+    if (hasOutroLogo) { cmd.input(LOGO_UNICA_PATH); outroLogoIdx = nextIdx++; }
+    if (hasOutroSfx)  { cmd.input(OUTRO_SFX_PATH);  sfxIdx       = nextIdx++; }
 
     const filters = [];
-    let   vLabel  = '[0:v]';
 
-    // Logo overlay - canto inferior direito
-    if (hasLogo) {
-      const logoIdx = hasMusic ? 3 : 2;
+    // 1. Color grading cinematográfico
+    filters.push(
+      `[0:v]eq=contrast=1.05:saturation=1.15:brightness=0.02,unsharp=5:5:0.5:5:5:0.0[colored]`
+    );
+
+    // 2. Legendas SRT — fonte menor para não cobrir o rosto
+    if (hasSrt) {
+      const srtSafe = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
       filters.push(
-        `[${logoIdx}:v]scale=110:-1[logo]`,
-        `${vLabel}[logo]overlay=W-w-15:H-h-15[v]`
+        `[colored]subtitles='${srtSafe}':force_style='FontName=Roboto,FontSize=14,` +
+        `PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Bold=1,` +
+        `Alignment=2,MarginV=60'[subbed]`
       );
-      vLabel = '[v]';
+    } else {
+      filters.push('[colored]copy[subbed]');
     }
 
-    // Áudio: narração + música
-    let aLabel;
+    // 3. Hook text — 2 linhas pequenas, rodapé
+    if (hookLinhas.length > 0) {
+      let vLabel = '[subbed]';
+      hookLinhas.forEach((linha, i) => {
+        const outLabel = i === hookLinhas.length - 1 ? '[hooked]' : `[hookline${i}]`;
+        const yPos = hookLinhas.length === 1
+          ? 'h-200'
+          : i === 0 ? 'h-240' : 'h-195';
+        filters.push(
+          `${vLabel}drawtext=text='${sanitizarLinha(linha)}':fontfile='${FONT_PATH}':fontsize=22:` +
+          `fontcolor=white:borderw=2:bordercolor=black:` +
+          `box=1:boxcolor=black@0.5:boxborderw=8:` +
+          `x=(w-text_w)/2:y=${yPos}:enable='between(t,0,3.5)'${outLabel}`
+        );
+        vLabel = outLabel;
+      });
+    } else {
+      filters.push('[subbed]copy[hooked]');
+    }
+
+    // 4. Logo overlay pequeno — canto inferior direito
+    if (logoIdx !== -1) {
+      filters.push(
+        `[${logoIdx}:v]scale=110:-1[logo]`,
+        `[hooked][logo]overlay=W-w-15:H-h-15[withlogo]`
+      );
+    } else {
+      filters.push('[hooked]copy[withlogo]');
+    }
+
+    // 5. CTA card (últimos 5s do conteúdo)
+    if (ctaIdx !== -1) {
+      filters.push(
+        `[${ctaIdx}:v]scale=1080:1920[cta]`,
+        `[withlogo][cta]overlay=0:0:enable='gte(t,${ctaInicio})'[precta]`
+      );
+    } else {
+      filters.push('[withlogo]copy[precta]');
+    }
+
+    // 6. Fade in/out → produz [mainvid]
+    filters.push(
+      `[precta]fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5[mainvid]`
+    );
+
+    // 7. Outro final: tela verde + logo centralizado (2s)
+    if (outroLogoIdx !== -1) {
+      filters.push(
+        `color=c=#0B5323:s=1080x1920:d=2:r=30[bgoutro]`,
+        `[${outroLogoIdx}:v]scale=700:-1[logobig]`,
+        `[bgoutro][logobig]overlay=(W-w)/2:(H-h)/2[outroframe]`,
+        `[mainvid][outroframe]concat=n=2:v=1:a=0[vout]`
+      );
+    } else {
+      filters.push('[mainvid]copy[vout]');
+    }
+
+    // 8. Áudio: narração + música + SFX de transição + silêncio para o outro
+    const OUTRO_DUR = hasOutroLogo ? 2 : 0;
+    const sfxDelay  = Math.round(duracao * 1000); // ms — dispara exatamente na virada do outro
+
     if (hasMusic) {
       const fadeStart = Math.max(0, duracao - 2);
       filters.push(
         `[1:a]volume=1.0[voz]`,
-        `[2:a]volume=0.10,atrim=0:${duracao},afade=t=in:st=0:d=2,afade=t=out:st=${fadeStart}:d=2[bgm]`,
-        `[voz][bgm]amix=inputs=2:duration=first[aout]`
+        `[${musicIdx}:a]volume=0.04,atrim=0:${duracao + OUTRO_DUR},afade=t=in:st=0:d=2,afade=t=out:st=${fadeStart}:d=2[bgm]`,
+        `[voz][bgm]amix=inputs=2:duration=first,apad=pad_dur=${OUTRO_DUR}[mixpre]`
       );
-      aLabel = '[aout]';
+    } else {
+      filters.push(`[1:a]volume=1.0,apad=pad_dur=${OUTRO_DUR}[mixpre]`);
     }
 
-    const mapV = vLabel === '[v]' ? '[v]' : '0:v';
-    const mapA = aLabel || '1:a';
-
-    if (filters.length > 0) {
-      cmd.complexFilter(filters.join(';'));
+    if (hasOutroSfx && sfxIdx !== -1) {
+      // SFX com delay para começar na virada do outro
+      filters.push(
+        `[${sfxIdx}:a]volume=0.8,adelay=${sfxDelay}|${sfxDelay}[sfx]`,
+        `[mixpre][sfx]amix=inputs=2:duration=first[aout]`
+      );
+    } else {
+      filters.push('[mixpre]copy[aout]');
     }
 
     cmd
+      .complexFilter(filters.join(';'))
       .outputOptions([
-        `-map ${mapV}`,
-        `-map ${mapA}`,
+        '-map [vout]',
+        '-map [aout]',
         '-c:v libx264', '-preset fast', '-crf 22',
         '-c:a aac', '-b:a 128k',
-        '-shortest',
         '-movflags +faststart'
       ])
       .on('end', () => {
-        const extras = [hasLogo && 'logo', hasMusic && 'música'].filter(Boolean).join(' + ');
-        logger.info(`[VIDEO WORKER] ✅ Narração${extras ? ' + ' + extras : ''} adicionada ao vídeo final`);
+        try { if (hasSrt) fs.unlinkSync(srtPath); } catch {}
+        const features = [hasSrt && 'legendas', hookLinhas.length > 0 && 'hook', hasLogo && 'logo', hasCta && 'CTA', hasMusic && 'música', hasOutroLogo && 'outro'].filter(Boolean).join(' + ');
+        logger.info(`[VIDEO WORKER] ✅ Vídeo premium: ${features}`);
         resolve(outputPath);
       })
-      .on('error', reject)
+      .on('error', (err, stdout, stderr) => {
+        try { if (hasSrt) fs.unlinkSync(srtPath); } catch {}
+        logger.error(`[FFMPEG] Erro pós-produção: ${stderr}`);
+        reject(err);
+      })
       .save(outputPath);
   });
 }
@@ -270,18 +445,26 @@ async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil =
 // ─────────────────────────────────────────────────────────────────────────────
 
 const videoWorker = new Worker('video-generation', async (job) => {
-  const { 
-    jobId, 
+  const {
+    jobId,
     videoDocId,
-    tema, 
-    especialidadeId, 
-    funil = 'TOPO', 
-    duracao = 60, 
-    publicar = false, 
+    tema,
+    especialidadeId,
+    funil = 'TOPO',
+    duracao = 60,
+    publicar = false,
     targeting = {},
     userId,
-    modo = 'avatar',  // 'avatar' (HeyGen), 'ilustrativo' (Slideshow+TTS), 'veo' (Google Veo 3.1)
-    tone = 'educativo' // 'emotional', 'educativo', 'inspiracional', 'bastidores'
+    modo = 'avatar',       // 'avatar' | 'ilustrativo' | 'veo'
+    tone = 'educativo',    // 'emotional' | 'educativo' | 'inspiracional' | 'bastidores'
+    // 🧠 Campos de inteligência de conteúdo
+    platform = 'instagram',
+    contentType = 'instagram',
+    subTema,
+    hookStyle = 'dor',
+    objetivo = 'salvar',
+    variacao,
+    intensidade = 'viral'
   } = job.data;
 
   logger.info(`[VIDEO WORKER] ▶ ${jobId} — "${tema}"`);
@@ -306,6 +489,11 @@ const videoWorker = new Worker('video-generation', async (job) => {
         percentual,
         timestamp: new Date().toISOString()
       });
+
+      // Evento global para o frontend atualizar a lista sem polling
+      if (etapa === 'CONCLUIDO' || etapa === 'ERRO') {
+        io.emit('video:status', { jobId, etapa, videoId: videoDocId });
+      }
     } catch (e) {
       logger.warn(`[VIDEO WORKER] Erro ao atualizar progresso: ${e.message}`);
     }
@@ -317,12 +505,18 @@ const videoWorker = new Worker('video-generation', async (job) => {
     // ═══════════════════════════════════════════════════════════════════════
     await atualizarProgresso('ROTEIRO', 10);
     
-    const { roteiro } = await gerarRoteiro({ 
-      tema, 
-      especialidade: especialidadeId, 
-      funil, 
+    const { roteiro } = await gerarRoteiro({
+      tema,
+      especialidade: especialidadeId,
+      funil,
       duracao,
-      tone
+      tone,
+      platform,
+      subTema,
+      hookStyle,
+      objetivo,
+      variacao: variacao !== undefined ? Number(variacao) : Math.random(),
+      intensidade
     });
 
     await atualizarProgresso('ROTEIRO', 25, {
@@ -337,7 +531,11 @@ const videoWorker = new Worker('video-generation', async (job) => {
         hashtags: roteiro.hashtags,
         copyAnuncio: roteiro.copy_anuncio
       },
-      especialidadeId: roteiro.profissional
+      especialidadeId: roteiro.profissional,
+      // 🧠 Metadados de inteligência
+      estruturaUsada: roteiro.estrutura_usada || null,
+      hookTextoGerado: roteiro.hook_texto_overlay || null,
+      legendaInstagram: roteiro.legenda_instagram || null
     });
 
     logger.info(`[VIDEO WORKER] Roteiro gerado: ${roteiro.profissional} | ${roteiro.titulo}`);
@@ -428,9 +626,14 @@ const videoWorker = new Worker('video-generation', async (job) => {
         fs.writeFileSync(concatPath, Buffer.from(videoResponse.data));
       }
 
-      // Mixar narração + logo no vídeo concatenado
+      // Mixar narração + pós-produção premium
       await atualizarProgresso('POS_PRODUCAO', 87, { etapa: 'MIXANDO_AUDIO' });
-      await mixarNarracaoLocal(concatPath, audioPath, videoFinalPath, funil);
+      await mixarNarracaoLocal(concatPath, audioPath, videoFinalPath, funil, {
+        hookTexto:     roteiro.hook_texto_overlay,
+        textoCompleto: roteiro.texto_completo,
+        hookStyle,
+        especialidade: especialidadeId
+      });
       try { fs.unlinkSync(concatPath); } catch {}
 
       // Upload para Cloudinary
@@ -475,6 +678,110 @@ const videoWorker = new Worker('video-generation', async (job) => {
         roteiro: { titulo: roteiro.titulo, profissional: roteiro.profissional, duracao: roteiro.duracao_estimada },
         videoFinal: videoFinalVeo,
         provider: 'veo-3.1',
+        meta: null
+      };
+
+    } else if (modo === 'runway') {
+      // Kling AI — vídeo cinematográfico
+      logger.info(`[VIDEO WORKER] Modo RUNWAY - Kling AI (cinematográfico)`);
+
+      if (!isKlingConfigured()) {
+        throw new Error('RUNWAY_ACCESS_KEY_ID ou RUNWAY_ACCESS_KEY_SECRET não configurados.');
+      }
+
+      const numClips = Math.max(1, Math.ceil(duracao / RUNWAY_CLIP_DURATION));
+      const duracaoEfetiva = numClips * RUNWAY_CLIP_DURATION;
+      logger.info(`[VIDEO WORKER] Gerando ${numClips} clip(s) Kling de ${RUNWAY_CLIP_DURATION}s → ${duracaoEfetiva}s (solicitado: ${duracao}s)`);
+
+      const runwayService = new RunwayService();
+      const clipUrls = [];
+
+      for (let i = 0; i < numClips; i++) {
+        const progressoGeracao = 30 + Math.round((i / numClips) * 38);
+        await atualizarProgresso('HEYGEN', progressoGeracao);
+        logger.info(`[VIDEO WORKER] Gerando clip Kling ${i + 1}/${numClips}...`);
+        const result = await runwayService.gerarVideo(especialidadeId, tema || null, { clipIndex: i });
+        clipUrls.push(result.url);
+        logger.info(`[VIDEO WORKER] Clip Kling ${i + 1}/${numClips} gerado`);
+      }
+
+      videoCru = clipUrls[0];
+
+      await atualizarProgresso('HEYGEN', 70, {
+        videoCruUrl: videoCru,
+        videoFinalUrl: videoCru,
+        videoUrl: videoCru,
+        status: 'processing',
+        provider: 'runway'
+      });
+
+      const tmpDirKling = path.join(__dirname, '../tmp/videos');
+      fs.mkdirSync(tmpDirKling, { recursive: true });
+      const tsKling = Date.now();
+
+      const audioPathKling     = path.join(tmpDirKling, `runway_narracao_${tsKling}.mp3`);
+      const concatPathKling    = path.join(tmpDirKling, `runway_concat_${tsKling}.mp4`);
+      const videoFinalPathKling = path.join(tmpDirKling, `runway_final_${tsKling}.mp4`);
+
+      await atualizarProgresso('POS_PRODUCAO', 73, { etapa: 'GERANDO_NARRACAO' });
+      await gerarNarracaoPTBR(roteiro.texto_completo, audioPathKling);
+
+      await atualizarProgresso('POS_PRODUCAO', 80, { etapa: 'CONCATENANDO_CLIPS' });
+      if (numClips > 1) {
+        await concatenarClipsVeo(clipUrls, concatPathKling);
+      } else {
+        const videoResponse = await axios.get(clipUrls[0], { responseType: 'arraybuffer', httpsAgent: ipv4HttpsAgent });
+        fs.writeFileSync(concatPathKling, Buffer.from(videoResponse.data));
+      }
+
+      await atualizarProgresso('POS_PRODUCAO', 87, { etapa: 'MIXANDO_AUDIO' });
+      await mixarNarracaoLocal(concatPathKling, audioPathKling, videoFinalPathKling, funil, {
+        hookTexto:     roteiro.hook_texto_overlay,
+        textoCompleto: roteiro.texto_completo,
+        hookStyle,
+        especialidade: especialidadeId
+      });
+      try { fs.unlinkSync(concatPathKling); } catch {}
+
+      await atualizarProgresso('POS_PRODUCAO', 93, { etapa: 'UPLOAD_CLOUDINARY' });
+      const cloudinaryKling = (await import('cloudinary')).default;
+      const uploadResultKling = await cloudinaryKling.v2.uploader.upload(videoFinalPathKling, {
+        resource_type: 'video',
+        folder: 'fono-inova/ai-videos/runway',
+        public_id: `runway_narrado_${tsKling}`,
+        overwrite: false
+      });
+      const videoFinalKling = uploadResultKling.secure_url;
+
+      try { fs.unlinkSync(audioPathKling); fs.unlinkSync(videoFinalPathKling); } catch {}
+
+      await atualizarProgresso('POS_PRODUCAO', 95, {
+        videoFinalUrl: videoFinalKling,
+        videoUrl: videoFinalKling
+      });
+
+      await atualizarProgresso('CONCLUIDO', 100, {
+        status: 'ready',
+        provider: 'runway',
+        'tempos.concluidoEm': new Date()
+      });
+
+      const ioKling = getIo();
+      ioKling.emit(`video-complete-${jobId}`, {
+        jobId,
+        status: 'CONCLUIDO',
+        videoUrl: videoFinalKling,
+        roteiro: roteiro.titulo,
+        provider: 'runway'
+      });
+
+      logger.info(`[VIDEO WORKER] ${jobId} RUNWAY concluído (${numClips} clip(s), ${Math.round((Date.now() - job.timestamp) / 1000)}s total)`);
+      return {
+        jobId,
+        status: 'CONCLUIDO',
+        roteiro: { titulo: roteiro.titulo, profissional: roteiro.profissional, duracao: roteiro.duracao_estimada },
+        videoFinal: videoFinalKling,
+        provider: 'runway',
         meta: null
       };
 
@@ -588,6 +895,45 @@ const videoWorker = new Worker('video-generation', async (job) => {
       roteiro: roteiro.titulo,
       meta: metaResult
     });
+
+    // 🔁 Auto-multiplicar: criar post Instagram derivado do vídeo
+    if (platform === 'instagram' || !platform) {
+      try {
+        const funnelStage = funil?.toLowerCase() === 'topo' ? 'top' : funil?.toLowerCase() === 'fundo' ? 'bottom' : 'middle';
+        const igPost = await InstagramPost.create({
+          title: roteiro.titulo,
+          content: roteiro.legenda_instagram || roteiro.textoCompleto || roteiro.titulo,
+          caption: roteiro.legenda_instagram || null,
+          theme: especialidadeId,
+          funnelStage,
+          mediaType: 'video',
+          mediaUrl: videoFinal,
+          aiGenerated: true,
+          tone: tone || 'emotional',
+          status: 'draft',
+          processingStatus: 'completed',
+          createdBy: userId || null
+        });
+        const postJobId = `post_ig_from_video_${Date.now()}`;
+        await postGenerationQueue.add('generate-post', {
+          postId: igPost._id.toString(),
+          channel: 'instagram',
+          especialidadeId,
+          customTheme: roteiro.titulo,
+          funnelStage,
+          generateImage: false,
+          userId,
+          tone,
+          sourceVideoId: videoDocId,
+          sourceVideoUrl: videoFinal,
+          legenda: roteiro.legenda_instagram,
+          hashtags: roteiro.hashtags
+        }, { jobId: postJobId });
+        logger.info(`[VIDEO WORKER] Post Instagram criado e enfileirado: ${igPost._id} / ${postJobId}`);
+      } catch (postErr) {
+        logger.warn(`[VIDEO WORKER] Falha ao criar post Instagram (não crítico): ${postErr.message}`);
+      }
+    }
 
     logger.info(`[VIDEO WORKER] ✅ ${jobId} concluído em ${(Date.now() - job.timestamp) / 1000}s`);
 
