@@ -2368,6 +2368,7 @@ export async function handleIncomingMessage(req, res) {
 // ============================================================================
 
 let silenceMonitorStarted = false;
+let lastAnomalyAlert = null; // 🆕 Controle de tempo do alerta de anomalia
 
 export function startSilenceMonitor() {
     if (silenceMonitorStarted) return;
@@ -2375,6 +2376,7 @@ export function startSilenceMonitor() {
 
     const SILENCE_THRESHOLD_MINUTES = parseInt(process.env.SILENCE_THRESHOLD_MINUTES) || 720; // 12 horas padrão
     const CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutos
+    const ANOMALY_ALERT_INTERVAL = 4 * 60 * 60 * 1000; // 🆕 4 horas entre alertas de anomalia
 
     setInterval(async () => {
         try {
@@ -2417,15 +2419,22 @@ export function startSilenceMonitor() {
 
                 // Se menos de 2 mensagens na última hora durante horário comercial
                 if (messagesLastHour < 2) {
-                    logger.warn(`🚨 [GUARD-ANOMALY] Volume anormal: apenas ${messagesLastHour} mensagem(ns) na última hora`);
+                    const now = Date.now();
                     
-                    const io = getIo();
-                    if (io) {
-                        io.emit('system:alert', {
-                            type: 'anomaly',
-                            message: `Volume anormal de mensagens (${messagesLastHour}/hora)`,
-                            timestamp: new Date()
-                        });
+                    // 🆕 Só alerta se passaram 4 horas desde o último alerta
+                    if (!lastAnomalyAlert || (now - lastAnomalyAlert) > ANOMALY_ALERT_INTERVAL) {
+                        lastAnomalyAlert = now;
+                        
+                        logger.warn(`🚨 [GUARD-ANOMALY] Volume anormal: apenas ${messagesLastHour} mensagem(ns) na última hora`);
+                        
+                        const io = getIo();
+                        if (io) {
+                            io.emit('system:alert', {
+                                type: 'anomaly',
+                                message: `Volume anormal de mensagens (${messagesLastHour}/hora)`,
+                                timestamp: new Date()
+                            });
+                        }
                     }
                 }
             }
