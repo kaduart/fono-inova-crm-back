@@ -275,6 +275,8 @@ export function isAutoResume(text, suspendedState) {
         [STATES.COLLECT_THERAPY]: () => /(^|\s)(fono|psico|fisio|neuropsico|ocupa[cç]|musico|psicopedag|linguinha|freio\s*lingual|neuropsi)/i.test(t),
         // Retomada quando user responde laudo/acompanhamento enquanto estava em COLLECT_NEURO_TYPE suspenso
         [STATES.COLLECT_NEURO_TYPE]: () => /\b(laudo|relat[oó]rio|diagn[oó]stico|acompanhamento|terapia|sess[oõ]es?)\b/i.test(t),
+        // Retomada quando user descreve a queixa: qualquer texto descritivo com >10 chars que não seja pergunta
+        [STATES.COLLECT_COMPLAINT]: () => t.length > 10 && !t.endsWith('?') && !/(preço|valor|endereço|plano|onde|quando|quanto|como)/i.test(t),
         [STATES.COLLECT_NAME]: () => t.length >= 3 && /^[A-Za-zÀ-ÿ\s]+$/.test(t) && !/(preço|valor|endereço|plano)/i.test(t),
         [STATES.COLLECT_BIRTH]: () => /\d{2}[\/-]\d{2}[\/-]\d{2,4}/.test(t) || /\d+\s*anos?/i.test(t),
         [STATES.COLLECT_PERIOD]: () => /\b(manh[aã]|tard|noit)/i.test(t),
