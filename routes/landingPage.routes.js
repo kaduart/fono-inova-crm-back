@@ -52,7 +52,7 @@ router.post('/track', async (req, res) => {
 router.use(auth);
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 📋 LISTAGEM E CONSULTA
+// 📋 LISTAGEM E CONSULTA (ROTA ESTÁTICA)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -115,32 +115,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-/**
- * GET /api/landing-pages/:slug
- * Detalhes de uma landing page específica
- */
-router.get('/:slug', async (req, res) => {
-  try {
-    const { slug } = req.params;
-    
-    const page = await LandingPage.findOne({ slug }).lean();
-    
-    if (!page) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Landing page não encontrada' 
-      });
-    }
-    
-    res.json({ success: true, data: page });
-  } catch (error) {
-    console.error('Erro ao buscar landing page:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // ═══════════════════════════════════════════════════════════════════════════════
-// 🎯 ROTAÇÃO E SUGESTÕES
+// 🎯 ROTAÇÃO E SUGESTÕES (ROTAS ESTÁTICAS - DEVEM VIR ANTES DE /:slug)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -200,6 +176,169 @@ router.get('/suggest', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao sugerir LPs:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🔧 ADMIN (ROTAS ESTÁTICAS)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /api/landing-pages/seed
+ * Popula o banco com as 20 LPs padrão (apenas admin)
+ */
+router.post('/seed', async (req, res) => {
+  try {
+    // TODO: Verificar se é admin
+    // if (!req.user.isAdmin) {
+    //   return res.status(403).json({ success: false, error: 'Acesso negado' });
+    // }
+    
+    const result = await landingPageService.seedLandingPages();
+    
+    res.json({
+      success: true,
+      message: 'Seed executado com sucesso',
+      data: result
+    });
+  } catch (error) {
+    console.error('Erro detalhado no seed:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      details: error.errors ? Object.keys(error.errors).map(k => ({
+        field: k,
+        message: error.errors[k].message
+      })) : null,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+/**
+ * GET /api/landing-pages/stats
+ * Estatísticas gerais das landing pages
+ */
+router.get('/stats', async (req, res) => {
+  try {
+    const stats = await landingPageService.getStats();
+    
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error('Erro ao buscar estatísticas:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/landing-pages/cron/run-now
+ * Executa o cron manualmente (admin)
+ */
+router.post('/cron/run-now', async (req, res) => {
+  try {
+    const { runLandingPageDailyPostsNow } = await import('../crons/landingPageDailyPost.js');
+    
+    console.log('🚀 Executando cron manualmente...');
+    const result = await runLandingPageDailyPostsNow();
+    
+    res.json({
+      success: true,
+      message: 'Cron executado com sucesso',
+      data: result
+    });
+  } catch (error) {
+    console.error('Erro ao executar cron:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/landing-pages/cron/status
+ * Status do cron de landing pages
+ */
+router.get('/cron/status', async (req, res) => {
+  try {
+    const { getLandingPageCronStatus } = await import('../crons/landingPageDailyPost.js');
+    
+    const status = getLandingPageCronStatus();
+    
+    res.json({
+      success: true,
+      data: status
+    });
+  } catch (error) {
+    console.error('Erro ao buscar status:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📊 MÉTRICAS (ROTAS ESTÁTICAS)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * GET /api/landing-pages/metrics
+ * Busca métricas agregadas das landing pages
+ */
+router.get('/metrics', async (req, res) => {
+  try {
+    const stats = await landingPageService.getStats();
+    
+    // Busca top LPs por views
+    const topByViews = await LandingPage.find({ status: 'active' })
+      .sort({ 'metrics.views': -1 })
+      .limit(10)
+      .select('slug title headline category metrics views leads conversionRate');
+    
+    // Busca top LPs por leads
+    const topByLeads = await LandingPage.find({ status: 'active' })
+      .sort({ 'metrics.leads': -1 })
+      .limit(10)
+      .select('slug title headline category metrics views leads conversionRate');
+    
+    res.json({
+      success: true,
+      data: {
+        ...stats,
+        topByViews,
+        topByLeads
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao buscar métricas:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 📖 ROTAS PARAMETRIZADAS (SEMPRE DEPOIS DAS ESTÁTICAS)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * GET /api/landing-pages/:slug
+ * Detalhes de uma landing page específica
+ * NOTA: Esta rota deve vir DEPOIS de todas as rotas estáticas
+ */
+router.get('/:slug', async (req, res) => {
+  try {
+    const { slug } = req.params;
+    
+    const page = await LandingPage.findOne({ slug }).lean();
+    
+    if (!page) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Landing page não encontrada' 
+      });
+    }
+    
+    res.json({ success: true, data: page });
+  } catch (error) {
+    console.error('Erro ao buscar landing page:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -329,10 +468,6 @@ router.post('/:slug/create-post', async (req, res) => {
   }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// ✍️ AÇÕES
-// ═══════════════════════════════════════════════════════════════════════════════
-
 /**
  * POST /api/landing-pages/:slug/use
  * Marca uma LP como usada em post
@@ -396,60 +531,6 @@ router.post('/:slug/metrics', async (req, res) => {
   }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// 🔧 ADMIN
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * POST /api/landing-pages/seed
- * Popula o banco com as 20 LPs padrão (apenas admin)
- */
-router.post('/seed', async (req, res) => {
-  try {
-    // TODO: Verificar se é admin
-    // if (!req.user.isAdmin) {
-    //   return res.status(403).json({ success: false, error: 'Acesso negado' });
-    // }
-    
-    const result = await landingPageService.seedLandingPages();
-    
-    res.json({
-      success: true,
-      message: 'Seed executado com sucesso',
-      data: result
-    });
-  } catch (error) {
-    console.error('Erro detalhado no seed:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message,
-      details: error.errors ? Object.keys(error.errors).map(k => ({
-        field: k,
-        message: error.errors[k].message
-      })) : null,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
-});
-
-/**
- * GET /api/landing-pages/stats
- * Estatísticas gerais das landing pages
- */
-router.get('/stats', async (req, res) => {
-  try {
-    const stats = await landingPageService.getStats();
-    
-    res.json({
-      success: true,
-      data: stats
-    });
-  } catch (error) {
-    console.error('Erro ao buscar estatísticas:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 /**
  * PUT /api/landing-pages/:slug
  * Atualiza uma landing page (admin)
@@ -484,86 +565,6 @@ router.put('/:slug', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro ao atualizar LP:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * POST /api/landing-pages/cron/run-now
- * Executa o cron manualmente (admin)
- */
-router.post('/cron/run-now', async (req, res) => {
-  try {
-    const { runLandingPageDailyPostsNow } = await import('../crons/landingPageDailyPost.js');
-    
-    console.log('🚀 Executando cron manualmente...');
-    const result = await runLandingPageDailyPostsNow();
-    
-    res.json({
-      success: true,
-      message: 'Cron executado com sucesso',
-      data: result
-    });
-  } catch (error) {
-    console.error('Erro ao executar cron:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-/**
- * GET /api/landing-pages/cron/status
- * Status do cron de landing pages
- */
-router.get('/cron/status', async (req, res) => {
-  try {
-    const { getLandingPageCronStatus } = await import('../crons/landingPageDailyPost.js');
-    
-    const status = getLandingPageCronStatus();
-    
-    res.json({
-      success: true,
-      data: status
-    });
-  } catch (error) {
-    console.error('Erro ao buscar status:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 📊 MÉTRICAS (Site → CRM)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * GET /api/landing-pages/metrics
- * Busca métricas agregadas das landing pages
- */
-router.get('/metrics', async (req, res) => {
-  try {
-    const stats = await landingPageService.getStats();
-    
-    // Busca top LPs por views
-    const topByViews = await LandingPage.find({ status: 'active' })
-      .sort({ 'metrics.views': -1 })
-      .limit(10)
-      .select('slug title headline category metrics views leads conversionRate');
-    
-    // Busca top LPs por leads
-    const topByLeads = await LandingPage.find({ status: 'active' })
-      .sort({ 'metrics.leads': -1 })
-      .limit(10)
-      .select('slug title headline category metrics views leads conversionRate');
-    
-    res.json({
-      success: true,
-      data: {
-        ...stats,
-        topByViews,
-        topByLeads
-      }
-    });
-  } catch (error) {
-    console.error('Erro ao buscar métricas:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

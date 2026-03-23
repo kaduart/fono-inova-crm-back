@@ -24,8 +24,9 @@ const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const ASSETS_DIR = path.resolve(__dirname, '../../assets/video');
-const OUTPUT_DIR = path.resolve(__dirname, '../../tmp/videos/final');
+const ASSETS_DIR  = path.resolve(__dirname, '../../assets');
+const MUSIC_DIR   = path.resolve(__dirname, '../../assets/music');
+const OUTPUT_DIR  = path.resolve(__dirname, '../../tmp/videos/final');
 
 /**
  * Pipeline completo de pós-produção
@@ -91,9 +92,9 @@ export async function posProducao({
  * Montagem via fluent-ffmpeg (sem exec, sem injeção)
  */
 function _montarVideoFFmpeg({ videoInput, srtPath, hookTexto, ctaTexto, musica, duracao, outputPath }) {
-  const logoPath   = path.join(ASSETS_DIR, 'logo.png');
-  const ctaPath    = path.join(ASSETS_DIR, 'cta_card.png');
-  const musicaPath = path.join(ASSETS_DIR, `musica_${musica}.mp3`);
+  const logoPath   = path.join(ASSETS_DIR, 'logo-overlay.png');
+  const ctaPath    = path.join(ASSETS_DIR, 'cta_card.png');  // opcional, não obrigatório
+  const musicaPath = path.join(MUSIC_DIR, `musica_${musica}.mp3`);
   
   // Fonte Roboto (padrão Ubuntu/Debian)
   const fontPath = '/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf';
@@ -128,22 +129,27 @@ function _montarVideoFFmpeg({ videoInput, srtPath, hookTexto, ctaTexto, musica, 
   return new Promise((resolve, reject) => {
     let cmd = ffmpeg();
 
-    // Inputs
-    cmd = cmd.input(videoInput);  // [0]
-    
+    // Inputs com rastreamento dinâmico de índices
+    cmd = cmd.input(videoInput);  // sempre [0]
+    let nextIdx = 1;
+    let logoIdx = -1, ctaIdx = -1, musicaIdx = -1;
+
     if (fs.existsSync(logoPath)) {
-      cmd = cmd.input(logoPath);  // [1]
+      cmd = cmd.input(logoPath);
+      logoIdx = nextIdx++;
     }
     if (fs.existsSync(ctaPath)) {
-      cmd = cmd.input(ctaPath);   // [2]
+      cmd = cmd.input(ctaPath);
+      ctaIdx = nextIdx++;
     }
     if (fs.existsSync(musicaPath)) {
-      cmd = cmd.input(musicaPath); // [3]
+      cmd = cmd.input(musicaPath);
+      musicaIdx = nextIdx++;
     }
 
     // Construir filter_complex
     const filters = [];
-    
+
     // 1. Hook overlay (primeiros 3.5s)
     if (hookSafe) {
       filters.push(
@@ -155,8 +161,9 @@ function _montarVideoFFmpeg({ videoInput, srtPath, hookTexto, ctaTexto, musica, 
       filters.push('[0:v]copy[hook]');
     }
 
-    // 2. Legendas SRT
-    if (fs.existsSync(srtPath)) {
+    // 2. Legendas SRT (só usa se o arquivo existe e tem conteúdo)
+    const srtValido = fs.existsSync(srtPath) && fs.statSync(srtPath).size > 0;
+    if (srtValido) {
       filters.push(
         `[hook]subtitles='${srtSafe}':force_style='FontName=Roboto,FontSize=28,` +
         `PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=3,Bold=1,` +
@@ -166,31 +173,31 @@ function _montarVideoFFmpeg({ videoInput, srtPath, hookTexto, ctaTexto, musica, 
       filters.push('[hook]copy[subs]');
     }
 
-    // 3. Logo overlay (canto superior direito, exceto CTA)
-    if (fs.existsSync(logoPath)) {
+    // 3. Logo overlay (índice dinâmico)
+    if (logoIdx !== -1) {
       filters.push(
-        `[1:v]scale=120:-1[logo]`,
+        `[${logoIdx}:v]scale=120:-1[logo]`,
         `[subs][logo]overlay=W-w-30:30:enable='between(t,0,${ctaInicio})'[withlogo]`
       );
     } else {
       filters.push('[subs]copy[withlogo]');
     }
 
-    // 4. Card CTA (últimos 5s)
-    if (fs.existsSync(ctaPath)) {
+    // 4. Card CTA (índice dinâmico)
+    if (ctaIdx !== -1) {
       filters.push(
-        `[2:v]scale=1080:1920[cta]`,
+        `[${ctaIdx}:v]scale=1080:1920[cta]`,
         `[withlogo][cta]overlay=0:0:enable='gte(t,${ctaInicio})'[vout]`
       );
     } else {
       filters.push('[withlogo]copy[vout]');
     }
 
-    // 5. Áudio: voz + música
-    if (fs.existsSync(musicaPath)) {
+    // 5. Áudio: voz + música (índice dinâmico)
+    if (musicaIdx !== -1) {
       filters.push(
         `[0:a]volume=1.0[voz]`,
-        `[3:a]volume=0.08,atrim=0:${duracao},afade=t=in:st=0:d=2,` +
+        `[${musicaIdx}:a]volume=0.08,atrim=0:${duracao},afade=t=in:st=0:d=2,` +
         `afade=t=out:st=${duracao - 2}:d=2[bgm]`,
         `[voz][bgm]amix=inputs=2:duration=first[aout]`
       );

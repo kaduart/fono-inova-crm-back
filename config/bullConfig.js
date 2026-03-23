@@ -26,16 +26,12 @@ export const warmLeadFollowupEvents = new QueueEvents("warm-lead-followup", {
 });
 
 // 🎬 NOVO: Fila de geração de vídeos (HeyGen + FFmpeg)
-export const videoGenerationQueue = new Queue("video-generation", { 
+export const videoGenerationQueue = new Queue("video-generation", {
     connection: redisConnection,
     defaultJobOptions: {
-        attempts: 2,
-        backoff: {
-            type: 'exponential',
-            delay: 30000  // 30s entre tentativas
-        },
-        removeOnComplete: 50,  // Mantém últimos 50 jobs
-        removeOnFail: 20       // Mantém últimos 20 falhos
+        attempts: 1,           // sem retry automático — evita loop em caso de erro
+        removeOnComplete: 50,
+        removeOnFail: 20
     }
 });
 

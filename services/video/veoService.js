@@ -159,7 +159,7 @@ const CENAS_ESPECIALIDADE = {
  * @param {number} clipIndex - índice do clip (0-based)
  * @returns {string} prompt completo para o clip
  */
-function buildScenePrompt(especialidade, clipIndex = 0) {
+export function buildScenePrompt(especialidade, clipIndex = 0) {
   const config = CENAS_ESPECIALIDADE[especialidade] || CENAS_ESPECIALIDADE.fonoaudiologia;
   const { cenas, estilo } = config;
   const cena = cenas[clipIndex % cenas.length];
@@ -169,7 +169,7 @@ function buildScenePrompt(especialidade, clipIndex = 0) {
 /**
  * Template para tema personalizado — mantém estilo visual da especialidade.
  */
-function buildCustomPrompt(tema, especialidade) {
+export function buildCustomPrompt(tema, especialidade) {
   const config = CENAS_ESPECIALIDADE[especialidade] || CENAS_ESPECIALIDADE.fonoaudiologia;
   return `8-second single continuous shot: ${tema}. ${config.estilo}`;
 }
