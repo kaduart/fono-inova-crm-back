@@ -103,6 +103,7 @@ const KNOWN_PROBLEM_PATTERNS = {
     test: (conversation) => {
       const { messages, outcome } = conversation;
       if (outcome === 'success') return false;
+      if (!messages || !Array.isArray(messages)) return false;
       
       // Procura mensagem com preço seguida de não-resposta
       const priceIndex = messages.findIndex(m => 
