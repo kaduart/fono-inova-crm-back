@@ -14,6 +14,9 @@ const LP_CATEGORY_TO_THERAPY_ID = {
   psicologia:          'psychology',
   aprendizagem:        'psychopedagogy',
   terapia_ocupacional: 'occupational_therapy',
+  fisioterapia:        'physiotherapy',
+  neuropsicologia:     'neuropsychological',
+  desenvolvimento:     'speech',         // Down, prematuridade → fono como porta de entrada
   geografica:          null,             // LP genérica de localização → sem terapia pré-definida
 };
 
@@ -183,6 +186,69 @@ const LP_PATTERN_MAP = [
     patterns: [
       /terapia ocupacional.*an[aá]polis/i,
       /terapia.*ocupacional/i,
+    ],
+  },
+  {
+    slug: 'psicomotricidade',
+    patterns: [
+      /psicomotricidade/i,
+    ],
+  },
+
+  // ─── TDAH / ATENÇÃO ───────────────────────────────────────────────────────
+  {
+    slug: 'tdah-infantil',
+    patterns: [
+      /tdah/i,
+      /hiperativ/i,
+      /dificuldade.*aten[çc][aã]o/i,
+      /aten[çc][aã]o.*dificuldade/i,
+      /muito inquieto/i,
+      /n[aã]o.*concentra/i,
+    ],
+  },
+
+  // ─── SÍNDROME DE DOWN ─────────────────────────────────────────────────────
+  {
+    slug: 'sindrome-de-down',
+    patterns: [
+      /s[ií]ndrome\s+de\s+down/i,
+      /\bdown\b/i,
+      /trissomia/i,
+    ],
+  },
+
+  // ─── PREMATURIDADE ────────────────────────────────────────────────────────
+  {
+    slug: 'prematuridade-desenvolvimento',
+    patterns: [
+      /prematuro/i,
+      /prematuridade/i,
+      /rec[eé]m[\s-]nascido/i,
+    ],
+  },
+
+  // ─── ADULTO / VOZ / DEGLUTIÇÃO ────────────────────────────────────────────
+  {
+    slug: 'fonoaudiologia-adulto',
+    patterns: [
+      /avalia[çc][aã]o.*voz/i,
+      /voz.*avalia[çc][aã]o/i,
+      /degluti[çc][aã]o/i,
+      /disfagia/i,
+      /atendimento.*adulto/i,
+      /adulto.*fono/i,
+    ],
+  },
+
+  // ─── DIFICULDADE ESCOLAR / PSICOPEDAGOGIA ────────────────────────────────
+  {
+    slug: 'dificuldade-escolar',
+    patterns: [
+      /dificuldade.*escolar/i,
+      /escolar.*dificuldade/i,
+      /psicopedagogia/i,
+      /psicopedag[oó]g/i,
     ],
   },
 ];

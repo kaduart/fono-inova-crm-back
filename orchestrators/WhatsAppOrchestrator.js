@@ -62,6 +62,7 @@ import { callAI } from '../services/IA/Aiproviderservice.js';
 import { buildMessageContext } from '../services/messageContextBuilder.js';
 import { parseIncomingMessage } from '../services/whatsappLinkService.js';
 import { extractLPContext } from '../utils/lpContextParser.js';
+import { enforce } from '../services/EnforcementLayer.js';
 
 const logger = new Logger('WhatsAppOrchestrator');
 
@@ -352,6 +353,7 @@ export default class WhatsAppOrchestrator {
 
   async _processState(state, text, lead, stateData, services = {}, ctx = null) {
     const leadId = lead._id;
+    const flags = ctx?.flags || {};
 
     this.logger.info('V8_STATE_ENTRY', { leadId, state, textLen: text.length, text: text.substring(0, 60) });
 
@@ -381,8 +383,8 @@ export default class WhatsAppOrchestrator {
 
           // ── WARM RECALL: enriquece contexto apenas se lead ficou afastado ────
           // Evita chamar enrichLeadContext em toda mensagem — só quando voltou depois de ≥1 dia
-          const quickHoursSince = freshLead.lastInteractionAt
-            ? (Date.now() - new Date(freshLead.lastInteractionAt).getTime()) / (1000 * 60 * 60)
+          const quickHoursSince = lead.lastInteractionAt
+            ? (Date.now() - new Date(lead.lastInteractionAt).getTime()) / (1000 * 60 * 60)
             : 0;
           const isReturningAfterGap = quickHoursSince >= 24;
 
@@ -451,7 +453,7 @@ export default class WhatsAppOrchestrator {
           if (hasExistingName) {
             // canOfferScheduling: falso se bookingOffersCount >= 1 (já recebeu slots)
             if (!ctx.canOfferScheduling) {
-              this.logger.info('V8_SLOT_SKIP_ALREADY_OFFERED', { leadId, bookingOffersCount: freshLead.bookingOffersCount });
+              this.logger.info('V8_SLOT_SKIP_ALREADY_OFFERED', { leadId, bookingOffersCount: lead.bookingOffersCount });
               return this._reply('Você já recebeu os horários disponíveis 😊 Conseguiu verificar? Se precisar de outros dias ou turnos é só me contar 💚');
             }
             const resumeData = { ...stateData, therapy: hasExistingTherapy, patientName: hasExistingName };
@@ -469,7 +471,7 @@ export default class WhatsAppOrchestrator {
         }
 
         // ── LP CONTEXT: detectar LP de origem pelo texto do CTA pré-preenchido ──
-        if (!freshLead.lpContextApplied) {
+        if (!lead.lpContextApplied) {
           const lpContext = extractLPContext(text);
           if (lpContext) {
             const { therapy, complaint, slug, lpData } = lpContext;
@@ -869,7 +871,7 @@ export default class WhatsAppOrchestrator {
         // _buildLPGreeting pergunta "quantos anos?" antes de pedir período
         // Só captura se ainda não temos idade registrada
         {
-          const existingAge = freshLead.patientInfo?.age || freshLead.patientInfo?.ageInMonths;
+          const existingAge = lead.patientInfo?.age || lead.patientInfo?.ageInMonths;
           if (!existingAge) {
             const ageResult = extractAgeFromText(text);
             const ageNum = resolveAgeNumber(ageResult);
@@ -1590,8 +1592,18 @@ Me conta um pouco sobre o que você precisa! 😊`;
       temperature: 0.7,
     });
 
+    // 🛡️ Enforcement: valida estrutura da resposta (preço, plano, agendamento, etc.)
+    const { response: enforcedText, wasEnforced, validation } = enforce(
+      aiText,
+      { flags: ctx?.flags || {}, lead, userText },
+      { strictMode: false, logViolations: true }
+    );
+    if (wasEnforced) {
+      this.logger.warn('V8_ENFORCEMENT_FALLBACK', { violations: validation.violations.map(v => v.rule) });
+    }
+
     // LLM já aplica tom/empatia/RNs — skipEnrichment evita duplicação
-    return this._reply(aiText, { skipEnrichment: true });
+    return this._reply(enforcedText, { skipEnrichment: true });
   }
 
   _buildLPGreeting(lpData) {

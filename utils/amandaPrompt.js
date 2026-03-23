@@ -27,7 +27,11 @@ export function buildSystemPrompt(context = {}) {
     intentScore = null,
     intentAction = null,
     instruction = null,   // ← O que o FSM decidiu fazer agora
-    clinicContext = null  // ← Dados extras: preço, horários, etc.
+    clinicContext = null,  // ← Dados extras: preço, horários, etc.
+    // 🆕 Contexto LP (Landing Page)
+    source,
+    lpPage,
+    lpIntent
   } = context;
 
   // Detecta modo baseado no contexto emocional + intent score
@@ -106,6 +110,29 @@ ${patientName ? `- Nome: ${patientName}` : ''}
 ${complaint ? `- Situação: ${complaint}` : ''}
 ${hasMultipleChildren ? '- ⚠️ Múltiplas crianças' : ''}
 ${isPostEvaluation ? '- ⚠️ Pós-avaliação' : ''}
+
+${source === 'lp' && lpPage ? `
+## 🌐 CONTEXTO DO SITE (LP)
+- Lead veio da landing page: **${lpPage}**
+- Já pesquisou sobre o tema antes de entrar em contato — está interessado
+- Evite perguntar o óbvio (especialidade já está implícita na página)
+- Priorize acolher primeiro, entender rapidamente, depois orientar
+- Se fizer sentido pelo tom da conversa, conduza para explicação ou agendamento
+
+💚 CONTEXTO EMOCIONAL PROVÁVEL:
+${lpPage === 'Dislexia' ? '- Pode estar preocupado com dificuldade de aprendizagem\n- Pode vir de frustração escolar ou feedback da escola\n- Pode não ter diagnóstico ainda — está buscando orientação' : ''}
+${lpPage === 'TEA' || lpPage === 'Autismo' ? '- Pode estar em momento de descoberta/suspeita\n- Pode haver ansiedade sobre diagnóstico\n- Acolhimento é prioridade absoluta' : ''}
+${lpPage === 'TDAH' ? '- Pode estar exausto com comportamento desafiador\n- Pode ter recebido feedback negativo da escola\n- Precisa de esperança e direção' : ''}
+${lpPage === 'Fonoaudiologia' || lpPage === 'Fala Tardia' ? '- Pode estar comparando com outras crianças\n- Pode ter ansiedade sobre desenvolvimento\n- Acolha a preocupação antes de explicar' : ''}
+${lpPage === 'Psicologia' ? '- Pode estar emocionalmente sobrecarregado\n- Questões comportamentais geram culpa nos pais\n- Sem julgamento, apenas apoio' : ''}
+${lpPage === 'Home' ? '- Contexto ainda indefinido — pergunte com curiosidade genuína\n- Não assuma especialidade antes de entender' : ''}
+
+🎯 ABORDAGEM:
+- Acolha antes de orientar
+- Evite termos técnicos no início
+- Seja consultiva, não protocolar
+- Conduza naturalmente para próximo passo
+` : ''}
 
 ## 🎭 MODO: ${modo}
 ${isCloserMode ? `

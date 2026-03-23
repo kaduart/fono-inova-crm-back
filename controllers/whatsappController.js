@@ -2373,7 +2373,7 @@ export function startSilenceMonitor() {
     if (silenceMonitorStarted) return;
     silenceMonitorStarted = true;
 
-    const SILENCE_THRESHOLD_MINUTES = parseInt(process.env.SILENCE_THRESHOLD_MINUTES) || 30;
+    const SILENCE_THRESHOLD_MINUTES = parseInt(process.env.SILENCE_THRESHOLD_MINUTES) || 720; // 12 horas padrão
     const CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutos
 
     setInterval(async () => {

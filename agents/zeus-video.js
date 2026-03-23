@@ -41,6 +41,106 @@ const NOMES_PROFISSIONAL = {
   musico_fer: 'Fer (Musicoterapia)'
 };
 
+// Hooks específicos por subTema — mais precisos que os genéricos por hookStyle
+// Usados quando subTema está definido, para máxima relevância emocional
+const HOOKS_SUBTEMA = {
+  atraso_fala: {
+    curiosidade: [
+      'Tem um detalhe no dia a dia que pode estar atrasando a fala do seu filho',
+      'Por que algumas crianças demoram mais para falar — e o que ninguém te conta',
+      'Existe algo que acontece em casa que a maioria dos pais não percebe'
+    ],
+    dor: [
+      'Seu filho tem mais de dois anos e ainda fala pouco — você não está sozinha',
+      'Você já se preocupou se seu filho vai falar igual às outras crianças?',
+      'Essa angústia de esperar seu filho falar é mais comum do que parece'
+    ],
+    alerta: [
+      'Se seu filho tem X anos e ainda não faz isso, vale investigar',
+      'Esse sinal de linguagem aparece cedo — e precisa de atenção',
+      'Atenção: esse comportamento na fala pode indicar atraso de linguagem'
+    ],
+    erro_comum: [
+      'Muitos pais acham que esperar resolve — e isso atrasa ainda mais',
+      'Esse hábito que parece inofensivo pode estar atrasando a fala',
+      'A maioria das famílias faz isso achando que ajuda — mas não ajuda'
+    ]
+  },
+  autismo: {
+    curiosidade: [
+      'Tem sinais de autismo que aparecem antes de 1 ano — e poucos reconhecem',
+      'Por que identificar cedo faz uma diferença enorme no desenvolvimento',
+      'Existe um sinal que aparece muito antes do diagnóstico — e é fácil de observar'
+    ],
+    dor: [
+      'Você percebeu algo diferente no seu filho e não sabe se deve se preocupar',
+      'Essa dúvida — "será que é autismo?" — pesa no coração de muitos pais',
+      'Saber que algo pode estar diferente e não saber o que fazer é muito difícil'
+    ],
+    alerta: [
+      'Esses sinais no primeiro ano de vida merecem atenção imediata',
+      'Se seu filho tem menos de 2 anos e faz isso, não espere para avaliar',
+      'Esse comportamento pode ser um sinal precoce — vale investigar'
+    ],
+    erro_comum: [
+      'Muitos pais esperam a criança "crescer e melhorar" — e perdem o momento certo',
+      'Esse mito sobre autismo ainda atrasa o diagnóstico de muitas crianças'
+    ]
+  },
+  comportamento: {
+    curiosidade: [
+      'Por que seu filho faz birra — e o que está por trás disso',
+      'Tem uma razão neurológica para as explosões emocionais do seu filho',
+      'Esse comportamento que parece "manha" pode ser outra coisa'
+    ],
+    dor: [
+      'Você já chegou ao limite com as birras do seu filho?',
+      'Quando o comportamento do seu filho te esgota — e você não sabe o que fazer',
+      'Essa sensação de que nada funciona com seu filho é exaustiva'
+    ],
+    erro_comum: [
+      'A maioria dos pais reage às birras do jeito errado — sem saber',
+      'Ceder ou punir: os dois podem piorar o comportamento do seu filho',
+      'Esse hábito dos pais piora a regulação emocional da criança'
+    ]
+  },
+  teste_linguinha: {
+    curiosidade: [
+      'Por que o freio da língua pode afetar muito mais que a amamentação',
+      'Esse procedimento simples pode mudar o desenvolvimento da fala',
+      'Poucos sabem que o freio lingual impacta isso no desenvolvimento'
+    ],
+    dor: [
+      'Amamentação dolorosa, fala diferente — pode ser o freio da língua',
+      'Você tentou amamentar e não conseguiu — pode ter uma razão simples'
+    ],
+    alerta: [
+      'Esses sinais em bebê podem indicar freio lingual restrito',
+      'Se seu bebê tem dificuldade para amamentar, não ignore esse sinal'
+    ]
+  },
+  coordenacao_motora: {
+    curiosidade: [
+      'Por que algumas crianças caem mais que outras — e o que isso indica',
+      'Esse detalhe no jeito do seu filho se mover pode dizer muito'
+    ],
+    dor: [
+      'Você percebeu que seu filho cai mais que outras crianças da mesma idade?',
+      'Ver seu filho com dificuldades motoras enquanto os outros correm é difícil'
+    ],
+    alerta: [
+      'Se seu filho ainda não faz isso com X anos, vale uma avaliação',
+      'Esse sinal motor aparece cedo e precisa de atenção'
+    ]
+  }
+};
+
+function escolherHookSubTema(subTema, hookStyle, seed = 0) {
+  const hooks = HOOKS_SUBTEMA[subTema]?.[hookStyle];
+  if (!hooks || hooks.length === 0) return null;
+  return hooks[Math.floor(seed * hooks.length) % hooks.length];
+}
+
 // Contexto descritivo por subTema para enriquecer o prompt
 const SUBTEMA_CONTEXTO = {
   atraso_fala:                'criança não fala, fala pouco, troca palavras, atraso de linguagem',
@@ -54,46 +154,159 @@ const SUBTEMA_CONTEXTO = {
   psicomotricidade:           'integração corpo e comportamento, coordenação, lateralidade'
 };
 
-// Biblioteca de ganchos por estilo
+// Biblioteca de ganchos por estilo — cada um tem DNA emocional diferente
 const HOOKS = {
   dor: [
     'Seu filho pode estar com dificuldade e você ainda não percebeu',
     'Isso pode estar atrasando o desenvolvimento do seu filho',
     'Muitos pais só descobrem tarde demais',
-    'Esse sinal pode estar passando despercebido'
+    'Esse sinal pode estar passando despercebido todos os dias',
+    'Você reconhece esse comportamento no seu filho?'
   ],
   alerta: [
-    'Se seu filho faz isso, preste atenção',
+    'Se seu filho faz isso, preste atenção agora',
     'Isso é um sinal que você não pode ignorar',
-    'Atenção: isso pode indicar algo importante',
-    'Se você perceber isso, não espere'
+    'Atenção: esse comportamento pode indicar algo importante',
+    'Se você perceber isso no seu filho, não espere',
+    'Esse sinal aparece cedo — e poucos pais identificam'
   ],
   curiosidade: [
-    'Poucos pais sabem disso sobre o desenvolvimento infantil',
-    'Isso pode mudar tudo no desenvolvimento do seu filho',
-    'Existe um sinal silencioso que quase ninguém percebe',
-    'Isso explica por que seu filho age assim'
+    'Você sabia que isso pode atrasar a fala do seu filho?',
+    'Existe um detalhe que a maioria dos pais ignora — e muda tudo',
+    'Poucos pais percebem esse sinal silencioso no desenvolvimento',
+    'O que ninguém te contou sobre o desenvolvimento do seu filho',
+    'Isso explica por que seu filho age assim — e você não vai acreditar',
+    'Tem um sinal que aparece cedo demais para a maioria perceber'
   ],
   erro_comum: [
     'A maioria dos pais comete esse erro sem saber',
-    'Você pode estar fazendo isso errado',
-    'Esse erro é mais comum do que você imagina',
-    'Pare de fazer isso se quer ajudar seu filho'
+    'Você pode estar fazendo isso errado com seu filho',
+    'Esse erro é mais comum do que parece — e prejudica o desenvolvimento',
+    'Pare de fazer isso se quer ajudar seu filho',
+    'Esse hábito parece inofensivo — mas não é'
   ],
   autoridade: [
-    'Como especialista, vejo isso todos os dias na clínica',
     'Depois de atender centenas de crianças, aprendi isso',
-    'Na clínica, esse é um dos casos mais comuns',
-    'Isso é o que os pais mais perguntam pra gente'
+    'Na clínica, vejo esse caso todos os dias — e poucos pais sabem',
+    'Isso é o que os pais mais perguntam pra gente — e a resposta surpreende',
+    'Como especialista, vou te contar o que realmente importa aqui',
+    'Toda semana atendo famílias com essa mesma dúvida'
   ]
 };
 
-// 4 estruturas narrativas variáveis
-const ESTRUTURAS = {
-  A: 'Alerta direto: Hook → Explicação rápida → 2-3 sinais práticos → CTA',
-  B: 'Mini história: Pergunta de identificação → Situação do dia a dia → Explicação leve → CTA',
-  C: 'Lista prática: Hook → Lista numerada de sinais/dicas → Conclusão → CTA',
-  D: 'Erro comum: Comportamento errado dos pais → Correção → Por que isso importa → CTA'
+// Estruturas narrativas — cada hookStyle tem estruturas compatíveis
+const ESTRUTURAS_POR_HOOK = {
+  curiosidade: {
+    B: 'Revelação gradual: Pergunta ou afirmação incompleta que abre curiosity gap → Informação surpreendente revelada aos poucos → Explicação do porquê isso acontece → CTA para compartilhar',
+    C: 'Lista surpresa: Hook curiosidade → "Existem X sinais que poucos pais conhecem" → Revelar cada um como descoberta → CTA compartilhar'
+  },
+  dor: {
+    A: 'Empatia + reconhecimento: Hook que nomeia a dor do pai → Valida a preocupação → 2-3 pontos práticos → CTA salvar',
+    B: 'Mini história identificação: Situação do dia a dia que o pai reconhece → Explicação emocional → Solução acolhedora → CTA'
+  },
+  alerta: {
+    A: 'Alerta direto: Hook urgente → Explicação rápida do risco → 2-3 sinais concretos → CTA agir agora',
+    C: 'Lista de sinais: Hook alerta → Checklist numerada que o pai pode conferir → O que fazer se identificar → CTA'
+  },
+  erro_comum: {
+    D: 'Erro + correção: Nomear o comportamento errado dos pais → Por que prejudica → Correção prática → CTA',
+    B: 'Revelação do erro: Hook que implica que o pai pode estar errando → Revelar o erro → Explicar a versão correta → CTA'
+  },
+  autoridade: {
+    B: 'Caso clínico: Abertura com experiência da clínica → Situação real (sem identificar paciente) → Aprendizado aplicável → CTA',
+    C: 'Dicas de especialista: Hook autoridade → Lista de dicas práticas do dia a dia clínico → CTA agendar'
+  }
+};
+
+// Instruções detalhadas por hookStyle — regras frase a frase
+const HOOK_INSTRUCOES = {
+  curiosidade: `
+REGRAS OBRIGATÓRIAS para hookStyle=curiosidade (LEIA COM ATENÇÃO):
+PROIBIDO:
+- Começar com "Você sabia que..." (clichê, parece aula)
+- Entregar a resposta na primeira frase
+- Tom professoral ou educativo direto
+- Frases genéricas como "isso pode mudar tudo", "isso é importante"
+
+OBRIGATÓRIO — estrutura frase a frase:
+- Frase 1: PROVOCATIVA ou ACUSATÓRIA — implica que o pai pode estar errando ou perdendo algo
+  Ex fortes: "Você pode estar atrapalhando a fala do seu filho sem perceber",
+             "Tem um hábito que a maioria dos pais tem — e atrasa o desenvolvimento",
+             "Isso que parece ajudar seu filho pode estar fazendo o contrário"
+- Frase 2: aprofunda a tensão — NÃO resolve ("e quase ninguém sabe disso")
+- Frase 3-4: contextualiza sem revelar a resposta
+- Frase 5-6: revela a virada surpreendente
+- Última frase antes do CTA: insight que o pai vai querer compartilhar com outros pais
+
+hook_texto_overlay para curiosidade: frase provocativa curta que cria tensão/dúvida imediata
+Ex corretos: "Você pode estar errando com seu filho…", "Isso atrasa a fala — e ninguém fala",
+             "O hábito que trava o desenvolvimento", "Tem algo que passa despercebido todo dia"`,
+
+  dor: `
+REGRAS OBRIGATÓRIAS para hookStyle=dor:
+- Frase 1: nomeia a dor/preocupação real ("Você já ficou preocupada porque seu filho ainda não fala…")
+- Tom: empático, de amiga especialista — NÃO alarmista, NÃO professoral
+- Validar a preocupação do pai → oferecer acolhimento → caminho prático
+- O pai precisa se sentir VISTO e COMPREENDIDO, não assustado`,
+
+  alerta: `
+REGRAS OBRIGATÓRIAS para hookStyle=alerta:
+- Frase 1: sinal concreto e específico ("Se seu filho ainda não faz isso com X meses, preste atenção")
+- Direto e objetivo — NÃO genérico ("isso pode indicar algo")
+- Dar 2-3 sinais observáveis no dia a dia com nomes simples
+- Terminar com ação clara e urgente`,
+
+  erro_comum: `
+REGRAS OBRIGATÓRIAS para hookStyle=erro_comum:
+- Frase 1: nomeia o comportamento errado sem rodeios ("A maioria dos pais faz isso — e prejudica sem querer")
+- Tom direto mas empático — o pai não é culpado, ele não sabia
+- Estrutura: erro → por que prejudica → versão correta → CTA
+- O pai deve sair com mudança prática imediata`,
+
+  autoridade: `
+REGRAS OBRIGATÓRIAS para hookStyle=autoridade:
+- Frase 1: abre com experiência clínica real ("Toda semana atendo famílias com essa dúvida…")
+- Dicas específicas e práticas que parecem "segredos de especialista"
+- Tom de conversa — NÃO de palestra ou texto de site
+- Terminar com CTA natural (não forçado)
+hook_texto_overlay OBRIGATÓRIO: prova de experiência real ou dado que surpreende
+PROIBIDO em hook_texto_overlay: "uma dica", "isso pode mudar tudo", "veja isso", qualquer frase genérica
+Exemplos corretos: "Toda semana vejo esse erro na clínica…", "90% dos pais fazem isso sem saber", "O que vejo todo dia pode estar afetando seu filho"`
+};
+
+// Instruções de TOM — como a narração SOA (independente do hookStyle)
+const TONE_INSTRUCOES = {
+  educativo: `
+TOM DO ROTEIRO: EDUCATIVO (Dicas/Fatos)
+- Narração didática mas leve — como professora simpática, não como aula
+- Incluir 1-2 informações concretas e verificáveis
+- Frases tipo: "Na fonoaudiologia, a gente chama isso de...", "Um dado importante:"
+- Funciona bem para salvar — o pai guarda o vídeo para usar depois
+- Evitar emoção excessiva — o valor é a informação`,
+
+  emotional: `
+TOM DO ROTEIRO: EMOCIONAL (Dor/Urgência)
+- Narração que ressoa com o estado emocional do pai preocupado
+- Validar a angústia antes de qualquer informação: "Eu entendo o que você está sentindo..."
+- Ritmo mais lento, frases curtas com pausas intencionais
+- Terminar com acolhimento e esperança — nunca com medo
+- Funciona bem para comentários e compartilhamentos`,
+
+  inspiracional: `
+TOM DO ROTEIRO: INSPIRACIONAL (Transformação)
+- Narrativa de transformação positiva — "isso tem solução", "já vi muitas crianças evoluírem"
+- Foco no DEPOIS: o que muda quando a família busca ajuda
+- Tom esperançoso e encorajador, não sentimental demais
+- Pode usar caso de sucesso genérico (sem identificar paciente)
+- Funciona bem para compartilhar com outros pais`,
+
+  bastidores: `
+TOM DO ROTEIRO: BASTIDORES (Da clínica)
+- Humanizar a clínica — mostrar o dia a dia real dos profissionais
+- Tom de conversa casual, como se estivesse mostrando "por trás das cenas"
+- Frases tipo: "Hoje na clínica aconteceu algo que quero compartilhar..."
+- Gera aproximação e confiança — não é comercial
+- Funciona bem para engajamento orgânico e comentários`
 };
 
 function escolherHook(hookStyle, seed = 0) {
@@ -101,9 +314,12 @@ function escolherHook(hookStyle, seed = 0) {
   return lista[Math.floor(seed * lista.length) % lista.length];
 }
 
-function escolherEstrutura(variacao) {
-  const letras = Object.keys(ESTRUTURAS);
-  return letras[Math.floor(variacao * letras.length) % letras.length];
+function escolherEstrutura(hookStyle, variacao) {
+  // Seleciona estrutura compatível com o hookStyle
+  const mapa = ESTRUTURAS_POR_HOOK[hookStyle] || ESTRUTURAS_POR_HOOK.dor;
+  const letras = Object.keys(mapa);
+  const letra = letras[Math.floor(variacao * letras.length) % letras.length];
+  return { letra, descricao: mapa[letra] };
 }
 
 /**
@@ -140,9 +356,10 @@ export async function gerarRoteiro({
                        'fono_ana';
   const nomeProfissional = NOMES_PROFISSIONAL[profissional];
 
-  const estruturaLetra = escolherEstrutura(variacao);
-  const estruturaDescricao = ESTRUTURAS[estruturaLetra];
-  const hookSugerido = escolherHook(hookStyle, variacao);
+  const { letra: estruturaLetra, descricao: estruturaDescricao } = escolherEstrutura(hookStyle, variacao);
+  // Hook por subTema é mais preciso — usa como primeiro candidato
+  const hookSugerido = escolherHookSubTema(subTema, hookStyle, variacao)
+                    || escolherHook(hookStyle, variacao);
   const subTemaContexto = SUBTEMA_CONTEXTO[subTema] || tema || especialidade;
 
   // Duração ajustada: Instagram = 20-35s, Ads = 30-60s
@@ -150,16 +367,39 @@ export async function gerarRoteiro({
     ? Math.min(Math.max(duracao, 20), 35)
     : Math.min(Math.max(duracao, 30), 60);
 
-  // CTA varia pelo objetivo
-  const ctaMap = {
-    salvar:       'Salve esse vídeo para não esquecer',
-    compartilhar: 'Manda esse vídeo para outro pai ou mãe',
-    comentar:     'Comenta aqui a idade do seu filho que eu te ajudo',
-    agendar:      'Fale com a gente no WhatsApp e agende uma avaliação'
+  // CTAs variados por objetivo × hookStyle — mais naturais e com mais variedade
+  const ctaVariantes = {
+    salvar: [
+      'Salva esse vídeo pra não esquecer',
+      'Salva aqui pra consultar depois',
+      'Guarda esse vídeo — você vai usar'
+    ],
+    compartilhar: [
+      'Manda pra outro pai ou mãe que precisa ver isso',
+      'Compartilha com quem tem filho na mesma idade',
+      'Marca aqui um pai ou mãe que precisa saber disso'
+    ],
+    comentar: [
+      'Comenta aqui a idade do seu filho que eu te ajudo',
+      'Isso acontece aí? Comenta embaixo',
+      'Conta pra mim nos comentários — já passaram por isso?'
+    ],
+    agendar: [
+      'Fala com a gente no WhatsApp e agenda uma avaliação',
+      'Manda mensagem no WhatsApp — vamos conversar',
+      'Clica no link e agenda uma avaliação gratuita'
+    ],
+    dm: [
+      'Me manda uma mensagem aqui se quiser saber mais',
+      'Me chama no direct — te ajudo a entender melhor',
+      'Manda DM com a palavra FILHO que eu te respondo'
+    ]
   };
-  const ctaSugerido = ctaMap[objetivo] || ctaMap.comentar;
+  // Seleciona variante baseada na variação (anti-repetição)
+  const variantesObj = ctaVariantes[objetivo] || ctaVariantes.comentar;
+  const ctaSugerido  = variantesObj[Math.floor(variacao * variantesObj.length) % variantesObj.length];
 
-  logger.info(`[ZEUS] Gerando: subTema=${subTema || especialidade} | hook=${hookStyle} | estrutura=${estruturaLetra} | platform=${platform} | intensidade=${intensidade}`);
+  logger.info(`[ZEUS] Gerando: subTema=${subTema || especialidade} | hook=${hookStyle} | tone=${tone} | estrutura=${estruturaLetra} | platform=${platform} | intensidade=${intensidade}`);
 
   const isInstagram = platform === 'instagram';
 
@@ -179,9 +419,28 @@ REGRAS OBRIGATÓRIAS:
 1. Linguagem simples — pai leigo precisa entender tudo
 2. NUNCA usar jargão clínico pesado
 3. Frases curtas, tom de conversa, como uma amiga especialista
-4. NUNCA soar robótico ou genérico
-5. Compliance saúde: nunca afirmar diagnóstico; usar "pode indicar", "vale investigar", "é importante observar"
-6. Retorne APENAS o JSON solicitado, sem markdown, sem explicações
+4. Compliance saúde: nunca afirmar diagnóstico; usar "pode indicar", "vale investigar", "é importante observar"
+5. Retorne APENAS o JSON solicitado, sem markdown, sem explicações
+
+RELAÇÃO ENTRE hookStyle E tone (ESSENCIAL):
+- hookStyle = define COMO o vídeo abre (os primeiros 3 segundos, a isca)
+- tone = define COMO o vídeo faz a pessoa SENTIR ao longo de toda a narração
+- Os dois devem trabalhar juntos, não se cancelar
+- Exemplo: hookStyle=curiosidade + tone=emocional → abre com mistério, mas a narração toda ressoa emocionalmente
+
+ANTI-ROBÔ (regras de naturalidade):
+- NUNCA usar a mesma estrutura de frase duas vezes seguidas
+- Variar ritmo: alterne frases longas com curtas (cria respiração no texto)
+- PROIBIDO: frases genéricas tipo "é muito importante", "isso pode afetar muito", "devemos prestar atenção"
+- Cada frase deve acrescentar algo novo — NUNCA repetir a mesma ideia com outras palavras
+- Escrever como a profissional FALARIA, não como ela ESCREVERIA num relatório
+
+REGRA GLOBAL DO hook_texto_overlay (A FRASE MAIS IMPORTANTE DO VÍDEO):
+O hook_texto_overlay aparece em tela nos primeiros 3 segundos e decide se o usuário continua assistindo.
+Ele precisa: parar o scroll, gerar emoção ou curiosidade imediata, ser específico ao tema.
+NUNCA usar: "isso pode mudar tudo", "uma dica importante", "veja isso", "você precisa saber", frases vagas.
+SEMPRE ser: específico, concreto, emocional ou surpreendente — máximo 8 palavras.
+Auto-validação: antes de finalizar, pergunte — "essa frase faria alguém parar de rolar o feed?" Se não → reescreva.
 
 ${isInstagram
   ? `MODO INSTAGRAM (ORGÂNICO — VIRAL):
@@ -194,6 +453,9 @@ ${isInstagram
 - Foco: clareza + promessa + CTA para WhatsApp
 - Tom mais institucional mas ainda acolhedor`}`;
 
+  const instrucaoHook  = HOOK_INSTRUCOES[hookStyle]  || HOOK_INSTRUCOES.dor;
+  const instrucaoTone  = TONE_INSTRUCOES[tone]        || TONE_INSTRUCOES.educativo;
+
   const userPrompt = `SubTema: ${subTema || especialidade}
 Contexto do tema: ${subTemaContexto}
 Profissional: ${nomeProfissional}
@@ -202,16 +464,29 @@ Duração alvo: ${duracaoEfetiva} segundos (~${Math.floor(duracaoEfetiva * 2.2)}
 Objetivo do conteúdo: ${objetivo} — ${ctaSugerido}
 Intensidade: ${intensidade}
 
-ESTRUTURA A USAR (${estruturaLetra}): ${estruturaDescricao}
+ESTRUTURA NARRATIVA A USAR (${estruturaLetra}):
+${estruturaDescricao}
 
-HOOK SUGERIDO (adapte se necessário): "${hookSugerido}"
+${instrucaoHook}
 
-ESTILO DO HOOK: ${hookStyle}
-${hookStyle === 'dor'        ? '→ Mostrar preocupação real, angústia de pai que não sabe o que fazer' : ''}
-${hookStyle === 'alerta'     ? '→ Risco ou atenção urgente, sem causar pânico' : ''}
-${hookStyle === 'curiosidade'? '→ Algo pouco conhecido que vai surpreender o pai' : ''}
-${hookStyle === 'erro_comum' ? '→ Comportamento que muitos pais fazem e que prejudica o filho' : ''}
-${hookStyle === 'autoridade' ? '→ Experiência clínica real, caso do dia a dia' : ''}
+${instrucaoTone}
+
+HOOK DE REFERÊNCIA (use como inspiração, adapte ao tema): "${hookSugerido}"
+
+COMBINAÇÃO ATIVA: hookStyle="${hookStyle}" + tone="${tone}"
+${hookStyle === 'curiosidade' && tone === 'educativo'     ? '→ Abre com mistério, corpo do vídeo entrega a informação como descoberta' : ''}
+${hookStyle === 'curiosidade' && tone === 'emotional'     ? '→ Abre com mistério emocional, narração toda ressoa com o coração do pai' : ''}
+${hookStyle === 'dor'         && tone === 'emotional'     ? '→ Valida a dor primeiro, depois acolhe — gera muito comentário e DM' : ''}
+${hookStyle === 'autoridade'  && tone === 'inspiracional' ? '→ Abre com credencial, corpo mostra transformação possível — gera compartilhamento' : ''}
+${hookStyle === 'erro_comum'  && tone === 'educativo'     ? '→ Nomeia o erro, explica o porquê, dá a correção prática — gera salvamento' : ''}
+${hookStyle === 'alerta'      && tone === 'bastidores'    ? '→ Alerta vindo de dentro da clínica — humanizado e urgente ao mesmo tempo' : ''}
+
+VERIFICAÇÃO OBRIGATÓRIA antes de finalizar (em ordem):
+1. hook_texto_overlay: essa frase faria alguém parar de rolar o feed? É genérica? Se sim → REESCREVA antes de continuar.
+2. Primeira frase da narração abre no estilo "${hookStyle}" correto?
+3. Toda a narração mantém o tom "${tone}" do início ao fim?
+4. As frases variam em ritmo (curtas e longas alternadas)?
+5. CTA final é exatamente: "${ctaSugerido}"?
 
 Retorne JSON:
 {
@@ -235,13 +510,16 @@ Retorne JSON:
 }`;
 
   try {
+    // curiosidade e erro_comum precisam de mais criatividade para não repetir padrões
+    const temperature = ['curiosidade', 'erro_comum'].includes(hookStyle) ? 1.0 : 0.85;
+
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
       ],
-      temperature: 0.8,
+      temperature,
       max_tokens: 1800,
       response_format: { type: 'json_object' }
     });

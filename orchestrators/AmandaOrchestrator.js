@@ -53,6 +53,7 @@ import callAI from "../services/IA/Aiproviderservice.js";
 import { clinicalEligibility } from "../domain/policies/ClinicalEligibility.js";
 import { canAutoRespond, buildResponseFromFlags, getTherapyInfo } from '../services/ResponseBuilder.js';
 import { CLINIC_KNOWLEDGE } from '../knowledge/clinicKnowledge.js';
+import { hasContextHint } from '../utils/intentRouter.js';
 // 🆕 Helper interno para detectar emoção (inline para evitar dependência circular)
 function detectEmotionalState(text = '') {
     const anxietyWords = /preocup|ansios|desesper|urgente|muito mal|piorando|não aguento|desesperada/i;
@@ -1642,14 +1643,39 @@ export async function getOptimizedAmandaResponse({
                 $set: { neuroObjectiveAsked: true, stage: 'triagem_agendamento' }
             }).catch(() => { });
 
+            const neuroFlags = amandaAnalysis.extracted.flags || {};
+            const neuroText = text || '';
+            const wantsEvaluationExplicit = /\b(laudo|avalia[çc][aã]o|diagn[oó]stico|teste\s+de\s+qi)\b/i.test(neuroText);
+            const schoolRequested = /escola\s+(pediu|solicitou|indicou|pedi)/i.test(neuroText);
+            const isDiscoveryContext =
+                (neuroFlags.mentionsInvestigation && !wantsEvaluationExplicit) ||
+                /\b(investig|suspeita|achamos\s+que|fase\s+de|acho\s+que|pode\s+ser|possibilidade|estamos\s+descobrindo)\b/i.test(neuroText);
+
+            if (schoolRequested || wantsEvaluationExplicit) {
+                // Pedido explícito de laudo/avaliação (tem prioridade sobre contexto de investigação)
+                return ensureSingleHeart(
+                    `Entendi! Neuropsicologia 💚\n\n` +
+                    `Só pra eu direcionar certinho: vocês estão buscando a **avaliação completa com laudo** ` +
+                    `ou **acompanhamento terapêutico**?`
+                );
+            }
+
+            // Contexto de investigação/descoberta sem pedido explícito → explica sem jargão
             return ensureSingleHeart(
-                `Entendi! Neuropsicologia 💚\n\n` +
-                `Só pra eu direcionar certinho: vocês estão buscando a **avaliação completa com laudo** ` +
-                `ou **acompanhamento terapêutico**?`
+                `Entendo, é um momento importante 💚\n\n` +
+                `Vocês estão buscando chegar num **diagnóstico** (avaliação completa que gera um laudo)` +
+                ` ou já têm diagnóstico e querem começar as **terapias**?`
             );
         }
 
-        return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead, enrichedContext);
+        // 🆕 MODO LP: Se tem contexto de landing page, usa IA para resposta humanizada
+        if (context?.source === 'lp' && context?.lpPage) {
+            console.log('[AMANDA] Modo LP ativo - usando IA para resposta humanizada');
+            // Deixa o fluxo continuar para chamar a IA com contexto LP no prompt
+        } else {
+            // Fluxo normal: resposta programática rápida
+            return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead, enrichedContext);
+        }
     }
 
     // 🆕 VERIFICAÇÃO: Emprego/Currículo (antes de perguntar qual área)
@@ -1683,9 +1709,36 @@ export async function getOptimizedAmandaResponse({
         );
     }
 
-    // 3.5 SEM THERAPY AREA → Pergunta qual área
+    // 3.5 SEM THERAPY AREA → Resposta contextual baseada em flags e sintomas
     if (!amandaAnalysis.extracted.therapyArea && !lead?.therapyArea) {
-        return ensureSingleHeart("Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚");
+        const flags35 = amandaAnalysis.extracted.flags || {};
+        const contextHint35 = hasContextHint(text);
+
+        if (contextHint35) {
+            const areaNames35 = {
+                fonoaudiologia: 'Fonoaudiologia',
+                psicologia: 'Psicologia',
+                terapia_ocupacional: 'Terapia Ocupacional',
+                fisioterapia: 'Fisioterapia',
+                neuropsicologia: 'Neuropsicologia'
+            };
+            const areaNome35 = areaNames35[contextHint35] || contextHint35;
+            return ensureSingleHeart(`Pelo que você descreveu, parece que a área de **${areaNome35}** pode ajudar 💚\n\nÉ isso mesmo, ou está buscando outra especialidade?`);
+        }
+
+        if (flags35.isEmotional || flags35.mentionsUrgency) {
+            return ensureSingleHeart(`Entendo sua preocupação, estou aqui pra ajudar 💚\n\nMe conta um pouco mais: qual a situação e qual a idade da criança?`);
+        }
+
+        if (flags35.wantsSchedule || flags35.isHotLead) {
+            return ensureSingleHeart(`Ótimo, vou te ajudar a agendar! 💚\n\nPra direcionar certinho: qual especialidade você busca? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia.`);
+        }
+
+        if (flags35.isJustBrowsing) {
+            return ensureSingleHeart(`Oi! Fique à vontade pra perguntar o que quiser 💚\n\nQual área da saúde você está buscando?`);
+        }
+
+        return ensureSingleHeart(`Olá! 💚 Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa!`);
     }
 
     // 3.6 COMPLETO → HARD RETURN: Oferece slots IMEDIATAMENTE
@@ -3801,10 +3854,10 @@ Em breve nossa equipe entra em contato 😊`
             /terapia ocupacional|terapeuta ocupacional|\bto\b|ocupacional|integração sensorial|sensorial|coordenação motora|motricidade|avd|pinça|lateralidade|canhoto|reflexos/i.test(summary) ? "terapia_ocupacional" :
                 /fonoaudiologia|\bfono\b|linguagem|fala|voz|deglutição|miofuncional|linguinha|freio|frenulo|gagueira|tartamudez|fluência|engasgar|amamentação|succao|sucção/i.test(summary) ? "fonoaudiologia" :
                     /psicologia(?!.*pedagogia)|\bpsic[oó]logo|comportamento|ansiedade|depressão|birra|agressivo|não dorme|medo|fobia|enurese|encoprese|toc|ritual/i.test(summary) ? "psicologia" :
-                        /neuropsicologia|neuropsi|avaliação neuropsicológica|laudo|teste de qi|funções executivas|memória|atenção|dislexia|discalculia|superdotação|tea|autismo|espectro autista/i.test(summary) ? "neuropsicologia" :
+                        /neuropsicologia|neuropsi|avaliação neuropsicológica|laudo|teste de qi|funções executivas|memória|superdotação|tea|autismo|espectro autista/i.test(summary) ? "neuropsicologia" :
                             /fisioterapia|\bfisio\b|atraso motor|não engatinhou|não andou|andar na ponta|pé torto|torticolo|prematuro|hipotonia|hipertonia|espasticidade|equilíbrio/i.test(summary) ? "fisioterapia" :
                                 /musicoterapia|música|musical|ritmo|estimulação musical/i.test(summary) ? "musicoterapia" :
-                                    /psicopedagogia|reforço escolar|dificuldade escolar|alfabetização/i.test(summary) ? "neuropsicologia" :
+                                    /psicopedagogia|reforço escolar|dificuldade escolar|alfabetização|dislexia|discalculia/i.test(summary) ? "psicopedagogia" :
                                         null;
 
         if (therapyFromSummary) {
@@ -4849,7 +4902,7 @@ Em breve nossa equipe entra em contato 😊`
 async function callVisitFunnelAI({ text, lead, context = {}, flags = {} }) {
     const stage = context.stage || lead?.stage || "novo";
 
-    const systemContext = buildSystemContext(flags, text, stage);
+    const systemContext = buildSystemContext(flags, text, stage, context);
     const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
 
     const messages = [];
@@ -5074,7 +5127,7 @@ function inferAreaFromContext(normalizedText, context = {}, flags = {}) {
         },
         {
             id: "psicopedagogia",
-            regex: /\b(psicopedagogia|psicopedagogo|reforço escolar|acompanhamento escolar|dificuldade escolar|alfabetização|adaptação curricular)\b/i
+            regex: /\b(psicopedagogia|psicopedagogo|reforço escolar|acompanhamento escolar|dificuldade escolar|alfabetização|adaptação curricular|dislexia|discalculia)\b/i
         },
         {
             id: "psicologia",
@@ -5082,7 +5135,7 @@ function inferAreaFromContext(normalizedText, context = {}, flags = {}) {
         },
         {
             id: "neuropsicologia",
-            regex: /\b(neuropsicolog(?:ia|o|a)|neuropsi|avaliação neuropsicológica|laudo|teste de qi|funções executivas|memória|atenção|dificuldade de aprendizagem|dislexia|discalculia|superdotação|altas habilidades|tea|autismo|espectro autista|neurodesenvolvimento)\b/i
+            regex: /\b(neuropsicolog(?:ia|o|a)|neuropsi|avaliação neuropsicológica|laudo|teste de qi|funções executivas|memória|superdotação|altas habilidades|neurodesenvolvimento|tea|autismo|espectro autista)\b/i
         },
         {
             id: "musicoterapia",
@@ -5151,7 +5204,7 @@ async function callClaudeWithTherapyData({
         shouldGreet,
     } = context;
 
-    const systemContext = buildSystemContext(flags, userText, stage);
+    const systemContext = buildSystemContext(flags, userText, stage, context);
     const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
 
     let ageContextNote = "";
@@ -5426,7 +5479,7 @@ async function callAmandaAIWithContext(
         }
     }
 
-    const systemContext = buildSystemContext(flags, userText, stage);
+    const systemContext = buildSystemContext(flags, userText, stage, context);
     const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
 
     const therapiesContext =
@@ -5845,9 +5898,14 @@ function enforceClinicScope(aiText = "", userText = "") {
 }
 
 
-const buildSystemContext = (flags, text = "", stage = "novo") => ({
+const buildSystemContext = (flags, text = "", stage = "novo", context = {}) => ({
     isHotLead: flags.visitLeadHot || stage === "interessado_agendamento",
     isColdLead: flags.visitLeadCold || stage === "novo",
+    
+    // 🆕 Contexto LP (Landing Page)
+    source: context?.source,
+    lpPage: context?.lpPage,
+    lpIntent: context?.lpIntent,
 
     negativeScopeTriggered: /audiometria|bera|rpg|pilates/i.test(text),
 
@@ -6309,8 +6367,16 @@ function buildSimpleResponse(missing, extracted, lead, enrichedContext = null) {
     });
 
     switch (first) {
-        case 'therapyArea':
-            return ensureSingleHeart(`Oi${respName ? ' ' + respName : ''}! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚`);
+        case 'therapyArea': {
+            const flagsBSR = extracted.flags || {};
+            if (flagsBSR.isEmotional || flagsBSR.mentionsUrgency) {
+                return ensureSingleHeart(`${respName ? 'Oi ' + respName + '! ' : 'Oi! '}Entendo sua preocupação, estou aqui pra ajudar 💚\n\nQual especialidade você busca? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia.`);
+            }
+            if (flagsBSR.wantsSchedule || flagsBSR.isHotLead) {
+                return ensureSingleHeart(`${respName ? 'Oi ' + respName + '! ' : ''}Ótimo, vou te ajudar a agendar! 💚\n\nQual especialidade você busca? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia.`);
+            }
+            return ensureSingleHeart(`Oi${respName ? ' ' + respName : ''}! 💚 Me conta o que você busca — assim te direciono para a especialidade certa. Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia.`);
+        }
 
         case 'period':
             // 🔧 Melhorado: Contextualiza com área terapêutica quando disponível

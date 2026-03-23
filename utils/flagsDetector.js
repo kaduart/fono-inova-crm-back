@@ -53,8 +53,8 @@ export function deriveFlagsFromText(text = "") {
     const ageGroup = extractAgeGroup(normalizedText);
 
     // 🔥 NOVO: Detecção de endereço/localização
-    // 🔧 CORREÇÃO: Capturar "vocês são de [qualquer cidade]" não só Anápolis
-    const asksAddress = /\b(onde\s+(fica|é|está|ficam|são|é\s+que)\s+(a\s+)?(cl[ií]nica|consult[oó]rio|voc[eê]s))|\b(qual\s+(o\s+)?endere[çc]o|endere[çc]o\s+(de\s+)?voc[eê]s)|\b(como\s+(chego|chegar|chega)|localiza[çc][aã]o|onde\s+est[aã]o)|\b(voc[eê]s\s+(s[aã]o|ficam)\s+(de\s+|em\s+|onde))|\b(s[aã]o\s+de\s+\w+|ficam\s+em\s+\w+)|\b(an[áa]polis|goi[aá]nia|bras[ií]lia|formosa|endere[çc]o|local)/i.test(normalizedText);
+    // 🔧 Nomes de cidades sozinhos NÃO indicam pedido de endereço (ex: "Fisioterapia em Anápolis")
+    const asksAddress = /\b(onde\s+(fica|é|está|ficam|são|é\s+que)\s+(a\s+)?(cl[ií]nica|consult[oó]rio|voc[eê]s))|\b(qual\s+(o\s+)?endere[çc]o|endere[çc]o\s+(de\s+)?voc[eê]s)|\b(como\s+(chego|chegar|chega)|localiza[çc][aã]o|onde\s+est[aã]o)|\b(voc[eê]s\s+(s[aã]o|ficam)\s+(de\s+|em\s+|onde))|\b(endere[çc]o)/i.test(normalizedText);
 
     return {
         text,
