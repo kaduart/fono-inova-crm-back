@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import { getIo } from '../config/socket.js';
 import { whatsappController } from '../controllers/whatsappController.js';
+import { whatsappGuard, healthCheck, getGuardStats } from '../middleware/whatsappGuard.js';
 
 const router = express.Router();
 
@@ -90,8 +91,13 @@ router.post('/upload-media', upload.single('file'), handleMulterError, whatsappC
 router.post('/send-media', upload.single('file'), handleMulterError, whatsappController.sendMedia);
 
 // 📩 Webhook (mensagens recebidas E status de entrega)
-router.post('/webhook', whatsappController.webhook);
+// 🛡️ Guard ativo: log bruto + captura fail-safe antes do processamento
+router.post('/webhook', whatsappGuard, whatsappController.webhook);
 router.get('/webhook', whatsappController.getWebhook);
+
+// 🛡️ Health Check e Monitoramento
+router.get('/health', healthCheck);
+router.get('/guard/stats', getGuardStats);
 
 // 🧪 Teste de socket
 router.post('/test-socket', (req, res) => {

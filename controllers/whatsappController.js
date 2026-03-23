@@ -500,6 +500,22 @@ export const whatsappController = {
 
     async webhook(req, res) {
         console.log("=========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< ===========================", new Date().toISOString());
+        
+        // 🛡️ GUARD: LOG BRUTO (antes de tudo - nunca falha)
+        try {
+            await mongoose.connection.collection('raw_webhook_logs').insertOne({
+                body: req.body,
+                headers: {
+                    'user-agent': req.headers['user-agent'],
+                    'content-type': req.headers['content-type']
+                },
+                receivedAt: new Date(),
+                source: 'whatsapp_webhook'
+            });
+        } catch (logErr) {
+            console.error('❌ RAW LOG FAIL (não crítico):', logErr.message);
+        }
+
         try {
             res.sendStatus(200); // Responde imediato pro Meta
 
@@ -519,6 +535,34 @@ export const whatsappController = {
 
             const from = msg.from;
             const content = msg.text?.body || '';
+
+            // 🛡️ GUARD: CAPTURA FAIL-SAFE DO LEAD (antes do debounce)
+            if (from) {
+                try {
+                    const phoneNorm = normalizeE164BR(from);
+                    await Lead.updateOne(
+                        { 'contact.phone': phoneNorm },
+                        {
+                            $setOnInsert: {
+                                'contact.phone': phoneNorm,
+                                origin: 'WhatsApp',
+                                createdAt: new Date(),
+                                status: 'new'
+                            },
+                            $set: {
+                                lastInteractionAt: new Date(),
+                                lastInboundMessage: content.substring(0, 200),
+                                'metadata.guardCapturedAt': new Date()
+                            }
+                        },
+                        { upsert: true }
+                    );
+                    console.log(`🛡️ GUARD: Lead capturado ${phoneNorm}`);
+                } catch (leadErr) {
+                    console.error('❌ FAIL-SAFE LEAD ERROR:', leadErr.message);
+                    // Continua mesmo se falhar - o log bruto já salvou
+                }
+            }
 
             // 🆕 DEBOUNCE CORRETO AQUI (3.5s, não 30s)
             const debounceKey = `webhook:buffer:${from}`;
@@ -2317,3 +2361,82 @@ export async function handleIncomingMessage(req, res) {
         return res.status(500).json({ ok: false });
     }
 }
+
+
+// ============================================================================
+// 🛡️ WHATSAPP GUARD - ALERTA DE SILÊNCIO E ANOMALIA
+// ============================================================================
+
+let silenceMonitorStarted = false;
+
+export function startSilenceMonitor() {
+    if (silenceMonitorStarted) return;
+    silenceMonitorStarted = true;
+
+    const SILENCE_THRESHOLD_MINUTES = parseInt(process.env.SILENCE_THRESHOLD_MINUTES) || 30;
+    const CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutos
+
+    setInterval(async () => {
+        try {
+            // Verifica última interação
+            const lastLead = await Lead.findOne().sort({ lastInteractionAt: -1 });
+            
+            if (!lastLead?.lastInteractionAt) {
+                logger.warn('[GUARD-SILENCE] Nenhuma interação encontrada no sistema');
+                return;
+            }
+
+            const minutesSinceLastInteraction = (Date.now() - new Date(lastLead.lastInteractionAt).getTime()) / (1000 * 60);
+
+            if (minutesSinceLastInteraction > SILENCE_THRESHOLD_MINUTES) {
+                logger.error(`🚨 [GUARD-SILENCE] ALERTA: ${Math.floor(minutesSinceLastInteraction)} minutos sem mensagens! Última: ${lastLead.contact?.phone}`);
+                
+                // Envia alerta via socket pro dashboard
+                const io = getIo();
+                if (io) {
+                    io.emit('system:alert', {
+                        type: 'silence',
+                        message: `Nenhuma mensagem há ${Math.floor(minutesSinceLastInteraction)} minutos`,
+                        lastInteraction: lastLead.lastInteractionAt,
+                        timestamp: new Date()
+                    });
+                }
+            }
+
+            // 🧨 ALERTA DE ANOMALIA: volume abaixo do esperado
+            const now = new Date();
+            const hour = now.getHours();
+            const isBusinessHours = hour >= 8 && hour <= 20;
+            
+            if (isBusinessHours) {
+                const oneHourAgo = new Date(now - 60 * 60 * 1000);
+                const messagesLastHour = await mongoose.connection.collection('raw_webhook_logs').countDocuments({
+                    receivedAt: { $gte: oneHourAgo },
+                    'body.entry.changes.value.messages': { $exists: true }
+                });
+
+                // Se menos de 2 mensagens na última hora durante horário comercial
+                if (messagesLastHour < 2) {
+                    logger.warn(`🚨 [GUARD-ANOMALY] Volume anormal: apenas ${messagesLastHour} mensagem(ns) na última hora`);
+                    
+                    const io = getIo();
+                    if (io) {
+                        io.emit('system:alert', {
+                            type: 'anomaly',
+                            message: `Volume anormal de mensagens (${messagesLastHour}/hora)`,
+                            timestamp: new Date()
+                        });
+                    }
+                }
+            }
+
+        } catch (err) {
+            logger.error('[GUARD-SILENCE] Erro no monitor:', err.message);
+        }
+    }, CHECK_INTERVAL);
+
+    logger.info(`[GUARD-SILENCE] Monitor iniciado (threshold: ${SILENCE_THRESHOLD_MINUTES}min, check: 5min)`);
+}
+
+// Inicia automaticamente
+startSilenceMonitor();
