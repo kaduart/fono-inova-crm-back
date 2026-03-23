@@ -43,8 +43,8 @@ async function checkAppointmentDetails() {
         // Verificar se há algum dado de lead ou outra coleção com esse ID
         console.log('\n🔍 Verificando se há leads com esse ID...');
         try {
-            const { default: Lead } = await import('./models/Lead.js');
-            const leads = await Lead.find({ patient: patientId }).select('_id name phone').limit(5).lean();
+            const { default: Lead } = await import('./models/Leads.js');
+            const leads = await Leads.find({ patient: patientId }).select('_id name phone').limit(5).lean();
             if (leads.length > 0) {
                 console.log(`   Encontrados ${leads.length} leads:`);
                 for (const l of leads) {

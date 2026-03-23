@@ -64,14 +64,23 @@ async function handleGenerateVideo(req, res) {
       roteiro,
       especialidadeId,
       funil = 'TOPO',
-      duracao,         // PT: enviado por clientes antigos
-      duration,        // EN: enviado pelo frontend atual
+      duracao,              // PT: enviado por clientes antigos
+      duration,             // EN: enviado pelo frontend atual
       publicar = false,
       targeting = {},
-      modo = 'avatar',  // 'avatar', 'ilustrativo' ou 'veo'
-      tone = 'educativo' // 'emotional', 'educativo', 'inspiracional', 'bastidores'
+      modo = 'avatar',      // 'avatar', 'ilustrativo' ou 'veo'
+      tone = 'educativo',   // 'emotional', 'educativo', 'inspiracional', 'bastidores'
+      // 🧠 Campos de inteligência de conteúdo
+      platform = 'instagram',   // 'instagram' | 'meta_ads'
+      contentType = 'instagram', // 'instagram' | 'ads' | 'educativo' | 'viral'
+      subTema,                  // 'atraso_fala' | 'autismo' | 'comportamento' | ...
+      hookStyle = 'dor',        // 'dor' | 'alerta' | 'curiosidade' | 'erro_comum' | 'autoridade'
+      objetivo = 'salvar',      // 'salvar' | 'compartilhar' | 'comentar' | 'agendar'
+      variacao,                 // 0..1 — anti-repetição (gerado automaticamente se omitido)
+      intensidade = 'viral'     // 'leve' | 'moderado' | 'forte' | 'viral'
     } = req.body;
 
+    logger.info(`[VIDEO ROUTE] body recebido: modo=${modo} | especialidade=${especialidadeId} | duration=${duration}`);
     // Usar roteiro como tema se tema não foi enviado (aceita string vazia)
     const temaFinal = tema !== undefined ? tema : roteiro;
     // Prioridade: duration (frontend) → duracao (legado) → default 60
@@ -91,6 +100,8 @@ async function handleGenerateVideo(req, res) {
     // ✅ FIX 1: jobId gerado UMA vez só
     const jobId = `vid_${Date.now()}`;
 
+    const variacaoFinal = variacao !== undefined ? Number(variacao) : Math.random();
+
     // Criar documento Video no Mongo (tracking)
     const videoDoc = await Video.create({
       title: `Vídeo ${especialidadeId} — ${temaFinal.substring(0, 30)}...`,
@@ -98,10 +109,16 @@ async function handleGenerateVideo(req, res) {
       especialidadeId,
       status: 'processing',
       jobId,
-      pipelineStatus: 'ROTEIRO'
+      pipelineStatus: 'ROTEIRO',
+      platform,
+      contentType,
+      subTema: subTema || null,
+      hookStyle,
+      objetivo,
+      intensidade
     });
 
-    // ✅ FIX 5 & 7: Enfileirar no BullMQ (sobrevive a restart)
+    // Enfileirar no BullMQ (sobrevive a restart)
     await videoGenerationQueue.add('generate-video', {
       jobId,
       videoDocId: videoDoc._id.toString(),
@@ -113,9 +130,16 @@ async function handleGenerateVideo(req, res) {
       targeting,
       userId: req.user?._id,
       modo,
-      tone
-    }, { 
-      jobId,  // Usa mesmo ID pro job BullMQ
+      tone,
+      platform,
+      contentType,
+      subTema: subTema || null,
+      hookStyle,
+      objetivo,
+      variacao: variacaoFinal,
+      intensidade
+    }, {
+      jobId,
       priority: 1
     });
 
@@ -263,6 +287,8 @@ router.post('/lote', async (req, res) => {
       const video = videos[i];
       const jobId = `vid_${Date.now()}_${i}`;
       
+      const loteVariacao = Math.random();
+
       // Criar doc
       const videoDoc = await Video.create({
         title: `Vídeo ${video.especialidadeId} — ${video.tema?.substring(0, 30) || 'Sem título'}...`,
@@ -270,7 +296,13 @@ router.post('/lote', async (req, res) => {
         especialidadeId: video.especialidadeId,
         status: 'processing',
         jobId,
-        pipelineStatus: 'ROTEIRO'
+        pipelineStatus: 'ROTEIRO',
+        platform: video.platform || 'instagram',
+        contentType: video.contentType || 'instagram',
+        subTema: video.subTema || null,
+        hookStyle: video.hookStyle || 'dor',
+        objetivo: video.objetivo || 'salvar',
+        intensidade: video.intensidade || 'viral'
       });
 
       // Enfileirar
@@ -283,7 +315,14 @@ router.post('/lote', async (req, res) => {
         duracao: video.duracao || 60,
         publicar: video.publicar || false,
         targeting: video.targeting || {},
-        userId: req.user?._id
+        userId: req.user?._id,
+        platform: video.platform || 'instagram',
+        contentType: video.contentType || 'instagram',
+        subTema: video.subTema || null,
+        hookStyle: video.hookStyle || 'dor',
+        objetivo: video.objetivo || 'salvar',
+        variacao: loteVariacao,
+        intensidade: video.intensidade || 'viral'
       }, { jobId });
 
       jobs.push({ jobId, videoId: videoDoc._id, bullJobId: job.id });

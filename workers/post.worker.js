@@ -161,18 +161,25 @@ const postWorker = new Worker('post-generation', async (job) => {
       const mode = job.data.mode || 'full'; // 'full' | 'caption' | 'hooks'
       logger.info(`[POST WORKER] Instagram modo: ${mode} (com imagem automática)`);
 
-      // Headline curta
-      const headline = await gerarHeadline({ especialidade, funnelStage, customTheme });
-
-      let legenda;
-      if (mode === 'hooks') {
-        // 🎣 GANCHOS VIRAIS: Gera 10 ganchos para usar nos Reels
-        const hooksResult = await generateHooksViral(especialidade, customTheme, funnelStage, 10);
-        legenda = hooksResult.content;
+      // Se vier legenda pré-gerada pelo ZEUS, usar diretamente (não re-gerar)
+      let headline, legenda;
+      if (job.data.legenda) {
+        legenda = job.data.legenda;
+        headline = customTheme || especialidade.nome;
+        logger.info(`[POST WORKER] Usando legenda pré-gerada pelo ZEUS (${legenda.length} chars)`);
       } else {
-        // ✨ FULL ou 📝 CAPTION SEO: legenda com keyword density + CTA por funil
-        const captionResult = await generateCaptionSEO(especialidade, customTheme || headline, funnelStage);
-        legenda = captionResult.content;
+        // Headline curta
+        headline = await gerarHeadline({ especialidade, funnelStage, customTheme });
+
+        if (mode === 'hooks') {
+          // 🎣 GANCHOS VIRAIS: Gera 10 ganchos para usar nos Reels
+          const hooksResult = await generateHooksViral(especialidade, customTheme, funnelStage, 10);
+          legenda = hooksResult.content;
+        } else {
+          // ✨ FULL ou 📝 CAPTION SEO: legenda com keyword density + CTA por funil
+          const captionResult = await generateCaptionSEO(especialidade, customTheme || headline, funnelStage);
+          legenda = captionResult.content;
+        }
       }
 
       // Score de qualidade automático

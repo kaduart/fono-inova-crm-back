@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
  * 🎭 SIMULADOR DE CONVERSAS REAIS COM A AMANDA
- * 
+ *
  * Simula conversas baseadas em casos reais de atendimento humano
  * Permite ver como Amanda responde vs. como humano respondeu
- * 
- * Uso: node tests/amanda/simulador-real.js [cenario-id]
- * 
+ *
+ * Uso: node tests/amanda/simulador-real.js [cenario-id] [--quiet]
+ *
  * Exemplos:
- *   node tests/amanda/simulador-real.js           # Lista cenários disponíveis
- *   node tests/amanda/simulador-real.js MC-01     # Simula caso de múltiplas crianças
- *   node tests/amanda/simulador-real.js DC-01     # Simula caso de desistência
- *   node tests/amanda/simulador-real.js interativo # Modo conversa livre
+ *   node tests/amanda/simulador-real.js               # Lista cenários disponíveis
+ *   node tests/amanda/simulador-real.js MC-01         # Simula caso de múltiplas crianças
+ *   node tests/amanda/simulador-real.js MC-01 --quiet # Sem logs internos
+ *   node tests/amanda/simulador-real.js interativo    # Modo conversa livre
  */
 
 import 'dotenv/config';
@@ -19,6 +19,20 @@ import mongoose from 'mongoose';
 import { getOptimizedAmandaResponse } from '../../orchestrators/AmandaOrchestrator.js';
 import Leads from '../../models/Leads.js';
 import readline from 'readline';
+
+// --quiet suprime logs internos do orchestrator
+const QUIET = process.argv.includes('--quiet') || process.argv.includes('-q');
+if (QUIET) {
+  const noop = () => {};
+  console.log = noop;
+  console.warn = noop;
+  console.info = noop;
+  console.debug = noop;
+  console.error = noop;
+}
+
+// print() escreve direto no stdout — nunca suprimido pelo --quiet
+const print = (...args) => process.stdout.write(args.join(' ') + '\n');
 
 const PHONE_TESTE = '5562999999998';
 
@@ -120,17 +134,17 @@ const CENARIOS = {
 // ═══════════════════════════════════════════════════════════
 
 function printBanner() {
-  console.log('\n🎭 ═══════════════════════════════════════════════════════════');
-  console.log('   SIMULADOR DE CONVERSAS REAIS - AMANDA AI');
-  console.log('   Compare respostas da Amanda com atendimento humano');
-  console.log('═══════════════════════════════════════════════════════════ 🎭\n');
+  print('\n🎭 ═══════════════════════════════════════════════════════════');
+  print('   SIMULADOR DE CONVERSAS REAIS - AMANDA AI');
+  print('   Compare respostas da Amanda com atendimento humano');
+  print('═══════════════════════════════════════════════════════════ 🎭\n');
 }
 
 function printCenario(key, cenario) {
-  console.log(`\n📋 ${key}: ${cenario.nome}`);
-  console.log(`   ${cenario.descricao}`);
-  console.log(`   Contexto: ${cenario.contexto}`);
-  console.log(`   Expectativa: ${cenario.expectativa}\n`);
+  print(`\n📋 ${key}: ${cenario.nome}`);
+  print(`   ${cenario.descricao}`);
+  print(`   Contexto: ${cenario.contexto}`);
+  print(`   Expectativa: ${cenario.expectativa}\n`);
 }
 
 async function limparLeadTeste() {
@@ -181,41 +195,38 @@ async function enviarMensagem(lead, texto, historico = []) {
 
 async function modoInterativo() {
   printBanner();
-  console.log('🎮 Modo Interativo - Converse com a Amanda\n');
-  console.log('Digite suas mensagens (ou "sair" para encerrar)\n');
+  print('🎮 Modo Interativo - Converse com a Amanda');
+  print('Digite suas mensagens (ou "sair" para encerrar)\n');
 
   await mongoose.connect(process.env.MONGO_URI);
   let lead = await criarLeadInicial(PHONE_TESTE, 'Lead Interativo');
   let historico = [];
 
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-
-  const perguntar = () => {
-    return new Promise((resolve) => {
-      rl.question('👤 Você: ', resolve);
-    });
-  };
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const perguntar = () => new Promise(resolve => rl.question('👤 Você: ', resolve));
 
   while (true) {
     const mensagem = await perguntar();
-    
+
     if (mensagem.toLowerCase() === 'sair') {
-      console.log('\n👋 Encerrando conversa...');
+      print('\n👋 Encerrando conversa...');
       rl.close();
       break;
     }
 
-    console.log('⏳ Amanda está digitando...\n');
-    
+    print('⏳ Amanda está digitando...\n');
+
     const resposta = await enviarMensagem(lead, mensagem, historico);
-    
+    const respostaTexto = typeof resposta === 'string' ? resposta : (resposta?.text || '[sem resposta]');
+
     historico.push({ autor: 'Cliente', texto: mensagem });
-    historico.push({ autor: 'Amanda', texto: resposta.text || resposta });
-    
-    console.log(`🤖 Amanda: ${resposta.text || resposta}\n`);
+    historico.push({ autor: 'Amanda', texto: respostaTexto });
+
+    print(`🤖 Amanda: ${respostaTexto}\n`);
+
+    // Refresh do lead para próxima mensagem ter estado atualizado
+    const leadAtualizado = await Leads.findById(lead._id).lean();
+    if (leadAtualizado) lead = leadAtualizado;
   }
 
   await mongoose.disconnect();
@@ -228,7 +239,7 @@ async function modoInterativo() {
 async function executarCenario(cenarioKey) {
   const cenario = CENARIOS[cenarioKey];
   if (!cenario) {
-    console.log(`❌ Cenário ${cenarioKey} não encontrado`);
+    print(`❌ Cenário ${cenarioKey} não encontrado`);
     return;
   }
 
@@ -236,42 +247,45 @@ async function executarCenario(cenarioKey) {
   printCenario(cenarioKey, cenario);
 
   await mongoose.connect(process.env.MONGO_URI);
-  let lead = await criarLeadInicial(PHONE_TESTE, cenario.nome);
+  let lead = await criarLeadInicial(PHONE_TESTE, 'Lead Teste');
   let historico = [];
 
-  console.log('═══════════════════════════════════════════════════════════');
-  console.log('🎬 INÍCIO DA SIMULAÇÃO\n');
+  print('═══════════════════════════════════════════════════════════');
+  print('🎬 INÍCIO DA SIMULAÇÃO\n');
 
   for (const mensagem of cenario.conversaHumana) {
     if (mensagem.autor === 'Cliente') {
-      console.log(`👤 Cliente: ${mensagem.texto}`);
-      
-      console.log('⏳ Amanda processando...');
+      print(`👤 Cliente: ${mensagem.texto}`);
+      print('⏳ Amanda processando...');
+
       const resposta = await enviarMensagem(lead, mensagem.texto, historico);
-      
-      console.log(`🤖 Amanda: ${resposta.text || resposta}\n`);
-      
+      const respostaTexto = typeof resposta === 'string' ? resposta : (resposta?.text || '[sem resposta]');
+
+      print(`🤖 Amanda: ${respostaTexto}\n`);
+
       historico.push({ autor: 'Cliente', texto: mensagem.texto });
-      historico.push({ autor: 'Amanda', texto: resposta.text || resposta });
-      
+      historico.push({ autor: 'Amanda', texto: respostaTexto });
+
+      // Refresh do lead para próxima mensagem ter estado atualizado
+      const leadAtualizado = await Leads.findById(lead._id).lean();
+      if (leadAtualizado) lead = leadAtualizado;
+
       // Comparação com resposta humana (se existir na conversa)
-      const proximaHumana = cenario.conversaHumana.find((m, i) => 
-        cenario.conversaHumana.indexOf(mensagem) < i && m.autor === 'Humano'
-      );
-      
+      const idx = cenario.conversaHumana.indexOf(mensagem);
+      const proximaHumana = cenario.conversaHumana.find((m, i) => i > idx && m.autor === 'Humano');
       if (proximaHumana) {
-        console.log(`📚 Humano: ${proximaHumana.texto}`);
-        console.log('   ^^^ Resposta real do atendimento humano\n');
+        print(`📚 Humano: ${proximaHumana.texto}`);
+        print('   ^^^ Resposta real do atendimento humano\n');
       }
-      
-      await new Promise(r => setTimeout(r, 1000));
+
+      await new Promise(r => setTimeout(r, 500));
     }
   }
 
-  console.log('═══════════════════════════════════════════════════════════');
-  console.log('✅ SIMULAÇÃO CONCLUÍDA');
-  console.log(`\n📝 Expectativa: ${cenario.expectativa}`);
-  
+  print('═══════════════════════════════════════════════════════════');
+  print('✅ SIMULAÇÃO CONCLUÍDA');
+  print(`\n📝 Expectativa: ${cenario.expectativa}`);
+
   await mongoose.disconnect();
 }
 
@@ -281,18 +295,19 @@ async function executarCenario(cenarioKey) {
 
 function listarCenarios() {
   printBanner();
-  console.log('📚 CENÁRIOS DISPONÍVEIS:\n');
-  
+  print('📚 CENÁRIOS DISPONÍVEIS:\n');
+
   Object.entries(CENARIOS).forEach(([key, cenario]) => {
-    console.log(`   ${key.padEnd(6)} - ${cenario.nome}`);
-    console.log(`          ${cenario.descricao}`);
-    console.log();
+    print(`   ${key.padEnd(6)} - ${cenario.nome}`);
+    print(`          ${cenario.descricao}`);
+    print('');
   });
-  
-  console.log('═══════════════════════════════════════════════════════════');
-  console.log('Uso: node simulador-real.js [CENÁRIO]');
-  console.log('Ex:  node simulador-real.js MC-01');
-  console.log('     node simulador-real.js interativo');
+
+  print('═══════════════════════════════════════════════════════════');
+  print('Uso: node simulador-real.js [CENÁRIO] [--quiet]');
+  print('Ex:  node simulador-real.js MC-01');
+  print('     node simulador-real.js MC-01 --quiet');
+  print('     node simulador-real.js interativo');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -321,7 +336,9 @@ async function main() {
   listarCenarios();
 }
 
-main().catch(err => {
-  console.error('❌ Erro:', err);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch(err => {
+    console.error('❌ Erro:', err);
+    process.exit(1);
+  });

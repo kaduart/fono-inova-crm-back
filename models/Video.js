@@ -46,7 +46,7 @@ const videoSchema = new mongoose.Schema({
   },
   provider: {
     type: String,
-    enum: ['heygen', 'veo-3.1', 'slideshow'],
+    enum: ['heygen', 'veo-3.1', 'slideshow', 'runway'],
     default: 'heygen'
   },
   publishedChannels: [{
@@ -197,6 +197,54 @@ const videoSchema = new mongoose.Schema({
       type: Boolean,
       default: false
     }
+  },
+
+  // 🧠 Inteligência de conteúdo (Growth Engine)
+  contentType: {
+    type: String,
+    enum: ['instagram', 'ads', 'educativo', 'viral'],
+    default: 'instagram'
+  },
+  platform: {
+    type: String,
+    enum: ['instagram', 'meta_ads'],
+    default: 'instagram'
+  },
+  subTema: {
+    type: String,
+    enum: [
+      'atraso_fala', 'autismo', 'comportamento', 'teste_linguinha',
+      'avaliacao_neuropsicologica', 'coordenacao_motora',
+      'terapia_ocupacional', 'fisioterapia_infantil', 'psicomotricidade'
+    ],
+    default: null
+  },
+  hookStyle: {
+    type: String,
+    enum: ['dor', 'alerta', 'curiosidade', 'erro_comum', 'autoridade'],
+    default: 'dor'
+  },
+  objetivo: {
+    type: String,
+    enum: ['salvar', 'compartilhar', 'comentar', 'agendar'],
+    default: 'salvar'
+  },
+  intensidade: {
+    type: String,
+    enum: ['leve', 'moderado', 'forte', 'viral'],
+    default: 'viral'
+  },
+  estruturaUsada: {
+    type: String,
+    default: null
+  },
+  hookTextoGerado: {
+    type: String,
+    default: null
+  },
+  legendaInstagram: {
+    type: String,
+    default: null
   }
 
 }, {
@@ -210,6 +258,9 @@ videoSchema.index({ createdAt: -1 });
 videoSchema.index({ jobId: 1 });
 videoSchema.index({ pipelineStatus: 1 });
 videoSchema.index({ 'config.funil': 1 });
+videoSchema.index({ platform: 1 });
+videoSchema.index({ subTema: 1 });
+videoSchema.index({ hookStyle: 1 });
 
 // Métodos úteis
 
