@@ -3,10 +3,11 @@ import express from 'express';
 const router = express.Router();
 
 // Lista de especialidades com ícones e cores
+// id = valor usado no MongoDB (deve bater com Doctor.specialty enum)
 router.get('/', (req, res) => {
     res.json([
         {
-            id: 'AudioLines',
+            id: 'fonoaudiologia',
             name: 'Fonoaudiologia',
             icon: 'mic',
             color: '#4CAF50',
@@ -20,21 +21,21 @@ router.get('/', (req, res) => {
             sessionDuration: 40
         },
         {
-            id: 'psico',
+            id: 'psicologia',
             name: 'Psicologia',
             icon: 'psychology',
             color: '#FF9800',
             sessionDuration: 40
         },
         {
-            id: 'to',
+            id: 'terapia_ocupacional',
             name: 'Terapia Ocupacional',
             icon: 'accessibility',
             color: '#9C27B0',
             sessionDuration: 40
         },
         {
-            id: 'fisio',
+            id: 'fisioterapia',
             name: 'Fisioterapia',
             icon: 'fitness_center',
             color: '#F44336',
@@ -48,7 +49,7 @@ router.get('/', (req, res) => {
             sessionDuration: 40
         },
         {
-            id: '',
+            id: 'psicomotricidade',
             name: 'Psicomotricidade',
             icon: 'directions_run',
             color: '#FF5722',
@@ -59,6 +60,13 @@ router.get('/', (req, res) => {
             name: 'Psicopedagogia',
             icon: 'school',
             color: '#9C27B0',
+            sessionDuration: 40
+        },
+        {
+            id: 'neuropsicologia',
+            name: 'Neuropsicologia',
+            icon: 'psychology_alt',
+            color: '#673AB7',
             sessionDuration: 40
         }
     ]);
