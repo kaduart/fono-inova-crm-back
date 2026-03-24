@@ -547,7 +547,7 @@ export const whatsappController = {
                                 'contact.phone': phoneNorm,
                                 origin: 'WhatsApp',
                                 createdAt: new Date(),
-                                status: 'new'
+                                status: 'novo'
                             },
                             $set: {
                                 lastInteractionAt: new Date(),

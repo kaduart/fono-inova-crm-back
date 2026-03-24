@@ -349,7 +349,8 @@ export async function gerarRoteiro({
   hookStyle = 'dor',
   objetivo = 'salvar',
   variacao = Math.random(),
-  intensidade = 'viral'
+  intensidade = 'viral',
+  bordao = ''
 }) {
   const profissional = ESPECIALIDADE_PROFISSIONAL[subTema] ||
                        ESPECIALIDADE_PROFISSIONAL[especialidade?.toLowerCase()] ||
@@ -481,9 +482,19 @@ ${hookStyle === 'autoridade'  && tone === 'inspiracional' ? '→ Abre com creden
 ${hookStyle === 'erro_comum'  && tone === 'educativo'     ? '→ Nomeia o erro, explica o porquê, dá a correção prática — gera salvamento' : ''}
 ${hookStyle === 'alerta'      && tone === 'bastidores'    ? '→ Alerta vindo de dentro da clínica — humanizado e urgente ao mesmo tempo' : ''}
 
+${bordao ? `BORDÃO OBRIGATÓRIO DE ABERTURA:
+O vídeo DEVE começar exatamente com: "${bordao}"
+- A primeira palavra falada na narração é "${bordao}"
+- O hook_texto_overlay também deve começar com "${bordao}"
+- Mantenha o tom curioso/educativo após o bordão — NÃO acusatório
+- Ex: "${bordao} que criticar seu filho pode travar a fala?" → correto
+- Ex: "${bordao} que existe um sinal que a maioria dos pais ignora?" → correto
+` : ''}
 VERIFICAÇÃO OBRIGATÓRIA antes de finalizar (em ordem):
 1. hook_texto_overlay: essa frase faria alguém parar de rolar o feed? É genérica? Se sim → REESCREVA antes de continuar.
+${bordao ? `1b. hook_texto_overlay começa com "${bordao}"? Se não → REESCREVA.` : ''}
 2. Primeira frase da narração abre no estilo "${hookStyle}" correto?
+${bordao ? `2b. Primeira palavra da narração é "${bordao}"? Se não → REESCREVA.` : ''}
 3. Toda a narração mantém o tom "${tone}" do início ao fim?
 4. As frases variam em ritmo (curtas e longas alternadas)?
 5. CTA final é exatamente: "${ctaSugerido}"?

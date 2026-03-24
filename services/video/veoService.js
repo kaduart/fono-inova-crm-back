@@ -159,19 +159,33 @@ const CENAS_ESPECIALIDADE = {
  * @param {number} clipIndex - índice do clip (0-based)
  * @returns {string} prompt completo para o clip
  */
-export function buildScenePrompt(especialidade, clipIndex = 0) {
+/**
+ * Modificadores de intensidade para prompts VEO
+ */
+const INTENSIDADE_MODS = {
+  leve: '',           // estilo original documental calmo
+  moderado: '',       // estilo original
+  forte: 'Dynamic camera movement, energetic pacing, vibrant colors, ',
+  viral: 'Fast-paced energetic movement, dynamic camera angles, bright vivid colors, engaging motion, ' 
+};
+
+export function buildScenePrompt(especialidade, clipIndex = 0, intensidade = 'moderado') {
   const config = CENAS_ESPECIALIDADE[especialidade] || CENAS_ESPECIALIDADE.fonoaudiologia;
   const { cenas, estilo } = config;
   const cena = cenas[clipIndex % cenas.length];
-  return `${cena} ${estilo}`;
+  const mod = INTENSIDADE_MODS[intensidade] || '';
+  // Injeta modificador no início do estilo visual
+  const estiloMod = mod + estilo;
+  return `${cena} ${estiloMod}`;
 }
 
 /**
  * Template para tema personalizado — mantém estilo visual da especialidade.
  */
-export function buildCustomPrompt(tema, especialidade) {
+export function buildCustomPrompt(tema, especialidade, intensidade = 'moderado') {
   const config = CENAS_ESPECIALIDADE[especialidade] || CENAS_ESPECIALIDADE.fonoaudiologia;
-  return `8-second single continuous shot: ${tema}. ${config.estilo}`;
+  const mod = INTENSIDADE_MODS[intensidade] || '';
+  return `8-second single continuous shot: ${tema}. ${mod}${config.estilo}`;
 }
 
 export class VeoService {
@@ -197,12 +211,13 @@ export class VeoService {
     const {
       durationSeconds = 8,
       aspectRatio = '9:16',
-      clipIndex = 0
+      clipIndex = 0,
+      intensidade = 'moderado'
     } = options;
 
     const prompt = temaCustom
-      ? buildCustomPrompt(temaCustom, especialidadeId)
-      : buildScenePrompt(especialidadeId, clipIndex);
+      ? buildCustomPrompt(temaCustom, especialidadeId, intensidade)
+      : buildScenePrompt(especialidadeId, clipIndex, intensidade);
 
     logger.info(`[VEO SERVICE] 🎬 Iniciando geração — ${especialidadeId} — clip ${clipIndex + 1} — ${durationSeconds}s ${aspectRatio}`);
     logger.info(`[VEO SERVICE] Cena: ${prompt.substring(0, 120)}...`);
