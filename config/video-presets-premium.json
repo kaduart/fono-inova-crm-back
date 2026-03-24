@@ -1,0 +1,455 @@
+{
+  "_meta": {
+    "descricao": "Presets Premium para videos Fono Inova - Otimizado para engajamento e conversao",
+    "versao": "1.0",
+    "atualizado": "2026-03-24"
+  },
+  "presets": {
+    "meta_autoridade": {
+      "nome": "Meta Ads - Autoridade",
+      "objetivo": "Converter em leads via WhatsApp",
+      "ideal_para": ["Meta Ads"],
+      "duracao_recomendada": 45,
+      "hook": {
+        "estilo": "autoridade",
+        "exemplos": [
+          "Depois de atender centenas de crianças na clínica...",
+          "Como especialista, vejo isso todos os dias",
+          "O que ninguém te conta sobre o desenvolvimento do seu filho"
+        ]
+      },
+      "tts": {
+        "voz": "alloy",
+        "velocidade": 1.0,
+        "tom": "profissional_acolhedor",
+        "pausas": "claras"
+      },
+      "musica": {
+        "tipo": "motivacional_suave",
+        "volume": 0.04,
+        "fade_in": 2.0,
+        "arquivos_sugeridos": [
+          "mixkit-classical-vibes-2-682.mp3",
+          "musica_calma.mp3"
+        ]
+      },
+      "veo": {
+        "intensidade": "moderado",
+        "modificadores": "Professional lighting, clean composition, trustworthy atmosphere, calm movements",
+        "duracao_clip": 8,
+        "estilo_visual": "Professional clinical documentary style, soft lighting, confident but warm"
+      },
+      "cta": {
+        "tipo": "agendar",
+        "textos": [
+          "Clique no botão e fale com nossa equipe no WhatsApp",
+          "Toque aqui para agendar uma avaliação gratuita",
+          "Converse com um especialista - clique no WhatsApp"
+        ]
+      },
+      "script_template": {
+        "estrutura": [
+          "0-5s: CREDENCIAL - Estabelecer autoridade médica",
+          "5-15s: PROBLEMA - Dor do público-alvo",
+          "15-35s: SOLUÇÃO - Como a clínica ajuda",
+          "35-42s: PROVA - Depoimento ou resultado",
+          "42-45s: CTA_WHATSAPP - Converter lead"
+        ],
+        "palavras_recomendadas": 85,
+        "exemplo_completo": {
+          "titulo": "autoridade_meta_ads",
+          "texto": "Sou fonoaudióloga há 10 anos e atendo crianças todos os dias. Se seu filho tem mais de 2 anos e ainda não fala frases completas, isso pode ser um sinal de alerta. Na nossa clínica, usamos técnicas comprovadas que já ajudaram centenas de famílias. O tratamento é personalizado e os resultados aparecem nas primeiras semanas. Não espere para buscar ajuda. Toque no botão e agende uma avaliação gratuita pelo WhatsApp. A primeira consulta é sem compromisso.",
+          "hashtags": [],
+          "cta": "Toque no botão e agende uma avaliação gratuita pelo WhatsApp 💚"
+        }
+      }
+    },
+
+    "meta_urgencia": {
+      "nome": "Meta Ads - Urgência",
+      "objetivo": "Converter rápido com alerta médico",
+      "ideal_para": ["Meta Ads"],
+      "duracao_recomendada": 35,
+      "hook": {
+        "estilo": "alerta",
+        "exemplos": [
+          "Atenção: se seu filho faz isso, não espere",
+          "Sinais que você não pode ignorar no desenvolvimento",
+          "Se seu filho tem X anos e não faz isso, preste atenção"
+        ]
+      },
+      "tts": {
+        "voz": "alloy",
+        "velocidade": 1.02,
+        "tom": "firme_empatico",
+        "pausas": "impactantes"
+      },
+      "musica": {
+        "tipo": "tensao_suave",
+        "volume": 0.05,
+        "fade_in": 1.0,
+        "arquivos_sugeridos": [
+          "mixkit-keep-smiling-15.mp3"
+        ]
+      },
+      "veo": {
+        "intensidade": "forte",
+        "modificadores": "Clear visuals, focused framing, professional urgency, direct eye contact",
+        "duracao_clip": 8,
+        "estilo_visual": "Urgent but professional medical style, clear messaging"
+      },
+      "cta": {
+        "tipo": "agendar_urgente",
+        "textos": [
+          "Clique agora e agende sua consulta",
+          "Não perca tempo - fale conosco no WhatsApp",
+          "Toque aqui para avaliação urgente"
+        ]
+      },
+      "script_template": {
+        "estrutura": [
+          "0-3s: ALERTA_MEDICO - Chamar atenção imediata",
+          "3-12s: SINAIS - O que observar",
+          "12-25s: CONSEQUENCIA - Por que agir rápido",
+          "25-32s: SOLUCAO - Tratamento disponível",
+          "32-35s: CTA_URGENTE - Converter lead"
+        ],
+        "palavras_recomendadas": 70,
+        "exemplo_completo": {
+          "titulo": "urgencia_meta_ads",
+          "texto": "Atenção pais: se seu filho tem 3 anos e ainda não junta duas palavras, isso não é normal. Quanto mais cedo começar o tratamento, mais rápido os resultados. Depois dos 5 anos, a janela de oportunidade começa a fechar. Nossa clínica tem vagas urgentes para avaliação. O tratamento é indolor e as crianças adoram. Não deixe para depois. Clique no botão e agende agora pelo WhatsApp.",
+          "hashtags": [],
+          "cta": "Clique no botão e agende avaliação urgente pelo WhatsApp 🚨"
+        }
+      }
+    },
+
+    "explosao_viral": {
+      "nome": "Explosão Viral",
+      "objetivo": "Maxima atencao e engajamento nos primeiros 5s",
+      "ideal_para": ["Reels", "TikTok", "Stories"],
+      "duracao_recomendada": 30,
+      "hook": {
+        "estilo": "curiosidade",
+        "exemplos": [
+          "Tem um habito que a maioria dos pais tem — e atrasa o desenvolvimento",
+          "Voce pode estar atrapalhando a fala do seu filho sem perceber",
+          "Isso que parece ajudar seu filho pode estar fazendo o contrario",
+          "O erro que 90% dos pais cometem no banho do bebe"
+        ]
+      },
+      "tts": {
+        "voz": "shimmer",
+        "velocidade": 1.05,
+        "tom": "energetico",
+        "pausas": "curtas"
+      },
+      "musica": {
+        "tipo": "upbeat_energetico",
+        "volume": 0.06,
+        "fade_in": 1.5,
+        "arquivos_sugeridos": [
+          "mixkit-feeling-happy-5.mp3",
+          "mixkit-keep-smiling-15.mp3",
+          "mixkit-smile-1076.mp3"
+        ]
+      },
+      "veo": {
+        "intensidade": "viral",
+        "modificadores": "Fast-paced energetic movement, dynamic camera angles, bright vivid colors, engaging motion",
+        "duracao_clip": 8,
+        "estilo_visual": "Cinematic viral style, saturated colors, quick movements"
+      },
+      "cta": {
+        "tipo": "compartilhar",
+        "textos": [
+          "Marca aqui um pai ou mae que precisa saber disso",
+          "Manda pra outro pai ou mae que precisa ver isso",
+          "Compartilha com quem tem filho na mesma idade"
+        ]
+      },
+      "script_template": {
+        "estrutura": [
+          "0-3s: HOOK_PROVOCATIVO - Parar o scroll imediatamente",
+          "3-8s: APROFUNDAR_TENSAO - Criar curiosity gap",
+          "8-20s: REVELACAO_SURPREENDENTE - Entregar valor inesperado",
+          "20-28s: PROVA_SOCIAL ou DADO - Fortalecer credibilidade",
+          "28-30s: CTA_COMPARTILHAR - Incentivar acao"
+        ],
+        "palavras_recomendadas": 65,
+        "exemplo_completo": {
+          "titulo": "banho_baby_fala_rapido",
+          "texto": "Sabia que o banho do seu bebê pode ajudar ele a falar mais rápido? Enquanto você ensaboa o bracinho, que tal falar um pouquinho com ele? Aqui vão 5 jeitos de transformar o banho em aula de palavras sem precisar de brinquedo caro. Primeiro: nomeie tudo que toca. Braço, Perninha, Pezinho. Segundo: pergunte o óbvio. Cadê seu nariz? Terceiro: cante sem vergonha. Cabeça, ombro, joelho e pé. Quarto: narre como repórter. Que cheiroso! Quinto: repita até cansar. Água! Isso, água! Resultado? Crianças que ouvem mais palavras desenvolvem vocabulário quarenta por cento mais rápido. Salva esse vídeo e tenta hoje à noite.",
+          "hashtags": ["#fono", "#desenvolvimentoinfantil", "#faladobebe", "#maternidade", "#fonoinova"],
+          "cta": "Salva esse vídeo e tenta hoje à noite 💚"
+        }
+      }
+    },
+
+    "autoridade_inspiradora": {
+      "nome": "Autoridade Inspiradora",
+      "objetivo": "Construir confiança e posicionar como especialista",
+      "ideal_para": ["Feed", "Reels", "YouTube Shorts"],
+      "duracao_recomendada": 45,
+      "hook": {
+        "estilo": "autoridade",
+        "exemplos": [
+          "Depois de atender centenas de crianças, aprendi isso",
+          "Toda semana atendo familias com essa mesma duvida",
+          "Isso é o que os pais mais perguntam pra gente — e a resposta surpreende",
+          "O que vejo todo dia na clinica pode estar afetando seu filho"
+        ]
+      },
+      "tts": {
+        "voz": "alloy",
+        "velocidade": 1.05,
+        "tom": "confiante",
+        "pausas": "estratégicas"
+      },
+      "musica": {
+        "tipo": "motivacional",
+        "volume": 0.06,
+        "fade_in": 1.5,
+        "arquivos_sugeridos": [
+          "mixkit-magical-moment-813.mp3",
+          "mixkit-its-april-847.mp3",
+          "mixkit-thats-the-way-of-life-840.mp3"
+        ]
+      },
+      "veo": {
+        "intensidade": "viral",
+        "modificadores": "Dynamic camera movement, vibrant colors, professional lighting",
+        "duracao_clip": 8,
+        "estilo_visual": "Professional documentary style, warm lighting, confident atmosphere"
+      },
+      "cta": {
+        "tipo": "agendar",
+        "textos": [
+          "Fala com a gente no WhatsApp e agenda uma avaliacao",
+          "Manda mensagem no WhatsApp — vamos conversar",
+          "Clica no link e agenda uma avaliacao gratuita"
+        ]
+      },
+      "script_template": {
+        "estrutura": [
+          "0-5s: CREDENCIAL_EXPERIENCIA - Estabelecer autoridade",
+          "5-15s: PROBLEMA_COMUM - Identificar dor do publico",
+          "15-35s: SOLUCAO_INSIGHT - Entregar conhecimento valioso",
+          "35-42s: TRANSFORMACAO_POSSIVEL - Mostrar resultado",
+          "42-45s: CTA_AGENDAR - Converter em lead"
+        ],
+        "palavras_recomendadas": 95,
+        "exemplo_completo": {
+          "titulo": "estimular_fala_sem_brinquedos",
+          "texto": "Como estimular a fala do seu bebê sem brinquedos caros. Primeira dica: nomeie tudo que toca. Braço, perninha, pezinho. Segunda dica: pergunte e espere resposta. Cadê seu nariz? Terceira dica: cante e narre o banho. Cabeça, ombro, joelho e pé. Quarta dica: crie repetição constante. Água! Isso, água! Depoimento de mãe: em um mês meu filho já falava água e tchau! Agende uma avaliação e veja a diferença na vida do seu pequeno.",
+          "hashtags": ["#fonoaudiologia", "#desenvolvimentoinfantil", "#estimulaçao", "#maternidadereal", "#fonoinova"],
+          "cta": "Agende uma avaliação e veja a diferença 💚"
+        }
+      }
+    },
+
+    "empatia_emocional": {
+      "nome": "Empatia Emocional",
+      "objetivo": "Gerar conexao genuina, comentarios e compartilhamentos",
+      "ideal_para": ["Reels", "TikTok", "Stories"],
+      "duracao_recomendada": 35,
+      "hook": {
+        "estilo": "dor",
+        "exemplos": [
+          "Seu filho tem mais de dois anos e ainda fala pouco — voce nao esta sozinha",
+          "Voce ja se preocupou se seu filho vai falar igual as outras crianças?",
+          "Essa angustia de esperar seu filho falar é mais comum do que parece",
+          "Voce ja chegou ao limite com as birras do seu filho?"
+        ]
+      },
+      "tts": {
+        "voz": "shimmer",
+        "velocidade": 1.0,
+        "tom": "acolhedor",
+        "pausas": "empaticas"
+      },
+      "musica": {
+        "tipo": "emocional_suave",
+        "volume": 0.05,
+        "fade_in": 2.0,
+        "arquivos_sugeridos": [
+          "musica_esperancosa.mp3",
+          "mixkit-forever-love-38.mp3",
+          "mixkit-i-love-you-mommy-831.mp3"
+        ]
+      },
+      "veo": {
+        "intensidade": "forte",
+        "modificadores": "Smooth transitions, warm tones, gentle movements, emotional close-ups",
+        "duracao_clip": 8,
+        "estilo_visual": "Warm emotional documentary style, soft lighting, intimate moments"
+      },
+      "cta": {
+        "tipo": "comentar",
+        "textos": [
+          "Comenta aqui a idade do seu filho que eu te ajudo",
+          "Isso acontece ai? Comenta embaixo",
+          "Conta pra mim nos comentarios — ja passaram por isso?"
+        ]
+      },
+      "script_template": {
+        "estrutura": [
+          "0-5s: VALIDACAO_DOR - Nomear sentimento do pai",
+          "5-15s: EMPATIA_ACOLHIMENTO - Mostrar que entende",
+          "15-25s: CAMINHO_ESPERANÇA - Oferecer soluçao suave",
+          "25-32s: PROVA_DE_QUE_E_POSSIVEL - Caso inspirador",
+          "32-35s: CTA_COMENTAR - Engajar conversa"
+        ],
+        "palavras_recomendadas": 75,
+        "exemplo_completo": {
+          "titulo": "banho_conectivo_aprendizado",
+          "texto": "Você percebe que seu filho pode estar aprendendo mesmo durante o banho? Que tal nomear as partes do corpo enquanto lava? Braço, perninha, pezinho. Pergunte coisas simples. Cadê o nariz? Cadê a barriguinha? Cante cantigas curtas. Cabeça, ombro, joelho e pé. Narre as ações do banho. Que cheiroso! Que gostoso! Cada palavra que seu bebê ouve conta muito no desenvolvimento dele. Conta pra gente qual dessas dicas você já faz no dia a dia.",
+          "hashtags": ["#maternidade", "#desenvolvimentoinfantil", "#banhodosbebe", "#conexao", "#fonoinova"],
+          "cta": "Conta pra gente qual dica você já faz 💚"
+        }
+      }
+    },
+
+    "alerta_urgencia": {
+      "nome": "Alerta e Urgencia",
+      "objetivo": "Chamar atencao imediata e incentivar acao rapida",
+      "ideal_para": ["Reels", "Stories", "Ads"],
+      "duracao_recomendada": 30,
+      "hook": {
+        "estilo": "alerta",
+        "exemplos": [
+          "Se seu filho tem X anos e ainda nao faz isso, preste atençao agora",
+          "Esses sinais no primeiro ano de vida merecem atençao imediata",
+          "Nao deixe o banho do seu bebe passar em branco!",
+          "Esse comportamento pode ser um sinal precoce — vale investigar"
+        ]
+      },
+      "tts": {
+        "voz": "alloy",
+        "velocidade": 1.02,
+        "tom": "firme",
+        "pausas": "impactantes"
+      },
+      "musica": {
+        "tipo": "ritmo_rapido",
+        "volume": 0.05,
+        "fade_in": 1.0,
+        "arquivos_sugeridos": [
+          "mixkit-smile-1076.mp3",
+          "mixkit-be-happy-2-823.mp3",
+          "mixkit-keep-smiling-15.mp3"
+        ]
+      },
+      "veo": {
+        "intensidade": "forte",
+        "modificadores": "Quick cuts, energetic pacing, urgent movement, bold colors",
+        "duracao_clip": 8,
+        "estilo_visual": "Urgent documentary style, dynamic movements, attention-grabbing angles"
+      },
+      "cta": {
+        "tipo": "agendar",
+        "textos": [
+          "Clica no link e agenda uma avaliacao gratuita",
+          "Nao perca tempo — agenda agora",
+          "Fala com a gente hoje mesmo no WhatsApp"
+        ]
+      },
+      "script_template": {
+        "estrutura": [
+          "0-3s: ALERTA_DIRETO - Sinal especifico e urgente",
+          "3-10s: EXPLICACAO_RAPIDA - Por que é importante",
+          "10-20s: CHECKLIST_SINAIS - O que observar",
+          "20-27s: CHAMADA_ACAO - O que fazer agora",
+          "27-30s: CTA_URGENCIA - Incentivar decisao imediata"
+        ],
+        "palavras_recomendadas": 65,
+        "exemplo_completo": {
+          "titulo": "banho_nao_passe_em_branco",
+          "texto": "Não deixe o banho do seu bebê passar em branco! Nomeie as partes do corpo enquanto lava. Braço, perninha, pezinho. Pergunte o óbvio. Cadê seu nariz? Cadê a barriguinha? Cante pequenas canções. Cabeça, ombro, joelho e pé. Narre cada ação. Água, cheiros, sabonete. Quanto mais cedo você começar a falar com seu bebê, mais rápido ele vai desenvolver a fala. Não perca essa janela de oportunidade todos os dias. Clique e agende uma avaliação com nossa equipe.",
+          "hashtags": ["#alerta", "#desenvolvimentoinfantil", "#faladosbebe", "#urgencia", "#fonoinova"],
+          "cta": "Clique e agende uma avaliação 💚"
+        }
+      }
+    },
+
+    "erro_correcao": {
+      "nome": "Erro Comum + Correçao",
+      "objetivo": "Gerar salvamentos e compartilhamentos de utilidade",
+      "ideal_para": ["Feed", "Reels", "TikTok"],
+      "duracao_recomendada": 40,
+      "hook": {
+        "estilo": "erro_comum",
+        "exemplos": [
+          "A maioria dos pais comete esse erro sem saber",
+          "Voce pode estar fazendo isso errado com seu filho",
+          "Esse erro é mais comum do que parece — e prejudica o desenvolvimento",
+          "Pare de fazer isso se quer ajudar seu filho"
+        ]
+      },
+      "tts": {
+        "voz": "nova",
+        "velocidade": 1.0,
+        "tom": "educativo_amigavel",
+        "pausas": "claras"
+      },
+      "musica": {
+        "tipo": "leve_positivo",
+        "volume": 0.04,
+        "fade_in": 1.5,
+        "arquivos_sugeridos": [
+          "mixkit-smile-1076.mp3",
+          "mixkit-be-happy-2-823.mp3"
+        ]
+      },
+      "veo": {
+        "intensidade": "moderado",
+        "modificadores": "Clear visuals, steady pace, friendly atmosphere",
+        "duracao_clip": 8,
+        "estilo_visual": "Educational friendly style, clear demonstrations, approachable"
+      },
+      "cta": {
+        "tipo": "salvar",
+        "textos": [
+          "Salva esse video pra nao esquecer",
+          "Salva aqui pra consultar depois",
+          "Guarda esse video — voce vai usar"
+        ]
+      },
+      "script_template": {
+        "estrutura": [
+          "0-5s: NOMEAR_ERRO - Identificar comportamento errado",
+          "5-15s: EXPLICAR_PREJUIZO - Por que prejudica",
+          "15-30s: VERSAO_CORRETA - Como fazer certo",
+          "30-38s: EXEMPLO_PRATICO - Demonstraçao clara",
+          "38-40s: CTA_SALVAR - Incentivar salvamento"
+        ],
+        "palavras_recomendadas": 85,
+        "exemplo_completo": {
+          "titulo": "erro_falar_por_crianca",
+          "texto": "A maioria dos pais comete esse erro sem saber. E com a melhor das intençoes. Quando o bebe aponta para a agua e faz aquele som, voce ja entrega a garrafa. Parece ajudar, certo? Mas esta tirando a chance mais valiosa dele. A crianca precisa tentar falar. Mesmo que saia errado. Mesmo que seja so um 'aga'. Quando voce adivinha e entrega, o cerebro dele aprende: nao preciso me esforçar. A correçao é simples. Peça para ele tentar falar. Espere. Mesmo que demore. Valorize qualquer tentativa. O cerebro precisa dessa luta para desenvolver. Salva esse video pra nao esquecer."
+        }
+      }
+    }
+  },
+
+  "configuracoes_globais": {
+    "cores_marca": {
+      "primaria": "#26977B",
+      "secundaria": "#1E7A64",
+      "fundo_outro": "#26977B",
+      "texto_hook": "#FFFFFF",
+      "borda_texto": "#000000"
+    },
+    "fontes": {
+      "titulos": "Roboto-Bold",
+      "corpo": "Roboto-Regular"
+    },
+    "musicas_disponiveis": {
+      "upbeat_energetico": ["mixkit-feeling-happy-5.mp3", "mixkit-keep-smiling-15.mp3"],
+      "motivacional": ["mixkit-magical-moment-813.mp3", "mixkit-its-april-847.mp3"],
+      "emocional_suave": ["musica_esperancosa.mp3", "mixkit-forever-love-38.mp3"],
+      "ritmo_rapido": ["mixkit-smile-1076.mp3", "mixkit-be-happy-2-823.mp3"],
+      "leve_positivo": ["mixkit-smile-1076.mp3"]
+    }
+  }
+}

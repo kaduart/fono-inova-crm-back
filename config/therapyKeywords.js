@@ -190,7 +190,7 @@ const JOB_KEYWORDS = {
     job: ['emprego', 'trabalho', 'vaga', 'vagas', 'trampo', 'estágio', 'estagio', 'estagiario', 'estagiária', 'estagiário'],
     search: ['procura', 'procurando', 'busca', 'buscando', 'precisa', 'necessidade', 'oportunidade', 'oportunidades'],
     action: ['trabalhar', 'trabalha', 'atuante', 'atuar', 'fazer parte', 'integrar', 'enviar'],
-    partnership: ['parceria', 'credenciamento', 'prestador', 'prestadora', 'convênio', 'convenio'],
+    partnership: ['parceria', 'credenciamento', 'prestador', 'prestadora'],
     professional: ['sou', 'me chamo', 'formado', 'formada', 'formação', 'profissional']
 };
 
