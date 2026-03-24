@@ -313,7 +313,7 @@ router.post('/detect-source', async (req, res) => {
  */
 router.get('/by-specialty', async (req, res) => {
   try {
-    const specialties = ['psicologia', 'fono', 'fisio', 'neuropsicologia', 'geral'];
+    const specialties = ['psicologia', 'fonoaudiologia', 'fisioterapia', 'terapia_ocupacional', 'neuropsicologia', 'psicopedagogia', 'musicoterapia', 'geral'];
     
     const results = await Promise.all(
       specialties.map(async (specialty) => {
