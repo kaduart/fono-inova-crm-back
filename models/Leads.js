@@ -7,7 +7,7 @@ const interactionSchema = new mongoose.Schema({
   channel: { type: String, enum: ['whatsapp', 'WhatsApp', 'telefone', 'email', 'manual'], default: 'manual' }, direction: { type: String, enum: ['inbound', 'outbound'], default: 'outbound' },
   message: String,
   note: String,
-  status: { type: String, enum: ['sent', 'received', 'failed', 'read', 'completed'], default: 'sent' },
+  status: { type: String, enum: ['sent', 'received', 'failed', 'read', 'completed', 'new'], default: 'sent' },
   acceptedPrivateCare: { type: Boolean, default: null },
   insuranceHardNo: { type: Boolean, default: false },
   triageStep: {
@@ -122,6 +122,7 @@ const leadSchema = new mongoose.Schema({
     type: String,
     enum: [
       'novo',
+      'new',
       'engajado',
       'atendimento',
       'convertido',
@@ -275,7 +276,7 @@ const leadSchema = new mongoose.Schema({
   metaTracking: {
     source: {
       type: String,
-      enum: ['meta_ads', 'google_ads', 'organic', 'indication', 'instagram', 'facebook', ''],
+      enum: ['meta_ads', 'google_ads', 'organic', 'indication', 'instagram', 'facebook', 'website', ''],
       default: ''
     },
     campaign: { type: String, default: null },        // Ex: "[vd-trafego]-[psico]"
