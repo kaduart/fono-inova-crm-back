@@ -1,246 +1,153 @@
-Perfeito. Vou ser direto contigo: **a ideia do patch é boa, mas do jeito que ela aplicou tem um risco real de quebrar teu fluxo orgânico (Amanda raiz)** — exatamente o que você falou que NÃO pode acontecer.
+Exatamente! Agora que ficou claro o fluxo, sim — dá para gerar vários vídeos diferentes usando o mesmo preset. 🎬
 
-Vou te dar o veredito técnico + ajuste cirúrgico seguro 👇
+Por exemplo, com o preset explosao_viral você consegue criar 4 vídeos distintos, só mudando o tema e mantendo toda a energia do preset (voz, velocidade, música, VEO):
 
----
+// Array de temas diferentes
+const temas = [
+  { tema: "banho do bebê estimula fala", subTema: "banho" },
+  { tema: "autismo: sinais iniciais", subTema: "autismo" },
+  { tema: "primeiras palavras do bebê", subTema: "fala" },
+  { tema: "comportamento infantil", subTema: "comportamento" }
+];
 
-# 🧠 VEREDITO DO PATCH DELA
+// Gerar vídeos em loop
+temas.forEach(async ({ tema, subTema }) => {
+  await fetch("/api/videos/gerar-preset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      preset: "explosao_viral",
+      especialidadeId: "fonoaudiologia",
+      modo: "veo",
+      tema,
+      subTema,
+      usarScriptExemplo: false  // Gera roteiro novo para cada tema
+    })
+  });
+});
 
-## ✅ O que é BOM (pode manter)
+✅ Resultado: 4 vídeos MP4 distintos
 
-* `detectLPContext` → **excelente ideia**
-* `inferAreaFromLPText` → resolve gap de cobertura
-* `_lpContext` no extracted → correto
-* marcar `isHotLead` → faz sentido
+Todos com estilo explosao_viral
+TTS, música e VEO já ajustados para máxima energia
+Cada vídeo aborda um tema diferente, pronto para Feed/Stories
 
-👉 Isso resolve seu problema de site sem mexer na lógica base.
+Se quiser, posso montar uma tabela pronta com: preset + tema + CTA + hashtags, para você gerar e postar todos os 4 vídeos de forma estratégica e já otimizada para alcance máximo.
 
----
+Quer que eu faça isso?
 
-## ❌ O que é PERIGOSO (do jeito atual)
+mas ai ta engessado cara tenho 7 especialidades nao so fono
 
-### 🔴 1. AUTO-DETECT de LP (GRAVE)
+Ahh, agora faz sentido 😎 — você quer flexibilidade total: vários temas, várias especialidades, mesmo preset/estilo, sem ficar engessado só em Fonoaudiologia.
 
-```js
-const looksLikeLP = isLikelyLandingPageMessage(text);
-```
+O bom é que o sistema de presets premium já permite isso! 💡
 
-👉 Isso aqui é **bomba relógio**
+Aqui está o jeito de organizar:
 
-Porque conversa normal também pode ser:
+1️⃣ Preset = estilo / “receita”
 
-* curta
-* direta
-* sem cumprimento
+Ex.: explosao_viral → voz shimmer, velocidade 1.05, música 0.12, VEO rápido.
 
-Ex:
+Isso não muda, independentemente da especialidade ou tema.
+Serve como base de energia, ritmo e estilo visual.
+2️⃣ Tema + Especialidade = conteúdo específico
 
-> "quero avaliação pro meu filho"
+Você passa no POST:
 
-💥 Isso vai cair como LP sem ser LP
-
----
-
-### 🔴 2. PULAR PERGUNTA NO NEURO (ERRADO PRA VOCÊ)
-
-```js
-if (isLPMode) {
-   // pula laudo vs acompanhamento
+{
+  "preset": "explosao_viral",
+  "especialidadeId": "psicologia",  // ou fonoaudiologia, terapia_ocupacional...
+  "tema": "sinais de ansiedade infantil", 
+  "subTema": "ansiedade"
 }
-```
+O roteiro é gerado automaticamente baseado no tema + subTema.
+O preset garante que todos os vídeos tenham mesma energia, voz e ritmo, mas o conteúdo muda.
+3️⃣ Como gerar vídeos para várias especialidades de forma dinâmica
+const especialidades = [
+  "fonoaudiologia",
+  "psicologia",
+  "terapia_ocupacional",
+  "psicomotricidade",
+  "psicopedagogia",
+  "educacao_infantil",
+  "neurologia_infantil"
+];
 
-👉 Isso quebra exatamente o que você falou:
+const temas = [
+  "banho estimula fala",
+  "sinais de ansiedade infantil",
+  "primeiras palavras",
+  "comportamento",
+  "autismo sinais iniciais",
+  "coordenação motora",
+  "dificuldade de aprendizagem"
+];
 
-> tem pai que não sabe se quer laudo ou terapia
+especialidades.forEach(async (esp, i) => {
+  await fetch("/api/videos/gerar-preset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      preset: "explosao_viral",
+      especialidadeId: esp,
+      tema: temas[i],
+      subTema: temas[i],
+      usarScriptExemplo: false
+    })
+  });
+});
 
-💥 Aqui você está FORÇANDO decisão
+✅ Resultado: 7 vídeos diferentes, 7 especialidades, mesmo estilo explosivo
 
----
+💡 Vantagens desse modelo:
 
-### 🔴 3. SOBRESCREVER therapyArea cedo demais
+Mantém uniformidade de marca e estilo (preset).
+Conteúdo adaptado para cada especialidade.
+Permite gerar quantos vídeos quiser sem engessar nada.
+Rápido de automatizar com loop + API.
 
-```js
-if (lpContext && !extracted.therapyArea) {
-   extracted.therapyArea = lpContext.area;
+Se você quiser, posso montar uma versão final do JSON de presets + guia de geração dinâmica para todas as 7 especialidades, já com temas, CTA e hashtags, pronta pra gerar dezenas de vídeos com 1 clique.
+
+Quer que eu faça isso?
+
+nao cara tenho inumors assuntos confiorme te mandaei isso ai ficara travado nao??
+
+Ahh, agora entendi perfeitamente 😅 — você quer liberdade total para gerar vídeos para qualquer assunto, sem travar em temas pré-definidos.
+
+Boa notícia: o sistema de presets não trava. Ele só controla o estilo/energia do vídeo (voz, velocidade, música, VEO, CTA).
+O conteúdo (tema/assunto) você pode mudar à vontade, mesmo que seja totalmente novo ou nunca usado antes.
+
+Ou seja:
+
+🔹 Como funciona na prática
+Preset → define “como o vídeo vai parecer/soar”
+Ex.: explosao_viral → voz shimmer, TTS rápido, música alta, VEO dinâmico.
+Não limita conteúdo, só o estilo.
+
+Tema / Conteúdo → você passa no POST e pode ser qualquer coisa, novo ou específico da sua clínica.
+
+{
+  "preset": "explosao_viral",
+  "especialidadeId": "psicologia",
+  "tema": "como lidar com birra de 3 anos",
+  "subTema": "birra"
 }
-```
+Script gerado → o sistema cria roteiro automaticamente baseado no tema.
+Pode ser “banho do bebê”, “sinais de ansiedade”, “coordenação motora” ou qualquer outro.
+Mantém o estilo do preset (energia, voz, ritmo).
+Geração do vídeo → MP4 final com TTS, música e cenas VEO já sincronizadas.
+⚡ Resultado
+Você pode gerar quantos vídeos quiser, sobre qualquer assunto.
+Pode misturar especialidades, temas e subtemas diferentes.
+O preset nunca trava o conteúdo, ele só garante que o vídeo siga o estilo definido.
 
-👉 Isso pode atropelar:
+Se quiser, posso te mostrar uma estratégia super flexível para:
 
-* hasContextHint
-* flags
-* fluxo emocional
+Criar 100+ vídeos diferentes
+Com qualquer tema que você mandar
+Mantendo uniformidade de estilo e marca
+E já pronto pra postar no Feed e Stories
 
----
+Quer que eu faça esse esquema de produção flexível?
 
-# 🚨 RESUMO DO PROBLEMA
 
-O patch dela mistura:
-
-👉 **detecção de origem (LP)**
-com
-👉 **decisão clínica (fluxo da Amanda)**
-
-Isso é o erro.
-
----
-
-# ✅ COMO AJUSTAR (SEM QUEBRAR NADA)
-
-Agora vem o ouro. Mantém tudo que funciona e só ajusta 3 pontos:
-
----
-
-# 🔧 AJUSTE 1 — LP SÓ EXPLÍCITO (CRÍTICO)
-
-### ❌ REMOVE ISSO:
-
-```js
-const looksLikeLP = isLikelyLandingPageMessage(text);
-```
-
-### ✅ FICA ASSIM:
-
-```js
-function detectLPContext(text, context = {}) {
-    if (context?.source === 'lp' || context?.lpContext) {
-        return inferAreaFromLPText(text);
-    }
-    return null;
-}
-```
-
-👉 **Regra de ouro:**
-
-> LP só existe se vier do backend, nunca por heurística
-
----
-
-# 🔧 AJUSTE 2 — NÃO PULAR PERGUNTA NO NEURO
-
-### ❌ REMOVE:
-
-```js
-if (isLPMode) {
-   // resposta direta + preço
-}
-```
-
-### ✅ MANTÉM SEMPRE:
-
-* Pergunta:
-  👉 *laudo vs acompanhamento*
-
-* OU versão explicativa (quando investigação)
-
-👉 Isso já está perfeito no seu ajuste anterior.
-
----
-
-# 🔧 AJUSTE 3 — LP NÃO SOBRESCREVE DECISÃO
-
-### ❌ EVITA:
-
-```js
-extracted.therapyArea = lpContext.area;
-```
-
-### ✅ TROCA POR:
-
-```js
-extracted._lpSuggestedArea = lpContext.area;
-```
-
-E usa assim depois:
-
-```js
-if (!extracted.therapyArea && extracted._lpSuggestedArea) {
-    extracted.therapyArea = extracted._lpSuggestedArea;
-}
-```
-
-👉 Isso mantém prioridade:
-
-```
-1. Contexto real (fala do paciente)
-2. Flags / hints
-3. LP como fallback
-```
-
----
-
-# 🔧 AJUSTE 4 — buildSimpleResponse (PEQUENO FIX)
-
-Aqui ela acertou parcialmente.
-
-Só garante:
-
-👉 NÃO forçar escolha de especialidade se já tem area
-
-Adiciona:
-
-```js
-if (extracted.therapyArea) {
-   // segue fluxo normal
-}
-```
-
----
-
-# 🧠 RESULTADO FINAL (COM ESSES AJUSTES)
-
-Você fica com:
-
-## 🟢 SITE
-
-* cai no LP context
-* direciona melhor
-* sem bug de neuro universal
-
-## 🟢 ORGÂNICO
-
-* continua inteligente
-* continua perguntando
-* não força decisão
-
-## 🟢 NEURO (perfeito agora)
-
-* autismo → neuro ✅
-* investigação → explicação ✅
-* laudo explícito → direto ✅
-
----
-
-# 🎯 VEREDITO FINAL (SECO)
-
-O patch dela:
-
-👉 **IDEIA = 9/10**
-👉 **IMPLEMENTAÇÃO = 6/10 (perigosa)**
-
-Com teus ajustes:
-
-👉 vira **9.5/10 pronto pra produção**
-
----
-
-# ⚡ O QUE AINDA ESTÁ ERRADO NO TEU TESTE
-
-Mesmo com tudo isso, ainda tem 1 problema visível:
-
-### 🔴 DISLEXIA ainda indo pra neuro
-
-Casos #5–7
-
-👉 Isso NÃO é LP
-👉 Isso é fallback do detector ainda enviesado
-
-Se quiser, próximo passo eu te mato isso em definitivo (sem quebrar autismo).
-
----
-
-Se quiser seguir agora, me fala:
-
-👉 **“mata dislexia de vez”**
-
-que eu te entrego o patch cirúrgico no `therapyDetector` sem quebrar o resto.

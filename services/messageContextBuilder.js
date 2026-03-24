@@ -131,6 +131,15 @@ export async function buildMessageContext(text, lead, state, stateData, insights
       lead?.autoBookingContext?.complaint ||
       lead?.qualificationData?.queixa ||
       null,
+
+    preferredPeriod:
+      stateData?.preferredPeriod ||
+      lead?.autoBookingContext?.preferredPeriod ||
+      lead?.pendingPreferredPeriod ||
+      null,
+
+    messageCount:
+      lead?.interactions?.length || 0,
   };
 
   // ── 6. ESTRATÉGIA DE CONVERSÃO ────────────────────────────────────────────
@@ -152,6 +161,8 @@ export async function buildMessageContext(text, lead, state, stateData, insights
     patientAge: leadData.age,
     patientName: leadData.name,
     complaint: leadData.complaint,
+    preferredPeriod: leadData.preferredPeriod,
+    messageCount: leadData.messageCount,
     emotionalContext: {
       expressedWorry: flags.isEmotional,
       expressedUrgency: flags.mentionsUrgency,

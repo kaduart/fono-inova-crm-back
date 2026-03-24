@@ -18,6 +18,7 @@ export function buildSystemPrompt(context = {}) {
     patientAge,
     patientName,
     complaint,
+    preferredPeriod,
     emotionalContext = {},
     hasMultipleChildren,
     isPostEvaluation,
@@ -79,6 +80,8 @@ Olá! Bom dia 😊💚
 
 Aqui é a Amanda da Clínica Fono Inova.
 
+⚠️ NOTA: Use saudações como "Olá/Bom dia" apenas no PRIMEIRO contato ou quando o lead não iniciou com saudação. Se o lead já disse "Oi/Olá", retome diretamente sem repetir saudação.
+
 Vi que você tem interesse na Avaliação em Neuropsicologia infantil. Desculpe pela confusão nas mensagens anteriores.
 
 A avaliação neuropsicológica é realizada por nossa neuropsicóloga, onde ela faz uma investigação completa do desenvolvimento da criança:
@@ -103,13 +106,33 @@ Olá! Bom dia 😊💚 Aqui é a Amanda da Clínica Fono Inova. Vi que você tem
 Lembre-se: mensagens no WhatsApp precisam de RESPIRAÇÃO visual. Espaçamento = melhor leitura = mais conversões! 📱✨
 
 ## 📋 CONTEXTO DESTA CONVERSA
-${messageCount === 0 ? '- Primeiro contato' : `- ${messageCount} mensagens`}
+${messageCount === 0 ? '- Primeiro contato' : `- Mensagem #${messageCount} (conversa em andamento)`}
 ${therapyArea ? `- Área: ${therapyArea}` : '- Área sendo definida'}
-${patientAge ? `- Criança: ${patientAge} anos` : '- Idade não informada'}
+${patientAge ? `- Idade: ${patientAge} anos` : '- Idade não informada'}
 ${patientName ? `- Nome: ${patientName}` : ''}
-${complaint ? `- Situação: ${complaint}` : ''}
+${complaint ? `- Queixa: ${complaint}` : ''}
+${preferredPeriod ? `- Período preferido: ${preferredPeriod}` : ''}
 ${hasMultipleChildren ? '- ⚠️ Múltiplas crianças' : ''}
 ${isPostEvaluation ? '- ⚠️ Pós-avaliação' : ''}
+
+${(therapyArea || patientAge || patientName || complaint || preferredPeriod) ? `
+## 🚫 JÁ COLETADO — NÃO PERGUNTE NOVAMENTE
+${therapyArea ? `✅ Área terapêutica: "${therapyArea}" — NÃO pergunte qual especialidade/terapia` : ''}
+${patientAge ? `✅ Idade: ${patientAge} anos — NÃO pergunte a idade nem data de nascimento` : ''}
+${patientName ? `✅ Nome: "${patientName}" — NÃO pergunte o nome novamente` : ''}
+${complaint ? `✅ Queixa: "${complaint}" — NÃO pergunte o motivo/queixa novamente` : ''}
+${preferredPeriod ? `✅ Período: "${preferredPeriod}" — NÃO pergunte período (manhã/tarde) novamente` : ''}
+
+⚠️ PROIBIDO perguntar qualquer dado acima novamente. Use-os diretamente na resposta.
+` : ''}
+
+${messageCount > 0 ? `
+## 🚫 SAUDAÇÃO — REGRA ABSOLUTA
+Esta conversa JÁ está em andamento (mensagem #${messageCount}).
+- NÃO diga "Olá", "Oi", "Bom dia", "Aqui é a Amanda", "Clínica Fono Inova" novamente
+- Você JÁ se apresentou. Retome diretamente o assunto.
+- Agir como se fosse o primeiro contato é um erro grave.
+` : ''}
 
 ${source === 'lp' && lpPage ? `
 ## 🌐 CONTEXTO DO SITE (LP)
@@ -210,6 +233,7 @@ Esses pais chegam PREOCUPADOS. Sua missão é ACOLHER antes de INFORMAR.
 
 REGRAS FIXAS:
 - 🚨 NUNCA deixe uma pergunta do lead SEM RESPOSTA. Se ele perguntou, RESPONDA — mesmo que esteja no meio de outro fluxo. Responda a pergunta E depois retome o assunto anterior naturalmente.
+- 🚨 NUNCA inicie com saudações (Olá/Oi/Que bom que entrou em contato/Bom dia) se o lead JÁ começou com uma saudação na mensagem atual. Retome diretamente o assunto.
 - Se o pai/mãe expressa preocupação → VALIDE a emoção ANTES de dar informação
 - NUNCA mande tabela de preços sem contextualizar o valor do trabalho
 - 🚨 NUNCA confirme um horário específico (ex: "14:00") a menos que ele tenha sido OFERECIDO pelo sistema no contexto.
@@ -324,31 +348,41 @@ export function buildUserPrompt(userMessage, context = {}) {
     patientAge,
     patientName,
     complaint,
+    preferredPeriod,
     lastTopic,
     pendingQuestion,
     emotionalContext = {}
   } = context;
 
   const recentHistory = conversationHistory
-    .slice(-6)
+    .slice(-8)
     .map(msg => `${msg.direction === 'inbound' ? 'Cliente' : 'Amanda'}: ${msg.content}`)
     .join('\n');
 
+  // Monta bloco do que JÁ é conhecido — só inclui o que existe
+  const jaColetado = [
+    therapyArea && `Especialidade: ${therapyArea}`,
+    patientAge && `Idade: ${patientAge} anos`,
+    patientName && `Nome: ${patientName}`,
+    complaint && `Queixa: ${complaint}`,
+    preferredPeriod && `Período: ${preferredPeriod}`,
+  ].filter(Boolean);
+
   return `
-## HISTÓRICO RECENTE:
-${recentHistory || '(Início)'}
+${jaColetado.length > 0 ? `## O QUE JÁ SABEMOS (NÃO PERGUNTE NOVAMENTE):
+${jaColetado.map(i => `- ${i}`).join('\n')}
 
-## CONTEXTO:
-${lastTopic ? `- Tópico: ${lastTopic}` : ''}
-${pendingQuestion ? `- Pendente: ${pendingQuestion}` : ''}
-${therapyArea ? `- Área: ${therapyArea}` : ''}
-${patientName ? `- Criança: ${patientName}${patientAge ? ` (${patientAge}a)` : ''}` : ''}
-${complaint ? `- Situação: ${complaint}` : ''}
+` : ''}## HISTÓRICO RECENTE:
+${recentHistory || '(Início da conversa)'}
 
-${emotionalContext?.expressedFrustration ? '⚠️ CLIENTE FRUSTRADO' : ''}
-${emotionalContext?.expressedWorry ? '⚠️ CLIENTE PREOCUPADO' : ''}
+## CONTEXTO ADICIONAL:
+${lastTopic ? `- Último tópico: ${lastTopic}` : ''}
+${pendingQuestion ? `- Questão pendente: ${pendingQuestion}` : ''}
 
-## MENSAGEM:
+${emotionalContext?.expressedFrustration ? '⚠️ CLIENTE FRUSTRADO — priorize empatia' : ''}
+${emotionalContext?.expressedWorry ? '⚠️ CLIENTE PREOCUPADO — valide antes de informar' : ''}
+
+## MENSAGEM ATUAL DO CLIENTE:
 """${userMessage}"""
 
 ## RESPONDA (natural, acolhedora, consultiva):

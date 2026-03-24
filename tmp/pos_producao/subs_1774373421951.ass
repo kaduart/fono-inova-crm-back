@@ -1,0 +1,20 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: TikTok,Roboto Black,88,&H0000FFFF,&H0000FFFF,&H00000000,&H99000000,-1,0,0,0,105,105,0,0,1,6,3,2,60,60,180,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:03.92,TikTok,,0,0,0,,Você pode estar travando o desenvolvimento do seu filho sem perceber.
+Dialogue: 0,0:00:03.92,0:00:06.88,TikTok,,0,0,0,,Muitos pais fazem isso sem saber.
+Dialogue: 0,0:00:06.88,0:00:07.88,TikTok,,0,0,0,,Olha só.
+Dialogue: 0,0:00:07.88,0:00:12.84,TikTok,,0,0,0,,Um sinal que pode passar batido é o jeito que seu filho reage a mudanças.
+Dialogue: 0,0:00:12.84,0:00:16.16,TikTok,,0,0,0,,Isso pode dificultar a adaptação em várias situações.
+Dialogue: 0,0:00:16.16,0:00:19.72,TikTok,,0,0,0,,É crucial observar como ele lida com novos desafios.
+Dialogue: 0,0:00:19.72,0:00:23.60,TikTok,,0,0,0,,E o mais surpreendente, isso pode impactar a confiança dele.
+Dialogue: 0,0:00:23.60,0:00:24.76,TikTok,,0,0,0,,Vamos ficar de olho nisso.

@@ -35,6 +35,7 @@ import Video from '../models/Video.js';
 import InstagramPost from '../models/InstagramPost.js';
 import VeoService, { isVeoConfigured } from '../services/video/veoService.js';
 import RunwayService, { isRunwayConfigured, CLIP_DURATION as RUNWAY_CLIP_DURATION } from '../services/video/runwayService.js';
+import { getFullProductionConfig, recommendPreset, getTTSConfig, getMusicConfig, getVEOConfig, listPresets } from '../services/video/presetService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,21 +44,59 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /**
  * Gera narração TTS em Português Brasileiro
+ * @param {string} texto - Texto para narração
+ * @param {string} outputPath - Caminho de saída
+ * @param {Object} options - Opções de narração
+ * @param {string} options.tone - 'emotional' | 'inspiracional' | 'educativo' | 'bastidores'
+ * @param {string} options.intensidade - 'leve' | 'moderado' | 'forte' | 'viral'
+ * @param {string} options.voice - 'nova' | 'shimmer' | 'alloy' | 'echo' | 'fable' | 'onyx' (do preset)
+ * @param {number} options.speed - Velocidade da fala (0.5-2.0)
  */
-async function gerarNarracaoPTBR(texto, outputPath) {
-  logger.info(`[VIDEO WORKER] Gerando narração PT-BR...`);
+async function gerarNarracaoPTBR(texto, outputPath, options = {}) {
+  const { tone = 'educativo', intensidade = 'moderado', voice: presetVoice, speed: presetSpeed } = options;
+  
+  // 🎙️ Configuração dinâmica baseada no tom e intensidade (ou preset)
+  let voice = presetVoice || 'nova';      // padrão: suave, terapêutica
+  let speed = presetSpeed || 1.0;         // padrão: velocidade normal
+  
+  // Se não veio de preset, aplicar lógica automática
+  if (!presetVoice) {
+    if (intensidade === 'viral' || intensidade === 'forte') {
+      voice = tone === 'emotional' ? 'shimmer' : 'alloy';
+    } else if (tone === 'emotional' || tone === 'inspiracional') {
+      voice = 'shimmer';
+    } else if (tone === 'bastidores') {
+      voice = 'alloy';
+    }
+  }
+  
+  if (!presetSpeed) {
+    if (intensidade === 'viral' || intensidade === 'forte') {
+      speed = 1.05;
+    } else if (tone === 'bastidores') {
+      speed = 1.02;
+    }
+    
+    // Ajuste fino: vídeos curtos (Instagram) = mais dinâmicos
+    const palavras = texto.split(/\s+/).length;
+    if (palavras < 50 && intensidade !== 'leve') {
+      speed = Math.min(speed + 0.02, 1.08);
+    }
+  }
+  
+  logger.info(`[VIDEO WORKER] Gerando narração PT-BR: voz=${voice}, speed=${speed}, tone=${tone}`);
   
   const response = await openai.audio.speech.create({
     model: 'tts-1',
-    voice: 'nova', // voz feminina, ideal para conteúdo terapêutico
+    voice,
     input: texto,
-    speed: 0.95
+    speed
   });
 
   const buffer = Buffer.from(await response.arrayBuffer());
   fs.writeFileSync(outputPath, buffer);
   
-  logger.info(`[VIDEO WORKER] ✅ Narração PT-BR gerada`);
+  logger.info(`[VIDEO WORKER] ✅ Narração PT-BR gerada (${palavras} palavras, ${Math.round(palavras / (speed * 2.2))}s estimados)`);
   return outputPath;
 }
 
@@ -116,9 +155,13 @@ async function mixarNarracaoVeo(videoUrl, audioPath, outputPath) {
 
     cmd
       .on('end', () => {
-        try { fs.unlinkSync(videoPath); } catch (e) {}
-        logger.info(`[VIDEO WORKER] ✅ Vídeo VEO com narração${hasLogo ? ' + logo' : ''} pronto`);
-        resolve(outputPath);
+        try {
+          try { fs.unlinkSync(videoPath); } catch (e) {}
+          logger.info(`[VIDEO WORKER] ✅ Vídeo VEO com narração${hasLogo ? ' + logo' : ''} pronto`);
+          resolve(outputPath);
+        } catch (cbErr) {
+          reject(cbErr);
+        }
       })
       .on('error', (err) => {
         try { fs.unlinkSync(videoPath); } catch (e) {}
@@ -178,9 +221,13 @@ async function concatenarClipsVeo(videoUrls, outputPath) {
         '-movflags +faststart'
       ])
       .on('end', () => {
-        clipPaths.forEach(p => { try { fs.unlinkSync(p); } catch {} });
-        logger.info(`[VIDEO WORKER] ✅ ${clipPaths.length} clips concatenados com xfade`);
-        resolve(outputPath);
+        try {
+          clipPaths.forEach(p => { try { fs.unlinkSync(p); } catch {} });
+          logger.info(`[VIDEO WORKER] ✅ ${clipPaths.length} clips concatenados com xfade`);
+          resolve(outputPath);
+        } catch (cbErr) {
+          reject(cbErr);
+        }
       })
       .on('error', (err) => {
         clipPaths.forEach(p => { try { fs.unlinkSync(p); } catch {} });
@@ -326,9 +373,11 @@ async function gerarSlideshowKenBurns(especialidade, duracao, tmpDir, baseName) 
     if (segments.length === 1) {
       cmd.outputOptions(['-c:v copy', '-an']).save(outputPath)
         .on('end', () => {
-          imagens.forEach(p => { try { fs.unlinkSync(p); } catch {} });
-          segments.forEach(p => { try { fs.unlinkSync(p); } catch {} });
-          res(null);
+          try {
+            imagens.forEach(p => { try { fs.unlinkSync(p); } catch {} });
+            segments.forEach(p => { try { fs.unlinkSync(p); } catch {} });
+            res(null);
+          } catch (cbErr) { rej(cbErr); }
         })
         .on('error', rej);
       return;
@@ -346,10 +395,12 @@ async function gerarSlideshowKenBurns(especialidade, duracao, tmpDir, baseName) 
     cmd.complexFilter(filters.join(';'))
       .outputOptions(['-map [vout]', '-c:v libx264', '-preset fast', '-crf 22', '-r 30', '-pix_fmt yuv420p', '-an'])
       .on('end', () => {
-        imagens.forEach(p => { try { fs.unlinkSync(p); } catch {} });
-        segments.forEach(p => { try { fs.unlinkSync(p); } catch {} });
-        logger.info(`[ECO] Slideshow montado: ${segments.length} imagens`);
-        res(null);
+        try {
+          imagens.forEach(p => { try { fs.unlinkSync(p); } catch {} });
+          segments.forEach(p => { try { fs.unlinkSync(p); } catch {} });
+          logger.info(`[ECO] Slideshow montado: ${segments.length} imagens`);
+          res(null);
+        } catch (cbErr) { rej(cbErr); }
       })
       .on('error', rej)
       .save(outputPath);
@@ -406,7 +457,7 @@ function getMusicPath(funil, hookStyle = 'dor', especialidade = '') {
  * Pós-produção premium: narração + legendas + hook + CTA + color grade + fade + logo + música
  */
 async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil = 'TOPO', extras = {}) {
-  const { hookTexto = '', textoCompleto = '', hookStyle = 'dor', especialidade = '' } = extras;
+  const { hookTexto = '', textoCompleto = '', hookStyle = 'dor', especialidade = '', intensidade = 'moderado', musicVolume: presetVolume } = extras;
 
   logger.info(`[VIDEO WORKER] Mixando narração ao vídeo concatenado...`);
   const hasLogo   = fs.existsSync(LOGO_PATH);
@@ -416,25 +467,20 @@ async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil =
 
   if (hasMusic) logger.info(`[VIDEO WORKER] 🎵 Adicionando música: ${path.basename(musicPath)}`);
 
-  const duracao = await new Promise((res, rej) => {
-    ffmpeg.ffprobe(localVideoPath, (err, meta) => err ? rej(err) : res(meta.format.duration || 60));
+  const { duracao, vidW, vidH } = await new Promise((res, rej) => {
+    ffmpeg.ffprobe(localVideoPath, (err, meta) => {
+      if (err) return rej(err);
+      const vs = meta.streams?.find(s => s.codec_type === 'video');
+      res({
+        duracao: meta.format.duration || 60,
+        vidW:    vs?.width  || 1080,
+        vidH:    vs?.height || 1920
+      });
+    });
   });
 
-  // Gerar SRT a partir do roteiro
-  const tmpDir  = path.dirname(outputPath);
-  const srtPath = path.join(tmpDir, `srt_${Date.now()}.srt`);
-  let hasSrt = false;
-  if (textoCompleto) {
-    try {
-      const srtContent = gerarSRTdoRoteiro(textoCompleto, duracao);
-      if (srtContent && srtContent.trim()) {
-        fs.writeFileSync(srtPath, srtContent, 'utf8');
-        hasSrt = true;
-      }
-    } catch (e) {
-      logger.warn(`[VIDEO WORKER] Falha ao gerar SRT: ${e.message}`);
-    }
-  }
+  // Legendas removidas do worker — adicionadas apenas na edição (posProducaoVeoService)
+  // Isso evita dupla legenda ao reeditar e permite controle de fonte/cor pelo usuário
 
   // Quebrar hook em no máximo 2 linhas de ~32 chars (cabe na tela sem overflow)
   const hookLinhas = (() => {
@@ -488,17 +534,8 @@ async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil =
       `[0:v]eq=contrast=1.05:saturation=1.15:brightness=0.02,unsharp=5:5:0.5:5:5:0.0[colored]`
     );
 
-    // 2. Legendas SRT — fonte menor para não cobrir o rosto
-    if (hasSrt) {
-      const srtSafe = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
-      filters.push(
-        `[colored]subtitles='${srtSafe}':force_style='FontName=Roboto,FontSize=14,` +
-        `PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Bold=1,` +
-        `Alignment=2,MarginV=60'[subbed]`
-      );
-    } else {
-      filters.push('[colored]copy[subbed]');
-    }
+    // 2. Sem legendas no worker — aplicadas na edição com estilo TikTok/Reels
+    filters.push('[colored]copy[subbed]');
 
     // 3. Hook text — 2 linhas pequenas, rodapé
     if (hookLinhas.length > 0) {
@@ -533,7 +570,7 @@ async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil =
     // 5. CTA card (últimos 5s do conteúdo)
     if (ctaIdx !== -1) {
       filters.push(
-        `[${ctaIdx}:v]scale=1080:1920[cta]`,
+        `[${ctaIdx}:v]scale=${vidW}:${vidH}[cta]`,
         `[withlogo][cta]overlay=0:0:enable='gte(t,${ctaInicio})'[precta]`
       );
     } else {
@@ -545,10 +582,10 @@ async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil =
       `[precta]fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart}:d=0.5[mainvid]`
     );
 
-    // 7. Outro final: tela verde + logo centralizado (2s)
+    // 7. Outro final: tela verde + logo centralizado (2s) — usa resolução real do vídeo
     if (outroLogoIdx !== -1) {
       filters.push(
-        `color=c=#0B5323:s=1080x1920:d=2:r=30[bgoutro]`,
+        `color=c=#26977B:s=${vidW}x${vidH}:d=2:r=30[bgoutro]`,
         `[${outroLogoIdx}:v]scale=700:-1[logobig]`,
         `[bgoutro][logobig]overlay=(W-w)/2:(H-h)/2[outroframe]`,
         `[mainvid][outroframe]concat=n=2:v=1:a=0[vout]`
@@ -563,9 +600,13 @@ async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil =
 
     if (hasMusic) {
       const fadeStart = Math.max(0, duracao - 2);
+      // 🎵 Volume da música ajustável por intensidade (conteúdo clínico = mais contido)
+      const musicVolume = intensidade === 'viral' ? 0.06 :   // ← Era 0.12, muito alto
+                          intensidade === 'forte' ? 0.05 :   // ← Era 0.10
+                          0.04;                              // ← Era 0.08, padrão mais suave
       filters.push(
         `[1:a]volume=1.0[voz]`,
-        `[${musicIdx}:a]volume=0.04,atrim=0:${duracao + OUTRO_DUR},afade=t=in:st=0:d=2,afade=t=out:st=${fadeStart}:d=2[bgm]`,
+        `[${musicIdx}:a]volume=${musicVolume},atrim=0:${duracao + OUTRO_DUR},afade=t=in:st=0:d=1.5,afade=t=out:st=${fadeStart}:d=2[bgm]`,
         `[voz][bgm]amix=inputs=2:duration=first,apad=pad_dur=${OUTRO_DUR}[mixpre]`
       );
     } else {
@@ -592,14 +633,17 @@ async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil =
         '-movflags +faststart'
       ])
       .on('end', () => {
-        try { if (hasSrt) fs.unlinkSync(srtPath); } catch {}
-        const features = [hasSrt && 'legendas', hookLinhas.length > 0 && 'hook', hasLogo && 'logo', hasCta && 'CTA', hasMusic && 'música', hasOutroLogo && 'outro'].filter(Boolean).join(' + ');
-        logger.info(`[VIDEO WORKER] ✅ Vídeo premium: ${features}`);
-        resolve(outputPath);
+        try {
+          const features = [hookLinhas.length > 0 && 'hook', hasLogo && 'logo', hasCta && 'CTA', hasMusic && 'música', hasOutroLogo && 'outro'].filter(Boolean).join(' + ');
+          logger.info(`[VIDEO WORKER] ✅ Vídeo premium: ${features}`);
+          resolve(outputPath);
+        } catch (cbErr) {
+          logger.error(`[FFMPEG] Erro no callback de sucesso: ${cbErr.message}`);
+          reject(cbErr);
+        }
       })
       .on('error', (err, stdout, stderr) => {
-        try { if (hasSrt) fs.unlinkSync(srtPath); } catch {}
-        logger.error(`[FFMPEG] Erro pós-produção: ${stderr}`);
+        logger.error(`[FFMPEG] Erro pós-produção: ${stderr || err.message}`);
         reject(err);
       })
       .save(outputPath);
@@ -631,8 +675,25 @@ const videoWorker = new Worker('video-generation', async (job) => {
     objetivo = 'salvar',
     variacao,
     intensidade = 'viral',
-    roteiroEditado = null  // roteiro pré-gerado pelo preview (pula ZEUS se fornecido)
+    bordao = '',           // bordão de abertura ex: "Você sabia" — instrui ZEUS
+    roteiroEditado = null,  // roteiro pré-gerado pelo preview (pula ZEUS se fornecido)
+    preset = null           // 🎬 Preset premium: 'explosao_viral', 'autoridade_inspiradora', etc.
   } = job.data;
+
+  // 🎯 Aplicar configurações do preset se fornecido
+  let presetConfig = null;
+  if (preset) {
+    presetConfig = getFullProductionConfig(preset);
+    if (presetConfig) {
+      logger.info(`[VIDEO WORKER] 🎬 Usando preset PREMIUM: "${presetConfig.nome}"`);
+      logger.info(`[VIDEO WORKER] 📊 Config: voz=${presetConfig.tts.voice}, speed=${presetConfig.tts.speed}, vol=${presetConfig.musica.volume}`);
+    }
+  } else {
+    // Auto-recomendar preset baseado nos parâmetros
+    const presetRecomendado = recommendPreset(hookStyle, tone, intensidade);
+    presetConfig = getFullProductionConfig(presetRecomendado);
+    logger.info(`[VIDEO WORKER] 🎬 Preset auto-recomendado: "${presetConfig.nome}" (${hookStyle}+${tone}+${intensidade})`);
+  }
 
   logger.info(`[VIDEO WORKER] ▶ ${jobId} — "${tema}"`);
   
@@ -689,7 +750,8 @@ const videoWorker = new Worker('video-generation', async (job) => {
         hookStyle,
         objetivo,
         variacao: variacao !== undefined ? Number(variacao) : Math.random(),
-        intensidade
+        intensidade,
+        bordao
       });
       roteiro = result.roteiro;
     }
@@ -722,26 +784,113 @@ const videoWorker = new Worker('video-generation', async (job) => {
 
     let videoCru;
 
+    if (modo === 'teste') {
+      // 🧪 MODO TESTE: Usa modo econômico (imagens Pexels + TTS) - CUSTO ZERO/PRATICAMENTE ZERO
+      logger.info(`[VIDEO WORKER] 🧪 MODO TESTE ATIVADO - Usando slideshow de imagens (custo ~R$0,02)`);
+      logger.info(`[VIDEO WORKER] Para testar flow sem gastar com VEO (R$64). Use preset para ajustar voz/música.`);
+      
+      // Força modo econômico para teste
+      const tmpDirEco = path.join(__dirname, '../tmp/videos');
+      fs.mkdirSync(tmpDirEco, { recursive: true });
+      const tsEco = Date.now();
+      const baseEco = `teste_${tsEco}`;
+
+      await atualizarProgresso('HEYGEN', 35, { etapa: 'GERANDO_SLIDESHOW_TESTE' });
+      const slideshowPath = await gerarSlideshowKenBurns(especialidadeId, duracao, tmpDirEco, baseEco);
+
+      await atualizarProgresso('HEYGEN', 55, { etapa: 'GERANDO_NARRACAO_TESTE' });
+      const audioEcoPath = path.join(tmpDirEco, `${baseEco}_audio.mp3`);
+      await gerarNarracaoPTBR(roteiro.texto_completo, audioEcoPath, { 
+        tone: presetConfig?.tts?.tom || roteiro.tone || 'educativo',
+        intensidade,
+        voice: presetConfig?.tts?.voice,
+        speed: presetConfig?.tts?.speed
+      });
+
+      await atualizarProgresso('POS_PRODUCAO', 65, { etapa: 'MIXANDO_VIDEO_TESTE' });
+      const videoEcoFinalPath = path.join(tmpDirEco, `${baseEco}_final.mp4`);
+      await mixarNarracaoLocal(slideshowPath, audioEcoPath, videoEcoFinalPath, funil, {
+        hookTexto:     roteiro.hook_texto_overlay,
+        textoCompleto: roteiro.texto_completo,
+        hookStyle,
+        especialidade: especialidadeId,
+        intensidade
+      });
+      try { fs.unlinkSync(slideshowPath); fs.unlinkSync(audioEcoPath); } catch {}
+
+      await atualizarProgresso('POS_PRODUCAO', 90, { etapa: 'UPLOAD_TESTE' });
+      const cloudinaryEco = (await import('cloudinary')).default;
+      const uploadEco = await cloudinaryEco.v2.uploader.upload(videoEcoFinalPath, {
+        resource_type: 'video',
+        folder: 'fono-inova/ai-videos/teste',  // Pasta separada para testes
+        public_id: baseEco,
+        overwrite: false
+      });
+      const videoFinalEcoUrl = uploadEco.secure_url;
+      try { fs.unlinkSync(videoEcoFinalPath); } catch {}
+
+      await atualizarProgresso('CONCLUIDO', 100, { 
+        status: 'ready', 
+        provider: 'teste',
+        videoFinalUrl: videoFinalEcoUrl,
+        videoUrl: videoFinalEcoUrl,
+        'tempos.concluidoEm': new Date()
+      });
+
+      const ioEco = getIo();
+      ioEco.emit(`video-complete-${jobId}`, { 
+        jobId, 
+        status: 'CONCLUIDO', 
+        videoUrl: videoFinalEcoUrl, 
+        roteiro: roteiro.titulo, 
+        provider: 'teste',
+        modoTeste: true,
+        custo: 'GRATUITO / R$0,02'
+      });
+
+      logger.info(`[VIDEO WORKER] ✅ ${jobId} MODO TESTE CONCLUÍDO - Custo: GRATUITO`);
+      return {
+        jobId,
+        status: 'CONCLUIDO',
+        roteiro: { titulo: roteiro.titulo, profissional: roteiro.profissional, duracao: roteiro.duracao_estimada },
+        videoFinal: videoFinalEcoUrl,
+        provider: 'teste',
+        modoTeste: true,
+        meta: null
+      };
+    }
+
     if (modo === 'veo') {
-      // 🎬 Modo VEO: Google Veo 2.0 — vídeo cinematográfico real
-      logger.info(`[VIDEO WORKER] Modo VEO 2.0 - Google AI (cinematográfico)`);
+      // 🎬 Modo VEO: Google Veo 2.0 — vídeo cinematográfico real (CUSTO R$64)
+      logger.info(`[VIDEO WORKER] Modo VEO 2.0 - Google AI (cinematográfico) ~R$64`);
 
       if (!isVeoConfigured()) {
         throw new Error('GOOGLE_AI_API_KEY não configurado. Acesse aistudio.google.com para obter gratuitamente.');
       }
 
       // Calcula quantos clips de 8s são necessários para cobrir a duração solicitada
-      // Ex: 30s → ceil(30/8) = 4 clips (32s efetivos), 60s → 8 clips (64s efetivos)
-      const numClips = Math.max(1, Math.ceil(duracao / 8));
+      // Ex: 30s → ceil(30/8) = 4 clips (32s efetivos) — máx 6 clips (48s) para Instagram
+      const numClips = Math.min(6, Math.max(1, Math.ceil(duracao / 8)));
       const duracaoEfetiva = numClips * 8;
       logger.info(`[VIDEO WORKER] Gerando ${numClips} clip(s) Veo de 8s → ${duracaoEfetiva}s de conteúdo (solicitado: ${duracao}s)`);
 
       // Gera clips sequencialmente para respeitar rate limits da API Veo
       // (geração paralela causa 429 RESOURCE_EXHAUSTED com múltiplos clips)
       const veoService = new VeoService();
-      const clipUrls = [];
 
-      for (let i = 0; i < numClips; i++) {
+      // Retomar de onde parou: carrega clips já gerados em tentativas anteriores
+      const videoDoc = await Video.findById(videoDocId).select('clipsGerados numClipsTotal').lean();
+      const clipUrls = videoDoc?.clipsGerados?.length > 0 ? [...videoDoc.clipsGerados] : [];
+      const startClip = clipUrls.length;
+
+      if (startClip > 0) {
+        logger.info(`[VIDEO WORKER] 🔁 Retomando geração: ${startClip}/${numClips} clips já prontos, continuando do clip ${startClip + 1}...`);
+      }
+
+      // Salva total esperado no banco (para monitoramento)
+      await Video.findByIdAndUpdate(videoDocId, { numClipsTotal: numClips });
+
+      for (let i = startClip; i < numClips; i++) {
         const progressoGeracao = 30 + Math.round((i / numClips) * 38); // 30% → 68%
         await atualizarProgresso('HEYGEN', progressoGeracao);
         logger.info(`[VIDEO WORKER] Gerando clip ${i + 1}/${numClips}...`);
@@ -749,9 +898,11 @@ const videoWorker = new Worker('video-generation', async (job) => {
         let tentativa = 0;
         while (true) {
           try {
-            const result = await veoService.gerarVideo(especialidadeId, tema || null, { durationSeconds: 8, aspectRatio: '9:16', clipIndex: i });
+            const result = await veoService.gerarVideo(especialidadeId, tema || null, { durationSeconds: 8, aspectRatio: '9:16', clipIndex: i, intensidade });
             clipUrls.push(result.url);
-            logger.info(`[VIDEO WORKER] ✅ Clip ${i + 1}/${numClips} gerado`);
+            // Persiste o clip imediatamente — se o job travar nos próximos, retomamos daqui
+            await Video.findByIdAndUpdate(videoDocId, { $push: { clipsGerados: result.url } });
+            logger.info(`[VIDEO WORKER] ✅ Clip ${i + 1}/${numClips} gerado e salvo`);
             break;
           } catch (err) {
             const is429 = err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED');
@@ -788,7 +939,12 @@ const videoWorker = new Worker('video-generation', async (job) => {
 
       // Gerar narração do roteiro
       await atualizarProgresso('POS_PRODUCAO', 73, { etapa: 'GERANDO_NARRACAO' });
-      await gerarNarracaoPTBR(roteiro.texto_completo, audioPath);
+      await gerarNarracaoPTBR(roteiro.texto_completo, audioPath, { 
+        tone: presetConfig?.tts?.tom || roteiro.tone || 'educativo',
+        intensidade: presetConfig?.tts?.speed > 1.02 ? 'viral' : intensidade,
+        voice: presetConfig?.tts?.voice,
+        speed: presetConfig?.tts?.speed
+      });
 
       // Concatenar clips (ou baixar diretamente se for só 1)
       await atualizarProgresso('POS_PRODUCAO', 80, { etapa: 'CONCATENANDO_CLIPS' });
@@ -807,7 +963,8 @@ const videoWorker = new Worker('video-generation', async (job) => {
         hookTexto:     roteiro.hook_texto_overlay,
         textoCompleto: roteiro.texto_completo,
         hookStyle,
-        especialidade: especialidadeId
+        especialidade: especialidadeId,
+        intensidade
       });
       try { fs.unlinkSync(concatPath); } catch {}
 
@@ -864,20 +1021,31 @@ const videoWorker = new Worker('video-generation', async (job) => {
         throw new Error('RUNWAY_ACCESS_KEY_ID ou RUNWAY_ACCESS_KEY_SECRET não configurados.');
       }
 
-      const numClips = Math.max(1, Math.ceil(duracao / RUNWAY_CLIP_DURATION));
+      const numClips = Math.min(5, Math.max(1, Math.ceil(duracao / RUNWAY_CLIP_DURATION))); // máx 50s
       const duracaoEfetiva = numClips * RUNWAY_CLIP_DURATION;
       logger.info(`[VIDEO WORKER] Gerando ${numClips} clip(s) Kling de ${RUNWAY_CLIP_DURATION}s → ${duracaoEfetiva}s (solicitado: ${duracao}s)`);
 
       const runwayService = new RunwayService();
-      const clipUrls = [];
 
-      for (let i = 0; i < numClips; i++) {
+      // Retomar de onde parou
+      const videoDocKling = await Video.findById(videoDocId).select('clipsGerados numClipsTotal').lean();
+      const clipUrls = videoDocKling?.clipsGerados?.length > 0 ? [...videoDocKling.clipsGerados] : [];
+      const startClipKling = clipUrls.length;
+
+      if (startClipKling > 0) {
+        logger.info(`[VIDEO WORKER] 🔁 Retomando Kling: ${startClipKling}/${numClips} clips já prontos`);
+      }
+
+      await Video.findByIdAndUpdate(videoDocId, { numClipsTotal: numClips });
+
+      for (let i = startClipKling; i < numClips; i++) {
         const progressoGeracao = 30 + Math.round((i / numClips) * 38);
         await atualizarProgresso('HEYGEN', progressoGeracao);
         logger.info(`[VIDEO WORKER] Gerando clip Kling ${i + 1}/${numClips}...`);
         const result = await runwayService.gerarVideo(especialidadeId, tema || null, { clipIndex: i });
         clipUrls.push(result.url);
-        logger.info(`[VIDEO WORKER] Clip Kling ${i + 1}/${numClips} gerado`);
+        await Video.findByIdAndUpdate(videoDocId, { $push: { clipsGerados: result.url } });
+        logger.info(`[VIDEO WORKER] Clip Kling ${i + 1}/${numClips} gerado e salvo`);
       }
 
       videoCru = clipUrls[0];
@@ -899,7 +1067,12 @@ const videoWorker = new Worker('video-generation', async (job) => {
       const videoFinalPathKling = path.join(tmpDirKling, `runway_final_${tsKling}.mp4`);
 
       await atualizarProgresso('POS_PRODUCAO', 73, { etapa: 'GERANDO_NARRACAO' });
-      await gerarNarracaoPTBR(roteiro.texto_completo, audioPathKling);
+      await gerarNarracaoPTBR(roteiro.texto_completo, audioPathKling, { 
+        tone: presetConfig?.tts?.tom || roteiro.tone || 'educativo',
+        intensidade: presetConfig?.tts?.speed > 1.02 ? 'viral' : intensidade,
+        voice: presetConfig?.tts?.voice,
+        speed: presetConfig?.tts?.speed
+      });
 
       await atualizarProgresso('POS_PRODUCAO', 80, { etapa: 'CONCATENANDO_CLIPS' });
       if (numClips > 1) {
@@ -914,7 +1087,8 @@ const videoWorker = new Worker('video-generation', async (job) => {
         hookTexto:     roteiro.hook_texto_overlay,
         textoCompleto: roteiro.texto_completo,
         hookStyle,
-        especialidade: especialidadeId
+        especialidade: especialidadeId,
+        intensidade
       });
       try { fs.unlinkSync(concatPathKling); } catch {}
 
@@ -974,7 +1148,12 @@ const videoWorker = new Worker('video-generation', async (job) => {
 
       await atualizarProgresso('HEYGEN', 55);
       const audioEcoPath = path.join(tmpDirEco, `${baseEco}_audio.mp3`);
-      await gerarNarracaoPTBR(roteiro.texto_completo, audioEcoPath);
+      await gerarNarracaoPTBR(roteiro.texto_completo, audioEcoPath, { 
+        tone: presetConfig?.tts?.tom || roteiro.tone || 'educativo',
+        intensidade: presetConfig?.tts?.speed > 1.02 ? 'viral' : intensidade,
+        voice: presetConfig?.tts?.voice,
+        speed: presetConfig?.tts?.speed
+      });
 
       await atualizarProgresso('POS_PRODUCAO', 65);
       const videoEcoFinalPath = path.join(tmpDirEco, `${baseEco}_final.mp4`);
@@ -982,7 +1161,8 @@ const videoWorker = new Worker('video-generation', async (job) => {
         hookTexto:     roteiro.hook_texto_overlay,
         textoCompleto: roteiro.texto_completo,
         hookStyle,
-        especialidade: especialidadeId
+        especialidade: especialidadeId,
+        intensidade
       });
       try { fs.unlinkSync(slideshowPath); fs.unlinkSync(audioEcoPath); } catch {}
 

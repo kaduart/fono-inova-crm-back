@@ -16,6 +16,7 @@ import { videoGenerationQueue } from '../config/bullConfig.js';
 import Video from '../models/Video.js';
 import logger from '../utils/logger.js';
 import { aplicarPosProducao } from '../services/video/posProducaoVeoService.js';
+import { listPresets, getFullProductionConfig, getScriptTemplate } from '../services/video/presetService.js';
 import fs from 'fs';
 
 const router = Router();
@@ -68,7 +69,7 @@ async function handleGenerateVideo(req, res) {
       duration,             // EN: enviado pelo frontend atual
       publicar = false,
       targeting = {},
-      modo = 'avatar',      // 'avatar', 'ilustrativo', 'veo', 'economico'
+      modo = 'avatar',      // 'avatar', 'ilustrativo', 'veo', 'economico', 'teste'
       tone = 'educativo',   // 'emotional', 'educativo', 'inspiracional', 'bastidores'
       // 🧠 Campos de inteligência de conteúdo
       platform = 'instagram',   // 'instagram' | 'meta_ads'
@@ -78,6 +79,7 @@ async function handleGenerateVideo(req, res) {
       objetivo = 'salvar',      // 'salvar' | 'compartilhar' | 'comentar' | 'agendar'
       variacao,                 // 0..1 — anti-repetição (gerado automaticamente se omitido)
       intensidade = 'viral',    // 'leve' | 'moderado' | 'forte' | 'viral'
+      bordao = '',              // bordão de abertura ex: "Você sabia" — instrui ZEUS
       roteiroEditado = null     // roteiro pré-gerado (do modal de preview), pula ZEUS
     } = req.body;
 
@@ -139,6 +141,7 @@ async function handleGenerateVideo(req, res) {
       objetivo,
       variacao: variacaoFinal,
       intensidade,
+      bordao: bordao || '',
       roteiroEditado: roteiroEditado || null
     }, {
       jobId,
@@ -226,6 +229,133 @@ router.post('/preview-roteiro', async (req, res) => {
     });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao gerar preview roteiro:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 🆕 GET /presets — Lista presets premium disponíveis
+router.get('/presets', async (req, res) => {
+  try {
+    const presets = listPresets();
+    res.json({ success: true, presets });
+  } catch (error) {
+    logger.error('[VIDEO ROUTES] Erro ao listar presets:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 🆕 GET /presets/:name — Detalhes de um preset específico
+router.get('/presets/:name', async (req, res) => {
+  try {
+    const preset = getFullProductionConfig(req.params.name);
+    if (!preset) {
+      return res.status(404).json({ success: false, error: 'Preset não encontrado' });
+    }
+    res.json({ success: true, preset });
+  } catch (error) {
+    logger.error('[VIDEO ROUTES] Erro ao buscar preset:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 🆕 GET /presets/:name/script — Script exemplo pronto para uso
+router.get('/presets/:name/script', async (req, res) => {
+  try {
+    const script = getScriptTemplate(req.params.name);
+    if (!script) {
+      return res.status(404).json({ success: false, error: 'Preset ou script não encontrado' });
+    }
+    res.json({ 
+      success: true, 
+      preset: req.params.name,
+      script: script.exemplo,
+      hashtags: script.exemplo?.hashtags || [],
+      cta: script.exemplo?.cta || ''
+    });
+  } catch (error) {
+    logger.error('[VIDEO ROUTES] Erro ao buscar script:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// 🆕 POST /gerar-preset — Gera vídeo usando script exemplo do preset
+router.post('/gerar-preset', async (req, res) => {
+  try {
+    const {
+      preset,              // 'explosao_viral', 'autoridade_inspiradora', etc.
+      especialidadeId = 'fonoaudiologia',
+      modo = 'veo',
+      usarScriptExemplo = true
+    } = req.body;
+
+    if (!preset) {
+      return res.status(400).json({ success: false, error: 'preset é obrigatório' });
+    }
+
+    const presetConfig = getFullProductionConfig(preset);
+    if (!presetConfig) {
+      return res.status(404).json({ success: false, error: 'Preset não encontrado' });
+    }
+
+    // Pega o script exemplo
+    const scriptTemplate = getScriptTemplate(preset);
+    if (!scriptTemplate || !scriptTemplate.exemplo) {
+      return res.status(404). json({ success: false, error: 'Script exemplo não disponível para este preset' });
+    }
+
+    const textoRoteiro = scriptTemplate.exemplo.texto;
+    const tituloRoteiro = scriptTemplate.exemplo.titulo;
+    const hashtags = scriptTemplate.exemplo.hashtags || [];
+    const cta = scriptTemplate.exemplo.cta || '';
+
+    // Criar job
+    const jobId = `vid_preset_${Date.now()}`;
+    const videoDoc = await Video.create({
+      title: `${presetConfig.nome} — ${tituloRoteiro}`,
+      roteiro: textoRoteiro.substring(0, 100) + '...',
+      especialidadeId,
+      status: 'processing',
+      jobId,
+      pipelineStatus: 'ROTEIRO',
+      preset: preset,
+      hashtags: hashtags
+    });
+
+    // Enfileirar com roteiro pré-definido (pula ZEUS)
+    await videoGenerationQueue.add('generate-video', {
+      jobId,
+      videoDocId: videoDoc._id.toString(),
+      tema: tituloRoteiro,
+      especialidadeId,
+      duracao: presetConfig.duracaoRecomendada,
+      modo,
+      preset,
+      roteiroEditado: {
+        titulo: tituloRoteiro,
+        texto_completo: textoRoteiro,
+        hook_texto_overlay: textoRoteiro.split('.')[0],
+        cta_texto_overlay: cta,
+        hashtags: hashtags,
+        profissional: especialidadeId,
+        duracao_estimada: presetConfig.duracaoRecomendada
+      },
+      tone: presetConfig.tts?.tom || 'educativo',
+      intensidade: preset.includes('viral') ? 'viral' : 'forte'
+    }, { jobId, priority: 1 });
+
+    res.status(202).json({
+      success: true,
+      message: `Vídeo premium gerando: ${presetConfig.nome}`,
+      jobId,
+      videoId: videoDoc._id,
+      preset: preset,
+      script: textoRoteiro.substring(0, 150) + '...',
+      tempo_estimado: modo === 'veo' ? '3-5 minutos' : '5-10 minutos',
+      status_url: `/api/videos/status/${jobId}`
+    });
+
+  } catch (error) {
+    logger.error('[VIDEO ROUTES] Erro ao gerar vídeo com preset:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -438,7 +568,17 @@ router.post('/:id/pos-producao', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Vídeo ainda não está pronto' });
     }
 
-    const { legendas = true, musica = null, cta = null } = req.body;
+    const {
+      legendas = true, musica = null, cta = null,
+      musicVolume = 0.05,  // ← Reduzido de 0.20 para 0.05 (5% padrão)
+      logo = null, logoPosition = 'bottom-right',
+      watermarkText = null,
+      trimStart = 0, trimEnd = 0,
+      subtitleFontSize = 88, subtitleFontColor = '&H0000FFFF'
+    } = req.body;
+    
+    // 🐛 Debug: logar o valor recebido
+    logger.info(`[POS-PRODUCAO] 🎵 Volume recebido: ${musicVolume} (tipo: ${typeof musicVolume})`);
     const videoUrl = video.videoUrl || video.videoFinalUrl;
 
     if (!videoUrl) {
@@ -468,8 +608,12 @@ router.post('/:id/pos-producao', async (req, res) => {
           videoUrl,
           roteiro: video.roteiro || '',
           legendas,
-          musica,
-          cta
+          musica, musicVolume,
+          cta,
+          logo, logoPosition,
+          watermarkText,
+          trimStart, trimEnd,
+          subtitleFontSize, subtitleFontColor
         });
 
         await Video.findByIdAndUpdate(video._id, {
@@ -503,6 +647,84 @@ router.get('/:id', async (req, res) => {
     res.json({ success: true, data: video });
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao buscar vídeo:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /:id/retry — Retenta geração de um vídeo falho, continuando do clip onde parou
+router.post('/:id/retry', async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.id);
+    if (!video) {
+      return res.status(404).json({ success: false, error: 'Vídeo não encontrado' });
+    }
+    if (video.status === 'processing') {
+      return res.status(400).json({ success: false, error: 'Vídeo já está em processamento' });
+    }
+    if (video.status === 'ready') {
+      return res.status(400).json({ success: false, error: 'Vídeo já está pronto' });
+    }
+
+    const clipsJaGerados = video.clipsGerados?.length || 0;
+    const totalClips = video.numClipsTotal || null;
+
+    // Resetar status mas MANTER clipsGerados para retomar de onde parou
+    await Video.findByIdAndUpdate(req.params.id, {
+      status: 'processing',
+      pipelineStatus: 'ROTEIRO',
+      errorMessage: null,
+      'progresso.etapa': 'ROTEIRO',
+      'progresso.percentual': clipsJaGerados && totalClips ? Math.round((clipsJaGerados / totalClips) * 68) : 0,
+      'progresso.atualizadoEm': new Date()
+    });
+
+    // Novo jobId para o BullMQ (reusa o mesmo videoDocId)
+    const newJobId = `vid_retry_${Date.now()}`;
+
+    await videoGenerationQueue.add('generate-video', {
+      jobId: newJobId,
+      videoDocId: video._id.toString(),
+      tema: video.roteiro || '',
+      especialidadeId: video.especialidadeId,
+      funil: video.config?.funil || 'TOPO',
+      duracao: video.duration || 30,
+      publicar: false,
+      targeting: {},
+      modo: video.provider === 'veo-3.1' ? 'veo' : video.provider === 'runway' ? 'kling' : 'veo',
+      tone: 'educativo',
+      platform: video.platform || 'instagram',
+      contentType: video.contentType || 'instagram',
+      subTema: video.subTema || null,
+      hookStyle: video.hookStyle || 'dor',
+      objetivo: video.objetivo || 'salvar',
+      variacao: Math.random(),
+      intensidade: video.intensidade || 'viral',
+      roteiroEditado: video.roteiroEstruturado ? {
+        titulo: video.roteiroEstruturado.titulo,
+        profissional: video.roteiroEstruturado.profissional,
+        texto_completo: video.roteiroEstruturado.textoCompleto,
+        hook_texto_overlay: video.roteiroEstruturado.hookTextoOverlay,
+        cta_texto_overlay: video.roteiroEstruturado.ctaTextoOverlay,
+        hashtags: video.roteiroEstruturado.hashtags,
+        duracao_estimada: video.roteiroEstruturado.duracaoEstimada,
+        legenda_instagram: video.legendaInstagram
+      } : null
+    }, { jobId: newJobId, priority: 1 });
+
+    logger.info(`[VIDEO ROUTES] Retry iniciado para vídeo ${req.params.id} (${clipsJaGerados}/${totalClips || '?'} clips já prontos)`);
+
+    res.json({
+      success: true,
+      message: clipsJaGerados > 0
+        ? `Retomando geração: ${clipsJaGerados}/${totalClips || '?'} clips já prontos, continuando do clip ${clipsJaGerados + 1}`
+        : 'Regenerando vídeo do início',
+      jobId: newJobId,
+      videoId: video._id,
+      clipsJaGerados,
+      totalClips
+    });
+  } catch (error) {
+    logger.error('[VIDEO ROUTES] Erro ao retentar:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
 });

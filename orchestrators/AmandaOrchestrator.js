@@ -4512,7 +4512,7 @@ Em breve nossa equipe entra em contato 😊`
         );
     }
 
-    if (/precisa\s+de\s+tudo|fono.*psico|psico.*fono/i.test(text)) {
+    if (/precisa\s+de\s+tudo|fono.*psico|psico.*fono/i.test(text.replace(/(?:cl[ií]nica\s+)?fono\s+inova/gi, ''))) {
         flags.multidisciplinary = true;
         flags.therapyArea = "multiprofissional";
     }
@@ -5115,7 +5115,7 @@ function inferAreaFromContext(normalizedText, context = {}, flags = {}) {
     const AREA_DEFS = [
         {
             id: "fonoaudiologia",
-            regex: /\b(fono|fonoaudiolog(?:ia|o|a)|fonoaudiólog(?:o|a)|audiolog(?:ia|o|a)|audiólog(?:o|a)|linguagem|fala|voz|deglutição|mastigação|motricidade orofacial|miofuncional|linguinha|freio|frenulo|lábio leporino|fenda palatina|respiração oral|voz rouca|gagueira|tartamudez|fluência|engasgar|amamentação|succao|sucção)\b/i
+            regex: /\b(fono(?![\s-]?inova)|fonoaudiolog(?:ia|o|a)|fonoaudiólog(?:o|a)|audiolog(?:ia|o|a)|audiólog(?:o|a)|linguagem|fala|voz|deglutição|mastigação|motricidade orofacial|miofuncional|linguinha|freio|frenulo|lábio leporino|fenda palatina|respiração oral|voz rouca|gagueira|tartamudez|fluência|engasgar|amamentação|succao|sucção|s[ií]ndrome\s+de\s+down|trissomia)\b/i
         },
         {
             id: "terapia_ocupacional",
@@ -6122,7 +6122,9 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
     // Só ativa se NÃO for uma correção (quando usuário está trocando de área)
     const isCorrection = /\b(não|correção|troca|mudei|desculpe|errado|queria)\b.*\b(fono|psico|neuro|to|fisio)/i.test(text);
     const hasMultipleExplicit = /\b(precisa\s+de\s+tudo|todas\s+(?:as\s+)?áreas?|todas\s+(?:as\s+)?especialidades?|equipe\s+mult|multi\s*profissional)\b/i.test(text);
-    const hasMultipleCombination = /\b(fono.*psico|psico.*fono|fono.*to|to.*fono|neuro.*fono|fono.*neuro)\b/i.test(text);
+    // Strip nome da clínica antes de checar combinações — evita false positive "Fono Inova...neuropsicológica"
+    const textSemClinica = text.replace(/(?:cl[ií]nica\s+)?fono\s+inova/gi, '');
+    const hasMultipleCombination = /\b(fono.*psico|psico.*fono|fono.*to|to.*fono|neuro.*fono|fono.*neuro)\b/i.test(textSemClinica);
 
     if (!isCorrection && (hasMultipleExplicit || hasMultipleCombination)) {
         extracted.flags.multidisciplinary = true;

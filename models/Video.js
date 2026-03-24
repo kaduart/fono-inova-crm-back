@@ -138,6 +138,16 @@ const videoSchema = new mongoose.Schema({
     default: null
   },
 
+  // 🔁 Clips parciais — permite retomar geração de onde parou
+  clipsGerados: {
+    type: [String],
+    default: []
+  },
+  numClipsTotal: {
+    type: Number,
+    default: null
+  },
+
   // Meta Ads (futuro)
   metaCampaignId: {
     type: String,

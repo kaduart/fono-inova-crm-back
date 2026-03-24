@@ -228,11 +228,31 @@ export default class WhatsAppOrchestrator {
 
       if (isAdultPatient && ![STATES.HANDOFF, STATES.BOOKED].includes(currentState)) {
         this.logger.info('V8_ADULT_PATIENT', { leadId });
-        await jumpToState(leadId, STATES.HANDOFF);
-        return this._reply(
-          'Oi! 😊\n\nAqui na Fono Inova somos especializados em atendimento infantil e para adolescentes.\n\nPara atendimento adulto, nossa equipe vai te orientar melhor sobre as opções 💚\n\nJá vou chamar alguém para te ajudar!',
-          { skipEnrichment: true }
-        );
+
+        // Exceção: Neuropsicologia atende todas as idades (incluindo adultos)
+        const isNeuroContext =
+          /neuropsico|avalia[çc][aã]o\s*neuropsicol/i.test(text) ||
+          lead?.therapyArea === 'neuropsicologia' ||
+          lead?.therapyArea === 'neuropsychological';
+
+        if (isNeuroContext) {
+          // Neuropsicologia atende adultos — direciona diretamente para coleta de objetivo
+          this.logger.info('V8_ADULT_NEURO_EXCEPTION', { leadId });
+          await this._saveTherapy(leadId, { id: 'neuropsychological', name: 'Neuropsicologia' });
+          await jumpToState(leadId, STATES.COLLECT_NEURO_TYPE, { therapy: 'neuropsychological', isAdult: true });
+          return this._reply(
+            'Sim, realizamos **Avaliação Neuropsicológica para todas as idades**, incluindo adultos 💚\n\n' +
+            'Para te ajudar melhor: você está buscando um *laudo neuropsicológico* (avaliação completa com relatório) ou *acompanhamento terapêutico* (sessões regulares)?',
+            { skipEnrichment: true }
+          );
+        } else {
+          // Para as demais especialidades, menciona que neuro atende adultos antes de redirecionar
+          await jumpToState(leadId, STATES.HANDOFF);
+          return this._reply(
+            'Oi! 😊\n\nAqui na Fono Inova somos especializados em atendimento **infantil e adolescentes**.\n\n💡 Porém, realizamos **Avaliação Neuropsicológica para todas as idades**, incluindo adultos!\n\nSe for para avaliação neuropsicológica (laudo de TDAH, autismo, dificuldades cognitivas etc.), posso te ajudar agora 💚\n\nPara outras especialidades em adulto, vou chamar alguém da equipe!',
+            { skipEnrichment: true }
+          );
+        }
       }
 
       // ══ 1. DETECÇÃO DE INTERRUPÇÃO GLOBAL ══
@@ -534,10 +554,14 @@ export default class WhatsAppOrchestrator {
 
           // Queixa embutida na mesma mensagem que a terapia?
           // Ex: "quero psicologia meu filho tem ansiedade" → não perguntar de novo
+          const isReferral = /\b(pediatra|neuropediatra|neurologista|m[eé]dic[oa]|escola|terapeuta)\b/i.test(text) &&
+            /\b(pediu|indicou|recomendou|solicitou|mandou|disse\s+que|orientou)\b/i.test(text);
+
           const hasEmbeddedComplaint = text.length > 30 && (
             flags.isEmotional ||
             ctx.symptomTherapies?.length > 0 ||
-            /\b(meu\s+filho|minha\s+filha|ele\s+(não|tá|está)|ela\s+(não|tá|está)|queixa|dificuldade|não\s+(fala|para|consegue|anda|aprende)|ansios|agitado|agressiv|atraso|escola\s+(pediu|disse)|médico\s+(pediu|disse))\b/i.test(text)
+            isReferral ||
+            /\b(meu\s+filho|minha\s+filha|meu\s+beb[eê]|minha\s+beb[eê]|ele\s+(não|tá|está)|ela\s+(não|tá|está)|queixa|dificuldade|não\s+(fala|para|consegue|anda|aprende)|ansios|agitado|agressiv|atraso|escola\s+(pediu|disse|indicou)|m[eé]dic[ao]\s+(pediu|disse|indicou|recomendou))\b/i.test(text)
           );
 
           if (hasEmbeddedComplaint && !isAvailQuestion) {
@@ -547,7 +571,9 @@ export default class WhatsAppOrchestrator {
             const isAskingHow = /\b(como\s+(funciona|é|acontece|é\s+feita?|seria)|pode\s+me\s+explicar|me\s+explica|quero\s+entender|como\s+é\s+o\s+processo|como\s+funciona\s+a\s+avalia[cç][aã]o)\b/i.test(text);
             const instruction = isAskingHow
               ? `Lead veio de uma LP e perguntou como funciona a avaliação de ${therapyName}, além de descrever a queixa. Explique brevemente como funciona (avaliação inicial, sessões, o que esperar), acolha a situação descrita e, ao final, peça a data de nascimento do paciente para verificar os horários.`
-              : `Lead já descreveu a queixa junto com a terapia (${therapyName}). Confirme que entendeu a situação e peça a data de nascimento do paciente.`;
+              : isReferral
+                ? `Lead veio com indicação de profissional de saúde para ${therapyName}. Acolha reconhecendo a indicação, NÃO pergunte novamente "qual a situação" pois ela já foi descrita. Peça o nome e data de nascimento do paciente para verificar os horários.`
+                : `Lead já descreveu a queixa junto com a terapia (${therapyName}). Confirme que entendeu a situação e peça a data de nascimento do paciente.`;
             return await this._replyWithAI(ctx, instruction);
           }
 
@@ -762,11 +788,20 @@ export default class WhatsAppOrchestrator {
         this.logger.warn('V8_RETRY', { leadId, state, retryCount, reason: 'neuro_type_not_detected', text: text.substring(0, 60) });
         if (handoff) { this.logger.warn('V8_HANDOFF', { leadId, state }); return this._handoffReply(); }
 
+        const isAdultContext = stateData?.isAdult || ctx?.flags?.ageGroup === 'adulto';
+        const pacienteRef = isAdultContext ? 'do paciente' : 'da criança';
+        const investigarRef = isAdultContext
+          ? 'Ainda não sei o que tenho / o que está acontecendo — quero investigar'
+          : 'Ainda não sei o que meu filho(a) tem — quero investigar';
+        const tratarRef = isAdultContext
+          ? 'Já tenho diagnóstico — quero iniciar o acompanhamento'
+          : 'Já sei o que ele(a) tem — quero iniciar o tratamento';
+
         if (retryCount === 1) {
           return this._reply(
             `Deixa eu te explicar a diferença pra ficar mais fácil 💚\n\n` +
             `*Laudo neuropsicológico* — para quem quer *entender* o que está acontecendo. ` +
-            `São ~10 sessões de avaliação e ao final você recebe um relatório completo com o perfil da criança. ` +
+            `São ~10 sessões de avaliação e ao final você recebe um relatório completo com o perfil ${pacienteRef}. ` +
             `Muito usado quando há suspeita de TEA, TDAH ou dificuldades de aprendizado.\n\n` +
             `*Acompanhamento terapêutico* — para quem já tem diagnóstico e quer *trabalhar* as dificuldades em sessões regulares.\n\n` +
             `Qual das duas situações é mais parecida com a de vocês?`
@@ -776,9 +811,9 @@ export default class WhatsAppOrchestrator {
         // retryCount >= 2: oferece escolha direta A ou B
         return this._reply(
           `Sem problemas, vou simplificar 😊\n\n` +
-          `*A)* Ainda não sei o que meu filho tem — quero investigar\n` +
-          `*B)* Já sei o que ele tem — quero iniciar o tratamento\n\n` +
-          `Qual é a situação de vocês?`
+          `*A)* ${investigarRef}\n` +
+          `*B)* ${tratarRef}\n\n` +
+          `Qual é a situação?`
         );
       }
 
@@ -1613,8 +1648,12 @@ Me conta um pouco sobre o que você precisa! 😊`;
       patientAge: promptMode.patientAge,
       patientName: promptMode.patientName,
       complaint: promptMode.complaint,
+      preferredPeriod: promptMode.preferredPeriod,
       emotionalContext: promptMode.emotionalContext,
-      conversationHistory: lead.recentMessages || [],
+      conversationHistory: lead.recentMessages || lead.interactions?.slice(-8).map(i => ({
+        direction: i.direction,
+        content: i.message || i.note || '',
+      })) || [],
     });
 
     const aiText = await callAI({
