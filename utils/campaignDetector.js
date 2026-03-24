@@ -33,12 +33,15 @@ const SPECIALTY_KEYWORDS = {
 };
 
 // Padrões de nomes de campanha do Meta
+// Retornam valores que batem com Doctor.specialty enum
 const CAMPAIGN_PATTERNS = [
   { regex: /\[?psico\]?/i, specialty: 'psicologia' },
-  { regex: /\[?fono\]?/i, specialty: 'fono' },
-  { regex: /\[?fisio\]?/i, specialty: 'fisio' },
+  { regex: /\[?fono\]?/i, specialty: 'fonoaudiologia' },
+  { regex: /\[?fisio\]?/i, specialty: 'fisioterapia' },
+  { regex: /\[?to\]?/i, specialty: 'terapia_ocupacional' },
   { regex: /\[?neuro\]?/i, specialty: 'neuropsicologia' },
-  { regex: /\[?psicopeda?\]?/i, specialty: 'psicopedagogia' }
+  { regex: /\[?psicopeda?\]?/i, specialty: 'psicopedagogia' },
+  { regex: /\[?music\]?/i, specialty: 'musicoterapia' }
 ];
 
 /**
