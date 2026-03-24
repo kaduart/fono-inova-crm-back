@@ -83,16 +83,36 @@ export async function buildMessageContext(text, lead, state, stateData, insights
       null,
 
     therapy: (() => {
-      // Mapeia IDs de terapia (inglês) para nomes em português
+      // Mapeia IDs de terapia (inglês/abreviações) para nomes em português
       const areaMap = {
+        // Fonoaudiologia
         "speech": "fonoaudiologia",
         "tongue_tie": "fonoaudiologia",
+        "fono": "fonoaudiologia",
+        "fonoaudiologia": "fonoaudiologia",
+        // Psicologia
         "psychology": "psicologia",
+        "psico": "psicologia",
+        "psicologia": "psicologia",
+        // Terapia Ocupacional
         "occupational": "terapia_ocupacional",
+        "to": "terapia_ocupacional",
+        "terapia_ocupacional": "terapia_ocupacional",
+        // Fisioterapia
         "physiotherapy": "fisioterapia",
+        "fisio": "fisioterapia",
+        "fisioterapia": "fisioterapia",
+        // Musicoterapia
         "music": "musicoterapia",
+        "musicoterapia": "musicoterapia",
+        // Neuropsicologia
         "neuropsychological": "neuropsicologia",
+        "neuro": "neuropsicologia",
+        "neuropsicologia": "neuropsicologia",
+        // Psicopedagogia
         "psychopedagogy": "psicopedagogia",
+        "psicoped": "psicopedagogia",
+        "psicopedagogia": "psicopedagogia",
         "neuropsychopedagogy": "neuropsicologia",
       };
       
