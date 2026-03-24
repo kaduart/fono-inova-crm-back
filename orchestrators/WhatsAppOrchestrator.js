@@ -442,7 +442,6 @@ export default class WhatsAppOrchestrator {
               const resumeData = { ...stateData, therapy: hasExistingTherapy };
               await jumpToState(leadId, STATES.COLLECT_COMPLAINT, resumeData);
               return this._reply(
-                `Que bom que voltou! 😊💚\n\n` +
                 `${contextLine}` +
                 `Me conta um pouco mais sobre a situação para eu poder ajudar melhor 💚`
               );
@@ -467,7 +466,7 @@ export default class WhatsAppOrchestrator {
           }
           const resumeData = { ...stateData, therapy: hasExistingTherapy };
           await jumpToState(leadId, STATES.COLLECT_COMPLAINT, resumeData);
-          return await this._replyWithAI(ctx, 'Lead retornou na mesma sessão com terapia já registrada mas sem queixa. Retome de forma calorosa e pergunte sobre a situação que está preocupando.');
+          return await this._replyWithAI(ctx, 'Lead retornou na mesma sessão com terapia já registrada mas sem queixa. Retome de forma calorosa SEM repetir saudações iniciais (Olá/Oi/Que bom que entrou em contato) e pergunte sobre a situação que está preocupando.');
         }
 
         // ── LP CONTEXT: detectar LP de origem pelo texto do CTA pré-preenchido ──
@@ -554,7 +553,7 @@ export default class WhatsAppOrchestrator {
 
           await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy: therapy?.id || therapy });
           if (isAvailQuestion) {
-            return await this._replyWithAI(ctx, `Lead perguntou se a clínica atende ${therapyName}. Confirme positivamente e pergunte qual é a principal queixa ou dificuldade.`);
+            return await this._replyWithAI(ctx, `Lead perguntou se a clínica atende ${therapyName}. Confirme positivamente SEM repetir saudações iniciais (Olá/Oi/Que bom que entrou em contato) e pergunte qual é a principal queixa ou dificuldade.`);
           }
           return await this._replyWithAI(ctx, `Lead demonstrou interesse em ${therapyName}. Acolha e pergunte sobre a situação — o que está preocupando.`);
         }
@@ -695,7 +694,7 @@ export default class WhatsAppOrchestrator {
             $set: { 'autoBookingContext.complaint': text.trim() }
           });
           await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { ...stateData, complaint: text.trim() });
-          return await this._replyWithAI(ctx, 'Lead descreveu uma queixa mas não mencionou especialidade. Acolha o relato e pergunte se é com uma criança e com que idade.');
+          return await this._replyWithAI(ctx, 'Lead descreveu uma queixa mas não mencionou especialidade. Acolha o relato SEM repetir saudações iniciais (Olá/Oi/Que bom que entrou em contato) e pergunte se é com uma criança e com que idade.');
         }
 
         // Verifica se tem dado de idade/contexto para resposta mais natural
@@ -755,7 +754,7 @@ export default class WhatsAppOrchestrator {
             { $set: { autoBookingContext: { $ifNull: ['$autoBookingContext', {}] } } },
             { $set: { 'autoBookingContext.neuroType': 'acompanhamento' } },
           ]);
-          return await this._replyWithAI(ctx, 'Lead escolheu acompanhamento terapêutico em neuropsicologia. Confirme a escolha, mencione o investimento e pergunte a principal dificuldade.', `Investimento acompanhamento: ${getPriceText('psicopedagogia')}`);
+          return await this._replyWithAI(ctx, 'Lead escolheu acompanhamento terapêutico em neuropsicologia. Confirme a escolha SEM repetir saudações iniciais (Olá/Oi/Que bom que entrou em contato), mencione o investimento e pergunte a principal dificuldade.', `Investimento acompanhamento: ${getPriceText('psicopedagogia')}`);
         }
 
         // ── Genuinamente não sabe — explica a diferença de forma natural ──
@@ -822,7 +821,7 @@ export default class WhatsAppOrchestrator {
           this.logger.info('V8_COMPLAINT_NO_AGE', { leadId, complaint: complaint.substring(0, 60) });
           await jumpToState(leadId, STATES.COLLECT_BIRTH, newData);
           await this._saveComplaint(leadId, complaint);
-          return await this._replyWithAI(ctx, 'Lead descreveu a queixa. Confirme que entendeu de forma acolhedora e peça a data de nascimento do paciente (dd/mm/aaaa).');
+          return await this._replyWithAI(ctx, 'Lead descreveu a queixa. Confirme que entendeu de forma acolhedora SEM repetir saudações iniciais (Olá/Oi/Que bom que entrou em contato) e peça a data de nascimento do paciente (dd/mm/aaaa).');
         }
 
         const { handoff, retryCount } = await incrementRetry(leadId);
@@ -1210,7 +1209,20 @@ Me conta um pouco sobre o que você precisa! 😊`;
     const leadId = lead._id;
     try {
       const ctx = this.currentContext;
-      const therapyArea = ctx?.leadData?.therapy || lead.therapyArea || stateData.therapy?.id || stateData.therapy;
+      // Normaliza therapyArea garantindo nome em português para busca de slots
+      const rawTherapy = ctx?.leadData?.therapy || lead.therapyArea || stateData.therapy?.id || stateData.therapy;
+      const areaMap = {
+        "speech": "fonoaudiologia",
+        "tongue_tie": "fonoaudiologia",
+        "psychology": "psicologia",
+        "occupational": "terapia_ocupacional",
+        "physiotherapy": "fisioterapia",
+        "music": "musicoterapia",
+        "neuropsychological": "neuropsicologia",
+        "psychopedagogy": "psicopedagogia",
+        "neuropsychopedagogy": "neuropsicologia",
+      };
+      const therapyArea = areaMap[rawTherapy] || rawTherapy;
       const patientName = stateData.patientName || ctx?.leadData?.name;
       const birthDate = stateData.birthDate;
       const age = stateData.age || ctx?.leadData?.age;
