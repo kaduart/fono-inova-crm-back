@@ -82,11 +82,29 @@ export async function buildMessageContext(text, lead, state, stateData, insights
       lead?.qualificationData?.idade ||
       null,
 
-    therapy:
-      stateData?.therapy ||
-      lead?.therapyArea ||
-      (primaryTherapy?.id ?? primaryTherapy) ||
-      null,
+    therapy: (() => {
+      // Mapeia IDs de terapia (inglês) para nomes em português
+      const areaMap = {
+        "speech": "fonoaudiologia",
+        "tongue_tie": "fonoaudiologia",
+        "psychology": "psicologia",
+        "occupational": "terapia_ocupacional",
+        "physiotherapy": "fisioterapia",
+        "music": "musicoterapia",
+        "neuropsychological": "neuropsicologia",
+        "psychopedagogy": "psicopedagogia",
+        "neuropsychopedagogy": "neuropsicologia",
+      };
+      
+      const rawTherapy = stateData?.therapy || lead?.therapyArea || (primaryTherapy?.id ?? primaryTherapy) || null;
+      
+      // Se for um ID conhecido, converte para nome em português
+      if (rawTherapy && areaMap[rawTherapy]) {
+        return areaMap[rawTherapy];
+      }
+      
+      return rawTherapy;
+    })(),
 
     complaint:
       stateData?.complaint ||
