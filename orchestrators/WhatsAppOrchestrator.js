@@ -1212,14 +1212,34 @@ Me conta um pouco sobre o que você precisa! 😊`;
       // Normaliza therapyArea garantindo nome em português para busca de slots
       const rawTherapy = ctx?.leadData?.therapy || lead.therapyArea || stateData.therapy?.id || stateData.therapy;
       const areaMap = {
+        // Fonoaudiologia
         "speech": "fonoaudiologia",
         "tongue_tie": "fonoaudiologia",
+        "fono": "fonoaudiologia",
+        "fonoaudiologia": "fonoaudiologia",
+        // Psicologia
         "psychology": "psicologia",
+        "psico": "psicologia",
+        "psicologia": "psicologia",
+        // Terapia Ocupacional
         "occupational": "terapia_ocupacional",
+        "to": "terapia_ocupacional",
+        "terapia_ocupacional": "terapia_ocupacional",
+        // Fisioterapia
         "physiotherapy": "fisioterapia",
+        "fisio": "fisioterapia",
+        "fisioterapia": "fisioterapia",
+        // Musicoterapia
         "music": "musicoterapia",
+        "musicoterapia": "musicoterapia",
+        // Neuropsicologia
         "neuropsychological": "neuropsicologia",
+        "neuro": "neuropsicologia",
+        "neuropsicologia": "neuropsicologia",
+        // Psicopedagogia
         "psychopedagogy": "psicopedagogia",
+        "psicoped": "psicopedagogia",
+        "psicopedagogia": "psicopedagogia",
         "neuropsychopedagogy": "neuropsicologia",
       };
       const therapyArea = areaMap[rawTherapy] || rawTherapy;
