@@ -623,6 +623,7 @@ class ConvenioMetricsService {
     async faturarEmLote({ paymentIds, notaFiscal, dataFaturamento }) {
         const Payment = mongoose.model('Payment');
         const Package = mongoose.model('Package');
+        const Session = mongoose.model('Session');
         
         console.log(`[ConvenioMetrics] Faturando ${paymentIds.length} atendimentos em lote`);
 
@@ -671,6 +672,20 @@ class ConvenioMetricsService {
                 }
 
                 await payment.save();
+
+                // 🔹 ATUALIZAR SESSION.PAYMENTID para vincular sessão ao payment
+                if (payment.session) {
+                    await Session.updateOne(
+                        { _id: payment.session },
+                        { 
+                            $set: { 
+                                paymentId: payment._id,
+                                isPaid: true,
+                                paidAt: dataFaturamento
+                            } 
+                        }
+                    );
+                }
 
                 result.faturados++;
                 result.totalValor += valorConvenio;

@@ -35,8 +35,19 @@ export const videoGenerationQueue = new Queue("video-generation", {
     }
 });
 
-export const videoGenerationEvents = new QueueEvents("video-generation", { 
-    connection: redisConnection 
+export const videoGenerationEvents = new QueueEvents("video-generation", {
+    connection: redisConnection
+});
+
+// Fila de pós-produção manual (legendas, música, CTA) — separada da geração
+export const posProducaoQueue = new Queue("pos-producao", {
+    connection: redisConnection,
+    defaultJobOptions: {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 30000 },
+        removeOnComplete: 50,
+        removeOnFail: 20
+    }
 });
 
 // 📝 NOVO: Fila de geração de posts (GMB, Instagram, Facebook)

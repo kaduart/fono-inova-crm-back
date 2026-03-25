@@ -263,6 +263,116 @@ class FinancialMetricsService {
       }
     ]);
 
+    // 🆕 DETALHAMENTO POR MÊS DE REFERÊNCIA
+    // Recebimentos do período agrupados por mês da sessão atendida
+    const recebidoPorMesRef = await Payment.aggregate([
+      {
+        $match: {
+          billingType: 'convenio',
+          'insurance.status': { $in: ['received', 'partial'] },
+          'insurance.receivedAt': { $gte: start, $lte: end }
+        }
+      },
+      {
+        $lookup: {
+          from: 'sessions',
+          localField: 'session',
+          foreignField: '_id',
+          as: 'sessao'
+        }
+      },
+      { $unwind: { path: '$sessao', preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          receivedAmount: '$insurance.receivedAmount',
+          sessionDate: { $ifNull: ['$sessao.date', { $dateToString: { format: '%Y-%m-%d', date: '$paymentDate' } }] }
+        }
+      },
+      {
+        $addFields: {
+          mesRef: { 
+            $concat: [
+              { $substr: ['$sessionDate', 0, 4] },
+              '-',
+              { $substr: ['$sessionDate', 5, 2] }
+            ]
+          }
+        }
+      },
+      {
+        $group: {
+          _id: '$mesRef',
+          total: { $sum: '$receivedAmount' },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Sessões de pacote pagas agrupadas por mês de referência
+    const recebidoPacotePorMesRef = await Session.aggregate([
+      {
+        $match: {
+          isPaid: true,
+          paidAt: { $gte: start, $lte: end },
+          paymentMethod: 'convenio',
+          $or: [
+            { paymentId: { $exists: false } },
+            { paymentId: null }
+          ]
+        }
+      },
+      ...lookupStages,
+      {
+        $project: {
+          valor: valorReal,
+          mesRef: { 
+            $concat: [
+              { $substr: ['$date', 0, 4] },
+              '-',
+              { $substr: ['$date', 5, 2] }
+            ]
+          }
+        }
+      },
+      {
+        $group: {
+          _id: '$mesRef',
+          total: { $sum: '$valor' },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Combinar os dois resultados
+    const mesesRefMap = new Map();
+    
+    recebidoPorMesRef.forEach(item => {
+      mesesRefMap.set(item._id, {
+        mes: item._id,
+        total: item.total,
+        count: item.count
+      });
+    });
+    
+    recebidoPacotePorMesRef.forEach(item => {
+      const existente = mesesRefMap.get(item._id);
+      if (existente) {
+        existente.total += item.total;
+        existente.count += item.count;
+      } else {
+        mesesRefMap.set(item._id, {
+          mes: item._id,
+          total: item.total,
+          count: item.count
+        });
+      }
+    });
+    
+    const recebidoPorMesReferencia = Array.from(mesesRefMap.values())
+      .sort((a, b) => a.mes.localeCompare(b.mes));
+
     const atendidoTotal = atendidoAgg[0]?.total || 0;
     const faturadoTotal = faturadoAgg[0]?.total || 0;
     const recebidoAvulso = recebidoAgg[0]?.total || 0;
@@ -273,6 +383,15 @@ class FinancialMetricsService {
     // A Receber = derivado de Atendido - Recebido (fonte única, sem ambiguidade)
     // Cobre tanto avulso quanto pacote, igual à lógica do EntradasSaidasTab
     const aReceberTotal = Math.max(0, atendidoTotal - recebidoTotal);
+
+    // Calcular totais do mês atual vs meses anteriores
+    const mesAtualStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`;
+    const recebidoMesAtual = recebidoPorMesReferencia
+      .filter(item => item.mes === mesAtualStr)
+      .reduce((sum, item) => sum + item.total, 0);
+    const recebidoMesesAnteriores = recebidoPorMesReferencia
+      .filter(item => item.mes !== mesAtualStr)
+      .reduce((sum, item) => sum + item.total, 0);
 
     return {
       atendido: {
@@ -295,7 +414,10 @@ class FinancialMetricsService {
         total: recebidoTotal,
         avulso: recebidoAvulso,
         pacote: recebidoPacoteTotal,
-        count: (recebidoAgg[0]?.count || 0) + (recebidoPacote[0]?.count || 0)
+        count: (recebidoAgg[0]?.count || 0) + (recebidoPacote[0]?.count || 0),
+        mesAtual: recebidoMesAtual,
+        mesesAnteriores: recebidoMesesAnteriores,
+        porMesReferencia: recebidoPorMesReferencia
       },
       aReceber: {
         total: aReceberTotal,
@@ -642,12 +764,13 @@ class FinancialMetricsService {
     const startStr = start.toISOString().split('T')[0];
     const endStr = end.toISOString().split('T')[0];
 
-    // 1️⃣ Convênio avulso faturado mas não recebido (acumulado — todos os meses)
+    // 1️⃣ Convênio avulso faturado mas não recebido — filtrado pelo período do mês
     const avulsoReceivable = await Payment.aggregate([
       {
         $match: {
           billingType: 'convenio',
-          'insurance.status': 'billed'
+          'insurance.status': 'billed',
+          paymentDate: { $gte: startStr, $lte: endStr }
         }
       },
       {
@@ -659,7 +782,7 @@ class FinancialMetricsService {
       }
     ]);
 
-    // 2️⃣ Convênio PACOTE: sessões de pacote completadas não pagas pelo plano (acumulado — todos os meses)
+    // 2️⃣ Convênio PACOTE: sessões de pacote completadas não pagas pelo plano — filtrado pelo período
     // Apenas pacote (com package definido) — avulso já é coberto via Payment em avulsoReceivable
     const sessionReceivable = await Session.aggregate([
       {
@@ -667,7 +790,8 @@ class FinancialMetricsService {
           status: 'completed',
           paymentMethod: 'convenio',
           package: { $exists: true, $ne: null },
-          $or: [{ isPaid: false }, { isPaid: { $exists: false } }]
+          $or: [{ isPaid: false }, { isPaid: { $exists: false } }],
+          date: { $gte: startStr, $lte: endStr }
         }
       },
       {

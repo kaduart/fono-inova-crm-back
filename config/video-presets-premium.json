@@ -43,7 +43,7 @@
         "tipo": "agendar",
         "textos": [
           "Clique no botão e fale com nossa equipe no WhatsApp",
-          "Toque aqui para agendar uma avaliação gratuita",
+          "Toque aqui para agendar uma consulta",
           "Converse com um especialista - clique no WhatsApp"
         ]
       },
@@ -58,9 +58,9 @@
         "palavras_recomendadas": 85,
         "exemplo_completo": {
           "titulo": "autoridade_meta_ads",
-          "texto": "Sou fonoaudióloga há 10 anos e atendo crianças todos os dias. Se seu filho tem mais de 2 anos e ainda não fala frases completas, isso pode ser um sinal de alerta. Na nossa clínica, usamos técnicas comprovadas que já ajudaram centenas de famílias. O tratamento é personalizado e os resultados aparecem nas primeiras semanas. Não espere para buscar ajuda. Toque no botão e agende uma avaliação gratuita pelo WhatsApp. A primeira consulta é sem compromisso.",
+          "texto": "Sou fonoaudióloga há 10 anos e atendo crianças todos os dias. Se seu filho tem mais de 2 anos e ainda não fala frases completas, isso pode ser um sinal de alerta. Na nossa clínica, usamos técnicas comprovadas que já ajudaram centenas de famílias. O tratamento é personalizado e os resultados aparecem nas primeiras semanas. Não espere para buscar ajuda. Toque no botão e agende uma consulta pelo WhatsApp. Vamos conversar sobre como podemos ajudar.",
           "hashtags": [],
-          "cta": "Toque no botão e agende uma avaliação gratuita pelo WhatsApp 💚"
+          "cta": "Toque no botão e fale conosco pelo WhatsApp 💚"
         }
       }
     },
@@ -227,7 +227,7 @@
         "textos": [
           "Fala com a gente no WhatsApp e agenda uma avaliacao",
           "Manda mensagem no WhatsApp — vamos conversar",
-          "Clica no link e agenda uma avaliacao gratuita"
+          "Clica no link e agenda um atendimento"
         ]
       },
       "script_template": {
@@ -349,7 +349,7 @@
       "cta": {
         "tipo": "agendar",
         "textos": [
-          "Clica no link e agenda uma avaliacao gratuita",
+          "Clica no link e agenda um atendimento",
           "Nao perca tempo — agenda agora",
           "Fala com a gente hoje mesmo no WhatsApp"
         ]
