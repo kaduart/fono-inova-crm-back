@@ -1779,15 +1779,36 @@ router.get("/daily-closing", async (req, res) => {
         console.log(`   Total em dinheiro: R$${filteredPayments.reduce((sum, p) => sum + (p.amount || 0), 0)}\n`);
 
         // ======================================================
-        // 🔹 MAPS para performance O(1) - USA TODOS OS PAGAMENTOS, NÃO SÓ OS FILTRADOS
+        // 🔹 BUSCAR PAGAMENTOS HISTÓRICOS DOS PACOTES DE HOJE
+        // (pagamentos de pacotes feitos antes de hoje mas com sessões hoje)
+        // ======================================================
+        const packageIdsToday = [...new Set(
+            appointmentsToday
+                .filter(a => a.serviceType === 'package_session' && a.package?._id)
+                .map(a => a.package._id.toString())
+        )];
+
+        const historicalPackagePayments = packageIdsToday.length > 0
+            ? await Payment.find({
+                package: { $in: packageIdsToday.map(id => new mongoose.Types.ObjectId(id)) },
+                status: { $in: ['paid', 'package_paid'] }
+            }).populate('patient doctor package appointment').lean()
+            : [];
+
+        // Merge: pagamentos de hoje + pagamentos históricos de pacotes
+        const allPaymentsForMaps = [
+            ...payments,
+            ...historicalPackagePayments.filter(hp => !payments.some(p => p._id.toString() === hp._id.toString()))
+        ];
+
+        // ======================================================
+        // 🔹 MAPS para performance O(1)
         // ======================================================
         const paymentsByAppt = new Map();
         const paymentsByPackage = new Map();
         const paymentsByPatient = new Map();
 
-        // ✅ IMPORTANTE: Usar 'payments' (todos) e não 'filteredPayments' (só do dia)
-        // Para encontrar pagamentos de liminar/crédito feitos em dias anteriores
-        payments.forEach(p => {
+        allPaymentsForMaps.forEach(p => {
             // Por appointment
             const apptId = p.appointment?._id?.toString();
             if (apptId) {
@@ -2728,11 +2749,22 @@ router.get('/insurance/receivables', auth, async (req, res) => {
                 ? ['pending_billing', 'billed', 'received', 'partial', 'glosa']
                 : ['pending_billing', 'billed'];
 
+        // Busca payments de convênio: ou billingType='convenio' ou appointment é convenio_session
         const paymentMatch = {
-            billingType: 'convenio',
+            $or: [
+                { billingType: 'convenio' },
+                { appointment: { $exists: true, $ne: null } }  // Será filtrado via lookup abaixo
+            ],
             'insurance.status': { $in: insuranceStatuses }
         };
-        if (month) paymentMatch['paymentDate'] = { $regex: `^${month}` };
+
+        // Todas as abas filtram por paymentDate (data do atendimento/sessão)
+        // Assim mostra as sessões DO mês, separadas por status
+        if (month) {
+            const monthRegex = `^${month}`;
+            paymentMatch['paymentDate'] = { $regex: monthRegex };
+        }
+
         if (provider) paymentMatch['insurance.provider'] = provider;
 
         const paymentReceivables = await Payment.aggregate([
@@ -2741,6 +2773,19 @@ router.get('/insurance/receivables', auth, async (req, res) => {
             { $lookup: { from: 'appointments', localField: 'appointment', foreignField: '_id', as: 'appointmentInfo' } },
             { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'packageInfo' } },
             { $lookup: { from: 'insuranceguides', localField: 'packageInfo.insuranceGuide', foreignField: '_id', as: 'guideInfo' } },
+            // Filtra apenas payments de convênio: billingType='convenio' OU appointment é convenio_session OU package_session de pacote convenio
+            {
+                $match: {
+                    $or: [
+                        { billingType: 'convenio' },
+                        { 'appointmentInfo.serviceType': 'convenio_session' },
+                        { 
+                            'appointmentInfo.serviceType': 'package_session',
+                            'packageInfo.type': 'convenio'
+                        }
+                    ]
+                }
+            },
             {
                 $addFields: {
                     // Usa o insuranceProvider do pacote como fonte autoritativa (corrige payments com provider errado)
@@ -2776,22 +2821,24 @@ router.get('/insurance/receivables', auth, async (req, res) => {
         ]);
 
         // ── 2. Session-based receivables (pacote convênio sem Payment) ──────────
-        // Exclui packages que já têm Payment records para evitar double-counting
-        const packagesWithPayments = await Payment.distinct('package', {
+        // Exclui APPOINTMENTS que já têm Payment records (não packages inteiros!)
+        // Usa driver nativo para evitar casting de tipos (receivedAt é string no banco)
+        const appointmentsWithPayments = await Payment.collection.distinct('appointment', {
             billingType: 'convenio',
-            'insurance.status': { $in: insuranceStatuses },
-            ...(month ? { paymentDate: { $regex: `^${month}` } } : {})
+            appointment: { $exists: true, $ne: null },
+            ...(paymentMatch['$or'] ? { $or: paymentMatch['$or'] } : {
+                'insurance.status': { $in: insuranceStatuses },
+                ...(month ? { paymentDate: { $regex: `^${month}` } } : {})
+            })
         });
-        const packagesToExclude = packagesWithPayments.filter(Boolean);
+        const appointmentsToExclude = appointmentsWithPayments.filter(Boolean);
 
         const sessionMatch = {
-            status: 'completed',
-            paymentMethod: 'convenio',
-            isPaid: { $ne: true },
-            $or: [{ paymentId: null }, { paymentId: { $exists: false } }]
+            operationalStatus: 'confirmed',
+            serviceType: { $in: ['convenio_session', 'package_session'] }
         };
         if (month) sessionMatch['date'] = { $regex: `^${month}` };
-        if (packagesToExclude.length > 0) sessionMatch['package'] = { $nin: packagesToExclude };
+        if (appointmentsToExclude.length > 0) sessionMatch['_id'] = { $nin: appointmentsToExclude };
 
         const sessionReceivables = await Session.aggregate([
             { $match: sessionMatch },
@@ -2989,7 +3036,9 @@ router.patch('/insurance/:id/receive', auth, async (req, res) => {
         payment.amount = finalAmount; // ← Agora entra no caixa!
         payment.status = 'paid';
         payment.insurance.status = isGlosa ? 'partial' : 'received';
-        payment.insurance.receivedAt = receivedDate ? new Date(receivedDate) : new Date();
+        payment.insurance.receivedAt = receivedDate
+            ? moment(receivedDate).tz('America/Sao_Paulo').format('YYYY-MM-DD')
+            : moment().tz('America/Sao_Paulo').format('YYYY-MM-DD');
         payment.insurance.receivedAmount = finalAmount;
 
         if (isGlosa && notes) {
