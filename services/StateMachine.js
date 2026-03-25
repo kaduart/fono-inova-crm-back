@@ -30,6 +30,7 @@ export const STATES = {
     BOOKED: 'BOOKED',
     INTERRUPTED: 'INTERRUPTED',
     HANDOFF: 'HANDOFF',
+    REJECTED: 'REJECTED',  // Lead não é fit (ex: adulto com queixa não atendida)
 };
 
 // Transições lineares: de um estado vai para o próximo
