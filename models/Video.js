@@ -255,6 +255,13 @@ const videoSchema = new mongoose.Schema({
   legendaInstagram: {
     type: String,
     default: null
+  },
+  
+  // 🧪 Modo de geração (teste = slideshow econômico)
+  modo: {
+    type: String,
+    enum: ['avatar', 'ilustrativo', 'veo', 'economico', 'teste'],
+    default: 'veo'
   }
 
 }, {
