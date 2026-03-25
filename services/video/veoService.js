@@ -212,8 +212,14 @@ export class VeoService {
       durationSeconds = 8,
       aspectRatio = '9:16',
       clipIndex = 0,
-      intensidade = 'moderado'
+      intensidade = 'moderado',
+      modo = 'veo'  // 🧪 Proteção contra custo acidental
     } = options;
+
+    // 🚨 BLOQUEIO ABSOLUTO: Modo teste nunca gera vídeo pago
+    if (modo === 'teste' || modo === 'economico') {
+      throw new Error(`[VEO SERVICE] BLOQUEADO: Modo '${modo}' não pode usar VEO (custo R$64/clip). Use slideshow.`);
+    }
 
     const prompt = temaCustom
       ? buildCustomPrompt(temaCustom, especialidadeId, intensidade)

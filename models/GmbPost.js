@@ -138,6 +138,7 @@ const gmbPostSchema = new mongoose.Schema({
   error: { type: String },
   retryCount: { type: Number, default: 0 },
   lastErrorAt: { type: Date },
+  nextRetryAt: { type: Date, default: null },  // cooldown por fila cheia
   jobId: { type: String },
   
   // Metadados
@@ -208,6 +209,19 @@ gmbPostSchema.methods.markFailed = function(error) {
 };
 
 /**
+ * Fila do Make estava cheia — mantém scheduled mas adia para daqui X ms
+ * Padrão: 1 hora
+ */
+gmbPostSchema.methods.markQueueRetry = function(delayMs = 60 * 60 * 1000) {
+  this.nextRetryAt = new Date(Date.now() + delayMs);
+  this.retryCount = (this.retryCount || 0) + 1;
+  this.lastErrorAt = new Date();
+  this.error = 'Make queue full — reagendado automaticamente';
+  // status permanece 'scheduled' para ser retentado depois
+  return this.save();
+};
+
+/**
  * Agenda post para publicação
  */
 gmbPostSchema.methods.schedule = function(date) {
@@ -243,9 +257,11 @@ gmbPostSchema.methods.updateMetrics = function(views, clicks) {
  * Busca posts agendados para publicação
  */
 gmbPostSchema.statics.findScheduledForPublish = function(limit = 10) {
+  const now = new Date();
   return this.find({
     status: 'scheduled',
-    scheduledAt: { $lte: new Date() }
+    scheduledAt: { $lte: now },
+    $or: [{ nextRetryAt: null }, { nextRetryAt: { $lte: now } }],
   })
   .sort({ scheduledAt: 1 })
   .limit(limit);

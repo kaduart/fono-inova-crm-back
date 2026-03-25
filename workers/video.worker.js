@@ -36,6 +36,8 @@ import InstagramPost from '../models/InstagramPost.js';
 import VeoService, { isVeoConfigured } from '../services/video/veoService.js';
 import RunwayService, { isRunwayConfigured, CLIP_DURATION as RUNWAY_CLIP_DURATION } from '../services/video/runwayService.js';
 import { getFullProductionConfig, recommendPreset, getTTSConfig, getMusicConfig, getVEOConfig, listPresets } from '../services/video/presetService.js';
+import { aplicarPosProducao } from '../services/video/posProducaoVeoService.js';
+import { posProducaoQueue } from '../config/bullConfig.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -70,6 +72,9 @@ async function gerarNarracaoPTBR(texto, outputPath, options = {}) {
     }
   }
   
+  // Calcular número de palavras para log e ajustes
+  const palavras = texto.split(/\s+/).length;
+  
   if (!presetSpeed) {
     if (intensidade === 'viral' || intensidade === 'forte') {
       speed = 1.05;
@@ -78,7 +83,6 @@ async function gerarNarracaoPTBR(texto, outputPath, options = {}) {
     }
     
     // Ajuste fino: vídeos curtos (Instagram) = mais dinâmicos
-    const palavras = texto.split(/\s+/).length;
     if (palavras < 50 && intensidade !== 'leve') {
       speed = Math.min(speed + 0.02, 1.08);
     }
@@ -290,7 +294,7 @@ async function buscarImagensEco(especialidade, count, tmpDir, baseName) {
       const imgPath = path.join(tmpDir, `${baseName}_img_${i}.jpg`);
       await new Promise((res, rej) => {
         ffmpeg()
-          .input(`color=c=${cores[i % cores.length]}:s=1080x1920:d=1`)
+          .input(`color=c=${cores[i % cores.length]}:s=1080x1080:d=1`)
           .inputFormat('lavfi')
           .frames(1)
           .output(imgPath)
@@ -332,7 +336,7 @@ async function gerarSlideshowKenBurns(especialidade, duracao, tmpDir, baseName) 
           '-t', String(duracaoPorImg),
           '-vf',
           `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,` +
-          `zoompan=z='${zExpr}':x='${xExpr}':y='ih/2-(ih/zoom/2)':d=${frames}:s=1080x1920:fps=30,` +
+          `zoompan=z='${zExpr}':x='${xExpr}':y='ih/2-(ih/zoom/2)':d=${frames}:s=1080x1080:fps=30,` +
           `format=yuv420p`,
           '-c:v', 'libx264',
           '-preset', 'fast',
@@ -457,7 +461,7 @@ function getMusicPath(funil, hookStyle = 'dor', especialidade = '') {
  * Pós-produção premium: narração + legendas + hook + CTA + color grade + fade + logo + música
  */
 async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil = 'TOPO', extras = {}) {
-  const { hookTexto = '', textoCompleto = '', hookStyle = 'dor', especialidade = '', intensidade = 'moderado', musicVolume: presetVolume } = extras;
+  const { hookStyle = 'dor', especialidade = '', intensidade = 'moderado', musicVolume: presetVolume } = extras;
 
   logger.info(`[VIDEO WORKER] Mixando narração ao vídeo concatenado...`);
   const hasLogo   = fs.existsSync(LOGO_PATH);
@@ -467,7 +471,7 @@ async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil =
 
   if (hasMusic) logger.info(`[VIDEO WORKER] 🎵 Adicionando música: ${path.basename(musicPath)}`);
 
-  const { duracao, vidW, vidH } = await new Promise((res, rej) => {
+  const { duracao: duracaoVideo, vidW, vidH } = await new Promise((res, rej) => {
     ffmpeg.ffprobe(localVideoPath, (err, meta) => {
       if (err) return rej(err);
       const vs = meta.streams?.find(s => s.codec_type === 'video');
@@ -479,33 +483,19 @@ async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil =
     });
   });
 
-  // Legendas removidas do worker — adicionadas apenas na edição (posProducaoVeoService)
-  // Isso evita dupla legenda ao reeditar e permite controle de fonte/cor pelo usuário
+  // Detectar duração da narração para truncar vídeo se necessário
+  const duracaoNarracao = await new Promise((res, rej) => {
+    ffmpeg.ffprobe(audioPath, (err, meta) => {
+      if (err) return rej(err);
+      res(meta.format.duration || duracaoVideo);
+    });
+  });
 
-  // Quebrar hook em no máximo 2 linhas de ~32 chars (cabe na tela sem overflow)
-  const hookLinhas = (() => {
-    const raw = (hookTexto || '').replace(/\n/g, ' ').trim().substring(0, 80);
-    if (!raw) return [];
-    const palavras = raw.split(' ');
-    const linhas = [];
-    let atual = '';
-    for (const p of palavras) {
-      if (linhas.length >= 2) break;
-      if ((atual ? atual + ' ' + p : p).length <= 32) {
-        atual = atual ? atual + ' ' + p : p;
-      } else {
-        if (atual) linhas.push(atual);
-        atual = p;
-      }
-    }
-    if (atual && linhas.length < 2) linhas.push(atual);
-    return linhas;
-  })();
-
-  const sanitizarLinha = (t) => t
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g,  '\u2019')
-    .replace(/:/g,  '\\:');
+  // 🎬 Sincronizar vídeo com narração: usar a menor duração + outro
+  const OUTRO_DUR = fs.existsSync(LOGO_UNICA_PATH) ? 2 : 0;
+  const duracao = Math.min(duracaoVideo, duracaoNarracao);
+  
+  logger.info(`[VIDEO WORKER] 📊 Duração — Vídeo: ${duracaoVideo.toFixed(1)}s | Narração: ${duracaoNarracao.toFixed(1)}s | Final: ${duracao.toFixed(1)}s + ${OUTRO_DUR}s outro`);
 
   const ctaInicio    = Math.max(0, duracao - 5);
   const fadeOutStart = Math.max(0, duracao - 0.5);
@@ -529,33 +519,14 @@ async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil =
 
     const filters = [];
 
-    // 1. Color grading cinematográfico
+    // 1. Truncar vídeo para duração da narração (evita vídeo vazio no final)
+    // e aplicar color grading cinematográfico
     filters.push(
-      `[0:v]eq=contrast=1.05:saturation=1.15:brightness=0.02,unsharp=5:5:0.5:5:5:0.0[colored]`
+      `[0:v]trim=0:${duracao},setpts=PTS-STARTPTS,eq=contrast=1.05:saturation=1.15:brightness=0.02,unsharp=5:5:0.5:5:5:0.0[colored]`
     );
 
-    // 2. Sem legendas no worker — aplicadas na edição com estilo TikTok/Reels
-    filters.push('[colored]copy[subbed]');
-
-    // 3. Hook text — 2 linhas pequenas, rodapé
-    if (hookLinhas.length > 0) {
-      let vLabel = '[subbed]';
-      hookLinhas.forEach((linha, i) => {
-        const outLabel = i === hookLinhas.length - 1 ? '[hooked]' : `[hookline${i}]`;
-        const yPos = hookLinhas.length === 1
-          ? 'h-200'
-          : i === 0 ? 'h-240' : 'h-195';
-        filters.push(
-          `${vLabel}drawtext=text='${sanitizarLinha(linha)}':fontfile='${FONT_PATH}':fontsize=22:` +
-          `fontcolor=white:borderw=2:bordercolor=black:` +
-          `box=1:boxcolor=black@0.5:boxborderw=8:` +
-          `x=(w-text_w)/2:y=${yPos}:enable='between(t,0,3.5)'${outLabel}`
-        );
-        vLabel = outLabel;
-      });
-    } else {
-      filters.push('[subbed]copy[hooked]');
-    }
+    // 2. Sem legendas no worker — usuário adiciona no editor
+    filters.push('[colored]copy[hooked]');
 
     // 4. Logo overlay pequeno — canto inferior direito
     if (logoIdx !== -1) {
@@ -585,7 +556,7 @@ async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil =
     // 7. Outro final: tela verde + logo centralizado (2s) — usa resolução real do vídeo
     if (outroLogoIdx !== -1) {
       filters.push(
-        `color=c=#26977B:s=${vidW}x${vidH}:d=2:r=30[bgoutro]`,
+        `color=c=#3f7c67:s=${vidW}x${vidH}:d=2:r=30[bgoutro]`,
         `[${outroLogoIdx}:v]scale=700:-1[logobig]`,
         `[bgoutro][logobig]overlay=(W-w)/2:(H-h)/2[outroframe]`,
         `[mainvid][outroframe]concat=n=2:v=1:a=0[vout]`
@@ -595,7 +566,6 @@ async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil =
     }
 
     // 8. Áudio: narração + música + SFX de transição + silêncio para o outro
-    const OUTRO_DUR = hasOutroLogo ? 2 : 0;
     const sfxDelay  = Math.round(duracao * 1000); // ms — dispara exatamente na virada do outro
 
     if (hasMusic) {
@@ -634,7 +604,7 @@ async function mixarNarracaoLocal(localVideoPath, audioPath, outputPath, funil =
       ])
       .on('end', () => {
         try {
-          const features = [hookLinhas.length > 0 && 'hook', hasLogo && 'logo', hasCta && 'CTA', hasMusic && 'música', hasOutroLogo && 'outro'].filter(Boolean).join(' + ');
+          const features = [hasLogo && 'logo', hasCta && 'CTA', hasMusic && 'música', hasOutroLogo && 'outro'].filter(Boolean).join(' + ');
           logger.info(`[VIDEO WORKER] ✅ Vídeo premium: ${features}`);
           resolve(outputPath);
         } catch (cbErr) {
@@ -868,6 +838,11 @@ const videoWorker = new Worker('video-generation', async (job) => {
         throw new Error('GOOGLE_AI_API_KEY não configurado. Acesse aistudio.google.com para obter gratuitamente.');
       }
 
+      // 🚨 PROTEÇÃO ABSOLUTA: Modo teste/econômico nunca usa VEO (custo R$64/clip)
+      if (modo === 'teste' || modo === 'economico') {
+        throw new Error(`[VIDEO WORKER] BLOQUEIO DE SEGURANÇA: Modo '${modo}' não pode usar VEO. Use slideshow.`);
+      }
+
       // Calcula quantos clips de 8s são necessários para cobrir a duração solicitada
       // Ex: 30s → ceil(30/8) = 4 clips (32s efetivos) — máx 6 clips (48s) para Instagram
       const numClips = Math.min(6, Math.max(1, Math.ceil(duracao / 8)));
@@ -898,7 +873,7 @@ const videoWorker = new Worker('video-generation', async (job) => {
         let tentativa = 0;
         while (true) {
           try {
-            const result = await veoService.gerarVideo(especialidadeId, tema || null, { durationSeconds: 8, aspectRatio: '9:16', clipIndex: i, intensidade });
+            const result = await veoService.gerarVideo(especialidadeId, tema || null, { durationSeconds: 8, aspectRatio: '1:1', clipIndex: i, intensidade, modo });
             clipUrls.push(result.url);
             // Persiste o clip imediatamente — se o job travar nos próximos, retomamos daqui
             await Video.findByIdAndUpdate(videoDocId, { $push: { clipsGerados: result.url } });
@@ -1439,5 +1414,82 @@ videoWorker.on('error', (err) => {
 });
 
 logger.info('[VIDEO WORKER] 🎬 Worker inicializado (concurrency: 1)');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WORKER DE POS-PRODUCAO (legendas, música, CTA aplicados manualmente)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const posProducaoWorker = new Worker('pos-producao', async (job) => {
+  const {
+    videoId,
+    videoUrl,
+    roteiro,
+    legendas,
+    musica,
+    musicVolume,
+    cta,
+    logo,
+    logoPosition,
+    watermarkText,
+    trimStart,
+    trimEnd,
+    subtitleFontSize,
+    subtitleFontColor
+  } = job.data;
+
+  logger.info(`[POS-PRODUCAO WORKER] Iniciando edição vídeo ${videoId}`);
+
+  try {
+    const editadoUrl = await aplicarPosProducao({
+      videoId,
+      videoUrl,
+      roteiro,
+      legendas,
+      musica,
+      musicVolume,
+      cta,
+      logo,
+      logoPosition,
+      watermarkText,
+      trimStart,
+      trimEnd,
+      subtitleFontSize,
+      subtitleFontColor
+    });
+
+    await Video.findByIdAndUpdate(videoId, {
+      videoEditadoUrl: editadoUrl,
+      posProducaoStatus: 'ready',
+      'posProducaoConfig.aplicadoEm': new Date()
+    });
+
+    const io = getIo();
+    io.emit('video:status', { videoId, etapa: 'POS_PRODUCAO_CONCLUIDA' });
+
+    logger.info(`[POS-PRODUCAO WORKER] Vídeo ${videoId} editado: ${editadoUrl}`);
+    return { videoId, editadoUrl };
+
+  } catch (err) {
+    logger.error(`[POS-PRODUCAO WORKER] Erro vídeo ${videoId}: ${err.message}`);
+    await Video.findByIdAndUpdate(videoId, {
+      posProducaoStatus: 'failed',
+      posProducaoError: err.message
+    }).catch(() => {});
+    throw err;
+  }
+}, {
+  connection: redisConnection,
+  concurrency: 2
+});
+
+posProducaoWorker.on('failed', (job, err) => {
+  logger.error(`[POS-PRODUCAO WORKER] Job ${job?.id} falhou: ${err.message}`);
+});
+
+posProducaoWorker.on('error', (err) => {
+  logger.error('[POS-PRODUCAO WORKER] Erro no worker:', err.message);
+});
+
+logger.info('[POS-PRODUCAO WORKER] Worker inicializado (concurrency: 2)');
 
 export default videoWorker;

@@ -1185,10 +1185,24 @@ Me conta um pouco sobre o que você precisa! 😊`;
       const strategy = determinePricingStrategy(intentScore, flags);
       const pricing = getTherapyPricing(therapy);
 
-      if (strategy === 'package_first' && pricing && !pricing.incluiLaudo) {
-        // Lead quente: valor primeiro, depois preço, CTA direto
+      // Neuropsicologia (bundle único) OU lead quente: valor antes do preço
+      // ANTES: !pricing.incluiLaudo bloqueava neuro de chegar no buildValueFirstResponse
+      if (pricing && (pricing.incluiLaudo || strategy === 'package_first')) {
         const childAge = ctx?.leadData?.age;
-        return buildValueFirstResponse(therapy, { childAge, includeUrgency: !!childAge && childAge <= 6 });
+        // Detecta contexto filho (flag da msg atual, ageGroup do DB ou qualificationData)
+        const isChildContext =
+          flags.mentionsChild ||
+          lead.ageGroup === 'crianca' ||
+          lead.qualificationData?.ageGroup === 'crianca' ||
+          !!childAge;
+        const priceResponse = buildValueFirstResponse(therapy, {
+          childAge,
+          includeUrgency: isChildContext && !!childAge && childAge <= 6,
+        });
+        if (isChildContext) {
+          return `Entendo, vou te ajudar com as informações para o seu filho! 💚\n\n${priceResponse}`;
+        }
+        return priceResponse;
       }
 
       const priceComparison = getPriceComparison(therapy);

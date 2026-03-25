@@ -12,10 +12,9 @@
 
 import { Router } from 'express';
 import { auth } from '../middleware/auth.js';
-import { videoGenerationQueue } from '../config/bullConfig.js';
+import { videoGenerationQueue, posProducaoQueue } from '../config/bullConfig.js';
 import Video from '../models/Video.js';
 import logger from '../utils/logger.js';
-import { aplicarPosProducao } from '../services/video/posProducaoVeoService.js';
 import { listPresets, getFullProductionConfig, getScriptTemplate } from '../services/video/presetService.js';
 import fs from 'fs';
 
@@ -118,7 +117,8 @@ async function handleGenerateVideo(req, res) {
       subTema: subTema || null,
       hookStyle,
       objetivo,
-      intensidade
+      intensidade,
+      modo  // 🧪 Salvar modo para retry respeitar teste
     });
 
     // Enfileirar no BullMQ (sobrevive a restart)
@@ -590,48 +590,31 @@ router.post('/:id/pos-producao', async (req, res) => {
     video.posProducaoStatus = 'processing';
     await video.save();
 
-    // Responde imediatamente (202) e processa em background
+    // Enfileirar no BullMQ (sobrevive a restart do servidor)
+    await posProducaoQueue.add('pos-producao', {
+      videoId: video._id.toString(),
+      videoUrl,
+      roteiro: video.roteiro || '',
+      legendas,
+      musica,
+      musicVolume,
+      cta,
+      logo,
+      logoPosition,
+      watermarkText,
+      trimStart,
+      trimEnd,
+      subtitleFontSize,
+      subtitleFontColor
+    });
+
+    logger.info(`[POS-PRODUCAO] Job enfileirado para vídeo ${video._id}`);
+
     res.status(202).json({
       success: true,
       message: 'Pós-produção iniciada — vídeo editado disponível em alguns minutos',
       videoId: video._id
     });
-
-    // Processo assíncrono em background
-    (async () => {
-      try {
-        logger.info(`[POS-PRODUCAO] 🎬 Iniciando edição vídeo ${video._id}`);
-        logger.info(`[POS-PRODUCAO] Config: legendas=${legendas}, musica=${musica}, cta=${JSON.stringify(cta)}`);
-        
-        const editadoUrl = await aplicarPosProducao({
-          videoId: video._id.toString(),
-          videoUrl,
-          roteiro: video.roteiro || '',
-          legendas,
-          musica, musicVolume,
-          cta,
-          logo, logoPosition,
-          watermarkText,
-          trimStart, trimEnd,
-          subtitleFontSize, subtitleFontColor
-        });
-
-        await Video.findByIdAndUpdate(video._id, {
-          videoEditadoUrl: editadoUrl,
-          posProducaoStatus: 'ready',
-          'posProducaoConfig.aplicadoEm': new Date()
-        });
-
-        logger.info(`[POS-PRODUCAO] ✅ Vídeo ${video._id} editado: ${editadoUrl}`);
-      } catch (err) {
-        logger.error(`[POS-PRODUCAO] ❌ Erro vídeo ${video._id}: ${err.message}`);
-        logger.error(`[POS-PRODUCAO] Stack: ${err.stack}`);
-        await Video.findByIdAndUpdate(video._id, {
-          posProducaoStatus: 'failed',
-          posProducaoError: err.message
-        }).catch(() => {});
-      }
-    })();
 
   } catch (error) {
     logger.error('[VIDEO ROUTES] Erro ao iniciar pós-produção:', error.message);
@@ -690,7 +673,7 @@ router.post('/:id/retry', async (req, res) => {
       duracao: video.duration || 30,
       publicar: false,
       targeting: {},
-      modo: video.provider === 'veo-3.1' ? 'veo' : video.provider === 'runway' ? 'kling' : 'veo',
+      modo: video.modo || 'veo',  // 🧪 Respeitar modo original (teste = econômico)
       tone: 'educativo',
       platform: video.platform || 'instagram',
       contentType: video.contentType || 'instagram',
@@ -813,8 +796,15 @@ router.post('/:id/publish-meta', async (req, res) => {
     // Importar serviço de publicação Meta
     const { publicarVideo } = await import('../services/meta/videoPublisher.js');
     
-    // Baixar vídeo temporariamente
-    const response = await fetch(videoUrl);
+    // Baixar vídeo temporariamente (timeout de 5 minutos para vídeos grandes)
+    const abortController = new AbortController();
+    const fetchTimeout = setTimeout(() => abortController.abort(), 5 * 60 * 1000);
+    let response;
+    try {
+      response = await fetch(videoUrl, { signal: abortController.signal });
+    } finally {
+      clearTimeout(fetchTimeout);
+    }
     if (!response.ok) {
       throw new Error('Falha ao baixar vídeo');
     }

@@ -21,6 +21,14 @@ const MAKE_TIMEOUT_MS = 15000; // 15s
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 2000; // 2s inicial
 
+// Erro especial para fila cheia — permite tratamento diferenciado no caller
+export class MakeQueueFullError extends Error {
+  constructor() {
+    super('Make queue full');
+    this.name = 'MakeQueueFullError';
+  }
+}
+
 // Hashtags por especialidade
 function gerarHashtags(tema) {
   const base = '#fonoinova #fonoaudiologia #desenvolvimentoinfantil #terapiainfantil #criançassaudaveis #anapolisgo';
@@ -52,6 +60,19 @@ export function isMakeConfigured() {
  * @param {number} attempt - Tentativa atual (para retry)
  * @returns {Promise<object>} Resposta do Make
  */
+// Valida se uma URL de imagem é acessível antes de enviar ao Make
+async function validateMediaUrl(url) {
+  if (!url) return null;
+  // Rejeita URLs locais, relativas ou claramente inválidas
+  if (!url.startsWith('http')) return null;
+  try {
+    const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
+    return res.ok ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function sendPostToMake(post, attempt = 1) {
   if (!MAKE_WEBHOOK_URL) {
     throw new Error('MAKE_WEBHOOK_URL não configurado no .env');
@@ -60,6 +81,9 @@ export async function sendPostToMake(post, attempt = 1) {
   // ── Legendas por canal ───────────────────────────────────────────────
   const textoBase = post.content || '';
   const ctaUrl    = post.ctaUrl || 'https://www.clinicafonoinova.com.br/';
+
+  // Valida imagem antes de enviar — URL inválida derruba o cenário no Make
+  const safeMediaUrl = await validateMediaUrl(post.mediaUrlBranded || post.mediaUrl);
 
   // Instagram: texto curto (até 150 chars) + hashtags + link na bio
   const textoShort = textoBase.split('\n').filter(Boolean).slice(0, 2).join('\n');
@@ -82,8 +106,8 @@ export async function sendPostToMake(post, attempt = 1) {
     postId: post._id.toString(),
     title: post.title || '',
     content: post.content || '',          // GMB summary (até 1500 chars)
-    mediaUrl: post.mediaUrl || null,       // imagem branded (para Insta/Face)
-    mediaUrlBranded: post.mediaUrlBranded || post.mediaUrl || null, // alias
+    mediaUrl: safeMediaUrl,                // validado — null se inacessível
+    mediaUrlBranded: safeMediaUrl,         // alias
     ctaUrl,
     ctaType: post.ctaType || 'LEARN_MORE',
     especialidade: post.theme || null,
@@ -114,14 +138,12 @@ export async function sendPostToMake(post, attempt = 1) {
       const text = await response.text().catch(() => response.statusText);
       const isQueueFull = text.toLowerCase().includes('queue') && text.toLowerCase().includes('full');
       
-      if (isQueueFull && attempt < MAX_RETRIES) {
-        const delay = RETRY_DELAY_MS * Math.pow(2, attempt - 1); // Backoff exponencial: 2s, 4s, 8s
-        console.log(`⚠️ [Make] Fila cheia, tentando novamente em ${delay/1000}s... (${attempt}/${MAX_RETRIES})`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        return sendPostToMake(post, attempt + 1);
+      if (isQueueFull) {
+        // Não retenta — joga erro especial para o caller deferir o post
+        throw new MakeQueueFullError();
       }
-      
-      // Última tentativa ou outro erro 400
+
+      // Outro erro 400
       throw new Error(`Make retornou HTTP ${response.status}: ${text.substring(0, 200)}`);
     }
 

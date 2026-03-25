@@ -63,7 +63,59 @@ export const getDashboard = async (req, res) => {
 
     const producaoTotal = producaoParticular + producaoPacotes + producaoConvenio;
     const caixaTotal = camadas.garantido?.valor || 0;
-    
+
+    // A Receber do mês: sessões feitas NESTE mês que ainda não foram pagas
+    // Query direta por sessão — evita histórico de outros meses
+    const inicioStr = inicioMes.format('YYYY-MM-DD');
+    const fimStr = fimMes.format('YYYY-MM-DD');
+
+    const [sessoesConvenioNaoPagas, sessoesParticularNaoPagas] = await Promise.all([
+      // Convênio: completadas no mês, ainda não recebidas do plano
+      Session.find({
+        date: { $gte: inicioStr, $lte: fimStr },
+        status: 'completed',
+        paymentMethod: 'convenio',
+        $or: [{ isPaid: false }, { isPaid: { $exists: false } }]
+      }).populate('package', 'insuranceGrossAmount').lean(),
+
+      // Particular: completadas no mês, ainda não pagas pelo paciente
+      Session.find({
+        date: { $gte: inicioStr, $lte: fimStr },
+        status: 'completed',
+        paymentMethod: { $ne: 'convenio' },
+        $or: [{ isPaid: false }, { isPaid: { $exists: false } }]
+      }).lean()
+    ]);
+
+    const aReceberConvenio = sessoesConvenioNaoPagas.reduce(
+      (sum, s) => sum + (s.sessionValue || s.package?.insuranceGrossAmount || 0), 0
+    );
+    const aReceberParticular = sessoesParticularNaoPagas.reduce(
+      (sum, s) => sum + (s.sessionValue || 0), 0
+    );
+    const aReceberTotal = aReceberConvenio + aReceberParticular;
+
+    // A Receber HISTÓRICO (todos os meses, acumulado) — card informativo separado
+    const Payment = (await import('../models/Payment.js')).default;
+    const [convenioHistoricoResult, sessoesHistoricoResult] = await Promise.all([
+      // Convênio avulso: guias faturadas ainda não recebidas (todos os meses)
+      Payment.aggregate([
+        { $match: { billingType: 'convenio', 'insurance.status': 'billed' } },
+        { $group: { _id: null, total: { $sum: '$insurance.grossAmount' } } }
+      ]),
+      // Convênio pacote + particular: sessões de todos os meses não pagas
+      Session.find({
+        status: 'completed',
+        $or: [{ isPaid: false }, { isPaid: { $exists: false } }]
+      }).populate('package', 'insuranceGrossAmount').lean()
+    ]);
+
+    const aReceberHistoricoConvenioAvulso = convenioHistoricoResult[0]?.total || 0;
+    const aReceberHistoricoSessoes = sessoesHistoricoResult.reduce(
+      (sum, s) => sum + (s.sessionValue || s.package?.insuranceGrossAmount || 0), 0
+    );
+    const aReceberHistoricoTotal = aReceberHistoricoConvenioAvulso + aReceberHistoricoSessoes;
+
     // Constrói resumo unificado
     const resumo = {
       producao: producaoTotal,
@@ -73,6 +125,16 @@ export const getDashboard = async (req, res) => {
         convenio: producaoConvenio
       },
       caixa: caixaTotal,
+      aReceber: {
+        total: aReceberTotal,
+        convenio: aReceberConvenio,
+        particular: aReceberParticular
+      },
+      aReceberHistorico: {
+        total: aReceberHistoricoTotal,
+        convenioAvulso: aReceberHistoricoConvenioAvulso,
+        sessoes: aReceberHistoricoSessoes
+      },
       creditoPacotes: camadas.creditoPacotes?.valor || 0,
       convenioAgendado: camadas.convenioAgendado?.valor || 0,
       agendadoConfirmado: camadas.agendadoConfirmado?.valorBruto || 0,

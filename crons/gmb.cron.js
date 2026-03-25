@@ -14,6 +14,7 @@ import mongoose from 'mongoose';
 import cron from 'node-cron';
 import * as gmbService from '../services/gmbService.js';
 import * as makeService from '../services/makeService.js';
+import { MakeQueueFullError } from '../services/makeService.js';
 import GmbPost from '../models/GmbPost.js';
 
 // =====================================================================
@@ -156,7 +157,17 @@ async function taskSendToMake() {
 
     let sent = 0, failed = 0;
 
+    let queueFullDetected = false;
+
     for (const post of posts) {
+        // Se a fila já foi detectada como cheia nesta rodada, skip imediato
+        if (queueFullDetected) {
+            logger.warn(`Pulando "${post.title?.substring(0, 40)}" — fila Make cheia`);
+            await post.markQueueRetry(60 * 60 * 1000); // retry em 1h
+            failed++;
+            continue;
+        }
+
         try {
             await makeService.sendPostToMake(post);
             post.status = 'published';
@@ -166,9 +177,17 @@ async function taskSendToMake() {
             sent++;
             logger.success(`Post enviado ao Make: ${post.title?.substring(0, 40)}`);
         } catch (error) {
-            await post.markFailed(error.message);
-            failed++;
-            logger.error(`Falha ao enviar post ao Make`, error, { postId: post._id });
+            if (error instanceof MakeQueueFullError) {
+                // Fila cheia: adia 1h e para de tentar os outros desta rodada
+                queueFullDetected = true;
+                await post.markQueueRetry(60 * 60 * 1000);
+                failed++;
+                logger.warn(`Fila Make cheia — "${post.title?.substring(0, 40)}" adiado 1h`);
+            } else {
+                await post.markFailed(error.message);
+                failed++;
+                logger.error(`Falha ao enviar post ao Make`, error, { postId: post._id });
+            }
         }
 
         // Pausa entre envios
