@@ -1,5 +1,6 @@
 // services/billing/insuranceBilling.js
 import mongoose from 'mongoose';
+import moment from 'moment-timezone';
 import guideService from './guideService.js';
 import Session from '../../models/Session.js';
 import Appointment from '../../models/Appointment.js';
@@ -355,7 +356,9 @@ class InsuranceBillingService {
         await session.startTransaction();
       }
 
-      const receiptDate = receivedDate || new Date();
+      const receiptDate = receivedDate
+          ? moment(receivedDate).tz('America/Sao_Paulo').format('YYYY-MM-DD')
+          : moment().tz('America/Sao_Paulo').format('YYYY-MM-DD');
 
       // Atualizar Payment
       await Payment.findOneAndUpdate(

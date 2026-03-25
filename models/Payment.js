@@ -134,9 +134,9 @@ const paymentSchema = new mongoose.Schema({
             default: 'pending_billing'
         },
         grossAmount: { type: Number },        // Valor "cheio" da tabela do convênio
-        billedAt: { type: Date },             // Quando foi faturado
-        receivedAt: { type: Date },           // Quando recebeu
-        expectedReceiptDate: { type: Date },  // Previsão (mês seguinte)
+        billedAt: { type: Date },              // Quando foi faturado (Date)
+        receivedAt: { type: String },          // Quando recebeu (YYYY-MM-DD string)
+        expectedReceiptDate: { type: String }, // Previsão (YYYY-MM-DD string)
         receivedAmount: { type: Number },     // Valor efetivamente recebido
         glosaReason: { type: String }         // Motivo se glosado
     },

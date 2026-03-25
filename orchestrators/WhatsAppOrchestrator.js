@@ -189,13 +189,13 @@ export default class WhatsAppOrchestrator {
       }
 
       // Agradecimento — responde e permanece no estado atual
-      if (flags.saysThanks && ![STATES.HANDOFF, STATES.BOOKED].includes(currentState)) {
+      if (flags.saysThanks && ![STATES.HANDOFF, STATES.BOOKED, STATES.REJECTED].includes(currentState)) {
         this.logger.info('V8_THANKS', { leadId, state: currentState });
         return this._reply('De nada! 😊 Qualquer coisa é só chamar 💚', { skipEnrichment: true });
       }
 
       // Despedida — responde e permanece (lead pode voltar)
-      if (flags.saysBye && ![STATES.HANDOFF, STATES.BOOKED].includes(currentState)) {
+      if (flags.saysBye && ![STATES.HANDOFF, STATES.BOOKED, STATES.REJECTED].includes(currentState)) {
         this.logger.info('V8_BYE', { leadId, state: currentState });
         return this._reply('Até logo! 😊 Quando precisar, estarei por aqui 💚', { skipEnrichment: true });
       }
@@ -226,7 +226,7 @@ export default class WhatsAppOrchestrator {
           (flags.mentionsAdult && flags.ageGroup === 'adulto')
         );
 
-      if (isAdultPatient && ![STATES.HANDOFF, STATES.BOOKED].includes(currentState)) {
+      if (isAdultPatient && ![STATES.HANDOFF, STATES.BOOKED, STATES.REJECTED].includes(currentState)) {
         this.logger.info('V8_ADULT_PATIENT', { leadId });
 
         // Exceção: Neuropsicologia atende todas as idades (incluindo adultos)
@@ -257,7 +257,7 @@ export default class WhatsAppOrchestrator {
 
       // ══ 1. DETECÇÃO DE INTERRUPÇÃO GLOBAL ══
       // Verifica se o lead fez uma pergunta que precisa ser respondida ANTES de continuar
-      const isInFlow = ![STATES.IDLE, STATES.GREETING, STATES.BOOKED, STATES.HANDOFF].includes(currentState);
+      const isInFlow = ![STATES.IDLE, STATES.GREETING, STATES.BOOKED, STATES.HANDOFF, STATES.REJECTED].includes(currentState);
 
       // 🔥 CORREÇÃO: Interrupção funciona em QUALQUER estado (incluindo IDLE)
       // exceto quando já está interrompido
@@ -577,11 +577,28 @@ export default class WhatsAppOrchestrator {
             return await this._replyWithAI(ctx, instruction);
           }
 
-          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { therapy: therapy?.id || therapy });
+          // ── NOVO: Sistema de persona (self | child | unknown) ─────────────
+          const persona = this.detectPersona(text);
+          const isAdult = persona === 'self';
+          const personaHint = this._getPersonaHint(persona);
+          
+          this.logger.info('PERSONA_DETECTED', { 
+            leadId, 
+            persona, 
+            text: text.substring(0, 80),
+            source: 'IDLE_therapy_detected'
+          });
+          
+          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { 
+            therapy: therapy?.id || therapy, 
+            persona,
+            isAdult 
+          });
+          
           if (isAvailQuestion) {
-            return await this._replyWithAI(ctx, `Lead perguntou se a clínica atende ${therapyName}. Confirme positivamente SEM repetir saudações iniciais (Olá/Oi/Que bom que entrou em contato) e pergunte qual é a principal queixa ou dificuldade.`);
+            return await this._replyWithAI(ctx, `Lead perguntou se a clínica atende ${therapyName}. Confirme positivamente SEM repetir saudações iniciais (Olá/Oi/Que bom que entrou em contato) e pergunte qual é a principal queixa ou dificuldade.\n${personaHint}`);
           }
-          return await this._replyWithAI(ctx, `Lead demonstrou interesse em ${therapyName}. Acolha e pergunte sobre a situação — o que está preocupando.`);
+          return await this._replyWithAI(ctx, `Lead demonstrou interesse em ${therapyName}. Acolha e pergunte sobre a situação — o que está preocupando.\n${personaHint}`);
         }
 
         this.logger.info('V8_NO_THERAPY_ON_IDLE', { leadId, text: text.substring(0, 60) });
@@ -841,6 +858,16 @@ export default class WhatsAppOrchestrator {
         }
 
         if (text.length > 5) {
+          // Detecta intenção pura (sem queixa real descrita)
+          const isPureIntent = /\b(quero\s+(marcar|agendar|ser\s+avaliad[oa]|uma?\s+consulta)|gostaria\s+de\s+(marcar|agendar|ser\s+avaliad[oa])|preciso\s+(de\s+)?(avalia[cç][aã]o|consulta)|tem\s+hor[aá]rio|valores?)\b/i.test(text.trim());
+          const hasRealComplaint = /\b(n[aã]o\s+(fala|anda|come|dorme|consegue|para|responde)|dificuldade|atraso|troca\s+(letras|sons|palavras)|gagueira|voz\s+rouc|rouquid[aã]o|disfonia|dor|engolir|mastigar|degluti|ansios|agitad|agressiv|comportamento|aprend|escola\s+(pediu|disse|falou)|m[eé]dic[ao]\s+(pediu|indicou)|autismo|tdah|tea)\b/i.test(text);
+
+          if (isPureIntent && !hasRealComplaint) {
+            this.logger.info('INTENT_BLOCKED_NO_COMPLAINT', { leadId, text: text.substring(0, 100), isPureIntent: true, hasRealComplaint: false });
+            const personaHint = stateData.persona ? this._getPersonaHint(stateData.persona) : '';
+            return await this._replyWithAI(ctx, `Lead expressou intenção de ser avaliado mas não descreveu a queixa real. Acolha brevemente e pergunte especificamente o que está incomodando ou preocupando, sem repetir saudações iniciais.\n${personaHint}`);
+          }
+
           const complaint = text.substring(0, 200);
           const age = extractAgeFromText(text);
           const newData = { ...stateData, complaint, ...(age ? { age } : {}) };
@@ -856,7 +883,8 @@ export default class WhatsAppOrchestrator {
           this.logger.info('V8_COMPLAINT_NO_AGE', { leadId, complaint: complaint.substring(0, 60) });
           await jumpToState(leadId, STATES.COLLECT_BIRTH, newData);
           await this._saveComplaint(leadId, complaint);
-          return await this._replyWithAI(ctx, 'Lead descreveu a queixa. Confirme que entendeu de forma acolhedora SEM repetir saudações iniciais (Olá/Oi/Que bom que entrou em contato) e peça a data de nascimento do paciente (dd/mm/aaaa).');
+          const adultHintBirth = stateData.isAdult ? ' Atenção: paciente adulto — não mencione criança.' : '';
+          return await this._replyWithAI(ctx, `Lead descreveu a queixa. Confirme que entendeu de forma acolhedora SEM repetir saudações iniciais (Olá/Oi/Que bom que entrou em contato) e peça a data de nascimento do paciente (dd/mm/aaaa).${adultHintBirth}`);
         }
 
         const { handoff, retryCount } = await incrementRetry(leadId);
@@ -886,11 +914,67 @@ export default class WhatsAppOrchestrator {
 
         if (age || birth) {
           this.logger.info('V8_BIRTH_COLLECTED', { leadId, age, birth });
-          const ageNum = resolveAgeNumber(age);
-          const newData = { ...stateData, age: ageNum || null, birthDate: birth || null };
+          let ageNum = resolveAgeNumber(age);
+          
+          // ── FIX 3: Calcular idade real a partir da data de nascimento ─────
+          if (birth && !ageNum) {
+            ageNum = this._calculateAgeFromBirth(birth);
+            this.logger.info('V8_AGE_CALCULATED_FROM_BIRTH', { leadId, birth, ageNum });
+          }
+          
+          // ── FIX 3: Detectar adulto a partir da idade ──────────────────────
+          const isAdult = ageNum >= 18;
+          
+          // Atualiza persona se necessário
+          let persona = stateData.persona || 'unknown';
+          if (isAdult && persona === 'unknown') {
+            persona = 'self';
+            this.logger.info('PERSONA_DETECTED', { leadId, persona: 'self', source: 'birth_calculation', age: ageNum });
+          } else if (!isAdult && persona === 'unknown') {
+            persona = 'child';
+            this.logger.info('PERSONA_DETECTED', { leadId, persona: 'child', source: 'birth_calculation', age: ageNum });
+          }
+          
+          if (isAdult && !stateData.isAdult) {
+            this.logger.info('ADULT_DETECTED', { leadId, age: ageNum, source: 'birth_calculation' });
+          }
+          const newData = { ...stateData, age: ageNum || null, birthDate: birth || null, isAdult, persona };
+          
+          // ── FIX 3: Gate de negócio — adulto + voz/canto não atendido ──────
+          const complaint = stateData?.complaint || '';
+          const isVoiceCase = /\b(voz|rouca|rouquid|cantar|canto|cantoria|disfonia|afonia|perda\s+de\s+voz|voz\s+fraca)\b/i.test(complaint);
+          
+          if (isAdult && isVoiceCase) {
+            this.logger.info('ADULT_VOICE_REJECTED', { leadId, age: ageNum, complaint: complaint.substring(0, 100), reason: 'adult_voice_not_attended' });
+            await jumpToState(leadId, STATES.REJECTED, { ...newData, rejected: true, reason: 'adult_voice_not_attended' });
+            return this._reply(
+              `Entendi 😊\n\n` +
+              `No momento, aqui na clínica nós atendemos principalmente crianças e desenvolvimento infantil 💚\n\n` +
+              `Para casos de voz/canto em adultos, o ideal é um fonoaudiólogo especializado em voz adulta.\n\n` +
+              `Se quiser, posso te orientar melhor sobre outras especialidades que atendemos! 😊`
+            );
+          }
+          
+          // ── FIX 3: Verificar se temos uma queixa real (não só intenção) ───
+          const isPureIntentOnly = /\b(quero\s+(marcar|agendar|ser\s+avaliad[oa]|uma?\s+consulta)|gostaria\s+de\s+(marcar|agendar|ser\s+avaliad[oa])|preciso\s+(de\s+)?(avalia[cç][aã]o|consulta)|tem\s+hor[aá]rio|valores?)\b/i.test(complaint);
+          const hasRealComplaint = /\b(n[aã]o\s+(fala|anda|come|dorme|consegue|para|responde)|dificuldade|atraso|troca\s+(letras|sons|palavras)|gagueira|voz\s+rouc|rouquid[aã]o|disfonia|dor|engolir|mastigar|degluti|ansios|agitad|agressiv|comportamento|aprend|escola\s+(pediu|disse|falou)|m[eé]dic[ao]\s+(pediu|indicou)|autismo|tdah|tea|troc[oa]\s+letras|troc[oa]\s+sons|sopro|lispa|lateraliza|lateralizou|mastiga\s+com\s+a\s+boca\s+aberta|respira\s+pel[oa]\s+boca|denti[cç][aã]o|morder|chupeta|dedo)\b/i.test(complaint);
+          
+          if (isPureIntentOnly && !hasRealComplaint) {
+            this.logger.info('V8_BIRTH_BUT_NO_REAL_COMPLAINT', { leadId, complaint: complaint.substring(0, 60) });
+            // Volta para COLLECT_COMPLAINT para pegar a queixa real
+            await jumpToState(leadId, STATES.COLLECT_COMPLAINT, newData);
+            const personaHint = this._getPersonaHint(persona);
+            return this._reply(
+              `Perfeito! Anotado${ageNum ? `, *${ageNum} anos*` : ''} 📝\n\n` +
+              `Agora, só pra gente te orientar certinho: qual é a principal dificuldade ou preocupação? ` +
+              `Por exemplo: atraso na fala, troca letras, dificuldade para engolir, etc?\n${personaHint}`
+            );
+          }
+          
           await jumpToState(leadId, STATES.COLLECT_PERIOD, newData);
           await this._saveAge(leadId, ageNum, birth);
-          return await this._replyWithAI(ctx, `Lead informou idade/nascimento${ageNum ? ` (${formatAge(age)})` : ''}. Confirme o dado e pergunte qual período funciona melhor: manhã ou tarde.`);
+          const personaHintPeriod = this._getPersonaHint(persona);
+          return await this._replyWithAI(ctx, `Lead informou idade/nascimento${ageNum ? ` (${ageNum} anos)` : ''}. Confirme o dado e pergunte qual período funciona melhor: manhã ou tarde.\n${personaHintPeriod}`);
         }
 
         const { handoff, retryCount } = await incrementRetry(leadId);
@@ -1527,6 +1611,85 @@ Me conta um pouco sobre o que você precisa! 😊`;
     ];
     
     return availabilityPatterns.some(p => p.test(t));
+  }
+
+  // Helper para calcular idade a partir da data de nascimento (YYYY-MM-DD)
+  _calculateAgeFromBirth(birthDate) {
+    if (!birthDate) return null;
+    const today = new Date();
+    const birth = new Date(birthDate);
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+    return age;
+  }
+
+  // ═══════════════════════════════════════════
+  // PERSONA DETECTOR: classifica quem é o atendimento
+  // ═══════════════════════════════════════════
+  // Retorna: 'child' | 'self' | 'unknown'
+  // Prioridade: CRIANÇA sempre ganha (mesmo se mencionar adulto também)
+  detectPersona(text) {
+    if (!text) return 'unknown';
+    const lowerText = text.toLowerCase();
+    
+    // ── 1. Detectar menção a criança (AMPLIADO) ────────────────────────
+    // Inclui: filho, filha, neto, neta, sobrinho, afilhado, aluno, etc
+    const childPatterns = [
+      /\b(filho|filha|filhos|filhas)\b/,
+      /\b(crian[çc]a|crian[çc]as|beb[eê]|beb[eê]s|nen[eê]m|nen[eê]ms)\b/,
+      /\b(neto|neta|netos|netas)\b/,
+      /\b(sobrinho|sobrinha|sobrinhos|sobrinhas)\b/,
+      /\b(afilhado|afilhada|afilhados|afilhadas)\b/,
+      /\b(aluno|aluna|alunos|alunas)\b/,
+      /\b(menor|menores|menorzinho|menorzinha)\b/,
+      /\b(pequeno|pequena|pequenos|pequenas)\b/,
+      /\b(garoto|garota|garotos|garotas|menino|menina|meninos|meninas)\b/,
+      /\b(beb[êe]|rec[eé]m-nascido|neonato)\b/,
+      /\b(tem\s+\d+\s+(anos?|meses?|dias?|meses))\b/,  // "tem 5 anos"
+      /\b(faz\s+\d+\s+anos?)\b/,  // "faz 3 anos"
+    ];
+    
+    const mentionsChild = childPatterns.some(pattern => pattern.test(lowerText));
+    
+    // ── 2. Detectar menção a si mesmo (adulto) ──────────────────────────
+    const selfPatterns = [
+      /\b(para\s+mim|pra\s+mim|para\s+eu|pra\s+eu)\b/,
+      /\b([ée]\s+comigo|sou\s+eu|sou\s+adulto|sou\s+adulta)\b/,
+      /\b(eu\s+(que\s+)?(preciso|quero|busco|procuro|tenho))\b/,
+      /\b(minha\s+(voz|gagueira|fala|dificuldade))\b/,
+      /\b(tenho\s+\d+\s+anos?)\b/,  // "tenho 30 anos"
+    ];
+    
+    const mentionsSelf = selfPatterns.some(pattern => pattern.test(lowerText));
+    
+    // ── 3. Lógica de prioridade ─────────────────────────────────────────
+    // REGRA DE OURO: Criança SEMPRE ganha prioridade
+    // Mesmo se disser "é pra mim e meu neto" → é criança
+    if (mentionsChild) {
+      return 'child';
+    }
+    
+    if (mentionsSelf) {
+      return 'self';
+    }
+    
+    return 'unknown';
+  }
+
+  // Helper para gerar hint baseado na persona
+  _getPersonaHint(persona) {
+    switch (persona) {
+      case 'child':
+        return 'O atendimento é para uma CRIANÇA. Use linguagem acolhedora para responsáveis e considere desenvolvimento infantil.';
+      case 'self':
+        return 'O atendimento é para um ADULTO. NÃO mencione criança, desenvolvimento infantil ou termos pediátricos.';
+      case 'unknown':
+      default:
+        return 'Não está claro se é para adulto ou criança. Acolha e pergunte de forma natural quem é o paciente.';
+    }
   }
 
   // Helper para converter ID de terapia em nome amigável
