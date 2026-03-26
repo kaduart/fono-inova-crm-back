@@ -360,6 +360,12 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                         validateBeforeSave: false
                     });
 
+                    // 🔥 CALCULA SE É PRIMEIRO AGENDAMENTO DO PACIENTE
+                    const existingAppointments = await Appointment.countDocuments({ 
+                        patient: newSession.patient 
+                    }).session(mongoSession);
+                    const isFirstAppointment = existingAppointments === 0;
+
                     // 🔹 Criar appointment vinculado
                     const newAppointment = new Appointment({
                         patient: newSession.patient,
@@ -375,7 +381,9 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                         clinicalStatus: 'pending',
                         paymentStatus: newSession.paymentStatus,
                         visualFlag: newSession.visualFlag,
-                        notes: notes || ''
+                        notes: notes || '',
+                        // 🔥 NOVO: Primeiro agendamento do paciente?
+                        isFirstAppointment: isFirstAppointment
                     });
 
                     await newAppointment.save({
@@ -590,6 +598,14 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 }
             }
 
+            // 🔥 CALCULA SE É PRIMEIRO AGENDAMENTO DO PACIENTE
+            // (antes de criar, conta quantos ele já tem)
+            const existingAppointments = await Appointment.countDocuments({ 
+                patient: safeId(patientId) 
+            });
+            const isFirstAppointment = existingAppointments === 0;
+            console.log(`[POST Appointment] isFirstAppointment para paciente ${patientId}:`, isFirstAppointment);
+
             const appointment = await Appointment.create({
                 patient: safeId(patientId),
                 doctor: safeId(doctorId),
@@ -608,6 +624,8 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 // 🆕 NOVO: Atribuição de lead para tracking de receita
                 lead: effectiveLeadId || null,
                 leadSnapshot: leadSnapshotData || undefined,
+                // 🔥 NOVO: Primeiro agendamento do paciente?
+                isFirstAppointment: isFirstAppointment,
                 metadata: {
                     origin: {
                         source: source || 'outro',

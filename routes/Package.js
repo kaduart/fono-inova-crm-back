@@ -1,5 +1,6 @@
 import express from 'express';
 import { generateReport, getPackageById, packageOperations, updateStatus } from '../controllers/therapyPackageController.js';
+import { receiveSessionPayment, listPendingPayments } from '../controllers/packageSessionController.js';
 import { auth } from '../middleware/auth.js';
 import validateId from '../middleware/validateId.js';
 import { validatePackageInput } from '../middleware/validatePackage.js';
@@ -26,6 +27,12 @@ router.post('/:id/add-session', auth, validateId, packageOperations.addSessionTo
 // Rotas de Pagamento
 router.post('/:id/payments', auth, packageOperations.registerPayment);
 router.patch('/:id/status', auth, updateStatus);
+
+// 💰 Receber pagamento de sessão específica (modo per-session - paga no ato)
+router.post('/sessions/:sessionId/pay', auth, receiveSessionPayment);
+
+// 📋 Listar sessões pendentes de pagamento
+router.get('/sessions/pending-payments', auth, listPendingPayments);
 
 // Relatórios
 router.get('/report/generate', auth, generateReport);

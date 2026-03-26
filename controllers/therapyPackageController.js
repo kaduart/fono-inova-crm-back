@@ -8,6 +8,7 @@ import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
 import { distributePayments } from '../services/distributePayments.js';
+import { getHolidaysWithNames } from '../config/feriadosBR-dynamic.js';
 
 import { syncEvent } from '../services/syncService.js';
 import { runJourneyFollowups } from '../services/journeyFollowupEngine.js';
@@ -83,6 +84,59 @@ const validateInputs = {
     paymentMethod: (method) => ['dinheiro', 'pix', 'cartão'].includes(method),
     paymentType: (type) => ['full', 'per-session', 'partial'].includes(type)
 };
+
+/**
+ * 🗓️ Ajusta data se cair em feriado - pula para próxima semana
+ * @param {string} dateStr - Data no formato YYYY-MM-DD
+ * @param {string} timeStr - Hora no formato HH:mm
+ * @returns {string} - Data ajustada (YYYY-MM-DD)
+ */
+function adjustDateIfHoliday(dateStr, timeStr) {
+    const year = parseInt(dateStr.split('-')[0], 10);
+    const holidays = getHolidaysWithNames(year);
+    const holidayDates = new Set(holidays.map(h => h.date));
+    
+    let currentDate = moment(dateStr, 'YYYY-MM-DD');
+    let currentDateStr = dateStr;
+    let iterations = 0;
+    const maxIterations = 52; // Máximo 52 semanas (1 ano)
+    
+    while (holidayDates.has(currentDateStr) && iterations < maxIterations) {
+        // Verifica se é feriado parcial (Quarta-feira de Cinzas)
+        const holiday = holidays.find(h => h.date === currentDateStr);
+        const isAshWednesday = holiday?.name === 'Quarta-feira de Cinzas';
+        
+        if (isAshWednesday) {
+            // Quarta-feira de Cinzas: bloqueia apenas manhã (antes das 12h)
+            const hour = parseInt(timeStr?.split(':')[0] || '0', 10);
+            if (hour >= 12) {
+                // Tarde está liberada, não precisa pular
+                break;
+            }
+            // Manhã bloqueada, vai para próxima semana
+        }
+        
+        // Pula para próxima semana (mesmo dia da semana)
+        currentDate.add(7, 'days');
+        currentDateStr = currentDate.format('YYYY-MM-DD');
+        
+        // Atualiza feriados se mudou de ano
+        const newYear = currentDate.year();
+        if (newYear !== year) {
+            const newHolidays = getHolidaysWithNames(newYear);
+            holidayDates.clear();
+            newHolidays.forEach(h => holidayDates.add(h.date));
+        }
+        
+        iterations++;
+    }
+    
+    if (iterations >= maxIterations) {
+        console.warn(`⚠️ Não foi possível encontrar data válida após ${maxIterations} semanas para ${dateStr}`);
+    }
+    
+    return currentDateStr;
+}
 
 // Operações CRUD Completas
 export const packageOperations = {
@@ -360,8 +414,15 @@ export const packageOperations = {
             for (const slot of selectedSlots) {
                 if (!slot.date || !slot.time) continue;
 
+                // 🗓️ Ajusta data se cair em feriado (pula para próxima semana)
+                const adjustedDate = adjustDateIfHoliday(slot.date, slot.time);
+                
+                if (adjustedDate !== slot.date) {
+                    console.log(`🗓️ Feriado detectado! Ajustando ${slot.date} → ${adjustedDate} (${slot.time})`);
+                }
+
                 sessionsToCreate.push({
-                    date: slot.date,
+                    date: adjustedDate,
                     time: slot.time,
                     patient: patientId,
                     doctor: doctorId,
@@ -403,6 +464,13 @@ export const packageOperations = {
 
             const insertedSessions = await Session.insertMany(sessionsToCreate, { session: mongoSession });
 
+            // 🔥 CALCULA SE É PRIMEIRO AGENDAMENTO DO PACIENTE (para todos do pacote)
+            const existingAppointments = await Appointment.countDocuments({ 
+                patient: patientId 
+            }).session(mongoSession);
+            const isFirstAppointment = existingAppointments === 0;
+            console.log(`[CREATE PACKAGE] isFirstAppointment para paciente ${patientId}:`, isFirstAppointment);
+
             for (const s of insertedSessions) {
                 appointmentsToCreate.push({
                     patient: patientId,
@@ -417,7 +485,9 @@ export const packageOperations = {
                     operationalStatus: 'scheduled',
                     clinicalStatus: 'pending',
                     paymentStatus: 'pending',
-                    sessionValue: numericSessionValue  // ⭐ VALOR PARA PROJEÇÃO FINANCEIRA
+                    sessionValue: numericSessionValue,  // ⭐ VALOR PARA PROJEÇÃO FINANCEIRA
+                    // 🔥 NOVO: Primeiro agendamento do paciente?
+                    isFirstAppointment: isFirstAppointment
                 });
             }
 
@@ -447,6 +517,16 @@ export const packageOperations = {
                 insertedAppointments.map(a => [`${a.date}-${a.time}-${a.patient}-${a.doctor}`, a._id])
             );
             console.log('Sessions:', insertedSessions.length, 'Appointments:', insertedAppointments.length);
+            
+            // 🗓️ Log de ajustes por feriado
+            const adjustedDates = sessionsToCreate.filter((s, i) => s.date !== selectedSlots[i]?.date);
+            if (adjustedDates.length > 0) {
+                console.log(`🗓️ ${adjustedDates.length} sessão(ões) ajustada(s) por feriado:`);
+                adjustedDates.forEach(s => {
+                    const original = selectedSlots.find(sl => sl.time === s.time);
+                    console.log(`   ${original?.date} → ${s.date} (${s.time})`);
+                });
+            }
 
 
             await Session.bulkWrite(
@@ -476,28 +556,35 @@ export const packageOperations = {
             let amountPaid = 0;
             const paymentDocs = [];
 
-            for (const p of payments) {
-                const value = Number(p.amount) || 0;
-                if (value <= 0) continue;
+            // 🔥 SE for per-session, ignora pagamentos antecipados (paga no dia)
+            if (paymentType === 'per-session') {
+                console.log(`[CREATE PACKAGE] Modo per-session: ignorando ${payments.length} pagamentos do body`);
+                // Não cria nenhum pagamento agora - será criado quando concluir sessão
+            } else {
+                // Cria pagamentos normalmente (full ou partial)
+                for (const p of payments) {
+                    const value = Number(p.amount) || 0;
+                    if (value <= 0) continue;
 
-                const paymentDoc = new Payment({
-                    package: newPackage._id,
-                    patient: patientId,
-                    doctor: doctorId,
-                    amount: value,
-                    paymentMethod: p.method,
-                    paymentDate: p.date || new Date(),
-                    kind: 'package_receipt',
-                    status: 'paid',
-                    serviceType: 'package_session',
-                    notes: p.description || 'Pagamento do pacote'
-                });
+                    const paymentDoc = new Payment({
+                        package: newPackage._id,
+                        patient: patientId,
+                        doctor: doctorId,
+                        amount: value,
+                        paymentMethod: p.method,
+                        paymentDate: p.date || new Date(),
+                        kind: 'package_receipt',
+                        status: 'paid',
+                        serviceType: 'package_session',
+                        notes: p.description || 'Pagamento do pacote'
+                    });
 
-                await paymentDoc.save({ session: mongoSession });
-                paymentDocs.push(paymentDoc);
-                newPackage.payments.push(paymentDoc._id);
-                newPackage.totalPaid += value;
-                amountPaid += value;
+                    await paymentDoc.save({ session: mongoSession });
+                    paymentDocs.push(paymentDoc);
+                    newPackage.payments.push(paymentDoc._id);
+                    newPackage.totalPaid += value;
+                    amountPaid += value;
+                }
             }
 
             // 🧩 Sanitização garantida antes do cálculo
@@ -585,7 +672,8 @@ export const packageOperations = {
                 .lean();
 
             // 💸 Distribui também o valor migrado (pagos convertidos do avulso → pacote)
-            if (migratedTotal > 0) {
+            // 🔥 SÓ distribui se NÃO for pagamento por sessão (per_session)
+            if (migratedTotal > 0 && paymentType !== 'per-session') {
                 try {
                     await distributePayments(reloadedPackage._id, migratedTotal, null, null);
                 } catch (e) {
@@ -595,12 +683,17 @@ export const packageOperations = {
 
 
             // 💰 Distribui pagamentos após garantir consistência total
-            for (const p of paymentDocs) {
-                try {
-                    await distributePayments(reloadedPackage._id, p.amount, null, p._id);
-                } catch (e) {
-                    console.error(`⚠️ Erro ao distribuir pagamento ${p._id}:`, e.message);
+            // 🔥 SÓ distribui se NÃO for pagamento por sessão (per_session)
+            if (paymentType !== 'per-session') {
+                for (const p of paymentDocs) {
+                    try {
+                        await distributePayments(reloadedPackage._id, p.amount, null, p._id);
+                    } catch (e) {
+                        console.error(`⚠️ Erro ao distribuir pagamento ${p._id}:`, e.message);
+                    }
                 }
+            } else {
+                console.log(`[CREATE PACKAGE] Modo 'per-session' - distribuição de pagamentos ignorada`);
             }
 
 
@@ -920,7 +1013,7 @@ export const packageOperations = {
 
                 const getClinicalStatus = (s, confirmed) => {
                     if (s === 'completed') return 'completed';
-                    if (s === 'canceled') return confirmed ? 'missed' : 'canceled';
+                    if (s === 'canceled') return 'missed'; // Sessão cancelada = falta (missed)
                     return 'pending';
                 };
 
@@ -1026,32 +1119,12 @@ export const packageOperations = {
                             sessionDoc.paymentStatus = 'pending_receipt';
                             sessionDoc.visualFlag = 'pending';
                         } else if (!sessionDoc.isPaid) {
-                            // 💰 PARTICULAR: Criar pagamento normal
-                            const paymentDoc = new Payment({
-                                patient: sessionDoc.patient,
-                                doctor: sessionDoc.doctor,
-                                serviceType: 'package_session',
-                                amount: sessionDoc.sessionValue, // ✅ CORRIGIDO
-                                paymentMethod: sessionDoc.paymentMethod,
-                                session: sessionDoc._id,
-                                package: pkgId,
-                                serviceDate: sessionDoc.date,
-                                status: 'paid',
-                                kind: 'session_completion'
-                            });
-                            await paymentDoc.save({ session: mongoSession });
-
-                            sessionDoc.isPaid = true;
-
-                            // Atualizar pacote com o pagamento
-                            await Package.findByIdAndUpdate(
-                                pkgId,
-                                {
-                                    $push: { payments: paymentDoc._id },
-                                    $inc: { totalPaid: sessionDoc.sessionValue }
-                                },
-                                { session: mongoSession }
-                            );
+                            // 💰 PARTICULAR: Sem pagamento prévio → deixa em aberto
+                            // O pagamento será registrado manualmente depois
+                            sessionDoc.isPaid = false;
+                            sessionDoc.paymentStatus = 'pending';
+                            sessionDoc.visualFlag = 'pending';
+                            // ❌ NÃO cria Payment automático
                         }
 
                     }
@@ -1221,6 +1294,9 @@ export const packageOperations = {
                         appointment.sessionType = sessionDoc.sessionType;
                         appointment.serviceType = serviceType;
                         appointment.session = sessionDoc._id;
+                        // 💰 Sincroniza status financeiro com a sessão
+                        appointment.paymentStatus = sessionDoc.paymentStatus;
+                        appointment.visualFlag = sessionDoc.visualFlag;
                         await appointment.save({ session: mongoSession });
                     }
                 } else {
@@ -1235,7 +1311,10 @@ export const packageOperations = {
                         clinicalStatus: getClinicalStatus(sessionDoc.status, sessionDoc.confirmedAbsence),
                         session: sessionDoc._id,
                         serviceType: serviceType,
-                        sessionType: sessionDoc.sessionType
+                        sessionType: sessionDoc.sessionType,
+                        // 💰 Sincroniza status financeiro com a sessão
+                        paymentStatus: sessionDoc.paymentStatus,
+                        visualFlag: sessionDoc.visualFlag
                     });
                     await appointment.save({ session: mongoSession });
                     sessionDoc.appointmentId = appointment._id;
@@ -1661,6 +1740,13 @@ export const packageOperations = {
             // ============================================================
             // CRIAR APPOINTMENT
             // ============================================================
+            
+            // 🔥 CALCULA SE É PRIMEIRO AGENDAMENTO DO PACIENTE
+            const existingAppointments = await Appointment.countDocuments({ 
+                patient: newSession.patient 
+            }).session(mongoSession);
+            const isFirstAppointment = existingAppointments === 0;
+            
             const newAppointment = new Appointment({
                 patient: newSession.patient,
                 doctor: newSession.doctor,
@@ -1674,7 +1760,9 @@ export const packageOperations = {
                 operationalStatus: 'scheduled',
                 clinicalStatus: 'pending',
                 paymentStatus: newSession.paymentStatus,
-                visualFlag: newSession.visualFlag
+                visualFlag: newSession.visualFlag,
+                // 🔥 NOVO: Primeiro agendamento do paciente?
+                isFirstAppointment: isFirstAppointment
             });
 
             await newAppointment.save({
