@@ -72,6 +72,77 @@ const CENARIOS_CRITICOS = [
     deveBypass: false,
     naoDeveConter: ['me conta o que você está buscando'],
     criterio: 'Deve seguir fluxo estruturado (não genérico)'
+  },
+  // ═══════════════════════════════════════════════════════════
+  // CENÁRIOS REAIS DO SITE (Log de Produção 2026-03-25)
+  // ═══════════════════════════════════════════════════════════
+  {
+    id: 7,
+    nome: 'Site - Mensagem completa com explicação',
+    entrada: 'Oi! Vi no site sobre avaliação psicológica e queria entender melhor.\n\nÉ para meu filho(a). Pode me explicar como funciona?',
+    intencaoEsperada: 'EXPLICACAO',
+    deveBypass: true,
+    naoDeveConter: ['me conta o que você está buscando', 'direcionar para a especialidade'],
+    criterio: 'Mensagem real do site - deve detectar EXPLICACAO e ir para IA'
+  },
+  {
+    id: 8,
+    nome: 'Site - Queria entender (sem explicação explícita)',
+    entrada: 'Oi! Vi no site sobre avaliação psicológica e queria entender melhor.',
+    intencaoEsperada: 'FIRST_CONTACT',
+    deveBypass: true,
+    naoDeveConter: ['me conta o que você está buscando', 'direcionar para a especialidade'],
+    criterio: 'Mensagem curta do site - deve ser FIRST_CONTACT com acolhimento'
+  },
+  {
+    id: 9,
+    nome: 'Site - Preciso pra mim mesmo',
+    entrada: 'Preciso pra mim mesmo',
+    intencaoEsperada: 'FIRST_CONTACT',
+    deveBypass: true,
+    naoDeveConter: ['me conta o que você está buscando'],
+    criterio: 'Resposta adulto do site - deve ser FIRST_CONTACT'
+  },
+  {
+    id: 10,
+    nome: 'Site - Confirmação simples',
+    entrada: 'Sim',
+    intencaoEsperada: 'FIRST_CONTACT',
+    deveBypass: true,
+    criterio: 'Resposta curta de confirmação - contexto dependente'
+  },
+  // ═══════════════════════════════════════════════════════════
+  // CENÁRIOS QUE ESTAVAM RETORNANDO NULL (CORREÇÃO CRÍTICA)
+  // ═══════════════════════════════════════════════════════════
+  {
+    id: 11,
+    nome: 'Site - Terapia Ocupacional',
+    entrada: 'Oi! Vi no site sobre terapia ocupacional. Pode me explicar como funciona a avaliação?',
+    intencaoEsperada: 'EXPLICACAO',
+    deveBypass: true,
+    naoDeveConter: ['null', '[SEM RESPOSTA]'],
+    deveConter: ['Terapia Ocupacional', 'nome', 'idade'],
+    criterio: 'NUNCA pode retornar null - fallback obrigatório'
+  },
+  {
+    id: 12,
+    nome: 'Site - Psicologia',
+    entrada: 'Oi! Vi no site sobre avaliação psicológica. É para meu filho. Pode me explicar?',
+    intencaoEsperada: 'EXPLICACAO',
+    deveBypass: true,
+    naoDeveConter: ['null', '[SEM RESPOSTA]'],
+    deveConter: ['Psicologia', 'nome', 'idade'],
+    criterio: 'NUNCA pode retornar null - fallback obrigatório'
+  },
+  {
+    id: 13,
+    nome: 'Site - Fonoaudiologia',
+    entrada: 'Oi! Vi no site sobre fonoaudiologia. É para meu filho. Pode me explicar?',
+    intencaoEsperada: 'EXPLICACAO',
+    deveBypass: true,
+    naoDeveConter: ['null', '[SEM RESPOSTA]'],
+    deveConter: ['Fonoaudiologia', 'nome', 'idade'],
+    criterio: 'NUNCA pode retornar null - fallback obrigatório'
   }
 ];
 
