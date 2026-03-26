@@ -101,4 +101,117 @@ router.post("/analyze-conversations", async (req, res) => {
   }
 });
 
+/**
+ * 🔥 GET /marketing/new-patients-today
+ * Pacientes novos do dia (primeiro agendamento deles)
+ * Para tela de Lançamentos/Marketing
+ */
+router.get("/new-patients-today", async (req, res) => {
+  try {
+    const { date } = req.query; // opcional: ?date=2026-03-26
+    
+    // Data alvo (hoje se não informar)
+    const targetDate = date ? new Date(date) : new Date();
+    targetDate.setHours(0, 0, 0, 0);
+    
+    const nextDay = new Date(targetDate);
+    nextDay.setDate(nextDay.getDate() + 1);
+
+    const Appointment = (await import("../models/Appointment.js")).default;
+    const Patient = (await import("../models/Patient.js")).default;
+
+    // 🚀 Aggregation: Primeiro agendamento de cada paciente
+    const firstAppointments = await Appointment.aggregate([
+      // Agrupa por paciente e pega o primeiro agendamento
+      {
+        $group: {
+          _id: "$patient",
+          firstAppointmentDate: { $min: "$createdAt" },
+          firstAppointmentId: { $first: "$_id" },
+          appointment: { $first: "$$ROOT" }
+        }
+      },
+      // Filtra só quem teve primeiro agendamento no dia alvo
+      {
+        $match: {
+          firstAppointmentDate: {
+            $gte: targetDate,
+            $lt: nextDay
+          }
+        }
+      },
+      // Popula dados do paciente
+      {
+        $lookup: {
+          from: "patients",
+          localField: "_id",
+          foreignField: "_id",
+          as: "patientData"
+        }
+      },
+      { $unwind: "$patientData" },
+      // Ordena por hora
+      { $sort: { "appointment.time": 1 } },
+      // Projeta só o necessário
+      {
+        $project: {
+          patientId: "$_id",
+          patientName: "$patientData.name",
+          patientPhone: "$patientData.phone",
+          appointmentDate: "$appointment.date",
+          appointmentTime: "$appointment.time",
+          specialty: "$appointment.specialty",
+          doctor: "$appointment.doctor",
+          firstAppointmentDate: 1,
+          createdAt: "$appointment.createdAt"
+        }
+      }
+    ]);
+
+    // Conta por período para comparação
+    const weekAgo = new Date(targetDate);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    
+    const monthAgo = new Date(targetDate);
+    monthAgo.setDate(monthAgo.getDate() - 30);
+
+    const [weekCount, monthCount] = await Promise.all([
+      // Média semanal
+      Appointment.aggregate([
+        { $group: { _id: "$patient", firstDate: { $min: "$createdAt" } } },
+        { $match: { firstDate: { $gte: weekAgo, $lt: nextDay } } },
+        { $count: "total" }
+      ]),
+      // Média mensal
+      Appointment.aggregate([
+        { $group: { _id: "$patient", firstDate: { $min: "$createdAt" } } },
+        { $match: { firstDate: { $gte: monthAgo, $lt: nextDay } } },
+        { $count: "total" }
+      ])
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        date: targetDate.toISOString().split('T')[0],
+        count: firstAppointments.length,
+        patients: firstAppointments,
+        comparison: {
+          weekTotal: weekCount[0]?.total || 0,
+          monthTotal: monthCount[0]?.total || 0,
+          dailyAverage: Math.round((monthCount[0]?.total || 0) / 30)
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error("❌ Erro em new-patients-today:", err);
+    res.status(500).json({
+      success: false,
+      message: "Erro ao buscar pacientes novos",
+      error: err.message
+    });
+  }
+});
+
 export default router;

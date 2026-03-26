@@ -118,6 +118,9 @@ import imageBankRoutes from './routes/imageBank.routes.js';
 import alertsRoutes from './routes/alerts.routes.js';
 import journeyRoutes from './routes/journey.routes.js';
 import scoringRoutes from './routes/scoring.routes.js';
+import medicalEventRoutes from './routes/medicalEvent.routes.js';
+import appointmentAnalyticsRoutes from './routes/appointmentAnalytics.routes.js';
+import dailyClosingSimpleRoutes from './routes/dailyClosingSimple.routes.js';
 
 // ======================================================
 // 🧭 Inicialização base
@@ -323,6 +326,9 @@ app.use('/api/imagebank', imageBankRoutes);
 app.use('/api/alerts', alertsRoutes);
 app.use('/api/journey', journeyRoutes);
 app.use('/api/scoring', scoringRoutes);
+app.use('/api/medical-events', medicalEventRoutes);
+app.use('/api/analytics/appointments', appointmentAnalyticsRoutes);
+app.use('/api/daily-closing-simple', dailyClosingSimpleRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);
