@@ -1426,6 +1426,7 @@ router.get("/agenda-externa/disponibilidade", agendaAuth, async (req, res) => {
     }
 
     // 5. Calcular disponibilidade para cada dia
+    // 🆕 Usa calculateAvailableSlots que já inclui verificação de feriados
     const result = [];
 
     for (const day of weekDays) {
@@ -1433,37 +1434,57 @@ router.get("/agenda-externa/disponibilidade", agendaAuth, async (req, res) => {
         date: day.date,
         dayOfWeek: day.dayOfWeek,
         dayLabel: day.dayLabel,
-        professionals: []
+        professionals: [],
+        // 🆕 Campos para feriado (serão preenchidos se algum profissional identificar feriado)
+        isHoliday: false,
+        holidayName: null
       };
 
       for (const doctor of doctors) {
-        // Verificar se tem disponibilidade cadastrada para este dia
-        const dailyAvailability = doctor.weeklyAvailability?.find(a => a.day === day.dayOfWeek);
-        if (!dailyAvailability?.times?.length) continue;
+        try {
+          // 🆕 Usa a função centralizada que já verifica feriados, pacotes e agendamentos
+          const slotsWithMetadata = await calculateAvailableSlots(String(doctor._id), day.date);
+          
+          // Extrai apenas os horários disponíveis (para compatibilidade com frontend atual)
+          const availableSlots = slotsWithMetadata
+            .filter(slot => slot.available)
+            .map(slot => slot.time);
+          
+          // Verifica se é feriado para mostrar badge especial
+          const holidaySlots = slotsWithMetadata.filter(slot => slot.reason === 'holiday');
+          const isHoliday = holidaySlots.length > 0;
+          const holidayName = isHoliday ? holidaySlots[0].label : null;
 
-        // Normalizar horários
-        const allSlots = dailyAvailability.times
-          .map(t => String(t).slice(0, 5))
-          .filter(t => /^\d{2}:\d{2}$/.test(t))
-          .sort();
-
-        // 🆕 NOVO: Verificar ocupados por INTERVALO, não por hora exata
-        const bookedTimes = Array.from(bookedMap[String(doctor._id)]?.[day.date] || []);
-        const availableSlots = allSlots.filter(slot => !slotIsBlocked(slot, bookedTimes));
-
-        if (availableSlots.length > 0) {
-          dayResult.professionals.push({
-            doctorId: String(doctor._id),
-            name: doctor.fullName,
-            specialty: doctor.specialty,
-            availableSlots,
-            totalSlots: allSlots.length,
-            bookedSlots: allSlots.length - availableSlots.length
-          });
+          if (availableSlots.length > 0 || isHoliday) {
+            dayResult.professionals.push({
+              doctorId: String(doctor._id),
+              name: doctor.fullName,
+              specialty: doctor.specialty,
+              availableSlots,
+              totalSlots: slotsWithMetadata.length,
+              bookedSlots: slotsWithMetadata.length - availableSlots.length,
+              // 🆕 Novos campos para feriados
+              isHoliday,
+              holidayName,
+              allSlots: slotsWithMetadata // 🆕 Retorna todos os slots com metadados
+            });
+            
+            // 🆕 Se for feriado, marca o dia todo como feriado
+            if (isHoliday) {
+              dayResult.isHoliday = true;
+              dayResult.holidayName = holidayName;
+            }
+          }
+        } catch (err) {
+          console.error(`[disponibilidade] Erro ao calcular slots para ${doctor.fullName} em ${day.date}:`, err);
         }
       }
 
-      if (dayResult.professionals.length > 0) {
+      // 🆕 Sempre adiciona o dia se tiver profissionais OU se for feriado
+      // (para mostrar no frontend que é feriado mesmo sem vagas disponíveis)
+      const hasAnyHoliday = dayResult.professionals.some(p => p.isHoliday);
+      
+      if (dayResult.professionals.length > 0 || hasAnyHoliday) {
         dayResult.professionals.sort((a, b) => a.name.localeCompare(b.name));
         result.push(dayResult);
       }

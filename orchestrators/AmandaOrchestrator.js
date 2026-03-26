@@ -1470,6 +1470,15 @@ export function detectIntentPriority(message) {
         return "ALTA_INTENCAO";
     }
     
+    // 1.5b 🔥 ALTA_INTENCAO por necessidade clara - sintoma específico + pedido de ajuda
+    // Detecta: "Precisamos de ajuda para destravar o R", "Queremos ajuda com a fala"
+    const pedidoAjudaRegex = /\b(precisamos? de ajuda|queremos? ajuda|gostar[íi]amos de ajuda|necessitamos? de ajuda|preciso de ajuda|quero ajuda)\b/i;
+    const sintomaFonoRegex = /\b(destravar (o )?r|n[ãa]o fala|atraso (na )?fala|dificuldade (na )?fala|troca (de )?letras|lateraliz|problema (de )?fala|dist[úu]rbio (de )?fala|ajuda com a fala|fala da criança|fala do filho)\b/i;
+    if (pedidoAjudaRegex.test(msg) && sintomaFonoRegex.test(msg)) {
+        console.log(`[ALTA_INTENCAO] Detectado por necessidade clara (sintoma + pedido de ajuda): "${msg.substring(0, 50)}..."`);
+        return "ALTA_INTENCAO";
+    }
+    
     // 1.6 🔥 URGENCIA (prioridade alta - detecta palavras temporais críticas)
     if (/\b(urgente|emergencia|emerg[êe]ncia|preciso logo|hoje|amanh[ãa]|agora|imediat|quanto antes|desesperad|n[ãa]o aguent|tentou tudo|j[áa] tentei|t[áa] piorando|t[áa] muito ruim)\b/i.test(msg)) {
         return "URGENCIA";

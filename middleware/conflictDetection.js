@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from "../constants/appointmentStatus.js";
 import Appointment from "../models/Appointment.js";
 import Doctor from "../models/Doctor.js";
+import { isNationalHoliday, getHolidayName, isTimeBlockedByHoliday } from "../config/feriadosBR-dynamic.js";
 
 /**
  * ✅ SAFE AVAILABILITY + CONFLICT CHECK (drop-in)
@@ -255,6 +256,7 @@ function appointmentBlocksSlot(slotTime, appointmentTime, durationMinutes = 40) 
 
 // ======================================================
 // 🔧 FUNÇÃO: Calcular slots disponíveis (reutilizável)
+// Retorna: [{ time, available, reason?, label? }]
 // ======================================================
 export async function calculateAvailableSlots(doctorId, date) {
   console.log(`[calculateAvailableSlots] doctorId=${doctorId}, date=${date}`);
@@ -267,6 +269,12 @@ export async function calculateAvailableSlots(doctorId, date) {
   const dayKey = getDayKeyFromYMD(date);
   console.log(`[calculateAvailableSlots] dayKey=${dayKey}, doctorName=${doctor.fullName}`);
   console.log(`[calculateAvailableSlots] weeklyAvailability=`, JSON.stringify(doctor.weeklyAvailability));
+
+  // 🗓️ VERIFICAÇÃO DE FERIADO (prioridade máxima)
+  // Verifica feriado por horário (suporta feriados parciais como Quarta-feira de Cinzas)
+  const getHolidayInfoForTime = (time) => {
+    return isTimeBlockedByHoliday(date, time);
+  };
 
   const dailyAvailability = doctor.weeklyAvailability?.find((d) => d.day === dayKey);
   const rawTimes = dailyAvailability?.times || [];
@@ -301,7 +309,7 @@ export async function calculateAvailableSlots(doctorId, date) {
     date,
     operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
   })
-    .select("time duration -_id")
+    .select("time duration patient -_id")
     .lean();
 
   // 🚨 FIX: pre_agendado agora BLOQUEIA o slot (removido de NON_BLOCKING_OPERATIONAL_STATUSES)
@@ -313,38 +321,55 @@ export async function calculateAvailableSlots(doctorId, date) {
       { professionalName: { $regex: new RegExp(doctor.fullName, 'i') } }
     ]
   })
-    .select("time duration -_id")
+    .select("time duration patient -_id")
     .lean();
 
   // Combinar todos os agendamentos
   const allAppointments = [...bookedAppointments, ...preAgendadosAtivos];
 
-  // 🆕 NOVO: Verificar disponibilidade por intervalo, não por hora exata
-  const availableSlots = normalizedTimes.filter((slotTime) => {
-    // Verifica se algum agendamento ocupa este slot
-    const isBlocked = allAppointments.some((appt) => {
+  // 🆕 NOVO: Montar array de slots com metadados
+  const slotsWithMetadata = normalizedTimes.map((slotTime) => {
+    // Prioridade 1: Feriado (verifica por horário - suporta feriados parciais)
+    const holidayCheck = getHolidayInfoForTime(slotTime);
+    if (holidayCheck && holidayCheck.blocked) {
+      return {
+        time: slotTime,
+        available: false,
+        reason: 'holiday',
+        label: holidayCheck.name + (holidayCheck.note ? ` (${holidayCheck.note})` : '')
+      };
+    }
+
+    // Prioridade 2: Verificar se está bloqueado por agendamento
+    const blockingAppt = allAppointments.find((appt) => {
       const apptTime = normalizeTimeHHmm(appt.time);
       if (!apptTime) return false;
       
-      // Usa duração do agendamento ou padrão de 40 min
       const apptDuration = appt.duration || 40;
-      
-      const blocks = appointmentBlocksSlot(slotTime, apptTime, apptDuration);
-      
-      if (blocks) {
-        console.log(`[calculateAvailableSlots] Slot ${slotTime} BLOQUEADO por agendamento às ${apptTime} (duração: ${apptDuration}min)`);
-      }
-      
-      return blocks;
+      return appointmentBlocksSlot(slotTime, apptTime, apptDuration);
     });
-    
-    return !isBlocked;
+
+    if (blockingAppt) {
+      console.log(`[calculateAvailableSlots] Slot ${slotTime} BLOQUEADO por agendamento às ${blockingAppt.time}`);
+      return {
+        time: slotTime,
+        available: false,
+        reason: 'appointment',
+        label: 'Horário Ocupado'
+      };
+    }
+
+    // Disponível (ou feriado parcial onde este horário não é afetado)
+    return {
+      time: slotTime,
+      available: true
+    };
   });
   
   console.log(`[calculateAvailableSlots] totalAppointments=${allAppointments.length}`);
-  console.log(`[calculateAvailableSlots] availableSlots=`, availableSlots);
+  console.log(`[calculateAvailableSlots] slotsWithMetadata=`, slotsWithMetadata);
 
-  return availableSlots;
+  return slotsWithMetadata;
 }
 
 // ======================================================
