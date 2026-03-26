@@ -1371,7 +1371,7 @@ function detectIntentPriority(message) {
     if (
         /^\s*(oi|ol[áa]|bom dia|boa tarde|boa noite|hey|hi)\s*[!?.]*\s*$/i.test(msg) ||
         /^(preciso|gostaria|quero|tenho interesse|vi o site|me indica(rao|ram))\s*$/i.test(msg) ||
-        /\b(saber mais|orientar|ajuda|informa[çc][aã]o|d[úu]vida|conhecer)\b/i.test(msg) ||
+        /\b(saber mais|orientar|ajuda|informa[çc][aã]o|d[úu]vida|conhecer|queria entender|queria saber|vi no site)\b/i.test(msg) ||
         (msg.length < 25 && 
          !/\b(fala|olha|dificuldade|pre[çc]o|valor|custa|agenda|marcar|hoje|amanh[ãa])\b/i.test(msg)) ||
         /\bpara?\s+(mim|meu filho|minha filha|crian[çc]a|beb[êe])\b/i.test(msg) ||
@@ -1443,6 +1443,30 @@ function handleTriagemResponse(message, context) {
 // ============================================================================
 
 export async function getOptimizedAmandaResponse({
+    content,
+    userText,
+    lead = {},
+    context = {},
+    messageId = null,
+}) {
+    // 🆕 WRAPPER DE SEGURANÇA: Garante que nunca retorne null
+    const result = await _getOptimizedAmandaResponseInternal({
+        content, userText, lead, context, messageId
+    });
+    
+    if (!result || result === null || (typeof result === 'object' && !result.text)) {
+        console.error('🚨 [GUARD CRÍTICO] Resposta nula detectada, usando fallback de emergência');
+        return {
+            text: `Oi! Entendi que você está buscando informações sobre nossos serviços 💚\n\nPara te ajudar melhor, qual especialidade você procura (Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia) e qual o nome do paciente?`,
+            type: 'text',
+            _fallback: true
+        };
+    }
+    
+    return result;
+}
+
+async function _getOptimizedAmandaResponseInternal({
     content,
     userText,
     lead = {},
@@ -1852,6 +1876,54 @@ export async function getOptimizedAmandaResponse({
             "No assunto, coloque sua área de atuação (ex: Terapeuta Ocupacional).\n\n" +
             "Em breve nossa equipe entra em contato! 😊💚"
         );
+    }
+
+    // 🆕 DETECÇÃO DE ESPECIALIDADE POR TEXTO (Fallback antes do BYPASS)
+    // ⚠️ SÓ ativa quando: é EXPLICACAO/FIRST_CONTACT + não detectou área + não é emprego/preço/fora_escopo
+    const isEmpregoOuParceria = /\b(emprego|trabalhar|vaga|curriculo|cv|parceria|colaborar|estagio)\b/i.test(text);
+    const isPerguntaPreco = /\b(quanto|custa|valor|preco|reembolso|convenio|plano)\b/i.test(text);
+    const isForaEscopo = /\b(cirurgia|medico|pediatra|neuropediatra|otorrino|psiquiatra)\b/i.test(text);
+    
+    console.log(`[DEBUG ESPECIALIDADE] Emprego:${isEmpregoOuParceria} Preco:${isPerguntaPreco} Fora:${isForaEscopo}`);
+    console.log(`[DEBUG ESPECIALIDADE] Flags:`, JSON.stringify(context.forceFlags));
+    console.log(`[DEBUG ESPECIALIDADE] forceExplainFirst:`, context.forceFlags?.forceExplainFirst);
+    console.log(`[DEBUG ESPECIALIDADE] forceFirstContact:`, context.forceFlags?.forceFirstContact);
+    console.log(`[DEBUG ESPECIALIDADE] therapyArea:`, amandaAnalysis.extracted.therapyArea);
+    
+    const deveExecutar = !isEmpregoOuParceria && !isPerguntaPreco && !isForaEscopo && 
+        (context.forceFlags?.forceExplainFirst || context.forceFlags?.forceFirstContact) &&
+        !amandaAnalysis.extracted.therapyArea;
+    
+    console.log(`[DEBUG ESPECIALIDADE] deveExecutar:`, deveExecutar);
+    
+    if (deveExecutar) {
+        
+        const especialidadeDetectada = 
+            /\bterapia ocupacional\b/i.test(text) ? 'terapia_ocupacional' :
+            /\bto\b/i.test(text) && !/\bato\b|\bestou\b|\btoda\b|\btodo\b/i.test(text) ? 'terapia_ocupacional' :
+            /\bpsicolog(ia|a)\b/i.test(text) && !/\bpsicopedagogia\b/i.test(text) ? 'psicologia' :
+            /\bfonoaudiolog\b/i.test(text) || /\bfono\b/i.test(text) && !/\bfonograma|\btelefone/i.test(text) ? 'fonoaudiologia' :
+            null;
+        
+        console.log(`[DEBUG ESPECIALIDADE] Detectada: ${especialidadeDetectada}`);
+        
+        if (especialidadeDetectada) {
+            const areaNamesEsp = {
+                fonoaudiologia: 'Fonoaudiologia',
+                psicologia: 'Psicologia', 
+                terapia_ocupacional: 'Terapia Ocupacional'
+            };
+            const areaNomeEsp = areaNamesEsp[especialidadeDetectada];
+            
+            console.log(`🎯 [ESPECIALIDADE DETECTADA] ${areaNomeEsp} - Usando fallback programático (protegido)`);
+            return ensureSingleHeart(
+                `Oi! Entendi que você busca **${areaNomeEsp}** 💚\n\n` +
+                `Para te ajudar melhor, qual o **nome** e **idade** do paciente?` +
+                `\n\nAssim consigo verificar a melhor forma de atendimento para vocês! 😊`
+            );
+        }
+    } else {
+        console.log(`[DEBUG ESPECIALIDADE] Não passou nas condições - pulando fallback`);
     }
 
     // 3.5 SEM THERAPY AREA → Resposta contextual baseada em flags e sintomas
@@ -4237,8 +4309,10 @@ Em breve nossa equipe entra em contato 😊`
 
     // 🛡️ BLOQUEIO: se triagem ainda não terminou, NÃO entra em fluxo antigo
     if (lead?.triageStep && lead.triageStep !== "done") {
-        console.log("🛑 [GUARD] Triagem ativa, bloqueando fluxo antigo");
-        return null;
+        console.log("🛑 [GUARD] Triagem ativa, bloqueando fluxo antigo - usando resposta programática");
+        // 🆕 CORREÇÃO: Em vez de retornar null, usa buildSimpleResponse para continuar a triagem
+        const analysis = amandaAnalysis || { missing: ['name'], extracted: {} };
+        return buildSimpleResponse(analysis.missing || ['name'], analysis.extracted || {}, lead, enrichedContext);
     }
 
     const inActiveSchedulingState = !!(
@@ -5051,7 +5125,41 @@ Em breve nossa equipe entra em contato 😊`
     }
 
     // Fluxo geral
+    console.log(`[DEBUG FLUXO] Etapa 1 - Chamando IA...`);
     const genericAnswer = await callAmandaAIWithContext(text, lead, enrichedContext, flags, analysis);
+    console.log(`[DEBUG FLUXO] Etapa 2 - IA respondeu:`, genericAnswer?.substring ? genericAnswer.substring(0, 50) + '...' : genericAnswer);
+
+    // 🆕 FALLBACK OBRIGATÓRIO: Se IA não respondeu ou retornou null, usa resposta programática
+    console.log(`[DEBUG FLUXO] Etapa 3 - Verificando fallback... genericAnswer:`, !!genericAnswer);
+    if (!genericAnswer || genericAnswer === 'null' || genericAnswer === null) {
+        console.log('⚠️ [FALLBACK CRÍTICO] IA não respondeu ou retornou null. Usando resposta programática de segurança.');
+        
+        // Tenta usar buildSimpleResponse com os dados disponíveis
+        if (amandaAnalysis && amandaAnalysis.missing) {
+            console.log('[DEBUG FLUXO] Etapa 4 - Usando buildSimpleResponse');
+            return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted || {}, lead, enrichedContext);
+        }
+        
+        // Último recurso: resposta genérica de acolhimento
+        const areaHint = enrichedContext?.therapyArea || lead?.therapyArea;
+        const areaNames = {
+            fonoaudiologia: 'Fonoaudiologia',
+            psicologia: 'Psicologia',
+            terapia_ocupacional: 'Terapia Ocupacional',
+            to: 'Terapia Ocupacional',
+            fisioterapia: 'Fisioterapia',
+            neuropsicologia: 'Neuropsicologia'
+        };
+        const areaDisplay = areaHint ? (areaNames[areaHint] || areaHint) : null;
+        
+        console.log('[DEBUG FLUXO] Etapa 5 - areaDisplay:', areaDisplay);
+        if (areaDisplay) {
+            return ensureSingleHeart(`Oi! Entendi que você busca **${areaDisplay}** 💚\n\nPara te ajudar melhor, qual o nome e idade do paciente?`);
+        }
+        
+        console.log('[DEBUG FLUXO] Etapa 6 - Usando resposta genérica');
+        return ensureSingleHeart(`Oi! Bem-vindo(a) à Fono Inova 💚\n\nMe conta: qual especialidade você busca? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia e Neuropsicologia.`);
+    }
 
     const finalScoped = enforceClinicScope(genericAnswer, text);
     return ensureSingleHeart(finalScoped);
