@@ -1,39 +1,47 @@
 # 🔥 RELATÓRIO REPLAY — Conversas Reais vs Amanda FSM V8
 
-**Gerado em:** 23/03/2026, 16:40:48  
+**Gerado em:** 25/03/2026, 22:21:51  
 **Total de perguntas:** 50  
-**Categoria:** scheduling  
+**Categoria:** Todas  
 **Modo:** Mais recentes
 
 ---
 
 ## 📊 RESUMO POR CATEGORIA
 
-- **Agendamento (fundodo funil):** 50 (100.0%)
+- **Primeiro Contato / Saudação:** 14 (28.0%)
+- **geral:** 12 (24.0%)
+- **Plano de Saúde:** 7 (14.0%)
+- **Dúvida sobre Terapia:** 5 (10.0%)
+- **Info da Criança:** 5 (10.0%)
+- **Agendamento (fundodo funil):** 4 (8.0%)
+- **Preço / Valor:** 3 (6.0%)
 
 ### Por Prioridade
 
 - 🔴 Crítica: 0
-- 🟠 Alta: 50
-- 🟡 Média: 0
-- ⚪ Baixa: 0
+- 🟠 Alta: 23
+- 🟡 Média: 15
+- ⚪ Baixa: 12
 - ❌ Erros: 0
 
 ---
 
-## 1. 🟠 [SCHEDULING]
+## 1. 🟠 [FIRSTCONTACT]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Primeiro Contato / Saudação  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Oi, vi no site e gostaria de agendar uma avaliação. Pode me explicar como funciona?
+Preciso pra mim mesmo
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -55,19 +63,21 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 2. 🟠 [SCHEDULING]
+## 2. 🟠 [FIRSTCONTACT]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Primeiro Contato / Saudação  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** agendar
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Nao tem pedido médico pois nao consegui uma consulta com neuropediatra
+Oi! Vi no site sobre avaliação psicológica e queria entender melhor.\n\nÉ para meu filho(a). Pode me explicar como funciona?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+[SEM RESPOSTA]
 ```
 
 **📋 AVALIAÇÃO:**
@@ -89,320 +99,16 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 3. 🟠 [SCHEDULING]
+## 3. 🟠 [FIRSTCONTACT]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Quero agendar
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 4. 🟠 [SCHEDULING]
-
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Primeiro Contato / Saudação  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Gostaria de agendar uma avaliação na Clínica Fono Inova.
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 5. 🟠 [SCHEDULING]
-
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Olá! Vi o site da Clínica Fono Inova e gostaria de agendar uma avaliação. Pode me ajudar?
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 6. 🟠 [SCHEDULING]
-
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Olá! Vi o site da Clínica Fono Inova e gostaria de agendar uma avaliação. Pode me ajudar?
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 7. 🟠 [SCHEDULING]
-
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Olá! Vi o site da Clínica Fono Inova e gostaria de agendar uma avaliação. Pode me ajudar?
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 8. 🟠 [SCHEDULING]
-
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Olá! Vi o site da Clínica Fono Inova e gostaria de agendar uma avaliação. Pode me ajudar?
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 9. 🟠 [SCHEDULING]
-
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Qual valor da consulta?
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a área exata (Fono, Psicologia, TO...), passo o valor certinho 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 10. 🟠 [SCHEDULING]
-
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Olá! Vi o site e gostaria de agendar uma avaliação na Clínica Fono Inova.
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 11. 🟠 [SCHEDULING]
-
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Olá! Vi o site da Clínica Fono Inova e gostaria de agendar uma avaliação. Pode me ajudar?
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 12. 🟠 [SCHEDULING]
-
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Olá! Gostaria de agendar uma avaliação fonoaudiológica.
+Oi! Vi o site da Clínica Fono Inova 💚\nÉ para meu filho, pode me orientar?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
@@ -429,82 +135,16 @@ Oi! Entendi que é para **Fonoaudiologia**. Qual o **nome completo** do paciente
 
 ---
 
-## 13. 🟠 [SCHEDULING]
+## 4. 🟡 [INSURANCE]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Olá! Vi o site da Clínica Fono Inova e gostaria de agendar uma avaliação. Pode me ajudar?
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 14. 🟠 [SCHEDULING]
-
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Plano de Saúde  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Gostaria de agendar uma avaliação na Clínica Fono Inova.
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 15. 🟠 [SCHEDULING]
-
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Consigo fazer a fonoaudióloga aí porque a Unimed não autoriza reembolso quando tem clínica na cidade que atende
+Atende Unimed?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
@@ -531,14 +171,52 @@ Trabalhamos com reembolso para a maioria dos planos. Você paga e solicita o ree
 
 ---
 
-## 16. 🟠 [SCHEDULING]
+## 5. 🟡 [THERAPY]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Dúvida sobre Terapia  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Esse valor é de cada consulta?
+Yohanna Caixeta dos Santos
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 6. 🟠 [SCHEDULING]
+
+**Categoria:** Agendamento (fundodo funil)  
+**Prioridade:** ALTA  
+**🎭 Persona:** Empoderadora  
+**📊 Estágio:** morno | **Emoção:** cautela | **Intenção:** agendar
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Quero saber o valor das consultas por favor
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
@@ -565,21 +243,21 @@ A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a áre
 
 ---
 
-## 17. 🟠 [SCHEDULING]
+## 7. 🟠 [FIRSTCONTACT]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Primeiro Contato / Saudação  
+**Prioridade:** ALTA  
+**🎭 Persona:** Empoderadora  
+**📊 Estágio:** morno | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Gostaria de agendar uma avaliação psicológica infantil.
+Gostaria de uma psicóloga pra minha filha, ela tem 5 anos, foi diagnosticada com ansiedade, e queria acompanhamento
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Seja bem-vindo(a) à Fono Inova 
-
-Entendi que você busca **Psicologia**. Me conta um pouquinho: o que vocês têm observado que te preocupou? Estou aqui para ouvir e ajudar a encontrar o melhor caminho 😊 💚
+Oi! Entendi que é para **Psicologia**. Qual o **nome completo** do paciente? 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -601,14 +279,58 @@ Entendi que você busca **Psicologia**. Me conta um pouquinho: o que vocês têm
 
 ---
 
-## 18. 🟠 [SCHEDULING]
+## 8. ⚪ [GERAL]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** geral  
+**Prioridade:** BAIXA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** informacao_tratamento
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Qual o valor da consulta ?
+Como funciona
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Oi! 😊
+
+Entendo que buscar ajuda pode ser um passo difícil, mas você fez muito bem em procurar informações. Isso é algo que preocupa muitos pais, e estamos aqui para caminhar junto com vocês.
+
+A avaliação inicial é uma ótima forma de entender melhor a situação e traçar o caminho para a evolução. É leve, presencial e feita com muito acolhimento, sem compromisso de continuidade.
+
+Para seguir, poderia me informar o nome do paciente e a idade dele? Assim, posso te ajudar a escolher o melhor dia e período para a avaliação. 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 9. 🟡 [PRICE]
+
+**Categoria:** Preço / Valor  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** cautela | **Intenção:** informacao_precos
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+E qual valor?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
@@ -635,19 +357,21 @@ A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a áre
 
 ---
 
-## 19. 🟠 [SCHEDULING]
+## 10. 🟡 [INSURANCE]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Plano de Saúde  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Pode confirmar a consulta do Diogo por favor
+Tem psicólogo q atende Unimed?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Trabalhamos com reembolso para a maioria dos planos. Você paga e solicita o reembolso pelo app do plano 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -669,19 +393,21 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 20. 🟠 [SCHEDULING]
+## 11. 🟠 [FIRSTCONTACT]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Primeiro Contato / Saudação  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Gostaria de agendar uma avaliação na Clínica Fono Inova.
+Oi! Vi o site da Clínica Fono Inova 💚\nÉ para meu filho, pode me orientar?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Oi! Entendi que é para **Fonoaudiologia**. Qual o **nome completo** do paciente? 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -703,14 +429,379 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 21. 🟠 [SCHEDULING]
+## 12. 🟠 [FIRSTCONTACT]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Primeiro Contato / Saudação  
+**Prioridade:** ALTA  
+**🎭 Persona:** Empoderadora  
+**📊 Estágio:** morno | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Quais são os valores da consulta
+Gostaria de saber mais
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 13. 🟡 [INSURANCE]
+
+**Categoria:** Plano de Saúde  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Vocês atendem unimed?
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Trabalhamos com reembolso para a maioria dos planos. Você paga e solicita o reembolso pelo app do plano 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 14. 🟠 [CHILDINFO]
+
+**Categoria:** Info da Criança  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Dificuldade em concentrar
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Entendo sua preocupação 
+
+Quando envolve desenvolvimento infantil isso realmente deixa a gente apreensivo.
+Você fez muito bem em buscar orientação cedo. 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 15. 🟠 [FIRSTCONTACT]
+
+**Categoria:** Primeiro Contato / Saudação  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Oi! Vi o site da Clínica Fono Inova 💚\nÉ para meu filho, pode me orientar?
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Oi! Entendi que é para **Fonoaudiologia**. Qual o **nome completo** do paciente? 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 16. 🟡 [INSURANCE]
+
+**Categoria:** Plano de Saúde  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Vocês atendem pela Unimed?
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Trabalhamos com reembolso para a maioria dos planos. Você paga e solicita o reembolso pelo app do plano 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 17. 🟡 [THERAPY]
+
+**Categoria:** Dúvida sobre Terapia  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** informacao_tratamento
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Terapia infantil.
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 18. 🟡 [INSURANCE]
+
+**Categoria:** Plano de Saúde  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Vocês atendem pela Unimed?
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Trabalhamos com reembolso para a maioria dos planos. Você paga e solicita o reembolso pelo app do plano 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 19. 🟠 [FIRSTCONTACT]
+
+**Categoria:** Primeiro Contato / Saudação  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Boa tarde.
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 20. 🟠 [FIRSTCONTACT]
+
+**Categoria:** Primeiro Contato / Saudação  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Oi! Vi o site da Clínica Fono Inova 💚\nÉ para meu filho, pode me orientar?
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Oi! Entendi que é para **Fonoaudiologia**. Qual o **nome completo** do paciente? 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 21. 🟠 [FIRSTCONTACT]
+
+**Categoria:** Primeiro Contato / Saudação  
+**Prioridade:** ALTA  
+**🎭 Persona:** Empoderadora  
+**📊 Estágio:** morno | **Emoção:** neutro | **Intenção:** exploracao
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Gostaria de saber se aí também tem atendimento psicológico para adulto ?
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 22. 🟡 [PRICE]
+
+**Categoria:** Preço / Valor  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** cautela | **Intenção:** informacao_precos
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Eu sabe os valores
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
@@ -737,21 +828,21 @@ A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a áre
 
 ---
 
-## 22. 🟠 [SCHEDULING]
+## 23. ⚪ [GERAL]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** geral  
+**Prioridade:** BAIXA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Quanto que é a consulta com a fono
+Maria Júlia Da Silva
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Seja bem-vindo(a) à Fono Inova 
-
-Entendi que você busca **Fonoaudiologia**. Me conta um pouquinho: o que vocês têm observado que te preocupou? Estou aqui para ouvir e ajudar a encontrar o melhor caminho 😊 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -773,19 +864,21 @@ Entendi que você busca **Fonoaudiologia**. Me conta um pouquinho: o que vocês 
 
 ---
 
-## 23. 🟠 [SCHEDULING]
+## 24. ⚪ [GERAL]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** geral  
+**Prioridade:** BAIXA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi o site da Clínica Fono Inova e gostaria de agendar uma avaliação. Pode me ajudar?
+Dia 6 pela manhã
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -807,21 +900,21 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 24. 🟠 [SCHEDULING]
+## 25. 🟠 [FIRSTCONTACT]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Primeiro Contato / Saudação  
+**Prioridade:** ALTA  
+**🎭 Persona:** Empoderadora  
+**📊 Estágio:** morno | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Gostaria de agendar uma avaliação psicológica infantil.
+Eu quero ser avaliada
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Seja bem-vindo(a) à Fono Inova 
-
-Entendi que você busca **Psicologia**. Me conta um pouquinho: o que vocês têm observado que te preocupou? Estou aqui para ouvir e ajudar a encontrar o melhor caminho 😊 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -843,21 +936,21 @@ Entendi que você busca **Psicologia**. Me conta um pouquinho: o que vocês têm
 
 ---
 
-## 25. 🟠 [SCHEDULING]
+## 26. 🟠 [FIRSTCONTACT]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Primeiro Contato / Saudação  
+**Prioridade:** ALTA  
+**🎭 Persona:** Empoderadora  
+**📊 Estágio:** morno | **Emoção:** neutro | **Intenção:** agendar
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Gostaria de agendar uma avaliação de freio lingual (teste da linguinha).
+Oi! Vi no site de vocês e gostaria de entender melhor como funciona a avaliação fonoaudiológica. É para eu,Pode me explicar?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Seja bem-vindo(a) à Fono Inova 
-
-Entendi que você busca **Fonoaudiologia**. Me conta um pouquinho: o que vocês têm observado que te preocupou? Estou aqui para ouvir e ajudar a encontrar o melhor caminho 😊 💚
+[SEM RESPOSTA]
 ```
 
 **📋 AVALIAÇÃO:**
@@ -879,21 +972,21 @@ Entendi que você busca **Fonoaudiologia**. Me conta um pouquinho: o que vocês 
 
 ---
 
-## 26. 🟠 [SCHEDULING]
+## 27. 🟠 [FIRSTCONTACT]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Primeiro Contato / Saudação  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi a página de Freio Lingual e gostaria de agendar uma avaliação.
+Oi! Vi o site da Clínica Fono Inova 💚\nÉ para meu filho, pode me orientar?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Seja bem-vindo(a) à Fono Inova 
-
-Entendi que você busca **Fonoaudiologia**. Me conta um pouquinho: o que vocês têm observado que te preocupou? Estou aqui para ouvir e ajudar a encontrar o melhor caminho 😊 💚
+Oi! Entendi que é para **Fonoaudiologia**. Qual o **nome completo** do paciente? 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -915,53 +1008,21 @@ Entendi que você busca **Fonoaudiologia**. Me conta um pouquinho: o que vocês 
 
 ---
 
-## 27. 🟠 [SCHEDULING]
+## 28. ⚪ [GERAL]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** geral  
+**Prioridade:** BAIXA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi o site e gostaria de agendar uma avaliação.
+Que horas?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 28. 🟠 [SCHEDULING]
-
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Tem como marcar por aqui
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -986,16 +1047,18 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 ## 29. 🟠 [SCHEDULING]
 
 **Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Prioridade:** ALTA  
+**🎭 Persona:** Empoderadora  
+**📊 Estágio:** morno | **Emoção:** pronto | **Intenção:** agendar
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Eu queria marcar uma consulta com um fonoaudiólogo
+Gostaria de agendar o exame de teste da linguinha para o meu recém-nascido. Poderia me informar a disponibilidade de horários e se atende por convênio?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Obrigado!  Agora me manda a **data de nascimento** (dd/mm/aaaa) pra eu organizar certinho 😊 💚
+Trabalhamos com reembolso para a maioria dos planos. Você paga e solicita o reembolso pelo app do plano 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1020,16 +1083,18 @@ Obrigado!  Agora me manda a **data de nascimento** (dd/mm/aaaa) pra eu organizar
 ## 30. 🟠 [SCHEDULING]
 
 **Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Prioridade:** ALTA  
+**🎭 Persona:** Empoderadora  
+**📊 Estágio:** morno | **Emoção:** pronto | **Intenção:** agendar
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi o site da Clínica Fono Inova e gostaria de agendar uma avaliação. Pode me ajudar?
+Gostaria de agendar o exame de teste da linguinha para o meu recém-nascido. Poderia me informar a disponibilidade de horários e se atende por convênio?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Trabalhamos com reembolso para a maioria dos planos. Você paga e solicita o reembolso pelo app do plano 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1051,19 +1116,21 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 31. 🟠 [SCHEDULING]
+## 31. ⚪ [GERAL]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** geral  
+**Prioridade:** BAIXA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi o site da Clínica Fono Inova e gostaria de agendar uma avaliação. Pode me ajudar?
+Vocês fazem?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1085,19 +1152,21 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 32. 🟠 [SCHEDULING]
+## 32. 🟠 [CHILDINFO]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Info da Criança  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi o site e gostaria de agendar uma avaliação na Clínica Fono Inova.
+É para o meu filho
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1119,19 +1188,23 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 33. 🟠 [SCHEDULING]
+## 33. ⚪ [GERAL]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** geral  
+**Prioridade:** BAIXA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Gostaria de agendar uma avaliação fonoaudiológica.
+Falta de atenção
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Entendi que é para **Fonoaudiologia**. Qual o **nome completo** do paciente? 💚
+Entendo, é um momento importante 
+
+Vocês estão buscando chegar num **diagnóstico** (avaliação completa que gera um laudo) ou já têm diagnóstico e querem começar as **terapias**? 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1156,16 +1229,18 @@ Oi! Entendi que é para **Fonoaudiologia**. Qual o **nome completo** do paciente
 ## 34. 🟠 [SCHEDULING]
 
 **Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Prioridade:** ALTA  
+**🎭 Persona:** Empoderadora  
+**📊 Estágio:** morno | **Emoção:** pronto | **Intenção:** agendar
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi o site da Clínica Fono Inova e gostaria de agendar uma avaliação. Pode me ajudar?
+Gostaria de agendar o exame de teste da linguinha para o meu recém-nascido. Poderia me informar a disponibilidade de horários e se atende por convênio?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Trabalhamos com reembolso para a maioria dos planos. Você paga e solicita o reembolso pelo app do plano 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1187,19 +1262,21 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 35. 🟠 [SCHEDULING]
+## 35. 🟡 [THERAPY]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Dúvida sobre Terapia  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Empoderadora  
+**📊 Estágio:** morno | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi o site e gostaria de agendar uma avaliação na Clínica Fono Inova.
+Vou organizar aqui e volto a te procurar
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1221,19 +1298,21 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 36. 🟠 [SCHEDULING]
+## 36. 🟠 [CHILDINFO]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Info da Criança  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi o site e gostaria de agendar uma avaliação.
+Para meu filho
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1255,14 +1334,16 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 37. 🟠 [SCHEDULING]
+## 37. 🟡 [PRICE]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Preço / Valor  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** cautela | **Intenção:** informacao_precos
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Certo, e para dar continuidade ao tratamento, caso precise de mais consultas, é o mesmo valor de 200?
+O valor é o mesmo
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
@@ -1289,19 +1370,21 @@ A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a áre
 
 ---
 
-## 38. 🟠 [SCHEDULING]
+## 38. ⚪ [GERAL]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** geral  
+**Prioridade:** BAIXA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Qual valor da consulta com a fonoaudióloga?
+No caso seria pra pessoa adulta
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-A avaliação de fonoaudiologia é **R$ 250,00** 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1323,19 +1406,21 @@ A avaliação de fonoaudiologia é **R$ 250,00** 💚
 
 ---
 
-## 39. 🟠 [SCHEDULING]
+## 39. 🟡 [THERAPY]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Dúvida sobre Terapia  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** agendar
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Pode marcar meu sinho Tarde
+Avaliação em adultos vcs fazem
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1357,19 +1442,21 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 40. 🟠 [SCHEDULING]
+## 40. 🟠 [FIRSTCONTACT]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Primeiro Contato / Saudação  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** agendar
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Gostaria de agendar uma avaliação fonoaudiológica.
+Oi! Vi no site sobre avaliação psicológica e queria entender melhor.\n\nÉ para meu filho(a). Pode me explicar como funciona?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Entendi que é para **Fonoaudiologia**. Qual o **nome completo** do paciente? 💚
+[SEM RESPOSTA]
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1391,19 +1478,21 @@ Oi! Entendi que é para **Fonoaudiologia**. Qual o **nome completo** do paciente
 
 ---
 
-## 41. 🟠 [SCHEDULING]
+## 41. ⚪ [GERAL]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** geral  
+**Prioridade:** BAIXA  
+**🎭 Persona:** Empoderadora  
+**📊 Estágio:** morno | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi o site da Clínica Fono Inova e gostaria de agendar uma avaliação. Pode me ajudar?
+Ok, entendi, vou fazer isso
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1425,19 +1514,21 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 42. 🟠 [SCHEDULING]
+## 42. 🟡 [INSURANCE]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Plano de Saúde  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi o site e gostaria de agendar uma avaliação.
+Vcs atende pela Unimed
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Trabalhamos com reembolso para a maioria dos planos. Você paga e solicita o reembolso pelo app do plano 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1459,19 +1550,21 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 43. 🟠 [SCHEDULING]
+## 43. ⚪ [GERAL]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** geral  
+**Prioridade:** BAIXA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi o site da Clínica Fono Inova e gostaria de agendar uma avaliação. Pode me ajudar?
+Davi Lucas Soares Ferreira
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1493,19 +1586,21 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 44. 🟠 [SCHEDULING]
+## 44. ⚪ [GERAL]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** geral  
+**Prioridade:** BAIXA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi o site da Clínica Fono Inova e gostaria de agendar uma avaliação. Pode me ajudar? Bom dia
+De tarde
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1527,19 +1622,21 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 45. 🟠 [SCHEDULING]
+## 45. ⚪ [GERAL]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** geral  
+**Prioridade:** BAIXA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi o site da Clínica Fono Inova e gostaria de agendar uma avaliação. Pode me ajudar?
+Sendo no números pares
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1561,19 +1658,21 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 46. 🟠 [SCHEDULING]
+## 46. ⚪ [GERAL]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** geral  
+**Prioridade:** BAIXA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi o site e gostaria de agendar uma avaliação.
+O horário pode ser qualquer hora
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1595,19 +1694,28 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 47. 🟠 [SCHEDULING]
+## 47. 🟡 [THERAPY]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Dúvida sobre Terapia  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Quanto que é a consulta?
+Eu trabalho no hospital e estou esse mês estou no dia ímpares
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Que bom que você quer fazer parte da nossa equipe! 🥰
+
+Os currículos são recebidos **exclusivamente por e-mail**:
+📩 **contato@clinicafonoinova.com.br**
+
+No assunto, coloque sua área de atuação (ex: Terapeuta Ocupacional).
+
+Em breve nossa equipe entra em contato! 😊 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1629,21 +1737,21 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 48. 🟠 [SCHEDULING]
+## 48. 🟡 [INSURANCE]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Plano de Saúde  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** informacao_precos
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Gostaria de agendar uma avaliaoição psicológica infantil.
+Vocês passam plano de saúde?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Seja bem-vindo(a) à Fono Inova 
-
-Entendi que você busca **Psicologia**. Me conta um pouquinho: o que vocês têm observado que te preocupou? Estou aqui para ouvir e ajudar a encontrar o melhor caminho 😊 💚
+Trabalhamos com reembolso para a maioria dos planos. Você paga e solicita o reembolso pelo app do plano 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1665,19 +1773,21 @@ Entendi que você busca **Psicologia**. Me conta um pouquinho: o que vocês têm
 
 ---
 
-## 49. 🟠 [SCHEDULING]
+## 49. 🟠 [CHILDINFO]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Info da Criança  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Olá! Vi o site e gostaria de agendar uma avaliação.
+E ele já está com 2 anos
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1699,19 +1809,24 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 50. 🟠 [SCHEDULING]
+## 50. 🟠 [CHILDINFO]
 
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Categoria:** Info da Criança  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Não tenho como ir agora. Depois entro em contato para marcar certinho
+Vejo que ele tem muita dificuldade para falar
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Entendi que é para **Terapia Ocupacional**. Qual o **nome completo** do paciente? 💚
+Entendo sua preocupação 
+
+Quando envolve desenvolvimento infantil isso realmente deixa a gente apreensivo.
+Você fez muito bem em buscar orientação cedo. 💚
 ```
 
 **📋 AVALIAÇÃO:**
