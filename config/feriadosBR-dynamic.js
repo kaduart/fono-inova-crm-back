@@ -55,6 +55,108 @@ function formatDate(date) {
 }
 
 /**
+ * 🆕 Estrutura de feriados com período de bloqueio
+ * full = dia todo, morning = só manhã, afternoon = só tarde
+ */
+const HOLIDAY_SCHEDULE = {
+  // Feriados fixos - dia todo
+  '01-01': { type: 'full', name: 'Confraternização Universal' },
+  '04-21': { type: 'full', name: 'Tiradentes' },
+  '05-01': { type: 'full', name: 'Dia do Trabalho' },
+  '09-07': { type: 'full', name: 'Independência do Brasil' },
+  '10-12': { type: 'full', name: 'Nossa Senhora Aparecida' },
+  '11-02': { type: 'full', name: 'Finados' },
+  '11-15': { type: 'full', name: 'Proclamação da República' },
+  '12-25': { type: 'full', name: 'Natal' },
+  // Feriados móveis (serão calculados dinamicamente)
+  'carnival': { type: 'full', name: 'Carnaval', offset: -48 },
+  'ash_wednesday': { type: 'morning', name: 'Quarta-feira de Cinzas', offset: -47 },
+  'good_friday': { type: 'full', name: 'Sexta-feira Santa', offset: -2 },
+  'corpus_christi': { type: 'full', name: 'Corpus Christi', offset: 60 },
+};
+
+/**
+ * 🆕 Retorna detalhes do feriado para uma data específica
+ * @param {Date|string} date - Data
+ * @returns {Object|null} - { name, type, period } ou null
+ */
+export function getHolidayDetails(date) {
+  const year = typeof date === "string" 
+    ? parseInt(date.split("-")[0]) 
+    : date.getFullYear();
+  
+  const dateStr = typeof date === "string" 
+    ? date.split("T")[0] 
+    : formatDate(date);
+  
+  const monthDay = dateStr.slice(5); // MM-DD
+  
+  // Verifica feriados fixos
+  if (HOLIDAY_SCHEDULE[monthDay]) {
+    return {
+      name: HOLIDAY_SCHEDULE[monthDay].name,
+      type: HOLIDAY_SCHEDULE[monthDay].type,
+      isHoliday: true
+    };
+  }
+  
+  // Verifica feriados móveis (baseados na Páscoa)
+  const easter = calculateEaster(year);
+  
+  const movableHolidays = [
+    { type: 'full', name: 'Carnaval', date: formatDate(addDays(easter, -48)) },
+    { type: 'morning', name: 'Quarta-feira de Cinzas', date: formatDate(addDays(easter, -47)) },
+    { type: 'full', name: 'Sexta-feira Santa', date: formatDate(addDays(easter, -2)) },
+    { type: 'full', name: 'Corpus Christi', date: formatDate(addDays(easter, 60)) },
+  ];
+  
+  const movable = movableHolidays.find(h => h.date === dateStr);
+  if (movable) {
+    return {
+      name: movable.name,
+      type: movable.type,
+      isHoliday: true
+    };
+  }
+  
+  return null;
+}
+
+/**
+ * 🆕 Verifica se um horário específico está bloqueado por feriado
+ * @param {string} date - Data YYYY-MM-DD
+ * @param {string} time - Horário HH:mm
+ * @returns {Object|null} - { name, blocked } ou null
+ */
+export function isTimeBlockedByHoliday(date, time) {
+  const holiday = getHolidayDetails(date);
+  
+  if (!holiday) return null;
+  
+  const [hours] = time.split(':').map(Number);
+  const isMorning = hours < 12;
+  
+  switch (holiday.type) {
+    case 'full':
+      return { name: holiday.name, blocked: true };
+    case 'morning':
+      return { 
+        name: holiday.name, 
+        blocked: isMorning,
+        note: isMorning ? 'Manhã livre' : 'Tarde normal'
+      };
+    case 'afternoon':
+      return { 
+        name: holiday.name, 
+        blocked: !isMorning,
+        note: !isMorning ? 'Tarde livre' : 'Manhã normal'
+      };
+    default:
+      return null;
+  }
+}
+
+/**
  * Gera todos os feriados nacionais para um ano específico
  * @param {number} year - Ano
  * @returns {string[]} - Array de datas YYYY-MM-DD
@@ -75,7 +177,7 @@ export function generateHolidaysForYear(year) {
     
     // Feriados móveis (baseados na Páscoa)
     formatDate(addDays(easter, -48)), // Carnaval (terça) - opcional
-    formatDate(addDays(easter, -47)), // Quarta-feira de cinzas - não é feriado nacional
+    formatDate(addDays(easter, -47)), // Quarta-feira de cinzas - MANHÃ apenas
     formatDate(addDays(easter, -2)),  // Sexta-feira Santa
     formatDate(addDays(easter, 60)),  // Corpus Christi
   ];
@@ -121,6 +223,25 @@ export function isNationalHoliday(date, currentYear = new Date().getFullYear()) 
 }
 
 /**
+ * Retorna o nome do feriado para uma data específica
+ * @param {Date|string} date - Data a verificar
+ * @returns {string|null} - Nome do feriado ou null
+ */
+export function getHolidayName(date) {
+  const year = typeof date === "string" 
+    ? parseInt(date.split("-")[0]) 
+    : date.getFullYear();
+  
+  const dateStr = typeof date === "string" 
+    ? date.split("T")[0] 
+    : formatDate(date);
+  
+  const holidays = getHolidaysWithNames(year);
+  const holiday = holidays.find(h => h.date === dateStr);
+  return holiday ? holiday.name : null;
+}
+
+/**
  * Lista todos os feriados com nomes
  * @param {number} year - Ano
  * @returns {Array<{date: string, name: string}>}
@@ -150,6 +271,9 @@ export default {
   generateHolidaysForYear,
   generateHolidaysForRange,
   isNationalHoliday,
+  getHolidayName,
+  getHolidayDetails,
+  isTimeBlockedByHoliday,
   getHolidaysWithNames,
   NATIONAL_HOLIDAYS_DYNAMIC,
 };

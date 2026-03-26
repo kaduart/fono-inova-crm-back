@@ -237,9 +237,17 @@ export async function findAvailableSlots({
 
             if (!slots?.length) continue;
 
-            for (const time of slots) {
+            for (const slot of slots) {
+                // 🆕 NOVO: Suporta novo formato { time, available, reason, label }
+                // e formato antigo string
+                const slotTime = typeof slot === 'string' ? slot : slot.time;
+                const isAvailable = typeof slot === 'string' ? true : slot.available;
+                
+                // Pula slots indisponíveis (feriados, ocupados, etc)
+                if (!isAvailable) continue;
+                
                 if (date === todayStr) {
-                    const [h, m] = time.split(":");
+                    const [h, m] = slotTime.split(":");
                     const slotDate = new Date(dateObj);
                     slotDate.setHours(+h, +m, 0, 0);
                     if (slotDate <= now) continue;
@@ -249,12 +257,12 @@ export async function findAvailableSlots({
                     doctorId: String(doctor._id),
                     doctorName: doctor.fullName,
                     date,
-                    time,
+                    time: slotTime,
                     specialty: therapyArea,
                     requestedSpecialties: specialties,
                 });
 
-                if (matchesPeriod(time)) {
+                if (matchesPeriod(slotTime)) {
                     validPeriodCount++;
                 }
 

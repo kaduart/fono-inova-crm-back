@@ -13,9 +13,14 @@ const interactionSchema = new mongoose.Schema({
   triageStep: {
     type: String,
     enum: [
-      'ask_profile',     // idade
-      'ask_complaint',   // queixa/motivo
-      'ask_period',      // dia/período
+      'ask_profile',       // idade
+      'ask_complaint',     // queixa/motivo
+      'ask_period',        // dia/período
+      'ask_name',          // nome do paciente (FSM V8)
+      'COLLECT_THERAPY',   // FSM V8 - coletar especialidade
+      'COLLECT_COMPLAINT', // FSM V8 - coletar queixa
+      'COLLECT_BIRTH',     // FSM V8 - coletar data nascimento
+      'COLLECT_PERIOD',    // FSM V8 - coletar período
       'done'
     ],
     default: null,
@@ -114,7 +119,7 @@ const leadSchema = new mongoose.Schema({
       currentStep: { type: String, default: null },
       lastUpdatedAt: { type: Date, default: null },
     },
-    default: null,
+    default: () => ({ active: false, complaint: null, schedulingIntentActive: false }),
   },
   therapyArea: { type: String, default: null },
   urgencyApplied: { type: String, default: null },
