@@ -54,6 +54,8 @@ import { clinicalEligibility } from "../domain/policies/ClinicalEligibility.js";
 import { canAutoRespond, buildResponseFromFlags, getTherapyInfo } from '../services/ResponseBuilder.js';
 import { CLINIC_KNOWLEDGE } from '../knowledge/clinicKnowledge.js';
 import { hasContextHint } from '../utils/intentRouter.js';
+import { isNationalHoliday } from '../config/feriadosBR.js';
+import Appointment from '../models/Appointment.js';
 // 🆕 Helper interno para detectar emoção (inline para evitar dependência circular)
 function detectEmotionalState(text = '') {
     const anxietyWords = /preocup|ansios|desesper|urgente|muito mal|piorando|não aguento|desesperada/i;
@@ -1330,10 +1332,123 @@ function isTriageComplete(lead) {
 }
 
 // ============================================================================
+// 🆕 REGRA 5: FILTRO DE PACOTES CONTÍNUOS + FERIADOS
+// ============================================================================
+
+/**
+ * 🆕 REGRA 5: Filtra slots ocupados por pacotes contínuos e feriados
+ * @param {Array} slots - Slots candidatos do findAvailableSlots
+ * @param {string} therapyArea - Área de terapia
+ * @returns {Promise<Array>} - Slots filtrados
+ */
+async function filterSlotsByRecurringPackages(slots, therapyArea) {
+    if (!slots || !slots.length) return [];
+    
+    try {
+        // 1. Remove feriados nacionais
+        const slotsWithoutHolidays = slots.filter(slot => {
+            const isHoliday = isNationalHoliday(slot.date);
+            if (isHoliday) {
+                console.log(`🗓️ [REGRA 5] Slot removido (feriado): ${slot.date} ${slot.time}`);
+            }
+            return !isHoliday;
+        });
+        
+        // 2. Busca sessões de pacotes contínuos
+        const startDate = slotsWithoutHolidays[0]?.date;
+        const endDate = slotsWithoutHolidays[slotsWithoutHolidays.length - 1]?.date;
+        
+        const recurringAppointments = await Appointment.find({
+            specialty: therapyArea,
+            packageId: { $exists: true, $ne: null }, // Sessões com pacote
+            status: { $in: ['scheduled', 'confirmed', 'completed'] }, // Não inclui canceladas
+            date: { 
+                $gte: new Date(startDate + 'T00:00:00'), 
+                $lte: new Date(endDate + 'T23:59:59') 
+            }
+        }).lean();
+        
+        if (!recurringAppointments.length) {
+            console.log(`✅ [REGRA 5] Nenhum pacote contínuo encontrado para ${therapyArea}`);
+            return slotsWithoutHolidays;
+        }
+        
+        console.log(`🔄 [REGRA 5] Encontradas ${recurringAppointments.length} sessões de pacotes`);
+        
+        // 3. Filtra slots ocupados por pacotes
+        const filteredSlots = slotsWithoutHolidays.filter(slot => {
+            const slotDateTime = new Date(`${slot.date}T${slot.time}`);
+            
+            const isOccupied = recurringAppointments.some(apt => {
+                const aptDate = new Date(apt.date);
+                return aptDate.toDateString() === slotDateTime.toDateString() &&
+                       aptDate.getHours() === slotDateTime.getHours() &&
+                       aptDate.getMinutes() === slotDateTime.getMinutes() &&
+                       String(apt.doctorId) === String(slot.doctorId);
+            });
+            
+            if (isOccupied) {
+                console.log(`🚫 [REGRA 5] Slot bloqueado (pacote contínuo): ${slot.date} ${slot.time} - Dr(a). ${slot.doctorName}`);
+            }
+            
+            return !isOccupied;
+        });
+        
+        console.log(`✅ [REGRA 5] Slots disponíveis: ${filteredSlots.length}/${slots.length}`);
+        return filteredSlots;
+        
+    } catch (err) {
+        console.error('❌ [REGRA 5] Erro ao filtrar slots:', err.message);
+        // Em caso de erro, retorna slots originais (fail-safe)
+        return slots;
+    }
+}
+
+/**
+ * 🆕 Wrapper para findAvailableSlots com Regra 5
+ * Busca slots e filtra pacotes contínuos + feriados
+ */
+async function findAvailableSlotsWithFilter(params) {
+    const { therapyArea, ...otherParams } = params;
+    
+    // Busca slots originais
+    const slotsResult = await findAvailableSlots({ therapyArea, ...otherParams });
+    
+    if (!slotsResult) return null;
+    
+    // Extrai todos os slots candidatos
+    const allSlots = [
+        slotsResult.primary,
+        ...(slotsResult.alternativesSamePeriod || []),
+        ...(slotsResult.alternativesOtherPeriod || []),
+    ].filter(Boolean);
+    
+    // Aplica filtro de pacotes contínuos
+    const filteredSlots = await filterSlotsByRecurringPackages(allSlots, therapyArea);
+    
+    if (!filteredSlots.length) {
+        console.log('⚠️ [REGRA 5] Todos os slots foram filtrados (pacotes/feriados)');
+        return null;
+    }
+    
+    // Reconstrói objeto de resultado
+    const primary = filteredSlots[0];
+    const alternativesSamePeriod = filteredSlots.slice(1, 3);
+    const alternativesOtherPeriod = filteredSlots.slice(3, 5);
+    
+    return {
+        primary,
+        alternativesSamePeriod,
+        alternativesOtherPeriod,
+        all: filteredSlots,
+    };
+}
+
+// ============================================================================
 // 🔥 ETAPA 1: DETECÇÃO DE INTENÇÃO + WRAPPER (sem alterar triagem ainda)
 // ============================================================================
 
-function detectIntentPriority(message) {
+export function detectIntentPriority(message) {
     const msg = message.toLowerCase();
     
     // 1. SINTOMA/ACOLHIMENTO (mais prioritário)
@@ -1341,7 +1456,21 @@ function detectIntentPriority(message) {
         return "SINTOMA";
     }
     
-    // 1.5 🔥 URGENCIA (prioridade máxima - detecta palavras temporais críticas)
+    // 1.5 🔥 ALTA_INTENCAO - Lead quer agendar com urgência temporal (antes de URGENCIA)
+    // Detecta: "tem hoje?", "amanhã de manhã seria bom", "sábado tem vaga"
+    // ⚠️ NÃO usar \b com caracteres acentuados - word boundary não funciona com "ã"
+    const altaIntencaoRegex = /\b(tem\s+(vaga|hor[áa]rio)|quer(?:o|ia)\s+agendar|marcar|encaixar|posso\s+ir|quando\s+tem|agendar\s+pra|podemos\s+marcar|vou\s+querer|tem\s+como|preciso\s+de)\b/i;
+    const temporalRegex = /(?:^|\s)(hoje|amanh[ãa]|essa\s+semana|pr[óo]xima\s+semana|s[áa]bado|domingo|segunda|ter[cç]a|quarta|quinta|sexta|depois\s+de\s+amanh[ãa]|\d{1,2}[\/\-]\d{1,2})(?:\s|$|[,.!?])/i;
+    const inicioComTemporal = /^\s*(hoje|amanh[ãa]|s[áa]bado|domingo|segunda|ter[cç]a|quarta|quinta|sexta|depois\s+de\s+amanh[ãa]|s[oó]\s+depois)(?:\s+(?:de|às?\s+)?(manh[ãa]|tarde|noite))?/i;
+    const temVagaETemporal = /\btem\b.*\b(vaga|hor[áa]rio)\b.*(?:^|\s)(hoje|amanh[ãa]|s[áa]bado|domingo|segunda|ter[cç]a|quarta|quinta|sexta)(?:\s|$|[,.!?])/i;
+    const temETemporal = /^\s*tem\b.*(?:^|\s)(hoje|amanh[ãa]|s[áa]bado|domingo)(?:\s|$|[,.!?])/i; // "Tem hoje?"
+    const vagaTemporal = /\b(vaga|hor[áa]rio)\b.*(?:^|\s)(hoje|amanh[ãa]|s[áa]bado|domingo|segunda|ter[cç]a|quarta|quinta|sexta)(?:\s|$|[,.!?])/i; // "Vaga amanhã"
+    
+    if ((altaIntencaoRegex.test(msg) && temporalRegex.test(msg)) || inicioComTemporal.test(msg) || temVagaETemporal.test(msg) || temETemporal.test(msg) || vagaTemporal.test(msg)) {
+        return "ALTA_INTENCAO";
+    }
+    
+    // 1.6 🔥 URGENCIA (prioridade alta - detecta palavras temporais críticas)
     if (/\b(urgente|emergencia|emerg[êe]ncia|preciso logo|hoje|amanh[ãa]|agora|imediat|quanto antes|desesperad|n[ãa]o aguent|tentou tudo|j[áa] tentei|t[áa] piorando|t[áa] muito ruim)\b/i.test(msg)) {
         return "URGENCIA";
     }
@@ -1391,7 +1520,17 @@ function handleTriagemResponse(message, context) {
     const flags = context?.forceFlags || {};
     
     // 🔴 Se não há force flags críticas → permite passar
-    if (!flags.forceExplainFirst && !flags.forceEmpathy && !flags.forceRedirect && !flags.forcePrice && !flags.forceFirstContact && !flags.forceUrgencia && !flags.forceUrgency) {
+    if (!flags.forceExplainFirst && !flags.forceEmpathy && !flags.forceRedirect && !flags.forcePrice && !flags.forceFirstContact && !flags.forceUrgencia && !flags.forceUrgency && !flags.forceHighIntent) {
+        return message;
+    }
+    
+    // 🟢 ALTA_INTENCAO: NÃO bloqueia - deixa passar com contexto especial
+    // A diferença é que em vez de retornar null (IA genérica), permite o fluxo
+    // mas com flags de contexto para guiar a resposta
+    if (flags.forceHighIntent) {
+        console.log("🎯 [TRIAGEM WRAPPER] ALTA_INTENCAO detectada → Fluxo com slots imediatos");
+        // NÃO retorna null - permite que o fluxo continue normalmente
+        // O contexto.offerSlotsImmediately será verificado no fluxo principal
         return message;
     }
     
@@ -1501,8 +1640,16 @@ async function _getOptimizedAmandaResponseInternal({
         forcePrice: intentPriority === "PRECO",
         forceFirstContact: intentPriority === "FIRST_CONTACT",
         forceUrgencia: intentPriority === "URGENCIA",
+        forceHighIntent: intentPriority === "ALTA_INTENCAO",  // 🆕 REGRA 1: Alta intenção
         forceUrgency: hasUrgency  // Novo flag para agendamento com urgência
     };
+    
+    // 🆕 REGRA 1: Configurar contexto para ALTA_INTENCAO
+    if (context.forceFlags.forceHighIntent) {
+        context.offerSlotsImmediately = true;
+        context.skipGenericGreeting = true;
+        console.log("🎯 [ALTA_INTENCAO] Contexto configurado: offerSlotsImmediately=true");
+    }
 
     // 🛡️ ANTI-LOOP GUARD: Verifica se triagem já está completa antes de qualquer coisa
     if (lead?._id && isTriageComplete(lead)) {
@@ -1515,14 +1662,14 @@ async function _getOptimizedAmandaResponseInternal({
             });
         }
 
-        // Busca e oferece slots imediatamente
-        const slots = await findAvailableSlots({
+        // Busca e oferece slots imediatamente (🆕 REGRA 5: com filtro de pacotes/feriados)
+        const slots = await findAvailableSlotsWithFilter({
             therapyArea: lead.therapyArea,
             patientAge: lead.patientInfo?.age,
             preferredPeriod: lead.pendingPreferredPeriod
         });
 
-        if (slots && slots.length > 0) {
+        if (slots && slots.all?.length > 0) {
             const { message: slotMenu } = buildSlotMenuMessage(slots);
             return ensureSingleHeart(slotMenu + "\n\nQual funciona melhor? 💚");
         } else {
@@ -1924,6 +2071,46 @@ async function _getOptimizedAmandaResponseInternal({
         }
     } else {
         console.log(`[DEBUG ESPECIALIDADE] Não passou nas condições - pulando fallback`);
+    }
+
+    // 🆕 REGRA 3 & 4: ALTA_INTENCAO/URGENCIA sem therapyArea → Resposta rápida com slots
+    if ((context.forceFlags?.forceHighIntent || context.forceFlags?.forceUrgency) && 
+        !amandaAnalysis.extracted.therapyArea && !lead?.therapyArea) {
+        
+        console.log("🚀 [ALTA_INTENCAO/URGENCIA] Lead quer agendar urgente sem área definida");
+        
+        // 🆕 REGRA 3: Tenta inferir área do histórico ou texto
+        const inferredArea = inferAreaFromContext(text, enrichedContext, amandaAnalysis.extracted.flags) || 
+            (/\b(fala|voz|gagueira|l[ií]ngua|linguinha|fono)\b/i.test(text) ? 'fonoaudiologia' :
+             /\b(comportamento|emo[cç][aã]o|ansiedade|psico)\b/i.test(text) ? 'psicologia' :
+             /\b(motor|coordena[cç][aã]o|sensorial|to\b)\b/i.test(text) ? 'terapia_ocupacional' : null);
+        
+        if (inferredArea) {
+            // Salva área inferida e continua para buscar slots
+            await safeLeadUpdate(lead._id, { 
+                $set: { therapyArea: inferredArea, stage: 'triagem_agendamento' } 
+            }).catch(() => {});
+            lead.therapyArea = inferredArea;
+            amandaAnalysis.extracted.therapyArea = inferredArea;
+            console.log(`🎯 [INFERÊNCIA] Área inferida: ${inferredArea}`);
+        } else {
+            // 🆕 REGRA 4: Template de resposta rápida - oferece múltiplas áreas
+            const periodoSolicitado = extractPeriodFromText(text) || 
+                (/\b(manh[ãa]|manha)\b/i.test(text) ? 'manhã' : 
+                 /\b(tarde)\b/i.test(text) ? 'tarde' : null);
+            
+            const diaSolicitado = /\b(hoje)\b/i.test(text) ? 'hoje' :
+                /\b(amanh[ãa]|amanha)\b/i.test(text) ? 'amanhã' :
+                /\b(s[áa]bado)\b/i.test(text) ? 'sábado' :
+                /\b(domingo)\b/i.test(text) ? 'domingo' : 'esse período';
+            
+            return ensureSingleHeart(
+                `Entendi que você precisa de um horário ${diaSolicitado}${periodoSolicitado ? ' de ' + periodoSolicitado : ''}! 💚\n\n` +
+                `Temos vagas em várias áreas. Pra te mostrar os melhores horários, ` +
+                `qual especialidade você precisa: **Fonoaudiologia**, **Psicologia**, **Terapia Ocupacional**, **Fisioterapia** ou **Neuropsicologia**?\n\n` +
+                `Ou se preferir, posso verificar em todas as áreas ao mesmo tempo! 😊`
+            );
+        }
     }
 
     // 3.5 SEM THERAPY AREA → Resposta contextual baseada em flags e sintomas
@@ -2976,14 +3163,14 @@ async function _getOptimizedAmandaResponseInternal({
                 $set: { triageStep: "done", stage: "engajado" }
             });
 
-            // Busca slots
-            const slots = await findAvailableSlots({
+            // Busca slots (🆕 REGRA 5: com filtro de pacotes/feriados)
+            const slots = await findAvailableSlotsWithFilter({
                 therapyArea: lead.therapyArea,
                 patientAge: lead.patientInfo?.age,
                 preferredPeriod: lead.pendingPreferredPeriod
             });
 
-            if (slots && slots.length > 0) {
+            if (slots && slots.all?.length > 0) {
                 const { message: slotMenu } = buildSlotMenuMessage(slots);
                 return ensureSingleHeart(slotMenu + "\n\nQual funciona melhor? 💚");
             } else {
@@ -3170,11 +3357,22 @@ Em breve nossa equipe entra em contato 😊`
         }
     }
     // 🛡️ VERIFICAÇÃO DE DESAMBIGUAÇÃO: "vaga" pode ser consulta OU emprego
+    // 🆕 REGRA 2: Prioridade máxima para contexto temporal + vaga = AGENDAMENTO
     if (flags.wantsPartnershipOrResume) {
         const normalizedText = flags.normalizedText || text.toLowerCase();
-
+        
+        // 🆕 REGRA 2: Contexto temporal + "vaga" SEMPRE = agendamento (nunca emprego)
+        const hasTemporalContext = /\b(hoje|amanh[ãa]|s[áa]bado|domingo|segunda|ter[cç]a|quarta|quinta|sexta|dias?|semanas?|\d{1,2}[\/\-]\d{1,2})\b/i.test(normalizedText);
+        const hasVaga = /\btem\s+vaga|tem\s+hor[áa]rio|disponibilidade\b/i.test(normalizedText);
+        
+        if (hasTemporalContext && hasVaga) {
+            console.log("[DISAMBIGUATION] Temporal + Vaga = AGENDAMENTO (ignorando parceria)");
+            flags.wantsSchedule = true;
+            flags.wantsPartnershipOrResume = false;
+            // Não retorna - deixa o fluxo continuar para agendamento
+        }
         // Se ambos forem detectados, verificar contexto para decidir
-        if (flags.wantsSchedule) {
+        else if (flags.wantsSchedule) {
             // Contextos que indicam agendamento de consulta (não emprego)
             const schedulingContext = /\b(dias|hor[áa]rio|consulta|agendar|marcar|disponibilidade|atendimento|tem\s+vaga|quais\s+os\s+dias)\b/i.test(normalizedText);
             // Contextos que indicam emprego/parceria
@@ -3412,7 +3610,7 @@ Em breve nossa equipe entra em contato 😊`
         const period = lead?.qualificationData?.extractedInfo?.disponibilidade;
 
         try {
-            const slots = await findAvailableSlots({
+            const slots = await findAvailableSlotsWithFilter({
                 therapyArea,
                 preferredPeriod: period,
                 daysAhead: 30,
@@ -3567,7 +3765,7 @@ Em breve nossa equipe entra em contato 😊`
             }).catch(err => logSuppressedError('safeLeadUpdate', err));
 
             try {
-                const slots = await findAvailableSlots({
+                const slots = await findAvailableSlotsWithFilter({
                     therapyArea,
                     preferredPeriod,
                     daysAhead: 30,
@@ -5975,6 +6173,16 @@ ${useModule("noNameBeforeSlotRule")}
         additionalContext += safeContext.shouldOfferScheduling
             ? "\n📅 MOMENTO: Contexto propício para oferecer agendamento se fizer sentido"
             : "\n📅 MOMENTO: Ainda não é hora de pressionar agendamento - foco em informação";
+    }
+
+    // 🆕 REGRA 6: Instrução específica para URGÊNCIA/ALTA_INTENCAO
+    if (safeContext.forceUrgency || safeContext.forceHighIntent) {
+        additionalContext += `\n\n🚨 URGÊNCIA/ALTA INTENÇÃO DETECTADA — REGRAS ESPECÍFICAS:` +
+            `\n- NÃO use "Me conta o que você está buscando" ou saudações genéricas` +
+            `\n- NÃO peça para repetir nome/idade se já estiver no lead` +
+            `\n- OFEREÇA horários disponíveis IMEDIATAMENTE ou peça a especialidade de forma direta` +
+            `\n- Se não tiver no dia/período solicitado, ofereça a alternativa mais próxima` +
+            `\n- Mantenha tom acolhedor mas ÁGIL — o lead quer resolver logo`;
     }
 
     // 🧠 Monta nota sobre dados já coletados (evita perguntar de novo)
