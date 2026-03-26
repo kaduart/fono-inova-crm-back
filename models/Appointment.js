@@ -198,6 +198,14 @@ const appointmentSchema = new mongoose.Schema({
     capturedAt: { type: Date, default: null }          // quando o lead entrou
   },
 
+  // 🔥 NOVO: Indica se é o primeiro agendamento do paciente
+  // Usado para distinguir novos pacientes (conversões) de recorrentes
+  isFirstAppointment: {
+    type: Boolean,
+    default: false,
+    index: true  // facilita queries por tipo
+  },
+
   // ─── CLASSIFICAÇÃO DE PACIENTE (preenchido na importação) ──
   // novo: primeiro contato ever; retorno: voltou após meses; recorrente: já ativo
   patientType: {

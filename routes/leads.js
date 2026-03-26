@@ -589,4 +589,91 @@ router.get('/report/summary',
  * Acesso: admin, secretary
  */
 
+/**
+ * 🔥 GET /leads/dashboard-metrics
+ * Métricas eficientes para dashboard (dia, semana, mês)
+ * Uma query só com facet
+ * Acesso: admin, secretary
+ */
+router.get('/dashboard-metrics',
+    authorize(['admin', 'secretary']),
+    async (req, res) => {
+        try {
+            // Definir datas
+            const now = new Date();
+            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const startOfWeek = new Date(now);
+            startOfWeek.setDate(now.getDate() - now.getDay()); // Domingo
+            startOfWeek.setHours(0, 0, 0, 0);
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+            // 🚀 UMA QUERY SÓ com facet
+            const metrics = await Lead.aggregate([
+                {
+                    $facet: {
+                        // Leads de hoje
+                        today: [
+                            { $match: { createdAt: { $gte: startOfDay } } },
+                            { $count: 'total' }
+                        ],
+                        // Leads da semana
+                        thisWeek: [
+                            { $match: { createdAt: { $gte: startOfWeek } } },
+                            { $count: 'total' }
+                        ],
+                        // Leads do mês
+                        thisMonth: [
+                            { $match: { createdAt: { $gte: startOfMonth } } },
+                            { $count: 'total' }
+                        ],
+                        // Total geral
+                        total: [
+                            { $count: 'total' }
+                        ],
+                        // Por status (hoje)
+                        byStatusToday: [
+                            { $match: { createdAt: { $gte: startOfDay } } },
+                            { $group: { _id: '$status', count: { $sum: 1 } } }
+                        ],
+                        // Por origem (hoje)
+                        bySourceToday: [
+                            { $match: { createdAt: { $gte: startOfDay } } },
+                            { $group: { _id: '$source', count: { $sum: 1 } } }
+                        ]
+                    }
+                }
+            ]);
+
+            const result = metrics[0];
+
+            res.json({
+                success: true,
+                data: {
+                    today: result.today[0]?.total || 0,
+                    thisWeek: result.thisWeek[0]?.total || 0,
+                    thisMonth: result.thisMonth[0]?.total || 0,
+                    total: result.total[0]?.total || 0,
+                    byStatusToday: result.byStatusToday.reduce((acc, item) => {
+                        acc[item._id || 'unknown'] = item.count;
+                        return acc;
+                    }, {}),
+                    bySourceToday: result.bySourceToday.reduce((acc, item) => {
+                        acc[item._id || 'unknown'] = item.count;
+                        return acc;
+                    }, {})
+                },
+                generatedAt: new Date()
+            });
+
+        } catch (err) {
+            console.error('❌ Erro em dashboard-metrics:', err);
+            res.status(500).json({
+                success: false,
+                message: 'Erro ao buscar métricas',
+                error: err.message
+            });
+        }
+    }
+);
+
 export default router;

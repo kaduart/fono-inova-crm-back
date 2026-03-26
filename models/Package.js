@@ -10,7 +10,7 @@ const packageSchema = new mongoose.Schema({
   paymentType: { type: String },
   sessionType: {
     type: String,
-    enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'psicomotricidade', 'musicoterapia', 'psicopedagogia'],
+    enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'psicomotricidade', 'musicoterapia', 'psicopedagogia', 'neuropediatria', 'neuroped'],
     required: true
   },
   sessionValue: {
@@ -41,7 +41,7 @@ const packageSchema = new mongoose.Schema({
   specialty: {
     type: String,
     required: true,
-    enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'pediatria', 'neuroped', 'psicomotricidade', 'musicoterapia', 'psicopedagogia']
+    enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'pediatria', 'neuroped', 'neuropediatria', 'psicomotricidade', 'musicoterapia', 'psicopedagogia']
   },
   firstAppointment: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' },
   financialStatus: {

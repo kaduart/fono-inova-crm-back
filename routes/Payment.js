@@ -1453,6 +1453,7 @@ router.get("/totals", async (req, res) => {
             byMethod,
             byServiceType,
             patientTypeResult,
+            appointmentsList, // 🔥 NOVO: lista de agendamentos com isFirstAppointment
             receitaRealizadaResult,
             particularDebtResult,
             convenioPacotePendingResult,
@@ -1512,6 +1513,11 @@ router.get("/totals", async (req, res) => {
                 { $match: patientTypeMatch },
                 { $group: { _id: '$patientType', count: { $sum: 1 } } }
             ]),
+            // 🔥 NOVO: Agendamentos separados por isFirstAppointment
+            Appointment.find({
+                createdAt: { $gte: rangeStart, $lte: rangeEnd },
+                ...(doctorId ? { doctor: new mongoose.Types.ObjectId(doctorId) } : {}),
+            }).select('_id patient doctor date time specialty isFirstAppointment').lean(),
             Session.aggregate(receitaRealizadaAgg),
             PatientBalance.aggregate(particularDebtAgg),
             Session.aggregate(convenioPacotePendingAgg),
@@ -1556,6 +1562,17 @@ router.get("/totals", async (req, res) => {
             novos: ptMap['novo'] || 0,
             retornos: ptMap['retorno'] || 0,
             recorrentes: ptMap['recorrente'] || 0
+        };
+
+        // 🔥 NOVO: Processa agendamentos por isFirstAppointment
+        const appointmentsByType = {
+            novos: (appointmentsList || []).filter(a => a.isFirstAppointment === true),
+            recorrentes: (appointmentsList || []).filter(a => a.isFirstAppointment === false),
+        };
+        const appointmentTypeSummary = {
+            novos: { count: appointmentsByType.novos.length },
+            recorrentes: { count: appointmentsByType.recorrentes.length },
+            total: (appointmentsList || []).length
         };
 
         // ======================================================
@@ -1608,6 +1625,11 @@ router.get("/totals", async (req, res) => {
                 breakdown,
                 patientTypes,
                 receitaRealizada,
+                // 🔥 NOVO: Dados de agendamentos por tipo (para clique no front)
+                appointmentTypes: {
+                    summary: appointmentTypeSummary,
+                    details: appointmentsByType, // lista completa para exibir ao clicar
+                },
             },
         });
     } catch (err) {
@@ -1965,6 +1987,8 @@ router.get("/daily-closing", async (req, res) => {
                 isConvenio: isConvenioAppt,
                 insuranceProvider: isConvenioAppt ? (appt.insuranceProvider || appt.package?.insuranceProvider) : null,
                 insuranceValue: isConvenioAppt ? insuranceValue : null,
+                // 🔥 NOVO: Flag de primeiro agendamento
+                isFirstAppointment: appt.isFirstAppointment || false,
             });
         }
 
@@ -2127,6 +2151,36 @@ router.get("/daily-closing", async (req, res) => {
             (a) => !isCanceled(a.operationalStatus) && (isConfirmed(a.operationalStatus) || isCompleted(a.clinicalStatus))
         ).length;
 
+        // 🔥 NOVO: Separar agendamentos por isFirstAppointment
+        report.summary.appointments.novos = appointmentsDoDia.filter(a => a.isFirstAppointment === true).length;
+        report.summary.appointments.recorrentes = appointmentsDoDia.filter(a => a.isFirstAppointment === false).length;
+        
+        // Detalhes para clique no front
+        report.appointmentsByType = {
+            novos: appointmentsDoDia
+                .filter(a => a.isFirstAppointment === true)
+                .map(a => ({
+                    id: a._id.toString(),
+                    patient: a.patient?.fullName || a.patientInfo?.fullName || 'Não informado',
+                    phone: a.patient?.phone || a.patientInfo?.phone || null,
+                    time: a.time,
+                    specialty: a.specialty,
+                    doctor: a.doctor?.fullName || 'Não informado',
+                    serviceType: a.serviceType,
+                })),
+            recorrentes: appointmentsDoDia
+                .filter(a => a.isFirstAppointment === false)
+                .map(a => ({
+                    id: a._id.toString(),
+                    patient: a.patient?.fullName || a.patientInfo?.fullName || 'Não informado',
+                    phone: a.patient?.phone || a.patientInfo?.phone || null,
+                    time: a.time,
+                    specialty: a.specialty,
+                    doctor: a.doctor?.fullName || 'Não informado',
+                    serviceType: a.serviceType,
+                })),
+        };
+
         // 🏥 Cálculo do Grand Total (caixa + produção de convênio)
         report.financial.grandTotal = report.financial.totalReceived + 
                                        report.financial.totalInsuranceProduction;
@@ -2253,6 +2307,11 @@ router.get("/daily-closing", async (req, res) => {
                     payments: filteredPayments.length,
                     professionals: report.professionals.length,
                     timeSlots: report.timeSlots.length,
+                },
+                // 🔥 NOVO: Contagem por tipo de paciente
+                byPatientType: {
+                    novos: report.summary.appointments.novos,
+                    recorrentes: report.summary.appointments.recorrentes,
                 },
             },
         });
