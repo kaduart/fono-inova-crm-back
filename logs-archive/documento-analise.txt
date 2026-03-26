@@ -1,430 +1,72 @@
-Cara… isso aqui já não é mais “ajuste de fluxo”.
-Isso virou **motor de qualificação inteligente** 👏
+Perfeito, Kimi! 🚀 Aqui vai um **snippet pronto para Amanda**, já considerando:
 
-Vou te dar uma visão honesta de produto agora — porque tecnicamente você já está bem sólido.
-
----
-
-# 🧠 O que você acabou de construir (e talvez não percebeu)
-
-Você saiu de:
-
-❌ chatbot que agenda
-➡️ para
-✅ **sistema que QUALIFICA antes de agendar**
-
-Isso muda tudo:
-
-* melhora taxa de comparecimento
-* reduz agenda errada
-* aumenta percepção de autoridade
-* prepara terreno pra automação de vendas de pacote
+* **Pacotes contínuos** → não oferece slots ocupados por sessões recorrentes do mesmo paciente/doutor/hora.
+* **Feriados nacionais** → blacklist de datas.
+* **Integração com `offerSlotsImmediately`**.
 
 ---
 
-# ⚠️ Agora vem o ponto crítico (que pouca gente faz)
+```javascript
+// 🔹 AmandaOrchestrator.js - snippet Regra 5 + feriados
 
-👉 **Você precisa medir impacto no negócio, não só logs técnicos**
+const { Appointment } = require("../models/Appointment");
+const nationalHolidaysBR = require("../config/feriadosBR"); // array de datas YYYY-MM-DD
 
----
+async function filterUnavailableSlots(doctor, allSlots) {
+  // Pega todos slots ocupados por pacotes contínuos
+  const occupiedSlots = await Appointment.find({
+    doctorId: doctor._id,
+    packageId: { $exists: true },        // apenas pacotes/sessões contínuas
+    status: { $in: ["scheduled", "done"] } 
+  });
 
-# 📊 3 métricas que você DEVE acompanhar (a partir de hoje)
+  // Filtra slots que estão em feriado ou já ocupados
+  const filteredSlots = allSlots.filter(slot => {
+    const slotDateStr = slot.date.toISOString().split("T")[0];
 
-## 1. Taxa de bloqueio por intenção
+    // 🔹 Não oferecer se for feriado
+    if (nationalHolidaysBR.includes(slotDateStr)) return false;
 
-Dos logs:
-`INTENT_BLOCKED_NO_COMPLAINT`
+    // 🔹 Não oferecer se algum paciente contínuo já ocupa
+    const isOccupied = occupiedSlots.some(occ => 
+      occ.dayOfWeek === slot.date.getDay() &&
+      occ.hour === slot.date.getHours()
+    );
 
-👉 Pergunta:
+    return !isOccupied;
+  });
 
-* Está alto demais → você está travando lead
-* Está baixo demais → bug voltou
-
-📌 Referência saudável:
-
-* 20% a 40% das primeiras mensagens
-
----
-
-## 2. Taxa de rejeição (adulto + voz)
-
-`ADULT_VOICE_REJECTED`
-
-👉 Isso aqui é ouro estratégico:
-
-* Se for alto → existe demanda que você não atende
-* Pode virar:
-
-  * nova linha de serviço
-  * parceria
-  * canal de indicação (dinheiro parado hoje)
-
----
-
-## 3. Taxa de recuperação pós-bloqueio
-
-👉 Quantos usuários que foram bloqueados com:
-“me conta melhor a queixa”
-
-REALMENTE respondem depois?
-
-Se for baixo → sua copy precisa melhorar (não é código)
-
----
-
-# 💬 Ajuste fino de conversão (alto impacto)
-
-Sua lógica está perfeita.
-Mas o texto ainda pode melhorar conversão.
-
----
-
-## ❌ Hoje (neutro)
-
-> “Me conta o que está te preocupando”
-
----
-
-## ✅ Melhor (converte mais)
-
-```txt
-Perfeito 😊  
-Pra te orientar certinho 💚  
-me conta o que você ou seu filho estão apresentando — o que mais tem te preocupado?
-```
-
-👉 Pequena mudança = grande impacto
-
----
-
-# 🔥 Oportunidade que você abriu (MUITO forte)
-
-Agora que você tem:
-
-* `isAdult`
-* `complaint`
-* `rejected`
-* `reason`
-
-👉 Você pode fazer isso:
-
-## 💰 Reaproveitar lead rejeitado
-
-Exemplo:
-
-Se:
-`adult_voice_not_attended`
-
-👉 você pode depois enviar:
-
-```txt
-Oi 😊  
-Sobre seu caso de voz, encontrei um profissional que pode te ajudar muito.  
-Se quiser, te passo o contato 💚
-```
-
-👉 Isso vira:
-
-* autoridade
-* parceria
-* possível comissão
-
----
-
-# ⚠️ Pequeno ajuste técnico (último refinamento)
-
-## Sobre o estado `REJECTED`
-
-Você acertou em criar 👏
-Mas recomendo:
-
-```js
-REJECTED: {
-  terminal: true,
-  allowFollowUp: true
+  return filteredSlots;
 }
-```
 
-👉 Pra permitir reativação futura sem resetar lead
+// 🔹 Uso dentro de handleTriagemResponse() ou fluxo ALTA_INTENCAO
+async function getAvailableSlotsForAmanda(doctor, allSlots, context) {
+  const slots = await filterUnavailableSlots(doctor, allSlots);
 
----
+  // Se não tiver slots, prepara resposta rápida
+  if (!slots.length) {
+    context.offerSlotsImmediately = false;
+    return "Não tenho horários disponíveis neste período. Posso te oferecer outras datas?";
+  }
 
-# 🚀 Próximo nível (se quiser escalar MESMO)
-
-Agora você está pronto pra isso:
-
----
-
-## 1. Score de lead (simples e poderoso)
-
-```js
-leadScore = {
-  hasComplaint: true,
-  clarity: high,
-  urgency: medium,
-  fit: true
+  context.offerSlotsImmediately = true;
+  return slots.map(s => `${s.date.toLocaleDateString()} às ${s.date.getHours()}:00`).slice(0,5);
 }
-```
 
-👉 Prioriza atendimento humano depois
-
----
-
-## 2. Priorização automática
-
-Lead com:
-
-* queixa clara
-* criança
-* urgência
-
-👉 entra na frente no atendimento
-
----
-
-## 3. Integração com financeiro (seu próximo ouro 💰)
-
-Você já sabe:
-
-* tipo de caso
-* perfil
-
-👉 pode sugerir pacote ANTES da consulta
-
----
-
-# 🧠 Conclusão direta
-
-Você resolveu o problema certo.
-
-Agora o jogo muda:
-
-❌ “funciona ou não funciona”
-➡️
-✅ “quanto isso aumenta faturamento”
-
----
-
-Se quiser, eu posso te ajudar no próximo passo mais valioso agora:
-
-👉 montar um **painel simples (Mongo ou logs)** com:
-
-* taxa de bloqueio
-* taxa de conversão
-* motivos de rejeição
-
-ou
-
-👉 desenhar **fluxo de oferta de pacote automático** baseado na queixa
-
-Qual você quer atacar agora?
-
-
-
-
-
-
-
-
-
-
-
-Perfeito — você pegou **um ponto MUITO importante** 👇
-
-👉 O mundo real não é só “meu filho” ou “pra mim”
-Tem:
-
-* neto
-* sobrinho
-* afilhado
-* aluno
-* paciente
-* “uma criança aqui em casa”
-
-Se você não tratar isso → o sistema começa a errar contexto de novo.
-
----
-
-# 🧠 Problema real
-
-Hoje sua lógica está assim:
-
-* Detecta adulto → “pra mim”
-* Detecta criança → “meu filho / minha filha”
-
-👉 **Mas falta o meio-termo: responsável por criança**
-
----
-
-# ✅ SOLUÇÃO CORRETA (nível produção)
-
-Você não deve só detectar adulto.
-
-👉 Você precisa classificar em **3 estados**:
-
-```js
-PERSONA = {
-  SELF: 'self',        // adulto falando de si
-  CHILD: 'child',      // responsável falando de criança
-  UNKNOWN: 'unknown'
-}
+module.exports = { filterUnavailableSlots, getAvailableSlotsForAmanda };
 ```
 
 ---
 
-# 🔍 Detector mais robusto
+### **💡 Detalhes importantes**
 
-## 1. Detectar criança (ampliado)
-
-```js
-const mentionsChild = /(
-  filho|filha|
-  criança|beb[eê]|
-  neto|neta|
-  sobrinho|sobrinha|
-  afilhado|afilhada|
-  aluno|aluna|
-  menor|
-  pequeno|pequen[oa]
-)/i.test(text)
-```
-
-👉 Isso resolve seu ponto 💥
+1. `Appointment.packageId` → indica que a sessão faz parte de um pacote contínuo.
+2. `status: ["scheduled","done"]` → só considera sessões agendadas ou já realizadas. Canceladas não bloqueiam.
+3. `nationalHolidaysBR` → array de feriados nacionais em formato `YYYY-MM-DD`. Você pode manter no `config/feriadosBR.js`.
+4. O retorno do `getAvailableSlotsForAmanda` já está pronto para usar no **handler ALTA_INTENCAO**.
 
 ---
 
-## 2. Detectar adulto (self)
+Se você quiser, posso **adiantar também a função que gera a lista de feriados nacionais dinamicamente** pra não precisar atualizar manualmente todos os anos — isso evita problemas futuros com datas de Páscoa, Corpus Christi etc.
 
-```js
-const isSelf = /(
-  para mim|pra mim|
-  para eu|pra eu|
-  é comigo|
-  sou eu
-)/i.test(text)
-```
-
----
-
-## 3. Regra final (ESSENCIAL)
-
-```js
-if (mentionsChild) {
-  stateData.persona = 'child'
-  stateData.isAdult = false
-} else if (isSelf) {
-  stateData.persona = 'self'
-  stateData.isAdult = true
-} else {
-  stateData.persona = 'unknown'
-}
-```
-
----
-
-# ⚠️ REGRA DE OURO
-
-👉 **Criança sempre ganha prioridade**
-
-Mesmo se a pessoa disser:
-
-> "é pra mim e meu neto"
-
-✅ Deve tratar como criança
-
----
-
-# 💬 Impacto direto no LLM
-
-Hoje você só faz:
-
-> “não falar de criança”
-
-Agora você pode fazer MUITO melhor:
-
----
-
-## Se for criança:
-
-```txt
-O atendimento é para uma criança. Use linguagem acolhedora para responsáveis e mencione desenvolvimento infantil.
-```
-
----
-
-## Se for adulto:
-
-```txt
-O atendimento é para um adulto. NÃO mencione criança ou desenvolvimento infantil.
-```
-
----
-
-## Se for unknown:
-
-```txt
-Não está claro se é para adulto ou criança. Pergunte de forma natural.
-```
-
----
-
-# 🔥 Ganho imediato disso
-
-Você resolve:
-
-✅ Neto/avó (seu caso)
-✅ Professores perguntando
-✅ Cuidadores
-✅ Leads confusos
-✅ Ambiguidade de linguagem
-
----
-
-# 🚀 Upgrade simples (recomendado)
-
-Loga isso:
-
-```js
-logger.info('PERSONA_DETECTED', {
-  persona: stateData.persona,
-  text
-})
-```
-
-👉 Isso vai te mostrar:
-
-* quantos são pais
-* quantos são adultos
-* quantos são confusos
-
----
-
-# 🧠 Visão estratégica
-
-Isso aqui parece detalhe…
-
-Mas na prática:
-
-👉 é o que separa chatbot comum de **atendimento inteligente**
-
----
-
-# ⚡ Resumo direto
-
-Você precisa evoluir de:
-
-❌ `isAdult: true/false`
-
-➡️ para
-
-✅ `persona: self | child | unknown`
-
----
-
-Se quiser, no próximo passo eu já te entrego:
-
-👉 função pronta `detectPersona(text)` plugável
-👉 já integrada com seus FIX 1, 2, 3
-👉 sem quebrar nada do fluxo atual
-
-Quer que eu já escreva isso pronto pra colar no teu código?
+Quer que eu faça isso agora?
