@@ -27,7 +27,7 @@ import pricing, { getTherapyPricing, PRICING } from '../config/pricing.js';
 export function buildStrategicContext(flags, lead, enrichedContext) {
     // ✅ Mantém TUDO que já existia (100% backward compatible)
     const strategic = {
-        ...enrichedContext,
+        ...(enrichedContext || {}),
 
         // 🆕 Adiciona hints estratégicos (sugestões, não ordens)
         strategicHints: {}

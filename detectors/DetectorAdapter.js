@@ -211,13 +211,13 @@ export function detectWithContext(text, lead = {}, enrichedContext = {}) {
  */
 function buildDetectorContext(lead, enrichedContext) {
   // 🔍 Extrai última mensagem da Amanda (para inferir contexto)
-  const lastBotMessage = getLastBotMessage(enrichedContext.conversationHistory);
+  const lastBotMessage = getLastBotMessage(enrichedContext?.conversationHistory);
 
   // 🎯 Determina stage atual
   const stage = determineStage(lead, enrichedContext);
 
   // 📊 Calcula messageIndex (índice da mensagem inbound no histórico)
-  const messageIndex = calculateMessageIndex(enrichedContext.conversationHistory);
+  const messageIndex = calculateMessageIndex(enrichedContext?.conversationHistory);
 
   return {
     // Contexto da conversa
@@ -233,8 +233,8 @@ function buildDetectorContext(lead, enrichedContext) {
     },
 
     // Contexto de conversa
-    messageCount: enrichedContext.messageCount || 0,
-    isFirstContact: enrichedContext.isFirstContact || false,
+    messageCount: enrichedContext?.messageCount || 0,
+    isFirstContact: enrichedContext?.isFirstContact || false,
     messageIndex,  // 🆕 Índice da mensagem inbound (0-based) para detecção de early questions
 
     // 🆕 FASE 2: Contexto de preço e agendamento

@@ -65,6 +65,88 @@ function formatWhatsAppResponse(text) {
 }
 
 // ============================================================
+// 🧠 CLASSIFICAÇÃO INTELIGENTE DO LEAD (Persona/Intenção)
+// ============================================================
+
+function mapTherapyToDor(especialidade) {
+    const dorMap = {
+        'fonoaudiologia': 'atraso_fala_comunicacao',
+        'psicologia': 'comportamento_emocional',
+        'neuropsicologia': 'aprendizagem_cognitivo',
+        'terapia_ocupacional': 'sensorial_motricidade',
+        'fisioterapia': 'desenvolvimento_motor',
+        'musicoterapia': 'estimulacao_emocional'
+    };
+    return dorMap[especialidade] || 'descoberta';
+}
+
+function calcularEstagio(lead) {
+    const score = lead.qualificationData?.score || 0;
+    const msgCount = lead.messagesCount || lead.messageCount || 0;
+    const hasIntent = lead.qualificationData?.intent;
+    
+    if (score >= 80 || hasIntent === 'agendar') return 'quente';
+    if (score >= 50 || msgCount >= 3) return 'morno';
+    if (score >= 20 || msgCount >= 1) return 'consideracao';
+    return 'frio';
+}
+
+function detectarObjecao(extractedInfo) {
+    const text = JSON.stringify(extractedInfo || {}).toLowerCase();
+    
+    if (/tarde|futuro|esperar|ainda|pequen|novo|tempo/i.test(text)) return 'fase';
+    if (/marido|esposa|mae|pai|familia|decidir|decisao/i.test(text)) return 'marido';
+    if (/caro|valor|preco|gratis|plano|dinheiro/i.test(text)) return 'preco';
+    if (/longe|distancia|bairro|endereco/i.test(text)) return 'local';
+    if (/outro|clinica|concorrente/i.test(text)) return 'concorrente';
+    return null;
+}
+
+function selecionarPersona(classificacao) {
+    const c = classificacao;
+    
+    if (c.estagio === 'frio') {
+        return {
+            nome: 'Educadora',
+            instrucao: 'Explique de forma leve, sem pressionar. Gere curiosidade. Use exemplos do dia a dia.'
+        };
+    }
+    
+    if (c.estagio === 'quente') {
+        return {
+            nome: 'Fechadora',
+            instrucao: 'Seja direta e gentil. Conduza para agendamento com clareza. Elimine atritos.'
+        };
+    }
+    
+    if (c.objecao === 'fase') {
+        return {
+            nome: 'Quebradora',
+            instrucao: 'Valide primeiro ("entendo a preocupação"), depois corrija a crença com dados concretos e cuidado.'
+        };
+    }
+    
+    if (c.objecao === 'marido') {
+        return {
+            nome: 'Empoderadora',
+            instrucao: 'Dê segurança e argumentos para decisão. Ofereça materiais para compartilhar.'
+        };
+    }
+    
+    if (c.emocao === 'ansioso' || c.emocao === 'preocupado') {
+        return {
+            nome: 'Validadora',
+            instrucao: 'Acolha profundamente. Não minimize. Demonstre que entende a urgência emocional.'
+        };
+    }
+    
+    return {
+        nome: 'Validadora',
+        instrucao: 'Acolha e incentive a pessoa a compartilhar mais. Seja receptiva e calorosa.'
+    };
+}
+
+// ============================================================
 // ROTEADOR DE ORQUESTRADORES (feature flag USE_STATE_MACHINE)
 // USE_STATE_MACHINE=true  → WhatsAppOrchestrator (FSM nova)
 // USE_STATE_MACHINE=false → AmandaOrchestrator (legado)
@@ -73,6 +155,33 @@ const fsmOrchestrator = new WhatsAppOrchestrator(); // singleton — evita overh
 
 async function runOrchestrator(lead, userText, context) {
     const leadId = lead?._id;
+    
+    // 🧠 MONTA CLASSIFICAÇÃO INTELIGENTE DO LEAD
+    const classificacao = {
+        dor_principal: mapTherapyToDor(lead.qualificationData?.extractedInfo?.especialidade),
+        estagio: calcularEstagio(lead),
+        emocao: lead.qualificationData?.sentiment || 'neutro',
+        intencao: lead.qualificationData?.intent || 'informacao',
+        objecao: detectarObjecao(lead.qualificationData?.extractedInfo)
+    };
+    
+    const persona = selecionarPersona(classificacao);
+    
+    const enrichedContextFinal = {
+        ...context,
+        inteligencia: {
+            classificacao,
+            persona
+        }
+    };
+    
+    logger.info('LEAD_INTELIGENCIA', { 
+        leadId, 
+        estagio: classificacao.estagio, 
+        emocao: classificacao.emocao,
+        persona: persona.nome 
+    });
+    
     if (process.env.USE_STATE_MACHINE === 'true') {
         const isMidConversationLegacyLead = !lead.currentState && lead.triageStep;
         if (!isMidConversationLegacyLead) {
@@ -81,7 +190,7 @@ async function runOrchestrator(lead, userText, context) {
                 const result = await fsmOrchestrator.process({
                     lead,
                     message: { content: userText },
-                    context,
+                    context: enrichedContextFinal,
                 });
                 logger.info('ORCHESTRATOR_FSM_RESULT', { leadId, command: result?.command });
                 return result;
@@ -94,7 +203,13 @@ async function runOrchestrator(lead, userText, context) {
     } else {
         logger.info('ORCHESTRATOR_LEGACY', { leadId, USE_STATE_MACHINE: process.env.USE_STATE_MACHINE });
     }
-    const text = await getOptimizedAmandaResponse({ content: userText, userText, lead, context });
+    
+    const text = await getOptimizedAmandaResponse({ 
+        content: userText, 
+        userText, 
+        lead, 
+        context: enrichedContextFinal 
+    });
     return text ? { command: 'SEND_MESSAGE', payload: { text } } : { command: 'NO_REPLY' };
 }
 
@@ -536,33 +651,9 @@ export const whatsappController = {
             const from = msg.from;
             const content = msg.text?.body || '';
 
-            // 🛡️ GUARD: CAPTURA FAIL-SAFE DO LEAD (antes do debounce)
-            if (from) {
-                try {
-                    const phoneNorm = normalizeE164BR(from);
-                    await Lead.updateOne(
-                        { 'contact.phone': phoneNorm },
-                        {
-                            $setOnInsert: {
-                                'contact.phone': phoneNorm,
-                                origin: 'WhatsApp',
-                                createdAt: new Date(),
-                                status: 'novo'
-                            },
-                            $set: {
-                                lastInteractionAt: new Date(),
-                                lastInboundMessage: content.substring(0, 200),
-                                'metadata.guardCapturedAt': new Date()
-                            }
-                        },
-                        { upsert: true }
-                    );
-                    console.log(`🛡️ GUARD: Lead capturado ${phoneNorm}`);
-                } catch (leadErr) {
-                    console.error('❌ FAIL-SAFE LEAD ERROR:', leadErr.message);
-                    // Continua mesmo se falhar - o log bruto já salvou
-                }
-            }
+            // 🛡️ NOTA: O upsert do lead é feito no middleware whatsappGuard.js
+            // e também dentro do processInboundMessage. Removido daqui para evitar duplicação.
+            // O middleware já garante captura fail-safe antes de chegar aqui.
 
             // 🆕 DEBOUNCE CORRETO AQUI (3.5s, não 30s)
             const debounceKey = `webhook:buffer:${from}`;
@@ -1561,7 +1652,7 @@ async function processInboundMessage(msg, value) {
             (parseInt(msg.timestamp, 10) || Date.now() / 1000) * 1000
         );
 
-        console.log("🔄 Processando mensagem:", { from, type, wamid });
+        console.log("🔄 Processando mensagem:", { from, type, wamid, traceId: wamid });
 
         // EXTRAÇÃO DE CONTEÚDO
         let content = "";
@@ -1585,7 +1676,7 @@ async function processInboundMessage(msg, value) {
                 console.error("⚠️ Falha ao resolver mídia (audio):", e.message);
             }
 
-            console.log(`🎙️ Processando áudio para transcrição: ${mediaId}`);
+            console.log(`🎙️ [${wamid}] Processando áudio para transcrição: ${mediaId}`);
 
             // 🔹 TRANSCRIÇÃO
             content = await transcribeWaAudio({ mediaId });
@@ -1607,7 +1698,7 @@ async function processInboundMessage(msg, value) {
             }
 
             try {
-                console.log(`🖼️ Gerando descrição para imagem: ${mediaId}`);
+                console.log(`🖼️ [${wamid}] Gerando descrição para imagem: ${mediaId}`);
                 const description = await describeWaImage({ mediaId, mediaUrl, mimeType: msg.image?.mime_type });
 
                 if (caption) {
@@ -1994,7 +2085,7 @@ async function handleAutoReply(from, to, content, lead) {
     let mongoLockAcquired = false;
     let mongoLockedLeadId = null;
     try {
-        console.log('🤖 [AUTO-REPLY] Iniciando para', { from, to, leadId: lead?._id, content });
+        console.log('🤖 [AUTO-REPLY] Iniciando para', { from, to, leadId: lead?._id, traceId: lead?._id, content: content?.substring(0, 50) });
 
         const fromNumeric = from.replace(/\D/g, '');
         const isTestNumber = AUTO_TEST_NUMBERS.includes(fromNumeric);
@@ -2010,7 +2101,7 @@ async function handleAutoReply(from, to, content, lead) {
                 if (ok === "OK") {
                     lockAcquired = true;
                 } else {
-                    console.log("⏭️ AI lock ativo; evitando corrida", lockKey);
+                    console.log(`⏭️ [${lead?._id}] AI lock ativo; evitando corrida`, lockKey);
                     // ✅ FIX: Guarda mensagem pendente pra processar depois
                     try {
                         const pendingKey = `ai:pending:${from}`;
@@ -2018,7 +2109,7 @@ async function handleAutoReply(from, to, content, lead) {
                         const pendingList = existing ? JSON.parse(existing) : [];
                         pendingList.push({ content, timestamp: Date.now() });
                         await redis.set(pendingKey, JSON.stringify(pendingList), "EX", 300); // 5min TTL
-                        console.log("📝 Mensagem guardada para processar depois:", content.substring(0, 50));
+                        console.log(`📝 [${lead?._id}] Mensagem guardada para processar depois:`, content.substring(0, 50));
                     } catch (e) {
                         console.warn("⚠️ Falha ao guardar mensagem pendente:", e.message);
                     }
@@ -2043,7 +2134,7 @@ async function handleAutoReply(from, to, content, lead) {
 
                 const exists = await redis.get(recentKey);
                 if (exists) {
-                    console.log("⏭️ Mensagem idêntica recebida recentemente; evitando duplicação:", content.substring(0, 50));
+                    console.log(`⏭️ [${lead?._id}] Mensagem idêntica recebida recentemente; evitando duplicação:`, content.substring(0, 50));
                     return;
                 }
 
@@ -2064,7 +2155,7 @@ async function handleAutoReply(from, to, content, lead) {
                 if (ok === "OK") {
                     debounceAcquired = true;
                 } else {
-                    console.log("⏭️ Debounce ativo (3s); pulando auto-reply");
+                    console.log(`⏭️ [${lead?._id}] Debounce ativo; pulando auto-reply`);
                     return;
                 }
             }
@@ -2088,7 +2179,7 @@ async function handleAutoReply(from, to, content, lead) {
                     const pendingTexts = pendingList.map(p => p.content).join("\n");
                     aggregatedContent = `${pendingTexts}\n${content}`;
                     await redis.del(pendingKey);
-                    console.log("📥 Mensagens pendentes agregadas:", pendingList.length);
+                    console.log(`📥 [${lead?._id}] Mensagens pendentes agregadas:`, pendingList.length);
                 }
             }
         } catch (e) {

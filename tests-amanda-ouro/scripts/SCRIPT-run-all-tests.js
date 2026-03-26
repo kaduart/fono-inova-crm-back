@@ -194,7 +194,7 @@ async function runQNAV8Mode() {
 ╚════════════════════════════════════════════════════════════════╝
 ${c.reset}\n`);
 
-    const qnaScript = join(__dirname, '../relatorio-qna-amanda-v8.js');
+    const qnaScript = join(__dirname, '../../tests/relatorio-qna-amanda-v8.js');
     
     if (!fs.existsSync(qnaScript)) {
         log(c.red, `❌ Script não encontrado: ${qnaScript}`);
@@ -205,7 +205,7 @@ ${c.reset}\n`);
     log(c.blue, '🚀 Iniciando geração do relatório Q&A...');
     log(c.yellow, '   (Isso pode levar alguns minutos - são 7 cenários com chamadas reais à Amanda)\n');
     
-    const result = await runTest('../relatorio-qna-amanda-v8.js', 600000);
+    const result = await runTest('../../tests/relatorio-qna-amanda-v8.js', 600000);
     
     console.log('\n' + c.cyan + '═'.repeat(64) + c.reset);
     

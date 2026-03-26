@@ -1,6 +1,6 @@
 # 🌐 RELATÓRIO TESTE — Mensagens do Site Fono Inova
 
-**Gerado em:** 24/03/2026, 23:00:47  
+**Gerado em:** 25/03/2026, 20:46:26  
 **Total de mensagens testadas:** 52  
 **Fonte:** 29 páginas do site
 
@@ -797,11 +797,7 @@ Queria entender melhor como funciona. Pode me exrender?
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Que bom que você se interessou pela fisioterapia pediátrica! 😊
-
-Na nossa clínica, a fisioterapia infantil foca no desenvolvimento motor, postura e reabilitação, ajudando as crianças a alcançarem seus marcos de desenvolvimento de forma saudável. 
-
-Para que eu possa te dar informações mais específicas, você poderia me contar o nome e a idade do seu filho(a)? 💚
+[ERRO: Todos os providers falharam: OpenAI: 401 Incorrect API key provided: sk-test. You can find your API key at https://platform.openai.com/account/api-keys.]
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1134,11 +1130,7 @@ Quero agendar uma avaliação para meu filho.
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Que bom que você quer dar esse passo!  
-
-Para agendar a avaliação do Teste da Linguinha, só preciso de algumas informações. 
-
-Primeiro, qual é a idade do seu filho? 😊 💚
+[ERRO: Todos os providers falharam: OpenAI: 401 Incorrect API key provided: sk-test. You can find your API key at https://platform.openai.com/account/api-keys.]
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1198,11 +1190,7 @@ Queria entender melhor como funciona o teste da linguinha. Pode me explicar?
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-O teste da linguinha é uma avaliação que verifica a mobilidade e a funcionalidade da língua, especialmente em crianças com suspeita de frenotomia. 
-
-Durante o teste, observamos se a língua consegue se mover de forma adequada, o que é essencial para a alimentação, fala e desenvolvimento oral.
-
-Posso saber o nome e a idade do seu filho para te dar informações mais específicas? 💚
+[ERRO: Todos os providers falharam: OpenAI: 401 Incorrect API key provided: sk-test. You can find your API key at https://platform.openai.com/account/api-keys.]
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1229,11 +1217,7 @@ Queria entender melhor como funciona. Pode me explicar?
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Que bom que você se interessou pelo freio lingual 😊
-
-O teste da linguinha é um procedimento realizado para avaliar a presença de anquiloglossia, que é quando o freio da língua é muito curto. Isso pode interferir na fala, na deglutição e até na amamentação. A avaliação é feita para determinar se a liberação do freio é necessária.
-
-Para te ajudar melhor, posso saber o nome e a idade do paciente? 💚
+[ERRO: Todos os providers falharam: OpenAI: 401 Incorrect API key provided: sk-test. You can find your API key at https://platform.openai.com/account/api-keys.]
 ```
 
 **📋 AVALIAÇÃO:**
@@ -1287,11 +1271,7 @@ Queria entender melhor como funciona. Pode me explicar?
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-A musicoterapia é uma abordagem terapêutica que utiliza a música para promover a saúde e o bem-estar. 
-
-Nas sessões, trabalhamos com atividades musicais que podem incluir escuta, improvisação e até a composição de músicas, tudo isso de forma personalizada, visando atender às necessidades específicas de cada paciente.
-
-Seria ótimo saber o nome e a idade da criança para que eu possa te dar informações ainda mais direcionadas! 💚
+[ERRO: Todos os providers falharam: OpenAI: 401 Incorrect API key provided: sk-test. You can find your API key at https://platform.openai.com/account/api-keys.]
 ```
 
 **📋 AVALIAÇÃO:**

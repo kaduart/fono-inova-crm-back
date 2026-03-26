@@ -165,6 +165,106 @@ function makeFreshLead(phone) {
   };
 }
 
+// ═══════════════════════════════════════════════════════════
+// CLASSIFICAÇÃO DE LEAD (PARA TESTAR PERSONAS)
+// ═══════════════════════════════════════════════════════════
+
+function mapTherapyToDor(therapy) {
+  const map = {
+    'fisioterapia': 'Dor nas costas/lombar/cervical',
+    'fisioterapia_pelvica': 'Incontinência/dor pélvica',
+    'pilates': 'Postura/flexibilidade',
+    'pilates_tecar': 'Recuperação/condicionamento',
+    'drenagem': 'Retenção de líquido/circulação',
+    'liberacao': 'Tensão muscular crônica',
+    'acupuntura': 'Dor crônica/estresse',
+    'rpg': 'Postura/desalinhamento',
+    'tecar': 'Recuperação de lesão',
+    'infrared': 'Bem-estar/detox'
+  };
+  return map[therapy] || 'Dor ou desconforto geral';
+}
+
+function detectarEmocao(text) {
+  const t = text.toLowerCase();
+  if (/desesperad|urgente|muito mal|horr[ií]vel|insuport[aá]vel/.test(t)) return 'desespero';
+  if (/ansios|preocupad|medo/.test(t)) return 'ansiedade';
+  if (/frustrad|j[aá] tentei|nada funciona/.test(t)) return 'frustracao';
+  if (/quanto custa|pre[çc]o|valor|qual o investimento/.test(t)) return 'cautela';
+  if (/quero agendar|posso ir|quando tem|disponibilidade/.test(t)) return 'pronto';
+  return 'neutro';
+}
+
+function detectarIntencao(text) {
+  const t = text.toLowerCase();
+  if (/agendar|marcar|consulta|avalia[çc][aã]o/.test(t)) return 'agendar';
+  if (/pre[çc]o|valor|custa|plano|reembolso|conv[eê]nio/.test(t)) return 'informacao_precos';
+  if (/endere[çc]o|onde fica|localiza|como chegar/.test(t)) return 'informacao_local';
+  if (/tratamento|terapia|funciona|resultado/.test(t)) return 'informacao_tratamento';
+  if (/d[uú]vida|perguntar|queria saber/.test(t)) return 'duvida';
+  return 'exploracao';
+}
+
+function detectarObjecao(text) {
+  const t = text.toLowerCase();
+  if (/n[aã]o tenho tempo|ocupad|trabalho durante/.test(t)) return 'fase';
+  if (/marido|espos[oa]|fam[íi]lia|preciso perguntar/.test(t)) return 'terceiro';
+  if (/caro|n[aã]o tenho dinheiro|muito caro/.test(t)) return 'preco';
+  if (/longe|n[aã]o tenho transporte/.test(t)) return 'local';
+  if (/outro lugar|j[aá] fui em|cl[ií]nica [xX]/.test(t)) return 'concorrente';
+  return null;
+}
+
+function calcularEstagio(text, lead) {
+  let score = 0;
+  const t = text.toLowerCase();
+  
+  // Sinais de engajamento
+  if (/quero|gostaria|posso|vou|agenda|marca/.test(t)) score += 2;
+  if (/quando|qual hor[aá]rio|dispon[ií]vel/.test(t)) score += 2;
+  if (/pre[çc]o|valor|custa|investimento/.test(t)) score += 1;
+  
+  // Sinais de desengajamento
+  if (/s[oó] pergunta|tire uma d[uú]vida|informa[çc][aã]o/.test(t)) score -= 1;
+  
+  // Considerar histórico
+  const msgCount = lead?.messageCount || 0;
+  if (msgCount > 5) score += 1;
+  if (msgCount > 10) score += 1;
+  
+  if (score >= 4) return 'quente';
+  if (score >= 2) return 'morno';
+  if (score >= 0) return 'consideracao';
+  return 'frio';
+}
+
+function selecionarPersona(estagio, emocao, objecao) {
+  if (objecao === 'fase') return { nome: 'Quebradora', instrucao: 'Valide primeiro, explique que tratamentos duram 50 min, ofereça horários estratégicos (almoço/final de tarde).' };
+  if (objecao === 'terceiro') return { nome: 'Quebradora', instrucao: 'Sugira que o marido/familiar venha junto para conhecer, ofereça visita guiada.' };
+  if (objecao === 'preco') return { nome: 'Validadora', instrucao: 'Reforce valor do atendimento 1-a-1, explique reembolso, ofereça opções de parcelamento.' };
+  if (emocao === 'desespero') return { nome: 'Fechadora', instrucao: 'Seja direta e acolhedora, priorize agendamento imediato, mostre empatia mas leve para ação.' };
+  if (emocao === 'ansiedade') return { nome: 'Educadora', instrucao: 'Explique passo a passo, tranquilize, seja didática antes de propor agendamento.' };
+  if (emocao === 'frustracao') return { nome: 'Validadora', instrucao: 'Valide a frustração, diferencie nossa abordagem, traga casos de sucesso.' };
+  if (estagio === 'quente') return { nome: 'Fechadora', instrucao: 'Seja direta, objetiva, foque em agendar. Não faça perguntas que já foram respondidas.' };
+  if (estagio === 'morno') return { nome: 'Empoderadora', instrucao: 'Incentive a decisão, destaque benefícios, crie senso de urgência suave.' };
+  if (estagio === 'frio') return { nome: 'Educadora', instrucao: 'Explique de forma leve e didática, construa confiança antes de vender.' };
+  return { nome: 'Educadora', instrucao: 'Explique de forma leve e didática, construa confiança antes de vender.' };
+}
+
+function classificarLead(text, therapy, lead) {
+  const dor_principal = mapTherapyToDor(therapy);
+  const estagio = calcularEstagio(text, lead);
+  const emocao = detectarEmocao(text);
+  const intencao = detectarIntencao(text);
+  const objecao = detectarObjecao(text);
+  const persona = selecionarPersona(estagio, emocao, objecao);
+
+  return {
+    classificacao: { dor_principal, estagio, emocao, intencao, objecao },
+    persona
+  };
+}
+
 function getCategoryPriority(category) {
   return CATEGORIES[category]?.priority || 'BAIXA';
 }
@@ -228,14 +328,19 @@ async function run() {
     console.log(`  [${i + 1}/${limit}] [${prioridade}] "${pergunta.substring(0, 55)}${pergunta.length > 55 ? '...' : ''}"`);
     
     try {
+      // 🧠 Cria lead e classifica inteligentemente
+      const leadReplay = makeFreshLead(msg.from);
+      const inteligencia = classificarLead(pergunta, 'fisioterapia', leadReplay);
+      
       const resposta = await getOptimizedAmandaResponse({
         content: pergunta,
         userText: pergunta,
-        lead: makeFreshLead(msg.from),
+        lead: leadReplay,
         context: { 
           source: 'whatsapp-inbound',
           stage: 'novo',
-          isReplay: true  // Flag importante!
+          isReplay: true,
+          inteligencia  // 🧠 INJETA CLASSIFICAÇÃO
         },
         messageId: `replay-${Date.now()}-${i}`,
       });
@@ -251,6 +356,7 @@ async function run() {
         telefoneOriginal: msg.from,
         dataOriginal: msg.timestamp,
         tempoRespostaMs: Date.now() - startTime,
+        inteligencia: inteligencia,  // 🧠 INCLUI PERSONA USADA
       });
       
       process.stdout.write(`     ✅ ${textoResposta.length} chars\n`);
@@ -266,6 +372,7 @@ async function run() {
         telefoneOriginal: msg.from,
         dataOriginal: msg.timestamp,
         erro: true,
+        inteligencia: inteligencia,  // 🧠 INCLUI PERSONA USADA
       });
     }
     
@@ -340,8 +447,19 @@ async function run() {
     
     markdown += `## ${idx + 1}. ${emojiPrioridade} [${r.categoria.toUpperCase()}]\n\n`;
     markdown += `**Categoria:** ${catNome}  \n`;
-    markdown += `**Prioridade:** ${r.prioridade}\n\n`;
-    markdown += `**👤 PERGUNTA REAL DO LEAD:**\n`;
+    markdown += `**Prioridade:** ${r.prioridade}  \n`;
+    
+    // 🧠 Mostra persona/classificação se disponível
+    if (r.inteligencia) {
+      const { classificacao, persona } = r.inteligencia;
+      markdown += `**🎭 Persona:** ${persona.nome}  \n`;
+      markdown += `**📊 Estágio:** ${classificacao.estagio} | **Emoção:** ${classificacao.emocao} | **Intenção:** ${classificacao.intencao}\n`;
+      if (classificacao.objecao) {
+        markdown += `**⚠️ Objecão:** ${classificacao.objecao}  \n`;
+      }
+    }
+    
+    markdown += `\n**👤 PERGUNTA REAL DO LEAD:**\n`;
     markdown += `\`\`\`\n${r.perguntaOriginal}\n\`\`\`\n\n`;
     markdown += `**🤖 RESPOSTA DA AMANDA:**\n`;
     markdown += `\`\`\`\n${r.respostaAmanda}\n\`\`\`\n\n`;

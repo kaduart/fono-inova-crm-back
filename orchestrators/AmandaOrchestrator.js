@@ -1330,6 +1330,115 @@ function isTriageComplete(lead) {
 }
 
 // ============================================================================
+// 🔥 ETAPA 1: DETECÇÃO DE INTENÇÃO + WRAPPER (sem alterar triagem ainda)
+// ============================================================================
+
+function detectIntentPriority(message) {
+    const msg = message.toLowerCase();
+    
+    // 1. SINTOMA/ACOLHIMENTO (mais prioritário)
+    if (/(?:^|\W)(n[ãa]o fala|n[ãa]o olha|dificuldade|inquieto|agitad|birra|agress[ãa]o|agressi\w*|atraso|preocupad|ansios\w*|frustrad\w*|chor[ae]|triste|isolad|hiperativo|desatento|n[ãa]o concentra|n[ãa]o obedece|teimos|medo|ins[ôo]nia|pesadelo|enurese|encoprese|n[ãa]o come|mastiga|engasga|refluxo|constipa[çc][ãa]o)(?:\W|$)/i.test(msg)) {
+        return "SINTOMA";
+    }
+    
+    // 1.5 🔥 URGENCIA (prioridade máxima - detecta palavras temporais críticas)
+    if (/\b(urgente|emergencia|emerg[êe]ncia|preciso logo|hoje|amanh[ãa]|agora|imediat|quanto antes|desesperad|n[ãa]o aguent|tentou tudo|j[áa] tentei|t[áa] piorando|t[áa] muito ruim)\b/i.test(msg)) {
+        return "URGENCIA";
+    }
+    
+    // 2. EXPLICAÇÃO (pedido explícito de informação)
+    if (/\b(como funciona|pode me explicar|o que [ée]|qual [ée]|me explique|como [ée]|funciona como|pode explicar)\b/i.test(msg)) {
+        return "EXPLICACAO";
+    }
+    
+    // 3. FORA DO ESCOPO
+    if (/\b(teste da linguinha|teste da l[íi]ngua|cirurgia|fazer cirurgia|operar|operac[ãa]o|cirurgi[ãa]o|m[ée]dico|pediatra|neuropediatra|otorrino|psiquiatra)\b/i.test(msg)) {
+        return "FORA_ESCOPO";
+    }
+    
+    // 4. PREÇO/VALOR
+    if (/\b(quanto custa|qual o pre[çc]o|qual o valor|investimento|reembolso|plano de sa[úu]de|conv[eê]nio|cart[ãa]o)\b/i.test(msg)) {
+        return "PRECO";
+    }
+    
+    // 5. AGENDAMENTO
+    if (/\b(quero agendar|vou agendar|quero marcar|vou marcar|quando tem vaga|quando posso|tem hor[áa]rio|disponibilidade|posso ir|posso fazer|quero fazer a avalia[çc][ãa]o|encaixar|tem (hoje|amanh[ãa])|hoje|amanh[ãa]\s+(as|às|\d))\b/i.test(msg)) {
+        return "AGENDAMENTO";
+    }
+    
+    // 6. 🔥 FIRST_CONTACT — Topo de funil (vago, curto, aberto)
+    // ⚠️ EXCLUI palavras de urgência temporal (hoje, amanhã) quando relacionadas a disponibilidade
+    if (
+        /^\s*(oi|ol[áa]|bom dia|boa tarde|boa noite|hey|hi)\s*[!?.]*\s*$/i.test(msg) ||
+        /^(preciso|gostaria|quero|tenho interesse|vi o site|me indica(rao|ram))\s*$/i.test(msg) ||
+        /\b(saber mais|orientar|ajuda|informa[çc][aã]o|d[úu]vida|conhecer)\b/i.test(msg) ||
+        (msg.length < 25 && 
+         !/\b(fala|olha|dificuldade|pre[çc]o|valor|custa|agenda|marcar|hoje|amanh[ãa])\b/i.test(msg)) ||
+        /\bpara?\s+(mim|meu filho|minha filha|crian[çc]a|beb[êe])\b/i.test(msg) ||
+        /^\s*(fono|psico|to|fisio|terapia|neuro)\w*\s*\.?\s*$/i.test(msg)
+    ) {
+        return "FIRST_CONTACT";
+    }
+    
+    return "DEFAULT";
+}
+
+/**
+ * Wrapper de triagem — intercepta respostas hardcoded quando force flags ativas
+ * Retorna null se deve deixar IA responder, ou a mensagem se pode prosseguir
+ */
+function handleTriagemResponse(message, context) {
+    const flags = context?.forceFlags || {};
+    
+    // 🔴 Se não há force flags críticas → permite passar
+    if (!flags.forceExplainFirst && !flags.forceEmpathy && !flags.forceRedirect && !flags.forcePrice && !flags.forceFirstContact && !flags.forceUrgencia && !flags.forceUrgency) {
+        return message;
+    }
+    
+    // 🔴 URGENCIA: prioridade máxima - sempre vai para IA com acolhimento + agilidade
+    if (flags.forceUrgencia) {
+        console.log("🛑 [TRIAGEM WRAPPER] Bloqueado: forceUrgencia → IA (prioridade máxima)");
+        return null;
+    }
+    
+    // 🟡 Agendamento puro pode passar se não houver conflito OU urgência
+    if (flags.forceScheduling && !flags.forceExplainFirst && !flags.forceEmpathy && !flags.forceFirstContact && !flags.forceUrgencia) {
+        // Mas se for agendamento com urgência (hoje/amanhã), bypassa para IA
+        if (flags.forceUrgency) {
+            console.log("🛑 [TRIAGEM WRAPPER] Bloqueado: forceScheduling + forceUrgency → IA");
+            return null;
+        }
+        return message;
+    }
+    
+    // 🔴 FIRST_CONTACT: sempre deixa IA responder com acolhimento
+    if (flags.forceFirstContact) {
+        console.log("🛑 [TRIAGEM WRAPPER] Bloqueado: forceFirstContact → IA");
+        return null;
+    }
+    
+    // 🔴 Bloqueia e deixa IA responder
+    if (flags.forceExplainFirst) {
+        console.log("🛑 [TRIAGEM WRAPPER] Bloqueado: forceExplainFirst → IA");
+        return null;
+    }
+    if (flags.forceEmpathy) {
+        console.log("🛑 [TRIAGEM WRAPPER] Bloqueado: forceEmpathy → IA");
+        return null;
+    }
+    if (flags.forceRedirect) {
+        console.log("🛑 [TRIAGEM WRAPPER] Bloqueado: forceRedirect → IA");
+        return null;
+    }
+    if (flags.forcePrice) {
+        console.log("🛑 [TRIAGEM WRAPPER] Bloqueado: forcePrice → IA");
+        return null;
+    }
+    
+    return message;
+}
+
+// ============================================================================
 // 🎯 ORQUESTRADOR PRINCIPAL
 // ============================================================================
 
@@ -1347,6 +1456,29 @@ export async function getOptimizedAmandaResponse({
         /\b(agendar|marcar|consulta|atendimento|avalia[cç][aã]o)\b|\b(qual\s+dia|qual\s+hor[áa]rio|tem\s+hor[áa]rio|dispon[ií]vel|disponivel|essa\s+semana)\b/i;
 
     console.log(`🎯 [ORCHESTRATOR] Processando: "${text}"`);
+
+    // 🔥 ETAPA 1: DETECÇÃO DE INTENÇÃO (sem alterar triagem ainda)
+    const intentPriority = detectIntentPriority(text);
+    console.log(`🔥 [INTENT DETECTION] Prioridade: ${intentPriority}`);
+    
+    if (!context) context = {};
+    context.intentPriority = intentPriority;
+    
+    // Detecta urgência na mensagem independente do intent principal
+    const msg = text.toLowerCase();
+    // ⚠️ Não usar \b com caracteres acentuados - word boundary não funciona com "ã"
+    const hasUrgency = /(?:^|\s)(hoje|amanh[ãa]|urgente|desesperad[oa]?|preciso logo|quanto antes|tem vaga|tem hor[áa]rio)(?:\s|$|[,.!?])/i.test(msg);
+    
+    context.forceFlags = {
+        forceExplainFirst: intentPriority === "EXPLICACAO",
+        forceEmpathy: intentPriority === "SINTOMA" || intentPriority === "URGENCIA" || hasUrgency,
+        forceScheduling: intentPriority === "AGENDAMENTO",
+        forceRedirect: intentPriority === "FORA_ESCOPO",
+        forcePrice: intentPriority === "PRECO",
+        forceFirstContact: intentPriority === "FIRST_CONTACT",
+        forceUrgencia: intentPriority === "URGENCIA",
+        forceUrgency: hasUrgency  // Novo flag para agendamento com urgência
+    };
 
     // 🛡️ ANTI-LOOP GUARD: Verifica se triagem já está completa antes de qualquer coisa
     if (lead?._id && isTriageComplete(lead)) {
@@ -1475,6 +1607,12 @@ export async function getOptimizedAmandaResponse({
         }
     }
 
+    // 🎯 PROPAGA FORCE FLAGS para enrichedContext (para IA respeitar)
+    if (enrichedContext) {
+        enrichedContext.intentPriority = context.intentPriority;
+        enrichedContext.forceFlags = context.forceFlags;
+    }
+
     // 🔄 PRE-ENCHIMENTO: Usa dados da memória se o lead ainda não tem
     if (enrichedContext) {
         // Preenche nome do paciente
@@ -1590,7 +1728,11 @@ export async function getOptimizedAmandaResponse({
             }).catch(() => { });
             // Atualiza a análise para refletir a mudança de área
             amandaAnalysis.extracted.therapyArea = 'psicologia';
-            return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead, enrichedContext);
+            if (context.forceFlags?.forceExplainFirst || context.forceFlags?.forceEmpathy) {
+                console.log('🔥 [BYPASS] neuro redirect com force flag → IA');
+            } else {
+                return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead, enrichedContext);
+            }
         } else if (wantsLaudo && wantsAcompanhamento) {
             // Ambos - explica e pergunta prioridade (formato Ana)
             return ensureSingleHeart(
@@ -1672,6 +1814,9 @@ export async function getOptimizedAmandaResponse({
         if (context?.source === 'lp' && context?.lpPage) {
             console.log('[AMANDA] Modo LP ativo - usando IA para resposta humanizada');
             // Deixa o fluxo continuar para chamar a IA com contexto LP no prompt
+        } else if (context.forceFlags?.forceExplainFirst || context.forceFlags?.forceEmpathy || context.forceFlags?.forceRedirect) {
+            console.log('🔥 [BYPASS] buildSimpleResponse com force flag → IA');
+            // Deixa fluxo continuar para IA
         } else {
             // Fluxo normal: resposta programática rápida
             return buildSimpleResponse(amandaAnalysis.missing, amandaAnalysis.extracted, lead, enrichedContext);
@@ -1731,14 +1876,20 @@ export async function getOptimizedAmandaResponse({
         }
 
         if (flags35.wantsSchedule || flags35.isHotLead) {
-            return ensureSingleHeart(`Ótimo, vou te ajudar a agendar! 💚\n\nPra direcionar certinho: qual especialidade você busca? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia.`);
+            const wrapped = handleTriagemResponse(`Ótimo, vou te ajudar a agendar! 💚\n\nPra direcionar certinho: qual especialidade você busca? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia.`, context);
+            if (wrapped) return ensureSingleHeart(wrapped);
+            console.log('🔥 [BYPASS] wantsSchedule com force flag → IA');
         }
 
         if (flags35.isJustBrowsing) {
-            return ensureSingleHeart(`Oi! Fique à vontade pra perguntar o que quiser 💚\n\nQual área da saúde você está buscando?`);
+            const wrapped = handleTriagemResponse(`Oi! Fique à vontade pra perguntar o que quiser 💚\n\nQual área da saúde você está buscando?`, context);
+            if (wrapped) return ensureSingleHeart(wrapped);
+            console.log('🔥 [BYPASS] isJustBrowsing com force flag → IA');
         }
 
-        return ensureSingleHeart(`Olá! 💚 Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa!`);
+        const wrapped = handleTriagemResponse(`Olá! 💚 Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa!`, context);
+        if (wrapped) return ensureSingleHeart(wrapped);
+        console.log('🔥 [BYPASS] default firstContact com force flag → IA');
     }
 
     // 3.6 COMPLETO → HARD RETURN: Oferece slots IMEDIATAMENTE
@@ -2605,14 +2756,20 @@ export async function getOptimizedAmandaResponse({
                 const isPureGreeting = PURE_GREETING_REGEX.test(text.trim());
 
                 if (isPureGreeting) {
-                    return ensureSingleHeart(
-                        "Olá! 😊 Tudo bem? Pra eu organizar certinho, vocês preferem **manhã ou tarde**?"
+                    const wrapped = handleTriagemResponse(
+                        "Olá! 😊 Tudo bem? Pra eu organizar certinho, vocês preferem **manhã ou tarde**?",
+                        context
                     );
+                    if (wrapped) return ensureSingleHeart(wrapped);
+                    console.log("🔥 [BYPASS] saudação com force flag → IA");
                 }
 
-                return ensureSingleHeart(
-                    "Pra eu organizar certinho, vocês preferem **manhã ou tarde**?"
+                const wrapped = handleTriagemResponse(
+                    "Pra eu organizar certinho, vocês preferem **manhã ou tarde**?",
+                    context
                 );
+                if (wrapped) return ensureSingleHeart(wrapped);
+                console.log("🔥 [BYPASS] ask_period com force flag → IA");
             }
 
             await safeLeadUpdate(lead._id, {
@@ -2622,7 +2779,9 @@ export async function getOptimizedAmandaResponse({
                 }
             });
 
-            return ensureSingleHeart("Ótimo! 💚 Qual o **nome do paciente**?");
+            const wrapped = handleTriagemResponse("Ótimo! 💚 Qual o **nome do paciente**?", context);
+            if (wrapped) return ensureSingleHeart(wrapped);
+            console.log("🔥 [BYPASS] período confirmado com force flag → IA");
         } // fecha else do bypass
     }
 
@@ -2778,9 +2937,12 @@ export async function getOptimizedAmandaResponse({
 
         // Se não extraiu queixa claramente, pergunta
         if (!complaint || complaint.length < 3) {
-            return ensureSingleHeart(
-                "Me conta um pouquinho: o que você tem observado no dia a dia que te preocupou? 💚"
+            const wrapped = handleTriagemResponse(
+                "Me conta um pouquinho: o que você tem observado no dia a dia que te preocupou? 💚",
+                context
             );
+            if (wrapped) return ensureSingleHeart(wrapped);
+            console.log("🔥 [BYPASS] ask_complaint sem queixa com force flag → IA");
         }
 
         // Salva queixa e finaliza triagem

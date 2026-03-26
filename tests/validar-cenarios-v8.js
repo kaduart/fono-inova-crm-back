@@ -17,6 +17,103 @@ dotenv.config();
 const MONGO_URI = process.env.MONGO_URI;
 
 // ═══════════════════════════════════════════════════════════
+// 🧠 HELPERS DE CLASSIFICAÇÃO DE LEAD (copiado do controller)
+// ═══════════════════════════════════════════════════════════
+
+function mapTherapyToDor(especialidade) {
+  const dorMap = {
+    'fonoaudiologia': 'atraso_fala_comunicacao',
+    'psicologia': 'comportamento_emocional',
+    'neuropsicologia': 'aprendizagem_cognitivo',
+    'terapia_ocupacional': 'sensorial_motricidade',
+    'fisioterapia': 'desenvolvimento_motor',
+    'musicoterapia': 'estimulacao_emocional'
+  };
+  return dorMap[especialidade] || 'descoberta';
+}
+
+function calcularEstagio(lead) {
+  const score = lead.qualificationData?.score || 0;
+  const msgCount = lead.messagesCount || lead.messageCount || 0;
+  const hasIntent = lead.qualificationData?.intent;
+  
+  if (score >= 80 || hasIntent === 'agendar') return 'quente';
+  if (score >= 50 || msgCount >= 3) return 'morno';
+  if (score >= 20 || msgCount >= 1) return 'consideracao';
+  return 'frio';
+}
+
+function detectarObjecao(extractedInfo) {
+  const text = JSON.stringify(extractedInfo || {}).toLowerCase();
+  
+  if (/tarde|futuro|esperar|ainda|pequen|novo|tempo/i.test(text)) return 'fase';
+  if (/marido|esposa|mae|pai|familia|decidir|decisao/i.test(text)) return 'marido';
+  if (/caro|valor|preco|gratis|plano|dinheiro/i.test(text)) return 'preco';
+  if (/longe|distancia|bairro|endereco/i.test(text)) return 'local';
+  if (/outro|clinica|concorrente/i.test(text)) return 'concorrente';
+  return null;
+}
+
+function selecionarPersona(classificacao) {
+  const c = classificacao;
+  
+  if (c.estagio === 'frio') {
+    return {
+      nome: 'Educadora',
+      instrucao: 'Explique de forma leve, sem pressionar. Gere curiosidade. Use exemplos do dia a dia.'
+    };
+  }
+  
+  if (c.estagio === 'quente') {
+    return {
+      nome: 'Fechadora',
+      instrucao: 'Seja direta e gentil. Conduza para agendamento com clareza. Elimine atritos.'
+    };
+  }
+  
+  if (c.objecao === 'fase') {
+    return {
+      nome: 'Quebradora',
+      instrucao: 'Valide primeiro ("entendo a preocupação"), depois corrija a crença com dados concretos e cuidado.'
+    };
+  }
+  
+  if (c.objecao === 'marido') {
+    return {
+      nome: 'Empoderadora',
+      instrucao: 'Dê segurança e argumentos para decisão. Ofereça materiais para compartilhar.'
+    };
+  }
+  
+  if (c.emocao === 'ansioso' || c.emocao === 'preocupado') {
+    return {
+      nome: 'Validadora',
+      instrucao: 'Acolha profundamente. Não minimize. Demonstre que entende a urgência emocional.'
+    };
+  }
+  
+  return {
+    nome: 'Validadora',
+    instrucao: 'Acolha e incentive a pessoa a compartilhar mais. Seja receptiva e calorosa.'
+  };
+}
+
+function buildInteligencia(lead) {
+  const classificacao = {
+    dor_principal: mapTherapyToDor(lead.qualificationData?.extractedInfo?.especialidade),
+    estagio: calcularEstagio(lead),
+    emocao: lead.qualificationData?.sentiment || 'neutro',
+    intencao: lead.qualificationData?.intent || 'informacao',
+    objecao: detectarObjecao(lead.qualificationData?.extractedInfo)
+  };
+  
+  return {
+    classificacao,
+    persona: selecionarPersona(classificacao)
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
 // CENÁRIOS DE TESTE
 // ═══════════════════════════════════════════════════════════
 
@@ -173,6 +270,10 @@ async function testarCenario(cenario) {
   let erro = null;
 
   try {
+    // 🧠 MONTA INTELIGÊNCIA DO LEAD PARA TESTE DE PERSONA
+    const inteligencia = buildInteligencia(lead);
+    console.log(`🎭 Persona: ${inteligencia.persona.nome} | Estágio: ${inteligencia.classificacao.estagio}`);
+    
     resposta = await getOptimizedAmandaResponse({
       content: cenario.mensagem,
       userText: cenario.mensagem,
@@ -181,7 +282,8 @@ async function testarCenario(cenario) {
         stage: 'novo',
         messageCount: 1,
         conversationHistory: [],
-        phone: phone
+        phone: phone,
+        inteligencia  // 🧠 INJETA CLASSIFICAÇÃO DA PERSONA
       }
     });
 

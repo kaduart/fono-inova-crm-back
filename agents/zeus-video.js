@@ -1,48 +1,76 @@
 /**
- * 🎬 ZEUS — Gerador Estratégico de Conteúdo de Vídeo (v2.0 com Intenção do Lead)
+ * ZEUS v3.0 — Máquina de Aquisição de Pacientes
  *
- * Cria roteiros estruturados para talking head (avatar falando) com foco
- * em viralização orgânica (Instagram) ou conversão (Meta Ads).
+ * Redesenhado para gerar comportamento, não conteúdo.
+ * Cada roteiro move um lead de um estado psicológico → mensagem no WhatsApp.
  *
- * 🧠 NOVO: Detecção automática de intenção do lead
- * - Passar contextoLead (texto da mensagem) para detectar intenção automaticamente
- * - O ZEUS escolhe hookStyle, tone e CTA baseado no momento do lead
- *
- * Exemplo de uso com intenção:
- *   gerarRoteiro({
- *     subTema: 'atraso_fala',
- *     contextoLead: 'meu filho tem 3 anos e ainda não fala, estou desesperada',
- *     // ZEUS detecta: preocupacao → hook=dor, tone=emotional, cta=agendar
- *   })
- *
- * Params:
- *   subTema, hookStyle, objetivo, platform, variacao, intensidade,
- *   contextoLead (novo), forcarIntencao (novo)
+ * Mudanças v3.0 vs v2.0:
+ * - Modelo: gpt-4o (substituindo gpt-4o-mini)
+ * - 4 pipelines separados por estágio de jornada de compra
+ * - Template obrigatório de 7 elementos orientados a conversão
+ * - Campos novos: estagio_jornada, objecao_principal, crenca_a_quebrar, prova_social
+ * - Score de CONVERSÃO substituindo score de conformidade
+ * - CTA gerado conectado ao hook (não selecionado de pool genérico)
+ * - Few-shot examples por pipeline (2 por tipo principal)
+ * - Sem substituições de humanização via regex
+ * - forcarIntencao corrigido (confianca forçada = 1.0)
+ * - detectarIntencaoLead puramente informacional (não sobrescreve seleções do usuário)
+ * - Instrução de intensidade moderada removida (bloqueava mecanismo de conversão)
+ * - TONE_INSTRUCOES substituído por ESTADO_ALVO (estado emocional do viewer ao final)
  */
 
 import OpenAI from 'openai';
 import logger from '../utils/logger.js';
+import {
+  TEMPLATE_7_ELEMENTOS as TEMPLATE_DESCOBERTA_V2,
+  FEW_SHOTS_DESCOBERTA_V2,
+  scorarDescobertaV2,
+} from './zeus-descoberta-config.js';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+import {
+  buildSystemPromptConsideracao,
+  buildSystemPromptDecisao,
+  buildSystemPromptRetargeting,
+  FEW_SHOTS_CONSIDERACAO,
+  FEW_SHOTS_DECISAO,
+  FEW_SHOTS_RETARGETING,
+  scorarConsideracao,
+  scorarDecisao,
+  scorarRetargeting,
+} from './zeus-pipelines-complementares-config.js';
 
-// Mapeamento de especialidades para profissionais
+// Lazy initialization — evita erro de importação quando OPENAI_API_KEY não está definida (testes)
+let _openai;
+function getOpenAI() {
+  if (!_openai) {
+    _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return _openai;
+}
+
+const MODELO = 'gpt-4o';
+
+// ─────────────────────────────────────────────
+// SEÇÃO 1: MAPEAMENTOS BASE
+// ─────────────────────────────────────────────
+
 const ESPECIALIDADE_PROFISSIONAL = {
-  fonoaudiologia:          'fono_ana',
-  psicologia:              'psico_bia',
-  terapia_ocupacional:     'to_carla',
-  terapiaocupacional:      'to_carla',
-  neuropsicologia:         'neuro_dani',
-  fisioterapia:            'fisio_edu',
-  musicoterapia:           'musico_fer',
-  atraso_fala:             'fono_ana',
-  autismo:                 'psico_bia',
-  comportamento:           'psico_bia',
-  teste_linguinha:         'fono_ana',
+  fonoaudiologia:             'fono_ana',
+  psicologia:                 'psico_bia',
+  terapia_ocupacional:        'to_carla',
+  terapiaocupacional:         'to_carla',
+  neuropsicologia:            'neuro_dani',
+  fisioterapia:               'fisio_edu',
+  musicoterapia:              'musico_fer',
+  atraso_fala:                'fono_ana',
+  autismo:                    'psico_bia',
+  comportamento:              'psico_bia',
+  teste_linguinha:            'fono_ana',
   avaliacao_neuropsicologica: 'neuro_dani',
-  coordenacao_motora:      'fisio_edu',
-  fisioterapia_infantil:   'fisio_edu',
-  psicomotricidade:        'to_carla',
-  geral:                   'fono_ana'
+  coordenacao_motora:         'fisio_edu',
+  fisioterapia_infantil:      'fisio_edu',
+  psicomotricidade:           'to_carla',
+  geral:                      'fono_ana',
 };
 
 const NOMES_PROFISSIONAL = {
@@ -51,916 +79,726 @@ const NOMES_PROFISSIONAL = {
   to_carla:   'Carla (Terapia Ocupacional)',
   neuro_dani: 'Dani (Neuropsicologia)',
   fisio_edu:  'Edu (Fisioterapia)',
-  musico_fer: 'Fer (Musicoterapia)'
+  musico_fer: 'Fer (Musicoterapia)',
 };
 
-// Hooks específicos por subTema — FORTES mas RESPEITOSOS
-// Nível de intensidade: MODERADO (identificação sem drama excessivo)
-const HOOKS_SUBTEMA = {
-  atraso_fala: {
-    curiosidade: [
-      'Tem um hábito em casa que pode estar travando a fala do seu filho',
-      'Por que seu filho de 3 anos fala "tá" em vez de "está"?',
-      'Tem um sinal na fala que muitos pais não percebem'
-    ],
-    dor: [
-      'Você chama seu filho… e ele não responde?',
-      'Seu filho já tentou falar… mas não conseguiu se expressar?',
-      'Enquanto outras crianças brincam, seu filho fica no canto sozinho?'
-    ],
-    alerta: [
-      'Seu filho já tem 3 anos e ainda não fala?',
-      'Esse sinal na fala aparece aos 18 meses — e poucos pais notam',
-      'Não responder quando chama pode ser mais que teimosia'
-    ],
-    erro_comum: [
-      'Esperar "a hora certa" pode estar custando meses de desenvolvimento',
-      'O que você faz achando que ajuda — e na verdade atrasa a fala',
-      'A maioria dos pais corrige o filho do jeito errado todo dia'
-    ]
-  },
-  autismo: {
-    curiosidade: [
-      'Tem sinais que aparecem aos 6 meses — e a maioria dos pais ignora',
-      'Por que seu filho olha pro lado quando você chama o nome?',
-      'O que significa quando a criança roda objetos por horas'
-    ],
-    dor: [
-      'Você chama seu filho… e ele não olha pra você?',
-      'Seu filho brinca sozinho enquanto outras crianças interagem?',
-      'Tem algo diferente no seu filho que você não consegue explicar?'
-    ],
-    alerta: [
-      'Se seu filho faz isso antes dos 2 anos, não é "fase"',
-      'Não olhar nos olhos quando chama — isso não é normal aos 18 meses',
-      'Esse comportamento pode ser um sinal — e aparece cedo'
-    ],
-    erro_comum: [
-      '"Ele vai melhorar quando entrar na escola" — o erro que atrasa tudo',
-      'Esperar a criança "crescer e parar" pode perder o melhor momento',
-      'O que a vovó diz que é normal — e não é'
-    ]
-  },
-  comportamento: {
-    curiosidade: [
-      'Por que seu filho joga no chão quando contrariado — não é birra',
-      'Tem uma explicação neurológica para as explosões do seu filho',
-      'O que está por trás das birras longas'
-    ],
-    dor: [
-      'Você já tentou sair do mercado com seu filho aos gritos?',
-      'Sua rotina vira uma batalha quando é hora de…?',
-      'Você já se sentiu perdido com as reações do seu filho?'
-    ],
-    erro_comum: [
-      'Ceder ou gritar: os dois caminhos pioram o comportamento',
-      'O que você faz no impulso — e reforça a birra',
-      'A frase que os pais usam e que aumenta as crises'
-    ]
-  },
-  teste_linguinha: {
-    curiosidade: [
-      'Por que seu bebê engasga toda hora na mamadeira',
-      'O que o formato da língua do bebê diz sobre amamentação',
-      'Por que alguns bebês não conseguem segurar o peito direito'
-    ],
-    dor: [
-      'Seus seios doem e o bebê não consegue mamar direito?',
-      'O bebê não consegue segurar o peito — pode ser físico',
-      'Amamentação difícil desde o primeiro dia?'
-    ],
-    alerta: [
-      'Se seu bebê faz "clique" ao mamar, presta atenção',
-      'Esse formato da língua dificulta a amamentação desde o nascimento',
-      'Dor nos seios e bebê frustrado — pode ser o freio'
-    ]
-  },
-  coordenacao_motora: {
-    curiosidade: [
-      'Por que seu filho cai tanto quando corre — não é desajeitado',
-      'O que o jeito de subir escada diz sobre coordenação',
-      'Por que algumas crianças não conseguem andar de bicicleta'
-    ],
-    dor: [
-      'Seu filho cai mais que os amigos da mesma idade?',
-      'Seu filho tem medo de brincar porque cai muito?',
-      'Ver seu filho atrás dos outros nas brincadeiras'
-    ],
-    alerta: [
-      'Se seu filho de 5 anos ainda não consegue pular de um pé só',
-      'Quedas frequentes não são normalidade — é um sinal',
-      'Dificuldade para subir escada pode indicar problema motor'
-    ]
-  }
-};
-
-function escolherHookSubTema(subTema, hookStyle, seed = 0) {
-  const hooks = HOOKS_SUBTEMA[subTema]?.[hookStyle];
-  if (!hooks || hooks.length === 0) return null;
-  return hooks[Math.floor(seed * hooks.length) % hooks.length];
-}
-
-// Hashtags base garantidas por especialidade/subTema — sempre incluídas, independente do que o GPT gerar
 const HASHTAGS_BASE = {
-  fonoaudiologia:          ['#Fonoaudiologia', '#FonoaudiologiaInfantil', '#DesenvolvimentoDaFala', '#FonoInova'],
-  atraso_fala:             ['#AtrasoFala', '#FilhoNaoFala', '#DesenvolvimentoDaFala', '#Fonoaudiologia', '#FonoInova'],
-  teste_linguinha:         ['#TesteDaLinguinha', '#FreioLingual', '#Fonoaudiologia', '#FonoInova'],
-  psicologia:              ['#PsicologiaInfantil', '#SaúdeMentalInfantil', '#DesenvolvimentoInfantil', '#FonoInova'],
-  autismo:                 ['#Autismo', '#TEA', '#AutismoInfantil', '#IdentificacaoPrecoce', '#FonoInova'],
-  comportamento:           ['#ComportamentoInfantil', '#Birra', '#RegulaçãoEmocional', '#PsicologiaInfantil', '#FonoInova'],
-  terapia_ocupacional:     ['#TerapiaOcupacional', '#TOInfantil', '#DesenvolvimentoMotor', '#FonoInova'],
-  terapiaocupacional:      ['#TerapiaOcupacional', '#TOInfantil', '#DesenvolvimentoMotor', '#FonoInova'],
-  neuropsicologia:         ['#Neuropsicologia', '#AvaliacaoNeuropsicologica', '#TDAH', '#FonoInova'],
+  fonoaudiologia:             ['#Fonoaudiologia', '#FonoaudiologiaInfantil', '#DesenvolvimentoDaFala', '#FonoInova'],
+  atraso_fala:                ['#AtrasoFala', '#FilhoNaoFala', '#DesenvolvimentoDaFala', '#Fonoaudiologia', '#FonoInova'],
+  teste_linguinha:            ['#TesteDaLinguinha', '#FreioLingual', '#Fonoaudiologia', '#FonoInova'],
+  psicologia:                 ['#PsicologiaInfantil', '#SaudeMentalInfantil', '#DesenvolvimentoInfantil', '#FonoInova'],
+  autismo:                    ['#Autismo', '#TEA', '#AutismoInfantil', '#IdentificacaoPrecoce', '#FonoInova'],
+  comportamento:              ['#ComportamentoInfantil', '#Birra', '#RegulacaoEmocional', '#PsicologiaInfantil', '#FonoInova'],
+  terapia_ocupacional:        ['#TerapiaOcupacional', '#TOInfantil', '#DesenvolvimentoMotor', '#FonoInova'],
+  terapiaocupacional:         ['#TerapiaOcupacional', '#TOInfantil', '#DesenvolvimentoMotor', '#FonoInova'],
+  neuropsicologia:            ['#Neuropsicologia', '#AvaliacaoNeuropsicologica', '#TDAH', '#FonoInova'],
   avaliacao_neuropsicologica: ['#AvaliacaoNeuropsicologica', '#Neuropsicologia', '#TDAH', '#FonoInova'],
-  fisioterapia:            ['#FisioterapiaInfantil', '#DesenvolvimentoMotor', '#FisioInfantil', '#FonoInova'],
-  fisioterapia_infantil:   ['#FisioterapiaInfantil', '#DesenvolvimentoMotor', '#FisioInfantil', '#FonoInova'],
-  coordenacao_motora:      ['#CoordenacaoMotora', '#DesenvolvimentoMotor', '#FisioterapiaInfantil', '#FonoInova'],
-  psicomotricidade:        ['#Psicomotricidade', '#DesenvolvimentoMotor', '#TerapiaOcupacional', '#FonoInova'],
-  musicoterapia:           ['#Musicoterapia', '#MusicoterapiaInfantil', '#FonoInova'],
-  geral:                   ['#DesenvolvimentoInfantil', '#SaúdeInfantil', '#FonoInova']
+  fisioterapia:               ['#FisioterapiaInfantil', '#DesenvolvimentoMotor', '#FisioInfantil', '#FonoInova'],
+  fisioterapia_infantil:      ['#FisioterapiaInfantil', '#DesenvolvimentoMotor', '#FisioInfantil', '#FonoInova'],
+  coordenacao_motora:         ['#CoordenacaoMotora', '#DesenvolvimentoMotor', '#FisioterapiaInfantil', '#FonoInova'],
+  psicomotricidade:           ['#Psicomotricidade', '#DesenvolvimentoMotor', '#TerapiaOcupacional', '#FonoInova'],
+  musicoterapia:              ['#Musicoterapia', '#MusicoterapiaInfantil', '#FonoInova'],
+  geral:                      ['#DesenvolvimentoInfantil', '#SaudeInfantil', '#FonoInova'],
 };
 
-// Hashtags de público (pais) — sempre incluídas para alcance orgânico
-const HASHTAGS_PUBLICO = [
-  '#Maternidade', '#Parentalidade', '#DesenvolvimentoInfantil', '#CriançaSaudável', '#MaeDePrimeirViagem'
-];
+const HASHTAGS_PUBLICO = ['#Maternidade', '#Parentalidade', '#DesenvolvimentoInfantil', '#CriancaSaudavel', '#MaeDePrimeiraViagem'];
+const HASHTAGS_LOCAL   = ['#Anapolis', '#AnapolisGO', '#Goias'];
 
-// Hashtags de localidade — alcance geográfico Anápolis/GO
-const HASHTAGS_LOCAL = ['#Anápolis', '#AnápolisGO', '#Goiás'];
-
-/**
- * Mescla hashtags do ZEUS com as bases garantidas — remove duplicatas, normaliza formato
- */
 function montarHashtags(hashtagsGeradas = [], subTema, especialidade) {
   const chave = subTema || especialidade?.toLowerCase() || 'geral';
-  const base = HASHTAGS_BASE[chave] || HASHTAGS_BASE.geral;
-
-  // Normaliza todas para ter # na frente e lowercase para comparar
+  const base  = HASHTAGS_BASE[chave] || HASHTAGS_BASE.geral;
   const normalizar = (h) => h.startsWith('#') ? h : `#${h}`;
   const todas = [...hashtagsGeradas.map(normalizar), ...base, ...HASHTAGS_PUBLICO, ...HASHTAGS_LOCAL];
-
-  // Remove duplicatas ignorando case
   const vistas = new Set();
   return todas.filter(h => {
     const key = h.toLowerCase();
     if (vistas.has(key)) return false;
     vistas.add(key);
     return true;
-  }).slice(0, 25); // Instagram: máx 30, usamos 25 para margem
+  }).slice(0, 25);
 }
 
-// Contexto descritivo por subTema para enriquecer o prompt
-const SUBTEMA_CONTEXTO = {
-  atraso_fala:                'criança não fala, fala pouco, troca palavras, atraso de linguagem',
-  autismo:                    'sinais iniciais de TEA, comportamento, socialização, contato visual',
-  comportamento:              'birra, agressividade, dificuldade emocional, limites, autocontrole',
-  teste_linguinha:            'frênulo lingual, amamentação, fala, freio da língua',
-  avaliacao_neuropsicologica: 'atenção, aprendizado, memória, suspeitas de TDAH ou dificuldades escolares',
-  coordenacao_motora:         'equilíbrio, quedas frequentes, dificuldade motora grossa',
-  terapia_ocupacional:        'autonomia, coordenação fina, atividades do dia a dia',
-  fisioterapia_infantil:      'desenvolvimento motor global, tônus muscular, postura',
-  psicomotricidade:           'integração corpo e comportamento, coordenação, lateralidade'
-};
+// ─────────────────────────────────────────────
+// SEÇÃO 2: DADOS DE CONVERSÃO POR SUBTEMA
+// ─────────────────────────────────────────────
 
-// 🧠 PERCEPÇÃO CLÍNICA: Mapeamento de dor real por subTema
-const DOR_REAL = {
+// Estado atual do pai, custo de não agir, e janela temporal por subTema
+const PERFIL_SUBTEMA = {
   atraso_fala: {
-    dor_principal: 'angústia de ver outras crianças falando e seu filho calado, comparação com outros, culpa',
-    situacao_real: 'o pai tenta fazer o filho repetir palavras e ele não responde, ou fala "tá" em vez de "está"',
-    idade_critica: '2 a 4 anos',
-    estagio_pai: 'descoberta — acabou de perceber que algo está errado'
+    situacao_real:    'o filho tenta chamar, a palavra não sai, ou fala de forma que ninguém entende — e o pai finge que está tudo bem quando alguém pergunta',
+    custo_invisivel:  'cada mês depois dos 3 anos, a plasticidade linguística cai — o que poderia ser resolvido em 6 meses hoje pode precisar de 2 anos amanhã',
+    janela_temporal:  'antes dos 3 anos',
+    crencas:          ['vai_melhorar_com_a_escola', 'e_timidez_nao_atraso', 'muito_novo_para_tratar', 'e_preguica_de_falar'],
+    objecoes:         ['talvez_exagero', 'e_fase', 'muito_caro', 'marido_nao_acredita', 'ja_tentei'],
   },
   autismo: {
-    dor_principal: 'medo do diagnóstico, dúvida se está imaginando, comparação com outros, isolamento social da criança',
-    situacao_real: 'a criança não olha nos olhos quando chama, fica rodando objetos, não brinca com outras',
-    idade_critica: '1 a 3 anos',
-    estagio_pai: 'dúvida — sabe que algo está diferente mas não sabe se é autismo ou fase'
+    situacao_real:    'a criança não olha nos olhos quando chamada, alinha objetos por horas, não brinca com outras crianças — e a família diz que é o "jeitinho dela"',
+    custo_invisivel:  'diagnóstico antes dos 2 anos muda completamente o prognóstico — a janela de intervenção precoce tem início e fim',
+    janela_temporal:  'antes dos 2 anos',
+    crencas:          ['e_fase', 'vai_melhorar_na_escola', 'e_so_timidez', 'diagnostico_e_rotulo'],
+    objecoes:         ['talvez_exagero', 'muito_caro', 'marido_nao_acredita', 'diagnostico_assusta', 'fica_longe'],
   },
   comportamento: {
-    dor_principal: 'exaustão emocional, vergonha em público, culpa por não saber lidar, medo de estar fazendo errado',
-    situacao_real: 'birra no mercado, choro que não para, criança bate em outros, não obedece',
-    idade_critica: '2 a 6 anos',
-    estagio_pai: 'ação — já tentou de tudo e precisa de ajuda urgente'
+    situacao_real:    'toda ida ao mercado pode virar crise, jantar é batalha, os limites não funcionam — e o pai já não sabe mais o que está fazendo errado',
+    custo_invisivel:  'padrões de regulação emocional se consolidam nos primeiros anos — quanto mais tarde, mais resistente o padrão fica',
+    janela_temporal:  'entre 2 e 6 anos',
+    crencas:          ['e_fase', 'vai_passar_com_a_idade', 'e_frescura', 'precisa_ser_mais_firme'],
+    objecoes:         ['talvez_exagero', 'muito_caro', 'marido_nao_acredita', 'ja_tentei_tudo'],
   },
   teste_linguinha: {
-    dor_principal: 'amamentação dolorosa, culpa por não conseguir amamentar, medo de afetar fala',
-    situacao_real: 'o bebê não pega direito no peito, mamãe tem feridas, ou o bebê engasga muito',
-    idade_critica: '0 a 12 meses',
-    estagio_pai: 'descoberta — acabou de ouvir falar do freio lingual'
+    situacao_real:    'amamentação dolorosa, bebê frustrado no peito, cliques ao mamar — e o pediatra disse que é normal',
+    custo_invisivel:  'o freio lingual afeta amamentação, fala e deglutição — e quanto mais tarde é identificado, mais impacto tem no desenvolvimento',
+    janela_temporal:  'nas primeiras semanas de vida',
+    crencas:          ['e_normal_dor_na_amamentacao', 'vai_resolver_sozinho', 'pediatra_disse_que_esta_ok'],
+    objecoes:         ['talvez_exagero', 'muito_caro', 'fica_longe', 'ja_consultei_e_disseram_que_nao'],
   },
   avaliacao_neuropsicologica: {
-    dor_principal: 'frustração escolar, comparação com colegas, culpa por achar que é preguiça',
-    situacao_real: 'criança não consegue se concentrar nas tarefas, esquece o que aprendeu, desorganização',
-    idade_critica: '5 a 10 anos',
-    estagio_pai: 'dúvida — acha que pode ser TDAH mas não tem certeza'
+    situacao_real:    'criança não consegue se concentrar nas tarefas, esquece o que aprendeu, professora reclama toda semana — e o pai acha que é falta de força de vontade',
+    custo_invisivel:  'sem diagnóstico, a criança acumula experiências de fracasso que afetam autoestima por anos — o problema escolar vira problema emocional',
+    janela_temporal:  'antes do segundo ciclo escolar',
+    crencas:          ['e_preguica', 'vai_melhorar_com_disciplina', 'e_so_falta_de_atencao', 'medicamento_resolve'],
+    objecoes:         ['talvez_exagero', 'muito_caro', 'marido_nao_acredita', 'escola_nao_indicou'],
   },
   coordenacao_motora: {
-    dor_principal: 'vergonha de ver o filho caindo, medo de acidente, frustração por não acompanhar amigos',
-    situacao_real: 'cai toda hora, não consegue subir escada, tem dificuldade para brincar na rua',
-    idade_critica: '3 a 7 anos',
-    estagio_pai: 'descoberta — percebeu que outras crianças fazem coisas que seu filho não consegue'
-  },
-  terapia_ocupacional: {
-    dor_principal: 'dependência excessiva, frustração do filho por não conseguir se vestir/sozinho',
-    situacao_real: 'não consegue abotoar camisa, segurar lápis direito, fazer sozinho as tarefas do dia a dia',
-    idade_critica: '3 a 8 anos',
-    estagio_pai: 'ação — precisa que o filho tenha mais autonomia'
+    situacao_real:    'filho cai mais que os amigos, tem medo de brincar, não consegue andar de bicicleta na idade que os outros já andavam — e os outros pais comentam',
+    custo_invisivel:  'dificuldades motoras não tratadas afetam autoestima, participação social e desempenho escolar',
+    janela_temporal:  'entre 3 e 7 anos',
+    crencas:          ['e_so_desajeitado', 'vai_melhorar_com_o_tempo', 'e_jeito_dele'],
+    objecoes:         ['talvez_exagero', 'muito_caro', 'fica_longe'],
   },
   fisioterapia_infantil: {
-    dor_principal: 'preocupação com postura, medo de dores futuras, comparação com desenvolvimento de outros',
-    situacao_real: 'anda torto, senta errado, reclama de dor nas costas, não consegue correr direito',
-    idade_critica: '4 a 10 anos',
-    estagio_pai: 'dúvida — não sabe se é postura ou problema sério'
+    situacao_real:    'criança reclama de dor nas costas, anda de forma diferente, postura errada que o pediatra disse que é normal',
+    custo_invisivel:  'padrões posturais e motores se consolidam na infância — corrigir depois é mais difícil e mais lento',
+    janela_temporal:  'entre 4 e 10 anos',
+    crencas:          ['vai_corrigir_sozinho', 'e_jeito_do_corpo', 'pediatra_disse_que_e_normal'],
+    objecoes:         ['talvez_exagero', 'muito_caro', 'fica_longe'],
   },
   psicomotricidade: {
-    dor_principal: 'dificuldade de coordenação, confusão entre direita/esquerda, desajeitão',
-    situacao_real: 'bate em tudo, não consegue andar de bicicleta, confunde lados do corpo',
-    idade_critica: '4 a 8 anos',
-    estagio_pai: 'descoberta — percebeu que o filho é desajeitado demais'
-  }
-};
-
-// 🎯 MÓDULO: INTENÇÃO DO LEAD → CONTEÚDO
-// Detecta automaticamente o momento do lead e adapta estratégia
-
-const INTENCAO_KEYWORDS = {
-  duvida: [
-    'não sei se', 'será que', 'acho que', 'dúvida', 'pergunta', 'como funciona',
-    'o que é', 'por que', 'como sabe', 'difícil saber', 'não entendo',
-    'me explica', 'como assim', 'o que significa'
-  ],
-  preocupacao: [
-    'preocupada', 'preocupado', 'medo', 'angustiada', 'angustiado', 'desesperada',
-    'desesperado', 'choro', 'não dormo', 'não sei o que fazer', 'tô perdida',
-    'tô perdido', 'tô desesperada', 'tô desesperado', 'não aguento mais',
-    'será que é grave', 'pode ser autismo', 'pode ser atraso', 'tem algo errado'
-  ],
-  comparacao: [
-    'outras crianças', 'outros filhos', 'comparando', 'igual a', 'diferente de',
-    'as outras já', 'os outros já', 'meu filho não faz', 'meu filho ainda não',
-    'deveria estar', 'era pra estar', 'já deveria', 'ainda não consegue'
-  ],
-  acao: [
-    'quero agendar', 'como faço', 'quanto custa', 'valor', 'preço', 'horário',
-    'disponibilidade', 'quando tem', 'quero começar', 'quero marcar',
-    'quero saber mais', 'pode me ajudar', 'como funciona atendimento',
-    'quero conversar', 'posso ir aí', 'endereço', 'telefone', 'whatsapp'
-  ],
-  leve_curiosidade: [
-    'vi no', 'achei interessante', 'curiosa', 'curioso', 'só queria saber',
-    'vi sobre', 'ouvi falar', 'vi no instagram', 'vi no site', 'passando aqui',
-    'só uma dúvida', 'só perguntando', 'por curiosidade'
-  ]
-};
-
-/**
- * Detecta intenção do lead baseada no texto da conversa/mensagem
- * @param {string} textoLead - Texto da mensagem ou contexto do lead
- * @returns {Object} { intencao, confianca, hookRecomendado, toneRecomendado, ctaRecomendado }
- */
-export function detectarIntencaoLead(textoLead = '') {
-  if (!textoLead || textoLead.length < 5) {
-    return { 
-      intencao: 'desconhecida', 
-      confianca: 0,
-      hookRecomendado: 'dor',
-      toneRecomendado: 'emotional',
-      ctaRecomendado: 'agendar'
-    };
-  }
-
-  const texto = textoLead.toLowerCase();
-  const scores = {};
-  
-  // Calcular score para cada intenção
-  Object.entries(INTENCAO_KEYWORDS).forEach(([intencao, keywords]) => {
-    scores[intencao] = keywords.filter(kw => texto.includes(kw)).length;
-  });
-
-  // Encontrar intenção com maior score
-  const entries = Object.entries(scores);
-  const maxScore = Math.max(...entries.map(([, score]) => score));
-  
-  // Se nenhuma intenção foi detectada com confiança
-  if (maxScore === 0) {
-    // Fallback: análise de sentimento simples
-    if (texto.includes('?') && texto.length < 50) {
-      return { 
-        intencao: 'duvida', 
-        confianca: 0.6,
-        hookRecomendado: 'curiosidade',
-        toneRecomendado: 'educativo',
-        ctaRecomendado: 'comentar'
-      };
-    }
-    return { 
-      intencao: 'preocupacao', 
-      confianca: 0.5,
-      hookRecomendado: 'dor',
-      toneRecomendado: 'emotional',
-      ctaRecomendado: 'agendar'
-    };
-  }
-
-  const intencaoDetectada = entries.find(([, score]) => score === maxScore)[0];
-  const confianca = Math.min(maxScore * 0.3 + 0.4, 0.95); // Score baseado na quantidade de matches
-
-  // Mapear para estratégia de conteúdo
-  const estrategias = {
-    duvida: {
-      hookRecomendado: 'curiosidade',
-      toneRecomendado: 'educativo',
-      ctaRecomendado: 'comentar',
-      ctaTexto: 'posso te explicar melhor nos comentários'
-    },
-    preocupacao: {
-      hookRecomendado: 'dor',
-      toneRecomendado: 'emotional',
-      ctaRecomendado: 'agendar',
-      ctaTexto: 'se quiser entender melhor o que está acontecendo'
-    },
-    comparacao: {
-      hookRecomendado: 'alerta',
-      toneRecomendado: 'emotional',
-      ctaRecomendado: 'salvar',
-      ctaTexto: 'salva aqui pra comparar depois com seu filho'
-    },
-    acao: {
-      hookRecomendado: 'autoridade',
-      toneRecomendado: 'inspiracional',
-      ctaRecomendado: 'agendar',
-      ctaTexto: 'posso te mostrar os horários disponíveis'
-    },
-    leve_curiosidade: {
-      hookRecomendado: 'curiosidade',
-      toneRecomendado: 'educativo',
-      ctaRecomendado: 'compartilhar',
-      ctaTexto: 'se conhece alguém que precisa ver isso'
-    }
-  };
-
-  const estrategia = estrategias[intencaoDetectada];
-
-  return {
-    intencao: intencaoDetectada,
-    confianca,
-    ...estrategia
-  };
-}
-
-// 🚫 PALAVRAS PROIBIDAS (geram texto genérico/fraco)
-// Aplicadas tanto no hook_texto_overlay quanto no texto_completo inteiro
-const PALAVRAS_PROIBIDAS = [
-  // Frases de IA genérica
-  'eu entendo o que você está sentindo',
-  'eu entendo o que voce esta sentindo',
-  'você não está sozinha',
-  'voce nao esta sozinha',
-  'você não está sozinho',
-  'voce nao esta sozinho',
-  'não hesite',
-  'nao hesite',
-  'estamos aqui para ajudar',
-  'conte com a gente',
-  // CTAs fracos
-  'agende agora',
-  'não perca tempo',
-  'corra',
-  // Linguagem clínica genérica
-  'é muito importante',
-  'isso pode afetar',
-  'devemos observar',
-  'é fundamental',
-  'é essencial',
-  'precisamos prestar atenção',
-  'isso pode prejudicar',
-  'é necessário',
-  'devemos considerar',
-  'interação social',
-  'desenvolvimento infantil'
-];
-
-/**
- * Verifica se o texto contém alguma frase proibida
- * @param {string} texto
- * @returns {string[]} lista de frases proibidas encontradas
- */
-function verificarFrasesProibidas(texto) {
-  const t = texto.toLowerCase();
-  return PALAVRAS_PROIBIDAS.filter(p => t.includes(p.toLowerCase()));
-}
-
-// ✅ FRASES DE HUMANIZAÇÃO (substituir formais)
-const SUBSTITUICOES_HUMANIZADAS = {
-  'crianças': 'os pequenos',
-  'paciente': 'o atendimento de hoje',
-  'tratamento': 'acompanhamento',
-  'intervenção': 'ajuda',
-  'diagnóstico': 'entender o que está acontecendo',
-  'terapia': 'os encontros',
-  'evolução': 'melhora',
-  'desenvolvimento': 'crescimento'
-};
-
-// Biblioteca de ganchos por estilo — cada um tem DNA emocional diferente
-const HOOKS = {
-  dor: [
-    'Seu filho pode estar com dificuldade e você ainda não percebeu',
-    'Isso pode estar atrasando o desenvolvimento do seu filho',
-    'Muitos pais só descobrem tarde demais',
-    'Esse sinal pode estar passando despercebido todos os dias',
-    'Você reconhece esse comportamento no seu filho?'
-  ],
-  alerta: [
-    'Se seu filho faz isso, preste atenção agora',
-    'Isso é um sinal que você não pode ignorar',
-    'Atenção: esse comportamento pode indicar algo importante',
-    'Se você perceber isso no seu filho, não espere',
-    'Esse sinal aparece cedo — e poucos pais identificam'
-  ],
-  curiosidade: [
-    'Você sabia que isso pode atrasar a fala do seu filho?',
-    'Existe um detalhe que a maioria dos pais ignora — e muda tudo',
-    'Poucos pais percebem esse sinal silencioso no desenvolvimento',
-    'O que ninguém te contou sobre o desenvolvimento do seu filho',
-    'Isso explica por que seu filho age assim — e você não vai acreditar',
-    'Tem um sinal que aparece cedo demais para a maioria perceber'
-  ],
-  erro_comum: [
-    'A maioria dos pais comete esse erro sem saber',
-    'Você pode estar fazendo isso errado com seu filho',
-    'Esse erro é mais comum do que parece — e prejudica o desenvolvimento',
-    'Pare de fazer isso se quer ajudar seu filho',
-    'Esse hábito parece inofensivo — mas não é'
-  ],
-  autoridade: [
-    'Depois de atender centenas de crianças, aprendi isso',
-    'Na clínica, vejo esse caso todos os dias — e poucos pais sabem',
-    'Isso é o que os pais mais perguntam pra gente — e a resposta surpreende',
-    'Como especialista, vou te contar o que realmente importa aqui',
-    'Toda semana atendo famílias com essa mesma dúvida'
-  ]
-};
-
-// Estruturas narrativas — cada hookStyle tem estruturas compatíveis
-const ESTRUTURAS_POR_HOOK = {
-  curiosidade: {
-    B: 'Revelação gradual: Pergunta ou afirmação incompleta que abre curiosity gap → Informação surpreendente revelada aos poucos → Explicação do porquê isso acontece → CTA para compartilhar',
-    C: 'Lista surpresa: Hook curiosidade → "Existem X sinais que poucos pais conhecem" → Revelar cada um como descoberta → CTA compartilhar'
+    situacao_real:    'criança confunde direita e esquerda, bate em tudo, não consegue andar de bicicleta — os colegas percebem e ela começa a se isolar',
+    custo_invisivel:  'dificuldades psicomotoras afetam aprendizagem, escrita e autoestima',
+    janela_temporal:  'entre 4 e 8 anos',
+    crencas:          ['e_desajeitado_natural', 'vai_melhorar_com_esporte', 'e_so_fase'],
+    objecoes:         ['talvez_exagero', 'muito_caro', 'fica_longe'],
   },
-  dor: {
-    A: 'Empatia + reconhecimento: Hook que nomeia a dor do pai → Valida a preocupação → 2-3 pontos práticos → CTA salvar',
-    B: 'Mini história identificação: Situação do dia a dia que o pai reconhece → Explicação emocional → Solução acolhedora → CTA'
-  },
-  alerta: {
-    A: 'Alerta direto: Hook urgente → Explicação rápida do risco → 2-3 sinais concretos → CTA agir agora',
-    C: 'Lista de sinais: Hook alerta → Checklist numerada que o pai pode conferir → O que fazer se identificar → CTA'
-  },
-  erro_comum: {
-    D: 'Erro + correção: Nomear o comportamento errado dos pais → Por que prejudica → Correção prática → CTA',
-    B: 'Revelação do erro: Hook que implica que o pai pode estar errando → Revelar o erro → Explicar a versão correta → CTA'
-  },
-  autoridade: {
-    B: 'Caso clínico: Abertura com experiência da clínica → Situação real (sem identificar paciente) → Aprendizado aplicável → CTA',
-    C: 'Dicas de especialista: Hook autoridade → Lista de dicas práticas do dia a dia clínico → CTA agendar'
-  }
 };
 
-// Instruções detalhadas por hookStyle — regras frase a frase
-const HOOK_INSTRUCOES = {
-  curiosidade: `
-REGRAS OBRIGATÓRIAS para hookStyle=curiosidade (LEIA COM ATENÇÃO):
-PROIBIDO:
-- Começar com "Você sabia que..." (clichê, parece aula)
-- Entregar a resposta na primeira frase
-- Tom professoral ou educativo direto
-- Frases genéricas como "isso pode mudar tudo", "isso é importante"
-
-OBRIGATÓRIO — estrutura frase a frase:
-- Frase 1: PROVOCATIVA ou ACUSATÓRIA — implica que o pai pode estar errando ou perdendo algo
-  Ex fortes: "Você pode estar atrapalhando a fala do seu filho sem perceber",
-             "Tem um hábito que a maioria dos pais tem — e atrasa o desenvolvimento",
-             "Isso que parece ajudar seu filho pode estar fazendo o contrário"
-- Frase 2: aprofunda a tensão — NÃO resolve ("e quase ninguém sabe disso")
-- Frase 3-4: contextualiza sem revelar a resposta
-- Frase 5-6: revela a virada surpreendente
-- Última frase antes do CTA: insight que o pai vai querer compartilhar com outros pais
-
-hook_texto_overlay para curiosidade: frase provocativa curta que cria tensão/dúvida imediata
-Ex corretos: "Você pode estar errando com seu filho…", "Isso atrasa a fala — e ninguém fala",
-             "O hábito que trava o desenvolvimento", "Tem algo que passa despercebido todo dia"`,
-
-  dor: `
-REGRAS OBRIGATÓRIAS para hookStyle=dor:
-- Frase 1: nomeia a dor/preocupação real ("Você já ficou preocupada porque seu filho ainda não fala…")
-- Tom: empático, de amiga especialista — NÃO alarmista, NÃO professoral
-- Validar a preocupação do pai → oferecer acolhimento → caminho prático
-- O pai precisa se sentir VISTO e COMPREENDIDO, não assustado`,
-
-  alerta: `
-REGRAS OBRIGATÓRIAS para hookStyle=alerta:
-- Frase 1: sinal concreto e específico ("Se seu filho ainda não faz isso com X meses, preste atenção")
-- Direto e objetivo — NÃO genérico ("isso pode indicar algo")
-- Dar 2-3 sinais observáveis no dia a dia com nomes simples
-- Terminar com ação clara e urgente`,
-
-  erro_comum: `
-REGRAS OBRIGATÓRIAS para hookStyle=erro_comum:
-- Frase 1: nomeia o comportamento errado sem rodeios ("A maioria dos pais faz isso — e prejudica sem querer")
-- Tom direto mas empático — o pai não é culpado, ele não sabia
-- Estrutura: erro → por que prejudica → versão correta → CTA
-- O pai deve sair com mudança prática imediata`,
-
-  autoridade: `
-REGRAS OBRIGATÓRIAS para hookStyle=autoridade:
-- Frase 1: abre com experiência clínica real ("Toda semana atendo famílias com essa dúvida…")
-- Dicas específicas e práticas que parecem "segredos de especialista"
-- Tom de conversa — NÃO de palestra ou texto de site
-- Terminar com CTA natural (não forçado)
-hook_texto_overlay OBRIGATÓRIO: prova de experiência real ou dado que surpreende
-PROIBIDO em hook_texto_overlay: "uma dica", "isso pode mudar tudo", "veja isso", qualquer frase genérica
-Exemplos corretos: "Toda semana vejo esse erro na clínica…", "90% dos pais fazem isso sem saber", "O que vejo todo dia pode estar afetando seu filho"`
+// Tratamento de cada objeção — nomeação + desmonte específico
+const TRATAMENTO_OBJECAO = {
+  talvez_exagero: {
+    nomeacao:   'talvez você esteja exagerando — é o que a maioria pensa antes de vir aqui',
+    desmonte:   'prefiro avaliar e confirmar que está tudo bem do que você esperar mais seis meses e chegar com um atraso maior do que o de hoje',
+    angulo:     'permissão para buscar ajuda sem se sentir exagerada',
+  },
+  e_fase: {
+    nomeacao:   '"deve ser fase" — essa é a frase mais cara que uma família pode ouvir',
+    desmonte:   'em anos de clínica, os casos que melhoraram sozinhos dá pra contar nos dedos de uma mão — os outros chegaram mais tarde e levaram o dobro do tempo',
+    angulo:     'custo real da espera baseado em experiência clínica',
+  },
+  muito_caro: {
+    nomeacao:   'o custo da avaliação pesa quando você não sabe o que vai encontrar',
+    desmonte:   'o que uma família investe em avaliação precoce economiza em anos de terapia depois — e a janela que fecha agora não reabre no mesmo ponto',
+    angulo:     'custo de oportunidade, não custo do serviço',
+  },
+  marido_nao_acredita: {
+    nomeacao:   '"meu marido acha que estou exagerando" — ouço isso toda semana',
+    desmonte:   'toda semana atendo crianças cujo pai dizia que era exagero da mãe — e quando chegam, eles são os primeiros a agradecer por não ter esperado mais',
+    angulo:     'validação da intuição materna com prova de experiência clínica',
+  },
+  ja_tentei: {
+    nomeacao:   'você já tentou outras abordagens e não funcionou — faz sentido ter dúvida',
+    desmonte:   'o que não funcionou antes pode não ter sido a abordagem certa para o que seu filho tem especificamente — avaliação individualizada muda o direcionamento',
+    angulo:     'especificidade da abordagem vs. tentativas genéricas anteriores',
+  },
+  diagnostico_assusta: {
+    nomeacao:   'você tem medo do que vai descobrir — e isso paralisa muita gente',
+    desmonte:   'o diagnóstico não cria o problema — ele nomeia o que já existe e abre o caminho para resolver — sem ele, você trata no escuro',
+    angulo:     'diagnóstico como libertação, não como sentença',
+  },
+  fica_longe: {
+    nomeacao:   'a distância é real e o deslocamento pesa',
+    desmonte:   'a maioria das famílias que atendo vem de outras cidades — e quando pergunto se valeu, a resposta é sempre a mesma',
+    angulo:     'valor percebido vs. custo de deslocamento',
+  },
+  ja_consultei_e_disseram_que_nao: {
+    nomeacao:   'você já consultou e disseram que estava tudo bem',
+    desmonte:   'avaliações diferentes podem chegar a conclusões diferentes dependendo da metodologia — uma segunda opinião especializada custa menos do que descobrir tarde',
+    angulo:     'segunda opinião como proteção, não como desconfiança',
+  },
 };
 
-// Instruções de TOM — como a narração SOA (independente do hookStyle)
-const TONE_INSTRUCOES = {
-  educativo: `
-TOM DO ROTEIRO: EDUCATIVO (Dicas/Fatos)
-- Narração didática mas leve — como professora simpática, não como aula
-- Incluir 1-2 informações concretas e verificáveis
-- Frases tipo: "Na fonoaudiologia, a gente chama isso de...", "Um dado importante:"
-- Funciona bem para salvar — o pai guarda o vídeo para usar depois
-- Evitar emoção excessiva — o valor é a informação`,
-
-  emotional: `
-TOM DO ROTEIRO: EMOCIONAL (Dor/Urgência)
-- Narração que ressoa com o estado emocional do pai preocupado
-- Validar a angústia antes de qualquer informação: "Eu entendo o que você está sentindo..."
-- Ritmo mais lento, frases curtas com pausas intencionais
-- Terminar com acolhimento e esperança — nunca com medo
-- Funciona bem para comentários e compartilhamentos`,
-
-  inspiracional: `
-TOM DO ROTEIRO: INSPIRACIONAL (Transformação)
-- Narrativa de transformação positiva — "isso tem solução", "já vi muitas crianças evoluírem"
-- Foco no DEPOIS: o que muda quando a família busca ajuda
-- Tom esperançoso e encorajador, não sentimental demais
-- Pode usar caso de sucesso genérico (sem identificar paciente)
-- Funciona bem para compartilhar com outros pais`,
-
-  bastidores: `
-TOM DO ROTEIRO: BASTIDORES (Da clínica)
-- Humanizar a clínica — mostrar o dia a dia real dos profissionais
-- Tom de conversa casual, como se estivesse mostrando "por trás das cenas"
-- Frases tipo: "Hoje na clínica aconteceu algo que quero compartilhar..."
-- Gera aproximação e confiança — não é comercial
-- Funciona bem para engajamento orgânico e comentários`
+// Cenas de abertura por subTema — observacionais, sem drama, pai se reconhece antes de entender
+// Tom: acolhedor — a cena é do dia a dia, não uma tragédia
+const CENAS_ABERTURA = {
+  atraso_fala: [
+    'Fim de tarde. Ele tentou me chamar. A palavra saiu diferente.',
+    'Ele aponta pro biscoito. A palavra não veio. Ele aponta de novo.',
+    'Ela sabia o que queria dizer. A palavra não saía. Ela desistia e mostrava com o dedo.',
+    'Você chamou o nome dele. Ele continuou brincando. Você chamou de novo.',
+  ],
+  autismo: [
+    'Ela brincava sozinha enquanto as outras crianças corriam juntas. Você olhava de longe.',
+    'Você chamou o nome dele três vezes. Na terceira ele olhou — mas não pra você.',
+    'Na festa, as crianças brincavam juntas. Ele ficou perto dos blocos. Sozinho, mas concentrado.',
+  ],
+  comportamento: [
+    'O jantar ficou tenso de novo. Ela tentou tudo. Nada funcionou.',
+    'No mercado, ele pediu biscoito. Ela disse não. A situação saiu do controle.',
+    'Ele sente tudo muito forte. Qualquer coisa pequena vira uma crise grande.',
+  ],
+  teste_linguinha: [
+    'Quinto dia tentando amamentar. O bebê largava o peito. Ela não entendia por quê.',
+    'O bebê fazia clique toda vez que mamava. O pediatra disse que era normal.',
+    'Ela achava que era ela que estava fazendo errado. Não era.',
+  ],
+  avaliacao_neuropsicologica: [
+    'A professora ligou de novo. "Ele não consegue terminar as atividades."',
+    'Ela estudou por duas horas. Na prova, não lembrava o que tinha lido.',
+    'Toda noite tem choro pra fazer tarefa. Ela já não sabe mais como ajudar.',
+  ],
+  coordenacao_motora: [
+    'Ele ficou de fora da brincadeira. Tinha medo de cair de novo.',
+    'Ela tem seis anos e ainda não consegue andar de bicicleta. Os amigos já conseguem.',
+    'Você percebeu que ele cai mais que as outras crianças — mas não sabe se é normal.',
+  ],
+  fisioterapia_infantil: [
+    'Ela reclama de dor nas costas. Tem oito anos.',
+    'O pediatra disse que a postura dele era normal. Mas você continua observando.',
+  ],
+  psicomotricidade: [
+    'Na aula de natação, a professora disse que ela confundia os lados mais do que o esperado.',
+    'Ele tropeça mais do que os amigos. Todo dia. Você já não sabe se é jeito ou algo a mais.',
+  ],
 };
 
-function escolherHook(hookStyle, seed = 0) {
-  const lista = HOOKS[hookStyle] || HOOKS.dor;
+function escolherCena(subTema, seed = 0) {
+  const lista = CENAS_ABERTURA[subTema] || CENAS_ABERTURA.atraso_fala;
   return lista[Math.floor(seed * lista.length) % lista.length];
 }
 
-function escolherEstrutura(hookStyle, variacao) {
-  // Seleciona estrutura compatível com o hookStyle
-  const mapa = ESTRUTURAS_POR_HOOK[hookStyle] || ESTRUTURAS_POR_HOOK.dor;
-  const letras = Object.keys(mapa);
-  const letra = letras[Math.floor(variacao * letras.length) % letras.length];
-  return { letra, descricao: mapa[letra] };
+// ─────────────────────────────────────────────
+// SEÇÃO 3: MAPEAMENTO DE ESTADO POR JORNADA
+// ─────────────────────────────────────────────
+
+const MAPEAMENTO_JORNADA = {
+  descoberta: {
+    estado_atual:    'sabe que algo pode estar errado, mas ainda não agiu — pode estar em negação, minimizando, ou esperando "pra ver"',
+    estado_desejado: 'desconforto cognitivo suficiente para não conseguir mais ignorar — "não posso continuar fingindo que está tudo bem"',
+    mecanismo:       'cena de reconhecimento + custo invisível da inação + janela de desenvolvimento que fecha',
+    cta_tipo:        'micro_comprometimento',
+    cta_destino:     'comentar, salvar, seguir — NUNCA WhatsApp direto',
+    proibicoes:      ['cta_whatsapp_direto', 'cta_agendar'],
+  },
+  consideracao: {
+    estado_atual:    'sabe que precisa de ajuda, está avaliando se essa clínica especificamente é a certa — tem dúvida sobre competência, abordagem, ou resultado',
+    estado_desejado: 'convicção de que essa clínica entende o problema do filho de forma que os outros não entenderam — confiança específica, não genérica',
+    mecanismo:       'autoridade demonstrada por caso específico + diferenciação implícita + prova social concreta',
+    cta_tipo:        'qualificacao',
+    cta_destino:     'WhatsApp com baixa fricção para qualificar — "manda mensagem e eu te digo se o que você descreveu é algo que tratamos"',
+    proibicoes:      ['educacao_generica', 'cta_educacional'],
+  },
+  decisao: {
+    estado_atual:    'já decidiu que precisa de ajuda, tem uma objeção específica bloqueando a ação — preço, distância, medo do diagnóstico, cônjuge que não acredita',
+    estado_desejado: 'objeção removida + próximo passo com fricção zero — "não existe mais razão válida para não fazer isso agora"',
+    mecanismo:       'nomeação direta da objeção + desmonte com especificidade + próximo passo mínimo + friction eliminator',
+    cta_tipo:        'acao_direta',
+    cta_destino:     'WhatsApp com palavra-chave específica + eliminador de fricção ("primeira conversa sem compromisso", "respondo hoje")',
+    proibicoes:      ['educacao_generica', 'cta_fraco'],
+  },
+  retargeting: {
+    estado_atual:    'já foi exposta ao conteúdo, sentiu algo, não agiu — está represada, não fria; a intenção existe mas está bloqueada por inércia ou medo',
+    estado_desejado: 'reativação da intenção existente — "eu já sabia disso, o que estou esperando"',
+    mecanismo:       'referência implícita ao conhecimento compartilhado + tempo que passou com consequência real + próximo passo mínimo absoluto',
+    cta_tipo:        'reativacao',
+    cta_destino:     'passo mínimo possível — "manda só um oi" — sem reexplicar nada',
+    proibicoes:      ['educacao_nova', 'venda_direta'],
+  },
+};
+
+// ─────────────────────────────────────────────
+// SEÇÃO 4: FEW-SHOT EXAMPLES (2 por pipeline)
+// ─────────────────────────────────────────────
+// Usando few-shots otimizados dos arquivos de configuração
+
+const FEW_SHOT = {
+  // descoberta: importado de zeus-descoberta-config.js
+  descoberta: FEW_SHOTS_DESCOBERTA_V2.map(ex => ({
+    params: `subTema=${ex.tema} | estagio=descoberta`,
+    output: {
+      titulo: ex.elementos.titulo || ex.tema,
+      texto_completo: ex.texto_completo,
+      hook_texto_overlay: ex.elementos.cena_inicial || ex.elementos.hook_texto_overlay,
+      cta_texto_overlay: ex.elementos.cta,
+    },
+  })),
+  
+  // consideracao: importado de zeus-pipelines-complementares-config.js
+  consideracao: FEW_SHOTS_CONSIDERACAO.map(ex => ({
+    params: `subTema=${ex.tema} | estagio=consideracao`,
+    output: {
+      titulo: ex.elementos.titulo || ex.tema,
+      texto_completo: ex.texto_completo,
+      hook_texto_overlay: ex.elementos.cena_inicial,
+      cta_texto_overlay: ex.elementos.cta,
+    },
+  })),
+  
+  // decisao: importado de zeus-pipelines-complementares-config.js
+  decisao: FEW_SHOTS_DECISAO.map(ex => ({
+    params: `subTema=${ex.tema} | estagio=decisao | objecao=${ex.objecao || 'e_fase'}`,
+    output: {
+      titulo: ex.elementos.titulo || ex.tema,
+      texto_completo: ex.texto_completo,
+      hook_texto_overlay: ex.elementos.cena_inicial,
+      cta_texto_overlay: ex.elementos.cta,
+    },
+  })),
+  
+  // retargeting: importado de zeus-pipelines-complementares-config.js
+  retargeting: FEW_SHOTS_RETARGETING.map(ex => ({
+    params: `subTema=${ex.tema} | estagio=retargeting`,
+    output: {
+      titulo: ex.elementos.titulo || ex.tema,
+      texto_completo: ex.texto_completo,
+      hook_texto_overlay: ex.elementos.cena_inicial,
+      cta_texto_overlay: ex.elementos.cta,
+    },
+  })),
+};
+
+
+
+// ─────────────────────────────────────────────
+// SEÇÃO 5: PIPELINE SYSTEM PROMPTS (4 distintos)
+// ─────────────────────────────────────────────
+
+// Tom específico por estágio — define o estado emocional que o viewer deve ter ao final
+const TOM_POR_ESTAGIO = {
+  descoberta: `
+TOM OBRIGATÓRIO PARA DESCOBERTA: ACOLHEDOR E VALIDANTE
+- O pai deve terminar o vídeo sentindo: "alguém entende o que estou vivendo"
+- NUNCA culpa, NUNCA urgência exagerada, NUNCA drama
+- Voz de especialista confiável falando diretamente, como numa conversa
+- Valide a dúvida antes de qualquer informação: "faz sentido você estar se perguntando isso"
+- A tensão é curiosidade suave, não medo — "existe algo que vale prestar atenção"
+- A janela temporal aparece como informação, não como ameaça
+- CTA: micro-comprometimento natural ("salva", "comenta") — NUNCA WhatsApp ou agendamento
+- PROIBIDO: "você precisa agir agora", "não espere mais", "está perdendo tempo"
+- PROIBIDO: cenas de choro, desespero, vergonha pública
+- PERMITIDO: cenas de observação silenciosa, dúvida genuína, dia a dia normal`,
+
+  consideracao: `
+TOM OBRIGATÓRIO PARA CONSIDERAÇÃO: AUTORIDADE EMPÁTICA
+- O pai deve terminar sentindo: "essa clínica entende o que meu filho tem de forma diferente"
+- Demonstre competência através de casos e resultados, não através de credenciais
+- Tom direto mas humanizado — não é palestra, é conversa de especialista`,
+
+  decisao: `
+TOM OBRIGATÓRIO PARA DECISÃO: DIRETO E DESBLOQUEADOR
+- O pai deve terminar sentindo: "não existe mais razão válida para não fazer isso agora"
+- Nomeie a objeção sem rodeio, desmonte com especificidade
+- Tom firme mas não agressivo — como um amigo especialista que fala a verdade`,
+
+  retargeting: `
+TOM OBRIGATÓRIO PARA RETARGETING: CUMPLICIDADE TRANQUILA
+- O pai deve terminar sentindo: "já sabia disso — o próximo passo é menor do que penso"
+- NUNCA julgamento pela demora — remoção de culpa, abertura do caminho
+- Tom de continuidade, como retomada de conversa já iniciada`,
+};
+
+function buildSystemPrompt(estagio, mapeamento, fewShots) {
+  // Usar templates otimizados por estágio
+  if (estagio === 'descoberta') {
+    return buildSystemPromptDescobertaV2(mapeamento);
+  }
+  if (estagio === 'consideracao') {
+    return buildSystemPromptConsideracao(mapeamento);
+  }
+  if (estagio === 'decisao') {
+    return buildSystemPromptDecisao(mapeamento);
+  }
+  if (estagio === 'retargeting') {
+    return buildSystemPromptRetargeting(mapeamento);
+  }
+
+  const exemplosStr = fewShots.map((ex, i) =>
+    `EXEMPLO ${i + 1} (${ex.params}):\n${JSON.stringify(ex.output, null, 2)}`
+  ).join('\n\n');
+
+  const tomEstagio = TOM_POR_ESTAGIO[estagio] || '';
+
+  const base = `Você é ZEUS, especialista em conteúdo de aquisição para clínicas de saúde infantil (Fono Inova — Anápolis/GO).
+Atende: Fonoaudiologia, Psicologia Infantil, Terapia Ocupacional, Fisioterapia, Psicomotricidade, Avaliação Neuropsicológica, Musicoterapia, Teste da Linguinha.
+Público: pais de crianças de 0 a 10 anos.
+
+OBJETIVO DESTE PIPELINE: ${estagio.toUpperCase()}
+Estado atual do viewer: ${mapeamento.estado_atual}
+Estado desejado ao final: ${mapeamento.estado_desejado}
+Mecanismo de transição: ${mapeamento.mecanismo}
+CTA permitido: ${mapeamento.cta_destino}
+Proibições: ${mapeamento.proibicoes.join(', ')}
+${tomEstagio}
+
+TEMPLATE OBRIGATÓRIO — 7 ELEMENTOS NESSA ORDEM:
+
+1. CENA INICIAL (0-2s)
+   - Local específico + momento do dia + ação concreta da criança ou do pai
+   - ZERO explicação, ZERO contexto, ZERO pergunta
+   - O pai se reconhece na cena antes de entender por quê
+   - Use a cena fornecida em hook_texto_overlay EXATAMENTE
+
+2. HOOK DE TENSÃO (2-5s)
+   - Afirmação que cria incompletude cognitiva
+   - NUNCA pergunta — perguntas criam verificação, não tensão
+   - Implica que o pai está perdendo algo ou que existe algo que ele não sabe
+   - Não resolve a tensão — a mantém aberta
+
+3. AMPLIFICAÇÃO EMOCIONAL (5-12s)
+   - Aprofunda a tensão sem resolver
+   - Dois níveis: custo de desenvolvimento (janela que fecha) + custo de identidade (pai que sabia e não agiu)
+   - Específico, não genérico — números ou comportamentos concretos
+
+4. QUEBRA DE CRENÇA (12-18s)
+   - Desmonta a crença específica que mantém inação
+   - Com dado clínico ou observação de experiência real — nunca argumento abstrato
+   - "Em anos de clínica..." ou dado de desenvolvimento concreto
+
+5. PROVA (18-22s)
+   - Resultado recente, caso específico ou volume com contexto
+   - NUNCA: "já ajudei muitas famílias", "temos ótimos resultados"
+   - SIM: número, tempo, situação específica reconhecível
+
+6. TRATAMENTO DE OBJEÇÃO (22-26s)
+   - Uma objeção. A principal. Nomeada sem rodeio.
+   - Desmontada com especificidade — não com argumento genérico
+
+7. CTA NO PICO EMOCIONAL (26-30s)
+   - Gerado como resolução direta da tensão criada no elemento 2
+   - CTA fecha o loop aberto do hook — o viewer sente que é continuação natural, não venda
+   - Ação específica + friction eliminator
+   - TIPO PERMITIDO PARA ESTE ESTÁGIO: ${mapeamento.cta_tipo}
+
+REGRAS GLOBAIS:
+- Linguagem falada, frases máximo 12 palavras, contrações naturais (tá, às vezes, a gente)
+- PROIBIDO: jargão clínico pesado, frases genéricas ("é muito importante", "devemos observar")
+- PROIBIDO: afirmar diagnóstico — usar "pode indicar", "vale avaliar", "estou vendo"
+- Compliance saúde: nunca garantir resultado, nunca afirmar diagnóstico
+- Retorne APENAS o JSON solicitado, sem markdown, sem texto extra
+
+EXEMPLOS DE REFERÊNCIA (estude a estrutura, não copie):
+${exemplosStr}`;
+
+  return base;
 }
 
+// Template otimizado v2 para pipeline de descoberta
+function buildSystemPromptDescobertaV2(mapeamento) {
+  const exemplosStr = FEW_SHOTS_DESCOBERTA_V2.map((ex, i) => `
+EXEMPLO ${i + 1} — ${ex.tema} (${ex.palavras} palavras):
+${ex.texto_completo}
+
+Elementos:
+- Cena: ${ex.elementos.cena_inicial}
+- Hook: ${ex.elementos.hook_tensao}
+- Prova: ${ex.elementos.prova_concreta}
+- CTA: ${ex.elementos.cta}
+`).join('\n---\n');
+
+  return `Você é ZEUS, especialista em conteúdo de aquisição para clínicas de saúde infantil (Fono Inova — Anápolis/GO).
+
+${TEMPLATE_DESCOBERTA_V2}
+
+TOM OBRIGATÓRIO: ACOLHEDOR E CONFIÁVEL
+- Sem culpa, sem drama, sem urgência exagerada
+- Voz de especialista que entende e acolhe
+- Frases curtas (máx 12 palavras), linguagem falada
+- Use "a gente", "você", contrações naturais (tá, às vezes, tô)
+- Valide antes de informar: "Faz sentido você pensar assim"
+
+ESTADO DO VIEWER:
+- Atual: ${mapeamento.estado_atual}
+- Desejado: ${mapeamento.estado_desejado}
+- Mecanismo: ${mapeamento.mecanismo}
+
+PROIBIDO:
+- Perguntas no hook (evite: "Você sabia que...?", "Já percebeu que...?")
+- Urgência agressiva: "não espere mais", "cada dia que passa", "está perdendo tempo"
+- CTA de WhatsApp, agendamento, "entre em contato"
+- Prova vaga: "muitas crianças", "vários casos", "ótimos resultados"
+- Linguagem culposa: "você está errando", "deveria"
+
+METAS RIGOROSAS:
+- Mínimo 80 palavras (contar no texto_completo)
+- Prova concreta com número, % ou caso específico obrigatória
+- CTA de micro-comprometimento apenas (salva, comenta, compartilha)
+
+${exemplosStr}
+
+Retorne APENAS JSON:
+{
+  "roteiro": {
+    "titulo": "... (máx 50 chars)",
+    "texto_completo": "... (mínimo 80 palavras, máximo 95)",
+    "hook_texto_overlay": "... (cena específica, 0-2s)",
+    "cta_texto_overlay": "... (micro-comprometimento, sem WhatsApp)",
+    "prova_concreta_usada": "... (qual número/resultado usou)",
+    "contagem_palavras": 0
+  }
+}`;
+}
+
+// ─────────────────────────────────────────────
+// SEÇÃO 6: SCORE DE CONVERSÃO
+// ─────────────────────────────────────────────
+
+function scorarConversao(roteiro, params) {
+  const { estagio_jornada, objecao_principal } = params;
+
+  // Usar scores otimizados por estágio
+  if (estagio_jornada === 'descoberta') {
+    return scorarDescobertaV2(roteiro, params);
+  }
+  if (estagio_jornada === 'consideracao') {
+    return scorarConsideracao(roteiro, params);
+  }
+  if (estagio_jornada === 'decisao') {
+    return scorarDecisao(roteiro, params);
+  }
+  if (estagio_jornada === 'retargeting') {
+    return scorarRetargeting(roteiro, params);
+  }
+  const t    = roteiro.texto_completo || '';
+  const tLow = t.toLowerCase();
+  const hook = (roteiro.hook_texto_overlay || '').toLowerCase();
+  const cta  = (roteiro.cta_texto_overlay  || '').toLowerCase();
+
+  let score = 100;
+  const falhas = [];
+
+  // -30: CTA de WhatsApp direto em roteiro de descoberta
+  if (estagio_jornada === 'descoberta') {
+    const ctaWhats = ['whatsapp', 'manda mensagem', 'chama aqui', 'agende', 'marcar'];
+    if (ctaWhats.some(c => cta.includes(c))) {
+      score -= 30;
+      falhas.push('CTA de WhatsApp em descoberta — mata lead frio antes de construir confiança');
+    }
+  }
+
+  // -25: sem tratamento de objeção em consideracao/decisao
+  if (['consideracao', 'decisao'].includes(estagio_jornada) && objecao_principal) {
+    const palavrasObjecao = objecao_principal.replace(/_/g, ' ').split('_');
+    const temObjecao = palavrasObjecao.some(p => tLow.includes(p)) ||
+      tLow.includes('fase') || tLow.includes('caro') || tLow.includes('exager') ||
+      tLow.includes('marido') || tLow.includes('tentei') || tLow.includes('distanc');
+    if (!temObjecao) {
+      score -= 25;
+      falhas.push('Objeção principal não tratada — bloqueio pré-ação permanece ativo');
+    }
+  }
+
+  // -20: hook é pergunta (mecanismo de stop-scroll mais fraco)
+  if (hook.endsWith('?') || hook.includes('você sabia que') || hook.includes('já percebeu')) {
+    score -= 20;
+    falhas.push('Hook é pergunta — cria verificação ("tenho/não tenho") em vez de tensão universal');
+  }
+
+  // -20: sem janela temporal (urgência baseada em desenvolvimento)
+  const temJanela = /\d+\s*(anos?|meses?|semanas?|ciclo)/.test(tLow) ||
+    tLow.includes('antes dos') || tLow.includes('janela') || tLow.includes('plasticidade');
+  if (!temJanela) {
+    score -= 20;
+    falhas.push('Sem janela temporal — sem urgência real baseada em desenvolvimento');
+  }
+
+  // -15: sem cena específica no início (sem stop-scroll real)
+  const temCena = roteiro.hook_texto_overlay && roteiro.hook_texto_overlay.length > 0 &&
+    !roteiro.hook_texto_overlay.toLowerCase().startsWith('você sabia') &&
+    !roteiro.hook_texto_overlay.toLowerCase().startsWith('preste');
+  if (!temCena) {
+    score -= 15;
+    falhas.push('Sem cena de abertura — sem stop-scroll real');
+  }
+
+  // -15: sem prova concreta
+  const temProva = /\d+\s*(palavras?|crianças?|famílias?|meses?|semanas?|anos?)/.test(tLow) ||
+    tLow.includes('semana passada') || tLow.includes('esse mês') || tLow.includes('ontem') ||
+    tLow.includes('atendi') && /\d/.test(tLow);
+  if (!temProva) {
+    score -= 15;
+    falhas.push('Sem prova concreta — afirmação de autoridade sem evidência');
+  }
+
+  // -10: CTA fraco ou genérico
+  const ctaFraco = ['quando quiser', 'se fizer sentido', 'não hesite', 'agende agora', 'não perca'];
+  if (ctaFraco.some(c => cta.includes(c))) {
+    score -= 10;
+    falhas.push('CTA fraco — transfere decisão para o viewer sem criar urgência');
+  }
+
+  // -10: texto muito curto para criar arco completo
+  const palavras = t.split(/\s+/).filter(Boolean).length;
+  if (palavras < 70) {
+    score -= 10;
+    falhas.push('Texto curto demais para os 7 elementos');
+  }
+
+  return { score: Math.max(score, 0), falhas };
+}
+
+// ─────────────────────────────────────────────
+// SEÇÃO 7: FUNÇÃO PRINCIPAL gerarRoteiro()
+// ─────────────────────────────────────────────
+
 /**
- * Gera conteúdo estratégico de vídeo (Instagram viral ou Meta Ads)
+ * Gera roteiro orientado a conversão (ZEUS v3.0)
  *
  * @param {object} params
- * @param {string} params.tema           - Tema livre (pode ser vazio para geração automática)
- * @param {string} params.especialidade  - ID da especialidade/profissional
- * @param {string} params.funil          - TOPO | MEIO | FUNDO
- * @param {number} params.duracao        - Duração em segundos
- * @param {string} params.tone           - emotional | educativo | inspiracional | bastidores
- * @param {string} params.platform       - instagram | meta_ads (default: instagram)
- * @param {string} params.subTema        - subTema da clínica (ex: atraso_fala)
- * @param {string} params.hookStyle      - dor | alerta | curiosidade | erro_comum | autoridade
- * @param {string} params.objetivo       - salvar | compartilhar | comentar | agendar
- * @param {number} params.variacao       - 0..1 — controla estrutura e hook (anti-repetição)
- * @param {string} params.intensidade    - leve | moderado | forte | viral
+ *
+ * Campos v3.0 (novos — orientados a conversão):
+ * @param {string} params.estagio_jornada     - descoberta | consideracao | decisao | retargeting
+ * @param {string} params.objecao_principal   - e_fase | muito_caro | talvez_exagero | marido_nao_acredita | ja_tentei | diagnostico_assusta | fica_longe
+ * @param {string} params.crenca_a_quebrar    - crença específica que mantém inação (auto-detectada se omitida)
+ * @param {string} params.prova_social        - resultado recente, caso ou volume para incluir
+ * @param {string} params.janela_temporal     - urgência temporal (auto-detectada por subTema se omitida)
+ * @param {string} params.tipo_conteudo       - aquisicao_organica | conversao_direta
+ *
+ * Campos v2.0 (mantidos para compatibilidade):
+ * @param {string} params.subTema             - atraso_fala | autismo | comportamento | etc.
+ * @param {string} params.especialidade       - fallback se subTema não fornecido
+ * @param {number} params.duracao             - duração em segundos (default 30)
+ * @param {string} params.platform            - instagram | meta_ads
+ * @param {string} params.hookStyle           - dor | curiosidade | alerta | autoridade | erro_comum (informacional em v3.0)
+ * @param {number} params.variacao            - 0..1 para anti-repetição
+ * @param {string} params.bordao              - bordão obrigatório de abertura
+ * @param {string} params.contextoLead        - texto do lead para enriquecer contexto (informacional)
+ * @param {string} params.forcarIntencao      - forçar intenção específica (corrigido em v3.0)
  */
 export async function gerarRoteiro({
-  tema,
+  // v3.0
+  estagio_jornada   = 'descoberta',
+  objecao_principal = null,
+  crenca_a_quebrar  = null,
+  prova_social      = null,
+  janela_temporal   = null,
+  tipo_conteudo     = 'aquisicao_organica',
+  prompt_extra      = null,  // Instruções adicionais do usuário
+
+  // v2.0 (compatibilidade — alguns campos são aceitos mas não usados internamente)
+  tema:       _tema,
   especialidade,
-  funil = 'TOPO',
-  duracao = 60,
-  tone = 'educativo',
-  platform = 'instagram',
+  funil             = 'TOPO',
+  duracao           = 30,
+  tone:       _tone,
+  platform          = 'instagram',
   subTema,
-  hookStyle = 'dor',
-  objetivo = 'salvar',
-  variacao = Math.random(),
-  intensidade = 'viral',
-  bordao = '',
-  contextoLead = null,  // 🧠 Texto da mensagem/conversa do lead para detectar intenção
-  forcarIntencao = null // 🧠 Opcional: forçar uma intenção específica ('duvida', 'preocupacao', etc)
-}) {
-  // 🧠 DETECÇÃO DE INTENÇÃO DO LEAD
-  let intencaoDetectada = null;
-  let ctaPersonalizado = null;
-  
+  hookStyle:  _hookStyle,
+  objetivo:   _objetivo,
+  variacao          = Math.random(),
+  intensidade: _intensidade,
+  bordao            = '',
+  contextoLead      = null,
+  forcarIntencao    = null,
+} = {}) {
+
+  // ── Mapear funil v2.0 → estagio_jornada v3.0 (compatibilidade)
+  if (funil && estagio_jornada === 'descoberta') {
+    const mapaFunil = { TOPO: 'descoberta', MEIO: 'consideracao', FUNDO: 'decisao' };
+    if (mapaFunil[funil]) estagio_jornada = mapaFunil[funil];
+  }
+
+  // ── Detecção de intenção — informacional apenas, não sobrescreve seleções
+  let intencaoInfo = null;
   if (forcarIntencao) {
-    // Usar intenção forçada manualmente
-    intencaoDetectada = detectarIntencaoLead('');
-    intencaoDetectada.intencao = forcarIntencao;
-    logger.info(`[ZEUS] 🎯 Intenção forçada: ${forcarIntencao}`);
+    intencaoInfo = { intencao: forcarIntencao, confianca: 1.0, origem: 'forcado' };
+    logger.info(`[ZEUS] Intenção forçada: ${forcarIntencao}`);
   } else if (contextoLead) {
-    // Detectar automaticamente baseado no contexto
-    intencaoDetectada = detectarIntencaoLead(contextoLead);
-    logger.info(`[ZEUS] 🎯 Intenção detectada: ${intencaoDetectada.intencao} (confiança: ${(intencaoDetectada.confianca * 100).toFixed(0)}%)`);
-  }
-  
-  // 🚫 BLOQUEAR COMBINAÇÕES RUINS
-  const COMBINACOES_BLOQUEADAS = [
-    { hook: 'alerta', tone: 'emotional', motivo: 'alerta precisa ser direto, não emotivo' },
-    { hook: 'autoridade', tone: 'emotional', motivo: 'autoridade + emocional mistura sinais' },
-    { hook: 'curiosidade', tone: 'inspiracional', motivo: 'curiosidade precisa tensão, não esperança' }
-  ];
-  
-  const combinacaoRuim = COMBINACOES_BLOQUEADAS.find(c => c.hook === hookStyle && c.tone === tone);
-  if (combinacaoRuim) {
-    logger.warn(`[ZEUS] 🚫 Combinação bloqueada: ${hookStyle}+${tone} (${combinacaoRuim.motivo})`);
-    // Fallback: mudar tone para algo compatível
-    if (hookStyle === 'alerta') tone = 'educativo';
-    else if (hookStyle === 'autoridade') tone = 'inspiracional';
-    else if (hookStyle === 'curiosidade') tone = 'educativo';
-    logger.info(`[ZEUS] 🔄 Tone ajustado para: ${tone}`);
+    intencaoInfo = detectarIntencaoLead(contextoLead);
+    logger.info(`[ZEUS] Intenção detectada (informacional): ${intencaoInfo.intencao} (${(intencaoInfo.confianca * 100).toFixed(0)}%)`);
   }
 
-  // Aplicar estratégia baseada na intenção detectada
-  if (intencaoDetectada && intencaoDetectada.confianca > 0.5) {
-    hookStyle = intencaoDetectada.hookRecomendado;
-    tone = intencaoDetectada.toneRecomendado;
-    objetivo = intencaoDetectada.ctaRecomendado;
-    ctaPersonalizado = intencaoDetectada.ctaTexto;
-    logger.info(`[ZEUS] 🎯 Estratégia aplicada: hook=${hookStyle} | tone=${tone} | objetivo=${objetivo}`);
-  }
-
-  const profissional = ESPECIALIDADE_PROFISSIONAL[subTema] ||
-                       ESPECIALIDADE_PROFISSIONAL[especialidade?.toLowerCase()] ||
-                       'fono_ana';
+  // ── Dados do subTema
+  const perfil        = PERFIL_SUBTEMA[subTema] || PERFIL_SUBTEMA.atraso_fala;
+  const profissional  = ESPECIALIDADE_PROFISSIONAL[subTema] ||
+                        ESPECIALIDADE_PROFISSIONAL[especialidade?.toLowerCase()] ||
+                        'fono_ana';
   const nomeProfissional = NOMES_PROFISSIONAL[profissional];
 
-  const { letra: estruturaLetra, descricao: estruturaDescricao } = escolherEstrutura(hookStyle, variacao);
-  // Hook por subTema é mais preciso — usa como primeiro candidato
-  const hookSugerido = escolherHookSubTema(subTema, hookStyle, variacao)
-                    || escolherHook(hookStyle, variacao);
-  const subTemaContexto = SUBTEMA_CONTEXTO[subTema] || tema || especialidade;
+  // ── Auto-detectar campos omitidos
+  const objecaoFinal   = objecao_principal || perfil.objecoes[0] || 'e_fase';
+  const crencaFinal    = crenca_a_quebrar  || perfil.crencas[0]  || 'e_fase';
+  const janelaFinal    = janela_temporal   || perfil.janela_temporal || 'antes dos 3 anos';
+  const tratObjecao    = TRATAMENTO_OBJECAO[objecaoFinal] || TRATAMENTO_OBJECAO.talvez_exagero;
+  const cenaInicial    = escolherCena(subTema, variacao);
+  const mapeamento     = MAPEAMENTO_JORNADA[estagio_jornada] || MAPEAMENTO_JORNADA.descoberta;
+  const fewShots       = FEW_SHOT[estagio_jornada] || FEW_SHOT.descoberta;
 
-  // Duração ajustada: Instagram = 20-35s, Ads = 30-60s
+  // ── Duração efetiva
   const duracaoEfetiva = platform === 'instagram'
     ? Math.min(Math.max(duracao, 20), 35)
     : Math.min(Math.max(duracao, 30), 60);
 
-  // CTAs variados por objetivo — naturais, como continuação da conversa
-  const ctaVariantes = {
-    salvar: [
-      'Salva aqui que você vai precisar depois',
-      'Guarda esse vídeo pra quando precisar consultar',
-      'Salva que essa informação vale ouro'
-    ],
-    compartilhar: [
-      'Se conhece alguém nessa situação, manda pra ela ver',
-      'Compartilha com quem você sabe que tá passando por isso',
-      'Marca aqui quem precisa ouvir isso hoje'
-    ],
-    comentar: [
-      'Comenta aqui como tá sendo aí na sua casa',
-      'Me conta nos comentários se isso faz sentido pra você',
-      'Deixa aqui a idade do seu filho que eu te digo mais'
-    ],
-    agendar: [
-      'Se quiser conversar sobre isso, me chama no WhatsApp',
-      'Se fizer sentido pra você, a gente pode marcar um horário',
-      'Quando quiser entender melhor, é só mandar mensagem'
-    ],
-    dm: [
-      'Me chama no direct se quiser conversar sobre o seu caso',
-      'Manda mensagem aqui que eu te ajudo a entender melhor',
-      'Se preferir falar no privado, me chama aqui'
-    ]
-  };
-  // Seleciona variante baseada na variação (anti-repetição)
-  const variantesObj = ctaVariantes[objetivo] || ctaVariantes.comentar;
-  let ctaSugerido  = variantesObj[Math.floor(variacao * variantesObj.length) % variantesObj.length];
-  
-  // 🧠 Se tem intenção detectada com CTA personalizado, usar ele
-  if (ctaPersonalizado) {
-    ctaSugerido = ctaPersonalizado;
-    logger.info(`[ZEUS] 🎯 CTA personalizado por intenção: "${ctaSugerido}"`);
-  }
+  // ── System prompt do pipeline
+  const systemPrompt = buildSystemPrompt(estagio_jornada, mapeamento, fewShots);
 
-  logger.info(`[ZEUS] Gerando: subTema=${subTema || especialidade} | hook=${hookStyle} | tone=${tone} | estrutura=${estruturaLetra} | platform=${platform} | intensidade=${intensidade}`);
-
-  const isInstagram = platform === 'instagram';
-
-  const systemPrompt = `Você é ZEUS, especialista em marketing médico infantil e criação de conteúdo viral para Instagram.
-
-Seu objetivo NÃO é apenas gerar um roteiro. É criar conteúdo que:
-- Para o scroll nos primeiros 3 segundos
-- Faz o pai pensar "isso é exatamente sobre meu filho"
-- Gera salvamento, compartilhamento ou comentário real
-- Posiciona a clínica como autoridade acolhedora
-
-A clínica Fono Inova atende: Fonoaudiologia, Psicologia Infantil, Terapia Ocupacional, Fisioterapia Infantil, Psicomotricidade, Avaliação Neuropsicológica, Teste da Linguinha.
-
-Público: pais de crianças de 0 a 10 anos com dúvidas sobre desenvolvimento.
-
-REGRAS OBRIGATÓRIAS:
-1. Linguagem simples — pai leigo precisa entender tudo
-2. NUNCA usar jargão clínico pesado
-3. Frases curtas, tom de conversa, como uma amiga especialista
-4. Compliance saúde: nunca afirmar diagnóstico; usar "pode indicar", "vale investigar", "é importante observar"
-5. Retorne APENAS o JSON solicitado, sem markdown, sem explicações
-
-RELAÇÃO ENTRE hookStyle E tone (ESSENCIAL):
-- hookStyle = define COMO o vídeo abre (os primeiros 3 segundos, a isca)
-- tone = define COMO o vídeo faz a pessoa SENTIR ao longo de toda a narração
-- Os dois devem trabalhar juntos, não se cancelar
-- Exemplo: hookStyle=curiosidade + tone=emocional → abre com mistério, mas a narração toda ressoa emocionalmente
-
-ANTI-ROBÔ (regras de naturalidade):
-- NUNCA usar a mesma estrutura de frase duas vezes seguidas
-- Variar ritmo: alterne frases longas com curtas (cria respiração no texto)
-- PROIBIDO: frases genéricas tipo "é muito importante", "isso pode afetar muito", "devemos prestar atenção"
-- Cada frase deve acrescentar algo novo — NUNCA repetir a mesma ideia com outras palavras
-- Escrever como a profissional FALARIA, não como ela ESCREVERIA num relatório
-
-REGRAS DE CONVERSÃO FORTE (obrigatório):
-- PROIBIDO linguagem genérica: "interação social", "comportamento", "desenvolvimento" — SEJA ESPECÍFICO (ex: "não olha nos olhos", "não responde quando chama", "fica isolada no recreio")
-- PROIBIDO CTA fraco: "não hesite", "pense nisso", "quando quiser", "agende agora" — VÁ DIRETO AO PONTO
-- SEMPRE use gatilho de urgência leve: "quanto antes", "logo nos primeiros meses", "enquanto é cedo"
-- Mencione IDADE específica ou FAIXA ETÁRIA (ex: "crianças de 2 a 4 anos", "antes dos 5 anos")
-- Dê 1 EXEMPLO CONCRETO na narração (ex: "ontem atendi uma menina de 3 anos que...")
-- CTA final MÁXIMO 8 palavras, direto, sem enrolação
-
-🎚️ NÍVEL DE INTENSIDADE EMOCIONAL: MODERADO
-- NÃO usar sofrimento extremo (choro, desespero, culpa intensa)
-- NÃO dramatizar ou explorar dor excessivamente
-- Focar em situações REAIS do dia a dia (não tragédias)
-- Gerar IDENTIFICAÇÃO, não choque ou rejeição
-- Equilibrar: forte o suficiente para parar o scroll, respeitoso o suficiente para não gerar repulsa
-
-🚫 HOOKS PROIBIDOS (nunca use):
-- "Eu entendo o que você está sentindo" → genérico, fraco
-- "Preste muita atenção" → professoral
-- "Você já chorou vendo seu filho..." → pesado demais, explora dor
-- "Isso pode mudar tudo" → vazio
-- Qualquer frase que explore culpa ou sofrimento extremo
-
-✅ HOOKS PERMITIDOS (moderados e efetivos):
-- "Você chama seu filho… e ele não responde?"
-- "Seu filho já tem 3 anos e ainda não fala?"
-- "Tem um sinal que muitos pais não percebem…"
-- "Enquanto outras crianças brincam, seu filho fica sozinho?"
-
-👉 REGRA DE OURO: Se a primeira frase não fizer a mãe pensar "isso acontece aqui em casa", REESCREVA.
-
-🧠 PERCEPÇÃO CLÍNICA (injetar no roteiro):
-Antes de escrever, interprete a dor real do pai:
-- Dor principal: angústia específica (não "preocupação" genérica)
-- Situação real: o que acontece no dia a dia (ex: "tenta fazer repetir e não responde")
-- Idade crítica: mencione no roteiro
-- Estágio do pai: descoberta (acabou de perceber) | dúvida (sabe que algo está errado) | ação (já tentou de tudo)
-
-🚫 BLOQUEADOR DE TEXTO GENÉRICO:
-Se o rascunho contiver: "é muito importante", "isso pode afetar", "devemos observar", "é fundamental" → REESCREVER imediatamente com linguagem específica ou emocional.
-
-💬 HUMANIZAÇÃO TOTAL:
-- Converter 100% para linguagem falada (WhatsApp/consulta)
-- Frases MÁXIMO 12 palavras
-- Usar contrações: "tá", "às vezes", "muito comum ver", "a gente vê"
-- Substituir termos formais:
-  * "crianças" → "os pequenos", "os filhos"
-  * "tratamento" → "acompanhamento", "os encontros"
-  * "evolução" → "melhora", "mudança"
-  * "diagnóstico" → "entender o que está acontecendo"
-
-🎯 CTA NATURAL (continuação da conversa):
-Proibido: "agende agora", "não perca tempo", "corra"
-Usar: "se fizer sentido pra você...", "se quiser entender melhor...", "quando quiser conversar..."
-O CTA deve parecer que a profissional continuou falando, não um comercial.
-
-REGRA GLOBAL DO hook_texto_overlay (A FRASE MAIS IMPORTANTE DO VÍDEO):
-O hook_texto_overlay aparece em tela nos primeiros 3 segundos e decide se o usuário continua assistindo.
-Ele precisa: parar o scroll, gerar emoção ou curiosidade imediata, ser específico ao tema.
-
-🚫 HOOK_TEXTO_OVERLAY PROIBIDOS (nunca use):
-- "Eu entendo o que você está sentindo"
-- "Preste muita atenção"
-- "Isso pode mudar tudo"
-- "Uma dica importante"
-- "Você precisa saber"
-- "É importante observar"
-
-✅ EXEMPLOS DE HOOKS FORTES:
-- "Você já pediu pro seu filho repetir..."
-- "Enquanto outras crianças brincam, seu filho..."
-- "Você já chorou vendo seu filho tentar falar?"
-- "Toda vez que você tenta brincar, ele vira o rosto"
-
-👉 Auto-validação: antes de finalizar, pergunte — "essa frase faria alguém parar de rolar o feed?" Se não → reescreva imediatamente.
-
-${isInstagram
-  ? `MODO INSTAGRAM (ORGÂNICO — VIRAL):
-- Duração: 20-35 segundos (frases bem curtas, ritmo acelerado)
-- Foco: retenção total + salvamento/compartilhamento
-- Hook AGRESSIVO nos primeiros 3 segundos
-- Intensidade: ${intensidade}`
-  : `MODO META ADS (CONVERSÃO):
-- Duração: 30-60 segundos
-- Foco: clareza + promessa + CTA para WhatsApp
-- Tom mais institucional mas ainda acolhedor`}`;
-
-  const instrucaoHook  = HOOK_INSTRUCOES[hookStyle]  || HOOK_INSTRUCOES.dor;
-  const instrucaoTone  = TONE_INSTRUCOES[tone]        || TONE_INSTRUCOES.educativo;
-
-  const userPrompt = `SubTema: ${subTema || especialidade}
-Contexto do tema: ${subTemaContexto}
+  // ── User prompt com todos os dados de conversão
+  const userPrompt = `SubTema: ${subTema || especialidade || 'geral'}
 Profissional: ${nomeProfissional}
-Funil: ${funil}
-Duração alvo: ${duracaoEfetiva} segundos (~${Math.floor(duracaoEfetiva * 2.2)} palavras na narração)
-Objetivo do conteúdo: ${objetivo} — ${ctaSugerido}
-Intensidade: ${intensidade}
+Estágio de jornada: ${estagio_jornada}
+Plataforma: ${platform}
+Duração alvo: ${duracaoEfetiva}s (~${Math.floor(duracaoEfetiva * 2.2)} palavras na narração)
+Tipo de conteúdo: ${tipo_conteudo}
 
-ESTRUTURA NARRATIVA A USAR (${estruturaLetra}):
-${estruturaDescricao}
+PERFIL DO VIEWER NESTE MOMENTO:
+Situação real: ${perfil.situacao_real}
+Custo invisível de não agir: ${perfil.custo_invisivel}
 
-${instrucaoHook}
+JANELA TEMPORAL (mencionar no roteiro):
+${janelaFinal}
 
-${instrucaoTone}
+CRENÇA A QUEBRAR:
+${crencaFinal.replace(/_/g, ' ')}
 
-HOOK DE REFERÊNCIA (USE ESTE EXATO HOOK): "${hookSugerido}"
+OBJEÇÃO PRINCIPAL A TRATAR:
+Nomeação: ${tratObjecao.nomeacao}
+Desmonte: ${tratObjecao.desmonte}
+Ângulo: ${tratObjecao.angulo}
 
-⚠️ OBRIGATÓRIO: Use o hook acima EXATAMENTE como hook_texto_overlay. NÃO crie hooks genéricos como "eu entendo" ou "preste atenção".
+PROVA SOCIAL (incluir se disponível):
+${prova_social || 'Gere prova baseada em experiência clínica realista e específica — número, tempo ou caso. Nunca genérico.'}
 
-COMBINAÇÃO ATIVA: hookStyle="${hookStyle}" + tone="${tone}"
-${hookStyle === 'curiosidade' && tone === 'educativo'     ? '→ Abre com mistério, corpo do vídeo entrega a informação como descoberta' : ''}
-${hookStyle === 'curiosidade' && tone === 'emotional'     ? '→ Abre com mistério emocional, narração toda ressoa com o coração do pai' : ''}
-${hookStyle === 'dor'         && tone === 'emotional'     ? '→ Valida a dor primeiro, depois acolhe — gera muito comentário e DM' : ''}
-${hookStyle === 'autoridade'  && tone === 'inspiracional' ? '→ Abre com credencial, corpo mostra transformação possível — gera compartilhamento' : ''}
-${hookStyle === 'erro_comum'  && tone === 'educativo'     ? '→ Nomeia o erro, explica o porquê, dá a correção prática — gera salvamento' : ''}
-${hookStyle === 'alerta'      && tone === 'bastidores'    ? '→ Alerta vindo de dentro da clínica — humanizado e urgente ao mesmo tempo' : ''}
+CENA DE ABERTURA (usar EXATAMENTE como hook_texto_overlay):
+"${cenaInicial}"
 
-${bordao ? `BORDÃO OBRIGATÓRIO DE ABERTURA:
-O vídeo DEVE começar exatamente com: "${bordao}"
-- A primeira palavra falada na narração é "${bordao}"
-- O hook_texto_overlay também deve começar com "${bordao}"
-- Mantenha o tom curioso/educativo após o bordão — NÃO acusatório
-- Ex: "${bordao} que criticar seu filho pode travar a fala?" → correto
-- Ex: "${bordao} que existe um sinal que a maioria dos pais ignora?" → correto
-` : ''}
-PERCEPÇÃO CLÍNICA A INJETAR (dor real do tema):
-${JSON.stringify(DOR_REAL[subTema] || DOR_REAL.atraso_fala, null, 2)}
+${bordao ? `BORDÃO OBRIGATÓRIO DE ABERTURA (primeira palavra falada):
+"${bordao}"
+O hook_texto_overlay também deve começar com "${bordao}"` : ''}
 
-REGRA DE ESCRITA: Use a dor principal e situação real acima como base emocional. Não explique a dor — mostre que você ENTENDE vivenciando com o pai.
+${contextoLead ? `CONTEXTO DO LEAD (enriquecer a especificidade do roteiro):
+${contextoLead}` : ''}
 
-VERIFICAÇÃO OBRIGATÓRIA antes de finalizar (em ordem):
-1. HOOK INTENSO: Essa frase faria alguém PARAR O SCROLL imediatamente? Gera identificação ou curiosidade forte? Se não → REESCREVA.
-${bordao ? `1b. hook_texto_overlay começa com "${bordao}"? Se não → REESCREVA.` : ''}
-2. HUMANIZAÇÃO: Todas as frases têm máximo 12 palavras? Usa contrações (tá, às vezes, a gente)? Se não → REESCREVA.
-3. SEM TEXTOS GENÉRICOS: Contém "é muito importante", "isso pode afetar", "devemos observar"? Se sim → REESCREVA com situação específica.
-4. Tom: "${tone}" está consistente do início ao fim?
-5. Ritmo: Frases curtas e longas alternadas?
-6. CTA NATURAL: É continuação da conversa ("se quiser entender...") e NÃO comercial ("agende agora")?
-7. IDADE: Menciona idade específica ou faixa etária?
-8. EXEMPLO: Tem situação concreta do dia a dia (ex: "ontem atendi...")?
-9. GATILHO: Tem urgência leve ("quanto antes", "enquanto é cedo")?
+${intencaoInfo ? `INTENÇÃO DO LEAD DETECTADA (informacional — use para personalizar):
+Intenção: ${intencaoInfo.intencao} (confiança: ${(intencaoInfo.confianca * 100).toFixed(0)}%)` : ''}
 
-CONTROLE DE QUALIDADE FINAL (auto-avaliação):
-❓ Parece uma profissional FALANDO ou um texto ESCRITO de site? Se escrito → ajustar para linguagem falada.
-❓ Tem EMOÇÃO (pai se sente visto) OU DESCOBERTA REAL (insight novo)? Se não → adicionar.
-❓ Tem APLICAÇÃO PRÁTICA (o pai sai sabendo o que fazer)? Se não → adicionar dica acionável.
-❓ O hook é ESPECÍFICO (não genérico)? Se genérico → reescrever com detalhe concreto.
-
-⚠️ VALIDAÇÃO CRÍTICA DO HOOK_TEXTO_OVERLAY:
-Se hook_texto_overlay conter: "eu entendo", "preste atenção", "isso pode mudar", "dica importante" → REESCREVER imediatamente com cena específica (ex: "você já pediu pro seu filho repetir...").
+${prompt_extra ? `INSTRUÇÕES ADICIONAIS DO USUÁRIO (seguir rigorosamente):
+${prompt_extra}` : ''}
 
 Retorne JSON:
 {
   "roteiro": {
-    "titulo": "título legível em português, máx 50 chars, sem snake_case — ex: 'Seu filho ainda não fala?' ou 'Sinais de atraso de linguagem'",
+    "titulo": "título em português, máx 50 chars, descritivo",
     "profissional": "${profissional}",
     "duracao_estimada": ${duracaoEfetiva},
-    "texto_completo": "narração exata que o avatar vai falar, tom de conversa",
-    "hook_texto_overlay": "USE EXATAMENTE: ${hookSugerido}",
-    "cta_texto_overlay": "${ctaSugerido}",
-    "legenda_instagram": "REGRA: primeiros 125 chars DEVEM conter a palavra-chave principal do tema (ex: 'atraso de fala', 'autismo', 'birra'). Depois quebras de linha, emojis leves (máx 3) e CTA. Mínimo 150 chars no total.",
-    "hashtags": ["gere 8 a 10 hashtags específicas do tema — SEM as de localidade e SEM #FonoInova que são adicionadas automaticamente. Misture: 2 de alto volume (ex: #Maternidade), 4 de médio (ex: #AtrasoFala), 2-4 de nicho (ex: #FilhoNaoFala). NUNCA inclua hashtag genérica demais como #Criança sozinha."],
-    "estrutura_usada": "${estruturaLetra}",
-    "objetivo": "${objetivo}",
+    "estagio_jornada": "${estagio_jornada}",
+    "texto_completo": "narração exata que o avatar vai falar — linguagem falada, frases curtas, tom de conversa",
+    "hook_texto_overlay": "USAR EXATAMENTE: ${cenaInicial}",
+    "cta_texto_overlay": "CTA gerado como resolução da tensão do hook — conectado, específico, com friction eliminator — tipo: ${mapeamento.cta_tipo}",
+    "legenda_instagram": "primeiros 125 chars contêm a keyword principal. Quebras de linha. Máx 3 emojis. Mínimo 150 chars total.",
+    "hashtags": ["8 a 10 hashtags específicas do tema — sem localidade e sem #FonoInova que são adicionadas automaticamente"],
     "copy_anuncio": {
-      "texto_primario": "copy 2-3 linhas pra Meta Ads",
-      "headline": "headline 5-8 palavras",
-      "descricao": "descrição secundária 1 frase"
-    }
+      "texto_primario": "2-3 linhas para Meta Ads",
+      "headline": "5-8 palavras",
+      "descricao": "1 frase"
+    },
+    "storyboard_hint": "O texto_completo deve ser dividido em frases curtas (2-8 palavras cada) separadas por pontos finais, facilitando a direção de cena automática"
   }
 }`;
 
@@ -969,194 +807,359 @@ Retorne JSON:
 
   for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
     if (tentativa > 1) {
-      logger.info(`[ZEUS] 🔄 Tentativa ${tentativa}/${MAX_TENTATIVAS} — roteiro anterior reprovado: ${ultimoErro}`);
+      logger.info(`[ZEUS] Tentativa ${tentativa}/${MAX_TENTATIVAS} — reprovado: ${ultimoErro}`);
     }
 
-  try {
-    // curiosidade e erro_comum precisam de mais criatividade para não repetir padrões
-    // A cada tentativa aumenta levemente a temperatura para variar o output
-    const baseTemp = ['curiosidade', 'erro_comum'].includes(hookStyle) ? 1.0 : 0.85;
-    const temperature = Math.min(baseTemp + (tentativa - 1) * 0.05, 1.2);
+    try {
+      const temperature = 0.9 + (tentativa - 1) * 0.05;
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      temperature,
-      max_tokens: 1800,
-      response_format: { type: 'json_object' }
-    });
-
-    let resultado = JSON.parse(response.choices[0].message.content);
-
-    if (!resultado.roteiro?.texto_completo) {
-      throw new Error('ZEUS retornou roteiro sem texto_completo');
-    }
-
-    // 🚫 VALIDAÇÃO: Bloquear texto genérico automaticamente (texto_completo inteiro)
-    const texto = resultado.roteiro.texto_completo.toLowerCase();
-    const palavrasProibidasEncontradas = verificarFrasesProibidas(resultado.roteiro.texto_completo);
-    
-    if (palavrasProibidasEncontradas.length > 0) {
-      logger.warn(`[ZEUS] ⚠️ Texto genérico detectado: ${palavrasProibidasEncontradas.join(', ')}. Solicitando reescrita...`);
-      
-      // Reescrever automaticamente
-      const rewritePrompt = `O roteiro abaixo contém linguagem genérica proibida: ${palavrasProibidasEncontradas.join(', ')}.
-
-REGRAS OBRIGATÓRIAS para a reescrita:
-1. MANTENHA: faixa etária específica (ex: "2 a 4 anos", "18 meses") — NÃO remova
-2. MANTENHA: comportamentos concretos (ex: "não responde", "não fala", "não olha") — NÃO remova
-3. SUBSTITUA o CTA fraco por algo natural: "me chama no WhatsApp", "manda mensagem aqui", "quando quiser conversar"
-4. Frases curtas, linguagem de conversa (tá, às vezes, a gente)
-5. NUNCA use: "não hesite", "estamos aqui para ajudar", "eu entendo", "é normal"
-
-Roteiro original:
-${resultado.roteiro.texto_completo}
-
-Retorne APENAS o novo texto no campo "texto_completo" do JSON.`;
-
-      const rewriteResponse = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+      const response = await getOpenAI().chat.completions.create({
+        model: MODELO,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: rewritePrompt }
+          { role: 'user',   content: userPrompt   },
         ],
-        temperature: 0.9,
-        max_tokens: 1000,
-        response_format: { type: 'json_object' }
+        temperature,
+        max_tokens: 2000,
+        response_format: { type: 'json_object' },
       });
 
-      const rewriteResult = JSON.parse(rewriteResponse.choices[0].message.content);
-      if (rewriteResult.texto_completo) {
-        resultado.roteiro.texto_completo = rewriteResult.texto_completo;
-        logger.info('[ZEUS] ✅ Roteiro reescrito para remover textos genéricos');
+      const resultado = JSON.parse(response.choices[0].message.content);
+
+      if (!resultado.roteiro?.texto_completo) {
+        throw new Error('ZEUS retornou roteiro sem texto_completo');
       }
-    }
 
-    // 💬 HUMANIZAÇÃO ADICIONAL: Substituir termos formais
-    let textoHumanizado = resultado.roteiro.texto_completo;
-    Object.entries(SUBSTITUICOES_HUMANIZADAS).forEach(([formal, informal]) => {
-      const regex = new RegExp(`\\b${formal}\\b`, 'gi');
-      textoHumanizado = textoHumanizado.replace(regex, informal);
-    });
-    resultado.roteiro.texto_completo = textoHumanizado;
+      // ── Score de conversão
+      const { score, falhas } = scorarConversao(resultado.roteiro, {
+        estagio_jornada,
+        objecao_principal: objecaoFinal,
+      });
 
-    // 🚫 VALIDAÇÃO DO HOOK: Bloquear hooks genéricos
-    const hook = resultado.roteiro.hook_texto_overlay?.toLowerCase() || '';
-    const hooksProibidos = [
-      'eu entendo', 'preste atenção', 'isso pode mudar',
-      'dica importante', 'você precisa saber', 'é importante'
-    ];
-    const hookFraco = hooksProibidos.some(h => hook.includes(h));
+      logger.info(`[ZEUS] Score de conversão: ${score}/100${falhas.length ? ` | Falhas: ${falhas.join(' | ')}` : ''}`);
 
-    if (hookFraco) {
-      logger.warn(`[ZEUS] ⚠️ Hook genérico detectado: "${resultado.roteiro.hook_texto_overlay}". Substituindo...`);
-      const hookForte = escolherHookSubTema(subTema, hookStyle, variacao) || hookSugerido;
-      resultado.roteiro.hook_texto_overlay = hookForte;
-      logger.info(`[ZEUS] ✅ Hook substituído por: "${hookForte}"`);
-    }
+      if (score < 55 && tentativa < MAX_TENTATIVAS) {
+        ultimoErro = `Score ${score}/100 — ${falhas[0]}`;
+        throw new Error(ultimoErro);
+      }
 
-    // 🔴 DETECTOR DE CONTRADIÇÃO: abre com preocupação e depois normaliza
-    const textoFinal = resultado.roteiro.texto_completo.toLowerCase();
-    const temPreocupacao = textoFinal.includes('preocup') || textoFinal.includes('angust') || textoFinal.includes('medo');
-    const temNormalizacao = textoFinal.includes('é normal') || textoFinal.includes('e normal') || textoFinal.includes('isso é comum') || textoFinal.includes('nao se preocupe') || textoFinal.includes('não se preocupe');
-    if (temPreocupacao && temNormalizacao) {
-      logger.warn('[ZEUS] 🔴 CONTRADIÇÃO DETECTADA: roteiro abre com dor/medo e depois normaliza — mata conversão. Rejeitando...');
-      throw new Error('CONTRADIÇÃO DE MENSAGEM — roteiro abre com preocupação e depois diz "é normal". REGERAR.');
-    }
+      if (falhas.length > 0) {
+        logger.warn(`[ZEUS] Avisos de conversão: ${falhas.join(' | ')}`);
+      }
 
-    // 📊 SCORE DE QUALIDADE 0-100 — só libera acima de 70
-    const scoreRoteiro = (() => {
-      let s = 100;
-      const t = resultado.roteiro.texto_completo;
-      const tLow = t.toLowerCase();
-      const palavras = t.split(/\s+/).filter(Boolean).length;
+      // ── Montar hashtags
+      resultado.roteiro.hashtags = montarHashtags(
+        resultado.roteiro.hashtags || [],
+        subTema,
+        especialidade,
+      );
 
-      // -35: frases proibidas no texto completo
-      const proibidas = verificarFrasesProibidas(t);
-      if (proibidas.length > 0) s -= 35;
-
-      // -20: muito curto (menos de 80 palavras)
-      if (palavras < 80) s -= 20;
-
-      // -15: sem faixa etária específica
-      if (!/\d+\s*(anos?|meses?|m[eê]s)/.test(tLow)) s -= 15;
-
-      // -15: sem comportamento concreto observável
-      const comportamentosConcretos = ['não fala', 'nao fala', 'não responde', 'nao responde', 'não olha', 'nao olha', 'não anda', 'nao anda', 'não come', 'nao come', 'não dorme', 'nao dorme', 'não brinca', 'nao brinca', 'cai muito', 'chora muito'];
-      if (!comportamentosConcretos.some(c => tLow.includes(c))) s -= 15;
-
-      // -10: CTA fraco (genérico)
-      const ctaFraco = ['não perca', 'nao perca', 'agende agora', 'não hesite', 'nao hesite', 'estamos aqui'];
-      if (ctaFraco.some(c => tLow.includes(c))) s -= 10;
-
-      // -10: hook_texto_overlay muito longo (>70 chars) ou ausente
-      const hookLen = (resultado.roteiro.hook_texto_overlay || '').length;
-      if (hookLen === 0 || hookLen > 70) s -= 10;
-
-      return Math.max(s, 0);
-    })();
-
-    logger.info(`[ZEUS] 📊 Score de qualidade: ${scoreRoteiro}/100`);
-
-    if (scoreRoteiro < 60) {
-      logger.warn(`[ZEUS] 🔴 ROTEIRO REPROVADO (score ${scoreRoteiro}/100) — abaixo do mínimo de 60. Rejeitando para regerar.`);
-      throw new Error(`ROTEIRO REPROVADO — score ${scoreRoteiro}/100. Requer mínimo 60.`);
-    }
-
-    // ✅ CONTROLE DE QUALIDADE FINAL (warnings não-bloqueantes)
-    const validacoes = [
-      { teste: texto.length < 500, mensagem: 'Texto muito curto' },
-      { teste: !resultado.roteiro.hook_texto_overlay || resultado.roteiro.hook_texto_overlay.length > 60, mensagem: 'Hook muito longo ou ausente' },
-      { teste: resultado.roteiro.texto_completo.split('.').some(f => f.trim().split(/\s+/).length > 15), mensagem: 'Frases muito longas detectadas' }
-    ];
-
-    const falhas = validacoes.filter(v => v.teste);
-    if (falhas.length > 0) {
-      logger.warn(`[ZEUS] ⚠️ Avisos de qualidade: ${falhas.map(f => f.mensagem).join(', ')}`);
-    }
-
-    // Mescla hashtags do GPT com as bases garantidas (localidade + especialidade)
-    resultado.roteiro.hashtags = montarHashtags(
-      resultado.roteiro.hashtags || [],
-      subTema,
-      especialidade
-    );
-
-    const palavras = resultado.roteiro.texto_completo.split(/\s+/).length;
-    logger.info(`[ZEUS] ✅ Roteiro gerado: ${palavras} palavras | estrutura=${resultado.roteiro.estrutura_usada} | ${nomeProfissional} | hashtags=${resultado.roteiro.hashtags.length}`);
-
-    // 🧠 Adicionar metadados de intenção ao resultado
-    if (intencaoDetectada) {
-      resultado.roteiro._intencao = {
-        detectada: intencaoDetectada.intencao,
-        confianca: intencaoDetectada.confianca,
-        hookAplicado: hookStyle,
-        toneAplicado: tone,
-        objetivoAplicado: objetivo
+      // ── Metadados
+      resultado.roteiro._meta = {
+        modelo:            MODELO,
+        estagio_jornada,
+        objecao_tratada:   objecaoFinal,
+        crenca_quebrada:   crencaFinal,
+        janela_temporal:   janelaFinal,
+        score_conversao:   score,
+        tentativa,
+        intencao_lead:     intencaoInfo?.intencao || null,
       };
+
+      const palavras = resultado.roteiro.texto_completo.split(/\s+/).length;
+      logger.info(`[ZEUS] Roteiro gerado: ${palavras} palavras | estágio=${estagio_jornada} | score=${score} | ${nomeProfissional}`);
+
+      // ── Gerar storyboard automático (Zeus v3.3)
+      resultado.roteiro.storyboard = gerarStoryboard(resultado.roteiro, estagio_jornada, perfil);
+      
+      // ── Gerar prompt Veo pronto
+      resultado.roteiro.veo_prompt = gerarPromptVeo(resultado.roteiro.storyboard, estagio_jornada);
+
+      return resultado;
+
+    } catch (error) {
+      const rejeicaoQualidade = error.message.startsWith('Score') ||
+                                error.message.startsWith('ZEUS retornou');
+
+      if (rejeicaoQualidade && tentativa < MAX_TENTATIVAS) {
+        ultimoErro = error.message;
+        continue;
+      }
+
+      logger.error('[ZEUS] Erro ao gerar roteiro:', error.message);
+      throw error;
     }
-
-    return resultado;
-
-  } catch (error) {
-    const erroQualidade = error.message.startsWith('ROTEIRO REPROVADO') ||
-                          error.message.startsWith('CONTRADIÇÃO DE MENSAGEM');
-
-    if (erroQualidade && tentativa < MAX_TENTATIVAS) {
-      ultimoErro = error.message;
-      continue; // tenta novamente
-    }
-
-    logger.error('[ZEUS] Erro ao gerar roteiro:', error.message);
-    throw error;
   }
-  } // fim for tentativas
 
-  // Se chegou aqui, todas as tentativas falharam por qualidade
   throw new Error(`[ZEUS] Roteiro reprovado após ${MAX_TENTATIVAS} tentativas: ${ultimoErro}`);
 }
+
+// ─────────────────────────────────────────────
+// SEÇÃO 8: detectarIntencaoLead() — INFORMACIONAL
+// Não sobrescreve seleções do usuário.
+// Retorna dados para enriquecer contexto apenas.
+// ─────────────────────────────────────────────
+
+const INTENCAO_KEYWORDS = {
+  duvida: [
+    'não sei se', 'será que', 'acho que', 'dúvida', 'como funciona',
+    'o que é', 'por que', 'como sabe', 'não entendo', 'me explica',
+  ],
+  preocupacao: [
+    'preocupada', 'preocupado', 'medo', 'angustiada', 'desesperada',
+    'desesperado', 'não sei o que fazer', 'tô perdida', 'tô perdido',
+    'será que é grave', 'pode ser autismo', 'pode ser atraso', 'tem algo errado',
+  ],
+  comparacao: [
+    'outras crianças', 'os outros já', 'meu filho não faz', 'meu filho ainda não',
+    'deveria estar', 'era pra estar', 'já deveria', 'ainda não consegue',
+  ],
+  acao: [
+    'quero agendar', 'quanto custa', 'valor', 'preço', 'horário',
+    'disponibilidade', 'quero começar', 'quero marcar', 'pode me ajudar',
+    'como funciona atendimento', 'posso ir aí', 'endereço',
+  ],
+  leve_curiosidade: [
+    'vi no instagram', 'vi no site', 'achei interessante', 'curiosa', 'curioso',
+    'só uma dúvida', 'só perguntando', 'por curiosidade', 'ouvi falar',
+  ],
+};
+
+export function detectarIntencaoLead(textoLead = '') {
+  if (!textoLead || textoLead.length < 5) {
+    return {
+      intencao:   'desconhecida',
+      confianca:  0,
+      estagio_sugerido: 'descoberta',
+    };
+  }
+
+  const texto  = textoLead.toLowerCase();
+  const scores = {};
+
+  Object.entries(INTENCAO_KEYWORDS).forEach(([intencao, keywords]) => {
+    scores[intencao] = keywords.filter(kw => texto.includes(kw)).length;
+  });
+
+  const entries   = Object.entries(scores);
+  const maxScore  = Math.max(...entries.map(([, s]) => s));
+
+  if (maxScore === 0) {
+    return {
+      intencao:   texto.includes('?') && texto.length < 50 ? 'duvida' : 'preocupacao',
+      confianca:  0.4,
+      estagio_sugerido: 'descoberta',
+    };
+  }
+
+  const intencaoDetectada = entries.find(([, s]) => s === maxScore)[0];
+  // Confiança calibrada — nunca ultrapassa 0.85 para não gerar falsa certeza
+  const confianca = Math.min(maxScore * 0.25 + 0.35, 0.85);
+
+  // Sugestão de estágio baseada na intenção (apenas sugestão — não sobrescreve)
+  const mapaEstagio = {
+    duvida:           'descoberta',
+    preocupacao:      'descoberta',
+    comparacao:       'consideracao',
+    acao:             'decisao',
+    leve_curiosidade: 'descoberta',
+  };
+
+  return {
+    intencao:        intencaoDetectada,
+    confianca,
+    estagio_sugerido: mapaEstagio[intencaoDetectada] || 'descoberta',
+  };
+}
+
+// ═════════════════════════════════────────────
+// STORYBOARD + DIREÇÃO DE CENA (Zeus v3.3)
+// ═════════════════════════════════────────────
+
+/**
+ * Calcula timing flexível baseado na fala e estágio
+ */
+function calcularTimingPorFala(fala, estagio_jornada) {
+  const palavras = fala.split(/\s+/).length;
+  const baseSegundos = palavras * 0.5; // 1 palavra ≈ 0.5s
+  
+  // Ajuste por estágio (ritmo emocional)
+  const multiplicador = {
+    descoberta: 1.2,     // Mais lento, acolhedor
+    consideracao: 1.0,   // Ritmo médio
+    decisao: 0.9,        // Mais direto
+    retargeting: 1.1,    // Tranquilo
+  }[estagio_jornada] || 1.0;
+  
+  const tempoAjustado = baseSegundos * multiplicador;
+  
+  // Range de 20% para flexibilidade
+  const min = Math.max(tempoAjustado * 0.8, 2);
+  const max = tempoAjustado * 1.2;
+  
+  // Classificação por tipo
+  let tipo = 'medio';
+  if (max < 4) tipo = 'curto';
+  if (min > 6) tipo = 'longo';
+  
+  return {
+    range: `${Math.round(min)}-${Math.round(max)}s`,
+    min,
+    max,
+    tipo,
+    palavras
+  };
+}
+
+/**
+ * Define direção visual baseada no estágio e conteúdo da fala
+ */
+function definirDirecaoVisual(fala, estagio_jornada, indice, totalBlocos) {
+  // Análise de emoção da fala
+  const temCena = /você|mãe|pai|chamou|brincando/.test(fala.toLowerCase());
+  const temProva = /\d|%|em \d+|resultado/.test(fala);
+  const tensao = /detalhe|chegar tarde|não percebe|faz sentido/.test(fala.toLowerCase());
+  
+  // Direção por estágio + contexto
+  const direcoes = {
+    descoberta: {
+      visual: temCena 
+        ? 'criança brincando, ignora quando chamada, ambiente doméstico natural'
+        : 'mãe observa com expressão de dúvida, close suave no rosto',
+      camera: indice === 0 ? 'plano médio, movimento suave' : 'close, foco nos olhos',
+      emocao: tensao ? 'curiosidade/tensão suave' : 'neutralidade acolhedora',
+      iluminacao: 'luz natural suave, tom quente',
+    },
+    consideracao: {
+      visual: temProva
+        ? 'terapeuta interage com criança, ambiente clínico acolhedor'
+        : 'mãe presta atenção, gesto de compreensão',
+      camera: 'plano médio-fechar, movimento controlado',
+      emocao: 'confiança construindo',
+      iluminacao: 'luz profissional suave, ambiente clínico',
+    },
+    decisao: {
+      visual: 'terapeuta fala direto para câmera com autoridade gentil',
+      camera: 'plano fechado, estabilidade',
+      emocao: 'autoridade empática',
+      iluminacao: 'luz clara, foco no rosto',
+    },
+    retargeting: {
+      visual: 'ambiente familiar tranquilo, sem pressão',
+      camera: 'plano aberto, sensação de espaço',
+      emocao: 'cumplicidade/remoção de culpa',
+      iluminacao: 'luz suave acolhedora',
+    },
+  };
+  
+  const base = direcoes[estagio_jornada] || direcoes.descoberta;
+  
+  // Ajustes específicos por conteúdo
+  if (temProva) {
+    base.visual = 'texto sutil na tela ou gráfico leve, cena de transformação';
+    base.emocao = 'credibilidade/concreto';
+  }
+  
+  return base;
+}
+
+/**
+ * Define transição entre blocos
+ */
+function definirTransicao(indiceAtual, totalBlocos, estagio_jornada) {
+  if (indiceAtual === 0) return 'abertura';
+  if (indiceAtual === totalBlocos - 1) return 'fade_loop';
+  
+  // Transições por contexto emocional
+  const transicoes = {
+    descoberta: ['continuidade natural', 'corte suave', 'fade leve'],
+    consideracao: ['corte informativo', 'transição limpa'],
+    decisao: ['corte direto', 'continuidade firme'],
+    retargeting: ['fade suave', 'continuidade gentil'],
+  };
+  
+  const opcoes = transicoes[estagio_jornada] || transicoes.descoberta;
+  return opcoes[indiceAtual % opcoes.length];
+}
+
+/**
+ * Gera storyboard completo a partir do roteiro
+ */
+function gerarStoryboard(roteiro, estagio_jornada, perfil) {
+  const texto = roteiro.texto_completo;
+  
+  // Quebrar em blocos por frases (pontos finais, reticências, quebras)
+  const frases = texto
+    .split(/(?<=[.…!?:])\s+/)
+    .map(f => f.trim())
+    .filter(f => f.length > 0);
+  
+  const blocos = [];
+  const cenasAbertura = CENAS_ABERTURA[perfil?.subTema] || CENAS_ABERTURA.atraso_fala;
+  const cenaInicial = cenasAbertura ? cenasAbertura[0] : 'criança brincando';
+  
+  frases.forEach((fala, indice) => {
+    const timing = calcularTimingPorFala(fala, estagio_jornada);
+    const direcao = definirDirecaoVisual(fala, estagio_jornada, indice, frases.length);
+    const transicao = definirTransicao(indice, frases.length, estagio_jornada);
+    
+    // Cena especial para o primeiro bloco (hook)
+    if (indice === 0) {
+      direcao.visual = cenaInicial;
+      direcao.emocao = 'stop-scroll imediato';
+    }
+    
+    blocos.push({
+      bloco: indice + 1,
+      ordem: indice + 1,
+      fala,
+      timing_range: timing.range,
+      timing_tipo: timing.tipo,
+      visual: direcao.visual,
+      camera: direcao.camera,
+      emocao: direcao.emocao,
+      iluminacao: direcao.iluminacao,
+      transicao,
+    });
+  });
+  
+  return {
+    blocos,
+    meta: {
+      total_blocos: blocos.length,
+      duracao_estimada: blocos.reduce((acc, b) => acc + parseInt(b.timing_range.split('-')[1]), 0),
+      estagio_jornada,
+    }
+  };
+}
+
+/**
+ * Gera prompt otimizado para Veo a partir do storyboard
+ */
+function gerarPromptVeo(storyboard, estagio_jornada) {
+  const estilos = {
+    descoberta: 'Documentary style, soft natural lighting, intimate family moments, gentle camera movement, authentic emotions',
+    consideracao: 'Professional clinical documentary, warm lighting, confident atmosphere, smooth camera work',
+    decisao: 'Direct documentary, clear lighting, professional authority, steady camera',
+    retargeting: 'Soft documentary style, warm forgiving light, peaceful atmosphere, gentle transitions',
+  };
+  
+  const cenas = storyboard.blocos.map((bloco, i) => {
+    return `Cena ${i + 1} (${bloco.timing_range}): ${bloco.visual}. ${bloco.camera}. ${bloco.iluminacao}. Emoção: ${bloco.emocao}. Transição: ${bloco.transicao}.`;
+  }).join('\n\n');
+  
+  return {
+    estilo_base: estilos[estagio_jornada] || estilos.descoberta,
+    direcao_cinematografica: cenas,
+    loop_hint: estagio_jornada === 'descoberta' 
+      ? 'Final scene should visually connect to opening, creating seamless loop'
+      : 'Clear ending with emotional resolution',
+    aspect_ratio: '9:16 vertical',
+    qualidade: 'cinematic, professional healthcare documentary',
+  };
+}
+
+// Exportações para testes unitários
+export { scorarConversao, TOM_POR_ESTAGIO, MAPEAMENTO_JORNADA, CENAS_ABERTURA, montarHashtags, gerarStoryboard, gerarPromptVeo };
 
 export default { gerarRoteiro, detectarIntencaoLead };

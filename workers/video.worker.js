@@ -104,6 +104,49 @@ async function gerarNarracaoPTBR(texto, outputPath, options = {}) {
   return outputPath;
 }
 
+/**
+ * 🎙️ Configurações de TTS específicas por estágio Zeus v3.2
+ * Garante alinhamento emocional: roteiro acolhedor = voz acolhedora
+ */
+function getTTSPorEstagioZeus(estagioJornada) {
+  const configs = {
+    descoberta: {
+      // Tom acolhedor, calmo, quase sussurrado - SEM tensão
+      voice: 'nova',        // Voz suave, terapêutica
+      speed: 0.95,          // LENTO - respiração entre frases
+      tom: 'acolhedor_calmo',
+      pausas: 'longas',     // Pausas emocionais importantes
+      instrucao: 'Falar como numa conversa íntima. Voz suave, calma. Pausar após frases emocionais. NÃO soar como advertência.'
+    },
+    consideracao: {
+      // Autoridade gentil - confiança sem pressão
+      voice: 'alloy',       // Voz neutra-profissional
+      speed: 1.0,           // Ritmo natural
+      tom: 'autoridade_empatica',
+      pausas: 'claras',
+      instrucao: 'Tom de especialista confiável. Firme mas gentil. Demonstrar competência sem arrogância.'
+    },
+    decisao: {
+      // Direto mas humano - remover objeções
+      voice: 'echo',        // Voz mais grave, direta
+      speed: 1.02,          // Levemente mais rápido (ação)
+      tom: 'direto_desbloqueador',
+      pausas: 'impactantes',
+      instrucao: 'Falar a verdade sem rodeios. Tom firme mas não agressivo. Como um amigo especialista.'
+    },
+    retargeting: {
+      // Cumplicidade - remoção de culpa
+      voice: 'nova',        // Volta à suavidade
+      speed: 0.98,          // Tranquilo
+      tom: 'cumplicidade_tranquila',
+      pausas: 'confortaveis',
+      instrucao: 'Tom de continuidade, sem julgamento. Tranquilidade. "Já sabia disso - vamos em frente."'
+    }
+  };
+  
+  return configs[estagioJornada] || configs.descoberta;
+}
+
 const LOGO_PATH       = path.join(__dirname, '../assets/logo-overlay.png');
 const CTA_PATH        = path.join(__dirname, '../assets/cta_card.png');
 const LOGO_UNICA_PATH = path.join(__dirname, '../../front/public/images/logo-unica.png');
@@ -647,7 +690,10 @@ const videoWorker = new Worker('video-generation', async (job) => {
     intensidade = 'viral',
     bordao = '',           // bordão de abertura ex: "Você sabia" — instrui ZEUS
     roteiroEditado = null,  // roteiro pré-gerado pelo preview (pula ZEUS se fornecido)
-    preset = null           // 🎬 Preset premium: 'explosao_viral', 'autoridade_inspiradora', etc.
+    preset = null,          // 🎬 Preset premium: 'explosao_viral', 'autoridade_inspiradora', etc.
+    // ⚡ Zeus v3.0
+    modoZeus = false,
+    zeusConfig = null
   } = job.data;
 
   // 🎯 Aplicar configurações do preset se fornecido
@@ -663,6 +709,23 @@ const videoWorker = new Worker('video-generation', async (job) => {
     const presetRecomendado = recommendPreset(hookStyle, tone, intensidade);
     presetConfig = getFullProductionConfig(presetRecomendado);
     logger.info(`[VIDEO WORKER] 🎬 Preset auto-recomendado: "${presetConfig.nome}" (${hookStyle}+${tone}+${intensidade})`);
+  }
+
+  // ⚡ SOBRESCREVER TTS quando Modo Zeus ativo (alinhamento emocional obrigatório)
+  // O roteiro Zeus tem tom específico por estágio - o TTS DEVE corresponder
+  if (modoZeus && zeusConfig?.estagio_jornada) {
+    const ttsZeus = getTTSPorEstagioZeus(zeusConfig.estagio_jornada);
+    
+    // Sobrescrever configurações de voz do preset
+    presetConfig.tts = {
+      ...presetConfig.tts,
+      voice: ttsZeus.voice,
+      speed: ttsZeus.speed,
+      tom: ttsZeus.tom,
+      pausas: ttsZeus.pausas
+    };
+    
+    logger.info(`[VIDEO WORKER] ⚡ Modo Zeus ativo - TTS ajustado para estágio '${zeusConfig.estagio_jornada}': voz=${ttsZeus.voice}, speed=${ttsZeus.speed}, tom=${ttsZeus.tom}`);
   }
 
   logger.info(`[VIDEO WORKER] ▶ ${jobId} — "${tema}"`);
@@ -709,7 +772,8 @@ const videoWorker = new Worker('video-generation', async (job) => {
       roteiro = roteiroEditado;
       logger.info(`[VIDEO WORKER] Usando roteiro editado pelo usuário: "${roteiro.titulo}"`);
     } else {
-      const result = await gerarRoteiro({
+      // ⚡ Parâmetros base (compatibilidade v2.0)
+      const baseParams = {
         tema,
         especialidade: especialidadeId,
         funil,
@@ -722,7 +786,20 @@ const videoWorker = new Worker('video-generation', async (job) => {
         variacao: variacao !== undefined ? Number(variacao) : Math.random(),
         intensidade,
         bordao
-      });
+      };
+      
+      // ⚡ Se modoZeus ativado, adiciona configurações v3.0
+      if (modoZeus && zeusConfig) {
+        Object.assign(baseParams, {
+          estagio_jornada: zeusConfig.estagio_jornada,
+          objecao_principal: zeusConfig.objecao_principal,
+          prova_social: zeusConfig.prova_social,
+          tipo_conteudo: zeusConfig.tipo_conteudo || 'aquisicao_organica',
+          prompt_extra: zeusConfig.promptExtra || null
+        });
+      }
+      
+      const result = await gerarRoteiro(baseParams);
       roteiro = result.roteiro;
     }
 
@@ -742,7 +819,15 @@ const videoWorker = new Worker('video-generation', async (job) => {
       // 🧠 Metadados de inteligência
       estruturaUsada: roteiro.estrutura_usada || null,
       hookTextoGerado: roteiro.hook_texto_overlay || null,
-      legendaInstagram: roteiro.legenda_instagram || null
+      legendaInstagram: roteiro.legenda_instagram || null,
+      // 🎙️ Configurações de TTS aplicadas (importante para debug)
+      ttsConfig: modoZeus ? {
+        voice: presetConfig?.tts?.voice,
+        speed: presetConfig?.tts?.speed,
+        tom: presetConfig?.tts?.tom,
+        modoZeus: true,
+        estagioJornada: zeusConfig?.estagio_jornada
+      } : null
     });
 
     logger.info(`[VIDEO WORKER] Roteiro gerado: ${roteiro.profissional} | ${roteiro.titulo}`);
@@ -770,6 +855,8 @@ const videoWorker = new Worker('video-generation', async (job) => {
 
       await atualizarProgresso('HEYGEN', 55, { etapa: 'GERANDO_NARRACAO_TESTE' });
       const audioEcoPath = path.join(tmpDirEco, `${baseEco}_audio.mp3`);
+      logger.info(`[VIDEO WORKER] 🎙️ TTS: voz=${presetConfig?.tts?.voice}, speed=${presetConfig?.tts?.speed}, tom=${presetConfig?.tts?.tom}`);
+      
       await gerarNarracaoPTBR(roteiro.texto_completo, audioEcoPath, { 
         tone: presetConfig?.tts?.tom || roteiro.tone || 'educativo',
         intensidade,

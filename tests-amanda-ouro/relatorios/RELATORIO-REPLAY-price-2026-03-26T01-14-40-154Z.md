@@ -1,604 +1,41 @@
 # 🔥 RELATÓRIO REPLAY — Conversas Reais vs Amanda FSM V8
 
-**Gerado em:** 23/03/2026, 16:41:40  
+**Gerado em:** 25/03/2026, 22:14:40  
 **Total de perguntas:** 20  
-**Categoria:** urgency  
+**Categoria:** price  
 **Modo:** Mais recentes
 
 ---
 
 ## 📊 RESUMO POR CATEGORIA
 
-- **Urgência:** 10 (50.0%)
-- **Agendamento (fundodo funil):** 4 (20.0%)
-- **Dúvida sobre Terapia:** 3 (15.0%)
-- **Primeiro Contato / Saudação:** 3 (15.0%)
+- **Agendamento (fundodo funil):** 8 (40.0%)
+- **Preço / Valor:** 6 (30.0%)
+- **Info da Criança:** 2 (10.0%)
+- **geral:** 2 (10.0%)
+- **Dúvida sobre Terapia:** 1 (5.0%)
+- **Primeiro Contato / Saudação:** 1 (5.0%)
 
 ### Por Prioridade
 
-- 🔴 Crítica: 10
-- 🟠 Alta: 7
-- 🟡 Média: 3
-- ⚪ Baixa: 0
+- 🔴 Crítica: 0
+- 🟠 Alta: 11
+- 🟡 Média: 7
+- ⚪ Baixa: 2
 - ❌ Erros: 0
 
 ---
 
-## 1. 🟡 [THERAPY]
-
-**Categoria:** Dúvida sobre Terapia  
-**Prioridade:** MEDIA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Enfim, aguardo contato amanhã! Desde já agradeço
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 2. 🔴 [URGENCY]
-
-**Categoria:** Urgência  
-**Prioridade:** CRITICA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Matias até hoje não fala nenhuma palavra
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Obrigado!  Agora me manda a **data de nascimento** (dd/mm/aaaa) pra eu organizar certinho 😊 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 3. 🟠 [FIRSTCONTACT]
-
-**Categoria:** Primeiro Contato / Saudação  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Amanhã passo certinho boa noite
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 4. 🔴 [URGENCY]
-
-**Categoria:** Urgência  
-**Prioridade:** CRITICA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Tem hoje
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 5. 🟠 [SCHEDULING]
+## 1. 🟠 [SCHEDULING]
 
 **Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
+**Prioridade:** ALTA  
+**🎭 Persona:** Empoderadora  
+**📊 Estágio:** morno | **Emoção:** cautela | **Intenção:** agendar
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Podemos marcar às 11:00 da amanhã ?
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 6. 🔴 [URGENCY]
-
-**Categoria:** Urgência  
-**Prioridade:** CRITICA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Agendamos para hoje
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 7. 🔴 [URGENCY]
-
-**Categoria:** Urgência  
-**Prioridade:** CRITICA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Além da avaliação amanhã as 8h00?
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 8. 🟠 [SCHEDULING]
-
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Sábado de manhã tem vaga
-No caso amanhã
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Que bom que você quer fazer parte da nossa equipe! 🥰
-
-Os currículos são recebidos **exclusivamente por e-mail**:
-📩 **contato@clinicafonoinova.com.br**
-
-No assunto, coloque sua área de atuação (ex: Terapeuta Ocupacional).
-
-Em breve nossa equipe entra em contato! 😊 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 9. 🔴 [URGENCY]
-
-**Categoria:** Urgência  
-**Prioridade:** CRITICA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Amanhã de manhã seria bom para me
-Pq a tarde trabalho
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Que bom que você quer fazer parte da nossa equipe! 🥰
-
-Os currículos são recebidos **exclusivamente por e-mail**:
-📩 **contato@clinicafonoinova.com.br**
-
-No assunto, coloque sua área de atuação (ex: Terapeuta Ocupacional).
-
-Em breve nossa equipe entra em contato! 😊 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 10. 🔴 [URGENCY]
-
-**Categoria:** Urgência  
-**Prioridade:** CRITICA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Amanhã de manhã
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 11. 🔴 [URGENCY]
-
-**Categoria:** Urgência  
-**Prioridade:** CRITICA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Tem como ser hoje
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 12. 🟠 [FIRSTCONTACT]
-
-**Categoria:** Primeiro Contato / Saudação  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Por isso eu gostaria de fazer a cirurgia amanhã ainda
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 13. 🟠 [SCHEDULING]
-
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Ok. Se puder já agendar com o dentista pra amanhã será perfeito
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 14. 🔴 [URGENCY]
-
-**Categoria:** Urgência  
-**Prioridade:** CRITICA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Não precisa ser feita ainda amanhã
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Que bom que você quer fazer parte da nossa equipe! 🥰
-
-Os currículos são recebidos **exclusivamente por e-mail**:
-📩 **contato@clinicafonoinova.com.br**
-
-No assunto, coloque sua área de atuação (ex: Terapeuta Ocupacional).
-
-Em breve nossa equipe entra em contato! 😊 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 15. 🔴 [URGENCY]
-
-**Categoria:** Urgência  
-**Prioridade:** CRITICA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Mas sabe me dizer se é feita ainda amanhã?
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 16. 🟠 [SCHEDULING]
-
-**Categoria:** Agendamento (fundodo funil)  
-**Prioridade:** ALTA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Eu vou querer agendar pra amanhã sim
-```
-
-**🤖 RESPOSTA DA AMANDA:**
-```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
-```
-
-**📋 AVALIAÇÃO:**
-
-- [ ] Excelente (enviaria assim)
-- [ ] Boa (pequenos ajustes)
-- [ ] Regular (precisa melhorar)
-- [ ] Ruim (refazer totalmente)
-
-**📝 Observações:**
-```
-[Anotar aqui o que precisa ajustar...]
-```
-
-**✏️ Sugestão de melhoria:**
-```
-[Como deveria responder idealmente...]
-```
-
----
-
-## 17. 🟡 [THERAPY]
-
-**Categoria:** Dúvida sobre Terapia  
-**Prioridade:** MEDIA
-
-**👤 PERGUNTA REAL DO LEAD:**
-```
-Qual sería o valor? De todas eu posso tentar ir amanhã más gostaría dos valores para Fazer ao escolha da clínica eu ja fui là SEM meu filho só entrei e falei com vcs mais Ainda não recibí o valor
+Quero saber o valor das consultas por favor
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
@@ -625,19 +62,21 @@ A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a áre
 
 ---
 
-## 18. 🟠 [FIRSTCONTACT]
+## 2. 🟡 [PRICE]
 
-**Categoria:** Primeiro Contato / Saudação  
-**Prioridade:** ALTA
+**Categoria:** Preço / Valor  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** cautela | **Intenção:** informacao_precos
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Só depois de amanhã
+E qual valor?
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a área exata (Fono, Psicologia, TO...), passo o valor certinho 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -659,19 +98,21 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 19. 🔴 [URGENCY]
+## 3. 🟠 [CHILDINFO]
 
-**Categoria:** Urgência  
-**Prioridade:** CRITICA
+**Categoria:** Info da Criança  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Hoje não tem como
+Dificuldade em concentrar
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
 ```
 
 **📋 AVALIAÇÃO:**
@@ -693,19 +134,603 @@ Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, 
 
 ---
 
-## 20. 🟡 [THERAPY]
+## 4. 🟡 [PRICE]
+
+**Categoria:** Preço / Valor  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** cautela | **Intenção:** informacao_precos
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Eu sabe os valores
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a área exata (Fono, Psicologia, TO...), passo o valor certinho 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 5. 🟡 [THERAPY]
 
 **Categoria:** Dúvida sobre Terapia  
-**Prioridade:** MEDIA
+**Prioridade:** MEDIA  
+**🎭 Persona:** Empoderadora  
+**📊 Estágio:** morno | **Emoção:** neutro | **Intenção:** exploracao
 
 **👤 PERGUNTA REAL DO LEAD:**
 ```
-Muito obrigado, até amanhã ✨
+Vou organizar aqui e volto a te procurar
 ```
 
 **🤖 RESPOSTA DA AMANDA:**
 ```
-Oi! Pra eu direcionar certinho, qual área você precisa? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia? 💚
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 6. 🟡 [PRICE]
+
+**Categoria:** Preço / Valor  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** cautela | **Intenção:** informacao_precos
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+O valor é o mesmo
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a área exata (Fono, Psicologia, TO...), passo o valor certinho 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 7. 🟠 [CHILDINFO]
+
+**Categoria:** Info da Criança  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Vejo que ele tem muita dificuldade para falar
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 8. ⚪ [GERAL]
+
+**Categoria:** geral  
+**Prioridade:** BAIXA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** exploracao
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Ela ainda não está conseguindo arrastar
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 9. 🟠 [SCHEDULING]
+
+**Categoria:** Agendamento (fundodo funil)  
+**Prioridade:** ALTA  
+**🎭 Persona:** Empoderadora  
+**📊 Estágio:** morno | **Emoção:** pronto | **Intenção:** agendar
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Quero agendar
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Ótimo, vou te ajudar a agendar! 
+
+Pra direcionar certinho: qual especialidade você busca? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia. 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 10. 🟡 [PRICE]
+
+**Categoria:** Preço / Valor  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** cautela | **Intenção:** informacao_precos
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Valores primeiro por favor ?
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a área exata (Fono, Psicologia, TO...), passo o valor certinho 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 11. 🟠 [SCHEDULING]
+
+**Categoria:** Agendamento (fundodo funil)  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** cautela | **Intenção:** agendar
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Qual valor da consulta?
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a área exata (Fono, Psicologia, TO...), passo o valor certinho 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 12. 🟠 [SCHEDULING]
+
+**Categoria:** Agendamento (fundodo funil)  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** cautela | **Intenção:** agendar
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Esse valor é de cada consulta?
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a área exata (Fono, Psicologia, TO...), passo o valor certinho 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 13. 🟠 [SCHEDULING]
+
+**Categoria:** Agendamento (fundodo funil)  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** cautela | **Intenção:** agendar
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Qual o valor da consulta ?
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a área exata (Fono, Psicologia, TO...), passo o valor certinho 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 14. 🟠 [SCHEDULING]
+
+**Categoria:** Agendamento (fundodo funil)  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** agendar
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Pode confirmar a consulta do Diogo por favor
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Olá!  Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa! 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 15. 🟠 [SCHEDULING]
+
+**Categoria:** Agendamento (fundodo funil)  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** cautela | **Intenção:** agendar
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Quais são os valores da consulta
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a área exata (Fono, Psicologia, TO...), passo o valor certinho 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 16. 🟠 [FIRSTCONTACT]
+
+**Categoria:** Primeiro Contato / Saudação  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** agendar
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Ola Bom dia! Quanto que tá avaliação da fonoaudióloga
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Oi! Seja bem-vindo(a) à Fono Inova 
+
+Entendi que você busca **Fonoaudiologia**. Me conta um pouquinho: o que vocês têm observado que te preocupou? Estou aqui para ouvir e ajudar a encontrar o melhor caminho 😊 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 17. 🟠 [SCHEDULING]
+
+**Categoria:** Agendamento (fundodo funil)  
+**Prioridade:** ALTA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** agendar
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Quanto que é a consulta com a fono
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+Oi! Seja bem-vindo(a) à Fono Inova 
+
+Entendi que você busca **Fonoaudiologia**. Me conta um pouquinho: o que vocês têm observado que te preocupou? Estou aqui para ouvir e ajudar a encontrar o melhor caminho 😊 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 18. 🟡 [PRICE]
+
+**Categoria:** Preço / Valor  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** cautela | **Intenção:** informacao_precos
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Qual valor?
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a área exata (Fono, Psicologia, TO...), passo o valor certinho 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 19. 🟡 [PRICE]
+
+**Categoria:** Preço / Valor  
+**Prioridade:** MEDIA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** cautela | **Intenção:** informacao_precos
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+E qual o valor?
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a área exata (Fono, Psicologia, TO...), passo o valor certinho 💚
+```
+
+**📋 AVALIAÇÃO:**
+
+- [ ] Excelente (enviaria assim)
+- [ ] Boa (pequenos ajustes)
+- [ ] Regular (precisa melhorar)
+- [ ] Ruim (refazer totalmente)
+
+**📝 Observações:**
+```
+[Anotar aqui o que precisa ajustar...]
+```
+
+**✏️ Sugestão de melhoria:**
+```
+[Como deveria responder idealmente...]
+```
+
+---
+
+## 20. ⚪ [GERAL]
+
+**Categoria:** geral  
+**Prioridade:** BAIXA  
+**🎭 Persona:** Educadora  
+**📊 Estágio:** consideracao | **Emoção:** neutro | **Intenção:** informacao_local
+
+**👤 PERGUNTA REAL DO LEAD:**
+```
+Pode mim mandar a localizacao por favor
+```
+
+**🤖 RESPOSTA DA AMANDA:**
+```
+📍 Estamos na Av. Minas Gerais, 405 - Jundiaí, Anápolis/GO. Tem estacionamento fácil! Quer o link do Maps? 💚
 ```
 
 **📋 AVALIAÇÃO:**
