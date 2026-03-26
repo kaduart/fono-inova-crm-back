@@ -79,7 +79,10 @@ async function handleGenerateVideo(req, res) {
       variacao,                 // 0..1 — anti-repetição (gerado automaticamente se omitido)
       intensidade = 'viral',    // 'leve' | 'moderado' | 'forte' | 'viral'
       bordao = '',              // bordão de abertura ex: "Você sabia" — instrui ZEUS
-      roteiroEditado = null     // roteiro pré-gerado (do modal de preview), pula ZEUS
+      roteiroEditado = null,    // roteiro pré-gerado (do modal de preview), pula ZEUS
+      // ⚡ Campos Zeus v3.0
+      modoZeus,
+      zeusConfig
     } = req.body;
 
     logger.info(`[VIDEO ROUTE] body recebido: modo=${modo} | especialidade=${especialidadeId} | duration=${duration}`);
@@ -142,7 +145,10 @@ async function handleGenerateVideo(req, res) {
       variacao: variacaoFinal,
       intensidade,
       bordao: bordao || '',
-      roteiroEditado: roteiroEditado || null
+      roteiroEditado: roteiroEditado || null,
+      // ⚡ Zeus v3.0
+      modoZeus: modoZeus || false,
+      zeusConfig: zeusConfig || null
     }, {
       jobId,
       priority: 1
@@ -192,7 +198,10 @@ router.post('/preview-roteiro', async (req, res) => {
       subTema,
       hookStyle = 'dor',
       objetivo = 'salvar',
-      intensidade = 'viral'
+      intensidade = 'viral',
+      modoZeus,
+      zeusConfig,
+      promptExtra  // Instruções adicionais do usuário
     } = req.body;
 
     if (!especialidadeId) {
@@ -200,7 +209,9 @@ router.post('/preview-roteiro', async (req, res) => {
     }
 
     const { gerarRoteiro } = await import('../agents/zeus-video.js');
-    const { roteiro } = await gerarRoteiro({
+    
+    // Parâmetros base (compatibilidade v2.0)
+    const baseParams = {
       tema,
       especialidade: especialidadeId,
       funil,
@@ -212,7 +223,20 @@ router.post('/preview-roteiro', async (req, res) => {
       objetivo,
       variacao: Math.random(),
       intensidade
-    });
+    };
+    
+    // Se modoZeus ativado, sobrescreve com configurações v3.0
+    if (modoZeus && zeusConfig) {
+      Object.assign(baseParams, {
+        estagio_jornada: zeusConfig.estagio_jornada,
+        objecao_principal: zeusConfig.objecao_principal,
+        prova_social: zeusConfig.prova_social,
+        tipo_conteudo: zeusConfig.tipo_conteudo || 'aquisicao_organica',
+        prompt_extra: promptExtra || zeusConfig.promptExtra || null
+      });
+    }
+    
+    const { roteiro } = await gerarRoteiro(baseParams);
 
     res.json({
       success: true,
@@ -224,7 +248,10 @@ router.post('/preview-roteiro', async (req, res) => {
         hashtags: roteiro.hashtags,
         legenda_instagram: roteiro.legenda_instagram,
         profissional: roteiro.profissional,
-        duracao_estimada: roteiro.duracao_estimada
+        duracao_estimada: roteiro.duracao_estimada,
+        // Zeus v3.3: storyboard + direção de cena
+        storyboard: roteiro.storyboard,
+        veo_prompt: roteiro.veo_prompt
       }
     });
   } catch (error) {

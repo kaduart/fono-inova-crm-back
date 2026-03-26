@@ -9,8 +9,8 @@
  */
 
 import mongoose from 'mongoose';
-import Leads from '../models/Leads.js';
-import { getOptimizedAmandaResponse } from '../orchestrators/AmandaOrchestrator.js';
+import Leads from '../../models/Leads.js';
+import { getOptimizedAmandaResponse } from '../../orchestrators/AmandaOrchestrator.js';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
