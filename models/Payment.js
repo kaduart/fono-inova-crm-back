@@ -140,6 +140,36 @@ const paymentSchema = new mongoose.Schema({
         receivedAmount: { type: Number },     // Valor efetivamente recebido
         glosaReason: { type: String }         // Motivo se glosado
     },
+    
+    // 🆕 ARQUITETURA v4.0 - Rastreabilidade Financeira
+    paymentOrigin: {
+        type: String,
+        enum: ['auto_per_session', 'manual_balance', 'package_prepaid', 'convenio', 'liminar', 'individual'],
+        default: null,
+        index: true,
+        description: 'Origem do pagamento para rastreabilidade financeira'
+    },
+    
+    correlationId: {
+        type: String,
+        index: true,
+        description: 'ID de correlação para rastreamento de transações'
+    },
+    
+    // 🆕 ARQUITETURA v4.0 - Controle de Estado (Saga Pattern)
+    confirmedAt: {
+        type: Date,
+        description: 'Timestamp da confirmação (após commit da transação)'
+    },
+    canceledAt: {
+        type: Date,
+        description: 'Timestamp do cancelamento (compensação)'
+    },
+    cancellationReason: {
+        type: String,
+        enum: ['transaction_rollback', 'manual_cancel', 'payment_failed', 'other'],
+        description: 'Motivo do cancelamento'
+    }
 }, {
     timestamps: true,
     toObject: { virtuals: true },

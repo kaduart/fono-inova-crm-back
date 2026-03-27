@@ -143,6 +143,21 @@ const sessionSchema = new mongoose.Schema({
         type: Date,
         default: null,
         description: 'Data em que a receita foi reconhecida (para DRE mensal)'
+    },
+    
+    // 🆕 ARQUITETURA v4.0 - Rastreabilidade Financeira
+    paymentOrigin: {
+        type: String,
+        enum: ['auto_per_session', 'manual_balance', 'package_prepaid', 'convenio', 'liminar', 'individual'],
+        default: null,
+        index: true,
+        description: 'Origem do pagamento para rastreabilidade financeira completa'
+    },
+    
+    correlationId: {
+        type: String,
+        index: true,
+        description: 'ID de correlação para rastreamento de transações distribuídas'
     }
 
 }, {

@@ -1612,8 +1612,11 @@ router.patch('/:id/complete', auth, async (req, res) => {
     try {
         const { id } = req.params;
         const { addToBalance = false, balanceAmount = 0, balanceDescription = '' } = req.body;
+        
+        // 🏷️ GERAR CORRELATION ID PARA TRACING DISTRIBUÍDO
+        const correlationId = req.headers['x-correlation-id'] || `corr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-        console.log(`[complete] Iniciando - addToBalance: ${addToBalance}, patientId: ${req.body.patientId || 'n/a'}`);
+        console.log(`[complete] Iniciando - addToBalance: ${addToBalance}, patientId: ${req.body.patientId || 'n/a'}, correlationId: ${correlationId}`);
 
         // ============================================================
         // FASE 1: BUSCAR DADOS FORA DA TRANSAÇÃO (sem lock)
@@ -1718,11 +1721,12 @@ router.patch('/:id/complete', auth, async (req, res) => {
                         serviceType: 'package_session',
                         amount: sessionValue,
                         paymentMethod: 'pix',
-                        status: 'paid',
+                        status: 'pending',  // ⏳ Inicia como pending, confirmado após commit
                         kind: 'session_payment',
-                        paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"),
                         serviceDate: appointment.date,
-                        notes: `[PER-SESSION] Pagamento automático`,
+                        notes: `[PER-SESSION] Pagamento automático - Pendente de confirmação`,
+                        paymentOrigin: 'auto_per_session',
+                        correlationId: correlationId,
                         createdAt: new Date(),
                         updatedAt: new Date()
                     });
@@ -1748,10 +1752,12 @@ router.patch('/:id/complete', auth, async (req, res) => {
                         serviceType: appointment.serviceType || 'individual_session',
                         amount: appointment.sessionValue || 0,
                         paymentMethod: appointment.paymentMethod || 'pix',
-                        status: 'paid',
+                        status: 'pending',  // ⏳ Inicia como pending, confirmado após commit
                         paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"),
                         serviceDate: appointment.date,
-                        notes: '[CRIADO AUTOMATICAMENTE NO COMPLETE]',
+                        notes: '[CRIADO AUTOMATICAMENTE NO COMPLETE] - Pendente de confirmação',
+                        paymentOrigin: 'auto_per_session',
+                        correlationId: correlationId,
                         createdAt: new Date(),
                         updatedAt: new Date()
                     });
@@ -1802,6 +1808,13 @@ router.patch('/:id/complete', auth, async (req, res) => {
             visualFlag: 'ok',
             updatedAt: new Date()
         };
+
+        // 🏷️ ADICIONAR paymentOrigin E correlationId AO UPDATE DA SESSÃO
+        sessionUpdateData.paymentOrigin = addToBalance ? 'manual_balance' : 
+                                          (isConvenioSession ? 'convenio' : 
+                                           (isPerSession ? 'auto_per_session' : 
+                                            (packageId ? 'package_prepaid' : 'auto_per_session')));
+        sessionUpdateData.correlationId = correlationId;
 
         // ============================================================
         // 3️⃣ OPERAÇÕES DENTRO DA TRANSAÇÃO (apenas updates)
@@ -1875,21 +1888,10 @@ router.patch('/:id/complete', auth, async (req, res) => {
                 );
 
                 console.log(`[complete] 🔍 existingPayment encontrado: ${existingPayment ? `status=${existingPayment.status}` : 'NULL - não encontrado no DB'}`);
-
-                const paymentUpdateData = existingPayment?.status === 'paid'
-                    ? { status: 'paid', updatedAt: new Date() }
-                    : {
-                        status: 'paid',
-                        paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"),
-                        updatedAt: new Date()
-                    };
-
-                const updateResult = await Payment.updateOne(
-                    { _id: finalPaymentId },
-                    { $set: paymentUpdateData },
-                    { session }
-                );
-                console.log(`[complete] 🔍 Payment.updateOne result: matched=${updateResult.matchedCount}, modified=${updateResult.modifiedCount}`);
+                
+                // ✅ NÃO atualizamos payment aqui - será feito FORA da transação após commit
+                // Isso evita misturar estado transacional com não-transacional
+                console.log(`[complete] ℹ️ Payment ${finalPaymentId} será confirmado após commit da transação`);
             } else {
                 console.log(`[complete] ⚠️ finalPaymentId é NULL — payment NÃO será atualizado`);
             }
@@ -1951,6 +1953,13 @@ router.patch('/:id/complete', auth, async (req, res) => {
             visualFlag: 'ok',
             $push: { history: historyEntry }
         };
+
+        // 🏷️ ADICIONAR paymentOrigin E correlationId
+        updateData.paymentOrigin = addToBalance ? 'manual_balance' : 
+                                  (isConvenioSession ? 'convenio' : 
+                                   (isPerSession ? 'auto_per_session' : 
+                                    (packageId ? 'package_prepaid' : 'auto_per_session')));
+        updateData.correlationId = correlationId;
 
         // 💰 Se for adicionar ao saldo devedor, não marca como pago
         if (addToBalance) {
@@ -2016,6 +2025,69 @@ router.patch('/:id/complete', auth, async (req, res) => {
         await session.commitTransaction();
         console.log(`[complete] ✅ Transação commitada (${Date.now() - startTime}ms)`);
 
+        // ============================================================
+        // FASE 2.5: CONFIRMAR PAYMENT + AUDIT TRAIL (fora da transação)
+        // ============================================================
+        
+        // ✅ CONFIRMAR PAYMENT (fora da transação - mantém consistência de estado)
+        if (finalPaymentId && perSessionPayment) {
+            try {
+                const paymentUpdateData = {
+                    status: 'paid',
+                    paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"),
+                    confirmedAt: new Date(),
+                    updatedAt: new Date()
+                };
+                
+                await Payment.updateOne(
+                    { _id: finalPaymentId },
+                    { $set: paymentUpdateData }
+                );
+                console.log(`[complete] ✅ Payment confirmado (fora da transação) (${Date.now() - startTime}ms)`);
+            } catch (confirmErr) {
+                // 🚨 Payment ficou em pending - precisa de atenção manual
+                console.error(`[complete] 🚨 PAYMENT CONFIRMATION FAILED - correlationId: ${correlationId}`, {
+                    error: confirmErr.message,
+                    paymentId: finalPaymentId.toString(),
+                    status: 'pending -> paid FAILED',
+                    timestamp: new Date().toISOString()
+                });
+            }
+        }
+        
+        // 📝 AUDIT TRAIL (fire-and-forget)
+        try {
+            const { default: FinancialEvent } = await import('../models/FinancialEvent.js');
+            await FinancialEvent.create({
+                eventType: 'SESSION_COMPLETED',
+                timestamp: new Date(),
+                sessionId: sessionId,
+                appointmentId: appointment._id,
+                patientId: patientId,
+                packageId: packageId,
+                payload: {
+                    paymentType: sessionUpdateData.paymentOrigin,
+                    amount: appointment.sessionValue || 0,
+                    addToBalance: !!addToBalance,
+                    balanceAmount: balanceAmount || 0,
+                    paymentId: finalPaymentId?.toString()
+                },
+                correlationId: correlationId,
+                processedBy: req.user?._id
+            });
+            console.log(`[complete] ✅ FinancialEvent criado (${Date.now() - startTime}ms)`);
+        } catch (auditErr) {
+            // 🚨 CRITICAL: Log estruturado para recuperação manual se necessário
+            console.error(`[complete] 🚨 AUDIT LOG FAILED - correlationId: ${correlationId}`, {
+                error: auditErr.message,
+                eventType: 'SESSION_COMPLETED',
+                appointmentId: appointment._id?.toString(),
+                patientId: patientId?.toString(),
+                sessionId: sessionId?.toString(),
+                timestamp: new Date().toISOString()
+            });
+        }
+
         // 🔔 Emitir evento socket para atualizar agenda externa
         try {
             const io = getIo();
@@ -2071,7 +2143,9 @@ router.patch('/:id/complete', auth, async (req, res) => {
                     kind: 'revenue_recognition',
                     serviceDate: appointment.date,
                     paymentDate: appointment.date,  // ← Entra no caixa no dia do atendimento
-                    notes: `Receita reconhecida - Processo: ${packageDoc.liminarProcessNumber || 'N/A'}`
+                    notes: `Receita reconhecida - Processo: ${packageDoc.liminarProcessNumber || 'N/A'}`,
+                    paymentOrigin: 'liminar',
+                    correlationId: correlationId
                 });
                 await revenueDoc.save();
 
@@ -2126,7 +2200,9 @@ router.patch('/:id/complete', auth, async (req, res) => {
                         status: 'pending_billing'
                     },
                     serviceDate: appointment.date,
-                    notes: `Sessão de convênio - Guia ${guide?.number || 'N/A'} - Pacote ${packageId}`
+                    notes: `Sessão de convênio - Guia ${guide?.number || 'N/A'} - Pacote ${packageId}`,
+                    paymentOrigin: 'convenio',
+                    correlationId: correlationId
                 });
 
                 await newPayment.save();
@@ -2259,14 +2335,24 @@ router.patch('/:id/complete', auth, async (req, res) => {
             }
         }
         
-        // 🔄 COMPENSAÇÃO: Deletar payment criado fora da transação se falhou
+        // 🔄 COMPENSAÇÃO: Marcar payment como canceled (não deletar - auditoria)
         if (perSessionPayment && perSessionPayment._id) {
             try {
-                console.log(`[complete] 🗑️ Compensação: Deletando payment ${perSessionPayment._id}`);
-                await Payment.findByIdAndDelete(perSessionPayment._id);
-                console.log(`[complete] ✅ Payment deletado (compensação)`);
+                console.log(`[complete] 🔄 Compensação: Cancelando payment ${perSessionPayment._id}`);
+                await Payment.updateOne(
+                    { _id: perSessionPayment._id },
+                    { 
+                        $set: { 
+                            status: 'canceled',
+                            cancellationReason: 'transaction_rollback',
+                            canceledAt: new Date(),
+                            notes: (perSessionPayment.notes || '') + ' | [CANCELADO: transação abortada]'
+                        } 
+                    }
+                );
+                console.log(`[complete] ✅ Payment cancelado (compensação)`);
             } catch (compensateErr) {
-                console.error(`[complete] ⚠️ Erro na compensação (payment orphan):`, compensateErr.message);
+                console.error(`[complete] ⚠️ Erro na compensação (payment inconsistente):`, compensateErr.message);
             }
         }
         

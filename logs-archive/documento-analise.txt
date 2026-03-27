@@ -1,138 +1,233 @@
-preo qeu ao clciar em criar pacote no TherapyPackagesSummary elo card dos pacotes esteja dentro de um accordion e ele feche automaticamente e abre o de baixo    
-[2026-03-27T00:35:22.747Z] GET → /api/whatsapp/contacts
-[INFO] 2026-03-27T00:35:22.770Z — [MetaAds] Contagem de leads atualizada
-[INFO] 2026-03-27T00:35:22.770Z — [MetaAds Cron] Sincronização concluída: { synced: 0, cached: undefined, errors: 0 }
-✅ [CONTACTS] Retornando 50 de 635 contacts
+crieio apcote 026-03-27T14:51:07.593Z] GET → /api/appointments
+(node:40908) Warning: Label 'appointments.query' already exists for console.time()
+[2026-03-27T14:51:08.721Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 638 contacts
 📊 [CONTACTS] 49/50 têm leadId
 🔍 [FIRST CONTACT] {
   phone: '5511918646962',
   leadId: '69b179e6a9d4fc76878eed9f',
   type: 'string'
 }
-[2026-03-27T00:35:30.183Z] GET → /api/whatsapp/contacts
-✅ [CONTACTS] Retornando 50 de 635 contacts
-📊 [CONTACTS] 49/50 têm leadId
-🔍 [FIRST CONTACT] {
-  phone: '5511918646962',
-  leadId: '69b179e6a9d4fc76878eed9f',
-  type: 'string'
-}
-[2026-03-27T00:35:31.448Z] GET → /api/patients
-[PATIENTS LIST] Search: "undefined", Limit: 50
-[PATIENTS LIST] Encontrados: 50 pacientes
-[2026-03-27T00:35:37.896Z] GET → /api/pre-agendamento
-[2026-03-27T00:35:41.939Z] GET → /api/patients
-[PATIENTS LIST] Search: "undefined", Limit: 50
-[PATIENTS LIST] Encontrados: 50 pacientes
-[2026-03-27T00:35:49.501Z] GET → /api/doctors
-[2026-03-27T00:35:49.510Z] GET → /api/admin/profile
-[2026-03-27T00:35:49.528Z] GET → /api/appointments/patient/69bd82b8272d184895f454aa
-[2026-03-27T00:35:49.540Z] GET → /api/patients/69bd82b8272d184895f454aa
-[2026-03-27T00:35:49.584Z] GET → /api/evolutions/patient/69bd82b8272d184895f454aa
-[2026-03-27T00:35:49.588Z] GET → /api/payments/future-sessions/69bd82b8272d184895f454aa
-[2026-03-27T00:35:50.078Z] GET → /api/doctors
-[2026-03-27T00:35:50.104Z] GET → /api/appointments/patient/69bd82b8272d184895f454aa
-[2026-03-27T00:35:50.120Z] GET → /api/patients/69bd82b8272d184895f454aa
-[2026-03-27T00:35:50.169Z] GET → /api/payments/future-sessions/69bd82b8272d184895f454aa
-[2026-03-27T00:35:50.174Z] GET → /api/evolutions/patient/69bd82b8272d184895f454aa
-[2026-03-27T00:35:50.759Z] GET → /api/evolutions/patient/69bd82b8272d184895f454aa
-[2026-03-27T00:35:54.981Z] GET → /api/packages
-[2026-03-27T00:35:55.567Z] GET → /api/packages
-[2026-03-27T00:36:00.181Z] GET → /api/whatsapp/contacts
-✅ [CONTACTS] Retornando 50 de 635 contacts
-📊 [CONTACTS] 49/50 têm leadId
-🔍 [FIRST CONTACT] {
-  phone: '5511918646962',
-  leadId: '69b179e6a9d4fc76878eed9f',
-  type: 'string'
-}
-[2026-03-27T00:36:02.570Z] GET → /api/appointments
-[2026-03-27T00:36:02.621Z] GET → /api/appointments/patient/69bd82b8272d184895f454aa
-[2026-03-27T00:36:03.164Z] GET → /api/appointments/patient/69bd82b8272d184895f454aa
-[2026-03-27T00:36:05.573Z] GET → /api/appointments
-(node:162898) Warning: Label 'appointments.query' already exists for console.time()
-[2026-03-27T00:36:30.187Z] GET → /api/whatsapp/contacts
-✅ [CONTACTS] Retornando 50 de 635 contacts
-📊 [CONTACTS] 49/50 têm leadId
-🔍 [FIRST CONTACT] {
-  phone: '5511918646962',
-  leadId: '69b179e6a9d4fc76878eed9f',
-  type: 'string'
-}
-[2026-03-27T00:36:50.131Z] POST → /api/packages
-[CREATE PACKAGE] isFirstAppointment para paciente 69bd82b8272d184895f454aa: false
-Sessions: 4 Appointments: 4
+[2026-03-27T14:51:26.932Z] POST → /api/packages
+🗓️ Feriado detectado! Ajustando 2026-04-03 → 2026-04-10 (11:00)
+[CREATE PACKAGE] isFirstAppointment para paciente 69bd82b8272d184895f454aa: true
+⛔ Sessão duplicada ignorada: 2026-04-10-11:00-69bd82b8272d184895f454aa-689815f43e7468e2d7faa2ef
+⚠️ Detectadas 1 duplicatas internas antes do insert.
+Sessions: 4 Appointments: 3
+🗓️ 1 sessão(ões) ajustada(s) por feriado:
+   2026-03-27 → 2026-04-10 (11:00)
 [CREATE PACKAGE] Modo per-session: ignorando 0 pagamentos do body
 [CREATE PACKAGE] Modo 'per-session' - distribuição de pagamentos ignorada
-[2026-03-27T00:36:52.797Z] GET → /api/packages
-[2026-03-27T00:36:52.811Z] GET → /api/appointments
-(node:162898) Warning: Label 'appointments.query' already exists for console.time()
-[2026-03-27T00:36:53.371Z] GET → /api/packages
-[2026-03-27T00:37:00.189Z] GET → /api/whatsapp/contacts
-✅ [CONTACTS] Retornando 50 de 635 contacts
-📊 [CONTACTS] 49/50 têm leadId
-🔍 [FIRST CONTACT] {
-  phone: '5511918646962',
-  leadId: '69b179e6a9d4fc76878eed9f',
-  type: 'string'
-}
-[2026-03-27T00:37:07.764Z] GET → /api/whatsapp/contacts
-✅ [CONTACTS] Retornando 50 de 635 contacts
-📊 [CONTACTS] 49/50 têm leadId
-🔍 [FIRST CONTACT] {
-  phone: '5511918646962',
-  leadId: '69b179e6a9d4fc76878eed9f',
-  type: 'string'
-}
-🚀 Primeira execução do Lead Recovery (warmup)...
-🔁 Recovery habilitado para 0 leads existentes
-⚠️ Cliente desconectado (client namespace disconnect)
-[2026-03-27T00:37:18.996Z] GET → /api/whatsapp/contacts
-✅ [CONTACTS] Retornando 50 de 635 contacts
-📊 [CONTACTS] 49/50 têm leadId
-🔍 [FIRST CONTACT] {
-  phone: '5511918646962',
-  leadId: '69b179e6a9d4fc76878eed9f',
-  type: 'string'
-}
-⚡ Novo cliente conectado: J-eU4_fMMFTI7bbmAAAF
-👥 Total de clientes: 2
-[2026-03-27T00:37:24.758Z] GET → /api/whatsapp/contacts
-✅ [CONTACTS] Retornando 50 de 635 contacts
-📊 [CONTACTS] 49/50 têm leadId
-🔍 [FIRST CONTACT] {
-  phone: '5511918646962',
-  leadId: '69b179e6a9d4fc76878eed9f',
-  type: 'string'
-}
-[2026-03-27T00:37:25.628Z] GET → /api/whatsapp/contacts
-✅ [CONTACTS] Retornando 50 de 635 contacts
-📊 [CONTACTS] 49/50 têm leadId
-🔍 [FIRST CONTACT] {
-  phone: '5511918646962',
-  leadId: '69b179e6a9d4fc76878eed9f',
-  type: 'string'
-}
-[2026-03-27T00:37:28.402Z] GET → /api/dashboard/overview
-[2026-03-27T00:37:28.413Z] GET → /api/pre-agendamento
-[2026-03-27T00:37:28.432Z] GET → /api/admin/profile
-[2026-03-27T00:37:28.437Z] GET → /api/payments
-[2026-03-27T00:37:28.981Z] GET → /api/pre-agendamento
-[2026-03-27T00:37:29.205Z] GET → /api/payments
-[2026-03-27T00:37:29.780Z] GET → /api/patients
-[PATIENTS LIST] Search: "undefined", Limit: 50
-[PATIENTS LIST] Encontrados: 50 pacientes
-[2026-03-27T00:37:31.893Z] GET → /api/whatsapp/contacts
-✅ [CONTACTS] Retornando 50 de 635 contacts
-📊 [CONTACTS] 49/50 têm leadId
-🔍 [FIRST CONTACT] {
-  phone: '5511918646962',
-  leadId: '69b179e6a9d4fc76878eed9f',
-  type: 'string'
-}
-[2026-03-27T00:37:35.217Z] GET → /api/calendar/holidays
-[2026-03-27T00:37:35.241Z] GET → /api/appointments
-(node:162898) Warning: Label 'appointments.query' already exists for console.time()
-[2026-03-27T00:37:35.804Z] GET → /api/calendar/holidays
-[2026-03-27T00:37:59.164Z] GET → /api/pre-agendamento
- {"error":"Not found"}
+[2026-03-27T14:51:27.918Z] GET → /api/packages
+[2026-03-27T14:51:27.929Z] GET → /api/appointments
+(node:40908) Warning: Label 'appointments.query' already exists for console.time()
+[2026-03-27T14:51:27.999Z] GET → /api/packages
+[2026-03-27T14:51:38.610Z] GET → /api/whatsapp/contacts-----[
+    {
+        "_id": "69c6996e06a4b96f32c0068a",
+        "version": 0,
+        "durationMonths": 1,
+        "sessionsPerWeek": 1,
+        "patient": {
+            "_id": "69bd82b8272d184895f454aa",
+            "fullName": "ANA TESTE",
+            "dateOfBirth": "2026-03-04T03:00:00.000Z",
+            "gender": null,
+            "address": {
+                "street": null,
+                "number": null,
+                "district": null,
+                "city": null,
+                "state": null,
+                "zipCode": null
+            },
+            "email": null,
+            "cpf": null,
+            "healthPlan": {
+                "name": null,
+                "policyNumber": null
+            },
+            "appointments": [],
+            "packages": [
+                "69c6996e06a4b96f32c0068a"
+            ],
+            "imageAuthorization": false,
+            "createdAt": "2026-03-20T17:24:08.123Z",
+            "updatedAt": "2026-03-27T14:51:27.020Z",
+            "__v": 0
+        },
+        "doctor": {
+            "_id": "689815f43e7468e2d7faa2ef",
+            "fullName": "Doutor Teste",
+            "specialty": "psicomotricidade"
+        },
+        "paymentType": "per-session",
+        "sessionType": "terapia_ocupacional",
+        "sessionValue": 0.1,
+        "totalSessions": 4,
+        "sessions": [
+            {
+                "_id": "69c6996f06a4b96f32c0068d",
+                "date": "2026-03-27",
+                "time": "11:00",
+                "sessionType": "terapia_ocupacional",
+                "sessionValue": 0.1,
+                "appointmentId": "69c6996f06a4b96f32c00693",
+                "doctor": "689815f43e7468e2d7faa2ef",
+                "patient": "69bd82b8272d184895f454aa",
+                "package": "69c6996e06a4b96f32c0068a",
+                "isPaid": false,
+                "paymentMethod": null,
+                "status": "scheduled",
+                "confirmedAbsence": null,
+                "paymentStatus": "pending",
+                "partialAmount": 0,
+                "visualFlag": "pending",
+                "insuranceGuide": null,
+                "guideConsumed": false,
+                "paidAt": null,
+                "paymentId": null,
+                "sessionConsumed": false,
+                "commissionRate": null,
+                "commissionValue": null,
+                "revenueRecognizedAt": null,
+                "paymentOrigin": null,
+                "wasProvisioned": false,
+                "statusHistory": [],
+                "__v": 0,
+                "createdAt": "2026-03-27T14:51:27.060Z",
+                "updatedAt": "2026-03-27T14:51:27.168Z"
+            },
+            {
+                "_id": "69c6996f06a4b96f32c0068e",
+                "date": "2026-04-10",
+                "time": "11:00",
+                "sessionType": "terapia_ocupacional",
+                "sessionValue": 0.1,
+                "appointmentId": "69c6996f06a4b96f32c00694",
+                "doctor": "689815f43e7468e2d7faa2ef",
+                "patient": "69bd82b8272d184895f454aa",
+                "package": "69c6996e06a4b96f32c0068a",
+                "isPaid": false,
+                "paymentMethod": null,
+                "status": "scheduled",
+                "confirmedAbsence": null,
+                "paymentStatus": "pending",
+                "partialAmount": 0,
+                "visualFlag": "pending",
+                "insuranceGuide": null,
+                "guideConsumed": false,
+                "paidAt": null,
+                "paymentId": null,
+                "sessionConsumed": false,
+                "commissionRate": null,
+                "commissionValue": null,
+                "revenueRecognizedAt": null,
+                "paymentOrigin": null,
+                "wasProvisioned": false,
+                "statusHistory": [],
+                "__v": 0,
+                "createdAt": "2026-03-27T14:51:27.061Z",
+                "updatedAt": "2026-03-27T14:51:27.168Z"
+            },
+            {
+                "_id": "69c6996f06a4b96f32c0068f",
+                "date": "2026-04-10",
+                "time": "11:00",
+                "sessionType": "terapia_ocupacional",
+                "sessionValue": 0.1,
+                "appointmentId": "69c6996f06a4b96f32c00694",
+                "doctor": "689815f43e7468e2d7faa2ef",
+                "patient": "69bd82b8272d184895f454aa",
+                "package": "69c6996e06a4b96f32c0068a",
+                "isPaid": false,
+                "paymentMethod": null,
+                "status": "scheduled",
+                "confirmedAbsence": null,
+                "paymentStatus": "pending",
+                "partialAmount": 0,
+                "visualFlag": "pending",
+                "insuranceGuide": null,
+                "guideConsumed": false,
+                "paidAt": null,
+                "paymentId": null,
+                "sessionConsumed": false,
+                "commissionRate": null,
+                "commissionValue": null,
+                "revenueRecognizedAt": null,
+                "paymentOrigin": null,
+                "wasProvisioned": false,
+                "statusHistory": [],
+                "__v": 0,
+                "createdAt": "2026-03-27T14:51:27.061Z",
+                "updatedAt": "2026-03-27T14:51:27.168Z"
+            },
+            {
+                "_id": "69c6996f06a4b96f32c00690",
+                "date": "2026-04-17",
+                "time": "11:00",
+                "sessionType": "terapia_ocupacional",
+                "sessionValue": 0.1,
+                "appointmentId": "69c6996f06a4b96f32c00695",
+                "doctor": "689815f43e7468e2d7faa2ef",
+                "patient": "69bd82b8272d184895f454aa",
+                "package": "69c6996e06a4b96f32c0068a",
+                "isPaid": false,
+                "paymentMethod": null,
+                "status": "scheduled",
+                "confirmedAbsence": null,
+                "paymentStatus": "pending",
+                "partialAmount": 0,
+                "visualFlag": "pending",
+                "insuranceGuide": null,
+                "guideConsumed": false,
+                "paidAt": null,
+                "paymentId": null,
+                "sessionConsumed": false,
+                "commissionRate": null,
+                "commissionValue": null,
+                "revenueRecognizedAt": null,
+                "paymentOrigin": null,
+                "wasProvisioned": false,
+                "statusHistory": [],
+                "__v": 0,
+                "createdAt": "2026-03-27T14:51:27.062Z",
+                "updatedAt": "2026-03-27T14:51:27.168Z"
+            }
+        ],
+        "appointments": [
+            "69c6996f06a4b96f32c00693",
+            "69c6996f06a4b96f32c00694",
+            "69c6996f06a4b96f32c00695"
+        ],
+        "date": "2026-03-27T00:00:00.000Z",
+        "sessionsDone": 0,
+        "payments": [],
+        "status": "active",
+        "balance": 0.4,
+        "credit": 0,
+        "specialty": "terapia_ocupacional",
+        "financialStatus": "unpaid",
+        "paidSessions": 0,
+        "totalPaid": 0,
+        "totalValue": 0.4,
+        "type": "therapy",
+        "liminarProcessNumber": null,
+        "liminarCourt": null,
+        "liminarExpirationDate": null,
+        "liminarMode": "hybrid",
+        "liminarAuthorized": true,
+        "liminarCreditBalance": 0,
+        "liminarTotalCredit": 0,
+        "recognizedRevenue": 0,
+        "insuranceGuide": null,
+        "insuranceProvider": null,
+        "insuranceGrossAmount": 0,
+        "insuranceBillingStatus": null,
+        "calculationMode": "duration",
+        "__v": 0,
+        "remaining": 4
+    }
+]
+
+

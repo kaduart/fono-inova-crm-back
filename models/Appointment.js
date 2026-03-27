@@ -227,6 +227,37 @@ const appointmentSchema = new mongoose.Schema({
       convertedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       convertedAt: Date
     }
+  },
+
+  // 🆕 ARQUITETURA v4.0 - Rastreabilidade Financeira
+  paymentOrigin: {
+    type: String,
+    enum: ['auto_per_session', 'manual_balance', 'package_prepaid', 'convenio', 'liminar'],
+    default: null,
+    index: true,
+    description: 'Origem do pagamento quando o agendamento for completado'
+  },
+  
+  correlationId: {
+    type: String,
+    index: true,
+    description: 'ID de correlação para rastreamento da transação de conclusão'
+  },
+  
+  // Campos para saldo devedor (manual_balance)
+  addedToBalance: {
+    type: Boolean,
+    default: false,
+    description: 'Se o valor foi adicionado ao saldo devedor do paciente'
+  },
+  balanceAmount: {
+    type: Number,
+    default: 0,
+    description: 'Valor adicionado ao saldo devedor'
+  },
+  balanceDescription: {
+    type: String,
+    description: 'Descrição do saldo devedor'
   }
 
 }, {
