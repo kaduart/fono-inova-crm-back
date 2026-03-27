@@ -194,7 +194,7 @@ const upload = multer({
 const corsHeaders = (req, res, next) => {
     res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-correlation-id');
     res.header('Access-Control-Allow-Credentials', 'true');
     if (req.method === 'OPTIONS') {
         return res.sendStatus(200);
@@ -255,7 +255,7 @@ const corsOptions = {
   origin: true, // ← Permite TODAS as origens (temporário!)
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-correlation-id"],
 };
 
 app.use(
