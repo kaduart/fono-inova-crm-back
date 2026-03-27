@@ -18,16 +18,27 @@ let redisConfig;
 if (redisUrl) {
     // Usar REDIS_URL (Render Native, Upstash, etc)
     console.log("🚀 Conectando ao Redis via REDIS_URL...");
+    
+    // Detecta se é Render (rediss:// no formato do Render)
+    const isRender = redisUrl.includes('red-d') || redisUrl.includes('render.com');
+    if (isRender) {
+        console.log("☁️ Detectado Redis do Render - ajustando timeouts...");
+    }
+    
     redisConfig = {
         url: redisUrl,
         socket: {
             reconnectStrategy: (retries) => {
                 console.warn(`🔁 Tentando reconectar ao Redis (tentativa ${retries})...`);
-                return Math.min(retries * 1000, 15000);
+                // ⚡ Retry mais rápido no início
+                return Math.min(retries * 500, 10000);
             },
-            keepAlive: 15000,
-            connectTimeout: 30000, // Aumentado para 30s
+            keepAlive: 10000, // ⚡ Keep alive mais frequente
+            connectTimeout: isRender ? 60000 : 30000, // ⚡ 60s no Render (planos free são lentos)
+            idleTimeout: 30000, // ⚡ Timeout para conexões idle
         },
+        // ⚡ Não quebra o sistema se Redis falhar
+        disableOfflineQueue: true,
     };
 
     // Se for Upstash ou qualquer rediss://, adicionar TLS
@@ -105,5 +116,41 @@ export async function startRedis() {
 export function getRedis() {
     return redisClient;
 }
+
+// 🛡️ Wrapper seguro - não quebra se Redis cair
+export const safeRedisClient = {
+    async get(key) {
+        try {
+            return await redisClient.get(key);
+        } catch (err) {
+            console.error('Redis get error:', err.message);
+            return null;
+        }
+    },
+    async set(key, value, options) {
+        try {
+            return await redisClient.set(key, value, options);
+        } catch (err) {
+            console.error('Redis set error:', err.message);
+            return null;
+        }
+    },
+    async del(key) {
+        try {
+            return await redisClient.del(key);
+        } catch (err) {
+            console.error('Redis del error:', err.message);
+            return null;
+        }
+    },
+    async ping() {
+        try {
+            return await redisClient.ping();
+        } catch (err) {
+            console.error('Redis ping error:', err.message);
+            return null;
+        }
+    }
+};
 
 export default redisClient;

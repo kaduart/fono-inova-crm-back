@@ -650,6 +650,24 @@ export const whatsappController = {
 
             const from = msg.from;
             const content = msg.text?.body || '';
+            const messageId = msg.id; // 🆕 ID único da mensagem
+
+            // 🔥 IDEMPOTÊNCIA ATÔMICA: SET NX (só seta se não existir)
+            const idempotencyKey = `msg:processed:${messageId}`;
+            try {
+                // ⚡ SET NX = atômico - impossível duplicar mesmo com concorrência
+                const lock = await redis?.set(idempotencyKey, '1', 'NX', 'EX', 300); // 5 minutos
+                
+                if (!lock) {
+                    // Chave já existe = mensagem duplicada
+                    console.log(`[IDEMPOTENCY] Mensagem ${messageId} já processada. Ignorando.`);
+                    return;
+                }
+                // Se chegou aqui, é a primeira vez - segue processando
+            } catch (redisErr) {
+                // ⚡ Se Redis cair, continua (sem idempotência, mas não quebra)
+                console.error('Redis idempotency error (continuando):', redisErr.message);
+            }
 
             // 🛡️ NOTA: O upsert do lead é feito no middleware whatsappGuard.js
             // e também dentro do processInboundMessage. Removido daqui para evitar duplicação.
@@ -657,41 +675,53 @@ export const whatsappController = {
 
             // 🆕 DEBOUNCE CORRETO AQUI (3.5s, não 30s)
             const debounceKey = `webhook:buffer:${from}`;
-            const existing = await redis?.get(debounceKey);
+            
+            try {
+                const existing = await redis?.get(debounceKey);
 
-            if (existing) {
-                // Acumula
-                const data = JSON.parse(existing);
-                data.messages.push(content);
-                data.lastTime = Date.now();
-                await redis.set(debounceKey, JSON.stringify(data), 'EX', 10);
-                console.log(`[BUFFER] Acumulado: ${data.messages.length} msgs`);
-                return; // Não processa ainda!
+                if (existing) {
+                    // Acumula
+                    const data = JSON.parse(existing);
+                    data.messages.push(content);
+                    data.lastTime = Date.now();
+                    await redis?.set(debounceKey, JSON.stringify(data), 'EX', 10);
+                    console.log(`[BUFFER] Acumulado: ${data.messages.length} msgs`);
+                    return; // Não processa ainda!
+                }
+
+                // Primeira mensagem - inicia timer
+                await redis?.set(debounceKey, JSON.stringify({
+                    messages: [content],
+                    startTime: Date.now(),
+                    msgData: msg
+                }), 'EX', 4); // 4 segundos de espera
+            } catch (redisErr) {
+                // ⚡ Se Redis cair, processa sem debounce
+                console.error('Redis debounce error (processando sem buffer):', redisErr.message);
+                await processInboundMessage(msg, value);
+                return;
             }
-
-            // Primeira mensagem - inicia timer
-            await redis?.set(debounceKey, JSON.stringify({
-                messages: [content],
-                startTime: Date.now(),
-                msgData: msg
-            }), 'EX', 4); // 4 segundos de espera
 
             // Aguarda 3.5s e processa tudo junto
             setTimeout(async () => {
-                const buffer = await redis?.get(debounceKey);
-                if (!buffer) return; // Já processado por outra instância
+                try {
+                    const buffer = await redis?.get(debounceKey);
+                    if (!buffer) return; // Já processado por outra instância
 
-                await redis?.del(debounceKey);
-                const data = JSON.parse(buffer);
-                const combinedText = data.messages.join(' ');
+                    await redis?.del(debounceKey);
+                    const data = JSON.parse(buffer);
+                    const combinedText = data.messages.join(' ');
 
-                // Substitui o texto da mensagem pelo combinado
-                if (!msg.text) {
-                    msg.text = { body: combinedText };
-                } else {
-                    msg.text.body = combinedText;
+                    // Substitui o texto da mensagem pelo combinado
+                    if (!msg.text) {
+                        msg.text = { body: combinedText };
+                    } else {
+                        msg.text.body = combinedText;
+                    }
+                    await processInboundMessage(msg, value);
+                } catch (err) {
+                    console.error('❌ Erro no processamento do buffer:', err);
                 }
-                await processInboundMessage(msg, value);
             }, 3500);
 
         } catch (err) {
