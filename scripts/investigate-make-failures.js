@@ -5,7 +5,7 @@
  */
 
 import { Queue } from 'bullmq';
-import { redisConnection } from '../config/redisConnection.js';
+import { bullMqConnection } from '../config/redisConnection.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -15,7 +15,7 @@ async function investigate() {
   
   // 1. Verifica fila de geração de posts
   console.log('\n1️⃣ Fila de GERAÇÃO de posts (post-generation):');
-  const postGenQueue = new Queue('post-generation', { connection: redisConnection });
+  const postGenQueue = new Queue('post-generation', { connection: bullMqConnection });
   const postGenJobs = await postGenQueue.getJobs(['waiting', 'active', 'completed', 'failed']);
   
   console.log(`   Total de jobs: ${postGenJobs.length}`);

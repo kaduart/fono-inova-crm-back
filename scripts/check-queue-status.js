@@ -5,7 +5,7 @@
  */
 
 import { Queue } from 'bullmq';
-import { redisConnection } from '../config/redisConnection.js';
+import { bullMqConnection } from '../config/redisConnection.js';
 
 const queues = [
   { name: 'post-generation', label: '📝 Post Generation' },
@@ -19,7 +19,7 @@ async function checkQueueStatus() {
   
   for (const q of queues) {
     try {
-      const queue = new Queue(q.name, { connection: redisConnection });
+      const queue = new Queue(q.name, { connection: bullMqConnection });
       
       const [waiting, active, completed, failed, delayed] = await Promise.all([
         queue.getWaitingCount(),

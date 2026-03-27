@@ -341,7 +341,7 @@ const postWorker = new Worker('post-generation', async (job) => {
     throw error;
   }
 }, {
-  connection: redisConnection,
+  connection: bullMqConnection,
   concurrency: 3,  // Máx 3 posts simultâneos
   limiter: {
     max: 20,
