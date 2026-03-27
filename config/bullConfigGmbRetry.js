@@ -4,13 +4,13 @@
  */
 
 import { Queue, QueueEvents, Worker } from 'bullmq';
-import { redisConnection } from './redisConnection.js';
+import { bullMqConnection } from './redisConnection.js';
 import * as makeService from '../services/makeService.js';
 import GmbPost from '../models/GmbPost.js';
 
 // 🔄 Fila de retry para publicações
 export const gmbPublishRetryQueue = new Queue('gmb-publish-retry', { 
-    connection: redisConnection,
+    connection: bullMqConnection,
     defaultJobOptions: {
         attempts: 5,           // Tenta 5 vezes
         backoff: {
@@ -23,7 +23,7 @@ export const gmbPublishRetryQueue = new Queue('gmb-publish-retry', {
 });
 
 export const gmbPublishRetryEvents = new QueueEvents('gmb-publish-retry', { 
-    connection: redisConnection 
+    connection: bullMqConnection 
 });
 
 // 🏭 Worker que processa a fila de retry
@@ -66,7 +66,7 @@ export function initGmbRetryWorker() {
             throw error;
         }
     }, {
-        connection: redisConnection,
+        connection: bullMqConnection,
         concurrency: 1,  // Um por vez pra não sobrecarregar o Make
         limiter: {
             max: 10,
