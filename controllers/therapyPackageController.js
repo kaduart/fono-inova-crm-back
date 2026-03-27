@@ -2153,6 +2153,187 @@ export const getPackageVersionHistory = async (req, res) => {
     }
 };
 
+// ============================================
+// 🔄 CANCELAMENTO EM MASSA DE SESSÕES (BULKWRITE)
+// ============================================
+export const bulkCancelSessions = async (req, res) => {
+    const startTime = Date.now();
+    const mongoSession = await mongoose.startSession();
+    let transactionCommitted = false;
+
+    try {
+        const { sessionIds, confirmedAbsence = false } = req.body;
+        const packageId = req.params.id;
+
+        if (!sessionIds || !Array.isArray(sessionIds) || sessionIds.length === 0) {
+            return res.status(400).json({ error: 'sessionIds deve ser um array não vazio' });
+        }
+
+        // 📝 LOG: Início da operação
+        console.log({
+            event: 'BULK_CANCEL_START',
+            packageId,
+            totalRequested: sessionIds.length,
+            timestamp: new Date().toISOString()
+        });
+
+        await mongoSession.startTransaction();
+
+        // Busca o pacote
+        const pkg = await Package.findById(packageId).session(mongoSession);
+        if (!pkg) {
+            throw new Error('Pacote não encontrado');
+        }
+
+        // Busca apenas sessões que não estão canceladas
+        const sessions = await Session.find({
+            _id: { $in: sessionIds },
+            package: packageId,
+            status: { $ne: 'canceled' }
+        }).session(mongoSession).lean();
+
+        if (sessions.length === 0) {
+            await mongoSession.abortTransaction();
+            console.log({
+                event: 'BULK_CANCEL_SKIPPED',
+                packageId,
+                reason: 'Nenhuma sessão precisa ser cancelada',
+                timestamp: new Date().toISOString()
+            });
+            return res.json({
+                success: true,
+                message: 'Nenhuma sessão precisa ser cancelada',
+                canceledCount: 0,
+                totalRequested: sessionIds.length
+            });
+        }
+
+        // 🚀 BULKWRITE: Atualiza todas as sessões de uma vez
+        const sessionBulkOps = sessions.map(s => ({
+            updateOne: {
+                filter: { _id: s._id },
+                update: {
+                    $set: {
+                        status: 'canceled',
+                        confirmedAbsence: confirmedAbsence,
+                        canceledAt: new Date()
+                    }
+                }
+            }
+        }));
+
+        // ⚡ ordered: false = continua mesmo se algum falhar
+        const bulkResult = await Session.bulkWrite(sessionBulkOps, { 
+            session: mongoSession,
+            ordered: false 
+        });
+
+        // 🚀 BULKWRITE: Atualiza appointments relacionados de uma vez
+        const appointmentIds = sessions
+            .filter(s => s.appointmentId)
+            .map(s => s.appointmentId);
+
+        let appointmentsUpdated = 0;
+        if (appointmentIds.length > 0) {
+            const appointmentResult = await Appointment.updateMany(
+                { 
+                    _id: { $in: appointmentIds },
+                    operationalStatus: { $ne: 'canceled' }
+                },
+                {
+                    $set: {
+                        operationalStatus: 'canceled',
+                        clinicalStatus: 'missed'
+                    }
+                },
+                { session: mongoSession }
+            );
+            appointmentsUpdated = appointmentResult.modifiedCount || 0;
+        }
+
+        // Conta quantas eram 'completed' (para ajustar sessionsDone)
+        const completedCount = sessions.filter(s => s.status === 'completed').length;
+
+        // Ajusta sessionsDone do pacote se necessário
+        if (completedCount > 0) {
+            await Package.findByIdAndUpdate(
+                packageId,
+                { $inc: { sessionsDone: -completedCount } },
+                { session: mongoSession }
+            );
+        }
+
+        // Verifica status final do pacote (contagem otimizada)
+        const [activeCount, completedRemaining] = await Promise.all([
+            Session.countDocuments({ package: packageId, status: { $ne: 'canceled' } }).session(mongoSession),
+            Session.countDocuments({ package: packageId, status: 'completed' }).session(mongoSession)
+        ]);
+
+        let packageStatusUpdated = null;
+        if (activeCount === 0 && sessions.length > 0) {
+            await Package.findByIdAndUpdate(
+                packageId,
+                { status: 'finished' },
+                { session: mongoSession }
+            );
+            packageStatusUpdated = 'finished';
+        } else if (completedRemaining < activeCount && pkg.status === 'finished') {
+            await Package.findByIdAndUpdate(
+                packageId,
+                { status: 'active' },
+                { session: mongoSession }
+            );
+            packageStatusUpdated = 'active';
+        }
+
+        await mongoSession.commitTransaction();
+        transactionCommitted = true;
+
+        const duration = Date.now() - startTime;
+
+        // 📝 LOG: Sucesso
+        console.log({
+            event: 'BULK_CANCEL_SUCCESS',
+            packageId,
+            canceledCount: sessions.length,
+            totalRequested: sessionIds.length,
+            appointmentsUpdated,
+            packageStatusUpdated,
+            durationMs: duration,
+            timestamp: new Date().toISOString()
+        });
+
+        res.json({
+            success: true,
+            message: `${sessions.length} sessão(ões) cancelada(s) com sucesso`,
+            canceledCount: sessions.length,
+            totalRequested: sessionIds.length,
+            durationMs: duration
+        });
+
+    } catch (error) {
+        if (!transactionCommitted) {
+            await mongoSession.abortTransaction();
+        }
+
+        // 📝 LOG: Erro
+        console.error({
+            event: 'BULK_CANCEL_ERROR',
+            packageId: req.params.id,
+            error: error.message,
+            stack: error.stack,
+            timestamp: new Date().toISOString()
+        });
+
+        res.status(500).json({
+            error: 'Erro ao cancelar sessões em massa',
+            message: error.message
+        });
+    } finally {
+        await mongoSession.endSession();
+    }
+};
+
 // Funções de validação
 function isValidDateString(dateString) {
     const regex = /^\d{4}-\d{2}-\d{2}$/;
