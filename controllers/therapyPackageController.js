@@ -975,7 +975,7 @@ export const packageOperations = {
                 const sessionDoc = await Session.findById(sessionId)
                     .populate({
                         path: 'package',
-                        select: 'sessionType sessionsPerWeek doctor patient sessionValue totalSessions totalPaid sessionsDone status'
+                        select: 'sessionType sessionsPerWeek doctor patient sessionValue totalSessions totalPaid sessionsDone status paymentType type'
                     })
                     .populate('appointmentId')
                     .session(mongoSession);
@@ -1119,12 +1119,67 @@ export const packageOperations = {
                             sessionDoc.paymentStatus = 'pending_receipt';
                             sessionDoc.visualFlag = 'pending';
                         } else if (!sessionDoc.isPaid) {
-                            // 💰 PARTICULAR: Sem pagamento prévio → deixa em aberto
-                            // O pagamento será registrado manualmente depois
-                            sessionDoc.isPaid = false;
-                            sessionDoc.paymentStatus = 'pending';
-                            sessionDoc.visualFlag = 'pending';
-                            // ❌ NÃO cria Payment automático
+                            // 💰 PARTICULAR: Verificar se é per-session (pagamento no dia)
+                            const isPerSession = sessionDoc.package.paymentType === 'per-session';
+                            
+                            if (isPerSession) {
+                                // 🔥 PER-SESSION: Cria pagamento automaticamente ao completar
+                                const sessionValue = sessionDoc.sessionValue || sessionDoc.package.sessionValue || 0;
+                                
+                                const paymentDoc = new Payment({
+                                    patient: sessionDoc.patient,
+                                    doctor: sessionDoc.doctor,
+                                    serviceType: 'package_session',
+                                    amount: sessionValue,
+                                    paymentMethod: 'pix', // Default, pode ser alterado depois
+                                    billingType: 'particular',
+                                    session: sessionDoc._id,
+                                    package: pkgId,
+                                    serviceDate: sessionDoc.date,
+                                    paymentDate: sessionDoc.date, // Entra no caixa no dia
+                                    status: 'paid',
+                                    kind: 'session_payment',
+                                    notes: `Pagamento automático - Sessão ${moment(sessionDoc.date).format('DD/MM/YYYY')} ${sessionDoc.time}`
+                                });
+                                await paymentDoc.save({ session: mongoSession });
+                                
+                                // Atualizar pacote
+                                const newTotalPaid = (sessionDoc.package.totalPaid || 0) + sessionValue;
+                                const newBalance = (sessionDoc.package.totalValue || 0) - newTotalPaid;
+                                const newFinancialStatus = newBalance <= 0 ? 'paid' : 
+                                                           newTotalPaid > 0 ? 'partially_paid' : 'unpaid';
+                                
+                                await Package.findByIdAndUpdate(
+                                    pkgId,
+                                    {
+                                        $inc: { totalPaid: sessionValue, paidSessions: 1 },
+                                        $push: { payments: paymentDoc._id },
+                                        $set: {
+                                            balance: newBalance,
+                                            financialStatus: newFinancialStatus,
+                                            lastPaymentAt: new Date()
+                                        }
+                                    },
+                                    { session: mongoSession }
+                                );
+                                
+                                // Atualizar sessão
+                                sessionDoc.isPaid = true;
+                                sessionDoc.paymentStatus = 'paid';
+                                sessionDoc.paymentId = paymentDoc._id;
+                                sessionDoc.visualFlag = 'ok';
+                                sessionDoc.paidAt = new Date();
+                                sessionDoc.paymentMethod = 'pix';
+                                
+                                console.log(`💰 Pagamento per-session automático: R$ ${sessionValue} - Sessão ${sessionDoc._id}`);
+                                
+                            } else {
+                                // 💰 FULL/PARTIAL: Sem pagamento prévio → deixa em aberto
+                                // O pagamento já foi feito antecipadamente
+                                sessionDoc.isPaid = false;
+                                sessionDoc.paymentStatus = 'pending';
+                                sessionDoc.visualFlag = 'pending';
+                            }
                         }
 
                     }

@@ -125,6 +125,9 @@ router.post("/agenda-externa/pre-agendar", agendaAuth, async (req, res) => {
       }
     }
 
+    // Determinar patientType baseado nos dados
+    const patientType = isNewPatient ? 'novo' : 'recorrente';
+    
     // Criar APPOINTMENT
     const appointmentData = {
       patient: resolvedPatientId || undefined,
@@ -154,6 +157,8 @@ router.post("/agenda-externa/pre-agendar", agendaAuth, async (req, res) => {
       clinicalStatus: 'pending',
       paymentStatus: 'pending',
       visualFlag: 'pending',
+      // Classificação do paciente
+      patientType,
       // Notas
       notes: observations || '',
       responsible: responsible || '',

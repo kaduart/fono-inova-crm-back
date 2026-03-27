@@ -1715,10 +1715,12 @@ router.get("/daily-closing", async (req, res) => {
                 .populate("doctor patient package")
                 .lean(),
             
-            // 2️⃣ Agendamentos PARA hoje (para Receita Prevista e A Receber)
-            // Busca todos e filtra depois para incluir liminar
+            // 2️⃣ Agendamentos PARA hoje OU CRIADOS hoje (para incluir pré-agendamentos)
             Appointment.find({
-                date: targetDate
+                $or: [
+                    { date: { $gte: startOfDay, $lte: endOfDay } },
+                    { createdAt: { $gte: startOfDay, $lte: endOfDay } }
+                ]
             })
                 .populate("doctor patient package")
                 .lean(),
@@ -1745,6 +1747,16 @@ router.get("/daily-closing", async (req, res) => {
                 .populate("patient doctor package appointment")
                 .lean()
         ]);
+
+        // 🔥 DEDUPLICAR: Remover agendamentos duplicados (mesmo _id)
+        const uniqueAppointmentsMap = new Map();
+        for (const appt of appointmentsToday) {
+            const id = appt._id.toString();
+            if (!uniqueAppointmentsMap.has(id)) {
+                uniqueAppointmentsMap.set(id, appt);
+            }
+        }
+        const uniqueAppointmentsToday = Array.from(uniqueAppointmentsMap.values());
 
         // ======================================================
         // 🔹 HELPERS
@@ -1805,7 +1817,7 @@ router.get("/daily-closing", async (req, res) => {
         // (pagamentos de pacotes feitos antes de hoje mas com sessões hoje)
         // ======================================================
         const packageIdsToday = [...new Set(
-            appointmentsToday
+            uniqueAppointmentsToday
                 .filter(a => a.serviceType === 'package_session' && a.package?._id)
                 .map(a => a.package._id.toString())
         )];
@@ -1908,7 +1920,7 @@ router.get("/daily-closing", async (req, res) => {
         // ======================================================
         // 🔹 PROCESSAR APPOINTMENTS DO DIA (para Receita Prevista)
         // ======================================================
-        for (const appt of appointmentsToday) {
+        for (const appt of uniqueAppointmentsToday) {
             const opStatus = (appt.operationalStatus || "").toLowerCase();
             const clinicalStatus = (appt.clinicalStatus || "").toLowerCase();
             const doctorName = appt.doctor?.fullName || "Não informado";
@@ -2145,20 +2157,24 @@ router.get("/daily-closing", async (req, res) => {
         );
         
         // ✅ Atualizar contadores do dia (sessões agendadas para o dia)
-        const appointmentsDoDia = appointmentsToday || [];
+        const appointmentsDoDia = uniqueAppointmentsToday || [];
         report.summary.appointments.totalDoDia = appointmentsDoDia.length;
         report.summary.appointments.confirmadosDoDia = appointmentsDoDia.filter(
             (a) => !isCanceled(a.operationalStatus) && (isConfirmed(a.operationalStatus) || isCompleted(a.clinicalStatus))
         ).length;
 
-        // 🔥 NOVO: Separar agendamentos por isFirstAppointment
-        report.summary.appointments.novos = appointmentsDoDia.filter(a => a.isFirstAppointment === true).length;
-        report.summary.appointments.recorrentes = appointmentsDoDia.filter(a => a.isFirstAppointment === false).length;
+        // 🔥 NOVO: Separar agendamentos por patientType (novo/recorrente/retorno)
+        // Usa patientType preferencialmente, fallback para isFirstAppointment
+        const isNovo = (a) => a.patientType === 'novo' || a.isFirstAppointment === true;
+        const isRecorrente = (a) => a.patientType === 'recorrente' || a.patientType === 'retorno' || a.isFirstAppointment === false;
         
-        // Detalhes para clique no front
+        report.summary.appointments.novos = appointmentsDoDia.filter(isNovo).length;
+        report.summary.appointments.recorrentes = appointmentsDoDia.filter(isRecorrente).length;
+        
+        // Detalhes para clique no front - incluir patientType real
         report.appointmentsByType = {
             novos: appointmentsDoDia
-                .filter(a => a.isFirstAppointment === true)
+                .filter(isNovo)
                 .map(a => ({
                     id: a._id.toString(),
                     patient: a.patient?.fullName || a.patientInfo?.fullName || 'Não informado',
@@ -2167,9 +2183,10 @@ router.get("/daily-closing", async (req, res) => {
                     specialty: a.specialty,
                     doctor: a.doctor?.fullName || 'Não informado',
                     serviceType: a.serviceType,
+                    patientType: a.patientType || (a.isFirstAppointment ? 'novo' : 'recorrente'),
                 })),
             recorrentes: appointmentsDoDia
-                .filter(a => a.isFirstAppointment === false)
+                .filter(isRecorrente)
                 .map(a => ({
                     id: a._id.toString(),
                     patient: a.patient?.fullName || a.patientInfo?.fullName || 'Não informado',
@@ -2178,6 +2195,7 @@ router.get("/daily-closing", async (req, res) => {
                     specialty: a.specialty,
                     doctor: a.doctor?.fullName || 'Não informado',
                     serviceType: a.serviceType,
+                    patientType: a.patientType || (a.isFirstAppointment ? 'novo' : 'recorrente'),
                 })),
         };
 
@@ -2303,7 +2321,7 @@ router.get("/daily-closing", async (req, res) => {
             meta: {
                 generatedAt: new Date().toISOString(),
                 recordCount: {
-                    appointments: appointmentsToday.length,
+                    appointments: uniqueAppointmentsToday.length,
                     payments: filteredPayments.length,
                     professionals: report.professionals.length,
                     timeSlots: report.timeSlots.length,
