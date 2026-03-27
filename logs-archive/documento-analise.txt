@@ -1,1 +1,138 @@
-prefiso qeu ao clciar em criar pacote no TherapyPackagesSummary elo card dos pacotes esteja dentro de um acocodnion e ele feche automaticamente e abre o de baixo 
+preo qeu ao clciar em criar pacote no TherapyPackagesSummary elo card dos pacotes esteja dentro de um accordion e ele feche automaticamente e abre o de baixo    
+[2026-03-27T00:35:22.747Z] GET → /api/whatsapp/contacts
+[INFO] 2026-03-27T00:35:22.770Z — [MetaAds] Contagem de leads atualizada
+[INFO] 2026-03-27T00:35:22.770Z — [MetaAds Cron] Sincronização concluída: { synced: 0, cached: undefined, errors: 0 }
+✅ [CONTACTS] Retornando 50 de 635 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5511918646962',
+  leadId: '69b179e6a9d4fc76878eed9f',
+  type: 'string'
+}
+[2026-03-27T00:35:30.183Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 635 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5511918646962',
+  leadId: '69b179e6a9d4fc76878eed9f',
+  type: 'string'
+}
+[2026-03-27T00:35:31.448Z] GET → /api/patients
+[PATIENTS LIST] Search: "undefined", Limit: 50
+[PATIENTS LIST] Encontrados: 50 pacientes
+[2026-03-27T00:35:37.896Z] GET → /api/pre-agendamento
+[2026-03-27T00:35:41.939Z] GET → /api/patients
+[PATIENTS LIST] Search: "undefined", Limit: 50
+[PATIENTS LIST] Encontrados: 50 pacientes
+[2026-03-27T00:35:49.501Z] GET → /api/doctors
+[2026-03-27T00:35:49.510Z] GET → /api/admin/profile
+[2026-03-27T00:35:49.528Z] GET → /api/appointments/patient/69bd82b8272d184895f454aa
+[2026-03-27T00:35:49.540Z] GET → /api/patients/69bd82b8272d184895f454aa
+[2026-03-27T00:35:49.584Z] GET → /api/evolutions/patient/69bd82b8272d184895f454aa
+[2026-03-27T00:35:49.588Z] GET → /api/payments/future-sessions/69bd82b8272d184895f454aa
+[2026-03-27T00:35:50.078Z] GET → /api/doctors
+[2026-03-27T00:35:50.104Z] GET → /api/appointments/patient/69bd82b8272d184895f454aa
+[2026-03-27T00:35:50.120Z] GET → /api/patients/69bd82b8272d184895f454aa
+[2026-03-27T00:35:50.169Z] GET → /api/payments/future-sessions/69bd82b8272d184895f454aa
+[2026-03-27T00:35:50.174Z] GET → /api/evolutions/patient/69bd82b8272d184895f454aa
+[2026-03-27T00:35:50.759Z] GET → /api/evolutions/patient/69bd82b8272d184895f454aa
+[2026-03-27T00:35:54.981Z] GET → /api/packages
+[2026-03-27T00:35:55.567Z] GET → /api/packages
+[2026-03-27T00:36:00.181Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 635 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5511918646962',
+  leadId: '69b179e6a9d4fc76878eed9f',
+  type: 'string'
+}
+[2026-03-27T00:36:02.570Z] GET → /api/appointments
+[2026-03-27T00:36:02.621Z] GET → /api/appointments/patient/69bd82b8272d184895f454aa
+[2026-03-27T00:36:03.164Z] GET → /api/appointments/patient/69bd82b8272d184895f454aa
+[2026-03-27T00:36:05.573Z] GET → /api/appointments
+(node:162898) Warning: Label 'appointments.query' already exists for console.time()
+[2026-03-27T00:36:30.187Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 635 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5511918646962',
+  leadId: '69b179e6a9d4fc76878eed9f',
+  type: 'string'
+}
+[2026-03-27T00:36:50.131Z] POST → /api/packages
+[CREATE PACKAGE] isFirstAppointment para paciente 69bd82b8272d184895f454aa: false
+Sessions: 4 Appointments: 4
+[CREATE PACKAGE] Modo per-session: ignorando 0 pagamentos do body
+[CREATE PACKAGE] Modo 'per-session' - distribuição de pagamentos ignorada
+[2026-03-27T00:36:52.797Z] GET → /api/packages
+[2026-03-27T00:36:52.811Z] GET → /api/appointments
+(node:162898) Warning: Label 'appointments.query' already exists for console.time()
+[2026-03-27T00:36:53.371Z] GET → /api/packages
+[2026-03-27T00:37:00.189Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 635 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5511918646962',
+  leadId: '69b179e6a9d4fc76878eed9f',
+  type: 'string'
+}
+[2026-03-27T00:37:07.764Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 635 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5511918646962',
+  leadId: '69b179e6a9d4fc76878eed9f',
+  type: 'string'
+}
+🚀 Primeira execução do Lead Recovery (warmup)...
+🔁 Recovery habilitado para 0 leads existentes
+⚠️ Cliente desconectado (client namespace disconnect)
+[2026-03-27T00:37:18.996Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 635 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5511918646962',
+  leadId: '69b179e6a9d4fc76878eed9f',
+  type: 'string'
+}
+⚡ Novo cliente conectado: J-eU4_fMMFTI7bbmAAAF
+👥 Total de clientes: 2
+[2026-03-27T00:37:24.758Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 635 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5511918646962',
+  leadId: '69b179e6a9d4fc76878eed9f',
+  type: 'string'
+}
+[2026-03-27T00:37:25.628Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 635 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5511918646962',
+  leadId: '69b179e6a9d4fc76878eed9f',
+  type: 'string'
+}
+[2026-03-27T00:37:28.402Z] GET → /api/dashboard/overview
+[2026-03-27T00:37:28.413Z] GET → /api/pre-agendamento
+[2026-03-27T00:37:28.432Z] GET → /api/admin/profile
+[2026-03-27T00:37:28.437Z] GET → /api/payments
+[2026-03-27T00:37:28.981Z] GET → /api/pre-agendamento
+[2026-03-27T00:37:29.205Z] GET → /api/payments
+[2026-03-27T00:37:29.780Z] GET → /api/patients
+[PATIENTS LIST] Search: "undefined", Limit: 50
+[PATIENTS LIST] Encontrados: 50 pacientes
+[2026-03-27T00:37:31.893Z] GET → /api/whatsapp/contacts
+✅ [CONTACTS] Retornando 50 de 635 contacts
+📊 [CONTACTS] 49/50 têm leadId
+🔍 [FIRST CONTACT] {
+  phone: '5511918646962',
+  leadId: '69b179e6a9d4fc76878eed9f',
+  type: 'string'
+}
+[2026-03-27T00:37:35.217Z] GET → /api/calendar/holidays
+[2026-03-27T00:37:35.241Z] GET → /api/appointments
+(node:162898) Warning: Label 'appointments.query' already exists for console.time()
+[2026-03-27T00:37:35.804Z] GET → /api/calendar/holidays
+[2026-03-27T00:37:59.164Z] GET → /api/pre-agendamento
+ {"error":"Not found"}

@@ -1686,35 +1686,116 @@ router.patch('/:id/complete', auth, async (req, res) => {
             return res.json(responseData);
         }
 
-        // 1️⃣ ATUALIZAR SESSÃO (SEMPRE!)
-        console.log(`[complete] Etapa 1: Atualizando sessão (${Date.now() - startTime}ms)`);
+        // Declarar variáveis
+        let finalPaymentId = paymentId;
+        let perSessionPayment = null; // Para compensação se necessário
         
-        // 🏥 Verificar se é convênio (precisa estar antes de definir sessionUpdateData)
-        // Usa appointment.package pois packageDoc ainda não foi buscado
+        // 🏥 Verificar tipos
         const isConvenioSession = appointment.billingType === 'convenio' ||
                                   appointment.insuranceProvider ||
                                   appointment.insuranceGuide ||
                                   (appointment.package?.type === 'convenio');
         
-        // 💰 Se for adicionar ao saldo devedor, não marca como pago
-        // 🏥 Se for convênio, também não marca como pago (aguarda recebimento do convênio)
-        const sessionUpdateData = addToBalance ? {
-            status: 'completed',
-            isPaid: false,  // ❌ Não está pago
-            paymentStatus: 'pending',  // ⏳ Pendente
-            addedToBalance: true,  // 📝 Flag indicando que foi pro saldo
-            balanceAmount: balanceAmount || appointment.sessionValue || 0,
-            visualFlag: 'pending',  // 🚩 Visual de pendente
-            updatedAt: new Date()
-        } : isConvenioSession ? {
-            // 🏥 CONVÊNIO: Não está pago, aguarda recebimento
+        const isPerSession = packageId && appointment.package?.paymentType === 'per-session';
+        
+        // ============================================================
+        // 1️⃣ CRIAR PAYMENT FORA DA TRANSAÇÃO (evita WriteConflict)
+        // ============================================================
+        if (!addToBalance && !finalPaymentId) {
+            // 🔥 PER-SESSION: Criar pagamento automático
+            if (isPerSession) {
+                console.log(`[complete] 🔥 PER-SESSION: Criando pagamento (fora da transação)...`);
+                
+                const sessionValue = appointment.sessionValue || appointment.package?.sessionValue || 0;
+                
+                try {
+                    perSessionPayment = await Payment.create({
+                        patient: appointment.patient?._id || appointment.patient,
+                        doctor: appointment.doctor?._id || appointment.doctor,
+                        appointment: appointment._id,
+                        session: appointment.session?._id || appointment.session,
+                        package: packageId,
+                        serviceType: 'package_session',
+                        amount: sessionValue,
+                        paymentMethod: 'pix',
+                        status: 'paid',
+                        kind: 'session_payment',
+                        paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"),
+                        serviceDate: appointment.date,
+                        notes: `[PER-SESSION] Pagamento automático`,
+                        createdAt: new Date(),
+                        updatedAt: new Date()
+                    });
+                    
+                    finalPaymentId = perSessionPayment._id;
+                    console.log(`[complete] ✅ PER-SESSION: Payment criado: ${finalPaymentId}`);
+                } catch (err) {
+                    console.error(`[complete] ❌ Erro ao criar payment per-session:`, err.message);
+                    await session.abortTransaction();
+                    return res.status(500).json({ error: 'Erro ao criar pagamento', details: err.message });
+                }
+            }
+            // 🆕 PARTICULAR sem pacote: Criar payment
+            else if (!packageId && !isConvenioSession) {
+                console.log(`[complete] ⚠️ PARTICULAR: Criando pagamento (fora da transação)...`);
+                
+                try {
+                    perSessionPayment = await Payment.create({
+                        patient: appointment.patient?._id || appointment.patient,
+                        doctor: appointment.doctor?._id || appointment.doctor,
+                        appointment: appointment._id,
+                        session: appointment.session?._id || appointment.session,
+                        serviceType: appointment.serviceType || 'individual_session',
+                        amount: appointment.sessionValue || 0,
+                        paymentMethod: appointment.paymentMethod || 'pix',
+                        status: 'paid',
+                        paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"),
+                        serviceDate: appointment.date,
+                        notes: '[CRIADO AUTOMATICAMENTE NO COMPLETE]',
+                        createdAt: new Date(),
+                        updatedAt: new Date()
+                    });
+                    
+                    finalPaymentId = perSessionPayment._id;
+                    console.log(`[complete] ✅ PARTICULAR: Payment criado: ${finalPaymentId}`);
+                } catch (err) {
+                    console.error(`[complete] ❌ Erro ao criar payment particular:`, err.message);
+                    await session.abortTransaction();
+                    return res.status(500).json({ error: 'Erro ao criar pagamento', details: err.message });
+                }
+            }
+        }
+        
+        // ============================================================
+        // 2️⃣ DEFINIR DADOS DA SESSÃO
+        // ============================================================
+        console.log(`[complete] Etapa 2: Definindo dados da sessão (${Date.now() - startTime}ms)`);
+        
+        let sessionUpdateData = addToBalance ? {
             status: 'completed',
             isPaid: false,
-            paymentStatus: 'pending_receipt',  // ⏳ Aguardando recebimento do convênio
+            paymentStatus: 'pending',
+            addedToBalance: true,
+            balanceAmount: balanceAmount || appointment.sessionValue || 0,
             visualFlag: 'pending',
             updatedAt: new Date()
+        } : isConvenioSession ? {
+            status: 'completed',
+            isPaid: false,
+            paymentStatus: 'pending_receipt',
+            visualFlag: 'pending',
+            updatedAt: new Date()
+        } : isPerSession ? {
+            // 🔥 PER-SESSION
+            status: 'completed',
+            isPaid: true,
+            paymentStatus: 'paid',
+            paymentId: finalPaymentId,
+            paidAt: new Date(),
+            visualFlag: 'ok',
+            updatedAt: new Date()
         } : {
-            // 💰 PARTICULAR: Está pago
+            // 💰 PARTICULAR (full/partial)
             status: 'completed',
             isPaid: true,
             paymentStatus: 'paid',
@@ -1722,9 +1803,11 @@ router.patch('/:id/complete', auth, async (req, res) => {
             updatedAt: new Date()
         };
 
-        // 2️⃣ ATUALIZAR PAYMENT (se não for saldo devedor)
-        let finalPaymentId = paymentId; // 📜 Declarar fora do bloco para uso posterior
-
+        // ============================================================
+        // 3️⃣ OPERAÇÕES DENTRO DA TRANSAÇÃO (apenas updates)
+        // ============================================================
+        console.log(`[complete] Etapa 3: Transação - updates (${Date.now() - startTime}ms)`);
+        
         if (!addToBalance) {
             // ✅ FIX: Se não tem payment vinculado, busca pelo appointment ID
             if (!finalPaymentId && !packageId) {
@@ -1736,50 +1819,50 @@ router.patch('/:id/complete', auth, async (req, res) => {
 
                 if (orphanPayment) {
                     finalPaymentId = orphanPayment._id;
-                    await Appointment.updateOne(
-                        { _id: appointment._id },
-                        { $set: { payment: finalPaymentId } },
-                        { session }
-                    );
                 }
             }
 
-            // 🆕 CRIAR PAYMENT SE NÃO EXISTIR (e não for pacote NEM convênio)
-            const isConvenio = appointment.billingType === 'convenio' ||
-                appointment.insuranceProvider ||
-                appointment.insuranceGuide ||
-                (appointment.package?.type === 'convenio');
-
-            if (!finalPaymentId && !packageId && !isConvenio) {
-                console.log(`[complete] ⚠️ Payment não encontrado, criando novo...`);
-
-                const newPayment = await Payment.create([{
-                    patient: appointment.patient?._id || appointment.patient,
-                    doctor: appointment.doctor?._id || appointment.doctor,
-                    appointment: appointment._id,
-                    session: appointment.session?._id || appointment.session,
-                    serviceType: appointment.serviceType || 'individual_session',
-                    amount: appointment.sessionValue || 0,
-                    paymentMethod: appointment.paymentMethod || 'pix',
-                    status: 'paid',
-                    paymentDate: moment().tz("America/Sao_Paulo").format("YYYY-MM-DD"),
-                    serviceDate: appointment.date,
-                    notes: '[CRIADO AUTOMATICAMENTE NO COMPLETE]',
-                    createdAt: new Date(),
-                    updatedAt: new Date()
-                }], { session });
-
-                finalPaymentId = newPayment[0]._id;
-
-                // Vincular ao appointment
+            // 🔥 PER-SESSION: Atualizar pacote e vincular payment ao appointment
+            if (isPerSession && finalPaymentId && perSessionPayment) {
+                const sessionValue = perSessionPayment.amount;
+                const currentTotalPaid = appointment.package?.totalPaid || 0;
+                const newTotalPaid = currentTotalPaid + sessionValue;
+                const totalValue = appointment.package?.totalValue || 0;
+                
+                // Atualizar pacote
+                await Package.findByIdAndUpdate(
+                    packageId,
+                    {
+                        $inc: { totalPaid: sessionValue, paidSessions: 1 },
+                        $push: { payments: finalPaymentId },
+                        $set: {
+                            balance: Math.max(0, totalValue - newTotalPaid),
+                            financialStatus: newTotalPaid >= totalValue ? 'paid' : 'partially_paid',
+                            lastPaymentAt: new Date()
+                        }
+                    },
+                    { session }
+                );
+                
+                // 🔥 VINCULAR PAYMENT AO APPOINTMENT (faltava isso!)
                 await Appointment.updateOne(
                     { _id: appointment._id },
                     { $set: { payment: finalPaymentId } },
                     { session }
                 );
-
-                console.log(`[complete] ✅ Payment criado: ${finalPaymentId}`);
-            } else if (isConvenio) {
+                
+                console.log(`[complete] ✅ Package e Appointment atualizados na transação`);
+            }
+            // 🆕 PARTICULAR: Vincular payment ao appointment (se criado agora)
+            else if (!packageId && finalPaymentId && perSessionPayment) {
+                // Payment já foi criado fora da transação, só vincular
+                await Appointment.updateOne(
+                    { _id: appointment._id },
+                    { $set: { payment: finalPaymentId } },
+                    { session }
+                );
+                console.log(`[complete] ✅ PARTICULAR: Payment vinculado ao appointment`);
+            } else if (isConvenioSession) {
                 console.log(`[complete] ℹ️ Convênio detectado - não criando payment`);
             }
 
@@ -1913,11 +1996,22 @@ router.patch('/:id/complete', auth, async (req, res) => {
             }
         }
 
-        console.log(`[complete] Executando Appointment.updateOne (${Date.now() - startTime}ms)`);
+        // 4️⃣ ATUALIZAR SESSÃO (dentro da transação)
+        if (sessionId) {
+            console.log(`[complete] Etapa 4: Atualizando sessão (${Date.now() - startTime}ms)`);
+            await Session.findByIdAndUpdate(
+                sessionId,
+                { $set: sessionUpdateData },
+                { session }
+            );
+        }
+        
+        // 5️⃣ ATUALIZAR AGENDAMENTO
+        console.log(`[complete] Etapa 5: Atualizando agendamento (${Date.now() - startTime}ms)`);
         await Appointment.updateOne({ _id: id }, updateData, { session });
         console.log(`[complete] Appointment.updateOne concluído (${Date.now() - startTime}ms)`);
 
-        // 5️⃣ COMMIT
+        // 6️⃣ COMMIT
         console.log(`[complete] Commitando transação... (${Date.now() - startTime}ms)`);
         await session.commitTransaction();
         console.log(`[complete] ✅ Transação commitada (${Date.now() - startTime}ms)`);
@@ -2066,47 +2160,37 @@ router.patch('/:id/complete', auth, async (req, res) => {
             }
         }
 
-        // 1️⃣ ATUALIZAR SESSÃO (fora da transação - evita lock)
-        if (sessionId) {
+        // 1️⃣ CONSUMIR GUIA DE CONVÊNIO (se necessário, fora da transação)
+        if (sessionId && sessionUpdateData.status === 'completed') {
             try {
-                console.log(`[complete] Atualizando session ${sessionId} (fora da transação)... (${Date.now() - startTime}ms)`);
-                await Session.findOneAndUpdate(
-                    { _id: sessionId },
-                    sessionUpdateData
-                );
-                console.log(`[complete] Session atualizada (${Date.now() - startTime}ms)`);
+                const session = await Session.findById(sessionId);
+                if (session?.insuranceGuide && !session.guideConsumed) {
+                    try {
+                        console.log(`[complete] Consumindo guia ${session.insuranceGuide} para sessão ${sessionId}...`);
+                        const InsuranceGuide = mongoose.model('InsuranceGuide');
+                        const guide = await InsuranceGuide.findById(session.insuranceGuide);
 
-                // 🏥 Consumir guia de convênio se a sessão tiver guia vinculada
-                if (sessionUpdateData.status === 'completed') {
-                    const session = await Session.findById(sessionId);
-                    if (session?.insuranceGuide && !session.guideConsumed) {
-                        try {
-                            console.log(`[complete] Consumindo guia ${session.insuranceGuide} para sessão ${sessionId}...`);
-                            const InsuranceGuide = mongoose.model('InsuranceGuide');
-                            const guide = await InsuranceGuide.findById(session.insuranceGuide);
-
-                            if (guide && guide.status === 'active' && guide.usedSessions < guide.totalSessions) {
-                                guide.usedSessions += 1;
-                                if (guide.usedSessions >= guide.totalSessions) {
-                                    guide.status = 'exhausted';
-                                }
-                                await guide.save();
-
-                                // Marcar sessão como consumida
-                                await Session.updateOne(
-                                    { _id: sessionId },
-                                    { $set: { guideConsumed: true } }
-                                );
-
-                                console.log(`[complete] ✅ Guia consumida: ${guide.usedSessions}/${guide.totalSessions}`);
+                        if (guide && guide.status === 'active' && guide.usedSessions < guide.totalSessions) {
+                            guide.usedSessions += 1;
+                            if (guide.usedSessions >= guide.totalSessions) {
+                                guide.status = 'exhausted';
                             }
-                        } catch (guideErr) {
-                            console.error(`[complete] ❌ Erro ao consumir guia: ${guideErr.message}`);
+                            await guide.save();
+
+                            // Marcar sessão como consumida
+                            await Session.updateOne(
+                                { _id: sessionId },
+                                { $set: { guideConsumed: true } }
+                            );
+
+                            console.log(`[complete] ✅ Guia consumida: ${guide.usedSessions}/${guide.totalSessions}`);
                         }
+                    } catch (guideErr) {
+                        console.error(`[complete] ❌ Erro ao consumir guia: ${guideErr.message}`);
                     }
                 }
             } catch (err) {
-                console.error('[complete] ❌ Erro ao atualizar session (não crítico):', err.message);
+                console.error('[complete] ❌ Erro ao buscar session (não crítico):', err.message);
             }
         }
 
@@ -2174,6 +2258,18 @@ router.patch('/:id/complete', auth, async (req, res) => {
                 console.error('[complete] Erro ao abortar transação:', abortErr.message);
             }
         }
+        
+        // 🔄 COMPENSAÇÃO: Deletar payment criado fora da transação se falhou
+        if (perSessionPayment && perSessionPayment._id) {
+            try {
+                console.log(`[complete] 🗑️ Compensação: Deletando payment ${perSessionPayment._id}`);
+                await Payment.findByIdAndDelete(perSessionPayment._id);
+                console.log(`[complete] ✅ Payment deletado (compensação)`);
+            } catch (compensateErr) {
+                console.error(`[complete] ⚠️ Erro na compensação (payment orphan):`, compensateErr.message);
+            }
+        }
+        
         console.error(`[complete] ❌ Erro ao concluir (${Date.now() - startTime}ms):`, error);
         res.status(500).json({
             error: 'Erro interno no servidor',
