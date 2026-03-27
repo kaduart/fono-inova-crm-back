@@ -9,7 +9,7 @@
  */
 
 import { Worker } from 'bullmq';
-import { redisConnection } from '../config/redisConnection.js';
+import { bullMqConnection } from '../config/redisConnection.js';
 import { getIo } from '../config/socket.js';
 import logger from '../utils/logger.js';
 import OpenAI from 'openai';
@@ -1449,7 +1449,7 @@ const videoWorker = new Worker('video-generation', async (job) => {
     throw error;
   }
 }, {
-  connection: redisConnection,
+  connection: bullMqConnection,
   concurrency: 1,  // 1 vídeo por vez (Veo API: sequential clips per job, avoid double load)
   limiter: {
     max: 10,
@@ -1565,7 +1565,7 @@ const posProducaoWorker = new Worker('pos-producao', async (job) => {
     throw err;
   }
 }, {
-  connection: redisConnection,
+  connection: bullMqConnection,
   concurrency: 2
 });
 

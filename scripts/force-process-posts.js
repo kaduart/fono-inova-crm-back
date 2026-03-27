@@ -5,7 +5,7 @@
  */
 
 import { Queue } from 'bullmq';
-import { redisConnection } from '../config/redisConnection.js';
+import { bullMqConnection } from '../config/redisConnection.js';
 import GmbPost from '../models/GmbPost.js';
 
 async function forceProcessPosts() {
@@ -27,7 +27,7 @@ async function forceProcessPosts() {
     }
     
     // 2. Ver jobs na fila
-    const queue = new Queue('post-generation', { connection: redisConnection });
+    const queue = new Queue('post-generation', { connection: bullMqConnection });
     const waiting = await queue.getWaiting();
     
     console.log(`\n📋 Jobs na fila: ${waiting.length}`);
