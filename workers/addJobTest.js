@@ -3,12 +3,12 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import { Queue } from "bullmq";
-import { redisConnection } from "../config/redisConnection.js";
+import { bullMqConnection } from "../config/redisConnection.js";
 
 console.log(`🔎 REDIS_URL em runtime: ${process.env.REDIS_URL || "N/D"}`);
 console.log(`🔎 NODE_ENV: ${process.env.NODE_ENV || "development"}`);
 
-const queue = new Queue("followupQueue", { connection: redisConnection });
+const queue = new Queue("followupQueue", { connection: bullMqConnection });
 
 (async () => {
   try {

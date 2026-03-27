@@ -9,7 +9,7 @@
  */
 
 import { Worker } from 'bullmq';
-import { redisConnection } from '../config/redisConnection.js';
+import { bullMqConnection } from '../config/redisConnection.js';
 import { getIo } from '../config/socket.js';
 import logger from '../utils/logger.js';
 

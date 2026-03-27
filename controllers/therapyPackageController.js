@@ -2334,6 +2334,175 @@ export const bulkCancelSessions = async (req, res) => {
     }
 };
 
+// ============================================
+// 🚀 CANCELAR TODAS AS SESSÕES DO PACOTE (ULTRA SIMPLES)
+// ============================================
+export const cancelAllSessions = async (req, res) => {
+    const startTime = Date.now();
+    const packageId = req.params.id;
+    
+    // 🔥 IDEMPOTÊNCIA: Lock para evitar duplo clique/concorrência
+    const lockKey = `cancel:all:${packageId}`;
+    try {
+        const lock = await redis?.set(lockKey, '1', 'NX', 'EX', 30); // 30s de lock
+        if (!lock) {
+            return res.status(409).json({ 
+                error: 'Cancelamento já em andamento',
+                message: 'Aguarde alguns segundos e tente novamente'
+            });
+        }
+    } catch (redisErr) {
+        // ⚡ Se Redis cair, continua sem lock (loga warning)
+        console.warn('[CANCEL-ALL] Redis indisponível, continuando sem lock:', redisErr.message);
+    }
+
+    const mongoSession = await mongoose.startSession();
+    let transactionCommitted = false;
+
+    try {
+        const { confirmedAbsence = false } = req.body;
+
+        // 🔄 ATUALIZA STATUS PARA 'CANCELING' (UX + controle)
+        await Package.findByIdAndUpdate(
+            packageId,
+            { status: 'canceling', cancelingAt: new Date() },
+            { session: mongoSession }
+        );
+
+        await mongoSession.startTransaction();
+
+        // ⚡ UMA QUERY: Atualiza TODAS as sessões de uma vez
+        const sessionResult = await Session.updateMany(
+            {
+                package: packageId,
+                status: { $ne: 'canceled' }
+            },
+            {
+                $set: {
+                    status: 'canceled',
+                    confirmedAbsence: confirmedAbsence,
+                    canceledAt: new Date()
+                }
+            },
+            { session: mongoSession }
+        );
+
+        // ⚡ UMA QUERY: Atualiza TODOS os appointments de uma vez
+        const appointmentResult = await Appointment.updateMany(
+            {
+                package: packageId,
+                operationalStatus: { $ne: 'canceled' }
+            },
+            {
+                $set: {
+                    operationalStatus: 'canceled',
+                    clinicalStatus: 'missed'
+                }
+            },
+            { session: mongoSession }
+        );
+
+        // Ajusta sessionsDone (conta quantas eram 'completed')
+        const completedCount = await Session.countDocuments({
+            package: packageId,
+            status: 'completed'
+        }).session(mongoSession);
+
+        if (completedCount > 0) {
+            await Package.findByIdAndUpdate(
+                packageId,
+                { $inc: { sessionsDone: -completedCount } },
+                { session: mongoSession }
+            );
+        }
+
+        // Atualiza status final do pacote
+        const activeCount = await Session.countDocuments({
+            package: packageId,
+            status: { $ne: 'canceled' }
+        }).session(mongoSession);
+
+        const finalStatus = activeCount === 0 ? 'canceled' : 'active';
+        
+        // 🛡️ ATUALIZA SÓ SE AINDA ESTÁ 'CANCELING' (evita race condition rara)
+        await Package.findOneAndUpdate(
+            { 
+                _id: packageId,
+                status: 'canceling'  // Só atualiza se ninguém mudou o status no meio
+            },
+            { 
+                status: finalStatus,
+                canceledAt: finalStatus === 'canceled' ? new Date() : null,
+                cancelingAt: null
+            },
+            { session: mongoSession }
+        );
+
+        await mongoSession.commitTransaction();
+        transactionCommitted = true;
+
+        const duration = Date.now() - startTime;
+
+        // 📝 LOG
+        console.log({
+            event: 'CANCEL_ALL_SUCCESS',
+            packageId,
+            canceledCount: sessionResult.modifiedCount,
+            appointmentsUpdated: appointmentResult.modifiedCount,
+            finalStatus,
+            durationMs: duration,
+            timestamp: new Date().toISOString()
+        });
+
+        // 📦 RESPONSE COMPLETO
+        res.json({
+            success: true,
+            message: `${sessionResult.modifiedCount} sessão(ões) cancelada(s)`,
+            packageId,
+            canceledSessions: sessionResult.modifiedCount,
+            canceledAppointments: appointmentResult.modifiedCount,
+            finalStatus,
+            durationMs: duration
+        });
+
+    } catch (error) {
+        if (!transactionCommitted) {
+            await mongoSession.abortTransaction();
+        }
+
+        console.error({
+            event: 'CANCEL_ALL_ERROR',
+            packageId,
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+
+        // Em caso de erro, tenta restaurar status do pacote
+        try {
+            await Package.findByIdAndUpdate(packageId, { 
+                status: 'active',
+                cancelingAt: null 
+            });
+        } catch (restoreErr) {
+            console.error('Falha ao restaurar status do pacote:', restoreErr.message);
+        }
+
+        res.status(500).json({
+            error: 'Erro ao cancelar sessões',
+            message: error.message
+        });
+    } finally {
+        await mongoSession.endSession();
+        
+        // 🔓 LIBERA O LOCK (sempre, mesmo em erro)
+        try {
+            await redis?.del(lockKey);
+        } catch (redisErr) {
+            console.warn('[CANCEL-ALL] Falha ao liberar lock:', redisErr.message);
+        }
+    }
+};
+
 // Funções de validação
 function isValidDateString(dateString) {
     const regex = /^\d{4}-\d{2}-\d{2}$/;

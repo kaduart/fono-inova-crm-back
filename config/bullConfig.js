@@ -1,15 +1,15 @@
 // config/bullConfig.js
 import { Queue, QueueEvents } from "bullmq";
 import chalk from "chalk";
-import { redisConnection } from "./redisConnection.js";
+import { bullMqConnection } from "./redisConnection.js";
 
 // 🔄 Fila legada (mantida para compatibilidade)
-export const followupQueue = new Queue("followupQueue", { connection: redisConnection });
-export const followupEvents = new QueueEvents("followupQueue", { connection: redisConnection });
+export const followupQueue = new Queue("followupQueue", { connection: bullMqConnection });
+export const followupEvents = new QueueEvents("followupQueue", { connection: bullMqConnection });
 
 // 🆕 NOVO: Fila de follow-ups para leads mornos (tom acolhedor)
 export const warmLeadFollowupQueue = new Queue("warm-lead-followup", { 
-    connection: redisConnection,
+    connection: bullMqConnection,
     defaultJobOptions: {
         attempts: 3,
         backoff: {
@@ -22,12 +22,12 @@ export const warmLeadFollowupQueue = new Queue("warm-lead-followup", {
 });
 
 export const warmLeadFollowupEvents = new QueueEvents("warm-lead-followup", { 
-    connection: redisConnection 
+    connection: bullMqConnection 
 });
 
 // 🎬 NOVO: Fila de geração de vídeos (HeyGen + FFmpeg)
 export const videoGenerationQueue = new Queue("video-generation", {
-    connection: redisConnection,
+    connection: bullMqConnection,
     defaultJobOptions: {
         attempts: 1,           // sem retry automático — evita loop em caso de erro
         removeOnComplete: 50,
@@ -36,12 +36,12 @@ export const videoGenerationQueue = new Queue("video-generation", {
 });
 
 export const videoGenerationEvents = new QueueEvents("video-generation", {
-    connection: redisConnection
+    connection: bullMqConnection
 });
 
 // Fila de pós-produção manual (legendas, música, CTA) — separada da geração
 export const posProducaoQueue = new Queue("pos-producao", {
-    connection: redisConnection,
+    connection: bullMqConnection,
     defaultJobOptions: {
         attempts: 2,
         backoff: { type: 'exponential', delay: 30000 },
@@ -52,7 +52,7 @@ export const posProducaoQueue = new Queue("pos-producao", {
 
 // 📝 NOVO: Fila de geração de posts (GMB, Instagram, Facebook)
 export const postGenerationQueue = new Queue("post-generation", { 
-    connection: redisConnection,
+    connection: bullMqConnection,
     defaultJobOptions: {
         attempts: 2,
         backoff: {
@@ -65,5 +65,5 @@ export const postGenerationQueue = new Queue("post-generation", {
 });
 
 export const postGenerationEvents = new QueueEvents("post-generation", { 
-    connection: redisConnection 
+    connection: bullMqConnection 
 });

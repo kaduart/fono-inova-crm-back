@@ -1,5 +1,5 @@
 import express from 'express';
-import { generateReport, getPackageById, packageOperations, updateStatus, bulkCancelSessions } from '../controllers/therapyPackageController.js';
+import { generateReport, getPackageById, packageOperations, updateStatus, bulkCancelSessions, cancelAllSessions } from '../controllers/therapyPackageController.js';
 import { receiveSessionPayment, listPendingPayments } from '../controllers/packageSessionController.js';
 import { auth } from '../middleware/auth.js';
 import validateId from '../middleware/validateId.js';
@@ -39,5 +39,8 @@ router.get('/report/generate', auth, generateReport);
 
 // 🔄 Cancelamento em massa de sessões
 router.post('/:id/sessions/bulk-cancel', auth, validateId, bulkCancelSessions);
+
+// 🚀 Cancelar TODAS as sessões do pacote (mais simples)
+router.post('/:id/cancel-all-sessions', auth, validateId, cancelAllSessions);
 
 export default router;
