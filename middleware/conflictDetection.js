@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from "../constants/appointmentStatus.js";
 import Appointment from "../models/Appointment.js";
 import Doctor from "../models/Doctor.js";
+import Session from "../models/Session.js";
 import { isNationalHoliday, getHolidayName, isTimeBlockedByHoliday } from "../config/feriadosBR-dynamic.js";
 
 /**
@@ -112,7 +113,7 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     const newEndMinutes = newStartMinutes + newDuration;
 
     // 🆕 NOVO: Buscar TODOS os agendamentos do dia para verificar sobreposição
-    const [doctorAppointments, patientAppointments] = await Promise.all([
+    const [doctorAppointments, patientAppointments, doctorSessions, patientSessions] = await Promise.all([
       Appointment.find({
         doctor: doctorObjectId,
         date,
@@ -132,10 +133,34 @@ export const checkAppointmentConflicts = async (req, res, next) => {
         .select("time duration doctor")
         .populate("doctor", "fullName")
         .lean(),
+
+      // Sessões de pacote do médico (modelo Session)
+      Session.find({
+        doctor: doctorObjectId,
+        date,
+        status: { $nin: ['canceled'] },
+      })
+        .select("time patient")
+        .populate("patient", "fullName")
+        .lean(),
+
+      // Sessões de pacote do paciente (modelo Session)
+      Session.find({
+        patient: patientObjectId,
+        date,
+        status: { $nin: ['canceled'] },
+      })
+        .select("time doctor")
+        .populate("doctor", "fullName")
+        .lean(),
     ]);
 
+    // Combina appointments + sessions para checagem unificada (sessions usam duration 40 padrão)
+    const allDoctorSlots = [...doctorAppointments, ...doctorSessions];
+    const allPatientSlots = [...patientAppointments, ...patientSessions];
+
     // 🆕 NOVO: Verificar sobreposição de intervalos para o médico
-    const doctorConflict = doctorAppointments.find((appt) => {
+    const doctorConflict = allDoctorSlots.find((appt) => {
       const apptTime = normalizeTimeHHmm(appt.time);
       if (!apptTime) return false;
       
@@ -154,7 +179,7 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     });
 
     // 🆕 NOVO: Verificar sobreposição de intervalos para o paciente
-    const patientConflict = patientAppointments.find((appt) => {
+    const patientConflict = allPatientSlots.find((appt) => {
       const apptTime = normalizeTimeHHmm(appt.time);
       if (!apptTime) return false;
       
@@ -304,28 +329,39 @@ export async function calculateAvailableSlots(doctorId, date) {
   console.log(`[calculateAvailableSlots] normalizedTimes=`, normalizedTimes);
 
   // 🚨 FIX: Buscar agendamentos COM DURAÇÃO para verificar sobreposição
-  const bookedAppointments = await Appointment.find({
-    doctor: toObjectId(doctorId),
-    date,
-    operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
-  })
-    .select("time duration patient -_id")
-    .lean();
+  const [bookedAppointments, preAgendadosAtivos, packageSessions] = await Promise.all([
+    Appointment.find({
+      doctor: toObjectId(doctorId),
+      date,
+      operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
+    })
+      .select("time duration patient -_id")
+      .lean(),
 
-  // 🚨 FIX: pre_agendado agora BLOQUEIA o slot (removido de NON_BLOCKING_OPERATIONAL_STATUSES)
-  const preAgendadosAtivos = await Appointment.find({
-    date,
-    operationalStatus: 'pre_agendado',
-    $or: [
-      { doctor: toObjectId(doctorId) },
-      { professionalName: { $regex: new RegExp(doctor.fullName, 'i') } }
-    ]
-  })
-    .select("time duration patient -_id")
-    .lean();
+    // 🚨 FIX: pre_agendado agora BLOQUEIA o slot
+    Appointment.find({
+      date,
+      operationalStatus: 'pre_agendado',
+      $or: [
+        { doctor: toObjectId(doctorId) },
+        { professionalName: { $regex: new RegExp(doctor.fullName, 'i') } }
+      ]
+    })
+      .select("time duration patient -_id")
+      .lean(),
 
-  // Combinar todos os agendamentos
-  const allAppointments = [...bookedAppointments, ...preAgendadosAtivos];
+    // 🚨 FIX: Sessões de pacote (modelo Session) bloqueiam slots — nunca estavam sendo consultadas
+    Session.find({
+      doctor: toObjectId(doctorId),
+      date,
+      status: { $nin: ['canceled'] },
+    })
+      .select("time -_id")
+      .lean(),
+  ]);
+
+  // Combinar todos os agendamentos (sessions de pacote usam duração padrão de 40min)
+  const allAppointments = [...bookedAppointments, ...preAgendadosAtivos, ...packageSessions];
 
   // 🆕 NOVO: Montar array de slots com metadados
   const slotsWithMetadata = normalizedTimes.map((slotTime) => {
@@ -366,7 +402,7 @@ export async function calculateAvailableSlots(doctorId, date) {
     };
   });
   
-  console.log(`[calculateAvailableSlots] totalAppointments=${allAppointments.length}`);
+  console.log(`[calculateAvailableSlots] bookedAppointments=${bookedAppointments.length}, preAgendados=${preAgendadosAtivos.length}, packageSessions=${packageSessions.length}, total=${allAppointments.length}`);
   console.log(`[calculateAvailableSlots] slotsWithMetadata=`, slotsWithMetadata);
 
   return slotsWithMetadata;
