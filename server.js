@@ -122,6 +122,24 @@ import medicalEventRoutes from './routes/medicalEvent.routes.js';
 import appointmentAnalyticsRoutes from './routes/appointmentAnalytics.routes.js';
 import dailyClosingSimpleRoutes from './routes/dailyClosingSimple.routes.js';
 
+// 🚀 ROTAS 4.0 - Event-Driven Architecture (NOVO)
+import appointmentV2Routes from './routes/appointment.v2.js';
+import healthV2Routes from './routes/health.v2.js';
+import paymentV2Routes from './routes/payment.v2.js';
+import dailyClosingV2Routes from './routes/dailyClosing.v2.js';
+import totalsV2Routes from './routes/totals.v2.js';
+import patientV2Routes from './routes/patient.v2.js';  // 🆕 Patients V2
+import packageV2Routes from './routes/package.v2.js';  // 🆕 Packages V2
+
+// 💰 ROTAS FINANCEIRAS
+import invoiceRoutes from './routes/invoice.routes.js';
+
+// 🏥 ROTAS BILLING/CONVÊNIO (Domain: Billing)
+import insuranceRoutes from './domains/billing/insuranceRoutes.js';
+
+// 📊 ROTAS OBSERVABILIDADE (Monitoramento)
+import observabilityRoutes from './infrastructure/observability/observabilityRoutes.js';
+
 // ======================================================
 // 🧭 Inicialização base
 // ======================================================
@@ -282,6 +300,19 @@ app.use("/api/doctors", doctorRoutes);
 app.use("/api/patients", patientRoutes);
 app.use("/api/patients", patientDuplicatesRoutes);
 app.use("/api/appointments", appointmentRoutes);
+
+// 🚀 ROTAS 4.0 - Event-Driven (separadas do legado)
+app.use("/api/v2/appointments", appointmentV2Routes);
+app.use("/api/v2/health", healthV2Routes);
+app.use("/api/v2/payments", paymentV2Routes);
+app.use("/api/v2/daily-closing", dailyClosingV2Routes);
+app.use("/api/v2/totals", totalsV2Routes);
+app.use("/api/v2/patients", patientV2Routes);  // 🆕 Patients V2 (CQRS)
+app.use("/api/v2/packages", packageV2Routes);  // 🆕 Packages V2 (CQRS)
+app.use("/api/v2/invoices", invoiceRoutes);
+app.use("/api/insurance", insuranceRoutes);
+app.use("/api/observability", observabilityRoutes);
+
 app.use("/api/evolutions", evolutionRoutes);
 app.use("/api/leads", leadsRouter);
 app.use("/api/packages", PackageRoutes);
@@ -366,6 +397,12 @@ app.get("/health", (_, res) =>
 );
 
 // ======================================================
+// 🛡️ Middleware de Erros (deve vir antes do static)
+// ======================================================
+import { errorHandler } from './middleware/errorHandler.js';
+app.use(errorHandler);
+
+// ======================================================
 // 🎨 Servir Frontend (Produção)
 // ======================================================
 const distPath = path.resolve(__dirname, "./dist");
@@ -422,6 +459,11 @@ function initFollowupWatcher() {
     await import("./workers/video.worker.js");  // 🎬 Video pipeline worker
     await import("./workers/post.worker.js");   // 📝 Post generation worker
     
+    // 🚀 Workers 4.0 - Event-Driven Architecture
+    const { startAllWorkers } = await import("./workers/index.js");
+    startAllWorkers();
+    console.log("🎯 Workers 4.0 iniciados (Event-Driven)");
+    
     // 🔄 Inicializa worker de retry para GMB
     const { initGmbRetryWorker } = await import("./config/bullConfigGmbRetry.js");
     initGmbRetryWorker();
@@ -430,8 +472,12 @@ function initFollowupWatcher() {
     await import("./crons/responseTracking.cron.js");
 
     // Conexão MongoDB
-    await mongoose.connect(process.env.MONGO_URI);
-    console.log("✅ Connected to MongoDB");
+    await mongoose.connect(process.env.MONGO_URI, {
+      readPreference: 'primary',
+      retryWrites: true,
+      w: 'majority'
+    });
+    console.log("✅ Connected to MongoDB (readPreference: primary)");
 
     // 👉 AQUI LIGAMOS SEU CRON DIÁRIO DE APRENDIZADO
     startLearningCron();
