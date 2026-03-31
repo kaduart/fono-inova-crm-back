@@ -2030,7 +2030,7 @@ router.patch('/:id/complete', auth, async (req, res) => {
         // ============================================================
         
         // ✅ CONFIRMAR PAYMENT (fora da transação - mantém consistência de estado)
-        if (finalPaymentId && perSessionPayment) {
+        if (finalPaymentId && !addToBalance) {
             try {
                 const paymentUpdateData = {
                     status: 'paid',
