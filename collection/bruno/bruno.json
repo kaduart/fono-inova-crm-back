@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "CRM-4.0-Event-Driven",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}

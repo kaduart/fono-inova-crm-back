@@ -1,0 +1,50 @@
+meta {
+  name: Update Payment
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{baseUrl}}/payments/{{paymentId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "status": "paid",
+    "amount": 200.00
+  }
+}
+
+script:pre-request {
+  const paymentId = bru.getEnvVar("paymentId");
+  
+  if (!paymentId) {
+    console.error("❌ ERRO: paymentId não encontrado!");
+    console.error("   Execute 'Create Payment' primeiro");
+  } else {
+    console.log("✏️  Atualizando payment:", paymentId);
+  }
+}
+
+script:post-response {
+  if (res.body?.success) {
+    console.log("✅ Payment atualizado");
+    console.log("\n🔍 Verifique no servidor:");
+    console.log("   tail -f /tmp/server.log | grep 'PAYMENT_UPDATED'");
+  }
+}
+
+docs {
+  # Update Payment
+  
+  Atualiza um pagamento existente.
+  
+  ## Evento emitido
+  `PAYMENT_UPDATED` → Atualiza projeção PatientsView
+}

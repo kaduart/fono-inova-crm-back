@@ -1,0 +1,146 @@
+meta {
+  name: Complete Session
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/v2/appointments/{{appointmentId}}/complete
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+headers {
+  X-Correlation-Id: {{correlationId}}
+  ~X-Idempotency-Key: {{appointmentId}}_complete_normal
+}
+
+body:json {
+  {
+    "addToBalance": false
+  }
+}
+
+script:pre-request {
+  // DEPENDÊNCIAS: Verifica se pode completar
+  const apptId = bru.getEnvVar("appointmentId");
+  const canComplete = bru.getEnvVar("canComplete");
+  const lastStatus = bru.getEnvVar("lastOperationalStatus");
+  
+  if (!apptId) {
+    console.error("❌ ERRO: appointmentId não encontrado!");
+    console.error("   DEPENDÊNCIA: Execute primeiro → POST Create Particular");
+  } else {
+    console.log("✅ Completando appointment:", apptId);
+  }
+  
+  // Verifica se pode completar baseado no último status check
+  if (canComplete === "false") {
+    console.warn("⚠️ AVISO: canComplete = false");
+    console.warn("   Execute 'Check Status' primeiro para verificar");
+    console.warn("   Status atual:", lastStatus || "desconhecido");
+  } else if (canComplete === "true") {
+    console.log("✅ Pode completar: true");
+  }
+  
+  // Verifica status problemáticos
+  if (lastStatus === "canceled") {
+    console.error("❌ ERRO: Agendamento já foi cancelado!");
+  } else if (lastStatus?.includes("processing")) {
+    console.warn("⏳ Aviso: Agendamento ainda em processamento");
+    console.warn("   Aguarde ou execute 'Check Status'");
+  }
+}
+
+script:post-response {
+  // AUTO-COLLECT: Salva resultado do complete
+  const data = res.body?.data || res.body;
+  if (data) {
+    if (data.status) {
+      bru.setEnvVar("lastCompleteStatus", data.status);
+      console.log("📊 Complete status:", data.status);
+    }
+    if (data.appointmentId) {
+      console.log("✅ Complete iniciado para:", data.appointmentId);
+    }
+    if (data.idempotencyKey) {
+      bru.setEnvVar("completeIdempotencyKey", data.idempotencyKey);
+    }
+    
+    if (res.status === 202) {
+      console.log("\n⏳ Complete em processamento...");
+      console.log("   Execute 'Check Status' para acompanhar");
+    }
+  }
+}
+
+docs {
+  # Complete Session (Event-Driven 4.0)
+  
+  ## DEPENDÊNCIAS
+  Requer:
+  - `{{appointmentId}}` → Criado via **Create Particular**
+  - `{{correlationId}}` (opcional) → Para rastreamento
+  
+  Recomendado antes:
+  - **Check Status** → Verifica `canComplete: true`
+  
+  ## Evento Disparado
+  - **REQUESTED**: `APPOINTMENT_COMPLETE_REQUESTED`
+  - **RESULTADO**: `APPOINTMENT_COMPLETED`
+  
+  ## AUTO-COLLECT
+  Este endpoint salva automaticamente:
+  - `lastCompleteStatus` → status da finalização
+  - `completeIdempotencyKey` → chave de idempotência
+  
+  ## Estados de Processamento
+  ```
+  processing_complete → confirmed + completed
+  ```
+  
+  ## Cenários
+  
+  ### Particular
+  - Cria Payment → status: paid
+  - Session.isPaid = true
+  
+  ### Pacote Pré-pago
+  - Consome `sessionsDone++`
+  - Session.isPaid = true
+  
+  ### Pacote Per-Session
+  - Cria Payment
+  - Atualiza Package.totalPaid
+  
+  ### Convênio
+  - Consome guia
+  - Cria Payment `billingType: 'convenio'`
+  
+  ## Guard de Concorrência
+  Se tentar completar 2x:
+  ```json
+  {
+    "success": false,
+    "error": "Complete já em andamento",
+    "status": "processing_complete"
+  }
+  ```
+  
+  ## Response 202 Accepted
+  ```json
+  {
+    "success": true,
+    "message": "Complete em processamento",
+    "data": {
+      "appointmentId": "...",
+      "status": "processing_complete",
+      "idempotencyKey": "appointmentId_complete_normal"
+    }
+  }
+  ```
+}
