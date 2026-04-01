@@ -74,6 +74,11 @@ export const EventTypes = {
     PAYMENT_UPDATED: 'PAYMENT_UPDATED',
     PAYMENT_DELETED: 'PAYMENT_DELETED',
     
+    // 💰 Balance V2 - Eventos
+    BALANCE_DEBIT_REQUESTED: 'BALANCE_DEBIT_REQUESTED',
+    BALANCE_UPDATE_REQUESTED: 'BALANCE_UPDATE_REQUESTED',
+    BALANCE_DELETE_REQUESTED: 'BALANCE_DELETE_REQUESTED',
+    
     // 📦 Package V2 - Eventos de CRUD para projeção
     PACKAGE_CREATE_REQUESTED: 'PACKAGE_CREATE_REQUESTED',
     PACKAGE_CREATE_FAILED: 'PACKAGE_CREATE_FAILED',
@@ -161,6 +166,8 @@ const eventToQueueMap = {
     [EventTypes.PAYMENT_PROCESS_REQUESTED]: 'payment-processing',
     [EventTypes.PAYMENT_UPDATE_REQUESTED]: 'payment-processing',
     [EventTypes.BALANCE_UPDATE_REQUESTED]: 'balance-update',
+    [EventTypes.BALANCE_DEBIT_REQUESTED]: 'balance-update',
+    [EventTypes.BALANCE_DELETE_REQUESTED]: 'balance-update',
     [EventTypes.DAILY_CLOSING_REQUESTED]: 'daily-closing',
     [EventTypes.TOTALS_RECALCULATE_REQUESTED]: 'totals-calculation',
     
