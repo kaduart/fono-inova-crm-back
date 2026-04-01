@@ -1,0 +1,81 @@
+meta {
+  name: Hardening - Test All
+  type: http
+  seq: 13
+}
+
+get {
+  url: {{baseUrl}}/v2/health
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+script:post-response {
+  // Valida health check completo
+  const data = res.body?.data || res.body;
+  
+  console.log("🧪 HEALTH CHECK V2");
+  console.log("==================");
+  
+  if (data) {
+    console.log("✅ MongoDB:", data.checks?.mongodb ? "OK" : "FALHA");
+    console.log("✅ Redis:", data.checks?.redis ? "OK" : "FALHA");
+    
+    console.log("\n📊 Filas BullMQ:");
+    for (const [name, status] of Object.entries(data.checks?.queues || {})) {
+      const icon = status.status === 'ok' ? '✅' : '❌';
+      console.log(`   ${icon} ${name}:`);
+      console.log(`      waiting: ${status.waiting}, active: ${status.active}, failed: ${status.failed}`);
+    }
+    
+    if (data.success) {
+      console.log("\n✅ SISTEMA SAUDÁVEL");
+    } else {
+      console.log("\n❌ PROBLEMAS DETECTADOS");
+    }
+  }
+  
+  console.log("==================");
+}
+
+docs {
+  # Hardening - Health Check v2
+  
+  Verifica a saúde completa do sistema 4.0:
+  
+  ## Checks realizados
+  
+  - **MongoDB**: Conexão ativa
+  - **Redis**: Ping responde PONG
+  - **Filas BullMQ**: Status de todas as filas
+    - appointment-processing
+    - payment-processing
+    - cancel-orchestrator
+    - complete-orchestrator
+    - outbox-processor
+  
+  ## Response esperado (sucesso)
+  
+  ```json
+  {
+    "success": true,
+    "timestamp": "2026-03-28T00:00:00.000Z",
+    "version": "4.0.0",
+    "checks": {
+      "mongodb": true,
+      "redis": true,
+      "queues": {
+        "appointment-processing": {
+          "status": "ok",
+          "waiting": 0,
+          "active": 0,
+          "failed": 0
+        }
+      }
+    }
+  }
+  ```
+}

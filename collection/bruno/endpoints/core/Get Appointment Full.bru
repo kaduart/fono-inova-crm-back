@@ -1,0 +1,161 @@
+meta {
+  name: Get Appointment Full
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{baseUrl}}/v2/appointments/{{appointmentId}}
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+script:pre-request {
+  // DEPENDÊNCIA: Verifica se appointmentId existe e é válido
+  const apptId = bru.getEnvVar("appointmentId");
+  
+  if (!apptId) {
+    console.error("❌❌❌ ERRO CRÍTICO ❌❌❌");
+    console.error("appointmentId está VAZIO no environment!");
+    console.error("");
+    console.error("SOLUÇÕES:");
+    console.error("1. Execute 'Create Particular' primeiro (vai salvar automaticamente)");
+    console.error("2. Ou defina manualmente: Environments → Seu Env → appointmentId");
+    console.error("");
+    console.error("⚠️  A requisição vai falhar com 404!");
+  } else if (apptId.length !== 24) {
+    console.error("❌ ERRO: appointmentId parece inválido!");
+    console.error("   Valor:", apptId);
+    console.error("   Um ObjectId válido tem 24 caracteres hexadecimais");
+  } else {
+    console.log("✅ Usando appointmentId:", apptId);
+    console.log("   Tamanho:", apptId.length, "caracteres ✓");
+  }
+}
+
+script:post-response {
+  // AUTO-COLLECT: Extrai e salva todos os IDs relevantes
+  const data = res.body?.data;
+  if (data) {
+    const appt = data.appointment || data;
+    
+    // Salva sessionId se existir
+    if (appt.session?._id) {
+      bru.setEnvVar("sessionId", appt.session._id);
+      console.log("✅ sessionId salvo:", appt.session._id);
+    }
+    
+    // Salva paymentId se existir
+    if (appt.payment?._id) {
+      bru.setEnvVar("paymentId", appt.payment._id);
+      console.log("✅ paymentId salvo:", appt.payment._id);
+    }
+    
+    // Salva packageId se existir
+    if (appt.package?._id || appt.packageId) {
+      const pkgId = appt.package?._id || appt.packageId;
+      bru.setEnvVar("packageId", pkgId);
+      console.log("✅ packageId salvo:", pkgId);
+    }
+    
+    // Salva insuranceGuideId se existir
+    if (appt.insuranceGuide?._id || appt.insuranceGuideId) {
+      const guideId = appt.insuranceGuide?._id || appt.insuranceGuideId;
+      bru.setEnvVar("insuranceGuideId", guideId);
+      console.log("✅ insuranceGuideId salvo:", guideId);
+    }
+    
+    // Salva patientId se existir
+    if (appt.patient?._id || appt.patientId) {
+      const patId = appt.patient?._id || appt.patientId;
+      bru.setEnvVar("patientId", patId);
+      console.log("✅ patientId salvo:", patId);
+    }
+    
+    // Salva doctorId se existir
+    if (appt.doctor?._id || appt.doctorId) {
+      const docId = appt.doctor?._id || appt.doctorId;
+      bru.setEnvVar("doctorId", docId);
+      console.log("✅ doctorId salvo:", docId);
+    }
+    
+    // Salva status para referência
+    if (appt.operationalStatus) {
+      bru.setEnvVar("lastOperationalStatus", appt.operationalStatus);
+      console.log("📊 operationalStatus:", appt.operationalStatus);
+    }
+    
+    // Salva valores financeiros
+    if (appt.sessionValue) {
+      bru.setEnvVar("lastSessionValue", appt.sessionValue.toString());
+    }
+    
+    // Log resumo
+    console.log("\n📋 RESUMO DO AGENDAMENTO:");
+    console.log("   ID:", appt._id);
+    console.log("   Status:", appt.operationalStatus);
+    console.log("   Sessão:", appt.session?._id ? "✅ Criada" : "⏳ Pendente");
+    console.log("   Pagamento:", appt.payment?._id ? "✅ Criado" : "⏳ Pendente");
+  }
+}
+
+docs {
+  # Get Appointment Full (4.0)
+  
+  Retorna o agendamento completo igual ao legado:
+  - Appointment com todos os dados
+  - Patient populado
+  - Doctor populado
+  - Session (se criada)
+  - Package (se houver)
+  - Payment (se criado)
+  
+  ## DEPENDÊNCIAS
+  Requer:
+  - `{{appointmentId}}` → Deve ser criado primeiro via **Create Particular**
+  
+  Se não tiver, o console mostra:
+  ```
+  ❌ ERRO: appointmentId não encontrado!
+     Execute primeiro: POST Create Particular
+  ```
+  
+  ## AUTO-COLLECT
+  Este endpoint salva automaticamente no environment:
+  - `sessionId` → para usar em Get Session
+  - `paymentId` → para usar em Get Payment  
+  - `packageId` → para reuso em novos agendamentos
+  - `patientId`, `doctorId` → referência
+  - `insuranceGuideId` → se for convênio
+  - `lastOperationalStatus` → status atual
+  
+  ## Quando Usar
+  
+  Após criar agendamento (Create Particular), use este endpoint para verificar se tudo foi criado corretamente:
+  
+  ```
+  1. Create Particular → Retorna 202 (processing_create)
+  2. Aguarde 2-3 segundos
+  3. Get Appointment Full → Verifica se session e payment foram criados
+  ```
+  
+  ## Response
+  ```json
+  {
+    "success": true,
+    "data": {
+      "appointment": {
+        "_id": "...",
+        "patient": { "fullName": "...", ... },
+        "doctor": { "fullName": "...", ... },
+        "session": { "status": "scheduled", ... },
+        "payment": { "status": "pending", ... },
+        "operationalStatus": "scheduled"
+      }
+    }
+  }
+  ```
+}

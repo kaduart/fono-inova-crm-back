@@ -90,3 +90,27 @@ export async function closeQueues() {
 }
 
 export { redisConnection };
+
+// DLQ helper function
+const dlqQueues = new Map();
+
+export async function moveToDLQ(job, error, queueName = 'dlq') {
+    const dlq = getQueue(queueName);
+    
+    await dlq.add('failed-job', {
+        originalJob: job.data,
+        originalQueue: job.queueName,
+        error: {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+        },
+        failedAt: new Date().toISOString(),
+        attempts: job.attemptsMade
+    }, {
+        jobId: `dlq_${job.id}_${Date.now()}`,
+        priority: 1
+    });
+    
+    console.log(`[DLQ] Job ${job.id} movido para ${queueName}`);
+}
