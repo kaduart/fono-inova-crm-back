@@ -31,7 +31,7 @@ export function startBalanceWorker() {
     const worker = new Worker('balance-update', async (job) => {
         const { eventId, eventType, correlationId, payload } = job.data;
         
-        console.log(`[BalanceWorker] Processando ${eventId}`, {
+        console.log(`[BalanceWorker] Processando ${eventType}: ${eventId}`, {
             attempt: job.attemptsMade + 1
         });
         
@@ -41,26 +41,122 @@ export function startBalanceWorker() {
             return { status: 'already_processed' };
         }
         
-        // 2. STATE GUARD: Verifica se sessão está completed
-        if (payload.sessionId) {
-            const session = await Session.findById(payload.sessionId)
-                .select('status')
-                .lean();
+        try {
+            let result;
             
-            if (!session) {
-                throw new Error(`Sessão ${payload.sessionId} não encontrada`);
+            // Processa baseado no tipo de evento
+            switch (eventType) {
+                case 'BALANCE_DEBIT_REQUESTED':
+                    result = await handleDebit(payload, eventId);
+                    break;
+                default:
+                    // Evento legado
+                    result = await handleLegacy(payload, eventId);
             }
             
-            if (session.status !== 'completed') {
-                // Ainda não está pronto, faz retry
-                throw new Error(`STATE_GUARD: Session ${payload.sessionId} status=${session.status}, esperado=completed`);
+            processedEvents.set(eventId, Date.now());
+            return result;
+            
+        } catch (error) {
+            console.error(`[BalanceWorker] Erro:`, error.message);
+            
+            if (job.attemptsMade >= 4) {
+                await moveToDLQ(job, error);
             }
             
-            console.log(`[BalanceWorker] State guard OK: session.completed`);
+            throw error;
         }
         
-        try {
-            const { patientId, amount, description, sessionId, appointmentId, registeredBy } = payload;
+    }, {
+        connection: redisConnection,
+        concurrency: 5,
+        limiter: { max: 10, duration: 1000 }
+    });
+    
+    worker.on('completed', (job, result) => {
+        console.log(`[BalanceWorker] Job ${job.id} completado:`, result.status);
+    });
+    
+    worker.on('failed', (job, error) => {
+        console.error(`[BalanceWorker] Job ${job?.id} falhou:`, error.message);
+    });
+    
+    console.log('[BalanceWorker] Worker iniciado');
+    return worker;
+}
+
+// ============================================================
+// HANDLERS
+// ============================================================
+
+async function handleDebit(payload, eventId) {
+    const { patientId, amount, description, sessionId, appointmentId, requestedBy } = payload;
+    
+    // STATE GUARD
+    if (sessionId) {
+        const session = await Session.findById(sessionId).select('status').lean();
+        if (session && session.status !== 'completed') {
+            throw new Error(`STATE_GUARD: Session ${sessionId} status=${session.status}`);
+        }
+    }
+    
+    const result = await PatientBalance.updateOne(
+        { patient: patientId },
+        {
+            $inc: { 
+                currentBalance: amount,
+                totalDebited: amount
+            },
+            $push: {
+                transactions: {
+                    type: 'debit',
+                    amount: Math.abs(amount),
+                    description,
+                    sessionId,
+                    appointmentId,
+                    registeredBy: requestedBy,
+                    transactionDate: new Date()
+                }
+            },
+            $set: { lastTransactionAt: new Date() }
+        },
+        { upsert: true }
+    );
+    
+    console.log(`[BalanceWorker] Débito: patient=${patientId}, amount=${amount}`);
+    
+    return { status: 'success', eventId, patientId, amount };
+}
+
+async function handleLegacy(payload, eventId) {
+    const { patientId, amount, description, sessionId, appointmentId, registeredBy } = payload;
+    
+    const result = await PatientBalance.updateOne(
+        { patient: patientId },
+        {
+            $inc: { 
+                currentBalance: amount,
+                totalDebited: amount > 0 ? amount : 0,
+                totalCredited: amount < 0 ? Math.abs(amount) : 0
+            },
+            $push: {
+                transactions: {
+                    type: amount > 0 ? 'debit' : 'credit',
+                    amount: Math.abs(amount),
+                    description,
+                    sessionId,
+                    appointmentId,
+                    registeredBy,
+                    transactionDate: new Date()
+                }
+            },
+            $set: { lastTransactionAt: new Date() }
+        },
+        { upsert: true }
+    );
+    
+    return { status: 'success', eventId, patientId, amount };
+}
             
             // 3. ATUALIZAÇÃO ATÔMICA
             const result = await PatientBalance.updateOne(

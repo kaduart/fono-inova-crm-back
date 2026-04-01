@@ -59,6 +59,24 @@ const balanceTransactionSchema = new mongoose.Schema({
     linkedDebitId: {
         type: mongoose.Schema.Types.ObjectId,
         default: null
+    },
+    // 🚀 V2: Soft delete
+    isDeleted: {
+        type: Boolean,
+        default: false
+    },
+    deletedAt: {
+        type: Date,
+        default: null
+    },
+    deletedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+    },
+    deleteReason: {
+        type: String,
+        default: null
     }
 }, { _id: true });
 
@@ -91,6 +109,12 @@ const patientBalanceSchema = new mongoose.Schema({
     totalCredited: {
         type: Number,
         default: 0
+    },
+    // 🚀 V2: Processing status
+    processingStatus: {
+        type: String,
+        enum: ['idle', 'updating', 'error'],
+        default: 'idle'
     }
 }, {
     timestamps: true,
