@@ -125,6 +125,11 @@ import dailyClosingSimpleRoutes from './routes/dailyClosingSimple.routes.js';
 // 🚀 ROTAS V2 - Fechamento do Dia
 import dailyClosingV2Routes from './routes/dailyClosing.v2.js';
 
+// 🚀 ROTAS V2 - Event-Driven
+import appointmentV2Routes from './routes/appointment.v2.js';
+import patientV2Routes from './routes/patient.v2.js';
+import packageV2Routes from './routes/package.v2.js';
+
 
 // ======================================================
 // 🧭 Inicialização base
@@ -289,6 +294,9 @@ app.use("/api/appointments", appointmentRoutes);
 
 // Fechamento do Dia (V2 sem dependência de eventos)
 app.use("/api/v2/daily-closing", dailyClosingV2Routes);
+app.use("/api/v2/appointments", appointmentV2Routes);
+app.use("/api/v2/patients", patientV2Routes);
+app.use("/api/v2/packages", packageV2Routes);
 
 app.use("/api/evolutions", evolutionRoutes);
 app.use("/api/leads", leadsRouter);
