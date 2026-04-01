@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: crm-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - crm-network
+
+  # Opcional: Redis Insight (GUI para Redis)
+  redis-insight:
+    image: redislabs/redisinsight:latest
+    container_name: crm-redis-insight
+    ports:
+      - "8001:8001"
+    volumes:
+      - redis-insight-data:/db
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - crm-network
+
+  # Worker de Balance
+  worker-balance:
+    build: .
+    container_name: crm-worker-balance
+    command: node workers/balanceWorker.js
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MONGODB_URI=${MONGODB_URI}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - crm-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  # Worker de Payment
+  worker-payment:
+    build: .
+    container_name: crm-worker-payment
+    command: node workers/paymentWorker.js
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MONGODB_URI=${MONGODB_URI}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - crm-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  # Worker de Sync
+  worker-sync:
+    build: .
+    container_name: crm-worker-sync
+    command: node workers/syncWorker.js
+    environment:
+      - NODE_ENV=production
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MONGODB_URI=${MONGODB_URI}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - crm-network
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  redis-insight-data:
+
+networks:
+  crm-network:
+    driver: bridge
