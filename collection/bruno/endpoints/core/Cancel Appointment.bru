@@ -1,0 +1,132 @@
+meta {
+  name: Cancel Appointment
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/v2/appointments/{{appointmentId}}/cancel
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+headers {
+  X-Correlation-Id: {{correlationId}}
+  ~X-Idempotency-Key: {{appointmentId}}_cancel
+}
+
+body:json {
+  {
+    "reason": "Paciente solicitou cancelamento",
+    "confirmedAbsence": false
+  }
+}
+
+script:pre-request {
+  // DEPENDÊNCIAS: Verifica se tem tudo necessário
+  const apptId = bru.getEnvVar("appointmentId");
+  const correlationId = bru.getEnvVar("correlationId");
+  
+  if (!apptId) {
+    console.error("❌ ERRO: appointmentId não encontrado!");
+    console.error("   DEPENDÊNCIA: Execute primeiro → POST Create Particular");
+    console.error("   Alternativa: Use {{lastListedAppointmentId}} se listou");
+  } else {
+    console.log("🚫 Cancelando appointment:", apptId);
+  }
+  
+  if (!correlationId) {
+    console.warn("⚠️ AVISO: correlationId não encontrado");
+    console.warn("   Será gerado um novo automaticamente");
+  }
+}
+
+script:post-response {
+  // AUTO-COLLECT: Salva resultado do cancelamento
+  const data = res.body?.data || res.body;
+  if (data) {
+    if (data.status) {
+      bru.setEnvVar("lastCancelStatus", data.status);
+      console.log("📊 Cancel status:", data.status);
+    }
+    if (data.appointmentId) {
+      console.log("✅ Cancel iniciado para:", data.appointmentId);
+    }
+    if (data.idempotencyKey) {
+      bru.setEnvVar("cancelIdempotencyKey", data.idempotencyKey);
+    }
+    
+    // Log do resultado
+    if (res.status === 202) {
+      console.log("\n⏳ Cancel em processamento...");
+      console.log("   Execute 'Check Status' para acompanhar");
+    }
+  }
+}
+
+docs {
+  # Cancel Appointment (Event-Driven 4.0)
+  
+  ## DEPENDÊNCIAS
+  Requer:
+  - `{{appointmentId}}` → Criado via **Create Particular** ou **List with Filters**
+  - `{{correlationId}}` (opcional) → Para rastreamento
+  
+  ## Evento Disparado
+  - **REQUESTED**: `APPOINTMENT_CANCEL_REQUESTED`
+  - **RESULTADO**: `APPOINTMENT_CANCELED`
+  
+  ## AUTO-COLLECT
+  Este endpoint salva automaticamente:
+  - `lastCancelStatus` → status do cancelamento
+  - `cancelIdempotencyKey` → chave de idempotência
+  
+  ## Estados de Processamento
+  ```
+  processing_cancel → canceled
+  ```
+  
+  ## Fluxo do Worker
+  1. **cancelSession()**: Preserva `original*`, marca `status: canceled`
+  2. **cancelPayment()**: Cancela se NÃO for `package_receipt` ou `session_payment`
+  3. **Atualiza Appointment**: `operationalStatus: canceled`
+  4. **Publica**: `APPOINTMENT_CANCELED`
+  
+  ## Guards de Concorrência
+  
+  ### Já está processando
+  ```json
+  {
+    "success": false,
+    "error": "Cancelamento já em andamento",
+    "status": "processing_cancel"
+  }
+  ```
+  
+  ### Já cancelado
+  ```json
+  {
+    "success": false,
+    "error": "Agendamento já cancelado",
+    "status": "canceled"
+  }
+  ```
+  
+  ### Já completado
+  ```json
+  {
+    "success": false,
+    "error": "Não pode cancelar sessão já completada"
+  }
+  ```
+  
+  ## Idempotência
+  Mesma `idempotencyKey` retorna sucesso sem duplicar:
+  ```
+  Key: {appointmentId}_cancel
+  ```
+}

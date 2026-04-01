@@ -1,0 +1,55 @@
+meta {
+  name: List with Filters
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/appointments?patientId={{patientId}}&startDate=2025-04-01&endDate=2025-04-30
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+script:post-response {
+  // AUTO-COLLECT: Salva o primeiro appointmentId da lista para uso
+  const data = res.body?.data || res.body;
+  if (data && Array.isArray(data.appointments || data)) {
+    const appointments = data.appointments || data;
+    if (appointments.length > 0) {
+      const firstAppt = appointments[0];
+      if (firstAppt._id) {
+        bru.setEnvVar("lastListedAppointmentId", firstAppt._id);
+        console.log("✅ Último appointment listado:", firstAppt._id);
+        console.log("   (Use {{lastListedAppointmentId}} para referência)");
+      }
+      // Salva total
+      bru.setEnvVar("lastListTotal", appointments.length.toString());
+      console.log("📊 Total na lista:", appointments.length);
+    } else {
+      console.log("⚠️ Lista vazia");
+    }
+  }
+}
+
+docs {
+  # List with Filters
+  
+  Lista agendamentos com filtros.
+  
+  ## AUTO-COLLECT
+  Este endpoint salva automaticamente:
+  - `lastListedAppointmentId` → primeiro ID da lista (para referência rápida)
+  - `lastListTotal` → total de resultados
+  
+  ## Query Params
+  - `patientId`: Filtra por paciente
+  - `doctorId`: Filtra por profissional
+  - `status`: scheduled | confirmed | canceled | etc
+  - `specialty`: Especialidade
+  - `startDate`: Data inicial (YYYY-MM-DD)
+  - `endDate`: Data final (YYYY-MM-DD)
+  - `excludePreAgendamentos`: true | false
+}

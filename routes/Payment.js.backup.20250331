@@ -1,0 +1,3761 @@
+import express from 'express';
+import moment from 'moment-timezone';
+import mongoose from 'mongoose';
+import PDFDocument from 'pdfkit';
+import { auth, authorize } from '../middleware/auth.js';
+import Appointment from '../models/Appointment.js';
+import Package from '../models/Package.js';
+import Payment from '../models/Payment.js';
+import Session from '../models/Session.js';
+import PatientBalance from '../models/PatientBalance.js';
+import { distributePayments } from '../services/distributePayments.js';
+import { createNextPackageFromPrevious } from '../utils/createNextPackageFromPrevious.js';
+import { mapStatusToClinical, mapStatusToOperational } from "../utils/statusMappers.js";
+
+const router = express.Router();
+
+router.post('/', async (req, res) => {
+    const { patientId,
+        doctorId, serviceType,
+        amount, paymentMethod,
+        status, notes, packageId,
+        paymentDate, sessionType,
+        sessionId, isAdvancePayment = false,
+        advanceSessions = []
+    } = req.body;
+
+    try {
+        // Validação básica
+        if (!patientId || !doctorId || !sessionType || !amount || !paymentMethod) {
+            return res.status(400).json({
+                success: false,
+                message: 'Campos obrigatórios faltando'
+            });
+        }
+
+        if (isAdvancePayment) {
+            return handleAdvancePayment(req, res);
+        }
+
+        const currentDate = new Date();
+
+        // Cria sessão individual se necessário
+        let individualSessionId = null;
+        if (serviceType === 'individual_session') {
+            const newSession = await Session.create({
+                serviceType,
+                patient: patientId,
+                doctor: doctorId,
+                notes,
+                package: null,
+                sessionType,
+                createdAt: currentDate,
+                updatedAt: currentDate
+            });
+            individualSessionId = newSession._id;
+        }
+
+        // Validação específica por tipo de serviço
+        if (serviceType === 'package_session' && !packageId) {
+            return res.status(400).json({
+                success: false,
+                message: 'ID do pacote é obrigatório para pagamentos de pacote'
+            });
+        }
+
+        // Validação para sessões (exceto individual_session)
+        if (serviceType === 'session' && !sessionId) {
+            return res.status(400).json({
+                success: false,
+                message: 'ID da sessão é obrigatório para serviço do tipo "session"'
+            });
+        }
+
+        // Validação de documentos relacionados
+        if (serviceType === 'package_session') {
+            const packageExists = await Package.exists({ _id: packageId });
+            if (!packageExists) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Pacote não encontrado'
+                });
+            }
+        }
+
+        // Validação de sessão para tipo 'session' (individual_session não precisa)
+        if (serviceType === 'session') {
+            const sessionExists = await Session.exists({ _id: sessionId });
+            if (!sessionExists) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Sessão não encontrada'
+                });
+            }
+        }
+
+        // Criar sessões futuras se for pagamento adiantado
+        let advanceSessionsIds = [];
+        if (advanceSessions.length > 0) {
+            for (const session of advanceSessions) {
+                const newSession = await Session.create({
+                    date: session.date,
+                    time: session.time,
+                    sessionType: session.sessionType,
+                    patient: patientId,
+                    doctor: doctorId,
+                    status: 'scheduled',
+                    isPaid: true,
+                    paymentMethod: paymentMethod,
+                    isAdvance: true,
+                    createdAt: currentDate,
+                    updatedAt: currentDate,
+                });
+                advanceSessionsIds.push(newSession._id);
+            }
+        }
+
+        // Criar pagamento com sessões futuras
+        const paymentData = {
+            patient: patientId,
+            doctor: doctorId,
+            serviceType,
+            amount,
+            paymentMethod,
+            notes,
+            status: status || 'paid',
+            createdAt: currentDate,
+            updatedAt: currentDate,
+            sessionType,
+            coveredSessions: advanceSessionsIds.map(id => ({
+                sessionId: id,
+                used: false,
+                scheduledDate: advanceSessions.find(s => s.sessionId === id.toString())?.date
+            })),
+            isAdvance: advanceSessions.length > 0
+        };
+
+        // Adiciona campos condicionais
+        if (serviceType === 'session') {
+            paymentData.session = sessionId;
+        } else if (serviceType === 'individual_session') {
+            paymentData.session = individualSessionId;
+        } else if (serviceType === 'package_session') {
+            paymentData.package = packageId;
+        }
+
+        const payment = await Payment.create(paymentData);
+
+        // Atualiza status da sessão para tipos relevantes
+        if (serviceType === 'session' || serviceType === 'individual_session') {
+            const sessionToUpdate = serviceType === 'individual_session' ? individualSessionId : sessionId;
+            await Session.findByIdAndUpdate(
+                sessionToUpdate,
+                {
+                    status: status,
+                    updatedAt: currentDate
+                }
+            );
+        }
+
+        return res.status(201).json({
+            success: true,
+            data: payment,
+            message: advanceSessions.length > 0
+                ? `Pagamento registrado com ${advanceSessions.length} sessões futuras`
+                : 'Pagamento registrado com sucesso',
+            timestamp: currentDate // 🔥 TIMESTAMP NA RESPOSTA
+        });
+
+    } catch (error) {
+        console.error('Erro ao registrar pagamento:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Erro ao registrar pagamento',
+            error: error.message
+        });
+    }
+});
+
+// Função para lidar com pagamentos de sessões futuras
+async function handleAdvancePayment(req, res) {
+    const {
+        patientId,
+        doctorId,
+        amount,
+        paymentMethod,
+        status,
+        notes,
+        advanceSessions = []
+    } = req.body;
+
+    try {
+        // Validação específica para sessões futuras
+        if (advanceSessions.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'É necessário pelo menos uma sessão futura'
+            });
+        }
+
+        // Validar cada sessão
+        for (const session of advanceSessions) {
+            if (!session.date || !session.time || !session.sessionType) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Todas as sessões devem ter data, horário e tipo preenchidos'
+                });
+            }
+        }
+
+        // Criar sessões futuras
+        const advanceSessionsIds = [];
+        for (const session of advanceSessions) {
+            const newSession = await Session.create({
+                date: session.date,
+                time: session.time,
+                sessionType: session.sessionType,
+                patient: patientId,
+                doctor: doctorId,
+                status: 'scheduled',
+                isPaid: true,
+                paymentMethod: paymentMethod,
+                isAdvance: true
+            });
+            advanceSessionsIds.push(newSession._id);
+        }
+
+        // Criar pagamento
+        const payment = await Payment.create({
+            patient: patientId,
+            doctor: doctorId,
+            amount,
+            paymentMethod,
+            notes,
+            status: status || 'paid',
+            isAdvance: true,
+            advanceSessions: advanceSessionsIds.map(id => ({
+                sessionId: id,
+                used: false,
+                scheduledDate: advanceSessions.find(s => s.sessionId === id.toString())?.date
+            }))
+        });
+
+        return res.status(201).json({
+            success: true,
+            data: payment
+        });
+
+    } catch (error) {
+        console.error('Erro no pagamento adiantado:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Erro ao registrar pagamento adiantado',
+            error: error.message
+        });
+    }
+}
+
+router.get('/', async (req, res) => {
+    try {
+        const {
+            doctorId,
+            patientId,
+            status,
+            startDate,
+            endDate,
+        } = req.query;
+
+        const filters = {};
+
+        // 🔍 Filtros básicos
+        if (doctorId) filters.doctor = doctorId;
+        if (patientId) filters.patient = patientId;
+        if (status) filters.status = status;
+
+        // 🔄 IMPORTANTE: fechamento financeiro usa paymentDate, não createdAt
+        if (startDate && endDate) {
+            // Busca por paymentDate OU createdAt (fallback para registros antigos)
+            filters.$or = [
+                {
+                    paymentDate: {
+                        $gte: startDate,
+                        $lte: endDate,
+                    }
+                },
+                {
+                    // Fallback: se não tiver paymentDate, usa createdAt
+                    paymentDate: { $exists: false },
+                    createdAt: {
+                        $gte: new Date(startDate + 'T00:00:00'),
+                        $lte: new Date(endDate + 'T23:59:59')
+                    }
+                }
+            ];
+        }
+
+        // 🧾 Busca dos pagamentos com todos os populates que você tinha antes
+        const payments = await Payment.find(filters)
+            .populate({
+                path: 'patient',
+                select: 'fullName email phoneNumber',
+                model: 'Patient',
+            })
+            .populate({
+                path: 'doctor',
+                select: 'fullName specialty',
+                model: 'Doctor',
+            })
+            .populate({
+                path: 'package',
+                model: 'Package',
+                select:
+                    '_id name totalSessions totalPaid balance financialStatus sessionType patient doctor',
+                populate: [
+                    {
+                        path: 'patient',
+                        select: '_id fullName phoneNumber',
+                        model: 'Patient',
+                    },
+                    {
+                        path: 'doctor',
+                        select: '_id fullName specialty',
+                        model: 'Doctor',
+                    },
+                ],
+            })
+            // 🔎 Sessão principal – agora com mais campos
+            .populate({
+                path: 'session',
+                select: 'date time sessionType status',
+                model: 'Session',
+            })
+            // 📅 Agendamento
+            .populate({
+                path: 'appointment',
+                select: 'date time status',
+                model: 'Appointment',
+            })
+            // 📦 Sessões adiantadas (pacote)
+            .populate({
+                path: 'advanceSessions.session',
+                select: 'date time sessionType status',
+                model: 'Session',
+            })
+            .sort({ createdAt: -1 })
+            .lean();
+
+        // ❌ Ignora pagamentos ligados a sessões canceladas
+        const validPayments = payments.filter(
+            (p) => p.session?.status !== 'canceled'
+        );
+
+        if (validPayments.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Nenhum pagamento encontrado',
+            });
+        }
+
+        // 💰 Totais
+        const totalReceived = validPayments.reduce((acc, p) => {
+            return p.status === 'paid' ? acc + p.amount : acc;
+        }, 0);
+
+        const totalPending = validPayments.reduce((acc, p) => {
+            return p.status === 'pending' ? acc + p.amount : acc;
+        }, 0);
+
+        // 🎨 Formatação final pro front (mantendo o shape antigo)
+        const formattedPayments = validPayments.map((payment) => ({
+            ...payment,
+            // ⚠️ serviceType continua vindo do próprio Payment (não tiramos nada)
+            // ex: payment.serviceType === 'tongue_tie_test'
+
+            patientName: payment.patient?.fullName || 'Não informado',
+            doctorName: payment.doctor?.fullName || 'Não informado',
+            doctorSpecialty: payment.doctor?.specialty || 'Não informada',
+            packageName: payment.package?.name || null,
+            formattedDate: new Date(payment.createdAt).toLocaleDateString('pt-BR'),
+            formattedAmount: `R$ ${payment.amount.toFixed(2)}`,
+            advanceSessions:
+                payment.advanceSessions?.map((s) => ({
+                    sessionId: s.session?._id,
+                    date: s.session?.date,
+                    time: s.session?.time,
+                    sessionType: s.session?.sessionType,
+                    status: s.session?.status,
+                    used: s.used,
+                })) || [],
+        }));
+
+        return res.status(200).json({
+            success: true,
+            count: formattedPayments.length,
+            data: formattedPayments,
+            totals: {
+                received: totalReceived,
+                pending: totalPending,
+            },
+        });
+    } catch (err) {
+        console.error('Erro ao buscar pagamentos:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Erro ao buscar pagamentos',
+            error:
+                process.env.NODE_ENV === 'development' ? err.message : undefined,
+        });
+    }
+});
+
+
+router.patch('/:id', auth, async (req, res) => {
+    const { id } = req.params;
+    const { amount, paymentMethod, status, serviceType, specialty, advanceServices = [] } = req.body;
+    const MAX_RETRIES = 8;
+    let retryCount = 0;
+    let result;
+    console.log('Erro ao exportar CSV:', req.body);
+
+    const executeCriticalOperation = async (entity, filter, update, session) => {
+        try {
+            return await entity.updateMany(filter, update, { session });
+        } catch (error) {
+            if (error.code === 112 || error.codeName === 'WriteConflict') {
+                console.warn('Conflito detectado em operação crítica. Tentando abordagem alternativa...');
+                if (filter._id) {
+                    return await entity.updateMany(filter, update, { session });
+                } else {
+                    const docs = await entity.find(filter).session(session);
+                    for (const doc of docs) {
+                        await entity.updateOne({ _id: doc._id }, update, { session });
+                    }
+                    return { modifiedCount: docs.length };
+                }
+            }
+            throw error;
+        }
+    };
+
+    const safePopulatePayment = async (paymentId) => {
+        try {
+            return await Payment.findById(paymentId)
+                .populate('patient doctor session')
+                .populate('advanceSessions.session')
+                .populate('advanceSessions.appointment');
+        } catch (error) {
+            console.error('Erro na população:', error);
+            return await Payment.findById(paymentId).populate('patient doctor session');
+        }
+    };
+
+    while (retryCount < MAX_RETRIES) {
+        const mongoSession = await mongoose.startSession();
+        let transactionCommitted = false;
+
+        try {
+            await mongoSession.startTransaction();
+
+            console.log(`🔄 Tentativa ${retryCount + 1} de ${MAX_RETRIES} para atualizar pagamento ${id}`);
+
+            const currentDate = new Date();
+
+            // 1. Buscar pagamento existente
+            let payment = await Payment.findById(id)
+                .session(mongoSession)
+                .select()
+                .lean();
+
+            if (!payment) {
+                await mongoSession.abortTransaction();
+                return res.status(404).json({
+                    success: false,
+                    error: 'Pagamento não encontrado'
+                });
+            }
+
+            console.log('📋 Pagamento encontrado:', payment._id);
+
+            // 2. 🔥 ATUALIZAÇÃO DO PAGAMENTO PRINCIPAL
+            const updateData = {
+                ...(amount !== undefined && { amount }),
+                ...(paymentMethod !== undefined && { paymentMethod }),
+                ...(status !== undefined && { status }),
+                ...(serviceType !== undefined && { serviceType }),      // ✅ Atualiza serviceType
+                ...(specialty !== undefined && { specialty }),          // ✅ Atualiza specialty
+                updatedAt: currentDate
+            };
+
+            await Payment.updateOne({ _id: id }, { $set: updateData }, { session: mongoSession });
+            console.log('✅ Pagamento principal atualizado');
+
+            // 3. 🔥 LÓGICA ORIGINAL PARA O PAGAMENTO PRINCIPAL (MANTIDA)
+            // 3.1. Atualizar sessões de pacotes
+            if (payment.package) {
+                console.log('📦 Atualizando sessões do pacote:', payment.package);
+                await executeCriticalOperation(
+                    Session,
+                    { package: payment.package },
+                    {
+                        $set: {
+                            isPaid: status === 'paid',
+                            status: status === 'paid' ? 'completed' : 'pending',
+                            updatedAt: currentDate
+                        }
+                    },
+                    mongoSession
+                );
+                await updatePackageStatus(payment.package, mongoSession);
+            }
+
+            // 3.2. Atualizar sessão individual
+            if (payment.session) {
+                console.log('💼 Atualizando sessão individual:', payment.session);
+                await Session.findByIdAndUpdate(
+                    payment.session,
+                    {
+                        $set: {
+                            isPaid: status === 'paid',
+                            status: status === 'paid' ? 'completed' : 'pending',
+                            updatedAt: currentDate
+                        }
+                    },
+                    { session: mongoSession }
+                );
+            }
+
+            // 3.3. Atualizar status em agendamentos vinculados
+            const appointmentIds = [
+                payment.appointment,
+                ...(payment.advanceSessions?.map(a => a.appointment) || [])
+            ].filter(id => id);
+
+            if (appointmentIds.length > 0) {
+                console.log('📅 Atualizando agendamentos vinculados:', appointmentIds.length);
+                await executeCriticalOperation(
+                    Appointment,
+                    { _id: { $in: appointmentIds } },
+                    {
+                        $set: {
+                            paymentStatus: status === 'paid' ? 'paid' : 'pending',
+                            operationalStatus: status === 'paid' ? 'confirmed' : 'pending',
+                            updatedAt: currentDate
+                        }
+                    },
+                    mongoSession
+                );
+            }
+
+            // 4. 🔥 LÓGICA advanceServices: CRIAR NOVOS PAGAMENTOS SEPARADOS
+            if (advanceServices.length > 0) {
+                console.log('🔥 Criando novos pagamentos para advanceServices:', advanceServices.length);
+
+                for (const [index, sessionData] of advanceServices.entries()) {
+                    console.log(`💰 Criando pagamento ${index + 1}/${advanceServices.length}`);
+
+                    // 🔥 CRIAR NOVO PAGAMENTO INDEPENDENTE
+                    const newPayment = new Payment({
+                        patient: payment.patient,
+                        doctor: payment.doctor,
+                        serviceType: sessionData.serviceType || 'individual_session',
+                        amount: sessionData.amount, // Valor do advanceService
+                        paymentMethod: paymentMethod || payment.paymentMethod,
+                        status: status, // Mesmo status do principal
+                        specialty: sessionData.sessionType,
+                        sessionType: sessionData.sessionType,
+                        isAdvance: true,
+                        serviceDate: sessionData.date,
+                        paymentDate: moment.tz(currentDate, "America/Sao_Paulo").format("YYYY-MM-DD"),
+                        createdAt: currentDate, // DATA DA CRIAÇÃO DO PAGAMENTO
+                        updatedAt: currentDate,
+                        notes: `Pagamento adiantado - ${sessionData.date} ${sessionData.time}`
+                    });
+                    await newPayment.save({ session: mongoSession });
+                    console.log('✅ Novo pagamento criado:', newPayment._id);
+
+                    // 🔥 CRIAR APPOINTMENT para o novo pagamento
+                    const newAppointment = new Appointment({
+                        date: sessionData.date,
+                        time: sessionData.time,
+                        patient: payment.patient,
+                        doctor: payment.doctor,
+                        specialty: sessionData.sessionType,
+                        serviceType: sessionData.serviceType || 'individual_session',
+                        operationalStatus: 'scheduled',
+                        clinicalStatus: 'pending',
+                        paymentStatus: status === 'paid' ? 'paid' : 'pending',
+                        paymentMethod: paymentMethod || payment.paymentMethod,
+                        sessionValue: sessionData.amount,
+                        payment: newPayment._id, // Vincula ao NOVO pagamento
+                        createdAt: currentDate, // DATA DA CRIAÇÃO DO PAGAMENTO
+                        updatedAt: currentDate,
+                    });
+                    await newAppointment.save({ session: mongoSession });
+                    console.log('✅ Novo appointment criado:', newAppointment._id);
+
+                    // 🔥 CRIAR SESSION para o novo pagamento
+                    const newSession = new Session({
+                        date: sessionData.date,
+                        time: sessionData.time,
+                        sessionType: sessionData.sessionType,
+                        sessionValue: sessionData.amount,
+                        patient: payment.patient,
+                        doctor: payment.doctor,
+                        paymentMethod: paymentMethod || payment.paymentMethod,
+                        isAdvance: true,
+                        payment: newPayment._id,
+                        status: 'scheduled',
+                        isPaid: status === 'paid',
+                        paymentStatus: status === 'paid' ? 'paid' : 'pending',
+                        visualFlag: status === 'paid' ? 'ok' : 'pending',
+                        appointmentId: newAppointment._id,
+                        paymentDate: status === 'paid' ? moment.tz(currentDate, "America/Sao_Paulo").format("YYYY-MM-DD") : undefined,
+                        createdAt: currentDate,
+                        updatedAt: currentDate,
+                    });
+                    await newSession.save({ session: mongoSession });
+                    console.log('✅ Nova session criada:', newSession._id);
+
+                    // Vincular appointment com session
+                    await Appointment.updateOne(
+                        { _id: newAppointment._id },
+                        { $set: { session: newSession._id } },
+                        { session: mongoSession }
+                    );
+
+                    // Vincular pagamento com appointment e session
+                    await Payment.updateOne(
+                        { _id: newPayment._id },
+                        {
+                            $set: {
+                                appointment: newAppointment._id,
+                                session: newSession._id
+                            }
+                        },
+                        { session: mongoSession }
+                    );
+
+                    console.log(`✅ AdvanceService ${index + 1} completo - Pagamento: ${newPayment._id}`);
+                }
+                console.log('🎉 Todos os advanceServices processados');
+            }
+
+            // COMMIT DA TRANSAÇÃO
+            await mongoSession.commitTransaction();
+            transactionCommitted = true;
+            console.log('🎉 Transação commitada com sucesso');
+
+            // 5. POPULAÇÃO DO PAGAMENTO PRINCIPAL
+            try {
+                result = await safePopulatePayment(id);
+
+                return res.json({
+                    success: true,
+                    data: result,
+                    message: advanceServices.length > 0
+                        ? `Pagamento atualizado e ${advanceServices.length} sessões futuras criadas`
+                        : 'Pagamento atualizado com sucesso'
+                });
+
+            } catch (populateError) {
+                console.error('❌ Erro na população:', populateError);
+
+                result = await Payment.findById(id).populate('patient doctor session');
+
+                return res.json({
+                    success: true,
+                    data: result,
+                    warning: 'Dados carregados parcialmente',
+                    message: 'Pagamento atualizado com sucesso'
+                });
+            }
+
+        } catch (error) {
+            console.error('❌ Erro durante a transação:', error);
+
+            const isWriteConflict = error.code === 112 ||
+                error.codeName === 'WriteConflict' ||
+                (error.errorLabels && error.errorLabels.includes('TransientTransactionError'));
+
+            if (mongoSession.inTransaction() && !transactionCommitted) {
+                try {
+                    await mongoSession.abortTransaction();
+                    console.log('🔄 Rollback executado');
+                } catch (abortError) {
+                    console.error('❌ Erro ao fazer rollback:', abortError);
+                }
+            }
+
+            if (isWriteConflict && retryCount < MAX_RETRIES - 1) {
+                retryCount++;
+                const delay = Math.min(150 * Math.pow(4, retryCount), 5000);
+                console.warn(`🔄 Conflito detectado. Tentativa ${retryCount + 1}/${MAX_RETRIES} em ${delay}ms`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                continue;
+            }
+
+            if (error.name === 'ValidationError') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Erro de validação',
+                    errors: error.errors
+                });
+            }
+
+            return res.status(500).json({
+                success: false,
+                message: 'Erro interno ao atualizar pagamento',
+                error: error.message
+            });
+
+        } finally {
+            await mongoSession.endSession();
+        }
+    }
+
+    return res.status(500).json({
+        success: false,
+        message: 'Falha após múltiplas tentativas'
+    });
+});
+
+// Novo endpoint simples para marcar como pago
+// router.patch('/:id/mark-as-paid' ...)
+router.patch('/:id/mark-as-paid', auth, authorize(['admin', 'secretary']), async (req, res) => {
+    const session = await mongoose.startSession();
+
+    const runTx = async () => {
+        return await session.withTransaction(async () => {
+            const id = req.params.id;
+
+            // 0) Idempotência – se já estiver pago, retorna ok
+            const existing = await Payment.findById(id).session(session).lean();
+            if (!existing) {
+                return res.status(404).json({ success: false, message: 'Pagamento não encontrado' });
+            }
+            if (existing.status === 'paid') {
+                return res.json({ success: true, message: 'Pagamento já estava pago', data: existing });
+            }
+
+            // 1) Atualiza Payment de forma atômica
+            const paidAt = new Date();
+            const today = moment.tz(paidAt, "America/Sao_Paulo").format("YYYY-MM-DD"); // ⬅️ Adicionar
+            const payment = await Payment.findOneAndUpdate(
+                { _id: id, status: { $ne: 'paid' } },
+                {
+                    $set: {
+                        status: 'paid',
+                        paidAt,
+                        paymentDate: today
+                    }
+                },
+                { new: true, session, runValidators: true }
+            );
+
+            if (!payment) {
+                // outro processo pode ter pago no meio do caminho
+                const latest = await Payment.findById(id).session(session);
+                return res.json({ success: true, message: 'Pagamento já foi marcado como pago', data: latest });
+            }
+
+            // 2) Atualiza Session (se existir)
+            if (payment.session) {
+                await Session.updateOne(
+                    { _id: payment.session },
+                    {
+                        $set: {
+                            isPaid: true,
+                            paymentStatus: 'paid',
+                            visualFlag: 'ok',
+                            paymentMethod: payment.paymentMethod
+                        }
+                    },
+                    { session }
+                );
+            }
+
+            // 3) Atualiza Appointment (se existir)
+            if (payment.appointment) {
+                await Appointment.updateOne(
+                    { _id: payment.appointment },
+                    {
+                        $set: {
+                            paymentStatus: 'paid',
+                            visualFlag: 'ok',
+                            // ⚠️ só mude se sua regra realmente usa 'paid' como estado operacional
+                            // operationalStatus: 'paid',
+                            paymentMethod: payment.paymentMethod
+                        }
+                    },
+                    { session }
+                );
+            }
+
+            return res.json({
+                success: true,
+                message: 'Pagamento marcado como pago com sucesso',
+                data: payment
+            });
+        });
+    };
+
+    try {
+        let attempt = 0;
+        const maxAttempts = 5;
+
+        while (true) {
+            try {
+                await runTx();
+                break; // sucesso
+            } catch (e) {
+                const msg = String(e?.message || '');
+                const isTransient = e?.errorLabels?.includes('TransientTransactionError')
+                    || msg.includes('Write conflict')
+                    || msg.includes('WriteConflict')
+                    || msg.includes('yielding is disabled');
+
+                if (isTransient && attempt < maxAttempts - 1) {
+                    attempt += 1;
+                    // backoff exponencial simples
+                    const delay = 50 * Math.pow(2, attempt);
+                    await new Promise(r => setTimeout(r, delay));
+                    continue;
+                }
+
+                throw e; // estoura de vez
+            }
+        }
+    } catch (error) {
+        console.error('Erro ao marcar pagamento como pago:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Erro ao marcar pagamento como pago',
+            error: error?.message
+        });
+    } finally {
+        session.endSession();
+    }
+});
+
+
+// Função auxiliar para atualizar status do pacote
+async function updatePackageStatus(packageId, session) {
+    try {
+        const Package = mongoose.model('Package');
+        const Session = mongoose.model('Session');
+
+        const packageDoc = await Package.findById(packageId).session(session);
+        if (!packageDoc) return;
+
+        const totalSessions = await Session.countDocuments({
+            package: packageId
+        }).session(session);
+
+        const completedSessions = await Session.countDocuments({
+            package: packageId,
+            status: 'completed'
+        }).session(session);
+
+        let newStatus = packageDoc.status;
+
+        if (completedSessions >= totalSessions) {
+            newStatus = 'completed';
+        } else if (completedSessions > 0) {
+            newStatus = 'in_progress';
+        }
+
+        if (newStatus !== packageDoc.status) {
+            await Package.updateOne(
+                { _id: packageId },
+                { $set: { status: newStatus } },
+                { session }
+            );
+        }
+    } catch (error) {
+        console.error('Erro ao atualizar status do pacote:', error);
+        throw error;
+    }
+}
+
+router.get('/future-sessions/:patientId', async (req, res) => {
+    try {
+        const { patientId } = req.params;
+
+        const sessions = await Session.find({
+            patient: patientId,
+            isAdvance: true,
+            status: 'scheduled'
+        })
+            .populate('doctor', 'fullName specialty')
+            .select('date time sessionType specialty')
+            .sort({ date: 1 });
+
+        res.json(sessions);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.patch('/use-session/:paymentId', async (req, res) => {
+    const { sessionId } = req.body;
+
+    try {
+        const payment = await Payment.findById(req.params.paymentId);
+
+        // Encontrar a sessão específica
+        const session = payment.sessions.id(sessionId);
+
+        if (!session) {
+            return res.status(404).json({ error: 'Sessão não encontrada neste pagamento' });
+        }
+
+        if (session.status === 'completed') {
+            return res.status(400).json({ error: 'Sessão já foi utilizada' });
+        }
+
+        // Atualizar status
+        session.status = 'completed';
+        session.usedAt = new Date();
+
+        await payment.save();
+
+        res.json({
+            success: true,
+            message: 'Sessão marcada como utilizada',
+            updatedPayment: payment
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post('/:paymentId/add-session', auth, async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        const { date, time, sessionType, specialty } = req.body;
+        const payment = await Payment.findById(req.params.paymentId).session(session);
+
+        if (!payment) {
+            await session.abortTransaction();
+            return res.status(404).json({ error: 'Pagamento não encontrado' });
+        }
+
+        if (!payment.isAdvancePayment) {
+            await session.abortTransaction();
+            return res.status(400).json({ error: 'Este pagamento não permite sessões futuras' });
+        }
+
+        // Criar novo agendamento
+        const appointment = new Appointment({
+            date,
+            time,
+            sessionType,
+            specialty,
+            patient: payment.patient,
+            doctor: payment.doctor,
+            paymentStatus: 'advanced',
+            sourcePayment: payment._id,
+            operationalStatus: 'scheduled',
+            clinicalStatus: 'pending'
+        });
+
+        // Criar nova sessão
+        const newSession = new Session({
+            date,
+            time,
+            sessionType,
+            specialty,
+            patient: payment.patient,
+            doctor: payment.doctor,
+            status: 'scheduled',
+            sourcePayment: payment._id
+        });
+
+        // Salvar ambos
+        await appointment.save({ session });
+        await newSession.save({ session });
+
+        // Adicionar ao pagamento
+        payment.advancedSessions.push({
+            appointment: appointment._id,
+            session: newSession._id,
+            scheduledDate: new Date(`${date}T${time}`),
+            used: false
+        });
+
+        await payment.save({ session });
+        await session.commitTransaction();
+
+        res.json({
+            success: true,
+            payment,
+            newAppointment: appointment,
+            newSession: newSession
+        });
+
+    } catch (error) {
+        await session.abortTransaction();
+        console.error('Erro ao adicionar sessão futura:', error);
+        res.status(500).json({
+            error: 'Erro ao adicionar sessão futura',
+            details: process.env.NODE_ENV === 'development' ? error.message : null
+        });
+    } finally {
+        session.endSession();
+    }
+});
+
+// Funções auxiliares
+async function updateSessionStatus(sessionId, amountPaid) {
+    const session = await Session.findById(sessionId);
+    if (!session) return;
+
+    if (amountPaid >= session.price) {
+        session.status = 'paid';
+    } else if (amountPaid > 0) {
+        session.status = 'partial';
+    } else {
+        session.status = 'pending';
+    }
+    await session.save();
+}
+
+// Função para atualizar status do pacote (com suporte a transação)
+
+// Função para atualizar status do pacote (considerando sessões usadas)
+// Exportação de PDF
+router.get('/export/pdf', authorize(['admin']), async (req, res) => {
+    try {
+        const filters = req.query;
+        const payments = await Payment.find(filters)
+            .populate('patientId doctorId sessionId packageId')
+            .sort({ sessionDate: 1 });
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'attachment; filename=relatorio_pagamentos.pdf');
+
+        const doc = new PDFDocument({ margin: 30, size: 'A4' });
+        doc.pipe(res);
+
+        doc.fontSize(18).text('Relatório de Pagamentos', { align: 'center' });
+        doc.moveDown(1);
+
+        doc.fontSize(12);
+        doc.text('Data', 50, doc.y, { width: 80, continued: true });
+        doc.text('Paciente', 130, doc.y, { width: 120, continued: true });
+        doc.text('Profissional', 250, doc.y, { width: 120, continued: true });
+        doc.text('Valor', 370, doc.y, { width: 60, continued: true });
+        doc.text('Status', 430, doc.y, { width: 80 });
+        doc.text('Pacote', 510, doc.y, { width: 80 });
+        doc.moveDown(0.5);
+
+        payments.forEach(p => {
+            const date = p.sessionDate.toISOString().split('T')[0];
+            doc.text(date, 50, doc.y, { width: 80, continued: true });
+            doc.text(p.patientId.name, 130, doc.y, { width: 120, continued: true });
+            doc.text(p.doctorId.name, 250, doc.y, { width: 120, continued: true });
+            doc.text(`R$ ${p.value.toFixed(2)}`, 370, doc.y, { width: 60, continued: true });
+            doc.text(p.status.toUpperCase(), 430, doc.y, { width: 80 });
+            doc.text(p.packageId.name, 510, doc.y, { width: 80 });
+            doc.moveDown(0.5);
+        });
+
+        doc.end();
+    } catch (err) {
+        console.error('Erro ao gerar PDF', err);
+        res.status(500).json({ message: 'Erro ao gerar PDF' });
+    }
+});
+
+// Exportação CSV
+router.get('/export/csv', authorize(['admin', 'secretary']), async (req, res) => {
+    const filters = req.query;
+    const payments = await Payment.find(filters)
+        .populate('patientId doctorId')
+        .sort({ sessionDate: 1 });
+
+    const headers = ['Data', 'Paciente', 'Profissional', 'Valor', 'Status', 'Método'];
+    const rows = payments.map(p => [
+        p.sessionDate.toISOString().split('T')[0],
+        p.patientId.name,
+        p.doctorId.name,
+        p.value.toFixed(2),
+        p.status,
+        p.paymentMethod
+    ]);
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+
+    res
+        .header('Content-Type', 'text/csv')
+        .attachment('pagamentos.csv')
+        .send(csv);
+});
+
+// routes/paymentRoutes.js
+/**
+ * @route   GET /api/payments/totals
+ * @desc    Retorna totais financeiros com filtros dinâmicos
+ * @query   ?period=day|week|month|year|custom
+ *          ?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD (se custom)
+ *          ?doctorId=... 
+ *          ?paymentMethod=pix|dinheiro|cartão|boleto|transferência
+ *          ?serviceType=package|individual_session|evaluation
+ *          ?status=paid|pending|partial
+ */
+router.get("/totals", async (req, res) => {
+    try {
+        const {
+            period = "month",
+            startDate,
+            endDate,
+            doctorId,
+            paymentMethod,
+            serviceType,
+            status,
+        } = req.query;
+
+        // ======================================================
+        // 🗓️ 1. Definir intervalo de datas
+        // ======================================================
+        const now = new Date();
+        let rangeStart, rangeEnd;
+
+        switch (period) {
+            case "day":
+                rangeStart = new Date(now.setHours(0, 0, 0, 0));
+                rangeEnd = new Date(now.setHours(23, 59, 59, 999));
+                break;
+            case "week": {
+                const day = now.getDay();
+                const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+                rangeStart = new Date(now.setDate(diff));
+                rangeStart.setHours(0, 0, 0, 0);
+                rangeEnd = new Date(rangeStart);
+                rangeEnd.setDate(rangeStart.getDate() + 6);
+                rangeEnd.setHours(23, 59, 59, 999);
+                break;
+            }
+            case "month":
+                rangeStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                rangeEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+                break;
+            case "year":
+                rangeStart = new Date(now.getFullYear(), 0, 1);
+                rangeEnd = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+                break;
+            case "custom":
+                rangeStart = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), 1);
+                rangeEnd = endDate ? new Date(endDate) : new Date();
+                break;
+            case "all":
+                // 🔄 Todos os registros - sem filtro de data
+                rangeStart = new Date('2000-01-01');
+                rangeEnd = new Date('2099-12-31');
+                break;
+            default:
+                rangeStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                rangeEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        }
+
+        // ======================================================
+        // 🎛️ 2. Filtros dinâmicos
+        // ======================================================
+        // 🔹 Filtro por data de pagamento/atendimento (paymentDate) quando disponível
+        // ou createdAt como fallback para registros antigos
+        const matchStage = {
+            // ❌ EXCLUIR PAGAMENTOS CANCELADOS SEMPRE
+            status: { $ne: 'canceled' },
+            $or: [
+                // Preferência: paymentDate (data do atendimento)
+                {
+                    paymentDate: {
+                        $gte: rangeStart.toISOString().split('T')[0],
+                        $lte: rangeEnd.toISOString().split('T')[0]
+                    }
+                },
+                // Fallback: createdAt para registros antigos sem paymentDate
+                {
+                    paymentDate: { $exists: false },
+                    createdAt: { $gte: rangeStart, $lte: rangeEnd }
+                }
+            ]
+        };
+
+        // 🔹 Caso o período seja "all", remove o filtro de data
+        if (period === "all") {
+            delete matchStage.$or;
+        }
+
+        if (doctorId) matchStage.doctor = new mongoose.Types.ObjectId(doctorId);
+        if (paymentMethod) matchStage.paymentMethod = paymentMethod;
+        if (serviceType) matchStage.serviceType = serviceType;
+        if (status) matchStage.status = status;
+
+        // ======================================================
+        // 💰 3. Agregação principal - CAIXA (dinheiro recebido)
+        // Separa Particular vs Convênio Recebido
+        // ======================================================
+        const cashAggregation = [
+            { $match: matchStage },
+            {
+                $group: {
+                    _id: null,
+                    // Totais gerais
+                    totalReceived: { $sum: { $cond: [{ $eq: ["$status", "paid"] }, "$amount", 0] } },
+                    totalPending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, "$amount", 0] } },
+                    totalPartial: { $sum: { $cond: [{ $eq: ["$status", "partial"] }, "$amount", 0] } },
+                    countReceived: { $sum: { $cond: [{ $eq: ["$status", "paid"] }, 1, 0] } },
+                    countPending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } },
+                    countPartial: { $sum: { $cond: [{ $eq: ["$status", "partial"] }, 1, 0] } },
+                    // Separado por tipo
+                    particularReceived: { 
+                        $sum: { 
+                            $cond: [
+                                { $and: [
+                                    { $eq: ["$status", "paid"] },
+                                    { $ne: ["$billingType", "convenio"] }
+                                ]}, 
+                                "$amount", 0
+                            ] 
+                        } 
+                    },
+                    particularCountReceived: {
+                        $sum: {
+                            $cond: [
+                                { $and: [
+                                    { $eq: ["$status", "paid"] },
+                                    { $ne: ["$billingType", "convenio"] }
+                                ]},
+                                1, 0
+                            ]
+                        }
+                    },
+                },
+            },
+        ];
+
+        // ======================================================
+        // 🏥 4. Agregação de PRODUÇÃO DE CONVÊNIOS
+        // Busca convênios realizados no período (independentemente de pagamento)
+        // ======================================================
+        const insuranceMatchStage = {
+            ...matchStage,
+            billingType: 'convenio',
+        };
+
+        // Remove apenas filtro específico de status se usuário passou um,
+        // mas mantém a exclusão de cancelados
+        if (status && status !== 'canceled') {
+            delete insuranceMatchStage.status;
+        }
+
+        const insuranceAggregation = [
+            { $match: insuranceMatchStage },
+            {
+                $group: {
+                    _id: null,
+                    // Produção total: soma grossAmount se existir, senão usa amount (para registros antigos)
+                    totalInsuranceProduction: {
+                        $sum: {
+                            $cond: [
+                                {
+                                    $and: [
+                                        { $ne: ["$insurance", null] },
+                                        { $gt: ["$insurance.grossAmount", 0] }
+                                    ]
+                                },
+                                "$insurance.grossAmount",
+                                { $cond: [{ $gt: ["$amount", 0] }, "$amount", 0] }
+                            ]
+                        }
+                    },
+                    totalInsuranceReceived: {
+                        $sum: {
+                            $cond: [
+                                {
+                                    $and: [
+                                        { $ne: ["$insurance", null] },
+                                        { $in: ["$insurance.status", ["received", "partial"]] }
+                                    ]
+                                },
+                                { $ifNull: ["$insurance.receivedAmount", "$amount"] },
+                                0
+                            ]
+                        }
+                    },
+                    totalInsurancePending: {
+                        $sum: {
+                            $cond: [
+                                {
+                                    $and: [
+                                        { $ne: ["$insurance", null] },
+                                        { $in: ["$insurance.status", ["pending_billing", "billed"]] }
+                                    ]
+                                },
+                                "$insurance.grossAmount",
+                                { $cond: [{ $gt: ["$amount", 0] }, "$amount", 0] }
+                            ]
+                        }
+                    },
+                    countInsuranceTotal: { $sum: 1 },
+                    countInsuranceReceived: {
+                        $sum: {
+                            $cond: [
+                                {
+                                    $and: [
+                                        { $ne: ["$insurance", null] },
+                                        { $in: ["$insurance.status", ["received", "partial"]] }
+                                    ]
+                                },
+                                1,
+                                0
+                            ]
+                        }
+                    },
+                    countInsurancePending: {
+                        $sum: {
+                            $cond: [
+                                {
+                                    $and: [
+                                        { $ne: ["$insurance", null] },
+                                        { $in: ["$insurance.status", ["pending_billing", "billed"]] }
+                                    ]
+                                },
+                                1,
+                                0
+                            ]
+                        }
+                    },
+                },
+            },
+        ];
+
+        // ======================================================
+        // 🚀 Executa todas as agregações em paralelo
+        // ======================================================
+        // Filtro de data para patientType (createdAt = quando o paciente entrou no sistema)
+        const patientTypeMatch = {
+            patientType: { $in: ['novo', 'retorno', 'recorrente'] },
+            createdAt: { $gte: rangeStart, $lte: rangeEnd }
+        };
+        if (period === 'all') delete patientTypeMatch.createdAt;
+        if (doctorId) patientTypeMatch.doctor = new mongoose.Types.ObjectId(doctorId);
+
+        // ======================================================
+        // 📊 Receita Realizada — sessões efetivamente entregues no período
+        // Usa date da sessão (competência), não paymentDate do pacote
+        // ======================================================
+        const sessionDateStart = rangeStart.toISOString().split('T')[0];
+        const sessionDateEnd   = rangeEnd.toISOString().split('T')[0];
+
+        const receitaRealizadaAgg = [
+            {
+                $match: {
+                    status: 'completed',
+                    ...(period !== 'all' ? { date: { $gte: sessionDateStart, $lte: sessionDateEnd } } : {}),
+                    ...(doctorId ? { doctor: new mongoose.Types.ObjectId(doctorId) } : {}),
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total:        { $sum: '$sessionValue' },
+                    totalRecebido: { $sum: { $cond: ['$isPaid', '$sessionValue', 0] } },
+                    totalPendente: { $sum: { $cond: ['$isPaid', 0, '$sessionValue'] } },
+                    count:        { $sum: 1 },
+                }
+            }
+        ];
+
+        // ======================================================
+        // 💳 Débito particular do período — fonte correta: PatientBalance
+        // Payment.status=pending não reflete o saldo real por paciente
+        // ======================================================
+        const particularDebtAgg = [
+            { $unwind: '$transactions' },
+            {
+                $match: {
+                    'transactions.type': 'debit',
+                    'transactions.isPaid': false,
+                    ...(period !== 'all' ? {
+                        'transactions.transactionDate': { $gte: rangeStart, $lte: rangeEnd }
+                    } : {}),
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: '$transactions.amount' },
+                    count: { $sum: 1 },
+                }
+            }
+        ];
+
+        // ======================================================
+        // 🏥 Convênio pendente — fonte única: Sessions com triple-fallback
+        // Igual ao financialMetrics.calculateConvenioDetail (convenioAtendido)
+        // Garante que Lançamentos e Extrato mostrem o mesmo valor
+        // ======================================================
+        const convenioPacotePendingAgg = [
+            {
+                $match: {
+                    status: 'completed',
+                    paymentMethod: 'convenio',
+                    $or: [{ isPaid: false }, { isPaid: { $exists: false } }],
+                    ...(period !== 'all' ? { date: { $gte: sessionDateStart, $lte: sessionDateEnd } } : {}),
+                    ...(doctorId ? { doctor: new mongoose.Types.ObjectId(doctorId) } : {}),
+                }
+            },
+            { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg' } },
+            { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+            // Triple-fallback: sessionValue → pkg.insuranceGrossAmount → payment.insurance.grossAmount
+            {
+                $lookup: {
+                    from: 'payments',
+                    let: { sid: '$_id' },
+                    pipeline: [
+                        { $match: { $expr: { $eq: ['$session', '$$sid'] }, status: { $ne: 'canceled' } } },
+                        { $project: { grossAmount: '$insurance.grossAmount' } },
+                        { $limit: 1 }
+                    ],
+                    as: 'linkedPayment'
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    total: {
+                        $sum: {
+                            $cond: {
+                                if: { $gt: ['$sessionValue', 0] },
+                                then: '$sessionValue',
+                                else: {
+                                    $cond: {
+                                        if: { $gt: ['$pkg.insuranceGrossAmount', 0] },
+                                        then: '$pkg.insuranceGrossAmount',
+                                        else: { $ifNull: [{ $arrayElemAt: ['$linkedPayment.grossAmount', 0] }, 0] }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    count: { $sum: 1 },
+                }
+            }
+        ];
+
+        const [
+            cashResult,
+            insuranceResult,
+            breakdown,
+            byMethod,
+            byServiceType,
+            patientTypeResult,
+            appointmentsList, // 🔥 NOVO: lista de agendamentos com isFirstAppointment
+            receitaRealizadaResult,
+            particularDebtResult,
+            convenioPacotePendingResult,
+        ] = await Promise.all([
+            Payment.aggregate(cashAggregation),
+            Payment.aggregate(insuranceAggregation),
+            Payment.aggregate([
+                { $match: matchStage },
+                {
+                    $addFields: {
+                        effectiveDate: {
+                            $cond: [
+                                { $and: [{ $ne: ["$paymentDate", null] }, { $ne: ["$paymentDate", ""] }] },
+                                { $dateFromString: { dateString: "$paymentDate", onError: "$createdAt" } },
+                                "$createdAt"
+                            ]
+                        }
+                    }
+                },
+                {
+                    $group: {
+                        _id: {
+                            year: { $year: "$effectiveDate" },
+                            month: { $month: "$effectiveDate" },
+                            day: { $dayOfMonth: "$effectiveDate" },
+                        },
+                        totalPaid: { $sum: { $cond: [{ $eq: ["$status", "paid"] }, "$amount", 0] } },
+                        totalPending: { $sum: { $cond: [{ $eq: ["$status", "pending"] }, "$amount", 0] } },
+                        totalPartial: { $sum: { $cond: [{ $eq: ["$status", "partial"] }, "$amount", 0] } },
+                    },
+                },
+                { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 } },
+            ]),
+            Payment.aggregate([
+                { $match: matchStage },
+                {
+                    $group: {
+                        _id: "$paymentMethod",
+                        total: { $sum: "$amount" },
+                        count: { $sum: 1 },
+                    },
+                },
+                { $sort: { total: -1 } },
+            ]),
+            Payment.aggregate([
+                { $match: matchStage },
+                {
+                    $group: {
+                        _id: "$serviceType",
+                        total: { $sum: "$amount" },
+                        count: { $sum: 1 },
+                    },
+                },
+                { $sort: { total: -1 } },
+            ]),
+            Appointment.aggregate([
+                { $match: patientTypeMatch },
+                { $group: { _id: '$patientType', count: { $sum: 1 } } }
+            ]),
+            // 🔥 NOVO: Agendamentos separados por isFirstAppointment
+            Appointment.find({
+                createdAt: { $gte: rangeStart, $lte: rangeEnd },
+                ...(doctorId ? { doctor: new mongoose.Types.ObjectId(doctorId) } : {}),
+            }).select('_id patient doctor date time specialty isFirstAppointment').lean(),
+            Session.aggregate(receitaRealizadaAgg),
+            PatientBalance.aggregate(particularDebtAgg),
+            Session.aggregate(convenioPacotePendingAgg),
+        ]);
+
+        const cashTotals = cashResult[0] || {
+            totalReceived: 0,
+            totalPending: 0,
+            totalPartial: 0,
+            countReceived: 0,
+            countPending: 0,
+            countPartial: 0,
+            particularReceived: 0,
+            particularCountReceived: 0,
+        };
+
+        const insuranceTotals = insuranceResult[0] || {
+            totalInsuranceProduction: 0,
+            totalInsuranceReceived: 0,
+            totalInsurancePending: 0,
+            countInsuranceTotal: 0,
+            countInsuranceReceived: 0,
+            countInsurancePending: 0,
+        };
+
+        // Débito particular do período via PatientBalance (fonte correta)
+        const particularDebt = particularDebtResult[0] || { total: 0, count: 0 };
+
+        // Convênio pendente — fonte única: Sessions com triple-fallback (igual ao convenioAtendido)
+        const convenioPacotePending = convenioPacotePendingResult[0] || { total: 0, count: 0 };
+
+        const rr = receitaRealizadaResult[0] || { total: 0, totalRecebido: 0, totalPendente: 0, count: 0 };
+        const receitaRealizada = {
+            total:         rr.total,
+            totalRecebido: rr.totalRecebido,
+            totalPendente: rr.totalPendente,
+            count:         rr.count,
+        };
+
+        const ptMap = (patientTypeResult || []).reduce((acc, i) => { acc[i._id] = i.count; return acc; }, {});
+        const patientTypes = {
+            novos: ptMap['novo'] || 0,
+            retornos: ptMap['retorno'] || 0,
+            recorrentes: ptMap['recorrente'] || 0
+        };
+
+        // 🔥 NOVO: Processa agendamentos por isFirstAppointment
+        const appointmentsByType = {
+            novos: (appointmentsList || []).filter(a => a.isFirstAppointment === true),
+            recorrentes: (appointmentsList || []).filter(a => a.isFirstAppointment === false),
+        };
+        const appointmentTypeSummary = {
+            novos: { count: appointmentsByType.novos.length },
+            recorrentes: { count: appointmentsByType.recorrentes.length },
+            total: (appointmentsList || []).length
+        };
+
+        // ======================================================
+        // 📊 Totals consolidados
+        // ======================================================
+        const totalInsurancePending = convenioPacotePending.total || 0;
+        const countInsurancePending = convenioPacotePending.count || 0;
+
+        const totals = {
+            totalReceived: cashTotals.totalReceived,
+            totalPending: cashTotals.totalPending,
+            totalPartial: cashTotals.totalPartial,
+            countReceived: cashTotals.countReceived,
+            countPending: cashTotals.countPending,
+            countPartial: cashTotals.countPartial,
+            particularReceived: cashTotals.particularReceived || 0,
+            particularPending: particularDebt.total || 0,
+            particularCountReceived: cashTotals.particularCountReceived || 0,
+            particularCountPending: particularDebt.count || 0,
+            totalInsuranceProduction: insuranceTotals.totalInsuranceProduction,
+            totalInsuranceReceived: insuranceTotals.totalInsuranceReceived,
+            totalInsurancePending,
+            countInsuranceTotal: insuranceTotals.countInsuranceTotal,
+            countInsuranceReceived: insuranceTotals.countInsuranceReceived,
+            countInsurancePending,
+            totalCombined: cashTotals.totalReceived + (particularDebt.total || 0) + totalInsurancePending,
+            aReceberMes: (particularDebt.total || 0) + totalInsurancePending,
+        };
+
+        // ======================================================
+        // ✅ 8. Retorno final
+        // ======================================================
+        res.status(200).json({
+            success: true,
+            filters: {
+                period,
+                doctorId,
+                paymentMethod,
+                serviceType,
+                status,
+                dateRange: {
+                    start: rangeStart.toISOString(),
+                    end: rangeEnd.toISOString(),
+                },
+            },
+            data: {
+                totals,
+                byMethod,
+                byServiceType,
+                breakdown,
+                patientTypes,
+                receitaRealizada,
+                // 🔥 NOVO: Dados de agendamentos por tipo (para clique no front)
+                appointmentTypes: {
+                    summary: appointmentTypeSummary,
+                    details: appointmentsByType, // lista completa para exibir ao clicar
+                },
+            },
+        });
+    } catch (err) {
+        console.error("❌ Erro ao calcular totais financeiros:", err);
+        res.status(500).json({
+            success: false,
+            message: "Erro ao calcular totais financeiros",
+            error: err.message,
+        });
+    }
+});
+
+
+/**
+ * 🔹 NOVO ENDPOINT: /daily-closing
+ *   Retorna uma visão clara e segmentada:
+ *   - Sessões (agendamentos do dia)
+ *   - Pagamentos (entradas do dia)
+ *   - Resumos e métricas consolidados
+ */
+
+// ======================================================
+// 📅 ROTA: FECHAMENTO DIÁRIO
+// ======================================================
+router.get("/daily-closing", async (req, res) => {
+    try {
+        const { date } = req.query;
+
+        const targetDate = date
+            ? moment.tz(date, "America/Sao_Paulo").format("YYYY-MM-DD")
+            : moment.tz(new Date(), "America/Sao_Paulo").format("YYYY-MM-DD");
+
+        const startOfDay = moment
+            .tz(`${targetDate}T00:00:00`, "America/Sao_Paulo")
+            .toDate();
+        const endOfDay = moment
+            .tz(`${targetDate}T23:59:59`, "America/Sao_Paulo")
+            .toDate();
+
+        const sessions = await Session.find({ date: targetDate })
+            .populate("package patient doctor appointmentId")
+            .lean();
+
+        if (sessions.length > 0) {
+            const bulkOps = sessions
+                .filter(s => s.appointmentId)
+                .map(s => {
+                    const paidLike = ['paid', 'package_paid', 'advanced', 'partial']
+                        .includes(String(s.paymentStatus || '').toLowerCase()) || !!s.isPaid;
+
+                    return {
+                        updateOne: {
+                            filter: { _id: s.appointmentId },
+                            update: {
+                                $set: {
+                                    sessionValue: s.sessionValue,
+                                    paymentStatus: paidLike
+                                        ? (s.paymentStatus || 'paid')
+                                        : (s.paymentStatus || 'pending'),
+                                    operationalStatus: mapStatusToOperational(s.status),
+                                    clinicalStatus: mapStatusToClinical(s.status),
+                                }
+                            }
+                        }
+                    };
+                });
+
+            if (bulkOps.length > 0) {
+                Appointment.bulkWrite(bulkOps, { ordered: false })
+                    .catch(e => console.error('[daily-closing] bulkWrite error:', e.message));
+            }
+        }
+
+        // ======================================================
+        // 🔹 QUERIES PARALELAS (mantém performance)
+        // ======================================================
+        const [appointmentsCreated, appointmentsToday, payments] = await Promise.all([
+            // 1️⃣ Agendamentos CRIADOS hoje (para pacotes vendidos hoje)
+            Appointment.find({
+                createdAt: { $gte: startOfDay, $lte: endOfDay },
+                serviceType: { $ne: 'package_session' }
+            })
+                .populate("doctor patient package")
+                .lean(),
+            
+            // 2️⃣ Agendamentos PARA hoje OU CRIADOS hoje (para incluir pré-agendamentos)
+            Appointment.find({
+                $or: [
+                    { date: { $gte: startOfDay, $lte: endOfDay } },
+                    { createdAt: { $gte: startOfDay, $lte: endOfDay } }
+                ]
+            })
+                .populate("doctor patient package")
+                .lean(),
+
+            // 3️⃣ Pagamentos recebidos hoje (para o Caixa)
+            Payment.find({
+                status: { $in: ["paid", "package_paid"] },
+                $or: [
+                    // ✅ NOVO: paymentDate como Date
+                    {
+                        paymentDate: { $gte: startOfDay, $lte: endOfDay }
+                    },
+
+                    // ✅ paymentDate string (modelo atual)
+                    { paymentDate: targetDate },
+
+                    // ✅ legado: sem paymentDate → usa createdAt
+                    {
+                        paymentDate: { $exists: false },
+                        createdAt: { $gte: startOfDay, $lte: endOfDay },
+                    },
+                ],
+            })
+                .populate("patient doctor package appointment")
+                .lean()
+        ]);
+
+        // 🔥 DEDUPLICAR: Remover agendamentos duplicados (mesmo _id)
+        const uniqueAppointmentsMap = new Map();
+        for (const appt of appointmentsToday) {
+            const id = appt._id.toString();
+            if (!uniqueAppointmentsMap.has(id)) {
+                uniqueAppointmentsMap.set(id, appt);
+            }
+        }
+        const uniqueAppointmentsToday = Array.from(uniqueAppointmentsMap.values());
+
+        // ======================================================
+        // 🔹 HELPERS
+        // ======================================================
+        const getPaymentDate = (pay) => {
+            if (!pay) return null;
+            if (typeof pay.paymentDate === "string" && pay.paymentDate.trim()) {
+                return pay.paymentDate; // 🔥 SEM USAR appointment.date
+            }
+            return moment(pay.createdAt).tz("America/Sao_Paulo").format("YYYY-MM-DD");
+        };
+
+
+        const normalizePaymentMethod = (method) => {
+            if (!method) return "dinheiro";
+            method = String(method).toLowerCase().trim();
+            if (method.includes("pix")) return "pix";
+            if (
+                method.includes("cartão") || method.includes("cartao") ||
+                method.includes("card") || method.includes("credito") ||
+                method.includes("débito") || method.includes("debito")
+            ) return "cartão";
+            return "dinheiro";
+        };
+
+        const isCanceled = (status) =>
+            ["canceled"].includes((status || "").toLowerCase());
+        const isConfirmed = (status) =>
+            ["confirmed"].includes((status || "").toLowerCase());
+        const isCompleted = (status) =>
+            ["completed"].includes((status || "").toLowerCase());
+
+        // ======================================================
+        // 🔥 FILTRO CORRIGIDO - Remove restrição de patientIdsOfDay
+        // ======================================================
+        const filteredPayments = payments.filter((p) => {
+            const payDate = getPaymentDate(p);
+            const isTargetDate = payDate === targetDate;
+
+            // 🏥 Convênio só entra no caixa quando recebido
+            if (p.billingType === 'convenio') {
+                const isReceived = p.insurance?.status === 'received';
+                const receivedToday = p.insurance?.receivedAt &&
+                    moment(p.insurance.receivedAt).format('YYYY-MM-DD') === targetDate;
+                return receivedToday && isReceived;
+            }
+
+            return isTargetDate;
+        });
+
+        console.log(`\n📊 RESUMO PAGAMENTOS:`);
+        console.log(`   Total buscados: ${payments.length}`);
+        console.log(`   Filtrados do dia: ${filteredPayments.length}`);
+        console.log(`   Total em dinheiro: R$${filteredPayments.reduce((sum, p) => sum + (p.amount || 0), 0)}\n`);
+
+        // ======================================================
+        // 🔹 BUSCAR PAGAMENTOS HISTÓRICOS DOS PACOTES DE HOJE
+        // (pagamentos de pacotes feitos antes de hoje mas com sessões hoje)
+        // ======================================================
+        const packageIdsToday = [...new Set(
+            uniqueAppointmentsToday
+                .filter(a => a.serviceType === 'package_session' && a.package?._id)
+                .map(a => a.package._id.toString())
+        )];
+
+        const historicalPackagePayments = packageIdsToday.length > 0
+            ? await Payment.find({
+                package: { $in: packageIdsToday.map(id => new mongoose.Types.ObjectId(id)) },
+                status: { $in: ['paid', 'package_paid'] }
+            }).populate('patient doctor package appointment').lean()
+            : [];
+
+        // Merge: pagamentos de hoje + pagamentos históricos de pacotes
+        const allPaymentsForMaps = [
+            ...payments,
+            ...historicalPackagePayments.filter(hp => !payments.some(p => p._id.toString() === hp._id.toString()))
+        ];
+
+        // ======================================================
+        // 🔹 MAPS para performance O(1)
+        // ======================================================
+        const paymentsByAppt = new Map();
+        const paymentsByPackage = new Map();
+        const paymentsByPatient = new Map();
+
+        allPaymentsForMaps.forEach(p => {
+            // Por appointment
+            const apptId = p.appointment?._id?.toString();
+            if (apptId) {
+                if (!paymentsByAppt.has(apptId)) paymentsByAppt.set(apptId, []);
+                paymentsByAppt.get(apptId).push(p);
+            }
+
+            // Por package
+            const pkgId = p.package?._id?.toString();
+            if (pkgId) {
+                if (!paymentsByPackage.has(pkgId)) paymentsByPackage.set(pkgId, []);
+                paymentsByPackage.get(pkgId).push(p);
+            }
+
+            // Por patient
+            const patId = p.patient?._id?.toString();
+            if (patId) {
+                if (!paymentsByPatient.has(patId)) paymentsByPatient.set(patId, []);
+                paymentsByPatient.get(patId).push(p);
+            }
+        });
+
+        // ======================================================
+        // 🔹 ESTRUTURA INICIAL
+        // ======================================================
+        const report = {
+            date: targetDate,
+            summary: {
+                appointments: {
+                    total: 0,
+                    attended: 0,
+                    canceled: 0,
+                    pending: 0,
+                    expectedValue: 0,
+                    pendingValue: 0,
+                    pendingCount: 0,
+                },
+                payments: {
+                    totalReceived: 0,
+                    byMethod: { dinheiro: 0, pix: 0, cartão: 0 },
+                },
+                // 🏥 NOVO: Seção de convênio
+                insurance: {
+                    production: 0,
+                    sessionsCount: 0,
+                    received: 0,
+                    pending: 0,
+                    byProvider: [],
+                },
+            },
+            financial: {
+                totalReceived: 0,
+                totalExpected: 0,
+                totalRevenue: 0,
+                totalInsuranceProduction: 0,  // 🏥 NOVO
+                totalInsurancePending: 0,      // 🏥 NOVO
+                grandTotal: 0,                 // 🏥 NOVO (caixa + produção)
+                paymentMethods: {
+                    dinheiro: { amount: 0, details: [] },
+                    pix: { amount: 0, details: [] },
+                    cartão: { amount: 0, details: [] },
+                },
+                packages: { total: 0, details: [] },
+                insurance: { total: 0, byProvider: [] },  // 🏥 NOVO
+            },
+            timelines: {
+                appointments: [],
+                payments: [],
+                insuranceSessions: [],  // 🏥 NOVO
+            },
+            professionals: [],
+            timeSlots: [],
+        };
+
+        // ======================================================
+        // 🔹 PROCESSAR APPOINTMENTS DO DIA (para Receita Prevista)
+        // ======================================================
+        for (const appt of uniqueAppointmentsToday) {
+            const opStatus = (appt.operationalStatus || "").toLowerCase();
+            const clinicalStatus = (appt.clinicalStatus || "").toLowerCase();
+            const doctorName = appt.doctor?.fullName || "Não informado";
+            const patientName = appt.patient?.fullName || appt.patientInfo?.fullName || "Não informado";
+            const isPackage = appt.serviceType === "package_session";
+            const isLiminar = isPackage && appt.package?.type === 'liminar';
+            
+            // 🔗 Buscar pagamentos relacionados (3 vias)
+            const apptId = appt._id.toString();
+            const pkgId = appt.package?._id?.toString();
+            const patId = appt.patient?._id?.toString();
+
+            const allRelatedPays = [
+                ...(paymentsByAppt.get(apptId) || []),
+                ...(pkgId ? (paymentsByPackage.get(pkgId) || []) : []),
+                ...(patId ? (paymentsByPatient.get(patId) || []) : [])
+            ];
+
+            // Deduplica por _id
+            const uniquePays = [...new Map(
+                allRelatedPays.map(p => [p._id.toString(), p])
+            ).values()];
+
+            const relatedPayToday = uniquePays.find((p) => getPaymentDate(p) === targetDate);
+            const relatedPayAnyDay = uniquePays.find((p) => getPaymentDate(p) !== null);
+
+            const method = relatedPayToday
+                ? normalizePaymentMethod(relatedPayToday.paymentMethod)
+                : normalizePaymentMethod(appt.package?.paymentMethod || appt.paymentMethod || "—");
+
+            const paidStatus = relatedPayToday
+                ? "Pago no dia"
+                : (relatedPayAnyDay ? "Pago antes" : "Pendente");
+
+            const sessionValue = Number(appt.sessionValue || 0);
+
+            // Atualizar contadores
+            report.summary.appointments.total++;
+            if (isCanceled(opStatus)) report.summary.appointments.canceled++;
+            else if (isConfirmed(opStatus) || isCompleted(clinicalStatus))
+                report.summary.appointments.attended++;
+            else report.summary.appointments.pending++;
+
+            report.summary.appointments.expectedValue += sessionValue;
+
+            // Verificar se é convênio
+            const isConvenioAppt = appt.serviceType === 'convenio_session' ||
+                                   appt.paymentMethod === 'convenio' ||
+                                   appt.insuranceProvider ||
+                                   appt.package?.type === 'convenio';
+            
+            const insuranceValue = isConvenioAppt ? 
+                (appt.package?.insuranceGrossAmount || appt.insuranceValue || 80) : 0;
+
+            // Timeline
+            report.timelines.appointments.push({
+                id: apptId,
+                patient: patientName,
+                phone: appt.patient?.phone || appt.patientInfo?.phone || null,
+                patientType: appt.patientType || null,
+                service: appt.serviceType,
+                doctor: doctorName,
+                sessionValue,
+                method,
+                paidStatus,
+                operationalStatus: opStatus,
+                clinicalStatus,
+                displayStatus: paidStatus,
+                date: appt.date,
+                time: appt.time,
+                isPackage,
+                isLiminar,
+                paymentMethod: method,
+                packageId: pkgId || null,
+                // 🏥 NOVO: Campos de convênio
+                isConvenio: isConvenioAppt,
+                insuranceProvider: isConvenioAppt ? (appt.insuranceProvider || appt.package?.insuranceProvider) : null,
+                insuranceValue: isConvenioAppt ? insuranceValue : null,
+                // 🔥 NOVO: Flag de primeiro agendamento
+                isFirstAppointment: appt.isFirstAppointment || false,
+            });
+        }
+
+        // ======================================================
+        // 🏥 PROCESSAR SESSÕES DE CONVÊNIO
+        // ======================================================
+        const insuranceSessions = sessions.filter(s => 
+            s.package?.type === 'convenio' || 
+            s.paymentMethod === 'convenio' ||
+            s.billingType === 'convenio'
+        );
+
+        const insuranceByProvider = {};
+
+        for (const session of insuranceSessions) {
+            const pkg = session.package;
+            const provider = pkg?.insuranceProvider || session.insuranceProvider || 'Convênio';
+            const insuranceValue = pkg?.insuranceGrossAmount || pkg?.sessionValue || 80;
+            const isCompleted = session.status === 'completed';
+            
+            // Timeline de convênio
+            report.timelines.insuranceSessions.push({
+                id: session._id.toString(),
+                time: session.time,
+                patient: session.patient?.fullName || 'N/A',
+                provider: provider,
+                insuranceValue: insuranceValue,
+                status: session.status,
+                paymentStatus: session.paymentStatus || 'pending_receipt',
+                isPaid: session.isPaid || false,
+                guideNumber: session.insuranceGuide?.number || null,
+            });
+
+            // Contabilizar produção
+            if (isCompleted) {
+                report.summary.insurance.production += insuranceValue;
+                report.summary.insurance.sessionsCount += 1;
+                
+                if (session.isPaid) {
+                    report.summary.insurance.received += insuranceValue;
+                } else {
+                    report.summary.insurance.pending += insuranceValue;
+                }
+
+                // Agrupar por provider
+                if (!insuranceByProvider[provider]) {
+                    insuranceByProvider[provider] = { value: 0, sessions: 0 };
+                }
+                insuranceByProvider[provider].value += insuranceValue;
+                insuranceByProvider[provider].sessions += 1;
+            }
+        }
+
+        // Converter byProvider para array
+        report.summary.insurance.byProvider = Object.entries(insuranceByProvider).map(
+            ([provider, data]) => ({ provider, ...data })
+        );
+
+        // 🏥 Adicionar ao financial
+        report.financial.totalInsuranceProduction = report.summary.insurance.production;
+        report.financial.totalInsurancePending = report.summary.insurance.pending;
+        report.financial.insurance = {
+            total: report.summary.insurance.production,
+            byProvider: report.summary.insurance.byProvider,
+        };
+
+        // ======================================================
+        // 🔹 PROCESSAR PAGAMENTOS
+        // ======================================================
+        for (const pay of filteredPayments) {
+            const paymentDate = getPaymentDate(pay);
+            if (paymentDate !== targetDate) continue;
+
+            const amount = Number(pay.amount || 0);
+            const method = normalizePaymentMethod(pay.paymentMethod);
+            const type = pay.serviceType || "outro";
+            const patient = pay.patient?.fullName || "Avulso";
+            const doctor = pay.doctor?.fullName || "Não vinculado";
+
+            // Totais
+            report.summary.payments.totalReceived += amount;
+            report.summary.payments.byMethod[method] += amount;
+            report.financial.totalReceived += amount;
+            report.financial.paymentMethods[method].amount += amount;
+            report.financial.paymentMethods[method].details.push({
+                id: pay._id.toString(),
+                type,
+                patient,
+                value: amount,
+                method,
+                createdAt: pay.createdAt,
+                doctor,
+                status: pay.status,
+                paymentDate,
+                referenceDate: pay.appointment?.date || null,
+                isAdvancePayment: pay.isAdvance || false,
+                appointmentId: pay.appointment?._id?.toString() || null,
+            });
+
+            if (type === "package_session" && pay.package) {
+                report.financial.packages.total += amount;
+                report.financial.packages.details.push({
+                    id: pay._id.toString(),
+                    patient,
+                    value: amount,
+                    method,
+                    sessions: pay.package?.totalSessions || 0,
+                    sessionValue: pay.package?.sessionValue || 0,
+                    date: paymentDate,
+                    packageId: pay.package._id.toString(),
+                });
+            }
+
+            report.timelines.payments.push({
+                id: pay._id.toString(),
+                patient,
+                type,
+                method,
+                value: amount,
+                paymentDate,
+                doctor,
+                serviceType: pay.serviceType || null,
+            });
+        }
+
+        // ======================================================
+        // 🧮 CÁLCULOS FINAIS
+        // ======================================================
+        // ✅ Usa a timeline que tem o paidStatus calculado
+        const timelineAppointments = report.timelines.appointments || [];
+        const validAppointments = timelineAppointments.filter(
+            (a) => !isCanceled(a.operationalStatus)
+        );
+        
+        // Receita Prevista = todos os appointments (inclusive cancelados)
+        report.financial.totalExpected = timelineAppointments.reduce(
+            (sum, a) => sum + (a.sessionValue || 0),
+            0
+        );
+
+        // A Receber = confirmados não pagos EXCETO convênio (que paga depois)
+        report.financial.totalRevenue = validAppointments
+            .filter((a) => a.paidStatus === "Pendente" && isConfirmed(a.operationalStatus) && !a.isConvenio)
+            .reduce((sum, a) => sum + (a.sessionValue || 0), 0);
+
+        report.summary.appointments.pendingCount = validAppointments.filter(
+            (a) => a.paidStatus === "Pendente" && isConfirmed(a.operationalStatus) && !a.isConvenio
+        ).length;
+
+        // Receita Prevista para o summary = todos os appointments (inclusive cancelados)
+        report.summary.appointments.expectedValue = timelineAppointments.reduce(
+            (sum, a) => sum + (a.sessionValue || 0),
+            0
+        );
+        
+        // ✅ Atualizar contadores do dia (sessões agendadas para o dia)
+        const appointmentsDoDia = uniqueAppointmentsToday || [];
+        report.summary.appointments.totalDoDia = appointmentsDoDia.length;
+        report.summary.appointments.confirmadosDoDia = appointmentsDoDia.filter(
+            (a) => !isCanceled(a.operationalStatus) && (isConfirmed(a.operationalStatus) || isCompleted(a.clinicalStatus))
+        ).length;
+
+        // 🔥 NOVO: Separar agendamentos por patientType (novo/recorrente/retorno)
+        // Usa patientType preferencialmente, fallback para isFirstAppointment
+        const isNovo = (a) => a.patientType === 'novo' || a.isFirstAppointment === true;
+        const isRecorrente = (a) => a.patientType === 'recorrente' || a.patientType === 'retorno' || a.isFirstAppointment === false;
+        
+        report.summary.appointments.novos = appointmentsDoDia.filter(isNovo).length;
+        report.summary.appointments.recorrentes = appointmentsDoDia.filter(isRecorrente).length;
+        
+        // Detalhes para clique no front - incluir patientType real
+        report.appointmentsByType = {
+            novos: appointmentsDoDia
+                .filter(isNovo)
+                .map(a => ({
+                    id: a._id.toString(),
+                    patient: a.patient?.fullName || a.patientInfo?.fullName || 'Não informado',
+                    phone: a.patient?.phone || a.patientInfo?.phone || null,
+                    time: a.time,
+                    specialty: a.specialty,
+                    doctor: a.doctor?.fullName || 'Não informado',
+                    serviceType: a.serviceType,
+                    patientType: a.patientType || (a.isFirstAppointment ? 'novo' : 'recorrente'),
+                })),
+            recorrentes: appointmentsDoDia
+                .filter(isRecorrente)
+                .map(a => ({
+                    id: a._id.toString(),
+                    patient: a.patient?.fullName || a.patientInfo?.fullName || 'Não informado',
+                    phone: a.patient?.phone || a.patientInfo?.phone || null,
+                    time: a.time,
+                    specialty: a.specialty,
+                    doctor: a.doctor?.fullName || 'Não informado',
+                    serviceType: a.serviceType,
+                    patientType: a.patientType || (a.isFirstAppointment ? 'novo' : 'recorrente'),
+                })),
+        };
+
+        // 🏥 Cálculo do Grand Total (caixa + produção de convênio)
+        report.financial.grandTotal = report.financial.totalReceived + 
+                                       report.financial.totalInsuranceProduction;
+
+        // ======================================================
+        // 🔹 MONTAR RELATÓRIOS POR PROFISSIONAL E HORÁRIOS
+        // ======================================================
+        const professionalsMap = {};
+        const timeSlotsMap = {};
+
+        console.log(`\n🕐 Processando ${report.timelines.appointments.length} appointments para timeSlots...`);
+
+        report.timelines.appointments.forEach((appt) => {
+            // Pre-agendamentos são leads ainda não confirmados — excluir dos slots/profissionais
+            if (appt.operationalStatus === 'pre_agendado') return;
+
+            const doctor = appt.doctor || "Não informado";
+            const time = (appt.time || "").substring(0, 5);
+            const value = appt.sessionValue || 0;
+            
+            console.log(`  📌 ${appt.patient} - ${time} - ${appt.service} - ${doctor}`);
+
+            if (!professionalsMap[doctor]) {
+                professionalsMap[doctor] = {
+                    name: doctor,
+                    appointments: [],
+                    confirmed: 0,
+                    canceled: 0,
+                    scheduled: 0,
+                    totalValue: 0,
+                };
+            }
+
+            professionalsMap[doctor].appointments.push(appt);
+            if (isConfirmed(appt.operationalStatus))
+                professionalsMap[doctor].confirmed++;
+            else if (isCanceled(appt.operationalStatus))
+                professionalsMap[doctor].canceled++;
+            else professionalsMap[doctor].scheduled++;
+            professionalsMap[doctor].totalValue += value;
+
+            if (!timeSlotsMap[time]) {
+                timeSlotsMap[time] = {
+                    time,
+                    appointments: [],
+                    count: 0,
+                    stats: {
+                        confirmed: 0,
+                        canceled: 0,
+                        scheduled: 0,
+                        revenue: 0,         // valor esperado (sessões não canceladas)
+                        revenueReceived: 0, // apenas "Pago no dia"
+                        professionals: [],
+                    },
+                };
+            }
+
+            const slot = timeSlotsMap[time];
+            slot.appointments.push(appt);
+            slot.count++;
+            if (isConfirmed(appt.operationalStatus)) slot.stats.confirmed++;
+            else if (isCanceled(appt.operationalStatus)) slot.stats.canceled++;
+            else slot.stats.scheduled++;
+            if (!isCanceled(appt.operationalStatus))
+                slot.stats.revenue += value;
+            if (appt.paidStatus === "Pago no dia")
+                slot.stats.revenueReceived += value;
+            if (!slot.stats.professionals.includes(doctor))
+                slot.stats.professionals.push(doctor);
+        });
+
+        report.professionals = Object.values(professionalsMap).map((prof) => {
+            const totalSessions = prof.appointments.length;
+            const efficiency =
+                totalSessions > 0 ? (prof.confirmed / totalSessions) * 100 : 0;
+            return { ...prof, sessionCount: totalSessions, efficiency };
+        });
+
+        report.timeSlots = Object.values(timeSlotsMap)
+            .map((slot) => {
+                const total = slot.stats.confirmed + slot.stats.scheduled;
+                const confirmationRate = total > 0 ? (slot.stats.confirmed / total) * 100 : 0;
+                return {
+                    ...slot,
+                    totalSessions: slot.count,
+                    stats: {
+                        ...slot.stats,
+                        confirmationRate,
+                        occupancy: (slot.count / 10) * 100,
+                    },
+                };
+            })
+            .sort((a, b) => a.time.localeCompare(b.time));
+        
+        // 🐛 DEBUG: Log dos timeSlots criados
+        console.log(`\n🕐 TimeSlots criados: ${report.timeSlots.length}`);
+        report.timeSlots.forEach(slot => {
+            console.log(`  ${slot.time}: ${slot.count} appointments`);
+            slot.appointments.forEach(a => {
+                console.log(`    - ${a.patient} (${a.service})`);
+            });
+        });
+
+        // ======================================================
+        // 🔹 LOGS FINAIS
+        // ======================================================
+        console.log("\n📊 FECHAMENTO FINAL", targetDate);
+        console.log("✅ Agendamentos válidos:", validAppointments.length);
+        console.log("💰 Recebido:", report.financial.totalReceived);
+        console.log("📅 Previsto:", report.financial.totalExpected);
+        console.log("⏳ A receber:", report.financial.totalRevenue);
+        console.log("📦 Pagamentos processados:", filteredPayments.length);
+
+        // ======================================================
+        // 🔹 RETORNO
+        // ======================================================
+        res.json({
+            success: true,
+            data: report,
+            meta: {
+                generatedAt: new Date().toISOString(),
+                recordCount: {
+                    appointments: uniqueAppointmentsToday.length,
+                    payments: filteredPayments.length,
+                    professionals: report.professionals.length,
+                    timeSlots: report.timeSlots.length,
+                },
+                // 🔥 NOVO: Contagem por tipo de paciente
+                byPatientType: {
+                    novos: report.summary.appointments.novos,
+                    recorrentes: report.summary.appointments.recorrentes,
+                },
+            },
+        });
+    } catch (error) {
+        console.error("❌ Erro no fechamento diário:", error);
+        res.status(500).json({
+            success: false,
+            error: "Erro ao gerar relatório diário",
+            details: process.env.NODE_ENV === "development" ? error.message : undefined,
+        });
+    }
+});
+
+
+// Detalhamento de sessões agendadas
+router.get('/daily-scheduled-details', async (req, res) => {
+    try {
+        const { date } = req.query;
+
+        // Criar datas com o fuso horário UTC-3
+        const startOfDay = date
+            ? new Date(`${date}T00:00:00-03:00`)
+            : new Date(new Date().setHours(0, 0, 0, 0) - 3 * 60 * 60 * 1000);
+
+        const endOfDay = date
+            ? new Date(`${date}T23:59:59.999-03:00`)
+            : new Date(new Date().setHours(23, 59, 59, 999) - 3 * 60 * 60 * 1000);
+
+        const sessions = await Session.find({
+            date: { $gte: startOfDay, $lte: endOfDay },
+            status: 'scheduled'
+        })
+            .populate({
+                path: 'patient',
+                select: 'fullName phone email'
+            })
+            .populate({
+                path: 'doctor',
+                select: 'fullName specialty'
+            })
+            .populate({
+                path: 'package',
+                select: 'sessionValue sessionType'
+            })
+            .select('date time status confirmedAbsence notes')
+            .sort({ date: 1 })
+            .lean();
+
+        // Formatar dados para resposta
+        const formattedSessions = sessions.map(session => ({
+            id: session._id,
+            date: session.date,
+            time: session.time,
+            patient: session.patient?.fullName || 'N/A',
+            patientPhone: session.patient?.phone || '',
+            patientEmail: session.patient?.email || '',
+            doctor: session.doctor?.fullName || 'N/A',
+            specialty: session.doctor?.specialty || 'N/A',
+            sessionType: session.package?.sessionType || 'N/A',
+            value: session.package?.sessionValue || 0,
+            status: session.status,
+            confirmedAbsence: session.confirmedAbsence || false,
+            notes: session.notes || ''
+        }));
+
+        res.json(formattedSessions);
+    } catch (error) {
+        console.error('Erro ao obter detalhes de sessões agendadas:', error);
+        res.status(500).json({ error: 'Erro interno' });
+    }
+});
+
+// Detalhamento de sessões realizadas
+router.get('/daily-completed-details', async (req, res) => {
+    try {
+        const { date } = req.query;
+        const targetDate = date ? new Date(date) : new Date();
+
+        const startOfDay = new Date(targetDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        startOfDay.setHours(startOfDay.getHours() + 3);
+
+        const endOfDay = new Date(targetDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        endOfDay.setHours(endOfDay.getHours() + 3);
+
+        const sessions = await Session.find({
+            date: { $gte: startOfDay, $lte: endOfDay },
+            status: 'completed'
+        })
+            .populate({
+                path: 'patient',
+                select: 'fullName'
+            })
+            .populate({
+                path: 'doctor',
+                select: 'fullName specialty'
+            })
+            .populate({
+                path: 'package',
+                select: 'sessionValue sessionType'
+            })
+            .select('date time notes')
+            .sort({ date: 1 }) // Ordenar por horário
+            .lean();
+
+        // Formatar dados para resposta
+        const formattedSessions = sessions.map(session => ({
+            id: session._id,
+            date: session.date,
+            time: session.time,
+            patient: session.patient?.fullName || 'N/A',
+            doctor: session.doctor?.fullName || 'N/A',
+            specialty: session.doctor?.specialty || 'N/A',
+            sessionType: session.package?.sessionType || 'N/A',
+            value: session.package?.sessionValue || 0,
+            duration: 40, // Duração fixa padrão
+            notes: session.notes || ''
+        }));
+
+        res.json(formattedSessions);
+    } catch (error) {
+        console.error('Erro ao obter detalhes de sessões realizadas:', error);
+        res.status(500).json({ error: 'Erro interno' });
+    }
+});
+
+// Detalhamento de pagamentos
+router.get('/daily-payments-details', async (req, res) => {
+    try {
+        const { date } = req.query;
+        const targetDate = date ? new Date(date) : new Date();
+
+        const startOfDay = new Date(targetDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        startOfDay.setHours(startOfDay.getHours() + 3);
+
+        const endOfDay = new Date(targetDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        endOfDay.setHours(endOfDay.getHours() + 3);
+
+        const payments = await Payment.find({
+            status: "paid",
+            $or: [
+                // ✅ Pagamentos com paymentDate explícito
+                { paymentDate: targetDate },
+
+                // ✅ Pagamentos antigos sem paymentDate — usa createdAt como fallback
+                {
+                    paymentDate: { $exists: false },
+                    createdAt: { $gte: startOfDay, $lte: endOfDay },
+                },
+            ],
+        })
+            .populate("patient doctor package appointment advancedSessions")
+            .lean();
+
+
+        // Formatar dados para resposta
+        const formattedPayments = payments.map(payment => ({
+            id: payment._id,
+            date: payment.createdAt,
+            patient: payment.patient?.fullName || 'N/A',
+            doctor: payment.doctor?.fullName || 'N/A',
+            specialty: payment.doctor?.specialty || 'N/A',
+            sessionType: payment.package?.sessionType || 'N/A',
+            amount: payment.amount,
+            paymentMethod: payment.paymentMethod,
+            notes: payment.notes || ''
+        }));
+
+        res.json(formattedPayments);
+    } catch (error) {
+        console.error('Erro ao obter detalhes de pagamentos:', error);
+        res.status(500).json({ error: 'Erro interno' });
+    }
+});
+
+// Detalhamento de faltas e cancelamentos
+router.get('/daily-absences-details', async (req, res) => {
+    try {
+        const { date } = req.query;
+        const targetDate = date ? new Date(date) : new Date();
+
+        const startOfDay = new Date(targetDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        startOfDay.setHours(startOfDay.getHours() + 3);
+
+        const endOfDay = new Date(targetDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        endOfDay.setHours(endOfDay.getHours() + 3);
+
+        const absences = await Session.find({
+            date: { $gte: startOfDay, $lte: endOfDay },
+            status: 'canceled',
+            confirmedAbsence: true // Apenas faltas confirmadas
+        })
+            .populate({
+                path: 'patient',
+                select: 'fullName phone'
+            })
+            .populate({
+                path: 'doctor',
+                select: 'fullName specialty'
+            })
+            .populate({
+                path: 'package',
+                select: 'sessionValue sessionType'
+            })
+            .select('date time confirmedAbsence notes')
+            .sort({ date: 1 }) // Ordenar por horário
+            .lean();
+
+        // Formatar dados para resposta
+        const formattedAbsences = absences.map(absence => ({
+            id: absence._id,
+            date: absence.date,
+            time: absence.time,
+            patient: absence.patient?.fullName || 'N/A',
+            patientPhone: absence.patient?.phone || '',
+            doctor: absence.doctor?.fullName || 'N/A',
+            specialty: absence.doctor?.specialty || 'N/A',
+            sessionType: absence.package?.sessionType || 'N/A',
+            value: absence.package?.sessionValue || 0,
+            confirmedAbsence: absence.confirmedAbsence || false,
+            notes: absence.notes || ''
+        }));
+
+        res.json(formattedAbsences);
+    } catch (error) {
+        console.error('Erro ao obter detalhes de faltas:', error);
+        res.status(500).json({ error: 'Erro interno' });
+    }
+});
+
+/**
+ * Registra um novo pagamento (manual, Pix, etc.) para um pacote existente.
+ * Atualiza automaticamente os saldos e status das sessões.
+ */
+/**
+ * Registra um novo pagamento (manual, Pix, etc.) para um pacote existente.
+ * Atualiza automaticamente os saldos e status das sessões.
+ */
+router.post('/add', async (req, res) => {
+    const mongoSession = await mongoose.startSession();
+    let transactionCommitted = false;
+
+    try {
+        await mongoSession.startTransaction();
+
+        const {
+            packageId,
+            amount,
+            paymentMethod = 'dinheiro',
+            paymentDate,
+            note,
+            patientId,
+            doctorId,
+            serviceType,
+        } = req.body;
+
+        console.log('💰 Iniciando registro de pagamento:', req.body);
+
+        // 1️⃣ Validação
+        if (!packageId || !amount || amount <= 0 || !patientId || !doctorId || !serviceType) {
+            return res.status(400).json({
+                success: false,
+                message: 'Campos obrigatórios faltando ou inválidos.',
+            });
+        }
+
+        // 2️⃣ Buscar pacote e sessões
+        const pkg = await Package.findById(packageId)
+            .populate('sessions')
+            .session(mongoSession);
+
+        if (!pkg) {
+            return res.status(404).json({ success: false, message: 'Pacote não encontrado.' });
+        }
+
+        const totalValue = pkg.totalValue ?? pkg.totalSessions * pkg.sessionValue;
+        const balance = pkg.balance ?? Math.max(totalValue - pkg.totalPaid, 0);
+
+        console.log(`📦 Pacote atual: total R$${totalValue} | saldo R$${balance}`);
+
+        let remaining = amount;
+
+        // 3️⃣ Aplicar pagamento no pacote atual
+        const applied = Math.min(remaining, balance);
+        const newTotalPaid = pkg.totalPaid + applied;
+        const newBalance = Math.max(totalValue - newTotalPaid, 0);
+        const status = newBalance === 0 ? 'paid' : 'partial';
+
+        // 4️⃣ Registrar pagamento principal
+        const parentPayment = await Payment.create(
+            [{
+                patient: patientId,
+                doctor: doctorId,
+                serviceType,
+                amount: applied,
+                paymentMethod,
+                notes: note || '',
+                status,
+                package: packageId,
+                createdAt: new Date(),
+                paymentDate: paymentDate || new Date(),
+            }],
+            { session: mongoSession }
+        );
+
+        // 5️⃣ Distribuir valor nas sessões (se aplicável)
+        const updatedPackage = await distributePayments(
+            pkg._id,
+            applied,
+            mongoSession,
+            parentPayment[0]._id
+        );
+
+        // 6️⃣ Atualizar pacote
+        await Package.findByIdAndUpdate(
+            pkg._id,
+            {
+                $push: { payments: parentPayment[0]._id },
+                $set: {
+                    totalPaid: updatedPackage.totalPaid,
+                    balance: updatedPackage.balance,
+                    financialStatus: updatedPackage.financialStatus,
+                },
+            },
+            { session: mongoSession }
+        );
+
+        remaining -= applied;
+        let newPackage = null;
+
+        // 8️⃣ Caso haja excedente → criar novo pacote automático (cenário C)
+        if (remaining > 0) {
+            console.log(`💡 Valor excedente detectado: R$${remaining}`);
+
+            const result = await createNextPackageFromPrevious(pkg, remaining, {
+                session: mongoSession,
+                paymentMethod,
+                serviceType,
+                paymentDate,
+                notes: 'Pagamento adiantado após quitação do pacote anterior',
+            });
+
+            newPackage = result.newPackage;
+
+            console.log(
+                `✅ Novo pacote criado automaticamente: ${newPackage._id} | Início: ${newPackage.startDate}`
+            );
+        }
+
+        // 9️⃣ Commit
+        await mongoSession.commitTransaction();
+        transactionCommitted = true;
+
+        const finalPackage = await Package.findById(pkg._id)
+            .populate('sessions payments')
+            .lean();
+
+        console.log(`
+💳 Pagamento registrado:
+📦 Pacote: ${packageId}
+🧍 Paciente: ${patientId}
+👩‍⚕️ Doutor: ${doctorId}
+💰 Valor: R$${amount}
+💳 Método: ${paymentMethod}
+📅 Data: ${paymentDate}
+`);
+
+        return res.status(201).json({
+            success: true,
+            message:
+                remaining > 0
+                    ? 'Pagamento quitado e novo pacote criado automaticamente 💚'
+                    : 'Pagamento registrado e distribuído com sucesso 💚',
+            data: {
+                currentPackage: {
+                    id: pkg._id,
+                    status: newBalance === 0 ? 'paid' : 'partial',
+                    balance: newBalance,
+                    totalPaid: newTotalPaid,
+                },
+                updatedPackage: finalPackage,
+                ...(newPackage && { newPackage }),
+            },
+        });
+    } catch (error) {
+        if (mongoSession.inTransaction() && !transactionCommitted) {
+            await mongoSession.abortTransaction();
+        }
+        console.error('❌ Erro ao registrar pagamento:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || 'Erro ao registrar pagamento.',
+            errorCode: 'ADD_PAYMENT_ERROR',
+        });
+    } finally {
+        await mongoSession.endSession();
+    }
+});
+
+// ============================================================
+// 🏥 CONVÊNIOS - Endpoints
+// ============================================================
+
+/**
+ * POST /api/payments/insurance
+ * Registra atendimento de convênio (amount = 0 no dia)
+ */
+router.post('/insurance', auth, async (req, res) => {
+    try {
+        const {
+            patientId,
+            doctorId,
+            sessionId,
+            packageId,
+            serviceType = 'session',
+            insuranceProvider,
+            grossAmount,
+            authorizationCode,
+            paymentDate,
+            notes
+        } = req.body;
+
+        // Validação
+        if (!patientId || !doctorId || !insuranceProvider || !grossAmount) {
+            return res.status(400).json({
+                success: false,
+                message: 'Campos obrigatórios: patientId, doctorId, insuranceProvider, grossAmount'
+            });
+        }
+
+        const payment = await Payment.create({
+            patient: patientId,
+            doctor: doctorId,
+            session: sessionId || null,
+            package: packageId || null,
+            serviceType,
+            amount: 0, // ← Zerado no dia!
+            paymentMethod: 'convenio',
+            billingType: 'convenio',
+            status: 'pending',
+            paymentDate: paymentDate || moment().tz('America/Sao_Paulo').format('YYYY-MM-DD'),
+            notes,
+            insurance: {
+                provider: insuranceProvider,
+                grossAmount,
+                authorizationCode: authorizationCode || null,
+                status: 'pending_billing',
+                expectedReceiptDate: moment().add(1, 'month').endOf('month').toDate()
+            }
+        });
+
+        // Atualiza sessão como realizada (mas não paga)
+        if (sessionId) {
+            await Session.findByIdAndUpdate(sessionId, {
+                status: 'completed',
+                isPaid: false,
+                paymentStatus: 'pending',
+                billingType: 'convenio'
+            });
+        }
+
+        const populated = await Payment.findById(payment._id)
+            .populate('patient', 'fullName')
+            .populate('doctor', 'fullName');
+
+        res.status(201).json({
+            success: true,
+            message: 'Atendimento convênio registrado (aguardando faturamento)',
+            data: populated
+        });
+    } catch (error) {
+        console.error('❌ Erro ao registrar convênio:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+/**
+ * GET /api/payments/insurance/receivables
+ * Lista contas a receber de convênios - AGRUPADO POR PACIENTE
+ */
+router.get('/insurance/receivables', auth, async (req, res) => {
+    try {
+        const { provider, status, month } = req.query;
+
+        // ── 1. Payment-based receivables (avulso / guias) ──────────────────────
+        const insuranceStatuses = status
+            ? [status]
+            : month
+                ? ['pending_billing', 'billed', 'received', 'partial', 'glosa']
+                : ['pending_billing', 'billed'];
+
+        // Busca payments de convênio: ou billingType='convenio' ou appointment é convenio_session
+        const paymentMatch = {
+            $or: [
+                { billingType: 'convenio' },
+                { appointment: { $exists: true, $ne: null } }  // Será filtrado via lookup abaixo
+            ],
+            'insurance.status': { $in: insuranceStatuses }
+        };
+
+        // Todas as abas filtram por paymentDate (data do atendimento/sessão)
+        // Assim mostra as sessões DO mês, separadas por status
+        if (month) {
+            const monthRegex = `^${month}`;
+            paymentMatch['paymentDate'] = { $regex: monthRegex };
+        }
+
+        if (provider) paymentMatch['insurance.provider'] = provider;
+
+        const paymentReceivables = await Payment.aggregate([
+            { $match: paymentMatch },
+            { $lookup: { from: 'patients', localField: 'patient', foreignField: '_id', as: 'patientInfo' } },
+            { $lookup: { from: 'appointments', localField: 'appointment', foreignField: '_id', as: 'appointmentInfo' } },
+            { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'packageInfo' } },
+            { $lookup: { from: 'insuranceguides', localField: 'packageInfo.insuranceGuide', foreignField: '_id', as: 'guideInfo' } },
+            // Filtra apenas payments de convênio: billingType='convenio' OU appointment é convenio_session OU package_session de pacote convenio
+            {
+                $match: {
+                    $or: [
+                        { billingType: 'convenio' },
+                        { 'appointmentInfo.serviceType': 'convenio_session' },
+                        { 
+                            'appointmentInfo.serviceType': 'package_session',
+                            'packageInfo.type': 'convenio'
+                        }
+                    ]
+                }
+            },
+            {
+                $addFields: {
+                    // Usa o insuranceProvider do pacote como fonte autoritativa (corrige payments com provider errado)
+                    _resolvedProvider: {
+                        $ifNull: [
+                            { $arrayElemAt: ['$packageInfo.insuranceProvider', 0] },
+                            '$insurance.provider'
+                        ]
+                    },
+                    patientName: { $ifNull: [{ $arrayElemAt: ['$patientInfo.fullName', 0] }, 'Paciente não identificado'] },
+                    specialty: { $ifNull: [{ $arrayElemAt: ['$appointmentInfo.specialty', 0] }, { $arrayElemAt: ['$packageInfo.specialty', 0] }, 'N/A'] },
+                    guideNumber: { $ifNull: [{ $arrayElemAt: ['$guideInfo.number', 0] }, 'N/A'] }
+                }
+            },
+            // Filtro de provider após resolução (aplica sobre o provider real)
+            ...(provider ? [{ $match: { _resolvedProvider: provider } }] : []),
+            {
+                $group: {
+                    _id: { provider: '$_resolvedProvider', patient: '$patient', patientName: '$patientName' },
+                    patientTotal: { $sum: '$insurance.grossAmount' },
+                    patientCount: { $sum: 1 },
+                    payments: { $push: { paymentId: '$_id', grossAmount: '$insurance.grossAmount', status: '$insurance.status', paymentDate: '$paymentDate', authorizationCode: '$insurance.authorizationCode', specialty: '$specialty', guideNumber: '$guideNumber' } }
+                }
+            },
+            {
+                $group: {
+                    _id: '$_id.provider',
+                    totalPending: { $sum: '$patientTotal' },
+                    count: { $sum: '$patientCount' },
+                    patients: { $push: { patientId: '$_id.patient', patientName: '$_id.patientName', total: '$patientTotal', count: '$patientCount', payments: '$payments' } }
+                }
+            }
+        ]);
+
+        // ── 2. Session-based receivables (pacote convênio sem Payment) ──────────
+        // Exclui APPOINTMENTS que já têm Payment records (não packages inteiros!)
+        // Usa driver nativo para evitar casting de tipos (receivedAt é string no banco)
+        const appointmentsWithPayments = await Payment.collection.distinct('appointment', {
+            billingType: 'convenio',
+            appointment: { $exists: true, $ne: null },
+            ...(paymentMatch['$or'] ? { $or: paymentMatch['$or'] } : {
+                'insurance.status': { $in: insuranceStatuses },
+                ...(month ? { paymentDate: { $regex: `^${month}` } } : {})
+            })
+        });
+        const appointmentsToExclude = appointmentsWithPayments.filter(Boolean);
+
+        const sessionMatch = {
+            operationalStatus: 'confirmed',
+            serviceType: { $in: ['convenio_session', 'package_session'] }
+        };
+        if (month) sessionMatch['date'] = { $regex: `^${month}` };
+        if (appointmentsToExclude.length > 0) sessionMatch['_id'] = { $nin: appointmentsToExclude };
+
+        const sessionReceivables = await Session.aggregate([
+            { $match: sessionMatch },
+            { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg' } },
+            { $unwind: { path: '$pkg', preserveNullAndEmptyArrays: true } },
+            { $lookup: { from: 'patients', localField: 'patient', foreignField: '_id', as: 'patientInfo' } },
+            { $lookup: { from: 'insuranceguides', localField: 'insuranceGuide', foreignField: '_id', as: 'guideInfo' } },
+            {
+                $addFields: {
+                    _provider: { $ifNull: ['$pkg.insuranceProvider', 'Convênio'] },
+                    _grossAmount: {
+                        $cond: {
+                            if: { $gt: ['$pkg.insuranceGrossAmount', 0] },
+                            then: '$pkg.insuranceGrossAmount',
+                            else: { $ifNull: ['$sessionValue', 0] }
+                        }
+                    },
+                    _patientName: { $ifNull: [{ $arrayElemAt: ['$patientInfo.fullName', 0] }, 'Paciente não identificado'] },
+                    _guideNumber: { $ifNull: [{ $arrayElemAt: ['$guideInfo.number', 0] }, null] }
+                }
+            },
+            // Filtro de provider (se informado)
+            ...(provider ? [{ $match: { _provider: provider } }] : []),
+            // Ignora sessões sem valor cadastrado
+            { $match: { _grossAmount: { $gt: 0 } } },
+            {
+                $group: {
+                    _id: { provider: '$_provider', patient: '$patient', patientName: '$_patientName' },
+                    patientTotal: { $sum: '$_grossAmount' },
+                    patientCount: { $sum: 1 },
+                    payments: { $push: { paymentId: '$_id', grossAmount: '$_grossAmount', status: 'pending_billing', paymentDate: '$date', authorizationCode: null, specialty: '$sessionType', guideNumber: '$_guideNumber', isFromSession: true } }
+                }
+            },
+            {
+                $group: {
+                    _id: '$_id.provider',
+                    totalPending: { $sum: '$patientTotal' },
+                    count: { $sum: '$patientCount' },
+                    patients: { $push: { patientId: '$_id.patient', patientName: '$_id.patientName', total: '$patientTotal', count: '$patientCount', payments: '$payments' } }
+                }
+            }
+        ]);
+
+        // ── 3. Mescla por provider ───────────────────────────────────────────────
+        const mergedMap = new Map();
+        for (const r of paymentReceivables) mergedMap.set(r._id, r);
+
+        for (const r of sessionReceivables) {
+            if (mergedMap.has(r._id)) {
+                const existing = mergedMap.get(r._id);
+                existing.totalPending += r.totalPending;
+                existing.count += r.count;
+                for (const sp of r.patients) {
+                    const ep = existing.patients.find(p => p.patientId?.toString() === sp.patientId?.toString());
+                    if (ep) {
+                        ep.total += sp.total;
+                        ep.count += sp.count;
+                        ep.payments.push(...sp.payments);
+                    } else {
+                        existing.patients.push(sp);
+                    }
+                }
+            } else {
+                mergedMap.set(r._id, r);
+            }
+        }
+
+        const receivables = Array.from(mergedMap.values()).sort((a, b) => b.totalPending - a.totalPending);
+        const grandTotal = receivables.reduce((sum, r) => sum + r.totalPending, 0);
+
+        res.json({
+            success: true,
+            data: receivables,
+            summary: {
+                totalProviders: receivables.length,
+                grandTotal
+            }
+        });
+    } catch (error) {
+        console.error('❌ Erro ao buscar recebíveis:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+/**
+ * GET /api/payments/insurance/audit
+ * Auditoria de pagamentos de convênio - identifica problemas de dados
+ */
+router.get('/insurance/audit', auth, async (req, res) => {
+    try {
+        // Buscar todos os pagamentos de convênio
+        const payments = await Payment.find({
+            billingType: 'convenio'
+        }).select('patient insurance.provider insurance.grossAmount insurance.status paymentDate').lean();
+
+        const issues = [];
+        const patientIds = new Set();
+
+        // Primeira passada: identificar problemas básicos
+        for (const payment of payments) {
+            // Verificar se tem patient
+            if (!payment.patient) {
+                issues.push({
+                    paymentId: payment._id.toString(),
+                    issue: 'MISSING_PATIENT',
+                    details: 'Pagamento sem paciente vinculado',
+                    provider: payment.insurance?.provider,
+                    grossAmount: payment.insurance?.grossAmount,
+                    status: payment.insurance?.status,
+                    paymentDate: payment.paymentDate
+                });
+                continue;
+            }
+
+            patientIds.add(payment.patient.toString());
+        }
+
+        // Verificar quais pacientes existem no banco
+        const patientIdsArray = Array.from(patientIds);
+        const existingPatients = await mongoose.model('Patient').find({
+            _id: { $in: patientIdsArray }
+        }).select('_id fullName').lean();
+
+        const existingPatientIds = new Set(existingPatients.map(p => p._id.toString()));
+        const patientMap = new Map(existingPatients.map(p => [p._id.toString(), p.fullName]));
+
+        // Segunda passada: identificar pacientes não encontrados
+        for (const payment of payments) {
+            if (!payment.patient) continue;
+
+            const patientId = payment.patient.toString();
+            if (!existingPatientIds.has(patientId)) {
+                issues.push({
+                    paymentId: payment._id.toString(),
+                    issue: 'PATIENT_NOT_FOUND',
+                    details: `Paciente ${patientId} não encontrado no banco de dados`,
+                    patientId: patientId,
+                    provider: payment.insurance?.provider,
+                    grossAmount: payment.insurance?.grossAmount,
+                    status: payment.insurance?.status,
+                    paymentDate: payment.paymentDate
+                });
+            }
+        }
+
+        // Estatísticas
+        const stats = {
+            totalPayments: payments.length,
+            withPatient: payments.filter(p => p.patient).length,
+            withoutPatient: payments.filter(p => !p.patient).length,
+            uniquePatients: patientIds.size,
+            existingPatients: existingPatientIds.size,
+            missingPatients: patientIds.size - existingPatientIds.size,
+            totalIssues: issues.length
+        };
+
+        res.json({
+            success: true,
+            stats,
+            issues: issues.slice(0, 100), // Limitar a 100 issues para não sobrecarregar
+            patientMap: Object.fromEntries(patientMap) // Mapa de pacientes existentes
+        });
+    } catch (error) {
+        console.error('❌ Erro na auditoria:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+/**
+ * PATCH /api/payments/insurance/:id/receive
+ * Marca convênio como recebido (entra no caixa)
+ */
+router.patch('/insurance/:id/receive', auth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { receivedAmount, receivedDate, notes } = req.body;
+
+        const payment = await Payment.findById(id);
+
+        if (!payment || payment.billingType !== 'convenio') {
+            return res.status(404).json({
+                success: false,
+                message: 'Pagamento de convênio não encontrado'
+            });
+        }
+
+        // Garante que o objeto insurance existe
+        if (!payment.insurance) {
+            payment.insurance = {};
+        }
+        
+        const finalAmount = receivedAmount ?? payment.insurance.grossAmount ?? 0;
+        const isGlosa = receivedAmount !== undefined && receivedAmount < (payment.insurance.grossAmount || 0);
+
+        payment.amount = finalAmount; // ← Agora entra no caixa!
+        payment.status = 'paid';
+        payment.insurance.status = isGlosa ? 'partial' : 'received';
+        payment.insurance.receivedAt = receivedDate
+            ? moment(receivedDate).tz('America/Sao_Paulo').format('YYYY-MM-DD')
+            : moment().tz('America/Sao_Paulo').format('YYYY-MM-DD');
+        payment.insurance.receivedAmount = finalAmount;
+
+        if (isGlosa && notes) {
+            payment.insurance.glosaReason = notes;
+        }
+
+        await payment.save();
+
+        // Atualiza sessão como paga
+        if (payment.session) {
+            await Session.findByIdAndUpdate(payment.session, {
+                isPaid: true,
+                paymentStatus: 'paid'
+            });
+        }
+
+        res.json({
+            success: true,
+            message: isGlosa
+                ? `Convênio recebido com glosa (R$${finalAmount} de R$${payment.insurance.grossAmount})`
+                : 'Convênio recebido integralmente',
+            data: payment
+        });
+    } catch (error) {
+        console.error('❌ Erro ao registrar recebimento:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+/**
+ * PATCH /api/payments/insurance/:id/bill
+ * Marca como faturado (enviado pro convênio)
+ */
+router.patch('/insurance/:id/bill', auth, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const payment = await Payment.findByIdAndUpdate(
+            id,
+            {
+                'insurance.status': 'billed',
+                'insurance.billedAt': new Date()
+            },
+            { new: true }
+        );
+
+        if (!payment) {
+            return res.status(404).json({ success: false, message: 'Não encontrado' });
+        }
+
+        res.json({
+            success: true,
+            message: 'Marcado como faturado',
+            data: payment
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// ======================================================================
+// SALDO DEVEDOR / CONTA CORRENTE (consolidado de patientBalance.js)
+// ======================================================================
+
+
+// Helper
+async function getOrCreateBalance(patientId) {
+    return await PatientBalance.getOrCreate(patientId);
+}
+
+// GET /api/payments/balance/:patientId
+router.get('/balance/:patientId', auth, async (req, res) => {
+    try {
+        const { patientId } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(patientId)) {
+            return res.status(400).json({ success: false, message: 'ID inválido' });
+        }
+
+        const balance = await PatientBalance.findOne({ patient: patientId })
+            .populate('transactions.sessionId', 'date time status serviceType')
+            .populate('transactions.appointmentId', 'date time operationalStatus')
+            .populate('transactions.registeredBy', 'fullName name')
+            .populate({
+                path: 'transactions.appointmentId',
+                select: 'date time operationalStatus doctor',
+                populate: {
+                    path: 'doctor',
+                    select: 'fullName specialty'
+                }
+            });
+
+        if (!balance) {
+            return res.json({
+                success: true,
+                data: { patient: patientId, currentBalance: 0, hasDebt: false, hasCredit: false, transactions: [] }
+            });
+        }
+
+        res.json({ success: true, data: balance });
+    } catch (error) {
+        console.error('Erro ao buscar saldo:', error);
+        res.status(500).json({ success: false, message: 'Erro ao buscar saldo' });
+    }
+});
+
+// POST /api/payments/balance/:patientId/debit
+router.post('/balance/:patientId/debit', auth, async (req, res) => {
+    const mongoSession = await mongoose.startSession();
+    try {
+        await mongoSession.startTransaction();
+        const { patientId } = req.params;
+        const { amount, description, sessionId, appointmentId } = req.body;
+
+        if (!mongoose.Types.ObjectId.isValid(patientId) || !amount || amount <= 0) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({ success: false, message: 'Dados inválidos' });
+        }
+
+        // 🚀 OTIMIZAÇÃO: Usar updateOne dentro da transação (atômico)
+        const newTransaction = {
+            type: 'debit',
+            amount,
+            description: description || 'Sessão utilizada - pagamento pendente',
+            sessionId: sessionId || null,
+            appointmentId: appointmentId || null,
+            registeredBy: req.user?._id || null,
+            transactionDate: new Date()
+        };
+
+        const result = await PatientBalance.findOneAndUpdate(
+            { patient: patientId },
+            {
+                $push: { transactions: newTransaction },
+                $inc: { currentBalance: amount, totalDebited: amount },
+                $set: { lastTransactionAt: new Date() }
+            },
+            { 
+                upsert: true, 
+                new: true,
+                session: mongoSession 
+            }
+        );
+
+        if (sessionId) {
+            await Session.findByIdAndUpdate(sessionId, {
+                $set: { addedToBalance: true, balanceRegisteredAt: new Date() }
+            }, { session: mongoSession });
+        }
+
+        await mongoSession.commitTransaction();
+        res.json({
+            success: true,
+            message: 'Débito registrado',
+            data: { 
+                currentBalance: result.currentBalance, 
+                transaction: result.transactions[result.transactions.length - 1] 
+            }
+        });
+    } catch (error) {
+        await mongoSession.abortTransaction();
+        console.error('❌ Erro ao registrar débito:', error);
+        res.status(500).json({ success: false, message: 'Erro ao registrar débito' });
+    } finally {
+        await mongoSession.endSession();
+    }
+});
+
+// POST /api/payments/balance/:patientId/payment
+router.post('/balance/:patientId/payment', auth, async (req, res) => {
+    const mongoSession = await mongoose.startSession();
+    try {
+        await mongoSession.startTransaction();
+        const { patientId } = req.params;
+        const { amount, paymentMethod, description, sessionId, appointmentId } = req.body;
+
+        if (!mongoose.Types.ObjectId.isValid(patientId) || !amount || amount <= 0) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({ success: false, message: 'Dados inválidos' });
+        }
+
+        const balance = await getOrCreateBalance(patientId);
+        if (amount > balance.currentBalance) {
+            await mongoSession.abortTransaction();
+            return res.status(400).json({ success: false, message: 'Valor excede saldo devedor' });
+        }
+
+        await balance.addPayment(amount, paymentMethod || 'dinheiro', description || 'Pagamento saldo devedor', req.user?._id);
+        const transaction = balance.transactions[balance.transactions.length - 1];
+
+        if (sessionId) {
+            await Session.findByIdAndUpdate(sessionId, {
+                $set: { isPaid: true, paymentStatus: 'paid', visualFlag: 'ok', paidAt: new Date() }
+            }, { session: mongoSession });
+        }
+        if (appointmentId) {
+            await Appointment.findByIdAndUpdate(appointmentId, {
+                $set: { paymentStatus: 'paid', visualFlag: 'ok', paidAt: new Date() },
+                $push: { history: { action: 'payment_received', newStatus: 'paid', changedBy: req.user?._id, timestamp: new Date(), context: 'financial' } }
+            }, { session: mongoSession });
+        }
+
+        await mongoSession.commitTransaction();
+        res.json({ success: true, message: 'Pagamento registrado', data: { currentBalance: balance.currentBalance, transaction } });
+    } catch (error) {
+        await mongoSession.abortTransaction();
+        res.status(500).json({ success: false, message: 'Erro ao registrar pagamento' });
+    } finally {
+        await mongoSession.endSession();
+    }
+});
+
+// POST /api/payments/balance/:patientId/payment-multi
+// Aceita múltiplas formas de pagamento em uma única transação
+router.post('/balance/:patientId/payment-multi', auth, async (req, res) => {
+    const { patientId } = req.params;
+    const { payments, debitIds, totalAmount } = req.body;
+    
+    const startTime = Date.now();
+    const timings = {};
+
+    try {
+        // 1. VALIDAÇÃO RÁPIDA (fora de transaction)
+        if (!mongoose.Types.ObjectId.isValid(patientId)) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'ID de paciente inválido' 
+            });
+        }
+
+        if (!payments || !Array.isArray(payments) || payments.length === 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Dados de pagamento inválidos' 
+            });
+        }
+
+        const totalPaymentAmount = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+        
+        if (totalPaymentAmount <= 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Valor do pagamento deve ser maior que zero' 
+            });
+        }
+
+        // 2. BUSCA BALANCE SEM POPULATE (rápido)
+        const balanceQueryStart = Date.now();
+        let balance = await PatientBalance.findOne({ patient: patientId }).lean();
+        timings.balanceQuery = Date.now() - balanceQueryStart;
+
+        if (!balance) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Saldo do paciente não encontrado' 
+            });
+        }
+
+        const pendingDebits = balance.transactions.filter(t => 
+            t.type === 'debit' && !t.isPaid
+        );
+
+        if (pendingDebits.length === 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Não há débitos pendentes para pagar' 
+            });
+        }
+
+        const validDebitIds = debitIds?.filter(id => 
+            pendingDebits.some(d => d._id.toString() === id)
+        ) || [];
+
+        if (validDebitIds.length === 0) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Nenhum débito válido selecionado' 
+            });
+        }
+
+        // 3. PREPARA DADOS (fora de transaction)
+        const prepareStart = Date.now();
+        const now = new Date();
+        const today = moment().tz("America/Sao_Paulo").format("YYYY-MM-DD");
+        
+        const paidSessionIds = [];
+        const paidAppointmentIds = [];
+        const paidPaymentIds = [];
+        
+        const debitValues = {};
+        
+        validDebitIds.forEach(debitId => {
+            const debit = pendingDebits.find(d => d._id.toString() === debitId);
+            if (debit) {
+                debitValues[debitId] = debit.amount;
+                if (debit.sessionId) paidSessionIds.push(debit.sessionId.toString());
+                if (debit.appointmentId) paidAppointmentIds.push(debit.appointmentId.toString());
+                if (debit.paymentId) paidPaymentIds.push(debit.paymentId.toString());
+            }
+        });
+
+        const paymentMethodsList = payments
+            .filter(p => p.amount > 0)
+            .map(p => p.paymentMethod || 'dinheiro')
+            .join(' + ');
+
+        const transactionData = {
+            _id: new mongoose.Types.ObjectId(),
+            type: 'payment',
+            amount: totalPaymentAmount,
+            description: `Pagamento de ${validDebitIds.length} débito(s) - ${paymentMethodsList}`,
+            paymentMethod: payments[0]?.paymentMethod || 'dinheiro',
+            registeredBy: req.user?._id,
+            sessionId: null,
+            appointmentId: null,
+            transactionDate: now,
+            createdAt: now
+        };
+
+        timings.prepare = Date.now() - prepareStart;
+
+        // 4. TRANSACTION MÍNIMA (só saldo)
+        const txStart = Date.now();
+        const mongoSession = await mongoose.startSession();
+        let transactionCommitted = false;
+
+        try {
+            await mongoSession.startTransaction();
+
+            // Atualizar cada débito individualmente
+            for (const debitId of validDebitIds) {
+                const debitAmount = debitValues[debitId];
+                await PatientBalance.updateOne(
+                    { 
+                        patient: patientId,
+                        'transactions._id': new mongoose.Types.ObjectId(debitId)
+                    },
+                    {
+                        $set: {
+                            'transactions.$.isPaid': true,
+                            'transactions.$.paidAmount': debitAmount,
+                            'transactions.$.paidAt': now,
+                            lastTransactionAt: now
+                        }
+                    },
+                    { session: mongoSession }
+                );
+            }
+
+            // Atualizar saldo e adicionar transação de pagamento
+            const updateResult = await PatientBalance.findOneAndUpdate(
+                { patient: patientId },
+                {
+                    $inc: {
+                        currentBalance: -totalPaymentAmount,
+                        totalCredited: totalPaymentAmount
+                    },
+                    $push: {
+                        transactions: transactionData
+                    }
+                },
+                { session: mongoSession, new: true }
+            );
+
+            if (!updateResult) {
+                await mongoSession.abortTransaction();
+                return res.status(500).json({
+                    success: false,
+                    message: 'Erro ao atualizar saldo'
+                });
+            }
+
+            await mongoSession.commitTransaction();
+            transactionCommitted = true;
+            timings.transaction = Date.now() - txStart;
+
+        } catch (txError) {
+            if (mongoSession.inTransaction()) {
+                await mongoSession.abortTransaction();
+            }
+            throw txError;
+        } finally {
+            await mongoSession.endSession();
+        }
+
+        // 5. UPDATES PARALELOS (fora da transaction)
+        const parallelStart = Date.now();
+        const updatePromises = [];
+
+        if (paidSessionIds.length > 0) {
+            updatePromises.push(
+                Session.updateMany(
+                    { _id: { $in: paidSessionIds } },
+                    {
+                        $set: {
+                            isPaid: true,
+                            paymentStatus: 'paid',
+                            visualFlag: 'ok',
+                            paidAt: now,
+                            updatedAt: now
+                        }
+                    }
+                )
+            );
+        }
+
+        if (paidAppointmentIds.length > 0) {
+            updatePromises.push(
+                Appointment.updateMany(
+                    { _id: { $in: paidAppointmentIds } },
+                    {
+                        $set: {
+                            paymentStatus: 'paid',
+                            visualFlag: 'ok',
+                            paidAt: now,
+                            updatedAt: now
+                        }
+                    }
+                )
+            );
+
+            updatePromises.push(
+                Payment.updateMany(
+                    { appointment: { $in: paidAppointmentIds } },
+                    {
+                        $set: {
+                            status: 'paid',
+                            paymentDate: today,
+                            paidAt: now,
+                            paymentMethod: payments[0]?.paymentMethod || 'dinheiro',
+                            updatedAt: now
+                        }
+                    }
+                )
+            );
+        }
+
+        const parallelResults = await Promise.allSettled(updatePromises);
+        const failures = parallelResults.filter(r => r.status === 'rejected');
+        if (failures.length > 0) {
+            console.warn('⚠️  Alguns updates paralelos falharam:', failures.map(f => f.reason?.message));
+        }
+
+        timings.parallel = Date.now() - parallelStart;
+
+        // 6. RESPOSTA
+        const totalTime = Date.now() - startTime;
+        
+        res.json({
+            success: true,
+            message: `Pagamento de ${validDebitIds.length} débito(s) registrado`,
+            data: {
+                currentBalance: balance.currentBalance - totalPaymentAmount,
+                payment: transactionData,
+                totalPaid: totalPaymentAmount,
+                debitsPaid: validDebitIds.length,
+                sessionsUpdated: paidSessionIds.length,
+                appointmentsUpdated: paidAppointmentIds.length
+            },
+            performance: {
+                totalMs: totalTime,
+                balanceQueryMs: timings.balanceQuery,
+                prepareMs: timings.prepare,
+                transactionMs: timings.transaction,
+                parallelUpdatesMs: timings.parallel
+            }
+        });
+
+        if (totalTime > 3000) {
+            console.warn(`⚠️  payment-multi demorou ${totalTime}ms:`, timings);
+        }
+
+    } catch (error) {
+        console.error('❌ Erro ao registrar pagamentos múltiplos:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Erro ao registrar pagamentos: ' + error.message 
+        });
+    }
+});
+
+// POST /api/payments/cleanup-isis - APAGA PAGAMENTOS ERRADOS
+router.post('/cleanup-isis', auth, async (req, res) => {
+    try {
+        const balance = await PatientBalance.findOne({ patient: '685b0cfaaec14c7163585b5b' });
+        
+        if (!balance) {
+            return res.status(404).json({ error: 'Balance não encontrado' });
+        }
+
+        // Pega só os débitos (mantém eles)
+        const debits = balance.transactions.filter(t => t.type === 'debit');
+        
+        // Marca todos como pagos
+        debits.forEach(d => {
+            d.isPaid = true;
+            d.paidAmount = d.amount;
+        });
+
+        // Calcula total dos débitos
+        const totalDebitado = debits.reduce((sum, d) => sum + d.amount, 0);
+
+        // Cria UM pagamento só
+        const payment = {
+            type: 'payment',
+            amount: totalDebitado,
+            description: 'Pagamento consolidado',
+            paymentMethod: 'cartao_credito',
+            transactionDate: new Date()
+        };
+
+        // Substitui tudo: só débitos + 1 pagamento
+        balance.transactions = [...debits, payment];
+        balance.currentBalance = 0;
+        balance.totalDebited = totalDebitado;
+        balance.totalCredited = totalDebitado;
+
+        await balance.save();
+
+        res.json({ 
+            success: true,
+            message: '✅ APAGADOS TODOS OS PAGAMENTOS ERRADOS!',
+            debits: debits.length,
+            payments: 1,
+            saldo: balance.currentBalance,
+            total: `R$ ${totalDebitado}`
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// DELETE /api/payments/balance/:patientId/transaction/:transactionId
+// Exclui uma transação do saldo — requer motivo obrigatório
+router.delete('/balance/:patientId/transaction/:transactionId', auth, async (req, res) => {
+    try {
+        const { patientId, transactionId } = req.params;
+        const { reason } = req.body;
+
+        if (!reason || reason.trim().length < 5) {
+            return res.status(400).json({ success: false, message: 'Motivo da exclusão é obrigatório (mínimo 5 caracteres)' });
+        }
+
+        const balance = await PatientBalance.findOne({ patient: patientId });
+        if (!balance) return res.status(404).json({ success: false, message: 'Saldo não encontrado' });
+
+        const transaction = balance.transactions.id(transactionId);
+        if (!transaction) return res.status(404).json({ success: false, message: 'Transação não encontrada' });
+
+        if (transaction.isPaid) {
+            return res.status(400).json({ success: false, message: 'Não é possível excluir uma transação já quitada' });
+        }
+
+        const amount = transaction.amount;
+        const type = transaction.type;
+
+        // Reverte o saldo conforme tipo
+        if (type === 'debit') {
+            balance.currentBalance -= amount;
+            balance.totalDebited -= amount;
+        } else if (type === 'payment' || type === 'credit') {
+            balance.currentBalance += amount;
+            balance.totalCredited -= amount;
+        }
+
+        // Registra log de exclusão no histórico
+        balance.transactions.push({
+            type: 'credit',
+            amount: 0,
+            description: `[EXCLUSÃO CORRETIVA] Transação ${transactionId} removida. Motivo: ${reason.trim()}`,
+            registeredBy: req.user?._id,
+            transactionDate: new Date()
+        });
+
+        balance.transactions.pull(transactionId);
+        balance.lastTransactionAt = new Date();
+        await balance.save();
+
+        res.json({ success: true, message: 'Transação excluída com sucesso', data: { currentBalance: balance.currentBalance } });
+    } catch (error) {
+        console.error('[balance/delete-transaction]', error);
+        res.status(500).json({ success: false, message: 'Erro ao excluir transação' });
+    }
+});
+
+// PATCH /api/payments/balance/:patientId/transaction/:transactionId
+// Edita valor e/ou descrição de uma transação pendente
+router.patch('/balance/:patientId/transaction/:transactionId', auth, async (req, res) => {
+    try {
+        const { patientId, transactionId } = req.params;
+        const { amount, description } = req.body;
+
+        if (amount !== undefined && (isNaN(amount) || amount < 0)) {
+            return res.status(400).json({ success: false, message: 'Valor inválido' });
+        }
+
+        const balance = await PatientBalance.findOne({ patient: patientId });
+        if (!balance) return res.status(404).json({ success: false, message: 'Saldo não encontrado' });
+
+        const transaction = balance.transactions.id(transactionId);
+        if (!transaction) return res.status(404).json({ success: false, message: 'Transação não encontrada' });
+
+        if (transaction.isPaid) {
+            return res.status(400).json({ success: false, message: 'Não é possível editar uma transação já quitada' });
+        }
+
+        // Ajusta saldo pela diferença
+        if (amount !== undefined && amount !== transaction.amount) {
+            const diff = amount - transaction.amount;
+            if (transaction.type === 'debit') {
+                balance.currentBalance += diff;
+                balance.totalDebited += diff;
+            }
+            transaction.amount = amount;
+        }
+
+        if (description !== undefined && description.trim()) {
+            transaction.description = description.trim();
+        }
+
+        balance.lastTransactionAt = new Date();
+        await balance.save();
+
+        res.json({ success: true, message: 'Transação atualizada', data: { currentBalance: balance.currentBalance, transaction } });
+    } catch (error) {
+        console.error('[balance/edit-transaction]', error);
+        res.status(500).json({ success: false, message: 'Erro ao editar transação' });
+    }
+});
+
+// GET /api/payments/balance/debtors
+router.get('/balance/debtors', auth, async (req, res) => {
+    try {
+        const debtors = await PatientBalance.find({ currentBalance: { $gt: 0 } })
+            .populate('patient', 'fullName phone email')
+            .sort({ currentBalance: -1 });
+        res.json({ success: true, count: debtors.length, data: debtors });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Erro ao buscar devedores' });
+    }
+});
+
+export default router;
+

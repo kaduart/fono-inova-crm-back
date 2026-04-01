@@ -1,0 +1,106 @@
+meta {
+  name: Create Liminar
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/v2/appointments
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+headers {
+  X-Correlation-Id: {{$guid}}
+  ~X-Idempotency-Key: {{patientId}}_liminar_{{$timestamp}}
+}
+
+body:json {
+  {
+    "patientId": "{{patientId}}",
+    "doctorId": "{{doctorId}}",
+    "packageId": "{{liminarPackageId}}",
+    "date": "2025-04-15",
+    "time": "17:00",
+    "specialty": "fonoaudiologia",
+    "serviceType": "liminar_session",
+    "billingType": "liminar",
+    "paymentMethod": "liminar",
+    "amount": 0,
+    "notes": "Teste liminar via 4.0 - deve reconhecer receita judicial"
+  }
+}
+
+script:post-response {
+  // AUTO-COLLECT: Salva todos os dados
+  const data = res.body?.data;
+  if (data && data.appointmentId) {
+    bru.setEnvVar("appointmentId", data.appointmentId);
+    bru.setEnvVar("correlationId", data.correlationId);
+    bru.setEnvVar("idempotencyKey", data.idempotencyKey);
+    bru.setEnvVar("lastLiminarSession", "true");
+    
+    if (data.eventId) {
+      bru.setEnvVar("lastEventId", data.eventId);
+    }
+    
+    console.log("✅ LIMINAR CRIADA:");
+    console.log("   ID:", data.appointmentId);
+    console.log("   Status:", data.status);
+    console.log("📋 Próximo: Complete para reconhecer receita");
+  } else {
+    console.log("❌ Erro:", res.body?.error?.message || "Falha");
+  }
+}
+
+docs {
+  # Create Liminar (Event-Driven 4.0)
+  
+  ## REGRAS DE NEGÓCIO (RNs):
+  
+  ### 1. O que é Liminar?
+  Decisão judicial que obriga o Estado a pagar tratamento.
+  O paciente NÃO paga, mas a clínica recebe do governo.
+  
+  ### 2. No Create
+  - Usa `package` tipo 'liminar'
+  - NÃO cobra do paciente (amount = 0)
+  - Session criada com `isPaid: true` (já garantido judicialmente)
+  
+  ### 3. No Complete
+  - Reconhece receita: `recognizeLiminarRevenue()`
+  - Atualiza `liminarCreditBalance` do pacote
+  - Cria Payment tipo 'revenue_recognition'
+  - Session `isPaid: true`
+  
+  ### 4. Diferença do Convênio
+  | Aspecto | Convênio | Liminar |
+  |---------|----------|---------|
+  | Quem paga | Convênio privado | Governo (judicial) |
+  | Receita | Reconhecida após sessão | Reconhecida após sessão |
+  | Risco | Inadimplência convênio | Baixo (ordem judicial) |
+  
+  ## Estados
+  ```
+  processing_create → scheduled → complete → confirmed
+                                        ↓
+                              recognizeLiminarRevenue()
+                              liminarCreditBalance++
+  ```
+  
+  ## Response
+  ```json
+  {
+    "success": true,
+    "data": {
+      "appointmentId": "...",
+      "status": "processing_create",
+      "packageId": "..."
+    }
+  }
+  ```
+}

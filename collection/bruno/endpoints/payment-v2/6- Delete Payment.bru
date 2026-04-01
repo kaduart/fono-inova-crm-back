@@ -1,0 +1,28 @@
+meta {
+  name: 6- Delete Payment
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{baseUrl}}/payments/{{v2PaymentId}}
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+script:post-response {
+  if (res.status === 200) {
+    console.log("✅ PAYMENT DELETED");
+    console.log("   📡 Event: PAYMENT_DELETED");
+    bru.deleteEnvVar("v2PaymentId");
+  }
+}
+
+docs {
+  # Delete Payment
+  
+  Passo 6: Deleta pagamento → Emite PAYMENT_DELETED
+}

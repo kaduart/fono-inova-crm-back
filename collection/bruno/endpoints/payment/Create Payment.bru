@@ -1,0 +1,86 @@
+meta {
+  name: Create Payment
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/payments
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "patientId": "{{patientId}}",
+    "doctorId": "{{doctorId}}",
+    "serviceType": "session",
+    "amount": 150.00,
+    "paymentMethod": "pix",
+    "description": "Pagamento teste V2"
+  }
+}
+
+script:pre-request {
+  // Verifica dependências
+  const patientId = bru.getEnvVar("patientId");
+  const doctorId = bru.getEnvVar("doctorId");
+  
+  if (!patientId) {
+    console.error("❌ ERRO: patientId não encontrado!");
+    console.error("   Execute 'List Patients' primeiro");
+  }
+  
+  if (!doctorId) {
+    console.error("❌ ERRO: doctorId não encontrado!");
+    console.error("   Execute 'List Doctors' primeiro");
+  }
+  
+  console.log("💰 Criando pagamento para paciente:", patientId);
+}
+
+script:post-response {
+  // Auto-collect do payment criado
+  const data = res.body?.data;
+  if (data) {
+    const paymentId = data._id || data.id;
+    if (paymentId) {
+      bru.setEnvVar("paymentId", paymentId);
+      console.log("✅ Payment criado:", paymentId);
+    }
+    
+    if (data.amount) {
+      bru.setEnvVar("paymentAmount", data.amount.toString());
+      console.log("💰 Valor:", data.amount);
+    }
+    
+    if (data.status) {
+      bru.setEnvVar("paymentStatus", data.status);
+      console.log("📊 Status:", data.status);
+    }
+    
+    // Verifica se evento foi emitido (log do servidor)
+    console.log("\n🔍 Verifique no servidor:");
+    console.log("   tail -f /tmp/server.log | grep 'PAYMENT_RECEIVED'");
+  }
+}
+
+docs {
+  # Create Payment
+  
+  Cria um novo pagamento e emite evento PAYMENT_RECEIVED.
+  
+  ## Campos obrigatórios
+  - `patientId` → ID do paciente
+  - `doctorId` → ID do doutor
+  - `serviceType` → tipo de serviço (session, evaluation, etc)
+  - `amount` → valor
+  - `paymentMethod` → pix, credit_card, etc
+  
+  ## Evento emitido
+  `PAYMENT_RECEIVED` → Atualiza projeção PatientsView
+}
