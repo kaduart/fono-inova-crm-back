@@ -1,0 +1,33 @@
+meta {
+  name: Check Projection
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/v2/patients/debug/{{patientId}}
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+script:post-response {
+  const view = res.body?.view;
+  if (view) {
+    console.log("📊 PROJEÇÃO DO PACIENTE");
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("Total Payments:", view.totalPayments);
+    console.log("Total Paid:", view.totalPaid);
+    console.log("Balance:", view.financialBalance);
+    console.log("Last Payment:", view.lastPaymentDate);
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━");
+  }
+}
+
+docs {
+  # Check Projection
+  
+  Verifica se a projeção foi atualizada pelos eventos.
+}

@@ -1,0 +1,44 @@
+meta {
+  name: List Patients
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/patients?page=1&limit=5
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+script:post-response {
+  // Auto-collect primeiro paciente e doutor
+  const patients = res.body?.patients || res.body?.data?.patients || [];
+  
+  if (patients.length > 0) {
+    const firstPatient = patients[0];
+    bru.setEnvVar("patientId", firstPatient._id);
+    console.log("✅ Patient ID:", firstPatient._id);
+    console.log("   Nome:", firstPatient.name);
+    
+    if (firstPatient.doctor) {
+      const doctorId = typeof firstPatient.doctor === 'object' 
+        ? firstPatient.doctor._id 
+        : firstPatient.doctor;
+      bru.setEnvVar("doctorId", doctorId);
+      console.log("✅ Doctor ID:", doctorId);
+    }
+  } else {
+    console.error("❌ Nenhum paciente encontrado");
+  }
+}
+
+docs {
+  # List Patients
+  
+  Lista pacientes e auto-coleta:
+  - `patientId` → primeiro paciente
+  - `doctorId` → doutor do paciente
+}
