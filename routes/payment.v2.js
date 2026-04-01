@@ -357,69 +357,6 @@ router.post('/webhook', async (req, res) => {
 });
 
 // ============================================
-// GET /api/v2/payments
-// Listagem V2 de pagamentos (CQRS-ready)
-// ============================================
-router.get('/', auth, async (req, res) => {
-    try {
-        const { 
-            patientId, 
-            status, 
-            startDate, 
-            endDate, 
-            paymentMethod,
-            page = 1, 
-            limit = 50 
-        } = req.query;
-
-        // Build query
-        const query = {};
-        if (patientId) query.patient = patientId;
-        if (status) query.status = status;
-        if (paymentMethod) query.paymentMethod = paymentMethod;
-        if (startDate || endDate) {
-            query.createdAt = {};
-            if (startDate) query.createdAt.$gte = new Date(startDate);
-            if (endDate) query.createdAt.$lte = new Date(endDate);
-        }
-
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-
-        const [payments, total] = await Promise.all([
-            Payment.find(query)
-                .populate('patient', 'fullName email phone')
-                .populate('doctor', 'fullName specialty')
-                .populate('appointment', 'date time status')
-                .sort({ createdAt: -1 })
-                .skip(skip)
-                .limit(parseInt(limit))
-                .lean(),
-            Payment.countDocuments(query)
-        ]);
-
-        res.json({
-            success: true,
-            data: {
-                payments,
-                pagination: {
-                    page: parseInt(page),
-                    limit: parseInt(limit),
-                    total,
-                    pages: Math.ceil(total / parseInt(limit))
-                }
-            }
-        });
-
-    } catch (error) {
-        console.error('[PaymentV2] Erro na listagem:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Erro ao listar pagamentos: ' + error.message
-        });
-    }
-});
-
-// ============================================
 // GET /api/v2/payments/queue/status
 // Status da fila (para monitoramento)
 // ============================================
