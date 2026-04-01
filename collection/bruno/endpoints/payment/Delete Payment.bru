@@ -1,0 +1,46 @@
+meta {
+  name: Delete Payment
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/payments/{{paymentId}}
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+script:pre-request {
+  const paymentId = bru.getEnvVar("paymentId");
+  
+  if (!paymentId) {
+    console.error("❌ ERRO: paymentId não encontrado!");
+    console.error("   Execute 'Create Payment' primeiro");
+  } else {
+    console.log("🗑️  Deletando payment:", paymentId);
+  }
+}
+
+script:post-response {
+  if (res.status === 200 || res.body?.success) {
+    console.log("✅ Payment deletado");
+    bru.deleteEnvVar("paymentId");
+    console.log("\n🔍 Verifique no servidor:");
+    console.log("   tail -f /tmp/server.log | grep 'PAYMENT_DELETED'");
+  }
+}
+
+docs {
+  # Delete Payment
+  
+  Remove um pagamento.
+  
+  ## Evento emitido
+  `PAYMENT_DELETED` → Atualiza projeção PatientsView
+  
+  ## Atenção
+  Limpa a variável `paymentId` do ambiente após deleção
+}

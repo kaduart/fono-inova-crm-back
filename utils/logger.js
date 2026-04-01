@@ -25,4 +25,35 @@ const logger = {
   }
 };
 
+/**
+ * Cria um logger com contexto (correlationId e componente)
+ * @param {string} correlationId - ID de correlação para rastreamento
+ * @param {string} component - Nome do componente
+ * @returns {Object} Logger contextualizado
+ */
+export function createContextLogger(correlationId, component) {
+  const prefix = correlationId ? `[${correlationId}]` : '';
+  const comp = component ? `[${component}]` : '';
+  
+  return {
+    info: (event, message, meta = {}) => {
+      console.log(`${prefix}${comp}[INFO] ${event}: ${message}`, meta);
+    },
+    
+    error: (event, message, meta = {}) => {
+      console.error(`${prefix}${comp}[ERROR] ${event}: ${message}`, meta);
+    },
+    
+    warn: (event, message, meta = {}) => {
+      console.warn(`${prefix}${comp}[WARN] ${event}: ${message}`, meta);
+    },
+    
+    debug: (event, message, meta = {}) => {
+      if (process.env.DEBUG || process.env.NODE_ENV === 'development') {
+        console.log(`${prefix}${comp}[DEBUG] ${event}: ${message}`, meta);
+      }
+    }
+  };
+}
+
 export default logger;
