@@ -1718,7 +1718,8 @@ router.get("/daily-closing", async (req, res) => {
             // 2️⃣ Agendamentos PARA hoje OU CRIADOS hoje (para incluir pré-agendamentos)
             Appointment.find({
                 $or: [
-                    { date: { $gte: startOfDay, $lte: endOfDay } },
+                    { date: { $gte: startOfDay, $lte: endOfDay } }, // date como Date object
+                    { date: targetDate },                             // date como string "YYYY-MM-DD"
                     { createdAt: { $gte: startOfDay, $lte: endOfDay } }
                 ]
             })
