@@ -1087,7 +1087,7 @@ export const packageOperations = {
                                 package: pkgId,
                                 serviceDate: sessionDoc.date,
                                 paymentDate: sessionDoc.date,  // ← Entra no caixa no dia do atendimento
-                                status: 'paid',  // ← 'recognized' não é pego pela query de caixa
+                                status: 'recognized',
                                 kind: 'revenue_recognition',
                                 notes: `Receita reconhecida - Processo: ${sessionDoc.package.liminarProcessNumber}`
                             });

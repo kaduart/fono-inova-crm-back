@@ -142,7 +142,7 @@ const appointmentSchema = new mongoose.Schema({
   // ─── FINANCEIRO EXTRA ──────────────────────────────────────
   paymentStatus: {
     type: String,
-    enum: ['pending', 'paid', 'partial', 'canceled', 'advanced', 'package_paid', 'pending_receipt'],
+    enum: ['pending', 'paid', 'partial', 'canceled', 'advanced', 'package_paid', 'pending_receipt', 'recognized'],
     default: 'pending'
   },
   visualFlag: {
