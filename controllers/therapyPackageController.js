@@ -13,6 +13,7 @@ import { getHolidaysWithNames } from '../config/feriadosBR-dynamic.js';
 import { syncEvent } from '../services/syncService.js';
 import { runJourneyFollowups } from '../services/journeyFollowupEngine.js';
 import Leads from '../models/Leads.js';
+import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 
 /**
  * 🏥 Cria recebível de convênio quando sessão é completada
@@ -714,6 +715,21 @@ export const packageOperations = {
                 runJourneyFollowups(leadId, {
                     patientName: patient.name
                 });
+            }
+
+            // Notifica projection worker para atualizar PackagesView (V2 CQRS)
+            try {
+                await publishEvent(EventTypes.PACKAGE_CREATED, {
+                    patientId,
+                    packageId: reloadedPackage._id.toString(),
+                    doctorId: doctorId,
+                    type: type || 'therapy',
+                    totalSessions: finalTotalSessions,
+                    sessionsCreated: insertedSessions?.length || 0,
+                    requestId: `legacy_${reloadedPackage._id}_${Date.now()}`
+                });
+            } catch (eventError) {
+                console.error('⚠️ Falha ao publicar PACKAGE_CREATED (não-crítico):', eventError.message);
             }
 
             res.status(201).json({
