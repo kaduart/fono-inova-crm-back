@@ -39,7 +39,7 @@ Thumbs.db
 # WhatsApp session data
 whatsapp-session/
 .whatsapp-session/
-session/
+/session/
 *.session
 # WhatsApp cache files
 **/Cache/
