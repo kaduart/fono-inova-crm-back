@@ -17,6 +17,7 @@ import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPu
 import { createContextLogger } from '../../../utils/logger.js';
 import Package from '../../../models/Package.js';
 import Session from '../../../models/Session.js';
+import Appointment from '../../../models/Appointment.js';
 
 const logger = createContextLogger('PackageProcessingWorker');
 
@@ -140,6 +141,7 @@ async function handlePackageCreate(payload, correlationId) {
     await mongoSession.startTransaction();
     
     const {
+      packageId: predefinedPackageId,  // 🆕 Recebe do payload se existir
       patientId,
       doctorId,
       specialty,
@@ -180,8 +182,9 @@ async function handlePackageCreate(payload, correlationId) {
       };
     }
     
-    // Cria o package
+    // Cria o package (com ID pré-definido se vier do payload)
     const packageData = {
+      _id: predefinedPackageId || new mongoose.Types.ObjectId(),  // 🆕 Usa ID da rota ou gera novo
       patient: patientId,
       doctor: doctorId,
       specialty,
@@ -212,8 +215,9 @@ async function handlePackageCreate(payload, correlationId) {
     const newPackage = await Package.create([packageData], { session: mongoSession });
     const packageId = newPackage[0]._id;
     
-    // Cria sessões (se tiver slots)
+    // Cria sessões e appointments 1:1 (se tiver slots)
     const createdSessions = [];
+    const createdAppointments = [];
     if (selectedSlots.length > 0) {
       for (const slot of selectedSlots) {
         const sessionData = {
@@ -230,16 +234,43 @@ async function handlePackageCreate(payload, correlationId) {
           paymentStatus: 'pending',
           visualFlag: 'pending'
         };
-        
-        const [session] = await Session.create([sessionData], { session: mongoSession });
-        createdSessions.push(session._id);
+
+        const [newSession] = await Session.create([sessionData], { session: mongoSession });
+        createdSessions.push(newSession._id);
+
+        // Cria appointment vinculado diretamente à session
+        const [newAppointment] = await Appointment.create([{
+          patient: patientId,
+          doctor: doctorId,
+          date: slot.date,
+          time: slot.time,
+          specialty,
+          session: newSession._id,
+          package: packageId,
+          serviceType: 'package_session',
+          operationalStatus: 'scheduled',
+          clinicalStatus: 'pending',
+          paymentStatus: 'pending',
+          sessionValue,
+          billingType: 'particular',
+          duration: 40,
+          history: []
+        }], { session: mongoSession });
+        createdAppointments.push(newAppointment._id);
+
+        // Vincula appointmentId na session
+        await Session.updateOne(
+          { _id: newSession._id },
+          { $set: { appointmentId: newAppointment._id } },
+          { session: mongoSession }
+        );
       }
     }
-    
+
     // Atualiza package com referências
     await Package.findByIdAndUpdate(
       packageId,
-      { sessions: createdSessions },
+      { sessions: createdSessions, appointments: createdAppointments },
       { session: mongoSession }
     );
     
