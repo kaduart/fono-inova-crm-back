@@ -23,7 +23,7 @@ body:json {
   {
     "patientId": "{{patientId}}",
     "doctorId": "{{doctorId}}",
-    "date": "2025-04-15",
+    "date": "2026-04-15",
     "time": "11:00",
     "specialty": "fonoaudiologia",
     "serviceType": "individual_session",
@@ -34,10 +34,27 @@ body:json {
   }
 }
 
-vars:post-response {
-  appointmentId: res.body.data.appointmentId
-  correlationId: res.body.data.correlationId
-  idempotencyKey: res.body.data.idempotencyKey
+script:post-response {
+  const data = res.body?.data;
+  if (data && data.appointmentId) {
+    bru.setEnvVar("appointmentId", data.appointmentId);
+    bru.setEnvVar("correlationId", data.correlationId);
+    bru.setEnvVar("idempotencyKey", data.idempotencyKey);
+    bru.setEnvVar("lastCreatedAppointmentId", data.appointmentId);
+    bru.setEnvVar("lastCreateStatus", data.status);
+
+    if (data.eventId) {
+      bru.setEnvVar("lastEventId", data.eventId);
+    }
+
+    console.log("✅ PARTICULAR CRIADO:");
+    console.log("   ID:", data.appointmentId);
+    console.log("   Status:", data.status);
+    console.log("   Correlation:", data.correlationId);
+    console.log("📋 Próximo: Faça polling em 'Check Status' até scheduled");
+  } else {
+    console.log("❌ Erro ao criar:", res.body?.error?.message || "Resposta inválida");
+  }
 }
 
 docs {

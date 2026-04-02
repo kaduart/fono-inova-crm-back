@@ -1,0 +1,56 @@
+meta {
+  name: 3e- Validation Error
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/v2/payments/create
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "patientId": "",
+    "doctorId": "{{v2DoctorId}}",
+    "serviceType": "session",
+    "amount": -100,
+    "paymentMethod": "pix",
+    "notes": "RN-V1: Deve falhar validação - campos obrigatórios e amount > 0"
+  }
+}
+
+script:post-response {
+  const status = res.status;
+  const error = res.body?.error;
+  
+  if (status === 400 || status === 422 || error) {
+    console.log("✅ VALIDATION ERROR CAUGHT");
+    console.log("   Status:", status);
+    console.log("   Error:", error || res.body?.message);
+    console.log("   RN-V1: Validações devem rejeitar dados inválidos");
+  } else {
+    console.log("❌ SHOULD HAVE FAILED VALIDATION");
+    console.log("   Status:", status);
+  }
+}
+
+docs {
+  # RN-V1: Validações
+  
+  Campos obrigatórios:
+  - ✅ `patientId`
+  - ✅ `doctorId`
+  - ✅ `sessionType`
+  - ✅ `amount` (deve ser > 0)
+  - ✅ `paymentMethod`
+  
+  Regras por tipo:
+  - `package_session` → exige `packageId`
+  - `session` → exige `sessionId`
+}

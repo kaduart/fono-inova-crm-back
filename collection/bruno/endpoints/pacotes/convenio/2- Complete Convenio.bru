@@ -1,0 +1,55 @@
+meta {
+  name: 2- Complete Convenio
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{baseUrl}}/v2/appointments/{{appointmentId}}/complete
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+headers {
+  X-Correlation-Id: {{$guid}}
+  X-Idempotency-Key: {{appointmentId}}_complete_convenio
+}
+
+body:json {
+  {
+    "addToBalance": false
+  }
+}
+
+script:post-response {
+  const data = res.body?.data;
+  if (data && data.appointmentId) {
+    console.log("✅ CONVÊNIO COMPLETADO:");
+    console.log("   AppointmentId:", data.appointmentId);
+    console.log("   Status:", data.status);
+    console.log("📋 Validação: guide.usedSessions deve ter incrementado");
+    console.log("📋 Execute 'Check Guia Status' para confirmar");
+  } else if (res.body?.error) {
+    console.log("❌ Erro:", res.body.error);
+  } else {
+    console.log("❌ Erro inesperado:", JSON.stringify(res.body));
+  }
+}
+
+docs {
+  # Complete Convenio
+  
+  Finaliza agendamento de convênio.
+  
+  ## Comportamento Esperado
+  - Consome guia: `guide.usedSessions++`
+  - Cria Payment tipo 'convenio'
+  - Session: `paymentStatus: pending_receipt`
+  
+  ## Validação
+  Execute **"Check Guia Status"** para verificar `usedSessions`
+}

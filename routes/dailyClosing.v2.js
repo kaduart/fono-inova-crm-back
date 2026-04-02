@@ -4,6 +4,8 @@ import moment from 'moment-timezone';
 import { auth } from '../middleware/auth.js';
 import DailyClosingSnapshot from '../models/DailyClosingSnapshot.js';
 import { calculateDailyClosing } from '../services/dailyClosing/index.js';
+import Appointment from '../models/Appointment.js';
+import Payment from '../models/Payment.js';
 
 const router = express.Router();
 
@@ -77,6 +79,109 @@ router.post('/run', auth, async (req, res) => {
 
     } catch (error) {
         console.error('[DailyClosingV2] Erro:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ======================================================
+// GET /v2/daily-closing/details/payments - Detalhes de pagamentos
+// ======================================================
+router.get('/details/payments', auth, async (req, res) => {
+    try {
+        const { date } = req.query;
+        const targetDate = date 
+            ? moment.tz(date, "America/Sao_Paulo").format("YYYY-MM-DD")
+            : moment.tz(new Date(), "America/Sao_Paulo").format("YYYY-MM-DD");
+        
+        const startOfDay = moment.tz(targetDate, "America/Sao_Paulo").startOf('day').toDate();
+        const endOfDay = moment.tz(targetDate, "America/Sao_Paulo").endOf('day').toDate();
+        
+        const payments = await Payment.find({
+            paymentDate: { $gte: startOfDay, $lte: endOfDay },
+            status: 'paid'
+        }).populate('patient', 'fullName').lean();
+        
+        res.json({
+            success: true,
+            data: payments
+        });
+    } catch (error) {
+        console.error('[DailyClosingV2] Erro ao buscar pagamentos:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ======================================================
+// GET /v2/daily-closing/details/scheduled - Sessões agendadas
+// ======================================================
+router.get('/details/scheduled', auth, async (req, res) => {
+    try {
+        const { date } = req.query;
+        const targetDate = date 
+            ? moment.tz(date, "America/Sao_Paulo").format("YYYY-MM-DD")
+            : moment.tz(new Date(), "America/Sao_Paulo").format("YYYY-MM-DD");
+        
+        const appointments = await Appointment.find({
+            date: targetDate,
+            status: { $in: ['agendado', 'confirmado'] }
+        }).populate('patient', 'fullName').populate('doctor', 'fullName specialty').lean();
+        
+        res.json({
+            success: true,
+            data: appointments
+        });
+    } catch (error) {
+        console.error('[DailyClosingV2] Erro ao buscar agendamentos:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ======================================================
+// GET /v2/daily-closing/details/completed - Sessões realizadas
+// ======================================================
+router.get('/details/completed', auth, async (req, res) => {
+    try {
+        const { date } = req.query;
+        const targetDate = date 
+            ? moment.tz(date, "America/Sao_Paulo").format("YYYY-MM-DD")
+            : moment.tz(new Date(), "America/Sao_Paulo").format("YYYY-MM-DD");
+        
+        const appointments = await Appointment.find({
+            date: targetDate,
+            status: 'completed'
+        }).populate('patient', 'fullName').populate('doctor', 'fullName specialty').lean();
+        
+        res.json({
+            success: true,
+            data: appointments
+        });
+    } catch (error) {
+        console.error('[DailyClosingV2] Erro ao buscar realizadas:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ======================================================
+// GET /v2/daily-closing/details/absences - Faltas
+// ======================================================
+router.get('/details/absences', auth, async (req, res) => {
+    try {
+        const { date } = req.query;
+        const targetDate = date 
+            ? moment.tz(date, "America/Sao_Paulo").format("YYYY-MM-DD")
+            : moment.tz(new Date(), "America/Sao_Paulo").format("YYYY-MM-DD");
+        
+        const appointments = await Appointment.find({
+            date: targetDate,
+            status: 'faltou'
+        }).populate('patient', 'fullName').populate('doctor', 'fullName specialty').lean();
+        
+        res.json({
+            success: true,
+            data: appointments
+        });
+    } catch (error) {
+        console.error('[DailyClosingV2] Erro ao buscar faltas:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

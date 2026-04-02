@@ -1,4 +1,33 @@
 meta {
   name: payment
-  seq: 3
+  seq: 10
+}
+
+auth {
+  mode: inherit
+}
+
+docs {
+  # Payment V2 - Event-Driven com Regras de Negócio
+  
+  Coleção completa de testes para o fluxo de pagamento V2.
+  
+  ## Cobertura de Regras de Negócio (RN-V1):
+  
+  1. **RN Individual Session** (6) - Criação automática de sessão
+  2. **RN Package Session** (7) - Validação e atualização de pacote
+  3. **RN Advance Payment** (8) - Sessões futuras pagas antecipadamente
+  4. **RN Validation Error** (9) - Validações de campos obrigatórios
+  
+  ## Fluxo Principal:
+  
+  1. Setup - Get Patient
+  2. Check Before (projeção inicial)
+  3. Create Payment (async 202)
+  4. Check After Create (valida projeção)
+  5. Check Event Status (polling opcional)
+  6-9. Testes de RN
+  10. Update Payment
+  11. Delete Payment
+  12. Final Check
 }

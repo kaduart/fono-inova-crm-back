@@ -1,8 +1,15 @@
-// workers/paymentWorker.js
+// workers/paymentWorkerWithRules.js
+// V2 COM TODAS AS REGRAS DE NEGÓCIO DA V1
+
 import { Worker } from 'bullmq';
 import { redisConnection, moveToDLQ } from '../infrastructure/queue/queueConfig.js';
 import Payment from '../models/Payment.js';
 import Appointment from '../models/Appointment.js';
+import Patient from '../models/Patient.js';
+import Doctor from '../models/Doctor.js';
+import Package from '../models/Package.js';
+import Session from '../models/Session.js';
+import PatientBalance from '../models/PatientBalance.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import mongoose from 'mongoose';
 import { 
@@ -12,20 +19,7 @@ import {
 } from '../infrastructure/events/eventStoreService.js';
 import EventStore from '../models/EventStore.js';
 import { createContextLogger } from '../utils/logger.js';
-
-/**
- * Payment Worker - Processa pagamentos com Saga Pattern
- * 
- * Responsabilidade:
- * - Criar registro de pagamento
- * - Processar cobrança (PIX, cartão, etc)
- * - Confirmar ou rejeitar
- * - COMPENSAÇÃO: se falhar → cancela agendamento
- * 
- * Saga Pattern:
- * SUCCESS: PAYMENT_REQUESTED → PAYMENT_CONFIRMED → APPOINTMENT_CONFIRMED
- * FAILURE: PAYMENT_REQUESTED → PAYMENT_FAILED → APPOINTMENT_CANCELLED (compensação)
- */
+import { distributePayments } from '../services/distributePayments.js';
 
 export function startPaymentWorker() {
     const worker = new Worker('payment-processing', async (job) => {
@@ -34,52 +28,36 @@ export function startPaymentWorker() {
         const log = createContextLogger(correlationId, 'payment_worker');
         
         log.info('processing_started', `Processando ${eventType}: ${eventId}`, {
-            appointmentId: payload.appointmentId,
+            patientId: payload.patientId,
             amount: payload.amount,
             attempt: job.attemptsMade + 1
         });
 
-        // Idempotência: verifica via EventStore
+        // Idempotência
         const existingEvent = await EventStore.findOne({ eventId });
         if (existingEvent && existingEvent.status === 'processed') {
             log.info('already_processed', `Evento já processado: ${eventId}`);
             return { status: 'already_processed' };
         }
 
-        // Idempotência via idempotencyKey se disponível
-        const idempotencyKey = job.data.idempotencyKey || eventId;
-        if (idempotencyKey && await eventExists(idempotencyKey)) {
-            log.info('already_processed', `Evento com idempotencyKey já processado: ${idempotencyKey}`);
-            return { status: 'already_processed' };
-        }
-
         try {
-            // Registra evento no Event Store
             await appendEvent({
                 eventType: 'PAYMENT_CREATE_REQUESTED',
                 aggregateType: 'payment',
-                aggregateId: payload.appointmentId || eventId,
+                aggregateId: payload.patientId || eventId,
                 payload: job.data,
-                idempotencyKey,
                 correlationId,
-                metadata: {
-                    source: 'payment_worker',
-                    workerJobId: job.id
-                }
+                metadata: { source: 'payment_worker', workerJobId: job.id }
             });
 
-            // Wrapper com garantias de processamento
             const result = await processWithGuarantees(
                 { eventId, eventType, correlationId, payload },
                 async (event) => {
                     if (eventType === EventTypes.PAYMENT_REQUESTED) {
-                        return await handlePaymentRequested(payload, eventId, correlationId, log);
+                        return await handlePaymentWithAllRules(payload, eventId, correlationId, log);
                     } else if (eventType === EventTypes.PAYMENT_PROCESS_REQUESTED) {
                         return await handlePaymentProcessRequested(payload, eventId, correlationId, log);
-                    } else if (eventType === EventTypes.PAYMENT_COMPLETED) {
-                        return await handlePaymentConfirmed(payload, eventId, correlationId, log);
                     }
-                    
                     throw new Error(`Tipo desconhecido: ${eventType}`);
                 },
                 'payment_worker'
@@ -89,11 +67,7 @@ export function startPaymentWorker() {
             
         } catch (error) {
             log.error('processing_error', error.message, { eventId, eventType });
-            
-            if (job.attemptsMade >= 4) {
-                await moveToDLQ(job, error);
-            }
-            
+            if (job.attemptsMade >= 4) await moveToDLQ(job, error);
             throw error;
         }
         
@@ -112,166 +86,328 @@ export function startPaymentWorker() {
         log.error('job_failed', `Job ${job?.id} falhou: ${error.message}`);
     });
 
-    console.log('[PaymentWorker] Worker iniciado (com Saga Pattern e Event Store)');
+    console.log('[PaymentWorker] Worker iniciado com TODAS as regras de negócio V1');
     return worker;
 }
 
 /**
- * Processa solicitação de pagamento
- * Saga: Step 1 → Cria pagamento e processa
+ * Handler principal com TODAS as regras de negócio da V1
  */
-async function handlePaymentRequested(payload, eventId, correlationId, log) {
-    const { 
-        appointmentId, 
-        patientId, 
-        doctorId, 
-        amount, 
-        paymentMethod = 'pix',
-        notes 
-    } = payload;
-
-    // 1. STATE GUARD: Verifica se agendamento existe e está pending
-    const appointment = await Appointment.findById(appointmentId);
+async function handlePaymentWithAllRules(payload, eventId, correlationId, log) {
+    const mongoSession = await mongoose.startSession();
     
-    if (!appointment) {
-        throw new Error(`APPOINTMENT_NOT_FOUND: ${appointmentId}`);
-    }
-
-    if (appointment.operationalStatus === 'confirmed') {
-        log.info('already_confirmed', `Agendamento ${appointmentId} já confirmado`);
-        return { status: 'already_confirmed', appointmentId };
-    }
-
-    if (appointment.operationalStatus === 'rejected' || appointment.operationalStatus === 'canceled') {
-        log.info('appointment_cancelled', `Agendamento ${appointmentId} já cancelado/rejeitado`);
-        return { status: 'appointment_cancelled', appointmentId };
-    }
-
-    // 2. Verifica se já existe pagamento para este appointment (idempotência)
-    const existingPayment = await Payment.findOne({ 
-        appointment: appointmentId,
-        status: { $in: ['paid', 'pending'] }
-    });
-
-    if (existingPayment) {
-        log.info('payment_exists', `Pagamento já existe: ${existingPayment._id}`);
-        return { 
-            status: existingPayment.status === 'paid' ? 'already_paid' : 'already_pending',
-            paymentId: existingPayment._id
-        };
-    }
-
-    // 3. Cria registro de pagamento
-    const payment = new Payment({
-        patient: patientId,
-        doctor: doctorId,
-        appointment: appointmentId,
-        amount,
-        paymentMethod,
-        status: 'pending', // Começa como pending
-        correlationId,
-        notes: notes || `Pagamento referente ao agendamento ${appointmentId}`,
-        requestedAt: new Date()
-    });
-
-    await payment.save();
-    log.info('payment_created', `Pagamento criado: ${payment._id}`);
-
-    // 4. PROCESSA PAGAMENTO (simulação - aqui entra Sicoob/gateway)
-    const paymentResult = await processPayment(payment, log);
-
-    if (paymentResult.success) {
-        // ✅ SAGA: Sucesso
-        await confirmPaymentFlow(payment, appointment, correlationId, log);
+    try {
+        await mongoSession.startTransaction();
         
-        return {
-            status: 'payment_confirmed',
-            paymentId: payment._id,
-            appointmentId,
-            transactionId: paymentResult.transactionId
-        };
-    } else {
-        // ❌ SAGA: Falha → Compensação
-        await compensatePaymentFailure(payment, appointment, paymentResult.error, correlationId, log);
+        const {
+            patientId,
+            doctorId,
+            serviceType,
+            amount,
+            paymentMethod,
+            status,
+            notes,
+            packageId,
+            paymentDate,
+            sessionType,
+            sessionId,
+            isAdvancePayment = false,
+            advanceSessions = [],
+            appointmentId
+        } = payload;
+
+        // ═══════════════════════════════════════════════════════════════
+        // 1. VALIDAÇÕES BÁSICAS (da V1)
+        // ═══════════════════════════════════════════════════════════════
         
-        return {
-            status: 'payment_failed_compensated',
-            paymentId: payment._id,
-            appointmentId,
-            error: paymentResult.error
+        if (!patientId || !doctorId || !sessionType || !amount || !paymentMethod) {
+            throw new Error('VALIDATION_ERROR: Campos obrigatórios faltando');
+        }
+
+        if (amount <= 0) {
+            throw new Error('VALIDATION_ERROR: Valor deve ser maior que zero');
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // 2. VERIFICAÇÃO DE EXISTÊNCIA (da V1)
+        // ═══════════════════════════════════════════════════════════════
+        
+        const patientExists = await Patient.exists({ _id: patientId });
+        if (!patientExists) {
+            throw new Error('PATIENT_NOT_FOUND: Paciente não encontrado');
+        }
+
+        const doctorExists = await Doctor.exists({ _id: doctorId });
+        if (!doctorExists) {
+            throw new Error('DOCTOR_NOT_FOUND: Médico não encontrado');
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // 3. VALIDAÇÃO POR TIPO DE SERVIÇO (da V1)
+        // ═══════════════════════════════════════════════════════════════
+        
+        if (serviceType === 'package_session' && !packageId) {
+            throw new Error('VALIDATION_ERROR: ID do pacote é obrigatório para pagamentos de pacote');
+        }
+
+        if (serviceType === 'package_session') {
+            const packageExists = await Package.exists({ _id: packageId });
+            if (!packageExists) {
+                throw new Error('PACKAGE_NOT_FOUND: Pacote não encontrado');
+            }
+        }
+
+        if (serviceType === 'session' && !sessionId) {
+            throw new Error('VALIDATION_ERROR: ID da sessão é obrigatório para serviço do tipo "session"');
+        }
+
+        if (serviceType === 'session') {
+            const sessionExists = await Session.exists({ _id: sessionId });
+            if (!sessionExists) {
+                throw new Error('SESSION_NOT_FOUND: Sessão não encontrada');
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // 4. CRIAÇÃO DE SESSÃO INDIVIDUAL (da V1)
+        // ═══════════════════════════════════════════════════════════════
+        
+        let individualSessionId = null;
+        if (serviceType === 'individual_session') {
+            const newSession = await Session.create([{
+                serviceType,
+                patient: patientId,
+                doctor: doctorId,
+                notes,
+                package: null,
+                sessionType,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            }], { session: mongoSession });
+            individualSessionId = newSession[0]._id;
+            log.info('session_created', `Sessão individual criada: ${individualSessionId}`);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // 5. CRIAÇÃO DE SESSÕES FUTURAS (Advance Payment - da V1)
+        // ═══════════════════════════════════════════════════════════════
+        
+        let advanceSessionsIds = [];
+        if (advanceSessions.length > 0) {
+            for (const session of advanceSessions) {
+                const newSession = await Session.create([{
+                    date: session.date,
+                    time: session.time,
+                    sessionType: session.sessionType,
+                    patient: patientId,
+                    doctor: doctorId,
+                    status: 'scheduled',
+                    isPaid: true,
+                    paymentMethod: paymentMethod,
+                    isAdvance: true,
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                }], { session: mongoSession });
+                advanceSessionsIds.push(newSession[0]._id);
+            }
+            log.info('advance_sessions_created', `${advanceSessionsIds.length} sessões futuras criadas`);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // 6. CRIAÇÃO DO PAGAMENTO (da V1)
+        // ═══════════════════════════════════════════════════════════════
+        
+        const currentDate = new Date();
+        const paymentData = {
+            patient: patientId,
+            doctor: doctorId,
+            serviceType,
+            amount,
+            paymentMethod,
+            notes,
+            status: status || 'paid',
+            createdAt: currentDate,
+            updatedAt: currentDate,
+            sessionType,
+            coveredSessions: advanceSessionsIds.map(id => ({
+                sessionId: id,
+                used: false,
+                scheduledDate: advanceSessions.find(s => s.sessionId === id.toString())?.date
+            })),
+            isAdvance: advanceSessions.length > 0,
+            eventId,
+            correlationId
         };
+
+        // Adiciona campos condicionais
+        if (serviceType === 'session') {
+            paymentData.session = sessionId;
+        } else if (serviceType === 'individual_session') {
+            paymentData.session = individualSessionId;
+        } else if (serviceType === 'package_session') {
+            paymentData.package = packageId;
+        }
+
+        if (appointmentId) {
+            paymentData.appointment = appointmentId;
+        }
+
+        const [payment] = await Payment.create([paymentData], { session: mongoSession });
+        log.info('payment_created', `Pagamento criado: ${payment._id}`, { amount, serviceType });
+
+        // ═══════════════════════════════════════════════════════════════
+        // 7. ATUALIZAÇÃO DE STATUS DA SESSÃO (da V1)
+        // ═══════════════════════════════════════════════════════════════
+        
+        if (serviceType === 'session' || serviceType === 'individual_session') {
+            const sessionToUpdate = serviceType === 'individual_session' ? individualSessionId : sessionId;
+            await Session.findByIdAndUpdate(
+                sessionToUpdate,
+                { 
+                    $set: { 
+                        status: 'completed',
+                        paymentStatus: 'paid',
+                        paidAt: new Date()
+                    }
+                },
+                { session: mongoSession }
+            );
+            log.info('session_updated', `Sessão ${sessionToUpdate} marcada como paga`);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // 8. ATUALIZAÇÃO DO APPOINTMENT (da V1)
+        // ═══════════════════════════════════════════════════════════════
+        
+        if (appointmentId) {
+            await Appointment.findByIdAndUpdate(
+                appointmentId,
+                {
+                    $set: {
+                        operationalStatus: 'confirmed',
+                        paymentStatus: 'paid',
+                        payment: payment._id
+                    },
+                    $push: {
+                        history: {
+                            action: 'payment_confirmed',
+                            newStatus: 'confirmed',
+                            timestamp: new Date(),
+                            context: `Pagamento ${payment._id} confirmado`
+                        }
+                    }
+                },
+                { session: mongoSession }
+            );
+            log.info('appointment_updated', `Appointment ${appointmentId} atualizado`);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // 9. ATUALIZAÇÃO DE PACOTE (da V1)
+        // ═══════════════════════════════════════════════════════════════
+        
+        if (serviceType === 'package_session' && packageId) {
+            await Package.findByIdAndUpdate(
+                packageId,
+                {
+                    $inc: { sessionsDone: 1 },
+                    $push: {
+                        payments: {
+                            paymentId: payment._id,
+                            amount: amount,
+                            date: new Date()
+                        }
+                    }
+                },
+                { session: mongoSession }
+            );
+            log.info('package_updated', `Pacote ${packageId} atualizado`);
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // 10. COMMIT DA TRANSAÇÃO
+        // ═══════════════════════════════════════════════════════════════
+        
+        await mongoSession.commitTransaction();
+        
+        // ═══════════════════════════════════════════════════════════════
+        // 11. PUBLICAR EVENTO DE SUCESSO
+        // ═══════════════════════════════════════════════════════════════
+        
+        await publishEvent(
+            EventTypes.PAYMENT_COMPLETED,
+            {
+                paymentId: payment._id,
+                patientId,
+                doctorId,
+                amount,
+                serviceType,
+                appointmentId,
+                sessionsCreated: advanceSessionsIds.length
+            },
+            {
+                correlationId,
+                aggregateType: 'payment',
+                aggregateId: payment._id
+            }
+        );
+
+        return {
+            status: 'payment_created',
+            paymentId: payment._id,
+            patientId,
+            doctorId,
+            amount,
+            sessionsCreated: advanceSessionsIds.length,
+            sessionId: individualSessionId || sessionId
+        };
+        
+    } catch (error) {
+        await mongoSession.abortTransaction();
+        log.error('payment_failed', error.message, { error: error.stack });
+        throw error;
+    } finally {
+        mongoSession.endSession();
     }
 }
 
 /**
- * Processa pagamento múltiplo (payment-multi do saldo)
- * Usado para quitar múltiplos débitos de uma vez
+ * Processa pagamento múltiplo (payment-multi)
  */
 async function handlePaymentProcessRequested(payload, eventId, correlationId, log) {
-    const {
-        type,
-        patientId,
-        payments,
-        debitIds,
-        totalAmount,
-        requestedBy
-    } = payload;
-
-    log.info('multi_payment_started', `Processando payment-multi: ${debitIds?.length || 0} débitos`, {
-        patientId,
-        totalAmount
-    });
-
-    // Se não for multi_payment, ignora
-    if (type !== 'multi_payment') {
-        log.warn('unknown_type', `Tipo desconhecido: ${type}`);
-        return { status: 'ignored', reason: 'not_multi_payment' };
-    }
-
     const mongoSession = await mongoose.startSession();
     
     try {
         await mongoSession.startTransaction();
 
-        const now = new Date();
-        const results = {
-            paymentsCreated: [],
-            debitsMarked: [],
-            appointmentsUpdated: [],
-            errors: []
-        };
+        const { type, patientId, payments, debitIds, totalAmount } = payload;
 
-        // 1. Cria o Payment principal (consolidado)
-        const mainPayment = new Payment({
+        if (type !== 'multi_payment') {
+            return { status: 'ignored', reason: 'not_multi_payment' };
+        }
+
+        // Validações
+        if (!patientId || !payments?.length || !debitIds?.length) {
+            throw new Error('VALIDATION_ERROR: Dados incompletos para payment-multi');
+        }
+
+        // Cria pagamento principal
+        const [mainPayment] = await Payment.create([{
             patient: patientId,
             amount: totalAmount,
             paymentMethod: payments[0]?.paymentMethod || 'dinheiro',
             status: 'paid',
-            kind: 'multi_payment',
-            notes: `Pagamento múltiplo: ${debitIds.length} débito(s) - Total: R$ ${totalAmount}`,
-            correlationId,
-            paidAt: now,
-            createdAt: now
-        });
+            type: 'multi_payment',
+            debitIds,
+            eventId,
+            correlationId
+        }], { session: mongoSession });
 
-        await mainPayment.save({ session: mongoSession });
-        results.paymentsCreated.push(mainPayment._id);
-
-        // 2. Atualiza PatientBalance (marca débitos como pagos)
-        const PatientBalance = (await import('../models/PatientBalance.js')).default;
-        
-        const balanceUpdate = await PatientBalance.findOneAndUpdate(
-            { 
-                patient: patientId,
-                'transactions._id': { $in: debitIds.map(id => new mongoose.Types.ObjectId(id)) }
-            },
+        // Atualiza PatientBalance
+        await PatientBalance.updateOne(
+            { patient: patientId },
             {
-                $set: {
-                    'transactions.$[debit].isPaid': true,
-                    'transactions.$[debit].paidAt': now,
-                    'transactions.$[debit].paymentId': mainPayment._id
-                },
-                $inc: {
+                $inc: { 
                     currentBalance: -totalAmount,
                     totalCredited: totalAmount
                 },
@@ -279,248 +415,34 @@ async function handlePaymentProcessRequested(payload, eventId, correlationId, lo
                     transactions: {
                         type: 'payment',
                         amount: totalAmount,
-                        description: `Pagamento múltiplo - ${debitIds.length} débito(s)`,
-                        paymentMethod: payments[0]?.paymentMethod || 'dinheiro',
-                        registeredBy: requestedBy,
-                        createdAt: now
+                        description: `Pagamento múltiplo: ${debitIds.length} débitos`,
+                        paymentId: mainPayment._id,
+                        transactionDate: new Date()
                     }
                 }
             },
-            {
-                session: mongoSession,
-                arrayFilters: [{ 
-                    'debit._id': { $in: debitIds.map(id => new mongoose.Types.ObjectId(id)) },
-                    'debit.type': 'debit'
-                }],
-                new: true
-            }
+            { session: mongoSession }
         );
-
-        if (!balanceUpdate) {
-            throw new Error('BALANCE_UPDATE_FAILED');
-        }
-
-        results.debitsMarked = debitIds;
-
-        // 3. Atualiza Appointments relacionados aos débitos
-        const appointmentIds = [];
-        for (const debitId of debitIds) {
-            const debit = balanceUpdate.transactions.find(t => 
-                t._id.toString() === debitId && t.type === 'debit'
-            );
-            if (debit?.appointmentId) {
-                appointmentIds.push(debit.appointmentId);
-            }
-        }
-
-        if (appointmentIds.length > 0) {
-            await Appointment.updateMany(
-                { _id: { $in: appointmentIds } },
-                {
-                    $set: {
-                        paymentStatus: 'paid',
-                        visualFlag: 'ok',
-                        paidAt: now,
-                        updatedAt: now
-                    },
-                    $push: {
-                        history: {
-                            action: 'multi_payment_received',
-                            newStatus: 'paid',
-                            timestamp: now,
-                            context: `Pagamento múltiplo: ${mainPayment._id}`
-                        }
-                    }
-                },
-                { session: mongoSession }
-            );
-            results.appointmentsUpdated = appointmentIds;
-        }
 
         await mongoSession.commitTransaction();
 
-        log.info('multi_payment_completed', `Payment-multi concluído: ${mainPayment._id}`, {
-            paymentId: mainPayment._id,
-            debitsCount: debitIds.length,
-            appointmentsCount: appointmentIds.length
-        });
-
-        // 4. Publica eventos de resultado
         await publishEvent(
             EventTypes.PAYMENT_COMPLETED,
             {
-                paymentId: mainPayment._id.toString(),
-                patientId: patientId.toString(),
+                paymentId: mainPayment._id,
+                patientId,
                 amount: totalAmount,
                 type: 'multi_payment',
-                debitsCount: debitIds.length,
-                appointmentsCount: appointmentIds.length
+                debitsPaid: debitIds.length
             },
-            { correlationId }
-        );
-
-        // 4.1 Solicita recálculo de totais (snapshot ficará stale)
-        await publishEvent(
-            EventTypes.TOTALS_RECALCULATE_REQUESTED,
-            {
-                clinicId: null, // Todos os clinicos
-                date: new Date().toISOString().split('T')[0],
-                period: 'month',
-                reason: 'payment_multi_completed',
-                triggeredBy: 'payment_worker'
-            },
-            { correlationId }
-        );
-
-        // 5. Notificação
-        await publishEvent(
-            EventTypes.NOTIFICATION_REQUESTED,
-            {
-                type: 'PAYMENT_CONFIRMED',
-                patientId: patientId.toString(),
-                amount: totalAmount,
-                message: `Pagamento de R$ ${totalAmount} confirmado (${debitIds.length} débito(s) quitados)`
-            },
-            { correlationId }
+            { correlationId, aggregateType: 'payment', aggregateId: mainPayment._id }
         );
 
         return {
-            status: 'multi_payment_completed',
+            status: 'multi_payment_created',
             paymentId: mainPayment._id,
-            amount: totalAmount,
-            debitsCount: debitIds.length,
-            appointmentsUpdated: appointmentIds.length
+            debitsPaid: debitIds.length
         };
-
-    } catch (error) {
-        await mongoSession.abortTransaction();
-        log.error('multi_payment_error', `Erro no payment-multi: ${error.message}`);
-        
-        // Publica evento de falha
-        await publishEvent(
-            EventTypes.PAYMENT_FAILED,
-            {
-                patientId: patientId.toString(),
-                amount: totalAmount,
-                error: error.message,
-                type: 'multi_payment'
-            },
-            { correlationId }
-        );
-        
-        throw error;
-    } finally {
-        mongoSession.endSession();
-    }
-}
-
-/**
- * Processa pagamento (integração com gateway)
- * TODO: Substituir por integração real com Sicoob
- */
-async function processPayment(payment, log) {
-    log.debug('processing_payment', `Processando pagamento ${payment._id}...`);
-    
-    // Simulação: 90% sucesso, 10% falha (para testar compensação)
-    const shouldFail = Math.random() < 0.1;
-    
-    if (shouldFail && process.env.NODE_ENV === 'development') {
-        return {
-            success: false,
-            error: 'INSUFFICIENT_FUNDS',
-            message: 'Saldo insuficiente (simulação)'
-        };
-    }
-    
-    // Aqui entraria a integração real:
-    // - Gerar QR Code PIX
-    // - Aguardar webhook de confirmação
-    // - Ou processar cartão
-    
-    // Simula delay de processamento
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    return {
-        success: true,
-        transactionId: `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    };
-}
-
-/**
- * SAGA: Fluxo de sucesso
- * Confirma pagamento e agendamento
- */
-async function confirmPaymentFlow(payment, appointment, correlationId, log) {
-    const mongoSession = await mongoose.startSession();
-    
-    try {
-        await mongoSession.startTransaction();
-        
-        // 1. Atualiza pagamento para 'paid'
-        await Payment.findByIdAndUpdate(payment._id, {
-            status: 'paid',
-            paidAt: new Date(),
-            confirmedAt: new Date()
-        }, { session: mongoSession });
-        
-        // 2. Confirma agendamento
-        await Appointment.findByIdAndUpdate(appointment._id, {
-            operationalStatus: 'scheduled',
-            paymentStatus: 'paid',
-            payment: payment._id,
-            confirmedAt: new Date(),
-            $push: {
-                history: {
-                    action: 'payment_confirmed',
-                    newStatus: 'scheduled',
-                    timestamp: new Date(),
-                    context: `Pagamento ${payment._id} confirmado`
-                }
-            }
-        }, { session: mongoSession });
-        
-        await mongoSession.commitTransaction();
-        
-        log.info('payment_confirmed', `Pagamento ${payment._id} confirmado, agendamento ${appointment._id} ativado`);
-        
-        // 3. Publica evento de sucesso
-        await publishEvent(
-            EventTypes.PAYMENT_COMPLETED,
-            {
-                paymentId: payment._id.toString(),
-                appointmentId: appointment._id.toString(),
-                patientId: payment.patient?.toString(),
-                amount: payment.amount,
-                paymentMethod: payment.paymentMethod
-            },
-            { correlationId }
-        );
-
-        // 3.1 Solicita recálculo de totais
-        await publishEvent(
-            EventTypes.TOTALS_RECALCULATE_REQUESTED,
-            {
-                clinicId: appointment.clinicId,
-                date: new Date().toISOString().split('T')[0],
-                period: 'month',
-                reason: 'payment_confirmed',
-                triggeredBy: 'payment_worker'
-            },
-            { correlationId }
-        );
-        
-        // 4. Notificação
-        await publishEvent(
-            EventTypes.NOTIFICATION_REQUESTED,
-            {
-                type: 'PAYMENT_CONFIRMED',
-                patientId: payment.patient?.toString(),
-                appointmentId: appointment._id.toString(),
-                amount: payment.amount,
-                channels: ['whatsapp', 'email']
-            },
-            { correlationId, delay: 2000 }
-        );
         
     } catch (error) {
         await mongoSession.abortTransaction();
@@ -528,129 +450,4 @@ async function confirmPaymentFlow(payment, appointment, correlationId, log) {
     } finally {
         mongoSession.endSession();
     }
-}
-
-/**
- * SAGA: Compensação por falha
- * Cancela pagamento e agendamento
- */
-async function compensatePaymentFailure(payment, appointment, error, correlationId, log) {
-    const mongoSession = await mongoose.startSession();
-    
-    try {
-        await mongoSession.startTransaction();
-        
-        // 1. Marca pagamento como falho
-        await Payment.findByIdAndUpdate(payment._id, {
-            status: 'failed',
-            failedAt: new Date(),
-            failureReason: error,
-            $push: {
-                history: {
-                    action: 'payment_failed',
-                    error,
-                    timestamp: new Date()
-                }
-            }
-        }, { session: mongoSession });
-        
-        // 2. COMPENSAÇÃO: Cancela agendamento
-        await Appointment.findByIdAndUpdate(appointment._id, {
-            operationalStatus: 'rejected',
-            paymentStatus: 'canceled',
-            rejectionReason: 'PAYMENT_FAILED',
-            rejectionDetails: { paymentId: payment._id, error },
-            $push: {
-                history: {
-                    action: 'appointment_rejected',
-                    newStatus: 'rejected',
-                    timestamp: new Date(),
-                    context: `Compensação: pagamento falhou - ${error}`
-                }
-            }
-        }, { session: mongoSession });
-        
-        await mongoSession.commitTransaction();
-        
-        log.info('compensation_executed', `Compensação executada: agendamento ${appointment._id} cancelado (pagamento falhou)`);
-        
-        // 3. Publica evento de compensação
-        await publishEvent(
-            EventTypes.PAYMENT_FAILED,
-            {
-                paymentId: payment._id.toString(),
-                appointmentId: appointment._id.toString(),
-                patientId: payment.patient?.toString(),
-                amount: payment.amount,
-                error,
-                compensationAction: 'APPOINTMENT_CANCELLED'
-            },
-            { correlationId }
-        );
-        
-        // 4. Notificação de falha
-        await publishEvent(
-            EventTypes.NOTIFICATION_REQUESTED,
-            {
-                type: 'PAYMENT_FAILED',
-                patientId: payment.patient?.toString(),
-                appointmentId: appointment._id.toString(),
-                error,
-                channels: ['whatsapp'],
-                message: 'Seu pagamento não foi aprovado. O agendamento foi cancelado.'
-            },
-            { correlationId }
-        );
-        
-    } catch (compensationError) {
-        await mongoSession.abortTransaction();
-        log.error('compensation_error', `ERRO NA COMPENSAÇÃO: ${compensationError.message}`);
-        // Aqui deveria alertar o time (PagerDuty, etc)
-        throw compensationError;
-    } finally {
-        mongoSession.endSession();
-    }
-}
-
-/**
- * Handler para confirmação externa (webhook)
- * Usado quando o pagamento é confirmado por webhook (ex: Sicoob)
- */
-async function handlePaymentConfirmed(payload, eventId, correlationId, log) {
-    const { paymentId, transactionId } = payload;
-    
-    const payment = await Payment.findById(paymentId);
-    if (!payment) {
-        throw new Error(`PAYMENT_NOT_FOUND: ${paymentId}`);
-    }
-    
-    // Já está confirmado?
-    if (payment.status === 'paid') {
-        return { status: 'already_confirmed', paymentId };
-    }
-    
-    // Atualiza com dados da transação
-    await Payment.findByIdAndUpdate(paymentId, {
-        status: 'paid',
-        paidAt: new Date(),
-        confirmedAt: new Date(),
-        transactionId,
-        $push: {
-            history: {
-                action: 'confirmed_via_webhook',
-                transactionId,
-                timestamp: new Date()
-            }
-        }
-    });
-    
-    // Confirma agendamento
-    await Appointment.findByIdAndUpdate(payment.appointment, {
-        operationalStatus: 'scheduled',
-        paymentStatus: 'paid'
-    });
-    
-    log.info('confirmed_via_webhook', `Pagamento ${paymentId} confirmado via webhook`);
-    
-    return { status: 'confirmed_via_webhook', paymentId };
 }

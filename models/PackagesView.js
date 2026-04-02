@@ -63,6 +63,15 @@ const packagesViewSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  sessionsDone: {
+    type: Number,
+    default: 0,
+    description: 'Alias de sessionsUsed para compatibilidade com frontend'
+  },
+  paidSessions: {
+    type: Number,
+    default: 0
+  },
 
   // 💰 Financeiro
   sessionValue: Number,
@@ -86,6 +95,27 @@ const packagesViewSchema = new mongoose.Schema({
   // 🔗 Relacionamentos (denormalizados)
   insuranceGuideId: mongoose.Schema.Types.ObjectId,
   insuranceProvider: String,
+  insuranceGrossAmount: Number,
+  insuranceBillingStatus: {
+    type: String,
+    enum: ['pending_batch', 'in_batch', 'billed', 'received', null],
+    default: null
+  },
+
+  // ⚖️ Campos Liminar
+  liminarProcessNumber: String,
+  liminarCourt: String,
+  liminarTotalCredit: Number,
+  liminarCreditBalance: Number,
+  recognizedRevenue: Number,
+
+  // 💳 Pagamentos (resumo denormalizado)
+  payments: [{
+    paymentId: mongoose.Schema.Types.ObjectId,
+    amount: Number,
+    status: String,
+    method: String
+  }],
 
   // 📋 Sessões (resumo)
   sessions: [{
