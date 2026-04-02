@@ -1,6 +1,7 @@
 // workers/balanceWorker.js
 import { Worker } from 'bullmq';
 import { redisConnection, moveToDLQ } from '../infrastructure/queue/queueConfig.js';
+import { publishEvent } from '../infrastructure/events/eventPublisher.js';
 import PatientBalance from '../models/PatientBalance.js';
 import Session from '../models/Session.js';
 
@@ -42,7 +43,8 @@ export function startBalanceWorker() {
         }
         
         // 2. STATE GUARD: Verifica se sessão está completed
-        if (payload.sessionId) {
+        // ⚠️ APENAS para eventos de sessão - skip para addToBalance (appointment)
+        if (payload.sessionId && !payload.appointmentId) {
             const session = await Session.findById(payload.sessionId)
                 .select('status')
                 .lean();
@@ -57,6 +59,9 @@ export function startBalanceWorker() {
             }
             
             console.log(`[BalanceWorker] State guard OK: session.completed`);
+        } else if (payload.sessionId && payload.appointmentId) {
+            // É um balance de appointment (fiado) - não exige sessão completed
+            console.log(`[BalanceWorker] Skip state guard: balance de appointment`);
         }
         
         try {
@@ -94,6 +99,20 @@ export function startBalanceWorker() {
             processedEvents.set(eventId, Date.now());
             
             console.log(`[BalanceWorker] Sucesso: patient=${patientId}, amount=${amount}`);
+            
+            // 🔔 NOTIFICA PROJEÇÕES: Publica evento de balance atualizado
+            await publishEvent(
+                'BALANCE_UPDATED',
+                {
+                    patientId,
+                    amount,
+                    description,
+                    sessionId,
+                    appointmentId,
+                    transactionType: amount > 0 ? 'debit' : 'credit'
+                },
+                { correlationId: correlationId || eventId }
+            );
             
             return {
                 status: 'success',

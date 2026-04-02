@@ -19,7 +19,15 @@
     "test:vitest": "vitest run",
     "test:amanda": "vitest run --config vitest.config.amanda.js",
     "test:e2e": "vitest run --config vitest.config.e2e.js",
-    "test:coverage": "vitest run --coverage"
+    "test:e2e:package": "vitest run tests/e2e/v2/package-flow.v2.e2e.test.js --config vitest.config.e2e.js --reporter=verbose",
+    "test:e2e:convenio": "vitest run tests/e2e/v2/convenio-flow.v2.e2e.test.js --config vitest.config.e2e.js --reporter=verbose",
+    "test:e2e:liminar": "vitest run tests/e2e/v2/liminar-flow.v2.e2e.test.js --config vitest.config.e2e.js --reporter=verbose",
+    "test:e2e:all": "vitest run tests/e2e/v2/ --config vitest.config.e2e.js --reporter=verbose",
+    "test:coverage": "vitest run --coverage",
+    "test:payment-v2": "node tests/payment-v2-e2e.js",
+    "test:payment-v2:simple": "node tests/payment-v2-simple.test.js",
+    "test:payment-v2:stress": "node tests/payment-v2-stress.test.js",
+    "test:payment-v2:api": "node ../scripts/test-e2e-simples.js"
   },
   "keywords": [],
   "author": "",

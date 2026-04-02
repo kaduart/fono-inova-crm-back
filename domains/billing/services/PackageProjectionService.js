@@ -34,6 +34,7 @@ async function fetchRawData(packageId, correlationId) {
     .populate('patient', 'fullName')
     .populate('doctor', 'fullName specialty')
     .populate('insuranceGuide', 'number insurance')
+    .populate('payments', 'amount status paymentMethod')
     .lean();
   
   if (!pkg) {
@@ -143,6 +144,8 @@ export async function buildPackageView(packageId, options = {}) {
       sessionType: pkg.sessionType,
       
       ...sessionMetrics,
+      sessionsDone: sessionMetrics.sessionsUsed,
+      paidSessions: pkg.paidSessions || 0,
       
       sessionValue: pkg.sessionValue,
       totalValue: pkg.totalValue,
@@ -155,6 +158,21 @@ export async function buildPackageView(packageId, options = {}) {
       
       insuranceGuideId: pkg.insuranceGuide?._id,
       insuranceProvider: pkg.insuranceProvider || pkg.insuranceGuide?.insurance,
+      insuranceGrossAmount: pkg.insuranceGrossAmount || 0,
+      insuranceBillingStatus: pkg.insuranceBillingStatus || null,
+      
+      liminarProcessNumber: pkg.liminarProcessNumber || null,
+      liminarCourt: pkg.liminarCourt || null,
+      liminarTotalCredit: pkg.liminarTotalCredit || 0,
+      liminarCreditBalance: pkg.liminarCreditBalance || 0,
+      recognizedRevenue: pkg.recognizedRevenue || 0,
+      
+      payments: (pkg.payments || []).map(p => ({
+        paymentId: p._id,
+        amount: p.amount,
+        status: p.status,
+        method: p.paymentMethod
+      })),
       
       sessions: sessionMetrics.sessionsSummary,
       

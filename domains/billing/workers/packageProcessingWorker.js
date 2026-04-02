@@ -18,6 +18,7 @@ import { createContextLogger } from '../../../utils/logger.js';
 import Package from '../../../models/Package.js';
 import Session from '../../../models/Session.js';
 import Appointment from '../../../models/Appointment.js';
+import { buildPackageView } from '../services/PackageProjectionService.js';
 
 const logger = createContextLogger('PackageProcessingWorker');
 
@@ -100,6 +101,13 @@ export const packageProcessingWorker = new Worker(
       
     } catch (error) {
       const duration = Date.now() - startTime;
+      // 🔥 Log detalhado para debug
+      console.error('═══════════════════════════════════════════════════════════');
+      console.error(`[PackageProcessingWorker] ❌ Job ${job.id} FAILED`);
+      console.error(`[PackageProcessingWorker] Error Message:`, error.message);
+      console.error(`[PackageProcessingWorker] Stack Trace:\n`, error.stack);
+      console.error(`[PackageProcessingWorker] Payload:`, JSON.stringify(payload, null, 2));
+      console.error('═══════════════════════════════════════════════════════════');
       logger.error('[PackageProcessingWorker] Job failed', {
         correlationId,
         eventType,
@@ -153,7 +161,18 @@ async function handlePackageCreate(payload, correlationId) {
       paymentType,
       type = 'therapy',
       notes,
-      requestId
+      requestId,
+      // Campos de convênio
+      insuranceGuideId,
+      insuranceProvider,
+      insuranceGrossAmount,
+      // Campos de liminar
+      liminarProcessNumber,
+      liminarCourt,
+      liminarTotalCredit,
+      liminarExpirationDate,
+      liminarMode,
+      liminarAuthorized
     } = payload;
     
     // Validação básica
@@ -200,8 +219,11 @@ async function handlePackageCreate(payload, correlationId) {
       totalPaid: 0,
       balance: sessionValue * totalSessions,
       financialStatus: 'unpaid',
-      date: selectedSlots[0]?.date ? new Date(selectedSlots[0].date) : new Date(),
-      time: selectedSlots[0]?.time || '08:00',
+      ...(insuranceGuideId && { insuranceGuide: insuranceGuideId }),
+      ...(insuranceProvider && { insuranceProvider }),
+      ...(insuranceGrossAmount !== undefined && { insuranceGrossAmount }),
+      date: (selectedSlots[0]?.date && selectedSlots[0].date !== 'Invalid date') ? new Date(selectedSlots[0].date) : new Date(),
+      time: (selectedSlots[0]?.time && selectedSlots[0].time !== 'Invalid date') ? selectedSlots[0].time : '08:00',
       durationMonths: Math.ceil(totalSessions / 4) || 1,
       sessionsPerWeek: 1,
       notes,
@@ -209,17 +231,59 @@ async function handlePackageCreate(payload, correlationId) {
         requestId,
         correlationId,
         createdAt: new Date()
-      }
+      },
+      // Campos de liminar (só se fornecidos)
+      ...(liminarProcessNumber && { liminarProcessNumber }),
+      ...(liminarCourt && { liminarCourt }),
+      ...(liminarTotalCredit && { liminarTotalCredit }),
+      ...(liminarExpirationDate && { liminarExpirationDate }),
+      ...(liminarMode && { liminarMode }),
+      ...(liminarAuthorized !== undefined && { liminarAuthorized })
     };
     
     const newPackage = await Package.create([packageData], { session: mongoSession });
     const packageId = newPackage[0]._id;
     
-    // Cria sessões e appointments 1:1 (se tiver slots)
+    // Cria sessões e appointments 1:1 (se tiver slots válidos)
     const createdSessions = [];
     const createdAppointments = [];
-    if (selectedSlots.length > 0) {
-      for (const slot of selectedSlots) {
+    const validSlots = selectedSlots.filter(s => s.date && s.date !== 'Invalid date' && s.time);
+    if (validSlots.length > 0) {
+      for (const slot of validSlots) {
+        // Determina campos por tipo de pacote
+        let appointmentServiceType = 'package_session';
+        let appointmentBillingType = 'particular';
+        let appointmentPaymentMethod = paymentMethod || 'package';
+        let appointmentPaymentStatus = 'pending';
+        let appointmentSessionValue = sessionValue;
+        let appointmentInsuranceGuide = null;
+        let sessionIsPaid = false;
+        let sessionPaymentStatus = 'pending';
+        let sessionVisualFlag = 'pending';
+
+        if (type === 'convenio') {
+          appointmentServiceType = 'convenio_session';
+          appointmentBillingType = 'convenio';
+          appointmentPaymentMethod = 'convenio';
+          appointmentPaymentStatus = 'pending_receipt';
+          appointmentSessionValue = insuranceGrossAmount || 0;
+          appointmentInsuranceGuide = insuranceGuideId || null;
+        } else if (type === 'liminar') {
+          appointmentServiceType = 'liminar_session';
+          appointmentBillingType = 'liminar';
+          appointmentPaymentMethod = 'liminar_credit'; // 🔥 compatível com enum Session
+          appointmentPaymentStatus = 'pending';
+        } else if (type === 'therapy') {
+          // Therapy: se foi pago integralmente, sessões nascem como pagas
+          const isFullyPaid = paymentType === 'full' && Array.isArray(payments) && payments.length > 0;
+          appointmentPaymentMethod = paymentMethod || 'dinheiro';
+          if (isFullyPaid) {
+            sessionIsPaid = true;
+            sessionPaymentStatus = 'package_paid';
+            sessionVisualFlag = 'ok';
+          }
+        }
+
         const sessionData = {
           date: slot.date,
           time: slot.time,
@@ -228,18 +292,20 @@ async function handlePackageCreate(payload, correlationId) {
           package: packageId,
           specialty,
           sessionType,
-          sessionValue,
+          sessionValue: appointmentSessionValue,
           status: 'scheduled',
-          isPaid: false,
-          paymentStatus: 'pending',
-          visualFlag: 'pending'
+          isPaid: sessionIsPaid,
+          paymentStatus: sessionPaymentStatus,
+          visualFlag: sessionVisualFlag,
+          paymentMethod: appointmentPaymentMethod,
+          ...(appointmentInsuranceGuide && { insuranceGuide: appointmentInsuranceGuide })
         };
 
         const [newSession] = await Session.create([sessionData], { session: mongoSession });
         createdSessions.push(newSession._id);
 
         // Cria appointment vinculado diretamente à session
-        const [newAppointment] = await Appointment.create([{
+        const appointmentPayload = {
           patient: patientId,
           doctor: doctorId,
           date: slot.date,
@@ -247,15 +313,20 @@ async function handlePackageCreate(payload, correlationId) {
           specialty,
           session: newSession._id,
           package: packageId,
-          serviceType: 'package_session',
+          serviceType: appointmentServiceType,
           operationalStatus: 'scheduled',
           clinicalStatus: 'pending',
-          paymentStatus: 'pending',
-          sessionValue,
-          billingType: 'particular',
+          paymentStatus: appointmentPaymentStatus,
+          sessionValue: appointmentSessionValue,
+          paymentMethod: appointmentPaymentMethod,
+          billingType: appointmentBillingType,
           duration: 40,
-          history: []
-        }], { session: mongoSession });
+          history: [],
+          ...(appointmentInsuranceGuide && { insuranceGuide: appointmentInsuranceGuide }),
+          ...(type === 'liminar' && { paymentOrigin: 'liminar' })
+        };
+
+        const [newAppointment] = await Appointment.create([appointmentPayload], { session: mongoSession });
         createdAppointments.push(newAppointment._id);
 
         // Vincula appointmentId na session
@@ -277,16 +348,29 @@ async function handlePackageCreate(payload, correlationId) {
     await mongoSession.commitTransaction();
     transactionCommitted = true;
     
-    // Publica evento de sucesso
-    await publishEvent(EventTypes.PACKAGE_CREATED, {
-      patientId,
-      packageId: packageId.toString(),
-      doctorId,
-      type,
-      totalSessions,
-      sessionsCreated: createdSessions.length,
-      requestId
-    }, { correlationId });
+    // 🔥 FALLBACK: Build view síncrono para garantir que a listagem funcione imediatamente
+    try {
+      await buildPackageView(packageId.toString(), { correlationId });
+      logger.info('[PackageProcessingWorker] View built synchronously', { correlationId, packageId: packageId.toString() });
+    } catch (viewError) {
+      logger.error('[PackageProcessingWorker] Failed to build view synchronously', { correlationId, error: viewError.message });
+    }
+
+    // Publica evento de sucesso (async, para outros consumidores)
+    try {
+      await publishEvent(EventTypes.PACKAGE_CREATED, {
+        patientId,
+        packageId: packageId.toString(),
+        doctorId,
+        type,
+        totalSessions,
+        sessionsCreated: createdSessions.length,
+        requestId
+      }, { correlationId });
+    } catch (eventError) {
+      logger.error('[PackageProcessingWorker] Failed to publish PACKAGE_CREATED event', { correlationId, error: eventError.message });
+      // Não falha o worker — a view já foi criada síncrona acima
+    }
     
     logger.info('[PackageProcessingWorker] Package created', {
       correlationId,

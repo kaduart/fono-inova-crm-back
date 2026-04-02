@@ -390,4 +390,336 @@ router.get('/queue/status', auth, async (req, res) => {
     }
 });
 
+// ======================================================
+// GET /v2/payments/report - Relatório de pagamentos
+// ======================================================
+router.get('/report', auth, async (req, res) => {
+    try {
+        const { startDate, endDate, status, paymentMethod, doctorId } = req.query;
+        
+        const query = {};
+        if (startDate && endDate) {
+            query.paymentDate = {
+                $gte: new Date(startDate),
+                $lte: new Date(endDate)
+            };
+        }
+        if (status) query.status = status;
+        if (paymentMethod) query.paymentMethod = paymentMethod;
+        if (doctorId) query.doctorId = doctorId;
+        
+        const payments = await Payment.find(query)
+            .populate('patient', 'fullName')
+            .populate('doctor', 'fullName specialty')
+            .sort({ paymentDate: -1 })
+            .lean();
+        
+        res.json({
+            success: true,
+            data: payments,
+            count: payments.length
+        });
+    } catch (error) {
+        console.error('[PaymentV2] Erro no relatório:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao gerar relatório: ' + error.message
+        });
+    }
+});
+
+// ======================================================
+// GET /v2/payments/report/summary - Resumo de pagamentos
+// ======================================================
+router.get('/report/summary', auth, async (req, res) => {
+    try {
+        const summary = await Payment.aggregate([
+            { $match: { status: 'paid' } },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: '$amount' },
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+        
+        const paidCount = await Payment.countDocuments({ status: 'paid' });
+        const unpaidCount = await Payment.countDocuments({ status: 'pending' });
+        
+        res.json({
+            success: true,
+            data: {
+                total: summary[0]?.total || 0,
+                paidCount,
+                unpaidCount
+            }
+        });
+    } catch (error) {
+        console.error('[PaymentV2] Erro no summary:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao gerar resumo: ' + error.message
+        });
+    }
+});
+
+// ======================================================
+// POST /v2/payments/manual - Adicionar pagamento manual
+// ======================================================
+router.post('/manual', auth, async (req, res) => {
+    try {
+        const { packageId, amount, paymentMethod, paymentDate, note } = req.body;
+        
+        if (!packageId || !amount || amount <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Pacote e valor são obrigatórios'
+            });
+        }
+        
+        const correlationId = `payment_manual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        const eventResult = await publishEvent(
+            EventTypes.PAYMENT_REQUESTED,
+            {
+                packageId,
+                amount,
+                paymentMethod: paymentMethod || 'dinheiro',
+                paymentDate: paymentDate || new Date().toISOString(),
+                notes: note,
+                type: 'manual_payment',
+                requestedBy: req.user?._id?.toString(),
+                requestedAt: new Date().toISOString()
+            },
+            {
+                correlationId,
+                aggregateType: 'payment',
+                aggregateId: packageId,
+                metadata: {
+                    source: 'payment_manual_v2',
+                    userId: req.user?._id?.toString()
+                }
+            }
+        );
+        
+        res.status(202).json({
+            success: true,
+            message: 'Pagamento manual enfileirado',
+            data: {
+                eventId: eventResult.eventId,
+                correlationId,
+                status: 'pending'
+            }
+        });
+    } catch (error) {
+        console.error('[PaymentV2] Erro ao adicionar:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao adicionar pagamento: ' + error.message
+        });
+    }
+});
+
+// ======================================================
+// GET /v2/payments/list - Lista pagamentos
+// ======================================================
+router.get('/list', auth, async (req, res) => {
+    try {
+        const { status, paymentMethod, startDate, endDate, patientId, limit = 100 } = req.query;
+        
+        const query = {};
+        if (status) query.status = status;
+        if (paymentMethod) query.paymentMethod = paymentMethod;
+        if (patientId) query.patient = patientId;
+        if (startDate && endDate) {
+            query.paymentDate = {
+                $gte: new Date(startDate),
+                $lte: new Date(endDate)
+            };
+        }
+        
+        const payments = await Payment.find(query)
+            .populate('patient', 'fullName')
+            .populate('doctor', 'fullName specialty')
+            .sort({ paymentDate: -1 })
+            .limit(parseInt(limit))
+            .lean();
+        
+        res.json({ success: true, data: payments, count: payments.length });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ======================================================
+// GET /v2/payments/summary - Resumo rápido
+// ======================================================
+router.get('/summary', auth, async (req, res) => {
+    try {
+        const [paid, pending, total] = await Promise.all([
+            Payment.countDocuments({ status: 'paid' }),
+            Payment.countDocuments({ status: 'pending' }),
+            Payment.aggregate([{ $group: { _id: null, sum: { $sum: '$amount' } } }])
+        ]);
+        
+        res.json({
+            success: true,
+            data: { paid, pending, total: total[0]?.sum || 0 }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ======================================================
+// GET /v2/payments/:id - Busca pagamento
+// ======================================================
+router.get('/:id', auth, async (req, res) => {
+    try {
+        const payment = await Payment.findById(req.params.id)
+            .populate('patient', 'fullName')
+            .populate('doctor', 'fullName specialty')
+            .lean();
+        
+        if (!payment) {
+            return res.status(404).json({ success: false, error: 'Pagamento não encontrado' });
+        }
+        
+        res.json({ success: true, data: payment });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ======================================================
+// POST /v2/payments/create - Cria pagamento
+// ======================================================
+router.post('/create', auth, async (req, res) => {
+    try {
+        const correlationId = `payment_create_${Date.now()}`;
+        
+        const eventResult = await publishEvent(
+            EventTypes.PAYMENT_REQUESTED,
+            {
+                ...req.body,
+                requestedBy: req.user?._id?.toString(),
+                requestedAt: new Date().toISOString()
+            },
+            {
+                correlationId,
+                aggregateType: 'payment',
+                aggregateId: req.body.patientId || 'new',
+                metadata: { source: 'payment_create_v2' }
+            }
+        );
+        
+        res.status(202).json({
+            success: true,
+            message: 'Pagamento enfileirado',
+            data: { eventId: eventResult.eventId, correlationId, status: 'pending' }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ======================================================
+// PATCH /v2/payments/:id - Atualiza pagamento
+// ======================================================
+router.patch('/:id', auth, async (req, res) => {
+    try {
+        const payment = await Payment.findByIdAndUpdate(
+            req.params.id,
+            { $set: req.body },
+            { new: true }
+        );
+        
+        if (!payment) {
+            return res.status(404).json({ success: false, error: 'Pagamento não encontrado' });
+        }
+        
+        res.json({ success: true, data: payment });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ======================================================
+// PATCH /v2/payments/:id/mark-as-paid - Marca como pago
+// ======================================================
+router.patch('/:id/mark-as-paid', auth, async (req, res) => {
+    try {
+        const payment = await Payment.findByIdAndUpdate(
+            req.params.id,
+            { $set: { status: 'paid', paidAt: new Date() } },
+            { new: true }
+        );
+        
+        if (!payment) {
+            return res.status(404).json({ success: false, error: 'Pagamento não encontrado' });
+        }
+        
+        // Publica evento para atualizar projeções
+        await publishEvent(
+            EventTypes.PAYMENT_COMPLETED,
+            { paymentId: payment._id, amount: payment.amount },
+            { aggregateType: 'payment', aggregateId: payment._id }
+        );
+        
+        res.json({ success: true, data: payment });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ======================================================
+// DELETE /v2/payments/:id - Remove pagamento
+// ======================================================
+router.delete('/:id', auth, async (req, res) => {
+    try {
+        const payment = await Payment.findByIdAndDelete(req.params.id);
+        
+        if (!payment) {
+            return res.status(404).json({ success: false, error: 'Pagamento não encontrado' });
+        }
+        
+        res.json({ success: true, message: 'Pagamento removido' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ======================================================
+// GET /v2/payments/export/csv - Exporta CSV
+// ======================================================
+router.get('/export/csv', auth, async (req, res) => {
+    try {
+        const payments = await Payment.find().lean();
+        
+        // Gera CSV simples
+        const headers = 'ID,Patient,Amount,Status,Date\n';
+        const rows = payments.map(p => `${p._id},${p.patient},${p.amount},${p.status},${p.paymentDate}`).join('\n');
+        
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename=payments.csv');
+        res.send(headers + rows);
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ======================================================
+// GET /v2/payments/export/pdf - Exporta PDF
+// ======================================================
+router.get('/export/pdf', auth, async (req, res) => {
+    try {
+        // Simplificado - retorna JSON por enquanto
+        const payments = await Payment.find().lean();
+        res.json({ success: true, data: payments, message: 'PDF export - implementar com biblioteca' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 export default router;

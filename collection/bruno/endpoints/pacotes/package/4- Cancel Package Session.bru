@@ -1,0 +1,63 @@
+meta {
+  name: 4- Cancel Package Session
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/v2/appointments/{{appointmentId}}/cancel
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+headers {
+  X-Correlation-Id: {{$guid}}
+  X-Idempotency-Key: {{appointmentId}}_cancel_package
+}
+
+body:json {
+  {
+    "reason": "Teste cancelamento pacote E2E",
+    "confirmedAbsence": false
+  }
+}
+
+script:post-response {
+  const data = res.body?.data;
+  if (data && data.appointmentId) {
+    console.log("✅ PACKAGE SESSION CANCELADA:");
+    console.log("   AppointmentId:", data.appointmentId);
+    console.log("   Status:", data.status);
+    console.log("   Reason:", data.canceledReason || "N/A");
+    console.log("📋 Validação: Crédito deve estar disponível para reaproveitamento");
+    console.log("📋 Crie nova sessão para testar reaproveitamento");
+  } else if (res.body?.error) {
+    console.log("❌ Erro no cancel:", res.body.error);
+  } else {
+    console.log("❌ Erro inesperado:", JSON.stringify(res.body));
+  }
+}
+
+docs {
+  # Cancel Package Session
+  
+  Cancela uma sessão de pacote.
+  
+  ## Comportamento Esperado
+  - Appointment: `operationalStatus: canceled`
+  - Session: preserva dados em `original*` (para reaproveitamento)
+  - Package: NÃO decrementa `sessionsDone` (igual legado)
+  - Crédito fica disponível para reaproveitamento
+  
+  ## Reaproveitamento
+  Quando criar nova sessão no mesmo pacote:
+  - Worker busca sessão cancelada com crédito
+  - Reaproveita: `isPaid: true` (sem cobrar novamente)
+  
+  ## Próximo Passo
+  Execute **"Create Package Session"** novamente para testar reaproveitamento
+}

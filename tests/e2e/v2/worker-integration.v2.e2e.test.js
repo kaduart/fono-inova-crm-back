@@ -66,8 +66,14 @@ describe('🔌 V2 Worker Integration', () => {
     await mongoose.connection.db.collection('patients_view')
       .deleteOne({ patientId: patient._id });
     
-    // Remove job da fila
-    if (job) await job.remove();
+    // Remove job da fila (pode falhar se worker já pegou)
+    if (job) {
+      try {
+        await job.remove();
+      } catch (err) {
+        console.log('Job locked by worker, skipping removal');
+      }
+    }
   }, 15000);
 
   it('Payload é serializado/deserializado corretamente', async () => {
@@ -101,7 +107,14 @@ describe('🔌 V2 Worker Integration', () => {
 
     // Limpa
     await Patient.deleteOne({ _id: patient._id });
-    if (job) await job.remove();
+    if (job) {
+      try {
+        await job.remove();
+      } catch (err) {
+        // Job pode estar locked por worker, ignora erro
+        console.log('Job locked, skipping removal');
+      }
+    }
   }, 15000);
 
   it('Fila tem configuração de retry correta', async () => {
@@ -126,7 +139,13 @@ describe('🔌 V2 Worker Integration', () => {
 
     // Limpa
     await Patient.deleteOne({ _id: patient._id });
-    if (job) await job.remove();
+    if (job) {
+      try {
+        await job.remove();
+      } catch (err) {
+        console.log('Job locked by worker, skipping removal');
+      }
+    }
   }, 15000);
 
   it('End-to-end: evento → fila → projeção manual (simula worker)', async () => {
@@ -177,6 +196,12 @@ describe('🔌 V2 Worker Integration', () => {
     await Patient.deleteOne({ _id: patient._id });
     await mongoose.connection.db.collection('patients_view')
       .deleteOne({ patientId: patient._id });
-    if (job) await job.remove();
+    if (job) {
+      try {
+        await job.remove();
+      } catch (err) {
+        console.log('Job locked by worker, skipping removal');
+      }
+    }
   }, 20000);
 });

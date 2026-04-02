@@ -15,7 +15,7 @@ import { publishEvent, EventTypes } from '../infrastructure/events/eventPublishe
  * - Publica eventos seguintes (pagamento, notificação, etc)
  * 
  * State Machine:
- * pending → validating → confirmed | rejected
+ * processing_create → scheduled (success) | canceled (rejected)
  */
 
 const processedEvents = new Map();
@@ -56,23 +56,14 @@ export function startAppointmentWorker() {
                 return { status: 'already_handled', currentStatus: appointment.operationalStatus };
             }
 
-            // 4. Atualiza para 'validating'
-            await Appointment.findByIdAndUpdate(appointment._id, {
-                operationalStatus: 'validating',
-                $push: {
-                    history: {
-                        action: 'validation_started',
-                        newStatus: 'validating',
-                        timestamp: new Date()
-                    }
-                }
-            });
+            // 4. Mantém 'processing_create' (já está nesse status desde a criação)
 
             // 5. VALIDAÇÕES DE NEGÓCIO
             const validations = await runValidations(appointment, payload);
             
             if (!validations.success) {
                 // REJEITA
+                console.log(`[AppointmentWorker] ❌ REJEITADO: ${validations.reason}`, validations.details);
                 await rejectAppointment(appointment._id, validations.reason, validations.details);
                 
                 // Publica evento de rejeição
@@ -98,7 +89,28 @@ export function startAppointmentWorker() {
             // 6. CONFIRMA AGENDAMENTO
             await confirmAppointment(appointment._id);
 
-            // 7. Publica eventos seguintes baseado no tipo
+            // 7. 🆕 Publica evento para criação de sessão (chain)
+            await publishEvent(
+                EventTypes.APPOINTMENT_VALIDATED,
+                {
+                    appointmentId: appointment._id.toString(),
+                    patientId: payload.patientId,
+                    doctorId: payload.doctorId,
+                    date: appointment.date,
+                    time: appointment.time,
+                    specialty: appointment.specialty,
+                    serviceType: payload.serviceType,
+                    packageId: payload.packageId,
+                    insuranceGuideId: payload.insuranceGuideId,
+                    amount: payload.amount,
+                    billingType: payload.billingType || 'particular',  // 🐛 FIX: passa billingType
+                    paymentMethod: payload.paymentMethod,
+                    userId: payload.userId
+                },
+                { correlationId }
+            );
+
+            // 8. Publica eventos seguintes baseado no tipo (notificações, etc)
             await publishNextEvents(appointment, payload, correlationId);
 
             processedEvents.set(eventId, Date.now());
@@ -148,7 +160,7 @@ async function runValidations(appointment, payload) {
         doctor: appointment.doctor,
         date: appointment.date,
         time: appointment.time,
-        operationalStatus: { $nin: ['canceled', 'rejected'] }
+        operationalStatus: { $nin: ['canceled', 'missed'] }
     });
 
     if (conflict) {
@@ -177,7 +189,7 @@ async function runValidations(appointment, payload) {
         patient: appointment.patient,
         date: appointment.date,
         time: appointment.time,
-        operationalStatus: { $nin: ['canceled', 'rejected'] }
+        operationalStatus: { $nin: ['canceled', 'missed'] }
     });
 
     if (patientConflict) {
@@ -224,13 +236,13 @@ async function confirmAppointment(appointmentId) {
  */
 async function rejectAppointment(appointmentId, reason, details) {
     await Appointment.findByIdAndUpdate(appointmentId, {
-        operationalStatus: 'rejected',
+        operationalStatus: 'canceled',
         rejectionReason: reason,
         rejectionDetails: details,
         $push: {
             history: {
                 action: 'appointment_rejected',
-                newStatus: 'rejected',
+                newStatus: 'canceled',
                 timestamp: new Date(),
                 context: reason
             }

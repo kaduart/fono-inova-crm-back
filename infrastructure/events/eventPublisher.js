@@ -14,6 +14,7 @@ import { createContextLogger } from '../../utils/logger.js';
 // Filas disponíveis
 const queues = {
     'appointment-processing': new Queue('appointment-processing', { connection: redisConnection }),
+    'appointment-session-creation': new Queue('appointment-session-creation', { connection: redisConnection }),
     'payment-processing': new Queue('payment-processing', { connection: redisConnection }),
     'balance-update': new Queue('balance-update', { connection: redisConnection }),
     'package-validation': new Queue('package-validation', { connection: redisConnection }),
@@ -44,6 +45,7 @@ export const EventTypes = {
     APPOINTMENT_CREATE_REQUESTED: 'APPOINTMENT_CREATE_REQUESTED',
     APPOINTMENT_CANCEL_REQUESTED: 'APPOINTMENT_CANCEL_REQUESTED',
     APPOINTMENT_COMPLETE_REQUESTED: 'APPOINTMENT_COMPLETE_REQUESTED',
+    APPOINTMENT_VALIDATED: 'APPOINTMENT_VALIDATED',  // 🆕 Evento intermediário para criação de sessão
     PAYMENT_PROCESS_REQUESTED: 'PAYMENT_PROCESS_REQUESTED',
     BALANCE_UPDATE_REQUESTED: 'BALANCE_UPDATE_REQUESTED',
     DAILY_CLOSING_REQUESTED: 'DAILY_CLOSING_REQUESTED',
@@ -77,6 +79,12 @@ export const EventTypes = {
     // 📦 Package V2 - Eventos de CRUD para projeção
     PACKAGE_CREATE_REQUESTED: 'PACKAGE_CREATE_REQUESTED',
     PACKAGE_CREATE_FAILED: 'PACKAGE_CREATE_FAILED',
+    
+    // 📅 Pré-Agendamento V2
+    PREAGENDAMENTO_CREATED: 'PREAGENDAMENTO_CREATED',
+    PREAGENDAMENTO_IMPORTED: 'PREAGENDAMENTO_IMPORTED',
+    PREAGENDAMENTO_STATUS_CHANGED: 'PREAGENDAMENTO_STATUS_CHANGED',
+    PREAGENDAMENTO_COMPLETED: 'PREAGENDAMENTO_COMPLETED',
     PACKAGE_CREATED: 'PACKAGE_CREATED',
     PACKAGE_UPDATED: 'PACKAGE_UPDATED',
     PACKAGE_CANCELLED: 'PACKAGE_CANCELLED',
@@ -155,6 +163,7 @@ export const EventTypes = {
 const eventToQueueMap = {
     // Intenções → Workers de orquestração
     [EventTypes.APPOINTMENT_CREATE_REQUESTED]: 'appointment-processing',
+    [EventTypes.APPOINTMENT_VALIDATED]: 'appointment-session-creation',  // 🆕 Criação de sessão após validação
     [EventTypes.APPOINTMENT_CANCEL_REQUESTED]: 'cancel-orchestrator',
     [EventTypes.APPOINTMENT_COMPLETE_REQUESTED]: 'complete-orchestrator',
     [EventTypes.APPOINTMENT_UPDATE_REQUESTED]: 'update-orchestrator',
@@ -185,16 +194,21 @@ const eventToQueueMap = {
     [EventTypes.PAYMENT_UPDATED]: ['balance-update', 'patient-projection'],
     [EventTypes.PAYMENT_DELETED]: ['balance-update', 'patient-projection'],
     
+    // Pré-Agendamento
+    [EventTypes.PREAGENDAMENTO_CREATED]: 'preagendamento-processing',
+    [EventTypes.PREAGENDAMENTO_IMPORTED]: 'preagendamento-processing',
+    [EventTypes.PREAGENDAMENTO_STATUS_CHANGED]: 'preagendamento-processing',
+    
     // Packages
     [EventTypes.PACKAGE_CREATE_REQUESTED]: 'package-processing',
     [EventTypes.PACKAGE_CREATE_FAILED]: 'notification',
     [EventTypes.PATIENT_CREATE_REQUESTED]: ['patient-projection'],
     [EventTypes.PATIENT_CREATED]: ['patient-projection'],
     [EventTypes.PATIENT_UPDATED]: ['patient-projection'],
-    [EventTypes.PACKAGE_CREATED]: ['package-validation', 'patient-projection'],
-    [EventTypes.PACKAGE_UPDATED]: ['package-validation', 'patient-projection'],
-    [EventTypes.PACKAGE_CANCELLED]: ['package-validation', 'patient-projection'],
-    [EventTypes.PACKAGE_CREDIT_CONSUMED]: 'package-validation',
+    [EventTypes.PACKAGE_CREATED]: ['patient-projection'],  // 🐛 FIX: Removido package-validation
+    [EventTypes.PACKAGE_UPDATED]: ['patient-projection'],
+    [EventTypes.PACKAGE_CANCELLED]: ['patient-projection'],
+    [EventTypes.PACKAGE_CREDIT_CONSUMED]: 'package-validation',  // Só este vai para validation
     [EventTypes.PACKAGE_NO_CREDIT]: 'notification',
     
     // Insurance
@@ -321,7 +335,7 @@ export async function publishEvent(eventType, payload, options = {}) {
                 eventType,
                 duplicate: true,
                 idempotencyKey: finalIdempotencyKey,
-                queue: queueName
+                queues: queuesToPublish
             };
         }
     }

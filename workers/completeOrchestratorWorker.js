@@ -178,8 +178,12 @@ export function startCompleteOrchestratorWorker() {
         // packageDoc já declarado acima no GUARD 3
         console.log(`[CompleteOrchestrator] packageDoc: ${packageDoc ? 'encontrado' : 'null'}, paymentType: ${packageDoc?.paymentType}`);
         const isPerSession = packageDoc?.paymentType === 'per-session';
-        const isConvenio = packageDoc?.type === 'convenio';
-        const isLiminar = packageDoc?.type === 'liminar';
+        const isConvenio = packageDoc?.type === 'convenio' || 
+                          appointment.billingType === 'convenio' || 
+                          appointment.insuranceGuide != null;
+        const isLiminar = packageDoc?.type === 'liminar' || 
+                         appointment.billingType === 'liminar' ||
+                         appointment.paymentOrigin === 'liminar';
         console.log(`[CompleteOrchestrator] isPerSession: ${isPerSession}, isConvenio: ${isConvenio}, isLiminar: ${isLiminar}`);
 
         // Determina paymentOrigin (null para particular simples)
@@ -342,12 +346,16 @@ export function startCompleteOrchestratorWorker() {
         }
 
         // 6. CONVÊNIO: Consome guia e cria payment
-        if (isConvenio && packageDoc?.insuranceGuide) {
+        const insuranceGuideId = packageDoc?.insuranceGuide || appointment.insuranceGuide;
+        console.log(`[CompleteOrchestrator] Convênio check: isConvenio=${isConvenio}, insuranceGuideId=${insuranceGuideId}`);
+        if (isConvenio && insuranceGuideId) {
+            console.log(`[CompleteOrchestrator] Processando convênio...`);
             try {
-                await consumeInsuranceGuide(
-                    packageDoc.insuranceGuide,
+                const consumeResult = await consumeInsuranceGuide(
+                    insuranceGuideId,
                     sessionId
                 );
+                console.log(`[CompleteOrchestrator] consumeInsuranceGuide result:`, consumeResult);
 
                 await createInsurancePayment({
                     patientId: appointment.patient?._id,
@@ -355,9 +363,9 @@ export function startCompleteOrchestratorWorker() {
                     appointmentId,
                     sessionId,
                     packageId,
-                    guideId: packageDoc.insuranceGuide,
-                    insuranceProvider: packageDoc.insuranceProvider,
-                    insuranceValue: packageDoc.insuranceGrossAmount || 0,
+                    guideId: insuranceGuideId,
+                    insuranceProvider: packageDoc?.insuranceProvider || appointment.insuranceProvider,
+                    insuranceValue: packageDoc?.insuranceGrossAmount || appointment.insuranceValue || 0,
                     correlationId
                 });
             } catch (insuranceErr) {

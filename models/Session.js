@@ -51,7 +51,7 @@ const sessionSchema = new mongoose.Schema({
     notes: { type: String },
     paymentStatus: {
         type: String,
-        enum: ['paid', 'partial', 'pending', 'pending_receipt', 'recognized'], // ← Adicionado 'pending_receipt' para convênio e 'recognized' para liminar
+        enum: ['paid', 'partial', 'pending', 'pending_receipt', 'recognized', 'package_paid'], // 🆕 Adicionado 'package_paid' para pacotes
         default: 'pending',
         description: 'Situação financeira específica desta sessão'
     },

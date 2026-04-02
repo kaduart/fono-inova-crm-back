@@ -98,20 +98,35 @@ export async function createPackageSession(data) {
         time,
         specialty,
         sessionValue = 0,
+        billingType = null,
         creditData = null, // Dados de reaproveitamento
         correlationId = null
     } = data;
 
     const pkg = await Package.findById(packageId);
+    const effectiveBillingType = billingType || pkg?.type || 'particular';
 
-    // Determina status de pagamento baseado no crédito
-    const isPaid = creditData ? creditData.isPaid : true;
-    const paymentStatus = creditData ? creditData.paymentStatus : 'package_paid';
-    const visualFlag = creditData ? creditData.visualFlag : 'ok';
-    const partialAmount = creditData ? creditData.partialAmount : 0;
-    const paymentMethod = creditData 
+    // Determina status de pagamento baseado no tipo de pacote / crédito
+    let isPaid = creditData ? creditData.isPaid : true;
+    let paymentStatus = creditData ? creditData.paymentStatus : 'package_paid';
+    let visualFlag = creditData ? creditData.visualFlag : 'ok';
+    let paymentMethod = creditData 
         ? creditData.paymentMethod 
         : (pkg?.paymentMethod || 'dinheiro');
+
+    if (effectiveBillingType === 'convenio') {
+        isPaid = false;
+        paymentStatus = 'pending_receipt';
+        visualFlag = 'pending';
+        paymentMethod = 'convenio';
+    } else if (effectiveBillingType === 'liminar') {
+        isPaid = false;
+        paymentStatus = 'pending';
+        visualFlag = 'pending';
+        paymentMethod = 'liminar_credit';
+    }
+
+    const partialAmount = creditData ? creditData.partialAmount : 0;
 
     const session = new Session({
         patient: patientId,
