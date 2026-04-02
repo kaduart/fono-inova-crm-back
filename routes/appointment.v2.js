@@ -9,8 +9,10 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { completeSessionEventDriven } from '../services/completeSessionEventService.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import Appointment from '../models/Appointment.js';
+import Package from '../models/Package.js';
 import { Messages, formatSuccess, formatError, ErrorCodes } from '../utils/apiMessages.js';
 import { createBusinessError, asyncHandler } from '../middleware/errorHandler.js';
 
@@ -31,13 +33,17 @@ router.post('/', flexibleAuth, asyncHandler(async (req, res) => {
       date,
       time,
       specialty = 'fonoaudiologia',
-      serviceType = 'session',
       packageId = null,
+      serviceType = packageId ? 'package_session' : 'session',
       insuranceGuideId = null,
       paymentMethod = 'dinheiro',
-      amount = 0,
+      amount = req.body.paymentAmount || 0,  // 🐛 FIX: suporta paymentAmount (front/collection)
       notes = ''
     } = req.body;
+
+    if (packageId) {
+      paymentMethod = 'package';
+    }
 
     // Validações com mensagens claras
     if (!patientId) {
@@ -80,8 +86,19 @@ router.post('/', flexibleAuth, asyncHandler(async (req, res) => {
       );
     }
 
+    // 🔥 DETERMINAR BILLINGTYPE CORRETAMENTE (respeita tipo do pacote)
+    let billingType = req.body.billingType;
+    if (!billingType && packageId) {
+      const pkg = await Package.findById(packageId).session(mongoSession).select('type');
+      if (pkg) {
+        billingType = pkg.type === 'convenio' ? 'convenio' : (pkg.type === 'liminar' ? 'liminar' : 'particular');
+      }
+    }
+    if (!billingType) {
+      billingType = insuranceGuideId ? 'convenio' : 'particular';
+    }
+
     // 🛡️ VALIDAÇÃO CONVÊNIO: Guia obrigatória e válida
-    const billingType = req.body.billingType || (insuranceGuideId ? 'convenio' : 'particular');
     
     if (billingType === 'convenio' || insuranceGuideId) {
       if (!insuranceGuideId) {
@@ -163,7 +180,7 @@ router.post('/', flexibleAuth, asyncHandler(async (req, res) => {
       
       sessionValue: amount,
       paymentMethod,
-      billingType: insuranceGuideId ? 'convenio' : 'particular',
+      billingType,
       
       notes,
       createdBy: req.user?._id,
@@ -203,6 +220,7 @@ router.post('/', flexibleAuth, asyncHandler(async (req, res) => {
         packageId: packageId?.toString(),
         insuranceGuideId: insuranceGuideId?.toString(),
         amount,
+        billingType,  // 🐛 FIX: inclui billingType
         paymentMethod,
         notes,
         userId: req.user?._id?.toString()
@@ -312,6 +330,9 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
 
     // Marca como processando
     appointment.operationalStatus = 'processing_cancel';
+    appointment.canceledReason = reason;
+    appointment.canceledBy = req.user?._id;
+    appointment.canceledAt = new Date();
     appointment.history.push({
       action: 'cancel_requested',
       newStatus: 'processing_cancel',
@@ -439,38 +460,26 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
 
     await mongoSession.commitTransaction();
 
-    // Publica evento
-    const eventResult = await publishEvent(
-      EventTypes.APPOINTMENT_COMPLETE_REQUESTED,
-      {
-        appointmentId: id,
-        patientId: appointment.patient?._id?.toString(),
-        doctorId: appointment.doctor?._id?.toString(),
-        packageId: appointment.package?._id?.toString(),
-        sessionId: appointment.session?._id?.toString(),
-        addToBalance,
-        balanceAmount: balanceAmount || appointment.sessionValue,
-        balanceDescription,
-        userId: req.user?._id?.toString()
-      },
-      {
-        correlationId: id,
-        idempotencyKey
-      }
-    );
+    // Executa complete síncrono (igual V1) + publica eventos
+    const result = await completeSessionEventDriven(id, {
+      addToBalance,
+      balanceAmount,
+      balanceDescription,
+      userId: req.user?._id,
+      correlationId: id
+    });
 
-    res.status(202).json(
+    res.status(200).json(
       formatSuccess(
         {
           appointmentId: id,
-          status: 'processing_complete',
-          correlationId: eventResult.correlationId,
-          idempotencyKey: eventResult.idempotencyKey
+          status: 'confirmed',
+          correlationId: result.correlationId,
+          eventsPublished: result.eventsPublished
         },
         {
-          message: Messages.PROCESSING.COMPLETE,
-          processing: 'async',
-          checkStatus: `GET /api/v2/appointments/${id}/status`
+          message: result.message || Messages.PROCESSING.COMPLETE,
+          processing: 'sync'
         }
       )
     );
@@ -823,6 +832,62 @@ router.get('/:id/complete-manual', flexibleAuth, asyncHandler(async (req, res) =
     sessionId: session._id,
     status: 'confirmed',
     message: 'Agendamento completado manualmente (DEBUG)'
+  }));
+}));
+
+/**
+ * PUT /api/v2/appointments/:id
+ * 
+ * Atualiza agendamento existente (event-driven)
+ */
+router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const updateData = req.body;
+  
+  console.log(`[AppointmentV2] Update solicitado: ${id}`, updateData);
+  
+  // Verifica se existe
+  const existing = await Appointment.findById(id);
+  if (!existing) {
+    return res.status(404).json(formatError('Agendamento não encontrado'));
+  }
+  
+  // Verifica conflito se mudou horário/médico
+  if (updateData.doctorId && updateData.date && updateData.time) {
+    const conflict = await Appointment.findOne({
+      _id: { $ne: id },
+      doctorId: updateData.doctorId,
+      date: updateData.date,
+      time: updateData.time,
+      status: { $nin: ['cancelled', 'completed'] }
+    });
+    
+    if (conflict) {
+      return res.status(409).json(formatError('Conflito de agenda médica', {
+        conflict: {
+          appointmentId: conflict._id,
+          patientName: conflict.patientName,
+          existingAppointment: {
+            _id: conflict._id,
+            time: conflict.time,
+            patient: conflict.patientId
+          }
+        },
+        suggestion: 'Por favor, escolha outro horário ou médico'
+      }));
+    }
+  }
+  
+  // Atualiza diretamente (não precisa de evento para update simples)
+  const updated = await Appointment.findByIdAndUpdate(
+    id,
+    { $set: updateData },
+    { new: true }
+  );
+  
+  res.json(formatSuccess({
+    appointment: updated,
+    message: 'Agendamento atualizado com sucesso'
   }));
 }));
 

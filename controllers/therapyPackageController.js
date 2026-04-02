@@ -1736,6 +1736,21 @@ export const packageOperations = {
                 console.log('📝 Nova sessão sem pagamento prévio');
             }
 
+            // 🏥 Sobrescreve defaults para convênio/liminar (exceto reaproveitamento de crédito)
+            if (!canceledPaidSession) {
+                if (pkg.type === 'convenio') {
+                    isPaid = false;
+                    paymentStatus = 'pending_receipt';
+                    visualFlag = 'pending';
+                    paymentMethod = 'convenio';
+                } else if (pkg.type === 'liminar') {
+                    isPaid = false;
+                    paymentStatus = 'pending';
+                    visualFlag = 'pending';
+                    paymentMethod = 'liminar_credit';
+                }
+            }
+
             console.log('💰 Dados financeiros calculados PARA A SESSÃO:', {
                 isPaid,
                 paymentStatus,
@@ -1762,7 +1777,9 @@ export const packageOperations = {
                 paymentMethod,
                 partialAmount,
                 notes: notes || '',
-                _inFinancialTransaction: true
+                _inFinancialTransaction: true,
+                ...(pkg.type === 'convenio' && { billingType: 'convenio', insuranceGuide: pkg.insuranceGuide }),
+                ...(pkg.type === 'liminar' && { billingType: 'liminar', paymentOrigin: 'liminar' })
             });
 
             await newSession.save({
@@ -1791,11 +1808,14 @@ export const packageOperations = {
                 specialty: newSession.specialty,
                 session: newSession._id,
                 package: packageId,
-                serviceType: 'package_session',
+                serviceType: pkg.type === 'convenio' ? 'convenio_session' : (pkg.type === 'liminar' ? 'liminar_session' : 'package_session'),
                 operationalStatus: 'scheduled',
                 clinicalStatus: 'pending',
                 paymentStatus: newSession.paymentStatus,
                 visualFlag: newSession.visualFlag,
+                billingType: pkg.type === 'convenio' ? 'convenio' : (pkg.type === 'liminar' ? 'liminar' : 'particular'),
+                ...(pkg.type === 'convenio' && { insuranceGuide: pkg.insuranceGuide, insuranceProvider: pkg.insuranceProvider }),
+                ...(pkg.type === 'liminar' && { paymentOrigin: 'liminar' }),
                 // 🔥 NOVO: Primeiro agendamento do paciente?
                 isFirstAppointment: isFirstAppointment
             });

@@ -16,6 +16,7 @@ import { startUpdateOrchestratorWorker } from './updateOrchestratorWorker.js';
 import { startInsuranceOrchestratorWorker } from '../domains/billing/workers/index.js';
 import { startDailyClosingWorker } from './dailyClosingWorker.js';
 import { startTotalsWorker } from './totalsWorker.js';
+import { startPreAgendamentoWorker } from './preAgendamentoWorker.js';
 // 🆕 Patients V2 Workers
 import { patientWorker } from '../domains/clinical/workers/patientWorker.js';
 import { patientProjectionWorker } from '../domains/clinical/workers/patientProjectionWorker.js';
@@ -56,6 +57,7 @@ export function startAllWorkers() {
     workers.push(startInvoiceWorker());
     workers.push(startDailyClosingWorker());
     workers.push(startTotalsWorker());
+    workers.push(startPreAgendamentoWorker());
     
     // 5. Sync Medical Worker (processa eventos médicos)
     workers.push(startSyncMedicalWorker());

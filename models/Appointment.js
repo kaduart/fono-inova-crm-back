@@ -66,13 +66,18 @@ const appointmentSchema = new mongoose.Schema({
   operationalStatus: {
     type: String,
     enum: [
-      'pre_agendado', // Interesse registrado, aguarda confirmação
-      'scheduled',    // Confirmado pela secretaria/paciente
-      'confirmed',    // Confirmado pelo profissional
+      'pre_agendado',      // Interesse registrado, aguarda confirmação
+      'scheduled',         // Confirmado pela secretaria/paciente
+      'confirmed',         // Confirmado pelo profissional
+      'completed',         // Sessão realizada/finalizada
       'pending',
       'canceled',
       'paid',
-      'missed'
+      'missed',
+      // 🚀 Estados de processamento (Event-Driven V2)
+      'processing_create',  // Em processamento de criação
+      'processing_cancel',  // Em processamento de cancelamento
+      'processing_complete' // Em processamento de finalização
     ],
     default: 'pre_agendado',
   },
@@ -110,7 +115,8 @@ const appointmentSchema = new mongoose.Schema({
     enum: [
       'evaluation', 'session', 'package_session',
       'individual_session', 'meet', 'alignment', 'return',
-      'tongue_tie_test', 'neuropsych_evaluation', 'convenio_session'
+      'tongue_tie_test', 'neuropsych_evaluation', 'convenio_session',
+      'liminar_session'  // 🆕 Sessão de liminar
     ],
     required: false
   },
@@ -120,18 +126,21 @@ const appointmentSchema = new mongoose.Schema({
     enum: [
       'dinheiro', 'pix', 'cartao_credito',
       'cartao_debito', 'cartão', 'transferencia_bancaria',
-      'plano-unimed', 'convenio', 'outro'
+      'plano-unimed', 'convenio', 'outro',
+      'package',  // 🆕 Para sessões de pacote
+      'liminar'   // 🆕 Para sessões de liminar
     ],
     default: 'dinheiro'
   },
   billingType: {
     type: String,
-    enum: ['particular', 'convenio'],
+    enum: ['particular', 'convenio', 'liminar'],
     default: 'particular'
   },
   insuranceProvider: { type: String, default: null },
   insuranceValue: { type: Number, min: 0, default: 0 },
   authorizationCode: { type: String, default: null },
+  insuranceGuide: { type: mongoose.Schema.Types.ObjectId, ref: 'InsuranceGuide', default: null },
 
   // ─── REFERÊNCIAS ───────────────────────────────────────────
   payment: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', required: false },
@@ -142,7 +151,7 @@ const appointmentSchema = new mongoose.Schema({
   // ─── FINANCEIRO EXTRA ──────────────────────────────────────
   paymentStatus: {
     type: String,
-    enum: ['pending', 'paid', 'partial', 'canceled', 'advanced', 'package_paid', 'pending_receipt'],
+    enum: ['pending', 'paid', 'partial', 'canceled', 'advanced', 'package_paid', 'pending_receipt', 'pending_balance'],
     default: 'pending'
   },
   visualFlag: {
@@ -158,6 +167,11 @@ const appointmentSchema = new mongoose.Schema({
   notes: { type: String, default: '' },
   responsible: { type: String, default: '' },
   secretaryNotes: String,
+  
+  // 🆕 CANCELAMENTO
+  canceledReason: { type: String, default: null },
+  canceledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  canceledAt: { type: Date, default: null },
 
   // ─── ESPECIALIDADE ─────────────────────────────────────────
   specialty: {

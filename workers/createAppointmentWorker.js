@@ -23,7 +23,7 @@ import mongoose from 'mongoose';
 export function startCreateAppointmentWorker() {
     console.log('[CreateAppointmentWorker] 🚀 Iniciando worker...');
     
-    const worker = new Worker('appointment-processing', async (job) => {
+    const worker = new Worker('appointment-session-creation', async (job) => {
         const { eventId, eventType, correlationId, idempotencyKey, payload } = job.data;
         
         const log = createContextLogger(correlationId, 'create-appointment');
@@ -37,7 +37,8 @@ export function startCreateAppointmentWorker() {
 
         // ✅ Eventos que este worker processa
         const validEventTypes = [
-            'APPOINTMENT_CREATE_REQUESTED',   // Novo evento 4.0
+            'APPOINTMENT_VALIDATED',          // 🆕 Evento após validação (chain)
+            'APPOINTMENT_CREATE_REQUESTED',   // Fallback para compatibilidade
             'APPOINTMENT_CREATED',            // Compatibilidade
             'PACKAGE_APPOINTMENT_REQUESTED',  // Pacote
             'APPOINTMENT_REQUESTED'           // Legado
@@ -74,6 +75,7 @@ export function startCreateAppointmentWorker() {
             packageId,
             insuranceGuideId,
             amount = 0,
+            billingType = 'particular',  // 🐛 FIX: extrai billingType
             userId
         } = payload;
 
@@ -142,6 +144,7 @@ export function startCreateAppointmentWorker() {
                             time,
                             specialty,
                             sessionValue: amount,
+                            billingType,
                             creditData,
                             correlationId
                         });
@@ -150,6 +153,7 @@ export function startCreateAppointmentWorker() {
                         appointment.session = session._id;
                         appointment.paymentStatus = session.paymentStatus;
                         appointment.visualFlag = session.visualFlag;
+                        appointment.operationalStatus = 'scheduled';
 
                     } else {
                         // PARTICULAR
@@ -164,6 +168,7 @@ export function startCreateAppointmentWorker() {
                             sessionType: specialty,
                             specialty,
                             sessionValue: amount,
+                            billingType,  // 🐛 FIX: persiste billingType
                             status: 'scheduled',
                             isPaid: false,
                             paymentStatus: 'pending',
@@ -185,7 +190,22 @@ export function startCreateAppointmentWorker() {
 
                     await appointment.save({ session: mongoSession });
                     log.info('appointment_updated', 'Appointment atualizado');
-                    
+
+                    if (packageId) {
+                        await Package.findByIdAndUpdate(
+                            packageId,
+                            {
+                                $addToSet: {
+                                    sessions: session._id,
+                                    appointments: appointment._id
+                                },
+                                $set: { updatedAt: new Date() }
+                            },
+                            { session: mongoSession }
+                        );
+                        log.info('package_updated', 'Package atualizado com sessão e appointment');
+                    }
+
                     await mongoSession.commitTransaction();
                     log.info('transaction_committed', 'Transação commitada');
 

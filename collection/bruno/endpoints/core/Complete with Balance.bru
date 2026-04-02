@@ -22,9 +22,13 @@ headers {
 body:json {
   {
     "addToBalance": true,
-    "balanceAmount": {{lastSessionValue || 200}},
+    "balanceAmount": {{lastSessionValue}},
     "balanceDescription": "Sessão pendente - fiado"
   }
+}
+
+vars:pre-request {
+  lastSessionValue: 200
 }
 
 script:pre-request {

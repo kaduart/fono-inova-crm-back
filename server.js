@@ -100,6 +100,7 @@ import metaAdsRoutes from './routes/meta-ads.js';
 
 import provisionamentoRoutes from './routes/provisionamento.js';
 import preAgendamentoRoutes from './routes/preAgendamento.js';
+import preAgendamentoV2Routes from './routes/preAgendamento.v2.js';
 import notificationRoutes from './routes/notifications.js';
 import { iniciarJobConfirmacao } from './jobs/confirmacaoJob.js';
 import { scheduleDailyAlerts } from './jobs/dailyAlerts.js';
@@ -122,8 +123,18 @@ import medicalEventRoutes from './routes/medicalEvent.routes.js';
 import appointmentAnalyticsRoutes from './routes/appointmentAnalytics.routes.js';
 import dailyClosingSimpleRoutes from './routes/dailyClosingSimple.routes.js';
 
-// 🚀 ROTAS V2 - Fechamento do Dia
+// 🚀 ROTAS V2 - Event-Driven
 import dailyClosingV2Routes from './routes/dailyClosing.v2.js';
+import totalsV2Routes from './routes/totals.v2.js';
+import paymentV2Routes from './routes/payment.v2.js';
+import balanceV2Routes from './routes/balance.v2.js';
+import appointmentV2Routes from './routes/appointment.v2.js';
+import patientV2Routes from './routes/patient.v2.js';
+import packageV2Routes from './routes/package.v2.js';
+import financialDashboardV2Routes from './routes/financialDashboard.v2.js';
+import expensesV2Routes from './routes/expenses.v2.js';
+import convenioV2Routes from './routes/convenio.v2.js';
+import calendarV2Routes from './routes/calendar.v2.js';
 
 
 // ======================================================
@@ -287,8 +298,18 @@ app.use("/api/patients", patientRoutes);
 app.use("/api/patients", patientDuplicatesRoutes);
 app.use("/api/appointments", appointmentRoutes);
 
-// Fechamento do Dia (V2 sem dependência de eventos)
+// 🚀 ROTAS V2 - Event-Driven (OBRIGATÓRIO)
 app.use("/api/v2/daily-closing", dailyClosingV2Routes);
+app.use("/api/v2/totals", totalsV2Routes);
+app.use("/api/v2/payments", paymentV2Routes);
+app.use("/api/v2/balance", balanceV2Routes);
+app.use("/api/v2/appointments", appointmentV2Routes);
+app.use("/api/v2/patients", patientV2Routes);
+app.use("/api/v2/packages", packageV2Routes);
+app.use("/api/v2/financial/dashboard", financialDashboardV2Routes);
+app.use("/api/v2/expenses", expensesV2Routes);
+app.use("/api/v2/convenio", convenioV2Routes);
+app.use("/api/v2/calendar", calendarV2Routes);
 
 app.use("/api/evolutions", evolutionRoutes);
 app.use("/api/leads", leadsRouter);
@@ -312,6 +333,7 @@ app.use('/api/financial/v2', financialMetricsRoutes);
 app.use('/api/financial/dashboard', financialDashboardRoutes);
 app.use('/api/planning', planningRoutes);
 app.use('/api/pre-agendamento', preAgendamentoRoutes);
+app.use('/api/v2/pre-agendamento', preAgendamentoV2Routes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sales', salesRoutes);

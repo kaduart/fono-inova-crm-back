@@ -15,6 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { formatSuccess, formatError } from '../utils/apiMessages.js';
 import PackagesView from '../models/PackagesView.js';
+import Package from '../models/Package.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { createContextLogger } from '../utils/logger.js';
@@ -53,6 +54,9 @@ router.post('/', flexibleAuth, async (req, res) => {
   const correlationId = `pkg_create_${Date.now()}`;
   const requestId = uuidv4();
   
+  // 🔥 GERA O PACKAGE ID AQUI (para retornar imediatamente)
+  const packageId = new mongoose.Types.ObjectId();
+  
   try {
     const {
       patientId,
@@ -80,12 +84,14 @@ router.post('/', flexibleAuth, async (req, res) => {
     logger.info('[PackageV2] Creating package', {
       correlationId,
       requestId,
+      packageId: packageId.toString(),
       patientId,
       totalSessions
     });
     
-    // Publica evento para processamento assíncrono
+    // Publica evento para processamento assíncrono (com packageId definido)
     await publishEvent('PACKAGE_CREATE_REQUESTED', {
+      packageId: packageId.toString(),  // 🆕 Envia o ID gerado
       patientId,
       doctorId,
       specialty,
@@ -105,12 +111,13 @@ router.post('/', flexibleAuth, async (req, res) => {
     
     res.status(202).json(formatSuccess({
       message: 'Pacote em processamento',
+      packageId: packageId.toString(),  // 🆕 ESSENCIAL para o front
       requestId,
       correlationId,
       status: 'processing'
     }, {
       duration: `${duration}ms`,
-      nextStep: 'GET /api/v2/packages para verificar criação'
+      nextStep: 'Use packageId para criar sessões imediatamente'
     }));
     
   } catch (error) {
@@ -147,7 +154,7 @@ router.get('/', flexibleAuth, async (req, res) => {
     logger.info(`[${correlationId}] Listing packages`, { query, options });
     
     // Executa query
-    const [packages, total] = await Promise.all([
+    let [packages, total] = await Promise.all([
       PackagesView.find(query)
         .sort({ [options.sortBy]: options.sortOrder })
         .skip(options.skip)
@@ -156,8 +163,43 @@ router.get('/', flexibleAuth, async (req, res) => {
       PackagesView.countDocuments(query)
     ]);
     
+    // 🔥 FALLBACK: Se listou vazio mas tem patientId, pode ser que o worker de projeção ainda não processou
+    if (packages.length === 0 && req.query.patientId) {
+      logger.info(`[${correlationId}] View empty, checking source of truth for patient ${req.query.patientId}`);
+      
+      const sourcePackages = await Package.find({ patient: req.query.patientId })
+        .select('_id')
+        .lean();
+      
+      if (sourcePackages.length > 0) {
+        logger.info(`[${correlationId}] Found ${sourcePackages.length} packages in source, rebuilding views...`);
+        
+        const rebuildResults = await Promise.allSettled(
+          sourcePackages.map(pkg => buildPackageView(pkg._id.toString(), { correlationId }))
+        );
+        
+        const successCount = rebuildResults.filter(r => r.status === 'fulfilled' && r.value?.success).length;
+        logger.info(`[${correlationId}] Rebuilt ${successCount}/${sourcePackages.length} views`);
+        
+        if (successCount > 0) {
+          // Reconsulta a view
+          [packages, total] = await Promise.all([
+            PackagesView.find(query)
+              .sort({ [options.sortBy]: options.sortOrder })
+              .skip(options.skip)
+              .limit(options.limit)
+              .lean(),
+            PackagesView.countDocuments(query)
+          ]);
+        }
+      }
+    }
+    
     const duration = Date.now() - startTime;
     
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     res.json(formatSuccess({
       packages,
       pagination: {
@@ -220,6 +262,9 @@ router.get('/:id', flexibleAuth, async (req, res) => {
     
     const duration = Date.now() - startTime;
     
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     res.json(formatSuccess({
       package: packageView,
       meta: {
