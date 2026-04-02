@@ -528,7 +528,7 @@ export const cancelConvenioSession = async (req, res) => {
         session.appointmentId,
         {
           operationalStatus: 'canceled',
-          clinicalStatus: session.confirmedAbsence ? 'missed' : 'canceled'
+          clinicalStatus: 'missed'
         },
         { session: mongoSession }
       );
