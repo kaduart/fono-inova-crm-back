@@ -491,33 +491,15 @@ export const packageOperations = {
                 });
             }
 
-            const seen = new Set();
-            const uniqueAppointments = [];
+            // 1 appointment por session, sempre — sem dedup por data (cada session._id é único)
+            const insertedAppointments = await Appointment.insertMany(appointmentsToCreate, { session: mongoSession });
 
-            for (const a of appointmentsToCreate) {
-                const key = `${a.date}-${a.time}-${a.patient}-${a.doctor}`;
-
-                if (!seen.has(key)) {
-                    seen.add(key);
-                    uniqueAppointments.push(a);
-                } else {
-                    console.warn(`⛔ Sessão duplicada ignorada: ${key}`);
-                }
-            }
-
-            if (appointmentsToCreate.length !== uniqueAppointments.length) {
-                console.warn(`⚠️ Detectadas ${appointmentsToCreate.length - uniqueAppointments.length} duplicatas internas antes do insert.`);
-            }
-
-            const insertedAppointments = await Appointment.insertMany(uniqueAppointments, { session: mongoSession });
-
-
-            // 🔗 Vincula sessions e appointments com base em data/hora (não pelo índice)
+            // 🔗 Vincula sessions→appointments pelo session._id (robusto, sem risco de colisão por data)
             const appointmentMap = new Map(
-                insertedAppointments.map(a => [`${a.date}-${a.time}-${a.patient}-${a.doctor}`, a._id])
+                insertedAppointments.map(a => [a.session.toString(), a._id])
             );
             console.log('Sessions:', insertedSessions.length, 'Appointments:', insertedAppointments.length);
-            
+
             // 🗓️ Log de ajustes por feriado
             const adjustedDates = sessionsToCreate.filter((s, i) => s.date !== selectedSlots[i]?.date);
             if (adjustedDates.length > 0) {
@@ -528,14 +510,12 @@ export const packageOperations = {
                 });
             }
 
-
             await Session.bulkWrite(
                 insertedSessions.map(s => {
-                    const key = `${s.date}-${s.time}-${s.patient}-${s.doctor}`;
-                    const appId = appointmentMap.get(key);
+                    const appId = appointmentMap.get(s._id.toString());
 
                     if (!appId) {
-                        console.warn(`⚠️ Sessão sem appointment correspondente (${key}) — será ignorada no link.`);
+                        console.warn(`⚠️ Sessão ${s._id} (${s.date} ${s.time}) sem appointment correspondente — verifique o insert.`);
                         return { updateOne: { filter: { _id: s._id }, update: {} } }; // noop
                     }
 
