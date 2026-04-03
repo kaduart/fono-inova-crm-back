@@ -142,7 +142,7 @@ export async function completeSession(sessionId, data = {}, context = {}) {
       }
     },
     { new: true }
-  ).populate('patient doctor appointment');
+  ).populate('patient doctor');
   
   // 4. Publica evento SESSION_COMPLETED
   // Este evento é consumido pelo billing domain!
@@ -159,6 +159,7 @@ export async function completeSession(sessionId, data = {}, context = {}) {
       date: session.date,
       specialty: session.specialty,
       completedAt: new Date(),
+      paymentType: session.paymentType || 'individual',  // ✅ Usado pelo billing worker
       // Dados para billing
       billing: {
         addToBalance,

@@ -50,7 +50,11 @@ export const errorHandler = (err, req, res, next) => {
 
     // Outros tipos de erro...
 
-    res.status(error.statusCode || 500).json({
+    const statusCode = Number.isInteger(error.statusCode) && error.statusCode >= 100 && error.statusCode < 600
+        ? error.statusCode
+        : 500;
+
+    res.status(statusCode).json({
         success: false,
         error: error.message || 'Erro interno do servidor',
         code: error.code || 'INTERNAL_ERROR',

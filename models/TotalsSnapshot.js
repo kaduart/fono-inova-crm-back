@@ -14,7 +14,7 @@ const TotalsSnapshotSchema = new mongoose.Schema({
         index: true
     },
     date: {
-        type: String,  // YYYY-MM-DD
+        type: String,  // YYYY-MM-DD (data de referência do cálculo)
         required: true,
         index: true
     },
@@ -23,10 +23,33 @@ const TotalsSnapshotSchema = new mongoose.Schema({
         default: 'month'
     },
     
+    // 📅 Time Dimension (CRÍTICO para rastreabilidade)
+    periodStart: {
+        type: Date,
+        required: true,
+        description: 'Início do período de competência'
+    },
+    periodEnd: {
+        type: Date,
+        required: true,
+        description: 'Fim do período de competência'
+    },
+    competencyDate: {
+        type: Date,
+        default: Date.now,
+        description: 'Data de competência (quando a produção foi realizada)'
+    },
+    cashDate: {
+        type: Date,
+        default: Date.now,
+        description: 'Data de caixa (quando o pagamento foi recebido)'
+    },
+    
     // Totais calculados (estrutura igual ao legado)
     totals: {
         // Geral
-        totalReceived: { type: Number, default: 0 },
+        totalReceived: { type: Number, default: 0 },        // 💰 Caixa real
+        totalProduction: { type: Number, default: 0 },      // 📊 Tudo produzido
         totalPending: { type: Number, default: 0 },
         totalPartial: { type: Number, default: 0 },
         countReceived: { type: Number, default: 0 },
@@ -38,12 +61,42 @@ const TotalsSnapshotSchema = new mongoose.Schema({
         particularCountReceived: { type: Number, default: 0 },
         
         // Convênio
+        insurance: {
+            pendingBilling: { type: Number, default: 0 },
+            billed: { type: Number, default: 0 },
+            received: { type: Number, default: 0 }
+        },
         totalInsuranceProduction: { type: Number, default: 0 },
         totalInsuranceReceived: { type: Number, default: 0 },
         totalInsurancePending: { type: Number, default: 0 },
         countInsuranceTotal: { type: Number, default: 0 },
         countInsuranceReceived: { type: Number, default: 0 },
         countInsurancePending: { type: Number, default: 0 },
+        
+        // 📦 NOVO: Crédito de Pacotes (Receita Diferida)
+        packageCredit: {
+            // 💰 Contrato e Caixa (semântica clara)
+            contractedRevenue: { type: Number, default: 0 },   // 📄 Valor contratado (venda)
+            cashReceived: { type: Number, default: 0 },        // 💰 Dinheiro efetivamente recebido
+            // 📊 Receita Diferida (obrigação futura)
+            deferredRevenue: { type: Number, default: 0 },     // 📊 Valor ainda não produzido
+            deferredSessions: { type: Number, default: 0 },    // 📊 Sessões a cumprir
+            // 📊 Receita Reconhecida (já executada)
+            recognizedRevenue: { type: Number, default: 0 },   // 📊 Valor já produzido via pacote
+            recognizedSessions: { type: Number, default: 0 },  // 📊 Sessões já realizadas
+            totalSessions: { type: Number, default: 0 },       // 📊 Total de sessões vendidas
+            activePackages: { type: Number, default: 0 }       // 📦 Pacotes ativos
+        },
+        
+        // 📄 NOVO: Conta Corrente de Pacientes
+        patientBalance: {
+            totalDebt: { type: Number, default: 0 },        // 💰 A receber
+            totalCredit: { type: Number, default: 0 },      // 📦 Crédito avulso
+            totalDebited: { type: Number, default: 0 },     // Produção não paga
+            totalCredited: { type: Number, default: 0 },    // Pagamentos recebidos
+            patientsWithDebt: { type: Number, default: 0 },
+            patientsWithCredit: { type: Number, default: 0 }
+        },
         
         // Por método de pagamento
         byMethod: {
@@ -64,6 +117,46 @@ const TotalsSnapshotSchema = new mongoose.Schema({
         type: String,
         default: 'totals_worker'
     },
+    
+    // 🔍 Validações de consistência (severidade: error, warning, insight)
+    validations: [{
+        type: {
+            type: String,
+            enum: ['error', 'warning', 'insight'],
+            required: true
+        },
+        code: {
+            type: String,
+            required: true
+        },
+        message: String,
+        details: mongoose.Schema.Types.Mixed,
+        timestamp: {
+            type: Date,
+            default: Date.now
+        }
+    }],
+    
+    // 🚨 Bloqueios críticos (impedem uso do snapshot)
+    blockingErrors: [{
+        code: String,
+        message: String,
+        field: String,
+        expected: mongoose.Schema.Types.Mixed,
+        actual: mongoose.Schema.Types.Mixed
+    }],
+    
+    // 📊 Insights gerenciais (sugestões, não alertas)
+    insights: [{
+        type: {
+            type: String,
+            enum: ['capacity', 'trend', 'opportunity', 'risk']
+        },
+        code: String,
+        message: String,
+        value: Number,
+        threshold: Number
+    }],
     
     // TTL: Auto-expira após 7 dias (será recalculado)
     expiresAt: {

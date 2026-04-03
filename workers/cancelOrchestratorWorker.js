@@ -210,6 +210,23 @@ export function startCancelOrchestratorWorker() {
 
             await mongoSession.commitTransaction();
 
+            // Forca rebuild da projecao do pacote apos cancelamento
+            if (appointment.package) {
+                // Aguarda propagação do commit antes de notificar projection worker
+                await new Promise(r => setTimeout(r, 50));
+                await publishEvent(
+                    EventTypes.PACKAGE_UPDATED,
+                    {
+                        packageId: appointment.package.toString(),
+                        patientId: appointment.patient?._id?.toString(),
+                        appointmentId: appointmentId.toString(),
+                        reason: 'appointment_canceled'
+                    },
+                    { correlationId }
+                );
+                console.log('[CancelOrchestrator] Evento PACKAGE_UPDATED publicado');
+            }
+
             log.info('completed', 'Cancelamento concluído', {
                 appointmentId,
                 sessionPreserved: sessionResult?.preserved || false,

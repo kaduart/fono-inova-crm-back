@@ -46,8 +46,16 @@ const appointmentSchema = new mongoose.Schema({
 
   // ─── DATA / HORA ───────────────────────────────────────────
   date: {
-    type: String,
-    required: [true, 'Data é obrigatória']
+    type: Date,
+    required: [true, 'Data é obrigatória'],
+    set: function(v) {
+      // Se for string "YYYY-MM-DD", converte para Date
+      if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const [ano, mes, dia] = v.split('-').map(Number);
+        return new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
+      }
+      return v;
+    }
   },
   time: {
     type: String,
@@ -72,13 +80,17 @@ const appointmentSchema = new mongoose.Schema({
       'pending',
       'canceled',
       'paid',
-      'missed'
+      'missed',
+      'completed',
+      'processing_create',
+      'processing_complete',
+      'processing_cancel'
     ],
     default: 'pre_agendado',
   },
   clinicalStatus: {
     type: String,
-    enum: ['pending', 'in_progress', 'completed', 'missed'],
+    enum: ['pending', 'in_progress', 'completed', 'missed', 'scheduled', 'canceled'],
     default: 'pending',
   },
 
@@ -142,7 +154,7 @@ const appointmentSchema = new mongoose.Schema({
   // ─── FINANCEIRO EXTRA ──────────────────────────────────────
   paymentStatus: {
     type: String,
-    enum: ['pending', 'paid', 'partial', 'canceled', 'advanced', 'package_paid', 'pending_receipt', 'recognized'],
+    enum: ['pending', 'paid', 'partial', 'canceled', 'advanced', 'package_paid', 'pending_receipt', 'recognized', 'pending_balance'],
     default: 'pending'
   },
   visualFlag: {

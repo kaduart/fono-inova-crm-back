@@ -8,6 +8,7 @@ import Patient from '../models/Patient.js';
 import Payment from '../models/Payment.js';
 import Convenio from '../models/Convenio.js';
 import { syncEvent } from '../services/syncService.js';
+import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
 
 /**
  * 📦 Controller para Pacotes de Convênio
@@ -208,6 +209,7 @@ export const createConvenioPackage = async (req, res) => {
       session: s._id,
       package: convenioPackage._id,
       serviceType: 'convenio_session',
+      billingType: 'convenio',  // ✅ CORREÇÃO: Define explicitamente como convenio
       operationalStatus: 'scheduled',
       clinicalStatus: 'pending',
       paymentStatus: 'pending_receipt', // ⚠️ Aguardando recebimento do convênio
@@ -236,14 +238,64 @@ export const createConvenioPackage = async (req, res) => {
     }
 
     // ===================================
-    // 7. ATUALIZAR PACOTE COM REFERÊNCIAS
+    // 7. CRIAR PAYMENTS PARA CADA SESSÃO (obrigatório para V2)
+    // ===================================
+    const payments = [];
+    const month = new Date().toISOString().slice(0, 7);
+    
+    for (let i = 0; i < insertedSessions.length; i++) {
+      const session = insertedSessions[i];
+      const appointment = insertedAppointments[i];
+      
+      const payment = new Payment({
+        patient: patientId,
+        doctor: doctorId,
+        session: session._id,
+        appointment: appointment._id,
+        package: convenioPackage._id,
+        serviceType: 'package_session',  // ✅ Valor válido do enum
+        amount: convenioValue || 0,
+        paymentMethod: 'convenio',
+        billingType: 'convenio',
+        status: 'pending',  // ✅ Valor válido do enum (pendente de faturamento)
+        sessionType: guide.specialty,  // ✅ Campo obrigatório
+        paymentDate: new Date().toISOString().split('T')[0],  // ✅ Campo obrigatório
+        insurance: {
+          provider: guide.insurance,
+          authorizationCode: guide.number,
+          status: 'pending_billing',
+          grossAmount: convenioValue || 0,
+          netAmount: convenioValue || 0
+        },
+        appointments: [{
+          appointment: appointment._id,
+          amount: convenioValue || 0,
+          guideNumber: guide.number
+        }],
+        serviceDate: session.date,
+        notes: `Pacote Convênio - Guia ${guide.number} - Sessão ${i + 1}/${selectedSlots.length}`
+      });
+      
+      await payment.save({ session: mongoSession });
+      payments.push(payment);
+      
+      // Vincula payment na session
+      session.paymentId = payment._id;
+      await session.save({ session: mongoSession });
+    }
+    
+    console.log(`✅ ${payments.length} Payments criados`);
+
+    // ===================================
+    // 8. ATUALIZAR PACOTE COM REFERÊNCIAS
     // ===================================
     convenioPackage.sessions = insertedSessions.map(s => s._id);
     convenioPackage.appointments = insertedAppointments.map(a => a._id);
+    convenioPackage.payments = payments.map(p => p._id); // Adiciona referência aos payments
     await convenioPackage.save({ session: mongoSession });
 
     // ===================================
-    // 8. MARCAR GUIA COMO CONVERTIDA
+    // 9. MARCAR GUIA COMO CONVERTIDA
     // ===================================
     guide.packageId = convenioPackage._id;
     await guide.save({ session: mongoSession });
@@ -274,6 +326,19 @@ export const createConvenioPackage = async (req, res) => {
       await syncEvent(convenioPackage, 'package');
     } catch (syncError) {
       console.error('⚠️ Erro na sincronização (não-crítico):', syncError.message);
+    }
+
+    // ===================================
+    // 12. BUILD PACKAGES VIEW (CQRS Read Model)
+    // ===================================
+    try {
+      await buildPackageView(convenioPackage._id, { 
+        correlationId: `convenio_pkg_${Date.now()}`,
+        force: true 
+      });
+      console.log(`✅ PackagesView atualizada para ${convenioPackage._id}`);
+    } catch (viewError) {
+      console.error('⚠️ Erro ao buildar PackagesView (não-crítico):', viewError.message);
     }
 
     // ===================================

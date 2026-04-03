@@ -14,6 +14,7 @@ import { startFollowupOrchestratorWorker } from './followupOrchestratorWorker.js
 import { startNotificationOrchestratorWorker } from './notificationOrchestratorWorker.js';
 import { startUpdateOrchestratorWorker } from './updateOrchestratorWorker.js';
 import { startInsuranceOrchestratorWorker } from '../domains/billing/workers/index.js';
+import { startBillingConsumerWorker } from '../domains/billing/workers/billingConsumerWorker.js';
 import { startDailyClosingWorker } from './dailyClosingWorker.js';
 import { startTotalsWorker } from './totalsWorker.js';
 // 🆕 Patients V2 Workers
@@ -75,6 +76,10 @@ export function startAllWorkers() {
     
     // 9. Insurance Worker (faturamento convênio/lotes) - Domain: Billing
     workers.push(startInsuranceOrchestratorWorker());
+    
+    // 9.1 🆕 Billing Consumer Worker V2 (Event-Driven - Insurance Billing)
+    workers.push(startBillingConsumerWorker());
+    console.log('[Workers] ✅ BillingConsumerWorker V2 iniciado');
     
     // 10. 🆕 Patients V2 Workers (CQRS)
     workers.push(patientWorker);

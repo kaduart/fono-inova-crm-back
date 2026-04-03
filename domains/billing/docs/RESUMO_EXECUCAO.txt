@@ -1,0 +1,83 @@
+================================================================================
+RESUMO - TESTE NA VERA (FRONT + BACK)
+================================================================================
+
+ORDEM DE EXECUÇÃO:
+------------------
+
+1. VALIDAR AMBIENTE
+   npm run billing:validate
+   
+   Esperado: ✅ Todas as verificações passaram
+
+2. SUBIR WORKER
+   npm run billing:go-live worker
+   
+   Verificar: pm2 list (worker deve aparecer "online")
+
+3. ATIVAR CREATE (cuidado - começa a afetar dados)
+   npm run billing:go-live create
+   
+   Teste no front:
+   - Criar agendamento convênio
+   - Completar sessão
+   - Verificar se criou 1 appointment e 1 payment
+   - CRÍTICO: Confirmar que NÃO duplicou
+
+4. ATIVAR BILLED
+   npm run billing:go-live billed
+   
+   Teste no front:
+   - Faturar sessão
+   - Status deve mudar para "Faturado"
+
+5. ATIVAR RECEIVED
+   npm run billing:go-live received
+   
+   Teste no front:
+   - Receber pagamento
+   - Status deve mudar para "Pago"
+   - Ciclo fechado
+
+MONITORAMENTO CONTÍNUO:
+-----------------------
+Terminal 1: npm run billing:monitor
+Terminal 2: npm run billing:validate (a cada 10 min)
+
+ROLLBACK (se necessário):
+--------------------------
+npm run billing:rollback
+
+================================================================================
+O QUE VERIFICAR NO FRONT A CADA ETAPA:
+================================================================================
+
+ETAPA CREATE:
+✅ Agendamento criado
+✅ Sessão completada → Appointment criado automaticamente
+✅ Payment criado com status "pending_billing"
+✅ Guia consumida (saldo -1)
+❌ NÃO deve ter duplicatas
+
+ETAPA BILLED:
+✅ Botão "Faturar" funciona
+✅ Status muda para "billed"
+✅ Valor preenchido
+
+ETAPA RECEIVED:
+✅ Botão "Receber" funciona
+✅ Status muda para "paid"
+✅ Sessão marcada como paga
+✅ Valor final correto
+
+================================================================================
+ALERTAS QUE INDICAM ROLLBACK:
+================================================================================
+
+🚨 Duplicatas (2 payments para mesma sessão)
+🚨 Status não muda após clicar botão
+🚨 Guia consumiu mas não criou payment
+🚨 Erro no console do navegador
+🚨 npm run billing:validate mostra inconsistências
+
+================================================================================

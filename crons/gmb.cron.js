@@ -190,8 +190,8 @@ async function taskSendToMake() {
             }
         }
 
-        // Pausa entre envios
-        await new Promise(r => setTimeout(r, 2000));
+        // Pausa entre envios (aumentado para evitar 'Make queue full')
+        await new Promise(r => setTimeout(r, 10000));
     }
 
     logger.success(`Make: ${sent} enviados, ${failed} falharam`);

@@ -13,6 +13,7 @@
 import mongoose from 'mongoose';
 import Package from '../../../models/Package.js';
 import Session from '../../../models/Session.js';
+import Appointment from '../../../models/Appointment.js';
 import Patient from '../../../models/Patient.js';
 import Doctor from '../../../models/Doctor.js';
 import PackagesView from '../../../models/PackagesView.js';
@@ -63,14 +64,32 @@ async function fetchRawData(packageId, correlationId) {
 
 /**
  * Calcula métricas de sessões
+ * 
+ * Source of truth: Appointment operationalStatus (completado/cancelado dentro da transação)
+ * Fallback: Session.status para compatibilidade
  */
-function calculateSessionMetrics(sessions, pkgTotalSessions) {
+async function calculateSessionMetrics(sessions, pkgTotalSessions, packageId) {
   // totalSessions = do contrato (pkg.totalSessions), não das criadas
   const totalSessions = pkgTotalSessions || sessions.length;
-  const sessionsUsed = sessions.filter(s => s.status === 'completed').length;
-  const sessionsCanceled = sessions.filter(s => s.status === 'canceled').length;
+
+  // 💥 SOURCE OF TRUTH: Appointments são atualizados atomicamente na transação
+  let appointmentsUsed = 0;
+  let appointmentsCanceled = 0;
+  if (packageId) {
+    [appointmentsUsed, appointmentsCanceled] = await Promise.all([
+      Appointment.countDocuments({ package: packageId, operationalStatus: 'completed' }),
+      Appointment.countDocuments({ package: packageId, operationalStatus: 'canceled' })
+    ]);
+  }
+
+  // Fallback por sessões (caso não haja appointments vinculados ainda)
+  const sessionsUsedFromSessions = sessions.filter(s => s.status === 'completed').length;
+  const sessionsCanceledFromSessions = sessions.filter(s => s.status === 'canceled').length;
+
+  const sessionsUsed = Math.max(appointmentsUsed, sessionsUsedFromSessions);
+  const sessionsCanceled = Math.max(appointmentsCanceled, sessionsCanceledFromSessions);
   const sessionsRemaining = Math.max(0, totalSessions - sessionsUsed - sessionsCanceled);
-  
+
   // Resumo das sessões para a view
   const sessionsSummary = sessions.map(s => ({
     sessionId: s._id,
@@ -79,7 +98,7 @@ function calculateSessionMetrics(sessions, pkgTotalSessions) {
     status: s.status,
     isPaid: s.isPaid || false
   }));
-  
+
   return {
     totalSessions,
     sessionsUsed,
@@ -128,7 +147,7 @@ export async function buildPackageView(packageId, options = {}) {
     const { pkg, sessions } = await fetchRawData(packageId, correlationId);
     
     // 2. Calcula métricas
-    const sessionMetrics = calculateSessionMetrics(sessions, pkg.totalSessions);
+    const sessionMetrics = await calculateSessionMetrics(sessions, pkg.totalSessions, packageId);
     const dates = calculateDates(sessions, pkg);
     
     // 3. Prepara dados da view

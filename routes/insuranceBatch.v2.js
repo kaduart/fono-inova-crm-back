@@ -17,6 +17,7 @@ import InsuranceBatchView from '../models/InsuranceBatchView.js';
 import { buildInsuranceBatchView } from '../domains/billing/services/InsuranceBatchProjectionService.js';
 import { flexibleAuth } from '../middleware/flexibleAuth.js';
 import { createContextLogger } from '../utils/logger.js';
+import insuranceBatchController from '../controllers/insuranceBatchController.js';
 
 const router = express.Router();
 const logger = createContextLogger('InsuranceBatchV2');
@@ -304,5 +305,21 @@ router.get('/consistency/check', flexibleAuth, async (req, res) => {
     res.status(500).json(formatError('Erro ao verificar consistência', 500, { correlationId }));
   }
 });
+
+// ============================================
+// ROTAS V2 - FATURAMENTO DE CONVÊNIO
+// ============================================
+
+// POST /api/v2/insurance-batches - Criar lote
+router.post('/', flexibleAuth, insuranceBatchController.createBatch);
+
+// POST /api/v2/insurance-batches/:id/send - Enviar lote
+router.post('/:id/send', flexibleAuth, insuranceBatchController.sendBatch);
+
+// POST /api/v2/insurance-batches/:id/return - Processar retorno
+router.post('/:id/return', flexibleAuth, insuranceBatchController.processReturn);
+
+// GET /api/v2/insurance-batches/:id - Detalhes (usando controller)
+router.get('/:id/detail', flexibleAuth, insuranceBatchController.getBatchById);
 
 export default router;

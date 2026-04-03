@@ -14,8 +14,14 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { formatSuccess, formatError } from '../utils/apiMessages.js';
+import { asyncHandler } from '../middleware/errorHandler.js';
 import PackagesView from '../models/PackagesView.js';
+import Package from '../models/Package.js';
+import Appointment from '../models/Appointment.js';
+import Session from '../models/Session.js';
+import Payment from '../models/Payment.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
+import { handlePackageCreate } from '../domains/billing/workers/packageProcessingWorker.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { createContextLogger } from '../utils/logger.js';
 import healthRoutes from './package.v2.health.js';
@@ -65,7 +71,18 @@ router.post('/', flexibleAuth, async (req, res) => {
       paymentMethod,
       paymentType,
       type,
-      notes
+      notes,
+      payments,
+      date,
+      durationMonths,
+      sessionsPerWeek,
+      calculationMode,
+      appointmentId,
+      liminarProcessNumber,
+      liminarCourt,
+      liminarExpirationDate,
+      liminarMode,
+      liminarAuthorized
     } = req.body;
     
     // Validação básica
@@ -84,8 +101,8 @@ router.post('/', flexibleAuth, async (req, res) => {
       totalSessions
     });
     
-    // Publica evento para processamento assíncrono
-    await publishEvent('PACKAGE_CREATE_REQUESTED', {
+    // Cria pacote de forma síncrona (garante read-your-writes)
+    const createResult = await handlePackageCreate({
       patientId,
       doctorId,
       specialty,
@@ -97,28 +114,45 @@ router.post('/', flexibleAuth, async (req, res) => {
       paymentType,
       type: type || 'therapy',
       notes,
+      payments,
+      date,
+      durationMonths,
+      sessionsPerWeek,
+      calculationMode,
+      appointmentId,
+      liminarProcessNumber,
+      liminarCourt,
+      liminarExpirationDate,
+      liminarMode,
+      liminarAuthorized,
       requestId,
       createdBy: req.user?._id
-    }, { correlationId });
+    }, correlationId);
+    
+    // Força build da projection para leitura imediata
+    const buildResult = await buildPackageView(createResult.packageId, {
+      correlationId,
+      force: true
+    });
     
     const duration = Date.now() - startTime;
     
-    res.status(202).json(formatSuccess({
-      message: 'Pacote em processamento',
+    res.status(201).json(formatSuccess({
+      package: buildResult.view,
       requestId,
       correlationId,
-      status: 'processing'
+      status: 'created'
     }, {
-      duration: `${duration}ms`,
-      nextStep: 'GET /api/v2/packages para verificar criação'
+      duration: `${duration}ms`
     }));
     
   } catch (error) {
     logger.error('[PackageV2] Error creating package', {
       correlationId,
-      error: error.message
+      error: error.message,
+      stack: error.stack
     });
-    res.status(500).json(formatError('Erro ao criar pacote', 500, { correlationId }));
+    res.status(500).json(formatError(error.message || 'Erro ao criar pacote', 500, { correlationId }));
   }
 });
 
@@ -404,39 +438,89 @@ router.delete('/:id', flexibleAuth, async (req, res) => {
   const { id } = req.params;
   
   try {
-    // Validação: pacote existe
-    const existing = await PackagesView.findOne({ packageId: id });
-    if (!existing) {
-      return res.status(404).json(formatError('Pacote não encontrado', 404, { correlationId }));
-    }
-    
     logger.info('[PackageV2] Deleting package', { correlationId, packageId: id });
-    
-    // Publica evento para processamento assíncrono
-    await publishEvent('PACKAGE_DELETE_REQUESTED', {
-      packageId: id,
-      reason: req.body.reason || 'User requested',
-      deletedBy: req.user?._id
-    }, { correlationId });
-    
+
+    const viewId = new mongoose.Types.ObjectId(id);
+
+    // Busca a view para obter o packageId real do Package
+    const view = await PackagesView.findById(viewId).lean();
+    const realPackageId = view?.packageId || viewId; // fallback pro próprio id
+    const pkgObjectId = new mongoose.Types.ObjectId(realPackageId);
+
+    // Deleta tudo em paralelo usando o ID real do Package
+    const [pkgResult, appointmentsResult, sessionsResult, paymentsResult] = await Promise.all([
+      Package.findByIdAndDelete(pkgObjectId),
+      Appointment.deleteMany({ package: pkgObjectId }),
+      Session.deleteMany({ package: pkgObjectId }),
+      Payment.deleteMany({ package: pkgObjectId })
+    ]);
+
+    // Remove a view pelo _id dela
+    await PackagesView.findByIdAndDelete(viewId);
+
     const duration = Date.now() - startTime;
-    
-    res.status(202).json(formatSuccess({
-      message: 'Cancelamento em processamento',
-      packageId: id,
+
+    logger.info('[PackageV2] Package deleted', {
       correlationId,
-      status: 'processing'
-    }, {
-      duration: `${duration}ms`
-    }));
-    
+      packageId: id,
+      found: !!pkgResult,
+      appointments: appointmentsResult.deletedCount,
+      sessions: sessionsResult.deletedCount,
+      payments: paymentsResult.deletedCount
+    });
+
+    res.status(200).json(formatSuccess({
+      packageId: id,
+      deleted: true,
+      counts: {
+        appointments: appointmentsResult.deletedCount,
+        sessions: sessionsResult.deletedCount,
+        payments: paymentsResult.deletedCount
+      }
+    }, { duration: `${duration}ms` }));
+
   } catch (error) {
     logger.error('[PackageV2] Error deleting package', { correlationId, error: error.message });
-    res.status(500).json(formatError('Erro ao cancelar pacote', 500, { correlationId }));
+    res.status(500).json(formatError('INTERNAL_ERROR', 'Erro ao deletar pacote', { correlationId }));
   }
 });
 
 // Health check
 router.use('/health', healthRoutes);
+
+// ============================================
+// POST /api/v2/packages/:id/rebuild
+// Força rebuild manual da PackagesView
+// ============================================
+
+router.post('/:id/rebuild', flexibleAuth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const correlationId = `pkg_rebuild_${Date.now()}`;
+  
+  try {
+    const result = await buildPackageView(id, { 
+      correlationId, 
+      force: true 
+    });
+    
+    res.json(formatSuccess({
+      packageId: id,
+      view: {
+        sessionsUsed: result.view.sessionsUsed,
+        sessionsRemaining: result.view.sessionsRemaining,
+        status: result.view.status
+      },
+      duration: result.duration
+    }, {
+      message: 'PackagesView reconstruída com sucesso',
+      correlationId
+    }));
+  } catch (error) {
+    res.status(500).json(formatError('Erro ao reconstruir view', 500, { 
+      error: error.message,
+      correlationId 
+    }));
+  }
+}));
 
 export default router;
