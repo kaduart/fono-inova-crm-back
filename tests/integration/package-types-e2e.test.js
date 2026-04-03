@@ -22,6 +22,13 @@ vi.mock('../../middleware/auth.js', () => ({
     }
 }));
 
+vi.mock('../../middleware/amandaAuth.js', () => ({
+    flexibleAuth: (req, res, next) => {
+        req.user = { _id: new mongoose.Types.ObjectId(), role: 'admin' };
+        next();
+    }
+}));
+
 let mongoReplSet;
 let app;
 
@@ -54,9 +61,11 @@ beforeAll(async () => {
 
     const packageRouter = (await import('../../routes/Package.js')).default;
     const convenioPackageRouter = (await import('../../routes/convenioPackages.js')).default;
+    const packageV2Router = (await import('../../routes/package.v2.js')).default;
 
     app.use('/api/packages', packageRouter);
     app.use('/api/convenio-packages', convenioPackageRouter);
+    app.use('/api/v2/packages', packageV2Router);
 });
 
 afterAll(async () => {
@@ -237,6 +246,65 @@ describe('💰 Pacote PARTICULAR (therapy)', () => {
         const updatedPkg = await Package.findById(pkgId);
         expect(updatedPkg.totalPaid).toBe(200);
         expect(updatedPkg.financialStatus).toBe('partially_paid');
+    });
+
+    it('deve criar pacote V2 full com pagamento, appointments e vínculo session-appointment', async () => {
+        const patient = await createPatient();
+        const doctor = await createDoctor();
+
+        const res = await request(app)
+            .post('/api/v2/packages')
+            .send({
+                patientId: patient._id.toString(),
+                doctorId: doctor._id.toString(),
+                specialty: 'fonoaudiologia',
+                sessionType: 'fonoaudiologia',
+                sessionValue: 150,
+                paymentType: 'full',
+                paymentMethod: 'pix',
+                totalSessions: 4,
+                durationMonths: 1,
+                calculationMode: 'sessions',
+                selectedSlots: [
+                    { date: '2026-05-05', time: '09:00' },
+                    { date: '2026-05-12', time: '09:00' },
+                    { date: '2026-05-19', time: '09:00' },
+                    { date: '2026-05-26', time: '09:00' }
+                ],
+                payments: [
+                    { amount: 600, method: 'pix', date: '2026-04-02', description: 'Pagamento integral' }
+                ]
+            });
+
+        expect(res.status).toBe(201);
+        const pkg = res.body.data.package;
+        expect(pkg.type).toBe('therapy');
+        expect(pkg.totalPaid).toBe(600);
+        expect(pkg.balance).toBe(0);
+        expect(pkg.financialStatus).toBe('paid');
+
+        const pkgId = pkg.packageId;
+
+        // Appointments devem existir
+        const appointments = await Appointment.find({ package: pkgId });
+        expect(appointments.length).toBe(4);
+
+        // Sessions devem ter appointmentId vinculado
+        const sessions = await Session.find({ package: pkgId });
+        expect(sessions.length).toBe(4);
+        for (const s of sessions) {
+            expect(s.appointmentId).toBeTruthy();
+        }
+
+        // Patient deve ter o pacote no array packages
+        const updatedPatient = await Patient.findById(patient._id);
+        expect(updatedPatient.packages.map(id => id.toString())).toContain(pkgId);
+
+        // Pagamentos devem existir
+        const payments = await Payment.find({ package: pkgId, kind: 'package_receipt' });
+        expect(payments.length).toBe(1);
+        expect(payments[0].amount).toBe(600);
+        expect(payments[0].status).toBe('paid');
     });
 });
 

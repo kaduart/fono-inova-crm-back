@@ -7,6 +7,8 @@ const insuranceBatchSessionSchema = new mongoose.Schema({
   session: { type: mongoose.Schema.Types.ObjectId, ref: 'Session', required: true },
   appointment: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment', required: true },
   guide: { type: mongoose.Schema.Types.ObjectId, ref: 'InsuranceGuide' },
+  payment: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment' },
+  protocolItemId: { type: String },
   
   // Valores
   grossAmount: { type: Number, required: true },

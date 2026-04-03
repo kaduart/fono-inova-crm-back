@@ -6,7 +6,15 @@ import MedicalEvent from './MedicalEvent.js';
 
 const sessionSchema = new mongoose.Schema({
     date: {
-        type: String,
+        type: Date,
+        set: function(v) {
+            // Se for string "YYYY-MM-DD", converte para Date
+            if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                const [ano, mes, dia] = v.split('-').map(Number);
+                return new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
+            }
+            return v;
+        }
     },
     time: String,
     sessionType: {
@@ -100,6 +108,12 @@ const sessionSchema = new mongoose.Schema({
         type: Boolean,
         default: false,
         description: 'Flag de idempotência - true se a guia já foi consumida'
+    },
+    billingBatchId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'InsuranceBatch',
+        default: null,
+        description: 'Lote de faturamento ao qual esta sessão foi vinculada'
     },
     paidAt: {
         type: Date,

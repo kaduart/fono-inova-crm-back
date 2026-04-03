@@ -318,32 +318,49 @@ async function handlePackageUpdateRequested(packageId, payload, correlationId) {
 
 async function handlePackageDeleteRequested(packageId, payload, correlationId) {
   const { reason, deletedBy } = payload;
-  
-  // 1. Soft delete no documento original
+
   const Package = (await import('../../../models/Package.js')).default;
-  const updated = await Package.findByIdAndUpdate(
-    packageId,
-    { 
-      status: 'cancelled',
-      cancelledAt: new Date(),
-      cancelledBy: deletedBy,
-      cancellationReason: reason,
-      updatedAt: new Date()
-    },
-    { new: true }
-  );
-  
-  if (!updated) {
-    throw new Error(`Package ${packageId} not found for cancellation`);
+  const Appointment = (await import('../../../models/Appointment.js')).default;
+  const Session = (await import('../../../models/Session.js')).default;
+  const Payment = (await import('../../../models/Payment.js')).default;
+
+  // 1. Verifica existência
+  const pkg = await Package.findById(packageId);
+  if (!pkg) {
+    throw new Error(`Package ${packageId} not found for deletion`);
   }
-  
-  // 2. Remove a view
+
+  // 2. Deleta appointments vinculados
+  const appointmentResult = await Appointment.deleteMany({ package: packageId });
+
+  // 3. Deleta sessions vinculadas
+  const sessionResult = await Session.deleteMany({ package: packageId });
+
+  // 4. Deleta payments vinculados
+  const paymentResult = await Payment.deleteMany({ package: packageId });
+
+  // 5. Deleta o pacote
+  await Package.findByIdAndDelete(packageId);
+
+  // 6. Remove a view
   await deletePackageView(packageId);
-  
+
+  logger.info(`[${correlationId}] Package deleted with all related data`, {
+    packageId,
+    appointments: appointmentResult.deletedCount,
+    sessions: sessionResult.deletedCount,
+    payments: paymentResult.deletedCount
+  });
+
   return {
-    operation: 'cancel_and_delete_view',
-    cancelled: true,
-    reason
+    operation: 'delete_all',
+    deleted: true,
+    reason,
+    counts: {
+      appointments: appointmentResult.deletedCount,
+      sessions: sessionResult.deletedCount,
+      payments: paymentResult.deletedCount
+    }
   };
 }
 

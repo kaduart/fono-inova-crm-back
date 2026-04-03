@@ -33,12 +33,24 @@ export async function fetchAppointmentsToday(startOfDay, endOfDay, targetDate) {
 
 export async function fetchPayments(startOfDay, endOfDay, targetDate) {
     return Payment.find({
-        status: { $in: ["paid", "package_paid"] },
-        $or: [
-            { paymentDate: { $gte: startOfDay, $lte: endOfDay } },
-            { paymentDate: targetDate },
-            { paymentDate: { $exists: false }, createdAt: { $gte: startOfDay, $lte: endOfDay } },
-        ],
+        $and: [
+            // 🏥 CONVÊNIO: Inclui payments pendentes de faturamento (produção do dia)
+            // 💰 OUTROS: Apenas pagamentos efetivamente recebidos
+            {
+                $or: [
+                    { status: { $in: ["paid", "package_paid"] } },
+                    { billingType: 'convenio', status: { $in: ['pending_billing', 'billed', 'received'] } }
+                ]
+            },
+            // Filtro de data
+            {
+                $or: [
+                    { paymentDate: { $gte: startOfDay, $lte: endOfDay } },
+                    { paymentDate: targetDate },
+                    { paymentDate: { $exists: false }, createdAt: { $gte: startOfDay, $lte: endOfDay } },
+                ]
+            }
+        ]
     }).populate("patient doctor package appointment").lean();
 }
 

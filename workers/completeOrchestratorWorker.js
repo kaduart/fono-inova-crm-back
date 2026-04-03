@@ -319,7 +319,7 @@ export function startCompleteOrchestratorWorker() {
         // 4. COMPLETA SESSÃO FORA DA TRANSAÇÃO (não crítico)
         if (sessionId) {
             try {
-                await completeSession(sessionId, {
+                await completeSession(sessionId, {}, {
                     addToBalance,
                     paymentOrigin,
                     correlationId
@@ -327,6 +327,21 @@ export function startCompleteOrchestratorWorker() {
             } catch (sessionErr) {
                 console.warn('[CompleteOrchestrator] Erro ao completar sessão (não crítico):', sessionErr.message);
             }
+        }
+
+        // 🔄 Força rebuild da projeção do pacote após complete (DEPOIS da sessão ser atualizada)
+        if (packageId) {
+            await publishEvent(
+                EventTypes.PACKAGE_UPDATED,
+                {
+                    packageId: packageId.toString(),
+                    patientId: appointment.patient?._id?.toString(),
+                    appointmentId: appointmentId.toString(),
+                    reason: 'appointment_completed'
+                },
+                { correlationId }
+            );
+            console.log('[CompleteOrchestrator] Evento PACKAGE_UPDATED publicado');
         }
 
         // PÓS-COMMIT (não bloqueia resposta)

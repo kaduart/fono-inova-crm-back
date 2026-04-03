@@ -73,6 +73,11 @@ const packageSchema = new mongoose.Schema({
     description: 'Data do último pagamento recebido'
   },
   txid: { type: String, unique: true, sparse: true },
+  metadata: {
+    requestId: { type: String, index: true },
+    correlationId: { type: String },
+    createdAt: { type: Date }
+  },
 
   // ========================================
   // 🏥 CAMPOS PARA PACOTES DE CONVÊNIO E LIMINAR

@@ -24,7 +24,7 @@ export function startPackageValidationWorker() {
         const { eventId, correlationId, payload } = job.data;
         const { appointmentId, packageId, patientId } = payload;
 
-        console.log(`[PackageValidationWorker] Validando pacote ${packageId} para agendamento ${appointmentId}`);
+        console.log(`[PackageValidationWorker] Validando pacote ${packageId} para agendamento ${appointmentId || '(buscando no pacote)'}`);
 
         // Idempotência
         if (processedEvents.has(eventId)) {
@@ -39,86 +39,52 @@ export function startPackageValidationWorker() {
                 throw new Error(`PACKAGE_NOT_FOUND: ${packageId}`);
             }
 
-            // 2. STATE GUARD: Verifica se agendamento ainda existe e está scheduled
-            const appointment = await Appointment.findById(appointmentId);
-            
-            if (!appointment) {
-                throw new Error(`APPOINTMENT_NOT_FOUND: ${appointmentId}`);
-            }
-
-            if (appointment.operationalStatus === 'rejected' || appointment.operationalStatus === 'canceled') {
-                console.log(`[PackageValidationWorker] Agendamento ${appointmentId} cancelado/rejeitado. Abortando.`);
-                return { status: 'aborted', reason: 'appointment_cancelled' };
-            }
-
-            // 3. Verifica crédito disponível
-            const remainingSessions = pkg.totalSessions - (pkg.sessionsDone || 0);
-            
-            if (remainingSessions <= 0) {
-                // Sem crédito: rejeita agendamento
-                await rejectDueToNoCredit(appointmentId, packageId);
-                
-                await publishEvent(
-                    EventTypes.APPOINTMENT_REJECTED,
-                    {
-                        appointmentId,
-                        reason: 'PACKAGE_NO_CREDIT',
-                        details: { packageId, remainingSessions: 0 }
-                    },
-                    { correlationId }
-                );
-                
-                processedEvents.set(eventId, Date.now());
-                
-                return {
-                    status: 'rejected',
-                    reason: 'PACKAGE_NO_CREDIT'
-                };
-            }
-
-            // 4. Cria sessão do pacote
-            const session = await createPackageSession(pkg, appointment);
-
-            // 5. Atualiza pacote (incrementa sessionsDone)
-            await Package.findByIdAndUpdate(packageId, {
-                $inc: { sessionsDone: 1 },
-                $push: { sessions: session._id, appointments: appointmentId }
-            });
-
-            // 6. Atualiza agendamento com referência da sessão
-            await Appointment.findByIdAndUpdate(appointmentId, {
-                session: session._id,
-                paymentStatus: 'package_paid',
-                $push: {
-                    history: {
-                        action: 'package_credit_consumed',
-                        newStatus: appointment.operationalStatus,
-                        timestamp: new Date(),
-                        context: `Pacote ${packageId}: sessão ${session._id}`
-                    }
-                }
-            });
-
-            // 7. Publica evento de sucesso
-            await publishEvent(
-                EventTypes.PACKAGE_CREDIT_CONSUMED,
-                {
+            // Se veio appointmentId explícito, processa apenas ele
+            if (appointmentId) {
+                const result = await processSingleAppointment({
+                    pkg,
                     appointmentId,
                     packageId,
-                    sessionId: session._id.toString(),
-                    remainingSessions: remainingSessions - 1
-                },
-                { correlationId }
-            );
+                    correlationId
+                });
+                processedEvents.set(eventId, Date.now());
+                return result;
+            }
+
+            // Se não veio appointmentId, busca appointments do pacote que ainda não têm session vinculada
+            const pendingAppointments = await Appointment.find({
+                package: packageId,
+                $or: [
+                    { session: { $exists: false } },
+                    { session: null }
+                ],
+                operationalStatus: { $nin: ['rejected', 'canceled'] }
+            });
+
+            if (!pendingAppointments.length) {
+                console.log(`[PackageValidationWorker] Nenhum agendamento pendente para o pacote ${packageId}. Ignorando.`);
+                return { status: 'skipped', reason: 'no_pending_appointments' };
+            }
+
+            const results = [];
+            for (const appt of pendingAppointments) {
+                const result = await processSingleAppointment({
+                    pkg,
+                    appointmentId: appt._id.toString(),
+                    packageId,
+                    correlationId
+                });
+                results.push(result);
+                // Recarrega pacote para próxima iteração ter sessionsDone atualizado
+                pkg.sessionsDone = (pkg.sessionsDone || 0) + 1;
+            }
 
             processedEvents.set(eventId, Date.now());
 
-            console.log(`[PackageValidationWorker] Crédito consumido: ${session._id}`);
-
             return {
-                status: 'credit_consumed',
-                sessionId: session._id.toString(),
-                remainingSessions: remainingSessions - 1
+                status: 'batch_processed',
+                processed: results.length,
+                results
             };
 
         } catch (error) {
@@ -142,6 +108,87 @@ export function startPackageValidationWorker() {
 
     console.log('[PackageValidationWorker] Worker iniciado');
     return worker;
+}
+
+/**
+ * Processa consumo de crédito para um único appointment
+ */
+async function processSingleAppointment({ pkg, appointmentId, packageId, correlationId }) {
+    const appointment = await Appointment.findById(appointmentId);
+
+    if (!appointment) {
+        throw new Error(`APPOINTMENT_NOT_FOUND: ${appointmentId}`);
+    }
+
+    if (appointment.operationalStatus === 'rejected' || appointment.operationalStatus === 'canceled') {
+        console.log(`[PackageValidationWorker] Agendamento ${appointmentId} cancelado/rejeitado. Abortando.`);
+        return { status: 'aborted', reason: 'appointment_cancelled' };
+    }
+
+    // Se já tem session vinculada, pula
+    if (appointment.session) {
+        return { status: 'skipped', reason: 'already_has_session' };
+    }
+
+    const remainingSessions = pkg.totalSessions - (pkg.sessionsDone || 0);
+
+    if (remainingSessions <= 0) {
+        await rejectDueToNoCredit(appointmentId, packageId);
+
+        await publishEvent(
+            EventTypes.APPOINTMENT_REJECTED,
+            {
+                appointmentId,
+                reason: 'PACKAGE_NO_CREDIT',
+                details: { packageId, remainingSessions: 0 }
+            },
+            { correlationId }
+        );
+
+        return {
+            status: 'rejected',
+            reason: 'PACKAGE_NO_CREDIT'
+        };
+    }
+
+    const session = await createPackageSession(pkg, appointment);
+
+    await Package.findByIdAndUpdate(packageId, {
+        $inc: { sessionsDone: 1 },
+        $push: { sessions: session._id, appointments: appointmentId }
+    });
+
+    await Appointment.findByIdAndUpdate(appointmentId, {
+        session: session._id,
+        paymentStatus: 'package_paid',
+        $push: {
+            history: {
+                action: 'package_credit_consumed',
+                newStatus: appointment.operationalStatus,
+                timestamp: new Date(),
+                context: `Pacote ${packageId}: sessão ${session._id}`
+            }
+        }
+    });
+
+    await publishEvent(
+        EventTypes.PACKAGE_CREDIT_CONSUMED,
+        {
+            appointmentId,
+            packageId,
+            sessionId: session._id.toString(),
+            remainingSessions: remainingSessions - 1
+        },
+        { correlationId }
+    );
+
+    console.log(`[PackageValidationWorker] Crédito consumido: ${session._id}`);
+
+    return {
+        status: 'credit_consumed',
+        sessionId: session._id.toString(),
+        remainingSessions: remainingSessions - 1
+    };
 }
 
 /**

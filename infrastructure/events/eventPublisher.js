@@ -33,7 +33,9 @@ const queues = {
     'package-processing': new Queue('package-processing', { connection: redisConnection }),
     'insurance-orchestrator': new Queue('insurance-orchestrator', { connection: redisConnection }),
     'clinical-orchestrator': new Queue('clinical-orchestrator', { connection: redisConnection }),
-    'clinical-session': new Queue('clinical-session', { connection: redisConnection })
+    'clinical-session': new Queue('clinical-session', { connection: redisConnection }),
+    'package-projection': new Queue('package-projection', { connection: redisConnection }),
+    'billing-orchestrator': new Queue('billing-orchestrator', { connection: redisConnection })
 };
 
 /**
@@ -181,8 +183,8 @@ const eventToQueueMap = {
     // Sessions
     // NOTA: SESSION_COMPLETED não vai para sync-medical porque o billing
     // é acionado por PAYMENT_COMPLETED (criado pelo CompleteOrchestrator)
-    [EventTypes.SESSION_COMPLETED]: ['patient-projection', 'clinical-session'],
-    [EventTypes.SESSION_CANCELED]: ['sync-medical', 'patient-projection', 'clinical-session'],
+    [EventTypes.SESSION_COMPLETED]: ['package-projection', 'patient-projection', 'clinical-session'],
+    [EventTypes.SESSION_CANCELED]: ['package-projection', 'sync-medical', 'patient-projection', 'clinical-session'],
     [EventTypes.SESSION_PAYMENT_RECEIVED]: ['sync-medical', 'patient-projection'],
     
     // Payments
@@ -198,9 +200,9 @@ const eventToQueueMap = {
     [EventTypes.PATIENT_CREATE_REQUESTED]: ['patient-projection'],
     [EventTypes.PATIENT_CREATED]: ['patient-projection'],
     [EventTypes.PATIENT_UPDATED]: ['patient-projection'],
-    [EventTypes.PACKAGE_CREATED]: ['package-validation', 'patient-projection'],
-    [EventTypes.PACKAGE_UPDATED]: ['package-validation', 'patient-projection'],
-    [EventTypes.PACKAGE_CANCELLED]: ['package-validation', 'patient-projection'],
+    [EventTypes.PACKAGE_CREATED]: ['package-projection', 'package-validation', 'patient-projection'],
+    [EventTypes.PACKAGE_UPDATED]: ['package-projection', 'package-validation', 'patient-projection'],
+    [EventTypes.PACKAGE_CANCELLED]: ['package-projection', 'package-validation', 'patient-projection'],
     [EventTypes.PACKAGE_CREDIT_CONSUMED]: 'package-validation',
     [EventTypes.PACKAGE_NO_CREDIT]: 'notification',
     
