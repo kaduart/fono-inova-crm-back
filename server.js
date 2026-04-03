@@ -112,6 +112,7 @@ import revenueAnalyticsRoutes from './routes/analytics.js';
 import insuranceGuidesRoutes from './routes/insuranceGuides.js';
 import convenioPackagesRoutes from './routes/convenioPackages.js';
 import convenioRoutes from './routes/financial/convenio.routes.js';
+import insuranceV2Routes from './routes/insuranceV2.routes.js';
 import reminderRoutes from './routes/reminder.js';
 
 import imageBankRoutes from './routes/imageBank.routes.js';
@@ -130,6 +131,11 @@ import appointmentV2Routes from './routes/appointment.v2.js';
 import patientV2Routes from './routes/patient.v2.js';
 import packageV2Routes from './routes/package.v2.js';
 import balanceV2Routes from './routes/balance.v2.js';
+import totalsV2Routes from './routes/totals.v2.js';  // 🚀 NOVO: Totals V2
+import projectionsV2Routes from './routes/projections.v2.js';  // 🚀 NOVO: Projeções V2
+import cashflowV2Routes from './routes/cashflow.v2.js';  // 🚀 NOVO: Caixa Real V2
+import goalsV2Routes from './routes/goals.v2.js';  // 🚀 NOVO: Metas V2
+import intelligenceV2Routes from './routes/intelligence.v2.js';  // 🚀 NOVO: Inteligência Financeira V2
 
 
 // ======================================================
@@ -295,10 +301,15 @@ app.use("/api/appointments", appointmentRoutes);
 
 // Fechamento do Dia (V2 sem dependência de eventos)
 app.use("/api/v2/daily-closing", dailyClosingV2Routes);
+app.use("/api/v2/projections", projectionsV2Routes);
+app.use("/api/v2/cashflow", cashflowV2Routes);
+app.use("/api/v2/goals", goalsV2Routes);
+app.use("/api/v2/intelligence", intelligenceV2Routes);  // 🚀 NOVO: Inteligência Financeira V2
 app.use("/api/v2/appointments", appointmentV2Routes);
 app.use("/api/v2/patients", patientV2Routes);
 app.use("/api/v2/packages", packageV2Routes);
 app.use("/api/v2/balance", balanceV2Routes);
+app.use("/api/v2/totals", totalsV2Routes);  // 🚀 NOVO: Totals V2
 
 app.use("/api/evolutions", evolutionRoutes);
 app.use("/api/leads", leadsRouter);
@@ -331,6 +342,7 @@ app.use('/api/analytics/revenue', revenueAnalyticsRoutes);
 app.use('/api/insurance-guides', insuranceGuidesRoutes);
 app.use('/api/convenio-packages', convenioPackagesRoutes);
 app.use('/api/financial/convenio', convenioRoutes);
+app.use('/api/v2', insuranceV2Routes);
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/marketing', marketingRoutes);
 app.use('/api/landing-pages', landingPageRoutes);

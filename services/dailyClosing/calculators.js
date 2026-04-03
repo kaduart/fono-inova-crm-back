@@ -47,24 +47,35 @@ export const calculateAppointmentSummary = (appointments) => {
 };
 
 // Calculate summary.financial
+// ⚠️ DAILY CLOSING = PRODUÇÃO DO DIA (não é caixa real)
+// Inclui convênios pendentes porque são "produzidos" no dia
 export const calculateFinancialSummary = (payments, appointments) => {
     const byMethod = { dinheiro: 0, pix: 0, cartão: 0 };
     
-    payments.forEach(p => {
+    // Só particular entra no byMethod (convênio não tem método de pagamento)
+    payments.filter(p => p.billingType !== 'convenio' || p.status === 'paid').forEach(p => {
         const method = normalizePaymentMethod(p.paymentMethod);
         if (byMethod[method] !== undefined) {
             byMethod[method] += p.amount || 0;
         }
     });
 
-    const totalReceived = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    // 📊 PRODUÇÃO DO DIA: tudo que foi atendido (particular + convênio)
+    const totalProduction = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    
+    // 💰 CAIXA DO DIA: só o que realmente entrou
+    const totalReceived = payments
+        .filter(p => p.status === 'paid' || p.insurance?.status === 'received')
+        .reduce((sum, p) => sum + (p.amount || 0), 0);
+    
     const totalExpected = appointments.reduce((sum, a) => sum + Number(a.sessionValue || 0), 0);
     const totalCanceled = appointments
         .filter(a => isCanceled(a.operationalStatus))
         .reduce((sum, a) => sum + Number(a.sessionValue || 0), 0);
 
     return {
-        totalReceived,
+        totalProduction,     // 📊 Tudo produzido no dia
+        totalReceived,       // 💰 Caixa real
         totalExpected,
         totalRevenue: totalExpected - totalCanceled,
         byMethod

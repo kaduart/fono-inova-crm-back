@@ -3,12 +3,25 @@ import { Queue } from 'bullmq';
 import Redis from 'ioredis';
 
 // Configuração de conexão Redis
-const redisConnection = new Redis({
-    host: process.env.REDIS_HOST || 'localhost',
-    port: process.env.REDIS_PORT || 6379,
-    maxRetriesPerRequest: null,
-    enableReadyCheck: false
-});
+// Usa REDIS_URL se disponível, senão fallback para REDIS_HOST/PORT
+const redisUrl = process.env.REDIS_URL;
+let redisConnection;
+
+if (redisUrl) {
+    redisConnection = new Redis(redisUrl, {
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false
+    });
+    console.log('[QueueConfig] Conectando via REDIS_URL');
+} else {
+    redisConnection = new Redis({
+        host: process.env.REDIS_HOST || 'localhost',
+        port: process.env.REDIS_PORT || 6379,
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false
+    });
+    console.log('[QueueConfig] Conectando via REDIS_HOST/PORT');
+}
 
 // Configurações padrão de retry
 export const defaultRetryConfig = {

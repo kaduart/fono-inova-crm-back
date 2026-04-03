@@ -42,40 +42,28 @@ router.post('/', flexibleAuth, asyncHandler(async (req, res) => {
     // Validações com mensagens claras
     if (!patientId) {
       await mongoSession.abortTransaction();
-      throw createBusinessError(
-        ErrorCodes.MISSING_REQUIRED_FIELD,
-        Messages.VALIDATION.PATIENT_REQUIRED,
-        400,
+      throw createBusinessError(Messages.VALIDATION.PATIENT_REQUIRED, 400, ErrorCodes.MISSING_REQUIRED_FIELD,
         { field: 'patientId' }
       );
     }
 
     if (!doctorId) {
       await mongoSession.abortTransaction();
-      throw createBusinessError(
-        ErrorCodes.MISSING_REQUIRED_FIELD,
-        Messages.VALIDATION.DOCTOR_REQUIRED,
-        400,
+      throw createBusinessError(Messages.VALIDATION.DOCTOR_REQUIRED, 400, ErrorCodes.MISSING_REQUIRED_FIELD,
         { field: 'doctorId' }
       );
     }
 
     if (!date) {
       await mongoSession.abortTransaction();
-      throw createBusinessError(
-        ErrorCodes.MISSING_REQUIRED_FIELD,
-        Messages.VALIDATION.DATE_REQUIRED,
-        400,
+      throw createBusinessError(Messages.VALIDATION.DATE_REQUIRED, 400, ErrorCodes.MISSING_REQUIRED_FIELD,
         { field: 'date' }
       );
     }
 
     if (!time) {
       await mongoSession.abortTransaction();
-      throw createBusinessError(
-        ErrorCodes.MISSING_REQUIRED_FIELD,
-        Messages.VALIDATION.TIME_REQUIRED,
-        400,
+      throw createBusinessError(Messages.VALIDATION.TIME_REQUIRED, 400, ErrorCodes.MISSING_REQUIRED_FIELD,
         { field: 'time' }
       );
     }
@@ -86,10 +74,7 @@ router.post('/', flexibleAuth, asyncHandler(async (req, res) => {
     if (billingType === 'convenio' || insuranceGuideId) {
       if (!insuranceGuideId) {
         await mongoSession.abortTransaction();
-        throw createBusinessError(
-          ErrorCodes.MISSING_REQUIRED_FIELD,
-          'Guia de convênio é obrigatória para agendamentos de convênio',
-          400,
+        throw createBusinessError('Guia de convênio é obrigatória para agendamentos de convênio', 400, ErrorCodes.MISSING_REQUIRED_FIELD,
           { field: 'insuranceGuideId' }
         );
       }
@@ -100,30 +85,21 @@ router.post('/', flexibleAuth, asyncHandler(async (req, res) => {
       
       if (!guide) {
         await mongoSession.abortTransaction();
-        throw createBusinessError(
-          ErrorCodes.NOT_FOUND,
-          'Guia de convênio não encontrada',
-          404,
+        throw createBusinessError('Guia de convênio não encontrada', 404, ErrorCodes.NOT_FOUND,
           { field: 'insuranceGuideId', value: insuranceGuideId }
         );
       }
       
       if (guide.status === 'canceled' || guide.status === 'expired') {
         await mongoSession.abortTransaction();
-        throw createBusinessError(
-          ErrorCodes.BUSINESS_RULE_VIOLATION,
-          `Guia de convênio está ${guide.status === 'canceled' ? 'cancelada' : 'expirada'}`,
-          400,
+        throw createBusinessError(`Guia de convênio está ${guide.status === 'canceled' ? 'cancelada' : 'expirada'}`, 400, ErrorCodes.BUSINESS_RULE_VIOLATION,
           { field: 'insuranceGuideId', status: guide.status }
         );
       }
       
       if (guide.usedSessions >= guide.totalSessions) {
         await mongoSession.abortTransaction();
-        throw createBusinessError(
-          ErrorCodes.INSUFFICIENT_CREDIT,
-          'Guia de convênio esgotada (sem sessões disponíveis)',
-          422,
+        throw createBusinessError('Guia de convênio esgotada (sem sessões disponíveis)', 422, ErrorCodes.INSUFFICIENT_CREDIT,
           { 
             field: 'insuranceGuideId', 
             used: guide.usedSessions, 
@@ -135,10 +111,7 @@ router.post('/', flexibleAuth, asyncHandler(async (req, res) => {
       // Verifica se paciente da guia bate com o do agendamento
       if (guide.patient?.toString() !== patientId?.toString()) {
         await mongoSession.abortTransaction();
-        throw createBusinessError(
-          ErrorCodes.BUSINESS_RULE_VIOLATION,
-          'Guia de convênio não pertence a este paciente',
-          400,
+        throw createBusinessError('Guia de convênio não pertence a este paciente', 400, ErrorCodes.BUSINESS_RULE_VIOLATION,
           { field: 'insuranceGuideId' }
         );
       }
@@ -262,10 +235,7 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
 
     if (!reason) {
       await mongoSession.abortTransaction();
-      throw createBusinessError(
-        ErrorCodes.MISSING_REQUIRED_FIELD,
-        Messages.VALIDATION.REASON_REQUIRED,
-        400,
+      throw createBusinessError(Messages.VALIDATION.REASON_REQUIRED, 400, ErrorCodes.MISSING_REQUIRED_FIELD,
         { field: 'reason' }
       );
     }
@@ -274,39 +244,27 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
 
     if (!appointment) {
       await mongoSession.abortTransaction();
-      throw createBusinessError(
-        ErrorCodes.NOT_FOUND,
-        Messages.BUSINESS.APPOINTMENT_NOT_FOUND,
-        404
+      throw createBusinessError(Messages.BUSINESS.APPOINTMENT_NOT_FOUND, 404, ErrorCodes.NOT_FOUND
       );
     }
 
     // Guards com mensagens claras
     if (appointment.operationalStatus === 'processing_cancel') {
       await mongoSession.abortTransaction();
-      throw createBusinessError(
-        ErrorCodes.ALREADY_PROCESSING,
-        Messages.BUSINESS.ALREADY_PROCESSING_CANCEL,
-        409,
+      throw createBusinessError(Messages.BUSINESS.ALREADY_PROCESSING_CANCEL, 409, ErrorCodes.ALREADY_PROCESSING,
         { status: 'processing_cancel' }
       );
     }
 
     if (appointment.operationalStatus === 'canceled') {
       await mongoSession.abortTransaction();
-      throw createBusinessError(
-        ErrorCodes.CONFLICT_STATE,
-        Messages.BUSINESS.ALREADY_CANCELED,
-        409
+      throw createBusinessError(Messages.BUSINESS.ALREADY_CANCELED, 409, ErrorCodes.CONFLICT_STATE
       );
     }
 
     if (appointment.clinicalStatus === 'completed') {
       await mongoSession.abortTransaction();
-      throw createBusinessError(
-        ErrorCodes.CONFLICT_STATE,
-        Messages.BUSINESS.CANNOT_CANCEL_COMPLETED,
-        409
+      throw createBusinessError(Messages.BUSINESS.CANNOT_CANCEL_COMPLETED, 409, ErrorCodes.CONFLICT_STATE
       );
     }
 
@@ -386,40 +344,28 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
 
     if (!appointment) {
       await mongoSession.abortTransaction();
-      throw createBusinessError(
-        ErrorCodes.NOT_FOUND,
-        Messages.BUSINESS.APPOINTMENT_NOT_FOUND,
-        404
+      throw createBusinessError(Messages.BUSINESS.APPOINTMENT_NOT_FOUND, 404, ErrorCodes.NOT_FOUND
       );
     }
 
     // Guards
     if (appointment.operationalStatus === 'processing_complete') {
       await mongoSession.abortTransaction();
-      throw createBusinessError(
-        ErrorCodes.ALREADY_PROCESSING,
-        Messages.BUSINESS.ALREADY_PROCESSING_COMPLETE,
-        409,
+      throw createBusinessError(Messages.BUSINESS.ALREADY_PROCESSING_COMPLETE, 409, ErrorCodes.ALREADY_PROCESSING,
         { status: 'processing_complete' }
       );
     }
 
     if (appointment.clinicalStatus === 'completed') {
       await mongoSession.abortTransaction();
-      throw createBusinessError(
-        ErrorCodes.CONFLICT_STATE,
-        Messages.BUSINESS.ALREADY_COMPLETED,
-        409,
+      throw createBusinessError(Messages.BUSINESS.ALREADY_COMPLETED, 409, ErrorCodes.CONFLICT_STATE,
         { idempotent: true }
       );
     }
 
     if (appointment.operationalStatus === 'canceled') {
       await mongoSession.abortTransaction();
-      throw createBusinessError(
-        ErrorCodes.CONFLICT_STATE,
-        Messages.BUSINESS.CANNOT_COMPLETE_CANCELED,
-        409
+      throw createBusinessError(Messages.BUSINESS.CANNOT_COMPLETE_CANCELED, 409, ErrorCodes.CONFLICT_STATE
       );
     }
 
@@ -595,10 +541,7 @@ router.get('/:id', flexibleAuth, asyncHandler(async (req, res) => {
 
   if (!appointment) {
     console.log(`[GET /v2/appointments/:id] Lançando erro 404`);
-    throw createBusinessError(
-      ErrorCodes.NOT_FOUND,
-      Messages.BUSINESS.APPOINTMENT_NOT_FOUND,
-      404
+    throw createBusinessError(Messages.BUSINESS.APPOINTMENT_NOT_FOUND, 404, ErrorCodes.NOT_FOUND
     );
   }
 
@@ -616,10 +559,7 @@ router.get('/:id/status', flexibleAuth, asyncHandler(async (req, res) => {
     .select('operationalStatus clinicalStatus paymentStatus session package patient correlationId canceledReason');
 
   if (!appointment) {
-    throw createBusinessError(
-      ErrorCodes.NOT_FOUND,
-      Messages.BUSINESS.APPOINTMENT_NOT_FOUND,
-      404
+    throw createBusinessError(Messages.BUSINESS.APPOINTMENT_NOT_FOUND, 404, ErrorCodes.NOT_FOUND
     );
   }
 
@@ -683,7 +623,7 @@ router.get('/:id/process-manual', flexibleAuth, asyncHandler(async (req, res) =>
   const appointment = await Appointment.findById(id);
   
   if (!appointment) {
-    throw createBusinessError(ErrorCodes.NOT_FOUND, 'Agendamento não encontrado', 404);
+    throw createBusinessError('Agendamento não encontrado', 404, ErrorCodes.NOT_FOUND);
   }
   
   // Se não tem sessão, cria
@@ -780,11 +720,11 @@ router.get('/:id/complete-manual', flexibleAuth, asyncHandler(async (req, res) =
   const appointment = await Appointment.findById(id);
   
   if (!appointment) {
-    throw createBusinessError(ErrorCodes.NOT_FOUND, 'Agendamento não encontrado', 404);
+    throw createBusinessError('Agendamento não encontrado', 404, ErrorCodes.NOT_FOUND);
   }
   
   if (!appointment.session) {
-    throw createBusinessError(ErrorCodes.BUSINESS_RULE_VIOLATION, 'Agendamento sem sessão', 400);
+    throw createBusinessError('Agendamento sem sessão', 400, ErrorCodes.BUSINESS_RULE_VIOLATION);
   }
   
   const Session = (await import('../models/Session.js')).default;
@@ -792,7 +732,7 @@ router.get('/:id/complete-manual', flexibleAuth, asyncHandler(async (req, res) =
   const session = await Session.findById(sessionId);
   
   if (!session) {
-    throw createBusinessError(ErrorCodes.NOT_FOUND, 'Sessão não encontrada', 404);
+    throw createBusinessError('Sessão não encontrada', 404, ErrorCodes.NOT_FOUND);
   }
   
   // Completa sessão
@@ -838,7 +778,10 @@ router.get('/debug/queues', flexibleAuth, asyncHandler(async (req, res) => {
     'appointment-processing',
     'payment-processing',
     'cancel-orchestrator',
-    'complete-orchestrator'
+    'complete-orchestrator',
+    'package-projection',
+    'billing-orchestrator',
+    'clinical-orchestrator'
   ];
   
   const status = {};

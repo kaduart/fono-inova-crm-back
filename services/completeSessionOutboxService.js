@@ -99,7 +99,9 @@ export async function completeSessionWithOutbox(appointmentId, options = {}) {
                     packageId: packageId?.toString(),
                     addToBalance,
                     amount: balanceAmount || appointment.sessionValue,
-                    paymentOrigin
+                    paymentType: paymentOrigin,  // ✅ Usado pelo billing worker
+                    paymentOrigin,                // ✅ Mantido para compatibilidade
+                    specialty: appointment.specialty
                 },
                 aggregateType: 'session',
                 aggregateId: sessionId.toString()

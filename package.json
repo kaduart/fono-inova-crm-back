@@ -19,7 +19,19 @@
     "test:vitest": "vitest run",
     "test:amanda": "vitest run --config vitest.config.amanda.js",
     "test:e2e": "vitest run --config vitest.config.e2e.js",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    
+    "billing:validate": "node scripts/validate-billing-v2.js",
+    "billing:monitor": "node scripts/monitor-billing-v2.js",
+    "billing:rollback": "FORCE_ROLLBACK=true node scripts/rollback-v2-emergency.js",
+    "billing:go-live": "node scripts/go-live-v2.js",
+    "billing:worker": "node -r dotenv/config domains/billing/workers/billingConsumerWorker.js",
+    "test:billing:e2e": "vitest run tests/billing/billing-v2-e2e.test.js",
+    "test:billing:integration": "vitest run tests/billing/billing-worker.integration.test.js",
+    "test:billing:load": "node tests/billing/load-test.js",
+    "test:billing:pre-deploy": "node tests/billing/pre-deploy-check.js",
+    "test:billing:full": "npm run test:billing:pre-deploy && npm run test:billing:e2e && npm run test:billing:load 100",
+    "billing:status": "node scripts/status-v2.js"
   },
   "keywords": [],
   "author": "",

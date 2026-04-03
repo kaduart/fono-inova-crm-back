@@ -156,7 +156,9 @@ export async function completeSessionEventDriven(appointmentId, options = {}) {
             packageId,
             addToBalance,
             amount: balanceAmount || appointment.sessionValue,
-            paymentOrigin
+            paymentType: paymentOrigin,  // ✅ Usado pelo billing worker
+            paymentOrigin,                // ✅ Mantido para compatibilidade
+            specialty: appointment.specialty
         }
     });
     

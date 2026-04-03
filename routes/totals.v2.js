@@ -12,6 +12,8 @@ import moment from 'moment-timezone';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import TotalsSnapshot from '../models/TotalsSnapshot.js';
 import Payment from '../models/Payment.js';
+import PackagesView from '../models/PackagesView.js';  // 📦 CQRS Read Model
+import PatientBalance from '../models/PatientBalance.js';
 import { createContextLogger } from '../utils/logger.js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -103,45 +105,247 @@ router.get('/', async (req, res) => {
 
         if (clinicId) matchStage.clinicId = clinicId;
 
-        const result = await Payment.aggregate([
-            { $match: matchStage },
-            {
-                $group: {
-                    _id: null,
-                    totalReceived: { 
-                        $sum: { $cond: [{ $eq: ["$status", "paid"] }, "$amount", 0] } 
-                    },
-                    totalPending: { 
-                        $sum: { $cond: [{ $eq: ["$status", "pending"] }, "$amount", 0] } 
-                    },
-                    countReceived: { 
-                        $sum: { $cond: [{ $eq: ["$status", "paid"] }, 1, 0] } 
-                    },
-                    countPending: { 
-                        $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } 
-                    },
-                    particularReceived: {
-                        $sum: {
-                            $cond: [
-                                { $and: [
-                                    { $eq: ["$status", "paid"] },
-                                    { $ne: ["$billingType", "convenio"] }
-                                ]},
-                                "$amount", 0
-                            ]
+        // ======================================================
+        // 📦 AGGREGATE PARALELO: Payments + Packages + PatientBalance
+        // ======================================================
+        const [paymentResult, packageResult, balanceResult] = await Promise.all([
+            // 💰 PAYMENTS: Caixa e Produção
+            Payment.aggregate([
+                { $match: matchStage },
+                {
+                    $group: {
+                        _id: null,
+                        totalReceived: { 
+                            $sum: { 
+                                $cond: [
+                                    { $or: [
+                                        { $eq: ["$status", "paid"] },
+                                        { $eq: ["$insurance.status", "received"] }
+                                    ]}, 
+                                    "$amount", 0
+                                ] 
+                            } 
+                        },
+                        totalProduction: {
+                            $sum: {
+                                $cond: [
+                                    { $or: [
+                                        { $eq: ["$status", "paid"] },
+                                        { $in: ["$insurance.status", ["pending_billing", "billed", "received"]] }
+                                    ]},
+                                    "$amount", 0
+                                ]
+                            }
+                        },
+                        totalPending: { 
+                            $sum: { $cond: [{ $eq: ["$status", "pending"] }, "$amount", 0] } 
+                        },
+                        countReceived: { 
+                            $sum: { 
+                                $cond: [
+                                    { $or: [
+                                        { $eq: ["$status", "paid"] },
+                                        { $eq: ["$insurance.status", "received"] }
+                                    ]}, 
+                                    1, 0
+                                ] 
+                            } 
+                        },
+                        countPending: { 
+                            $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] } 
+                        },
+                        particularReceived: {
+                            $sum: {
+                                $cond: [
+                                    { $and: [
+                                        { $eq: ["$status", "paid"] },
+                                        { $ne: ["$billingType", "convenio"] }
+                                    ]},
+                                    "$amount", 0
+                                ]
+                            }
+                        },
+                        insurancePendingBilling: {
+                            $sum: { $cond: [{ $eq: ["$insurance.status", "pending_billing"] }, "$amount", 0] }
+                        },
+                        insuranceBilled: {
+                            $sum: { $cond: [{ $eq: ["$insurance.status", "billed"] }, "$amount", 0] }
+                        },
+                        insuranceReceived: {
+                            $sum: { $cond: [{ $eq: ["$insurance.status", "received"] }, "$amount", 0] }
                         }
                     }
                 }
-            }
+            ]),
+            
+            // 📦 PACKAGES: Usar PackagesView (CQRS - já otimizado para leitura)
+            // ⚠️ Importante: recognizedRevenue é proporcional ao valor do pacote, não avulso
+            PackagesView.aggregate([
+                {
+                    $match: {
+                        status: { $in: ['active', 'finished'] }  // Pacotes ativos ou finalizados
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        // 💰 Contrato e Caixa (semântica clara)
+                        contractedRevenue: { $sum: "$totalValue" },  // 📄 Valor contratado (venda)
+                        cashReceived: { $sum: "$totalPaid" },        // 💰 Valor efetivamente recebido
+                        
+                        // 📊 Receita Diferida (obrigação futura)
+                        deferredSessions: { $sum: "$sessionsRemaining" },
+                        // ⚠️ deferredRevenue = proporcional ao pacote (sessionValue já é do pacote)
+                        deferredRevenue: { 
+                            $sum: { $multiply: ["$sessionsRemaining", "$sessionValue"] }
+                        },
+                        
+                        // 📊 Receita Reconhecida (já executada)
+                        recognizedSessions: { $sum: "$sessionsUsed" },
+                        // ⚠️ recognizedRevenue = proporcional ao pacote (não ao preço avulso)
+                        recognizedRevenue: {
+                            $sum: { $multiply: ["$sessionsUsed", "$sessionValue"] }
+                        },
+                        
+                        // Totais
+                        totalSessions: { $sum: "$totalSessions" },
+                        activePackages: { $sum: 1 }
+                    }
+                }
+            ]),
+            
+            // 📄 PATIENT BALANCE: Conta corrente (débitos/créditos avulsos)
+            PatientBalance.aggregate([
+                {
+                    $group: {
+                        _id: null,
+                        totalDebt: {
+                            $sum: {
+                                $cond: [{ $gt: ["$currentBalance", 0] }, "$currentBalance", 0]
+                            }
+                        },
+                        totalCredit: {
+                            $sum: {
+                                $cond: [{ $lt: ["$currentBalance", 0] }, { $multiply: ["$currentBalance", -1] }, 0]
+                            }
+                        },
+                        totalDebited: { $sum: "$totalDebited" },
+                        totalCredited: { $sum: "$totalCredited" },
+                        patientsWithDebt: {
+                            $sum: { $cond: [{ $gt: ["$currentBalance", 0] }, 1, 0] }
+                        },
+                        patientsWithCredit: {
+                            $sum: { $cond: [{ $lt: ["$currentBalance", 0] }, 1, 0] }
+                        }
+                    }
+                }
+            ])
         ]);
 
-        const totals = result[0] || {
-            totalReceived: 0,
-            totalPending: 0,
-            countReceived: 0,
-            countPending: 0,
-            particularReceived: 0
+        const p = paymentResult[0] || {};
+        const pkg = packageResult[0] || {};
+        const bal = balanceResult[0] || {};
+
+        const totals = {
+            totalReceived: p.totalReceived || 0,
+            totalProduction: p.totalProduction || 0,
+            totalPending: p.totalPending || 0,
+            countReceived: p.countReceived || 0,
+            countPending: p.countPending || 0,
+            particularReceived: p.particularReceived || 0,
+            insurancePendingBilling: p.insurancePendingBilling || 0,
+            insuranceBilled: p.insuranceBilled || 0,
+            insuranceReceived: p.insuranceReceived || 0,
+            // 📦 NOVO: Package Credit (Receita Diferida)
+            packageCredit: {
+                // 💰 Contrato e Caixa
+                contractedRevenue: pkg.contractedRevenue || 0,  // 📄 Valor contratado (venda)
+                cashReceived: pkg.cashReceived || 0,            // 💰 Dinheiro efetivamente recebido
+                
+                // 📊 Receita Diferida (obrigação futura)
+                deferredRevenue: Math.max(0, pkg.deferredRevenue || 0),
+                deferredSessions: Math.max(0, pkg.deferredSessions || 0),
+                
+                // 📊 Receita Reconhecida (já executada via pacote)
+                recognizedRevenue: pkg.recognizedRevenue || 0,
+                recognizedSessions: pkg.recognizedSessions || 0,
+                
+                // Totais
+                totalSessions: pkg.totalSessions || 0,
+                activePackages: pkg.activePackages || 0
+            },
+            // 📄 NOVO: Patient Balance (Conta Corrente)
+            patientBalance: {
+                totalDebt: bal.totalDebt || 0,
+                totalCredit: bal.totalCredit || 0,
+                totalDebited: bal.totalDebited || 0,
+                totalCredited: bal.totalCredited || 0,
+                patientsWithDebt: bal.patientsWithDebt || 0,
+                patientsWithCredit: bal.patientsWithCredit || 0
+            }
         };
+
+        // ======================================================
+        // 🔍 VALIDAÇÃO DE CONSISTÊNCIA (CRÍTICO)
+        // ======================================================
+        const validations = [];
+        
+        // 1. Caixa total deve ser >= caixa de pacote (não pode receber mais de pacote que o total)
+        // Isso detecta: pagamento duplicado, pacote sem payment, etc
+        if (totals.totalReceived < totals.packageCredit.cashReceived * 0.99) {
+            validations.push({
+                type: 'warning',
+                code: 'CASH_MISMATCH',
+                message: 'Caixa total menor que caixa de pacotes (pode indicar pagamento duplicado)',
+                details: {
+                    totalReceived: totals.totalReceived,
+                    packageCashReceived: totals.packageCredit.cashReceived
+                }
+            });
+        }
+        
+        // 2. contractedRevenue = deferredRevenue + recognizedRevenue (sempre!)
+        const expectedContracted = totals.packageCredit.deferredRevenue + totals.packageCredit.recognizedRevenue;
+        if (Math.abs(totals.packageCredit.contractedRevenue - expectedContracted) > 1) {
+            validations.push({
+                type: 'error',
+                code: 'PACKAGE_REVENUE_MISMATCH',
+                message: 'Inconsistência: contratado ≠ diferido + reconhecido',
+                details: {
+                    contracted: totals.packageCredit.contractedRevenue,
+                    deferred: totals.packageCredit.deferredRevenue,
+                    recognized: totals.packageCredit.recognizedRevenue,
+                    expected: expectedContracted
+                }
+            });
+        }
+        
+        // 3. Produção deve incluir recognizedRevenue
+        // Produção mínima = particular pago + convênio tudo + pacote reconhecido
+        const minProduction = totals.particularReceived + 
+                             totals.insurancePendingBilling + 
+                             totals.insuranceBilled + 
+                             totals.insuranceReceived +
+                             totals.packageCredit.recognizedRevenue;
+        if (totals.totalProduction < minProduction * 0.95) {
+            validations.push({
+                type: 'warning',
+                code: 'PRODUCTION_LOW',
+                message: 'Produção total menor que soma das partes',
+                details: {
+                    totalProduction: totals.totalProduction,
+                    minExpected: minProduction
+                }
+            });
+        }
+        
+        // Log warnings se houver
+        if (validations.length > 0) {
+            log.warn('totals_validation_warnings', 'Validações encontradas', { 
+                validations,
+                correlationId 
+            });
+        }
 
         // Se snapshot estava stale, dispara recálculo em background
         if (isStale || forceRecalculate) {
@@ -156,20 +360,41 @@ router.get('/', async (req, res) => {
             log.info('recalculate_triggered', `Recálculo em background: ${dateStr}`);
         }
 
+        // Separar validações por severidade para o frontend
+        const blockingErrors = validations.filter(v => v.type === 'error');
+        const warnings = validations.filter(v => v.type === 'warning');
+        
         return res.json({
             success: true,
             data: {
                 totals: {
-                    totalReceived: totals.totalReceived,
+                    totalReceived: totals.totalReceived,           // 💰 Caixa real
+                    totalProduction: totals.totalProduction,       // 📊 Tudo produzido
                     totalPending: totals.totalPending,
                     countReceived: totals.countReceived,
                     countPending: totals.countPending,
-                    particularReceived: totals.particularReceived
+                    particularReceived: totals.particularReceived, // 💰 Particular
+                    // 🏥 Convênio
+                    insurance: {
+                        pendingBilling: totals.insurancePendingBilling || 0,
+                        billed: totals.insuranceBilled || 0,
+                        received: totals.insuranceReceived || 0
+                    },
+                    // 📦 NOVO: Crédito de Pacotes (Receita Diferida)
+                    packageCredit: totals.packageCredit,
+                    // 📄 NOVO: Conta Corrente de Pacientes
+                    patientBalance: totals.patientBalance
                 },
+                // 📅 Time Dimension (para rastreabilidade)
                 period,
                 date: dateStr,
+                periodStart: rangeStart.toISOString(),
+                periodEnd: rangeEnd.toISOString(),
                 source: 'sync_fallback',
-                backgroundUpdate: isStale || forceRecalculate
+                backgroundUpdate: isStale || forceRecalculate,
+                // 🔍 Validações de consistência (por severidade)
+                blockingErrors: blockingErrors.length > 0 ? blockingErrors : undefined,
+                warnings: warnings.length > 0 ? warnings : undefined
             },
             correlationId
         });
