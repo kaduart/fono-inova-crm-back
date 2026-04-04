@@ -94,7 +94,16 @@ const expenseSchema = new mongoose.Schema({
       default: null
     },
     nextOccurrence: { type: String }, // 'YYYY-MM-DD'
-    endDate: { type: String },        // 'YYYY-MM-DD' (quando parar de gerar)
+    endDate: { 
+        type: Date,        // Date (quando parar de gerar)
+        set: function(v) {
+            if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                const [ano, mes, dia] = v.split('-').map(Number);
+                return new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
+            }
+            return v;
+        }
+    },
     parentExpense: {                  // ID da despesa "mãe" que gerou esta
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Expense',

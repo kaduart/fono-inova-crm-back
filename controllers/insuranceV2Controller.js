@@ -11,30 +11,92 @@ export async function getInsuranceReceivables(req, res) {
   try {
     const { provider, status, month } = req.query;
     
-    const matchFilter = { billingType: 'convenio' };
+    // 🆕 CORREÇÃO: Segue mesma regra do legado (ConvenioMetricsService)
+    // Busca SESSÕES completadas no período, não payments por paymentDate
     
-    if (status) {
-      matchFilter['insurance.status'] = status;
+    let sessions = [];
+    
+    if (month) {
+      const startOfMonth = new Date(month + '-01T00:00:00-03:00');
+      const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0, 23, 59, 59, 999);
+      
+      // Busca sessões COMPLETADAS de convênio no mês (igual ao legado)
+      sessions = await Session.find({
+        status: 'completed',  // ← SÓ SESSÕES REALIZADAS
+        date: { $gte: startOfMonth, $lte: endOfMonth },
+        $or: [
+          { paymentMethod: 'convenio' },
+          { insuranceGuide: { $exists: true, $ne: null } },
+          { 'package.type': 'convenio' }
+        ]
+      })
+      .populate('patient', 'fullName phone')
+      .populate('package', 'insuranceProvider insuranceCompany insuranceGrossAmount insuranceGuideNumber')
+      .populate('doctor', 'fullName specialty')
+      .sort({ date: -1 })
+      .lean();
     } else {
-      matchFilter['insurance.status'] = { $in: ['pending_billing', 'billed'] };
+      // Sem mês, busca todos os payments pendentes (comportamento antigo)
+      const matchFilter = { billingType: 'convenio' };
+      if (status) {
+        matchFilter['insurance.status'] = status;
+      } else {
+        matchFilter['insurance.status'] = { $in: ['pending_billing', 'billed'] };
+      }
+      
+      const payments = await Payment.find(matchFilter)
+        .populate('patient', 'fullName phone')
+        .populate('session', 'date time specialty status')
+        .populate('package', 'insuranceProvider insuranceGuide')
+        .lean();
+      
+      // Converte payments para formato de sessão
+      return _processPaymentsLegacy(res, payments, provider);
     }
     
-    if (provider) matchFilter['insurance.provider'] = provider;
-    if (month) matchFilter['paymentDate'] = { $regex: `^${month}` };
+    // Filtra por provider se especificado
+    if (provider) {
+      sessions = sessions.filter(s => 
+        s.package?.insuranceProvider === provider || 
+        s.package?.insuranceCompany === provider
+      );
+    }
     
-    const payments = await Payment.find(matchFilter)
-      .populate('patient', 'fullName phone')
-      .populate('session', 'date time specialty')
-      .populate('appointment', 'date time')
-      .populate('package', 'insuranceProvider insuranceGuide')
-      .sort({ 'session.date': -1 });
+    // Para cada sessão, busca o payment associado
+    const sessionIds = sessions.map(s => s._id.toString());
+    const payments = await Payment.find({
+      session: { $in: sessionIds.map(id => new mongoose.Types.ObjectId(id)) },
+      billingType: 'convenio'
+    }).lean();
+    
+    // Cria map de session -> payment
+    const paymentBySession = {};
+    payments.forEach(p => {
+      if (p.session) {
+        paymentBySession[p.session.toString()] = p;
+      }
+    });
     
     // Agrupar por CONVÊNIO (formato que InsuranceTab.tsx espera)
     const grouped = {};
     
-    for (const payment of payments) {
-      const providerName = payment.insurance?.provider || payment.package?.insuranceProvider || 'Outros';
-      const patientId = payment.patient?._id?.toString();
+    for (const session of sessions) {
+      const payment = paymentBySession[session._id.toString()];
+      
+      // 🆕 CORREÇÃO: Se não tem payment, considera como 'pending_billing'
+      const paymentStatus = payment?.insurance?.status || 'pending_billing';
+      
+      // Se especificou status, filtra
+      if (status && paymentStatus !== status) continue;
+      // Se não especificou, mostra pending_billing e billed
+      if (!status && !['pending_billing', 'billed'].includes(paymentStatus)) continue;
+      
+      const providerName = session.package?.insuranceProvider || 
+                           session.package?.insuranceCompany || 
+                           payment?.insurance?.provider || 
+                           'Outros';
+      
+      const patientId = session.patient?._id?.toString();
       if (!patientId) continue;
       
       if (!grouped[providerName]) {
@@ -52,7 +114,7 @@ export async function getInsuranceReceivables(req, res) {
       if (!patientGroup) {
         patientGroup = {
           patientId: patientId,
-          patientName: payment.patient.fullName,
+          patientName: session.patient?.fullName || 'N/A',
           total: 0,
           count: 0,
           payments: []
@@ -60,7 +122,9 @@ export async function getInsuranceReceivables(req, res) {
         grouped[providerName].patients.push(patientGroup);
       }
       
-      const grossAmount = payment.insurance?.grossAmount || payment.amount || 0;
+      const grossAmount = session.package?.insuranceGrossAmount || 
+                         payment?.insurance?.grossAmount || 
+                         payment?.amount || 80;
       
       // Atualizar totais
       grouped[providerName].totalPending += grossAmount;
@@ -70,12 +134,12 @@ export async function getInsuranceReceivables(req, res) {
       
       // Adicionar payment
       patientGroup.payments.push({
-        paymentId: payment._id.toString(),
+        paymentId: payment?._id?.toString() || session._id.toString(),
         grossAmount: grossAmount,
-        status: payment.insurance?.status || 'pending_billing',
-        paymentDate: payment.paymentDate,
-        authorizationCode: payment.insurance?.authorizationCode,
-        specialty: payment.session?.specialty || 'Outros'
+        status: payment?.insurance?.status || 'pending_billing',
+        paymentDate: session.date,
+        authorizationCode: payment?.insurance?.authorizationCode || session.package?.insuranceAuthorizationCode,
+        specialty: session.doctor?.specialty || 'Outros'
       });
     }
     
@@ -84,13 +148,87 @@ export async function getInsuranceReceivables(req, res) {
     const summary = {
       totalProviders: result.length,
       grandTotal: result.reduce((sum, g) => sum + g.totalPending, 0),
-      pendingCount: payments.filter(p => p.insurance?.status === 'pending_billing').length
+      pendingCount: result.reduce((sum, g) => 
+        sum + g.patients.reduce((pSum, p) => 
+          pSum + p.payments.filter(pay => pay.status === 'pending_billing').length, 0
+        ), 0
+      )
     };
     
     res.json({ success: true, data: result, summary });
   } catch (error) {
+    console.error('[InsuranceV2] Erro:', error);
     res.status(500).json({ success: false, error: error.message });
   }
+}
+
+// Função auxiliar para comportamento legacy (sem month)
+async function _processPaymentsLegacy(res, payments, provider) {
+  // Filtra por provider se especificado
+  let filteredPayments = payments;
+  if (provider) {
+    filteredPayments = payments.filter(p => 
+      p.insurance?.provider === provider || 
+      p.package?.insuranceProvider === provider
+    );
+  }
+  
+  // Agrupar por CONVÊNIO
+  const grouped = {};
+  
+  for (const payment of filteredPayments) {
+    const providerName = payment.insurance?.provider || payment.package?.insuranceProvider || 'Outros';
+    const patientId = payment.patient?._id?.toString();
+    if (!patientId) continue;
+    
+    if (!grouped[providerName]) {
+      grouped[providerName] = {
+        _id: providerName,
+        name: providerName,
+        totalPending: 0,
+        count: 0,
+        patients: []
+      };
+    }
+    
+    let patientGroup = grouped[providerName].patients.find(p => p.patientId === patientId);
+    if (!patientGroup) {
+      patientGroup = {
+        patientId: patientId,
+        patientName: payment.patient?.fullName || 'N/A',
+        total: 0,
+        count: 0,
+        payments: []
+      };
+      grouped[providerName].patients.push(patientGroup);
+    }
+    
+    const grossAmount = payment.insurance?.grossAmount || payment.amount || 0;
+    
+    grouped[providerName].totalPending += grossAmount;
+    grouped[providerName].count += 1;
+    patientGroup.total += grossAmount;
+    patientGroup.count += 1;
+    
+    patientGroup.payments.push({
+      paymentId: payment._id.toString(),
+      grossAmount: grossAmount,
+      status: payment.insurance?.status || 'pending_billing',
+      paymentDate: payment.paymentDate,
+      authorizationCode: payment.insurance?.authorizationCode,
+      specialty: payment.session?.specialty || 'Outros'
+    });
+  }
+  
+  const result = Object.values(grouped);
+  
+  const summary = {
+    totalProviders: result.length,
+    grandTotal: result.reduce((sum, g) => sum + g.totalPending, 0),
+    pendingCount: filteredPayments.filter(p => p.insurance?.status === 'pending_billing').length
+  };
+  
+  res.json({ success: true, data: result, summary });
 }
 
 // POST /api/v2/financial/convenio/faturar-lote

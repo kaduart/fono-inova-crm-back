@@ -321,8 +321,8 @@ async function getDoctorsOverview() {
  * 📅 Próximas consultas (para exibição no dashboard)
  */
 async function getUpcomingAppointments() {
-    const today = moment().tz(TIMEZONE).format('YYYY-MM-DD');
-    const nextWeek = moment().tz(TIMEZONE).add(7, 'days').format('YYYY-MM-DD');
+    const today = moment().tz(TIMEZONE).startOf('day').toDate();
+    const nextWeek = moment().tz(TIMEZONE).add(7, 'days').endOf('day').toDate();
 
     const appointments = await Appointment.find({
         date: { $gte: today, $lte: nextWeek },

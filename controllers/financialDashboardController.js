@@ -43,7 +43,7 @@ export const getDashboard = async (req, res) => {
     const Session = (await import('../models/Session.js')).default;
     const sessoesRealizadas = await Session.find({
       status: 'completed',
-      date: { $gte: inicioMes.format('YYYY-MM-DD'), $lte: fimMes.format('YYYY-MM-DD') }
+      date: { $gte: inicioMes.toDate(), $lte: fimMes.toDate() }
     }).populate('package', 'insuranceGrossAmount type').lean();
 
     let producaoParticular = 0;
@@ -66,13 +66,10 @@ export const getDashboard = async (req, res) => {
 
     // A Receber do mês: sessões feitas NESTE mês que ainda não foram pagas
     // Query direta por sessão — evita histórico de outros meses
-    const inicioStr = inicioMes.format('YYYY-MM-DD');
-    const fimStr = fimMes.format('YYYY-MM-DD');
-
     const [sessoesConvenioNaoPagas, sessoesParticularNaoPagas] = await Promise.all([
       // Convênio: completadas no mês, ainda não recebidas do plano
       Session.find({
-        date: { $gte: inicioStr, $lte: fimStr },
+        date: { $gte: inicioMes.toDate(), $lte: fimMes.toDate() },
         status: 'completed',
         paymentMethod: 'convenio',
         $or: [{ isPaid: false }, { isPaid: { $exists: false } }]
@@ -80,7 +77,7 @@ export const getDashboard = async (req, res) => {
 
       // Particular: completadas no mês, ainda não pagas pelo paciente
       Session.find({
-        date: { $gte: inicioStr, $lte: fimStr },
+        date: { $gte: inicioMes.toDate(), $lte: fimMes.toDate() },
         status: 'completed',
         paymentMethod: { $ne: 'convenio' },
         $or: [{ isPaid: false }, { isPaid: { $exists: false } }]

@@ -760,7 +760,7 @@ export const getAtendencePatient = async (req, res) => {
 export const getDoctorFinancialReport = async (req, res) => {
   try {
     const { doctorId } = req.params;
-    const { startDate, endDate } = req.query;
+    let { startDate, endDate } = req.query;
 
     // Validar datas
     if (!startDate || !endDate) {
@@ -769,6 +769,10 @@ export const getDoctorFinancialReport = async (req, res) => {
         message: 'startDate e endDate são obrigatórios'
       });
     }
+    
+    // 🆕 CORREÇÃO: Converte strings para Date objects após migração
+    startDate = new Date(startDate + 'T00:00:00-03:00');
+    endDate = new Date(endDate + 'T23:59:59-03:00');
 
     // Buscar doctor
     const doctor = await Doctor.findById(doctorId).select('fullName specialty').lean();
