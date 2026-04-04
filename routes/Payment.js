@@ -11,6 +11,7 @@ import PatientBalance from '../models/PatientBalance.js';
 import { distributePayments } from '../services/distributePayments.js';
 import { createNextPackageFromPrevious } from '../utils/createNextPackageFromPrevious.js';
 import { mapStatusToClinical, mapStatusToOperational } from "../utils/statusMappers.js";
+import { dashboardCache } from '../services/adminDashboardCacheService.js';
 
 const router = express.Router();
 
@@ -293,7 +294,7 @@ router.get('/', async (req, res) => {
             ];
         }
 
-        // 🧾 Busca dos pagamentos com todos os populates que você tinha antes
+        // 🧾 Busca dos pagamentos com LIMITE
         const payments = await Payment.find(filters)
             .populate({
                 path: 'patient',
@@ -342,6 +343,7 @@ router.get('/', async (req, res) => {
                 model: 'Session',
             })
             .sort({ createdAt: -1 })
+            .limit(parseInt(req.query.limit) || 500)  // 🆕 LIMITE PADRÃO 500
             .lean();
 
         // ❌ Ignora pagamentos ligados a sessões canceladas
@@ -354,6 +356,11 @@ router.get('/', async (req, res) => {
                 success: false,
                 message: 'Nenhum pagamento encontrado',
             });
+        }
+        
+        // 🆕 CACHE: Invalida após criar/atualizar
+        if (req.method === 'POST' || req.method === 'PATCH') {
+            dashboardCache.invalidateAll().catch(console.error);
         }
 
         // 💰 Totais
@@ -1347,8 +1354,9 @@ router.get("/totals", async (req, res) => {
         // 📊 Receita Realizada — sessões efetivamente entregues no período
         // Usa date da sessão (competência), não paymentDate do pacote
         // ======================================================
-        const sessionDateStart = rangeStart.toISOString().split('T')[0];
-        const sessionDateEnd   = rangeEnd.toISOString().split('T')[0];
+        // 🆕 CORREÇÃO: Usa Date objects diretamente após migração do schema
+        const sessionDateStart = rangeStart;
+        const sessionDateEnd   = rangeEnd;
 
         const receitaRealizadaAgg = [
             {

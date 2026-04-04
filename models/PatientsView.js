@@ -61,7 +61,16 @@ const patientsViewSchema = new mongoose.Schema({
   // 📅 Último/Próximo agendamento (denormalizado)
   lastAppointment: {
     id: { type: mongoose.Schema.Types.ObjectId },
-    date: { type: String }, // YYYY-MM-DD
+    date: { 
+      type: Date, // Date
+      set: function(v) {
+        if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          const [ano, mes, dia] = v.split('-').map(Number);
+          return new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
+        }
+        return v;
+      }
+    },
     time: { type: String }, // HH:mm
     status: { type: String },
     serviceType: { type: String },
@@ -70,7 +79,16 @@ const patientsViewSchema = new mongoose.Schema({
   
   nextAppointment: {
     id: { type: mongoose.Schema.Types.ObjectId },
-    date: { type: String },
+    date: { 
+      type: Date,
+      set: function(v) {
+        if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
+          const [ano, mes, dia] = v.split('-').map(Number);
+          return new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
+        }
+        return v;
+      }
+    },
     time: { type: String },
     status: { type: String },
     serviceType: { type: String },

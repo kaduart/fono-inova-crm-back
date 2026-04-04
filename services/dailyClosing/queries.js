@@ -10,7 +10,12 @@ import Payment from '../../models/Payment.js';
 import Session from '../../models/Session.js';
 
 export async function fetchSessions(date) {
-    return Session.find({ date })
+    // 🆕 CORREÇÃO: Usa Date range após migração (date é Date, não String)
+    const startOfDay = new Date(date + 'T00:00:00-03:00');
+    const endOfDay = new Date(date + 'T23:59:59-03:00');
+    return Session.find({ 
+        date: { $gte: startOfDay, $lte: endOfDay }
+    })
         .populate("package patient doctor appointmentId")
         .lean();
 }

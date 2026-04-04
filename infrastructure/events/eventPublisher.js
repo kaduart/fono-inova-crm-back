@@ -57,6 +57,9 @@ export const EventTypes = {
     APPOINTMENT_CANCELED: 'APPOINTMENT_CANCELED',
     APPOINTMENT_COMPLETED: 'APPOINTMENT_COMPLETED',
     APPOINTMENT_REJECTED: 'APPOINTMENT_REJECTED',
+    APPOINTMENT_CONFIRMED: 'APPOINTMENT_CONFIRMED',
+    APPOINTMENT_RESCHEDULED: 'APPOINTMENT_RESCHEDULED',
+    APPOINTMENT_DELETED: 'APPOINTMENT_DELETED',
     
     // 📝 Updates (solicitação de alteração)
     APPOINTMENT_UPDATE_REQUESTED: 'APPOINTMENT_UPDATE_REQUESTED',
@@ -179,6 +182,9 @@ const eventToQueueMap = {
     [EventTypes.APPOINTMENT_CANCELED]: ['sync-medical', 'patient-projection', 'clinical-orchestrator'],
     [EventTypes.APPOINTMENT_COMPLETED]: ['sync-medical', 'patient-projection'],
     [EventTypes.APPOINTMENT_REJECTED]: 'notification',
+    [EventTypes.APPOINTMENT_CONFIRMED]: ['notification', 'patient-projection'],
+    [EventTypes.APPOINTMENT_RESCHEDULED]: ['notification', 'patient-projection'],
+    [EventTypes.APPOINTMENT_DELETED]: ['notification', 'patient-projection', 'clinical-orchestrator'],
     
     // Sessions
     // NOTA: SESSION_COMPLETED não vai para sync-medical porque o billing

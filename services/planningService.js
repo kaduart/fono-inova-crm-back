@@ -22,21 +22,25 @@ export const updatePlanningProgress = async (planningId) => {
         console.log(`[Planning Update] 📊 Atualizando planejamento ${planningId}`);
         console.log(`[Planning Update] 📅 Período: ${start} a ${end}`);
 
+        // 🆕 CORREÇÃO: Converte strings para Date objects após migração
+        const startDateObj = new Date(start + 'T00:00:00-03:00');
+        const endDateObj = new Date(end + 'T23:59:59-03:00');
+
         // 1. Buscar sessões concluídas no período
         const sessions = await Session.find({
-            date: { $gte: start, $lte: end },
+            date: { $gte: startDateObj, $lte: endDateObj },
             status: 'completed'
         }).lean();
 
         // 2. Buscar pagamentos recebidos no período
         const payments = await Payment.find({
-            paymentDate: { $gte: start, $lte: end },
+            paymentDate: { $gte: startDateObj, $lte: endDateObj },
             status: 'paid'
         }).lean();
 
         // 3. Buscar agendamentos completados (para horas trabalhadas mais precisas)
         const appointments = await Appointment.find({
-            date: { $gte: start, $lte: end },
+            date: { $gte: startDateObj, $lte: endDateObj },
             clinicalStatus: 'completed'
         }).lean();
 

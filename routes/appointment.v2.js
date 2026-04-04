@@ -11,6 +11,10 @@ import mongoose from 'mongoose';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import Appointment from '../models/Appointment.js';
+import Session from '../models/Session.js';
+import Payment from '../models/Payment.js';
+import Patient from '../models/Patient.js';
+import Package from '../models/Package.js';
 import { Messages, formatSuccess, formatError, ErrorCodes } from '../utils/apiMessages.js';
 import { createBusinessError, asyncHandler } from '../middleware/errorHandler.js';
 
@@ -456,10 +460,10 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   const filter = {};
   
   if (startDate && endDate) {
-    // Date pode ser string ou Date - usar comparação de string
+    // 🆕 CORREÇÃO: Converte strings para Date objects após migração do schema
     filter.date = {
-      $gte: startDate,
-      $lte: endDate
+      $gte: new Date(startDate + 'T00:00:00-03:00'),
+      $lte: new Date(endDate + 'T23:59:59-03:00')
     };
   }
   
@@ -806,6 +810,418 @@ router.get('/debug/queues', flexibleAuth, asyncHandler(async (req, res) => {
     queues: status,
     message: 'Status das filas BullMQ'
   }));
+}));
+
+/**
+ * 🎯 PUT /api/v2/appointments/:id - Atualizar agendamento (Sync)
+ * 
+ * Regras V2 (baseado no V1):
+ * - Atualiza appointment, session e payment relacionados
+ * - Se mudar data/hora → reagenda (atualiza session)
+ * - Se mudar médico → atualiza patient.doctor
+ * - Se receber dados de pagamento sem ter payment → cria novo
+ */
+router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const mongoSession = await mongoose.startSession();
+  
+  try {
+    await mongoSession.startTransaction();
+    
+    // 1. Buscar agendamento
+    const appointment = await Appointment.findById(id).session(mongoSession)
+      .populate('session payment package');
+    
+    if (!appointment) {
+      await mongoSession.abortTransaction();
+      throw createBusinessError(Messages.APPOINTMENT.NOT_FOUND, 404, ErrorCodes.NOT_FOUND);
+    }
+    
+    // 2. Verificar permissões (médico só edita o próprio)
+    if (req.user.role === 'doctor' && appointment.doctor.toString() !== req.user.id) {
+      await mongoSession.abortTransaction();
+      throw createBusinessError('Acesso não autorizado', 403, ErrorCodes.UNAUTHORIZED);
+    }
+    
+    const updateData = {
+      ...req.body,
+      doctor: req.body.doctorId || appointment.doctor,
+      updatedAt: new Date()
+    };
+    
+    // 3. Atualizar appointment
+    Object.assign(appointment, updateData);
+    await appointment.validate();
+    const updatedAppointment = await appointment.save({ session: mongoSession });
+    
+    // 4. Atualizar documentos relacionados
+    const updatePromises = [];
+    
+    // Atualizar Session se existir
+    if (appointment.session) {
+      const sessionUpdate = Session.findByIdAndUpdate(
+        appointment.session,
+        {
+          $set: {
+            date: updateData.date || appointment.date,
+            time: updateData.time || appointment.time,
+            doctor: updateData.doctor || appointment.doctor,
+            sessionType: updateData.sessionType || appointment.sessionType,
+            sessionValue: updateData.paymentAmount || appointment.paymentAmount,
+            notes: updateData.notes || appointment.notes,
+            status: updateData.sessionStatus || updateData.operationalStatus || appointment.operationalStatus,
+            updatedAt: new Date()
+          }
+        },
+        { session: mongoSession, new: true }
+      );
+      updatePromises.push(sessionUpdate);
+    }
+    
+    // Atualizar ou Criar Pagamento (somente se NÃO for pacote)
+    if (!appointment.package && appointment.payment) {
+      const paymentUpdate = Payment.findByIdAndUpdate(
+        appointment.payment,
+        {
+          $set: {
+            doctor: updateData.doctor || appointment.doctor,
+            amount: (updateData.amount ?? updateData.paymentAmount ?? appointment.paymentAmount),
+            paymentMethod: updateData.paymentMethod || appointment.paymentMethod,
+            serviceDate: updateData.date || appointment.date,
+            serviceType: updateData.serviceType || appointment.serviceType,
+            billingType: updateData.billingType || appointment.billingType || 'particular',
+            insuranceProvider: updateData.insuranceProvider || appointment.insuranceProvider,
+            insuranceValue: updateData.insuranceValue || appointment.insuranceValue,
+            authorizationCode: updateData.authorizationCode || appointment.authorizationCode,
+            updatedAt: new Date()
+          }
+        },
+        { session: mongoSession, new: true }
+      );
+      updatePromises.push(paymentUpdate);
+    } else if (!appointment.package && (updateData.billingType || updateData.paymentAmount > 0)) {
+      // Criar novo pagamento
+      const newPayment = new Payment({
+        patient: appointment.patient,
+        doctor: updateData.doctor || appointment.doctor,
+        appointment: appointment._id,
+        amount: updateData.paymentAmount || 0,
+        paymentMethod: updateData.paymentMethod || 'dinheiro',
+        serviceDate: updateData.date || appointment.date,
+        serviceType: updateData.serviceType || appointment.serviceType,
+        billingType: updateData.billingType || 'particular',
+        insuranceProvider: updateData.billingType === 'convenio' ? updateData.insuranceProvider : null,
+        insuranceValue: updateData.billingType === 'convenio' ? updateData.insuranceValue : 0,
+        authorizationCode: updateData.billingType === 'convenio' ? updateData.authorizationCode : null,
+        status: updateData.billingType === 'convenio' ? 'pending' : 'paid',
+        kind: 'manual',
+        notes: `Pagamento registrado via edição V2 - ${new Date().toLocaleString('pt-BR')}`
+      });
+      
+      await newPayment.save({ session: mongoSession });
+      appointment.payment = newPayment._id;
+      appointment.paymentStatus = updateData.billingType === 'convenio' ? 'pending' : 'paid';
+      await appointment.save({ session: mongoSession });
+    }
+    
+    // Atualizar Pacote se for sessão de pacote
+    if (appointment.package && appointment.serviceType === 'package_session') {
+      const packageUpdate = Package.findByIdAndUpdate(
+        appointment.package,
+        {
+          $set: {
+            doctor: updateData.doctor || appointment.doctor,
+            sessionValue: updateData.paymentAmount || appointment.paymentAmount,
+            updatedAt: new Date()
+          }
+        },
+        { session: mongoSession, new: true }
+      );
+      updatePromises.push(packageUpdate);
+    }
+    
+    // Atualizar Paciente se o médico foi alterado
+    if (req.body.doctorId && appointment.doctor.toString() !== req.body.doctorId) {
+      const patientUpdate = Patient.findByIdAndUpdate(
+        appointment.patient,
+        {
+          $set: {
+            doctor: req.body.doctorId,
+            updatedAt: new Date()
+          }
+        },
+        { session: mongoSession, new: true }
+      );
+      updatePromises.push(patientUpdate);
+    }
+    
+    await Promise.all(updatePromises);
+    await mongoSession.commitTransaction();
+    
+    // Publicar evento de atualização
+    await publishEvent(EventTypes.APPOINTMENT.UPDATED, {
+      appointmentId: updatedAppointment._id,
+      patientId: updatedAppointment.patient,
+      doctorId: updatedAppointment.doctor,
+      changes: Object.keys(updateData),
+      previousDate: appointment.date,
+      newDate: updateData.date,
+      previousTime: appointment.time,
+      newTime: updateData.time,
+      updatedBy: req.user._id,
+      timestamp: new Date()
+    });
+    
+    res.json(formatSuccess({
+      appointment: updatedAppointment,
+      message: 'Agendamento atualizado com sucesso'
+    }));
+    
+  } catch (error) {
+    await mongoSession.abortTransaction();
+    throw error;
+  } finally {
+    mongoSession.endSession();
+  }
+}));
+
+/**
+ * 🎯 DELETE /api/v2/appointments/:id - Deletar agendamento (Sync)
+ * 
+ * Regras V2:
+ * - Deleta o appointment
+ * - Publica evento para deleção em cascata (session, payment)
+ */
+router.delete('/:id', flexibleAuth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  
+  const appointment = await Appointment.findById(id);
+  
+  if (!appointment) {
+    throw createBusinessError(Messages.APPOINTMENT.NOT_FOUND, 404, ErrorCodes.NOT_FOUND);
+  }
+  
+  // Verificar permissões
+  if (req.user.role === 'doctor' && appointment.doctor.toString() !== req.user.id) {
+    throw createBusinessError('Acesso não autorizado', 403, ErrorCodes.UNAUTHORIZED);
+  }
+  
+  // Deletar
+  await Appointment.findByIdAndDelete(id);
+  
+  // Publicar evento para orquestradores limparem relacionados
+  await publishEvent(EventTypes.APPOINTMENT.DELETED, {
+    appointmentId: appointment._id,
+    patientId: appointment.patient,
+    doctorId: appointment.doctor,
+    sessionId: appointment.session,
+    paymentId: appointment.payment,
+    packageId: appointment.package,
+    deletedBy: req.user._id,
+    timestamp: new Date()
+  });
+  
+  res.json(formatSuccess({
+    message: 'Agendamento deletado com sucesso',
+    appointmentId: id
+  }));
+}));
+
+/**
+ * 🎯 PATCH /api/v2/appointments/:id/confirm - Confirmar agendamento (Sync)
+ * 
+ * Regras V2 (baseado no V1):
+ * - Pendente/Scheduled → Confirmed
+ * - Atualiza session vinculada para 'completed'
+ * - Registra no histórico
+ */
+router.patch('/:id/confirm', flexibleAuth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const mongoSession = await mongoose.startSession();
+  
+  try {
+    await mongoSession.startTransaction();
+    
+    const appointment = await Appointment.findById(id).session(mongoSession);
+    
+    if (!appointment) {
+      await mongoSession.abortTransaction();
+      throw createBusinessError(Messages.APPOINTMENT.NOT_FOUND, 404, ErrorCodes.NOT_FOUND);
+    }
+    
+    // Verificar permissões
+    if (req.user.role === 'doctor' && appointment.doctor.toString() !== req.user.id) {
+      await mongoSession.abortTransaction();
+      throw createBusinessError('Acesso não autorizado', 403, ErrorCodes.UNAUTHORIZED);
+    }
+    
+    // Validação: não confirmar se já está cancelado
+    if (appointment.operationalStatus === 'canceled') {
+      await mongoSession.abortTransaction();
+      throw createBusinessError('Não é possível confirmar um agendamento cancelado', 400, ErrorCodes.BUSINESS_RULE_VIOLATION);
+    }
+    
+    const oldStatus = appointment.operationalStatus;
+    
+    // Atualizar status
+    appointment.operationalStatus = 'confirmed';
+    appointment.clinicalStatus = 'pending';
+    
+    // Registrar histórico
+    if (!appointment.history) appointment.history = [];
+    appointment.history.push({
+      action: 'confirmacao_v2',
+      changedBy: req.user._id,
+      timestamp: new Date(),
+      context: 'operacional',
+      details: { from: oldStatus, to: 'confirmed', notes: req.body.notes }
+    });
+    
+    const updatedAppointment = await appointment.save({ session: mongoSession });
+    
+    // Atualizar Session vinculada
+    if (appointment.session) {
+      await Session.findByIdAndUpdate(
+        appointment.session,
+        {
+          $set: {
+            status: 'completed',
+            updatedAt: new Date()
+          }
+        },
+        { session: mongoSession }
+      );
+    }
+    
+    await mongoSession.commitTransaction();
+    
+    // Publicar evento
+    await publishEvent(EventTypes.APPOINTMENT.CONFIRMED, {
+      appointmentId: updatedAppointment._id,
+      patientId: updatedAppointment.patient,
+      doctorId: updatedAppointment.doctor,
+      previousStatus: oldStatus,
+      confirmedBy: req.user._id,
+      timestamp: new Date()
+    });
+    
+    res.json(formatSuccess({
+      appointment: updatedAppointment,
+      message: 'Agendamento confirmado com sucesso'
+    }));
+    
+  } catch (error) {
+    await mongoSession.abortTransaction();
+    throw error;
+  } finally {
+    mongoSession.endSession();
+  }
+}));
+
+/**
+ * 🎯 PATCH /api/v2/appointments/:id/reschedule - Reagendar (Sync)
+ * 
+ * Endpoint específico para reagendamento (mudança de data/hora)
+ * - Atualiza appointment.date e appointment.time
+ * - Atualiza session vinculada
+ * - Registra no histórico
+ */
+router.patch('/:id/reschedule', flexibleAuth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { date, time, reason } = req.body;
+  
+  const mongoSession = await mongoose.startSession();
+  
+  try {
+    await mongoSession.startTransaction();
+    
+    // Validações
+    if (!date || !time) {
+      await mongoSession.abortTransaction();
+      throw createBusinessError('Data e hora são obrigatórios', 400, ErrorCodes.MISSING_REQUIRED_FIELD);
+    }
+    
+    const appointment = await Appointment.findById(id).session(mongoSession)
+      .populate('session');
+    
+    if (!appointment) {
+      await mongoSession.abortTransaction();
+      throw createBusinessError(Messages.APPOINTMENT.NOT_FOUND, 404, ErrorCodes.NOT_FOUND);
+    }
+    
+    // Verificar permissões
+    if (req.user.role === 'doctor' && appointment.doctor.toString() !== req.user.id) {
+      await mongoSession.abortTransaction();
+      throw createBusinessError('Acesso não autorizado', 403, ErrorCodes.UNAUTHORIZED);
+    }
+    
+    const oldDate = appointment.date;
+    const oldTime = appointment.time;
+    
+    // Atualizar appointment
+    appointment.date = date;
+    appointment.time = time;
+    
+    // Registrar histórico
+    if (!appointment.history) appointment.history = [];
+    appointment.history.push({
+      action: 'reagendamento_v2',
+      changedBy: req.user._id,
+      timestamp: new Date(),
+      context: 'operacional',
+      details: { 
+        oldDate: oldDate,
+        newDate: date,
+        oldTime: oldTime,
+        newTime: time,
+        reason: reason || 'Reagendamento manual'
+      }
+    });
+    
+    const updatedAppointment = await appointment.save({ session: mongoSession });
+    
+    // Atualizar Session vinculada
+    if (appointment.session) {
+      await Session.findByIdAndUpdate(
+        appointment.session,
+        {
+          $set: {
+            date: date,
+            time: time,
+            updatedAt: new Date()
+          }
+        },
+        { session: mongoSession }
+      );
+    }
+    
+    await mongoSession.commitTransaction();
+    
+    // Publicar evento
+    await publishEvent(EventTypes.APPOINTMENT.RESCHEDULED, {
+      appointmentId: updatedAppointment._id,
+      patientId: updatedAppointment.patient,
+      doctorId: updatedAppointment.doctor,
+      oldDate: oldDate,
+      newDate: date,
+      oldTime: oldTime,
+      newTime: time,
+      reason: reason,
+      rescheduledBy: req.user._id,
+      timestamp: new Date()
+    });
+    
+    res.json(formatSuccess({
+      appointment: updatedAppointment,
+      message: 'Agendamento reagendado com sucesso'
+    }));
+    
+  } catch (error) {
+    await mongoSession.abortTransaction();
+    throw error;
+  } finally {
+    mongoSession.endSession();
+  }
 }));
 
 export default router;

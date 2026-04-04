@@ -93,8 +93,9 @@ class FinancialMetricsService {
    * - A Receber (pendente)
    */
   async calculateConvenioDetail(period) {
-    const start = period.startDate;
-    const end = period.endDate;
+    // 🆕 CORREÇÃO: Garante que são Date objects após migração
+    const start = period.startDate instanceof Date ? period.startDate : new Date(period.startDate);
+    const end = period.endDate instanceof Date ? period.endDate : new Date(period.endDate);
 
     // Helper: sessionValue → pkg.insuranceGrossAmount → payment.insurance.grossAmount
     const valorReal = {
@@ -135,7 +136,7 @@ class FinancialMetricsService {
         $match: {
           status: 'completed',
           paymentMethod: 'convenio',
-          date: { $gte: start.toISOString().split('T')[0], $lte: end.toISOString().split('T')[0] }
+          date: { $gte: start, $lte: end }
         }
       },
       ...lookupStages,
@@ -155,7 +156,7 @@ class FinancialMetricsService {
           status: 'completed',
           paymentMethod: 'convenio',
           $or: [{ package: { $exists: false } }, { package: null }], // Sem pacote = avulso
-          date: { $gte: start.toISOString().split('T')[0], $lte: end.toISOString().split('T')[0] }
+          date: { $gte: start, $lte: end }
         }
       },
       ...lookupStages,
@@ -174,7 +175,7 @@ class FinancialMetricsService {
           status: 'completed',
           paymentMethod: 'convenio',
           package: { $exists: true, $ne: null }, // Com pacote
-          date: { $gte: start.toISOString().split('T')[0], $lte: end.toISOString().split('T')[0] }
+          date: { $gte: start, $lte: end }
         }
       },
       ...lookupStages,
@@ -597,7 +598,7 @@ class FinancialMetricsService {
       {
         $match: {
           status: 'completed',
-          date: { $gte: start.toISOString().split('T')[0], $lte: end.toISOString().split('T')[0] }
+          date: { $gte: start, $lte: end }
         }
       },
       {
@@ -658,7 +659,7 @@ class FinancialMetricsService {
       status: 'completed',
       sessionConsumed: true,
       commissionValue: { $gt: 0 },  // ⭐ Só sessões com comissão calculada
-      date: { $gte: start.toISOString().split('T')[0], $lte: end.toISOString().split('T')[0] }
+      date: { $gte: start, $lte: end }
     };
 
     if (doctorId) {

@@ -14,9 +14,16 @@ const TotalsSnapshotSchema = new mongoose.Schema({
         index: true
     },
     date: {
-        type: String,  // YYYY-MM-DD (data de referência do cálculo)
+        type: Date,  // Date (data de referência do cálculo)
         required: true,
-        index: true
+        index: true,
+        set: function(v) {
+            if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                const [ano, mes, dia] = v.split('-').map(Number);
+                return new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
+            }
+            return v;
+        }
     },
     period: {
         type: String,  // day, week, month, year, custom

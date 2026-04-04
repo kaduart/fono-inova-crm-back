@@ -154,7 +154,7 @@ async function getCashFlow(startDate, endDate, clinicId) {
 
     const dailyBreakdown = Array.from(dailyMap.entries())
         .map(([date, data]) => ({ date, ...data }))
-        .sort((a, b) => a.date.localeCompare(b.date));
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
 
     return {
         period: {

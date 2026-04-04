@@ -1,7 +1,18 @@
 import mongoose from 'mongoose';
 
 const DailyClosingSnapshotSchema = new mongoose.Schema({
-    date: { type: String, required: true, index: true },
+    date: { 
+        type: Date, 
+        required: true, 
+        index: true,
+        set: function(v) {
+            if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                const [ano, mes, dia] = v.split('-').map(Number);
+                return new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
+            }
+            return v;
+        }
+    },
     clinicId: { type: String, required: true, index: true, default: 'default' },
     report: {
         date: String,

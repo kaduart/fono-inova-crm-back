@@ -33,6 +33,7 @@ import Followup from "./models/Followup.js";
 import { getRedis, startRedis } from "./services/redisClient.js";
 import { registerWebhook } from "./services/sicoobService.js";
 import { sanitizeStack } from './middleware/sanitize.js';
+import { etagMiddleware } from './middleware/etagCache.js';
 import salesRoutes from './routes/sales.js';
 import { startLearningCron } from "./crons/learningCron.js";
 import { startMetaAdsCron } from "./crons/metaAdsSync.cron.js";
@@ -122,6 +123,7 @@ import scoringRoutes from './routes/scoring.routes.js';
 import medicalEventRoutes from './routes/medicalEvent.routes.js';
 import appointmentAnalyticsRoutes from './routes/appointmentAnalytics.routes.js';
 import dailyClosingSimpleRoutes from './routes/dailyClosingSimple.routes.js';
+import calendarRoutes from './routes/calendar.js';
 
 // 🚀 ROTAS V2 - Fechamento do Dia
 import dailyClosingV2Routes from './routes/dailyClosing.v2.js';
@@ -293,7 +295,7 @@ app.use("/api", proxyMediaRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/signup", signupRoutes);
 app.use("/api/login", loginRoutes);
-app.use("/api/admin", adminRoutes);
+app.use("/api/admin", etagMiddleware({ ttl: 300 }), adminRoutes);
 app.use("/api/doctors", doctorRoutes);
 app.use("/api/patients", patientRoutes);
 app.use("/api/patients", patientDuplicatesRoutes);
@@ -314,7 +316,7 @@ app.use("/api/v2/totals", totalsV2Routes);  // 🚀 NOVO: Totals V2
 app.use("/api/evolutions", evolutionRoutes);
 app.use("/api/leads", leadsRouter);
 app.use("/api/packages", PackageRoutes);
-app.use("/api/payments", PaymentRoutes);
+app.use("/api/payments", etagMiddleware({ ttl: 60 }), PaymentRoutes);
 app.use("/api/users", UserRoutes);
 app.use("/api/specialties", specialtyRouter);
 app.use("/api/analytics", analitycsRoutes);
@@ -334,7 +336,7 @@ app.use('/api/financial/dashboard', financialDashboardRoutes);
 app.use('/api/planning', planningRoutes);
 app.use('/api/pre-agendamento', preAgendamentoRoutes);
 app.use('/api/notifications', notificationRoutes);
-app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/dashboard', etagMiddleware({ ttl: 120 }), dashboardRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/provisionamento', provisionamentoRoutes);
 app.use('/api/analytics/financial', financialAnalyticsRoutes);
@@ -359,6 +361,7 @@ app.use('/api/scoring', scoringRoutes);
 app.use('/api/medical-events', medicalEventRoutes);
 app.use('/api/analytics/appointments', appointmentAnalyticsRoutes);
 app.use('/api/daily-closing-simple', dailyClosingSimpleRoutes);
+app.use('/api/calendar', calendarRoutes);
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);
