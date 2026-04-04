@@ -178,8 +178,8 @@ export const generateMonthlyCommissions = async () => {
 
     const now = moment.tz('America/Sao_Paulo');
     const lastMonth = now.clone().subtract(1, 'month');
-    const startDate = lastMonth.startOf('month').format('YYYY-MM-DD');
-    const endDate = lastMonth.endOf('month').format('YYYY-MM-DD');
+    const startDate = lastMonth.startOf('month').toDate();
+    const endDate = lastMonth.endOf('month').toDate();
     const monthRef = lastMonth.format('MMM/YYYY');
 
     console.log(`\n💰 Gerando comissões para ${monthRef}`);

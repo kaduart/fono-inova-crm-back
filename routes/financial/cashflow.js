@@ -38,6 +38,10 @@ router.get('/summary', auth, async (req, res) => {
     // Converter para Date objects com timezone BR (crucial para createdAt)
     const startDateTime = moment.tz(startDateStr, TIMEZONE).startOf('day').toDate();
     const endDateTime = moment.tz(endDateStr, TIMEZONE).endOf('day').toDate();
+    
+    // 🆕 CORREÇÃO: Date objects para filtro do campo date (após migração schema)
+    const startDateObj = new Date(startDateStr + 'T00:00:00-03:00');
+    const endDateObj = new Date(endDateStr + 'T23:59:59-03:00');
 
     console.log(`[Cashflow] Período: ${startDateStr} a ${endDateStr}`);
     console.log(`[Cashflow] Buscando createdAt entre: ${startDateTime.toISOString()} e ${endDateTime.toISOString()}`);
@@ -103,7 +107,7 @@ router.get('/summary', auth, async (req, res) => {
         {
           $match: {
             status: 'paid',
-            date: { $gte: startDateStr, $lte: endDateStr }
+            date: { $gte: startDateObj, $lte: endDateObj }
           }
         },
         {

@@ -84,15 +84,32 @@ const paymentSchema = new mongoose.Schema({
         enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'tongue_tie_test', 'neuropsych_evaluation', 'psicomotricidade', 'musicoterapia', 'psicopedagogia'],
     },
     serviceDate: {
-        type: String,
+        type: Date,
         required: function () {
             return this.appointment;
+        },
+        set: function(v) {
+            if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                const [ano, mes, dia] = v.split('-').map(Number);
+                return new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
+            }
+            return v;
         }
     },
     paymentDate: {
-        type: String,
+        type: Date,
         required: true,
-        default: () => new Date().toISOString().split('T')[0],
+        default: () => {
+            const now = new Date();
+            return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0));
+        },
+        set: function(v) {
+            if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                const [ano, mes, dia] = v.split('-').map(Number);
+                return new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
+            }
+            return v;
+        }
     },
     isAdvance: Boolean,
     paidAt: { type: Date },
@@ -135,8 +152,26 @@ const paymentSchema = new mongoose.Schema({
         },
         grossAmount: { type: Number },        // Valor "cheio" da tabela do convênio
         billedAt: { type: Date },              // Quando foi faturado (Date)
-        receivedAt: { type: String },          // Quando recebeu (YYYY-MM-DD string)
-        expectedReceiptDate: { type: String }, // Previsão (YYYY-MM-DD string)
+        receivedAt: { 
+            type: Date,                          // Quando recebeu (Date)
+            set: function(v) {
+                if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                    const [ano, mes, dia] = v.split('-').map(Number);
+                    return new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
+                }
+                return v;
+            }
+        },
+        expectedReceiptDate: { 
+            type: Date,                          // Previsão (Date)
+            set: function(v) {
+                if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                    const [ano, mes, dia] = v.split('-').map(Number);
+                    return new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
+                }
+                return v;
+            }
+        },
         receivedAmount: { type: Number },     // Valor efetivamente recebido
         glosaReason: { type: String }         // Motivo se glosado
     },

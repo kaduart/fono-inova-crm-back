@@ -58,12 +58,14 @@ router.get('/agenda-temporaria', authorize(['admin', 'secretary']), async (req, 
 
     if (month && year) {
       // Busca pelo mês selecionado
-      inicio = `${year}-${String(month).padStart(2, '0')}-01`;
-      fim = moment(`${year}-${String(month).padStart(2, '0')}-01`).endOf('month').format('YYYY-MM-DD');
+      const startStr = `${year}-${String(month).padStart(2, '0')}-01`;
+      const endStr = moment(`${year}-${String(month).padStart(2, '0')}-01`).endOf('month').format('YYYY-MM-DD');
+      inicio = new Date(startStr + 'T00:00:00-03:00');
+      fim = new Date(endStr + 'T23:59:59-03:00');
     } else {
       // Padrão: próxima semana
-      inicio = moment().tz(TIMEZONE).format('YYYY-MM-DD');
-      fim = moment().tz(TIMEZONE).add(7, 'days').format('YYYY-MM-DD');
+      inicio = moment().tz(TIMEZONE).startOf('day').toDate();
+      fim = moment().tz(TIMEZONE).add(7, 'days').endOf('day').toDate();
     }
 
     console.log('Buscando agenda entre:', inicio, 'e', fim);
@@ -323,9 +325,11 @@ router.get('/projecao-mes', authorize(['admin', 'secretary']), async (req, res) 
     const mes = parseInt(month);
     const ano = parseInt(year);
 
-    const inicioMes = `${ano}-${String(mes).padStart(2, '0')}-01`;
-    const fimMes = moment(`${ano}-${String(mes).padStart(2, '0')}-01`).endOf('month').format('YYYY-MM-DD');
-    const hoje = moment().tz(TIMEZONE).format('YYYY-MM-DD');
+    const inicioMesStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
+    const fimMesStr = moment(`${ano}-${String(mes).padStart(2, '0')}-01`).endOf('month').format('YYYY-MM-DD');
+    const inicioMes = new Date(inicioMesStr + 'T00:00:00-03:00');
+    const fimMes = new Date(fimMesStr + 'T23:59:59-03:00');
+    const hoje = moment().tz(TIMEZONE).startOf('day').toDate();
 
     // Verificar se o mês é passado, atual ou futuro
     const ehMesPassado = fimMes < hoje;
@@ -683,12 +687,16 @@ router.get('/metricas-mes', authorize(['admin', 'secretary']), async (req, res) 
     const mes = parseInt(month);
     const ano = parseInt(year);
 
-    const inicioMes = `${ano}-${String(mes).padStart(2, '0')}-01`;
-    const fimMes = moment(`${ano}-${String(mes).padStart(2, '0')}-01`).endOf('month').format('YYYY-MM-DD');
+    const inicioMesStr = `${ano}-${String(mes).padStart(2, '0')}-01`;
+    const fimMesStr = moment(`${ano}-${String(mes).padStart(2, '0')}-01`).endOf('month').format('YYYY-MM-DD');
+    const inicioMes = new Date(inicioMesStr + 'T00:00:00-03:00');
+    const fimMes = new Date(fimMesStr + 'T23:59:59-03:00');
 
     // Mês anterior para comparação
-    const inicioMesAnterior = moment(inicioMes).subtract(1, 'month').format('YYYY-MM-DD');
-    const fimMesAnterior = moment(inicioMes).subtract(1, 'day').format('YYYY-MM-DD');
+    const inicioMesAnteriorStr = moment(inicioMesStr).subtract(1, 'month').format('YYYY-MM-DD');
+    const fimMesAnteriorStr = moment(inicioMesStr).subtract(1, 'day').format('YYYY-MM-DD');
+    const inicioMesAnterior = new Date(inicioMesAnteriorStr + 'T00:00:00-03:00');
+    const fimMesAnterior = new Date(fimMesAnteriorStr + 'T23:59:59-03:00');
 
     // 1. ATENDIMENTOS DO MÊS ATUAL
     const atendimentosRealizados = await Appointment.countDocuments({

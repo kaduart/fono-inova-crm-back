@@ -923,10 +923,13 @@ router.get('/', flexibleAuth, async (req, res) => {
         if (specialty && specialty !== 'all') filter.specialty = specialty;
 
         // 🔹 Filtro por período
+        // 🆕 CORREÇÃO: Converte strings para Date objects após migração do schema
         if (startDate && endDate) {
+            const start = new Date(startDate + 'T00:00:00-03:00');
+            const end = new Date(endDate + 'T23:59:59-03:00');
             filter.date = {
-                $gte: startDate,  // string "2026-02-02"
-                $lte: endDate     // string "2026-03-14"
+                $gte: start,
+                $lte: end
             };
         }
         console.time('appointments.query');
