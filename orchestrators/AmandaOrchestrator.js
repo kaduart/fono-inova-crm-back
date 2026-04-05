@@ -52,6 +52,10 @@ import { buildSlotMenuMessage } from "../utils/slotMenuBuilder.js";
 import callAI from "../services/IA/Aiproviderservice.js";
 import { clinicalEligibility } from "../domain/policies/ClinicalEligibility.js";
 import { canAutoRespond, buildResponseFromFlags, getTherapyInfo } from '../services/ResponseBuilder.js';
+import { 
+  resolveDecision, 
+  extractDetectorResults 
+} from './decision/index.js';
 import { CLINIC_KNOWLEDGE } from '../knowledge/clinicKnowledge.js';
 import { hasContextHint } from '../utils/intentRouter.js';
 import { isNationalHoliday } from '../config/feriadosBR.js';
@@ -2139,21 +2143,7 @@ async function _getOptimizedAmandaResponseInternal({
             return ensureSingleHeart(`Pelo que você descreveu, parece que a área de **${areaNome35}** pode ajudar 💚\n\nÉ isso mesmo, ou está buscando outra especialidade?`);
         }
 
-        if (flags35.isEmotional || flags35.mentionsUrgency) {
-            return ensureSingleHeart(`Entendo sua preocupação, estou aqui pra ajudar 💚\n\nMe conta um pouco mais: qual a situação e qual a idade da criança?`);
-        }
-
-        if (flags35.wantsSchedule || flags35.isHotLead) {
-            const wrapped = handleTriagemResponse(`Ótimo, vou te ajudar a agendar! 💚\n\nPra direcionar certinho: qual especialidade você busca? Temos Fonoaudiologia, Psicologia, Terapia Ocupacional, Fisioterapia ou Neuropsicologia.`, context);
-            if (wrapped) return ensureSingleHeart(wrapped);
-            console.log('🔥 [BYPASS] wantsSchedule com force flag → IA');
-        }
-
-        if (flags35.isJustBrowsing) {
-            const wrapped = handleTriagemResponse(`Oi! Fique à vontade pra perguntar o que quiser 💚\n\nQual área da saúde você está buscando?`, context);
-            if (wrapped) return ensureSingleHeart(wrapped);
-            console.log('🔥 [BYPASS] isJustBrowsing com force flag → IA');
-        }
+        // (Decisões emocionais/agendamento tratadas pelo DecisionResolver)
 
         const wrapped = handleTriagemResponse(`Olá! 💚 Me conta o que você está buscando — assim consigo te direcionar para a especialidade certa!`, context);
         if (wrapped) return ensureSingleHeart(wrapped);
@@ -2204,6 +2194,54 @@ async function _getOptimizedAmandaResponseInternal({
     // Usa adapter pattern para manter compatibilidade com flags legacy
     const flags = detectWithContextualDetectors(text, lead, enrichedContext);
     console.log("🚩 FLAGS DETECTADAS:", flags);
+
+    // ═════════════════════════════════════════════════════════════════════════════
+    // 🧠 DECISION RESOLVER v2.0 - Decisão unificada
+    // ═════════════════════════════════════════════════════════════════════════════
+    
+    const decision = resolveDecision({
+        forceFlags: context.forceFlags,
+        detectorResults: extractDetectorResults(flags),
+        currentState: lead.triageStep || lead.stage || 'IDLE',
+        messageIndex: enrichedContext?.conversationHistory?.filter(m => m.role === 'user').length || 0,
+        enrichedContext
+    });
+    
+    console.log("🧠 DECISION:", {
+        action: decision.action,
+        domain: decision.domain,
+        confidence: decision.systemConfidence.toFixed(2),
+        reason: decision.reason
+    });
+    
+    // Executa baseado na decisão
+    switch (decision.action) {
+        case 'RULE': {
+            // RULE: Resposta programática via ResponseBuilder
+            if (canAutoRespond(flags)) {
+                const response = buildResponseFromFlags(flags, {
+                    therapyArea: lead?.therapyArea || flags.therapyArea
+                });
+                if (response) return ensureSingleHeart(response);
+            }
+            // Se ResponseBuilder não retornou, continua para fluxo legado
+            break;
+        }
+        case 'HYBRID': {
+            // HYBRID: Injeta contexto para IA
+            enrichedContext.decision = decision;
+            break;
+        }
+        case 'AI':
+        default: {
+            // AI: Continua fluxo normal
+            break;
+        }
+    }
+    
+    // ═════════════════════════════════════════════════════════════════════════════
+    // FIM DECISION RESOLVER
+    // ═════════════════════════════════════════════════════════════════════════════
 
     // 📊 Log detecções contextuais (quando ativas)
     if (flags._confirmation) {
@@ -3305,57 +3343,9 @@ async function _getOptimizedAmandaResponseInternal({
         flags.askIntent = false;
     }
 
-    // 🔥 PRIORIDADE: PARCERIA / CURRÍCULO
-    if (flags.partnership) {
-        console.log("🤝 [PARTNERSHIP FLOW] Ativado");
+    // (Parceria/Currículo tratado pelo DecisionResolver + ResponseBuilder)
 
-        return {
-            text: `Que bom seu interesse! 💚  
-
-Os currículos são recebidos exclusivamente por e-mail:
-📩 contato@clinicafonoinova.com.br  
-
-No assunto, coloque sua área de atuação (ex: Terapeuta Ocupacional).
-
-Em breve nossa equipe entra em contato 😊`
-        };
-    }
-
-    // ===============================
-    // ETAPA A - VALIDAÇÃO EMOCIONAL
-    // ===============================
-    const hasComplaint =
-        lead?.complaint ||
-        lead?.patientInfo?.complaint ||
-        lead?.autoBookingContext?.complaint ||
-        lead?.qualificationData?.extractedInfo?.queixa;
-
-    const userExpressedPain =
-        flags?.hasPain ||
-        /não anda|não fala|atraso|preocupado|preocupação|dificuldade/i.test(text);
-
-    if (userExpressedPain && !lead?.qualificationData?.painAcknowledged) {
-
-        await safeLeadUpdate(lead._id, {
-            $set: { "qualificationData.painAcknowledged": true }
-        }).catch(() => { });
-
-        return ensureSingleHeart(
-            "Entendo sua preocupação 💚\n\n" +
-            "Quando envolve desenvolvimento infantil isso realmente deixa a gente apreensivo.\n" +
-            "Você fez muito bem em buscar orientação cedo."
-        );
-    }
-
-    if (
-        /^[sS]im$/.test(text.trim()) &&
-        !SCHEDULING_REGEX.test(text)
-    ) {
-        return ensureSingleHeart(
-            "Perfeito 💚\n\n" +
-            "Me conta só mais um pouquinho pra eu te orientar certinho."
-        );
-    }
+    // (Validações emocionais e respostas curtas tratadas pelo DecisionResolver)
     if (lead?._id) {
         const $set = {};
         if (flags.topic) $set.topic = flags.topic; // ou "qualificationData.topic"
@@ -3365,60 +3355,7 @@ Em breve nossa equipe entra em contato 😊`
             await safeLeadUpdate(lead._id, { $set });
         }
     }
-    // 🛡️ VERIFICAÇÃO DE DESAMBIGUAÇÃO: "vaga" pode ser consulta OU emprego
-    // 🆕 REGRA 2: Prioridade máxima para contexto temporal + vaga = AGENDAMENTO
-    if (flags.wantsPartnershipOrResume) {
-        const normalizedText = flags.normalizedText || text.toLowerCase();
-        
-        // 🆕 REGRA 2: Contexto temporal + "vaga" SEMPRE = agendamento (nunca emprego)
-        const hasTemporalContext = /\b(hoje|amanh[ãa]|s[áa]bado|domingo|segunda|ter[cç]a|quarta|quinta|sexta|dias?|semanas?|\d{1,2}[\/\-]\d{1,2})\b/i.test(normalizedText);
-        const hasVaga = /\btem\s+vaga|tem\s+hor[áa]rio|disponibilidade\b/i.test(normalizedText);
-        
-        if (hasTemporalContext && hasVaga) {
-            console.log("[DISAMBIGUATION] Temporal + Vaga = AGENDAMENTO (ignorando parceria)");
-            flags.wantsSchedule = true;
-            flags.wantsPartnershipOrResume = false;
-            // Não retorna - deixa o fluxo continuar para agendamento
-        }
-        // Se ambos forem detectados, verificar contexto para decidir
-        else if (flags.wantsSchedule) {
-            // Contextos que indicam agendamento de consulta (não emprego)
-            const schedulingContext = /\b(dias|hor[áa]rio|consulta|agendar|marcar|disponibilidade|atendimento|tem\s+vaga|quais\s+os\s+dias)\b/i.test(normalizedText);
-            // Contextos que indicam emprego/parceria
-            const jobContext = /\b(vaga\s+(de\s+)?(trabalho|emprego)|curriculo|cv|parceria|enviar\s+curr[ií]culo|trabalhar\s+(com|na)\s+voc[eê]s)\b/i.test(normalizedText);
-
-            if (schedulingContext && !jobContext) {
-                console.log("[DISAMBIGUATION] wantsSchedule + wantsPartnershipOrResume → Contexto indica AGENDAMENTO, ignorando parceria");
-                // Não retorna, deixa o fluxo continuar para busca de slots reais
-            } else {
-                // É realmente sobre parceria/emprego
-                await safeLeadUpdate(lead._id, {
-                    $set: {
-                        reason: "parceria_profissional",
-                        stage: "parceria_profissional",
-                        "qualificationData.intent": "parceria_profissional",
-                    },
-                    $addToSet: { flags: "parceria_profissional" },
-                });
-                return ensureSingleHeart(
-                    "Que bom! 😊\n\nParcerias e currículos nós recebemos **exclusivamente por e-mail**.\nPode enviar para **contato@clinicafonoinova.com.br** (no assunto, coloque sua área).\n\nSe quiser, já me diga também sua cidade e disponibilidade 🙂 💚"
-                );
-            }
-        } else {
-            // Só tem parceria, sem conflito
-            await safeLeadUpdate(lead._id, {
-                $set: {
-                    reason: "parceria_profissional",
-                    stage: "parceria_profissional",
-                    "qualificationData.intent": "parceria_profissional",
-                },
-                $addToSet: { flags: "parceria_profissional" },
-            });
-            return ensureSingleHeart(
-                "Que bom! 😊\n\nParcerias e currículos nós recebemos **exclusivamente por e-mail**.\nPode enviar para **contato@clinicafonoinova.com.br** (no assunto, coloque sua área).\n\nSe quiser, já me diga também sua cidade e disponibilidade 🙂 💚"
-            );
-        }
-    }
+    // (Desambiguação parceria/emprego tratada pelo DecisionResolver)
 
     const psychologicalCue = determinePsychologicalFollowup({
         toneMode: enrichedContext.toneMode,
@@ -5785,39 +5722,16 @@ async function callClaudeWithTherapyData({
             : "O teste da orelhinha (triagem auditiva/TAN) nós não realizamos aqui. Mas podemos te ajudar com avaliação e terapias (Fono, Psico, TO, Fisio…). O que você está buscando exatamente: avaliação, terapia ou um exame específico? 💚";
     }
 
-    // 💸 Se pediu PREÇO → usa value pitch + insights
+    // 💸 LEGACY REMOVED: Preço agora é tratado pelo DecisionResolver
+    // Se action='RULE' → ResponseBuilder responde automaticamente
+    // Se action='HYBRID/AI' → fluxo continua com contexto enriquecido
+    // Mantido para referência: value pitch logic movida para ResponseBuilder
+    /*
     if (flags.asksPrice) {
         const insights = await getLatestInsights();
-        let learnedContext = "";
-
-        if (insights?.data?.effectivePriceResponses) {
-            const scenario = stage === "novo" ? "first_contact" : "engaged";
-            const bestResponse = insights.data.effectivePriceResponses.find(
-                (r) => r.scenario === scenario,
-            );
-            if (bestResponse) {
-                learnedContext = `\n💡 PADRÃO DE SUCESSO: "${bestResponse.response}"`;
-            }
-        }
-
-        const enrichedFlags = { ...flags, text: userText, rawText: userText };
-        const prompt = buildUserPromptWithValuePitch(enrichedFlags);
-        console.log("💰 [PRICE PROMPT] Usando buildUserPromptWithValuePitch");
-
-        messages.push({
-            role: "user",
-            content: prompt + learnedContext + intelligenceNote + patientStatus + urgencyNote,
-        });
-
-        const textResp = await callAI({
-            systemPrompt: dynamicSystemPrompt,
-            messages,
-            maxTokens: 300,
-            temperature: 0.7,
-        });
-
-        return textResp || "Como posso te ajudar? 💚";
+        ...
     }
+    */
 
     // 🧠 Monta nota sobre dados já coletados (evita perguntar de novo)
     // ✅ USA DADOS NORMALIZADOS DO CONTEXTO (não apenas do lead cru)
