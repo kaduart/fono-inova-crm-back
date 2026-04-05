@@ -52,9 +52,10 @@ import { buildSlotMenuMessage } from "../utils/slotMenuBuilder.js";
 import callAI from "../services/IA/Aiproviderservice.js";
 import { clinicalEligibility } from "../domain/policies/ClinicalEligibility.js";
 import { canAutoRespond, buildResponseFromFlags, getTherapyInfo } from '../services/ResponseBuilder.js';
-import { 
-  resolveDecision, 
-  extractDetectorResults 
+import {
+  resolveDecision,
+  extractDetectorResults,
+  logDecision
 } from './decision/index.js';
 import { CLINIC_KNOWLEDGE } from '../knowledge/clinicKnowledge.js';
 import { hasContextHint } from '../utils/intentRouter.js';
@@ -1146,7 +1147,7 @@ function mapComplaintToTherapyArea(complaint) {
     }
 
     // 2. Fallback: usa resolveTopicFromFlags (do flagsDetector.js)
-    const flags = deriveFlagsFromText(complaint);
+    const flags = detectAllFlags(complaint);
     const topic = resolveTopicFromFlags(flags, complaint);
     if (topic) {
         // Mapeia topic para área
@@ -1850,30 +1851,9 @@ async function _getOptimizedAmandaResponseInternal({
         return ensureSingleHeart(amandaAnalysis.serviceMessage);
     }
 
-    // 3.3 PERGUNTAS SIMPLES (preço, plano, local) → Responde direto
-    if (amandaAnalysis.extracted.flags.asksPrice && !amandaAnalysis.extracted.therapyArea) {
-        // Fallback sem área definida
-        return ensureSingleHeart("A avaliação inicial é **R$ 200** (fonoaudiologia R$ 250). Se me disser a área exata (Fono, Psicologia, TO...), passo o valor certinho 💚");
-    }
+    // 3.3 LEGACY REMOVED — preço agora roteado pelo DecisionResolver → RULE → ResponseBuilder
 
-    if (amandaAnalysis.extracted.flags.asksPrice && amandaAnalysis.extracted.therapyArea) {
-        const pricing = getTherapyPricing(amandaAnalysis.extracted.therapyArea);
-        let priceText;
-        if (pricing) {
-            priceText = formatPrice(pricing.avaliacao);
-        } else {
-            priceText = "R$ 200";
-        }
-        return ensureSingleHeart(`A avaliação de ${amandaAnalysis.extracted.therapyArea} é **${priceText}** 💚`);
-    }
-
-    if (amandaAnalysis.extracted.flags.asksPlans) {
-        return ensureSingleHeart("Trabalhamos com reembolso para a maioria dos planos. Você paga e solicita o reembolso pelo app do plano 💚");
-    }
-
-    if (amandaAnalysis.extracted.flags.asksLocation) {
-        return ensureSingleHeart("📍 Estamos na Av. Minas Gerais, 405 - Jundiaí, Anápolis/GO. Tem estacionamento fácil! Quer o link do Maps? 💚");
-    }
+    // LEGACY REMOVED — asksPlans e asksLocation → DecisionResolver → RULE → ResponseBuilder
 
     // 🧠 INTERPRETAÇÃO: Resposta sobre objetivo da neuropsicologia (laudo vs acompanhamento)
     const isNeuroContext = lead?.therapyArea === 'neuropsicologia' || amandaAnalysis.extracted.therapyArea === 'neuropsicologia';
@@ -2199,6 +2179,7 @@ async function _getOptimizedAmandaResponseInternal({
     // 🧠 DECISION RESOLVER v2.0 - Decisão unificada
     // ═════════════════════════════════════════════════════════════════════════════
     
+    const _decisionStart = Date.now();
     const decision = resolveDecision({
         forceFlags: context.forceFlags,
         detectorResults: extractDetectorResults(flags),
@@ -2206,7 +2187,16 @@ async function _getOptimizedAmandaResponseInternal({
         messageIndex: enrichedContext?.conversationHistory?.filter(m => m.role === 'user').length || 0,
         enrichedContext
     });
-    
+
+    logDecision({
+        leadId:       lead._id,
+        text:         lead.complaint || text,
+        flags,
+        decision,
+        latencyMs:    Date.now() - _decisionStart,
+        currentState: lead.triageStep || lead.stage || 'IDLE',
+    });
+
     console.log("🧠 DECISION:", {
         action: decision.action,
         domain: decision.domain,
@@ -5871,7 +5861,17 @@ async function callAmandaAIWithContext(
     }
 
     const systemContext = buildSystemContext(flags, userText, stage, context);
-    const dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
+    let dynamicSystemPrompt = buildDynamicSystemPrompt(systemContext);
+
+    // HYBRID: injeta contexto estratégico do DecisionResolver no prompt
+    if (safeContext?.decision?.action === 'HYBRID') {
+        const d = safeContext.decision;
+        dynamicSystemPrompt += `\n\n[DECISÃO ESTRATÉGICA]\n` +
+            `- Confiança: ${(d.systemConfidence * 100).toFixed(0)}%\n` +
+            `- Domínio: ${d.domain || 'desconhecido'}\n` +
+            `- Razão: ${d.reason || ''}\n` +
+            `Calibre sua resposta: seja mais assertivo na condução, menos genérico, foque em converter para agendamento se o contexto permitir.`;
+    }
 
     const therapiesContext =
         mentionedTherapies.length > 0
@@ -6351,8 +6351,8 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
     console.log('🧠 [AMANDA-SÊNIOR] Analisando:', text.substring(0, 50));
 
     // 1. EXTRAÇÃO MÁXIMA
-    // 🔥 USA flagsDetector.js COMPLETO (não recria localmente)
-    const fullFlags = deriveFlagsFromText(text);
+    // 🔥 USA flagsDetector.js COMPLETO (detectAllFlags — mais rico que deriveFlagsFromText)
+    const fullFlags = detectAllFlags(text);
 
     const extracted = {
         responsibleName: null,

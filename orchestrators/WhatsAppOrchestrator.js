@@ -63,6 +63,12 @@ import { buildMessageContext } from '../services/messageContextBuilder.js';
 import { parseIncomingMessage } from '../services/whatsappLinkService.js';
 import { extractLPContext } from '../utils/lpContextParser.js';
 import { enforce } from '../services/EnforcementLayer.js';
+import { 
+  resolveDecision, 
+  extractDetectorResults,
+  enrichInputWithBusinessRules 
+} from './decision/index.js';
+import { logDecision } from '../services/analytics/decisionTracking.js';
 
 const logger = new Logger('WhatsAppOrchestrator');
 
@@ -150,6 +156,60 @@ export default class WhatsAppOrchestrator {
       
       // Armazena ctx completo: leadData, canOfferScheduling, promptMode, flags, etc.
       this.currentContext = { ...ctx, lead: freshLead, state: currentState, stateData, insights, parsedMessage };
+
+      // ══ DECISION RESOLVER v2.0 (decisão unificada) ══
+      const _decisionStart = Date.now();
+      
+      // 1. Aplicar RNs
+      const rulesInput = enrichInputWithBusinessRules({
+        text,
+        lead: freshLead,
+        currentTime: new Date(),
+        lastMessageTime: freshLead.lastMessageAt,
+        messageIndex: ctx?.conversationHistory?.filter(m => m.role === 'user').length || 0
+      });
+      
+      // Se RNs bloquearam → retorna early
+      if (rulesInput.forcedDecision) {
+        this.logger.info('V8_DECISION_BLOCKED_BY_RULE', { 
+          leadId, 
+          reason: rulesInput.forcedDecision.reason 
+        });
+        return this._reply(rulesInput.forcedDecision.message || 'Processando...');
+      }
+      
+      // 2. Resolver decisão
+      const decision = resolveDecision({
+        forceFlags: ctx.forceFlags || {},
+        detectorResults: extractDetectorResults(flags),
+        currentState: currentState || 'IDLE',
+        messageIndex: rulesInput.messageIndex,
+        enrichedContext: { ...ctx, lead: freshLead },
+        businessRules: rulesInput.businessRules,
+        contextModifiers: rulesInput.contextModifiers
+      });
+      
+      // 3. Log da decisão
+      logDecision({
+        leadId,
+        text: text.substring(0, 100),
+        flags,
+        decision,
+        latencyMs: Date.now() - _decisionStart,
+        currentState: currentState || 'IDLE',
+        orchestrator: 'WhatsAppOrchestrator'
+      });
+      
+      this.logger.info('V8_DECISION', {
+        leadId,
+        action: decision.action,
+        domain: decision.domain,
+        confidence: decision.systemConfidence.toFixed(2),
+        reason: decision.reason
+      });
+      
+      // 4. Armazena decisão no contexto para uso nos handlers
+      this.currentContext.decision = decision;
 
       // ══ PRÉ-ROUTING: intenções que cortam qualquer estado ══
 
