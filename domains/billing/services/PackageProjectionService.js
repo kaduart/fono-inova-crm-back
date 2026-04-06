@@ -98,7 +98,6 @@ async function calculateSessionMetrics(sessions, pkgTotalSessions, packageId) {
     status: s.status,
     isPaid: s.isPaid || false
   }));
-
   return {
     totalSessions,
     sessionsUsed,

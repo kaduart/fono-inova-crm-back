@@ -57,7 +57,6 @@ export const packageProcessingWorker = new Worker(
   async (job) => {
     const { eventType, payload, correlationId, requestId } = job.data;
     const startTime = Date.now();
-
     logger.info('[PackageProcessingWorker] Processing job', {
       correlationId,
       eventType,
@@ -65,7 +64,6 @@ export const packageProcessingWorker = new Worker(
       jobId: job.id,
       attempt: job.attemptsMade + 1
     });
-
     // IDEMPOTÊNCIA: Já processou?
     if (requestId && processedRequests.has(requestId)) {
       logger.info('[PackageProcessingWorker] Request already processed', {
@@ -82,7 +80,6 @@ export const packageProcessingWorker = new Worker(
         case 'PACKAGE_CREATE_REQUESTED':
           result = await handlePackageCreate(payload, correlationId);
           break;
-
         default:
           logger.warn('[PackageProcessingWorker] Unknown event type', {
             correlationId,
@@ -90,12 +87,10 @@ export const packageProcessingWorker = new Worker(
           });
           return { status: 'ignored', reason: 'unknown_event' };
       }
-
       // Registra como processado
       if (requestId) {
         processedRequests.set(requestId, Date.now());
       }
-
       const duration = Date.now() - startTime;
       logger.info('[PackageProcessingWorker] Job completed', {
         correlationId,
@@ -103,7 +98,6 @@ export const packageProcessingWorker = new Worker(
         durationMs: duration,
         result: result.operation
       });
-
       return {
         success: true,
         eventType,
@@ -120,7 +114,6 @@ export const packageProcessingWorker = new Worker(
         durationMs: duration,
         willRetry: job.attemptsMade < 5
       });
-
       // Emite evento de falha
       await publishEvent('PACKAGE_CREATE_FAILED', {
         requestId,
@@ -129,7 +122,6 @@ export const packageProcessingWorker = new Worker(
         errorType: error.name,
         payload
       }, { correlationId });
-
       throw error;
     }
   },

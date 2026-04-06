@@ -1,0 +1,52 @@
+meta {
+  name: 5- Check Package Status
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/v2/packages/{{packageId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+script:post-response {
+  const pkg = res.body?.data?.package;
+  if (pkg) {
+    console.log("📦 STATUS DO PACOTE:");
+    console.log("   ID:", pkg.packageId || pkg._id);
+    console.log("   Status:", pkg.status);
+    console.log("   Total Sessions:", pkg.totalSessions);
+    console.log("   Sessions Done:", pkg.sessionsDone);
+    console.log("   Sessions Remaining:", pkg.sessionsRemaining);
+    console.log("   Sessions Summary:", pkg.sessionsSummary?.length || 0, "sessões");
+    
+    // Validação E2E
+    if (pkg.sessionsDone > 0) {
+      console.log("✅ VALIDAÇÃO: sessionsDone > 0 (completes funcionando)");
+    }
+    if (pkg.sessionsSummary?.some(s => s.status === 'canceled')) {
+      console.log("✅ VALIDAÇÃO: Tem sessão cancelada (cancel funcionando)");
+    }
+  } else {
+    console.log("❌ Pacote não encontrado");
+  }
+}
+
+docs {
+  # Check Package Status
+  
+  Consulta status completo do pacote.
+  
+  ## Validações E2E
+  - `sessionsDone` incrementado após complete
+  - `sessionsSummary` mostra todas as sessões
+  - Status de cada sessão (scheduled, completed, canceled)
+  
+  ## Uso
+  Execute após Complete ou Cancel para validar efeito no pacote
+}

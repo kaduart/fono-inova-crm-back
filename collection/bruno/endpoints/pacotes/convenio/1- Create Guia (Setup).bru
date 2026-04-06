@@ -1,0 +1,68 @@
+meta {
+  name: 1- Create Guia (Setup)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/v2/insurance-guides
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+headers {
+  X-Correlation-Id: {{$guid}}
+}
+
+body:json {
+  {
+    "number": "GUIA-{{$timestamp}}",
+    "patientId": "{{patientId}}",
+    "specialty": "fonoaudiologia",
+    "insurance": "unimed",
+    "totalSessions": 10,
+    "expiresAt": "2026-12-31",
+    "valor": 150.00
+  }
+}
+
+script:post-response {
+  const data = res.body?.data;
+  if (data && (data._id || data.guideId)) {
+    const guideId = data._id || data.guideId;
+    bru.setEnvVar("insuranceGuideId", guideId);
+    bru.setEnvVar("guideNumber", data.number);
+    console.log("✅ GUIA CRIADA:");
+    console.log("   ID:", guideId);
+    console.log("   Número:", data.number);
+    console.log("   Total Sessions:", data.totalSessions);
+    console.log("📋 Próximo: Execute 'Create Convenio' para agendar");
+  } else {
+    console.log("❌ Erro ao criar guia:", res.body?.error || "Falha");
+    console.log("   Response:", JSON.stringify(res.body));
+  }
+}
+
+docs {
+  # Criar Guia de Convênio (Setup)
+  
+  Cria uma guia de autorização para testes E2E.
+  
+  ## Campos
+  - `number`: Número único da guia
+  - `patientId`: Paciente autorizado
+  - `specialty`: Especialidade
+  - `insurance`: Nome do convênio
+  - `totalSessions`: Quantidade de sessões autorizadas
+  - `expiresAt`: Data de validade
+  
+  ## Retorno
+  - `guideId` ou `_id`: ID da guia criada
+  
+  ## Próximo Passo
+  Execute **"Create Convenio"** usando o insuranceGuideId
+}

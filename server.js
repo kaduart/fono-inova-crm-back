@@ -103,6 +103,7 @@ import metaAdsRoutes from './routes/meta-ads.js';
 
 import provisionamentoRoutes from './routes/provisionamento.js';
 import preAgendamentoRoutes from './routes/preAgendamento.js';
+import preAgendamentoV2Routes from './routes/preAgendamento.v2.js';
 import notificationRoutes from './routes/notifications.js';
 import { iniciarJobConfirmacao } from './jobs/confirmacaoJob.js';
 import { scheduleDailyAlerts } from './jobs/dailyAlerts.js';
@@ -145,6 +146,20 @@ import goalsV2Routes from './routes/goals.v2.js';  // 🚀 NOVO: Metas V2
 import intelligenceV2Routes from './routes/intelligence.v2.js';  // 🚀 NOVO: Inteligência Financeira V2
 import paymentsV2Routes from './routes/payments.v2.js';  // 🚀 NOVO: Payments V2 (Projection otimizada - QUERY)
 import paymentV2Routes from './routes/payment.v2.js';  // 🚀 NOVO: Payment V2 (Event-Driven - COMMAND)
+
+
+// 🚀 ROTAS V2 - Event-Driven
+import dailyClosingV2Routes from './routes/dailyClosing.v2.js';
+import totalsV2Routes from './routes/totals.v2.js';
+import paymentV2Routes from './routes/payment.v2.js';
+import balanceV2Routes from './routes/balance.v2.js';
+import appointmentV2Routes from './routes/appointment.v2.js';
+import patientV2Routes from './routes/patient.v2.js';
+import packageV2Routes from './routes/package.v2.js';
+import financialDashboardV2Routes from './routes/financialDashboard.v2.js';
+import expensesV2Routes from './routes/expenses.v2.js';
+import convenioV2Routes from './routes/convenio.v2.js';
+import calendarV2Routes from './routes/calendar.v2.js';
 
 
 // ======================================================
