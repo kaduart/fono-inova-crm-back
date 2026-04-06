@@ -1,0 +1,34 @@
+meta {
+  name: 1- Setup - Get Patient
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/patients?page=1&limit=1
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+script:post-response {
+  const patients = res.body?.patients || res.body?.data?.patients || [];
+  
+  if (patients.length > 0) {
+    const p = patients[0];
+    bru.setEnvVar("v2PatientId", p._id);
+    bru.setEnvVar("v2DoctorId", typeof p.doctor === 'object' ? p.doctor._id : p.doctor);
+    
+    console.log("✅ V2 Test Setup Complete");
+    console.log("   Patient:", p._id);
+    console.log("   Doctor:", bru.getEnvVar("v2DoctorId"));
+  }
+}
+
+docs {
+  # Setup - Get Patient
+  
+  Passo 1: Obtém paciente e doutor para testes V2
+}

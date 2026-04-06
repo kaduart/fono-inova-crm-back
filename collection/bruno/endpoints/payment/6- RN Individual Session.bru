@@ -1,0 +1,46 @@
+meta {
+  name: 3b- Create Individual Session
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/v2/payments/create
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "patientId": "{{v2PatientId}}",
+    "doctorId": "{{v2DoctorId}}",
+    "serviceType": "individual_session",
+    "sessionType": "sessao_individual",
+    "amount": 250.00,
+    "paymentMethod": "pix",
+    "notes": "RN-V1: Sessão individual deve ser criada automaticamente"
+  }
+}
+
+script:post-response {
+  const data = res.body?.data;
+  if (data?.eventId) {
+    bru.setEnvVar("v2IndSessionEventId", data.eventId);
+    console.log("✅ INDIVIDUAL SESSION PAYMENT REQUESTED");
+    console.log("   Event ID:", data.eventId);
+    console.log("   RN-V1: Worker deve criar Session automaticamente");
+  }
+}
+
+docs {
+  # RN-V1: Sessão Individual
+  
+  Quando `serviceType: "individual_session"`, o worker deve:
+  1. Criar uma Session automaticamente
+  2. Vincular ao Payment
+  3. Atualizar status da sessão para 'completed'
+}
