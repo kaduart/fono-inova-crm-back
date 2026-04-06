@@ -17,6 +17,8 @@ export const initializeSocket = (server) => {
         "http://localhost:5173",
         "https://app.clinicafonoinova.com.br",
         "https://fono-inova-crm-front.vercel.app",
+        "https://agenda.clinicafonoinova.com.br",
+        "https://www.clinicafonoinova.com.br",
       ],
       methods: ["GET", "POST"],
       credentials: true,
