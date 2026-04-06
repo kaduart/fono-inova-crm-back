@@ -110,6 +110,33 @@ router.get('/webhook/debug', (req, res) => {
     });
 });
 
+// 🔍 DEBUG: Testar verificação do webhook manualmente
+router.get('/webhook/test-verify', (req, res) => {
+    const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN?.trim();
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"]?.trim();
+    const challenge = req.query["hub.challenge"];
+    
+    console.log("[TEST VERIFY] Recebido:", { mode, token, challenge });
+    console.log("[TEST VERIFY] Env token:", verifyToken);
+    console.log("[TEST VERIFY] Match:", token === verifyToken);
+    
+    if (mode === "subscribe" && token === verifyToken) {
+        return res.status(200).send(challenge);
+    }
+    
+    return res.status(403).json({
+        error: "Forbidden",
+        debug: {
+            modeReceived: mode,
+            tokenReceived: token,
+            tokenExpected: verifyToken,
+            match: token === verifyToken,
+            modeOk: mode === "subscribe"
+        }
+    });
+});
+
 // 🧪 Teste de socket
 router.post('/test-socket', (req, res) => {
     try {
