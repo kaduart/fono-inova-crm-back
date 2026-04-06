@@ -14,6 +14,34 @@ import { appendEvent } from '../../../infrastructure/events/eventStoreService.js
 import { createContextLogger } from '../../../utils/logger.js';
 import crypto from 'crypto';
 
+async function checkDoubleBooking({ doctorId, patientId, date, time, excludeId = null }) {
+  const baseQuery = {
+    date,
+    time,
+    operationalStatus: { $nin: ['cancelled', 'canceled', 'rejected'] },
+  };
+  if (excludeId) baseQuery._id = { $ne: excludeId };
+
+  const [doctorConflict, patientConflict] = await Promise.all([
+    Appointment.findOne({ ...baseQuery, doctor: doctorId }).select('_id').lean(),
+    Appointment.findOne({ ...baseQuery, patient: patientId }).select('_id').lean(),
+  ]);
+
+  if (doctorConflict) {
+    const err = new Error('SLOT_TAKEN');
+    err.code = 'SLOT_TAKEN';
+    err.conflictId = doctorConflict._id.toString();
+    throw err;
+  }
+
+  if (patientConflict) {
+    const err = new Error('PATIENT_DOUBLE_BOOKING');
+    err.code = 'PATIENT_DOUBLE_BOOKING';
+    err.conflictId = patientConflict._id.toString();
+    throw err;
+  }
+}
+
 const log = createContextLogger('AppointmentService');
 
 /**
@@ -53,7 +81,9 @@ export async function scheduleAppointment(data, context = {}) {
   } = data;
   
   log.info({ correlationId, patientId, doctorId, date }, 'Criando agendamento');
-  
+
+  await checkDoubleBooking({ doctorId, patientId, date, time });
+
   // 1. Cria appointment
   const appointment = await Appointment.create({
     patient: patientId,
@@ -190,7 +220,15 @@ export async function rescheduleAppointment(appointmentId, newData, context = {}
   if (!oldAppointment) {
     throw new Error('AGENDAMENTO_NAO_ENCONTRADO');
   }
-  
+
+  await checkDoubleBooking({
+    doctorId:  oldAppointment.doctor,
+    patientId: oldAppointment.patient,
+    date,
+    time,
+    excludeId: appointmentId,
+  });
+
   const appointment = await Appointment.findByIdAndUpdate(
     appointmentId,
     {

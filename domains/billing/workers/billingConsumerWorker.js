@@ -17,6 +17,10 @@
 import { Worker, Queue } from 'bullmq';
 import { insuranceBillingService } from '../services/insuranceBillingService.v2.js';
 import EventStore from '../../../models/EventStore.js';
+import Payment from '../../../models/Payment.js';
+import Appointment from '../../../models/Appointment.js';
+import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPublisher.js';
+import { validatePaymentEvent, generatePaymentIdempotencyKey } from '../contracts/PaymentEvents.contract.js';
 import { v4 as uuidv4 } from 'uuid';
 
 // =============================================================================
@@ -116,6 +120,9 @@ export function getBillingWorkerStatus() {
 // PROCESSOR
 // =============================================================================
 
+/** Exportado apenas para testes — não usar em produção diretamente */
+export { processJob };
+
 async function processJob(job) {
   const { eventType, eventId, correlationId, payload, timestamp } = job.data;
   
@@ -132,9 +139,20 @@ async function processJob(job) {
       return await handleSessionReceived(payload, correlationId, job);
     
     case 'APPOINTMENT_BILLING_REQUESTED':
-      // Placeholder para futuro
-      return await handleAppointmentBilling(payload, correlationId);
-    
+      return await handleAppointmentBillingRequested(payload, correlationId, job);
+
+    case 'SESSION_BILLING_REQUESTED':
+      // Sessões particular/pacote completadas — roteadas pelo IntegrationWorker
+      // Por ora delegamos para o mesmo fluxo do appointment se houver appointmentId
+      if (payload.appointmentId) {
+        return await handleAppointmentBillingRequested(
+          { ...payload, appointmentId: payload.appointmentId },
+          correlationId,
+          job
+        );
+      }
+      return { status: 'skipped', reason: 'NO_APPOINTMENT_ID', sessionId: payload.sessionId };
+
     default:
       console.warn(`[BillingWorker] Unknown event type: ${eventType}`);
       return { status: 'ignored', reason: 'UNKNOWN_EVENT_TYPE' };
@@ -209,9 +227,145 @@ async function handleSessionCompleted(payload, correlationId, job) {
   }
 }
 
-async function handleAppointmentBilling(payload, correlationId) {
-  // Placeholder para implementação futura
-  return { status: 'skipped', reason: 'NOT_IMPLEMENTED' };
+const PAYMENT_METHOD_MAP = {
+  dinheiro:              'cash',
+  pix:                   'pix',
+  cartao_credito:        'credit_card',
+  cartao_debito:         'debit_card',
+  cartão:                'credit_card',
+  transferencia_bancaria:'bank_transfer',
+  bank_transfer:         'bank_transfer',
+  credit_card:           'credit_card',
+  debit_card:            'debit_card',
+  cash:                  'cash',
+};
+const mapPaymentMethod = (m) => PAYMENT_METHOD_MAP[m] || 'other';
+
+/**
+ * Handler: APPOINTMENT_BILLING_REQUESTED → decide e cria Payment
+ *
+ * paymentOrigin define o fluxo:
+ *   auto_per_session → cria Payment 'attended' (particular avulso)
+ *   package_prepaid  → skip (PackageProcessingWorker cuida do crédito)
+ *   manual_balance   → skip (saldo já foi adicionado ao balance)
+ *   convenio         → skip (billingConsumerWorker cuida via SESSION_COMPLETED)
+ *   liminar          → skip (fluxo especial não implementado aqui)
+ */
+async function handleAppointmentBillingRequested(payload, correlationId, job) {
+  const { appointmentId, patientId, paymentType, amount } = payload;
+
+  if (!appointmentId) {
+    throw new Error('Missing appointmentId in payload');
+  }
+
+  // ── 1. Busca appointment ──────────────────────────────────────────────────
+  const appointment = await Appointment.findById(appointmentId)
+    .select('paymentOrigin billingType patient doctor sessionValue paymentMethod serviceType session package date payment correlationId')
+    .lean();
+
+  if (!appointment) {
+    const err = new Error(`Appointment not found: ${appointmentId}`);
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+
+  const origin = appointment.paymentOrigin;
+
+  // ── 2. Rotas que não são responsabilidade deste handler ───────────────────
+  if (!origin || origin === 'convenio') {
+    return { status: 'skipped', reason: 'HANDLED_ELSEWHERE', origin, appointmentId };
+  }
+
+  if (origin === 'package_prepaid') {
+    return { status: 'skipped', reason: 'PACKAGE_HANDLES_CREDIT', origin, appointmentId };
+  }
+
+  if (origin === 'manual_balance') {
+    return { status: 'skipped', reason: 'BALANCE_ALREADY_ADDED', origin, appointmentId };
+  }
+
+  if (origin === 'liminar') {
+    return { status: 'skipped', reason: 'LIMINAR_NOT_IMPLEMENTED', origin, appointmentId };
+  }
+
+  // ── 3. auto_per_session: cria payment se ainda não existe ─────────────────
+  if (origin !== 'auto_per_session') {
+    console.warn(`[BillingWorker] Unknown paymentOrigin '${origin}' for appointment ${appointmentId}`);
+    return { status: 'skipped', reason: 'UNKNOWN_ORIGIN', origin, appointmentId };
+  }
+
+  // Idempotência: só cria se não existe payment para este appointment
+  const existing = await Payment.findOne({ appointmentId }).lean();
+  if (existing) {
+    return {
+      status: 'success',
+      duplicate: true,
+      paymentId: existing._id,
+      appointmentId,
+    };
+  }
+
+  // ── 4. Cria Payment ───────────────────────────────────────────────────────
+  const finalCorrelationId = correlationId || `worker_${job.id}_${uuidv4()}`;
+
+  const payment = await Payment.create({
+    patientId:     appointment.patient,
+    appointmentId: appointment._id,
+    sessionId:     appointment.session || null,
+    amount:        appointment.sessionValue ?? amount ?? 0,
+    paymentDate:   appointment.date || new Date(),
+    paymentMethod: mapPaymentMethod(appointment.paymentMethod),
+    billingType:   'particular',
+    source:        'appointment',
+    status:        'pending',
+  });
+
+  // ── 5. Publica evento PAYMENT_CREATED no bus ──────────────────────────────
+  const eventPayload = {
+    paymentId:     payment._id.toString(),
+    patientId:     payment.patientId.toString(),
+    appointmentId: appointmentId.toString(),
+    amount:        payment.amount,
+    status:        payment.status,
+    source:        payment.source,
+    sessionId:     payment.sessionId?.toString() ?? null,
+    paymentMethod: payment.paymentMethod,
+    billingType:   payment.billingType,
+    correlationId: finalCorrelationId,
+  };
+
+  // Publicação no event bus é fire-and-forget: nunca faz rollback do payment
+  try {
+    const validation = validatePaymentEvent('PAYMENT_CREATED', eventPayload);
+    if (!validation.valid) {
+      console.warn('[BillingWorker] PAYMENT_CREATED payload inválido:', validation.errors);
+    } else {
+      await publishEvent(EventTypes.PAYMENT_CREATED, eventPayload, {
+        correlationId:  finalCorrelationId,
+        aggregateType:  'payment',
+        aggregateId:    payment._id.toString(),
+        idempotencyKey: generatePaymentIdempotencyKey('PAYMENT_CREATED', eventPayload),
+        metadata:       { source: 'billing-consumer-worker' },
+      });
+    }
+  } catch (eventErr) {
+    // Redis indisponível ou falha no bus — loga mas não reverte o payment
+    console.warn('[BillingWorker] PAYMENT_CREATED event não publicado (non-fatal):', eventErr.message);
+  }
+
+  console.log(`[BillingWorker] Payment created for appointment ${appointmentId}`, {
+    paymentId: payment._id,
+    amount: payment.amount,
+    correlationId: finalCorrelationId,
+  });
+
+  return {
+    status:        'success',
+    paymentId:     payment._id,
+    amount:        payment.amount,
+    appointmentId,
+    origin:        'auto_per_session',
+  };
 }
 
 /**

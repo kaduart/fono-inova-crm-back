@@ -531,13 +531,28 @@ export async function handlePackageCreate(payload, correlationId) {
         const value = Number(p.amount) || 0;
         if (value <= 0) continue;
 
+        const methodMap = {
+          // cash
+          dinheiro: 'cash', cash: 'cash', especie: 'cash',
+          // pix
+          pix: 'pix',
+          // credit card
+          cartao_credito: 'credit_card', credit_card: 'credit_card', credito: 'credit_card', 'cartão de crédito': 'credit_card',
+          // debit card
+          cartao_debito: 'debit_card', debit_card: 'debit_card', debito: 'debit_card', 'cartão de débito': 'debit_card',
+          // bank transfer
+          transferencia: 'bank_transfer', bank_transfer: 'bank_transfer', ted: 'bank_transfer', doc: 'bank_transfer', deposito: 'bank_transfer',
+          // other
+          boleto: 'other', cheque: 'other', other: 'other',
+        };
+        const normalizedMethod = methodMap[p.method?.toLowerCase()] || 'other';
+
         const paymentDoc = new Payment({
-          package: newPackage._id,
-          patient: patientId,
-          doctor: doctorId,
+          packageId: newPackage._id,
+          patientId,
           amount: value,
-          paymentMethod: p.method,
-          paymentDate: p.date || new Date(),
+          paymentMethod: normalizedMethod,
+          paymentDate: p.date ? new Date(p.date) : new Date(),
           kind: 'package_receipt',
           status: 'paid',
           serviceType: 'package_session',

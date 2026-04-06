@@ -813,18 +813,42 @@ export const packageOperations = {
                     .lean();
 
                 const enhancedPackages = packages.map(pkg => {
+                    // 🐛 DEBUG: Log para verificar sessionsDone vindo do MongoDB
+                    console.log(`[PackageController] Package ${pkg._id}: sessionsDone=${pkg.sessionsDone}, type=${typeof pkg.sessionsDone}`);
+                    
+                    // Garante que sessionsDone seja um número
+                    const sessionsDone = typeof pkg.sessionsDone === 'number' ? pkg.sessionsDone : 
+                                        (parseInt(pkg.sessionsDone) || 0);
+                    const totalSessions = pkg.totalSessions || 1;
+                    
                     return {
-                        ...pkg,
+                        _id: pkg._id,
+                        patient: pkg.patient,
+                        doctor: pkg.doctor,
+                        sessionType: pkg.sessionType,
+                        specialty: pkg.specialty,
+                        totalSessions: totalSessions,
+                        sessionsDone: sessionsDone,
+                        remaining: totalSessions - sessionsDone,
+                        progress: Math.round((sessionsDone / totalSessions) * 100),
+                        status: pkg.status,
+                        balance: pkg.balance,
+                        totalPaid: pkg.totalPaid,
+                        totalValue: pkg.totalValue,
+                        type: pkg.type,
+                        insuranceProvider: pkg.insuranceProvider,
+                        insuranceBillingStatus: pkg.insuranceBillingStatus,
+                        liminarProcessNumber: pkg.liminarProcessNumber,
+                        liminarCreditBalance: pkg.liminarCreditBalance,
+                        liminarTotalCredit: pkg.liminarTotalCredit,
                         date: pkg.date,
                         time: pkg.time,
                         sessions: pkg.sessions?.map(session => ({
                             ...session,
-                            // Mantém as datas originais das sessões
-                            date: session.date, // "YYYY-MM-DD"
-                            time: session.time, // "HH:mm"
+                            date: session.date,
+                            time: session.time,
                         })) || [],
-                        remaining: pkg.totalSessions - pkg.sessionsDone,
-                        totalValue: pkg.totalValue,
+                        payments: pkg.payments || [],
                     };
                 });
 

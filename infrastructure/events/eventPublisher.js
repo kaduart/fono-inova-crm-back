@@ -35,7 +35,11 @@ const queues = {
     'clinical-orchestrator': new Queue('clinical-orchestrator', { connection: redisConnection }),
     'clinical-session': new Queue('clinical-session', { connection: redisConnection }),
     'package-projection': new Queue('package-projection', { connection: redisConnection }),
-    'billing-orchestrator': new Queue('billing-orchestrator', { connection: redisConnection })
+    'billing-orchestrator': new Queue('billing-orchestrator', { connection: redisConnection }),
+    'integration-orchestrator': new Queue('integration-orchestrator', { connection: redisConnection }),
+    'lead-orchestrator-v2':    new Queue('lead-orchestrator-v2',    { connection: redisConnection }),
+    'whatsapp-message-response': new Queue('whatsapp-message-response', { connection: redisConnection }),
+    'whatsapp-inbound':          new Queue('whatsapp-inbound',          { connection: redisConnection }),
 };
 
 /**
@@ -46,6 +50,7 @@ export const EventTypes = {
     APPOINTMENT_CREATE_REQUESTED: 'APPOINTMENT_CREATE_REQUESTED',
     APPOINTMENT_CANCEL_REQUESTED: 'APPOINTMENT_CANCEL_REQUESTED',
     APPOINTMENT_COMPLETE_REQUESTED: 'APPOINTMENT_COMPLETE_REQUESTED',
+    PAYMENT_REQUESTED: 'PAYMENT_REQUESTED',
     PAYMENT_PROCESS_REQUESTED: 'PAYMENT_PROCESS_REQUESTED',
     BALANCE_UPDATE_REQUESTED: 'BALANCE_UPDATE_REQUESTED',
     DAILY_CLOSING_REQUESTED: 'DAILY_CLOSING_REQUESTED',
@@ -143,6 +148,16 @@ export const EventTypes = {
     PATIENT_CREATE_FAILED: 'PATIENT_CREATE_FAILED',
     PATIENT_VIEW_REBUILD_REQUESTED: 'PATIENT_VIEW_REBUILD_REQUESTED',
     
+    // 👨‍⚕️ Doctors V2
+    DOCTOR_CREATE_REQUESTED: 'DOCTOR_CREATE_REQUESTED',
+    DOCTOR_UPDATE_REQUESTED: 'DOCTOR_UPDATE_REQUESTED',
+    DOCTOR_DELETE_REQUESTED: 'DOCTOR_DELETE_REQUESTED',
+    DOCTOR_DEACTIVATE_REQUESTED: 'DOCTOR_DEACTIVATE_REQUESTED',
+    DOCTOR_REACTIVATE_REQUESTED: 'DOCTOR_REACTIVATE_REQUESTED',
+    DOCTOR_CREATED: 'DOCTOR_CREATED',
+    DOCTOR_UPDATED: 'DOCTOR_UPDATED',
+    DOCTOR_DELETED: 'DOCTOR_DELETED',
+    
     // 👤 Leads
     LEAD_CREATED: 'LEAD_CREATED',
     LEAD_UPDATED: 'LEAD_UPDATED',
@@ -153,10 +168,33 @@ export const EventTypes = {
     FOLLOWUP_SCHEDULED: 'FOLLOWUP_SCHEDULED',
     FOLLOWUP_SENT: 'FOLLOWUP_SENT',
     FOLLOWUP_FAILED: 'FOLLOWUP_FAILED',
+    FOLLOWUP_RESPONSE_RECEIVED: 'FOLLOWUP_RESPONSE_RECEIVED',
+    
+    // 💬 WhatsApp inbound (mensagem recebida do webhook → processamento async)
+    WHATSAPP_MESSAGE_RECEIVED: 'WHATSAPP_MESSAGE_RECEIVED',
+
+    // 💬 WhatsApp Response Tracking
+    MESSAGE_RESPONSE_DETECTED: 'MESSAGE_RESPONSE_DETECTED',
     
     // 💰 Financeiro - Totals
     TOTALS_RECALCULATE_REQUESTED: 'TOTALS_RECALCULATE_REQUESTED',
-    DAILY_CLOSING_REQUESTED: 'DAILY_CLOSING_REQUESTED'
+    TOTALS_RECALCULATED: 'TOTALS_RECALCULATED',
+    DAILY_CLOSING_REQUESTED: 'DAILY_CLOSING_REQUESTED',
+
+    // 🔗 Integration Layer — eventos traduzidos entre domínios
+    APPOINTMENT_BILLING_REQUESTED: 'APPOINTMENT_BILLING_REQUESTED',
+    SESSION_BILLING_REQUESTED: 'SESSION_BILLING_REQUESTED',
+
+    // 💳 Payment V2 — ciclo de vida explícito (migração do post('save') hook)
+    PAYMENT_CREATED: 'PAYMENT_CREATED',               // Phase 1: publicado pelo worker, hook ainda ativo
+    PAYMENT_STATUS_CHANGED: 'PAYMENT_STATUS_CHANGED', // Phase 2+: substitui o hook quando consumer existir
+    PAYMENT_CONFIRMED: 'PAYMENT_CONFIRMED',
+    PAYMENT_CANCELLED: 'PAYMENT_CANCELLED',
+    INSURANCE_PAYMENT_RECOGNIZED: 'INSURANCE_PAYMENT_RECOGNIZED',
+    
+    // 🔗 Integration Layer — eventos traduzidos entre domínios
+    APPOINTMENT_BILLING_REQUESTED: 'APPOINTMENT_BILLING_REQUESTED',
+    SESSION_BILLING_REQUESTED: 'SESSION_BILLING_REQUESTED',
 };
 
 /**
@@ -168,6 +206,7 @@ const eventToQueueMap = {
     [EventTypes.APPOINTMENT_CANCEL_REQUESTED]: 'cancel-orchestrator',
     [EventTypes.APPOINTMENT_COMPLETE_REQUESTED]: 'complete-orchestrator',
     [EventTypes.APPOINTMENT_UPDATE_REQUESTED]: 'update-orchestrator',
+    [EventTypes.PAYMENT_REQUESTED]: 'payment-processing',
     [EventTypes.PAYMENT_PROCESS_REQUESTED]: 'payment-processing',
     [EventTypes.PAYMENT_UPDATE_REQUESTED]: 'payment-processing',
     [EventTypes.BALANCE_UPDATE_REQUESTED]: 'balance-update',
@@ -175,12 +214,13 @@ const eventToQueueMap = {
     [EventTypes.BALANCE_DELETE_REQUESTED]: 'balance-update',
     [EventTypes.DAILY_CLOSING_REQUESTED]: 'daily-closing',
     [EventTypes.TOTALS_RECALCULATE_REQUESTED]: 'totals-calculation',
+    [EventTypes.TOTALS_RECALCULATED]: [],
     
     // Resultados → Workers de reação
     [EventTypes.APPOINTMENT_CREATED]: ['notification', 'patient-projection', 'clinical-orchestrator'],
     [EventTypes.APPOINTMENT_UPDATED]: ['notification', 'patient-projection'],
     [EventTypes.APPOINTMENT_CANCELED]: ['sync-medical', 'patient-projection', 'clinical-orchestrator'],
-    [EventTypes.APPOINTMENT_COMPLETED]: ['sync-medical', 'patient-projection'],
+    [EventTypes.APPOINTMENT_COMPLETED]: ['sync-medical', 'patient-projection', 'integration-orchestrator', 'lead-orchestrator-v2'],
     [EventTypes.APPOINTMENT_REJECTED]: 'notification',
     [EventTypes.APPOINTMENT_CONFIRMED]: ['notification', 'patient-projection'],
     [EventTypes.APPOINTMENT_RESCHEDULED]: ['notification', 'patient-projection'],
@@ -189,12 +229,12 @@ const eventToQueueMap = {
     // Sessions
     // NOTA: SESSION_COMPLETED não vai para sync-medical porque o billing
     // é acionado por PAYMENT_COMPLETED (criado pelo CompleteOrchestrator)
-    [EventTypes.SESSION_COMPLETED]: ['package-projection', 'patient-projection', 'clinical-session'],
+    [EventTypes.SESSION_COMPLETED]: ['package-projection', 'patient-projection', 'clinical-session', 'integration-orchestrator'],
     [EventTypes.SESSION_CANCELED]: ['package-projection', 'sync-medical', 'patient-projection', 'clinical-session'],
     [EventTypes.SESSION_PAYMENT_RECEIVED]: ['sync-medical', 'patient-projection'],
     
     // Payments
-    [EventTypes.PAYMENT_COMPLETED]: 'notification',
+    [EventTypes.PAYMENT_COMPLETED]: ['notification', 'integration-orchestrator', 'lead-orchestrator-v2'],
     [EventTypes.PAYMENT_FAILED]: 'notification',
     [EventTypes.PAYMENT_RECEIVED]: ['balance-update', 'patient-projection'],
     [EventTypes.PAYMENT_UPDATED]: ['balance-update', 'patient-projection'],
@@ -246,6 +286,13 @@ const eventToQueueMap = {
     [EventTypes.FOLLOWUP_SCHEDULED]: 'followup-processing',
     [EventTypes.FOLLOWUP_SENT]: 'notification',
     [EventTypes.FOLLOWUP_FAILED]: 'notification',
+    [EventTypes.FOLLOWUP_RESPONSE_RECEIVED]: 'notification',
+    
+    // 💬 WhatsApp inbound
+    [EventTypes.WHATSAPP_MESSAGE_RECEIVED]: 'whatsapp-inbound',
+
+    // 💬 WhatsApp Response Tracking
+    [EventTypes.MESSAGE_RESPONSE_DETECTED]: 'whatsapp-message-response',
     
     // 🔔 Notificações
     [EventTypes.NOTIFICATION_REQUESTED]: 'notification',
@@ -256,7 +303,20 @@ const eventToQueueMap = {
     [EventTypes.WHATSAPP_MESSAGE_FAILED]: 'notification',
     [EventTypes.EMAIL_MESSAGE_REQUESTED]: 'email-notification',
     [EventTypes.EMAIL_MESSAGE_SENT]: 'notification',
-    [EventTypes.EMAIL_MESSAGE_FAILED]: 'notification'
+    [EventTypes.EMAIL_MESSAGE_FAILED]: 'notification',
+
+    // 🔗 Integration Layer — eventos traduzidos
+    [EventTypes.APPOINTMENT_BILLING_REQUESTED]: 'billing-orchestrator',
+    [EventTypes.SESSION_BILLING_REQUESTED]: 'billing-orchestrator',
+
+    // 💳 Payment V2 — ciclo de vida
+    // Phase 1: só patient-projection (hook ainda cobre o resto)
+    // Phase 2: adicionar 'appointment-processing' quando handler for criado
+    [EventTypes.PAYMENT_CREATED]:              'patient-projection',
+    [EventTypes.PAYMENT_STATUS_CHANGED]:       'patient-projection',
+    [EventTypes.PAYMENT_CONFIRMED]:            ['patient-projection', 'balance-update'],
+    [EventTypes.PAYMENT_CANCELLED]:            'patient-projection',
+    [EventTypes.INSURANCE_PAYMENT_RECOGNIZED]: ['patient-projection', 'balance-update'],
 };
 
 /**
@@ -305,11 +365,21 @@ export async function publishEvent(eventType, payload, options = {}) {
     
     const log = createContextLogger(correlationId, 'event_publisher');
     
+    // 🔥 LOG DIAGNÓSTICO - ENTRADA
+    console.log(`🔥 [EVENT_PUBLISHER] ========== ENTRADA ==========`);
+    console.log(`🔥 [EVENT_PUBLISHER] eventType: ${eventType}`);
+    console.log(`🔥 [EVENT_PUBLISHER] correlationId: ${correlationId}`);
+    console.log(`🔥 [EVENT_PUBLISHER] payload.appointmentId: ${payload?.appointmentId}`);
+    console.log(`🔥 [EVENT_PUBLISHER] =================================`);
+    
     log.info('publish_start', 'Publicando evento', { eventType });
     
     const queueNames = eventToQueueMap[eventType];
     
+    console.log(`🔥 [EVENT_PUBLISHER] queueNames encontrado:`, queueNames);
+    
     if (!queueNames) {
+        console.error(`❌ [EVENT_PUBLISHER] UNKNOWN_EVENT_TYPE: ${eventType}`);
         throw new Error(`UNKNOWN_EVENT_TYPE: ${eventType}`);
     }
     
@@ -323,10 +393,15 @@ export async function publishEvent(eventType, payload, options = {}) {
     // Gera idempotencyKey se não fornecida
     const finalIdempotencyKey = idempotencyKey || generateIdempotencyKey(eventType, payload, finalAggregateId);
     
+    console.log(`🔥 [EVENT_PUBLISHER] finalIdempotencyKey: ${finalIdempotencyKey}`);
+    
     // 🛡️ IDEMPOTÊNCIA: Verifica se já foi processado
     if (finalIdempotencyKey) {
+        console.log(`🔥 [EVENT_PUBLISHER] Verificando idempotência...`);
         const alreadyExists = await eventExists(finalIdempotencyKey);
+        console.log(`🔥 [EVENT_PUBLISHER] alreadyExists: ${alreadyExists}`);
         if (alreadyExists) {
+            console.warn(`⚠️ [EVENT_PUBLISHER] DUPLICADO! Ignorando ${eventType}`);
             log.warn('duplicate_event', 'Evento duplicado ignorado', {
                 eventType,
                 idempotencyKey: finalIdempotencyKey
@@ -399,23 +474,37 @@ export async function publishEvent(eventType, payload, options = {}) {
     
     // Publica para todas as filas configuradas
     const jobs = [];
+    console.log(`🔥 [EVENT_PUBLISHER] queuesToPublish:`, queuesToPublish);
+    
     for (const qName of queuesToPublish) {
+        console.log(`🔥 [EVENT_PUBLISHER] Processando fila: ${qName}`);
         const queue = queues[qName];
         if (!queue) {
+            console.error(`❌ [EVENT_PUBLISHER] Fila ${qName} NÃO ENCONTRADA no objeto queues!`);
             log.error('queue_not_found', `Fila ${qName} não encontrada`, { eventType });
             continue;
         }
         
-        const job = await queue.add(eventType, jobData, jobOptions);
-        jobs.push({ queue: qName, jobId: job.id });
-        
-        log.info('event_queued', 'Evento enviado para fila', {
-            eventType,
-            eventId,
-            queue: qName,
-            jobId: job.id
-        });
+        console.log(`🔥 [EVENT_PUBLISHER] Adicionando job à fila ${qName}...`);
+        try {
+            const job = await queue.add(eventType, jobData, jobOptions);
+            console.log(`✅ [EVENT_PUBLISHER] Job criado: ${job.id} na fila ${qName}`);
+            jobs.push({ queue: qName, jobId: job.id });
+            
+            log.info('event_queued', 'Evento enviado para fila', {
+                eventType,
+                eventId,
+                queue: qName,
+                jobId: job.id
+            });
+        } catch (addError) {
+            console.error(`❌ [EVENT_PUBLISHER] ERRO ao adicionar job:`, addError.message);
+            throw addError;
+        }
     }
+    
+    console.log(`🔥 [EVENT_PUBLISHER] Total jobs criados: ${jobs.length}`);
+    console.log(`🔥 [EVENT_PUBLISHER] ====== FIM ======`);
     
     return {
         eventId,

@@ -105,6 +105,15 @@ const TotalsSnapshotSchema = new mongoose.Schema({
             patientsWithCredit: { type: Number, default: 0 }
         },
         
+        // 💸 NOVO: Despesas e Lucro
+        expenses: {
+            total: { type: Number, default: 0 },            // 💸 Despesas pagas
+            pending: { type: Number, default: 0 },          // ⏳ Despesas pendentes
+            count: { type: Number, default: 0 }             // 📊 Quantidade de despesas
+        },
+        profit: { type: Number, default: 0 },               // 💰 Lucro (receita - despesas)
+        profitMargin: { type: Number, default: 0 },         // 📈 Margem de lucro (%)
+        
         // Por método de pagamento
         byMethod: {
             dinheiro: { amount: Number, count: Number },

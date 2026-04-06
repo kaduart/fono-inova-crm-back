@@ -94,16 +94,16 @@ export async function createPaymentForComplete(data) {
     } = data;
 
     const payment = new Payment({
-        patient: patientId,
-        doctor: doctorId,
-        appointment: appointmentId,
-        session: sessionId,
-        package: packageId,
+        patientId,
+        appointmentId,
+        sessionId,
+        packageId,
         amount,
         paymentMethod,
+        paymentDate: serviceDate ? new Date(serviceDate) : new Date(),
         serviceType,
         serviceDate,
-        status: 'pending', // Começa como pending!
+        status: 'pending',
         kind: paymentOrigin === 'auto_per_session' ? 'session_payment' : 'manual',
         paymentOrigin,
         correlationId,

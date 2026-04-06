@@ -15,16 +15,31 @@ import { Queue } from 'bullmq';
 import { redisConnection } from '../infrastructure/queue/queueConfig.js';
 import { createContextLogger } from '../utils/logger.js';
 import mongoose from 'mongoose';
+import { getSnapshot } from '../orchestrators/decision/decisionMetricsService.js';
 
 const router = express.Router();
 const logger = createContextLogger('MetricsDashboard');
 
-// Filas monitoradas
+// Filas monitoradas - EXPANDIDO: inclui appointment e DLQ
 const monitoredQueues = {
+  // Billing & Sync (original)
   'sync-medical': new Queue('sync-medical', { connection: redisConnection }),
   'insurance-orchestrator': new Queue('insurance-orchestrator', { connection: redisConnection }),
   'patient-projection': new Queue('patient-projection', { connection: redisConnection }),
-  'package-projection': new Queue('package-projection', { connection: redisConnection })
+  'package-projection': new Queue('package-projection', { connection: redisConnection }),
+  
+  // Appointment Core (novo)
+  'appointment-processing': new Queue('appointment-processing', { connection: redisConnection }),
+  'payment-processing': new Queue('payment-processing', { connection: redisConnection }),
+  'cancel-orchestrator': new Queue('cancel-orchestrator', { connection: redisConnection }),
+  'complete-orchestrator': new Queue('complete-orchestrator', { connection: redisConnection }),
+  
+  // Clinical (novo)
+  'clinical-orchestrator': new Queue('clinical-orchestrator', { connection: redisConnection }),
+  
+  // DLQ (novo - monitoramento crítico)
+  'dlq': new Queue('dlq', { connection: redisConnection }),
+  'dlq-critical': new Queue('dlq-critical', { connection: redisConnection })
 };
 
 // ============================================
@@ -182,22 +197,49 @@ function getQueueStatus(waiting, active, failed) {
 }
 
 async function collectThroughputMetrics() {
-  // Simulação - em produção, usar Prometheus/StatsD
   const EventStore = (await import('../models/EventStore.js')).default;
   
   const last5Min = new Date(Date.now() - 5 * 60 * 1000);
+  const last1Hour = new Date(Date.now() - 60 * 60 * 1000);
   
-  const eventsProcessed = await EventStore.countDocuments({
-    status: 'processed',
-    processedAt: { $gte: last5Min }
-  });
+  // Métricas gerais
+  const [eventsProcessed, eventsFailed, eventsPending] = await Promise.all([
+    EventStore.countDocuments({
+      status: 'processed',
+      processedAt: { $gte: last5Min }
+    }),
+    EventStore.countDocuments({
+      status: 'failed',
+      failedAt: { $gte: last5Min }
+    }),
+    EventStore.countDocuments({
+      status: { $in: ['pending', 'processing'] }
+    })
+  ]);
   
-  const eventsFailed = await EventStore.countDocuments({
-    status: 'failed',
-    failedAt: { $gte: last5Min }
-  });
+  // Métricas por tipo de evento (appointment-focused)
+  const appointmentEvents = await EventStore.aggregate([
+    {
+      $match: {
+        eventType: { $regex: /APPOINTMENT/ },
+        createdAt: { $gte: last1Hour }
+      }
+    },
+    {
+      $group: {
+        _id: '$eventType',
+        total: { $sum: 1 },
+        processed: { $sum: { $cond: [{ $eq: ['$status', 'processed'] }, 1, 0] } },
+        failed: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } }
+      }
+    },
+    { $sort: { total: -1 } }
+  ]);
   
-  const throughput = (eventsProcessed / 5).toFixed(2); // por minuto
+  // DLQ metrics
+  const dlqMetrics = await collectDLQMetrics();
+  
+  const throughput = (eventsProcessed / 5).toFixed(2);
   const errorRate = eventsProcessed + eventsFailed > 0 
     ? (eventsFailed / (eventsProcessed + eventsFailed) * 100).toFixed(2)
     : 0;
@@ -206,8 +248,62 @@ async function collectThroughputMetrics() {
     eventsPerMinute: parseFloat(throughput),
     errorRate: `${errorRate}%`,
     processedLast5Min: eventsProcessed,
-    failedLast5Min: eventsFailed
+    failedLast5Min: eventsFailed,
+    pendingEvents: eventsPending,
+    appointmentEvents: appointmentEvents.reduce((acc, item) => {
+      acc[item._id] = { total: item.total, processed: item.processed, failed: item.failed };
+      return acc;
+    }, {}),
+    dlq: dlqMetrics
   };
+}
+
+// ============================================
+// DLQ METRICS (novo)
+// ============================================
+
+async function collectDLQMetrics() {
+  const dlqQueue = monitoredQueues['dlq'];
+  const dlqCriticalQueue = monitoredQueues['dlq-critical'];
+  
+  if (!dlqQueue) return { error: 'DLQ not configured' };
+  
+  try {
+    const [
+      waiting,
+      failed,
+      criticalWaiting
+    ] = await Promise.all([
+      dlqQueue.getWaitingCount(),
+      dlqQueue.getFailedCount(),
+      dlqCriticalQueue ? dlqCriticalQueue.getWaitingCount() : Promise.resolve(0)
+    ]);
+    
+    // Busca jobs recentes na DLQ para análise
+    const recentJobs = await dlqQueue.getJobs(['waiting'], 0, 10);
+    const recentErrors = recentJobs.map(job => ({
+      id: job.id,
+      name: job.name,
+      failedReason: job.failedReason || 'unknown',
+      timestamp: job.timestamp
+    }));
+    
+    const total = waiting + failed;
+    const status = total > 50 ? 'critical' : total > 10 ? 'warning' : 'healthy';
+    
+    return {
+      total,
+      waiting,
+      failed,
+      criticalWaiting,
+      recentErrors,
+      status,
+      alert: total > 0 ? `${total} jobs em DLQ precisam de atenção` : null
+    };
+  } catch (error) {
+    logger.error('dlq_metrics_error', 'Erro ao coletar DLQ metrics', { error: error.message });
+    return { error: error.message };
+  }
 }
 
 async function collectConsistencyMetrics() {
@@ -258,7 +354,7 @@ function calculateHealthScore(queues, throughput) {
 }
 
 // ============================================
-// SLOs
+// SLOs - EXPANDIDO
 // ============================================
 
 const SLOs = {
@@ -266,12 +362,25 @@ const SLOs = {
   throughput: { target: 10, unit: 'events/min', window: '5m' },
   latency: { target: 5000, unit: 'ms', percentile: 'p99', window: '5m' },
   errorRate: { target: 1, unit: '%', window: '5m' },
-  consistency: { target: 100, unit: '%', window: '1h' }
+  consistency: { target: 100, unit: '%', window: '1h' },
+  dlqSize: { target: 0, unit: 'jobs', window: '5m' }, // Novo: DLQ deve estar vazia
+  appointmentSuccess: { target: 95, unit: '%', window: '1h' } // Novo: taxa de sucesso de agendamentos
 };
 
 async function checkSLOs() {
   const throughput = await collectThroughputMetrics();
   const consistency = await collectConsistencyMetrics();
+  
+  // Calcular taxa de sucesso de agendamentos
+  const appointmentStats = throughput.appointmentEvents;
+  const totalAppointments = Object.values(appointmentStats).reduce((sum, evt) => sum + evt.total, 0);
+  const failedAppointments = Object.values(appointmentStats).reduce((sum, evt) => sum + evt.failed, 0);
+  const appointmentSuccessRate = totalAppointments > 0 
+    ? ((totalAppointments - failedAppointments) / totalAppointments * 100).toFixed(2)
+    : 100;
+  
+  // DLQ status
+  const dlqSize = throughput.dlq?.total || 0;
   
   return {
     slos: SLOs,
@@ -290,9 +399,45 @@ async function checkSLOs() {
         value: consistency.batchConsistency.difference === 0 ? 100 : 0,
         target: 100,
         status: consistency.batchConsistency.difference === 0 ? 'met' : 'missed'
+      },
+      appointmentSuccess: {
+        value: parseFloat(appointmentSuccessRate),
+        target: SLOs.appointmentSuccess.target,
+        status: parseFloat(appointmentSuccessRate) >= SLOs.appointmentSuccess.target ? 'met' : 'missed'
+      },
+      dlqSize: {
+        value: dlqSize,
+        target: 0,
+        status: dlqSize === 0 ? 'met' : 'missed',
+        alert: dlqSize > 0 ? `${dlqSize} jobs na DLQ` : null
       }
     }
   };
 }
+
+// ============================================
+// GET /api/metrics/decision
+// Dashboard de decisões do AmandaOrchestrator
+// ============================================
+
+router.get('/decision', (req, res) => {
+  try {
+    const windowMinutes = req.query.window ? parseInt(req.query.window, 10) : undefined;
+    const last          = req.query.last   ? parseInt(req.query.last, 10)   : undefined;
+
+    const snapshot = getSnapshot({ windowMinutes, last });
+
+    res.json({
+      success: true,
+      data: snapshot,
+      meta: {
+        generatedAt: new Date().toISOString(),
+        note: 'In-memory buffer — resets on server restart'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 export default router;

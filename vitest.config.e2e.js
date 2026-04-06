@@ -8,7 +8,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['tests/e2e/**/*.test.js', 'tests/amanda/**/*.test.js'],
+    include: [
+      'tests/e2e/**/*.test.js',
+      'tests/amanda/**/*.test.js',
+      'tests/packs/**/*.pack.js',  // 🆕 Novos test packs para bugs corrigidos
+    ],
     setupFiles: [],
     testTimeout: 30000,
     hookTimeout: 30000,

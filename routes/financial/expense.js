@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import { auth, authorize } from '../../middleware/auth.js';
 import Doctor from '../../models/Doctor.js';
 import Expense from '../../models/Expense.js';
+import { publishEvent, EventTypes } from '../../infrastructure/events/eventPublisher.js';
 
 const router = express.Router();
 
@@ -278,6 +279,25 @@ router.patch('/:id', auth, authorize(['admin', 'secretary']), async (req, res) =
             });
         }
 
+        // 🔹 Disparar recálculo de totais (não bloqueante)
+        try {
+            await publishEvent(
+                EventTypes.TOTALS_RECALCULATE_REQUESTED,
+                {
+                    clinicId: null,
+                    date: expense.date || new Date().toISOString().split('T')[0],
+                    period: 'month',
+                    reason: 'expense_updated',
+                    triggeredBy: 'expense_controller',
+                    expenseId: expense._id.toString(),
+                    expenseStatus: expense.status,
+                    expenseAmount: expense.amount
+                }
+            );
+        } catch (err) {
+            console.error('[ExpenseController] Erro ao publicar recálculo:', err.message);
+        }
+
         res.json({
             success: true,
             message: 'Despesa atualizada com sucesso 💚',
@@ -307,13 +327,34 @@ router.delete('/:id', auth, authorize(['admin']), async (req, res) => {
             id,
             { status: 'canceled', updatedAt: new Date() },
             { new: true }
-        );
+        )
+            .populate('relatedDoctor', 'fullName specialty')
+            .populate('createdBy', 'fullName');
 
         if (!expense) {
             return res.status(404).json({
                 success: false,
                 message: 'Despesa não encontrada'
             });
+        }
+
+        // 🔹 Disparar recálculo de totais (não bloqueante)
+        try {
+            await publishEvent(
+                EventTypes.TOTALS_RECALCULATE_REQUESTED,
+                {
+                    clinicId: null,
+                    date: expense.date || new Date().toISOString().split('T')[0],
+                    period: 'month',
+                    reason: 'expense_canceled',
+                    triggeredBy: 'expense_controller',
+                    expenseId: expense._id.toString(),
+                    expenseStatus: 'canceled',
+                    expenseAmount: expense.amount
+                }
+            );
+        } catch (err) {
+            console.error('[ExpenseController] Erro ao publicar recálculo:', err.message);
         }
 
         res.json({
