@@ -840,35 +840,39 @@ export async function resolveLeadByPhone(phone, defaults = {}) {
         return await Lead.findById(existingLead._id);
     }
     
-    // 🎯 DETECTAR ORIGEM DO LEAD (Meta Ads tracking)
+    // 🎯 DETECTAR ORIGEM DO LEAD (Meta Ads / Google Ads tracking)
     // Tenta extrair informações de campanha dos metadados ou primeira mensagem
     let metaTracking = {};
     
-    if (defaults.firstMessage || defaults.fbclid || defaults.utmCampaign) {
+    if (defaults.firstMessage || defaults.fbclid || defaults.gclid || defaults.utmCampaign || defaults.origin) {
         const detection = parseLeadSource({
             message: defaults.firstMessage,
             fbclid: defaults.fbclid,
+            gclid: defaults.gclid,
             utmCampaign: defaults.utmCampaign,
             utmSource: defaults.utmSource,
             utmMedium: defaults.utmMedium
         });
         
         metaTracking = {
-            source: detection.source || 'whatsapp',
-            campaign: detection.campaign,
+            source: detection.source || defaults.origin || 'whatsapp',
+            campaign: detection.campaign || defaults.utmCampaign,
             specialty: detection.specialty || detectSpecialtyFromMessage(defaults.firstMessage) || 'geral',
             firstMessage: defaults.firstMessage,
-            fbclid: detection.fbclid,
-            utmSource: detection.utmSource,
-            utmCampaign: detection.utmCampaign,
-            utmMedium: detection.utmMedium,
+            fbclid: defaults.fbclid || detection.fbclid,
+            gclid: defaults.gclid || detection.gclid,
+            utmSource: defaults.utmSource || detection.utmSource,
+            utmCampaign: defaults.utmCampaign || detection.utmCampaign,
+            utmMedium: defaults.utmMedium || detection.utmMedium,
             detectedAt: new Date()
         };
         
         console.log(`🎯 [resolveLeadByPhone] Tracking detectado:`, {
             source: metaTracking.source,
             specialty: metaTracking.specialty,
-            hasCampaign: !!metaTracking.campaign
+            hasCampaign: !!metaTracking.campaign,
+            hasGclid: !!metaTracking.gclid,
+            hasFbclid: !!metaTracking.fbclid
         });
     }
     
