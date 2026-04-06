@@ -150,6 +150,7 @@ import financialDashboardV2Routes from './routes/financialDashboard.v2.js';  // 
 import expensesV2Routes from './routes/expenses.v2.js';  // 🚀 NOVO: Expenses V2
 import convenioV2Routes from './routes/convenio.v2.js';  // 🚀 NOVO: Convênio V2
 import calendarV2Routes from './routes/calendar.v2.js';  // 🚀 NOVO: Calendar V2
+import observabilityRoutes from './infrastructure/observability/observabilityRoutes.js';  // 🚀 NOVO: Observabilidade
 
 
 // ======================================================
@@ -392,6 +393,7 @@ app.use('/api/medical-events', medicalEventRoutes);
 app.use('/api/analytics/appointments', appointmentAnalyticsRoutes);
 app.use('/api/daily-closing-simple', dailyClosingSimpleRoutes);
 app.use('/api/calendar', calendarRoutes);
+app.use('/api/observability', observabilityRoutes);  // 🚀 NOVO: Dashboard de Observabilidade
 
 // ✅ PIX webhook agora ativo, sem fallback duplicado
 app.use("/api/pix", pixRoutes);
