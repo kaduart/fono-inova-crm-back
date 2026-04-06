@@ -61,6 +61,7 @@ export function isMakeConfigured() {
  * @returns {Promise<object>} Resposta do Make
  */
 // Valida se uma URL de imagem é acessível antes de enviar ao Make
+// 🚨 SIMPLIFICADO: Apenas verifica se é URL válida, não faz HEAD request
 async function validateMediaUrl(url) {
   if (!url) {
     console.log('[Make] URL da imagem é null/undefined');
@@ -72,29 +73,30 @@ async function validateMediaUrl(url) {
     return null;
   }
   
-  // Verifica se é URL do Cloudinary (geralmente confiável)
+  // ✅ SEMPRE aceita URLs do Cloudinary (não valida com HEAD)
   const isCloudinary = url.includes('cloudinary.com') || url.includes('res.cloudinary');
+  if (isCloudinary) {
+    console.log(`[Make] ✅ Cloudinary URL aceita: ${url.substring(0, 60)}...`);
+    return url;
+  }
   
+  // Para outras URLs, tenta validar mas aceita mesmo se falhar
   try {
     const res = await fetch(url, { 
       method: 'HEAD', 
-      signal: AbortSignal.timeout(5000),
-      // Cloudinary às vezes bloqueia HEAD, então aceitamos se for URL conhecida
-      ...(isCloudinary && { headers: { 'User-Agent': 'Mozilla/5.0' } })
+      signal: AbortSignal.timeout(3000)
     });
     
     if (res.ok) {
       console.log(`[Make] ✅ URL validada: ${url.substring(0, 60)}...`);
       return url;
     } else {
-      console.log(`[Make] ⚠️ URL retornou status ${res.status}: ${url.substring(0, 60)}`);
-      // Se for Cloudinary e der erro, ainda tenta usar (pode ser restrição de HEAD)
-      return isCloudinary ? url : null;
+      console.log(`[Make] ⚠️ URL retornou ${res.status}, mas tentando usar mesmo assim`);
+      return url; // Tenta usar mesmo com erro
     }
   } catch (err) {
-    console.log(`[Make] ⚠️ Erro ao validar URL: ${err.message}`);
-    // Se for Cloudinary, tenta usar mesmo assim
-    return isCloudinary ? url : null;
+    console.log(`[Make] ⚠️ Erro ao validar URL: ${err.message}, tentando usar mesmo assim`);
+    return url; // Tenta usar mesmo se falhar
   }
 }
 
@@ -108,7 +110,26 @@ export async function sendPostToMake(post, attempt = 1) {
   const ctaUrl    = post.ctaUrl || 'https://www.clinicafonoinova.com.br/';
 
   // Valida imagem antes de enviar — URL inválida derruba o cenário no Make
-  const safeMediaUrl = await validateMediaUrl(post.mediaUrlBranded || post.mediaUrl);
+  let safeMediaUrl = await validateMediaUrl(post.mediaUrlBranded || post.mediaUrl);
+  
+  console.log(`[Make] 📸 Post ${post._id}: mediaUrl=${post.mediaUrl ? post.mediaUrl.substring(0,50)+'...' : 'null'}, safeMediaUrl=${safeMediaUrl ? 'OK' : 'null'}`);
+  
+  // 🚨 Se não tem imagem válida e o post deveria ter imagem, loga erro
+  if (!safeMediaUrl && post.mediaUrl) {
+    console.error(`[Make] 🚨 Post ${post._id} tem URL de imagem mas está inacessível: ${post.mediaUrl}`);
+    console.error(`[Make] Provider: ${post.imageProvider}, Criado em: ${post.createdAt}`);
+    
+    // Tenta usar imagem do ImageBank como fallback
+    const { findExistingImage } = await import('./imageBankService.js');
+    const fallbackImage = await findExistingImage(post.theme, post.title);
+    
+    if (fallbackImage?.url) {
+      console.log(`[Make] 🔄 Usando imagem fallback do ImageBank: ${fallbackImage.url.substring(0, 60)}`);
+      safeMediaUrl = fallbackImage.url;
+    } else {
+      console.warn(`[Make] ⚠️ Nenhuma imagem fallback encontrada. Post será enviado SEM imagem.`);
+    }
+  }
 
   // Instagram: texto curto (até 150 chars) + hashtags + link na bio
   const textoShort = textoBase.split('\n').filter(Boolean).slice(0, 2).join('\n');
@@ -144,6 +165,7 @@ export async function sendPostToMake(post, attempt = 1) {
   };
 
   console.log(`🔗 [Make] Enviando post "${post.title?.substring(0, 40)}"... (tentativa ${attempt}/${MAX_RETRIES})`);
+  console.log(`🔗 [Make] URL da imagem: ${safeMediaUrl ? safeMediaUrl.substring(0, 80) + '...' : 'SEM IMAGEM'}`);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), MAKE_TIMEOUT_MS);
