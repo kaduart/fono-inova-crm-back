@@ -111,6 +111,18 @@ export async function buildPatientView(patientId, options = {}) {
       lastAppointment,
       nextAppointment,
       
+      // 📦 Pacotes (formato simplificado para o frontend)
+      packages: packages?.length > 0 
+        ? packages.map(pkg => ({
+            packageId: pkg._id,
+            sessionType: pkg.sessionType || pkg.therapyType || 'Sessão',
+            totalSessions: pkg.totalSessions || pkg.sessions?.length || 0,
+            sessionsDone: pkg.sessionsDone || pkg.sessions?.filter(s => s.status === 'completed')?.length || 0,
+            sessionsRemaining: pkg.sessionsRemaining || (pkg.totalSessions - (pkg.sessionsDone || 0)),
+            status: pkg.status
+          }))
+        : [],
+      
       // Saldo
       balance: {
         current: balance?.currentBalance || 0,
