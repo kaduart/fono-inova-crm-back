@@ -848,8 +848,14 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
         });
         patientId = created._id;
       }
-      if (patientId) updateData.patient = patientId;
-      const appointmentDate = date || appointment.date;
+      
+      // 🚨 VALIDAÇÃO: Se ainda não tem patientId, não pode criar Session/Payment
+      if (!patientId) {
+        console.error(`[SYNC-UPDATE] ❌ Não foi possível resolver patientId para appointment ${appointment._id}. Abortando criação de Session/Payment.`);
+        // Não criar session/payment sem patient
+      } else {
+        if (patientId) updateData.patient = patientId;
+        const appointmentDate = date || appointment.date;
       const appointmentTime = time || appointment.time;
       const sessionValue = Number(crm.paymentAmount || appointment.sessionValue || 0);
       const paymentMethod = crm.paymentMethod || appointment.paymentMethod || 'pix';
@@ -913,6 +919,7 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
       updateData.serviceType = serviceType;
 
       console.log(`[SYNC-UPDATE] ✅ Session ${newSession[0]._id} + Payment ${newPayment[0]._id} criados para appointment ${appointment._id}`);
+      } // fim do else (quando tem patientId)
     }
 
     // Para pre_agendado sem promoção: atualiza campos de patientInfo
