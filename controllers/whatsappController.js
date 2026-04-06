@@ -66,6 +66,39 @@ function formatWhatsAppResponse(text) {
 }
 
 // ============================================================
+// 🎯 TRACKING DE ORIGEM DA MENSAGEM (Google Ads / Meta)
+// ============================================================
+/**
+ * Extrai dados de tracking da mensagem do WhatsApp
+ * Formato: ---ref:source|campaign|clickId|utm_params
+ */
+function extractTrackingFromMessage(message) {
+    if (!message || typeof message !== 'string') return null;
+    
+    // Procura pelo padrão ---ref:... no final da mensagem
+    const match = message.match(/---ref:([^|]+)\|([^|]+)\|([^|]+)\|(.+)$/);
+    if (!match) return null;
+    
+    const [_, source, campaign, clickId, utmPart] = match;
+    
+    // Parse dos params UTM
+    const utmParams = {};
+    utmPart.split('|').forEach(param => {
+        const [key, value] = param.split('=');
+        if (key && value && value !== 'none') {
+            utmParams[key] = value;
+        }
+    });
+    
+    return {
+        source: source !== 'none' ? source : null,
+        campaign: campaign !== 'none' ? campaign : null,
+        clickId: clickId !== 'none' ? clickId : null,
+        ...utmParams
+    };
+}
+
+// ============================================================
 // 🧠 CLASSIFICAÇÃO INTELIGENTE DO LEAD (Persona/Intenção)
 // ============================================================
 
@@ -1766,6 +1799,12 @@ async function processInboundMessage(msg, value) {
                 ? content
                 : (caption || `[${String(type || "unknown").toUpperCase()}]`);
 
+        // 🎯 EXTRAI TRACKING DA MENSAGEM (Google Ads/Meta)
+        const trackingData = extractTrackingFromMessage(contentToSave);
+        if (trackingData) {
+            console.log('🎯 [Tracking] Dados encontrados na mensagem:', trackingData);
+        }
+
         // ✅ flags rápidas agora com texto real
         const quickFlags = deriveFlagsFromText(contentToSave || "");
         const suppressAutoFollowup =
@@ -1802,12 +1841,34 @@ async function processInboundMessage(msg, value) {
                 status: "virou_paciente",
                 convertedToPatient: patient._id,
                 conversionScore: 100,
-                firstMessage: contentToSave  // Passa primeira mensagem para detecção
+                firstMessage: contentToSave,  // Passa primeira mensagem para detecção
+                // Tracking de origem (Google Ads/Meta)
+                ...(trackingData && {
+                    origin: trackingData.source === 'google_ads' ? 'Google Ads' : 
+                            trackingData.source === 'meta_ads' ? 'Meta Ads' : 
+                            trackingData.utmSource || 'WhatsApp',
+                    gclid: trackingData.clickId?.startsWith('gclid') ? trackingData.clickId : undefined,
+                    fbclid: trackingData.clickId?.startsWith('fbclid') ? trackingData.clickId : undefined,
+                    utmCampaign: trackingData.campaign,
+                    utmSource: trackingData.utmSource,
+                    utmMedium: trackingData.utmMedium
+                })
             }
             : {
                 status: "novo",
                 conversionScore: 0,
-                firstMessage: contentToSave  // Passa primeira mensagem para detecção
+                firstMessage: contentToSave,  // Passa primeira mensagem para detecção
+                // Tracking de origem (Google Ads/Meta)
+                ...(trackingData && {
+                    origin: trackingData.source === 'google_ads' ? 'Google Ads' : 
+                            trackingData.source === 'meta_ads' ? 'Meta Ads' : 
+                            trackingData.utmSource || 'WhatsApp',
+                    gclid: trackingData.clickId?.startsWith('gclid') ? trackingData.clickId : undefined,
+                    fbclid: trackingData.clickId?.startsWith('fbclid') ? trackingData.clickId : undefined,
+                    utmCampaign: trackingData.campaign,
+                    utmSource: trackingData.utmSource,
+                    utmMedium: trackingData.utmMedium
+                })
             };
         
         const lead = await resolveLeadByPhone(from, leadDefaults);

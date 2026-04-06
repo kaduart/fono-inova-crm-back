@@ -157,16 +157,17 @@ export function extractCampaignFromMessage(message) {
 
 /**
  * Parser completo para quando um lead entra pelo WhatsApp
- * Combina fbclid (se disponível) com análise da mensagem
- * @param {object} params - { message, fbclid, utmCampaign, utmSource }
+ * Combina fbclid/gclid (se disponível) com análise da mensagem
+ * @param {object} params - { message, fbclid, gclid, utmCampaign, utmSource }
  * @returns {object} - Dados de tracking completos
  */
-export function parseLeadSource({ message, fbclid, utmCampaign, utmSource, utmMedium }) {
+export function parseLeadSource({ message, fbclid, gclid, utmCampaign, utmSource, utmMedium }) {
   const result = {
     source: '',
     campaign: null,
     specialty: 'geral',
     fbclid: fbclid || null,
+    gclid: gclid || null,
     utmSource: utmSource || null,
     utmCampaign: utmCampaign || null,
     utmMedium: utmMedium || null,
@@ -183,12 +184,17 @@ export function parseLeadSource({ message, fbclid, utmCampaign, utmSource, utmMe
     return result;
   }
   
-  // Prioridade 2: fbclid (veio do Meta)
-  if (fbclid) {
+  // Prioridade 2: gclid (veio do Google Ads)
+  if (gclid) {
+    result.source = 'google_ads';
+  }
+  
+  // Prioridade 3: fbclid (veio do Meta)
+  else if (fbclid) {
     result.source = 'meta_ads';
   }
   
-  // Prioridade 3: Análise da mensagem
+  // Prioridade 4: Análise da mensagem
   if (message) {
     const extracted = extractCampaignFromMessage(message);
     
