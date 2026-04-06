@@ -99,6 +99,17 @@ router.get('/webhook', whatsappController.getWebhook);
 router.get('/health', healthCheck);
 router.get('/guard/stats', getGuardStats);
 
+// 🔍 DEBUG: Verificar configuração do webhook
+router.get('/webhook/debug', (req, res) => {
+    const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN;
+    res.json({
+        tokenConfigured: !!verifyToken,
+        tokenLength: verifyToken?.length,
+        tokenPreview: verifyToken ? `${verifyToken.substring(0, 5)}...${verifyToken.substring(verifyToken.length - 5)}` : null,
+        env: process.env.NODE_ENV
+    });
+});
+
 // 🧪 Teste de socket
 router.post('/test-socket', (req, res) => {
     try {
