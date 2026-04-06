@@ -10,7 +10,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
-import { checkAppointmentConflicts } from '../middleware/conflictDetection.js';
+import { checkAppointmentConflicts, getAvailableTimeSlots } from '../middleware/conflictDetection.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
@@ -483,6 +483,13 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
  * 
  * Query params: startDate, endDate, patientId, doctorId, status
  */
+
+/**
+ * GET /api/v2/appointments/available-slots
+ * Slots disponíveis — mesma lógica da V1
+ */
+router.get('/available-slots', flexibleAuth, getAvailableTimeSlots);
+
 router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   const { 
     startDate, 
