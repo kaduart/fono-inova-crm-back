@@ -238,6 +238,25 @@ const corsHeaders = (req, res, next) => {
 app.post('/api/whatsapp/send-media', corsHeaders, upload.single('file'), whatsappController.sendMedia);
 app.post('/api/whatsapp/upload-media', corsHeaders, upload.single('file'), whatsappController.uploadMedia);
 
+// 🚨 WEBHOOK DO WHATSAPP - DEVE VIR ANTES DOS MIDDLEWARES DE BODY PARSING
+// O Meta envia GET com query string que não pode ser alterada por body parsers
+app.get('/api/whatsapp/webhook', (req, res) => {
+    const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN?.trim();
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"]?.trim();
+    const challenge = req.query["hub.challenge"];
+    
+    console.log("[WEBHOOK VERIFY] Recebido:", { mode, token: token?.substring(0, 10), challenge });
+    
+    if (mode === "subscribe" && token === verifyToken) {
+        console.log("[WEBHOOK VERIFY] ✅ Sucesso");
+        return res.status(200).send(challenge);
+    }
+    
+    console.log("[WEBHOOK VERIFY] ❌ Falha - token não bate ou mode incorreto");
+    return res.sendStatus(403);
+});
+
 // Aumentar limites para suportar uploads de até 50MB
 // Ignorar requisições multipart (deixar para o multer tratar)
 app.use((req, res, next) => {
