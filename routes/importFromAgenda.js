@@ -336,17 +336,16 @@ router.post("/agenda-externa/confirmar", agendaAuth, async (req, res) => {
 
     // Criar Payment
     const newPayment = await Payment.create({
-      patient: patientId,
-      doctor: doctor._id,
-      session: newSession._id,
-      appointment: pre._id,
+      patientId: patientId,
+      sessionId: newSession._id,
+      appointmentId: pre._id,
       serviceType: normalizedServiceType,
       amount: resolvedValue,
       paymentMethod,
       billingType: pre.billingType || 'particular',
       status: 'pending',
       paymentDate: resolvedDate,
-      serviceDate: resolvedDate
+      source: 'appointment'
     });
 
     await Session.findByIdAndUpdate(newSession._id, { paymentId: newPayment._id });
@@ -737,7 +736,7 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
     const mappedData = {
       // IDs
       doctorId: doctor?._id || null,
-      patientId: patientInfo?.patientId || null,
+      patientId: patientIdRaw || null,
       
       // Dados básicos
       date: date,
@@ -911,17 +910,16 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
       }]);
 
       const paymentData = {
-        patient: patientId,
-        doctor: doctorId,
-        session: newSession[0]._id,
-        appointment: appointment._id,
+        patientId: patientId,
+        sessionId: newSession[0]._id,
+        appointmentId: appointment._id,
         serviceType,
         amount: sessionValue,
         paymentMethod,
         billingType: resolvedBillingType,
         status: 'pending',
         paymentDate: appointmentDate,
-        serviceDate: appointmentDate,
+        source: 'appointment'
       };
       // Convenio: popula sub-doc insurance
       if (resolvedBillingType === 'convenio') {
@@ -1006,10 +1004,9 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
         appointment.payment,
         {
           $set: {
-            doctor: doctor?._id || appointment.doctor,
             amount: crm.paymentAmount || appointment.paymentAmount,
             paymentMethod: crm.paymentMethod || appointment.paymentMethod,
-            serviceDate: date || appointment.date,
+            paymentDate: date || appointment.date,
             updatedAt: new Date()
           }
         }
