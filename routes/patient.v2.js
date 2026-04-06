@@ -140,23 +140,25 @@ router.get('/:id', flexibleAuth, async (req, res) => {
     let isStale = false;
     let fallbackTriggered = false;
     
-    // 1. Tenta buscar na View
-    view = await PatientsView.findOne({ patientId: id }).lean();
-    
+    // 1. Tenta buscar na View (por patientId ou _id da própria view)
+    view = await PatientsView.findOne({ $or: [{ patientId: id }, { _id: id }] }).lean();
+    // Resolve o patientId real caso tenha chegado o _id da view
+    const resolvedPatientId = view?.patientId || id;
+
     // 2. Se não existe → FALLBACK: build sync
     if (!view) {
-      logger.warn(`[${correlationId}] ⚠️ View not found, triggering sync build`, { patientId: id });
-      
+      logger.warn(`[${correlationId}] ⚠️ View not found, triggering sync build`, { patientId: resolvedPatientId });
+
       // Verifica se paciente existe no domínio
-      const patientExists = await Patient.exists({ _id: id });
+      const patientExists = await Patient.exists({ _id: resolvedPatientId });
       if (!patientExists) {
-        logger.info(`[${correlationId}] ❌ Patient not found in domain`, { patientId: id });
+        logger.info(`[${correlationId}] ❌ Patient not found in domain`, { patientId: resolvedPatientId });
         return res.status(404).json(formatError('Paciente não encontrado', 404));
       }
-      
+
       // Build sync com timeout
       try {
-        const buildPromise = buildPatientView(id, { 
+        const buildPromise = buildPatientView(resolvedPatientId, {
           correlationId,
           force: true 
         });
@@ -178,19 +180,19 @@ router.get('/:id', flexibleAuth, async (req, res) => {
         source = 'build_sync';
         fallbackTriggered = true;
         
-        logger.info(`[${correlationId}] ✅ Sync build completed`, { patientId: id });
-        
+        logger.info(`[${correlationId}] ✅ Sync build completed`, { patientId: resolvedPatientId });
+
       } catch (buildError) {
         // Timeout ou erro no build
-        logger.error(`[${correlationId}] ❌ Sync build failed`, { 
-          patientId: id, 
-          error: buildError.message 
+        logger.error(`[${correlationId}] ❌ Sync build failed`, {
+          patientId: resolvedPatientId,
+          error: buildError.message
         });
-        
+
         // Último recurso: retorna dados crus do Patient
-        const patient = await Patient.findById(id).lean();
+        const patient = await Patient.findById(resolvedPatientId).lean();
         if (patient) {
-          logger.info(`[${correlationId}] ⚠️ Returning raw patient data`, { patientId: id });
+          logger.info(`[${correlationId}] ⚠️ Returning raw patient data`, { patientId: resolvedPatientId });
           
           const duration = Date.now() - startTime;
           return res.json(formatSuccess({
@@ -220,11 +222,11 @@ router.get('/:id', flexibleAuth, async (req, res) => {
       isStale = age > STALE_THRESHOLD_MS;
       
       if (isStale) {
-        logger.warn(`[${correlationId}] ⚠️ View is stale (${Math.round(age / 1000)}s)`, { patientId: id });
-        
+        logger.warn(`[${correlationId}] ⚠️ View is stale (${Math.round(age / 1000)}s)`, { patientId: resolvedPatientId });
+
         // Dispara rebuild em background (não await)
         publishEvent('PATIENT_VIEW_REBUILD_REQUESTED', {
-          patientId: id,
+          patientId: resolvedPatientId,
           reason: `stale_view_accessed (age: ${Math.round(age / 1000)}s)`
         }, { correlationId });
       }
@@ -345,7 +347,7 @@ router.post('/', flexibleAuth, async (req, res) => {
         status: 'pending',
         checkStatusUrl: `/api/v2/patients/status/${event.eventId}`,
         estimatedTime: '1-2s'
-      }, 'Paciente em processamento', 202)
+      }, { message: 'Paciente em processamento' })
     );
     
   } catch (error) {
@@ -360,18 +362,23 @@ router.post('/', flexibleAuth, async (req, res) => {
 router.put('/:id', flexibleAuth, async (req, res) => {
   const { id } = req.params;
   const correlationId = `pat_upd_${Date.now()}`;
-  
+
   try {
-    // Verifica existência
+    // Resolve o patientId real (pode vir o _id da PatientsView)
+    let patientId = id;
     const exists = await Patient.exists({ _id: id });
     if (!exists) {
-      return res.status(404).json(formatError('Paciente não encontrado', 404));
+      const view = await PatientsView.findOne({ $or: [{ _id: id }, { patientId: id }] }).lean();
+      if (!view) {
+        return res.status(404).json(formatError('Paciente não encontrado', 404));
+      }
+      patientId = view.patientId;
     }
-    
+
     const event = await publishEvent(
       EventTypes.PATIENT_UPDATE_REQUESTED,
       {
-        patientId: id,
+        patientId,
         updates: req.body,
         updatedBy: req.user?.id,
         updatedAt: new Date().toISOString()
@@ -386,11 +393,57 @@ router.put('/:id', flexibleAuth, async (req, res) => {
         jobId: event.jobId,
         status: 'pending',
         checkStatusUrl: `/api/v2/patients/status/${event.eventId}`
-      }, 'Atualização em processamento', 202)
+      }, { message: 'Atualização em processamento' })
     );
     
   } catch (error) {
     logger.error(`[${correlationId}] Update error`, { error: error.message });
+    return res.status(500).json(formatError(error.message, 500));
+  }
+});
+
+/**
+ * DELETE /api/v2/patients/:id
+ */
+router.delete('/:id', flexibleAuth, async (req, res) => {
+  const { id } = req.params;
+  const correlationId = `pat_del_${Date.now()}`;
+
+  try {
+    // Resolve o patientId real (pode vir o _id da PatientsView)
+    let patientId = id;
+    const exists = await Patient.exists({ _id: id });
+    if (!exists) {
+      const view = await PatientsView.findOne({ $or: [{ _id: id }, { patientId: id }] }).lean();
+      if (!view) {
+        return res.status(404).json(formatError('Paciente não encontrado', 404));
+      }
+      patientId = view.patientId;
+    }
+
+    const event = await publishEvent(
+      EventTypes.PATIENT_DELETE_REQUESTED,
+      {
+        patientId,
+        reason: req.body?.reason || null,
+        deletedBy: req.user?.id,
+        deletedAt: new Date().toISOString()
+      },
+      { correlationId }
+    );
+
+    return res.status(202).json(
+      formatSuccess({
+        eventId: event.eventId,
+        correlationId,
+        patientId,
+        status: 'pending',
+        checkStatusUrl: `/api/v2/patients/status/${event.eventId}`
+      }, { message: 'Exclusão em processamento' })
+    );
+
+  } catch (error) {
+    logger.error(`[${correlationId}] Delete error`, { error: error.message });
     return res.status(500).json(formatError(error.message, 500));
   }
 });
@@ -413,16 +466,15 @@ router.get('/status/:eventId', flexibleAuth, async (req, res) => {
       return res.status(404).json(formatError('Evento não encontrado', 404));
     }
     
-    // Se completou, inclui view
+    // Se completou, inclui view no nível raiz (frontend lê response.data.data.patientView)
+    let patientView = null;
     if (status.status === 'completed' && status.payload?.patientId) {
-      const view = await PatientsView.findOne({ 
-        patientId: status.payload.patientId 
+      patientView = await PatientsView.findOne({
+        patientId: status.payload.patientId
       }).lean();
-      
-      status.data = { ...status.data, patientView: view };
     }
-    
-    return res.json(formatSuccess(status));
+
+    return res.json(formatSuccess({ ...status, patientView }));
     
   } catch (error) {
     logger.error('Status error', { error: error.message });
