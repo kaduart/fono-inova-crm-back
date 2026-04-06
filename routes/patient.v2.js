@@ -504,6 +504,46 @@ router.get('/health/projection', flexibleAuth, async (req, res) => {
 });
 
 /**
+ * POST /api/v2/patients/admin/rebuild-all
+ * Admin: força rebuild de TODAS as views (útil após migrações)
+ */
+router.post('/admin/rebuild-all', flexibleAuth, async (req, res) => {
+  try {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json(formatError('Acesso negado', 403));
+    }
+    
+    const correlationId = req.headers['x-correlation-id'] || `admin_rebuild_all_${Date.now()}`;
+    
+    logger.info(`[${correlationId}] 🔄 Rebuild all views started`);
+    
+    // Marca todas as views como stale (isso força rebuild no próximo acesso)
+    const result = await PatientsView.updateMany(
+      {},
+      { 
+        $set: { 
+          'snapshot.isStale': true,
+          'snapshot.calculatedAt': new Date(0) // Força rebuild
+        }
+      }
+    );
+    
+    logger.info(`[${correlationId}] ✅ All views marked for rebuild`, {
+      modifiedCount: result.modifiedCount
+    });
+    
+    return res.json(formatSuccess({
+      modifiedCount: result.modifiedCount,
+      message: 'Todas as views foram marcadas para reconstrução. Elas serão atualizadas no próximo acesso.'
+    }, 'Views marcadas para rebuild'));
+    
+  } catch (error) {
+    logger.error('Admin rebuild-all error', { error: error.message });
+    return res.status(500).json(formatError(error.message, 500));
+  }
+});
+
+/**
  * POST /api/v2/patients/admin/rebuild-view/:id
  * Admin: força rebuild
  */
