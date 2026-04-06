@@ -113,26 +113,54 @@ router.get('/webhook/debug', (req, res) => {
 // 🔍 DEBUG: Testar verificação do webhook manualmente
 router.get('/webhook/test-verify', (req, res) => {
     const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN?.trim();
+    
+    // Debug completo da requisição
+    console.log("[TEST VERIFY] ========== DEBUG ==========");
+    console.log("[TEST VERIFY] req.query:", req.query);
+    console.log("[TEST VERIFY] req.originalUrl:", req.originalUrl);
+    console.log("[TEST VERIFY] req.url:", req.url);
+    
+    // Tenta pegar dos query params
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"]?.trim();
     const challenge = req.query["hub.challenge"];
     
-    console.log("[TEST VERIFY] Recebido:", { mode, token, challenge });
-    console.log("[TEST VERIFY] Env token:", verifyToken);
-    console.log("[TEST VERIFY] Match:", token === verifyToken);
+    // Tenta parsear manualmente se não encontrou
+    let manualMode, manualToken, manualChallenge;
+    if (!mode || !token) {
+        try {
+            const url = new URL(req.originalUrl, `http://${req.headers.host}`);
+            manualMode = url.searchParams.get('hub.mode');
+            manualToken = url.searchParams.get('hub.verify_token')?.trim();
+            manualChallenge = url.searchParams.get('hub.challenge');
+            console.log("[TEST VERIFY] Manual parse:", { manualMode, manualToken, manualChallenge });
+        } catch (e) {
+            console.log("[TEST VERIFY] Erro no manual parse:", e.message);
+        }
+    }
     
-    if (mode === "subscribe" && token === verifyToken) {
-        return res.status(200).send(challenge);
+    const finalMode = mode || manualMode;
+    const finalToken = token || manualToken;
+    const finalChallenge = challenge || manualChallenge;
+    
+    console.log("[TEST VERIFY] Final values:", { finalMode, finalToken, finalChallenge });
+    console.log("[TEST VERIFY] Env token:", verifyToken);
+    console.log("[TEST VERIFY] Match:", finalToken === verifyToken);
+    
+    if (finalMode === "subscribe" && finalToken === verifyToken) {
+        return res.status(200).send(finalChallenge);
     }
     
     return res.status(403).json({
         error: "Forbidden",
         debug: {
-            modeReceived: mode,
-            tokenReceived: token,
+            modeReceived: finalMode,
+            tokenReceived: finalToken,
             tokenExpected: verifyToken,
-            match: token === verifyToken,
-            modeOk: mode === "subscribe"
+            match: finalToken === verifyToken,
+            modeOk: finalMode === "subscribe",
+            rawQuery: req.query,
+            originalUrl: req.originalUrl
         }
     });
 });
