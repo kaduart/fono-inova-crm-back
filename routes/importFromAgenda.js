@@ -837,16 +837,40 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
       if (!patientId && patientIdRaw && mongoose.Types.ObjectId.isValid(patientIdRaw)) {
         patientId = patientIdRaw;
       }
-      if (!patientId && isNewPatient && patientInfo?.fullName) {
+      
+      // 🆕 SE AINDA NÃO TEM PACIENTE: Cria automaticamente se tiver dados
+      if (!patientId && patientInfo?.fullName) {
         const info = { ...appointment.patientInfo, ...(patientInfo || {}) };
-        const created = await Patient.create({
-          fullName: info.fullName,
-          phone: (info.phone || '').replace(/\D/g, '') || undefined,
-          email: info.email || undefined,
-          dateOfBirth: info.birthDate || undefined,
-          source: 'agenda_externa'
+        console.log(`[SYNC-UPDATE] 🆕 Criando novo paciente: ${info.fullName}`);
+        try {
+          const created = await Patient.create({
+            fullName: info.fullName,
+            phone: (info.phone || '').replace(/\D/g, '') || undefined,
+            email: info.email || undefined,
+            dateOfBirth: info.birthDate || undefined,
+            source: 'agenda_externa'
+          });
+          patientId = created._id;
+          console.log(`[SYNC-UPDATE] ✅ Paciente criado: ${patientId}`);
+        } catch (patientErr) {
+          console.error(`[SYNC-UPDATE] ❌ Erro ao criar paciente: ${patientErr.message}`);
+        }
+      }
+      
+      // Última tentativa: buscar paciente por telefone/nome
+      if (!patientId && patientInfo?.phone) {
+        const phoneClean = String(patientInfo.phone).replace(/\D/g, '');
+        const existingPatient = await Patient.findOne({ 
+          $or: [
+            { phone: phoneClean },
+            { phone: `55${phoneClean}` },
+            { phone: `+55${phoneClean}` }
+          ]
         });
-        patientId = created._id;
+        if (existingPatient) {
+          patientId = existingPatient._id;
+          console.log(`[SYNC-UPDATE] 🔍 Paciente encontrado por telefone: ${patientId}`);
+        }
       }
       
       // 🚨 VALIDAÇÃO: Se ainda não tem patientId, não pode criar Session/Payment

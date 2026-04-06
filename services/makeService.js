@@ -62,14 +62,39 @@ export function isMakeConfigured() {
  */
 // Valida se uma URL de imagem é acessível antes de enviar ao Make
 async function validateMediaUrl(url) {
-  if (!url) return null;
-  // Rejeita URLs locais, relativas ou claramente inválidas
-  if (!url.startsWith('http')) return null;
-  try {
-    const res = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
-    return res.ok ? url : null;
-  } catch {
+  if (!url) {
+    console.log('[Make] URL da imagem é null/undefined');
     return null;
+  }
+  // Rejeita URLs locais, relativas ou claramente inválidas
+  if (!url.startsWith('http')) {
+    console.log(`[Make] URL inválida (não começa com http): ${url.substring(0, 50)}`);
+    return null;
+  }
+  
+  // Verifica se é URL do Cloudinary (geralmente confiável)
+  const isCloudinary = url.includes('cloudinary.com') || url.includes('res.cloudinary');
+  
+  try {
+    const res = await fetch(url, { 
+      method: 'HEAD', 
+      signal: AbortSignal.timeout(5000),
+      // Cloudinary às vezes bloqueia HEAD, então aceitamos se for URL conhecida
+      ...(isCloudinary && { headers: { 'User-Agent': 'Mozilla/5.0' } })
+    });
+    
+    if (res.ok) {
+      console.log(`[Make] ✅ URL validada: ${url.substring(0, 60)}...`);
+      return url;
+    } else {
+      console.log(`[Make] ⚠️ URL retornou status ${res.status}: ${url.substring(0, 60)}`);
+      // Se for Cloudinary e der erro, ainda tenta usar (pode ser restrição de HEAD)
+      return isCloudinary ? url : null;
+    }
+  } catch (err) {
+    console.log(`[Make] ⚠️ Erro ao validar URL: ${err.message}`);
+    // Se for Cloudinary, tenta usar mesmo assim
+    return isCloudinary ? url : null;
   }
 }
 
