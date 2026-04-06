@@ -1,5 +1,5 @@
 // scripts/migratePatientsViewPackages.js
-// 🚀 Migração: Adiciona campo packages em views existentes
+// 🚀 Migração: Adiciona campo packages e garante balance em views existentes
 
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
@@ -20,12 +20,28 @@ async function migrate() {
 
     console.log(`📊 Encontradas ${viewsWithoutPackages.length} views sem campo packages`);
 
+    // 2. Garante que todas as views têm balance com valor padrão
+    console.log('💰 Verificando campo balance...');
+    const balanceResult = await PatientsView.updateMany(
+      { $or: [
+        { balance: { $exists: false } },
+        { 'balance.current': { $exists: false } }
+      ]},
+      {
+        $set: {
+          balance: { current: 0, lastUpdated: null }
+        }
+      }
+    );
+    console.log(`✅ ${balanceResult.modifiedCount} views atualizadas com balance`);
+
     if (viewsWithoutPackages.length === 0) {
       console.log('✅ Todas as views já têm o campo packages');
+      await mongoose.disconnect();
       return;
     }
 
-    // 2. Marca como stale para rebuild
+    // 3. Marca como stale para rebuild
     console.log('🔄 Marcando views como stale para rebuild...');
     
     const result = await PatientsView.updateMany(
@@ -40,9 +56,9 @@ async function migrate() {
 
     console.log(`✅ ${result.modifiedCount} views marcadas para rebuild`);
 
-    // 3. Opcional: Rebuild síncrono das primeiras 10 views (para teste)
-    const rebuildCount = Math.min(10, viewsWithoutPackages.length);
-    console.log(`🔄 Reconstruindo ${rebuildCount} views síncronas...`);
+    // 4. Rebuild síncrono das views
+    const rebuildCount = viewsWithoutPackages.length;
+    console.log(`🔄 Reconstruindo ${rebuildCount} views...`);
 
     for (let i = 0; i < rebuildCount; i++) {
       const view = viewsWithoutPackages[i];
@@ -59,8 +75,7 @@ async function migrate() {
     console.log('\n📋 Resumo:');
     console.log(`  - Total views sem packages: ${viewsWithoutPackages.length}`);
     console.log(`  - Views marcadas para rebuild: ${result.modifiedCount}`);
-    console.log(`  - Views reconstruídas agora: ${rebuildCount}`);
-    console.log(`  - Views restantes serão atualizadas no próximo acesso`);
+    console.log(`  - Views com balance atualizado: ${balanceResult.modifiedCount}`);
 
     await mongoose.disconnect();
     console.log('\n✅ Migração concluída!');
