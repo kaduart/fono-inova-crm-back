@@ -30,6 +30,7 @@ import Appointment from '../../../models/Appointment.js';
 import Followup    from '../../../models/Followup.js';
 import Patient     from '../../../models/Patient.js';
 import { v4 as uuidv4 } from 'uuid';
+import { bullMqConnection as redisConnection } from '../../../config/redisConnection.js';
 
 // =============================================================================
 // CONFIGURAÇÃO
@@ -42,14 +43,6 @@ const WORKER_CONFIG = {
     lockDuration: 30000,
     stalledInterval: 30000,
     maxStalledCount: 2,
-};
-
-const redisConnection = {
-    host:                 process.env.REDIS_HOST || 'localhost',
-    port:                 parseInt(process.env.REDIS_PORT || '6379'),
-    password:             process.env.REDIS_PASSWORD,
-    maxRetriesPerRequest: null,
-    enableReadyCheck:     false,
 };
 
 // Delay do follow-up pós-sessão (24h em ms)

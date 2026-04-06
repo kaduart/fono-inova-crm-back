@@ -36,13 +36,7 @@ const WORKER_CONFIG = {
     maxStalledCount: 2,
 };
 
-const redisConnection = {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379'),
-    password: process.env.REDIS_PASSWORD,
-    maxRetriesPerRequest: null,
-    enableReadyCheck: false,
-};
+import { bullMqConnection as redisConnection } from '../../../config/redisConnection.js';
 
 // =============================================================================
 // ROTEAMENTO — adicione novos handlers aqui sem tocar em outro arquivo

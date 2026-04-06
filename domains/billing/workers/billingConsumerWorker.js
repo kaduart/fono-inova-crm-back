@@ -42,14 +42,7 @@ const RETRY_CONFIG = {
   }
 };
 
-// Redis connection (padrão do projeto)
-const redisConnection = {
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-  password: process.env.REDIS_PASSWORD,
-  maxRetriesPerRequest: null,        // BullMQ requirement
-  enableReadyCheck: false            // BullMQ requirement
-};
+import { bullMqConnection as redisConnection } from '../../../config/redisConnection.js';
 
 // =============================================================================
 // WORKER
