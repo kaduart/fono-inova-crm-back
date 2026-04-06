@@ -67,3 +67,21 @@ export const postGenerationQueue = new Queue("post-generation", {
 export const postGenerationEvents = new QueueEvents("post-generation", { 
     connection: bullMqConnection 
 });
+
+// 👨‍⚕️ NOVO: Fila de processamento de médicos (V2)
+export const doctorQueue = new Queue("doctor-processing", { 
+    connection: bullMqConnection,
+    defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+            type: 'exponential',
+            delay: 1000
+        },
+        removeOnComplete: 100,
+        removeOnFail: 50
+    }
+});
+
+export const doctorEvents = new QueueEvents("doctor-processing", { 
+    connection: bullMqConnection 
+});

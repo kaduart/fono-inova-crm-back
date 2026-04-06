@@ -1,331 +1,62 @@
 import mongoose from 'mongoose';
+import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 
 const paymentSchema = new mongoose.Schema({
-    patient: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Patient',
-        required: true,
-    },
-    doctor: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Doctor',
-        required: true,
-    },
-    serviceType: {
-        type: String,
-        enum: [
-            'evaluation',
-            'session',
-            'package_session',
-            'tongue_tie_test',
-            'neuropsych_evaluation',
-            'individual_session',
-            'meet',
-            'alignment'
-        ],
-        required: true,
-        default: 'session'
-    },
-    amount: {
-        type: Number,
-        required: true,
-        min: 0
-    },
-    package: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Package',
-        required: function () {
-            return this.serviceType === 'package_session';
-        },
-        default: null
-    },
-    session: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Session',
-    },
-    appointment: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Appointment',
-    },
+    patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient', required: true },
+    appointmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' },
+    sessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Session' },
+    packageId: { type: mongoose.Schema.Types.ObjectId, ref: 'Package' },
+    amount: { type: Number, required: true, min: 0 },
+    receivedAmount: { type: Number, default: 0, min: 0 },
+    paymentDate: { type: Date, required: true },
+    paymentMethod: { type: String, enum: ['pix', 'credit_card', 'debit_card', 'cash', 'bank_transfer', 'other'], required: true },
+    status: { type: String, enum: ['pending', 'partial', 'paid', 'canceled', 'refunded'], default: 'pending' },
+    billingType: { type: String, enum: ['particular', 'convenio', 'insurance'], default: 'particular' },
+    clinicId: { type: String, default: 'default' },
+    description: { type: String },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    relatedExpenseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Expense' },
+    source: { type: String, enum: ['appointment', 'package', 'session', 'manual'], default: 'manual' },
+    isFromPackage: { type: Boolean, default: false },
+}, { timestamps: true });
 
-    // 🔹 NOVOS CAMPOS
-    kind: {
-        type: String,
-        enum: ['package_receipt', 'session_payment', 'manual', 'auto', 'session_completion', 'revenue_recognition'],
-        default: 'manual',
-        description: 'Tipo de pagamento para rastreabilidade (ex: recibo do pacote, pagamento unitário, conclusão de sessão ou reconhecimento de receita)'
-    },
-    parentPayment: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Payment',
-        default: null,
-        description: 'Se este pagamento foi gerado automaticamente a partir de outro'
-    },
+// Index para queries de período
+paymentSchema.index({ paymentDate: 1, status: 1 });
+paymentSchema.index({ clinicId: 1, paymentDate: 1 });
 
-    paymentMethod: {
-        type: String,
-        enum: [
-            'dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'cartão',
-            'transferencia_bancaria', 'plano-unimed', 'convenio', 'liminar_credit', 'outro'
-        ],
-        required: true
-    },
-    status: {
-        type: String,
-        enum: ['pending', 'attended', 'billed', 'paid', 'partial', 'canceled', 'advanced', 'package_paid', 'recognized'],
-        default: 'pending',
-        description: 'Status do pagamento. "recognized" é usado para receita reconhecida de liminar'
-    },
-    notes: {
-        type: String,
-    },
-    sessionType: {
-        type: String,
-        enum: ['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'tongue_tie_test', 'neuropsych_evaluation', 'psicomotricidade', 'musicoterapia', 'psicopedagogia'],
-    },
-    serviceDate: {
-        type: Date,
-        required: function () {
-            return this.appointment;
-        },
-        set: function(v) {
-            if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                const [ano, mes, dia] = v.split('-').map(Number);
-                return new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
-            }
-            return v;
-        }
-    },
-    paymentDate: {
-        type: Date,
-        required: true,
-        default: () => {
-            const now = new Date();
-            return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0));
-        },
-        set: function(v) {
-            if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                const [ano, mes, dia] = v.split('-').map(Number);
-                return new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
-            }
-            return v;
-        }
-    },
-    isAdvance: Boolean,
-    paidAt: { type: Date },
-
-    sessions: [{
-        session: { type: mongoose.Schema.Types.ObjectId, ref: 'Session' },
-        appointment: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' },
-        status: {
-            type: String,
-            enum: ['scheduled', 'completed', 'canceled'],
-            default: 'scheduled'
-        },
-        sessionDate: Date,
-        usedAt: Date
-    }],
-    advanceSessions: [{
-        session: { type: mongoose.Schema.Types.ObjectId, ref: 'Session' },
-        appointment: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' },
-        used: Boolean,
-        usedAt: Date,
-        scheduledDate: Date
-    }],
-
-    createdAt: { type: Date, default: Date.now, index: true },
-    billingType: {
-        type: String,
-        enum: ['particular', 'convenio'],
-        default: 'particular'
-    },
-
-    // Campos específicos de convênio
-    insurance: {
-        provider: { type: String },           // Ex: 'Unimed', 'Bradesco Saúde', 'SulAmérica'
-        planCode: { type: String },           // Código do plano (se necessário)
-        authorizationCode: { type: String },  // Código de autorização/guia
-        status: {
-            type: String,
-            enum: ['pending_billing', 'billed', 'received', 'partial', 'glosa'],
-            default: 'pending_billing'
-        },
-        grossAmount: { type: Number },        // Valor "cheio" da tabela do convênio
-        billedAt: { type: Date },              // Quando foi faturado (Date)
-        receivedAt: { 
-            type: Date,                          // Quando recebeu (Date)
-            set: function(v) {
-                if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                    const [ano, mes, dia] = v.split('-').map(Number);
-                    return new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
-                }
-                return v;
-            }
-        },
-        expectedReceiptDate: { 
-            type: Date,                          // Previsão (Date)
-            set: function(v) {
-                if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}$/)) {
-                    const [ano, mes, dia] = v.split('-').map(Number);
-                    return new Date(Date.UTC(ano, mes - 1, dia, 12, 0, 0));
-                }
-                return v;
-            }
-        },
-        receivedAmount: { type: Number },     // Valor efetivamente recebido
-        glosaReason: { type: String }         // Motivo se glosado
-    },
-    
-    // 🆕 ARQUITETURA v4.0 - Rastreabilidade Financeira
-    paymentOrigin: {
-        type: String,
-        enum: ['auto_per_session', 'manual_balance', 'package_prepaid', 'convenio', 'liminar', 'individual'],
-        default: null,
-        index: true,
-        description: 'Origem do pagamento para rastreabilidade financeira'
-    },
-    
-    correlationId: {
-        type: String,
-        index: true,
-        description: 'ID de correlação para rastreamento de transações'
-    },
-    
-    // 🆕 ARQUITETURA v4.0 - Controle de Estado (Saga Pattern)
-    confirmedAt: {
-        type: Date,
-        description: 'Timestamp da confirmação (após commit da transação)'
-    },
-    canceledAt: {
-        type: Date,
-        description: 'Timestamp do cancelamento (compensação)'
-    },
-    cancellationReason: {
-        type: String,
-        enum: ['transaction_rollback', 'manual_cancel', 'payment_failed', 'other'],
-        description: 'Motivo do cancelamento'
+// 🛡️ IDEMPOTÊNCIA: Índice único para evitar duplicidade de pagamentos
+// Um appointment só pode ter um pagamento do tipo 'appointment'
+// (package e manual podem ter múltiplos)
+paymentSchema.index({ 
+    appointment: 1, 
+    source: 1 
+}, { 
+    unique: true, 
+    partialFilterExpression: { 
+        source: 'appointment',
+        appointment: { $exists: true, $ne: null }
     }
-}, {
-    timestamps: true,
-    toObject: { virtuals: true },
-    toJSON: { virtuals: true }
 });
 
-paymentSchema.path("appointment").set((v) => (v === false ? null : v));
-paymentSchema.path("session").set((v) => (v === false ? null : v));
-paymentSchema.path("package").set((v) => (v === false ? null : v));
-
-paymentSchema.pre('save', async function (next) {
-    // 🚫 Ignora pagamentos do novo fluxo de pacotes
-    if (['package_receipt', 'session_payment'].includes(this.kind)) {
-        return next();
-    }
-
-    // 🔹 Continua o comportamento antigo para sessões avulsas
-    if (!this.appointment && !this.package) {
-        try {
-            const filter = {
-                patient: this.patient,
-                doctor: this.doctor,
-                date: {
-                    $gte: new Date(this.createdAt.getTime() - 3 * 24 * 60 * 60 * 1000),
-                    $lte: new Date(this.createdAt.getTime() + 3 * 24 * 60 * 60 * 1000)
-                },
-                payment: { $exists: false }
-            };
-            const appointment = await mongoose.model('Appointment').findOne(filter);
-            if (appointment) {
-                this.appointment = appointment._id;
-                await mongoose.model('Appointment').findByIdAndUpdate(appointment._id, {
-                    $set: { payment: this._id, operationalStatus: 'paid' }
-                });
-            }
-        } catch (error) {
-            console.error('Erro no pre-save Payment:', error.message);
-        }
-    }
-
-    next();
-});
-
-paymentSchema.post('save', async function (doc) {
+// Post-save hook para disparar recálculo - definido no SCHEMA antes de criar model
+paymentSchema.post('save', async function(doc) {
     try {
-        const Appointment = mongoose.model('Appointment');
-        const Session = mongoose.model('Session');
-        const Package = mongoose.model('Package');
-
-        // 🩵 Caso 1: Pagamento de sessão ou avaliação (avulso)
-        if (doc.appointment) {
-            const appointment = await Appointment.findById(doc.appointment);
-            if (appointment) {
-                if (appointment.operationalStatus === 'canceled') {
-                    // 🚫 Não marcar como pago se o agendamento foi cancelado
-                    await Appointment.findByIdAndUpdate(appointment._id, {
-                        paymentStatus: 'canceled'
-                    });
-                    return;
-                }
-
-                const statusMap = { paid: 'paid', pending: 'pending', canceled: 'canceled', recognized: 'recognized' };
-                await Appointment.findByIdAndUpdate(
-                    doc.appointment,
-                    { paymentStatus: statusMap[doc.status] || 'pending' },
-                    { new: true }
-                );
-            }
-        }
-
-        // 💰 Caso 2: Pagamento distribuído via pacote (novo fluxo)
-        if (['package_receipt', 'session_payment'].includes(doc.kind)) {
-            if (doc.session) {
-                const session = await Session.findById(doc.session);
-                if (session) {
-                    // 🔹 Sessões canceladas não podem ficar pagas
-                    if (session.status === 'canceled' || session.operationalStatus === 'canceled') {
-                        session.isPaid = false;
-                        session.paymentStatus = 'canceled';
-                        session.visualFlag = 'blocked';
-                        await session.save();
-                        return;
-                    }
-
-                    // 🔹 Atualiza sessão normalmente
-                    session.paymentStatus = doc.status === 'paid' ? 'paid' : 'partial';
-                    session.isPaid = doc.status === 'paid';
-                    await session.save();
-
-                    // 🔹 Atualiza o agendamento vinculado, se houver
-                    if (session.appointmentId) {
-                        await Appointment.findByIdAndUpdate(
-                            session.appointmentId,
-                            { paymentStatus: session.paymentStatus },
-                            { new: true }
-                        );
-                    }
-                }
-            }
-
-            // 🔹 Atualiza o pacote como um todo
-            if (doc.package) {
-                const pkg = await Package.findById(doc.package);
-                if (pkg) {
-                    const expectedTotal = pkg.totalSessions * pkg.sessionValue;
-                    pkg.financialStatus =
-                        pkg.totalPaid >= expectedTotal
-                            ? 'paid'
-                            : pkg.totalPaid > 0
-                                ? 'partially_paid'
-                                : 'unpaid';
-                    await pkg.save();
-                }
-            }
-        }
-    } catch (error) {
-        console.error('❌ Erro no post-save Payment:', error.message);
+        const paymentDate = doc.paymentDate || new Date();
+        const moment = (await import('moment-timezone')).default;
+        const dateStr = moment.tz(paymentDate, 'America/Sao_Paulo').format('YYYY-MM-DD');
+        
+        await publishEvent(EventTypes.TOTALS_RECALCULATE_REQUESTED, {
+            clinicId: doc.clinicId || 'default',
+            date: dateStr,
+            period: 'month',
+            source: 'payment_saved'
+        });
+    } catch (err) {
+        console.error('[Payment] Erro no post-save hook:', err.message);
     }
 });
 
-
-
+// Cria o model DEPOIS de definir os hooks
 const Payment = mongoose.model('Payment', paymentSchema);
+
 export default Payment;

@@ -172,6 +172,7 @@ function getQueueNameForEvent(eventType) {
         'APPOINTMENT_CANCEL_REQUESTED': 'cancel-orchestrator',
         'APPOINTMENT_COMPLETE_REQUESTED': 'complete-orchestrator',
         'APPOINTMENT_UPDATE_REQUESTED': 'update-orchestrator',
+        'PAYMENT_REQUESTED': 'payment-processing',
         'PAYMENT_PROCESS_REQUESTED': 'payment-processing',
         'PAYMENT_UPDATE_REQUESTED': 'payment-processing',
         

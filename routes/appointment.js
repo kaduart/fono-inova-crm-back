@@ -660,22 +660,17 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
 
             // 🔹 SEGUNDO cria o PAGAMENTO INDIVIDUAL (PENDENTE)
             const paymentData = {
-                patient: safeId(patientId),
-                doctor: safeId(doctorId),
-                session: safeId(individualSessionId),
-                package: safeId(packageId),
-                appointment: safeId(createdAppointmentId),
-                serviceType,
+                patientId: safeId(patientId),
+                sessionId: safeId(individualSessionId),
+                packageId: safeId(packageId) || undefined,
+                appointmentId: safeId(createdAppointmentId),
                 amount,
                 paymentMethod,
-                notes,
+                description: notes || serviceType,
                 billingType,
-                insurance,
                 status: 'pending',
+                source: 'appointment',
                 paymentDate: req.body.date,
-                serviceDate: req.body.date,
-                createdAt: currentDate,
-                updatedAt: currentDate,
             };
 
 
@@ -693,7 +688,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
 
             // 🔹 ATUALIZA O PAGAMENTO COM O ID DO AGENDAMENTO
             await Payment.findByIdAndUpdate(createdPaymentId, {
-                appointment: safeId(createdAppointmentId)
+                appointmentId: safeId(createdAppointmentId)
             });
 
             // 🔹 VINCULA O PAYMENT AO APPOINTMENT (BIDIRECIONAL)
@@ -763,39 +758,34 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
 
         if (createdPaymentId) {
             populatedPayment = await Payment.findById(createdPaymentId)
-                .populate('patient doctor session package appointment');
+                .populate('patientId sessionId packageId appointmentId');
         } else {
             // Fallback para outros casos
             const paymentData = {
-                patient: safeId(patientId),
-                doctor: safeId(doctorId),
-                serviceType,
+                patientId: safeId(patientId),
                 amount,
                 paymentMethod,
-                notes,
+                description: notes || serviceType,
                 status: 'pending',
+                source: 'appointment',
                 paymentDate: req.body.date,
-                serviceDate: req.body.date,
-                createdAt: currentDate,
-                updatedAt: currentDate,
             };
 
-            if (serviceType === 'session') paymentData.session = safeId(sessionId);
-            if (serviceType === 'individual_session') paymentData.session = safeId(individualSessionId);
-            if (serviceType === 'package_session') paymentData.package = safeId(packageId);
-            if (createdAppointmentId) paymentData.appointment = safeId(createdAppointmentId);
-
+            if (serviceType === 'session') paymentData.sessionId = safeId(sessionId);
+            if (serviceType === 'individual_session') paymentData.sessionId = safeId(individualSessionId);
+            if (serviceType === 'package_session') paymentData.packageId = safeId(packageId);
+            if (createdAppointmentId) paymentData.appointmentId = safeId(createdAppointmentId);
 
             const payment = await Payment.create(paymentData);
             populatedPayment = await Payment.findById(payment._id)
-                .populate('patient doctor session package appointment');
+                .populate('patientId sessionId packageId appointmentId');
         }
 
         console.log('✅ [POST] Agendamento criado com pagamento vinculado:', {
             appointmentId: createdAppointmentId,
             paymentId: populatedPayment._id,
             paymentStatus: populatedPayment.status,
-            hasAppointmentField: !!populatedPayment.appointment
+            hasAppointmentField: !!populatedPayment.appointmentId
         });
 
         if (leadId) {
@@ -944,7 +934,7 @@ router.get('/', flexibleAuth, async (req, res) => {
         const appointments = await Appointment.find(filter)
             .select('date time duration specialty notes responsible operationalStatus clinicalStatus paymentStatus visualFlag patient patientInfo professionalName doctor package session payment metadata billingType insuranceProvider insuranceValue authorizationCode serviceType sessionType sessionValue reason urgency assignedTo secretaryNotes')
             .populate({ path: 'doctor', select: 'fullName specialty email phoneNumber specialties' })
-            .populate({ path: 'patient', select: 'fullName dateOfBirth gender phone email cpf rg address' })
+            .populate({ path: 'patient', select: '_id fullName dateOfBirth gender phone email cpf rg address' })
             .populate({ path: 'package', select: 'financialStatus totalPaid totalSessions balance sessionValue type liminarProcessNumber liminarCourt' })
             .populate({ path: 'session', select: 'isPaid paymentStatus partialAmount' })
             .populate({ path: 'payment', select: 'status amount paymentMethod' })
@@ -962,12 +952,16 @@ router.get('/', flexibleAuth, async (req, res) => {
         // 🔹 Buscar saldos dos pacientes para mostrar no calendário
         const patientIds = appointments
             .map(appt => appt.patient?._id?.toString())
-            .filter((id, index, arr) => id && arr.indexOf(id) === index); // únicos
+            .filter((id, index, arr) => id && arr.indexOf(id) === index);
+
+        console.log(`[Calendar] ${patientIds.length} pacientes únicos para verificar saldo`);
 
         const patientBalances = await PatientBalance.find({
             patient: { $in: patientIds },
-            currentBalance: { $gt: 0 } // só quem deve
+            currentBalance: { $gt: 0 }
         }).select('patient currentBalance').lean();
+
+        console.log(`[Calendar] ${patientBalances.length} pacientes com saldo devedor`);
 
         // Map de patientId -> saldo para lookup rápido
         const balanceMap = patientBalances.reduce((map, bal) => {

@@ -31,6 +31,10 @@
  * │  ├── Evento: MESSAGE_SENT                                   │
  * │  └── Responsabilidade: Emite via socket, atualiza dashboards│
  * │                                                              │
+ * │  MessageResponseWorker                                      │
+ * │  ├── Evento: MESSAGE_RESPONSE_DETECTED                      │
+ * │  └── Responsabilidade: Marca follow-up respondido          │
+ * │                                                              │
  * └─────────────────────────────────────────────────────────────┘
  * 
  * FLUXO:
@@ -41,7 +45,8 @@
  *      ↓
  * LeadStateWorker (Carrega contexto do lead)
  *      ↓
- * OrchestratorWorker (IA decide resposta)
+ *   ├── OrchestratorWorker (IA decide resposta)
+ *   └── MessageResponseWorker (Marca follow-up respondido)
  *      ↓
  * NotificationWorker (Envia resposta)
  *      ↓
@@ -53,3 +58,4 @@ export { createLeadStateWorker } from './leadStateWorker.js';
 export { createOrchestratorWorker } from './orchestratorWorker.js';
 export { createNotificationWorker } from './notificationWorker.js';
 export { createRealtimeWorker } from './realtimeWorker.js';
+export { createMessageResponseWorker } from './messageResponseWorker.js';

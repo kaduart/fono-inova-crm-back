@@ -257,6 +257,8 @@ async function handleAdvancePayment(req, res) {
 }
 
 router.get('/', async (req, res) => {
+    // ⚠️ LEGACY: Front deve usar /api/v2/payments. Logar para detectar uso residual.
+    console.warn(`⚠️ [LEGACY /api/payments GET] chamado por ${req.ip} — migrar para /api/v2/payments`);
     try {
         const {
             doctorId,
@@ -1178,8 +1180,8 @@ router.get("/totals", async (req, res) => {
                 // Preferência: paymentDate (data do atendimento)
                 {
                     paymentDate: {
-                        $gte: rangeStart.toISOString().split('T')[0],
-                        $lte: rangeEnd.toISOString().split('T')[0]
+                        $gte: rangeStart,
+                        $lte: rangeEnd
                     }
                 },
                 // Fallback: createdAt para registros antigos sem paymentDate

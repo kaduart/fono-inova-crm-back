@@ -162,12 +162,14 @@ export async function buildPackageView(packageId, options = {}) {
       sessionType: pkg.sessionType,
       
       ...sessionMetrics,
-      
+      sessionsDone: Math.max(pkg.sessionsDone || 0, sessionMetrics.sessionsUsed), // usa o counter do Package (atualizado na transação)
+
       sessionValue: pkg.sessionValue,
       totalValue: pkg.totalValue,
       totalPaid: pkg.totalPaid,
       balance: pkg.balance,
       financialStatus: pkg.financialStatus,
+      payments: pkg.payments || [], // array de IDs — frontend usa length para checar se há pagamentos
       
       ...dates,
       expiresAt: pkg.liminarExpirationDate || null,

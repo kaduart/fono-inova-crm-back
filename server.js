@@ -30,7 +30,7 @@ dotenv.config({ path: path.resolve(__dirname, "./.env") });
 // ======================================================
 import { initializeSocket } from "./config/socket.js";
 import Followup from "./models/Followup.js";
-import { getRedis, startRedis } from "./services/redisClient.js";
+import { redisConnection } from "./config/redisConnection.js";
 import { registerWebhook } from "./services/sicoobService.js";
 import { sanitizeStack } from './middleware/sanitize.js';
 import { etagMiddleware } from './middleware/etagCache.js';
@@ -54,6 +54,7 @@ import { auth } from "./middleware/auth.js";
 // 📦 Rotas
 // ======================================================
 import adminRoutes from "./routes/admin.js";
+import adminDashboardV2Routes from './routes/adminDashboard.v2.js';  // 🚀 NOVO: Admin Dashboard V2
 import amandaRoutes from "./routes/aiAmanda.js";
 import analitycsRoutes from "./routes/analytics.js";
 import appointmentRoutes from "./routes/appointment.js";
@@ -86,6 +87,7 @@ import cashflowRoutes from './routes/financial/cashflow.js';
 import financialOverviewRoutes from './routes/financial/overview.routes.js';
 import financialMetricsRoutes from './routes/financial/metrics.routes.js';
 import financialDashboardRoutes from './routes/financial/dashboard.routes.js';
+import metricsDashboardRoutes from './routes/metrics.dashboard.js';
 import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
 import { scheduleGmbCron } from './jobs/gmbScheduledTasks.js';
 import { scheduleLandingPageDailyPosts } from './crons/landingPageDailyPost.js';
@@ -110,6 +112,7 @@ import importFromAgendaRouter from './routes/importFromAgenda.js';
 import dashboardRoutes from './routes/dashboard.js';
 import financialAnalyticsRoutes from './routes/analytics/financial.routes.js';
 import revenueAnalyticsRoutes from './routes/analytics.js';
+import operationalAnalyticsRoutes from './routes/analytics/operational.routes.js';
 import insuranceGuidesRoutes from './routes/insuranceGuides.js';
 import convenioPackagesRoutes from './routes/convenioPackages.js';
 import convenioRoutes from './routes/financial/convenio.routes.js';
@@ -131,13 +134,17 @@ import dailyClosingV2Routes from './routes/dailyClosing.v2.js';
 // 🚀 ROTAS V2 - Event-Driven
 import appointmentV2Routes from './routes/appointment.v2.js';
 import patientV2Routes from './routes/patient.v2.js';
+import doctorV2Routes from './routes/doctor.v2.js';  // 🚀 NOVO: Doctors V2
 import packageV2Routes from './routes/package.v2.js';
 import balanceV2Routes from './routes/balance.v2.js';
 import totalsV2Routes from './routes/totals.v2.js';  // 🚀 NOVO: Totals V2
+import dailySummaryV2Routes from './routes/dailySummary.v2.js';  // 🚀 NOVO: Daily Summary V2
 import projectionsV2Routes from './routes/projections.v2.js';  // 🚀 NOVO: Projeções V2
 import cashflowV2Routes from './routes/cashflow.v2.js';  // 🚀 NOVO: Caixa Real V2
 import goalsV2Routes from './routes/goals.v2.js';  // 🚀 NOVO: Metas V2
 import intelligenceV2Routes from './routes/intelligence.v2.js';  // 🚀 NOVO: Inteligência Financeira V2
+import paymentsV2Routes from './routes/payments.v2.js';  // 🚀 NOVO: Payments V2 (Projection otimizada - QUERY)
+import paymentV2Routes from './routes/payment.v2.js';  // 🚀 NOVO: Payment V2 (Event-Driven - COMMAND)
 
 
 // ======================================================
@@ -296,6 +303,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/signup", signupRoutes);
 app.use("/api/login", loginRoutes);
 app.use("/api/admin", etagMiddleware({ ttl: 300 }), adminRoutes);
+app.use("/api/v2/admin/dashboard", adminDashboardV2Routes);  // 🚀 NOVO: Admin Dashboard V2
 app.use("/api/doctors", doctorRoutes);
 app.use("/api/patients", patientRoutes);
 app.use("/api/patients", patientDuplicatesRoutes);
@@ -307,11 +315,15 @@ app.use("/api/v2/projections", projectionsV2Routes);
 app.use("/api/v2/cashflow", cashflowV2Routes);
 app.use("/api/v2/goals", goalsV2Routes);
 app.use("/api/v2/intelligence", intelligenceV2Routes);  // 🚀 NOVO: Inteligência Financeira V2
+app.use("/api/v2/payments", paymentsV2Routes);  // 🚀 NOVO: Payments V2 (Projection otimizada - QUERY)
+app.use("/api/v2/payments", paymentV2Routes);  // 🚀 NOVO: Payment V2 (Event-Driven - COMMAND)
 app.use("/api/v2/appointments", appointmentV2Routes);
 app.use("/api/v2/patients", patientV2Routes);
+app.use("/api/v2/doctors", doctorV2Routes);  // 🚀 NOVO: Doctors V2
 app.use("/api/v2/packages", packageV2Routes);
 app.use("/api/v2/balance", balanceV2Routes);
 app.use("/api/v2/totals", totalsV2Routes);  // 🚀 NOVO: Totals V2
+app.use("/api/v2/daily-summary", dailySummaryV2Routes);  // 🚀 NOVO: Daily Summary V2
 
 app.use("/api/evolutions", evolutionRoutes);
 app.use("/api/leads", leadsRouter);
@@ -333,18 +345,27 @@ app.use('/api/cashflow', cashflowRoutes);
 app.use('/api/financial', financialOverviewRoutes);
 app.use('/api/financial/v2', financialMetricsRoutes);
 app.use('/api/financial/dashboard', financialDashboardRoutes);
+app.use('/api/metrics', metricsDashboardRoutes);
 app.use('/api/planning', planningRoutes);
 app.use('/api/pre-agendamento', preAgendamentoRoutes);
+app.use('/api/v2/pre-agendamento', preAgendamentoRoutes);  // 🔄 ALIAS: V2 aponta para V1
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', etagMiddleware({ ttl: 120 }), dashboardRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/provisionamento', provisionamentoRoutes);
 app.use('/api/analytics/financial', financialAnalyticsRoutes);
 app.use('/api/analytics/revenue', revenueAnalyticsRoutes);
+app.use('/api/v2/analytics/operational', operationalAnalyticsRoutes);
 app.use('/api/insurance-guides', insuranceGuidesRoutes);
 app.use('/api/convenio-packages', convenioPackagesRoutes);
 app.use('/api/financial/convenio', convenioRoutes);
+
+// 🆕 Totals que usa cashflow (funciona!)
+import totalsWrapperRoutes from './routes/financial/totals-wrapper.routes.js';
+app.use('/api/v2', totalsWrapperRoutes);
+
 app.use('/api/v2', insuranceV2Routes);
+app.use('/api/v2/financial', financialOverviewRoutes);
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/marketing', marketingRoutes);
 app.use('/api/landing-pages', landingPageRoutes);
@@ -449,11 +470,8 @@ function initFollowupWatcher() {
 // ======================================================
 (async () => {
   try {
-    console.log("🔄 Iniciando conexão Redis...");
-    await startRedis();
-
-    const redisClient = getRedis();
-    await redisClient.ping();
+    console.log("🔄 Verificando Redis...");
+    await redisConnection.ping();
 
     // Workers e Crons
     await import("./workers/followup.worker.js");

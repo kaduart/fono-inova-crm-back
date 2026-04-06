@@ -189,20 +189,26 @@ export function startCreateAppointmentWorker() {
                     await mongoSession.commitTransaction();
                     log.info('transaction_committed', 'Transação commitada');
 
-                    // Publica eventos pós-criação
+                    // 📝 CRIA PAYMENT COMO PENDING (será confirmado no COMPLETE)
+                    // Avaliação/teste/sessão individual → nasce pending, só vira paid no complete
                     if (!packageId && amount > 0) {
-                        // PARTICULAR: Solicita pagamento
                         await publishEvent(
-                            EventTypes.PAYMENT_PROCESS_REQUESTED,
+                            EventTypes.PAYMENT_REQUESTED,
                             {
                                 appointmentId: appointmentId.toString(),
                                 patientId: patientId?.toString(),
                                 doctorId: doctorId?.toString(),
                                 amount,
+                                paymentMethod: payload.paymentMethod || 'dinheiro',
+                                status: 'pending', // 💥 Sempre nasce pendente!
+                                paymentDate: new Date().toISOString(),
                                 sessionId: session._id.toString()
                             },
                             { correlationId }
                         );
+                        console.log(`[CreateAppointmentWorker] 💰 Payment criado como PENDING (será confirmado no COMPLETE)`);
+                    } else {
+                        console.log(`[CreateAppointmentWorker] ⏭️ Sem payment:`, { hasPackage: !!packageId, amount });
                     }
 
                     log.info('success', 'SUCESSO FINAL', {

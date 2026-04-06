@@ -14,6 +14,7 @@ import { redisConnection } from '../../../infrastructure/queue/queueConfig.js';
 import { createContextLogger } from '../../../utils/logger.js';
 import { buildPatientView } from '../services/patientProjectionService.js';
 import PatientsView from '../../../models/PatientsView.js';
+import Appointment from '../../../models/Appointment.js';
 import DLQManager from '../../../infra/queue/dlqSystem.js';
 
 const logger = createContextLogger('PatientProjectionWorker');
@@ -150,6 +151,14 @@ async function processEvent(eventType, payload, correlationId) {
     // ========================================
     // PAYMENT EVENTS (afetam saldo)
     // ========================================
+    case 'PAYMENT_CREATED':
+      // 🔄 Phase 2 da migração do post('save') hook
+      return await handlePaymentCreated(payload, correlationId);
+
+    case 'PAYMENT_STATUS_CHANGED':
+      // 🔄 Sincroniza appointment.paymentStatus quando payment muda (ex: attended → paid)
+      return await handlePaymentStatusChanged(payload, correlationId);
+
     case 'PAYMENT_COMPLETED':
     case 'PAYMENT_RECEIVED':
     case 'PAYMENT_UPDATED':
@@ -280,6 +289,124 @@ async function handleSessionEvent(patientId, eventType, correlationId) {
     viewVersion: view.snapshot?.version,
     totalSessions: view.stats?.totalSessions
   };
+}
+
+/**
+ * Phase 2 — Shadow Update
+ *
+ * Replica o comportamento do post('save') hook do model Payment.
+ * Roda EM PARALELO com o hook (ambos atualizam appointment.paymentStatus).
+ * Objetivo: confirmar parity antes de remover o hook (Phase 4).
+ *
+ * Hook original (Payment.js):
+ *   statusMap = { paid:'paid', pending:'pending', canceled:'canceled', recognized:'recognized' }
+ *   Appointment.findByIdAndUpdate(appointmentId, { paymentStatus: statusMap[doc.status] || 'pending' })
+ */
+async function handlePaymentCreated(payload, correlationId) {
+    const { patientId, appointmentId, paymentId, status } = payload;
+
+    // ── Rebuild da patient view (sempre) ─────────────────────────────────────
+    const view = await buildPatientView(patientId, { correlationId });
+
+    // ── Shadow update — replica exata do hook ────────────────────────────────
+    if (appointmentId) {
+        const STATUS_MAP = {
+            paid:       'paid',
+            pending:    'pending',
+            canceled:   'canceled',
+            recognized: 'recognized',
+        };
+        const mappedStatus = STATUS_MAP[status] || 'pending';
+
+        // Busca o valor atual ANTES de atualizar (para o diff log)
+        const before = await Appointment.findById(appointmentId)
+            .select('paymentStatus')
+            .lean();
+
+        await Appointment.findByIdAndUpdate(
+            appointmentId,
+            { paymentStatus: mappedStatus },
+            { new: false }
+        );
+
+        // ── Divergence log (Phase 3 core) ────────────────────────────────────
+        // Se o hook e o evento produziram resultados diferentes, isso aparece aqui.
+        const hookWouldHaveSet = STATUS_MAP[status] || 'pending'; // mesmo mapa do hook
+        const diverged = before?.paymentStatus !== undefined &&
+                         before.paymentStatus !== hookWouldHaveSet &&
+                         before.paymentStatus !== mappedStatus;
+
+        if (diverged) {
+            logger.warn(`[PHASE2_DIVERGENCE] appointment ${appointmentId}`, {
+                paymentId,
+                before:         before?.paymentStatus,
+                hookWouldSet:   hookWouldHaveSet,
+                eventSet:       mappedStatus,
+                correlationId,
+            });
+        } else {
+            logger.info(`[PHASE2_PARITY] appointment ${appointmentId} paymentStatus=${mappedStatus}`, {
+                paymentId,
+                correlationId,
+            });
+        }
+    }
+
+    return {
+        operation:   'shadow_payment_created',
+        viewVersion: view?.snapshot?.version,
+        appointmentId: appointmentId || null,
+    };
+}
+
+/**
+ * PAYMENT_STATUS_CHANGED → atualiza appointment.paymentStatus + rebuilda view
+ *
+ * Cobre o ciclo: attended → paid (recebimento confirmado via webhook/manual)
+ * PAYMENT_COMPLETED cuida do WhatsApp; este cuida do estado interno do DB.
+ *
+ * Mapa de status (igual ao hook removido):
+ *   paid       → 'paid'
+ *   pending    → 'pending'
+ *   canceled   → 'canceled'
+ *   recognized → 'recognized'
+ *   default    → 'pending'
+ */
+async function handlePaymentStatusChanged(payload, correlationId) {
+    const { patientId, appointmentId, status, paymentId } = payload;
+
+    const STATUS_MAP = {
+        paid:       'paid',
+        pending:    'pending',
+        canceled:   'canceled',
+        recognized: 'recognized',
+        attended:   'pending',  // attended = realizado, aguarda pagamento
+    };
+    const mappedStatus = STATUS_MAP[status] ?? 'pending';
+
+    // Atualiza appointment se disponível
+    if (appointmentId) {
+        await Appointment.findByIdAndUpdate(
+            appointmentId,
+            { paymentStatus: mappedStatus },
+            { new: false }
+        );
+
+        logger.info(`[${correlationId}] PAYMENT_STATUS_CHANGED → appointment ${appointmentId} = ${mappedStatus}`, {
+            paymentId,
+            status,
+        });
+    }
+
+    // Rebuilda patient view (sempre)
+    const view = await buildPatientView(patientId, { correlationId });
+
+    return {
+        operation:     'payment_status_changed',
+        appointmentId: appointmentId || null,
+        mappedStatus,
+        viewVersion:   view?.snapshot?.version,
+    };
 }
 
 async function handlePaymentEvent(patientId, eventType, correlationId) {

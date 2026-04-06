@@ -9,8 +9,8 @@
     "stop": "node scripts/stop-dev.js",
     "restart": "npm stop && npm run dev",
     "worker": "node -r dotenv/config ./workers/followup.worker.js",
+    "worker:doctor": "node -r dotenv/config ./workers/doctor.worker.js",
     "cron": "node -r dotenv/config ./workers/followup.cron.js",
-    
     "test": "node tests/complete.js",
     "test:unit": "node tests/complete.js --unit",
     "test:qa": "node tests/complete.js --qa",
@@ -19,8 +19,9 @@
     "test:vitest": "vitest run",
     "test:amanda": "vitest run --config vitest.config.amanda.js",
     "test:e2e": "vitest run --config vitest.config.e2e.js",
+    "test:e2e:bugfixes": "vitest run --config vitest.config.bugfixes-e2e.js",
+    "test:e2e:bugfixes:watch": "vitest --config vitest.config.bugfixes-e2e.js --watch",
     "test:coverage": "vitest run --coverage",
-    
     "billing:validate": "node scripts/validate-billing-v2.js",
     "billing:monitor": "node scripts/monitor-billing-v2.js",
     "billing:rollback": "FORCE_ROLLBACK=true node scripts/rollback-v2-emergency.js",
@@ -69,6 +70,7 @@
     "googleapis": "^159.0.0",
     "groq-sdk": "^0.37.0",
     "helmet": "^8.1.0",
+    "ioredis": "^5.9.3",
     "jsonwebtoken": "^9.0.2",
     "moment-timezone": "^0.6.0",
     "mongodb": "^6.8.0",

@@ -498,6 +498,8 @@ switch (decision.action) {
 }
 */
 
+export { DOMAIN_CONFIG };
+
 export default { 
   resolveDecision, 
   extractDetectorResults, 

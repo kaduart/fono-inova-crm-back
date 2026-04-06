@@ -45,7 +45,7 @@ export async function buildPatientView(patientId, options = {}) {
       packages
     ] = await Promise.all([
       Appointment.find({ patient: patientId }).sort({ date: -1, time: -1 }).lean(),
-      Payment.find({ patient: patientId }).lean(),
+      Payment.find({ patientId }).lean(),
       PatientBalance.findOne({ patient: patientId }).lean(),
       Package.find({ patient: patientId }).lean()
     ]);
@@ -150,9 +150,9 @@ export async function buildPatientView(patientId, options = {}) {
     return result;
     
   } catch (error) {
-    logger.error(`[${correlationId}] Failed to build view`, { 
-      patientId, 
-      error: error.message 
+    logger.error(`[${correlationId}] Failed to build view: ${error?.message || String(error)}`, {
+      patientId,
+      stack: error?.stack?.split('\n').slice(0, 3).join(' | ')
     });
     throw error;
   }
@@ -233,25 +233,64 @@ function extractAppointments(appointments) {
   const todayStr = today.toISOString().slice(0, 10);
   const nowTime = today.toTimeString().slice(0, 5);
   
+  // 🔧 HELPER ROBUSTO: Converte qualquer formato de data para string YYYY-MM-DD
+  const toDateStr = (date) => {
+    if (!date) return '';
+    // Se já for string no formato ISO ou YYYY-MM-DD
+    if (typeof date === 'string') {
+      // Se for ISO string com T, pegar só a parte da data
+      if (date.includes('T')) return date.split('T')[0];
+      return date.slice(0, 10);
+    }
+    // Se for objeto Date (do MongoDB/Mongoose)
+    if (date instanceof Date) {
+      try {
+        return date.toISOString().split('T')[0];
+      } catch (e) {
+        return '';
+      }
+    }
+    // Fallback: converter para string
+    try {
+      const str = String(date);
+      if (str.includes('T')) return str.split('T')[0];
+      return str.slice(0, 10);
+    } catch (e) {
+      return '';
+    }
+  };
+  
   const valid = appointments.filter(a => a.operationalStatus !== 'canceled');
   
   // Último agendamento (passado)
   const past = valid
     .filter(a => {
-      if (a.date < todayStr) return true;
-      if (a.date > todayStr) return false;
+      const dateStr = toDateStr(a.date);
+      if (dateStr < todayStr) return true;
+      if (dateStr > todayStr) return false;
       return a.time < nowTime;
     })
-    .sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
+    .sort((a, b) => {
+      const dateA = toDateStr(a.date);
+      const dateB = toDateStr(b.date);
+      if (dateA !== dateB) return dateB.localeCompare(dateA);
+      return (b.time || '').localeCompare(a.time || '');
+    });
   
   // Próximo agendamento (futuro)
   const future = valid
     .filter(a => {
-      if (a.date > todayStr) return true;
-      if (a.date < todayStr) return false;
+      const dateStr = toDateStr(a.date);
+      if (dateStr > todayStr) return true;
+      if (dateStr < todayStr) return false;
       return a.time >= nowTime;
     })
-    .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+    .sort((a, b) => {
+      const dateA = toDateStr(a.date);
+      const dateB = toDateStr(b.date);
+      if (dateA !== dateB) return dateA.localeCompare(dateB);
+      return (a.time || '').localeCompare(b.time || '');
+    });
   
   const toAppointmentView = (apt) => apt ? {
     id: apt._id,

@@ -68,7 +68,7 @@ import {
   extractDetectorResults,
   enrichInputWithBusinessRules 
 } from './decision/index.js';
-import { logDecision } from '../services/analytics/decisionTracking.js';
+import  logDecision  from '../services/analytics/decisionTracking.js';
 
 const logger = new Logger('WhatsAppOrchestrator');
 

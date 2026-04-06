@@ -10,6 +10,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
+import { checkAppointmentConflicts } from '../middleware/conflictDetection.js';
 import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
@@ -23,7 +24,7 @@ const router = express.Router();
 /**
  * 🎯 POST /api/v2/appointments - Criar agendamento (Async)
  */
-router.post('/', flexibleAuth, asyncHandler(async (req, res) => {
+router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (req, res) => {
   const mongoSession = await mongoose.startSession();
   
   try {
@@ -36,12 +37,31 @@ router.post('/', flexibleAuth, asyncHandler(async (req, res) => {
       time,
       specialty = 'fonoaudiologia',
       serviceType = 'session',
+      sessionType = null,
       packageId = null,
       insuranceGuideId = null,
       paymentMethod = 'dinheiro',
       amount = 0,
-      notes = ''
+      paymentAmount = null, // Frontend envia paymentAmount
+      notes = '',
+      // ROI / origem
+      leadId = null,
+      source = null,
+      preAgendamentoId = null,
+      // Convênio extra
+      insuranceProvider = null,
+      insuranceValue = null,
+      authorizationCode = null,
     } = req.body;
+    
+    // 🔄 MAPEAMENTO: paymentAmount (frontend) → amount (backend)
+    const finalAmount = paymentAmount !== null ? parseFloat(paymentAmount) : (amount || 0);
+    
+    console.log(`[POST /v2/appointments] 💰 Valor recebido:`, {
+      amount,
+      paymentAmount,
+      finalAmount
+    });
 
     // Validações com mensagens claras
     if (!patientId) {
@@ -131,20 +151,35 @@ router.post('/', flexibleAuth, asyncHandler(async (req, res) => {
       time,
       specialty,
       serviceType,
+      sessionType: sessionType || specialty,
       package: packageId,
       insuranceGuide: insuranceGuideId,
-      
+
       operationalStatus: 'processing_create',
       clinicalStatus: 'pending',
       paymentStatus: 'pending',
-      
-      sessionValue: amount,
+
+      sessionValue: finalAmount,  // Model usa sessionValue (padrão do projeto)
       paymentMethod,
-      billingType: insuranceGuideId ? 'convenio' : 'particular',
-      
+      billingType: billingType || (insuranceGuideId ? 'convenio' : 'particular'),
+
+      // Convênio extras
+      ...(insuranceProvider && { insuranceProvider }),
+      ...(insuranceValue != null && { insuranceValue }),
+      ...(authorizationCode && { authorizationCode }),
+
       notes,
       createdBy: req.user?._id,
-      
+
+      // Metadata ROI
+      metadata: {
+        origin: {
+          source: source || 'crm',
+          preAgendamentoId: preAgendamentoId || null,
+          leadId: leadId || null,
+        }
+      },
+
       history: [{
         action: 'create_requested',
         newStatus: 'processing_create',
@@ -177,11 +212,17 @@ router.post('/', flexibleAuth, asyncHandler(async (req, res) => {
         time,
         specialty,
         serviceType,
-        packageId: packageId?.toString(),
-        insuranceGuideId: insuranceGuideId?.toString(),
-        amount,
+        sessionType: sessionType || specialty,
+        packageId: packageId?.toString() || null,
+        insuranceGuideId: insuranceGuideId?.toString() || null,
+        amount: finalAmount,
         paymentMethod,
+        billingType: billingType || (insuranceGuideId ? 'convenio' : 'particular'),
         notes,
+        // ROI / origem — worker usa para journey followups
+        leadId: leadId?.toString() || null,
+        source: source || 'crm',
+        preAgendamentoId: preAgendamentoId?.toString() || null,
         userId: req.user?._id?.toString()
       },
       {
@@ -460,11 +501,11 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   const filter = {};
   
   if (startDate && endDate) {
-    // 🆕 CORREÇÃO: Converte strings para Date objects após migração do schema
-    filter.date = {
-      $gte: new Date(startDate + 'T00:00:00-03:00'),
-      $lte: new Date(endDate + 'T23:59:59-03:00')
-    };
+    // Suporta BSON Date (migrados) e string (legados) simultaneamente
+    filter.$or = [
+      { date: { $gte: new Date(startDate + 'T00:00:00-03:00'), $lte: new Date(endDate + 'T23:59:59-03:00') } },
+      { date: { $gte: startDate, $lte: endDate + 'T23:59:59' } }
+    ];
   }
   
   if (patientId) filter.patient = patientId;
@@ -491,9 +532,10 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   // 🆕 Se light=true, retorna apenas campos essenciais para o calendário
   if (light === 'true') {
     query = query
-      .select('date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor')
+      .select('date time duration operationalStatus clinicalStatus paymentStatus sessionValue patient doctor billingType insuranceProvider package')
       .populate('patient', 'fullName')
-      .populate('doctor', 'fullName specialty');
+      .populate('doctor', 'fullName specialty')
+      .populate('package', 'type sessionValue financialStatus');
   } else {
     // Modo completo (padrão)
     query = query
@@ -567,18 +609,30 @@ router.get('/:id/status', flexibleAuth, asyncHandler(async (req, res) => {
     );
   }
 
-  const isProcessing = 
+  const isProcessing =
     appointment.operationalStatus === 'processing_create' ||
     appointment.operationalStatus === 'processing_cancel' ||
     appointment.operationalStatus === 'processing_complete';
 
+  // Estados terminais positivos (worker concluiu com sucesso)
+  const isResolved =
+    appointment.operationalStatus === 'scheduled' ||
+    appointment.operationalStatus === 'confirmed' ||
+    appointment.operationalStatus === 'paid' ||
+    appointment.operationalStatus === 'missed' ||
+    appointment.operationalStatus === 'completed' ||
+    appointment.clinicalStatus === 'completed';
+
   const statusMessages = {
-    'processing_create': Messages.PROCESSING.CREATE,
-    'processing_cancel': Messages.PROCESSING.CANCEL,
-    'processing_complete': Messages.PROCESSING.COMPLETE,
-    'scheduled': 'Agendamento confirmado',
-    'canceled': 'Agendamento cancelado',
-    'confirmed': 'Sessão completada'
+    'processing_create':  Messages.PROCESSING?.CREATE  || 'Criando agendamento...',
+    'processing_cancel':  Messages.PROCESSING?.CANCEL  || 'Cancelando...',
+    'processing_complete':Messages.PROCESSING?.COMPLETE|| 'Completando sessão...',
+    'scheduled':  'Agendamento confirmado',
+    'confirmed':  'Agendamento confirmado pelo profissional',
+    'paid':       'Agendamento pago',
+    'missed':     'Paciente faltou',
+    'completed':  'Sessão completada',
+    'canceled':   'Agendamento cancelado',
   };
 
   res.json(
@@ -590,7 +644,8 @@ router.get('/:id/status', flexibleAuth, asyncHandler(async (req, res) => {
         paymentStatus: appointment.paymentStatus,
         statusMessage: statusMessages[appointment.operationalStatus] || appointment.operationalStatus,
         isProcessing,
-        isCompleted: appointment.clinicalStatus === 'completed',
+        isResolved,   // ← front usa isso para saber que pode parar o polling
+        isCompleted: appointment.clinicalStatus === 'completed' || appointment.operationalStatus === 'completed',
         isCanceled: appointment.operationalStatus === 'canceled',
         canCancel: 
           appointment.operationalStatus !== 'canceled' &&

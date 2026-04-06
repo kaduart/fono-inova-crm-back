@@ -18,7 +18,7 @@ export default defineConfig({
         '**/*.config.*',
       ],
     },
-    include: ['tests/unit/**/*.test.js'],
+    include: ['tests/unit/**/*.test.js', 'tests/e2e/**/*.e2e.test.js', 'tests/integration/**/*.test.js'],
     exclude: [
       '**/node_modules/**',
       // Scripts que usam process.exit() — não são testes vitest

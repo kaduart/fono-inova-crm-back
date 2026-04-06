@@ -115,7 +115,7 @@ export function startCompleteOrchestratorWorker() {
         });
 
         // Processa com garantias de idempotência
-        return await processWithGuarantees(storedEvent.eventId, async () => {
+        return await processWithGuarantees(storedEvent, async () => {
 
         // Busca dados
         console.log(`[CompleteOrchestrator] Buscando appointment: ${appointmentId}`);
@@ -191,9 +191,25 @@ export function startCompleteOrchestratorWorker() {
         else if (packageId) paymentOrigin = 'package_prepaid';
         console.log(`[CompleteOrchestrator] paymentOrigin definido: ${paymentOrigin}`);
 
-        // 1. CRIA PAYMENT FORA DA TRANSAÇÃO (evita write conflict e aborted transaction)
+        // 🎯 VERIFICA FORMA DE PAGAMENTO
+        const paymentMethod = appointment.paymentMethod || 'dinheiro';
+        const isCredit = paymentMethod === 'credit' || paymentMethod === 'credito' || paymentMethod === 'cartao_credito';
+        const isImmediatePayment = ['debit', 'debito', 'cartao_debito', 'dinheiro', 'cash', 'pix'].includes(paymentMethod);
+        console.log(`[CompleteOrchestrator] paymentMethod: ${paymentMethod}, isCredit: ${isCredit}, isImmediate: ${isImmediatePayment}`);
+
+        // 1. CRIA PAYMENT FORA DA TRANSAÇÃO (se necessário)
         let perSessionPayment = null;
-        if (!addToBalance && !appointment.payment && isPerSession && packageId) {
+        const isParticularSimple = !packageId && !isConvenio && !isLiminar;
+        const sessionValue = appointment.sessionValue || 0;
+        
+        // 🔍 BUSCA PAYMENT EXISTENTE (criado no CREATE)
+        const existingPayment = appointment.payment?._id || appointment.payment;
+        if (existingPayment) {
+            console.log('[CompleteOrchestrator] Payment já existe (criado no CREATE):', existingPayment);
+        }
+        
+        // 📝 Cria payment para PACOTE PER-SESSION (se não existir)
+        if (!addToBalance && !existingPayment && isPerSession && packageId) {
             try {
                 perSessionPayment = await createPaymentForComplete({
                     patientId: appointment.patient?._id,
@@ -206,9 +222,28 @@ export function startCompleteOrchestratorWorker() {
                     correlationId,
                     serviceDate: appointment.date ? new Date(appointment.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
                 });
-                console.log('[CompleteOrchestrator] Payment criado FORA da transação:', perSessionPayment._id);
+                console.log('[CompleteOrchestrator] Payment PER-SESSION criado:', perSessionPayment._id);
             } catch (innerErr) {
                 console.error('[CompleteOrchestrator] ERRO na criação do payment:', innerErr.message);
+                throw innerErr;
+            }
+        }
+        // 📝 Cria payment para PARTICULAR SIMPLES (se não existir - fallback)
+        else if (!addToBalance && !existingPayment && isParticularSimple && sessionValue > 0) {
+            try {
+                perSessionPayment = await createPaymentForComplete({
+                    patientId: appointment.patient?._id,
+                    doctorId: appointment.doctor?._id,
+                    appointmentId,
+                    sessionId,
+                    amount: sessionValue,
+                    paymentOrigin: 'particular_simple',
+                    correlationId,
+                    serviceDate: appointment.date ? new Date(appointment.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+                });
+                console.log('[CompleteOrchestrator] Payment PARTICULAR criado:', perSessionPayment._id);
+            } catch (innerErr) {
+                console.error('[CompleteOrchestrator] ERRO na criação do payment particular:', innerErr.message);
                 throw innerErr;
             }
         }
@@ -243,12 +278,15 @@ export function startCompleteOrchestratorWorker() {
                 correlationId,
                 userId,
                 isConvenio,
-                packageId
+                packageId,
+                isCredit,
+                isImmediatePayment
             });
             
-            // Se temos payment per-session, inclui no update
-            if (perSessionPayment) {
-                appointmentUpdate.payment = perSessionPayment._id;
+            // Vincula payment ao appointment (existente ou recém-criado)
+            const finalPaymentId = perSessionPayment?._id || existingPayment;
+            if (finalPaymentId) {
+                appointmentUpdate.payment = finalPaymentId;
             }
 
             await Appointment.findByIdAndUpdate(
@@ -319,11 +357,41 @@ export function startCompleteOrchestratorWorker() {
         // 4. COMPLETA SESSÃO FORA DA TRANSAÇÃO (não crítico)
         if (sessionId) {
             try {
-                await completeSession(sessionId, {}, {
+                // Prepara dados de pagamento para a sessão
+                const sessionPaymentData = {};
+                const finalPaymentId = perSessionPayment?._id || existingPayment;
+                
+                if (addToBalance) {
+                    // 💰 SALDO DEVEDOR: Pendente
+                    sessionPaymentData.paymentStatus = 'pending_balance';
+                    sessionPaymentData.isPaid = false;
+                    sessionPaymentData.visualFlag = 'pending';
+                    if (finalPaymentId) sessionPaymentData.paymentId = finalPaymentId;
+                } else if (packageId && !isPerSession && !isConvenio) {
+                    // 📦 PACOTE PRE-PAID: Já foi pago antes
+                    sessionPaymentData.paymentStatus = 'package_paid';
+                    sessionPaymentData.isPaid = true;
+                    sessionPaymentData.visualFlag = 'ok';
+                } else if (isConvenio) {
+                    // 🏥 CONVÊNIO: Aguarda recebimento
+                    sessionPaymentData.paymentStatus = 'pending_receipt';
+                    sessionPaymentData.isPaid = false;
+                    sessionPaymentData.visualFlag = 'pending';
+                } else {
+                    // 💳 PARTICULAR (per-session ou simples): Pago no complete
+                    sessionPaymentData.paymentStatus = 'paid';
+                    sessionPaymentData.isPaid = true;
+                    sessionPaymentData.visualFlag = 'ok';
+                    if (finalPaymentId) sessionPaymentData.paymentId = finalPaymentId;
+                }
+                
+                await completeSession(sessionId, sessionPaymentData, {
                     addToBalance,
                     paymentOrigin,
-                    correlationId
+                    correlationId,
+                    userId
                 });
+                console.log('[CompleteOrchestrator] Sessão completada:', sessionPaymentData);
             } catch (sessionErr) {
                 console.warn('[CompleteOrchestrator] Erro ao completar sessão (não crítico):', sessionErr.message);
             }
@@ -347,13 +415,20 @@ export function startCompleteOrchestratorWorker() {
         // PÓS-COMMIT (não bloqueia resposta)
 
         // 5. CONFIRMA PAYMENT (fora da transação)
-        if (perSessionPayment) {
+        // Se NÃO for saldo devedor → confirma como PAID
+        // Se for saldo devedor → mantém como pending_balance
+        const paymentToConfirm = perSessionPayment?._id || existingPayment;
+        
+        if (paymentToConfirm && !addToBalance) {
             try {
-                await confirmPayment(perSessionPayment._id);
+                await confirmPayment(paymentToConfirm);
+                console.log('[CompleteOrchestrator] ✅ Payment confirmado:', paymentToConfirm);
             } catch (confirmErr) {
                 console.error(`[CompleteOrchestrator] Falha ao confirmar payment:`, confirmErr.message);
-                // Log crítico - inconsistência
             }
+        } else if (paymentToConfirm && addToBalance) {
+            // 💰 Saldo devedor: payment fica como pendente (será pago depois)
+            console.log('[CompleteOrchestrator] 💰 Payment mantido como pendente (saldo devedor):', paymentToConfirm);
         }
 
         // 6. CONVÊNIO: Consome guia e cria payment
@@ -480,7 +555,9 @@ function buildAppointmentUpdate({
     correlationId,
     userId,
     isConvenio,
-    packageId
+    packageId,
+    isCredit,
+    isImmediatePayment
 }) {
     const update = {
         $set: {
@@ -517,6 +594,8 @@ function buildAppointmentUpdate({
             update.$set.visualFlag = 'ok';
         }
     } else {
+        // 📝 PARTICULAR SIMPLES: Pagou = PAID (dinheiro, débito, crédito, cheque, pix...)
+        // Só fica pending se for saldo devedor (addToBalance)
         update.$set.paymentStatus = 'paid';
         update.$set.visualFlag = 'ok';
     }

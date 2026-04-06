@@ -26,6 +26,13 @@ import { packageProcessingWorker } from '../domains/billing/workers/packageProce
 // 🆕 Clinical V2 Workers
 import { startClinicalOrchestratorWorker } from '../domains/clinical/workers/clinicalOrchestrator.js';
 import { startSessionWorker } from '../domains/clinical/workers/sessionWorker.js';
+// 🔗 Integration Layer
+import { startIntegrationOrchestratorWorker } from '../domains/integration/workers/integrationOrchestratorWorker.js';
+// 📲 WhatsApp — Lead Orchestrator V2 (reage a eventos clínicos/financeiros)
+import { startLeadOrchestratorWorkerV2 } from '../domains/whatsapp/workers/leadOrchestratorWorker.v2.js';
+import { createMessageResponseWorker } from '../domains/whatsapp/workers/messageResponseWorker.js';
+import { createWhatsappSendWorker } from '../domains/whatsapp/workers/whatsappSendWorker.js';
+import { createWhatsappInboundWorker } from '../domains/whatsapp/workers/whatsappInboundWorker.js';
 
 /**
  * Inicializa todos os workers da aplicação
@@ -46,7 +53,9 @@ export function startAllWorkers() {
     workers.push(startPackageValidationWorker());
     
     // 2. Workers de agendamento
-    workers.push(startAppointmentWorker());
+    // startAppointmentWorker() DESATIVADO: legacy, competia com createAppointmentWorker
+    // no queue 'appointment-processing'. Validação de double-booking movida para
+    // appointmentService.checkDoubleBooking(). createAppointmentWorker cobre o fluxo completo.
     workers.push(startCreateAppointmentWorker());
     
     // 3. Workers orquestradores (novos - 4.0 completa)
@@ -98,6 +107,26 @@ export function startAllWorkers() {
     workers.push(startSessionWorker());
     console.log('[Workers] ✅ ClinicalOrchestratorWorker iniciado');
     console.log('[Workers] ✅ SessionWorker iniciado');
+
+    // 13. 🔗 Integration Layer (tradução e roteamento entre domínios)
+    workers.push(startIntegrationOrchestratorWorker());
+    console.log('[Workers] ✅ IntegrationOrchestratorWorker iniciado');
+
+    // 14. 📲 Lead Orchestrator V2 (WhatsApp reativo a eventos clínicos/financeiros)
+    workers.push(startLeadOrchestratorWorkerV2());
+    console.log('[Workers] ✅ LeadOrchestratorWorkerV2 iniciado');
+
+    // 15. 📲 Message Response Worker (detecta respostas a follow-ups)
+    workers.push(createMessageResponseWorker({}));
+    console.log('[Workers] ✅ MessageResponseWorker iniciado');
+
+    // 16. 📤 WhatsApp Send Worker (envio assíncrono via Evolution API)
+    workers.push(createWhatsappSendWorker());
+    console.log('[Workers] ✅ WhatsappSendWorker iniciado');
+
+    // 17. 📲 WhatsApp Inbound Worker (processa mensagens recebidas de forma async)
+    workers.push(createWhatsappInboundWorker());
+    console.log('[Workers] ✅ WhatsappInboundWorker iniciado');
 
     console.log('\n[Workers] Todos os workers iniciados!\n');
 

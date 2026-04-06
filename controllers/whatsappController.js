@@ -14,6 +14,7 @@ import { createSmartFollowupForLead } from "../services/followupOrchestrator.js"
 import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js';
 import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import Logger from '../services/utils/Logger.js';
+import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 
 import { getOptimizedAmandaResponse } from '../orchestrators/AmandaOrchestrator.js';
@@ -696,9 +697,9 @@ export const whatsappController = {
                     msgData: msg
                 }), 'EX', 4); // 4 segundos de espera
             } catch (redisErr) {
-                // ⚡ Se Redis cair, processa sem debounce
+                // ⚡ Se Redis cair, processa sem debounce (direto, sem fila)
                 console.error('Redis debounce error (processando sem buffer):', redisErr.message);
-                await processInboundMessage(msg, value);
+                await publishEvent(EventTypes.WHATSAPP_MESSAGE_RECEIVED, { msg, value });
                 return;
             }
 
@@ -718,7 +719,7 @@ export const whatsappController = {
                     } else {
                         msg.text.body = combinedText;
                     }
-                    await processInboundMessage(msg, value);
+                    await publishEvent(EventTypes.WHATSAPP_MESSAGE_RECEIVED, { msg, value });
                 } catch (err) {
                     console.error('❌ Erro no processamento do buffer:', err);
                 }
@@ -734,6 +735,13 @@ export const whatsappController = {
             const page = Math.max(parseInt(req.query.page || "1", 10), 1);
             const limit = Math.min(parseInt(req.query.limit || "50", 10), 100);
             const search = (req.query.search || "").trim();
+            const hasNewMessage = req.query.hasNewMessage;
+            const unreadOnly = req.query.unreadOnly === 'true';
+            const tag = req.query.tag;
+            const dateFrom = req.query.dateFrom;
+            const dateTo = req.query.dateTo;
+            const sortBy = req.query.sortBy || 'lastMessageAt'; // lastMessageAt, name, unreadCount
+            const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
             const skip = (page - 1) * limit;
 
             const filter = {};
@@ -744,15 +752,33 @@ export const whatsappController = {
                 ];
             }
 
-            const pipeline = [
-                {
-                    $match: {
-                        ...filter,
-                        phone: { $regex: /^\d+$/ }
-                    }
-                },
+            // Filtro de mensagens não lidas
+            if (hasNewMessage === 'true') {
+                filter.hasNewMessage = true;
+            } else if (hasNewMessage === 'false') {
+                filter.hasNewMessage = { $ne: true };
+            }
 
-                { $sort: { lastMessageAt: -1, name: 1 } },
+            if (unreadOnly) {
+                filter.unreadCount = { $gt: 0 };
+            }
+
+            // Filtro por tag
+            if (tag) {
+                filter.tags = tag;
+            }
+
+            // Filtro por data da última mensagem
+            if (dateFrom || dateTo) {
+                filter.lastMessageAt = {};
+                if (dateFrom) filter.lastMessageAt.$gte = new Date(dateFrom);
+                if (dateTo) filter.lastMessageAt.$lte = new Date(dateTo + 'T23:59:59.999Z');
+            }
+
+            const pipeline = [
+                { $match: filter },
+
+                { $sort: { [sortBy]: sortOrder, name: sortOrder } },
                 { $skip: skip },
                 { $limit: limit },
 
@@ -820,10 +846,7 @@ export const whatsappController = {
 
             const [rawData, total] = await Promise.all([
                 Contacts.aggregate(pipeline),
-                Contacts.countDocuments({
-                    ...filter,
-                    phone: { $regex: /^\d+$/ }
-                })
+                Contacts.countDocuments(filter)
             ]);
 
             // ✅ SERIALIZA ObjectIds pra STRING
@@ -1201,55 +1224,19 @@ export const whatsappController = {
             const to = normalizeE164BR(rawPhone);
             const contact = await Contacts.findOne({ phone: to }).lean();
 
-            const sendResult = await sendTextMessage({
+            // 📤 Enfileira envio assíncrono → WhatsappSendWorker (retry automático)
+            await publishEvent(EventTypes.WHATSAPP_MESSAGE_REQUESTED, {
                 to,
                 text: formattedText,
-                lead: leadId,
-                contactId: contact?._id || null,
-                patientId: lead.convertedToPatient || null,
-                sentBy: 'amanda',
-                forceSend: true
-            });
-
-            const waMessageId = sendResult?.messages?.[0]?.id || null;
-
-            await new Promise(r => setTimeout(r, 200));
-
-            let savedMsg = await Message.findOne({ waMessageId }).lean();
-
-            if (!savedMsg) {
-                savedMsg = await Message.create({
-                    waMessageId,
-                    lead: leadId,
-                    contact: contact?._id || null,
-                    from: process.env.WHATSAPP_PHONE_NUMBER_ID || 'whatsapp:amanda',
-                    to,
-                    direction: 'outbound',
-                    type: 'text',
-                    content: formattedText,
-                    status: 'sent',
-                    timestamp: new Date(),
-                    metadata: { sentBy: 'amanda', source: 'amanda-resume' }
-                });
-            }
-
-            const io = getIo();
-            io.emit("message:new", {
-                id: String(savedMsg._id),
-                from: savedMsg.from,
-                to: savedMsg.to,
-                direction: savedMsg.direction,
-                type: savedMsg.type,
-                content: savedMsg.content,
-                text: savedMsg.content,
-                status: savedMsg.status,
-                timestamp: savedMsg.timestamp,
                 leadId: String(leadId),
-                contactId: String(savedMsg.contact || ''),
-                metadata: savedMsg.metadata
+                contactId: contact?._id ? String(contact._id) : null,
+                patientId: lead.convertedToPatient ? String(lead.convertedToPatient) : null,
+                sentBy: 'amanda',
+                source: 'amanda-resume',
+                idempotencyKey: `amanda-resume:${String(leadId)}:${Date.now()}`,
             });
 
-            console.log(`✅ [AMANDA-RESUME] Respondido`);
+            console.log(`✅ [AMANDA-RESUME] Envio enfileirado para WhatsappSendWorker`);
 
             return res.json({
                 success: true,
@@ -2014,9 +2001,13 @@ async function processInboundMessage(msg, value) {
 
 
         // ✅ AMANDA 2.0 TRACKING (texto, áudio transcrito ou imagem descrita)
+        // Migrado para event-driven: publishEvent → messageResponseWorker (com retry)
         if ((type === "text" || type === "audio" || type === "image") && isRealText) {
-            handleResponseTracking(lead._id, contentToSave)
-                .catch(err => console.error("⚠️ Tracking não crítico falhou:", err));
+            publishEvent(EventTypes.MESSAGE_RESPONSE_DETECTED, {
+                leadId:      String(lead._id),
+                waMessageId: wamid,                              // ID externo (WhatsApp)
+                messageId:   savedMessage?._id?.toString() || null, // ID interno (Mongo)
+            }).catch(err => console.error("⚠️ Tracking não crítico falhou:", err));
         }
 
         // ✅ RESPOSTA AUTOMÁTICA (Amanda)
@@ -2360,65 +2351,23 @@ async function handleAutoReply(from, to, content, lead) {
             // 📝 Formata texto para melhor legibilidade no WhatsApp
             const finalText = formatWhatsAppResponse(aiText.trim());
 
-            // 🔎 Tenta achar o contact pra vincular na mensagem
+            // 🔎 Resolve contactId e patientId antes de enfileirar
             const contactDoc = await Contacts.findOne({ phone: from }).lean();
             const patientId = leadDoc.convertedToPatient || null;
 
-            // 📤 Envia e REGISTRA (sendTextMessage + registerMessage)
-            const result = await sendTextMessage({
+            // 📤 Enfileira envio assíncrono → WhatsappSendWorker (retry automático)
+            await publishEvent(EventTypes.WHATSAPP_MESSAGE_REQUESTED, {
                 to: from,
                 text: finalText,
-                lead: leadDoc._id,
-                contactId: contactDoc?._id || null,
-                patientId,
-                sentBy: 'amanda'
+                leadId: String(leadDoc._id),
+                contactId: contactDoc?._id ? String(contactDoc._id) : null,
+                patientId: patientId ? String(patientId) : null,
+                sentBy: 'amanda',
+                source: 'amanda-reply',
+                idempotencyKey: `amanda-reply:${String(leadDoc._id)}:${Date.now()}`,
             });
 
-            const waMessageId = result?.messages?.[0]?.id || null;
-
-            // Dá um respiro pro Mongo gravar
-            await new Promise(resolve => setTimeout(resolve, 200));
-
-            // 🔍 Busca a mensagem salva pelo waMessageId
-            let savedOut = null;
-            if (waMessageId) {
-                savedOut = await Message.findOne({ waMessageId }).lean();
-                console.log('🔍 Busca Amanda por waMessageId:', savedOut ? 'ENCONTROU' : 'NÃO ACHOU');
-            }
-
-            // Fallback: última outbound para esse número
-            if (!savedOut) {
-                savedOut = await Message.findOne({
-                    to: from,
-                    direction: "outbound",
-                    type: "text"
-                }).sort({ timestamp: -1 }).lean();
-                console.log('🔍 Busca Amanda por to + outbound:', savedOut ? 'ENCONTROU' : 'NÃO ACHOU');
-            }
-
-            if (savedOut) {
-                const io = getIo();
-                io.emit("message:new", {
-                    id: String(savedOut._id),
-                    from: savedOut.from,
-                    to: savedOut.to,
-                    direction: savedOut.direction,
-                    type: savedOut.type,
-                    content: savedOut.content,
-                    text: savedOut.content,
-                    status: savedOut.status,
-                    timestamp: savedOut.timestamp,
-                    leadId: String(savedOut.lead || leadDoc._id),
-                    contactId: String(savedOut.contact || contactDoc?._id || ''),
-                    metadata: savedOut.metadata || {
-                        sentBy: 'amanda'
-                    }
-                });
-
-                console.log("✅ Amanda respondeu e emitiu via socket:", String(savedOut._id));
-            } else {
-                console.warn('⚠️ Não achei a mensagem da Amanda no banco pra emitir socket');
-            }
+            console.log("[AmandaReply] Envio enfileirado para WhatsappSendWorker");
         }
     } catch (error) {
         console.error('❌ Erro no auto-reply (não crítico):', error);
@@ -2570,3 +2519,6 @@ export function startSilenceMonitor() {
 
 // Inicia automaticamente
 startSilenceMonitor();
+
+// Exporta para uso pelo whatsappInboundWorker
+export { processInboundMessage };

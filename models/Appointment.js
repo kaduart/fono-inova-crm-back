@@ -233,7 +233,7 @@ const appointmentSchema = new mongoose.Schema({
     origin: {
       source: {
         type: String,
-        enum: ['agenda_externa', 'whatsapp', 'telefone', 'instagram', 'site', 'indicacao', 'amandaAI', 'outro'],
+        enum: ['agenda_externa', 'whatsapp', 'telefone', 'instagram', 'site', 'indicacao', 'amandaAI', 'crm', 'outro'],
         default: 'outro'
       },
       convertedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -297,6 +297,16 @@ appointmentSchema.index({ 'patientInfo.phone': 1 });
 appointmentSchema.index({ assignedTo: 1, operationalStatus: 1 });
 appointmentSchema.index({ urgency: 1, createdAt: -1 });
 
+// ─── ÍNDICES DE PERFORMANCE (queries do calendário / listagens) ─
+// Query principal do calendário: filtra por clínica + período
+appointmentSchema.index({ clinicId: 1, date: 1 });
+// Query calendário com filtro de status (caso mais comum)
+appointmentSchema.index({ clinicId: 1, date: 1, operationalStatus: 1 });
+// Query por paciente + período (histórico, listagem de sessões)
+appointmentSchema.index({ patient: 1, date: 1 });
+// Query por data sem filtro de clínica (fallback/global)
+appointmentSchema.index({ date: 1, operationalStatus: 1 });
+
 // ─── VIRTUAL ────────────────────────────────────────────────
 appointmentSchema.virtual('daysUntilDate').get(function () {
   if (!this.date) return null;
@@ -332,15 +342,23 @@ appointmentSchema.pre('findOneAndUpdate', function (next) {
 });
 
 // ─── HOOKS PÓS-SAVE ────────────────────────────────────────
-appointmentSchema.post('save', async function (doc) {
-  try { await syncEvent(doc, 'appointment'); }
-  catch (error) { console.error('⚠️ Erro no hook post-save (não crítico):', error.message); }
+// IMPORTANTE: setImmediate garante que o response HTTP não aguarda o sync.
+// syncEvent é best-effort (falha não impacta o usuário).
+appointmentSchema.post('save', function (doc) {
+  setImmediate(() => {
+    syncEvent(doc, 'appointment').catch(err =>
+      console.error('⚠️ Erro no hook post-save (não crítico):', err.message)
+    );
+  });
 });
 
-appointmentSchema.post('findOneAndUpdate', async function (doc) {
+appointmentSchema.post('findOneAndUpdate', function (doc) {
   if (doc) {
-    try { await syncEvent(doc, 'appointment'); }
-    catch (error) { console.error('⚠️ Erro no hook post-findOneAndUpdate (não crítico):', error.message); }
+    setImmediate(() => {
+      syncEvent(doc, 'appointment').catch(err =>
+        console.error('⚠️ Erro no hook post-findOneAndUpdate (não crítico):', err.message)
+      );
+    });
   }
 });
 

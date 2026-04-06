@@ -66,9 +66,9 @@ router.post('/request', auth, async (req, res) => {
             ? `payment_${appointmentId}_${amount}`
             : `payment_${patientId}_${amount}_${Date.now()}`;
 
-        // 🎯 PUBLICA EVENTO: PAYMENT_REQUESTED
+        // 🎯 PUBLICA EVENTO: PAYMENT_PROCESS_REQUESTED
         const eventResult = await publishEvent(
-            EventTypes.PAYMENT_REQUESTED,
+            EventTypes.PAYMENT_PROCESS_REQUESTED,
             {
                 appointmentId: appointmentId?.toString(),
                 patientId: patientId.toString(),
@@ -306,15 +306,22 @@ router.post('/webhook', async (req, res) => {
         const correlationId = `webhook_${gateway}_${Date.now()}`;
 
         // Determina tipo de evento baseado no status
-        const eventType = status === 'paid' 
-            ? EventTypes.PAYMENT_COMPLETED 
+        const eventType = status === 'paid'
+            ? EventTypes.PAYMENT_COMPLETED
             : EventTypes.PAYMENT_FAILED;
 
-        // 🎯 PUBLICA EVENTO de confirmação
+        // Busca contexto do payment (patientId, appointmentId) para enriquecer eventos
+        const paymentDoc = await Payment.findById(paymentId)
+            .select('patient appointment status')
+            .lean();
+
+        // 🎯 PUBLICA EVENTO de confirmação (PAYMENT_COMPLETED / PAYMENT_FAILED)
         const eventResult = await publishEvent(
             eventType,
             {
                 paymentId: paymentId.toString(),
+                patientId: paymentDoc?.patient?.toString(),
+                appointmentId: paymentDoc?.appointment?.toString(),
                 transactionId,
                 status,
                 gateway,
@@ -325,12 +332,33 @@ router.post('/webhook', async (req, res) => {
                 correlationId,
                 aggregateType: 'payment',
                 aggregateId: paymentId,
-                metadata: {
-                    source: 'payment_webhook',
-                    gateway
-                }
+                metadata: { source: 'payment_webhook', gateway }
             }
         );
+
+        // 🔄 PUBLICA PAYMENT_STATUS_CHANGED — sincroniza appointment/session no sistema
+        // (PAYMENT_COMPLETED cuida do WhatsApp; este cuida do estado interno)
+        if (paymentDoc) {
+            await publishEvent(
+                EventTypes.PAYMENT_STATUS_CHANGED,
+                {
+                    paymentId:      paymentId.toString(),
+                    patientId:      paymentDoc.patient?.toString(),
+                    appointmentId:  paymentDoc.appointment?.toString(),
+                    previousStatus: paymentDoc.status,
+                    status,
+                    changedAt:      new Date().toISOString(),
+                },
+                {
+                    correlationId,
+                    aggregateType: 'payment',
+                    aggregateId:   paymentId,
+                    metadata:      { source: 'payment_webhook', gateway }
+                }
+            ).catch(err =>
+                console.warn('[PaymentV2] PAYMENT_STATUS_CHANGED não publicado (non-fatal):', err.message)
+            );
+        }
 
         console.log(`[PaymentV2] Webhook processado: ${paymentId}`, {
             status,

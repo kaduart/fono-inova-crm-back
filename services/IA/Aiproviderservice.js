@@ -4,6 +4,35 @@ import OpenAI from "openai";
 import "dotenv/config";
 
 // ============================================================================
+// 🚨 VALIDAÇÃO CRÍTICA DE API KEY
+// ============================================================================
+
+function validateApiKey() {
+    const key = process.env.OPENAI_API_KEY;
+    
+    if (!key) {
+        console.error("🚨 [CRÍTICO] OPENAI_API_KEY não definida!");
+        return false;
+    }
+    
+    if (key.includes("test") || key.includes("dummy") || key.includes("fake")) {
+        console.error("🚨 [CRÍTICO] OPENAI_API_KEY contém valor de teste! Use sk-prod- ou sk-live-");
+        console.error("   Valor atual:", key.substring(0, 15) + "...");
+        return false;
+    }
+    
+    if (!key.startsWith("sk-")) {
+        console.error("🚨 [CRÍTICO] OPENAI_API_KEY formato inválido! Deve começar com sk-");
+        return false;
+    }
+    
+    return true;
+}
+
+// Validação no startup (só loga, não bloqueia para não quebrar dev)
+const isApiKeyValid = validateApiKey();
+
+// ============================================================================
 // 🔧 CONFIGURAÇÃO DOS PROVIDERS
 // ============================================================================
 
@@ -11,7 +40,7 @@ const groq = process.env.GROQ_API_KEY
     ? new Groq({ apiKey: process.env.GROQ_API_KEY })
     : null;
 
-const openai = process.env.OPENAI_API_KEY
+const openai = process.env.OPENAI_API_KEY && isApiKeyValid
     ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
     : null;
 
