@@ -68,7 +68,7 @@ import {
   extractDetectorResults,
   enrichInputWithBusinessRules 
 } from './decision/index.js';
-import  logDecision  from '../services/analytics/decisionTracking.js';
+import { logDecision } from './decision/index.js';
 
 const logger = new Logger('WhatsAppOrchestrator');
 
@@ -1805,22 +1805,22 @@ Me conta um pouco sobre o que você precisa! 😊`;
       let enrichedText = text;
 
       // ── URGÊNCIA: prefixo de priorização ──────────────────────────────────
-      if (flags.mentionsUrgency && !enrichedText.toLowerCase().includes('priorid') && !enrichedText.toLowerCase().includes('r[aá]pido')) {
+      if (flags?.mentionsUrgency && !enrichedText.toLowerCase().includes('priorid') && !enrichedText.toLowerCase().includes('r[aá]pido')) {
         enrichedText = `Entendo a urgência 💚 Vou priorizar sua situação!\n\n${enrichedText}`;
       }
 
       // ── EMOCIONAL: acolhimento antes de qualquer informação ───────────────
-      else if (flags.isEmotional && !enrichedText.includes('preocupad') && !enrichedText.includes('Entendo')) {
+      else if (flags?.isEmotional && !enrichedText.includes('preocupad') && !enrichedText.includes('Entendo')) {
         enrichedText = `Entendo como você deve estar se sentindo 💚\n\n${enrichedText}`;
       }
 
       // ── TEA/TDAH: validação específica ────────────────────────────────────
-      if (flags.mentionsTEA_TDAH && !enrichedText.includes('passo')) {
+      if (flags?.mentionsTEA_TDAH && !enrichedText.includes('passo')) {
         enrichedText = enrichedText + '\n\n💚 Buscar ajuda especializada é um passo muito importante para o desenvolvimento do seu filho.';
       }
 
       // ── DÚVIDA DE TEA: reformula pergunta aberta ──────────────────────────
-      if (flags.mentionsDoubtTEA && !enrichedText.includes('tempo')) {
+      if (flags?.mentionsDoubtTEA && !enrichedText.includes('tempo')) {
         enrichedText = enrichedText.replace(
           /me conta um pouco da situação/i,
           'cada criança tem seu tempo, e é normal ter dúvidas. Me conta o que você tem observado'
@@ -1828,12 +1828,12 @@ Me conta um pouco sobre o que você precisa! 😊`;
       }
 
       // ── OBJEÇÃO DE PREÇO: contextualiza antes de informar ────────────────
-      if (flags.mentionsPriceObjection && !enrichedText.includes('investimento')) {
+      if (flags?.mentionsPriceObjection && !enrichedText.includes('investimento')) {
         enrichedText = enrichedText + '\n\n💚 Também temos opções de parcelamento que facilitam bastante.';
       }
 
       // ── HOT LEAD + insights reais de fechamento ───────────────────────────
-      if (flags.isHotLead && insights?.data?.successfulClosingQuestions?.length > 0 && state !== STATES.SHOW_SLOTS && state !== STATES.CONFIRM_BOOKING) {
+      if (flags?.isHotLead && insights?.data?.successfulClosingQuestions?.length > 0 && state !== STATES.SHOW_SLOTS && state !== STATES.CONFIRM_BOOKING) {
         const closingQ = insights.data.successfulClosingQuestions[0];
         if (closingQ?.question && !enrichedText.includes(closingQ.question.substring(0, 20))) {
           enrichedText = enrichedText + `\n\n${closingQ.question}`;
@@ -1841,12 +1841,12 @@ Me conta um pouco sobre o que você precisa! 😊`;
       }
 
       // ── SÓ PESQUISANDO: tom educativo, sem pressão ────────────────────────
-      if (flags.isJustBrowsing && enrichedText.toLowerCase().includes('agendar')) {
+      if (flags?.isJustBrowsing && enrichedText.toLowerCase().includes('agendar')) {
         enrichedText = enrichedText.replace(/agendar/gi, 'saber mais');
       }
 
       // ── OBJEÇÃO DE CONVÊNIO: bridge para particular ───────────────────────
-      if (flags.mentionsInsuranceObjection && !enrichedText.includes('reembolso')) {
+      if (flags?.mentionsInsuranceObjection && !enrichedText.includes('reembolso')) {
         enrichedText = enrichedText + '\n\n💡 Muitas famílias optam pelo particular e solicitam reembolso ao plano — posso te explicar como funciona se quiser!';
       }
 
