@@ -250,6 +250,7 @@ const eventToQueueMap = {
     [EventTypes.PATIENT_CREATED]: ['patient-projection'],
     [EventTypes.PATIENT_UPDATED]: ['patient-projection'],
     [EventTypes.PATIENT_DELETED]: ['patient-projection'],
+    [EventTypes.PATIENT_VIEW_REBUILD_REQUESTED]: ['patient-projection'],
     [EventTypes.PACKAGE_CREATED]: ['package-projection', 'package-validation', 'patient-projection'],
     [EventTypes.PACKAGE_UPDATED]: ['package-projection', 'package-validation', 'patient-projection'],
     [EventTypes.PACKAGE_CANCELLED]: ['package-projection', 'package-validation', 'patient-projection'],
