@@ -17,6 +17,31 @@ import { createContextLogger } from '../../../utils/logger.js';
 
 const logger = createContextLogger('PatientProjection');
 
+// 🏥 Mapeamento de nomes amigáveis para especialidades
+const SPECIALTY_NAMES = {
+  fonoaudiologia: 'Fonoaudiologia',
+  terapia_ocupacional: 'Terapia Ocupacional',
+  psicologia: 'Psicologia',
+  fisioterapia: 'Fisioterapia',
+  psicomotricidade: 'Psicomotricidade',
+  musicoterapia: 'Musicoterapia',
+  psicopedagogia: 'Psicopedagogia',
+  neuropediatria: 'Neuropediatria',
+  neuroped: 'Neuropediatria',
+  pediatria: 'Pediatria',
+  sessao: 'Sessão',
+  evaluation: 'Avaliação',
+  individual_session: 'Sessão Individual'
+};
+
+function formatSpecialtyName(raw) {
+  if (!raw) return 'Sessão';
+  // Converte snake_case para texto legível
+  return raw
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, l => l.toUpperCase());
+}
+
 // ============================================
 // BUILDERS (constroem a view)
 // ============================================
@@ -113,14 +138,18 @@ export async function buildPatientView(patientId, options = {}) {
       
       // 📦 Pacotes (formato simplificado para o frontend)
       packages: packages?.length > 0 
-        ? packages.map(pkg => ({
-            packageId: pkg._id,
-            sessionType: pkg.sessionType || pkg.therapyType || 'Sessão',
-            totalSessions: pkg.totalSessions || pkg.sessions?.length || 0,
-            sessionsDone: pkg.sessionsDone || pkg.sessions?.filter(s => s.status === 'completed')?.length || 0,
-            sessionsRemaining: pkg.sessionsRemaining || (pkg.totalSessions - (pkg.sessionsDone || 0)),
-            status: pkg.status
-          }))
+        ? packages.map(pkg => {
+            const rawType = pkg.sessionType || pkg.specialty || 'sessao';
+            const sessionType = SPECIALTY_NAMES[rawType] || formatSpecialtyName(rawType);
+            return {
+              packageId: pkg._id,
+              sessionType,
+              totalSessions: pkg.totalSessions || pkg.sessions?.length || 0,
+              sessionsDone: pkg.sessionsDone || pkg.sessions?.filter(s => s.status === 'completed')?.length || 0,
+              sessionsRemaining: pkg.sessionsRemaining || (pkg.totalSessions - (pkg.sessionsDone || 0)),
+              status: pkg.status
+            };
+          })
         : [],
       
       // Saldo
