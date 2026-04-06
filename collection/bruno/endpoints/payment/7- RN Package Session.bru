@@ -1,0 +1,47 @@
+meta {
+  name: 3c- Create with Package
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/v2/payments/create
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "patientId": "{{v2PatientId}}",
+    "doctorId": "{{v2DoctorId}}",
+    "serviceType": "package_session",
+    "packageId": "{{v2PackageId}}",
+    "amount": 150.00,
+    "paymentMethod": "pix",
+    "notes": "RN-V1: Deve validar existência do pacote e incrementar sessionsDone"
+  }
+}
+
+script:post-response {
+  const data = res.body?.data;
+  if (data?.eventId) {
+    bru.setEnvVar("v2PackageEventId", data.eventId);
+    console.log("✅ PACKAGE SESSION PAYMENT REQUESTED");
+    console.log("   Event ID:", data.eventId);
+    console.log("   RN-V1: Worker deve validar Package e incrementar sessionsDone");
+  }
+}
+
+docs {
+  # RN-V1: Pagamento de Pacote
+  
+  Quando `serviceType: "package_session"`:
+  - ✅ Validar que `packageId` existe
+  - ✅ Validar que Package pertence ao paciente
+  - ✅ Incrementar `package.sessionsDone`
+  - ✅ Adicionar pagamento ao array `package.payments`
+}

@@ -2293,9 +2293,9 @@ router.patch('/:id/complete', auth, async (req, res) => {
 
         // 💰 BUSCAR SALDO DEVEDOR DO PACIENTE
         let patientBalance = 0;
-        if (finalAppointment?.patient?._id) {
+        if (patientId) {
             try {
-                const balanceDoc = await PatientBalance.findOne({ patient: finalAppointment.patient._id });
+                const balanceDoc = await PatientBalance.findOne({ patient: patientId });
                 if (balanceDoc) {
                     patientBalance = balanceDoc.currentBalance;
                 }

@@ -492,33 +492,15 @@ export const packageOperations = {
                 });
             }
 
-            const seen = new Set();
-            const uniqueAppointments = [];
+            // 1 appointment por session, sempre — sem dedup por data (cada session._id é único)
+            const insertedAppointments = await Appointment.insertMany(appointmentsToCreate, { session: mongoSession });
 
-            for (const a of appointmentsToCreate) {
-                const key = `${a.date}-${a.time}-${a.patient}-${a.doctor}`;
-
-                if (!seen.has(key)) {
-                    seen.add(key);
-                    uniqueAppointments.push(a);
-                } else {
-                    console.warn(`⛔ Sessão duplicada ignorada: ${key}`);
-                }
-            }
-
-            if (appointmentsToCreate.length !== uniqueAppointments.length) {
-                console.warn(`⚠️ Detectadas ${appointmentsToCreate.length - uniqueAppointments.length} duplicatas internas antes do insert.`);
-            }
-
-            const insertedAppointments = await Appointment.insertMany(uniqueAppointments, { session: mongoSession });
-
-
-            // 🔗 Vincula sessions e appointments com base em data/hora (não pelo índice)
+            // 🔗 Vincula sessions→appointments pelo session._id (robusto, sem risco de colisão por data)
             const appointmentMap = new Map(
-                insertedAppointments.map(a => [`${a.date}-${a.time}-${a.patient}-${a.doctor}`, a._id])
+                insertedAppointments.map(a => [a.session.toString(), a._id])
             );
             console.log('Sessions:', insertedSessions.length, 'Appointments:', insertedAppointments.length);
-            
+
             // 🗓️ Log de ajustes por feriado
             const adjustedDates = sessionsToCreate.filter((s, i) => s.date !== selectedSlots[i]?.date);
             if (adjustedDates.length > 0) {
@@ -529,14 +511,12 @@ export const packageOperations = {
                 });
             }
 
-
             await Session.bulkWrite(
                 insertedSessions.map(s => {
-                    const key = `${s.date}-${s.time}-${s.patient}-${s.doctor}`;
-                    const appId = appointmentMap.get(key);
+                    const appId = appointmentMap.get(s._id.toString());
 
                     if (!appId) {
-                        console.warn(`⚠️ Sessão sem appointment correspondente (${key}) — será ignorada no link.`);
+                        console.warn(`⚠️ Sessão ${s._id} (${s.date} ${s.time}) sem appointment correspondente — verifique o insert.`);
                         return { updateOne: { filter: { _id: s._id }, update: {} } }; // noop
                     }
 
@@ -1796,6 +1776,21 @@ export const packageOperations = {
                 console.log('📝 Nova sessão sem pagamento prévio');
             }
 
+            // 🏥 Sobrescreve defaults para convênio/liminar (exceto reaproveitamento de crédito)
+            if (!canceledPaidSession) {
+                if (pkg.type === 'convenio') {
+                    isPaid = false;
+                    paymentStatus = 'pending_receipt';
+                    visualFlag = 'pending';
+                    paymentMethod = 'convenio';
+                } else if (pkg.type === 'liminar') {
+                    isPaid = false;
+                    paymentStatus = 'pending';
+                    visualFlag = 'pending';
+                    paymentMethod = 'liminar_credit';
+                }
+            }
+
             console.log('💰 Dados financeiros calculados PARA A SESSÃO:', {
                 isPaid,
                 paymentStatus,
@@ -1822,7 +1817,9 @@ export const packageOperations = {
                 paymentMethod,
                 partialAmount,
                 notes: notes || '',
-                _inFinancialTransaction: true
+                _inFinancialTransaction: true,
+                ...(pkg.type === 'convenio' && { billingType: 'convenio', insuranceGuide: pkg.insuranceGuide }),
+                ...(pkg.type === 'liminar' && { billingType: 'liminar', paymentOrigin: 'liminar' })
             });
 
             await newSession.save({
@@ -1851,11 +1848,14 @@ export const packageOperations = {
                 specialty: newSession.specialty,
                 session: newSession._id,
                 package: packageId,
-                serviceType: 'package_session',
+                serviceType: pkg.type === 'convenio' ? 'convenio_session' : (pkg.type === 'liminar' ? 'liminar_session' : 'package_session'),
                 operationalStatus: 'scheduled',
                 clinicalStatus: 'pending',
                 paymentStatus: newSession.paymentStatus,
                 visualFlag: newSession.visualFlag,
+                billingType: pkg.type === 'convenio' ? 'convenio' : (pkg.type === 'liminar' ? 'liminar' : 'particular'),
+                ...(pkg.type === 'convenio' && { insuranceGuide: pkg.insuranceGuide, insuranceProvider: pkg.insuranceProvider }),
+                ...(pkg.type === 'liminar' && { paymentOrigin: 'liminar' }),
                 // 🔥 NOVO: Primeiro agendamento do paciente?
                 isFirstAppointment: isFirstAppointment
             });
