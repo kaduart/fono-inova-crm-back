@@ -27,4 +27,6 @@ export {
 
 // NOTA: Não exportamos responseHandlers - usamos ResponseBuilder.js existente
 
+export { logDecision } from './decisionLogger.js';
+
 export { default } from './DecisionResolver.js';

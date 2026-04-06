@@ -124,23 +124,40 @@ export async function completeSession(sessionId, data = {}, context = {}) {
     };
   }
   
-  // 3. Atualiza sessão
+  // 3. Monta update da sessão
+  const sessionUpdate = {
+    status: 'completed',
+    completedAt: new Date(),
+    sessionConsumed: true,
+    notes: data.notes || session.notes,
+    updatedBy: userId,
+    updatedAt: new Date(),
+    // Dados de billing (se fornecidos)
+    billing: {
+      addToBalance,
+      balanceAmount,
+      balanceDescription
+    }
+  };
+  
+  // 3.1 DADOS DE PAGAMENTO (vindos do worker/orquestrador)
+  if (data.paymentId) {
+    sessionUpdate.payment = data.paymentId;
+  }
+  if (data.paymentStatus) {
+    sessionUpdate.paymentStatus = data.paymentStatus;
+  }
+  if (data.isPaid !== undefined) {
+    sessionUpdate.isPaid = data.isPaid;
+  }
+  if (data.visualFlag) {
+    sessionUpdate.visualFlag = data.visualFlag;
+  }
+  
+  // 3.2 Atualiza sessão
   const updatedSession = await Session.findByIdAndUpdate(
     sessionId,
-    {
-      status: 'completed',
-      completedAt: new Date(),
-      sessionConsumed: true,
-      notes: data.notes || session.notes,
-      updatedBy: userId,
-      updatedAt: new Date(),
-      // Dados de billing (se fornecidos)
-      billing: {
-        addToBalance,
-        balanceAmount,
-        balanceDescription
-      }
-    },
+    sessionUpdate,
     { new: true }
   ).populate('patient doctor');
   

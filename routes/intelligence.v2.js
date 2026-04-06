@@ -34,12 +34,16 @@ router.get('/', auth, async (req, res) => {
         const isCurrentMonth = targetMonth === (now.month() + 1) && targetYear === now.year();
         
         // ======================================================
-        // 1. BUSCAR META MENSAL
+        // 1. BUSCAR META MENSAL (PADRONIZADO com goals.v2.js)
         // ======================================================
+        const start = `${targetYear}-${String(targetMonth).padStart(2, '0')}-01`;
+        const lastDay = new Date(targetYear, targetMonth, 0).getDate();
+        const end = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${lastDay}`;
+        
         const planning = await Planning.findOne({
             type: 'monthly',
-            'period.start': startOfMonth.format('YYYY-MM-DD'),
-            'period.end': endOfMonth.format('YYYY-MM-DD'),
+            'period.start': start,
+            'period.end': end,
             createdBy: req.user?.id
         }).lean();
         

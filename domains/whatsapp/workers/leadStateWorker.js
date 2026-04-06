@@ -122,6 +122,22 @@ export function createLeadStateWorker(deps) {
           };
         }
 
+        // Detectar mensagem inbound para tracking de respostas
+        const isInbound = payload.direction === 'inbound' || !payload.direction;
+        if (isInbound && lead._id) {
+          await publishEvent('MESSAGE_RESPONSE_DETECTED', {
+            leadId: lead._id.toString(),
+            phone,
+            timestamp: new Date().toISOString(),
+            correlationId
+          }, { correlationId });
+          
+          logger.debug('[LeadStateWorker] Emitted MESSAGE_RESPONSE_DETECTED', {
+            leadId: lead._id,
+            phone
+          });
+        }
+
         // Tudo OK - avança para orquestração
         const enrichedContext = {
           leadId: lead._id,

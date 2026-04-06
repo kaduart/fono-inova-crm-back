@@ -90,21 +90,14 @@ function getEspecificacao(payment) {
 async function getCashFlow(startDate, endDate, clinicId) {
     const start = moment.tz(startDate, TIMEZONE).startOf('day');
     const end = moment.tz(endDate, TIMEZONE).endOf('day');
+    
+    // CORREÇÃO: Usa Date (igual está no banco MongoDB)
+    const rangeStart = new Date(start.format('YYYY-MM-DD') + 'T00:00:00.000Z');
+    const rangeEnd = new Date(end.format('YYYY-MM-DD') + 'T23:59:59.999Z');
 
-    // Match base para pagamentos confirmados
     const matchStage = {
         status: { $in: ['paid', 'completed', 'confirmed'] },
-        $or: [
-            {
-                paymentDate: {
-                    $gte: start.format('YYYY-MM-DD'),
-                    $lte: end.format('YYYY-MM-DD')
-                }
-            },
-            {
-                createdAt: { $gte: start.toDate(), $lte: end.toDate() }
-            }
-        ]
+        paymentDate: { $gte: rangeStart, $lte: rangeEnd }
     };
 
     if (clinicId && clinicId !== 'default') {
@@ -144,7 +137,7 @@ async function getCashFlow(startDate, endDate, clinicId) {
     // Agrupa por dia
     const dailyMap = new Map();
     payments.forEach(p => {
-        const date = p.paymentDate || moment(p.createdAt).format('YYYY-MM-DD');
+        const date = moment(p.paymentDate).format('YYYY-MM-DD');
         if (!dailyMap.has(date)) {
             dailyMap.set(date, { amount: 0, count: 0 });
         }
@@ -269,27 +262,15 @@ router.get('/transactions', auth, async (req, res) => {
             matchStage.clinicId = clinicId;
         }
 
-        // Filtro de data
+        // Filtro de data (CORRETO: Date no paymentDate)
         if (date) {
-            matchStage.$or = [
-                { paymentDate: date },
-                { createdAt: { $gte: moment.tz(date, TIMEZONE).startOf('day').toDate(), $lte: moment.tz(date, TIMEZONE).endOf('day').toDate() } }
-            ];
+            const dayStart = new Date(date + 'T00:00:00.000Z');
+            const dayEnd = new Date(date + 'T23:59:59.999Z');
+            matchStage.paymentDate = { $gte: dayStart, $lte: dayEnd };
         } else if (startDate && endDate) {
-            matchStage.$or = [
-                { 
-                    paymentDate: { 
-                        $gte: startDate, 
-                        $lte: endDate 
-                    } 
-                },
-                { 
-                    createdAt: { 
-                        $gte: moment.tz(startDate, TIMEZONE).startOf('day').toDate(), 
-                        $lte: moment.tz(endDate, TIMEZONE).endOf('day').toDate() 
-                    } 
-                }
-            ];
+            const rangeStart = new Date(startDate + 'T00:00:00.000Z');
+            const rangeEnd = new Date(endDate + 'T23:59:59.999Z');
+            matchStage.paymentDate = { $gte: rangeStart, $lte: rangeEnd };
         }
 
         if (method) {
@@ -299,27 +280,27 @@ router.get('/transactions', auth, async (req, res) => {
         const transactions = await Payment.find(matchStage)
             .sort({ createdAt: -1 })
             .limit(parseInt(limit))
-            .populate('patient', 'fullName')
-            .populate('doctor', 'fullName specialty')
+            .populate('patientId', 'fullName')
+            .populate('createdBy', 'fullName')
             .lean();
         
         const formatted = transactions.map(t => {
-            const doctorName = t.doctor?.fullName || (typeof t.doctor === 'string' ? t.doctor : '—');
-            const doctorSpecialty = t.doctor?.specialty || null;
-            
+            const paymentDateStr = t.paymentDate 
+                ? moment(t.paymentDate).format('YYYY-MM-DD')
+                : moment(t.createdAt).format('YYYY-MM-DD');
             return {
                 id: t._id.toString(),
-                date: t.paymentDate || moment(t.createdAt).format('YYYY-MM-DD'),
+                date: paymentDateStr,
                 time: moment(t.createdAt).format('HH:mm'),
                 amount: t.amount,
                 method: t.paymentMethod || 'unknown',
                 type: classifyPayment(t),
                 especificacao: getEspecificacao(t),
                 description: t.description || t.notes || getDefaultDescription(t),
-                patient: t.patient?.fullName || '—',
-                doctor: doctorName,
+                patient: t.patientId?.fullName || '—',
+                createdBy: t.createdBy?.fullName || '—',
                 status: t.status,
-                specialty: t.sessionType || doctorSpecialty || null,
+                specialty: t.sessionType || null,
                 serviceType: t.serviceType || null
             };
         });

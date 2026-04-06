@@ -66,18 +66,17 @@ export async function recognizeLiminarRevenue(packageId, data) {
 
     // Cria Payment de reconhecimento de receita
     const payment = new Payment({
-        patient: patientId,
-        doctor: doctorId,
-        appointment: appointmentId,
-        session: sessionId,
-        package: packageId,
+        patientId,
+        appointmentId,
+        sessionId,
+        packageId,
         amount: sessionValue,
-        paymentMethod: 'liminar_credit',
-        billingType: 'particular', // Entra no caixa como particular
+        paymentMethod: 'other', // liminar_credit não é enum válido
+        billingType: 'particular',
         status: 'paid',
         kind: 'revenue_recognition',
         serviceDate: date,
-        paymentDate: date,
+        paymentDate: date ? new Date(date) : new Date(),
         notes: `Receita reconhecida - Processo: ${pkg.liminarProcessNumber || 'N/A'}`,
         paymentOrigin: 'liminar',
         correlationId,

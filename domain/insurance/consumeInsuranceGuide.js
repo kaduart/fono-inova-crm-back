@@ -130,16 +130,16 @@ export async function createInsurancePayment(data) {
     const Payment = (await import('../../models/Payment.js')).default;
 
     const payment = new Payment({
-        patient: patientId,
-        doctor: doctorId,
-        appointment: appointmentId,
-        session: sessionId,
-        package: packageId,
+        patientId,
+        appointmentId,
+        sessionId,
+        packageId,
         amount: 0, // Paciente não paga
         billingType: 'convenio',
         insuranceProvider,
         insuranceValue,
-        paymentMethod: 'convenio',
+        paymentMethod: 'other', // convenio não é enum válido
+        paymentDate: new Date(),
         status: 'pending',
         kind: 'manual',
         insurance: {

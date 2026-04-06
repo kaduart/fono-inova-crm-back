@@ -57,6 +57,9 @@ import {
   extractDetectorResults,
   logDecision
 } from './decision/index.js';
+import { isSafeEmploymentIntent } from './decision/EmploymentGuard.js';
+import { resolveClinicalArea } from './decision/ClinicalMapper.js';
+import { resolveBestArea } from './decision/PriorityResolver.js';
 import { CLINIC_KNOWLEDGE } from '../knowledge/clinicKnowledge.js';
 import { hasContextHint } from '../utils/intentRouter.js';
 import { isNationalHoliday } from '../config/feriadosBR.js';
@@ -1658,6 +1661,32 @@ async function _getOptimizedAmandaResponseInternal({
         forceUrgency: hasUrgency  // Novo flag para agendamento com urgência
     };
     
+    // 🧠 CLINICAL MAPPER: Detecta specialty por sintomas ANTES do priority resolver
+    const clinicalResolution = resolveClinicalArea(text);
+    if (clinicalResolution.area && clinicalResolution.confidence >= 0.7) {
+        console.log(`[CLINICAL MAPPER] Specialty detectada: ${clinicalResolution.area} (${clinicalResolution.condition}, conf: ${clinicalResolution.confidence})`);
+        
+        // Força contexto de PATIENT_CARE quando detecta specialty
+        context.detectedSpecialty = clinicalResolution.area;
+        context.detectedCondition = clinicalResolution.condition;
+        context.clinicalConfidence = clinicalResolution.confidence;
+        
+        // Se não tem therapyArea no lead ainda, força empatia + direcionamento
+        if (!lead?.therapyArea) {
+            context.forceFlags.forcePatientCare = true;
+            context.forceFlags.forceEmpathy = true;
+            console.log(`[CLINICAL MAPPER] Forçando PATIENT_CARE para: ${clinicalResolution.area}`);
+        }
+    }
+    
+    // 🎯 TEMPLATE OURO - PRIORIDADE ABSOLUTA: Resposta direcionada quando ClinicalMapper detectou specialty
+    // Isso garante que NUNCA perguntemos "qual área" quando já sabemos por sintomas
+    // 🔧 THRESHOLD: 0.7 (ajustado de 0.8 para aumentar cobertura sem perder precisão)
+    if (context.detectedSpecialty && !lead?.therapyArea && clinicalResolution.confidence >= 0.7) {
+        console.log(`[TEMPLATE OURO - EARLY RETURN] Resposta direcionada para: ${context.detectedSpecialty} (conf: ${clinicalResolution.confidence})`);
+        return buildDirectedResponse(context.detectedSpecialty, context.detectedCondition);
+    }
+    
     // 🆕 REGRA 1: Configurar contexto para ALTA_INTENCAO
     if (context.forceFlags.forceHighIntent) {
         context.offerSlotsImmediately = true;
@@ -1988,8 +2017,10 @@ async function _getOptimizedAmandaResponseInternal({
     }
 
     // 🆕 VERIFICAÇÃO: Emprego/Currículo (antes de perguntar qual área)
-    if (amandaAnalysis.extracted.flags.wantsPartnershipOrResume ||
-        amandaAnalysis.extracted.flags.wantsJobOrInternship) {
+    // 🔒 GUARD: Só detecta emprego se NÃO houver contexto de paciente (proteção contra "meu filho" → emprego)
+    const isEmploymentSafe = isSafeEmploymentIntent(text);
+    if ((amandaAnalysis.extracted.flags.wantsPartnershipOrResume ||
+        amandaAnalysis.extracted.flags.wantsJobOrInternship) && isEmploymentSafe) {
         const jobArea = amandaAnalysis.extracted.flags.jobArea ||
             amandaAnalysis.extracted.therapyArea ||
             'nossa equipe';
@@ -2109,6 +2140,27 @@ async function _getOptimizedAmandaResponseInternal({
     // 3.5 SEM THERAPY AREA → Resposta contextual baseada em flags e sintomas
     if (!amandaAnalysis.extracted.therapyArea && !lead?.therapyArea) {
         const flags35 = amandaAnalysis.extracted.flags || {};
+        
+        // 🆕 PRIORITY RESOLVER: Tenta resolver área do contexto antes de perguntar
+        const areaResolution = resolveBestArea({ 
+            message: text, 
+            lead: lead, 
+            pageSource: context.pageSource 
+        });
+        
+        if (areaResolution.area && areaResolution.confidence >= 0.7) {
+            const areaNames35 = {
+                fonoaudiologia: 'Fonoaudiologia',
+                psicologia: 'Psicologia',
+                terapia_ocupacional: 'Terapia Ocupacional',
+                fisioterapia: 'Fisioterapia',
+                neuropsicologia: 'Neuropsicologia'
+            };
+            const areaNome35 = areaNames35[areaResolution.area] || areaResolution.area;
+            console.log(`[PRIORITY RESOLVER] Área resolvida: ${areaResolution.area} (conf: ${areaResolution.confidence}, source: ${areaResolution.source})`);
+            return ensureSingleHeart(`Oi! Entendi que você busca **${areaNome35}** 💚\n\nPara te ajudar melhor, qual o **nome** e **idade** do paciente?`);
+        }
+        
         const contextHint35 = hasContextHint(text);
 
         if (contextHint35) {
@@ -5570,6 +5622,13 @@ function inferAreaFromContext(normalizedText, context = {}, flags = {}) {
     const fallbackArea = detectAreaInText(combined);
     if (fallbackArea) return fallbackArea;
 
+    // 🆕 CLINICAL MAPPER: Detecta área por sintomas quando regex não pegou
+    const clinicalInference = resolveClinicalArea(t);
+    if (clinicalInference && clinicalInference.confidence >= 0.7) {
+        console.log(`[CLINICAL MAPPER] Área inferida por sintoma: ${clinicalInference.area} (${clinicalInference.condition})`);
+        return clinicalInference.area;
+    }
+
     return null;
 }
 
@@ -6719,6 +6778,42 @@ async function processMessageLikeAmanda(text, lead = {}, enrichedContext = null)
         serviceMessage,
         hasAll: missing.length === 0 && serviceStatus === 'available'
     };
+}
+
+/**
+ * 🎯 TEMPLATE OURO: Resposta direcionada (empatia + área + CTA)
+ * Usado quando ClinicalMapper detecta specialty com alta confiança
+ */
+function buildDirectedResponse(area, condition = null) {
+    const areaNames = {
+        fonoaudiologia: 'Fonoaudiologia',
+        psicologia: 'Psicologia',
+        terapia_ocupacional: 'Terapia Ocupacional',
+        fisioterapia: 'Fisioterapia',
+        neuropsicologia: 'Neuropsicologia',
+        musicoterapia: 'Musicoterapia'
+    };
+    
+    const areaName = areaNames[area] || area;
+    
+    // Frases de empatia contextual baseadas na condição
+    const empathyMap = {
+        'fala_tardia': 'Entendo sua preocupação com o desenvolvimento da fala 💚',
+        'dislexia': 'Compreendo a importância de investigar as dificuldades de leitura 💚',
+        'tea': 'Entendo que buscar orientação é o primeiro passo 💚',
+        'tdah': 'Compreendo os desafios da atenção e inquietação 💚',
+        'motricidade': 'Entendo sua preocupação com o desenvolvimento motor 💚',
+        'sensorial': 'Compreendo as dificuldades sensoriais que vocês enfrentam 💚',
+        'default': 'Entendo sua preocupação 💚'
+    };
+    
+    const empathy = empathyMap[condition] || empathyMap['default'];
+    
+    return ensureSingleHeart(
+        `${empathy}\n\n` +
+        `Pelo que você descreveu, a **${areaName}** pode ajudar bastante nesse caso.\n\n` +
+        `Você prefere que eu te explique como funciona ou já quer ver os horários disponíveis? 😊`
+    );
 }
 
 /**

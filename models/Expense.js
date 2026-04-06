@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 
 const expenseSchema = new mongoose.Schema({
   description: {
@@ -156,6 +157,29 @@ expenseSchema.index({ createdAt: 1, status: 1 });
 expenseSchema.pre('save', function(next) {
   this.updatedAt = new Date();
   next();
+});
+
+// 🔹 POST-SAVE: Disparar recálculo de totais (não bloqueante)
+expenseSchema.post('save', async function(doc) {
+  try {
+    // Só recalcula se status mudou para paid ou se é nova despesa
+    await publishEvent(
+      EventTypes.TOTALS_RECALCULATE_REQUESTED,
+      {
+        clinicId: null, // Todos os clinicos
+        date: doc.date || new Date().toISOString().split('T')[0],
+        period: 'month',
+        reason: 'expense_created_or_updated',
+        triggeredBy: 'expense_model',
+        expenseId: doc._id.toString(),
+        expenseStatus: doc.status,
+        expenseAmount: doc.amount
+      }
+    );
+  } catch (err) {
+    // Não quebra o fluxo se falhar publicação do evento
+    console.error('[Expense] Erro ao publicar recálculo de totais:', err.message);
+  }
 });
 
 // 🔹 VIRTUAL: nome do profissional

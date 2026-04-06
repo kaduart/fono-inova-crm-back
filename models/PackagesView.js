@@ -51,6 +51,10 @@ const packagesViewSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  sessionsDone: {
+    type: Number,
+    default: 0
+  },
   sessionsUsed: {
     type: Number,
     default: 0

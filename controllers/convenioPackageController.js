@@ -248,18 +248,16 @@ export const createConvenioPackage = async (req, res) => {
       const appointment = insertedAppointments[i];
       
       const payment = new Payment({
-        patient: patientId,
-        doctor: doctorId,
-        session: session._id,
-        appointment: appointment._id,
-        package: convenioPackage._id,
-        serviceType: 'package_session',  // ✅ Valor válido do enum
+        patientId,
+        sessionId: session._id,
+        appointmentId: appointment._id,
+        packageId: convenioPackage._id,
+        serviceType: 'package_session',
         amount: convenioValue || 0,
-        paymentMethod: 'convenio',
+        paymentMethod: 'other', // convenio não é enum válido
         billingType: 'convenio',
-        status: 'pending',  // ✅ Valor válido do enum (pendente de faturamento)
-        sessionType: guide.specialty,  // ✅ Campo obrigatório
-        paymentDate: new Date().toISOString().split('T')[0],  // ✅ Campo obrigatório
+        status: 'pending',
+        paymentDate: new Date(),
         insurance: {
           provider: guide.insurance,
           authorizationCode: guide.number,
@@ -267,11 +265,6 @@ export const createConvenioPackage = async (req, res) => {
           grossAmount: convenioValue || 0,
           netAmount: convenioValue || 0
         },
-        appointments: [{
-          appointment: appointment._id,
-          amount: convenioValue || 0,
-          guideNumber: guide.number
-        }],
         serviceDate: session.date,
         notes: `Pacote Convênio - Guia ${guide.number} - Sessão ${i + 1}/${selectedSlots.length}`
       });
