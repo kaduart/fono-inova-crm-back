@@ -101,6 +101,16 @@ const patientsViewSchema = new mongoose.Schema({
     lastUpdated: { type: Date }
   },
   
+  // 📦 Pacotes ativos (denormalizado do Package)
+  packages: [{
+    packageId: { type: mongoose.Schema.Types.ObjectId },
+    sessionType: { type: String },
+    totalSessions: { type: Number, default: 0 },
+    sessionsDone: { type: Number, default: 0 },
+    sessionsRemaining: { type: Number, default: 0 },
+    status: { type: String }
+  }],
+  
   // 🏷️ Tags/Categorização
   tags: [{ type: String, index: true }],
   
