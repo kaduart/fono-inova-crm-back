@@ -91,6 +91,7 @@ import metricsDashboardRoutes from './routes/metrics.dashboard.js';
 import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
 import { scheduleGmbCron } from './jobs/gmbScheduledTasks.js';
 import { scheduleLandingPageDailyPosts } from './crons/landingPageDailyPost.js';
+import { scheduleGmbAutoRepublish } from './crons/gmbAutoRepublish.js';  // 🔄 NOVO: Republicação automática de posts GMB
 import planningRoutes from './routes/planning.js';
 import marketingRoutes from './routes/marketing.js';
 import landingPageRoutes from './routes/landingPage.routes.js';
@@ -175,6 +176,7 @@ iniciarJobConfirmacao();
 scheduleDailyAlerts();
 scheduleGmbCron(); // ← Inicia cron do GMB (geração + envio ao Make)
 scheduleLandingPageDailyPosts(); // ← Inicia cron de posts automáticos para LPs
+scheduleGmbAutoRepublish(); // ← Inicia republicação automática de posts expirados
 scheduleDailyScoring(); // ← Inicia cron de cálculo diário de scores
 
 

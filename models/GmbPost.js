@@ -151,6 +151,18 @@ const gmbPostSchema = new mongoose.Schema({
   // Campanha/estratégia
   campaign: { type: String },
   
+  // 🔄 Republicação automática
+  republishedFrom: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'GmbPost',
+    description: 'Referência ao post original (quando é republicação)'
+  },
+  autoRepublish: { 
+    type: Boolean, 
+    default: true,
+    description: 'Se true, post será republicado automaticamente quando expirar'
+  },
+  
 }, { timestamps: true });
 
 // Índices para consultas comuns
