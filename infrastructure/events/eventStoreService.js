@@ -425,3 +425,52 @@ export async function processWithGuarantees(event, processor, workerName) {
     throw error;
   }
 }
+
+/**
+ * Busca status de um evento pelo eventId
+ * Usado pelo endpoint GET /api/v2/patients/status/:eventId
+ */
+export async function getEventStatus(eventId) {
+  const event = await EventStore.findOne({ eventId }).lean();
+  if (!event) return null;
+
+  // Para eventos REQUEST, verifica se o evento de conclusão já existe
+  const completionMap = {
+    'PATIENT_CREATE_REQUESTED': 'PATIENT_CREATED',
+    'PATIENT_UPDATE_REQUESTED': 'PATIENT_UPDATED',
+    'PATIENT_DELETE_REQUESTED': 'PATIENT_DELETED',
+  };
+
+  const completionEventType = completionMap[event.eventType];
+  if (completionEventType) {
+    const completed = await EventStore.findOne({
+      aggregateId: event.aggregateId,
+      eventType: completionEventType,
+    }).lean();
+
+    if (completed) {
+      return {
+        eventId: event.eventId,
+        eventType: event.eventType,
+        status: 'completed',
+        payload: completed.payload,
+        attempts: event.attempts,
+        processedAt: completed.createdAt,
+        error: null,
+        createdAt: event.createdAt,
+      };
+    }
+  }
+
+  return {
+    eventId: event.eventId,
+    eventType: event.eventType,
+    status: event.status,
+    payload: event.payload,
+    attempts: event.attempts,
+    processedAt: event.processedAt,
+    processedBy: event.processedBy,
+    error: event.error || null,
+    createdAt: event.createdAt
+  };
+}
