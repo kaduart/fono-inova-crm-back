@@ -138,7 +138,6 @@ import patientV2Routes from './routes/patient.v2.js';
 import doctorV2Routes from './routes/doctor.v2.js';  // 🚀 NOVO: Doctors V2
 import packageV2Routes from './routes/package.v2.js';
 import balanceV2Routes from './routes/balance.v2.js';
-import totalsV2Routes from './routes/totals.v2.js';  // 🚀 NOVO: Totals V2
 import dailySummaryV2Routes from './routes/dailySummary.v2.js';  // 🚀 NOVO: Daily Summary V2
 import projectionsV2Routes from './routes/projections.v2.js';  // 🚀 NOVO: Projeções V2
 import cashflowV2Routes from './routes/cashflow.v2.js';  // 🚀 NOVO: Caixa Real V2
@@ -146,20 +145,11 @@ import goalsV2Routes from './routes/goals.v2.js';  // 🚀 NOVO: Metas V2
 import intelligenceV2Routes from './routes/intelligence.v2.js';  // 🚀 NOVO: Inteligência Financeira V2
 import paymentsV2Routes from './routes/payments.v2.js';  // 🚀 NOVO: Payments V2 (Projection otimizada - QUERY)
 import paymentV2Routes from './routes/payment.v2.js';  // 🚀 NOVO: Payment V2 (Event-Driven - COMMAND)
-
-
-// 🚀 ROTAS V2 - Event-Driven
-import dailyClosingV2Routes from './routes/dailyClosing.v2.js';
-import totalsV2Routes from './routes/totals.v2.js';
-import paymentV2Routes from './routes/payment.v2.js';
-import balanceV2Routes from './routes/balance.v2.js';
-import appointmentV2Routes from './routes/appointment.v2.js';
-import patientV2Routes from './routes/patient.v2.js';
-import packageV2Routes from './routes/package.v2.js';
-import financialDashboardV2Routes from './routes/financialDashboard.v2.js';
-import expensesV2Routes from './routes/expenses.v2.js';
-import convenioV2Routes from './routes/convenio.v2.js';
-import calendarV2Routes from './routes/calendar.v2.js';
+import totalsV2Routes from './routes/totals.v2.js';  // 🚀 NOVO: Totals V2
+import financialDashboardV2Routes from './routes/financialDashboard.v2.js';  // 🚀 NOVO: Financial Dashboard V2
+import expensesV2Routes from './routes/expenses.v2.js';  // 🚀 NOVO: Expenses V2
+import convenioV2Routes from './routes/convenio.v2.js';  // 🚀 NOVO: Convênio V2
+import calendarV2Routes from './routes/calendar.v2.js';  // 🚀 NOVO: Calendar V2
 
 
 // ======================================================
@@ -339,6 +329,10 @@ app.use("/api/v2/packages", packageV2Routes);
 app.use("/api/v2/balance", balanceV2Routes);
 app.use("/api/v2/totals", totalsV2Routes);  // 🚀 NOVO: Totals V2
 app.use("/api/v2/daily-summary", dailySummaryV2Routes);  // 🚀 NOVO: Daily Summary V2
+app.use("/api/v2/financial/dashboard", financialDashboardV2Routes);  // 🚀 NOVO: Financial Dashboard V2
+app.use("/api/v2/expenses", expensesV2Routes);  // 🚀 NOVO: Expenses V2
+app.use("/api/v2/convenio", convenioV2Routes);  // 🚀 NOVO: Convênio V2
+app.use("/api/v2/calendar", calendarV2Routes);  // 🚀 NOVO: Calendar V2
 
 app.use("/api/evolutions", evolutionRoutes);
 app.use("/api/leads", leadsRouter);
