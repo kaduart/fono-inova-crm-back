@@ -4,6 +4,7 @@ import validateId from '../middleware/validateId.js';
 import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import Patient from '../models/Patient.js';
+import Session from '../models/Session.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 
 const router = express.Router();
@@ -232,7 +233,48 @@ router.get('/:id/appointments-summary', validateId, auth, async (req, res) => {
 });
 
 // Obter sessões do paciente
-router.get('/patients/:patientId/sessions', auth, async (req, res) => {
+// Busca sessões avulsas pendentes (sem pacote) — para absorção ao criar pacote
+router.get('/:patientId/sessions/pending', auth, async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { specialty } = req.query;
+
+    const filter = {
+      patient: patientId,
+      paymentStatus: { $in: ['pending', 'unpaid', 'pending_balance'] },
+      status: { $in: ['completed', 'missed'] }
+    };
+
+    if (specialty) {
+      const re = new RegExp(`^${specialty}$`, 'i');
+      filter.$or = [
+        { specialty: { $regex: re } },
+        { sessionType: { $regex: re } }
+      ];
+    }
+
+    const sessions = await Session.find(filter)
+      .populate('doctor', 'fullName')
+      .sort({ date: -1 })
+      .lean();
+
+    const data = sessions.map(s => ({
+      _id: s._id,
+      date: s.date,
+      time: s.time,
+      sessionValue: s.sessionValue,
+      specialty: s.specialty,
+      doctorName: s.doctor?.fullName || null
+    }));
+
+    res.json({ success: true, data });
+  } catch (err) {
+    console.error('[SESSIONS PENDING] Erro:', err);
+    res.status(500).json({ error: 'Erro ao buscar sessões pendentes' });
+  }
+});
+
+router.get('/:patientId/sessions', auth, async (req, res) => {
   try {
     const { patientId } = req.params;
     
