@@ -336,9 +336,9 @@ router.post("/agenda-externa/confirmar", agendaAuth, async (req, res) => {
 
     // Criar Payment
     const newPayment = await Payment.create({
-      patientId: patientId,
-      sessionId: newSession._id,
-      appointmentId: pre._id,
+      patient: patientId,
+      session: newSession._id,
+      appointment: pre._id,
       serviceType: normalizedServiceType,
       amount: resolvedValue,
       paymentMethod,
@@ -824,8 +824,9 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
 
     // ─── PROMOÇÃO pre_agendado → scheduled/confirmed ──────────────────────────
     // Atualiza o appointment existente e cria Session + Payment (mesmo padrão do POST /api/appointments)
+    const PROMOTING_STATUSES = ['scheduled', 'confirmed', 'paid', 'completed', 'missed'];
     const isPromoting = appointment.operationalStatus === 'pre_agendado' &&
-      updateData.operationalStatus && updateData.operationalStatus !== 'pre_agendado' &&
+      PROMOTING_STATUSES.includes(updateData.operationalStatus) &&
       !appointment.session;
 
     if (isPromoting) {
@@ -910,9 +911,9 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
       }]);
 
       const paymentData = {
-        patientId: patientId,
-        sessionId: newSession[0]._id,
-        appointmentId: appointment._id,
+        patient: patientId,
+        session: newSession[0]._id,
+        appointment: appointment._id,
         serviceType,
         amount: sessionValue,
         paymentMethod,
@@ -998,20 +999,19 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
       console.log(`[SYNC-UPDATE] ✅ Session ${appointment.session} atualizada`);
     }
 
-    // 4) Atualizar Pagamento relacionado (mesma lógica do appointments.js)
+    // 4) Atualizar Pagamento relacionado
     if (appointment.payment) {
-      await Payment.findByIdAndUpdate(
-        appointment.payment,
-        {
-          $set: {
-            amount: crm.paymentAmount || appointment.paymentAmount,
-            paymentMethod: crm.paymentMethod || appointment.paymentMethod,
-            paymentDate: date || appointment.date,
-            updatedAt: new Date()
-          }
-        }
-      );
-      console.log(`[SYNC-UPDATE] ✅ Payment ${appointment.payment} atualizado`);
+      const paymentUpdate = { updatedAt: new Date() };
+      if (operationalStatus === 'canceled') {
+        paymentUpdate.status = 'canceled';
+        paymentUpdate.canceledAt = new Date();
+      } else {
+        paymentUpdate.amount = crm.paymentAmount || appointment.paymentAmount;
+        paymentUpdate.paymentMethod = crm.paymentMethod || appointment.paymentMethod;
+        paymentUpdate.paymentDate = date || appointment.date;
+      }
+      await Payment.findByIdAndUpdate(appointment.payment, { $set: paymentUpdate });
+      console.log(`[SYNC-UPDATE] ✅ Payment ${appointment.payment} atualizado (status: ${paymentUpdate.status || 'mantido'})`);
     }
 
     // 5) Atualizar Appointment principal
