@@ -1894,6 +1894,9 @@ export const packageOperations = {
             // ============================================================
             // CRIAR NOVA SESSÃO
             // ============================================================
+            const resolvedSpecialty = specialty || pkg.specialty || pkg.sessionType;
+            const resolvedInsuranceGuide = pkg.insuranceGuide?._id || pkg.insuranceGuide || null;
+
             const newSession = new Session({
                 date,
                 time,
@@ -1902,7 +1905,6 @@ export const packageOperations = {
                 package: packageId,
                 sessionValue: validSessionValue,
                 sessionType: sessionType || pkg.sessionType,
-                specialty: specialty || pkg.specialty || pkg.sessionType,
                 status,
                 isPaid,
                 paymentStatus,
@@ -1911,7 +1913,7 @@ export const packageOperations = {
                 partialAmount,
                 notes: notes || '',
                 _inFinancialTransaction: true,
-                ...(pkg.type === 'convenio' && { billingType: 'convenio', insuranceGuide: pkg.insuranceGuide }),
+                ...(pkg.type === 'convenio' && { billingType: 'convenio', insuranceGuide: resolvedInsuranceGuide }),
                 ...(pkg.type === 'liminar' && { billingType: 'liminar', paymentOrigin: 'liminar' })
             });
 
@@ -1938,7 +1940,7 @@ export const packageOperations = {
                 date: newSession.date,
                 time: newSession.time,
                 duration: 40,
-                specialty: newSession.specialty,
+                specialty: resolvedSpecialty,
                 session: newSession._id,
                 package: packageId,
                 serviceType: pkg.type === 'convenio' ? 'convenio_session' : (pkg.type === 'liminar' ? 'liminar_session' : 'package_session'),
@@ -1947,7 +1949,7 @@ export const packageOperations = {
                 paymentStatus: newSession.paymentStatus,
                 visualFlag: newSession.visualFlag,
                 billingType: pkg.type === 'convenio' ? 'convenio' : (pkg.type === 'liminar' ? 'liminar' : 'particular'),
-                ...(pkg.type === 'convenio' && { insuranceGuide: pkg.insuranceGuide, insuranceProvider: pkg.insuranceProvider }),
+                ...(pkg.type === 'convenio' && { insuranceGuide: resolvedInsuranceGuide, insuranceProvider: pkg.insuranceProvider }),
                 ...(pkg.type === 'liminar' && { paymentOrigin: 'liminar' }),
                 // 🔥 NOVO: Primeiro agendamento do paciente?
                 isFirstAppointment: isFirstAppointment
