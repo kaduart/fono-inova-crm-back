@@ -16,8 +16,18 @@ import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import Patient from '../models/Patient.js';
 import Package from '../models/Package.js';
+import PatientsView from '../models/PatientsView.js';
 import { Messages, formatSuccess, formatError, ErrorCodes } from '../utils/apiMessages.js';
 import { createBusinessError, asyncHandler } from '../middleware/errorHandler.js';
+
+// ======================================================================
+// HELPER: Validação segura de datas (igual à V1)
+// ======================================================================
+function isValidDateString(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return false;
+  const date = new Date(dateStr);
+  return !isNaN(date.getTime());
+}
 
 const router = express.Router();
 
@@ -502,7 +512,7 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
     light = 'false'  // 🆕 NOVO: Modo light para calendário (menos dados)
   } = req.query;
   
-  console.log(`[GET /v2/appointments] Listando agendamentos`, { startDate, endDate, status, light });
+  console.log(`[GET /v2/appointments] Listando agendamentos`, { startDate, endDate, status, light, patientId, doctorId });
   
   // Build filter
   const filter = {};
@@ -515,8 +525,22 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
     ];
   }
   
-  if (patientId) filter.patient = patientId;
-  if (doctorId) filter.doctor = doctorId;
+  // 🆕 Se patientId for fornecido, verifica se é um ID de view ou ID real
+  if (patientId) {
+    const PatientsView = mongoose.model('PatientsView');
+    const patientView = await PatientsView.findById(patientId).lean();
+    
+    if (patientView) {
+      // É um ID de view, usa o patientId real
+      console.log(`[GET /v2/appointments] PatientId é de view, usando patientId real: ${patientView.patientId}`);
+      filter.patient = new mongoose.Types.ObjectId(patientView.patientId);
+    } else {
+      // É um ID real de paciente
+      filter.patient = new mongoose.Types.ObjectId(patientId);
+    }
+  }
+  
+  if (doctorId) filter.doctor = new mongoose.Types.ObjectId(doctorId);
   
   // Status filter
   if (status) {
@@ -534,6 +558,8 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   const skip = (parseInt(page) - 1) * parseInt(limit);
   
   // 🆕 Build query base
+  console.log(`[GET /v2/appointments] Filtro final:`, JSON.stringify(filter));
+  
   let query = Appointment.find(filter);
   
   // 🆕 Se light=true, retorna apenas campos essenciais para o calendário
@@ -544,19 +570,69 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
       .populate('doctor', 'fullName specialty')
       .populate('package', 'type sessionValue financialStatus');
   } else {
-    // Modo completo (padrão)
+    // Modo completo (padrão) - Mesmas regras da V1
     query = query
       .populate('patient', 'fullName dateOfBirth phone email')
-      .populate('doctor', 'fullName specialty email phoneNumber')
-      .populate('session', 'status paymentStatus sessionValue')
-      .populate('package', 'totalSessions sessionsDone sessionValue type')
-      .populate('payment', 'status amount paymentMethod');
+      .populate('doctor', 'fullName specialty email phoneNumber crm')
+      .populate('payment', 'status amount paymentMethod')
+      .populate({
+        path: 'advancedSessions',
+        select: 'date time specialty operationalStatus clinicalStatus',
+        populate: {
+          path: 'doctor',
+          select: 'fullName specialty'
+        }
+      })
+      .populate({
+        path: 'history.changedBy',
+        select: 'name email role',
+        options: { retainNullValues: true }
+      })
+      .populate({
+        path: 'package',
+        select: 'sessionType durationMonths sessionsPerWeek totalSessions sessionsDone',
+        populate: {
+          path: 'sessions',
+          select: 'date status isPaid'
+        }
+      })
+      .populate({
+        path: 'session',
+        select: 'date status isPaid confirmedAbsence paymentStatus sessionValue',
+        populate: {
+          path: 'package',
+          select: 'sessionType durationMonths sessionsPerWeek'
+        }
+      });
   }
   
-  const appointments = await query
+  let appointments = await query
     .sort({ date: 1, time: 1 })
     .skip(skip)
-    .limit(parseInt(limit));
+    .limit(parseInt(limit))
+    .lean();
+  
+  // 🆕 Formatação igual à V1
+  appointments = appointments.map(appt => {
+    // Formatar sessões adiantadas
+    if (appt.advancedSessions) {
+      appt.advancedSessions = appt.advancedSessions.map(session => ({
+        ...session,
+        formattedDate: session.date && isValidDateString(session.date)
+          ? new Date(session.date).toLocaleDateString('pt-BR')
+          : 'Data não disponível',
+        formattedTime: session.time || '--:--',
+      }));
+    }
+
+    return {
+      ...appt,
+      paymentStatus: appt.package
+        ? (appt.paymentStatus || 'package_paid')
+        : (appt.paymentStatus === 'paid' ? 'paid' : appt.paymentStatus || 'pending'),
+      source: appt.package ? 'package' : 'individual'
+    };
+  });
   
   const total = await Appointment.countDocuments(filter);
   

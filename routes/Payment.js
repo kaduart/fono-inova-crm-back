@@ -8,6 +8,7 @@ import Package from '../models/Package.js';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import PatientBalance from '../models/PatientBalance.js';
+import PatientsView from '../models/PatientsView.js';
 import { distributePayments } from '../services/distributePayments.js';
 import { createNextPackageFromPrevious } from '../utils/createNextPackageFromPrevious.js';
 import { mapStatusToClinical, mapStatusToOperational } from "../utils/statusMappers.js";
@@ -888,7 +889,17 @@ async function updatePackageStatus(packageId, session) {
 
 router.get('/future-sessions/:patientId', async (req, res) => {
     try {
-        const { patientId } = req.params;
+        let { patientId } = req.params;
+        
+        // 🆕 Verifica se é um ID de view ou ID real
+        const PatientsView = mongoose.model('PatientsView');
+        const patientView = await PatientsView.findById(patientId).lean();
+        
+        if (patientView) {
+            // É um ID de view, usa o patientId real
+            console.log(`[future-sessions] PatientId é de view, usando patientId real: ${patientView.patientId}`);
+            patientId = patientView.patientId;
+        }
 
         const sessions = await Session.find({
             patient: patientId,

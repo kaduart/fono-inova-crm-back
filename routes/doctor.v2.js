@@ -85,7 +85,7 @@ router.get('/', flexibleAuth, async (req, res) => {
     
   } catch (error) {
     console.error('[DoctorV2] Erro ao listar médicos:', error);
-    return res.status(500).json(formatError(error.message, 500));
+    return res.status(500).json(formatError(500, error.message));
   }
 });
 
@@ -101,7 +101,7 @@ router.get('/active', flexibleAuth, async (req, res) => {
     
     return res.json(formatSuccess({ doctors }));
   } catch (error) {
-    return res.status(500).json(formatError(error.message, 500));
+    return res.status(500).json(formatError(500, error.message));
   }
 });
 
@@ -117,7 +117,7 @@ router.get('/inactive', flexibleAuth, async (req, res) => {
     
     return res.json(formatSuccess({ doctors }));
   } catch (error) {
-    return res.status(500).json(formatError(error.message, 500));
+    return res.status(500).json(formatError(500, error.message));
   }
 });
 
@@ -129,7 +129,7 @@ router.get('/:id', flexibleAuth, async (req, res) => {
     const doctor = await Doctor.findById(req.params.id).lean();
     
     if (!doctor) {
-      return res.status(404).json(formatError('Médico não encontrado', 404));
+      return res.status(404).json(formatError(404, 'Médico não encontrado'));
     }
     
     return res.json(formatSuccess({
@@ -146,7 +146,7 @@ router.get('/:id', flexibleAuth, async (req, res) => {
     }));
     
   } catch (error) {
-    return res.status(500).json(formatError(error.message, 500));
+    return res.status(500).json(formatError(500, error.message));
   }
 });
 
@@ -164,7 +164,7 @@ router.post('/', auth, async (req, res) => {
     const { fullName, email, password, specialty, licenseNumber, phoneNumber, active } = req.body;
     
     if (!fullName || !email || !specialty) {
-      return res.status(400).json(formatError('Nome, email e especialidade são obrigatórios', 400));
+      return res.status(400).json(formatError(400, 'Nome, email e especialidade são obrigatórios'));
     }
     
     // Gera ID provisório
@@ -198,6 +198,7 @@ router.post('/', auth, async (req, res) => {
     
     return res.status(202).json(formatSuccess({
       jobId: job.id,
+      eventId: job.id,
       correlationId,
       doctorId,
       status: 'pending',
@@ -207,7 +208,7 @@ router.post('/', auth, async (req, res) => {
     
   } catch (error) {
     console.error('[DoctorV2] Erro ao criar médico:', error);
-    return res.status(500).json(formatError(error.message, 500));
+    return res.status(500).json(formatError(500, error.message));
   }
 });
 
@@ -220,7 +221,7 @@ router.put('/:id', auth, async (req, res) => {
   try {
     const doctorExists = await Doctor.exists({ _id: req.params.id });
     if (!doctorExists) {
-      return res.status(404).json(formatError('Médico não encontrado', 404));
+      return res.status(404).json(formatError(404, 'Médico não encontrado'));
     }
     
     const job = await doctorQueue.add(
@@ -243,13 +244,14 @@ router.put('/:id', auth, async (req, res) => {
     
     return res.status(202).json(formatSuccess({
       jobId: job.id,
+      eventId: job.id,
       correlationId,
       status: 'pending',
       checkStatusUrl: `/api/v2/doctors/status/${job.id}`
     }, 'Atualização em processamento', 202));
     
   } catch (error) {
-    return res.status(500).json(formatError(error.message, 500));
+    return res.status(500).json(formatError(500, error.message));
   }
 });
 
@@ -262,7 +264,7 @@ router.delete('/:id', auth, async (req, res) => {
   try {
     const doctorExists = await Doctor.exists({ _id: req.params.id });
     if (!doctorExists) {
-      return res.status(404).json(formatError('Médico não encontrado', 404));
+      return res.status(404).json(formatError(404, 'Médico não encontrado'));
     }
     
     const job = await doctorQueue.add(
@@ -285,12 +287,13 @@ router.delete('/:id', auth, async (req, res) => {
     
     return res.status(202).json(formatSuccess({
       jobId: job.id,
+      eventId: job.id,
       correlationId,
       status: 'pending'
     }, 'Deleção em processamento', 202));
     
   } catch (error) {
-    return res.status(500).json(formatError(error.message, 500));
+    return res.status(500).json(formatError(500, error.message));
   }
 });
 
@@ -303,7 +306,7 @@ router.patch('/:id/deactivate', auth, async (req, res) => {
   try {
     const doctorExists = await Doctor.exists({ _id: req.params.id });
     if (!doctorExists) {
-      return res.status(404).json(formatError('Médico não encontrado', 404));
+      return res.status(404).json(formatError(404, 'Médico não encontrado'));
     }
     
     const job = await doctorQueue.add(
@@ -325,12 +328,13 @@ router.patch('/:id/deactivate', auth, async (req, res) => {
     
     return res.status(202).json(formatSuccess({
       jobId: job.id,
+      eventId: job.id,
       correlationId,
       status: 'pending'
     }, 'Inativação em processamento', 202));
     
   } catch (error) {
-    return res.status(500).json(formatError(error.message, 500));
+    return res.status(500).json(formatError(500, error.message));
   }
 });
 
@@ -343,7 +347,7 @@ router.patch('/:id/reactivate', auth, async (req, res) => {
   try {
     const doctorExists = await Doctor.exists({ _id: req.params.id });
     if (!doctorExists) {
-      return res.status(404).json(formatError('Médico não encontrado', 404));
+      return res.status(404).json(formatError(404, 'Médico não encontrado'));
     }
     
     const job = await doctorQueue.add(
@@ -365,12 +369,13 @@ router.patch('/:id/reactivate', auth, async (req, res) => {
     
     return res.status(202).json(formatSuccess({
       jobId: job.id,
+      eventId: job.id,
       correlationId,
       status: 'pending'
     }, 'Reativação em processamento', 202));
     
   } catch (error) {
-    return res.status(500).json(formatError(error.message, 500));
+    return res.status(500).json(formatError(500, error.message));
   }
 });
 
@@ -386,23 +391,43 @@ router.get('/status/:jobId', flexibleAuth, async (req, res) => {
     const job = await doctorQueue.getJob(req.params.jobId);
     
     if (!job) {
-      return res.status(404).json(formatError('Job não encontrado', 404));
+      return res.status(404).json(formatError(404, 'Job não encontrado'));
     }
     
     const state = await job.getState();
     
+    // Mapeia estado do Bull para status do frontend
+    const status = state === 'completed' ? 'completed' 
+                 : state === 'failed' ? 'failed'
+                 : 'pending';
+    
+    // Extrai o resultado se existir
+    const error = job.failedReason || (job.returnvalue?.error);
+    
+    // Se completou com sucesso, busca o médico no banco
+    let doctorView = null;
+    if (status === 'completed' && job.returnvalue?.doctorId) {
+      doctorView = await Doctor.findById(job.returnvalue.doctorId)
+        .select('_id fullName email specialty licenseNumber phoneNumber active role createdAt updatedAt')
+        .lean();
+    }
+    
     return res.json(formatSuccess({
       jobId: job.id,
+      eventId: job.id,
+      status,
       state,
       data: job.data,
       result: job.returnvalue,
+      doctorView,
+      error,
       failedReason: job.failedReason,
       processedOn: job.processedOn,
       completedOn: job.completedOn
     }));
     
   } catch (error) {
-    return res.status(500).json(formatError(error.message, 500));
+    return res.status(500).json(formatError(500, error.message));
   }
 });
 

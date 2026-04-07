@@ -283,30 +283,49 @@ export const getCalendarAppointments = async (req, res) => {
     }
 
     const { start, end } = req.query;
-    const filter = {
-      doctor: new mongoose.Types.ObjectId(doctorId)
-    };
 
     // Adicionar filtro de período se fornecido
+    let startDate, endDate;
     if (start && end) {
-      filter.date = {
-        $gte: new Date(start).toISOString().split('T')[0], // Converter para formato YYYY-MM-DD
-        $lte: new Date(end).toISOString().split('T')[0]
-      };
+      startDate = new Date(start);
+      endDate = new Date(end);
+      endDate.setHours(23, 59, 59, 999);
+    } else {
+      startDate = new Date();
+      endDate = new Date();
+      endDate.setMonth(endDate.getMonth() + 1);
     }
+    
+    console.log('[CALENDAR] Buscando de', startDate.toISOString(), 'até', endDate.toISOString());
 
-    // Buscar agendamentos
-    const appointments = await Appointment.find(filter)
+    // Buscar agendamentos do período do profissional logado APENAS
+    const appointments = await Appointment.find({
+      date: { $gte: startDate, $lte: endDate },
+      doctor: new mongoose.Types.ObjectId(doctorId)
+    })
       .populate('patient', 'fullName phone email dateOfBirth gender')
       .populate('doctor', 'fullName specialty')
       .sort({ date: 1, time: 1 })
       .lean();
+    
+    console.log('[CALENDAR] Agendamentos encontrados:', appointments.length);
 
     // Formatar para o FullCalendar - CORREÇÃO CRÍTICA AQUI
     const events = appointments.map(appt => {
       try {
-        // Combinar data (string YYYY-MM-DD) e hora (string HH:MM)
-        const dateTimeString = `${appt.date}T${appt.time}`;
+        // Combinar data e hora
+        // appt.date pode ser Date ou string
+        let dateStr;
+        if (appt.date instanceof Date) {
+          dateStr = appt.date.toISOString().split('T')[0];
+        } else if (typeof appt.date === 'string') {
+          dateStr = appt.date.split('T')[0];
+        } else {
+          // Se for outro formato, tenta converter
+          dateStr = new Date(appt.date).toISOString().split('T')[0];
+        }
+        
+        const dateTimeString = `${dateStr}T${appt.time}`;
         const startDateTime = new Date(dateTimeString);
 
         // Verificar se a data é válida
@@ -444,27 +463,24 @@ export const getDoctorPatients = async (req, res) => {
 
 export const getTodaysAppointments = async (req, res) => {
   try {
-    // ⚠️ garante que isso é MESMO o ObjectId do Doctor
     const doctorId = req.user.doctorId || req.user._id || req.user.id;
-
-    // monta 'YYYY-MM-DD' igual está salvo no banco
-    const todayStr = new Date().toISOString().slice(0, 10);
-    // ex: '2025-11-22'
+    
+    // Criar range para o dia de HOJE (início e fim do dia)
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
+    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
 
     console.log('[GET_TODAYS_APPOINTMENTS] doctorId:', doctorId);
-    console.log('[GET_TODAYS_APPOINTMENTS] todayStr:', todayStr);
+    console.log('[GET_TODAYS_APPOINTMENTS] range:', startOfDay, 'até', endOfDay);
 
+    // Apenas agendamentos do profissional logado
     const filter = {
-      date: todayStr,
+      date: { $gte: startOfDay, $lte: endOfDay },
+      doctor: new ObjectId(doctorId)
     };
 
-    // se você quiser filtrar por médico:
-    if (doctorId) {
-      filter.doctor = doctorId;
-    }
-
     const appointments = await Appointment.find(filter)
-      .populate('patient', 'fullName') // no schema é 'patient'
+      .populate('patient', 'fullName')
       .select('_id date time operationalStatus clinicalStatus patient')
       .lean();
 
@@ -597,21 +613,25 @@ export const getFutureAppointments = async (req, res) => {
       return res.status(401).json({ error: 'Não autenticado' });
     }
 
-    const doctor = new ObjectId(req.user.id);
+    const doctorId = req.user.id;
     const now = new Date();
+    
+    console.log('[GET_FUTURE_APPOINTMENTS] doctorId:', doctorId);
 
-    // Pipeline corrigida
+    // Buscar agendamentos futuros do médico logado APENAS
+    const matchStage = {
+      date: { $gt: now },
+      doctor: new ObjectId(doctorId)
+    };
+
     const appointments = await Appointment.aggregate([
       {
-        $match: {
-          doctor: doctor,
-          date: { $gt: now }
-        }
+        $match: matchStage
       },
       {
         $lookup: {
           from: 'patients',
-          localField: 'patientId',
+          localField: 'patient',
           foreignField: '_id',
           as: 'patient'
         }
