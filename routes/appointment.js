@@ -896,7 +896,22 @@ router.get('/', flexibleAuth, async (req, res) => {
 
         // 🔹 Filtros por paciente e médico
         if (patientId && patientId !== 'all' && mongoose.Types.ObjectId.isValid(patientId)) {
-            filter.patient = new mongoose.Types.ObjectId(patientId);
+            // Resolver patientId: pode vir como ID da patients_view — buscar o ID real
+            let resolvedPatientId = patientId;
+            const patientExists = await mongoose.connection.db.collection('patients').findOne(
+                { _id: new mongoose.Types.ObjectId(patientId) },
+                { projection: { _id: 1 } }
+            );
+            if (!patientExists) {
+                const viewDoc = await mongoose.connection.db.collection('patients_view').findOne(
+                    { _id: new mongoose.Types.ObjectId(patientId) },
+                    { projection: { patientId: 1 } }
+                );
+                if (viewDoc?.patientId) {
+                    resolvedPatientId = viewDoc.patientId.toString();
+                }
+            }
+            filter.patient = new mongoose.Types.ObjectId(resolvedPatientId);
         }
         if (doctorId && doctorId !== 'all' && mongoose.Types.ObjectId.isValid(doctorId)) {
             filter.doctor = new mongoose.Types.ObjectId(doctorId);
