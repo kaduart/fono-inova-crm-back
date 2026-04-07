@@ -1,8 +1,42 @@
+import express from 'express';
+import mongoose from 'mongoose';
+import { auth, authorize } from '../middleware/auth.js';
+import TherapyPackage from '../models/TherapyPackage.js';
+import Payment from '../models/Payment.js';
+import Evolution from '../models/Evolution.js';
+
+const router = express.Router();
+
+// Helper para resolver patientId (pode vir do patients_view)
+async function resolvePatientId(patientId) {
+  if (!mongoose.Types.ObjectId.isValid(patientId)) {
+    return patientId;
+  }
+  
+  let resolvedPatientId = patientId;
+  const patientExists = await mongoose.connection.db.collection('patients').findOne(
+    { _id: new mongoose.Types.ObjectId(patientId) },
+    { projection: { _id: 1 } }
+  );
+  if (!patientExists) {
+    const viewDoc = await mongoose.connection.db.collection('patients_view').findOne(
+      { _id: new mongoose.Types.ObjectId(patientId) },
+      { projection: { patientId: 1 } }
+    );
+    if (viewDoc?.patientId) {
+      resolvedPatientId = viewDoc.patientId.toString();
+    }
+  }
+  return resolvedPatientId;
+}
+
 // Histórico de sessões de um paciente
 router.get('/patients/:patientId/session-history', auth, async (req, res) => {
   try {
+    const resolvedPatientId = await resolvePatientId(req.params.patientId);
+    
     const sessions = await TherapyPackage.aggregate([
-      { $match: { patientId: new mongoose.Types.ObjectId(req.params.patientId) } },
+      { $match: { patientId: new mongoose.Types.ObjectId(resolvedPatientId) } },
       { $unwind: '$sessions' },
       { $sort: { 'sessions.date': -1 } },
       {
@@ -22,7 +56,9 @@ router.get('/patients/:patientId/session-history', auth, async (req, res) => {
 // Histórico de pagamentos
 router.get('/patients/:patientId/payment-history', auth, async (req, res) => {
   try {
-    const payments = await Payment.find({ patientId: req.params.patientId }).sort({ date: -1 });
+    const resolvedPatientId = await resolvePatientId(req.params.patientId);
+    
+    const payments = await Payment.find({ patientId: resolvedPatientId }).sort({ date: -1 });
     res.json(payments);
   } catch (err) {
     res.status(500).json({ error: 'Erro ao buscar histórico de pagamentos' });
@@ -65,3 +101,5 @@ router.post('/availables', authorize(['admin', 'professional']), async (req, res
     res.status(500).json({ error: "Erro ao criar avaliação." });
   }
 });
+
+export default router;

@@ -16,6 +16,29 @@ import PatientBalance from '../models/PatientBalance.js';
 
 const router = express.Router();
 
+// Helper para resolver patientId (pode vir do patients_view)
+async function resolvePatientId(patientId) {
+  if (!mongoose.Types.ObjectId.isValid(patientId)) {
+    return patientId;
+  }
+  
+  let resolvedPatientId = patientId;
+  const patientExists = await mongoose.connection.db.collection('patients').findOne(
+    { _id: new mongoose.Types.ObjectId(patientId) },
+    { projection: { _id: 1 } }
+  );
+  if (!patientExists) {
+    const viewDoc = await mongoose.connection.db.collection('patients_view').findOne(
+      { _id: new mongoose.Types.ObjectId(patientId) },
+      { projection: { patientId: 1 } }
+    );
+    if (viewDoc?.patientId) {
+      resolvedPatientId = viewDoc.patientId.toString();
+    }
+  }
+  return resolvedPatientId;
+}
+
 // ======================================================
 // GET /v2/balance/:patientId - Lista saldo e transações
 // ======================================================
@@ -30,8 +53,11 @@ router.get('/:patientId', auth, async (req, res) => {
             });
         }
 
+        // Resolver patientId (pode vir do patients_view)
+        const resolvedPatientId = await resolvePatientId(patientId);
+
         // Busca ou cria balance
-        let balance = await PatientBalance.findOne({ patient: patientId })
+        let balance = await PatientBalance.findOne({ patient: resolvedPatientId })
             .populate('transactions.registeredBy', 'fullName')
             .lean();
 
@@ -40,7 +66,7 @@ router.get('/:patientId', auth, async (req, res) => {
             return res.json({
                 success: true,
                 data: {
-                    patientId,
+                    patientId: resolvedPatientId,
                     currentBalance: 0,
                     totalDebited: 0,
                     totalCredited: 0,
@@ -97,8 +123,11 @@ router.post('/:patientId/debit', auth, async (req, res) => {
             });
         }
 
+        // Resolver patientId (pode vir do patients_view)
+        const resolvedPatientId = await resolvePatientId(patientId);
+
         // Verifica se já existe balance
-        const balance = await PatientBalance.findOne({ patient: patientId }).session(mongoSession);
+        const balance = await PatientBalance.findOne({ patient: resolvedPatientId }).session(mongoSession);
         
         if (balance && balance.processingStatus === 'updating') {
             await mongoSession.abortTransaction();
@@ -115,7 +144,7 @@ router.post('/:patientId/debit', auth, async (req, res) => {
         const eventResult = await publishEvent(
             EventTypes.BALANCE_DEBIT_REQUESTED,
             {
-                patientId,
+                patientId: resolvedPatientId,
                 amount,
                 description,
                 sessionId,
@@ -127,7 +156,7 @@ router.post('/:patientId/debit', auth, async (req, res) => {
             {
                 correlationId,
                 aggregateType: 'balance',
-                aggregateId: patientId,
+                aggregateId: resolvedPatientId,
                 metadata: {
                     source: 'balance_api_v2',
                     userId: req.user?._id?.toString()
@@ -136,7 +165,7 @@ router.post('/:patientId/debit', auth, async (req, res) => {
         );
 
         console.log(`[BalanceV2] Débito enfileirado: ${eventResult.eventId}`, {
-            patientId,
+            patientId: resolvedPatientId,
             amount,
             correlationId
         });
@@ -147,7 +176,7 @@ router.post('/:patientId/debit', auth, async (req, res) => {
             data: {
                 eventId: eventResult.eventId,
                 correlationId,
-                patientId,
+                patientId: resolvedPatientId,
                 amount,
                 status: 'pending',
                 checkStatusUrl: `/api/v2/payments/status/${eventResult.eventId}`

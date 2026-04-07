@@ -87,6 +87,7 @@ import cashflowRoutes from './routes/financial/cashflow.js';
 import financialOverviewRoutes from './routes/financial/overview.routes.js';
 import financialMetricsRoutes from './routes/financial/metrics.routes.js';
 import financialDashboardRoutes from './routes/financial/dashboard.routes.js';
+import financialSSERoutes from './routes/financial/sse.routes.js';
 import metricsDashboardRoutes from './routes/metrics.dashboard.js';
 import { scheduleMonthlyCommissions } from './jobs/scheduledTasks.js';
 import { scheduleGmbCron } from './jobs/gmbScheduledTasks.js';
@@ -376,6 +377,7 @@ app.use('/api/cashflow', cashflowRoutes);
 app.use('/api/financial', financialOverviewRoutes);
 app.use('/api/financial/v2', financialMetricsRoutes);
 app.use('/api/financial/dashboard', financialDashboardRoutes);
+app.use('/api/financial/sse', financialSSERoutes);  // 🔄 SSE: Server-Sent Events para tempo real
 app.use('/api/metrics', metricsDashboardRoutes);
 app.use('/api/planning', planningRoutes);
 app.use('/api/pre-agendamento', preAgendamentoRoutes);

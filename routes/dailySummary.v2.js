@@ -33,24 +33,41 @@ router.get('/', async (req, res) => {
         const startOfDay = targetDate.clone().startOf('day').toDate();
         const endOfDay = targetDate.clone().endOf('day').toDate();
         
-        log.info('daily_summary_requested', `Resumo diário: ${dateStr}`);
+        log.info('daily_summary_requested', `Resumo diário: ${dateStr}`, {
+            startOfDay: startOfDay.toISOString(),
+            endOfDay: endOfDay.toISOString()
+        });
 
         // ======================================================
         // 📊 AGGREGATE PARALELO: Caixa + Atendimentos
         // ======================================================
+        
+        // 🔧 CORREÇÃO: Query por range de datas (paymentDate é Date, não string)
+        const paymentDateQuery = {
+            $gte: startOfDay,
+            $lte: endOfDay
+        };
+        
+        // 🔍 DEBUG: Contar total de pagamentos no dia
+        const totalPaymentsDebug = await Payment.countDocuments({
+            paymentDate: paymentDateQuery
+        });
+        log.info('debug_payments_total', `Total payments encontrados: ${totalPaymentsDebug}`);
+        
+        // 🔍 DEBUG: Contar pagamentos paid
+        const paidPaymentsDebug = await Payment.countDocuments({
+            status: 'paid',
+            paymentDate: paymentDateQuery
+        });
+        log.info('debug_payments_paid', `Payments PAID encontrados: ${paidPaymentsDebug}`);
+        
         const [cashResult, appointmentsResult, productionResult] = await Promise.all([
             // 💰 CAIXA DO DIA: Pagamentos recebidos
             Payment.aggregate([
                 {
                     $match: {
                         status: 'paid',
-                        $or: [
-                            { paymentDate: dateStr },
-                            { 
-                                paymentDate: { $exists: false },
-                                createdAt: { $gte: startOfDay, $lte: endOfDay }
-                            }
-                        ]
+                        paymentDate: paymentDateQuery
                     }
                 },
                 {
@@ -90,13 +107,7 @@ router.get('/', async (req, res) => {
                 {
                     $match: {
                         status: { $in: ['paid', 'pending'] },
-                        $or: [
-                            { paymentDate: dateStr },
-                            { 
-                                paymentDate: { $exists: false },
-                                createdAt: { $gte: startOfDay, $lte: endOfDay }
-                            }
-                        ]
+                        paymentDate: paymentDateQuery
                     }
                 },
                 {

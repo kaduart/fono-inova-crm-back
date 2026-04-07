@@ -2506,7 +2506,7 @@ router.get('/daily-payments-details', async (req, res) => {
                 },
             ],
         })
-            .populate("patient doctor package appointment advancedSessions")
+            .populate("patient doctor package appointment advanceSessions")
             .lean();
 
 

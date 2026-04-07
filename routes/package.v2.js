@@ -175,7 +175,22 @@ router.get('/', flexibleAuth, async (req, res) => {
     
     // Se tem patientId no token/filtro, filtra
     if (req.query.patientId) {
-      query.patientId = new mongoose.Types.ObjectId(req.query.patientId);
+      // Resolver patientId: pode vir como ID da patients_view — buscar o ID real
+      let resolvedPatientId = req.query.patientId;
+      const patientExists = await mongoose.connection.db.collection('patients').findOne(
+        { _id: new mongoose.Types.ObjectId(req.query.patientId) },
+        { projection: { _id: 1 } }
+      );
+      if (!patientExists) {
+        const viewDoc = await mongoose.connection.db.collection('patients_view').findOne(
+          { _id: new mongoose.Types.ObjectId(req.query.patientId) },
+          { projection: { patientId: 1 } }
+        );
+        if (viewDoc?.patientId) {
+          resolvedPatientId = viewDoc.patientId.toString();
+        }
+      }
+      query.patientId = new mongoose.Types.ObjectId(resolvedPatientId);
     }
     
     logger.info(`[${correlationId}] Listing packages`, { query, options });
@@ -284,10 +299,26 @@ router.get('/patient/:patientId', flexibleAuth, async (req, res) => {
   try {
     const options = parseQueryOptions(req);
     
-    logger.info(`[${correlationId}] Listing packages for patient ${patientId}`);
+    // Resolver patientId: pode vir como ID da patients_view — buscar o ID real
+    let resolvedPatientId = patientId;
+    const patientExists = await mongoose.connection.db.collection('patients').findOne(
+      { _id: new mongoose.Types.ObjectId(patientId) },
+      { projection: { _id: 1 } }
+    );
+    if (!patientExists) {
+      const viewDoc = await mongoose.connection.db.collection('patients_view').findOne(
+        { _id: new mongoose.Types.ObjectId(patientId) },
+        { projection: { patientId: 1 } }
+      );
+      if (viewDoc?.patientId) {
+        resolvedPatientId = viewDoc.patientId.toString();
+      }
+    }
+    
+    logger.info(`[${correlationId}] Listing packages for patient ${resolvedPatientId}`);
     
     // Query por paciente
-    const query = { patientId: new mongoose.Types.ObjectId(patientId) };
+    const query = { patientId: new mongoose.Types.ObjectId(resolvedPatientId) };
     if (options.status) query.status = options.status;
     
     const [packages, total, stats] = await Promise.all([
@@ -297,7 +328,7 @@ router.get('/patient/:patientId', flexibleAuth, async (req, res) => {
         .limit(options.limit)
         .lean(),
       PackagesView.countDocuments(query),
-      PackagesView.getStats(patientId)
+      PackagesView.getStats(resolvedPatientId)
     ]);
     
     const duration = Date.now() - startTime;
