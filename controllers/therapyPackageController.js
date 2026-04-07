@@ -164,6 +164,7 @@ export const packageOperations = {
                 totalSessions,
                 selectedSlots = [], // 💡 novo campo
                 payments = [],
+                pendingSessionIds = [], // 🔄 sessões pendentes de outros dias a absorver
                 // ⚖️ Campos específicos para liminar
                 type = 'therapy',
                 liminarProcessNumber,
@@ -340,6 +341,79 @@ export const packageOperations = {
             const newPackage = new Package(packageData);
 
             await newPackage.save({ session: mongoSession });
+
+            // ==========================================================
+            // 4.1️⃣ ABSORVER SESSÕES PENDENTES DE OUTROS DIAS
+            //      Vincula sessões avulsas com débito ao novo pacote
+            // ==========================================================
+            if (pendingSessionIds.length > 0) {
+                // ❶ Limita ao total de sessões do pacote (evita absorver mais do que cabe)
+                const idsToAbsorb = pendingSessionIds.slice(0, newPackage.totalSessions);
+
+                // ❷ Proteção contra dupla absorção: só pega as que ainda não têm pacote
+                const validSessions = await Session.find({
+                    _id: { $in: idsToAbsorb },
+                    patient: patientId,
+                    $or: [{ package: { $exists: false } }, { package: null }],
+                    status: { $ne: 'canceled' }
+                }, { _id: 1 }).session(mongoSession).lean();
+
+                const validIds = validSessions.map(s => s._id);
+
+                if (validIds.length === 0) {
+                    console.log(`[CREATE PACKAGE] Nenhuma sessão pendente válida para absorver`);
+                } else {
+                    await Session.updateMany(
+                        { _id: { $in: validIds } },
+                        {
+                            $set: {
+                                package: newPackage._id,
+                                paymentStatus: 'package_paid',
+                                paymentOrigin: 'package_prepaid',
+                                sessionConsumed: true,
+                                visualFlag: 'paid'
+                            }
+                        },
+                        { session: mongoSession }
+                    );
+
+                    await Appointment.updateMany(
+                        { session: { $in: validIds }, patient: patientId },
+                        {
+                            $set: {
+                                package: newPackage._id,
+                                paymentStatus: 'package_paid',
+                                paymentOrigin: 'package_prepaid',
+                                serviceType: 'package_session'
+                            }
+                        },
+                        { session: mongoSession }
+                    );
+
+                    // ❸ Converte débitos para auditoria em vez de deletar
+                    await Payment.updateMany(
+                        {
+                            session: { $in: validIds },
+                            status: { $in: ['pending', 'unpaid'] }
+                        },
+                        {
+                            $set: {
+                                status: 'converted_to_package',
+                                package: newPackage._id,
+                                convertedAt: new Date(),
+                                notes: `Convertido ao criar pacote ${newPackage._id}`
+                            }
+                        },
+                        { session: mongoSession }
+                    );
+
+                    // ❹ Atrelar as sessões absorvidas ao array sessions do pacote
+                    newPackage.sessions.push(...validIds);
+                    newPackage.sessionsDone = (newPackage.sessionsDone || 0) + validIds.length;
+                    console.log(`[CREATE PACKAGE] Absorvidas ${validIds.length} sessão(ões) pendente(s) no pacote ${newPackage._id}`);
+                }
+            }
+
             // 🔧 Reconciliação mínima de pagamentos herdados da sessão/appointment avulso
             if (replacedSessionId) {
                 // 2.1) Deleta pendentes/abertos da sessão avulsa (evita o “extra”)

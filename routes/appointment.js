@@ -22,6 +22,7 @@ import { runTransactionWithRetry } from '../utils/transactionRetry.js';
 import billingOrchestrator from '../services/billing/BillingOrchestrator.js';
 import { mapAppointmentToEvent } from '../utils/appointmentMapper.js';
 import PatientBalance from '../models/PatientBalance.js';
+import PatientsView from '../models/PatientsView.js';
 import { getIo } from '../config/socket.js';
 import guideService from '../services/billing/guideService.js';
 import Convenio from '../models/Convenio.js';
@@ -2372,7 +2373,18 @@ router.patch('/:id/complete', auth, async (req, res) => {
 // Busca todos os agendamentos de um paciente
 router.get('/patient/:id', validateId, auth, async (req, res) => {
 
-    const patient = req.params.id;
+    let patient = req.params.id;
+    
+    // 🆕 Verifica se é um ID de view ou ID real
+    const PatientsView = mongoose.model('PatientsView');
+    const patientView = await PatientsView.findById(patient).lean();
+    
+    if (patientView) {
+        // É um ID de view, usa o patientId real
+        console.log(`[GET /appointments/patient/:id] PatientId é de view, usando patientId real: ${patientView.patientId}`);
+        patient = patientView.patientId;
+    }
+    
     try {
         const appointments = await Appointment.find({ patient }).populate([
             { path: 'doctor', select: 'fullName crm' },

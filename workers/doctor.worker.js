@@ -19,7 +19,6 @@ import mongoose from "mongoose";
 
 import Doctor from "../models/Doctor.js";
 import { doctorQueue } from "../config/bullConfig.js";
-import { publishEvent, EventTypes } from "../infrastructure/events/eventPublisher.js";
 
 await mongoose.connect(process.env.MONGO_URI);
 
@@ -71,6 +70,18 @@ async function handleCreate(payload, correlationId) {
   
   console.log(chalk.blue(`[DOCTOR WORKER] Criando médico: ${fullName}`));
   
+  // Verifica se já existe médico com esse ID (idempotência)
+  const existingDoctor = await Doctor.findById(doctorId);
+  if (existingDoctor) {
+    console.log(chalk.yellow(`[DOCTOR WORKER] Médico ${doctorId} já existe, retornando existente`));
+    return { 
+      success: true, 
+      doctorId: existingDoctor._id.toString(),
+      fullName: existingDoctor.fullName,
+      alreadyExisted: true
+    };
+  }
+  
   const doctor = new Doctor({
     _id: doctorId,
     fullName: fullName.trim(),
@@ -85,14 +96,6 @@ async function handleCreate(payload, correlationId) {
   });
   
   await doctor.save();
-  
-  // Publica evento de sucesso
-  await publishEvent(EventTypes.DOCTOR_CREATED, {
-    doctorId: doctor._id.toString(),
-    fullName: doctor.fullName,
-    email: doctor.email,
-    specialty: doctor.specialty
-  }, { correlationId });
   
   console.log(chalk.green(`[DOCTOR WORKER] Médico criado: ${doctor._id}`));
   
@@ -122,12 +125,6 @@ async function handleUpdate(payload, correlationId) {
     throw new Error('Médico não encontrado');
   }
   
-  await publishEvent(EventTypes.DOCTOR_UPDATED, {
-    doctorId: doctor._id.toString(),
-    fullName: doctor.fullName,
-    updates: Object.keys(updates)
-  }, { correlationId });
-  
   console.log(chalk.green(`[DOCTOR WORKER] Médico atualizado: ${doctor._id}`));
   
   return { 
@@ -148,13 +145,6 @@ async function handleDelete(payload, correlationId) {
     throw new Error('Médico não encontrado');
   }
   
-  await publishEvent(EventTypes.DOCTOR_DELETED, {
-    doctorId,
-    fullName: doctor.fullName,
-    deletedBy,
-    reason
-  }, { correlationId });
-  
   console.log(chalk.green(`[DOCTOR WORKER] Médico deletado: ${doctorId}`));
   
   return { success: true, doctorId };
@@ -174,14 +164,6 @@ async function handleDeactivate(payload, correlationId) {
   if (!doctor) {
     throw new Error('Médico não encontrado');
   }
-  
-  await publishEvent(EventTypes.DOCTOR_UPDATED, {
-    doctorId: doctor._id.toString(),
-    fullName: doctor.fullName,
-    active: 'false',
-    action: 'deactivated',
-    deactivatedBy
-  }, { correlationId });
   
   console.log(chalk.green(`[DOCTOR WORKER] Médico inativado: ${doctor._id}`));
   
@@ -206,14 +188,6 @@ async function handleReactivate(payload, correlationId) {
   if (!doctor) {
     throw new Error('Médico não encontrado');
   }
-  
-  await publishEvent(EventTypes.DOCTOR_UPDATED, {
-    doctorId: doctor._id.toString(),
-    fullName: doctor.fullName,
-    active: 'true',
-    action: 'reactivated',
-    reactivatedBy
-  }, { correlationId });
   
   console.log(chalk.green(`[DOCTOR WORKER] Médico reativado: ${doctor._id}`));
   

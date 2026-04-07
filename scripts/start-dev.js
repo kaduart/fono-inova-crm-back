@@ -2,7 +2,7 @@
 /**
  * 🚀 Script de Inicialização para Desenvolvimento
  * 
- * Inicia o Redis (se não estiver rodando) e depois o servidor Node.js
+ * Inicia o Redis (se não estiver rodando), o servidor Node.js e os workers
  * Uso: npm run dev
  */
 
@@ -14,7 +14,16 @@ const execAsync = promisify(exec);
 const REDIS_PORT = process.env.REDIS_PORT || 6379;
 const REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
 
+// Workers a serem iniciados
+const WORKERS = [
+    { name: '👨‍⚕️ Doctor Worker', file: './workers/doctor.worker.js' },
+    { name: '📋 Followup Worker', file: './workers/followup.worker.js' },
+];
+
 console.log('🔧 Iniciando ambiente de desenvolvimento...\n');
+
+// Guarda referências dos processos filhos
+const childProcesses = [];
 
 // Função para verificar se o Redis está rodando
 async function isRedisRunning() {
@@ -56,6 +65,25 @@ async function startRedis() {
     }
 }
 
+// Função para iniciar um worker
+function startWorker(worker) {
+    console.log(`🔄 Iniciando ${worker.name}...`);
+    
+    const proc = spawn('node', ['-r', 'dotenv/config', worker.file], {
+        stdio: 'inherit',
+        shell: true,
+        env: { ...process.env, NODE_OPTIONS: '--dns-result-order=ipv4first' }
+    });
+    
+    proc.on('close', (code) => {
+        console.log(`⚠️  ${worker.name} encerrou com código ${code}`);
+    });
+    
+    childProcesses.push(proc);
+    console.log(`✅ ${worker.name} iniciado!\n`);
+    return proc;
+}
+
 // Função principal
 async function main() {
     // Verifica se Redis está rodando
@@ -70,6 +98,10 @@ async function main() {
         console.log('✅ Redis já está rodando!\n');
     }
     
+    // Inicia os workers
+    console.log('🚀 Iniciando workers...\n');
+    WORKERS.forEach(worker => startWorker(worker));
+    
     // Inicia o servidor Node.js
     console.log('🚀 Iniciando servidor Node.js...\n');
     
@@ -79,18 +111,35 @@ async function main() {
         env: { ...process.env, NODE_OPTIONS: '--dns-result-order=ipv4first' }
     });
     
+    childProcesses.push(server);
+    
     server.on('close', (code) => {
+        console.log(`\n👋 Servidor encerrou com código ${code}`);
+        // Encerra todos os workers
+        childProcesses.forEach(proc => {
+            if (proc !== server && !proc.killed) {
+                proc.kill('SIGTERM');
+            }
+        });
         process.exit(code);
     });
     
-    // Encerra o Redis quando o Node.js for encerrado (opcional)
+    // Encerra todos os processos quando o servidor for encerrado
     process.on('SIGINT', () => {
-        console.log('\n\n👋 Encerrando servidor...');
-        server.kill('SIGINT');
+        console.log('\n\n👋 Encerrando ambiente de desenvolvimento...');
+        childProcesses.forEach(proc => {
+            if (!proc.killed) {
+                proc.kill('SIGINT');
+            }
+        });
     });
     
     process.on('SIGTERM', () => {
-        server.kill('SIGTERM');
+        childProcesses.forEach(proc => {
+            if (!proc.killed) {
+                proc.kill('SIGTERM');
+            }
+        });
     });
 }
 

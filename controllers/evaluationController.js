@@ -2,6 +2,7 @@ import Evolution from "../models/Evolution.js";
 import Metric from "../models/Metric.js";
 import TherapyProtocol from "../models/TherapyProtocol.js";
 import EvolutionHistory from "../models/EvolutionHistory.js";
+import PatientsView from "../models/PatientsView.js";
 import mongoose from 'mongoose';
 
 // ========== FUNÇÕES AUXILIARES ==========
@@ -270,9 +271,19 @@ export const createEvaluation = async (req, res) => {
 // ========== GET EVALUATIONS BY PATIENT (MANTIDO) ==========
 
 export const getEvaluationsByPatient = async (req, res) => {
-  const { patientId } = req.params;
+  let { patientId } = req.params;
 
   try {
+    // 🆕 Verifica se é um ID de view ou ID real
+    const PatientsView = mongoose.model('PatientsView');
+    const patientView = await PatientsView.findById(patientId).lean();
+    
+    if (patientView) {
+      // É um ID de view, usa o patientId real
+      console.log(`[getEvaluationsByPatient] PatientId é de view, usando patientId real: ${patientView.patientId}`);
+      patientId = patientView.patientId;
+    }
+    
     if (!mongoose.Types.ObjectId.isValid(patientId)) {
       return res.status(400).json({ message: "Paciente inválido." });
     }
