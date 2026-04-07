@@ -14,6 +14,7 @@ import { syncEvent } from '../services/syncService.js';
 import { runJourneyFollowups } from '../services/journeyFollowupEngine.js';
 import Leads from '../models/Leads.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
+import PatientBalance from '../models/PatientBalance.js';
 
 /**
  * 🏥 Cria recebível de convênio quando sessão é completada
@@ -410,6 +411,24 @@ export const packageOperations = {
                     // ❹ Atrelar as sessões absorvidas ao array sessions do pacote
                     newPackage.sessions.push(...validIds);
                     newPackage.sessionsDone = (newPackage.sessionsDone || 0) + validIds.length;
+
+                    // ❺ Creditar o PatientBalance — zera a dívida das sessões absorvidas
+                    const absorbedSessions = await Session.find(
+                        { _id: { $in: validIds } }, { sessionValue: 1 }
+                    ).session(mongoSession).lean();
+                    const absorbedTotal = absorbedSessions.reduce((sum, s) => sum + (s.sessionValue || 0), 0);
+                    if (absorbedTotal > 0) {
+                        await PatientBalance.updateOne(
+                            { patient: patientId },
+                            {
+                                $inc: { currentBalance: -absorbedTotal },
+                                $set: { lastTransactionAt: new Date() }
+                            },
+                            { session: mongoSession }
+                        );
+                        console.log(`[CREATE PACKAGE] Balance creditado R$${absorbedTotal} para paciente ${patientId}`);
+                    }
+
                     console.log(`[CREATE PACKAGE] Absorvidas ${validIds.length} sessão(ões) pendente(s) no pacote ${newPackage._id}`);
                 }
             }
@@ -1789,7 +1808,7 @@ export const packageOperations = {
                 date,
                 time,
                 doctor: doctorId || pkg.doctor,
-                patient: patientId || pkg.patient,
+                patient: pkg.patient,
                 specialty: specialty || pkg.specialty,
                 status: { $ne: 'canceled' }
             }).session(mongoSession);
@@ -1878,7 +1897,7 @@ export const packageOperations = {
             const newSession = new Session({
                 date,
                 time,
-                patient: patientId || pkg.patient,
+                patient: pkg.patient,
                 doctor: doctorId || pkg.doctor,
                 package: packageId,
                 sessionValue: validSessionValue,
