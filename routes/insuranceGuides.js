@@ -105,10 +105,26 @@ router.post('/', auth, async (req, res) => {
       });
     }
 
+    // Resolver patientId: pode vir como ID da patients_view — buscar o ID real
+    let resolvedPatientId = patientId;
+    const patientExists = await mongoose.connection.db.collection('patients').findOne(
+      { _id: new mongoose.Types.ObjectId(patientId) },
+      { projection: { _id: 1 } }
+    );
+    if (!patientExists) {
+      const viewDoc = await mongoose.connection.db.collection('patients_view').findOne(
+        { _id: new mongoose.Types.ObjectId(patientId) },
+        { projection: { patientId: 1 } }
+      );
+      if (viewDoc?.patientId) {
+        resolvedPatientId = viewDoc.patientId.toString();
+      }
+    }
+
     // Criar guia
     const guide = new InsuranceGuide({
       number,
-      patientId,
+      patientId: resolvedPatientId,
       specialty,
       insurance,
       totalSessions,
@@ -164,7 +180,22 @@ router.get('/', auth, async (req, res) => {
     const filter = {};
 
     if (patientId && mongoose.Types.ObjectId.isValid(patientId)) {
-      filter.patientId = new mongoose.Types.ObjectId(patientId);
+      // Resolver patientId: pode vir como ID da patients_view — buscar o ID real
+      let resolvedPatientId = patientId;
+      const patientExists = await mongoose.connection.db.collection('patients').findOne(
+        { _id: new mongoose.Types.ObjectId(patientId) },
+        { projection: { _id: 1 } }
+      );
+      if (!patientExists) {
+        const viewDoc = await mongoose.connection.db.collection('patients_view').findOne(
+          { _id: new mongoose.Types.ObjectId(patientId) },
+          { projection: { patientId: 1 } }
+        );
+        if (viewDoc?.patientId) {
+          resolvedPatientId = viewDoc.patientId.toString();
+        }
+      }
+      filter.patientId = new mongoose.Types.ObjectId(resolvedPatientId);
     }
 
     if (specialty) {
@@ -438,8 +469,24 @@ router.get('/patient/:patientId/balance', auth, async (req, res) => {
       });
     }
 
+    // Resolver patientId: pode vir como ID da patients_view — buscar o ID real
+    let resolvedPatientId = patientId;
+    const patientExists = await mongoose.connection.db.collection('patients').findOne(
+      { _id: new mongoose.Types.ObjectId(patientId) },
+      { projection: { _id: 1 } }
+    );
+    if (!patientExists) {
+      const viewDoc = await mongoose.connection.db.collection('patients_view').findOne(
+        { _id: new mongoose.Types.ObjectId(patientId) },
+        { projection: { patientId: 1 } }
+      );
+      if (viewDoc?.patientId) {
+        resolvedPatientId = viewDoc.patientId.toString();
+      }
+    }
+
     // Usar método estático do model
-    const balance = await InsuranceGuide.getBalance(patientId, specialty);
+    const balance = await InsuranceGuide.getBalance(resolvedPatientId, specialty);
 
     return res.status(200).json({
       success: true,

@@ -1,123 +1,149 @@
-   ponto 1 
-aba ficncneiro ainda tb diversas chamad de apis legado, demroando a abertura da app
-me	204	preflight	Preflight
-0.0 kB	13 ms
-contacts?page=1&limit=50	204	preflight	Preflight
-0.0 kB	13 ms
-me	204	preflight	Preflight
-0.0 kB	13 ms
-patients	304	xhr	patientService.ts:33	0.6 kB	612 ms
-total-patients	200	xhr	patientService.ts:90	(disk cache)	8 ms
-patient-overview	200	xhr	patientService.ts:95	(disk cache)	7 ms
-list	304	xhr	doctorService.ts:68	0.6 kB	604 ms
-contacts?page=1&limit=50	304	xhr	whatsappService.ts:74	0.6 kB	617 ms
-list	304	xhr	doctorService.ts:73	0.6 kB	602 ms
-me	304	xhr	AuthContext.tsx:178	0.6 kB	606 ms
+curl 'http://localhost:5000/api/insurance-guides?patientId=69d3286c62b12ddbb24089f5' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgQWRtaW4iLCJpYXQiOjE3NzU1ODM4MTgsImV4cCI6MTc3NTY3MDIxOH0.JvgWRBQi2pOa8RJOlvxrBY_oXNYvaY9B0AWxTp2C0Jc' \
+  -H 'Connection: keep-alive' \
+  -H 'If-None-Match: W/"2f-DIu+YT+crC0gtA0fmLhDHoSSkwE"' \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Referer: http://localhost:5173/' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-site' \
+  -H 'User-Agent: Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36' \
+  -H 'sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"' \
+  -H 'sec-ch-ua-mobile: ?1' \
+  -H 'sec-ch-ua-platform: "Android"' \
+  -H 'x-correlation-id: front_1775587903116_9ppwaxhh4'
 
-contacts?page=1&limit=50	304	xhr	whatsappService.ts:74	0.6 kB	1.19 s
-me	304	xhr	AuthContext.tsx:178	0.6 kB	1.19 s
-socket.io/?EIO=4&transport=websocket	101	websocket	socketManager.ts:91	0.0 kB	Pending
-Otherlogo-padrao-3d-encurtada.png	304	png	Other	0.1 kB	657 ms
-AdminDashboard.tsx?t=1775442086552	304	script	AppRoutes.tsx:61	0.2 kB	597 ms
-confirmToast.tsx	304	script	AdminDashboard.tsx:8	0.2 kB	580 ms
-TabErrorBoundary.tsx	304	script	AdminDashboard.tsx:9	0.2 kB	581 ms
-useAdmin.ts	304	script	AdminDashboard.tsx:13	0.2 kB	608 ms
-useDashboard.ts	304	script	AdminDashboard.tsx:14	0.2 kB	598 ms
-usePayment.ts?t=1775442086552	304	script	AdminDashboard.tsx:17	0.2 kB	593 ms
-paymentService.ts?t=1775442086552	304	script	AdminDashboard.tsx:20	0.2 kB	619 ms
-AddAdminContent.tsx	304	script	AdminDashboard.tsx:22	0.2 kB	1.17 s
-AdminHeader.tsx	304	script	AdminDashboard.tsx:23	0.2 kB	1.17 s
-DashboardContentOptimized.tsx	304	script	AdminDashboard.tsx:24	0.2 kB	1.17 s
-ProfileContent.tsx	304	script	AdminDashboard.tsx:25	0.2 kB	1.18 s
-dashboardService.ts	304	script	useDashboard.ts:18	0.2 kB	585 ms
-adminService.ts	304	script	useAdmin.ts:5	0.2 kB	582 ms
-171 requests
-151 kB transferred
-57.1 MB resources
-Finish: 1.2 min
-DOMContentLoaded: 6.65 s
-Load: 6.97 s
+  {"success":true,"count":0,"data":{"guides":[]}}
 
+  curl 'http://localhost:5000/api/insurance-guides?patientId=69655746dcdf49e2c282800b&status=active' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgQWRtaW4iLCJpYXQiOjE3NzU1ODM4MTgsImV4cCI6MTc3NTY3MDIxOH0.JvgWRBQi2pOa8RJOlvxrBY_oXNYvaY9B0AWxTp2C0Jc' \
+  -H 'Connection: keep-alive' \
+  -H 'If-None-Match: W/"8fe-pRgqQyv54iF5fiLeIR2NOw6Q//E"' \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Referer: http://localhost:5173/' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-site' \
+  -H 'User-Agent: Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36' \
+  -H 'sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"' \
+  -H 'sec-ch-ua-mobile: ?1' \
+  -H 'sec-ch-ua-platform: "Android"' \
+  -H 'x-correlation-id: front_1775587948376_nvzlaoxut'
 
-
-
-
-
-
-
-
-ponto 2 
-cara mesma coisa na tab agedna monte de chamada legadno ainda analsiear o qu precismaos atuzlair e chamar e o que tnoa tem migar para v2 @fullcalendar_timegrid.js?v=b72bf538
-insuranceProviders.ts
-ScheduleAppointmentModal.tsx
-appointmentDetailModal.tsx?t=1775442086552
-calendarService.ts
-chunk-MIEWXLXB.js?v=b72bf538
-chunk-SS2ORZSQ.js?v=b72bf538
-react-datepicker.js?v=b72bf538
-react-modal.js?v=b72bf538
-
-dateUtils.ts
-InputCurrency.tsx
-TextArea.tsx
-chunk-FF6LLGUW.js?v=b72bf538
-dateFormat.ts
-PatientBalanceModal.tsx?t=1775442086552
-useBalanceV2.ts?t=1775442086552
-usePaymentV2.ts?t=1775442086552
-balanceService.ts?t=1775442086552
-usePaymentPolling.ts?t=1775442086552
-data:application/x-…
-holidays?year=2026
-holidays?year=2026
-holidays?year=2026
-appointments?startDate=2026-03-30&endDate=2026-05-09&limit=500&light=true
-holidays?year=2026
-appointments?startDate=2026-03-30&endDate=2026-05-09&limit=500&light=true
-176 requests
-626 kB transferred
-50.4 MB resources
-Finish: 21.88 s
-DOMContentLoaded: 9.15 s
-Request URL
-http://localhost:5173/src/utils/dateUtils.ts
-Request Method
-GET
-Status Code
-304 Not Modified
-Remote Address
-127.0.0.1:5173
-Referrer Policy
-strict-origin-when-cross-origin
-accept
-*/*
-accept-encoding
-gzip, deflate, br, zstd
-accept-language
-pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7
-connection
-keep-alive
-cookie
-_ga=GA1.1.913045854.1773701374; _gcl_au=1.1.1456448973.1773701374; _ga_N59X7PNQZZ=GS2.1.s1774154196$o5$g1$t1774156656$j60$l0$h0
-host
-localhost:5173
-if-none-match
-W/"446-N81s4z2dYFO3k2UqdGFZRZC6iFk"
-origin
-http://localhost:5173
-referer
-http://localhost:5173/src/components/patients/ScheduleAppointmentModal.tsx
-sec-ch-ua
-"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
-sec-ch-ua-mobile
-?1
-sec-ch-ua-platform
-"Android"
-sec-fetch-dest
-script
-sec-fetch-mode
-cors
-sec-fetch-site
-same-origin
-user-agent
-Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36urgente          
+  {
+    "success": true,
+    "count": 5,
+    "data": {
+        "guides": [
+            {
+                "_id": "699de4144152216f7913e8f7",
+                "number": "15510345",
+                "patientId": {
+                    "_id": "69655746dcdf49e2c282800b",
+                    "fullName": "Nicolas Lucca",
+                    "phone": "62992731969",
+                    "cpf": null
+                },
+                "specialty": "psicomotricidade",
+                "insurance": "unimed-anapolis",
+                "totalSessions": 10,
+                "usedSessions": 1,
+                "expiresAt": "2026-03-06T00:00:00.000Z",
+                "status": "active",
+                "packageId": "699de5184152216f7913ebfb",
+                "createdAt": "2026-02-24T17:47:00.339Z",
+                "updatedAt": "2026-03-04T21:01:07.828Z",
+                "__v": 0,
+                "remaining": 9
+            },
+            {
+                "_id": "699de0bf4152216f7913dbee",
+                "number": "15650230",
+                "patientId": {
+                    "_id": "69655746dcdf49e2c282800b",
+                    "fullName": "Nicolas Lucca",
+                    "phone": "62992731969",
+                    "cpf": null
+                },
+                "specialty": "fonoaudiologia",
+                "insurance": "unimed-anapolis",
+                "totalSessions": 20,
+                "usedSessions": 0,
+                "expiresAt": "2026-03-27T00:00:00.000Z",
+                "status": "active",
+                "packageId": "699de14a4152216f7913de38",
+                "createdAt": "2026-02-24T17:32:47.173Z",
+                "updatedAt": "2026-02-24T17:35:18.544Z",
+                "__v": 0,
+                "remaining": 20
+            },
+            {
+                "_id": "699dd6e34152216f7913b758",
+                "number": "15655250",
+                "patientId": {
+                    "_id": "69655746dcdf49e2c282800b",
+                    "fullName": "Nicolas Lucca",
+                    "phone": "62992731969",
+                    "cpf": null
+                },
+                "specialty": "terapia_ocupacional",
+                "insurance": "unimed-anapolis",
+                "totalSessions": 24,
+                "usedSessions": 12,
+                "expiresAt": "2026-05-24T00:00:00.000Z",
+                "status": "active",
+                "packageId": "699dd72d4152216f7913b8ee",
+                "createdAt": "2026-02-24T16:50:43.907Z",
+                "updatedAt": "2026-04-07T18:02:27.036Z",
+                "__v": 0,
+                "remaining": 12
+            },
+            {
+                "_id": "699ddb7b4152216f7913ca10",
+                "number": "15655247",
+                "patientId": {
+                    "_id": "69655746dcdf49e2c282800b",
+                    "fullName": "Nicolas Lucca",
+                    "phone": "62992731969",
+                    "cpf": null
+                },
+                "specialty": "psicologia",
+                "insurance": "unimed-anapolis",
+                "totalSessions": 24,
+                "usedSessions": 0,
+                "expiresAt": "2026-05-24T00:00:00.000Z",
+                "status": "active",
+                "packageId": "699ddbf74152216f7913cb1a",
+                "createdAt": "2026-02-24T17:10:19.520Z",
+                "updatedAt": "2026-02-24T17:12:37.490Z",
+                "__v": 0,
+                "remaining": 24
+            },
+            {
+                "_id": "69d53541d24df1c9ef974d80",
+                "number": "15650231",
+                "patientId": {
+                    "_id": "69655746dcdf49e2c282800b",
+                    "fullName": "Nicolas Lucca",
+                    "phone": "62992731969",
+                    "cpf": null
+                },
+                "specialty": "terapia_ocupacional",
+                "insurance": "unimed-anapolis",
+                "totalSessions": 15,
+                "usedSessions": 0,
+                "expiresAt": "2026-05-29T00:00:00.000Z",
+                "status": "active",
+                "packageId": null,
+                "createdAt": "2026-04-07T16:48:01.444Z",
+                "updatedAt": "2026-04-07T16:48:01.444Z",
+                "__v": 0,
+                "remaining": 15
+            }
+        ]
+    }
+}

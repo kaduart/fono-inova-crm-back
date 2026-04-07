@@ -7,6 +7,16 @@ import InsuranceBatch from '../models/InsuranceBatch.js';
 import Payment from '../models/Payment.js';
 import { v4 as uuidv4 } from 'uuid';
 
+// 🔄 Importação dinâmica do cache para evitar circular dependency
+let dashboardCache;
+async function getDashboardCache() {
+  if (!dashboardCache) {
+    const { dashboardCache: cache } = await import('../routes/financial/dashboard.routes.js');
+    dashboardCache = cache;
+  }
+  return dashboardCache;
+}
+
 /**
  * Cria um novo lote de faturamento de convênio
  */
@@ -244,6 +254,38 @@ export async function processReturn(batchId, returnData) {
     receivedAmount: batch.receivedAmount,
     totalGlosa: batch.totalGlosa
   });
+  
+  // 🔄 INVALIDAR CACHE DO DASHBOARD (para atualizar pipeline em tempo real)
+  try {
+    const cache = await getDashboardCache();
+    const monthKey = `${batch.startDate.getFullYear()}-${String(batch.startDate.getMonth() + 1).padStart(2, '0')}`;
+    const keysToDelete = cache.keys().filter(key => 
+      key.includes('dashboard_month_') && key.includes(monthKey)
+    );
+    keysToDelete.forEach(key => cache.del(key));
+    console.log(`[Pipeline] Dashboard cache invalidado: ${keysToDelete.length} keys para ${monthKey}`);
+    
+    // 🔄 INVALIDAR CACHE DE DESPESAS TAMBÉM (V2)
+    const { expenseCache } = await import('../routes/expenses.v2.js');
+    if (expenseCache) {
+      expenseCache.flushAll();
+      console.log('[Pipeline] Expense cache invalidado');
+    }
+    
+    // 🔔 NOTIFICAR CLIENTES VIA SSE (tempo real)
+    const { notifyDashboardUpdate } = await import('../routes/financial/sse.routes.js');
+    notifyDashboardUpdate('default', 'INSURANCE_PIPELINE_CHANGED', {
+      batchId: batch._id.toString(),
+      batchNumber: batch.batchNumber,
+      provider: batch.insuranceProvider,
+      month: monthKey,
+      receivedAmount: batch.receivedAmount,
+      totalGlosa: batch.totalGlosa,
+      status: batch.status
+    });
+  } catch (err) {
+    console.warn('[Pipeline] Erro ao notificar:', err.message);
+  }
   
   return batch;
 }

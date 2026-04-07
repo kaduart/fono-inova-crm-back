@@ -545,6 +545,8 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
         confidence: rates.confidence,
         basePeriodDays: rates.basePeriodDays
       },
+      // 🏥 Pipeline de Convênios (dados já calculados no overview)
+      convenioDetail: overview.convenioDetail,
       meta: {
         valor: metaMensal,
         percentualAtual: Math.round(percentualMeta * 100) / 100,
@@ -756,5 +758,8 @@ router.get('/cache/stats', auth, authorize(['admin']), (req, res) => {
     keys: keys.slice(0, 20) // Limita a 20 keys para não sobrecarregar
   });
 });
+
+// Exporta cache para invalidação externa (ex: quando processar retorno de convênio)
+export { dashboardCache };
 
 export default router;
