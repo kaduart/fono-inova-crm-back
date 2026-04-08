@@ -32,7 +32,10 @@
     "test:billing:load": "node tests/billing/load-test.js",
     "test:billing:pre-deploy": "node tests/billing/pre-deploy-check.js",
     "test:billing:full": "npm run test:billing:pre-deploy && npm run test:billing:e2e && npm run test:billing:load 100",
-    "billing:status": "node scripts/status-v2.js"
+    "billing:status": "node scripts/status-v2.js",
+    "test:safety": "vitest run tests/unit/completeWorker.safety.test.js tests/e2e/appointment-edit-sync.e2e.test.js --forceExit",
+    "test:all": "vitest run --forceExit",
+    "test:pre-deploy": "npm run test:safety && npm run test:billing:pre-deploy"
   },
   "keywords": [],
   "author": "",
