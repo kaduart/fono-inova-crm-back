@@ -698,13 +698,16 @@ router.get('/:id/status', flexibleAuth, asyncHandler(async (req, res) => {
     appointment.operationalStatus === 'processing_complete';
 
   // Estados terminais positivos (worker concluiu com sucesso)
+  // 🚨 IMPORTANTE: Não pode estar em processamento!
   const isResolved =
-    appointment.operationalStatus === 'scheduled' ||
-    appointment.operationalStatus === 'confirmed' ||
-    appointment.operationalStatus === 'paid' ||
-    appointment.operationalStatus === 'missed' ||
-    appointment.operationalStatus === 'completed' ||
-    appointment.clinicalStatus === 'completed';
+    !isProcessing && (
+      appointment.operationalStatus === 'scheduled' ||
+      appointment.operationalStatus === 'confirmed' ||
+      appointment.operationalStatus === 'paid' ||
+      appointment.operationalStatus === 'missed' ||
+      appointment.operationalStatus === 'completed' ||
+      appointment.clinicalStatus === 'completed'
+    );
 
   const statusMessages = {
     'processing_create':  Messages.PROCESSING?.CREATE  || 'Criando agendamento...',

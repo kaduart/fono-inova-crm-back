@@ -392,7 +392,7 @@ Se quiser, no próximo passo eu posso:
 Só me manda como estão suas collections hoje 👍
 
 
-ponto 1 temos daily-cloign, daily-summary  entende o que cada umd esses caras fazem e med etlahaa aqui
+ponto 1 temos daily-cloign, daily-summary entende o que cada umd esses caras fazem e med etlahaa aqui
 
 ponto 2 voce vaia anklsie a dicrscusao no @back/logs-archive/documento-analise.txt  vai enetndeo code temos 
 daily-summary, temos totals, daily-closing (tudo v2) oque existe pois temos um monte de api e ano ta unsando 
