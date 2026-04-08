@@ -46,45 +46,41 @@ async function ensureMongoConnection() {
     }
 }
 
-// 🔴 LIBERA APPOINTMENT EM CASO DE FALHA
+// 🔴 LIBERA APPOINTMENT EM CASO DE FALHA (SÓ SE AINDA ESTIVER TRAVADO)
 async function releaseAppointmentLock(appointmentId, reason = 'worker_failed') {
     if (!appointmentId) return;
     
     try {
         await ensureMongoConnection();
         
-        const appointment = await Appointment.findById(appointmentId);
-        if (!appointment) {
-            console.log(`[CancelOrchestrator] ⚠️ Appointment não encontrado para liberar: ${appointmentId}`);
-            return;
-        }
-        
-        // Só libera se estiver em estado de processamento
-        const processingStatuses = ['processing_cancel', 'processing_complete', 'processing_create'];
-        if (!processingStatuses.includes(appointment.operationalStatus)) {
-            console.log(`[CancelOrchestrator] ℹ️ Appointment não está em processamento: ${appointment.operationalStatus}`);
-            return;
-        }
-        
-        const previousStatus = appointment.operationalStatus === 'processing_create' ? 'pending' : 'scheduled';
-        
-        await Appointment.findByIdAndUpdate(appointmentId, {
-            $set: { 
-                operationalStatus: previousStatus,
-                updatedAt: new Date()
+        // ✅ CORREÇÃO: Só libera se AINDA estiver em processing_cancel
+        const result = await Appointment.findOneAndUpdate(
+            {
+                _id: appointmentId,
+                operationalStatus: 'processing_cancel'
             },
-            $push: {
-                history: {
-                    action: 'auto_release_cancel',
-                    previousStatus: appointment.operationalStatus,
-                    newStatus: previousStatus,
-                    timestamp: new Date(),
-                    context: `Worker cancel falhou: ${reason}`
+            {
+                $set: { 
+                    operationalStatus: 'scheduled',
+                    updatedAt: new Date()
+                },
+                $push: {
+                    history: {
+                        action: 'auto_release_cancel',
+                        previousStatus: 'processing_cancel',
+                        newStatus: 'scheduled',
+                        timestamp: new Date(),
+                        context: `Worker cancel falhou: ${reason}`
+                    }
                 }
             }
-        });
+        );
         
-        console.log(`[CancelOrchestrator] 🔓 Lock liberado: ${appointmentId} → ${previousStatus}`);
+        if (result) {
+            console.log(`[CancelOrchestrator] 🔓 Lock liberado: ${appointmentId} → scheduled`);
+        } else {
+            console.log(`[CancelOrchestrator] ℹ️ Não liberado: ${appointmentId} já não está em processing_cancel`);
+        }
     } catch (err) {
         console.error(`[CancelOrchestrator] ❌ ERRO CRÍTICO ao liberar lock:`, err.message);
     }
