@@ -8,7 +8,9 @@
 
 import express from 'express';
 import mongoose from 'mongoose';
+import { Queue } from 'bullmq';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { redisConnection } from '../infrastructure/queue/queueConfig.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { checkAppointmentConflicts, getAvailableTimeSlots } from '../middleware/conflictDetection.js';
 import Appointment from '../models/Appointment.js';
@@ -384,6 +386,20 @@ router.patch('/:id/cancel', flexibleAuth, asyncHandler(async (req, res) => {
 }));
 
 /**
+ * 🔓 Helper: Verifica se existe job ativo na fila complete-orchestrator
+ */
+async function hasActiveJobInQueue(appointmentId) {
+  try {
+    const queue = new Queue('complete-orchestrator', { connection: redisConnection });
+    const jobs = await queue.getJobs(['waiting', 'active', 'delayed']);
+    return jobs.some(job => job.data?.payload?.appointmentId === appointmentId);
+  } catch (error) {
+    console.error('[hasActiveJobInQueue] Erro ao verificar fila:', error.message);
+    return false; // Se não conseguir verificar, assume que não tem job
+  }
+}
+
+/**
  * 🎯 PATCH /api/v2/appointments/:id/complete - Completar (Async)
  */
 router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
@@ -403,12 +419,31 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
       );
     }
 
-    // Guards
+    // Guards - Verifica se está em processamento E se tem job ativo na fila
     if (appointment.operationalStatus === 'processing_complete') {
-      await mongoSession.abortTransaction();
-      throw createBusinessError(Messages.BUSINESS.ALREADY_PROCESSING_COMPLETE, 409, ErrorCodes.ALREADY_PROCESSING,
-        { status: 'processing_complete' }
-      );
+      // 🔴 VERIFICA SE TEM JOB ATIVO NA FILA - se não tiver, libera o lock automaticamente
+      const hasActiveJob = await hasActiveJobInQueue(id);
+      
+      if (hasActiveJob) {
+        await mongoSession.abortTransaction();
+        throw createBusinessError(Messages.BUSINESS.ALREADY_PROCESSING_COMPLETE, 409, ErrorCodes.ALREADY_PROCESSING,
+          { status: 'processing_complete', hasActiveJob: true }
+        );
+      } else {
+        // Não tem job ativo - provavelmente o worker falhou ou foi reiniciado
+        // Libera o lock automaticamente e continua o processamento
+        console.log(`[complete] 🔓 Lock obsoleto detectado para ${id}, liberando automaticamente...`);
+        appointment.operationalStatus = 'scheduled';
+        appointment.history.push({
+          action: 'auto_release_stale_lock',
+          previousStatus: 'processing_complete',
+          newStatus: 'scheduled',
+          timestamp: new Date(),
+          context: 'Lock liberado automaticamente - nenhum job ativo na fila'
+        });
+        await appointment.save({ session: mongoSession });
+        // Continua o processamento normalmente...
+      }
     }
 
     if (appointment.clinicalStatus === 'completed') {
@@ -466,7 +501,8 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
           appointmentId: id,
           status: 'processing_complete',
           correlationId: eventResult.correlationId,
-          idempotencyKey: eventResult.idempotencyKey
+          idempotencyKey: eventResult.idempotencyKey,
+          lockReleased: appointment.operationalStatus === 'scheduled' // Indica se o lock foi liberado automaticamente
         },
         {
           message: Messages.PROCESSING.COMPLETE,
@@ -1368,6 +1404,73 @@ router.patch('/:id/reschedule', flexibleAuth, asyncHandler(async (req, res) => {
   } finally {
     mongoSession.endSession();
   }
+}));
+
+/**
+ * 🔓 POST /api/v2/appointments/:id/release-lock - Liberar lock manualmente
+ * 
+ * Endpoint para liberar o lock de um agendamento travado em processing_*
+ * Útil quando o worker falhou e o agendamento ficou preso
+ */
+router.post('/:id/release-lock', flexibleAuth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { reason = 'manual_release' } = req.body;
+  
+  console.log(`[release-lock] Solicitação para liberar lock: ${id}, motivo: ${reason}`);
+  
+  const appointment = await Appointment.findById(id);
+  
+  if (!appointment) {
+    throw createBusinessError(Messages.BUSINESS.APPOINTMENT_NOT_FOUND, 404, ErrorCodes.NOT_FOUND);
+  }
+  
+  // Só permite liberar se estiver em estado de processamento
+  const processingStatuses = ['processing_complete', 'processing_cancel', 'processing_create'];
+  if (!processingStatuses.includes(appointment.operationalStatus)) {
+    res.json(formatSuccess({
+      appointmentId: id,
+      operationalStatus: appointment.operationalStatus,
+      message: 'Agendamento não está em processamento',
+      released: false
+    }));
+    return;
+  }
+  
+  // Determina o status anterior
+  let newStatus = 'scheduled';
+  if (appointment.operationalStatus === 'processing_create') {
+    newStatus = 'pending';
+  }
+  
+  const previousStatus = appointment.operationalStatus;
+  
+  // Atualiza o agendamento
+  await Appointment.findByIdAndUpdate(id, {
+    $set: { 
+      operationalStatus: newStatus,
+      updatedAt: new Date()
+    },
+    $push: {
+      history: {
+        action: 'manual_lock_release',
+        previousStatus: previousStatus,
+        newStatus: newStatus,
+        changedBy: req.user?._id,
+        timestamp: new Date(),
+        context: `Lock liberado manualmente via API. Motivo: ${reason}`
+      }
+    }
+  });
+  
+  console.log(`[release-lock] ✅ Lock liberado: ${id} (${previousStatus} → ${newStatus})`);
+  
+  res.json(formatSuccess({
+    appointmentId: id,
+    previousStatus: previousStatus,
+    newStatus: newStatus,
+    released: true,
+    message: `Lock liberado com sucesso. Status alterado de ${previousStatus} para ${newStatus}`
+  }));
 }));
 
 export default router;
