@@ -316,6 +316,14 @@ app.use(
 );
 app.options("*", cors(corsOptions));
 
+// 🚀 Health check imediato - responde antes de tudo
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'CRM Backend running', timestamp: new Date().toISOString() });
+});
+
 // Logger simples
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} → ${req.path}`);
@@ -500,6 +508,14 @@ function initFollowupWatcher() {
 }
 
 // ======================================================
+// 🚀 INICIA SERVIDOR IMEDIATAMENTE (antes das inicializações)
+// ======================================================
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
+});
+
+// ======================================================
 // 🧠 Inicializa Redis + Mongo + Workers (com PING check)
 // ======================================================
 (async () => {
@@ -563,15 +579,8 @@ function initFollowupWatcher() {
     }
 
     initFollowupWatcher();
-
-    // Inicializa servidor
-    server.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
-      
-      // Baileys desabilitado - usando extensão Chrome para envio via WhatsApp Web
-      // Para reabilitar: chamar baileysService.initialize() e escanear QR no terminal
-    });
+    
+    console.log("✅ Sistema totalmente inicializado!");
   } catch (err) {
     console.error("❌ Erro crítico na inicialização:", err);
     process.exit(1);
