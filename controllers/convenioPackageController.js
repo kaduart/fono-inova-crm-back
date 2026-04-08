@@ -248,10 +248,10 @@ export const createConvenioPackage = async (req, res) => {
       const appointment = insertedAppointments[i];
       
       const payment = new Payment({
-        patientId,
-        sessionId: session._id,
-        appointmentId: appointment._id,
-        packageId: convenioPackage._id,
+        patient: patientId,
+        session: session._id,
+        appointment: appointment._id,
+        package: convenioPackage._id,
         serviceType: 'package_session',
         amount: convenioValue || 0,
         paymentMethod: 'other', // convenio não é enum válido

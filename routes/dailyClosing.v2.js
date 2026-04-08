@@ -18,7 +18,16 @@ const TIMEZONE = 'America/Sao_Paulo';
 /**
  * Busca ou calcula fechamento de um dia específico
  */
-async function getOrCalculateDailyClosing(date, clinicId) {
+async function getOrCalculateDailyClosing(date, clinicId, forceRefresh = false) {
+    // Se forçar refresh, deleta snapshot existente
+    if (forceRefresh) {
+        await DailyClosingSnapshot.deleteOne({
+            date,
+            clinicId: clinicId || 'default'
+        });
+        console.log(`[DailyClosingV2] Snapshot deletado para refresh: ${date}`);
+    }
+    
     // Busca snapshot
     const snapshot = await DailyClosingSnapshot.findOne({
         date,
@@ -26,6 +35,7 @@ async function getOrCalculateDailyClosing(date, clinicId) {
     }).lean();
 
     if (snapshot) {
+        console.log(`[DailyClosingV2] Retornando snapshot: ${date}`);
         return snapshot.report;
     }
 
@@ -57,13 +67,14 @@ async function getOrCalculateDailyClosing(date, clinicId) {
  */
 router.get('/', auth, async (req, res) => {
     try {
-        const { date, startDate, endDate } = req.query;
+        const { date, startDate, endDate, refresh } = req.query;
         const clinicId = req.user?.clinicId || 'default';
+        const forceRefresh = refresh === 'true';
 
         // Modo LEGACY: apenas uma data
         if (date && !startDate && !endDate) {
             const targetDate = moment.tz(date, TIMEZONE).format('YYYY-MM-DD');
-            const report = await getOrCalculateDailyClosing(targetDate, clinicId);
+            const report = await getOrCalculateDailyClosing(targetDate, clinicId, forceRefresh);
             
             return res.json({
                 success: true,

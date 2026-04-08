@@ -1,379 +1,399 @@
-{
-    "success": true,
-    "data": {
-        "appointments": [
-            {
-                "_id": "69d3ba901d39dc388625206d",
-                "patient": {
-                    "_id": "69d3ba8f1d39dc3886252068",
-                    "fullName": "Isabela Ferreira De Mendonca"
-                },
-                "doctor": {
-                    "_id": "6981db7af55849815f98b00a",
-                    "fullName": "Mayra Magda Mendes Oliveira",
-                    "specialty": "fonoaudiologia"
-                },
-                "date": "2026-04-07T12:00:00.000Z",
-                "time": "13:20",
-                "duration": 40,
-                "operationalStatus": "completed",
-                "clinicalStatus": "completed",
-                "sessionValue": 80,
-                "billingType": "particular",
-                "insuranceProvider": null,
-                "paymentStatus": "paid",
-                "source": "individual"
-            },
-            {
-                "_id": "69c674ed1d84ac5eb1c3befd",
-                "patient": {
-                    "_id": "69457c15a132f0049cbc81df",
-                    "fullName": "Daniel Rodrigues dos Santos de Oliveira"
-                },
-                "doctor": {
-                    "_id": "6981db7af55849815f98b00a",
-                    "fullName": "Mayra Magda Mendes Oliveira",
-                    "specialty": "fonoaudiologia"
-                },
-                "date": "2026-04-07T12:00:00.000Z",
-                "time": "14:00",
-                "duration": 40,
-                "operationalStatus": "canceled",
-                "clinicalStatus": "missed",
-                "sessionValue": 180,
-                "billingType": "particular",
-                "insuranceProvider": null,
-                "package": {
-                    "_id": "69c674eb1d84ac5eb1c3bef0",
-                    "sessionValue": 180,
-                    "financialStatus": "partially_paid",
-                    "type": "therapy"
-                },
-                "paymentStatus": "pending",
-                "source": "package"
-            },
-            {
-                "_id": "69b9a624785a76ad646fdb12",
-                "patient": {
-                    "_id": "69b995d73fbcf7682605c8ca",
-                    "fullName": "Rebecca Garcia da Silva"
-                },
-                "doctor": {
-                    "_id": "6981db7af55849815f98b00a",
-                    "fullName": "Mayra Magda Mendes Oliveira",
-                    "specialty": "fonoaudiologia"
-                },
-                "date": "2026-04-07T12:00:00.000Z",
-                "time": "14:40",
-                "operationalStatus": "completed",
-                "clinicalStatus": "completed",
-                "duration": 40,
-                "paymentStatus": "package_paid",
-                "package": {
-                    "_id": "69b9a623785a76ad646fdb08",
-                    "sessionValue": 180,
-                    "financialStatus": "paid",
-                    "type": "therapy"
-                },
-                "sessionValue": 180,
-                "billingType": "particular",
-                "insuranceProvider": null,
-                "source": "package"
-            },
-            {
-                "_id": "69b9a3b3785a76ad646fd6be",
-                "doctor": {
-                    "_id": "6981db7af55849815f98b00a",
-                    "fullName": "Mayra Magda Mendes Oliveira",
-                    "specialty": "fonoaudiologia"
-                },
-                "date": "2026-04-07T12:00:00.000Z",
-                "time": "16:00",
-                "duration": 40,
-                "operationalStatus": "scheduled",
-                "clinicalStatus": "pending",
-                "sessionValue": 250,
-                "billingType": "particular",
-                "insuranceProvider": null,
-                "paymentStatus": "pending",
-                "source": "individual"
-            },
-            {
-                "_id": "69c14529c19d35b8454a27fe",
-                "patient": {
-                    "_id": "69bbf5d42d22a57a538ed310",
-                    "fullName": "Enthony Kauan Mesias Oliveira"
-                },
-                "doctor": {
-                    "_id": "685c2affaec14c71635863b7",
-                    "fullName": "Tatiana Celuta Peres",
-                    "specialty": "psicologia"
-                },
-                "date": "2026-04-07T12:00:00.000Z",
-                "time": "16:20",
-                "duration": 40,
-                "operationalStatus": "completed",
-                "clinicalStatus": "completed",
-                "sessionValue": 150,
-                "billingType": "particular",
-                "insuranceProvider": null,
-                "package": {
-                    "_id": "69c14528c19d35b8454a27e8",
-                    "sessionValue": 150,
-                    "financialStatus": "unpaid",
-                    "type": "liminar"
-                },
-                "paymentStatus": "package_paid",
-                "source": "package"
-            },
-            {
-                "_id": "69cd1764856a4f39ce254cb7",
-                "patient": {
-                    "_id": "69bd4aabfbee9c0a2cf12d34",
-                    "fullName": "Luiza Bueno Lima"
-                },
-                "doctor": {
-                    "_id": "68a8cf172132ca79b074d387",
-                    "fullName": "Suzane de Morais Soares",
-                    "specialty": "psicologia"
-                },
-                "date": "2026-04-07T12:00:00.000Z",
-                "time": "16:20",
-                "duration": 40,
-                "operationalStatus": "completed",
-                "clinicalStatus": "completed",
-                "sessionValue": 140,
-                "billingType": "particular",
-                "insuranceProvider": "",
-                "package": {
-                    "_id": "69cd1763856a4f39ce254cae",
-                    "sessionValue": 140,
-                    "financialStatus": "partially_paid",
-                    "type": "therapy"
-                },
-                "paymentStatus": "paid",
-                "source": "package"
-            },
-            {
-                "_id": "69c2e73a5c4ad17fefccbe35",
-                "patient": {
-                    "_id": "69bc07b81339067aa69b2a74",
-                    "fullName": "Bento Cabral Cândido"
-                },
-                "doctor": {
-                    "_id": "68bedf1104ec4875aaea8188",
-                    "fullName": "Mikaelly da Silva Sousa",
-                    "specialty": "fonoaudiologia"
-                },
-                "date": "2026-04-07T12:00:00.000Z",
-                "time": "16:20",
-                "duration": 40,
-                "operationalStatus": "completed",
-                "clinicalStatus": "completed",
-                "sessionValue": 150,
-                "billingType": "particular",
-                "insuranceProvider": null,
-                "package": {
-                    "_id": "69c2e7395c4ad17fefccbe21",
-                    "sessionValue": 150,
-                    "financialStatus": "paid",
-                    "type": "therapy"
-                },
-                "paymentStatus": "package_paid",
-                "source": "package"
-            },
-            {
-                "_id": "69cc3e444eda3e92588dd850",
-                "patient": {
-                    "_id": "69cc3c716873402d92effc91",
-                    "fullName": "Maria Eduarda Gomes Ulik"
-                },
-                "doctor": {
-                    "_id": "68a8cf172132ca79b074d387",
-                    "fullName": "Suzane de Morais Soares",
-                    "specialty": "psicologia"
-                },
-                "date": "2026-04-07T12:00:00.000Z",
-                "time": "17:00",
-                "duration": 40,
-                "operationalStatus": "canceled",
-                "clinicalStatus": "missed",
-                "sessionValue": 160,
-                "billingType": "particular",
-                "insuranceProvider": null,
-                "package": {
-                    "_id": "69cc3e434eda3e92588dd847",
-                    "sessionValue": 160,
-                    "financialStatus": "unpaid",
-                    "type": "therapy"
-                },
-                "paymentStatus": "pending",
-                "source": "package"
-            },
-            {
-                "_id": "69c15026c19d35b8454a2eb1",
-                "patient": {
-                    "_id": "69bbf5d42d22a57a538ed310",
-                    "fullName": "Enthony Kauan Mesias Oliveira"
-                },
-                "doctor": {
-                    "_id": "68bedf1104ec4875aaea8188",
-                    "fullName": "Mikaelly da Silva Sousa",
-                    "specialty": "fonoaudiologia"
-                },
-                "date": "2026-04-07T12:00:00.000Z",
-                "time": "17:00",
-                "duration": 40,
-                "operationalStatus": "completed",
-                "clinicalStatus": "completed",
-                "sessionValue": 160,
-                "billingType": "particular",
-                "insuranceProvider": null,
-                "package": {
-                    "_id": "69c15025c19d35b8454a2e8b",
-                    "sessionValue": 160,
-                    "financialStatus": "unpaid",
-                    "type": "liminar"
-                },
-                "paymentStatus": "package_paid",
-                "source": "package"
-            },
-            {
-                "_id": "69c1456fc19d35b8454a28a8",
-                "patient": {
-                    "_id": "69bbf5d42d22a57a538ed310",
-                    "fullName": "Enthony Kauan Mesias Oliveira"
-                },
-                "doctor": {
-                    "_id": "68a8cf172132ca79b074d387",
-                    "fullName": "Suzane de Morais Soares",
-                    "specialty": "psicologia"
-                },
-                "date": "2026-04-07T12:00:00.000Z",
-                "time": "17:40",
-                "duration": 40,
-                "operationalStatus": "completed",
-                "clinicalStatus": "completed",
-                "sessionValue": 150,
-                "billingType": "particular",
-                "insuranceProvider": null,
-                "package": {
-                    "_id": "69c1456ec19d35b8454a2882",
-                    "sessionValue": 150,
-                    "financialStatus": "unpaid",
-                    "type": "liminar"
-                },
-                "paymentStatus": "package_paid",
-                "source": "package"
-            },
-            {
-                "_id": "69c2eb4a5c4ad17fefccc51c",
-                "patient": {
-                    "_id": "69c16866c19d35b8454a35fb",
-                    "fullName": "Joaquim Rocha Simão"
-                },
-                "doctor": {
-                    "_id": "68bedf1104ec4875aaea8188",
-                    "fullName": "Mikaelly da Silva Sousa",
-                    "specialty": "fonoaudiologia"
-                },
-                "date": "2026-04-07T12:00:00.000Z",
-                "time": "17:40",
-                "duration": 40,
-                "operationalStatus": "completed",
-                "clinicalStatus": "completed",
-                "sessionValue": 80,
-                "billingType": "particular",
-                "insuranceProvider": "unimed-anapolis",
-                "package": {
-                    "_id": "69c2eb495c4ad17fefccc505",
-                    "sessionValue": 0,
-                    "financialStatus": "unpaid",
-                    "type": "convenio"
-                },
-                "paymentStatus": "pending_receipt",
-                "source": "package"
-            },
-            {
-                "_id": "69c2ebf15c4ad17fefccc5ff",
-                "patient": {
-                    "_id": "69c16797c19d35b8454a354d",
-                    "fullName": "Benjamim Rocha Simão"
-                },
-                "doctor": {
-                    "_id": "68bedf1104ec4875aaea8188",
-                    "fullName": "Mikaelly da Silva Sousa",
-                    "specialty": "fonoaudiologia"
-                },
-                "date": "2026-04-07T12:00:00.000Z",
-                "time": "18:20",
-                "duration": 40,
-                "operationalStatus": "completed",
-                "clinicalStatus": "completed",
-                "sessionValue": 80,
-                "billingType": "particular",
-                "insuranceProvider": "unimed-anapolis",
-                "package": {
-                    "_id": "69c2ebf15c4ad17fefccc5e8",
-                    "sessionValue": 0,
-                    "financialStatus": "unpaid",
-                    "type": "convenio"
-                },
-                "paymentStatus": "pending_receipt",
-                "source": "package"
-            },
-            {
-                "_id": "69c145a0c19d35b8454a291f",
-                "patient": {
-                    "_id": "69bbf5d42d22a57a538ed310",
-                    "fullName": "Enthony Kauan Mesias Oliveira"
-                },
-                "doctor": {
-                    "_id": "698f09aa39d78a9c5746dc28",
-                    "fullName": "Thayna Miranda",
-                    "specialty": "terapia_ocupacional"
-                },
-                "date": "2026-04-07T12:00:00.000Z",
-                "time": "18:20",
-                "duration": 40,
-                "operationalStatus": "completed",
-                "clinicalStatus": "completed",
-                "sessionValue": 160,
-                "billingType": "particular",
-                "insuranceProvider": null,
-                "package": {
-                    "_id": "69c1459fc19d35b8454a28f9",
-                    "sessionValue": 160,
-                    "financialStatus": "unpaid",
-                    "type": "liminar"
-                },
-                "paymentStatus": "package_paid",
-                "source": "package"
-            }
-        ],
-        "pagination": {
-            "page": 1,
-            "limit": 100,
-            "total": 13,
-            "pages": 1
-        }
-    },
-    "meta": {
-        "timestamp": "2026-04-07T23:07:42.861Z"
+Perfeito — e aqui tem um ponto muito importante de negócio + financeiro que você precisa validar com calma, porque é onde normalmente os sistemas quebram ou começam a “sumir dinheiro”.
+
+O comportamento que você descreveu está correto conceitualmente, mas precisa de controle rigoroso pra não dar problema depois.
+
+⚠️ INTERPRETAÇÃO CORRETA (E CRÍTICA)
+
+Você está certo em separar:
+
+💰 Particular
+Pago no ato → entra no caixa na hora
+✔ simples e direto
+🏥 Convênio
+Sessão realizada agora
+Pagamento é futuro (recebimento)
+✔ vira conta a receber, não caixa
+🚨 PONTO QUE VOCÊ PRECISA GARANTIR
+
+O seu sistema tem que separar 3 coisas obrigatoriamente:
+
+1. 💵 Caixa (dinheiro que entrou de verdade)
+só particular pago
+convênio NÃO entra aqui
+2. 📄 Contas a Receber (convênio)
+sessão feita
+valor gerado
+MAS ainda não pago
+3. ✅ Baixa do convênio (recebimento)
+quando o plano paga
+aí SIM entra no caixa
+🔥 PROBLEMA QUE SISTEMAS COMUNS TÊM
+
+Se isso não estiver bem controlado, acontece:
+
+convênio não entra no caixa ❌
+mas também não entra em lugar nenhum ❌
+resultado: dinheiro “some” da visão financeira
+✅ O QUE ESTÁ CERTO NO SEU SISTEMA
+
+✔ completed não significa pagamento
+✔ guideConsumed e sessionConsumed estão corretos
+✔ convênio não entra no caixa antes do pagamento
+
+⚠️ O QUE VOCÊ DEVE GARANTIR AGORA
+
+Você precisa confirmar que existe:
+
+1. Alguma estrutura tipo:
+accountsReceivable
+ou pendingPayments
+ou insuranceReceivables
+
+👉 Onde o convênio fica registrado como:
+
+valor a receber
+paciente
+guia
+data
+2. Endpoint de baixa do convênio
+
+Algo como:
+
+/api/convenio-packages/:id/mark-paid
+
+Quando isso acontecer:
+
+✔ entra no caixa
+✔ sai do contas a receber
+✔ fica registrado como recebido
+
+📊 REGRA DE OURO (ESSA É CRÍTICA)
+
+👉 Convênio só vira caixa quando dinheiro entra de fato
+
+Nunca antes.
+
+🚨 CHECK DE CONSISTÊNCIA (ESSENCIAL PRA VOCÊ)
+
+Confere isso no seu sistema:
+
+Quando sessão convênio é finalizada:
+ NÃO cria payment de caixa
+ Cria registro de "a receber"
+ Fica vinculado ao paciente e guia
+Quando convênio paga:
+ Cria entrada no caixa
+ Remove/atualiza "a receber"
+ Marca como pago
+💣 ERRO COMUM (EVITA ISSO!)
+
+❌ marcar convênio como “pago” na hora do atendimento
+❌ misturar convênio com pagamento imediato
+❌ usar o mesmo fluxo de particular
+
+🎯 CONCLUSÃO
+
+O que você viu está correto:
+
+✔ particular → caixa imediato
+✔ convênio → só depois do pagamento
+
+Mas o ponto crítico é:
+
+👉 Você precisa garantir que o convênio esteja sendo contabilizado em algum lugar enquanto não é pago
+
+👉 Se quiser ir pro próximo nível:
+
+Eu posso te ajudar a:
+
+revisar exatamente como está seu schema de convênio
+montar o fluxo correto de “contas a receber”
+garantir que seu daily-closing fique perfeito
+evitar qualquer divergência de caixa
+
+Só me manda como está hoje o modelo de convênio (schema ou código) que eu analiso contigo.
+
+mas nossa ideia nao e mostra rno fluxo de caixa do dia essea agendameotn osmtado com o qeu enteor 10 de dinehii 80 d econvenio tudo junto e outros card separadaos mostrano 80 pednente coenveio e tal cara??
+
+Agora sim — isso aqui é decisão de produto + UX financeira, e você está no caminho certo. Mas precisa ficar muito bem definido pra não confundir o caixa.
+
+🎯 RESPOSTA DIRETA
+
+👉 SIM — você pode mostrar “tudo junto” no dia (R$ 10 + R$ 80)
+👉 MAS NÃO pode misturar isso com o caixa real
+
+⚠️ O ERRO QUE VOCÊ PRECISA EVITAR
+
+Se você fizer isso:
+
+“Total do dia: R$ 90 (10 particular + 80 convênio)”
+
+👉 Isso está ERRADO para o caixa
+
+Porque:
+
+R$ 10 = dinheiro real 💰
+R$ 80 = dinheiro a receber 🧾
+
+👉 Misturar os dois = caixa falso
+
+✅ MODELO CORRETO (QUE VOCÊ QUER)
+
+Você pode (e deve) separar em blocos:
+
+🧾 CARD 1 — RESUMO DO DIA (VISÃO OPERACIONAL)
+
+Mostrar tudo que aconteceu:
+
+Particular: R$ 10
+Convênio: R$ 80
+Total de atendimentos: X
+
+👉 Isso é visão clínica / produção, não financeiro puro
+
+💰 CARD 2 — CAIXA REAL
+
+Mostrar apenas:
+
+Dinheiro recebido hoje
+Ex: R$ 10
+
+👉 Isso é o que realmente entrou no bolso
+
+🧾 CARD 3 — CONVÊNIOS A RECEBER
+
+Mostrar:
+
+R$ 80 pendente
+detalhado por paciente / guia
+
+👉 Isso é “dinheiro futuro”
+
+🧠 REGRA DE OURO (ESSENCIAL)
+
+Você está lidando com 3 visões diferentes:
+
+Visão	O que mostra	Inclui convênio?
+📊 Produção	tudo que foi feito	✅ SIM
+💰 Caixa	dinheiro recebido	❌ NÃO
+🧾 A Receber	dinheiro futuro	✅ SIM
+🔥 COMO FICA O SEU CASO
+
+No dia:
+
+Produção:
+R$ 10 particular
+R$ 80 convênio
+👉 Total: R$ 90
+Caixa:
+R$ 10
+👉 (somente particular)
+A receber:
+R$ 80
+👉 (convênio)
+⚠️ IMPORTANTE (MUITO)
+
+👉 O que NÃO pode acontecer:
+
+❌ somar convênio no caixa
+❌ esconder convênio
+❌ misturar tudo no mesmo número sem contexto
+💡 UX IDEAL (O QUE VOCÊ QUER CHEGAR)
+
+Você pode fazer um dashboard assim:
+
+HOJE
+
+💰 Caixa: R$ 10
+📊 Produção: R$ 90
+🧾 Convênios a receber: R$ 80
+
+👉 simples, claro e profissional
+
+🎯 RESUMO FINAL
+
+✔ Sua ideia está correta
+✔ Pode mostrar tudo no dia
+❗ MAS precisa separar claramente:
+
+dinheiro real
+dinheiro a receber
+produção total
+
+Se quiser, eu posso te desenhar exatamente como montar isso no front (cards + lógica + queries Mongo) pra ficar redondo e sem risco de erro financeiro.
+
+acabei de explicar fluxo caioxa prodicao, caixa entrada e isso mongo
+
+Perfeito — então você já definiu o modelo mental certo: separar Caixa, Produção e A Receber. Agora vamos alinhar isso com MongoDB de forma correta e segura, sem misturar nada.
+
+🧠 MODELO CORRETO (MONGO)
+
+Você precisa ter fontes de verdade separadas, não “inventar soma no front”.
+
+1. 💰 CAIXA (Entrada Real)
+
+👉 Collection: payments
+
+Campos importantes:
+
+amount
+paymentDate
+status: 'paid'
+type: 'cash' | 'pix' | 'card'
+billingType: 'particular'
+
+👉 Só entra aqui o que foi pago de verdade
+
+2. 📊 PRODUÇÃO (O QUE FOI FEITO)
+
+👉 Collection: appointments ou sessions
+
+Campos:
+
+status: 'completed'
+date
+type: 'particular' | 'convenio' | 'package'
+
+👉 Aqui entra:
+
+convênio
+particular
+pacote
+
+👉 Produção NÃO é dinheiro
+
+3. 🧾 CONTAS A RECEBER (CONVÊNIO)
+
+👉 Collection: insuranceReceivables (ou similar)
+
+Campos:
+
+patientId
+appointmentId
+amount
+status: 'pending' | 'paid'
+dueDate
+
+👉 Aqui fica o convênio até ser pago
+
+🔍 COMO CALCULAR (NO MONGODB)
+💰 Caixa do dia
+db.payments.aggregate([
+  {
+    $match: {
+      paymentDate: {
+        $gte: ISODate("2026-04-08T00:00:00Z"),
+        $lt: ISODate("2026-04-09T00:00:00Z")
+      },
+      status: "paid"
     }
-}curl 'http://localhost:5000/api/v2/appointments?startDate=2026-04-07&endDate=2026-04-07&light=true' \
-  -H 'Accept: application/json, text/plain, */*' \
-  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NTYwMDQwOCwiZXhwIjoxNzc1NjA0MDA4fQ.dp1P554-2nTSaDvsEDvlT6x9HCjyct1woQlistsghBM' \
-  -H 'Connection: keep-alive' \
-  -H 'If-None-Match: W/"1d01-GQkT55racFbnZu5AonXjDfwJ+Sc"' \
-  -H 'Origin: http://localhost:5173' \
-  -H 'Referer: http://localhost:5173/' \
-  -H 'Sec-Fetch-Dest: empty' \
-  -H 'Sec-Fetch-Mode: cors' \
-  -H 'Sec-Fetch-Site: same-site' \
-  -H 'User-Agent: Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36' \
-  -H 'sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"' \
-  -H 'sec-ch-ua-mobile: ?1' \
-  -H 'sec-ch-ua-platform: "Android"' \
-  -H 'x-correlation-id: front_1775603262771_hodz7kvj4'
+  },
+  {
+    $group: {
+      _id: null,
+      total: { $sum: "$amount" }
+    }
+  }
+])
+📊 Produção do dia
+db.appointments.aggregate([
+  {
+    $match: {
+      date: {
+        $gte: ISODate("2026-04-08T00:00:00Z"),
+        $lt: ISODate("2026-04-09T00:00:00Z")
+      },
+      status: "completed"
+    }
+  },
+  {
+    $group: {
+      _id: "$type",
+      total: { $sum: "$value" }
+    }
+  }
+])
+🧾 Convênios a receber
+db.insuranceReceivables.aggregate([
+  {
+    $match: {
+      status: "pending"
+    }
+  },
+  {
+    $group: {
+      _id: null,
+      total: { $sum: "$amount" }
+    }
+  }
+])
+🚨 REGRA CRÍTICA (NÃO QUEBRAR)
+
+👉 NUNCA deduzir caixa da produção
+
+👉 NUNCA misturar collections
+
+👉 NUNCA salvar “total do dia” no banco
+
+Tudo deve ser:
+
+✔ calculado via aggregate
+✔ em tempo real
+✔ baseado em fonte única
+
+💡 COMO FICA O DASHBOARD
+
+Você puxa 3 queries:
+
+1. Caixa
+
+→ payments
+
+2. Produção
+
+→ appointments
+
+3. A receber
+
+→ insuranceReceivables
+
+🔥 ERRO QUE VOCÊ ESTÁ EVITANDO (E É MUITO BOM)
+
+Se você misturar:
+
+convênio no caixa
+ou salvar total já somado
+
+👉 você perde:
+
+rastreabilidade
+auditoria
+confiança do financeiro
+🎯 RESUMO
+
+Você já está com o modelo certo:
+
+✔ Caixa = dinheiro real
+✔ Produção = tudo que foi feito
+✔ A receber = convênio
+
+Agora o ponto é:
+
+👉 implementar isso corretamente no Mongo
+👉 com agregações separadas
+👉 sem misturar dados
+
+Se quiser, no próximo passo eu posso:
+
+👉 revisar seu schema atual
+👉 te dizer exatamente onde está errado
+👉 e ajustar com você sem quebrar nada
+
+Só me manda como estão suas collections hoje 👍
+
+
+ponto 1 temos daily-cloign, daily-summary  entende o que cada umd esses caras fazem e med etlahaa aqui
+
+ponto 2 voce vaia anklsie a dicrscusao no @back/logs-archive/documento-analise.txt  vai enetndeo code temos 
+daily-summary, temos totals, daily-closing (tudo v2) oque existe pois temos um monte de api e ano ta unsando 
+preciso meohror isso, nao faca nada apenas anslie eme diga oq eu tem o gpas o qeu podmeos usar etc
