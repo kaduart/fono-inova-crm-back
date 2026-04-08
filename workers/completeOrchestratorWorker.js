@@ -56,38 +56,34 @@ async function releaseAppointmentLock(appointmentId, reason = 'worker_failed') {
     try {
         await ensureMongoConnection();
         
-        const appointment = await Appointment.findById(appointmentId);
-        if (!appointment) {
-            console.log(`[CompleteOrchestrator] ⚠️ Appointment não encontrado para liberar: ${appointmentId}`);
-            return;
-        }
-        
-        // Só libera se estiver em estado de processamento
-        const processingStatuses = ['processing_complete', 'processing_cancel', 'processing_create'];
-        if (!processingStatuses.includes(appointment.operationalStatus)) {
-            console.log(`[CompleteOrchestrator] ℹ️ Appointment não está em processamento: ${appointment.operationalStatus}`);
-            return;
-        }
-        
-        const newStatus = appointment.operationalStatus === 'processing_create' ? 'pending' : 'scheduled';
-        
-        await Appointment.findByIdAndUpdate(appointmentId, {
-            $set: { 
-                operationalStatus: newStatus,
-                updatedAt: new Date()
+        // ✅ CORREÇÃO: Só libera se AINDA estiver em processing_complete
+        const result = await Appointment.findOneAndUpdate(
+            {
+                _id: appointmentId,
+                operationalStatus: 'processing_complete'
             },
-            $push: {
-                history: {
-                    action: 'auto_release',
-                    previousStatus: appointment.operationalStatus,
-                    newStatus: newStatus,
-                    timestamp: new Date(),
-                    context: `Worker falhou: ${reason}`
+            {
+                $set: { 
+                    operationalStatus: 'scheduled',
+                    updatedAt: new Date()
+                },
+                $push: {
+                    history: {
+                        action: 'auto_release',
+                        previousStatus: 'processing_complete',
+                        newStatus: 'scheduled',
+                        timestamp: new Date(),
+                        context: `Worker falhou: ${reason}`
+                    }
                 }
             }
-        });
+        );
         
-        console.log(`[CompleteOrchestrator] 🔓 Lock liberado: ${appointmentId} → ${newStatus}`);
+        if (result) {
+            console.log(`[CompleteOrchestrator] 🔓 Lock liberado: ${appointmentId} → scheduled`);
+        } else {
+            console.log(`[CompleteOrchestrator] ℹ️ Não liberado: ${appointmentId} já não está em processing_complete`);
+        }
     } catch (err) {
         console.error(`[CompleteOrchestrator] ❌ ERRO CRÍTICO ao liberar lock:`, err.message);
         // Não relança - não queremos que o erro de liberação esconda o erro original
@@ -308,29 +304,52 @@ async function processCompleteJob({ job, eventId, correlationId, idempotencyKey,
             }
             
             // 🔴 CRIA PAYMENT DENTRO DA TRANSAÇÃO quando possível (Problema #4)
+            // ✅ CORREÇÃO: Verifica idempotência por appointmentId para evitar duplicação em retry
             if (!addToBalance && !existingPayment && isPerSession && packageId) {
-                perSessionPayment = await createPaymentForComplete({
-                    patientId: appointment.patient?._id,
-                    doctorId: appointment.doctor?._id,
-                    appointmentId,
-                    sessionId,
-                    packageId,
-                    amount: packageDoc?.sessionValue || 0,
-                    paymentOrigin: 'auto_per_session',
-                    correlationId,
-                    serviceDate: appointment.date ? new Date(appointment.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
-                });
+                // Busca se já existe payment para este appointment (idempotência)
+                const existingPerSessionPayment = await Payment.findOne({ 
+                    appointment: appointmentId,
+                    paymentOrigin: 'auto_per_session'
+                }).session(mongoSession);
+                
+                if (existingPerSessionPayment) {
+                    console.log(`[CompleteOrchestrator] ⚠️ Payment per-session já existe (retry): ${existingPerSessionPayment._id}`);
+                    perSessionPayment = existingPerSessionPayment;
+                } else {
+                    perSessionPayment = await createPaymentForComplete({
+                        patientId: appointment.patient?._id,
+                        doctorId: appointment.doctor?._id,
+                        appointmentId,
+                        sessionId,
+                        packageId,
+                        amount: packageDoc?.sessionValue || 0,
+                        paymentOrigin: 'auto_per_session',
+                        correlationId,
+                        serviceDate: appointment.date ? new Date(appointment.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+                    });
+                }
             } else if (!addToBalance && !existingPayment && isParticularSimple && sessionValue > 0) {
-                perSessionPayment = await createPaymentForComplete({
-                    patientId: appointment.patient?._id,
-                    doctorId: appointment.doctor?._id,
-                    appointmentId,
-                    sessionId,
-                    amount: sessionValue,
-                    paymentOrigin: 'particular_simple',
-                    correlationId,
-                    serviceDate: appointment.date ? new Date(appointment.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
-                });
+                // Busca se já existe payment para este appointment (idempotência)
+                const existingParticularPayment = await Payment.findOne({ 
+                    appointment: appointmentId,
+                    paymentOrigin: 'particular_simple'
+                }).session(mongoSession);
+                
+                if (existingParticularPayment) {
+                    console.log(`[CompleteOrchestrator] ⚠️ Payment particular já existe (retry): ${existingParticularPayment._id}`);
+                    perSessionPayment = existingParticularPayment;
+                } else {
+                    perSessionPayment = await createPaymentForComplete({
+                        patientId: appointment.patient?._id,
+                        doctorId: appointment.doctor?._id,
+                        appointmentId,
+                        sessionId,
+                        amount: sessionValue,
+                        paymentOrigin: 'particular_simple',
+                        correlationId,
+                        serviceDate: appointment.date ? new Date(appointment.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+                    });
+                }
             }
             
             // 2. ATUALIZA PACKAGE FINANCEIRO
