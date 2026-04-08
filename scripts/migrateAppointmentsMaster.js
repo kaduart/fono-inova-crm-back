@@ -34,16 +34,16 @@ async function runMigration() {
 
                 if (appointment.status === 'concluído') {
                     operationalStatus = 'pago';
-                    clinicalStatus = 'concluído';
+                    clinicalStatus = 'completed';
                 } else if (appointment.status === 'cancelado') {
                     operationalStatus = 'cancelado';
-                    clinicalStatus = 'pendente';
+                    clinicalStatus = 'pending';
                 } else if (appointment.status === 'confirmado') {
                     operationalStatus = 'confirmado';
-                    clinicalStatus = 'pendente';
+                    clinicalStatus = 'pending';
                 } else {
                     operationalStatus = 'agendado';
-                    clinicalStatus = 'pendente';
+                    clinicalStatus = 'pending';
                 }
 
                 // Atualizar diretamente no banco
