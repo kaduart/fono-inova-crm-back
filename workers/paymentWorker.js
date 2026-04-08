@@ -192,8 +192,17 @@ async function handlePaymentRequested(payload, eventId, correlationId, log) {
         await payment.save();
         log.info('payment_created', `Pagamento criado: ${payment._id}`);
 
-        // 🔗 LINKA payment ao appointment para que completeOrchestratorWorker encontre via existingPayment
+        // 🔗 LINKA payment ao appointment
         await Appointment.findByIdAndUpdate(appointmentId, { payment: payment._id });
+
+        // ✅ CONFIRMA PAYMENT IMEDIATAMENTE (sessão já foi completada antes deste evento)
+        await Payment.findByIdAndUpdate(payment._id, {
+            status: 'paid',
+            paidAt: new Date(),
+            confirmedAt: new Date(),
+            updatedAt: new Date()
+        });
+        log.info('payment_confirmed', `Pagamento confirmado como paid: ${payment._id}`);
 
         // 🔄 ATUALIZA PAYMENTSVIEW (projection para tela de pagamentos)
         try {
@@ -222,11 +231,10 @@ async function handlePaymentRequested(payload, eventId, correlationId, log) {
         throw error; // Re-lança outros erros
     }
 
-    // 4. Payment criado como pending — confirmação ocorre no completeOrchestratorWorker
-    log.info('payment_pending', `Payment ${payment._id} criado como pending, aguarda COMPLETE`);
+    log.info('payment_paid', `Payment ${payment._id} criado e confirmado como paid`);
 
     return {
-        status: 'payment_created_pending',
+        status: 'payment_created_paid',
         paymentId: payment._id,
         appointmentId
     };
@@ -460,6 +468,20 @@ async function processMultiPayment(payload, eventId, correlationId, log) {
                 date: new Date().toISOString().split('T')[0],
                 period: 'month',
                 reason: 'payment_multi_completed',
+                triggeredBy: 'payment_worker'
+            },
+            { correlationId }
+        );
+
+        // 4.2 Solicita recálculo do daily-closing (atualiza caixa do dia)
+        const paymentDate = new Date().toISOString().split('T')[0];
+        console.log(`[PaymentWorker] Disparando DAILY_CLOSING_REQUESTED para ${paymentDate}`);
+        await publishEvent(
+            EventTypes.DAILY_CLOSING_REQUESTED,
+            {
+                clinicId: 'default',
+                date: paymentDate,
+                reason: 'payment_completed',
                 triggeredBy: 'payment_worker'
             },
             { correlationId }

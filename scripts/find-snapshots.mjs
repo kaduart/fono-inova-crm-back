@@ -1,0 +1,10 @@
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
+dotenv.config();
+await mongoose.connect(process.env.MONGO_URI);
+const db = mongoose.connection.db;
+const docs = await db.collection('dailyclosingsnapshots').find({}).limit(5).toArray();
+console.log('Snapshots:', JSON.stringify(docs.map(d => ({ date: d.date, clinicId: d.clinicId, _id: d._id })), null, 2));
+const r = await db.collection('dailyclosingsnapshots').deleteMany({});
+console.log('Deletados:', r.deletedCount);
+await mongoose.disconnect();

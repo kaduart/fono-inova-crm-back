@@ -13,6 +13,7 @@ import { distributePayments } from '../services/distributePayments.js';
 import { createNextPackageFromPrevious } from '../utils/createNextPackageFromPrevious.js';
 import { mapStatusToClinical, mapStatusToOperational } from "../utils/statusMappers.js";
 import { dashboardCache } from '../services/adminDashboardCacheService.js';
+import { invalidateDailyClosingCache, invalidateCacheForPayment } from '../services/dailyClosingCacheService.js';
 
 const router = express.Router();
 
@@ -147,6 +148,9 @@ router.post('/', async (req, res) => {
 
         const payment = await Payment.create(paymentData);
 
+        // Invalida cache do daily-closing para a data do pagamento
+        await invalidateCacheForPayment(payment);
+
         // Atualiza status da sessão para tipos relevantes
         if (serviceType === 'session' || serviceType === 'individual_session') {
             const sessionToUpdate = serviceType === 'individual_session' ? individualSessionId : sessionId;
@@ -241,6 +245,9 @@ async function handleAdvancePayment(req, res) {
                 scheduledDate: advanceSessions.find(s => s.sessionId === id.toString())?.date
             }))
         });
+
+        // Invalida cache do daily-closing
+        await invalidateCacheForPayment(payment);
 
         return res.status(201).json({
             success: true,
@@ -654,6 +661,17 @@ router.patch('/:id', auth, async (req, res) => {
             await mongoSession.commitTransaction();
             transactionCommitted = true;
             console.log('🎉 Transação commitada com sucesso');
+
+            // Invalida cache do daily-closing para a data do pagamento atualizado
+            const updatedPayment = await Payment.findById(id).lean();
+            if (updatedPayment) {
+                await invalidateCacheForPayment(updatedPayment);
+                // Se criou novos pagamentos (advanceServices), invalida também
+                if (advanceServices.length > 0) {
+                    const today = moment.tz(TIMEZONE).format('YYYY-MM-DD');
+                    await invalidateDailyClosingCache(today, clinicId || 'default');
+                }
+            }
 
             // 5. POPULAÇÃO DO PAGAMENTO PRINCIPAL
             try {
@@ -2483,32 +2501,36 @@ router.get('/daily-completed-details', async (req, res) => {
 router.get('/daily-payments-details', async (req, res) => {
     try {
         const { date } = req.query;
-        const targetDate = date ? new Date(date) : new Date();
+        
+        // 🕐 Parse da data no timezone de Brasília
+        const moment = (await import('moment-timezone')).default;
+        
+        // ✅ CORREÇÃO: Cria data explícita para 00:00 e 23:59 do dia no timezone Brasil
+        const targetDateStr = date || moment.tz('America/Sao_Paulo').format('YYYY-MM-DD');
+        const startOfDay = moment.tz(`${targetDateStr}T00:00:00`, 'YYYY-MM-DDTHH:mm:ss', 'America/Sao_Paulo').toDate();
+        const endOfDay = moment.tz(`${targetDateStr}T23:59:59.999`, 'YYYY-MM-DDTHH:mm:ss.SSS', 'America/Sao_Paulo').toDate();
 
-        const startOfDay = new Date(targetDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        startOfDay.setHours(startOfDay.getHours() + 3);
-
-        const endOfDay = new Date(targetDate);
-        endOfDay.setHours(23, 59, 59, 999);
-        endOfDay.setHours(endOfDay.getHours() + 3);
+        console.log(`[daily-payments-details] Buscando: ${targetDateStr}`);
+        console.log(`  Start: ${startOfDay.toISOString()}`);
+        console.log(`  End: ${endOfDay.toISOString()}`);
 
         const payments = await Payment.find({
             status: "paid",
             $or: [
-                // ✅ Pagamentos com paymentDate explícito
-                { paymentDate: targetDate },
-
-                // ✅ Pagamentos antigos sem paymentDate — usa createdAt como fallback
+                // ✅ Pagamentos criados no dia (createdAt)
+                { 
+                    createdAt: { $gte: startOfDay, $lte: endOfDay }
+                },
+                // ✅ Pagamentos confirmados no dia (paidAt)
                 {
-                    paymentDate: { $exists: false },
-                    createdAt: { $gte: startOfDay, $lte: endOfDay },
+                    paidAt: { $gte: startOfDay, $lte: endOfDay }
                 },
             ],
         })
             .populate("patient doctor package appointment advanceSessions")
             .lean();
 
+        console.log(`[daily-payments-details] Encontrados: ${payments.length}`);
 
         // Formatar dados para resposta
         const formattedPayments = payments.map(payment => ({
