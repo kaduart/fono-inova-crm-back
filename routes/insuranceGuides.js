@@ -179,23 +179,30 @@ router.get('/', auth, async (req, res) => {
     // Construir filtro
     const filter = {};
 
-    if (patientId && mongoose.Types.ObjectId.isValid(patientId)) {
+    if (patientId) {
       // Resolver patientId: pode vir como ID da patients_view — buscar o ID real
       let resolvedPatientId = patientId;
-      const patientExists = await mongoose.connection.db.collection('patients').findOne(
-        { _id: new mongoose.Types.ObjectId(patientId) },
-        { projection: { _id: 1 } }
-      );
-      if (!patientExists) {
-        const viewDoc = await mongoose.connection.db.collection('patients_view').findOne(
+      
+      // Se for ObjectId válido, tenta resolver
+      if (mongoose.Types.ObjectId.isValid(patientId)) {
+        const patientExists = await mongoose.connection.db.collection('patients').findOne(
           { _id: new mongoose.Types.ObjectId(patientId) },
-          { projection: { patientId: 1 } }
+          { projection: { _id: 1 } }
         );
-        if (viewDoc?.patientId) {
-          resolvedPatientId = viewDoc.patientId.toString();
+        if (!patientExists) {
+          const viewDoc = await mongoose.connection.db.collection('patients_view').findOne(
+            { _id: new mongoose.Types.ObjectId(patientId) },
+            { projection: { patientId: 1 } }
+          );
+          if (viewDoc?.patientId) {
+            resolvedPatientId = viewDoc.patientId.toString();
+          }
         }
       }
-      filter.patientId = new mongoose.Types.ObjectId(resolvedPatientId);
+      
+      // 🆕 PADRONIZADO: Usa sempre STRING (não ObjectId)
+      filter.patientId = resolvedPatientId;
+      console.log(`[InsuranceGuides] Buscando guias para patientId: ${resolvedPatientId}`);
     }
 
     if (specialty) {
