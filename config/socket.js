@@ -43,6 +43,22 @@ export const initializeSocket = (server) => {
       socket.emit("pong");
     });
 
+    // 🔄 REBROADCAST: Atualizações de agendamentos para todos os clientes
+    socket.on("appointmentUpdated", (data) => {
+      console.log("📡 [SERVER] appointmentUpdated recebido, broadcasting...", data);
+      socket.broadcast.emit("appointmentUpdated", data);
+    });
+
+    socket.on("appointmentCreated", (data) => {
+      console.log("📡 [SERVER] appointmentCreated recebido, broadcasting...", data);
+      socket.broadcast.emit("appointmentCreated", data);
+    });
+
+    socket.on("appointmentDeleted", (data) => {
+      console.log("📡 [SERVER] appointmentDeleted recebido, broadcasting...", data);
+      socket.broadcast.emit("appointmentDeleted", data);
+    });
+
     socket.on("disconnect", (reason) => {
       console.log(`⚠️ Cliente desconectado (${reason})`);
     });

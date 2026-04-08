@@ -42,6 +42,9 @@ const paymentSchema = new mongoose.Schema({
     convertedPackage: { type: mongoose.Schema.Types.ObjectId, ref: 'Package', default: null },
     clinicId: { type: String, default: 'default' },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    // ✅ Data de confirmação do pagamento (quando efetivamente entrou no caixa)
+    paidAt: { type: Date, default: null },
+    confirmedAt: { type: Date, default: null },
 }, { timestamps: true });
 
 paymentSchema.index({ paymentDate: 1, status: 1 });
