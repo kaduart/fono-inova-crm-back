@@ -516,30 +516,37 @@ server.listen(PORT, '0.0.0.0', () => {
 });
 
 // ======================================================
-// 🧠 Inicializa Redis + Mongo + Workers (com PING check)
+// 🧠 Inicializa Redis + Mongo + Workers (NÃO BLOQUEIA)
 // ======================================================
 (async () => {
   try {
     console.log("🔄 Verificando Redis...");
-    await redisConnection.ping();
+    // NÃO await - deixa conectar em background
+    redisConnection.ping().then(() => {
+      console.log("✅ Redis conectado!");
+    }).catch(err => {
+      console.warn("⚠️ Redis indisponível (não bloqueia):", err.message);
+    });
 
-    // Workers e Crons
-    await import("./workers/followup.worker.js");
-    await import("./workers/followup.cron.js");
-    await import("./workers/video.worker.js");  // 🎬 Video pipeline worker
-    await import("./workers/post.worker.js");   // 📝 Post generation worker
-    
-    // 🚀 Workers 4.0 - Event-Driven Architecture
-    const { startAllWorkers } = await import("./workers/index.js");
-    startAllWorkers();
-    console.log("🎯 Workers 4.0 iniciados (Event-Driven)");
-    
-    // 🔄 Inicializa worker de retry para GMB
-    const { initGmbRetryWorker } = await import("./config/bullConfigGmbRetry.js");
-    initGmbRetryWorker();
-    
-    await import("./jobs/followup.analytics.cron.js");
-    await import("./crons/responseTracking.cron.js");
+    // Workers e Crons (com fallback se Redis falhar)
+    try {
+      await import("./workers/followup.worker.js");
+      await import("./workers/followup.cron.js");
+      await import("./workers/video.worker.js");
+      await import("./workers/post.worker.js");
+      
+      const { startAllWorkers } = await import("./workers/index.js");
+      startAllWorkers();
+      console.log("🎯 Workers 4.0 iniciados");
+      
+      const { initGmbRetryWorker } = await import("./config/bullConfigGmbRetry.js");
+      initGmbRetryWorker();
+      
+      await import("./jobs/followup.analytics.cron.js");
+      await import("./crons/responseTracking.cron.js");
+    } catch (workerErr) {
+      console.warn("⚠️ Workers não iniciados (Redis indisponível):", workerErr.message);
+    }
 
     // Conexão MongoDB
     await mongoose.connect(process.env.MONGO_URI, {
