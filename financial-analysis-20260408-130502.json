@@ -1,0 +1,5670 @@
+{
+  "paidNoPayment": {
+    "total": 273,
+    "particular": [
+      {
+        "id": "69d2a8667351a3447952661e",
+        "date": "2026-04-05",
+        "time": "15:22",
+        "billingType": "particular",
+        "serviceType": "session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": false,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69d2a8d07351a344795266e8",
+        "date": "2026-04-25",
+        "time": "09:00",
+        "billingType": "particular",
+        "serviceType": "session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": false,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69d2a9627586283dc1bfce81",
+        "date": "2026-04-25",
+        "time": "15:31",
+        "billingType": "particular",
+        "serviceType": "session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": false,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      }
+    ],
+    "package": [
+      {
+        "id": "68b8a5b07a36ac7ce0da604d",
+        "date": "2025-10-01",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68b9baca12aba72c13fff3a5",
+        "date": "2025-11-26",
+        "time": "16:40",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68b9bac912aba72c13fff3a0",
+        "date": "2025-11-12",
+        "time": "16:40",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68bedf5b04ec4875aaea81cb",
+        "date": "2025-10-15",
+        "time": "15:20",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68cd64a6bbc720b5cc9fea0f",
+        "date": "2025-10-13",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68d1b6eb123d6dc6644d2ed0",
+        "date": "2025-10-13",
+        "time": "18:00",
+        "serviceType": "package_session",
+        "sessionValue": 195,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68de8bc7d576ef219fd5679b",
+        "date": "2025-10-15",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68e3bf890d8aeeff1af03f71",
+        "date": "2025-10-17",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68e80d5ea49517ebb502a0de",
+        "date": "2025-10-22",
+        "time": "15:00",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68e80d60a49517ebb502a0ed",
+        "date": "2025-11-12",
+        "time": "15:00",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68eeb5f649e195b37058babb",
+        "date": "2025-10-20",
+        "time": "14:00",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68eeb6f149e195b37058bb88",
+        "date": "2025-10-20",
+        "time": "14:40",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f2561edbd680a8e1f10a63",
+        "date": "2025-10-24",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f2561fdbd680a8e1f10a6d",
+        "date": "2025-11-07",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f25620dbd680a8e1f10a77",
+        "date": "2025-11-21",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f25620dbd680a8e1f10a7c",
+        "date": "2025-11-26",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f25621dbd680a8e1f10a86",
+        "date": "2025-12-10",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f25622dbd680a8e1f10a8b",
+        "date": "2025-12-17",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f2662ac5bd0b3e3273dfe8",
+        "date": "2025-10-24",
+        "time": "13:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f2662ac5bd0b3e3273dfed",
+        "date": "2025-10-31",
+        "time": "13:59",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f2662bc5bd0b3e3273dff2",
+        "date": "2025-11-07",
+        "time": "13:59",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f26ad8c5bd0b3e3273e26f",
+        "date": "2025-10-17",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f26ad8c5bd0b3e3273e274",
+        "date": "2025-11-21",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f26ad9c5bd0b3e3273e279",
+        "date": "2025-10-31",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f76f19906180bdf2a05243",
+        "date": "2025-10-13",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f76f19906180bdf2a05244",
+        "date": "2025-10-20",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f7c5b93cf905d4cef8b40e",
+        "date": "2025-10-15",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f7c5b93cf905d4cef8b40f",
+        "date": "2025-10-17",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68f7c5b93cf905d4cef8b411",
+        "date": "2025-10-24",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68fa8c594862040e3c0636f5",
+        "date": "2025-10-31",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68fb84ff92bda574197a5f51",
+        "date": "2025-11-03",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68fb84ff92bda574197a5f4f",
+        "date": "2025-10-24",
+        "time": "10:40",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68fb84ff92bda574197a5f50",
+        "date": "2025-10-27",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "68fb84ff92bda574197a5f52",
+        "date": "2025-11-10",
+        "time": "10:40",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69020b2982b3b0951152e10f",
+        "date": "2025-11-05",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69020b2982b3b0951152e110",
+        "date": "2025-11-12",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69020b2982b3b0951152e111",
+        "date": "2025-11-19",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6904a70b7abc25e6eb2532ea",
+        "date": "2025-11-12",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6904a70b7abc25e6eb2532e7",
+        "date": "2025-10-31",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6904a70b7abc25e6eb2532e8",
+        "date": "2025-11-05",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6909e39346a6b4faa3016bf4",
+        "date": "2025-11-03",
+        "time": "18:00",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6909e39346a6b4faa3016bf2",
+        "date": "2025-10-20",
+        "time": "18:00",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "691329e9745b84b5aa93d52b",
+        "date": "2025-11-17",
+        "time": "14:00",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6913377c745b84b5aa93d70c",
+        "date": "2025-11-19",
+        "time": "15:20",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6913377c745b84b5aa93d70d",
+        "date": "2025-11-26",
+        "time": "15:20",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6913377c745b84b5aa93d70e",
+        "date": "2025-12-03",
+        "time": "15:20",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6913377c745b84b5aa93d70f",
+        "date": "2025-12-10",
+        "time": "15:20",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6914f0f43bd5036d01a7ce4d",
+        "date": "2025-11-12",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6914f0f43bd5036d01a7ce4f",
+        "date": "2025-11-26",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69171eb65d4d8bdb65edda40",
+        "date": "2025-11-14",
+        "time": "08:00",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69171eb65d4d8bdb65edda41",
+        "date": "2025-11-21",
+        "time": "08:00",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69171eb65d4d8bdb65edda42",
+        "date": "2025-11-28",
+        "time": "08:00",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "691b5d10fa52136b526804e1",
+        "date": "2025-11-17",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "691b5d10fa52136b526804e2",
+        "date": "2025-11-24",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "691b5d10fa52136b526804e3",
+        "date": "2025-12-01",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "691b5d10fa52136b526804e4",
+        "date": "2025-12-12",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "691b6464fa52136b52680758",
+        "date": "2025-11-17",
+        "time": "14:40",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "691cc843579b9d4697a3b694",
+        "date": "2025-12-19",
+        "time": "16:00",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "691cc843579b9d4697a3b690",
+        "date": "2025-11-21",
+        "time": "16:00",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "691cc843579b9d4697a3b692",
+        "date": "2025-12-05",
+        "time": "16:00",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "691cc843579b9d4697a3b693",
+        "date": "2025-12-12",
+        "time": "16:00",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "692d7ecedeb2718ab4e3caff",
+        "date": "2025-12-05",
+        "time": "16:40",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "692d7ecedeb2718ab4e3cb00",
+        "date": "2025-12-12",
+        "time": "16:40",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "692d7ecedeb2718ab4e3cb01",
+        "date": "2025-12-19",
+        "time": "16:40",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "692d7ecedeb2718ab4e3cb02",
+        "date": "2026-01-05",
+        "time": "16:40",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "692dd4b33a5c9a9be82f3767",
+        "date": "2025-12-12",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69302c62fc5b0c071179cfad",
+        "date": "2025-12-03",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69302c62fc5b0c071179cfae",
+        "date": "2025-12-10",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69302c62fc5b0c071179cfaf",
+        "date": "2025-12-17",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69302c62fc5b0c071179cfb0",
+        "date": "2026-01-07",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69308960fc5b0c071179e735",
+        "date": "2025-12-10",
+        "time": "16:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69308960fc5b0c071179e737",
+        "date": "2026-01-07",
+        "time": "16:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6931c0b244ec1d7efe01480b",
+        "date": "2025-12-05",
+        "time": "13:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6931c0b244ec1d7efe01480c",
+        "date": "2025-12-12",
+        "time": "13:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6931c0b244ec1d7efe01480d",
+        "date": "2025-12-08",
+        "time": "13:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6931c0b244ec1d7efe01480e",
+        "date": "2025-12-15",
+        "time": "13:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6937436f94602156495ef516",
+        "date": "2025-12-15",
+        "time": "18:00",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6937436f94602156495ef517",
+        "date": "2026-01-05",
+        "time": "18:00",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6939eb7e9a014578f5bdebf8",
+        "date": "2025-12-10",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6939eb7e9a014578f5bdebf9",
+        "date": "2025-12-17",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6939eb7e9a014578f5bdebfa",
+        "date": "2026-01-07",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "693b18725c892f877e5a3b3f",
+        "date": "2025-12-12",
+        "time": "08:00",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6940090abb6ba6cc3ff61f9d",
+        "date": "2025-12-15",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6940090abb6ba6cc3ff61f9f",
+        "date": "2026-01-19",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "694142f6bb6ba6cc3ff6437f",
+        "date": "2026-01-05",
+        "time": "18:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "694142f6bb6ba6cc3ff6437e",
+        "date": "2025-12-15",
+        "time": "18:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69453b04a132f0049cbc751b",
+        "date": "2025-12-19",
+        "time": "08:00",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69453b04a132f0049cbc751d",
+        "date": "2026-01-23",
+        "time": "08:00",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "695bfae04753f6b798c80507",
+        "date": "2026-01-09",
+        "time": "16:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "695d4265a9d9ddd1a36bcea9",
+        "date": "2026-01-05",
+        "time": "13:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "695fc1f4dd0ddeb4d0a9e71e",
+        "date": "2026-01-09",
+        "time": "08:00",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69663977123c0b1d3343b017",
+        "date": "2026-01-21",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6966398d123c0b1d3343b083",
+        "date": "2026-01-28",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "696639ff123c0b1d3343b0ee",
+        "date": "2026-02-11",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69663a39123c0b1d3343b23e",
+        "date": "2026-02-25",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69694e0923fb380b2193268e",
+        "date": "2026-01-30",
+        "time": "08:00",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "696f872fa6a4a6b91a7bef0d",
+        "date": "2026-01-21",
+        "time": "16:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6970eeefdfd730642f603243",
+        "date": "2026-02-06",
+        "time": "08:00",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6970ef66dfd730642f603462",
+        "date": "2026-01-21",
+        "time": "10:00",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6970ef82dfd730642f6034dd",
+        "date": "2026-01-28",
+        "time": "10:00",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6970ef99dfd730642f603502",
+        "date": "2026-02-04",
+        "time": "10:00",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6971175677dc3276528bfe4f",
+        "date": "2026-01-28",
+        "time": "16:40",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6971175677dc3276528bfe50",
+        "date": "2026-02-04",
+        "time": "16:40",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6971175677dc3276528bfe4e",
+        "date": "2026-01-21",
+        "time": "14:40",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69722c9faeeb528b5b3c0db3",
+        "date": "2026-01-23",
+        "time": "16:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69722cddaeeb528b5b3c0e51",
+        "date": "2026-01-23",
+        "time": "13:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6973d9663c57b32dc68da382",
+        "date": "2026-02-06",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6973d9663c57b32dc68da383",
+        "date": "2026-02-13",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6973d9663c57b32dc68da380",
+        "date": "2026-01-23",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6973d9663c57b32dc68da381",
+        "date": "2026-01-30",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6977583ca63516305a81996b",
+        "date": "2026-02-09",
+        "time": "08:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6977583ca63516305a81996c",
+        "date": "2026-02-13",
+        "time": "08:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6977583ca63516305a81996a",
+        "date": "2026-02-02",
+        "time": "08:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6977583ca63516305a81996d",
+        "date": "2026-02-16",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6977a094bae964fbb8bf4687",
+        "date": "2026-01-26",
+        "time": "14:40",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "697a6f5d45b1f739502b3889",
+        "date": "2026-01-28",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "697a6f5d45b1f739502b388a",
+        "date": "2026-02-04",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "697a6f5d45b1f739502b388c",
+        "date": "2026-02-18",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "697a759145b1f739502b3e60",
+        "date": "2026-02-03",
+        "time": "15:00",
+        "serviceType": "package_session",
+        "sessionValue": 161.25,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "697a759145b1f739502b3e61",
+        "date": "2026-02-10",
+        "time": "16:00",
+        "serviceType": "package_session",
+        "sessionValue": 161.25,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "697a759145b1f739502b3e62",
+        "date": "2026-02-17",
+        "time": "16:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 161.25,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "697a759145b1f739502b3e63",
+        "date": "2026-02-24",
+        "time": "16:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 161.25,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "697ca2c841bea6644e5c3787",
+        "date": "2026-01-30",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "697ca2c841bea6644e5c3788",
+        "date": "2026-02-06",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "697ca2c841bea6644e5c3789",
+        "date": "2026-02-13",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "697ca2c841bea6644e5c378a",
+        "date": "2026-02-20",
+        "time": "08:40",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "697ca8b141bea6644e5c3b0f",
+        "date": "2026-01-30",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "697ca8b141bea6644e5c3b10",
+        "date": "2026-02-06",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "697ca8b141bea6644e5c3b11",
+        "date": "2026-02-13",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "697ca8b141bea6644e5c3b12",
+        "date": "2026-02-20",
+        "time": "09:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69825b8cb67c834cf804baf6",
+        "date": "2026-02-03",
+        "time": "17:20",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69825b8cb67c834cf804baf7",
+        "date": "2026-02-16",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69839e0424fc8ae0c7209a5b",
+        "date": "2026-02-04",
+        "time": "14:40",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6983a33924fc8ae0c7209f8a",
+        "date": "2026-02-04",
+        "time": "16:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6983a33924fc8ae0c7209f8c",
+        "date": "2026-02-18",
+        "time": "16:00",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "6983a33924fc8ae0c7209f8d",
+        "date": "2026-02-25",
+        "time": "16:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69864e7979bba4d65fae75da",
+        "date": "2026-02-27",
+        "time": "16:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69864e7979bba4d65fae75d8",
+        "date": "2026-02-13",
+        "time": "16:00",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "69864e7979bba4d65fae75db",
+        "date": "2026-03-20",
+        "time": "10:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true
+      },
+      {
+        "id": "698a468c671613f5842c843e",
+        "date": "2026-02-23",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698a468c671613f5842c843f",
+        "date": "2026-03-02",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698a468c671613f5842c8440",
+        "date": "2026-03-09",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698a468c671613f5842c843d",
+        "date": "2026-02-16",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698a4b4f671613f5842c866a",
+        "date": "2026-02-02",
+        "time": "18:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698a4b4f671613f5842c866b",
+        "date": "2026-02-09",
+        "time": "18:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698a4b4f671613f5842c866d",
+        "date": "2026-02-23",
+        "time": "18:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698a4b4f671613f5842c866c",
+        "date": "2026-02-16",
+        "time": "18:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698c8c1fb458e314ff72ae86",
+        "date": "2026-01-28",
+        "time": "09:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698c8c1fb458e314ff72ae88",
+        "date": "2026-02-11",
+        "time": "09:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698ca9cd10fbb5ebee0a9195",
+        "date": "2026-02-11",
+        "time": "10:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698ca9cd10fbb5ebee0a9198",
+        "date": "2026-02-20",
+        "time": "08:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698ca9cd10fbb5ebee0a9196",
+        "date": "2026-02-13",
+        "time": "08:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698ca9cd10fbb5ebee0a9199",
+        "date": "2026-02-25",
+        "time": "10:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698ccd7610fbb5ebee0a9785",
+        "date": "2026-03-04",
+        "time": "14:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698ccd7610fbb5ebee0a977f",
+        "date": "2026-02-11",
+        "time": "14:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698ccd7610fbb5ebee0a9780",
+        "date": "2026-02-16",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698ccd7610fbb5ebee0a9782",
+        "date": "2026-02-23",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698ccd7610fbb5ebee0a9783",
+        "date": "2026-02-27",
+        "time": "10:40",
+        "billingType": "particular",
+        "serviceType": "individual_session",
+        "sessionValue": 0,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": ""
+      },
+      {
+        "id": "698ccd7610fbb5ebee0a9786",
+        "date": "2026-03-09",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698cd9fb10fbb5ebee0a9d2c",
+        "date": "2026-03-04",
+        "time": "15:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698cd9fb10fbb5ebee0a9d2b",
+        "date": "2026-02-25",
+        "time": "15:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "698cd9fb10fbb5ebee0a9d2d",
+        "date": "2026-03-11",
+        "time": "15:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "6997726c1a07d54a5731ed2a",
+        "date": "2026-02-18",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "6997726c1a07d54a5731ed2b",
+        "date": "2026-02-25",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "6997726c1a07d54a5731ed2c",
+        "date": "2026-03-04",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "6997726c1a07d54a5731ed2d",
+        "date": "2026-03-11",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "6998c54f397255b0643d5d0c",
+        "date": "2026-02-20",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "6998c54f397255b0643d5d0d",
+        "date": "2026-04-10",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "6998c54f397255b0643d5d0e",
+        "date": "2026-03-06",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "6998c54f397255b0643d5d0f",
+        "date": "2026-03-13",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "699f34675d86d1f6bd343bf0",
+        "date": "2026-03-04",
+        "time": "08:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "699f34965d86d1f6bd343c10",
+        "date": "2026-03-11",
+        "time": "08:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 175,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "699f36035d86d1f6bd34411e",
+        "date": "2026-03-04",
+        "time": "09:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "699f361c5d86d1f6bd3441fa",
+        "date": "2026-03-11",
+        "time": "09:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "699f36d55d86d1f6bd3444e9",
+        "date": "2026-02-27",
+        "time": "08:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a196961673747583ac51f5",
+        "date": "2026-03-06",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a196961673747583ac51f7",
+        "date": "2026-03-20",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "individual_session",
+        "sessionValue": 0,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": ""
+      },
+      {
+        "id": "69a196961673747583ac51f4",
+        "date": "2026-02-27",
+        "time": "08:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a196961673747583ac51f6",
+        "date": "2026-03-13",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a73beb43df8e06c597c0cb",
+        "date": "2026-02-25",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a81ceb9053b5d1e83a93bf",
+        "date": "2026-03-03",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a81ceb9053b5d1e83a93c0",
+        "date": "2026-03-17",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "individual_session",
+        "sessionValue": 0,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": ""
+      },
+      {
+        "id": "69a830b99053b5d1e83aa89d",
+        "date": "2026-03-11",
+        "time": "10:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a830b99053b5d1e83aa89b",
+        "date": "2026-03-04",
+        "time": "10:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a830b99053b5d1e83aa89c",
+        "date": "2026-03-06",
+        "time": "08:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a830b99053b5d1e83aa89e",
+        "date": "2026-04-01",
+        "time": "08:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": "package_prepaid"
+      },
+      {
+        "id": "69a830b99053b5d1e83aa89f",
+        "date": "2026-03-18",
+        "time": "10:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a830b99053b5d1e83aa8a0",
+        "date": "2026-03-20",
+        "time": "08:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a830b99053b5d1e83aa8a1",
+        "date": "2026-03-25",
+        "time": "10:00",
+        "billingType": "particular",
+        "serviceType": "session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a86a1d290c8fb4937feb3b",
+        "date": "2026-03-11",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a86a1d290c8fb4937feb3e",
+        "date": "2026-04-01",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a86a1d290c8fb4937feb43",
+        "date": "2026-05-06",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a86a1d290c8fb4937feb3a",
+        "date": "2026-03-04",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a86a1d290c8fb4937feb40",
+        "date": "2026-04-15",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a86a1d290c8fb4937feb42",
+        "date": "2026-04-29",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a86a1d290c8fb4937feb3c",
+        "date": "2026-03-18",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a86a1d290c8fb4937feb3d",
+        "date": "2026-03-25",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a86a1d290c8fb4937feb41",
+        "date": "2026-04-22",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a86a1d290c8fb4937feb3f",
+        "date": "2026-04-08",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a8764e290c8fb4937ff3ae",
+        "date": "2026-03-04",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a8764e290c8fb4937ff3b1",
+        "date": "2026-03-25",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a8764e290c8fb4937ff3af",
+        "date": "2026-03-11",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a89cdfe21d88945748534c",
+        "date": "2026-03-04",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a89cdfe21d88945748534d",
+        "date": "2026-03-11",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a89cdfe21d889457485350",
+        "date": "2026-04-01",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a89cdfe21d889457485352",
+        "date": "2026-04-15",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a89cdfe21d88945748534f",
+        "date": "2026-03-25",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a89cdfe21d88945748534e",
+        "date": "2026-03-18",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a89cdfe21d889457485353",
+        "date": "2026-04-22",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a89cdfe21d889457485351",
+        "date": "2026-04-08",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a98ced66c460e6da734592",
+        "date": "2026-03-11",
+        "time": "16:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69a9933866c460e6da734aba",
+        "date": "2026-03-13",
+        "time": "10:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69aae00bd1b70547867636ba",
+        "date": "2026-03-06",
+        "time": "09:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69aae00bd1b70547867636bc",
+        "date": "2026-03-20",
+        "time": "09:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69aae00bd1b70547867636bb",
+        "date": "2026-03-13",
+        "time": "09:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69af3322e34d9dac047626b4",
+        "date": "2026-03-09",
+        "time": "18:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69af3322e34d9dac047626b5",
+        "date": "2026-03-16",
+        "time": "18:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69af3322e34d9dac047626b3",
+        "date": "2026-03-02",
+        "time": "18:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69af3322e34d9dac047626b6",
+        "date": "2026-03-23",
+        "time": "18:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69b1aa7fbc2c7894a0be96fe",
+        "date": "2026-03-11",
+        "time": "14:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69b809bc7c7e8bd1b3b91239",
+        "date": "2026-03-23",
+        "time": "08:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69b809bc7c7e8bd1b3b91238",
+        "date": "2026-03-16",
+        "time": "08:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69b847c27c7e8bd1b3b92a2a",
+        "date": "2026-03-18",
+        "time": "10:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69b847c27c7e8bd1b3b92a2b",
+        "date": "2026-03-25",
+        "time": "10:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69b847c27c7e8bd1b3b92a2c",
+        "date": "2026-04-01",
+        "time": "10:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": "package_prepaid"
+      },
+      {
+        "id": "69b865a37c7e8bd1b3b9445e",
+        "date": "2026-03-16",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69b865a37c7e8bd1b3b9445f",
+        "date": "2026-03-23",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69b9a624785a76ad646fdb10",
+        "date": "2026-03-24",
+        "time": "14:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69b9a624785a76ad646fdb11",
+        "date": "2026-03-31",
+        "time": "14:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": "package_prepaid"
+      },
+      {
+        "id": "69b9a624785a76ad646fdb13",
+        "date": "2026-04-14",
+        "time": "14:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69ba9cfb8945dcd5863d99d3",
+        "date": "2026-03-25",
+        "time": "09:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69ba9cfb8945dcd5863d99d2",
+        "date": "2026-03-18",
+        "time": "09:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69ba9cfb8945dcd5863d99d4",
+        "date": "2026-04-01",
+        "time": "09:20",
+        "billingType": "particular",
+        "serviceType": "session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69ba9cfb8945dcd5863d99d5",
+        "date": "2026-04-08",
+        "time": "09:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69bafad5a1ea3fab7f74c85f",
+        "date": "2026-04-08",
+        "time": "16:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69bafad5a1ea3fab7f74c85e",
+        "date": "2026-04-01",
+        "time": "16:00",
+        "billingType": "particular",
+        "serviceType": "session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": "package_prepaid"
+      },
+      {
+        "id": "69bafad5a1ea3fab7f74c85c",
+        "date": "2026-03-18",
+        "time": "16:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 180,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69bb0dbaa1ea3fab7f74d2ee",
+        "date": "2026-03-25",
+        "time": "15:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69bb0dbaa1ea3fab7f74d2ed",
+        "date": "2026-03-18",
+        "time": "15:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69bb0dbaa1ea3fab7f74d2ef",
+        "date": "2026-04-01",
+        "time": "15:20",
+        "billingType": "particular",
+        "serviceType": "session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": "package_prepaid"
+      },
+      {
+        "id": "69bb0dbaa1ea3fab7f74d2f0",
+        "date": "2026-04-08",
+        "time": "15:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69bdb5d645db4b0372b7d520",
+        "date": "2026-03-20",
+        "time": "17:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69c1456fc19d35b8454a28a7",
+        "date": "2026-03-31",
+        "time": "17:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": "package_prepaid"
+      },
+      {
+        "id": "69c2e73a5c4ad17fefccbe31",
+        "date": "2026-03-24",
+        "time": "16:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69c2e73a5c4ad17fefccbe36",
+        "date": "2026-04-10",
+        "time": "16:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69c2e73a5c4ad17fefccbe37",
+        "date": "2026-04-14",
+        "time": "16:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69c2e73a5c4ad17fefccbe38",
+        "date": "2026-04-17",
+        "time": "16:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69c2e73a5c4ad17fefccbe33",
+        "date": "2026-03-31",
+        "time": "16:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": "package_prepaid"
+      },
+      {
+        "id": "69c2e73a5c4ad17fefccbe34",
+        "date": "2026-04-03",
+        "time": "16:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null
+      },
+      {
+        "id": "69cbd2086873402d92efd1a8",
+        "date": "2026-03-27",
+        "time": "16:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69cbd2086873402d92efd1aa",
+        "date": "2026-04-17",
+        "time": "16:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69cbd2086873402d92efd1a9",
+        "date": "2026-04-01",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": "package_prepaid"
+      },
+      {
+        "id": "69cd3899e706da54fdf0e521",
+        "date": "2026-04-10",
+        "time": "11:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69cd3899e706da54fdf0e527",
+        "date": "2026-05-08",
+        "time": "11:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69cd3899e706da54fdf0e522",
+        "date": "2026-04-13",
+        "time": "11:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69cd3899e706da54fdf0e523",
+        "date": "2026-04-17",
+        "time": "11:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69cd3899e706da54fdf0e525",
+        "date": "2026-04-24",
+        "time": "11:20",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69cd3899e706da54fdf0e524",
+        "date": "2026-04-20",
+        "time": "11:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69cd3899e706da54fdf0e526",
+        "date": "2026-04-27",
+        "time": "11:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 170,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69cd5d427f681ea50aa04285",
+        "date": "2026-04-15",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 0,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69ce7b088cf3e7fe128563b1",
+        "date": "2026-04-10",
+        "time": "16:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69ce7b7f0518dbe9f88563c1",
+        "date": "2026-03-02",
+        "time": "14:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69ced6d0644baa62b909e336",
+        "date": "2026-04-17",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69ced6d0644baa62b909e334",
+        "date": "2026-04-02",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": "package_prepaid"
+      },
+      {
+        "id": "69ced6d0644baa62b909e337",
+        "date": "2026-04-24",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 160,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69d45153c842a5a7291b5fb9",
+        "date": "2026-04-13",
+        "time": "18:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      },
+      {
+        "id": "69d45153c842a5a7291b5fba",
+        "date": "2026-04-20",
+        "time": "18:00",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 150,
+        "operationalStatus": "completed",
+        "hasPackage": true,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      }
+    ],
+    "convenio": [],
+    "desconhecido": [
+      {
+        "id": "687fa13acfb03169c5c8d0e2",
+        "date": "2025-07-23",
+        "time": "17:20",
+        "serviceType": "individual_session",
+        "sessionValue": 200,
+        "operationalStatus": "completed",
+        "hasPackage": false
+      },
+      {
+        "id": "688a74db51ef000229f8f398",
+        "date": "2025-08-08",
+        "time": "10:40",
+        "serviceType": "individual_session",
+        "sessionValue": 200,
+        "operationalStatus": "completed",
+        "hasPackage": false
+      },
+      {
+        "id": "69ced8875a2826c90c42b595",
+        "date": "2026-04-10",
+        "time": "16:40",
+        "billingType": "particular",
+        "serviceType": "package_session",
+        "sessionValue": 0,
+        "operationalStatus": "completed",
+        "hasPackage": false,
+        "insuranceProvider": null,
+        "paymentOrigin": null
+      }
+    ]
+  },
+  "duplicatePayments": [
+    {
+      "appointmentId": "69986c7d7c92d32c1fd44c0c",
+      "count": 2,
+      "payments": [
+        {
+          "id": "6999199c4191970789aacd4a",
+          "amount": 80,
+          "status": "paid",
+          "createdAt": "2026-02-21T02:34:04.982Z",
+          "method": "convenio"
+        },
+        {
+          "id": "6999199cf865dc3976dbc21c",
+          "amount": 80,
+          "status": "pending",
+          "createdAt": "2026-02-21T02:34:04.968Z",
+          "method": "convenio"
+        }
+      ]
+    },
+    {
+      "appointmentId": "68920612d9a9c60828b721ba",
+      "count": 2,
+      "payments": [
+        {
+          "id": "6893ad07631eadb897ec22ae",
+          "amount": 200,
+          "status": "paid",
+          "createdAt": "2025-08-06T19:29:11.080Z",
+          "method": "pix"
+        },
+        {
+          "id": "68920613d9a9c60828b721bc",
+          "amount": 200,
+          "status": "paid",
+          "createdAt": "2025-08-05T13:24:35.088Z",
+          "method": "pix"
+        }
+      ]
+    },
+    {
+      "appointmentId": "68911b9a239837370cab5d3e",
+      "count": 2,
+      "payments": [
+        {
+          "id": "6893acf1631eadb897ec2297",
+          "amount": 180,
+          "status": "paid",
+          "createdAt": "2025-08-06T19:28:49.412Z",
+          "method": "pix"
+        },
+        {
+          "id": "68911b9b239837370cab5d40",
+          "amount": 180,
+          "status": "paid",
+          "createdAt": "2025-08-04T20:44:11.137Z",
+          "method": "pix"
+        }
+      ]
+    },
+    {
+      "appointmentId": "68920696d9a9c60828b7223f",
+      "count": 2,
+      "payments": [
+        {
+          "id": "6893942c3009fb37020181f2",
+          "amount": 180,
+          "status": "paid",
+          "createdAt": "2025-08-06T17:43:08.858Z",
+          "method": "pix"
+        },
+        {
+          "id": "68920696d9a9c60828b72241",
+          "amount": 180,
+          "status": "paid",
+          "createdAt": "2025-08-05T13:26:46.827Z",
+          "method": "pix"
+        }
+      ]
+    },
+    {
+      "appointmentId": "688a6f2351ef000229f8f007",
+      "count": 2,
+      "payments": [
+        {
+          "id": "688d19168b8fa72f8d8768cc",
+          "amount": 200,
+          "status": "paid",
+          "createdAt": "2025-08-01T19:44:22.858Z",
+          "method": "cartão"
+        },
+        {
+          "id": "688a6f2451ef000229f8f009",
+          "amount": 180,
+          "status": "paid",
+          "createdAt": "2025-07-30T19:14:44.085Z",
+          "method": "cartão"
+        }
+      ]
+    },
+    {
+      "appointmentId": "688a6f7f51ef000229f8f07a",
+      "count": 2,
+      "payments": [
+        {
+          "id": "688cfda7d799e4a679686d1a",
+          "amount": 200,
+          "status": "paid",
+          "createdAt": "2025-08-01T17:47:19.443Z",
+          "method": "pix"
+        },
+        {
+          "id": "688a6f7f51ef000229f8f07c",
+          "amount": 200,
+          "status": "paid",
+          "createdAt": "2025-07-30T19:16:15.682Z",
+          "method": "pix"
+        }
+      ]
+    },
+    {
+      "appointmentId": "688a6e2c51ef000229f8ef78",
+      "count": 2,
+      "payments": [
+        {
+          "id": "688a6e7751ef000229f8efe2",
+          "amount": 200,
+          "status": "paid",
+          "createdAt": "2025-07-30T19:11:51.979Z",
+          "method": "pix"
+        },
+        {
+          "id": "688a6e2c51ef000229f8ef7a",
+          "amount": 200,
+          "status": "pending",
+          "createdAt": "2025-07-30T19:10:36.990Z",
+          "method": "pix"
+        }
+      ]
+    },
+    {
+      "appointmentId": "688a6d6251ef000229f8ee7b",
+      "count": 2,
+      "payments": [
+        {
+          "id": "688a6dd351ef000229f8ef08",
+          "amount": 200,
+          "status": "paid",
+          "createdAt": "2025-07-30T19:09:07.790Z",
+          "method": "pix"
+        },
+        {
+          "id": "688a6d6251ef000229f8ee7d",
+          "amount": 180,
+          "status": "pending",
+          "createdAt": "2025-07-30T19:07:14.321Z",
+          "method": "pix"
+        }
+      ]
+    },
+    {
+      "appointmentId": "68892962d6d2214f6d7b51b9",
+      "count": 2,
+      "payments": [
+        {
+          "id": "688a6db851ef000229f8eeec",
+          "amount": 180,
+          "status": "paid",
+          "createdAt": "2025-07-30T19:08:40.086Z",
+          "method": "cartão"
+        },
+        {
+          "id": "68892963d6d2214f6d7b51bb",
+          "amount": 180,
+          "status": "pending",
+          "createdAt": "2025-07-29T20:04:51.173Z",
+          "method": "cartão"
+        }
+      ]
+    },
+    {
+      "appointmentId": "686fd2039276a58116d0756c",
+      "count": 2,
+      "payments": [
+        {
+          "id": "688a6d9751ef000229f8eed0",
+          "amount": 200,
+          "status": "paid",
+          "createdAt": "2025-07-30T19:08:07.300Z",
+          "method": "dinheiro"
+        },
+        {
+          "id": "68703164f4d174ee9016aaa7",
+          "amount": 150,
+          "status": "paid",
+          "createdAt": "2025-07-10T21:32:20.690Z",
+          "method": "cartão"
+        }
+      ]
+    },
+    {
+      "appointmentId": "687e4e76902dfb659a5cc7bc",
+      "count": 2,
+      "payments": [
+        {
+          "id": "688130eacfb03169c5c8df4d",
+          "amount": 200,
+          "status": "paid",
+          "createdAt": "2025-07-23T18:58:50.979Z",
+          "method": "pix"
+        },
+        {
+          "id": "687e4e76902dfb659a5cc7bf",
+          "amount": 180,
+          "status": "pending",
+          "createdAt": "2025-07-21T14:28:06.384Z",
+          "method": "pix"
+        }
+      ]
+    },
+    {
+      "appointmentId": "687e4f67902dfb659a5cc8a1",
+      "count": 2,
+      "payments": [
+        {
+          "id": "68812cd2cfb03169c5c8df3d",
+          "amount": 200,
+          "status": "paid",
+          "createdAt": "2025-07-23T18:41:22.990Z",
+          "method": "pix"
+        },
+        {
+          "id": "687e4f67902dfb659a5cc8a4",
+          "amount": 200,
+          "status": "pending",
+          "createdAt": "2025-07-21T14:32:07.060Z",
+          "method": "pix"
+        }
+      ]
+    },
+    {
+      "appointmentId": "687e4f51902dfb659a5cc884",
+      "count": 2,
+      "payments": [
+        {
+          "id": "68812cc4cfb03169c5c8df2d",
+          "amount": 200,
+          "status": "paid",
+          "createdAt": "2025-07-23T18:41:08.471Z",
+          "method": "pix"
+        },
+        {
+          "id": "687e4f51902dfb659a5cc887",
+          "amount": 180,
+          "status": "pending",
+          "createdAt": "2025-07-21T14:31:45.549Z",
+          "method": "pix"
+        }
+      ]
+    },
+    {
+      "appointmentId": "686fd2039276a58116d07568",
+      "count": 2,
+      "payments": [
+        {
+          "id": "687fd8dbcfb03169c5c8dc2d",
+          "amount": 200,
+          "status": "paid",
+          "createdAt": "2025-07-22T18:30:51.956Z",
+          "method": "dinheiro"
+        },
+        {
+          "id": "68703164f4d174ee9016aaa6",
+          "amount": 150,
+          "status": "paid",
+          "createdAt": "2025-07-10T21:32:20.621Z",
+          "method": "cartão"
+        }
+      ]
+    }
+  ],
+  "zeroPayments": [
+    {
+      "id": "69d3e72fa353a149b385e667",
+      "amount": 0,
+      "status": "paid"
+    },
+    {
+      "id": "69c6fefd6170fbc84acacaae",
+      "amount": 0,
+      "status": "paid",
+      "appointment": "69c6fefc6170fbc84acacaa6"
+    },
+    {
+      "id": "69c53bc7cbb073be68ba4c57",
+      "amount": 0,
+      "status": "paid",
+      "package": "69cbd2066873402d92efd19b"
+    },
+    {
+      "id": "69c429006bad29f4d74cf891",
+      "amount": 0,
+      "status": "paid",
+      "appointment": "69c1561fc19d35b8454a30e9"
+    },
+    {
+      "id": "69c296999e200c6888c7fcb8",
+      "amount": 0,
+      "status": "paid",
+      "appointment": "69c155e6c19d35b8454a30b8"
+    },
+    {
+      "id": "69a596f1f3bc835afe5ac701",
+      "amount": 0,
+      "status": "paid",
+      "appointment": "69a596f0f3bc835afe5ac6f4"
+    },
+    {
+      "id": "69a59627f3bc835afe5ac39e",
+      "amount": 0,
+      "status": "paid",
+      "appointment": "69a59626f3bc835afe5ac391"
+    },
+    {
+      "id": "69d41ec65e130d4824702287",
+      "amount": 0,
+      "status": "pending"
+    },
+    {
+      "id": "69d415f475a8bae023f2db7d",
+      "amount": 0,
+      "status": "pending"
+    },
+    {
+      "id": "69d415e975a8bae023f2dae7",
+      "amount": 0,
+      "status": "pending"
+    },
+    {
+      "id": "69d3ce85440fc889f19ad322",
+      "amount": 0,
+      "status": "pending"
+    },
+    {
+      "id": "69d3cddd440fc889f19ad035",
+      "amount": 0,
+      "status": "pending"
+    },
+    {
+      "id": "69d3cd4aa1c2839d4d789216",
+      "amount": 0,
+      "status": "pending"
+    },
+    {
+      "id": "69d3cbf2f5542d743d41e0b6",
+      "amount": 0,
+      "status": "pending"
+    },
+    {
+      "id": "69d31144a14c560c7eb92c08",
+      "amount": 0,
+      "status": "pending"
+    },
+    {
+      "id": "69cd4a17e706da54fdf0efd3",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69cd1f4b856a4f39ce25536b"
+    },
+    {
+      "id": "69c59b5787f4b2aed4724e72",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69c59b2787f4b2aed4724e16"
+    },
+    {
+      "id": "69c5796987f4b2aed47236dc",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69c5792787f4b2aed4723660"
+    },
+    {
+      "id": "69c540f1cbb073be68ba5125",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69bd4c2dfbee9c0a2cf12ed0"
+    },
+    {
+      "id": "69c16a94c19d35b8454a37d3",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69c16867c19d35b8454a35ff"
+    },
+    {
+      "id": "69c1699ec19d35b8454a36bc",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69c167bac19d35b8454a3581"
+    },
+    {
+      "id": "69c1302a5080ee5743d90b3b",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69bd30b8f1bdd8410f7bd55a"
+    },
+    {
+      "id": "69bbf4232d22a57a538ed1d9",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69b41c4d215e92b68a2d389d"
+    },
+    {
+      "id": "69b84d257c7e8bd1b3b92f21",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69b84d237c7e8bd1b3b92f1b"
+    },
+    {
+      "id": "69b2b0742117c1ee38c8d871",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69b2b0732117c1ee38c8d86a"
+    },
+    {
+      "id": "69b2af482117c1ee38c8d77a",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69b2af472117c1ee38c8d772"
+    },
+    {
+      "id": "69b2abdc2117c1ee38c8d5da",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69b2abda2117c1ee38c8d5d3"
+    },
+    {
+      "id": "69b2ab2d2117c1ee38c8d4c0",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69b2ab2c2117c1ee38c8d4b9"
+    },
+    {
+      "id": "69b2a9452117c1ee38c8d021",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69b2a9432117c1ee38c8d019"
+    },
+    {
+      "id": "69af008c69352e600611a300",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69af008a69352e600611a2fa"
+    },
+    {
+      "id": "69aef1f069352e600611988c",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69aef1ef69352e6006119881"
+    },
+    {
+      "id": "69aef19b69352e60061197ab",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69aef19a69352e60061197a6"
+    },
+    {
+      "id": "69aeee0c78ad5b95e20b8074",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69aeee0c78ad5b95e20b8069"
+    },
+    {
+      "id": "69aed8254e6f07f5ef6acb51",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69aed8224e6f07f5ef6acb49"
+    },
+    {
+      "id": "69aed6734e6f07f5ef6aca5f",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69aed6724e6f07f5ef6aca58"
+    },
+    {
+      "id": "69aed29b4e6f07f5ef6ac8eb",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69aed2994e6f07f5ef6ac8e5"
+    },
+    {
+      "id": "69aec9e74e6f07f5ef6abee2",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69aec9e54e6f07f5ef6abedc"
+    },
+    {
+      "id": "69aec1b04e6f07f5ef6ab745",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69aec1af4e6f07f5ef6ab73e"
+    },
+    {
+      "id": "69aec0584e6f07f5ef6ab4de",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69aec0574e6f07f5ef6ab4d7"
+    },
+    {
+      "id": "69a9877166c460e6da733fcc",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69a9877066c460e6da733fc0"
+    },
+    {
+      "id": "69a9775ca11baf79ed733d11",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69a9775aa11baf79ed733d05"
+    },
+    {
+      "id": "69a8aa8c2a05280dd28b1a4f",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "699de5184152216f7913ec13",
+      "package": "699de5184152216f7913ebfb"
+    },
+    {
+      "id": "69a8aa8c2a05280dd28b1a4e",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "699dd72d4152216f7913b91a",
+      "package": "699dd72d4152216f7913b8ee"
+    },
+    {
+      "id": "69a8aa8b2a05280dd28b1a4d",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "699dd72d4152216f7913b919",
+      "package": "699dd72d4152216f7913b8ee"
+    },
+    {
+      "id": "69a8aa8b2a05280dd28b1a4c",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69986c7d7c92d32c1fd44c12",
+      "package": "69986c7c7c92d32c1fd44be9"
+    },
+    {
+      "id": "69a8aa8b2a05280dd28b1a4b",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69986c067c92d32c1fd44a4b",
+      "package": "69986c057c92d32c1fd44a1f"
+    },
+    {
+      "id": "69a597a5f3bc835afe5aca4d",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69a597a4f3bc835afe5aca40"
+    },
+    {
+      "id": "69a580846ba320a6504ff80e",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69a580836ba320a6504ff802"
+    },
+    {
+      "id": "69a084b8cfaefd54a8cc1de2",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "69a084b7cfaefd54a8cc1dd6"
+    },
+    {
+      "id": "699e11db4152216f79148fc3",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "699e11da4152216f79148fbd"
+    },
+    {
+      "id": "699e0bc84152216f79147955",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "699e0bc34152216f79147890"
+    },
+    {
+      "id": "699dbff14152216f791361ea",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "699dbff04152216f791361de"
+    },
+    {
+      "id": "699c6a76353c11d3c7775dd0",
+      "amount": 0,
+      "status": "pending",
+      "appointment": "699c6a75353c11d3c7775dc4"
+    }
+  ],
+  "duplicateAppointments": [
+    {
+      "key": "68c018f7198227a9b37da49a_2026-04-06_18:00",
+      "count": 2,
+      "ids": [
+        "69d45032b6ba0a5ae58563b1",
+        "69cd15f4856a4f39ce254bd2"
+      ],
+      "patient": "68c018f7198227a9b37da49a",
+      "date": "2026-04-06",
+      "time": "18:00"
+    },
+    {
+      "key": "69655746dcdf49e2c282800b_2026-03-02_15:20",
+      "count": 2,
+      "ids": [
+        "69ce7b800518dbe9f88563c4",
+        "69b301582117c1ee38c8f1dc"
+      ],
+      "patient": "69655746dcdf49e2c282800b",
+      "date": "2026-03-02",
+      "time": "15:20"
+    },
+    {
+      "key": "69655746dcdf49e2c282800b_2026-03-09_15:20",
+      "count": 2,
+      "ids": [
+        "69ce7b7f0518dbe9f88563c2",
+        "69b3019f2117c1ee38c8f21e"
+      ],
+      "patient": "69655746dcdf49e2c282800b",
+      "date": "2026-03-09",
+      "time": "15:20"
+    },
+    {
+      "key": "685a901eaec14c7163585993_2025-07-08_14:18",
+      "count": 7,
+      "ids": [
+        "69ce7b7e0518dbe9f88563c0",
+        "69ce7b7e0518dbe9f88563bf",
+        "69ce7b7e0518dbe9f88563be",
+        "69ce7b7e0518dbe9f88563bc",
+        "69ce7b7e0518dbe9f88563bb",
+        "69ce7b7e0518dbe9f88563ba",
+        "69ce7b7e0518dbe9f88563b9"
+      ],
+      "patient": "685a901eaec14c7163585993",
+      "date": "2025-07-08",
+      "time": "14:18"
+    },
+    {
+      "key": "685a901eaec14c7163585993_2025-07-14_12:20",
+      "count": 2,
+      "ids": [
+        "69ce7b7e0518dbe9f88563bd",
+        "687e352c20c72d457aba6f29"
+      ],
+      "patient": "685a901eaec14c7163585993",
+      "date": "2025-07-14",
+      "time": "12:20"
+    },
+    {
+      "key": "685c29afaec14c716358622a_2025-07-08_14:07",
+      "count": 4,
+      "ids": [
+        "69ce7b7d0518dbe9f88563b8",
+        "69ce7b7d0518dbe9f88563b7",
+        "69ce7b7d0518dbe9f88563b6",
+        "69ce7b7d0518dbe9f88563b5"
+      ],
+      "patient": "685c29afaec14c716358622a",
+      "date": "2025-07-08",
+      "time": "14:07"
+    },
+    {
+      "key": "685c29afaec14c716358622a_2025-07-08_14:06",
+      "count": 4,
+      "ids": [
+        "69ce7b7d0518dbe9f88563b4",
+        "69ce7b7d0518dbe9f88563b3",
+        "69ce7b7d0518dbe9f88563b2",
+        "69ce7b7d0518dbe9f88563b1"
+      ],
+      "patient": "685c29afaec14c716358622a",
+      "date": "2025-07-08",
+      "time": "14:06"
+    },
+    {
+      "key": "68a71cec58ef9f5f579b13d2_2026-04-02_17:00",
+      "count": 2,
+      "ids": [
+        "69cabd400431c101538c7860",
+        "69ce7b840518dbe9f88563c5"
+      ],
+      "patient": "Joaquim Henrique de Assis Tavares",
+      "date": "2026-04-02",
+      "time": "17:00"
+    },
+    {
+      "key": "6972301eaeeb528b5b3c1140_2026-03-27_16:40",
+      "count": 2,
+      "ids": [
+        "69ca5ea129c93a72f36f5411",
+        "69c6e4d0cc02cb09cd7e411a"
+      ],
+      "patient": "6972301eaeeb528b5b3c1140",
+      "date": "2026-03-27",
+      "time": "16:40"
+    },
+    {
+      "key": "6972301eaeeb528b5b3c1140_2026-04-10_16:40",
+      "count": 2,
+      "ids": [
+        "69c6e476cc02cb09cd7e4062",
+        "69ced8875a2826c90c42b595"
+      ],
+      "patient": "Samuel roczniesk da Costa",
+      "date": "2026-04-10",
+      "time": "16:40"
+    },
+    {
+      "key": "69bbf5d42d22a57a538ed310_2026-10-06_17:00",
+      "count": 2,
+      "ids": [
+        "69c15026c19d35b8454a2ecb",
+        "69c1456fc19d35b8454a28c2"
+      ],
+      "patient": "69bbf5d42d22a57a538ed310",
+      "date": "2026-10-06",
+      "time": "17:00"
+    },
+    {
+      "key": "69bbf5d42d22a57a538ed310_2026-10-27_17:00",
+      "count": 2,
+      "ids": [
+        "69c15026c19d35b8454a2ece",
+        "69c1456fc19d35b8454a28c5"
+      ],
+      "patient": "69bbf5d42d22a57a538ed310",
+      "date": "2026-10-27",
+      "time": "17:00"
+    },
+    {
+      "key": "69bbf5d42d22a57a538ed310_2026-10-13_17:00",
+      "count": 2,
+      "ids": [
+        "69c15026c19d35b8454a2ecc",
+        "69c1456fc19d35b8454a28c3"
+      ],
+      "patient": "69bbf5d42d22a57a538ed310",
+      "date": "2026-10-13",
+      "time": "17:00"
+    },
+    {
+      "key": "69bbf5d42d22a57a538ed310_2026-10-20_17:00",
+      "count": 2,
+      "ids": [
+        "69c15026c19d35b8454a2ecd",
+        "69c1456fc19d35b8454a28c4"
+      ],
+      "patient": "69bbf5d42d22a57a538ed310",
+      "date": "2026-10-20",
+      "time": "17:00"
+    },
+    {
+      "key": "69bbf5d42d22a57a538ed310_2026-07-28_17:00",
+      "count": 2,
+      "ids": [
+        "69c15026c19d35b8454a2ec1",
+        "69c1456fc19d35b8454a28b8"
+      ],
+      "patient": "69bbf5d42d22a57a538ed310",
+      "date": "2026-07-28",
+      "time": "17:00"
+    },
+    {
+      "key": "69bbf5d42d22a57a538ed310_2026-08-18_17:00",
+      "count": 2,
+      "ids": [
+        "69c15026c19d35b8454a2ec4",
+        "69c1456fc19d35b8454a28bb"
+      ],
+      "patient": "69bbf5d42d22a57a538ed310",
+      "date": "2026-08-18",
+      "time": "17:00"
+    },
+    {
+      "key": "69bbf5d42d22a57a538ed310_2026-09-15_17:00",
+      "count": 2,
+      "ids": [
+        "69c15026c19d35b8454a2ec8",
+        "69c1456fc19d35b8454a28bf"
+      ],
+      "patient": "69bbf5d42d22a57a538ed310",
+      "date": "2026-09-15",
+      "time": "17:00"
+    },
+    {
+      "key": "69bbf5d42d22a57a538ed310_2026-09-22_17:00",
+      "count": 2,
+      "ids": [
+        "69c15026c19d35b8454a2ec9",
+        "69c1456fc19d35b8454a28c0"
+      ],
+      "patient": "69bbf5d42d22a57a538ed310",
+      "date": "2026-09-22",
+      "time": "17:00"
+    },
+    {
+      "key": "69bbf5d42d22a57a538ed310_2026-08-11_17:00",
+      "count": 2,
+      "ids": [
+        "69c15026c19d35b8454a2ec3",
+        "69c1456fc19d35b8454a28ba"
+      ],
+      "patient": "69bbf5d42d22a57a538ed310",
+      "date": "2026-08-11",
+      "time": "17:00"
+    },
+    {
+      "key": "69bbf5d42d22a57a538ed310_2026-08-25_17:00",
+      "count": 2,
+      "ids": [
+        "69c15026c19d35b8454a2ec5",
+        "69c1456fc19d35b8454a28bc"
+      ],
+      "patient": "69bbf5d42d22a57a538ed310",
+      "date": "2026-08-25",
+      "time": "17:00"
+    },
+    {
+      "key": "69bbf5d42d22a57a538ed310_2026-09-01_17:00",
+      "count": 2,
+      "ids": [
+        "69c15026c19d35b8454a2ec6",
+        "69c1456fc19d35b8454a28bd"
+      ],
+      "patient": "69bbf5d42d22a57a538ed310",
+      "date": "2026-09-01",
+      "time": "17:00"
+    },
+    {
+      "key": "69bbf5d42d22a57a538ed310_2026-09-29_17:00",
+      "count": 2,
+      "ids": [
+        "69c15026c19d35b8454a2eca",
+        "69c1456fc19d35b8454a28c1"
+      ],
+      "patient": "69bbf5d42d22a57a538ed310",
+      "date": "2026-09-29",
+      "time": "17:00"
+    },
+    {
+      "key": "69bbf5d42d22a57a538ed310_2026-09-08_17:00",
+      "count": 2,
+      "ids": [
+        "69c15026c19d35b8454a2ec7",
+        "69c1456fc19d35b8454a28be"
+      ],
+      "patient": "69bbf5d42d22a57a538ed310",
+      "date": "2026-09-08",
+      "time": "17:00"
+    },
+    {
+      "key": "69bbf5d42d22a57a538ed310_2026-07-14_17:00",
+      "count": 2,
+      "ids": [
+        "69c15026c19d35b8454a2ebf",
+        "69c1456fc19d35b8454a28b6"
+      ],
+      "patient": "69bbf5d42d22a57a538ed310",
+      "date": "2026-07-14",
+      "time": "17:00"
+    },
+    {
+      "key": "69bbf5d42d22a57a538ed310_2026-07-21_17:00",
+      "count": 2,
+      "ids": [
+        "69c15026c19d35b8454a2ec0",
+        "69c1456fc19d35b8454a28b7"
+      ],
+      "patient": "69bbf5d42d22a57a538ed310",
+      "date": "2026-07-21",
+      "time": "17:00"
+    },
+    {
+      "key": "698a41dc671613f5842c81bd_2026-03-16_16:40",
+      "count": 2,
+      "ids": [
+        "69b84d977c7e8bd1b3b92f9d",
+        "69b865a37c7e8bd1b3b9445e"
+      ],
+      "patient": "Arthur Silva Gonzaga",
+      "date": "2026-03-16",
+      "time": "16:40"
+    },
+    {
+      "key": "69020a8b82b3b0951152e094_2026-03-18_09:20",
+      "count": 2,
+      "ids": [
+        "69b40c1c215e92b68a2d2fb1",
+        "69ba9cfb8945dcd5863d99d2"
+      ],
+      "patient": "Lavínia Da Silva Borges",
+      "date": "2026-03-18",
+      "time": "09:20"
+    },
+    {
+      "key": "68c998b811489d5364043c27_2026-03-16_08:40",
+      "count": 2,
+      "ids": [
+        "69b4098b215e92b68a2d2c8f",
+        "69b809bc7c7e8bd1b3b91238"
+      ],
+      "patient": "Heloísa Lopes Santana",
+      "date": "2026-03-16",
+      "time": "08:40"
+    },
+    {
+      "key": "69655746dcdf49e2c282800b_2026-02-02_15:20",
+      "count": 2,
+      "ids": [
+        "69b3023e2117c1ee38c8f3c2",
+        "699de14b4152216f7913de56"
+      ],
+      "patient": "69655746dcdf49e2c282800b",
+      "date": "2026-02-02",
+      "time": "15:20"
+    },
+    {
+      "key": "69722dd9aeeb528b5b3c0f87_2026-03-11_14:40",
+      "count": 3,
+      "ids": [
+        "69b01f670ca7b85bc0d5909d",
+        "69ab034b033def315bb8cd3c",
+        "69b1aa7fbc2c7894a0be96fe"
+      ],
+      "patient": "69722dd9aeeb528b5b3c0f87",
+      "date": "2026-03-11",
+      "time": "14:40"
+    },
+    {
+      "key": "68d14ea808d1047fa3bae802_2026-03-09_17:20",
+      "count": 2,
+      "ids": [
+        "69af2fb132df7420ae38a8bc",
+        "69aefac569352e6006119f56"
+      ],
+      "patient": "68d14ea808d1047fa3bae802",
+      "date": "2026-03-09",
+      "time": "17:20"
+    },
+    {
+      "key": "68d14ea808d1047fa3bae802_2026-03-08_17:20",
+      "count": 2,
+      "ids": [
+        "69aef1ef69352e6006119881",
+        "69aed2994e6f07f5ef6ac8e5"
+      ],
+      "patient": "68d14ea808d1047fa3bae802",
+      "date": "2026-03-08",
+      "time": "17:20"
+    },
+    {
+      "key": "68c998b811489d5364043c27_2026-03-09_08:40",
+      "count": 2,
+      "ids": [
+        "69aede514e6f07f5ef6acfc1",
+        "69aed6724e6f07f5ef6aca58"
+      ],
+      "patient": "68c998b811489d5364043c27",
+      "date": "2026-03-09",
+      "time": "08:40"
+    },
+    {
+      "key": "68c018f7198227a9b37da49a_2026-03-09_18:00",
+      "count": 3,
+      "ids": [
+        "69aed8224e6f07f5ef6acb49",
+        "69a983b4a11baf79ed7349d6",
+        "69af3322e34d9dac047626b4"
+      ],
+      "patient": "68c018f7198227a9b37da49a",
+      "date": "2026-03-09",
+      "time": "18:00"
+    },
+    {
+      "key": "685b0cfaaec14c7163585b5b_2026-03-09_16:00",
+      "count": 2,
+      "ids": [
+        "69aec1af4e6f07f5ef6ab73e",
+        "69a9829ea11baf79ed7347de"
+      ],
+      "patient": "685b0cfaaec14c7163585b5b",
+      "date": "2026-03-09",
+      "time": "16:00"
+    },
+    {
+      "key": "699865f57c92d32c1fd432bc_2026-02-27_16:00",
+      "count": 2,
+      "ids": [
+        "69a9985366c460e6da734f7b",
+        "699866a87c92d32c1fd435bd"
+      ],
+      "patient": "699865f57c92d32c1fd432bc",
+      "date": "2026-02-27",
+      "time": "16:00"
+    },
+    {
+      "key": "68f77af4906180bdf2a0549e_2026-03-11_08:00",
+      "count": 2,
+      "ids": [
+        "69a98b2566c460e6da734350",
+        "69b019312df669ba0a314127"
+      ],
+      "patient": "Henre Gabriel Jacinto Da Silva",
+      "date": "2026-03-11",
+      "time": "08:00"
+    },
+    {
+      "key": "69457c15a132f0049cbc81df_2026-03-10_14:00",
+      "count": 2,
+      "ids": [
+        "69a9855666c460e6da733bbd",
+        "69a9859666c460e6da733cf3"
+      ],
+      "patient": "Daniel Rodrigues dos Santos de Oliveira",
+      "date": "2026-03-10",
+      "time": "14:00"
+    },
+    {
+      "key": "685b0cfaaec14c7163585b5b_2026-03-09_15:20",
+      "count": 2,
+      "ids": [
+        "69a9834ba11baf79ed7348f4",
+        "69aec9e54e6f07f5ef6abedc"
+      ],
+      "patient": "Isis Caldas Rebelatto",
+      "date": "2026-03-09",
+      "time": "15:20"
+    },
+    {
+      "key": "68f77af4906180bdf2a0549e_2026-03-04_08:00",
+      "count": 2,
+      "ids": [
+        "69a6dff3f70ff0b9ec22cdb0",
+        "69a6fba5e0de8aa22836f096"
+      ],
+      "patient": "68f77af4906180bdf2a0549e",
+      "date": "2026-03-04",
+      "time": "08:00"
+    },
+    {
+      "key": "69330a389798fcf7ad3bdca1_2026-03-06_09:20",
+      "count": 2,
+      "ids": [
+        "69a583366ba320a6505001cb",
+        "69aae00bd1b70547867636ba"
+      ],
+      "patient": "Rodrigo Antônio Silva de Carvalho",
+      "date": "2026-03-06",
+      "time": "09:20"
+    },
+    {
+      "key": "6917116c5d4d8bdb65edd506_2026-03-04_10:00",
+      "count": 2,
+      "ids": [
+        "69a578686ba320a6504fd1a6",
+        "69a830b99053b5d1e83aa89b"
+      ],
+      "patient": "Issac Moreira Ribeiro",
+      "date": "2026-03-04",
+      "time": "10:00"
+    },
+    {
+      "key": "68d14ea808d1047fa3bae802_2026-03-02_17:20",
+      "count": 2,
+      "ids": [
+        "69a1af9433c7de1171f889c8",
+        "699f27885d86d1f6bd340b54"
+      ],
+      "patient": "Ian de Oliveira Brito",
+      "date": "2026-03-02",
+      "time": "17:20"
+    },
+    {
+      "key": "69330a389798fcf7ad3bdca1_2026-02-27_09:20",
+      "count": 2,
+      "ids": [
+        "69a084b7cfaefd54a8cc1dd6",
+        "699c59bdc0f8dbf36a8b1d4d"
+      ],
+      "patient": "69330a389798fcf7ad3bdca1",
+      "date": "2026-02-27",
+      "time": "09:20"
+    },
+    {
+      "key": "696e1597a5ff8d58658a139e_2026-03-04_18:00",
+      "count": 2,
+      "ids": [
+        "699f446f0b1684bcd70ff103",
+        "69a720bcc8861476a40c1d47"
+      ],
+      "patient": "Rafael Barros Santos",
+      "date": "2026-03-04",
+      "time": "18:00"
+    },
+    {
+      "key": "688a2b3c8779aa5ee830bf0d_2026-03-04_17:20",
+      "count": 2,
+      "ids": [
+        "699f3b6e5d86d1f6bd3455b3",
+        "69a89cdfe21d88945748534c"
+      ],
+      "patient": "Agatha Beatriz da Silva Almeida",
+      "date": "2026-03-04",
+      "time": "17:20"
+    },
+    {
+      "key": "6981deeef55849815f98b245_2026-03-03_14:00",
+      "count": 2,
+      "ids": [
+        "699f30da5d86d1f6bd342d43",
+        "699f2f165d86d1f6bd342675"
+      ],
+      "patient": "Daniel Rodrigues dos Santos de Oliveira",
+      "date": "2026-03-03",
+      "time": "14:00"
+    },
+    {
+      "key": "685b0cfaaec14c7163585b5b_2026-03-02_15:20",
+      "count": 2,
+      "ids": [
+        "699f25b95d86d1f6bd34044f",
+        "69a596f0f3bc835afe5ac6f4"
+      ],
+      "patient": "Isis Caldas Rebelatto",
+      "date": "2026-03-02",
+      "time": "15:20"
+    },
+    {
+      "key": "69655746dcdf49e2c282800b_2026-03-06_16:00",
+      "count": 2,
+      "ids": [
+        "699de5184152216f7913ec14",
+        "699ddbf74152216f7913cb4e"
+      ],
+      "patient": "69655746dcdf49e2c282800b",
+      "date": "2026-03-06",
+      "time": "16:00"
+    },
+    {
+      "key": "69655746dcdf49e2c282800b_2026-03-13_16:00",
+      "count": 2,
+      "ids": [
+        "699de5184152216f7913ec0e",
+        "699ddbf74152216f7913cb3f"
+      ],
+      "patient": "69655746dcdf49e2c282800b",
+      "date": "2026-03-13",
+      "time": "16:00"
+    },
+    {
+      "key": "69655746dcdf49e2c282800b_2026-02-20_16:00",
+      "count": 3,
+      "ids": [
+        "699de5184152216f7913ec0f",
+        "699ddbf74152216f7913cb48",
+        "69988a164d251383935da31b"
+      ],
+      "patient": "69655746dcdf49e2c282800b",
+      "date": "2026-02-20",
+      "time": "16:00"
+    },
+    {
+      "key": "69655746dcdf49e2c282800b_2026-01-26_15:20",
+      "count": 2,
+      "ids": [
+        "699de14b4152216f7913de54",
+        "699ddbf74152216f7913cb3c"
+      ],
+      "patient": "69655746dcdf49e2c282800b",
+      "date": "2026-01-26",
+      "time": "15:20"
+    },
+    {
+      "key": "69655746dcdf49e2c282800b_2026-02-09_15:20",
+      "count": 2,
+      "ids": [
+        "699de14b4152216f7913de58",
+        "699ddbf74152216f7913cb43"
+      ],
+      "patient": "69655746dcdf49e2c282800b",
+      "date": "2026-02-09",
+      "time": "15:20"
+    },
+    {
+      "key": "69655746dcdf49e2c282800b_2026-02-16_15:20",
+      "count": 2,
+      "ids": [
+        "699de14b4152216f7913de5a",
+        "699ddbf74152216f7913cb46"
+      ],
+      "patient": "69655746dcdf49e2c282800b",
+      "date": "2026-02-16",
+      "time": "15:20"
+    },
+    {
+      "key": "69655746dcdf49e2c282800b_2026-02-23_15:20",
+      "count": 2,
+      "ids": [
+        "699de14b4152216f7913de5c",
+        "699ddbf74152216f7913cb49"
+      ],
+      "patient": "69655746dcdf49e2c282800b",
+      "date": "2026-02-23",
+      "time": "15:20"
+    },
+    {
+      "key": "69655746dcdf49e2c282800b_2026-01-12_15:20",
+      "count": 2,
+      "ids": [
+        "699de14b4152216f7913de50",
+        "699ddbf74152216f7913cb37"
+      ],
+      "patient": "69655746dcdf49e2c282800b",
+      "date": "2026-01-12",
+      "time": "15:20"
+    },
+    {
+      "key": "685b0cfaaec14c7163585b5b_2026-03-02_16:00",
+      "count": 2,
+      "ids": [
+        "699dd51a4152216f7913b128",
+        "69a597a4f3bc835afe5aca40"
+      ],
+      "patient": "Isis Caldas Rebelatto",
+      "date": "2026-03-02",
+      "time": "16:00"
+    },
+    {
+      "key": "69722dd9aeeb528b5b3c0f87_2026-03-02_14:00",
+      "count": 3,
+      "ids": [
+        "699dd48e4152216f7913af4f",
+        "69ce7b7f0518dbe9f88563c1",
+        "69a59626f3bc835afe5ac391"
+      ],
+      "patient": "Helena Pedro Bezerra",
+      "date": "2026-03-02",
+      "time": "14:00"
+    },
+    {
+      "key": "688a2b3c8779aa5ee830bf0d_2026-02-25_17:20",
+      "count": 2,
+      "ids": [
+        "699dbff04152216f791361de",
+        "69a73beb43df8e06c597c0cb"
+      ],
+      "patient": "688a2b3c8779aa5ee830bf0d",
+      "date": "2026-02-25",
+      "time": "17:20"
+    },
+    {
+      "key": "692da1e37a66901c8975db66_2026-02-20_14:00",
+      "count": 2,
+      "ids": [
+        "699db73f4152216f79134093",
+        "69984c127c92d32c1fd3d569"
+      ],
+      "patient": "692da1e37a66901c8975db66",
+      "date": "2026-02-20",
+      "time": "14:00"
+    },
+    {
+      "key": "68c998b811489d5364043c27_2026-02-23_08:40",
+      "count": 2,
+      "ids": [
+        "699c628f353c11d3c7773dc9",
+        "699873f57c92d32c1fd468d5"
+      ],
+      "patient": "68c998b811489d5364043c27",
+      "date": "2026-02-23",
+      "time": "08:40"
+    },
+    {
+      "key": "685b0cfaaec14c7163585b5b_2026-02-27_14:40",
+      "count": 2,
+      "ids": [
+        "699c6209353c11d3c7773c39",
+        "69a04f8da264194f6c07df07"
+      ],
+      "patient": "Isis Caldas Rebelatto",
+      "date": "2026-02-27",
+      "time": "14:40"
+    },
+    {
+      "key": "685b0cfaaec14c7163585b5b_2026-02-27_15:20",
+      "count": 2,
+      "ids": [
+        "699c5da0c0f8dbf36a8b2ba6",
+        "69a0504ba264194f6c07e2cc"
+      ],
+      "patient": "Isis Caldas Rebelatto",
+      "date": "2026-02-27",
+      "time": "15:20"
+    },
+    {
+      "key": "68f2454f5811d9c02f263fb3_2026-02-27_10:00",
+      "count": 2,
+      "ids": [
+        "699c5d56c0f8dbf36a8b2a69",
+        "69a03e8fa264194f6c07a567"
+      ],
+      "patient": "Ravi Francisco Moreira Andrade",
+      "date": "2026-02-27",
+      "time": "10:00"
+    },
+    {
+      "key": "692da1e37a66901c8975db66_2026-02-20_13:20",
+      "count": 2,
+      "ids": [
+        "699849a47c92d32c1fd3cd0b",
+        "699847fe7c92d32c1fd3c63a"
+      ],
+      "patient": "Davi Felipe Araújo",
+      "date": "2026-02-20",
+      "time": "13:20"
+    },
+    {
+      "key": "68c029cecbdf4c1481b15592_2025-11-21_17:20",
+      "count": 2,
+      "ids": [
+        "69206e702e81f156f5b62798",
+        "68f26ad8c5bd0b3e3273e274"
+      ],
+      "patient": "João Henrique Xavier Ribeiro",
+      "date": "2025-11-21",
+      "time": "17:20"
+    },
+    {
+      "key": "68fb8c9a2164a973dbbfa4d1_2025-11-14_15:20",
+      "count": 3,
+      "ids": [
+        "69177ee74147676f61b8b57c",
+        "691794b942c6c18259ab96bc",
+        "68fb8d022164a973dbbfa4f0"
+      ],
+      "patient": "Noah peixoto dos santos Dias",
+      "date": "2025-11-14",
+      "time": "15:20"
+    },
+    {
+      "key": "68c018f7198227a9b37da49a_2026-02-09_18:00",
+      "count": 2,
+      "ids": [
+        "698a30a2d55a40bcc8e1edf8",
+        "698a4b4f671613f5842c866b"
+      ],
+      "patient": "Nicolas Alves Cintra",
+      "date": "2026-02-09",
+      "time": "18:00"
+    },
+    {
+      "key": "68fa895a25de16c17d334d0c_2025-12-10_16:00",
+      "count": 2,
+      "ids": [
+        "692f21649efee806a50068d9",
+        "69308960fc5b0c071179e735"
+      ],
+      "patient": "Zion Aires Araújo Oliveira",
+      "date": "2025-12-10",
+      "time": "16:00"
+    },
+    {
+      "key": "69932e43222f08fbf005c5d9_2025-12-25_14:00",
+      "count": 2,
+      "ids": [
+        "69932e43222f08fbf005c5db",
+        "69932e6b1c8d6b5d9dcd8284"
+      ],
+      "patient": "Paciente Teste Direto",
+      "date": "2025-12-25",
+      "time": "14:00"
+    },
+    {
+      "key": "695d18eae86808e0389b9da1_2026-03-20_17:20",
+      "count": 2,
+      "ids": [
+        "69bdb5d645db4b0372b7d520",
+        "69b41ce4215e92b68a2d39d3"
+      ],
+      "patient": "695d18eae86808e0389b9da1",
+      "date": "2026-03-20",
+      "time": "17:20"
+    },
+    {
+      "key": "6984a2ab532493ec27b526c2_2026-03-20_10:40",
+      "count": 2,
+      "ids": [
+        "69b41462215e92b68a2d35ba",
+        "69864e7979bba4d65fae75db"
+      ],
+      "patient": "Pedro Henrique Almeida Torres",
+      "date": "2026-03-20",
+      "time": "10:40"
+    },
+    {
+      "key": "699869177c92d32c1fd43f86_2026-02-23_14:00",
+      "count": 2,
+      "ids": [
+        "69986c7d7c92d32c1fd44c10",
+        "69c3ea78f29b3574466fca5b"
+      ],
+      "patient": "699869177c92d32c1fd43f86",
+      "date": "2026-02-23",
+      "time": "14:00"
+    },
+    {
+      "key": "69020a8b82b3b0951152e094_2026-02-11_09:20",
+      "count": 2,
+      "ids": [
+        "698c8c1fb458e314ff72ae88",
+        "6984f4c4625469999d9bd080"
+      ],
+      "patient": "Lavínia Da Silva Borges",
+      "date": "2026-02-11",
+      "time": "09:20"
+    },
+    {
+      "key": "688a2b3c8779aa5ee830bf0d_2026-01-21_17:20",
+      "count": 2,
+      "ids": [
+        "697a6fb745b1f739502b38ce",
+        "696f877ba6a4a6b91a7bf053"
+      ],
+      "patient": "Agatha Beatriz da Silva Almeida",
+      "date": "2026-01-21",
+      "time": "17:20"
+    },
+    {
+      "key": "6917116c5d4d8bdb65edd506_2026-01-21_10:00",
+      "count": 2,
+      "ids": [
+        "6970ef66dfd730642f603462",
+        "6970ef2ddfd730642f6032af"
+      ],
+      "patient": "Issac Moreira Ribeiro",
+      "date": "2026-01-21",
+      "time": "10:00"
+    },
+    {
+      "key": "68c029cecbdf4c1481b15592_2025-12-12_17:20",
+      "count": 2,
+      "ids": [
+        "69455113a132f0049cbc79f4",
+        "692f236d9efee806a5006b34"
+      ],
+      "patient": "João Henrique Xavier Ribeiro",
+      "date": "2025-12-12",
+      "time": "17:20"
+    },
+    {
+      "key": "685aec6baec14c7163585b09_2025-12-10_16:40",
+      "count": 2,
+      "ids": [
+        "69445602a132f0049cbc62f7",
+        "692f21829efee806a5006919"
+      ],
+      "patient": "Igor Carvalho da Silva",
+      "date": "2025-12-10",
+      "time": "16:40"
+    },
+    {
+      "key": "696e1597a5ff8d58658a139e_2026-02-18_18:00",
+      "count": 2,
+      "ids": [
+        "6993097f03d5cc171ceff493",
+        "699607d3717936c76709b713"
+      ],
+      "patient": "Rafael Barros Santos",
+      "date": "2026-02-18",
+      "time": "18:00"
+    }
+  ],
+  "overusedPackages": [
+    {
+      "id": "69a196951673747583ac51e8",
+      "patientId": "6972301eaeeb528b5b3c1140",
+      "sessionsDone": 5,
+      "totalSessions": 4,
+      "type": "therapy",
+      "status": "active"
+    }
+  ],
+  "packageWithoutKind": [
+    {
+      "id": "686d52eab26f4da03d42644a",
+      "package": "686d52eab26f4da03d42643c",
+      "amount": 1200
+    },
+    {
+      "id": "686fd2039276a58116d07570",
+      "package": "686fd2039276a58116d07556",
+      "amount": 720
+    },
+    {
+      "id": "687e352c20c72d457aba6f43",
+      "package": "687e352c20c72d457aba6efb",
+      "amount": 1200
+    },
+    {
+      "id": "687e40c6902dfb659a5cbfe5",
+      "package": "687e40c6902dfb659a5cbf9d",
+      "amount": 1200
+    },
+    {
+      "id": "687e9fd8cfb03169c5c8c314",
+      "package": "687e9fd8cfb03169c5c8c2e3",
+      "amount": 1440
+    },
+    {
+      "id": "687fd507cfb03169c5c8d731",
+      "package": "687fd507cfb03169c5c8d6ec",
+      "amount": 2160
+    },
+    {
+      "id": "68894826d6d2214f6d7b58c5",
+      "package": "68894824d6d2214f6d7b58a8",
+      "amount": 640
+    },
+    {
+      "id": "68929efcaadaf66f2a2bfb29",
+      "package": "68929efcaadaf66f2a2bfb0c",
+      "amount": 720
+    },
+    {
+      "id": "68929fbabe13af1922267192",
+      "package": "68929fb8be13af1922267175",
+      "amount": 640
+    },
+    {
+      "id": "6893c50f4b4ab2f2fe938218",
+      "package": "6893c50d4b4ab2f2fe9381fb",
+      "amount": 720
+    },
+    {
+      "id": "6894b09fc6fd0a1c11f6fd5f",
+      "package": "6894b09dc6fd0a1c11f6fd42",
+      "amount": 720
+    },
+    {
+      "id": "6896284c588fcfa3c5664a8d",
+      "package": "6896284a588fcfa3c5664a70",
+      "amount": 720
+    },
+    {
+      "id": "689dd70de2043e433fff97da",
+      "package": "689dd70be2043e433fff97bd",
+      "amount": 720
+    },
+    {
+      "id": "689f995a9c2e1fdc863e8562",
+      "package": "689f99589c2e1fdc863e8545",
+      "amount": 720
+    },
+    {
+      "id": "689f99b79c2e1fdc863e8591",
+      "package": "689f99b59c2e1fdc863e8574",
+      "amount": 720
+    },
+    {
+      "id": "68a0eed424dc1acb39bcfc3f",
+      "package": "68a0efc924dc1acb39bcfe73",
+      "amount": 25
+    },
+    {
+      "id": "68ada20f74b070eb52496de3",
+      "package": "68ada20d74b070eb52496dcc",
+      "amount": 800
+    },
+    {
+      "id": "68b1e3ef18fa98448dad343f",
+      "package": "68b1e3eb18fa98448dad3428",
+      "amount": 720
+    },
+    {
+      "id": "68b1f21528ca890852b710e4",
+      "package": "68b1f21328ca890852b710cd",
+      "amount": 640
+    },
+    {
+      "id": "68b8a5b17a36ac7ce0da6051",
+      "package": "68b8a5af7a36ac7ce0da603a",
+      "amount": 720
+    },
+    {
+      "id": "68b9bacc12aba72c13fff3b3",
+      "package": "68b9bac612aba72c13fff37e",
+      "amount": 1800
+    },
+    {
+      "id": "68bedf5c04ec4875aaea81cf",
+      "package": "68bedf5904ec4875aaea81b8",
+      "amount": 720
+    },
+    {
+      "id": "68bf0eadfd3cf3e3c2dfc6f7",
+      "package": "68bf0eabfd3cf3e3c2dfc6e0",
+      "amount": 640
+    },
+    {
+      "id": "68bf0edffd3cf3e3c2dfc732",
+      "package": "68bf0edcfd3cf3e3c2dfc71b",
+      "amount": 720
+    },
+    {
+      "id": "68bf3397cd07f1032e1837a4",
+      "package": "68bf3394cd07f1032e18378d",
+      "amount": 720
+    },
+    {
+      "id": "68c7fd78e0832897cb1c2d01",
+      "package": "68c7fd76e0832897cb1c2cef",
+      "amount": 480
+    },
+    {
+      "id": "68cbf9ab5cac66e0313cb123",
+      "package": "68cbf9a85cac66e0313cb10c",
+      "amount": 720
+    },
+    {
+      "id": "68cd64a7bbc720b5cc9fea13",
+      "package": "68cd64a4bbc720b5cc9fe9fc",
+      "amount": 640
+    },
+    {
+      "id": "68d15a375a6b8506bebc775b",
+      "package": "68d15a355a6b8506bebc7744",
+      "amount": 640
+    },
+    {
+      "id": "68d1b6ec123d6dc6644d2ed4",
+      "package": "68d1b6e9123d6dc6644d2ebd",
+      "amount": 780
+    },
+    {
+      "id": "68de8bc9d576ef219fd567a9",
+      "package": "68de8bc6d576ef219fd56792",
+      "amount": 720
+    },
+    {
+      "id": "68e3bf8a0d8aeeff1af03f75",
+      "package": "68e3bf870d8aeeff1af03f5e",
+      "amount": 720
+    },
+    {
+      "id": "68e80d60a49517ebb502a0f1",
+      "package": "68e80d5ea49517ebb502a0da",
+      "amount": 700
+    },
+    {
+      "id": "68eeb5f749e195b37058bac9",
+      "package": "68eeb5f549e195b37058bab2",
+      "amount": 640
+    },
+    {
+      "id": "68eeb6f349e195b37058bb96",
+      "package": "68eeb6f049e195b37058bb7f",
+      "amount": 720
+    },
+    {
+      "id": "6913a1d0745b84b5aa93dd8e",
+      "package": "691329e7745b84b5aa93d51a",
+      "kind": "manual",
+      "amount": 400
+    },
+    {
+      "id": "69177e3f48256a62250e33d0",
+      "package": "691b5d0efa52136b526804d1",
+      "kind": "adjustment",
+      "amount": 160
+    },
+    {
+      "id": "699919874191970789aaca70",
+      "package": "699847fe7c92d32c1fd3c62a",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "699cd1a7d6de140f6f2096d8",
+      "package": "699847fe7c92d32c1fd3c62a",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69c3ee30d0da770b9960e7fb",
+      "package": "699847fe7c92d32c1fd3c62a",
+      "amount": 140
+    },
+    {
+      "id": "69c3ee30d0da770b9960e7fc",
+      "package": "699847fe7c92d32c1fd3c62a",
+      "amount": 140
+    },
+    {
+      "id": "69c3ee30d0da770b9960e7fd",
+      "package": "699847fe7c92d32c1fd3c62a",
+      "amount": 140
+    },
+    {
+      "id": "699cd1a7d6de140f6f2096e1",
+      "package": "699848397c92d32c1fd3c7dd",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "699cd1a8d6de140f6f2096ea",
+      "package": "699848397c92d32c1fd3c7dd",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69c3ee30d0da770b9960e7fe",
+      "package": "699848397c92d32c1fd3c7dd",
+      "amount": 140
+    },
+    {
+      "id": "69c3ee30d0da770b9960e7ff",
+      "package": "699848397c92d32c1fd3c7dd",
+      "amount": 140
+    },
+    {
+      "id": "69c3ee31d0da770b9960e800",
+      "package": "699848397c92d32c1fd3c7dd",
+      "amount": 140
+    },
+    {
+      "id": "699cd1a8d6de140f6f2096f3",
+      "package": "6998486a7c92d32c1fd3c8ef",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "699cd1a8d6de140f6f2096fc",
+      "package": "6998486a7c92d32c1fd3c8ef",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69c3ee31d0da770b9960e801",
+      "package": "6998486a7c92d32c1fd3c8ef",
+      "amount": 140
+    },
+    {
+      "id": "6999198c4191970789aacb22",
+      "package": "699866a77c92d32c1fd43595",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee31d0da770b9960e802",
+      "package": "699866a77c92d32c1fd43595",
+      "amount": 80
+    },
+    {
+      "id": "69d06450e0bc04637f20985e",
+      "package": "699866a77c92d32c1fd43595",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06451e0bc04637f209864",
+      "package": "699866a77c92d32c1fd43595",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06451e0bc04637f209867",
+      "package": "699866a77c92d32c1fd43595",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06451e0bc04637f20986d",
+      "package": "699866a77c92d32c1fd43595",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "699919934191970789aacc06",
+      "package": "699866e27c92d32c1fd43657",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06451e0bc04637f209873",
+      "package": "699866e27c92d32c1fd43657",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06451e0bc04637f209878",
+      "package": "699866e27c92d32c1fd43657",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06451e0bc04637f20987d",
+      "package": "699866e27c92d32c1fd43657",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06451e0bc04637f209882",
+      "package": "699866e27c92d32c1fd43657",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "699cd1a8d6de140f6f209705",
+      "package": "69986c057c92d32c1fd44a1f",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "699cd1a8d6de140f6f20970e",
+      "package": "69986c057c92d32c1fd44a1f",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "699de6364152216f7913f188",
+      "package": "69986c057c92d32c1fd44a1f",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69a8aa8b2a05280dd28b1a4b",
+      "package": "69986c057c92d32c1fd44a1f",
+      "kind": "manual",
+      "amount": 0
+    },
+    {
+      "id": "69af0891381a1dc2998ab091",
+      "package": "69986c057c92d32c1fd44a1f",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69c3eb63fdbe7cd5b7b2505f",
+      "package": "69986c057c92d32c1fd44a1f",
+      "amount": 80
+    },
+    {
+      "id": "69c3eb63fdbe7cd5b7b25060",
+      "package": "69986c057c92d32c1fd44a1f",
+      "amount": 80
+    },
+    {
+      "id": "69c3ec3d64bc8f5c1df65ed4",
+      "package": "69986c057c92d32c1fd44a1f",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee31d0da770b9960e803",
+      "package": "69986c057c92d32c1fd44a1f",
+      "amount": 80
+    },
+    {
+      "id": "69d06452e0bc04637f209886",
+      "package": "69986c057c92d32c1fd44a1f",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06452e0bc04637f20988b",
+      "package": "69986c057c92d32c1fd44a1f",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06452e0bc04637f20988f",
+      "package": "69986c057c92d32c1fd44a1f",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06452e0bc04637f209893",
+      "package": "69986c057c92d32c1fd44a1f",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06452e0bc04637f209898",
+      "package": "69986c057c92d32c1fd44a1f",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06453e0bc04637f20989c",
+      "package": "69986c057c92d32c1fd44a1f",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06453e0bc04637f20989f",
+      "package": "69986c057c92d32c1fd44a1f",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06453e0bc04637f2098a2",
+      "package": "69986c057c92d32c1fd44a1f",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "6999199cf865dc3976dbc21c",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "6999199c4191970789aacd4a",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "6999199d4191970789aacd55",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "699cd1a9d6de140f6f209717",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "699cd1a9d6de140f6f209720",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "699cd1a9d6de140f6f209729",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69a8aa8b2a05280dd28b1a4c",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "kind": "manual",
+      "amount": 0
+    },
+    {
+      "id": "69c3ec3e64bc8f5c1df65ed5",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee31d0da770b9960e804",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "amount": 80
+    },
+    {
+      "id": "69d06453e0bc04637f2098a5",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06453e0bc04637f2098a8",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06453e0bc04637f2098ab",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06454e0bc04637f2098ae",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06454e0bc04637f2098b1",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06454e0bc04637f2098b4",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06454e0bc04637f2098b7",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06454e0bc04637f2098ba",
+      "package": "69986c7c7c92d32c1fd44be9",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "699cd1a9d6de140f6f209736",
+      "package": "69986d557c92d32c1fd44f15",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "699cd1a9d6de140f6f20973f",
+      "package": "69986d557c92d32c1fd44f15",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "699cd1aad6de140f6f209748",
+      "package": "69986d557c92d32c1fd44f15",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06455e0bc04637f2098bd",
+      "package": "69986d557c92d32c1fd44f15",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06455e0bc04637f2098c0",
+      "package": "69986d557c92d32c1fd44f15",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06455e0bc04637f2098c3",
+      "package": "69986d557c92d32c1fd44f15",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06455e0bc04637f2098c6",
+      "package": "69986d557c92d32c1fd44f15",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06455e0bc04637f2098c9",
+      "package": "69986d557c92d32c1fd44f15",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06456e0bc04637f2098cc",
+      "package": "69986d557c92d32c1fd44f15",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06456e0bc04637f2098cf",
+      "package": "69986d557c92d32c1fd44f15",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06456e0bc04637f2098d2",
+      "package": "69986d557c92d32c1fd44f15",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "699dc1304152216f79136637",
+      "package": "699dc1134152216f791365f0",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "699dc1464152216f79136737",
+      "package": "699dc1134152216f791365f0",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "699dc1c54152216f79136936",
+      "package": "699dc1134152216f791365f0",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "699dc1f44152216f79136a27",
+      "package": "699dc1134152216f791365f0",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "699dc2124152216f79136af0",
+      "package": "699dc1134152216f791365f0",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "699dc2484152216f79136bf9",
+      "package": "699dc1134152216f791365f0",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "699dccd34152216f791392fe",
+      "package": "699dcca24152216f79139213",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "699dcd404152216f79139449",
+      "package": "699dcca24152216f79139213",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "699dcd864152216f791395b9",
+      "package": "699dcca24152216f79139213",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "699dcde14152216f7913960b",
+      "package": "699dcca24152216f79139213",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "699dcedc4152216f79139aea",
+      "package": "699dce804152216f79139871",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "699dceff4152216f79139b26",
+      "package": "699dce804152216f79139871",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "699dcf324152216f79139b59",
+      "package": "699dce804152216f79139871",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69a8aa8b2a05280dd28b1a4d",
+      "package": "699dd72d4152216f7913b8ee",
+      "kind": "manual",
+      "amount": 0
+    },
+    {
+      "id": "69a8aa8c2a05280dd28b1a4e",
+      "package": "699dd72d4152216f7913b8ee",
+      "kind": "manual",
+      "amount": 0
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115f3",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115eb",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115ed",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115f2",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115e6",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115e8",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee32d0da770b9960e805",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee32d0da770b9960e806",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee32d0da770b9960e807",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee32d0da770b9960e808",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee32d0da770b9960e809",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee32d0da770b9960e80a",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee32d0da770b9960e80b",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee32d0da770b9960e80c",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee32d0da770b9960e80d",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee32d0da770b9960e80e",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee33d0da770b9960e80f",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee33d0da770b9960e810",
+      "package": "699dd72d4152216f7913b8ee",
+      "amount": 80
+    },
+    {
+      "id": "69d06456e0bc04637f2098d5",
+      "package": "699dd72d4152216f7913b8ee",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115e7",
+      "package": "699ddbf74152216f7913cb1a",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115f1",
+      "package": "699ddbf74152216f7913cb1a",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115e5",
+      "package": "699ddbf74152216f7913cb1a",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115e9",
+      "package": "699ddbf74152216f7913cb1a",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115f4",
+      "package": "699ddbf74152216f7913cb1a",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115ec",
+      "package": "699ddbf74152216f7913cb1a",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115ee",
+      "package": "699ddbf74152216f7913cb1a",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115f0",
+      "package": "699de14a4152216f7913de38",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115e4",
+      "package": "699de14a4152216f7913de38",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115ea",
+      "package": "699de14a4152216f7913de38",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115f5",
+      "package": "699de14a4152216f7913de38",
+      "amount": 80
+    },
+    {
+      "id": "69c3ce4d4c6aacfaa2a115ef",
+      "package": "699de14a4152216f7913de38",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee33d0da770b9960e811",
+      "package": "699de14a4152216f7913de38",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee33d0da770b9960e812",
+      "package": "699de14a4152216f7913de38",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee33d0da770b9960e813",
+      "package": "699de14a4152216f7913de38",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee33d0da770b9960e814",
+      "package": "699de14a4152216f7913de38",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee33d0da770b9960e815",
+      "package": "699de14a4152216f7913de38",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee33d0da770b9960e816",
+      "package": "699de14a4152216f7913de38",
+      "amount": 80
+    },
+    {
+      "id": "69a8aa8c2a05280dd28b1a4f",
+      "package": "699de5184152216f7913ebfb",
+      "kind": "manual",
+      "amount": 0
+    },
+    {
+      "id": "69c3ee33d0da770b9960e817",
+      "package": "699de5184152216f7913ebfb",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee33d0da770b9960e818",
+      "package": "699de5184152216f7913ebfb",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee33d0da770b9960e819",
+      "package": "699de5184152216f7913ebfb",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee33d0da770b9960e81a",
+      "package": "699de5184152216f7913ebfb",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee34d0da770b9960e81b",
+      "package": "699de5184152216f7913ebfb",
+      "amount": 80
+    },
+    {
+      "id": "69d06457e0bc04637f2098e1",
+      "package": "699de5184152216f7913ebfb",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee34d0da770b9960e81c",
+      "package": "699e003d4152216f7914500a",
+      "amount": 140
+    },
+    {
+      "id": "69c3ee34d0da770b9960e81d",
+      "package": "699e003d4152216f7914500a",
+      "amount": 140
+    },
+    {
+      "id": "69c3ee34d0da770b9960e81e",
+      "package": "699e003d4152216f7914500a",
+      "amount": 140
+    },
+    {
+      "id": "69c3ee34d0da770b9960e81f",
+      "package": "699e01084152216f791452ea",
+      "amount": 140
+    },
+    {
+      "id": "69c3ee34d0da770b9960e820",
+      "package": "699e01084152216f791452ea",
+      "amount": 140
+    },
+    {
+      "id": "69c3ee34d0da770b9960e821",
+      "package": "699e014f4152216f79145471",
+      "amount": 140
+    },
+    {
+      "id": "69c3ee34d0da770b9960e822",
+      "package": "699e014f4152216f79145471",
+      "amount": 140
+    },
+    {
+      "id": "69c3ee34d0da770b9960e823",
+      "package": "69a9985266c460e6da734f68",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee34d0da770b9960e824",
+      "package": "69a9985266c460e6da734f68",
+      "amount": 80
+    },
+    {
+      "id": "69d06456e0bc04637f2098d8",
+      "package": "69a9985266c460e6da734f68",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06456e0bc04637f2098db",
+      "package": "69a9985266c460e6da734f68",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06457e0bc04637f2098de",
+      "package": "69a9985266c460e6da734f68",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69bd9df0b443b0191eceef08",
+      "package": "69bd8e5b4d0f25ae97e30218",
+      "kind": "revenue_recognition",
+      "amount": 0.16
+    },
+    {
+      "id": "69c2e8a25c4ad17fefccc204",
+      "package": "69c14528c19d35b8454a27e8",
+      "kind": "revenue_recognition",
+      "amount": 150
+    },
+    {
+      "id": "69cc23466873402d92efeda0",
+      "package": "69c14528c19d35b8454a27e8",
+      "kind": "revenue_recognition",
+      "amount": 150
+    },
+    {
+      "id": "69c2fa7a5c4ad17fefcccec7",
+      "package": "69c1456ec19d35b8454a2882",
+      "kind": "revenue_recognition",
+      "amount": 150
+    },
+    {
+      "id": "69c2fa2d5c4ad17fefccce36",
+      "package": "69c1459fc19d35b8454a28f9",
+      "kind": "revenue_recognition",
+      "amount": 160
+    },
+    {
+      "id": "69cd766036dbb663aafcb31a",
+      "package": "69c1459fc19d35b8454a28f9",
+      "kind": "revenue_recognition",
+      "amount": 160
+    },
+    {
+      "id": "69c2e9c95c4ad17fefccc3d4",
+      "package": "69c15025c19d35b8454a2e8b",
+      "kind": "revenue_recognition",
+      "amount": 160
+    },
+    {
+      "id": "69cc29636873402d92eff0c7",
+      "package": "69c15025c19d35b8454a2e8b",
+      "kind": "revenue_recognition",
+      "amount": 160
+    },
+    {
+      "id": "69c3ee35d0da770b9960e825",
+      "package": "69c2eb495c4ad17fefccc505",
+      "amount": 80
+    },
+    {
+      "id": "69d06457e0bc04637f2098e4",
+      "package": "69c2eb495c4ad17fefccc505",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06457e0bc04637f2098e7",
+      "package": "69c2eb495c4ad17fefccc505",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06457e0bc04637f2098ea",
+      "package": "69c2eb495c4ad17fefccc505",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06457e0bc04637f2098ed",
+      "package": "69c2eb495c4ad17fefccc505",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06458e0bc04637f2098f0",
+      "package": "69c2eb495c4ad17fefccc505",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06458e0bc04637f2098f3",
+      "package": "69c2eb495c4ad17fefccc505",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06458e0bc04637f2098f6",
+      "package": "69c2eb495c4ad17fefccc505",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06458e0bc04637f2098f9",
+      "package": "69c2eb495c4ad17fefccc505",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69c3ee35d0da770b9960e826",
+      "package": "69c2ebf15c4ad17fefccc5e8",
+      "amount": 80
+    },
+    {
+      "id": "69d06458e0bc04637f2098fc",
+      "package": "69c2ebf15c4ad17fefccc5e8",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06458e0bc04637f2098ff",
+      "package": "69c2ebf15c4ad17fefccc5e8",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06458e0bc04637f209902",
+      "package": "69c2ebf15c4ad17fefccc5e8",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06459e0bc04637f209905",
+      "package": "69c2ebf15c4ad17fefccc5e8",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06459e0bc04637f209908",
+      "package": "69c2ebf15c4ad17fefccc5e8",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06459e0bc04637f20990b",
+      "package": "69c2ebf15c4ad17fefccc5e8",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06459e0bc04637f20990e",
+      "package": "69c2ebf15c4ad17fefccc5e8",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06459e0bc04637f209911",
+      "package": "69c2ebf15c4ad17fefccc5e8",
+      "kind": "manual",
+      "amount": 80
+    },
+    {
+      "id": "69d06459e0bc04637f209914",
+      "package": "69c566c587f4b2aed4722d2d",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d06459e0bc04637f209917",
+      "package": "69c566c587f4b2aed4722d2d",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645ae0bc04637f20991a",
+      "package": "69c566c587f4b2aed4722d2d",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645ae0bc04637f20991d",
+      "package": "69c566c587f4b2aed4722d2d",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645ae0bc04637f209920",
+      "package": "69c566c587f4b2aed4722d2d",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645ae0bc04637f209923",
+      "package": "69c566c587f4b2aed4722d2d",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645ae0bc04637f209926",
+      "package": "69c566c587f4b2aed4722d2d",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645be0bc04637f209929",
+      "package": "69c566c587f4b2aed4722d2d",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645be0bc04637f20992c",
+      "package": "69c5679b87f4b2aed4722dc3",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645be0bc04637f20992f",
+      "package": "69c5679b87f4b2aed4722dc3",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645be0bc04637f209932",
+      "package": "69c5679b87f4b2aed4722dc3",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645ce0bc04637f209935",
+      "package": "69c5679b87f4b2aed4722dc3",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645ce0bc04637f209938",
+      "package": "69c5679b87f4b2aed4722dc3",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645ce0bc04637f20993b",
+      "package": "69c5679b87f4b2aed4722dc3",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645ce0bc04637f20993e",
+      "package": "69c5679b87f4b2aed4722dc3",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645ce0bc04637f209941",
+      "package": "69c5679b87f4b2aed4722dc3",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645de0bc04637f209944",
+      "package": "69c5690187f4b2aed4722e86",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645de0bc04637f209947",
+      "package": "69c5690187f4b2aed4722e86",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645de0bc04637f20994a",
+      "package": "69c5690187f4b2aed4722e86",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645de0bc04637f20994d",
+      "package": "69c5690187f4b2aed4722e86",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645de0bc04637f209950",
+      "package": "69c5690187f4b2aed4722e86",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645ee0bc04637f209953",
+      "package": "69c5690187f4b2aed4722e86",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645ee0bc04637f209956",
+      "package": "69c5690187f4b2aed4722e86",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69d0645ee0bc04637f209959",
+      "package": "69c5690187f4b2aed4722e86",
+      "kind": "manual",
+      "amount": 140
+    },
+    {
+      "id": "69cc08506873402d92efe14c",
+      "package": "69c674eb1d84ac5eb1c3bef0",
+      "kind": "session_payment",
+      "amount": 180
+    },
+    {
+      "id": "69cd01366ffb1e1fc2707981",
+      "package": "69c675651d84ac5eb1c3bfde",
+      "kind": "session_payment",
+      "amount": 160
+    },
+    {
+      "id": "69d636fc4c580c34025f2400",
+      "package": "69c675651d84ac5eb1c3bfde",
+      "kind": "session_payment",
+      "amount": 160
+    },
+    {
+      "id": "69cd902fc00663564a087f17",
+      "package": "69c676c81d84ac5eb1c3c0d2",
+      "kind": "session_payment",
+      "amount": 180
+    },
+    {
+      "id": "69c6ea20cc02cb09cd7e447f",
+      "package": "69c698173014fd4ab2d720b8",
+      "kind": "session_payment",
+      "amount": 180
+    },
+    {
+      "id": "69cecaf0e8b60624cb131ce7",
+      "package": "69c698173014fd4ab2d720b8",
+      "kind": "session_payment",
+      "amount": 180
+    },
+    {
+      "id": "69d060f9bcd473325749b19c",
+      "package": "69c6996e06a4b96f32c0068a",
+      "kind": "session_payment",
+      "amount": 0.1
+    },
+    {
+      "id": "69d5879fc9a00ca31b8eafb4",
+      "package": "69cd1763856a4f39ce254cae",
+      "kind": "session_payment",
+      "amount": 140
+    },
+    {
+      "id": "69d63b7beeda8a9e407c3b05",
+      "package": "69d63b7beeda8a9e407c3afd",
+      "kind": null,
+      "amount": 80
+    },
+    {
+      "id": "69d646f485f1fc2849c5b69c",
+      "package": "69d646e885f1fc2849c5b659",
+      "kind": null,
+      "amount": 80
+    },
+    {
+      "id": "69d646f585f1fc2849c5b6aa",
+      "package": "69d646e885f1fc2849c5b659",
+      "kind": null,
+      "amount": 80
+    },
+    {
+      "id": "69d646f685f1fc2849c5b6bc",
+      "package": "69d646e885f1fc2849c5b659",
+      "kind": null,
+      "amount": 80
+    },
+    {
+      "id": "69d646f885f1fc2849c5b6ce",
+      "package": "69d646e885f1fc2849c5b659",
+      "kind": null,
+      "amount": 80
+    },
+    {
+      "id": "69d646f985f1fc2849c5b6e0",
+      "package": "69d646e885f1fc2849c5b659",
+      "kind": null,
+      "amount": 80
+    },
+    {
+      "id": "69d646fa85f1fc2849c5b6f2",
+      "package": "69d646e885f1fc2849c5b659",
+      "kind": null,
+      "amount": 80
+    },
+    {
+      "id": "69d646fd85f1fc2849c5b704",
+      "package": "69d646e885f1fc2849c5b659",
+      "kind": null,
+      "amount": 80
+    },
+    {
+      "id": "69d646ff85f1fc2849c5b716",
+      "package": "69d646e885f1fc2849c5b659",
+      "kind": null,
+      "amount": 80
+    },
+    {
+      "id": "69d6470085f1fc2849c5b728",
+      "package": "69d646e885f1fc2849c5b659",
+      "kind": null,
+      "amount": 80
+    },
+    {
+      "id": "69d6470185f1fc2849c5b73a",
+      "package": "69d646e885f1fc2849c5b659",
+      "kind": null,
+      "amount": 80
+    },
+    {
+      "id": "69d6470285f1fc2849c5b74c",
+      "package": "69d646e885f1fc2849c5b659",
+      "kind": null,
+      "amount": 80
+    },
+    {
+      "id": "69d6470485f1fc2849c5b75e",
+      "package": "69d646e885f1fc2849c5b659",
+      "kind": null,
+      "amount": 80
+    },
+    {
+      "id": "69d6470585f1fc2849c5b770",
+      "package": "69d646e885f1fc2849c5b659",
+      "kind": null,
+      "amount": 80
+    },
+    {
+      "id": "69d6470685f1fc2849c5b786",
+      "package": "69d646e885f1fc2849c5b659",
+      "kind": null,
+      "amount": 80
+    },
+    {
+      "id": "69d6470c85f1fc2849c5b79a",
+      "package": "69d646e885f1fc2849c5b659",
+      "kind": null,
+      "amount": 80
+    }
+  ]
+}
