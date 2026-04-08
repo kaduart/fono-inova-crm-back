@@ -432,7 +432,17 @@ router.patch('/:id', auth, async (req, res) => {
     const MAX_RETRIES = 8;
     let retryCount = 0;
     let result;
-    console.log('Erro ao exportar CSV:', req.body);
+    
+    console.log(`[Payment PATCH] Requisição para atualizar pagamento ${id}:`, req.body);
+    
+    // 🔴 VALIDAÇÃO: Verifica se o ID é válido
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+            success: false,
+            error: 'ID de pagamento inválido',
+            code: 'INVALID_PAYMENT_ID'
+        });
+    }
 
     const executeCriticalOperation = async (entity, filter, update, session) => {
         try {
