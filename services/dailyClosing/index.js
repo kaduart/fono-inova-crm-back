@@ -69,6 +69,11 @@ export async function calculateDailyClosing(date, clinicId) {
         fetchAppointmentsToday(startOfDay, endOfDay, targetDate),
         fetchPayments(startOfDay, endOfDay, targetDate)
     ]);
+    
+    console.log(`[DailyClosingService] Payments encontrados: ${payments.length}`);
+    payments.forEach(p => {
+        console.log(`  - ${p.patient?.fullName || 'N/A'}: R$${p.amount}, createdAt: ${p.createdAt}`);
+    });
 
     // ======================================================
     // 4. DEDUPLICAR E PROCESSAR
@@ -94,6 +99,7 @@ export async function calculateDailyClosing(date, clinicId) {
     // 6. FILTRAR PAGAMENTOS DO DIA
     // ======================================================
     const filteredPayments = filterPaymentsByDate(payments, targetDate);
+    console.log(`[DailyClosingService] Após filtro: ${filteredPayments.length} pagamentos`);
 
     // ======================================================
     // 7. CALCULAR SUMÁRIOS
@@ -230,6 +236,8 @@ function calculateCashFlow(payments, targetDate, startOfDay, endOfDay) {
         }
     };
 
+    console.log(`[calculateCashFlow] Processando ${payments.length} pagamentos...`);
+    
     for (const p of payments) {
         const amount = p.amount || 0;
         const baseInfo = {
@@ -238,6 +246,8 @@ function calculateCashFlow(payments, targetDate, startOfDay, endOfDay) {
             patient: p.patient?.fullName || 'N/A',
             method: p.paymentMethod
         };
+        
+        console.log(`  - ${baseInfo.patient}: R$${amount}, package: ${p.package ? 'SIM' : 'Não'}, kind: ${p.kind}`);
 
         // 🏥 CONVÊNIO - não entra no caixa, é produção
         if (p.billingType === 'convenio' || p.paymentMethod === 'convenio' || 
@@ -245,6 +255,7 @@ function calculateCashFlow(payments, targetDate, startOfDay, endOfDay) {
             result.insuranceProduction += amount;
             result.insuranceCount++;
             result.details.insurance.push(baseInfo);
+            console.log(`    -> CONVÊNIO`);
             continue;
         }
 
@@ -253,13 +264,14 @@ function calculateCashFlow(payments, targetDate, startOfDay, endOfDay) {
             result.packageConsumption += amount;
             result.packageCount++;
             result.details.package.push(baseInfo);
-            // Não soma no cashIn porque não é dinheiro novo
+            console.log(`    -> PACOTE (não entra no caixa)`);
             continue;
         }
 
         // Verifica se é adiantamento (sessão futura)
         const paymentDate = p.paymentDate || p.createdAt;
         const appointmentDate = p.appointment?.date || p.session?.date;
+        console.log(`    appointmentDate: ${appointmentDate}, targetDate: ${targetDate}`);
         
         // Se tem data de agendamento/sessão e é futura = adiantamento
         let isAdvance = false;
