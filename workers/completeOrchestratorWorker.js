@@ -512,6 +512,24 @@ export function startCompleteOrchestratorWorker() {
             { correlationId }
         );
 
+        // ✅ SOLICITA RECÁLCULO DO DAILY CLOSING (atualiza caixa do dia)
+        const appointmentDate = appointment.date 
+            ? new Date(appointment.date).toISOString().split('T')[0]
+            : new Date().toISOString().split('T')[0];
+        
+        console.log(`[CompleteOrchestrator] Disparando DAILY_CLOSING_REQUESTED para ${appointmentDate}`);
+        await publishEvent(
+            EventTypes.DAILY_CLOSING_REQUESTED,
+            {
+                clinicId: appointment.clinicId || 'default',
+                date: appointmentDate,
+                reason: 'appointment_completed',
+                triggeredBy: 'complete_orchestrator',
+                appointmentId: appointment._id.toString()
+            },
+            { correlationId }
+        );
+
         return {
             status: 'completed',
             appointmentId,

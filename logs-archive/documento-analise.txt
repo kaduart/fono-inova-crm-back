@@ -1,149 +1,379 @@
-curl 'http://localhost:5000/api/insurance-guides?patientId=69d3286c62b12ddbb24089f5' \
-  -H 'Accept: application/json, text/plain, */*' \
-  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgQWRtaW4iLCJpYXQiOjE3NzU1ODM4MTgsImV4cCI6MTc3NTY3MDIxOH0.JvgWRBQi2pOa8RJOlvxrBY_oXNYvaY9B0AWxTp2C0Jc' \
-  -H 'Connection: keep-alive' \
-  -H 'If-None-Match: W/"2f-DIu+YT+crC0gtA0fmLhDHoSSkwE"' \
-  -H 'Origin: http://localhost:5173' \
-  -H 'Referer: http://localhost:5173/' \
-  -H 'Sec-Fetch-Dest: empty' \
-  -H 'Sec-Fetch-Mode: cors' \
-  -H 'Sec-Fetch-Site: same-site' \
-  -H 'User-Agent: Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36' \
-  -H 'sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"' \
-  -H 'sec-ch-ua-mobile: ?1' \
-  -H 'sec-ch-ua-platform: "Android"' \
-  -H 'x-correlation-id: front_1775587903116_9ppwaxhh4'
-
-  {"success":true,"count":0,"data":{"guides":[]}}
-
-  curl 'http://localhost:5000/api/insurance-guides?patientId=69655746dcdf49e2c282800b&status=active' \
-  -H 'Accept: application/json, text/plain, */*' \
-  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsIm5hbWUiOiJSaWNhcmRvIE1haWEgQWRtaW4iLCJpYXQiOjE3NzU1ODM4MTgsImV4cCI6MTc3NTY3MDIxOH0.JvgWRBQi2pOa8RJOlvxrBY_oXNYvaY9B0AWxTp2C0Jc' \
-  -H 'Connection: keep-alive' \
-  -H 'If-None-Match: W/"8fe-pRgqQyv54iF5fiLeIR2NOw6Q//E"' \
-  -H 'Origin: http://localhost:5173' \
-  -H 'Referer: http://localhost:5173/' \
-  -H 'Sec-Fetch-Dest: empty' \
-  -H 'Sec-Fetch-Mode: cors' \
-  -H 'Sec-Fetch-Site: same-site' \
-  -H 'User-Agent: Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36' \
-  -H 'sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"' \
-  -H 'sec-ch-ua-mobile: ?1' \
-  -H 'sec-ch-ua-platform: "Android"' \
-  -H 'x-correlation-id: front_1775587948376_nvzlaoxut'
-
-  {
+{
     "success": true,
-    "count": 5,
     "data": {
-        "guides": [
+        "appointments": [
             {
-                "_id": "699de4144152216f7913e8f7",
-                "number": "15510345",
-                "patientId": {
-                    "_id": "69655746dcdf49e2c282800b",
-                    "fullName": "Nicolas Lucca",
-                    "phone": "62992731969",
-                    "cpf": null
+                "_id": "69d3ba901d39dc388625206d",
+                "patient": {
+                    "_id": "69d3ba8f1d39dc3886252068",
+                    "fullName": "Isabela Ferreira De Mendonca"
                 },
-                "specialty": "psicomotricidade",
-                "insurance": "unimed-anapolis",
-                "totalSessions": 10,
-                "usedSessions": 1,
-                "expiresAt": "2026-03-06T00:00:00.000Z",
-                "status": "active",
-                "packageId": "699de5184152216f7913ebfb",
-                "createdAt": "2026-02-24T17:47:00.339Z",
-                "updatedAt": "2026-03-04T21:01:07.828Z",
-                "__v": 0,
-                "remaining": 9
+                "doctor": {
+                    "_id": "6981db7af55849815f98b00a",
+                    "fullName": "Mayra Magda Mendes Oliveira",
+                    "specialty": "fonoaudiologia"
+                },
+                "date": "2026-04-07T12:00:00.000Z",
+                "time": "13:20",
+                "duration": 40,
+                "operationalStatus": "completed",
+                "clinicalStatus": "completed",
+                "sessionValue": 80,
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "paymentStatus": "paid",
+                "source": "individual"
             },
             {
-                "_id": "699de0bf4152216f7913dbee",
-                "number": "15650230",
-                "patientId": {
-                    "_id": "69655746dcdf49e2c282800b",
-                    "fullName": "Nicolas Lucca",
-                    "phone": "62992731969",
-                    "cpf": null
+                "_id": "69c674ed1d84ac5eb1c3befd",
+                "patient": {
+                    "_id": "69457c15a132f0049cbc81df",
+                    "fullName": "Daniel Rodrigues dos Santos de Oliveira"
                 },
-                "specialty": "fonoaudiologia",
-                "insurance": "unimed-anapolis",
-                "totalSessions": 20,
-                "usedSessions": 0,
-                "expiresAt": "2026-03-27T00:00:00.000Z",
-                "status": "active",
-                "packageId": "699de14a4152216f7913de38",
-                "createdAt": "2026-02-24T17:32:47.173Z",
-                "updatedAt": "2026-02-24T17:35:18.544Z",
-                "__v": 0,
-                "remaining": 20
+                "doctor": {
+                    "_id": "6981db7af55849815f98b00a",
+                    "fullName": "Mayra Magda Mendes Oliveira",
+                    "specialty": "fonoaudiologia"
+                },
+                "date": "2026-04-07T12:00:00.000Z",
+                "time": "14:00",
+                "duration": 40,
+                "operationalStatus": "canceled",
+                "clinicalStatus": "missed",
+                "sessionValue": 180,
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "package": {
+                    "_id": "69c674eb1d84ac5eb1c3bef0",
+                    "sessionValue": 180,
+                    "financialStatus": "partially_paid",
+                    "type": "therapy"
+                },
+                "paymentStatus": "pending",
+                "source": "package"
             },
             {
-                "_id": "699dd6e34152216f7913b758",
-                "number": "15655250",
-                "patientId": {
-                    "_id": "69655746dcdf49e2c282800b",
-                    "fullName": "Nicolas Lucca",
-                    "phone": "62992731969",
-                    "cpf": null
+                "_id": "69b9a624785a76ad646fdb12",
+                "patient": {
+                    "_id": "69b995d73fbcf7682605c8ca",
+                    "fullName": "Rebecca Garcia da Silva"
                 },
-                "specialty": "terapia_ocupacional",
-                "insurance": "unimed-anapolis",
-                "totalSessions": 24,
-                "usedSessions": 12,
-                "expiresAt": "2026-05-24T00:00:00.000Z",
-                "status": "active",
-                "packageId": "699dd72d4152216f7913b8ee",
-                "createdAt": "2026-02-24T16:50:43.907Z",
-                "updatedAt": "2026-04-07T18:02:27.036Z",
-                "__v": 0,
-                "remaining": 12
+                "doctor": {
+                    "_id": "6981db7af55849815f98b00a",
+                    "fullName": "Mayra Magda Mendes Oliveira",
+                    "specialty": "fonoaudiologia"
+                },
+                "date": "2026-04-07T12:00:00.000Z",
+                "time": "14:40",
+                "operationalStatus": "completed",
+                "clinicalStatus": "completed",
+                "duration": 40,
+                "paymentStatus": "package_paid",
+                "package": {
+                    "_id": "69b9a623785a76ad646fdb08",
+                    "sessionValue": 180,
+                    "financialStatus": "paid",
+                    "type": "therapy"
+                },
+                "sessionValue": 180,
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "source": "package"
             },
             {
-                "_id": "699ddb7b4152216f7913ca10",
-                "number": "15655247",
-                "patientId": {
-                    "_id": "69655746dcdf49e2c282800b",
-                    "fullName": "Nicolas Lucca",
-                    "phone": "62992731969",
-                    "cpf": null
+                "_id": "69b9a3b3785a76ad646fd6be",
+                "doctor": {
+                    "_id": "6981db7af55849815f98b00a",
+                    "fullName": "Mayra Magda Mendes Oliveira",
+                    "specialty": "fonoaudiologia"
                 },
-                "specialty": "psicologia",
-                "insurance": "unimed-anapolis",
-                "totalSessions": 24,
-                "usedSessions": 0,
-                "expiresAt": "2026-05-24T00:00:00.000Z",
-                "status": "active",
-                "packageId": "699ddbf74152216f7913cb1a",
-                "createdAt": "2026-02-24T17:10:19.520Z",
-                "updatedAt": "2026-02-24T17:12:37.490Z",
-                "__v": 0,
-                "remaining": 24
+                "date": "2026-04-07T12:00:00.000Z",
+                "time": "16:00",
+                "duration": 40,
+                "operationalStatus": "scheduled",
+                "clinicalStatus": "pending",
+                "sessionValue": 250,
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "paymentStatus": "pending",
+                "source": "individual"
             },
             {
-                "_id": "69d53541d24df1c9ef974d80",
-                "number": "15650231",
-                "patientId": {
-                    "_id": "69655746dcdf49e2c282800b",
-                    "fullName": "Nicolas Lucca",
-                    "phone": "62992731969",
-                    "cpf": null
+                "_id": "69c14529c19d35b8454a27fe",
+                "patient": {
+                    "_id": "69bbf5d42d22a57a538ed310",
+                    "fullName": "Enthony Kauan Mesias Oliveira"
                 },
-                "specialty": "terapia_ocupacional",
-                "insurance": "unimed-anapolis",
-                "totalSessions": 15,
-                "usedSessions": 0,
-                "expiresAt": "2026-05-29T00:00:00.000Z",
-                "status": "active",
-                "packageId": null,
-                "createdAt": "2026-04-07T16:48:01.444Z",
-                "updatedAt": "2026-04-07T16:48:01.444Z",
-                "__v": 0,
-                "remaining": 15
+                "doctor": {
+                    "_id": "685c2affaec14c71635863b7",
+                    "fullName": "Tatiana Celuta Peres",
+                    "specialty": "psicologia"
+                },
+                "date": "2026-04-07T12:00:00.000Z",
+                "time": "16:20",
+                "duration": 40,
+                "operationalStatus": "completed",
+                "clinicalStatus": "completed",
+                "sessionValue": 150,
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "package": {
+                    "_id": "69c14528c19d35b8454a27e8",
+                    "sessionValue": 150,
+                    "financialStatus": "unpaid",
+                    "type": "liminar"
+                },
+                "paymentStatus": "package_paid",
+                "source": "package"
+            },
+            {
+                "_id": "69cd1764856a4f39ce254cb7",
+                "patient": {
+                    "_id": "69bd4aabfbee9c0a2cf12d34",
+                    "fullName": "Luiza Bueno Lima"
+                },
+                "doctor": {
+                    "_id": "68a8cf172132ca79b074d387",
+                    "fullName": "Suzane de Morais Soares",
+                    "specialty": "psicologia"
+                },
+                "date": "2026-04-07T12:00:00.000Z",
+                "time": "16:20",
+                "duration": 40,
+                "operationalStatus": "completed",
+                "clinicalStatus": "completed",
+                "sessionValue": 140,
+                "billingType": "particular",
+                "insuranceProvider": "",
+                "package": {
+                    "_id": "69cd1763856a4f39ce254cae",
+                    "sessionValue": 140,
+                    "financialStatus": "partially_paid",
+                    "type": "therapy"
+                },
+                "paymentStatus": "paid",
+                "source": "package"
+            },
+            {
+                "_id": "69c2e73a5c4ad17fefccbe35",
+                "patient": {
+                    "_id": "69bc07b81339067aa69b2a74",
+                    "fullName": "Bento Cabral Cândido"
+                },
+                "doctor": {
+                    "_id": "68bedf1104ec4875aaea8188",
+                    "fullName": "Mikaelly da Silva Sousa",
+                    "specialty": "fonoaudiologia"
+                },
+                "date": "2026-04-07T12:00:00.000Z",
+                "time": "16:20",
+                "duration": 40,
+                "operationalStatus": "completed",
+                "clinicalStatus": "completed",
+                "sessionValue": 150,
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "package": {
+                    "_id": "69c2e7395c4ad17fefccbe21",
+                    "sessionValue": 150,
+                    "financialStatus": "paid",
+                    "type": "therapy"
+                },
+                "paymentStatus": "package_paid",
+                "source": "package"
+            },
+            {
+                "_id": "69cc3e444eda3e92588dd850",
+                "patient": {
+                    "_id": "69cc3c716873402d92effc91",
+                    "fullName": "Maria Eduarda Gomes Ulik"
+                },
+                "doctor": {
+                    "_id": "68a8cf172132ca79b074d387",
+                    "fullName": "Suzane de Morais Soares",
+                    "specialty": "psicologia"
+                },
+                "date": "2026-04-07T12:00:00.000Z",
+                "time": "17:00",
+                "duration": 40,
+                "operationalStatus": "canceled",
+                "clinicalStatus": "missed",
+                "sessionValue": 160,
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "package": {
+                    "_id": "69cc3e434eda3e92588dd847",
+                    "sessionValue": 160,
+                    "financialStatus": "unpaid",
+                    "type": "therapy"
+                },
+                "paymentStatus": "pending",
+                "source": "package"
+            },
+            {
+                "_id": "69c15026c19d35b8454a2eb1",
+                "patient": {
+                    "_id": "69bbf5d42d22a57a538ed310",
+                    "fullName": "Enthony Kauan Mesias Oliveira"
+                },
+                "doctor": {
+                    "_id": "68bedf1104ec4875aaea8188",
+                    "fullName": "Mikaelly da Silva Sousa",
+                    "specialty": "fonoaudiologia"
+                },
+                "date": "2026-04-07T12:00:00.000Z",
+                "time": "17:00",
+                "duration": 40,
+                "operationalStatus": "completed",
+                "clinicalStatus": "completed",
+                "sessionValue": 160,
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "package": {
+                    "_id": "69c15025c19d35b8454a2e8b",
+                    "sessionValue": 160,
+                    "financialStatus": "unpaid",
+                    "type": "liminar"
+                },
+                "paymentStatus": "package_paid",
+                "source": "package"
+            },
+            {
+                "_id": "69c1456fc19d35b8454a28a8",
+                "patient": {
+                    "_id": "69bbf5d42d22a57a538ed310",
+                    "fullName": "Enthony Kauan Mesias Oliveira"
+                },
+                "doctor": {
+                    "_id": "68a8cf172132ca79b074d387",
+                    "fullName": "Suzane de Morais Soares",
+                    "specialty": "psicologia"
+                },
+                "date": "2026-04-07T12:00:00.000Z",
+                "time": "17:40",
+                "duration": 40,
+                "operationalStatus": "completed",
+                "clinicalStatus": "completed",
+                "sessionValue": 150,
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "package": {
+                    "_id": "69c1456ec19d35b8454a2882",
+                    "sessionValue": 150,
+                    "financialStatus": "unpaid",
+                    "type": "liminar"
+                },
+                "paymentStatus": "package_paid",
+                "source": "package"
+            },
+            {
+                "_id": "69c2eb4a5c4ad17fefccc51c",
+                "patient": {
+                    "_id": "69c16866c19d35b8454a35fb",
+                    "fullName": "Joaquim Rocha Simão"
+                },
+                "doctor": {
+                    "_id": "68bedf1104ec4875aaea8188",
+                    "fullName": "Mikaelly da Silva Sousa",
+                    "specialty": "fonoaudiologia"
+                },
+                "date": "2026-04-07T12:00:00.000Z",
+                "time": "17:40",
+                "duration": 40,
+                "operationalStatus": "completed",
+                "clinicalStatus": "completed",
+                "sessionValue": 80,
+                "billingType": "particular",
+                "insuranceProvider": "unimed-anapolis",
+                "package": {
+                    "_id": "69c2eb495c4ad17fefccc505",
+                    "sessionValue": 0,
+                    "financialStatus": "unpaid",
+                    "type": "convenio"
+                },
+                "paymentStatus": "pending_receipt",
+                "source": "package"
+            },
+            {
+                "_id": "69c2ebf15c4ad17fefccc5ff",
+                "patient": {
+                    "_id": "69c16797c19d35b8454a354d",
+                    "fullName": "Benjamim Rocha Simão"
+                },
+                "doctor": {
+                    "_id": "68bedf1104ec4875aaea8188",
+                    "fullName": "Mikaelly da Silva Sousa",
+                    "specialty": "fonoaudiologia"
+                },
+                "date": "2026-04-07T12:00:00.000Z",
+                "time": "18:20",
+                "duration": 40,
+                "operationalStatus": "completed",
+                "clinicalStatus": "completed",
+                "sessionValue": 80,
+                "billingType": "particular",
+                "insuranceProvider": "unimed-anapolis",
+                "package": {
+                    "_id": "69c2ebf15c4ad17fefccc5e8",
+                    "sessionValue": 0,
+                    "financialStatus": "unpaid",
+                    "type": "convenio"
+                },
+                "paymentStatus": "pending_receipt",
+                "source": "package"
+            },
+            {
+                "_id": "69c145a0c19d35b8454a291f",
+                "patient": {
+                    "_id": "69bbf5d42d22a57a538ed310",
+                    "fullName": "Enthony Kauan Mesias Oliveira"
+                },
+                "doctor": {
+                    "_id": "698f09aa39d78a9c5746dc28",
+                    "fullName": "Thayna Miranda",
+                    "specialty": "terapia_ocupacional"
+                },
+                "date": "2026-04-07T12:00:00.000Z",
+                "time": "18:20",
+                "duration": 40,
+                "operationalStatus": "completed",
+                "clinicalStatus": "completed",
+                "sessionValue": 160,
+                "billingType": "particular",
+                "insuranceProvider": null,
+                "package": {
+                    "_id": "69c1459fc19d35b8454a28f9",
+                    "sessionValue": 160,
+                    "financialStatus": "unpaid",
+                    "type": "liminar"
+                },
+                "paymentStatus": "package_paid",
+                "source": "package"
             }
-        ]
+        ],
+        "pagination": {
+            "page": 1,
+            "limit": 100,
+            "total": 13,
+            "pages": 1
+        }
+    },
+    "meta": {
+        "timestamp": "2026-04-07T23:07:42.861Z"
     }
-}
+}curl 'http://localhost:5000/api/v2/appointments?startDate=2026-04-07&endDate=2026-04-07&light=true' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NTYwMDQwOCwiZXhwIjoxNzc1NjA0MDA4fQ.dp1P554-2nTSaDvsEDvlT6x9HCjyct1woQlistsghBM' \
+  -H 'Connection: keep-alive' \
+  -H 'If-None-Match: W/"1d01-GQkT55racFbnZu5AonXjDfwJ+Sc"' \
+  -H 'Origin: http://localhost:5173' \
+  -H 'Referer: http://localhost:5173/' \
+  -H 'Sec-Fetch-Dest: empty' \
+  -H 'Sec-Fetch-Mode: cors' \
+  -H 'Sec-Fetch-Site: same-site' \
+  -H 'User-Agent: Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36' \
+  -H 'sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"' \
+  -H 'sec-ch-ua-mobile: ?1' \
+  -H 'sec-ch-ua-platform: "Android"' \
+  -H 'x-correlation-id: front_1775603262771_hodz7kvj4'

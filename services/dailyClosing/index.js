@@ -103,6 +103,11 @@ export async function calculateDailyClosing(date, clinicId) {
     const insuranceSummary = calculateInsuranceSummary(sessions);
 
     // ======================================================
+    // 7b. CALCULAR CASH FLOW SEPARADO (caixa real vs produção)
+    // ======================================================
+    const cashFlow = calculateCashFlow(filteredPayments, targetDate, startOfDay, endOfDay);
+
+    // ======================================================
     // 8. CALCULAR PROFISSIONAIS
     // ======================================================
     const professionals = calculateProfessionals(uniqueAppointments, filteredPayments);
@@ -115,7 +120,8 @@ export async function calculateDailyClosing(date, clinicId) {
         summary: {
             appointments: appointmentSummary,
             financial: financialSummary,
-            insurance: insuranceSummary
+            insurance: insuranceSummary,
+            cashFlow: cashFlow  // 🆕 NOVO: separação de caixa
         },
         timelines: {
             appointments: uniqueAppointments.map(a => ({
@@ -184,5 +190,115 @@ export async function calculateDailyClosing(date, clinicId) {
 
 // Helper importado para timelines
 import { getPaymentDate } from './helpers.js';
+
+/**
+ * Calcula o cash flow separado para distinguir:
+ * - Dinheiro que entrou hoje (total)
+ * - Adiantamentos (sessões futuras)
+ * - Receita de hoje (sessões de hoje pagas hoje)
+ * - Consumo de pacote (não é dinheiro novo)
+ * - Convênio (produção, não caixa)
+ */
+function calculateCashFlow(payments, targetDate, startOfDay, endOfDay) {
+    const result = {
+        // 💰 Caixa total que entrou hoje
+        cashInToday: 0,
+        
+        // ⏩ Adiantamentos (sessões futuras)
+        advancePayments: 0,
+        advanceCount: 0,
+        
+        // ✅ Sessões de hoje pagas hoje
+        realTodaySessions: 0,
+        realTodayCount: 0,
+        
+        // 📦 Consumo de pacote (já pago anteriormente)
+        packageConsumption: 0,
+        packageCount: 0,
+        
+        // 🏥 Convênio (produção, não caixa)
+        insuranceProduction: 0,
+        insuranceCount: 0,
+        
+        // 📊 Detalhes para debug
+        details: {
+            cashIn: [],
+            advance: [],
+            package: [],
+            insurance: [],
+            realToday: []
+        }
+    };
+
+    for (const p of payments) {
+        const amount = p.amount || 0;
+        const baseInfo = {
+            id: p._id?.toString(),
+            amount: amount,
+            patient: p.patient?.fullName || 'N/A',
+            method: p.paymentMethod
+        };
+
+        // 🏥 CONVÊNIO - não entra no caixa, é produção
+        if (p.billingType === 'convenio' || p.paymentMethod === 'convenio' || 
+            p.insurance?.status || p.serviceType === 'convenio_session') {
+            result.insuranceProduction += amount;
+            result.insuranceCount++;
+            result.details.insurance.push(baseInfo);
+            continue;
+        }
+
+        // 📦 PACOTE - consumo de crédito antigo
+        if (p.package || p.kind === 'package_receipt' || p.kind === 'session_payment') {
+            result.packageConsumption += amount;
+            result.packageCount++;
+            result.details.package.push(baseInfo);
+            // Não soma no cashIn porque não é dinheiro novo
+            continue;
+        }
+
+        // Verifica se é adiantamento (sessão futura)
+        const paymentDate = p.paymentDate || p.createdAt;
+        const appointmentDate = p.appointment?.date || p.session?.date;
+        
+        // Se tem data de agendamento/sessão e é futura = adiantamento
+        let isAdvance = false;
+        if (appointmentDate) {
+            const aptDateStr = typeof appointmentDate === 'string' 
+                ? appointmentDate.substring(0, 10) 
+                : moment(appointmentDate).format('YYYY-MM-DD');
+            if (aptDateStr > targetDate) {
+                isAdvance = true;
+            }
+        }
+
+        if (isAdvance) {
+            // ⏩ ADIANTAMENTO - dinheiro entrou hoje, mas serviço é futuro
+            result.advancePayments += amount;
+            result.advanceCount++;
+            result.cashInToday += amount; // Entra no caixa
+            result.details.advance.push(baseInfo);
+        } else {
+            // ✅ SESSÃO DE HOJE - realizada e paga hoje
+            result.realTodaySessions += amount;
+            result.realTodayCount++;
+            result.cashInToday += amount; // Entra no caixa
+            result.details.realToday.push(baseInfo);
+        }
+    }
+
+    // Total de caixa é a soma de adiantamentos + sessões de hoje
+    // (pacotes e convênios são separados)
+    
+    console.log(`[DailyClosingService] CashFlow:`, {
+        cashInToday: result.cashInToday,
+        advancePayments: result.advancePayments,
+        realTodaySessions: result.realTodaySessions,
+        packageConsumption: result.packageConsumption,
+        insuranceProduction: result.insuranceProduction
+    });
+
+    return result;
+}
 
 export default { calculateDailyClosing };

@@ -1,5 +1,6 @@
 // domain/payment/cancelPayment.js
 import Payment from '../../models/Payment.js';
+import { invalidateCacheForPayment } from '../../services/dailyClosingCacheService.js';
 
 /**
  * Cancela um pagamento (se aplicável)
@@ -58,6 +59,9 @@ export async function cancelPayment(paymentId, options = {}) {
 
     await payment.save(sessionOptions);
 
+    // Invalida cache do daily-closing para a data do pagamento
+    await invalidateCacheForPayment(payment);
+
     console.log(`[cancelPayment] Payment ${paymentId} cancelado`);
 
     return { 
@@ -94,10 +98,11 @@ export async function createPaymentForComplete(data) {
     } = data;
 
     const payment = new Payment({
-        patientId,
-        appointmentId,
-        sessionId,
-        packageId,
+        patient: patientId,  // 🐛 CORREÇÃO: modelo espera 'patient', não 'patientId'
+        doctor: doctorId,    // 🐛 CORREÇÃO: adicionado doctor
+        appointment: appointmentId,
+        session: sessionId,
+        package: packageId,
         amount,
         paymentMethod,
         paymentDate: serviceDate ? new Date(serviceDate) : new Date(),
@@ -113,6 +118,9 @@ export async function createPaymentForComplete(data) {
     });
 
     await payment.save();
+
+    // Invalida cache do daily-closing para a data do pagamento (mesmo pendente)
+    await invalidateCacheForPayment(payment);
 
     console.log(`[createPaymentForComplete] Payment criado: ${payment._id}`, {
         amount,
@@ -144,6 +152,8 @@ export async function confirmPayment(paymentId) {
     );
 
     if (payment) {
+        // Invalida cache do daily-closing quando pagamento é confirmado
+        await invalidateCacheForPayment(payment);
         console.log(`[confirmPayment] Payment ${paymentId} confirmado`);
     }
 

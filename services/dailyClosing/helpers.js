@@ -71,20 +71,27 @@ export const buildBulkOps = (sessions) => {
 };
 
 // Filter payments for target date
+// ✅ CORREÇÃO: Usa createdAt para pegar pagamentos criados no dia
 export const filterPaymentsByDate = (payments, targetDate) => {
     return payments.filter((p) => {
+        // Verifica paymentDate (data do pagamento)
         const payDate = getPaymentDate(p);
-        const isTargetDate = payDate === targetDate;
-
+        const isTargetPaymentDate = payDate === targetDate;
+        
+        // Verifica createdAt (data de criação do registro)
+        const createdAt = p.createdAt ? moment(p.createdAt).format('YYYY-MM-DD') : null;
+        const isTargetCreatedDate = createdAt === targetDate;
+        
         // Convênio só entra quando recebido
-        if (p.billingType === 'convenio') {
+        if (p.billingType === 'convenio' || p.paymentMethod === 'convenio') {
             const isReceived = p.insurance?.status === 'received';
             const receivedToday = p.insurance?.receivedAt &&
                 moment(p.insurance.receivedAt).format('YYYY-MM-DD') === targetDate;
             return receivedToday && isReceived;
         }
 
-        return isTargetDate;
+        // Inclui se foi criado hoje OU se o paymentDate é hoje
+        return isTargetPaymentDate || isTargetCreatedDate;
     });
 };
 

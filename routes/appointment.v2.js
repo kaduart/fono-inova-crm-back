@@ -962,6 +962,7 @@ router.get('/debug/queues', flexibleAuth, asyncHandler(async (req, res) => {
 router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const mongoSession = await mongoose.startSession();
+  let transactionCommitted = false;
   
   try {
     await mongoSession.startTransaction();
@@ -1095,9 +1096,10 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     
     await Promise.all(updatePromises);
     await mongoSession.commitTransaction();
+    transactionCommitted = true;  // ✅ Marca como commitado
     
     // Publicar evento de atualização
-    await publishEvent(EventTypes.APPOINTMENT.UPDATED, {
+    await publishEvent(EventTypes.APPOINTMENT_UPDATED, {
       appointmentId: updatedAppointment._id,
       patientId: updatedAppointment.patient,
       doctorId: updatedAppointment.doctor,
@@ -1116,7 +1118,10 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     }));
     
   } catch (error) {
-    await mongoSession.abortTransaction();
+    // ✅ Só aborta se a transação não foi commitada ainda
+    if (!transactionCommitted) {
+      await mongoSession.abortTransaction();
+    }
     throw error;
   } finally {
     mongoSession.endSession();
@@ -1148,7 +1153,7 @@ router.delete('/:id', flexibleAuth, asyncHandler(async (req, res) => {
   await Appointment.findByIdAndDelete(id);
   
   // Publicar evento para orquestradores limparem relacionados
-  await publishEvent(EventTypes.APPOINTMENT.DELETED, {
+  await publishEvent(EventTypes.APPOINTMENT_DELETED, {
     appointmentId: appointment._id,
     patientId: appointment.patient,
     doctorId: appointment.doctor,
@@ -1234,7 +1239,7 @@ router.patch('/:id/confirm', flexibleAuth, asyncHandler(async (req, res) => {
     await mongoSession.commitTransaction();
     
     // Publicar evento
-    await publishEvent(EventTypes.APPOINTMENT.CONFIRMED, {
+    await publishEvent(EventTypes.APPOINTMENT_CONFIRMED, {
       appointmentId: updatedAppointment._id,
       patientId: updatedAppointment.patient,
       doctorId: updatedAppointment.doctor,
@@ -1336,7 +1341,7 @@ router.patch('/:id/reschedule', flexibleAuth, asyncHandler(async (req, res) => {
     await mongoSession.commitTransaction();
     
     // Publicar evento
-    await publishEvent(EventTypes.APPOINTMENT.RESCHEDULED, {
+    await publishEvent(EventTypes.APPOINTMENT_RESCHEDULED, {
       appointmentId: updatedAppointment._id,
       patientId: updatedAppointment.patient,
       doctorId: updatedAppointment.doctor,
