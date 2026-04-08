@@ -536,7 +536,7 @@ server.listen(PORT, '0.0.0.0', () => {
       await import("./workers/post.worker.js");
       
       const { startAllWorkers } = await import("./workers/index.js");
-      startAllWorkers();
+      await startAllWorkers();
       console.log("🎯 Workers 4.0 iniciados");
       
       const { initGmbRetryWorker } = await import("./config/bullConfigGmbRetry.js");
@@ -572,6 +572,10 @@ server.listen(PORT, '0.0.0.0', () => {
     // 🔁 Lead Recovery - Recuperação automática de leads (a cada 30 min)
     const { initLeadRecoveryCron } = await import("./crons/leadRecovery.cron.js");
     initLeadRecoveryCron();
+
+    // 🔄 Appointment Recovery - Recupera agendamentos travados (a cada 5 min)
+    const { initAppointmentRecoveryCron } = await import("./crons/appointmentRecovery.cron.js");
+    initAppointmentRecoveryCron();
 
     // 📲 Worker de publicação agendada — Instagram + Facebook
     const { startScheduledPublisher } = await import("./jobs/publishScheduled.js");
