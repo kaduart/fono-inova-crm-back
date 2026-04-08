@@ -20,9 +20,9 @@ const REDIS_RECONNECT_ON_ERROR = (err) => {
 // 🎯 Opções para uso geral (API, controllers, etc)
 const commonOptions = {
   maxRetriesPerRequest: 3, // ⚡ NÃO fica tentando infinito
-  enableReadyCheck: true,  // ⚡ Verifica antes de usar
+  enableReadyCheck: false, // ⚡ NÃO bloqueia na importação
   connectTimeout: 10000,   // ⚡ 10s timeout
-  lazyConnect: false,      // ⚡ Conecta imediatamente
+  lazyConnect: true,       // ⚡ NÃO conecta na importação (só no primeiro uso)
   retryStrategy: REDIS_RETRY_STRATEGY,
   reconnectOnError: REDIS_RECONNECT_ON_ERROR,
   keepAlive: 30000,
@@ -33,7 +33,7 @@ const bullMqOptions = {
   maxRetriesPerRequest: null, // ⚡ BullMQ exige isso
   enableReadyCheck: false,
   connectTimeout: 10000,
-  lazyConnect: false,
+  lazyConnect: true,       // ⚡ NÃO conecta na importação
   retryStrategy: REDIS_RETRY_STRATEGY,
   reconnectOnError: REDIS_RECONNECT_ON_ERROR,
   keepAlive: 30000,
