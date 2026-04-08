@@ -44,7 +44,7 @@ import { createWhatsappInboundWorker } from '../domains/whatsapp/workers/whatsap
 
 const workers = [];
 
-export function startAllWorkers() {
+export async function startAllWorkers() {
     console.log('[Workers] Iniciando workers...\n');
 
     // 1. Workers de domínio base
@@ -53,14 +53,12 @@ export function startAllWorkers() {
     workers.push(startPackageValidationWorker());
     
     // 2. Workers de agendamento
-    // startAppointmentWorker() DESATIVADO: legacy, competia com createAppointmentWorker
-    // no queue 'appointment-processing'. Validação de double-booking movida para
-    // appointmentService.checkDoubleBooking(). createAppointmentWorker cobre o fluxo completo.
     workers.push(startCreateAppointmentWorker());
     
     // 3. Workers orquestradores (novos - 4.0 completa)
-    workers.push(startCancelOrchestratorWorker());
-    workers.push(startCompleteOrchestratorWorker());
+    // 🔴 Agora são async para garantir conexão Mongo
+    workers.push(await startCancelOrchestratorWorker());
+    workers.push(await startCompleteOrchestratorWorker());
     
     // 4. Workers financeiros
     workers.push(startInvoiceWorker());

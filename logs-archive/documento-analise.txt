@@ -1,32 +1,9 @@
-aba caixa  precisamos qeu ao clicar no caixa real como era no outra abre 
-o modal com as infos do que entro separado por detalsi achoq eu temos o 
-api que jfaz isso e so prelcicar tb fornt tb algum dese temos essa logica
- de mdoal etc esqusieee aonte de criar ..... mesma coisa no card pdorucao
-  clicou abre modal com infos e a ems para a receber deta;lhesado cada card 
-  ao clicar 
 
 
 
 
 
-  ponto 2 agoara  clicnai temos neuropediratra o valor da cosnulta e 550 insuranceReceivables buscar no code a trava qeu dizemos ue nao temos e incluir agora como aread e atuacao
+  ponto 2 agoara  na clinica  temos neuropediatra o valor da consulta e 550 reais precsiaso no flow da amnda ia whatsappOrchestartos ou seus depepenmtes buscar no code a trava qeu dizemos ue nao temos e incluir agora como aread e atuacao
 
+precismso ajsutar o gmb para criar post de neuropediatria para ficarmos no topo de analsipos tb ja analsie como talaa e vmaos add e me de um resumo do qeu
 
-
-  curl 'http://localhost:5000/api/packages?page=1&limit=10&status=active&patientId=69cc3c716873402d92effc91' \
-  -H 'Accept: application/json, text/plain, */*' \
-  -H 'Accept-Language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' \
-  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4MDZkZDFiYjZmOTI1NTliNDlhOGE5YyIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NTY2MzIwNCwiZXhwIjoxNzc1NjY2ODA0fQ.RwQcW745QNQyyVzlU65GmY9zoP8UPkE0AZW8k7UWZnA' \
-  -H 'Connection: keep-alive' \
-  -H 'If-None-Match: W/"2-l9Fw4VUO7kr8CvBlt4zaMCqXZ0w"' \
-  -H 'Origin: http://localhost:5173' \
-  -H 'Referer: http://localhost:5173/' \
-  -H 'Sec-Fetch-Dest: empty' \
-  -H 'Sec-Fetch-Mode: cors' \
-  -H 'Sec-Fetch-Site: same-site' \
-  -H 'User-Agent: Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36' \
-  -H 'sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"' \
-  -H 'sec-ch-ua-mobile: ?1' \
-  -H 'sec-ch-ua-platform: "Android"' \
-  -H 'x-correlation-id: front_1775663892360_iks3fzccx'   resposne vazio depois do ajuste do id view e iaptietn id 
-  

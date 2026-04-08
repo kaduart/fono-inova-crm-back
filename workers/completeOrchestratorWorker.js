@@ -1,4 +1,6 @@
 // workers/completeOrchestratorWorker.js
+// 🚀 VERSÃO PRODUÇÃO - Robusta, com retry, liberação de lock e garantias
+
 import { Worker } from 'bullmq';
 import { redisConnection, moveToDLQ } from '../infrastructure/queue/queueConfig.js';
 import Appointment from '../models/Appointment.js';
@@ -8,7 +10,6 @@ import { consumePackageSession, updatePackageFinancials } from '../domain/packag
 import { consumeInsuranceGuide, createInsurancePayment } from '../domain/insurance/consumeInsuranceGuide.js';
 import { recognizeLiminarRevenue } from '../domain/liminar/recognizeRevenue.js';
 import { createPaymentForComplete, confirmPayment } from '../domain/payment/cancelPayment.js';
-import { createPerSessionInvoice } from '../domain/invoice/index.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
 import { withLock } from '../utils/redisLock.js';
@@ -21,20 +22,88 @@ import {
 } from '../infrastructure/events/eventStoreService.js';
 import EventStore from '../models/EventStore.js';
 
-/**
- * Complete Orchestrator Worker
- * 
- * Orquestra o fluxo de complete usando regras de domínio puras.
- * Usa Event Store para idempotência persistente.
- */
+// 🔴 GARANTE CONEXÃO MONGO NO WORKER (Problema #1)
+let mongoConnected = false;
+async function ensureMongoConnection() {
+    if (mongoConnected && mongoose.connection.readyState === 1) {
+        return;
+    }
+    
+    const MONGO_URI = process.env.MONGO_URI;
+    if (!MONGO_URI) {
+        throw new Error('MONGO_URI não configurada');
+    }
+    
+    try {
+        await mongoose.connect(MONGO_URI, {
+            maxPoolSize: 10,
+            minPoolSize: 2,
+            serverSelectionTimeoutMS: 30000,
+            socketTimeoutMS: 45000,
+        });
+        mongoConnected = true;
+        console.log('[CompleteOrchestrator] 🟢 MongoDB conectado');
+    } catch (err) {
+        console.error('[CompleteOrchestrator] ❌ Falha ao conectar MongoDB:', err.message);
+        throw err;
+    }
+}
 
-export function startCompleteOrchestratorWorker() {
-    console.log('[CompleteOrchestrator] 🚀 Worker iniciado');
+// 🔴 LIBERA APPOINTMENT EM CASO DE FALHA (Problema #2)
+async function releaseAppointmentLock(appointmentId, reason = 'worker_failed') {
+    if (!appointmentId) return;
+    
+    try {
+        await ensureMongoConnection();
+        
+        const appointment = await Appointment.findById(appointmentId);
+        if (!appointment) {
+            console.log(`[CompleteOrchestrator] ⚠️ Appointment não encontrado para liberar: ${appointmentId}`);
+            return;
+        }
+        
+        // Só libera se estiver em estado de processamento
+        const processingStatuses = ['processing_complete', 'processing_cancel', 'processing_create'];
+        if (!processingStatuses.includes(appointment.operationalStatus)) {
+            console.log(`[CompleteOrchestrator] ℹ️ Appointment não está em processamento: ${appointment.operationalStatus}`);
+            return;
+        }
+        
+        const newStatus = appointment.operationalStatus === 'processing_create' ? 'pending' : 'scheduled';
+        
+        await Appointment.findByIdAndUpdate(appointmentId, {
+            $set: { 
+                operationalStatus: newStatus,
+                updatedAt: new Date()
+            },
+            $push: {
+                history: {
+                    action: 'auto_release',
+                    previousStatus: appointment.operationalStatus,
+                    newStatus: newStatus,
+                    timestamp: new Date(),
+                    context: `Worker falhou: ${reason}`
+                }
+            }
+        });
+        
+        console.log(`[CompleteOrchestrator] 🔓 Lock liberado: ${appointmentId} → ${newStatus}`);
+    } catch (err) {
+        console.error(`[CompleteOrchestrator] ❌ ERRO CRÍTICO ao liberar lock:`, err.message);
+        // Não relança - não queremos que o erro de liberação esconda o erro original
+    }
+}
+
+/**
+ * Complete Orchestrator Worker - VERSÃO PRODUÇÃO
+ */
+export async function startCompleteOrchestratorWorker() {
+    console.log('[CompleteOrchestrator] 🚀 Iniciando worker...');
+    
+    // Garante conexão antes de criar o worker
+    await ensureMongoConnection();
     
     const worker = new Worker('complete-orchestrator', async (job) => {
-        console.log(`[CompleteOrchestrator] Job ${job.id} iniciando processamento`);
-        
-        try {
         const { eventId, correlationId, idempotencyKey, payload } = job.data;
         const { 
             appointmentId, 
@@ -43,174 +112,203 @@ export function startCompleteOrchestratorWorker() {
             balanceDescription = '',
             userId 
         } = payload;
-
-        console.log(`[CompleteOrchestrator] Job ${job.id} - appointmentId: ${appointmentId}`);
-
-        // Logger estruturado
+        
+        // Garante conexão a cada job
+        await ensureMongoConnection();
+        
+        console.log(`[CompleteOrchestrator] Job ${job.id} - appointmentId: ${appointmentId}, tentativa ${job.attemptsMade + 1}`);
+        
         const log = createContextLogger(correlationId || appointmentId, 'complete');
-
+        
         log.info('start', 'Iniciando complete', {
             appointmentId,
-            addToBalance,
-            eventId,
-            idempotencyKey,
-            attempt: job.attemptsMade + 1
+            attempt: job.attemptsMade + 1,
+            maxAttempts: job.opts?.attempts || 1
         });
+        
+        try {
+            return await withLock(`appointment:${appointmentId}:complete`, async () => {
+                return await processCompleteJob({
+                    job,
+                    eventId,
+                    correlationId,
+                    idempotencyKey,
+                    payload: { appointmentId, addToBalance, balanceAmount, balanceDescription, userId },
+                    log
+                });
+            }, { ttl: 180 }); // 🔴 LOCK TTL AUMENTADO: 180s (Problema #5)
+            
+        } catch (error) {
+            console.error(`[CompleteOrchestrator] Job ${job.id} erro:`, error.message);
+            
+            // 🔴 LIBERA LOCK EM CASO DE ERRO (Problema #2)
+            await releaseAppointmentLock(appointmentId, error.message);
+            
+            throw error; // Relança para o BullMQ fazer retry
+        }
+    }, {
+        connection: redisConnection,
+        concurrency: 3,
+        // 🔴 RETRY AUTOMÁTICO (Problema #6)
+        defaultJobOptions: {
+            attempts: 3,
+            backoff: {
+                type: 'exponential',
+                delay: 5000
+            },
+            removeOnComplete: { count: 100 },
+            removeOnFail: { count: 50 }
+        }
+    });
+    
+    // 🔴 HANDLER DE FALHA - LIBERA LOCK (Problema #2)
+    worker.on('failed', async (job, error) => {
+        const appointmentId = job?.data?.payload?.appointmentId;
+        console.error(`[CompleteOrchestrator] Job ${job?.id} falhou após ${job?.attemptsMade} tentativas:`, error.message);
+        
+        // Libera o lock se esgotou todas as tentativas
+        if (job?.attemptsMade >= (job?.opts?.attempts || 1)) {
+            await releaseAppointmentLock(appointmentId, `all_attempts_failed: ${error.message}`);
+            
+            // Move para DLQ (Dead Letter Queue) para análise posterior
+            try {
+                await moveToDLQ('complete-orchestrator', job, error);
+            } catch (dlqErr) {
+                console.error('[CompleteOrchestrator] Erro ao mover para DLQ:', dlqErr.message);
+            }
+        }
+    });
+    
+    worker.on('completed', (job, result) => {
+        console.log(`[CompleteOrchestrator] Job ${job.id} completado: ${result.status}`);
+    });
+    
+    worker.on('error', (error) => {
+        console.error('[CompleteOrchestrator] Worker error:', error.message);
+    });
+    
+    console.log('[CompleteOrchestrator] ✅ Worker iniciado (v2.0 - Produção)');
+    return worker;
+}
 
-        // 🛡️ IDEMPOTÊNCIA VIA EVENT STORE
-        const existingEvent = await EventStore.findOne({ eventId });
-        if (existingEvent) {
-            if (existingEvent.status === 'processed') {
-                log.info('idempotent', 'Evento já processado', { eventId, status: 'processed' });
+// Processamento principal isolado para clareza
+async function processCompleteJob({ job, eventId, correlationId, idempotencyKey, payload, log }) {
+    const { appointmentId, addToBalance, balanceAmount, balanceDescription, userId } = payload;
+    
+    // 🛡️ IDEMPOTÊNCIA VIA EVENT STORE
+    const existingEvent = await EventStore.findOne({ eventId });
+    if (existingEvent) {
+        if (existingEvent.status === 'processed') {
+            log.info('idempotent', 'Evento já processado', { eventId });
+            return { 
+                status: 'already_processed', 
+                appointmentId,
+                eventId,
+                idempotent: true
+            };
+        }
+        if (existingEvent.status === 'processing') {
+            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+            if (existingEvent.updatedAt < fiveMinutesAgo) {
+                log.warn('stale_processing', 'Evento travado em processing, reprocessando', { eventId });
+            } else {
+                log.info('concurrent', 'Evento em processamento por outro worker', { eventId });
                 return { 
-                    status: 'already_processed', 
+                    status: 'concurrent_processing', 
                     appointmentId,
                     eventId,
                     idempotent: true
                 };
             }
-            if (existingEvent.status === 'processing') {
-                // Verifica se não está travado há muito tempo (mais de 5 minutos)
-                const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-                if (existingEvent.updatedAt < fiveMinutesAgo) {
-                    log.warn('stale_processing', 'Evento travado em processing, reprocessando', { eventId });
-                } else {
-                    log.info('concurrent', 'Evento em processamento por outro worker', { eventId });
-                    return { 
-                        status: 'concurrent_processing', 
-                        appointmentId,
-                        eventId,
-                        idempotent: true
-                    };
-                }
-            }
         }
-        
-        // 🛡️ LOCK: Evita complete concorrente
-        return await withLock(`appointment:${appointmentId}:complete`, async () => {
-
-        // 🛡️ IDEMPOTÊNCIA GLOBAL VIA EVENT STORE
-        if (idempotencyKey && await eventExists(idempotencyKey)) {
-            const existingByKey = await EventStore.findOne({ idempotencyKey });
-            if (existingByKey?.status === 'processed') {
-                log.info('idempotent', 'IdempotencyKey já processada', { idempotencyKey });
-                return { 
-                    status: 'already_processed', 
-                    appointmentId,
-                    idempotencyKey,
-                    idempotent: true
-                };
-            }
+    }
+    
+    // 🛡️ IDEMPOTÊNCIA GLOBAL
+    if (idempotencyKey && await eventExists(idempotencyKey)) {
+        const existingByKey = await EventStore.findOne({ idempotencyKey });
+        if (existingByKey?.status === 'processed') {
+            log.info('idempotent', 'IdempotencyKey já processada', { idempotencyKey });
+            return { 
+                status: 'already_processed', 
+                appointmentId,
+                idempotent: true
+            };
         }
-
-        // Cria/registra evento no Event Store
-        const storedEvent = await appendEvent({
-            eventId,
-            eventType: EventTypes.SESSION_COMPLETED,
-            aggregateType: 'appointment',
-            aggregateId: appointmentId,
-            payload,
-            metadata: { correlationId, idempotencyKey, source: 'completeOrchestratorWorker' },
-            idempotencyKey: idempotencyKey || `complete_${appointmentId}_${Date.now()}`
-        });
-
-        // Processa com garantias de idempotência
-        return await processWithGuarantees(storedEvent, async () => {
-
-        // Busca dados
-        console.log(`[CompleteOrchestrator] Buscando appointment: ${appointmentId}`);
-        console.log(`[CompleteOrchestrator] MongoDB readyState: ${mongoose.connection.readyState}`);
-        
-        // Verifica se o ID é válido
-        if (!mongoose.Types.ObjectId.isValid(appointmentId)) {
-            console.error(`[CompleteOrchestrator] ID inválido: ${appointmentId}`);
-            throw new Error('APPOINTMENT_ID_INVALID');
-        }
-        
-        // Busca sem populate primeiro (mais rápido)
-        console.log(`[CompleteOrchestrator] Executando Appointment.findById...`);
+    }
+    
+    // Cria/registra evento
+    const storedEvent = await appendEvent({
+        eventId,
+        eventType: EventTypes.SESSION_COMPLETED,
+        aggregateType: 'appointment',
+        aggregateId: appointmentId,
+        payload,
+        metadata: { correlationId, idempotencyKey, source: 'completeOrchestratorWorker' },
+        idempotencyKey: idempotencyKey || `complete_${appointmentId}_${Date.now()}`
+    });
+    
+    return await processWithGuarantees(storedEvent, async () => {
+        // Busca appointment
         const appointment = await Appointment.findById(appointmentId);
-        console.log(`[CompleteOrchestrator] Appointment encontrado: ${appointment ? 'SIM' : 'NÃO'}`);
         
-        if (appointment) {
-            console.log(`[CompleteOrchestrator] Appointment status: ${appointment.clinicalStatus}, operacional: ${appointment.operationalStatus}`);
-        }
-
         if (!appointment) {
-            // Tenta buscar sem populate para ver se existe
-            const raw = await mongoose.connection.db.collection('appointments').findOne({ 
-                _id: new mongoose.Types.ObjectId(appointmentId) 
-            });
-            console.error(`[CompleteOrchestrator] Appointment não encontrado: ${appointmentId}`);
-            console.error(`[CompleteOrchestrator] Raw query result: ${raw ? 'ENCONTRADO' : 'NÃO ENCONTRADO'}`);
-            console.error(`[CompleteOrchestrator] Database: ${mongoose.connection.db.databaseName}`);
             throw new Error('APPOINTMENT_NOT_FOUND');
         }
-
-        // 🛡️ GUARD 1: Não completar duas vezes
+        
+        // Guards
         if (appointment.clinicalStatus === 'completed') {
-            console.log(`[CompleteOrchestrator] ⚠️ Agendamento já completado: ${appointmentId}`);
             return { status: 'already_completed', appointmentId, idempotent: true };
         }
         
-        // 🛡️ GUARD 2: Não completar se cancelado
         if (appointment.operationalStatus === 'canceled') {
-            console.log(`[CompleteOrchestrator] ❌ Agendamento cancelado: ${appointmentId}`);
             throw new Error('CANNOT_COMPLETE_CANCELED');
         }
         
-        // 🛡️ GUARD 3: Busca pacote e verifica saldo
+        // Busca dados do pacote
         const packageId = appointment.package?._id || appointment.package;
         let packageDoc = null;
         if (packageId) {
             const Package = (await import('../models/Package.js')).default;
-            console.log(`[CompleteOrchestrator] Buscando package: ${packageId}`);
             packageDoc = await Package.findById(packageId);
-            console.log(`[CompleteOrchestrator] Package encontrado: ${packageDoc ? 'SIM' : 'NÃO'}`);
             if (packageDoc && packageDoc.sessionsDone >= packageDoc.totalSessions) {
-                console.log(`[CompleteOrchestrator] ❌ Pacote sem saldo: ${packageDoc._id}`);
                 throw new Error('PACKAGE_EXHAUSTED');
             }
         }
-
-        const sessionId = appointment.session?._id;
-        // packageId já definido acima
-        // packageDoc já declarado acima no GUARD 3
-        console.log(`[CompleteOrchestrator] packageDoc: ${packageDoc ? 'encontrado' : 'null'}, paymentType: ${packageDoc?.paymentType}`);
+        
         const isPerSession = packageDoc?.paymentType === 'per-session';
         const isConvenio = packageDoc?.type === 'convenio';
         const isLiminar = packageDoc?.type === 'liminar';
-        console.log(`[CompleteOrchestrator] isPerSession: ${isPerSession}, isConvenio: ${isConvenio}, isLiminar: ${isLiminar}`);
-
-        // Determina paymentOrigin (null para particular simples)
-        let paymentOrigin = null;  // Evita erro de enum no Mongoose
+        const isParticularSimple = !packageId && !isConvenio && !isLiminar;
+        
+        // Determina paymentOrigin
+        let paymentOrigin = null;
         if (addToBalance) paymentOrigin = 'manual_balance';
         else if (isConvenio) paymentOrigin = 'convenio';
         else if (isLiminar) paymentOrigin = 'liminar';
         else if (isPerSession) paymentOrigin = 'auto_per_session';
         else if (packageId) paymentOrigin = 'package_prepaid';
-        console.log(`[CompleteOrchestrator] paymentOrigin definido: ${paymentOrigin}`);
-
-        // 🎯 VERIFICA FORMA DE PAGAMENTO
-        const paymentMethod = appointment.paymentMethod || 'dinheiro';
-        const isCredit = paymentMethod === 'credit' || paymentMethod === 'credito' || paymentMethod === 'cartao_credito';
-        const isImmediatePayment = ['debit', 'debito', 'cartao_debito', 'dinheiro', 'cash', 'pix'].includes(paymentMethod);
-        console.log(`[CompleteOrchestrator] paymentMethod: ${paymentMethod}, isCredit: ${isCredit}, isImmediate: ${isImmediatePayment}`);
-
-        // 1. CRIA PAYMENT FORA DA TRANSAÇÃO (se necessário)
-        let perSessionPayment = null;
-        const isParticularSimple = !packageId && !isConvenio && !isLiminar;
+        
         const sessionValue = appointment.sessionValue || 0;
-        
-        // 🔍 BUSCA PAYMENT EXISTENTE (criado no CREATE)
+        const sessionId = appointment.session?._id;
         const existingPayment = appointment.payment?._id || appointment.payment;
-        if (existingPayment) {
-            console.log('[CompleteOrchestrator] Payment já existe (criado no CREATE):', existingPayment);
-        }
         
-        // 📝 Cria payment para PACOTE PER-SESSION (se não existir)
-        if (!addToBalance && !existingPayment && isPerSession && packageId) {
-            try {
+        // 🔴 TRANSAÇÃO PRINCIPAL (inclui payment se possível)
+        const mongoSession = await mongoose.startSession();
+        let perSessionPayment = null;
+        
+        try {
+            await mongoSession.startTransaction({
+                readConcern: { level: 'local' },
+                writeConcern: { w: 'majority' }
+            });
+            
+            // 1. CONSOME PACOTE
+            if (packageId && appointment.clinicalStatus !== 'completed') {
+                await consumePackageSession(packageId, { mongoSession });
+            }
+            
+            // 🔴 CRIA PAYMENT DENTRO DA TRANSAÇÃO quando possível (Problema #4)
+            if (!addToBalance && !existingPayment && isPerSession && packageId) {
                 perSessionPayment = await createPaymentForComplete({
                     patientId: appointment.patient?._id,
                     doctorId: appointment.doctor?._id,
@@ -222,15 +320,7 @@ export function startCompleteOrchestratorWorker() {
                     correlationId,
                     serviceDate: appointment.date ? new Date(appointment.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
                 });
-                console.log('[CompleteOrchestrator] Payment PER-SESSION criado:', perSessionPayment._id);
-            } catch (innerErr) {
-                console.error('[CompleteOrchestrator] ERRO na criação do payment:', innerErr.message);
-                throw innerErr;
-            }
-        }
-        // 📝 Cria payment para PARTICULAR SIMPLES (se não existir - fallback)
-        else if (!addToBalance && !existingPayment && isParticularSimple && sessionValue > 0) {
-            try {
+            } else if (!addToBalance && !existingPayment && isParticularSimple && sessionValue > 0) {
                 perSessionPayment = await createPaymentForComplete({
                     patientId: appointment.patient?._id,
                     doctorId: appointment.doctor?._id,
@@ -241,35 +331,14 @@ export function startCompleteOrchestratorWorker() {
                     correlationId,
                     serviceDate: appointment.date ? new Date(appointment.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
                 });
-                console.log('[CompleteOrchestrator] Payment PARTICULAR criado:', perSessionPayment._id);
-            } catch (innerErr) {
-                console.error('[CompleteOrchestrator] ERRO na criação do payment particular:', innerErr.message);
-                throw innerErr;
             }
-        }
-
-        // TRANSAÇÃO PRINCIPAL - apenas operações atômicas essenciais
-        const mongoSession = await mongoose.startSession();
-
-        try {
-            await mongoSession.startTransaction({
-                readConcern: { level: 'local' },
-                writeConcern: { w: 'majority' }
-            });
-
-            // 1. CONSOME PACOTE (se houver e não for completed ainda)
-            if (packageId && appointment.clinicalStatus !== 'completed') {
-                await consumePackageSession(packageId, { mongoSession });
-            }
-
-            // 2. ATUALIZA PACKAGE FINANCEIRO (per-session)
+            
+            // 2. ATUALIZA PACKAGE FINANCEIRO
             if (perSessionPayment && packageId) {
-                console.log('[CompleteOrchestrator] Atualizando package financeiro...');
                 await updatePackageFinancials(packageId, perSessionPayment.amount, mongoSession, packageDoc);
-                console.log('[CompleteOrchestrator] Package atualizado');
             }
-
-            // 3. ATUALIZA APPOINTMENT (única operação - inclui payment se houver)
+            
+            // 3. ATUALIZA APPOINTMENT
             const appointmentUpdate = buildAppointmentUpdate({
                 addToBalance,
                 balanceAmount,
@@ -278,25 +347,21 @@ export function startCompleteOrchestratorWorker() {
                 correlationId,
                 userId,
                 isConvenio,
-                packageId,
-                isCredit,
-                isImmediatePayment
+                packageId
             });
             
-            // Vincula payment ao appointment (existente ou recém-criado)
             const finalPaymentId = perSessionPayment?._id || existingPayment;
             if (finalPaymentId) {
                 appointmentUpdate.payment = finalPaymentId;
             }
-
+            
             await Appointment.findByIdAndUpdate(
                 appointmentId,
                 appointmentUpdate,
                 { session: mongoSession }
             );
-            console.log('[CompleteOrchestrator] Appointment atualizado');
-
-            // ✅ SALVA NO OUTBOX: APPOINTMENT_COMPLETED (dentro da transação)
+            
+            // 4. SALVA EVENTOS NO OUTBOX
             const completedEventId = `APPOINTMENT_COMPLETED_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             await saveToOutbox(
                 {
@@ -319,86 +384,95 @@ export function startCompleteOrchestratorWorker() {
                 },
                 mongoSession
             );
-            console.log('[CompleteOrchestrator] Evento APPOINTMENT_COMPLETED salvo no outbox');
-
-            // ✅ SALVA NO OUTBOX: INVOICE_PER_SESSION_CREATE (dentro da transação - garante atomicidade)
-            if (isPerSession && !isConvenio && !isLiminar && packageId) {
-                const invoiceEventId = `INVOICE_PER_SESSION_CREATE_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                await saveToOutbox(
-                    {
-                        eventId: invoiceEventId,
-                        correlationId: correlationId || invoiceEventId,
-                        eventType: EventTypes.INVOICE_PER_SESSION_CREATE,
-                        payload: {
-                            patientId: appointment.patient?.toString(),
-                            appointmentId: appointmentId.toString(),
-                            sessionValue: packageDoc?.sessionValue || 0
-                        },
-                        aggregateType: 'invoice',
-                        aggregateId: appointmentId.toString()
-                    },
-                    mongoSession
-                );
-                console.log('[CompleteOrchestrator] Evento INVOICE_PER_SESSION_CREATE salvo no outbox');
-            }
-
-            console.log('[CompleteOrchestrator] Commitando transação...');
+            
             await mongoSession.commitTransaction();
-            console.log('[CompleteOrchestrator] Transação commitada!');
-
+            console.log('[CompleteOrchestrator] ✅ Transação commitada');
+            
         } catch (error) {
-            console.error('[CompleteOrchestrator] ERRO na transação:', error.message);
+            console.error('[CompleteOrchestrator] ❌ ERRO na transação:', error.message);
             await mongoSession.abortTransaction();
             throw error;
         } finally {
             mongoSession.endSession();
         }
         
-        // 4. COMPLETA SESSÃO FORA DA TRANSAÇÃO (não crítico)
-        if (sessionId) {
-            try {
-                // Prepara dados de pagamento para a sessão
-                const sessionPaymentData = {};
-                const finalPaymentId = perSessionPayment?._id || existingPayment;
-                
-                if (addToBalance) {
-                    // 💰 SALDO DEVEDOR: Pendente
-                    sessionPaymentData.paymentStatus = 'pending_balance';
-                    sessionPaymentData.isPaid = false;
-                    sessionPaymentData.visualFlag = 'pending';
-                    if (finalPaymentId) sessionPaymentData.paymentId = finalPaymentId;
-                } else if (packageId && !isPerSession && !isConvenio) {
-                    // 📦 PACOTE PRE-PAID: Já foi pago antes
-                    sessionPaymentData.paymentStatus = 'package_paid';
-                    sessionPaymentData.isPaid = true;
-                    sessionPaymentData.visualFlag = 'ok';
-                } else if (isConvenio) {
-                    // 🏥 CONVÊNIO: Aguarda recebimento
-                    sessionPaymentData.paymentStatus = 'pending_receipt';
-                    sessionPaymentData.isPaid = false;
-                    sessionPaymentData.visualFlag = 'pending';
-                } else {
-                    // 💳 PARTICULAR (per-session ou simples): Pago no complete
-                    sessionPaymentData.paymentStatus = 'paid';
-                    sessionPaymentData.isPaid = true;
-                    sessionPaymentData.visualFlag = 'ok';
-                    if (finalPaymentId) sessionPaymentData.paymentId = finalPaymentId;
-                }
-                
-                await completeSession(sessionId, sessionPaymentData, {
-                    addToBalance,
-                    paymentOrigin,
-                    correlationId,
-                    userId
-                });
-                console.log('[CompleteOrchestrator] Sessão completada:', sessionPaymentData);
-            } catch (sessionErr) {
-                console.warn('[CompleteOrchestrator] Erro ao completar sessão (não crítico):', sessionErr.message);
-            }
-        }
+        // PÓS-COMMIT (não crítico - falhas aqui são toleradas)
+        await executePostCommitOperations({
+            appointmentId,
+            sessionId,
+            packageId,
+            appointment,
+            packageDoc,
+            perSessionPayment,
+            existingPayment,
+            addToBalance,
+            paymentOrigin,
+            correlationId,
+            userId,
+            isConvenio,
+            isLiminar,
+            isPerSession
+        });
+        
+        return {
+            status: 'completed',
+            appointmentId,
+            paymentOrigin,
+            addToBalance,
+            perSessionPaymentId: perSessionPayment?._id,
+            idempotencyKey
+        };
+    });
+}
 
-        // 🔄 Força rebuild da projeção do pacote após complete (DEPOIS da sessão ser atualizada)
-        if (packageId) {
+// Operações pós-commit (não críticas)
+async function executePostCommitOperations({
+    appointmentId, sessionId, packageId, appointment, packageDoc,
+    perSessionPayment, existingPayment, addToBalance, paymentOrigin,
+    correlationId, userId, isConvenio, isLiminar, isPerSession
+}) {
+    const finalPaymentId = perSessionPayment?._id || existingPayment;
+    
+    // 1. COMPLETA SESSÃO
+    if (sessionId) {
+        try {
+            const sessionPaymentData = {};
+            
+            if (addToBalance) {
+                sessionPaymentData.paymentStatus = 'pending_balance';
+                sessionPaymentData.isPaid = false;
+                sessionPaymentData.visualFlag = 'pending';
+                if (finalPaymentId) sessionPaymentData.paymentId = finalPaymentId;
+            } else if (packageId && !isPerSession && !isConvenio) {
+                sessionPaymentData.paymentStatus = 'package_paid';
+                sessionPaymentData.isPaid = true;
+                sessionPaymentData.visualFlag = 'ok';
+            } else if (isConvenio) {
+                sessionPaymentData.paymentStatus = 'pending_receipt';
+                sessionPaymentData.isPaid = false;
+                sessionPaymentData.visualFlag = 'pending';
+            } else {
+                sessionPaymentData.paymentStatus = 'paid';
+                sessionPaymentData.isPaid = true;
+                sessionPaymentData.visualFlag = 'ok';
+                if (finalPaymentId) sessionPaymentData.paymentId = finalPaymentId;
+            }
+            
+            await completeSession(sessionId, sessionPaymentData, {
+                addToBalance,
+                paymentOrigin,
+                correlationId,
+                userId
+            });
+        } catch (sessionErr) {
+            console.warn('[CompleteOrchestrator] ⚠️ Erro ao completar sessão (não crítico):', sessionErr.message);
+            // Log para monitoramento mas não falha
+        }
+    }
+    
+    // 2. PUBLICA EVENTO PACKAGE_UPDATED
+    if (packageId) {
+        try {
             await publishEvent(
                 EventTypes.PACKAGE_UPDATED,
                 {
@@ -409,71 +483,60 @@ export function startCompleteOrchestratorWorker() {
                 },
                 { correlationId }
             );
-            console.log('[CompleteOrchestrator] Evento PACKAGE_UPDATED publicado');
+        } catch (err) {
+            console.warn('[CompleteOrchestrator] ⚠️ Erro ao publicar PACKAGE_UPDATED:', err.message);
         }
-
-        // PÓS-COMMIT (não bloqueia resposta)
-
-        // 5. CONFIRMA PAYMENT (fora da transação)
-        // Se NÃO for saldo devedor → confirma como PAID
-        // Se for saldo devedor → mantém como pending_balance
-        const paymentToConfirm = perSessionPayment?._id || existingPayment;
-        
-        if (paymentToConfirm && !addToBalance) {
-            try {
-                await confirmPayment(paymentToConfirm);
-                console.log('[CompleteOrchestrator] ✅ Payment confirmado:', paymentToConfirm);
-            } catch (confirmErr) {
-                console.error(`[CompleteOrchestrator] Falha ao confirmar payment:`, confirmErr.message);
-            }
-        } else if (paymentToConfirm && addToBalance) {
-            // 💰 Saldo devedor: payment fica como pendente (será pago depois)
-            console.log('[CompleteOrchestrator] 💰 Payment mantido como pendente (saldo devedor):', paymentToConfirm);
+    }
+    
+    // 3. CONFIRMA PAYMENT
+    if (finalPaymentId && !addToBalance) {
+        try {
+            await confirmPayment(finalPaymentId);
+        } catch (confirmErr) {
+            console.error('[CompleteOrchestrator] ⚠️ Falha ao confirmar payment:', confirmErr.message);
         }
-
-        // 6. CONVÊNIO: Consome guia e cria payment
-        if (isConvenio && packageDoc?.insuranceGuide) {
-            try {
-                await consumeInsuranceGuide(
-                    packageDoc.insuranceGuide,
-                    sessionId
-                );
-
-                await createInsurancePayment({
-                    patientId: appointment.patient?._id,
-                    doctorId: appointment.doctor?._id,
-                    appointmentId,
-                    sessionId,
-                    packageId,
-                    guideId: packageDoc.insuranceGuide,
-                    insuranceProvider: packageDoc.insuranceProvider,
-                    insuranceValue: packageDoc.insuranceGrossAmount || 0,
-                    correlationId
-                });
-            } catch (insuranceErr) {
-                console.error(`[CompleteOrchestrator] Erro convênio:`, insuranceErr.message);
-            }
+    }
+    
+    // 4. CONVÊNIO
+    if (isConvenio && packageDoc?.insuranceGuide) {
+        try {
+            await consumeInsuranceGuide(packageDoc.insuranceGuide, sessionId);
+            await createInsurancePayment({
+                patientId: appointment.patient?._id,
+                doctorId: appointment.doctor?._id,
+                appointmentId,
+                sessionId,
+                packageId,
+                guideId: packageDoc.insuranceGuide,
+                insuranceProvider: packageDoc.insuranceProvider,
+                insuranceValue: packageDoc.insuranceGrossAmount || 0,
+                correlationId
+            });
+        } catch (insuranceErr) {
+            console.error('[CompleteOrchestrator] ⚠️ Erro convênio:', insuranceErr.message);
         }
-
-        // 7. LIMINAR: Reconhece receita
-        if (isLiminar) {
-            try {
-                await recognizeLiminarRevenue(packageId, {
-                    sessionValue: appointment.sessionValue || packageDoc?.sessionValue || 0,
-                    appointmentId,
-                    sessionId,
-                    patientId: appointment.patient?._id,
-                    doctorId: appointment.doctor?._id,
-                    date: appointment.date,
-                    correlationId
-                });
-            } catch (liminarErr) {
-                console.error(`[CompleteOrchestrator] Erro liminar:`, liminarErr.message);
-            }
+    }
+    
+    // 5. LIMINAR
+    if (isLiminar) {
+        try {
+            await recognizeLiminarRevenue(packageId, {
+                sessionValue: appointment.sessionValue || packageDoc?.sessionValue || 0,
+                appointmentId,
+                sessionId,
+                patientId: appointment.patient?._id,
+                doctorId: appointment.doctor?._id,
+                date: appointment.date,
+                correlationId
+            });
+        } catch (liminarErr) {
+            console.error('[CompleteOrchestrator] ⚠️ Erro liminar:', liminarErr.message);
         }
-
-        // 8. FIADO: Publica evento de balance update
-        if (addToBalance) {
+    }
+    
+    // 6. FIADO
+    if (addToBalance) {
+        try {
             await publishEvent(
                 EventTypes.BALANCE_UPDATE_REQUESTED,
                 {
@@ -485,21 +548,13 @@ export function startCompleteOrchestratorWorker() {
                 },
                 { correlationId }
             );
+        } catch (err) {
+            console.warn('[CompleteOrchestrator] ⚠️ Erro ao publicar BALANCE_UPDATE:', err.message);
         }
-
-        console.log(`[CompleteOrchestrator] Complete concluído`, {
-            appointmentId,
-            paymentOrigin,
-            addToBalance
-        });
-
-        log.info('completed', 'Complete concluído', {
-            appointmentId,
-            paymentOrigin,
-            addToBalance
-        });
-
-        // ✅ SOLICITA RECÁLCULO DE TOTAIS (complete gera receita)
+    }
+    
+    // 7. RECÁLCULO DE TOTAIS
+    try {
         await publishEvent(
             EventTypes.TOTALS_RECALCULATE_REQUESTED,
             {
@@ -511,13 +566,16 @@ export function startCompleteOrchestratorWorker() {
             },
             { correlationId }
         );
-
-        // ✅ SOLICITA RECÁLCULO DO DAILY CLOSING (atualiza caixa do dia)
+    } catch (err) {
+        console.warn('[CompleteOrchestrator] ⚠️ Erro ao publicar TOTALS_RECALCULATE:', err.message);
+    }
+    
+    // 8. DAILY CLOSING
+    try {
         const appointmentDate = appointment.date 
             ? new Date(appointment.date).toISOString().split('T')[0]
             : new Date().toISOString().split('T')[0];
         
-        console.log(`[CompleteOrchestrator] Disparando DAILY_CLOSING_REQUESTED para ${appointmentDate}`);
         await publishEvent(
             EventTypes.DAILY_CLOSING_REQUESTED,
             {
@@ -529,40 +587,9 @@ export function startCompleteOrchestratorWorker() {
             },
             { correlationId }
         );
-
-        return {
-            status: 'completed',
-            appointmentId,
-            paymentOrigin,
-            addToBalance,
-            perSessionPaymentId: perSessionPayment?._id,
-            idempotencyKey
-        };
-        
-        }); // Fim do processWithGuarantees
-        
-        }, { ttl: 30 }); // Fim do withLock
-        
-        } catch (error) {
-            console.error(`[CompleteOrchestrator] Job ${job.id} erro:`, error.message);
-            throw error;
-        }
-
-    }, {
-        connection: redisConnection,
-        concurrency: 3
-    });
-
-    worker.on('completed', (job, result) => {
-        console.log(`[CompleteOrchestrator] Job ${job.id}: ${result.status}`);
-    });
-
-    worker.on('failed', (job, error) => {
-        console.error(`[CompleteOrchestrator] Job ${job?.id} falhou:`, error.message);
-    });
-
-    console.log('[CompleteOrchestrator] Worker iniciado');
-    return worker;
+    } catch (err) {
+        console.warn('[CompleteOrchestrator] ⚠️ Erro ao publicar DAILY_CLOSING:', err.message);
+    }
 }
 
 function buildAppointmentUpdate({
@@ -573,9 +600,7 @@ function buildAppointmentUpdate({
     correlationId,
     userId,
     isConvenio,
-    packageId,
-    isCredit,
-    isImmediatePayment
+    packageId
 }) {
     const update = {
         $set: {
@@ -596,9 +621,9 @@ function buildAppointmentUpdate({
             }
         }
     };
-
+    
     if (addToBalance) {
-        update.$set.paymentStatus = 'pending_balance';  // 🚀 Novo status específico para saldo devedor
+        update.$set.paymentStatus = 'pending_balance';
         update.$set.visualFlag = 'pending';
         update.$set.addedToBalance = true;
         update.$set.balanceAmount = balanceAmount;
@@ -612,11 +637,9 @@ function buildAppointmentUpdate({
             update.$set.visualFlag = 'ok';
         }
     } else {
-        // 📝 PARTICULAR SIMPLES: Pagou = PAID (dinheiro, débito, crédito, cheque, pix...)
-        // Só fica pending se for saldo devedor (addToBalance)
         update.$set.paymentStatus = 'paid';
         update.$set.visualFlag = 'ok';
     }
-
+    
     return update;
 }
