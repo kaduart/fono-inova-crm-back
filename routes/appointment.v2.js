@@ -501,8 +501,9 @@ router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
           appointmentId: id,
           status: 'processing_complete',
           correlationId: eventResult.correlationId,
-          idempotencyKey: eventResult.idempotencyKey,
-          lockReleased: appointment.operationalStatus === 'scheduled' // Indica se o lock foi liberado automaticamente
+          idempotencyKey: eventResult.idempotencyKey
+          // NOTA: Não retornamos lockReleased aqui porque o frontend
+          // deve confiar apenas no polling do /status para determinar sucesso
         },
         {
           message: Messages.PROCESSING.COMPLETE,
@@ -721,27 +722,46 @@ router.get('/:id/status', flexibleAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;
   
   const appointment = await Appointment.findById(id)
-    .select('operationalStatus clinicalStatus paymentStatus session package patient correlationId canceledReason');
+    .select('operationalStatus clinicalStatus paymentStatus session package patient correlationId canceledReason history');
 
   if (!appointment) {
     throw createBusinessError(Messages.BUSINESS.APPOINTMENT_NOT_FOUND, 404, ErrorCodes.NOT_FOUND
     );
   }
 
+  // Verifica se o lock foi liberado automaticamente (worker falhou)
+  // Se sim, o usuário precisa tentar a operação novamente
+  const lastHistoryEntry = appointment.history?.[appointment.history.length - 1];
+  const wasLockReleasedAutomatically = lastHistoryEntry?.action === 'auto_release_stale_lock';
+  const wasLockReleasedManually = lastHistoryEntry?.action === 'manual_lock_release';
+  const wasLockReleased = wasLockReleasedAutomatically || wasLockReleasedManually;
+
+  // Se estiver em processing_complete mas não tem job na fila, corrige o status
+  let effectiveOperationalStatus = appointment.operationalStatus;
+  if (appointment.operationalStatus === 'processing_complete') {
+    const hasActiveJob = await hasActiveJobInQueue(id);
+    if (!hasActiveJob) {
+      effectiveOperationalStatus = 'scheduled';
+    }
+  }
+
   const isProcessing =
-    appointment.operationalStatus === 'processing_create' ||
-    appointment.operationalStatus === 'processing_cancel' ||
-    appointment.operationalStatus === 'processing_complete';
+    effectiveOperationalStatus === 'processing_create' ||
+    effectiveOperationalStatus === 'processing_cancel' ||
+    effectiveOperationalStatus === 'processing_complete';
 
   // Estados terminais positivos (worker concluiu com sucesso)
-  // 🚨 IMPORTANTE: Não pode estar em processamento!
+  // 🚨 IMPORTANTE: 
+  // - Não pode estar em processamento
+  // - Não pode ter sido liberado por erro (lockReleased) - nesse caso o usuário precisa tentar de novo
   const isResolved =
-    !isProcessing && (
-      appointment.operationalStatus === 'scheduled' ||
-      appointment.operationalStatus === 'confirmed' ||
-      appointment.operationalStatus === 'paid' ||
-      appointment.operationalStatus === 'missed' ||
-      appointment.operationalStatus === 'completed' ||
+    !isProcessing && 
+    !wasLockReleased && (
+      effectiveOperationalStatus === 'scheduled' ||
+      effectiveOperationalStatus === 'confirmed' ||
+      effectiveOperationalStatus === 'paid' ||
+      effectiveOperationalStatus === 'missed' ||
+      effectiveOperationalStatus === 'completed' ||
       appointment.clinicalStatus === 'completed'
     );
 
@@ -761,20 +781,22 @@ router.get('/:id/status', flexibleAuth, asyncHandler(async (req, res) => {
     formatSuccess(
       {
         appointmentId: id,
-        operationalStatus: appointment.operationalStatus,
+        operationalStatus: effectiveOperationalStatus,
         clinicalStatus: appointment.clinicalStatus,
         paymentStatus: appointment.paymentStatus,
-        statusMessage: statusMessages[appointment.operationalStatus] || appointment.operationalStatus,
+        statusMessage: statusMessages[effectiveOperationalStatus] || effectiveOperationalStatus,
         isProcessing,
         isResolved,   // ← front usa isso para saber que pode parar o polling
-        isCompleted: appointment.clinicalStatus === 'completed' || appointment.operationalStatus === 'completed',
-        isCanceled: appointment.operationalStatus === 'canceled',
+        isCompleted: appointment.clinicalStatus === 'completed' || effectiveOperationalStatus === 'completed',
+        isCanceled: effectiveOperationalStatus === 'canceled',
+        wasLockReleased,  // ← indica se o lock foi liberado por erro (usuário precisa tentar de novo)
+        wasLockReleasedAutomatically,  // ← específico: liberado automaticamente porque não tinha job na fila
         canCancel: 
-          appointment.operationalStatus !== 'canceled' &&
+          effectiveOperationalStatus !== 'canceled' &&
           appointment.clinicalStatus !== 'completed' &&
           !isProcessing,
         canComplete:
-          appointment.operationalStatus !== 'canceled' &&
+          effectiveOperationalStatus !== 'canceled' &&
           appointment.clinicalStatus !== 'completed' &&
           !isProcessing,
         canceledReason: appointment.canceledReason,
@@ -785,6 +807,9 @@ router.get('/:id/status', flexibleAuth, asyncHandler(async (req, res) => {
       isProcessing ? {
         message: Messages.INFO.ASYNC_PROCESSING,
         retryIn: '2s'
+      } : wasLockReleased ? {
+        message: 'Operação falhou. Por favor, tente novamente.',
+        retry: true
       } : {}
     )
   );
