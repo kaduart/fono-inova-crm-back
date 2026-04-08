@@ -15,18 +15,26 @@ export const initializeSocket = (server) => {
     cors: {
       origin: [
         "http://localhost:5173",
+        "http://localhost:3000",
         "https://app.clinicafonoinova.com.br",
         "https://fono-inova-crm-front.vercel.app",
         "https://agenda.clinicafonoinova.com.br",
         "https://www.clinicafonoinova.com.br",
+        "https://fono-inova-crm-back.onrender.com",
       ],
-      methods: ["GET", "POST"],
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       credentials: true,
     },
-    transports: ["polling", "websocket"], // ✅ SEMPRE aceitar ambos
+    transports: ["polling", "websocket"],
     allowEIO3: true,
     pingTimeout: 60000,
     pingInterval: 25000,
+    // 🆕 IMPORTANTE: Configurações para funcionar atrás de proxy (Render, Nginx, etc)
+    perMessageDeflate: false,
+    httpCompression: true,
+    // Permitir upgrade de conexão para WebSocket
+    allowUpgrades: true,
+    upgradeTimeout: 10000,
   });
 
   io.on("connection", (socket) => {
