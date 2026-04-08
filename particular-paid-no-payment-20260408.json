@@ -1,0 +1,38 @@
+[
+  {
+    "id": "69d2a8667351a3447952661e",
+    "date": "2026-04-05",
+    "time": "15:22",
+    "billingType": "particular",
+    "serviceType": "session",
+    "sessionValue": 150,
+    "operationalStatus": "completed",
+    "hasPackage": false,
+    "insuranceProvider": null,
+    "paymentOrigin": null
+  },
+  {
+    "id": "69d2a8d07351a344795266e8",
+    "date": "2026-04-25",
+    "time": "09:00",
+    "billingType": "particular",
+    "serviceType": "session",
+    "sessionValue": 150,
+    "operationalStatus": "completed",
+    "hasPackage": false,
+    "insuranceProvider": null,
+    "paymentOrigin": null
+  },
+  {
+    "id": "69d2a9627586283dc1bfce81",
+    "date": "2026-04-25",
+    "time": "15:31",
+    "billingType": "particular",
+    "serviceType": "session",
+    "sessionValue": 150,
+    "operationalStatus": "completed",
+    "hasPackage": false,
+    "insuranceProvider": null,
+    "paymentOrigin": null
+  }
+]

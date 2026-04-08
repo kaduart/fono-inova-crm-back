@@ -1,0 +1,266 @@
+{
+  "stats": {
+    "totalPayments": 1111,
+    "totalAppointments": 1798,
+    "totalPackages": 144,
+    "issuesFound": 13,
+    "issuesFixed": 0
+  },
+  "issues": [
+    {
+      "type": "DUPLICATE_PAYMENT",
+      "severity": "HIGH",
+      "message": "Appointment 686fd2039276a58116d07568 tem 2 pagamentos ativos",
+      "data": {
+        "appointmentId": "686fd2039276a58116d07568",
+        "payments": [
+          {
+            "id": "68703164f4d174ee9016aaa6",
+            "amount": 150,
+            "status": "paid"
+          },
+          {
+            "id": "687fd8dbcfb03169c5c8dc2d",
+            "amount": 200,
+            "status": "paid"
+          }
+        ]
+      },
+      "fixable": true,
+      "timestamp": "2026-04-08T15:48:01.384Z"
+    },
+    {
+      "type": "DUPLICATE_PAYMENT",
+      "severity": "HIGH",
+      "message": "Appointment 686fd2039276a58116d0756c tem 2 pagamentos ativos",
+      "data": {
+        "appointmentId": "686fd2039276a58116d0756c",
+        "payments": [
+          {
+            "id": "68703164f4d174ee9016aaa7",
+            "amount": 150,
+            "status": "paid"
+          },
+          {
+            "id": "688a6d9751ef000229f8eed0",
+            "amount": 200,
+            "status": "paid"
+          }
+        ]
+      },
+      "fixable": true,
+      "timestamp": "2026-04-08T15:48:01.385Z"
+    },
+    {
+      "type": "DUPLICATE_PAYMENT",
+      "severity": "HIGH",
+      "message": "Appointment 687e4e76902dfb659a5cc7bc tem 2 pagamentos ativos",
+      "data": {
+        "appointmentId": "687e4e76902dfb659a5cc7bc",
+        "payments": [
+          {
+            "id": "687e4e76902dfb659a5cc7bf",
+            "amount": 180,
+            "status": "pending"
+          },
+          {
+            "id": "688130eacfb03169c5c8df4d",
+            "amount": 200,
+            "status": "paid"
+          }
+        ]
+      },
+      "fixable": true,
+      "timestamp": "2026-04-08T15:48:01.385Z"
+    },
+    {
+      "type": "ORPHAN_PAYMENT",
+      "severity": "MEDIUM",
+      "message": "68 pagamentos sem vínculo (appointment/session/package)",
+      "data": {
+        "count": 68,
+        "examples": [
+          "685961d7b9ddc9bdd4b29f80",
+          "685961f0b9ddc9bdd4b29f83",
+          "6859620bb9ddc9bdd4b29f86"
+        ]
+      },
+      "fixable": false,
+      "timestamp": "2026-04-08T15:48:01.387Z"
+    },
+    {
+      "type": "PACKAGE_PAYMENT_KIND",
+      "severity": "LOW",
+      "message": "251 pagamentos de pacote sem kind='package_receipt'",
+      "data": {
+        "count": 251
+      },
+      "fixable": true,
+      "timestamp": "2026-04-08T15:48:01.387Z"
+    },
+    {
+      "type": "DATE_MISMATCH",
+      "severity": "LOW",
+      "message": "342 pagamentos com divergência entre paymentDate e createdAt",
+      "data": {
+        "count": 342,
+        "examples": [
+          {
+            "id": "68daf67bd576ef219fd56056",
+            "paymentDate": "2025-10-06",
+            "createdAt": "2025-09-29",
+            "diff": 7
+          },
+          {
+            "id": "68e3c8c60d8aeeff1af04123",
+            "paymentDate": "2025-10-17",
+            "createdAt": "2025-10-06",
+            "diff": 11
+          },
+          {
+            "id": "68e3ca030d8aeeff1af041fc",
+            "paymentDate": "2025-10-10",
+            "createdAt": "2025-10-06",
+            "diff": 4
+          }
+        ]
+      },
+      "fixable": false,
+      "timestamp": "2026-04-08T15:48:01.531Z"
+    },
+    {
+      "type": "ZERO_AMOUNT_PAYMENT",
+      "severity": "HIGH",
+      "message": "53 pagamentos com valor zero ou negativo",
+      "data": {
+        "count": 53,
+        "examples": [
+          "699c6a76353c11d3c7775dd0",
+          "699dbff14152216f791361ea",
+          "699e0bc84152216f79147955"
+        ]
+      },
+      "fixable": false,
+      "timestamp": "2026-04-08T15:48:01.531Z"
+    },
+    {
+      "type": "CONVENIO_METHOD",
+      "severity": "MEDIUM",
+      "message": "35 pagamentos de convênio com método != 'convenio'",
+      "data": {
+        "count": 35
+      },
+      "fixable": true,
+      "timestamp": "2026-04-08T15:48:01.532Z"
+    },
+    {
+      "type": "PAID_NO_PAYMENT",
+      "severity": "HIGH",
+      "message": "273 appointments marcados como pagos sem payment vinculado",
+      "data": {
+        "count": 273,
+        "examples": [
+          "687fa13acfb03169c5c8d0e2",
+          "688a74db51ef000229f8f398",
+          "68b8a5b07a36ac7ce0da604d"
+        ]
+      },
+      "fixable": false,
+      "timestamp": "2026-04-08T15:48:02.035Z"
+    },
+    {
+      "type": "COMPLETED_NO_SESSION",
+      "severity": "MEDIUM",
+      "message": "38 appointments completados sem session",
+      "data": {
+        "count": 38
+      },
+      "fixable": false,
+      "timestamp": "2026-04-08T15:48:02.036Z"
+    },
+    {
+      "type": "DUPLICATE_APPOINTMENT",
+      "severity": "HIGH",
+      "message": "79 possíveis duplicatas encontradas",
+      "data": {
+        "count": 79,
+        "examples": [
+          {
+            "key": "685a901eaec14c7163585993_2025-07-14_12:20",
+            "count": 2,
+            "ids": [
+              "687e352c20c72d457aba6f29",
+              "69ce7b7e0518dbe9f88563bd"
+            ]
+          },
+          {
+            "key": "68c029cecbdf4c1481b15592_2025-11-21_17:20",
+            "count": 2,
+            "ids": [
+              "68f26ad8c5bd0b3e3273e274",
+              "69206e702e81f156f5b62798"
+            ]
+          },
+          {
+            "key": "68fb8c9a2164a973dbbfa4d1_2025-11-14_15:20",
+            "count": 3,
+            "ids": [
+              "68fb8d022164a973dbbfa4f0",
+              "69177ee74147676f61b8b57c",
+              "691794b942c6c18259ab96bc"
+            ]
+          }
+        ]
+      },
+      "fixable": false,
+      "timestamp": "2026-04-08T15:48:02.063Z"
+    },
+    {
+      "type": "PACKAGE_OVERUSED",
+      "severity": "HIGH",
+      "message": "1 pacotes com mais sessões feitas que o total",
+      "data": {
+        "count": 1,
+        "examples": [
+          {
+            "id": "69a196951673747583ac51e8",
+            "done": 5,
+            "total": 4
+          }
+        ]
+      },
+      "fixable": false,
+      "timestamp": "2026-04-08T15:48:02.139Z"
+    },
+    {
+      "type": "PACKAGE_NO_APPOINTMENTS",
+      "severity": "LOW",
+      "message": "31 pacotes sem appointments vinculados",
+      "data": {
+        "count": 31
+      },
+      "fixable": false,
+      "timestamp": "2026-04-08T15:48:02.139Z"
+    }
+  ],
+  "summary": {
+    "bySeverity": {
+      "HIGH": 7,
+      "MEDIUM": 3,
+      "LOW": 3
+    },
+    "byType": {
+      "DUPLICATE_PAYMENT": 3,
+      "ORPHAN_PAYMENT": 1,
+      "PACKAGE_PAYMENT_KIND": 1,
+      "DATE_MISMATCH": 1,
+      "ZERO_AMOUNT_PAYMENT": 1,
+      "CONVENIO_METHOD": 1,
+      "PAID_NO_PAYMENT": 1,
+      "COMPLETED_NO_SESSION": 1,
+      "DUPLICATE_APPOINTMENT": 1,
+      "PACKAGE_OVERUSED": 1,
+      "PACKAGE_NO_APPOINTMENTS": 1
+    }
+  }
+}
