@@ -28,8 +28,7 @@ const insuranceGuideSchema = new mongoose.Schema({
   },
 
   patientId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Patient',
+    type: String,  // 🆕 PADRONIZADO: sempre STRING (não ObjectId)
     required: [true, 'Paciente é obrigatório'],
     index: true
   },
@@ -227,14 +226,13 @@ insuranceGuideSchema.pre('save', function (next) {
  */
 insuranceGuideSchema.statics.findValid = async function (patientId, specialty, date = new Date()) {
   return await this.findOne({
-    patientId: new mongoose.Types.ObjectId(patientId),
+    patientId: patientId,  // 🆕 PADRONIZADO: STRING
     specialty: specialty.toLowerCase().trim(),
     status: 'active',
     expiresAt: { $gte: date },
     $expr: { $lt: ['$usedSessions', '$totalSessions'] } // usedSessions < totalSessions
   })
     .sort({ expiresAt: 1 }) // FIFO: primeira a vencer
-    .populate('patientId', 'fullName cpf')
     .lean(false); // Retorna documento Mongoose (não POJO)
 };
 
@@ -260,7 +258,7 @@ insuranceGuideSchema.statics.findValid = async function (patientId, specialty, d
  */
 insuranceGuideSchema.statics.getBalance = async function (patientId, specialty = null) {
   const query = {
-    patientId: new mongoose.Types.ObjectId(patientId),
+    patientId: patientId,  // 🆕 PADRONIZADO: STRING
     status: 'active',
     expiresAt: { $gte: new Date() } // Apenas não-vencidas
   };
