@@ -17,24 +17,18 @@ const REDIS_RECONNECT_ON_ERROR = (err) => {
   return shouldReconnect;
 };
 
-// 🎯 Opções OTIMIZADAS para limitar conexões
+// 🎯 Opções COMUNS para ambas as conexões (BullMQ exige maxRetriesPerRequest: null)
 const commonOptions = {
-  maxRetriesPerRequest: 3,
+  maxRetriesPerRequest: null, // ⚡ BullMQ EXIGE isso
   enableReadyCheck: false,
   connectTimeout: 10000,
   lazyConnect: true,
   retryStrategy: REDIS_RETRY_STRATEGY,
   reconnectOnError: REDIS_RECONNECT_ON_ERROR,
   keepAlive: 30000,
-  // 🔥 IMPORTANTE: Limitar conexões no pool
-  maxSockets: 5,
-  maxFreeSockets: 2,
-};
-
-// 🎯 Opções para BullMQ (usa a mesma conexão, mas com maxRetriesPerRequest: null)
-const bullMqOptions = {
-  ...commonOptions,
-  maxRetriesPerRequest: null, // BullMQ exige isso
+  // 🔥 Limitar conexões no pool para economizar
+  maxSockets: 3,
+  maxFreeSockets: 1,
 };
 
 let redisConnection;
@@ -46,16 +40,19 @@ try {
   if (redisUrl) {
     console.log("🚀 IORedis conectando via REDIS_URL...");
     
-    // 🔥 USA UMA ÚNICA CONEXÃO para ambos (economiza conexões)
+    // Conexão para uso geral (API, controllers) - com maxRetriesPerRequest: null
     redisConnection = new IORedis(redisUrl, {
       ...commonOptions,
       ...(redisUrl.startsWith('rediss://') ? { tls: {} } : {}),
     });
     
-    // Reutiliza a mesma instância para BullMQ (não cria nova conexão)
-    bullMqConnection = redisConnection;
+    // Conexão específica para BullMQ - mesmas opções, instância separada mas limitada
+    bullMqConnection = new IORedis(redisUrl, {
+      ...commonOptions,
+      ...(redisUrl.startsWith('rediss://') ? { tls: {} } : {}),
+    });
     
-    console.log("✅ Modo econômico: Uma conexão Redis para todos");
+    console.log("✅ Redis configurado com limite de conexões (maxSockets: 3)");
   } else {
     console.log("🚀 IORedis conectando via HOST/PORT local...");
     
@@ -66,24 +63,33 @@ try {
     };
     
     redisConnection = new IORedis({ ...localConfig, ...commonOptions });
-    bullMqConnection = redisConnection; // Mesma conexão
+    bullMqConnection = new IORedis({ ...localConfig, ...commonOptions });
   }
 
   // 🛡️ Eventos de conexão
   redisConnection.on('connect', () => {
-    console.log('✅ Redis connected');
+    console.log('✅ Redis connected (general)');
   });
 
   redisConnection.on('ready', () => {
-    console.log('✅ Redis ready');
+    console.log('✅ Redis ready (general)');
   });
 
   redisConnection.on('error', (err) => {
-    console.error(chalk.red('❌ Redis error:'), err.message);
+    console.error(chalk.red('❌ Redis error (general):'), err.message);
   });
 
   redisConnection.on('reconnecting', () => {
-    console.log('🔄 Redis reconnecting...');
+    console.log('🔄 Redis reconnecting (general)...');
+  });
+
+  // Eventos para BullMQ
+  bullMqConnection.on('connect', () => {
+    console.log('✅ Redis connected (BullMQ)');
+  });
+
+  bullMqConnection.on('error', (err) => {
+    console.error(chalk.red('❌ Redis error (BullMQ):'), err.message);
   });
 
 } catch (err) {
