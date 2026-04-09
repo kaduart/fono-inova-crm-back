@@ -617,14 +617,11 @@ export function detectManualIntent(text = "") {
 /**
  * Especialidades médicas que a clínica NÃO oferece
  * Usado para redirecionar o cliente corretamente
+ * 
+ * 📝 NOTA: Neuropediatria foi REMOVIDA desta lista em Abr/2026
+ * Agora temos neuropediatra na clínica! 
  */
 export const MEDICAL_SPECIALTIES_MAP = [
-    {
-        id: 'neurologista',
-        terms: ['neuropediatra', 'neuropediatria', 'neurologista', 'neurologia', 'neurologo', 'neuro pediatra', 'neuro pediatria'],
-        redirectTo: 'neuropsicologia',
-        message: 'Somos uma clínica de terapias. Não temos médicos neurologistas, mas oferecemos Neuropsicologia (avaliação das funções cognitivas).'
-    },
     {
         id: 'pediatra',
         terms: ['pediatra', 'pediatria', 'médico de criança'],
@@ -728,7 +725,8 @@ export function validateServiceAvailability(text = "", lead = {}) {
         neuropsicologia: { name: 'Neuropsicologia', aliases: ['neuropsico', 'neuropsicologo', 'neuropsicologa'] },
         musicoterapia: { name: 'Musicoterapia', aliases: ['musicoterapeuta'] },
         psicomotricidade: { name: 'Psicomotricidade', aliases: ['psicomotricidade', 'psicomotricista'] },
-        psicopedagogia: { name: 'Psicopedagogia', aliases: ['psicopedagogo', 'psicopedagoga'] }
+        psicopedagogia: { name: 'Psicopedagogia', aliases: ['psicopedagogo', 'psicopedagoga'] },
+        neuropediatria: { name: 'Neuropediatria', aliases: ['neuroped', 'neuropediatra'], isMedical: true, price: 550 }
     };
     
     // 3. Detecta qual serviço foi mencionado

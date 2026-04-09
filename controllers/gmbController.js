@@ -609,3 +609,125 @@ export async function scoreContent(req, res) {
     res.status(500).json({ success: false, error: error.message });
   }
 }
+
+// 📊 MÉTRICAS DE CONVERSÃO GMB v2
+export async function getConversionMetrics(req, res) {
+  try {
+    const dias = parseInt(req.query.dias) || 30;
+    const dataInicio = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
+    
+    // Busca leads do GMB com contexto
+    const Leads = (await import('../models/Leads.js')).default;
+    
+    const leadsGMB = await Leads.find({
+      'tracking.source': 'gmb',
+      createdAt: { $gte: dataInicio }
+    }).lean();
+    
+    // Métricas totais
+    const totalLeads = leadsGMB.length;
+    const totalAgendados = leadsGMB.filter(l => l.appointmentId).length;
+    const taxaConversaoGlobal = totalLeads > 0 ? totalAgendados / totalLeads : 0;
+    
+    // Por ângulo emocional
+    const porAngulo = Object.entries(
+      leadsGMB.reduce((acc, lead) => {
+        const ang = lead.tracking?.angulo || 'desconhecido';
+        if (!acc[ang]) acc[ang] = { total: 0, agendados: 0 };
+        acc[ang].total++;
+        if (lead.appointmentId) acc[ang].agendados++;
+        return acc;
+      }, {})
+    ).map(([angulo, dados]) => ({
+      _id: angulo,
+      total: dados.total,
+      agendados: dados.agendados,
+      taxaConversao: dados.total > 0 ? dados.agendados / dados.total : 0
+    }));
+    
+    // Por especialidade
+    const porEspecialidade = Object.entries(
+      leadsGMB.reduce((acc, lead) => {
+        const esp = lead.tracking?.especialidade || 'desconhecida';
+        if (!acc[esp]) acc[esp] = { total: 0, agendados: 0 };
+        acc[esp].total++;
+        if (lead.appointmentId) acc[esp].agendados++;
+        return acc;
+      }, {})
+    ).map(([esp, dados]) => ({
+      _id: esp,
+      total: dados.total,
+      agendados: dados.agendados,
+      taxaConversao: dados.total > 0 ? dados.agendados / dados.total : 0
+    }));
+    
+    // Por estágio do funil
+    const porFunnelStage = Object.entries(
+      leadsGMB.reduce((acc, lead) => {
+        const stage = lead.tracking?.funnelStage || 'unknown';
+        if (!acc[stage]) acc[stage] = { total: 0, agendados: 0 };
+        acc[stage].total++;
+        if (lead.appointmentId) acc[stage].agendados++;
+        return acc;
+      }, {})
+    ).map(([stage, dados]) => ({
+      _id: stage,
+      total: dados.total,
+      agendados: dados.agendados,
+      taxaConversao: dados.total > 0 ? dados.agendados / dados.total : 0
+    }));
+    
+    // Top problemas
+    const topProblemas = Object.entries(
+      leadsGMB.reduce((acc, lead) => {
+        const prob = lead.tracking?.problema;
+        if (!prob) return acc;
+        if (!acc[prob]) acc[prob] = { count: 0, agendados: 0 };
+        acc[prob].count++;
+        if (lead.appointmentId) acc[prob].agendados++;
+        return acc;
+      }, {})
+    )
+    .map(([problema, dados]) => ({
+      _id: problema,
+      count: dados.count,
+      agendados: dados.agendados
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+    
+    // Evolução diária (últimos 7 dias)
+    const evolucaoDiaria = [];
+    for (let i = 6; i >= 0; i--) {
+      const dia = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+      const diaStr = dia.toISOString().split('T')[0];
+      const leadsDia = leadsGMB.filter(l => {
+        const lDia = new Date(l.createdAt).toISOString().split('T')[0];
+        return lDia === diaStr;
+      });
+      evolucaoDiaria.push({
+        _id: diaStr,
+        total: leadsDia.length,
+        agendados: leadsDia.filter(l => l.appointmentId).length
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        totalLeads,
+        totalAgendados,
+        taxaConversaoGlobal,
+        porAngulo,
+        porEspecialidade,
+        porFunnelStage,
+        topProblemas,
+        evolucaoDiaria,
+        periodo: { dias, dataInicio }
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao calcular métricas de conversão:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}

@@ -11,12 +11,14 @@ import { clinicalEligibility } from '../domain/policies/ClinicalEligibility.js';
 console.log('🧪 Testando detecção de especialidades médicas...\n');
 
 const medicalTests = [
-    { text: 'Tem neuropediatra?', expected: 'neurologista', shouldBlock: true },
+    // ✅ ATUALIZADO Abr/2026: Neuropediatra agora é serviço disponível na clínica!
+    // { text: 'Tem neuropediatra?', expected: 'neurologista', shouldBlock: true },
     { text: 'Vocês têm neurologista?', expected: 'neurologista', shouldBlock: true },
     { text: 'Preciso de pediatra', expected: 'pediatra', shouldBlock: true },
     { text: 'Tem psiquiatra?', expected: 'psiquiatra', shouldBlock: true },
     { text: 'Quero agendar fonoaudiologia', expected: null, shouldBlock: false },
     { text: 'Tem neuropsicologia?', expected: null, shouldBlock: false },
+    { text: 'Tem neuropediatra?', expected: null, shouldBlock: false }, // ✅ Agora disponível
 ];
 
 let passed = 0;
@@ -43,7 +45,8 @@ for (const test of medicalTests) {
 console.log('\n🧪 Testando respostas humanizadas...\n');
 
 const responseTests = [
-    { specialty: 'neuropediatra', shouldRedirect: true },
+    // ✅ ATUALIZADO Abr/2026: Neuropediatra agora tem hasRedirect: false (disponível na clínica!)
+    { specialty: 'neuropediatra', shouldRedirect: false },
     { specialty: 'pediatra', shouldRedirect: false },
     { specialty: 'neurologista', shouldRedirect: true },
 ];
@@ -68,11 +71,12 @@ for (const test of responseTests) {
 console.log('\n🧪 Testando ClinicalEligibility...\n');
 
 const eligibilityTests = [
+    // ✅ ATUALIZADO Abr/2026: Neuropediatra agora disponível - não deve ser bloqueado
     { 
         text: 'Tem neuropediatra para meu filho?',
-        therapy: null,
+        therapy: 'neuropediatria',
         age: 8,
-        expectedBlocked: true
+        expectedBlocked: false
     },
     {
         text: 'Quero neuropsicologia',

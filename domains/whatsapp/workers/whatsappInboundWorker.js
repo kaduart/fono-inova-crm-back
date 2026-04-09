@@ -18,7 +18,7 @@
  */
 
 import { Worker } from 'bullmq';
-import { bullMqConnection } from '../../../config/redisConnection.js';
+import { bullMqConnection, redisConnection as redis } from '../../../config/redisConnection.js';
 import logger from '../../../utils/logger.js';
 import { processInboundMessage } from '../../../controllers/whatsappController.js';
 
@@ -27,7 +27,7 @@ export function createWhatsappInboundWorker() {
     'whatsapp-inbound',
     async (job) => {
       const { payload, metadata } = job.data;
-      const { msg, value } = payload;
+      let { msg, value } = payload;
 
       const wamid    = msg?.id || job.id;
       const from     = msg?.from || 'unknown';
@@ -38,6 +38,39 @@ export function createWhatsappInboundWorker() {
         from,
         correlationId,
       });
+
+      // 🔥 NOVO: Processa debounce se a mensagem veio do webhook com delay
+      if (payload._isDebounced && payload._debounceKey) {
+        try {
+          const buffer = await redis?.get(payload._debounceKey);
+          
+          if (buffer) {
+            const data = JSON.parse(buffer);
+            
+            // Combina todas as mensagens do buffer
+            if (data.messages && data.messages.length > 1) {
+              const combinedText = data.messages.join(' ');
+              if (!msg.text) {
+                msg.text = { body: combinedText };
+              } else {
+                msg.text.body = combinedText;
+              }
+              logger.info('[WhatsappInboundWorker] Mensagens combinadas', {
+                wamid,
+                count: data.messages.length,
+                combinedLength: combinedText.length
+              });
+            }
+            
+            // Limpa o buffer
+            await redis?.del(payload._debounceKey);
+            logger.info('[WhatsappInboundWorker] Buffer limpo', { debounceKey: payload._debounceKey });
+          }
+        } catch (debounceErr) {
+          logger.warn('[WhatsappInboundWorker] Erro ao processar debounce (continuando):', debounceErr.message);
+          // Continua processando a mensagem mesmo se o debounce falhar
+        }
+      }
 
       const result = await processInboundMessage(msg, value);
 

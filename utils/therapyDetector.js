@@ -122,6 +122,19 @@ export const THERAPY_SPECIALTIES = {
             /dificuldade\s+(de\s+)?aprendizagem/i,
             /problema\s+escolar|rendimento\s+escolar/i
         ]
+    },
+    neuropediatria: {
+        names: ['neuropediatria', 'neuroped'],
+        patterns: [
+            /n[e3]ur[o0]p[e3]d[i1][a4]tr[a4]/i,  // neuropediatra, neuropediatria
+            /\bneuroped\b/i,  // neuroped (palavra completa)
+            /m[eé]dico\s+n[eé]uro/i,  // médico neuro
+        ],
+        symptoms: ['investigacao', 'diagnostico_medico', 'tea', 'tdah', 'epilepsia', 'neurologico'],
+        ageRange: ['crianca', 'adolescente'],
+        duration: 'sessao_40min',
+        isMedical: true,
+        priceTier: 'premium'
     }
 };
 

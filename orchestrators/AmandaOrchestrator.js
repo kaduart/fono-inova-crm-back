@@ -109,11 +109,13 @@ const VALID_SERVICES = {
 };
 
 // Especialidades médicas que NÃO oferecemos
+// ✅ ATUALIZADO Abr/2026: Removido 'neuropediatra' - agora temos na clínica!
 const MEDICAL_SPECIALTIES = [
-    { terms: ['neuropediatra', 'neurologista', 'neurologia'], name: 'Neurologista', redirect: 'neuropsicologia' },
+    { terms: ['neurologista', 'neurologia'], name: 'Neurologista', redirect: 'neuropsicologia' },
     { terms: ['pediatra', 'pediatria'], name: 'Pediatra', redirect: 'fonoaudiologia' },
     { terms: ['psiquiatra', 'psiquiatria'], name: 'Psiquiatra', redirect: 'psicologia' },
     { terms: ['cardiologista', 'ortopedista', 'dermatologista'], name: null, redirect: null },
+    // NOTA: neuropediatra foi removido pois agora é um serviço disponível (R$ 550)
 ];
 
 /**
@@ -1498,7 +1500,8 @@ export function detectIntentPriority(message) {
     }
     
     // 3. FORA DO ESCOPO
-    if (/\b(teste da linguinha|teste da l[íi]ngua|cirurgia|fazer cirurgia|operar|operac[ãa]o|cirurgi[ãa]o|m[ée]dico|pediatra|neuropediatra|otorrino|psiquiatra)\b/i.test(msg)) {
+    // ✅ ATUALIZADO Abr/2026: Removido 'neuropediatra' - agora temos na clínica!
+    if (/\b(teste da linguinha|teste da l[íi]ngua|cirurgia|fazer cirurgia|operar|operac[ãa]o|cirurgi[ãa]o|m[ée]dico|pediatra|otorrino|psiquiatra)\b/i.test(msg)) {
         return "FORA_ESCOPO";
     }
     
@@ -2053,7 +2056,8 @@ async function _getOptimizedAmandaResponseInternal({
     // ⚠️ SÓ ativa quando: é EXPLICACAO/FIRST_CONTACT + não detectou área + não é emprego/preço/fora_escopo
     const isEmpregoOuParceria = /\b(emprego|trabalhar|vaga|curriculo|cv|parceria|colaborar|estagio)\b/i.test(text);
     const isPerguntaPreco = /\b(quanto|custa|valor|preco|reembolso|convenio|plano)\b/i.test(text);
-    const isForaEscopo = /\b(cirurgia|medico|pediatra|neuropediatra|otorrino|psiquiatra)\b/i.test(text);
+    // ✅ ATUALIZADO Abr/2026: Removido 'neuropediatra' - agora temos na clínica!
+    const isForaEscopo = /\b(cirurgia|medico|pediatra|otorrino|psiquiatra)\b/i.test(text);
     
     console.log(`[DEBUG ESPECIALIDADE] Emprego:${isEmpregoOuParceria} Preco:${isPerguntaPreco} Fora:${isForaEscopo}`);
     console.log(`[DEBUG ESPECIALIDADE] Flags:`, JSON.stringify(context.forceFlags));
