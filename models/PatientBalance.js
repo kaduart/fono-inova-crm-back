@@ -37,7 +37,7 @@ const balanceTransactionSchema = new mongoose.Schema({
     // Para pagamentos: método usado
     paymentMethod: {
         type: String,
-        enum: ['dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'transferencia_bancaria', null],
+        enum: ['dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'transferencia_bancaria', 'credito', 'debito', 'transferencia', null],
         default: null
     },
     // Data da transação

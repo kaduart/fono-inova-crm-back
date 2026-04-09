@@ -65,6 +65,13 @@ async function main() {
     
     // 2. Publica imediatamente
     console.log('\n🔗 Enviando ao Make...');
+    
+    // 🚨 Verifica se o post tem imagem antes de enviar
+    if (!result.post.mediaUrl) {
+      console.error('❌ Post não tem imagem. Abortando.');
+      process.exit(1);
+    }
+    
     await makeService.sendPostToMake(result.post);
     
     // 3. Atualiza status

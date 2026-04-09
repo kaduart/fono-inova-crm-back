@@ -44,7 +44,7 @@ const sessionSchema = new mongoose.Schema({
     isPaid: { type: Boolean, default: false },
     paymentMethod: {
         type: String,
-        enum: ['dinheiro', 'pix', 'cartão', 'convenio', 'liminar_credit'], // ← Adicionado 'convenio' e 'liminar_credit'
+        enum: ['dinheiro', 'pix', 'cartão', 'convenio', 'liminar_credit', 'credito', 'debito', 'cartao_credito', 'cartao_debito', 'transferencia', 'transferencia_bancaria'],
         default: null
     },
     session: String,

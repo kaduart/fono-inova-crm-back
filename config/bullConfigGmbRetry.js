@@ -46,6 +46,11 @@ export function initGmbRetryWorker() {
                 throw new Error('Post não encontrado');
             }
             
+            // 🚨 Verifica se o post tem imagem antes de enviar
+            if (!post.mediaUrl) {
+                throw new Error('Post não tem imagem. Gere uma imagem primeiro.');
+            }
+            
             // Tentar enviar ao Make
             await makeService.sendPostToMake(post);
             

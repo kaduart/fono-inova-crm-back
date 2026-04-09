@@ -130,8 +130,8 @@ const appointmentSchema = new mongoose.Schema({
   paymentMethod: {
     type: String,
     enum: [
-      'dinheiro', 'pix', 'cartao_credito',
-      'cartao_debito', 'cartão', 'transferencia_bancaria',
+      'dinheiro', 'pix', 'cartao_credito', 'credito',
+      'cartao_debito', 'debito', 'cartão', 'transferencia', 'transferencia_bancaria',
       'plano-unimed', 'convenio', 'outro'
     ],
     default: 'dinheiro'

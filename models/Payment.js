@@ -14,7 +14,7 @@ const paymentSchema = new mongoose.Schema({
     serviceDate: { type: Date, default: null },
     paymentMethod: {
         type: String,
-        enum: ['pix', 'cartão', 'dinheiro', 'convenio', 'liminar_credit', 'credit_card', 'debit_card', 'cash', 'bank_transfer', 'other'],
+        enum: ['pix', 'cartão', 'dinheiro', 'convenio', 'liminar_credit', 'credit_card', 'debit_card', 'cash', 'bank_transfer', 'other', 'credito', 'debito', 'cartao_credito', 'cartao_debito', 'transferencia', 'transferencia_bancaria'],
         required: true
     },
     status: {
