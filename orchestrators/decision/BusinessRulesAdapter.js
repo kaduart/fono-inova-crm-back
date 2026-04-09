@@ -21,21 +21,11 @@ const HARD_CONSTRAINTS = {
   
   /**
    * RN-001: Horário comercial
-   * Fora do horário e não é urgência → fila para amanhã
+   * 🟢 DESATIVADO: Amanda agora trabalha 24/7!
+   * A IA responde automaticamente em qualquer horário.
    */
   operatingHours: (input) => {
-    const { currentTime = new Date(), isUrgent = false } = input;
-    
-    if (!isBusinessHours(currentTime) && !isUrgent) {
-      return {
-        active: true,
-        type: 'CONSTRAINT',
-        reason: 'OUTSIDE_OPERATING_HOURS',
-        action: 'QUEUE_FOR_NEXT_DAY',
-        priority: 0,
-        message: 'Recebemos sua mensagem! Responderemos amanhã durante o horário comercial. 💚'
-      };
-    }
+    // Regra desativada - IA Amanda trabalha 24h por dia, 7 dias por semana
     return { active: false };
   },
 
