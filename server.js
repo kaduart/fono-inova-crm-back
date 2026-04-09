@@ -520,13 +520,30 @@ server.listen(PORT, '0.0.0.0', () => {
 // ======================================================
 (async () => {
   try {
-    console.log("🔄 Verificando Redis...");
-    // NÃO await - deixa conectar em background
-    redisConnection.ping().then(() => {
-      console.log("✅ Redis conectado!");
-    }).catch(err => {
-      console.warn("⚠️ Redis indisponível (não bloqueia):", err.message);
-    });
+    // Conexão Redis com retry
+    let redisConnected = false;
+    let redisRetries = 0;
+    const MAX_REDIS_RETRIES = 3;
+    
+    while (!redisConnected && redisRetries < MAX_REDIS_RETRIES) {
+      try {
+        redisRetries++;
+        console.log(`🔄 Verificando Redis (tentativa ${redisRetries}/${MAX_REDIS_RETRIES})...`);
+        await redisConnection.ping();
+        redisConnected = true;
+        console.log("✅ Redis conectado!");
+      } catch (err) {
+        console.warn(`⚠️ Redis tentativa ${redisRetries} falhou:`, err.message);
+        
+        if (redisRetries < MAX_REDIS_RETRIES) {
+          const delay = redisRetries * 1000;
+          console.log(`⏳ Aguardando ${delay}ms antes de tentar novamente...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          console.warn("⚠️ Redis indisponível após todas as tentativas - sistema continua em modo degradado");
+        }
+      }
+    }
 
     // Workers e Crons (com fallback se Redis falhar)
     try {
@@ -548,13 +565,39 @@ server.listen(PORT, '0.0.0.0', () => {
       console.warn("⚠️ Workers não iniciados (Redis indisponível):", workerErr.message);
     }
 
-    // Conexão MongoDB
-    await mongoose.connect(process.env.MONGO_URI, {
-      readPreference: 'primary',
-      retryWrites: true,
-      w: 'majority'
-    });
-    console.log("✅ Connected to MongoDB (readPreference: primary)");
+    // Conexão MongoDB com retry
+    let mongoConnected = false;
+    let mongoRetries = 0;
+    const MAX_MONGO_RETRIES = 5;
+    
+    while (!mongoConnected && mongoRetries < MAX_MONGO_RETRIES) {
+      try {
+        mongoRetries++;
+        console.log(`🔄 Tentando conectar MongoDB (tentativa ${mongoRetries}/${MAX_MONGO_RETRIES})...`);
+        
+        await mongoose.connect(process.env.MONGO_URI, {
+          readPreference: 'primary',
+          retryWrites: true,
+          w: 'majority',
+          serverSelectionTimeoutMS: 10000, // 10s timeout
+          socketTimeoutMS: 45000,
+        });
+        
+        mongoConnected = true;
+        console.log("✅ Connected to MongoDB (readPreference: primary)");
+      } catch (mongoErr) {
+        console.error(`❌ MongoDB tentativa ${mongoRetries} falhou:`, mongoErr.message);
+        
+        if (mongoRetries < MAX_MONGO_RETRIES) {
+          const delay = mongoRetries * 2000; // 2s, 4s, 6s...
+          console.log(`⏳ Aguardando ${delay}ms antes de tentar novamente...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          console.error("❌ Todas as tentativas de conexão MongoDB falharam");
+          throw mongoErr; // Re-throw para parar o servidor
+        }
+      }
+    }
 
     // 👉 AQUI LIGAMOS SEU CRON DIÁRIO DE APRENDIZADO
     startLearningCron();
