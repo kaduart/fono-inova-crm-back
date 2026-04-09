@@ -19,7 +19,11 @@ export const validateAppointment = (req, res, next) => {
     if (req.body.serviceType === 'individual_session') {
         schema = schema.keys({
             sessionValue: Joi.number().min(0.01).required(),
-            paymentMethod: Joi.string().valid('dinheiro', 'pix', 'cartão').required()
+            paymentMethod: Joi.string().valid(
+                'dinheiro', 'pix', 'cartão', 'credito', 'debito', 
+                'cartao_credito', 'cartao_debito',
+                'transferencia', 'transferencia_bancaria', 'convenio', 'outro'
+            ).required()
         });
     }
 

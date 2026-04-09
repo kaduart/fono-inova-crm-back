@@ -169,6 +169,13 @@ async function taskSendToMake() {
         }
 
         try {
+            // 🚨 Verifica se o post tem imagem antes de enviar
+            if (!post.mediaUrl) {
+                logger.error(`Post ${post._id} não tem imagem. Pulando.`);
+                failed++;
+                continue;
+            }
+            
             await makeService.sendPostToMake(post);
             post.status = 'published';
             post.publishedAt = new Date();

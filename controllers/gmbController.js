@@ -81,6 +81,16 @@ export async function publishPost(req, res) {
     const post = await GmbPost.findById(req.params.id);
     if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
 
+    // 🚨 Verifica se o post tem imagem antes de enviar
+    console.log(`[GMB Publish] Post ${post._id}: mediaUrl=${post.mediaUrl ? 'OK' : 'NULL'}`);
+    if (!post.mediaUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'Post não tem imagem. Gere uma imagem primeiro antes de publicar.',
+        solution: 'Clique em "Gerar nova imagem" no modal de edição do post.'
+      });
+    }
+
     if (!makeService.isMakeConfigured()) {
       return res.status(503).json({
         success: false,
@@ -153,6 +163,16 @@ export async function republishPost(req, res) {
   try {
     const post = await GmbPost.findById(req.params.id);
     if (!post) return res.status(404).json({ success: false, error: 'Post não encontrado' });
+
+    // 🚨 Verifica se o post tem imagem antes de enviar
+    console.log(`[GMB Republish] Post ${post._id}: mediaUrl=${post.mediaUrl ? 'OK' : 'NULL'}`);
+    if (!post.mediaUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'Post não tem imagem. Gere uma imagem primeiro antes de republicar.',
+        solution: 'Clique em "Gerar nova imagem" no modal de edição do post.'
+      });
+    }
 
     if (!makeService.isMakeConfigured()) {
       return res.status(503).json({
@@ -381,6 +401,17 @@ export async function triggerManualPublish(req, res) {
     }
 
     const post = posts[0];
+    
+    // 🚨 Verifica se o post tem imagem antes de enviar
+    console.log(`[GMB Trigger] Post ${post._id}: mediaUrl=${post.mediaUrl ? 'OK' : 'NULL'}`);
+    if (!post.mediaUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'Post agendado não tem imagem. Gere uma imagem primeiro.',
+        postId: post._id
+      });
+    }
+    
     await makeService.sendPostToMake(post);
     post.status = 'published';
     post.publishedAt = new Date();

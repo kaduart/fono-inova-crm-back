@@ -148,6 +148,14 @@ export async function sendPostToMake(post, attempt = 1) {
     `📲 WhatsApp: (62) 99337-7726\n` +
     `📍 Fono Inova · Centro de Desenvolvimento Infantil · Anápolis-GO`;
 
+  // 🚨 Garante que a imagem existe antes de enviar para o Make
+  // Se não tem imagem válida, NÃO envia (evita erro 400 no GMB)
+  if (!safeMediaUrl) {
+    console.error(`[Make] ❌ Post ${post._id} não tem imagem válida. Abortando envio.`);
+    console.error(`[Make] Gere uma imagem primeiro antes de publicar.`);
+    throw new Error(`Post não tem imagem válida. Gere uma imagem primeiro.`);
+  }
+
   const payload = {
     postId: post._id.toString(),
     title: post.title || '',
