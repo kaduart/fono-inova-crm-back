@@ -45,9 +45,11 @@ async function fetchRawData(packageId, correlationId) {
     throw new Error(`Package ${packageId} not found`);
   }
   
-  // Busca TODAS as sessões do pacote (incluindo canceladas)
+  // Busca sessões do pacote (limitado — pacotes com 100+ sessões são caso de borda)
   const sessions = await Session.find({ package: packageId })
     .sort({ date: 1, time: 1 })
+    .limit(100)
+    .select('date time status isPaid')
     .lean();
   
   logger.info('[PackageProjectionService] Raw data fetched', {

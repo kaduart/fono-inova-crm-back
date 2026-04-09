@@ -93,10 +93,12 @@ export const patientProjectionWorker = new Worker(
   },
   {
     connection: redisConnection,
-    concurrency: 5, // não muito alto para não sobrecarregar MongoDB
-    limiter: { max: 20, duration: 1000 },
+    concurrency: 2,
+    limiter: { max: 10, duration: 1000 },
     stalledInterval: 30000,
-    lockDuration: 30000
+    lockDuration: 30000,
+    removeOnComplete: { age: 3600, count: 100 },  // 🧹 limpa jobs antigos
+    removeOnFail: { age: 3600 * 6 }
   }
 );
 
