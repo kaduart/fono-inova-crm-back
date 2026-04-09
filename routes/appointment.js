@@ -2289,13 +2289,28 @@ router.patch('/:id/complete', auth, async (req, res) => {
             console.log(`[complete] Atualizando saldo devedor... (${Date.now() - startTime}ms)`);
             try {
                 const patientBalance = await PatientBalance.getOrCreate(patientId);
+                
+                // 🆕 MAPEAMENTO: Converte service types específicos para especialidades
+                let normalizedSpecialty = appointment.specialty;
+                const specialtyMap = {
+                    'tongue_tie_test': 'fonoaudiologia',
+                    'neuropsych_evaluation': 'psicologia',
+                    'evaluation': appointment.specialty || 'fonoaudiologia'  // mantém ou default
+                };
+                
+                // Se o serviceType for um tipo específico, usa o mapeamento
+                if (appointment.serviceType && specialtyMap[appointment.serviceType]) {
+                    normalizedSpecialty = specialtyMap[appointment.serviceType];
+                    console.log(`[complete] Mapeando specialty: ${appointment.specialty} + ${appointment.serviceType} → ${normalizedSpecialty}`);
+                }
+                
                 await patientBalance.addDebit(
                     balanceAmount || appointment.sessionValue || 0,
                     balanceDescription || `Sessão ${appointment.date} - pagamento pendente`,
                     sessionId,
                     appointment._id,
                     req.user?._id,
-                    appointment.specialty,  // 🆕 PASSA ESPECIALIDADE
+                    normalizedSpecialty,  // 🆕 PASSA ESPECIALIDADE MAPEADA
                     appointment.correlationId  // 🆕 V4: correlationId para idempotência
                 );
                 console.log(`[complete] ✅ Débito adicionado (${Date.now() - startTime}ms)`);

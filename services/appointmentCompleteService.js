@@ -249,13 +249,25 @@ export class AppointmentCompleteService {
 
         const balance = await this.PatientBalance.getOrCreate(patientId);
         
+        // 🆕 MAPEAMENTO: Converte service types específicos para especialidades
+        let normalizedSpecialty = appointment.specialty;
+        const specialtyMap = {
+            'tongue_tie_test': 'fonoaudiologia',
+            'neuropsych_evaluation': 'psicologia',
+            'evaluation': appointment.specialty || 'fonoaudiologia'
+        };
+        
+        if (appointment.serviceType && specialtyMap[appointment.serviceType]) {
+            normalizedSpecialty = specialtyMap[appointment.serviceType];
+        }
+        
         await balance.addDebit(
             amount || appointment.sessionValue || 0,
             description || `Sessão ${appointment.date} - pagamento pendente`,
             appointment.session?._id,
             appointment._id,
             userId,
-            appointment.specialty,  // 🆕 ESPECIALIDADE
+            normalizedSpecialty,  // 🆕 ESPECIALIDADE MAPEADA
             appointment.correlationId  // 🆕 V4: correlationId para idempotência
         );
 
