@@ -1700,11 +1700,16 @@ async function processInboundMessage(msg, value) {
         const toRaw =
             value?.metadata?.display_phone_number ||
             process.env.CLINIC_PHONE_E164 ||
-            "";
+            "0000000000000"; // Fallback para não quebrar validação
 
         // 🔧 CORREÇÃO: Normalização robusta do telefone
         const from = normalizeE164BR(fromRaw);
-        const to = normalizeE164BR(toRaw);
+        let to = normalizeE164BR(toRaw);
+        
+        // Garante que 'to' nunca seja vazio
+        if (!to || to === "null" || to === "undefined") {
+            to = "0000000000000";
+        }
 
         // 🆕 LOG DEBUG: Mostrar transformação do número
         console.log("📞 [WEBHOOK PHONE] Normalização:", {

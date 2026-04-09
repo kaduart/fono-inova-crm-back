@@ -881,9 +881,9 @@ export async function resolveLeadByPhone(phone, defaults = {}) {
         metaTracking.specialty = detectSpecialtyFromMessage(defaults.firstMessage);
     }
     
-    // Se não tem source mas tem firstMessage, assume whatsapp
+    // Se não tem source mas tem firstMessage, assume whatsapp (origem organic no schema)
     if (!metaTracking.source && defaults.firstMessage) {
-        metaTracking.source = 'whatsapp';
+        metaTracking.source = 'organic';
         metaTracking.firstMessage = defaults.firstMessage;
         metaTracking.detectedAt = new Date();
     }
