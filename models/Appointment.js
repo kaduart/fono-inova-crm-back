@@ -130,8 +130,8 @@ const appointmentSchema = new mongoose.Schema({
   paymentMethod: {
     type: String,
     enum: [
-      'dinheiro', 'pix', 'cartao_credito', 'credito',
-      'cartao_debito', 'debito', 'cartão', 'transferencia', 'transferencia_bancaria',
+      'dinheiro', 'pix', 'cartao_credito',
+      'cartao_debito', 'cartão', 'transferencia_bancaria',
       'plano-unimed', 'convenio', 'outro'
     ],
     default: 'dinheiro'
@@ -296,6 +296,12 @@ appointmentSchema.index({ specialty: 1, date: 1 });
 appointmentSchema.index({ 'patientInfo.phone': 1 });
 appointmentSchema.index({ assignedTo: 1, operationalStatus: 1 });
 appointmentSchema.index({ urgency: 1, createdAt: -1 });
+
+// 🆕 V4: Índice único para correlationId (idempotência)
+appointmentSchema.index(
+    { correlationId: 1 },
+    { unique: true, sparse: true }
+);
 
 // ─── ÍNDICES DE PERFORMANCE (queries do calendário / listagens) ─
 // Query principal do calendário: filtra por clínica + período

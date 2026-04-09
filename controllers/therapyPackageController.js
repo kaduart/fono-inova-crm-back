@@ -166,6 +166,7 @@ export const packageOperations = {
                 selectedSlots = [], // 💡 novo campo
                 payments = [],
                 pendingSessionIds = [], // 🔄 sessões pendentes de outros dias a absorver
+                selectedDebts = [], // 🆕 IDs das transações de débito a quitar
                 // ⚖️ Campos específicos para liminar
                 type = 'therapy',
                 liminarProcessNumber,
@@ -718,7 +719,90 @@ export const packageOperations = {
             await newPackage.save({ session: mongoSession });
 
             // ==========================================================
-            // 7️⃣ FINALIZAÇÃO
+            // 7️⃣ QUITAR DÉBITOS SELECIONADOS (via PatientBalance)
+            // ==========================================================
+            if (selectedDebts && selectedDebts.length > 0) {
+                console.log(`[Package Create] Quitando ${selectedDebts.length} débitos via pacote...`);
+                
+                const patientBalance = await PatientBalance.findOne({ patient: patientId }).session(mongoSession);
+                
+                if (patientBalance) {
+                    // 🔥 V4: Verificar se algum débito já foi quitado em OUTRO pacote
+                    const alreadySettled = patientBalance.transactions.filter(
+                        t => selectedDebts.includes(t._id.toString()) && 
+                             t.settledByPackageId &&
+                             t.settledByPackageId.toString() !== newPackage._id.toString()
+                    );
+                    
+                    if (alreadySettled.length > 0) {
+                        console.error(`[Package Create] ❌ ${alreadySettled.length} débito(s) já quitado(s) em outro pacote!`);
+                        throw new Error(`${alreadySettled.length} débito(s) já foram quitados em outro pacote`);
+                    }
+                    
+                    // Buscar débitos selecionados
+                    const debitsToSettle = patientBalance.transactions.filter(
+                        t => selectedDebts.includes(t._id.toString()) && 
+                             t.type === 'debit' && 
+                             !t.settledByPackageId &&
+                             !t.isPaid
+                    );
+                    
+                    if (debitsToSettle.length > 0) {
+                        const totalToSettle = debitsToSettle.reduce((sum, t) => sum + t.amount, 0);
+                        
+                        console.log(`[Package Create] Total a quitar: R$ ${totalToSettle} (${debitsToSettle.length} débitos)`);
+                        
+                        // 1. Marcar débitos como quitados pelo pacote
+                        for (const debit of debitsToSettle) {
+                            debit.settledByPackageId = newPackage._id;
+                            debit.isPaid = true;
+                            debit.paidAmount = debit.amount;
+                        }
+                        
+                        // 2. Criar transação de CRÉDITO (quitação)
+                        patientBalance.transactions.push({
+                            type: 'credit',
+                            amount: totalToSettle,
+                            description: `Quitação via pacote #${newPackage._id.toString().slice(-6)}`,
+                            specialty: debitsToSettle[0]?.specialty || sessionType,
+                            settledByPackageId: newPackage._id,
+                            registeredBy: req.user?._id,
+                            transactionDate: new Date()
+                        });
+                        
+                        // 3. Atualizar saldo
+                        patientBalance.currentBalance -= totalToSettle;
+                        patientBalance.totalCredited += totalToSettle;
+                        patientBalance.lastTransactionAt = new Date();
+                        
+                        await patientBalance.save({ session: mongoSession });
+                        console.log(`[Package Create] ✅ Débitos quitados. Novo saldo: R$ ${patientBalance.currentBalance}`);
+                        
+                        // 4. Atualizar appointments como pagos
+                        const appointmentIds = debitsToSettle
+                            .filter(t => t.appointmentId)
+                            .map(t => t.appointmentId);
+                        
+                        if (appointmentIds.length > 0) {
+                            await Appointment.updateMany(
+                                { _id: { $in: appointmentIds } },
+                                { 
+                                    $set: { 
+                                        paymentStatus: 'paid',
+                                        addedToBalance: false,
+                                        isPaid: true
+                                    }
+                                },
+                                { session: mongoSession }
+                            );
+                            console.log(`[Package Create] ✅ ${appointmentIds.length} appointments marcados como pagos`);
+                        }
+                    }
+                }
+            }
+
+            // ==========================================================
+            // 8️⃣ FINALIZAÇÃO
             // ==========================================================
             await mongoSession.commitTransaction();
             transactionCommitted = true;

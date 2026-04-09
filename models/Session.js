@@ -19,6 +19,28 @@ const sessionSchema = new mongoose.Schema({
     time: String,
     sessionType: {
         type: String,
+        required: [true, 'sessionType é obrigatório'],
+        enum: {
+            values: [
+                'fonoaudiologia',
+                'psicologia', 
+                'terapia ocupacional',
+                'fisioterapia',
+                'pediatria',
+                'neuroped',
+                'musicoterapia',
+                'psicomotricidade',
+                'psicopedagogia'
+            ],
+            message: 'sessionType "{VALUE}" não é válido. Use: fonoaudiologia, psicologia, terapia ocupacional, etc'
+        },
+        set: function(v) {
+            // Normaliza: lowercase, trim, underscores viram espaço, remove espaços duplos
+            // 'terapia_ocupacional' → 'terapia ocupacional'
+            // 'Fonoaudiologia' → 'fonoaudiologia'
+            if (!v) return v;
+            return v.toString().toLowerCase().trim().replace(/_/g, ' ').replace(/\s+/g, ' ');
+        }
     },
     sessionValue: Number,
     appointmentId: {
@@ -178,6 +200,24 @@ const sessionSchema = new mongoose.Schema({
     timestamps: true,
     toJSON: { virtuals: true },
     toObject: { virtuals: true }
+});
+
+// 🔍 Índice essencial para busca de sessões pendentes por especialidade
+sessionSchema.index({ patient: 1, sessionType: 1, paymentStatus: 1, status: 1 });
+sessionSchema.index({ patient: 1, paymentStatus: 1, status: 1 });
+
+// 🆕 V4: Índice único para appointmentId (1 appointment = 1 session)
+sessionSchema.index(
+    { appointmentId: 1 },
+    { unique: true, sparse: true }
+);
+
+// 🔒 Pre-validate: garante sessionType preenchido
+sessionSchema.pre('validate', function(next) {
+    if (!this.sessionType || this.sessionType.trim() === '') {
+        throw new Error('Session.sessionType é obrigatório. Não pode ser vazio.');
+    }
+    next();
 });
 
 // Hook pós-save para provisionamento automático

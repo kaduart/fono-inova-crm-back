@@ -254,7 +254,9 @@ export class AppointmentCompleteService {
             description || `Sessão ${appointment.date} - pagamento pendente`,
             appointment.session?._id,
             appointment._id,
-            userId
+            userId,
+            appointment.specialty,  // 🆕 ESPECIALIDADE
+            appointment.correlationId  // 🆕 V4: correlationId para idempotência
         );
 
         return { isPaid: false, type: 'balance', balanceId: balance._id };
