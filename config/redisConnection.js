@@ -3,7 +3,7 @@ import chalk from "chalk";
 import IORedis from "ioredis";
 
 const REDIS_RETRY_STRATEGY = (times) => {
-  const delay = Math.min(times * 100, 3000);
+  const delay = Math.min(times * 500, 5000); // ⬆️ 500ms base (era 100ms) — evita tempestade de retry
   console.log(`🔄 Redis retry ${times}, delay ${delay}ms`);
   return delay;
 };

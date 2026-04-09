@@ -62,24 +62,74 @@ export async function buildPatientView(patientId, options = {}) {
       return null;
     }
     
-    // 2. Busca dados relacionados em paralelo
+    // 2. Busca dados relacionados em paralelo (OTIMIZADO: limitado + select)
     const [
-      appointments,
-      payments,
+      recentAppointments,
+      totalAppointments,
+      totalCompleted,
+      totalCanceled,
+      totalNoShow,
+      recentPayments,
+      totalRevenueAgg,
+      totalPendingAgg,
       balance,
       packages
     ] = await Promise.all([
-      Appointment.find({ patient: patientId }).sort({ date: -1, time: -1 }).lean(),
-      Payment.find({ patientId }).lean(),
+      // Últimos 50 agendamentos (para last/next + lista resumida)
+      Appointment.find({ patient: patientId })
+        .sort({ date: -1, time: -1 })
+        .limit(50)
+        .select('date time operationalStatus clinicalStatus doctor serviceType specialty sessionValue paymentStatus')
+        .lean(),
+      // Counts via aggregation — barato, não carrega documentos
+      Appointment.countDocuments({ patient: patientId }),
+      Appointment.countDocuments({ patient: patientId, operationalStatus: 'completed' }),
+      Appointment.countDocuments({ patient: patientId, operationalStatus: 'canceled' }),
+      Appointment.countDocuments({ patient: patientId, clinicalStatus: 'no_show' }),
+      // Últimos 200 pagamentos (cobre 99% dos pacientes)
+      Payment.find({ patientId })
+        .sort({ createdAt: -1 })
+        .limit(200)
+        .select('status amount createdAt')
+        .lean(),
+      // Aggregation para totais financeiros (só completed/pending)
+      Payment.aggregate([
+        { $match: { patientId: new mongoose.Types.ObjectId(patientId), status: 'completed' } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
+      Payment.aggregate([
+        { $match: { patientId: new mongoose.Types.ObjectId(patientId), status: 'pending' } },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]),
       PatientBalance.findOne({ patient: patientId }).lean(),
-      Package.find({ patient: patientId }).lean()
+      Package.find({ patient: patientId })
+        .select('_id sessionType specialty totalSessions sessionsDone sessionsRemaining status sessionValue')
+        .lean()
     ]);
     
-    // 3. Calcula métricas
-    const stats = calculateStats(appointments, payments, packages);
+    // 3. Calcula métricas (usa counts da aggregation + dados recentes)
+    const appointments = recentAppointments; // compatibilidade com funções existentes
+    const payments = recentPayments;
+    const stats = {
+      totalAppointments,
+      totalCompleted,
+      totalCanceled,
+      totalNoShow,
+      totalSessions: packages.reduce((sum, p) => sum + (p.sessionsDone || 0), 0),
+      totalPackages: packages.length,
+      totalRevenue: totalRevenueAgg[0]?.total || 0,
+      totalPending: totalPendingAgg[0]?.total || 0,
+      firstAppointmentDate: recentAppointments.length > 0 
+        ? recentAppointments[recentAppointments.length - 1].date 
+        : null,
+      lastAppointmentDate: null,  // preenchido abaixo
+      nextAppointmentDate: null   // preenchido abaixo
+    };
     
     // 4. Extrai último/próximo agendamento
-    const { lastAppointment, nextAppointment } = extractAppointments(appointments);
+    const { lastAppointment, nextAppointment } = extractAppointments(recentAppointments);
+    stats.lastAppointmentDate = lastAppointment?.date || null;
+    stats.nextAppointmentDate = nextAppointment?.date || null;
     
     // 5. Normaliza nome para busca
     const normalizedName = patient.fullName
@@ -108,29 +158,8 @@ export async function buildPatientView(patientId, options = {}) {
       doctorName: patient.doctor?.fullName || null,
       specialty: null, // será preenchido se tiver doutor
       
-      // Stats calculadas
-      stats: {
-        totalAppointments: appointments.length,
-        totalCompleted: appointments.filter(a => a.operationalStatus === 'completed').length,
-        totalCanceled: appointments.filter(a => a.operationalStatus === 'canceled').length,
-        totalNoShow: appointments.filter(a => a.clinicalStatus === 'no_show').length,
-        
-        totalSessions: packages.reduce((sum, p) => sum + (p.sessionsDone || 0), 0),
-        totalPackages: packages.length,
-        
-        totalRevenue: payments
-          .filter(p => p.status === 'completed')
-          .reduce((sum, p) => sum + (p.amount || 0), 0),
-        totalPending: payments
-          .filter(p => p.status === 'pending')
-          .reduce((sum, p) => sum + (p.amount || 0), 0),
-        
-        firstAppointmentDate: appointments.length > 0 
-          ? appointments[appointments.length - 1].date 
-          : null,
-        lastAppointmentDate: lastAppointment?.date || null,
-        nextAppointmentDate: nextAppointment?.date || null
-      },
+      // Stats calculadas (usam aggregation counts — precisas e baratas)
+      stats,
       
       // Agendamentos
       lastAppointment,

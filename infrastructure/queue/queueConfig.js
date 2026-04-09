@@ -1,27 +1,10 @@
 // infrastructure/queue/queueConfig.js
 import { Queue } from 'bullmq';
-import Redis from 'ioredis';
+import { redisConnection as sharedRedisConnection } from '../../config/redisConnection.js';
 
-// Configuração de conexão Redis
-// Usa REDIS_URL se disponível, senão fallback para REDIS_HOST/PORT
-const redisUrl = process.env.REDIS_URL;
-let redisConnection;
-
-if (redisUrl) {
-    redisConnection = new Redis(redisUrl, {
-        maxRetriesPerRequest: null,
-        enableReadyCheck: false
-    });
-    console.log('[QueueConfig] Conectando via REDIS_URL');
-} else {
-    redisConnection = new Redis({
-        host: process.env.REDIS_HOST || 'localhost',
-        port: process.env.REDIS_PORT || 6379,
-        maxRetriesPerRequest: null,
-        enableReadyCheck: false
-    });
-    console.log('[QueueConfig] Conectando via REDIS_HOST/PORT');
-}
+// ✅ REUTILIZA conexão Redis existente para evitar duplicação de conexões
+const redisConnection = sharedRedisConnection;
+console.log('[QueueConfig] Reutilizando conexão Redis existente');
 
 // Configurações padrão de retry
 export const defaultRetryConfig = {
