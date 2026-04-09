@@ -129,6 +129,12 @@ export const scheduleGmbCron = () => {
 
             for (const post of posts) {
                 try {
+                    // 🚨 Verifica se o post tem imagem antes de enviar
+                    if (!post.mediaUrl) {
+                        console.error(`❌ [GMB] Post ${post._id} não tem imagem. Pulando.`);
+                        continue;
+                    }
+                    
                     await makeService.sendPostToMake(post);
                     post.status = 'published';
                     post.publishedAt = new Date();
