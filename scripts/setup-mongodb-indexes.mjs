@@ -1,146 +1,123 @@
-/**
- * Script para criar índices MongoDB para otimização de performance
- * Execute com: node scripts/setup-mongodb-indexes.mjs
- */
+// 🔧 Script para criar índices MongoDB (idempotente)
+// Roda uma vez para garantir performance e unicidade
+//
+// USO: node scripts/setup-mongodb-indexes.mjs
 
 import mongoose from 'mongoose';
+import dotenv from 'dotenv';
 
-const MONGODB_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/crm-clinica';
+dotenv.config();
 
-async function setupIndexes() {
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kaduart:%40Soundcar10@cluster0.g2c3sdk.mongodb.net/crm_development';
+
+async function setup() {
+    console.log('========================================');
+    console.log('🔧 SETUP: Criando índices MongoDB');
+    console.log('========================================\n');
+
+    console.log('🔗 Conectando...');
+    await mongoose.connect(MONGO_URI);
+    console.log('✅ Conectado!\n');
+
+    const db = mongoose.connection.db;
+
+    // ============================================
+    // 1. Índices de PatientBalance (transações)
+    // ============================================
+    console.log('📊 PatientBalance.transactions:');
+    
     try {
-        console.log('🔗 Conectando ao MongoDB...');
-        await mongoose.connect(MONGODB_URI);
-        console.log('✅ Conectado!\n');
-
-        const db = mongoose.connection.db;
-
-        // ============================================
-        // APPOINTMENTS
-        // ============================================
-        console.log('📅 Criando índices em appointments...');
-        
-        await db.collection('appointments').createIndex({ date: 1 });
-        console.log('  ✓ date (para filtros por data)');
-        
-        await db.collection('appointments').createIndex({ doctor: 1, date: 1 });
-        console.log('  ✓ doctor + date (para calendário)');
-        
-        await db.collection('appointments').createIndex({ patient: 1, date: -1 });
-        console.log('  ✓ patient + date (para histórico)');
-        
-        await db.collection('appointments').createIndex({ status: 1 });
-        console.log('  ✓ status (para filtros)');
-        
-        await db.collection('appointments').createIndex({ session: 1 });
-        console.log('  ✓ session (para joins)');
-        
-        await db.collection('appointments').createIndex({ payment: 1 });
-        console.log('  ✓ payment (para joins)');
-        
-        await db.collection('appointments').createIndex({ package: 1 });
-        console.log('  ✓ package (para joins)');
-
-        // ============================================
-        // SESSIONS
-        // ============================================
-        console.log('\n📋 Criando índices em sessions...');
-        
-        await db.collection('sessions').createIndex({ package: 1 });
-        console.log('  ✓ package (para buscar sessões do pacote)');
-        
-        await db.collection('sessions').createIndex({ patient: 1 });
-        console.log('  ✓ patient (para histórico)');
-        
-        await db.collection('sessions').createIndex({ appointment: 1 });
-        console.log('  ✓ appointment (para joins)');
-        
-        await db.collection('sessions').createIndex({ status: 1 });
-        console.log('  ✓ status (para filtros)');
-        
-        await db.collection('sessions').createIndex({ date: 1 });
-        console.log('  ✓ date (para relatórios)');
-
-        // ============================================
-        // PAYMENTS
-        // ============================================
-        console.log('\n💰 Criando índices em payments...');
-        
-        await db.collection('payments').createIndex({ patient: 1 });
-        console.log('  ✓ patient (para histórico)');
-        
-        await db.collection('payments').createIndex({ session: 1 });
-        console.log('  ✓ session (para joins)');
-        
-        await db.collection('payments').createIndex({ appointment: 1 });
-        console.log('  ✓ appointment (para joins)');
-        
-        await db.collection('payments').createIndex({ package: 1 });
-        console.log('  ✓ package (para joins)');
-        
-        await db.collection('payments').createIndex({ status: 1 });
-        console.log('  ✓ status (para filtros)');
-        
-        await db.collection('payments').createIndex({ date: 1 });
-        console.log('  ✓ date (para relatórios)');
-        
-        await db.collection('payments').createIndex({ createdAt: -1 });
-        console.log('  ✓ createdAt (para ordenação)');
-
-        // ============================================
-        // PACKAGES
-        // ============================================
-        console.log('\n📦 Criando índices em packages...');
-        
-        await db.collection('packages').createIndex({ patient: 1 });
-        console.log('  ✓ patient (para listar pacotes)');
-        
-        await db.collection('packages').createIndex({ status: 1 });
-        console.log('  ✓ status (para filtros)');
-        
-        await db.collection('packages').createIndex({ type: 1 });
-        console.log('  ✓ type (para filtros por tipo)');
-
-        // ============================================
-        // PATIENTS
-        // ============================================
-        console.log('\n👤 Criando índices em patients...');
-        
-        await db.collection('patients').createIndex({ name: 'text', email: 'text' });
-        console.log('  ✓ text index (para busca)');
-        
-        await db.collection('patients').createIndex({ phone: 1 });
-        console.log('  ✓ phone (para busca rápida)');
-
-        // ============================================
-        // PATIENTBALANCES
-        // ============================================
-        console.log('\n⚖️ Criando índices em patientbalances...');
-        
-        await db.collection('patientbalances').createIndex({ patient: 1 }, { unique: true });
-        console.log('  ✓ patient (único, para getOrCreate)');
-
-        console.log('\n✅ Todos os índices criados com sucesso!');
-        console.log('\n📊 Índices criados:');
-        
-        // Listar índices criados
-        const collections = ['appointments', 'sessions', 'payments', 'packages', 'patients', 'patientbalances'];
-        for (const coll of collections) {
-            const indexes = await db.collection(coll).indexes();
-            console.log(`\n${coll}:`);
-            indexes.forEach(idx => {
-                console.log(`  - ${idx.name}: ${JSON.stringify(idx.key)}`);
-            });
-        }
-
-    } catch (error) {
-        console.error('❌ Erro:', error.message);
-        process.exit(1);
-    } finally {
-        await mongoose.disconnect();
-        console.log('\n👋 Desconectado do MongoDB');
+        await db.collection('patientbalances').createIndex(
+            { 'transactions.appointmentId': 1 },
+            { name: 'idx_transactions_appointmentId' }
+        );
+        console.log('   ✅ appointmentId nas transações');
+    } catch (e) {
+        console.log('   ⚠️  appointmentId:', e.message);
     }
+
+    try {
+        await db.collection('patientbalances').createIndex(
+            { 'transactions.correlationId': 1 },
+            { name: 'idx_transactions_correlationId' }
+        );
+        console.log('   ✅ correlationId nas transações');
+    } catch (e) {
+        console.log('   ⚠️  correlationId:', e.message);
+    }
+
+    try {
+        await db.collection('patientbalances').createIndex(
+            { 'transactions.specialty': 1 },
+            { name: 'idx_transactions_specialty' }
+        );
+        console.log('   ✅ specialty nas transações');
+    } catch (e) {
+        console.log('   ⚠️  specialty:', e.message);
+    }
+
+    try {
+        await db.collection('patientbalances').createIndex(
+            { 'transactions.settledByPackageId': 1 },
+            { name: 'idx_transactions_settledByPackageId' }
+        );
+        console.log('   ✅ settledByPackageId nas transações');
+    } catch (e) {
+        console.log('   ⚠️  settledByPackageId:', e.message);
+    }
+
+    // ============================================
+    // 2. Índices de Appointment
+    // ============================================
+    console.log('\n📊 appointments:');
+
+    try {
+        await db.collection('appointments').createIndex(
+            { correlationId: 1 },
+            { unique: true, sparse: true, name: 'idx_correlationId_unique' }
+        );
+        console.log('   ✅ correlationId (único)');
+    } catch (e) {
+        console.log('   ⚠️  correlationId:', e.message);
+    }
+
+    // ============================================
+    // 3. Índices de Session
+    // ============================================
+    console.log('\n📊 sessions:');
+
+    try {
+        await db.collection('sessions').createIndex(
+            { appointmentId: 1 },
+            { unique: true, sparse: true, name: 'idx_appointmentId_unique' }
+        );
+        console.log('   ✅ appointmentId (único)');
+    } catch (e) {
+        console.log('   ⚠️  appointmentId:', e.message);
+    }
+
+    // ============================================
+    // Verificação final
+    // ============================================
+    console.log('\n========================================');
+    console.log('📋 Índices existentes:');
+
+    const patientBalanceIndexes = await db.collection('patientbalances').indexes();
+    console.log(`   PatientBalance: ${patientBalanceIndexes.length} índices`);
+
+    const appointmentIndexes = await db.collection('appointments').indexes();
+    console.log(`   Appointments: ${appointmentIndexes.length} índices`);
+
+    const sessionIndexes = await db.collection('sessions').indexes();
+    console.log(`   Sessions: ${sessionIndexes.length} índices`);
+
+    console.log('\n✅ Setup concluído!');
+
+    await mongoose.disconnect();
+    process.exit(0);
 }
 
-// Executar
-setupIndexes();
+setup().catch(err => {
+    console.error('💥 Erro:', err);
+    process.exit(1);
+});

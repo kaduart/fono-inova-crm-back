@@ -28,6 +28,12 @@ const balanceTransactionSchema = new mongoose.Schema({
         ref: 'Appointment',
         default: null
     },
+    // 🆕 ESPECIALIDADE (essencial para filtro por tipo)
+    specialty: {
+        type: String,
+        default: null,
+        description: 'Especialidade do atendimento (fonoaudiologia, psicologia, terapia_ocupacional, etc)'
+    },
     // Quem registrou
     registeredBy: {
         type: mongoose.Schema.Types.ObjectId,
@@ -77,6 +83,20 @@ const balanceTransactionSchema = new mongoose.Schema({
     deleteReason: {
         type: String,
         default: null
+    },
+    // 🆕 V3: Link com pacote que quitou este débito
+    settledByPackageId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Package',
+        default: null,
+        description: 'ID do pacote que quitou este débito (evita duplicidade)'
+    },
+    // 🆕 V4: ID de correlação para idempotência (1 appointment = 1 débito)
+    correlationId: {
+        type: String,
+        default: null,
+        index: true,
+        description: 'ID de correlação para evitar duplicidade de débitos'
     }
 }, { _id: true });
 
@@ -132,9 +152,48 @@ patientBalanceSchema.virtual('hasCredit').get(function() {
     return this.currentBalance < 0;
 });
 
-// Método para adicionar débito (sessão usada não paga)
-patientBalanceSchema.methods.addDebit = async function(amount, description, sessionId = null, appointmentId = null, registeredBy = null) {
-    console.log(`[PatientBalance.addDebit] Iniciando - amount: ${amount}, patient: ${this.patient}`);
+// Método para adicionar débito (sessão usada não paga) - IDEMPOTENTE
+patientBalanceSchema.methods.addDebit = async function(
+    amount, 
+    description, 
+    sessionId = null, 
+    appointmentId = null, 
+    registeredBy = null,
+    specialty = null,  // 🆕 especialidade do atendimento
+    correlationId = null  // 🆕 V4: ID de correlação para idempotência
+) {
+    console.log(`[PatientBalance.addDebit] Iniciando - amount: ${amount}, patient: ${this.patient}, specialty: ${specialty}, correlationId: ${correlationId}`);
+    
+    // 🔥 IDEMPOTÊNCIA: Verificar se já existe débito para este appointment
+    if (appointmentId) {
+        const exists = this.transactions.find(t => 
+            t.type === 'debit' && 
+            t.appointmentId?.toString() === appointmentId.toString()
+        );
+        
+        if (exists) {
+            console.log(`[PatientBalance.addDebit] ⚠️ Débito já existe para appointment ${appointmentId}, ignorando...`);
+            return { skipped: true, reason: 'already_exists', transaction: exists };
+        }
+    }
+    
+    // 🔥 IDEMPOTÊNCIA: Verificar por correlationId
+    if (correlationId) {
+        const existsByCorrelation = this.transactions.find(t => 
+            t.type === 'debit' && 
+            t.correlationId === correlationId
+        );
+        
+        if (existsByCorrelation) {
+            console.log(`[PatientBalance.addDebit] ⚠️ Débito já existe para correlationId ${correlationId}, ignorando...`);
+            return { skipped: true, reason: 'correlation_exists', transaction: existsByCorrelation };
+        }
+    }
+    
+    // Normaliza specialty (igual ao Session)
+    const normalizedSpecialty = specialty 
+        ? specialty.toString().toLowerCase().trim().replace(/_/g, ' ').replace(/\s+/g, ' ')
+        : null;
     
     this.transactions.push({
         type: 'debit',
@@ -142,6 +201,8 @@ patientBalanceSchema.methods.addDebit = async function(amount, description, sess
         description,
         sessionId,
         appointmentId,
+        specialty: normalizedSpecialty,
+        correlationId,  // 🆕 V4: guarda correlationId
         registeredBy,
         transactionDate: new Date()
     });
@@ -150,10 +211,10 @@ patientBalanceSchema.methods.addDebit = async function(amount, description, sess
     this.totalDebited += amount;
     this.lastTransactionAt = new Date();
     
-    console.log(`[PatientBalance.addDebit] Salvando... Novo saldo: ${this.currentBalance}`);
+    console.log(`[PatientBalance.addDebit] Salvando... Novo saldo: ${this.currentBalance}, specialty: ${normalizedSpecialty}`);
     const result = await this.save();
     console.log(`[PatientBalance.addDebit] ✅ Salvo com sucesso`);
-    return result;
+    return { skipped: false, transaction: result.transactions[result.transactions.length - 1] };
 };
 
 // Método para registrar pagamento/crédito
