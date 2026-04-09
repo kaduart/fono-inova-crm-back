@@ -2,19 +2,6 @@
  * WhatsApp Inbound Worker
  *
  * Consome: WHATSAPP_MESSAGE_RECEIVED  →  fila: whatsapp-inbound
- *
- * Responsabilidades:
- *   1. Recebe { msg, value } já com texto combinado (debounce feito no webhook)
- *   2. Delega para processInboundMessage() — lógica Amanda, save no Mongo, socket
- *
- * Idempotência:
- *   - processInboundMessage() já usa processedWamids (in-memory Set) para dedup
- *   - BullMQ deduplica por jobId no mesmo queue (jobId = wamid quando possível)
- *
- * Concurrency: 3 (Amanda é stateful por leadId — paralelismo seguro porque
- *   cada mensagem de um mesmo lead chega sequencialmente pelo debounce)
- *
- * Retry: 2 tentativas com backoff 1s/2s (erros de rede / Mongo transiente)
  */
 
 import { Worker } from 'bullmq';
@@ -23,9 +10,13 @@ import logger from '../../../utils/logger.js';
 import { processInboundMessage } from '../../../controllers/whatsappController.js';
 
 export function createWhatsappInboundWorker() {
-  return new Worker(
+  console.log('[WhatsappInboundWorker] 🚀 Criando worker...');
+  
+  const worker = new Worker(
     'whatsapp-inbound',
     async (job) => {
+      console.log(`[WhatsappInboundWorker] 📥 Job recebido: ${job.id}`);
+      
       const { payload, metadata } = job.data;
       let { msg, value } = payload;
 
@@ -39,7 +30,7 @@ export function createWhatsappInboundWorker() {
         correlationId,
       });
 
-      // 🔥 NOVO: Processa debounce se a mensagem veio do webhook com delay
+      // Processa debounce se a mensagem veio do webhook com delay
       if (payload._isDebounced && payload._debounceKey) {
         try {
           const buffer = await redis?.get(payload._debounceKey);
@@ -47,7 +38,6 @@ export function createWhatsappInboundWorker() {
           if (buffer) {
             const data = JSON.parse(buffer);
             
-            // Combina todas as mensagens do buffer
             if (data.messages && data.messages.length > 1) {
               const combinedText = data.messages.join(' ');
               if (!msg.text) {
@@ -58,29 +48,32 @@ export function createWhatsappInboundWorker() {
               logger.info('[WhatsappInboundWorker] Mensagens combinadas', {
                 wamid,
                 count: data.messages.length,
-                combinedLength: combinedText.length
               });
             }
             
-            // Limpa o buffer
             await redis?.del(payload._debounceKey);
             logger.info('[WhatsappInboundWorker] Buffer limpo', { debounceKey: payload._debounceKey });
           }
         } catch (debounceErr) {
-          logger.warn('[WhatsappInboundWorker] Erro ao processar debounce (continuando):', debounceErr.message);
-          // Continua processando a mensagem mesmo se o debounce falhar
+          logger.warn('[WhatsappInboundWorker] Erro ao processar debounce:', debounceErr.message);
         }
       }
 
-      const result = await processInboundMessage(msg, value);
+      try {
+        const result = await processInboundMessage(msg, value);
+        
+        if (result?.duplicate) {
+          logger.info('[WhatsappInboundWorker] Mensagem duplicada ignorada', { wamid });
+          return { status: 'skipped', reason: 'DUPLICATE', wamid };
+        }
 
-      if (result?.duplicate) {
-        logger.info('[WhatsappInboundWorker] Mensagem duplicada ignorada', { wamid });
-        return { status: 'skipped', reason: 'DUPLICATE', wamid };
+        logger.info('[WhatsappInboundWorker] ✅ Mensagem processada com sucesso', { wamid, from });
+        return { status: 'processed', wamid };
+      } catch (processErr) {
+        console.error(`[WhatsappInboundWorker] ❌ Erro ao processar mensagem:`, processErr.message);
+        logger.error('[WhatsappInboundWorker] Erro ao processar mensagem:', processErr);
+        throw processErr; // Re-throw para BullMQ tentar novamente
       }
-
-      logger.info('[WhatsappInboundWorker] Mensagem processada', { wamid, from });
-      return { status: 'processed', wamid };
     },
     {
       connection: bullMqConnection,
@@ -93,6 +86,26 @@ export function createWhatsappInboundWorker() {
       },
     }
   );
+
+  // Eventos do worker para debug
+  worker.on('completed', (job) => {
+    console.log(`[WhatsappInboundWorker] ✅ Job completado: ${job.id}`);
+  });
+
+  worker.on('failed', (job, err) => {
+    console.error(`[WhatsappInboundWorker] ❌ Job falhou: ${job?.id}, erro: ${err.message}`);
+  });
+
+  worker.on('error', (err) => {
+    console.error(`[WhatsappInboundWorker] ❌ Erro no worker:`, err.message);
+  });
+
+  worker.on('ready', () => {
+    console.log('[WhatsappInboundWorker] 🟢 Worker pronto para processar jobs');
+  });
+
+  console.log('[WhatsappInboundWorker] ✅ Worker criado e configurado');
+  return worker;
 }
 
 export default createWhatsappInboundWorker;
