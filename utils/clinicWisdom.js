@@ -336,18 +336,30 @@ const ACOLHIMENTO_RULES = {
 // ================================================================
 
 const SERVICE_REDIRECT_WISDOM = {
+    // ✅ ATUALIZADO Abr/2026: Agora temos neuropediatra na clínica!
     neuropediatra: {
         detected: 'Neuropediatra (médico neurologista pediátrico)',
-        redirect: 'Neuropsicologia',
-        explanation: 'Neuropsicologia avalia as funções cognitivas (atenção, memória, linguagem, raciocínio) através de testes padronizados. O laudo serve para escola, médicos e planejamento terapêutico.',
-        script: `Oi! 💚 Entendi que você está buscando neuropediatra.
+        redirect: null, // Agora temos na clínica!
+        explanation: 'Temos neuropediatra na equipe! Avaliação neurológica infantil com cuidado completo e orientação precisa para cada caso.',
+        script: `Oi! 💚 Que bom que você entrou em contato!
 
-Somos uma clínica de **terapias especializadas**, não temos médicos na equipe. O neuropediatra é um médico neurologista.
+Temos **neuropediatra** na nossa equipe! 🧠✨
 
-Mas posso te ajudar com **Neuropsicologia**! É uma avaliação completa das funções cerebrais (atenção, memória, linguagem, raciocínio) feita por meio de testes. Muitas famílias que buscam neuropediatra acabam precisando da avaliação neuropsicológica primeiro.
+A consulta é focada em avaliar o desenvolvimento neurológico da criança com cuidado completo e orientação precisa para cada caso.
 
-O laudo serve para levar ao médico, para a escola adaptar o ensino, e para planejar as terapias. Quer saber mais? 😊`,
-        empathyNote: 'Muitos pais confundem neuropediatra com neuropsicologia. Explique com calma a diferença sem fazer o pai se sentir ignorante.'
+A avaliação ajuda a entender questões como:
+• Atrasos no desenvolvimento
+• Dificuldades de atenção e comportamento  
+• Suspeitas de condições neurológicas
+• Orientação para encaminhamentos
+
+Valores da consulta:
+💵 R$ 575 à vista (PIX ou dinheiro)
+💳 R$ 600 em 2x no cartão
+💳 R$ 625 em 3x no cartão
+
+Quer que eu veja os horários disponíveis pra você? 😊`,
+        empathyNote: 'NUNCA prometa diagnóstico. Foque em "avaliação", "orientação", "entender o que está acontecendo". Tom humano e acolhedor, não promessas médicas.'
     },
     
     neurologista: {
@@ -549,20 +561,22 @@ export function getWisdomForContext(topic, flags = {}) {
 - Bridge: "${CONVENIO_WISDOM.geral.bridge}"`);
     }
 
-    // ── ESPECIALIDADES MÉDICAS (Fora de escopo) ────────────
+    // ── ESPECIALIDADES MÉDICAS ────────────
+    // ✅ ATUALIZADO Abr/2026: Agora temos neuropediatra na clínica!
     if (flags.mentionsNeuropediatra || /neuropediatra|neurologista\b/i.test(flags.normalizedText || '')) {
-        blocks.push(`🚫 NEUROPEDIATRA / NEUROLOGISTA — FORA DE ESCOPO:
-- A clínica NÃO tem médicos neurologistas.
-- Somos uma clínica de TERAPIAS (fonoaudiologia, psicologia, neuropsicologia, TO, fisioterapia).
-- REDIRECIONAMENTO: Oferecer Neuropsicologia (avaliação das funções cognitivas).
-- EXPLICAÇÃO: "A neuropsicologia avalia atenção, memória, linguagem e raciocínio através de testes. O laudo serve para escola e médicos."
-- NUNCA confirme que temos neuropediatra.`);
+        blocks.push(`✅ NEUROPEDIATRA — AGORA DISPONÍVEL:
+- Temos neuropediatra na equipe! 🧠
+- Avaliação neurológica infantil com cuidado completo
+- Foco em orientação e entender o que está acontecendo
+- NUNCA prometer diagnóstico — falar em "avaliação" e "orientação"
+- Valores: R$ 575 à vista / R$ 600 (2x) / R$ 625 (3x)
+- Tom: acolhedor, humano, sem promessas médicas`);
         
         if (!wisdom) {
             wisdom = {
-                tipo: 'redirect_medical',
-                de: 'neuropediatra',
-                para: 'neuropsicologia',
+                tipo: 'disponivel_medical',
+                servico: 'neuropediatra',
+                valores: { avista: 575, duasx: 600, tresx: 625 },
                 respostaExemplo: SERVICE_REDIRECT_WISDOM.neuropediatra.script
             };
         }

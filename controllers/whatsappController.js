@@ -707,8 +707,9 @@ export const whatsappController = {
             // e também dentro do processInboundMessage. Removido daqui para evitar duplicação.
             // O middleware já garante captura fail-safe antes de chegar aqui.
 
-            // 🆕 DEBOUNCE CORRETO AQUI (3.5s, não 30s)
+            // 🆕 DEBOUNCE CORRETO AQUI (3.5s, não 30s) - VERSÃO ROBUSTA
             const debounceKey = `webhook:buffer:${from}`;
+            const processingKey = `webhook:processing:${from}`;
             
             try {
                 const existing = await redis?.get(debounceKey);
@@ -719,7 +720,7 @@ export const whatsappController = {
                     data.messages.push(content);
                     data.lastTime = Date.now();
                     await redis?.set(debounceKey, JSON.stringify(data), 'EX', 10);
-                    console.log(`[BUFFER] Acumulado: ${data.messages.length} msgs`);
+                    console.log(`[BUFFER] Acumulado: ${data.messages.length} msgs de ${from}`);
                     return; // Não processa ainda!
                 }
 
@@ -727,8 +728,9 @@ export const whatsappController = {
                 await redis?.set(debounceKey, JSON.stringify({
                     messages: [content],
                     startTime: Date.now(),
-                    msgData: msg
-                }), 'EX', 4); // 4 segundos de espera
+                    msgData: msg,
+                    messageId: msg.id
+                }), 'EX', 10); // 10 segundos de TTL para segurança
             } catch (redisErr) {
                 // ⚡ Se Redis cair, processa sem debounce (direto, sem fila)
                 console.error('Redis debounce error (processando sem buffer):', redisErr.message);
@@ -736,27 +738,53 @@ export const whatsappController = {
                 return;
             }
 
-            // Aguarda 3.5s e processa tudo junto
-            setTimeout(async () => {
-                try {
-                    const buffer = await redis?.get(debounceKey);
-                    if (!buffer) return; // Já processado por outra instância
+            // 🔥 NOVO: Usar fila com atraso ao invés de setTimeout (mais robusto)
+            // Isso garante que a mensagem seja processada mesmo se o processo reiniciar
+            try {
+                const { publishEvent } = await import('../infrastructure/events/eventPublisher.js');
+                
+                // Agenda processamento em 3.5s usando a fila com delay
+                await publishEvent(EventTypes.WHATSAPP_MESSAGE_RECEIVED, { 
+                    msg, 
+                    value,
+                    _debounceKey: debounceKey,
+                    _processingKey: processingKey,
+                    _isDebounced: true
+                }, { 
+                    delay: 3500,
+                    correlationId: `webhook:${msg.id}`,
+                    idempotencyKey: `webhook:${from}:${msg.id}`
+                });
+                
+                console.log(`[WEBHOOK] Mensagem ${msg.id} agendada para processamento em 3.5s`);
+            } catch (queueErr) {
+                // Fallback: usa setTimeout se a fila falhar
+                console.warn('[WEBHOOK] Falha ao agendar na fila, usando setTimeout:', queueErr.message);
+                
+                setTimeout(async () => {
+                    try {
+                        const buffer = await redis?.get(debounceKey);
+                        if (!buffer) return; // Já processado por outra instância
 
-                    await redis?.del(debounceKey);
-                    const data = JSON.parse(buffer);
-                    const combinedText = data.messages.join(' ');
+                        await redis?.del(debounceKey);
+                        const data = JSON.parse(buffer);
+                        const combinedText = data.messages.join(' ');
 
-                    // Substitui o texto da mensagem pelo combinado
-                    if (!msg.text) {
-                        msg.text = { body: combinedText };
-                    } else {
-                        msg.text.body = combinedText;
+                        // Substitui o texto da mensagem pelo combinado
+                        if (!msg.text) {
+                            msg.text = { body: combinedText };
+                        } else {
+                            msg.text.body = combinedText;
+                        }
+                        
+                        const { publishEvent } = await import('../infrastructure/events/eventPublisher.js');
+                        await publishEvent(EventTypes.WHATSAPP_MESSAGE_RECEIVED, { msg, value });
+                        console.log(`[WEBHOOK] Mensagem ${msg.id} processada via setTimeout`);
+                    } catch (err) {
+                        console.error('❌ Erro no processamento do buffer:', err);
                     }
-                    await publishEvent(EventTypes.WHATSAPP_MESSAGE_RECEIVED, { msg, value });
-                } catch (err) {
-                    console.error('❌ Erro no processamento do buffer:', err);
-                }
-            }, 3500);
+                }, 3500);
+            }
 
         } catch (err) {
             console.error("❌ Erro crítico no webhook:", err);

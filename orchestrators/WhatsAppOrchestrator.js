@@ -128,6 +128,56 @@ export default class WhatsAppOrchestrator {
       // ══ INSIGHTS DE CONVERSAS REAIS (cache 1h) ══
       const insights = await this._getInsights();
 
+      // ══ 🎯 EXTRAI CONTEXTO GMB (SE EXISTIR) ══
+      // Contexto estruturado vem do link WhatsApp gerado no GMB
+      const gmbContext = this._extractGMBContext(text);
+      if (gmbContext) {
+        this.logger.info('V8_GMB_CONTEXT_DETECTED', { 
+          leadId, 
+          source: gmbContext.src,
+          especialidade: gmbContext.esp,
+          angulo: gmbContext.ang,
+          problema: gmbContext.prob?.substring(0, 50)
+        });
+        
+        // 💾 Salva contexto no lead para tracking e personalização
+        try {
+          await Leads.findByIdAndUpdate(leadId, {
+            $set: { 
+              'tracking.source': gmbContext.src,
+              'tracking.especialidade': gmbContext.esp,
+              'tracking.angulo': gmbContext.ang,
+              'tracking.problema': gmbContext.prob,
+              'tracking.funnelStage': gmbContext.fun,
+              'tracking.gmbTimestamp': new Date(gmbContext.ts),
+              'tracking.landingContext': gmbContext
+            }
+          });
+          this.logger.info('V8_GMB_CONTEXT_SAVED', { 
+            leadId, 
+            angulo: gmbContext.ang,
+            esp: gmbContext.esp 
+          });
+        } catch (saveError) {
+          this.logger.error('V8_GMB_CONTEXT_SAVE_ERROR', { 
+            leadId, 
+            error: saveError.message 
+          });
+          // Não quebra o fluxo se falhar ao salvar
+        }
+        
+        // 🎯 Se for primeira mensagem (IDLE/GREETING), responde com contexto
+        if (currentState === STATES.IDLE || currentState === STATES.GREETING) {
+          const contextualReply = this._generateContextualGMBReply(gmbContext);
+          await jumpToState(leadId, STATES.COLLECT_COMPLAINT, { 
+            gmbContext,
+            therapy: gmbContext.esp,
+            source: 'gmb'
+          });
+          return this._reply(contextualReply, { skipEnrichment: true });
+        }
+      }
+
       // ══ PIPELINE DE INTELIGÊNCIA (roda para toda mensagem) ══
       // Todos os detectores são chamados aqui, antes de qualquer decisão de estado.
       // O FSM decide com contexto rico, não no escuro.
@@ -155,7 +205,7 @@ export default class WhatsAppOrchestrator {
       }
       
       // Armazena ctx completo: leadData, canOfferScheduling, promptMode, flags, etc.
-      this.currentContext = { ...ctx, lead: freshLead, state: currentState, stateData, insights, parsedMessage };
+      this.currentContext = { ...ctx, lead: freshLead, state: currentState, stateData, insights, parsedMessage, gmbContext };
 
       // ══ DECISION RESOLVER v2.0 (decisão unificada) ══
       const _decisionStart = Date.now();
@@ -1963,5 +2013,172 @@ Me conta um pouco sobre o que você precisa! 😊`;
     // retryCount começa em 1 após o primeiro incremento
     const idx = Math.min(retryCount - 1, options.length - 1);
     return options[idx];
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // 🎯 GMB CONTEXT EXTRACTION (Máquina de Aquisição de Pacientes)
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /**
+   * 🧠 Extrai contexto estruturado do GMB da mensagem
+   * O contexto vem codificado em base64url dentro do texto: [ctx:XXXX]
+   * 
+   * @param {string} message - Mensagem recebida
+   * @returns {Object|null} Contexto estruturado ou null
+   */
+  _extractGMBContext(message) {
+    if (!message || typeof message !== 'string') return null;
+    
+    // 🎯 Procura por [ctx:XXXX] no texto (WhatsApp não passa params de URL)
+    const match = message.match(/\[ctx:([A-Za-z0-9_-]+)\]/);
+    if (!match) {
+      // Log para debug: saber quando NÃO achou contexto
+      this.logger.debug('V8_GMB_CONTEXT_NOT_FOUND', { 
+        messagePreview: message.substring(0, 100)
+      });
+      return null;
+    }
+
+    try {
+      // 🛡️ Usa base64url para decodificar (seguro para URLs)
+      const decoded = Buffer.from(match[1], 'base64url').toString('utf-8');
+      const context = JSON.parse(decoded);
+      
+      // Valida estrutura mínima
+      if (context.src !== 'gmb') {
+        this.logger.warn('V8_GMB_CONTEXT_INVALID_SRC', { src: context.src });
+        return null;
+      }
+      
+      // ✅ Log de sucesso para validação
+      this.logger.info('V8_GMB_CONTEXT_EXTRACTED', {
+        especialidade: context.esp,
+        angulo: context.ang,
+        problema: context.prob?.substring(0, 40)
+      });
+      
+      return context;
+    } catch (e) {
+      this.logger.warn('V8_GMB_CONTEXT_PARSE_ERROR', { 
+        error: e.message,
+        encoded: match[1]?.substring(0, 50)
+      });
+      return null;
+    }
+  }
+
+  /**
+   * 💬 Gera resposta contextual baseada no ângulo emocional do GMB
+   * Cada ângulo toca um ponto diferente da jornada do pai/mãe
+   * 
+   * 🎯 OTIMIZADO PARA CONVERSÃO: Direciona resposta para coletar melhor dado
+   * @param {Object} context - Contexto GMB extraído
+   * @returns {string} Resposta personalizada
+   */
+  _generateContextualGMBReply(context) {
+    const { ang, prob, esp } = context;
+    
+    // Mapeia especialidade para nome amigável
+    const especialidadeNome = {
+      neuropediatria: 'avaliação neurológica',
+      fonoaudiologia: 'desenvolvimento da fala',
+      neuropsicologia: 'avaliação cognitiva',
+      psicologia: 'acompanhamento emocional',
+      terapia_ocupacional: 'desenvolvimento motor',
+      fisioterapia: 'fisioterapia infantil',
+      psicopedagogia: 'desenvolvimento da aprendizagem',
+      psicomotricidade: 'desenvolvimento corporal',
+      musicoterapia: 'musicoterapia',
+      freio_lingual: 'avaliação do freio lingual'
+    }[esp] || 'avaliação especializada';
+
+    // 🔥 RESPOSTAS OTIMIZADAS: Direcionam o lead a contar mais
+    const respostas = {
+      medo: `Oi! Vi que você veio pelo nosso conteúdo 😊
+
+Imagino que isso deve ter te preocupado mesmo...
+
+Me conta: o que exatamente aconteceu com seu filho? Foi algo recente ou já vem acontecendo há um tempo? 💚`,
+
+      duvida: `Oi! Vi que você chegou pelo nosso conteúdo 😊
+
+Essa dúvida é mais comum do que parece... você não está sozinho nisso!
+
+Me ajuda a entender melhor: o que você tem observado no dia a dia do seu filho?`,
+
+      urgencia: `Oi! Vi que você veio pelo nosso conteúdo 😊
+
+Fez muito bem em buscar ajuda rápido — isso mostra o quanto você se importa!
+
+Me conta com calma: o que você percebeu no seu filho? Está acontecendo agora ou já faz um tempo?`,
+
+      comparacao: `Oi! Vi que você veio pelo nosso conteúdo 😊
+
+Cada criança tem seu tempo, com certeza! Mas quando algo chama atenção, sempre vale a pena avaliar.
+
+O que você tem percebido de diferente no seu filho ultimamente?`,
+
+      alivio: `Oi! Vi que você veio pelo nosso conteúdo 😊
+
+Que bom que você está buscando entender melhor — esse é o primeiro passo!
+
+Me conta: o que está acontecendo com seu filho? Quero entender para te ajudar da melhor forma 💚`,
+
+      identificacao: `Oi! Vi que você veio pelo nosso conteúdo 😊
+
+Você não está sozinha nessa... muitos pais passam por situações parecidas e a gente ajuda todo dia.
+
+Me conta o que você está observando no seu filho? Assim consigo te direcionar melhor 💚`
+    };
+
+    // Seleciona resposta baseada no ângulo ou usa dúvida como fallback
+    const resposta = respostas[ang] || respostas.duvida;
+    
+    this.logger.info('V8_GMB_CONTEXTUAL_REPLY', { 
+      angulo: ang, 
+      especialidade: esp,
+      problema: prob?.substring(0, 50),
+      tamanhoResposta: resposta.length
+    });
+    
+    return resposta;
+  }
+
+  /**
+   * 💾 Salva contexto GMB no lead para analytics e personalização futura
+   * 
+   * @param {string} leadId - ID do lead
+   * @param {Object} context - Contexto GMB extraído
+   * @returns {Promise<void>}
+   */
+  async _saveGMBContext(leadId, context) {
+    try {
+      await Leads.findByIdAndUpdate(leadId, {
+        $set: {
+          'sourceContext.gmb': {
+            especialidade: context.esp,
+            angulo: context.ang,
+            problema: context.prob,
+            funnelStage: context.fun,
+            timestamp: new Date(context.ts || Date.now()),
+            detectedAt: new Date()
+          },
+          source: 'gmb',
+          lastContextSource: 'gmb'
+        }
+      });
+      
+      this.logger.info('V8_GMB_CONTEXT_SAVED', {
+        leadId: leadId.toString(),
+        angulo: context.ang,
+        especialidade: context.esp
+      });
+    } catch (e) {
+      this.logger.error('V8_GMB_CONTEXT_SAVE_ERROR', {
+        leadId: leadId.toString(),
+        error: e.message
+      });
+      // Não falha o fluxo se não conseguir salvar
+    }
   }
 }
