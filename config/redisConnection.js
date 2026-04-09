@@ -1,9 +1,9 @@
-// config/redisConnection.js
+// config/redisConnection.js - OTIMIZADO PARA REDIS COM LIMITE DE CONEXÕES
 import chalk from "chalk";
 import IORedis from "ioredis";
 
 const REDIS_RETRY_STRATEGY = (times) => {
-  const delay = Math.min(times * 100, 3000); // 100ms, 200ms, 300ms... max 3s
+  const delay = Math.min(times * 100, 3000);
   console.log(`🔄 Redis retry ${times}, delay ${delay}ms`);
   return delay;
 };
@@ -17,26 +17,24 @@ const REDIS_RECONNECT_ON_ERROR = (err) => {
   return shouldReconnect;
 };
 
-// 🎯 Opções para uso geral (API, controllers, etc)
+// 🎯 Opções OTIMIZADAS para limitar conexões
 const commonOptions = {
-  maxRetriesPerRequest: 3, // ⚡ NÃO fica tentando infinito
-  enableReadyCheck: false, // ⚡ NÃO bloqueia na importação
-  connectTimeout: 10000,   // ⚡ 10s timeout
-  lazyConnect: true,       // ⚡ NÃO conecta na importação (só no primeiro uso)
-  retryStrategy: REDIS_RETRY_STRATEGY,
-  reconnectOnError: REDIS_RECONNECT_ON_ERROR,
-  keepAlive: 30000,
-};
-
-// 🎯 Opções para BullMQ (precisa ser null)
-const bullMqOptions = {
-  maxRetriesPerRequest: null, // ⚡ BullMQ exige isso
+  maxRetriesPerRequest: 3,
   enableReadyCheck: false,
   connectTimeout: 10000,
-  lazyConnect: true,       // ⚡ NÃO conecta na importação
+  lazyConnect: true,
   retryStrategy: REDIS_RETRY_STRATEGY,
   reconnectOnError: REDIS_RECONNECT_ON_ERROR,
   keepAlive: 30000,
+  // 🔥 IMPORTANTE: Limitar conexões no pool
+  maxSockets: 5,
+  maxFreeSockets: 2,
+};
+
+// 🎯 Opções para BullMQ (usa a mesma conexão, mas com maxRetriesPerRequest: null)
+const bullMqOptions = {
+  ...commonOptions,
+  maxRetriesPerRequest: null, // BullMQ exige isso
 };
 
 let redisConnection;
@@ -45,23 +43,20 @@ let bullMqConnection;
 try {
   const redisUrl = process.env.REDIS_URL;
 
-  // SE TIVER REDIS_URL, USA ELA (independente de ser Upstash ou não)
   if (redisUrl) {
     console.log("🚀 IORedis conectando via REDIS_URL...");
     
-    // Conexão para uso geral
+    // 🔥 USA UMA ÚNICA CONEXÃO para ambos (economiza conexões)
     redisConnection = new IORedis(redisUrl, {
       ...commonOptions,
       ...(redisUrl.startsWith('rediss://') ? { tls: {} } : {}),
     });
     
-    // Conexão específica para BullMQ
-    bullMqConnection = new IORedis(redisUrl, {
-      ...bullMqOptions,
-      ...(redisUrl.startsWith('rediss://') ? { tls: {} } : {}),
-    });
+    // Reutiliza a mesma instância para BullMQ (não cria nova conexão)
+    bullMqConnection = redisConnection;
+    
+    console.log("✅ Modo econômico: Uma conexão Redis para todos");
   } else {
-    // SÓ entra aqui se NÃO tiver REDIS_URL
     console.log("🚀 IORedis conectando via HOST/PORT local...");
     
     const localConfig = {
@@ -71,24 +66,24 @@ try {
     };
     
     redisConnection = new IORedis({ ...localConfig, ...commonOptions });
-    bullMqConnection = new IORedis({ ...localConfig, ...bullMqOptions });
+    bullMqConnection = redisConnection; // Mesma conexão
   }
 
   // 🛡️ Eventos de conexão
   redisConnection.on('connect', () => {
-    console.log('✅ Redis connected (general)');
+    console.log('✅ Redis connected');
   });
 
   redisConnection.on('ready', () => {
-    console.log('✅ Redis ready (general)');
+    console.log('✅ Redis ready');
   });
 
   redisConnection.on('error', (err) => {
-    console.error(chalk.red('❌ Redis error (general):'), err.message);
+    console.error(chalk.red('❌ Redis error:'), err.message);
   });
 
   redisConnection.on('reconnecting', () => {
-    console.log('🔄 Redis reconnecting (general)...');
+    console.log('🔄 Redis reconnecting...');
   });
 
 } catch (err) {
@@ -97,7 +92,7 @@ try {
   bullMqConnection = null;
 }
 
-// 🛡️ Wrapper seguro - se Redis cair, não quebra o sistema
+// 🛡️ Wrapper seguro
 export const safeRedis = {
   async get(key) {
     if (!redisConnection) return null;
