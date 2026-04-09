@@ -97,6 +97,16 @@ const balanceTransactionSchema = new mongoose.Schema({
         default: null,
         index: true,
         description: 'ID de correlação para evitar duplicidade de débitos'
+    },
+    // 🆕 V4: Controle de concorrência - marca transações em processamento
+    processingLock: {
+        type: String,
+        default: null,
+        description: 'Lock temporário para prevenir race conditions'
+    },
+    lockedAt: {
+        type: Date,
+        default: null
     }
 }, { _id: true });
 
@@ -141,6 +151,15 @@ const patientBalanceSchema = new mongoose.Schema({
     toJSON: { virtuals: true },
     toObject: { virtuals: true }
 });
+
+// 🛡️ INDEXES para prevenir duplicidades e melhorar performance
+// NOTA: Unique indexes são gerenciados pelo script add-unique-indexes.js
+// pois MongoDB não suporta unique constraint em campos de subdocumentos (transactions)
+// sem schema validation adicional.
+patientBalanceSchema.index({ patient: 1, 'transactions.appointmentId': 1 });
+patientBalanceSchema.index({ patient: 1, 'transactions.specialty': 1 });
+patientBalanceSchema.index({ patient: 1, 'transactions.settledByPackageId': 1 });
+patientBalanceSchema.index({ patient: 1, 'transactions.correlationId': 1 });
 
 // Virtual para saber se tem saldo devedor
 patientBalanceSchema.virtual('hasDebt').get(function() {
