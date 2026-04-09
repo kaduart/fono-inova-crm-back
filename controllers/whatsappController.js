@@ -2013,7 +2013,8 @@ async function processInboundMessage(msg, value) {
             mediaId,
             caption,
             status: "received",
-            timestamp,
+            timestamp: timestamp instanceof Date ? timestamp.toISOString() : timestamp,
+            timestampMs: timestamp instanceof Date ? timestamp.getTime() : Date.now(),
             leadId: String(lead._id),
             contactId: String(contact._id)
         };
