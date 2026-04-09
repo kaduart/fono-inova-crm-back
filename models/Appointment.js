@@ -130,9 +130,9 @@ const appointmentSchema = new mongoose.Schema({
   paymentMethod: {
     type: String,
     enum: [
-      'dinheiro', 'pix', 'cartao_credito',
-      'cartao_debito', 'cartão', 'transferencia_bancaria',
-      'plano-unimed', 'convenio', 'outro'
+      'dinheiro', 'pix', 'cartao_credito', 'credito',
+      'cartao_debito', 'debito', 'cartão', 'transferencia_bancaria', 'transferencia',
+      'plano-unimed', 'convenio', 'outro', null
     ],
     default: 'dinheiro'
   },
@@ -370,10 +370,88 @@ appointmentSchema.post('findOneAndUpdate', function (doc) {
 
 appointmentSchema.post('findOneAndDelete', async function (doc) {
   if (doc) {
-    try { await MedicalEvent.deleteOne({ originalId: doc._id, type: 'appointment' }); }
+    try { 
+      await MedicalEvent.deleteOne({ originalId: doc._id, type: 'appointment' }); 
+      // 🧹 CASCADE DELETE: Remove sessions vinculadas
+      const { default: Session } = await import('./Session.js');
+      await Session.deleteMany({ appointmentId: doc._id });
+      console.log(`🧹 Cascade delete: sessions do appointment ${doc._id} removidas`);
+    }
     catch (error) { console.error('⚠️ Erro no hook post-delete (não crítico):', error.message); }
   }
 });
+
+// 🧹 CASCADE DELETE para deleteOne e deleteMany
+appointmentSchema.pre('deleteOne', { document: true, query: false }, async function() {
+  const appointmentId = this._id;
+  try {
+    const { default: Session } = await import('./Session.js');
+    const result = await Session.deleteMany({ appointmentId });
+    console.log(`🧹 Cascade deleteOne: ${result.deletedCount} sessions removidas do appointment ${appointmentId}`);
+  } catch (error) {
+    console.error('⚠️ Erro no cascade deleteOne:', error.message);
+  }
+});
+
+appointmentSchema.pre('deleteMany', async function() {
+  const filter = this.getFilter();
+  try {
+    const { default: Session } = await import('./Session.js');
+    // Buscar appointments que serão deletados
+    const appointments = await mongoose.model('Appointment').find(filter).select('_id');
+    const appointmentIds = appointments.map(a => a._id);
+    
+    if (appointmentIds.length > 0) {
+      const result = await Session.deleteMany({ appointmentId: { $in: appointmentIds } });
+      console.log(`🧹 Cascade deleteMany: ${result.deletedCount} sessions removidas de ${appointmentIds.length} appointments`);
+    }
+  } catch (error) {
+    console.error('⚠️ Erro no cascade deleteMany:', error.message);
+  }
+});
+
+// 🧹 MÉTODO: Soft delete em cascata
+appointmentSchema.methods.softDeleteCascade = async function(reason = 'manual', deletedBy = null) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  
+  try {
+    const appointmentId = this._id;
+    
+    // 1. Soft delete nas sessions vinculadas
+    const { default: Session } = await import('./Session.js');
+    await Session.updateMany(
+      { appointmentId },
+      { 
+        $set: { 
+          isDeleted: true, 
+          deletedAt: new Date(), 
+          deleteReason: `cascade-delete: ${reason}`,
+          deletedBy 
+        } 
+      },
+      { session }
+    );
+    
+    // 2. Soft delete no appointment
+    this.isDeleted = true;
+    this.deletedAt = new Date();
+    this.deleteReason = reason;
+    this.deletedBy = deletedBy;
+    await this.save({ session });
+    
+    await session.commitTransaction();
+    console.log(`🧹 Soft delete cascade: appointment ${appointmentId} + sessions vinculadas`);
+    
+    return { success: true, appointmentId };
+  } catch (error) {
+    await session.abortTransaction();
+    console.error('💥 Erro no soft delete cascade:', error.message);
+    throw error;
+  } finally {
+    session.endSession();
+  }
+};
 
 const Appointment = mongoose.model('Appointment', appointmentSchema);
 export default Appointment;
