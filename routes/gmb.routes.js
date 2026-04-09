@@ -102,4 +102,7 @@ router.post('/generate-hooks', gmbController.generateHooks);
 router.post('/generate-variations', gmbController.generateVariations);
 router.post('/score', gmbController.scoreContent);
 
+// 📊 MÉTRICAS DE CONVERSÃO GMB v2
+router.get('/conversion-metrics', gmbController.getConversionMetrics);
+
 export default router;

@@ -220,12 +220,14 @@ export class ClinicalEligibility {
    */
   _detectMedicalSpecialty(text) {
     const MEDICAL_SPECIALTIES = [
-      { terms: ['neurologista', 'neurologia', 'neurologo', 'neuropediatra'], type: 'neurologista' },
+      // ✅ ATUALIZADO Abr/2026: Removido 'neuropediatra' - agora temos na clínica!
+      { terms: ['neurologista', 'neurologia', 'neurologo'], type: 'neurologista' },
       { terms: ['pediatra', 'pediatria'], type: 'pediatra' },
       { terms: ['cardiologista', 'cardiologia', 'cardio'], type: 'cardiologista' },
       { terms: ['ortopedista', 'ortopedia'], type: 'ortopedista' },
       { terms: ['dermatologista', 'dermatologia'], type: 'dermatologista' },
       { terms: ['oftalmologista', 'oftalmologia', 'oftalmo'], type: 'oftalmologista' }
+      // NOTA: neuropediatra foi removido da lista pois agora é um serviço disponível na clínica
     ];
 
     for (const specialty of MEDICAL_SPECIALTIES) {

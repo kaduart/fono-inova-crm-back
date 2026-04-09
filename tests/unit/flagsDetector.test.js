@@ -65,13 +65,15 @@ describe('🩺 Detecção de Especialidades Médicas', () => {
     
     describe('detectMedicalSpecialty', () => {
         const testCases = [
-            { text: 'Vocês têm neuropediatra?', expected: 'neurologista', redirectTo: 'neuropsicologia' },
-            { text: 'Preciso de neuro pediatra', expected: 'neurologista', redirectTo: 'neuropsicologia' },
-            { text: 'Tem neuropediatria?', expected: 'neurologista', redirectTo: 'neuropsicologia' },
+            // ✅ ATUALIZADO Abr/2026: Neuropediatra agora é serviço disponível na clínica!
+            // { text: 'Vocês têm neuropediatra?', expected: 'neurologista', redirectTo: 'neuropsicologia' },
+            // { text: 'Preciso de neuro pediatra', expected: 'neurologista', redirectTo: 'neuropsicologia' },
+            // { text: 'Tem neuropediatria?', expected: 'neurologista', redirectTo: 'neuropsicologia' },
             { text: 'Gostaria de consulta com pediatra', expected: 'pediatra', redirectTo: 'fonoaudiologia' },
             { text: 'Preciso de psiquiatra para meu filho', expected: 'psiquiatra', redirectTo: 'psicologia' },
             { text: 'Quero fazer fonoaudiologia', expected: null }, // não é médica
             { text: 'Psicologia infantil', expected: null }, // não é médica
+            { text: 'Neuropediatra', expected: null }, // ✅ Agora é serviço disponível, não especialidade médica fora de escopo
         ];
 
         testCases.forEach(({ text, expected, redirectTo }) => {
@@ -89,10 +91,17 @@ describe('🩺 Detecção de Especialidades Médicas', () => {
         });
 
         it('não deve confundir neuropediatra com pediatra', () => {
+            // ✅ ATUALIZADO Abr/2026: Neuropediatra não é mais detectada como especialidade médica fora de escopo
+            // Agora é um serviço válido da clínica
             const result = detectMedicalSpecialty('neuropediatria');
-            expect(result).not.toBeNull();
-            expect(result.specialty).toBe('neurologista');
-            expect(result.specialty).not.toBe('pediatra');
+            expect(result).toBeNull(); // Agora retorna null porque não é mais "especialidade médica bloqueada"
+        });
+        
+        it('deve reconhecer neuropediatra como serviço disponível', () => {
+            // ✅ NOVO TESTE: Neuropediatra agora é um serviço válido
+            const result = validateServiceAvailability('Quero neuropediatra');
+            expect(result.valid).toBe(true);
+            expect(result.service).toBe('neuropediatria');
         });
 
         it('não deve confundir neuropsicologia com neuropediatra', () => {
@@ -116,11 +125,12 @@ describe('🩺 Detecção de Especialidades Médicas', () => {
             expect(result.service).toBe('terapia_ocupacional');
         });
 
-        it('deve detectar neuropediatra como indisponível', () => {
+        it('deve detectar neuropediatra como disponível', () => {
+            // ✅ ATUALIZADO Abr/2026: Neuropediatra agora está disponível na clínica!
             const result = validateServiceAvailability('Preciso de neuropediatra');
-            expect(result.valid).toBe(false);
-            expect(result.isMedicalSpecialty).toBe(true);
-            expect(result.redirect).toBe('neuropsicologia');
+            expect(result.valid).toBe(true);
+            expect(result.service).toBe('neuropediatria');
+            expect(result.isMedicalSpecialty).toBeUndefined(); // Não é mais marcado como especialidade médica fora de escopo
         });
     });
 

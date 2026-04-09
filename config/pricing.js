@@ -79,6 +79,22 @@ export const THERAPY_PRICING = {
     incluiLaudo: true,
     sessoesPacote: 10,
   },
+  neuropediatria: {
+    avaliacao: 550, // Consulta neuropediatra (base)
+    sessaoAvulsa: 550,
+    pacoteMensal: null, // Sem pacote mensal
+    sessaoPacote: null,
+    descricao: 'Neuropediatria',
+    parcelamento: 'até 3x',
+    isMedical: true,
+    // 💳 Opções de parcelamento com juros da máquina
+    parcelamentoComJuros: {
+      '1x': { valor: 575, descricao: 'À vista no PIX ou dinheiro' },
+      '2x': { valor: 600, descricao: '2x de R$ 300 no cartão' },
+      '3x': { valor: 625, descricao: '3x de R$ 208,33 no cartão' },
+    },
+    valorComJuros: 625, // Valor máximo com juros (3x)
+  },
 };
 
 // Aliases para normalização
@@ -96,6 +112,9 @@ export const THERAPY_ALIASES = {
   psicopedagogia: 'psicopedagogia',
   neuropsico: 'neuropsicologia',
   neuropsicologia: 'neuropsicologia',
+  neuroped: 'neuropediatria',
+  neuropediatria: 'neuropediatria',
+  neuropediatra: 'neuropediatria',
 };
 
 // ============================================================
@@ -151,6 +170,12 @@ export function getPriceText(therapyKey) {
   // Neuropsicologia é especial
   if (pricing.incluiLaudo) {
     return `A avaliação neuropsicológica completa (${pricing.sessoesPacote} sessões + laudo) é ${formatPrice(pricing.avaliacao)}${pricing.parcelamento ? ` em ${pricing.parcelamento}` : ''} 💚`;
+  }
+  
+  // Neuropediatria tem parcelamento com juros
+  if (pricing.parcelamentoComJuros) {
+    const opcoes = pricing.parcelamentoComJuros;
+    return `Consulta neuropediátrica: ${formatPrice(opcoes['1x'].valor)} à vista (PIX/dinheiro) · ${formatPrice(opcoes['2x'].valor)} em 2x · ${formatPrice(opcoes['3x'].valor)} em 3x no cartão 💚`;
   }
   
   return `Avaliação: ${formatPrice(pricing.avaliacao)} · Sessão avulsa: ${formatPrice(pricing.sessaoAvulsa)} · Pacote mensal: ${formatPrice(pricing.pacoteMensal)} (${pricing.sessaoPacote}/sessão) 💚`;

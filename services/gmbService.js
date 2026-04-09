@@ -149,6 +149,25 @@ const PROBLEMAS_REAIS = {
     'procrastinação infantil',
     'baixa autoestima escolar'
   ],
+  neuropediatria: [
+    'neuropediatra anapolis',
+    'médico neuro infantil anapolis',
+    'consulta neuropediatra anapolis',
+    'avaliação neuropediátrica anapolis',
+    'neurologista infantil anapolis',
+    'convulsão infantil anapolis',
+    'epilepsia infantil anapolis',
+    'cefaleia criança anapolis',
+    'dor de cabeça criança anapolis',
+    'atraso neuropsicomotor anapolis',
+    'hipotonia criança anapolis',
+    'hipertonia criança anapolis',
+    'movimentos anormais criança anapolis',
+    'síndrome convulsiva anapolis',
+    'tea diagnóstico médico anapolis',
+    'tdah diagnóstico médico anapolis',
+    'avaliação neurológica infantil anapolis'
+  ],
   musicoterapia: [
     'autismo comunicação não verbal',
     'criança não fala expressa emoção',
@@ -217,6 +236,14 @@ const PROBLEMAS_REAIS = {
     'diagnóstico autismo anapolis',
     'avaliação cognitiva infantil anapolis',
     'laudo psicológico infantil anapolis'
+  ],
+  neuropediatria_anapolis: [
+    'neuropediatra anapolis',
+    'neurologista infantil anapolis',
+    'consulta neuropediatra anapolis',
+    'avaliação neuropediátrica anapolis',
+    'médico neuro infantil anapolis',
+    'neuropediatria anapolis'
   ]
 };
 
@@ -519,18 +546,21 @@ export async function createPostsForAllEspecialidades() {
 const PROMPTS_ESPECIALIDADE = {
   fonoaudiologia: {
     dor: 'a criança não fala, tem fala enrolada, gagueja, não pronuncia letras, tem diagnóstico de autismo ou TDAH, ou o pediatra disse "vamos esperar mais um pouco"',
+    story: 'Muitas mães chegam aqui dizendo: "meu filho tem 3 anos e ainda não fala nada... o pediatra pediu pra esperar, mas eu sinto que tem algo errado". E quando finalmente encontram ajuda especializada, veem a criança florescer.',
     urgencia: 'cada mês sem intervenção é um mês de atraso no desenvolvimento da fala — quanto antes, melhores os resultados',
     diferencial: 'a Fono Inova tem fonoaudiólogos especializados em linguagem infantil que identificam a causa real do atraso e montam um plano individualizado',
     gatilho: 'pais que estão em dúvida se devem buscar ajuda agora ou esperar mais',
   },
   tdah: {
     dor: 'a criança não consegue se concentrar, é muito inquieta, não para quieto, age sem pensar, esquece o que acabou de aprender, tem dificuldade na escola',
+    story: 'Mães chegam aqui exaustas dizendo: "meu filho não obedece, não concentra, os professores reclamam todo dia... eu já não sei mais o que fazer". E a maioria ouviu "é só falta de atenção" ou "vai passar". Mas quando finalmente fazem uma avaliação especializada, descobrem que há caminhos reais para ajudar.',
     urgencia: 'TDAH não tratado gera baixa autoestima, dificuldade de socialização e conflitos familiares — a intervenção precoce transforma a vida da criança',
     diferencial: 'a Fono Inova tem neuropsicóloga especializada em TDAH que faz avaliação completa de atenção e funções executivas, com laudo detalhado e plano de intervenção personalizado',
     gatilho: 'pais exaustos porque o filho não obedece, não concentra e os professores reclamam constantemente',
   },
   autismo: {
     dor: 'a criança não olha nos olhos, não responde ao nome, não aponta para objetos, tem comportamentos repetitivos, não brinca com outras crianças',
+    story: 'Pais chegam aqui com aquele nó na garganta. Perceberam que algo é diferente, mas ouviram "vamos esperar" de todo mundo. E cada mês que passa, a dúvida vira angústia. Uma avaliação clara, feita com cuidado, pode trazer direção para toda a família.',
     urgencia: 'o diagnóstico precoce de autismo (antes dos 3 anos) pode mudar completamente o prognóstico — quanto antes a intervenção, melhores os resultados',
     diferencial: 'a Fono Inova faz avaliação multiprofissional completa (psicólogo + fonoaudiólogo) com protocolos validados, laudo válido e acolhimento familiar',
     gatilho: 'pais que suspeitam de autismo mas não sabem onde fazer uma avaliação confiável e recebem apenas "vamos esperar"',
@@ -573,6 +603,7 @@ const PROMPTS_ESPECIALIDADE = {
   },
   neuropsicologia: {
     dor: 'a criança esquece o que acabou de aprender, é muito dispersa, tem dificuldade de concentração, demora muito para fazer tarefas simples ou tem suspeita de TDAH, dislexia ou TEA',
+    story: '"Meu filho é inteligente, mas não consegue render na escola. Já ouvi de tudo: é preguiça, é falta de atenção, é desinteresse". Essa frase a gente ouve quase todo dia. E quando finalmente fazem uma avaliação neuropsicológica completa, a história muda.',
     urgencia: 'uma avaliação neuropsicológica identifica exatamente onde está a dificuldade — sem isso qualquer intervenção é um chute no escuro',
     diferencial: 'a Fono Inova emite laudo neuropsicológico detalhado com orientações para escola, família e outros profissionais — um mapa completo do desenvolvimento',
     gatilho: 'pais que estão há anos ouvindo "é só falta de atenção" sem um diagnóstico claro',
@@ -640,7 +671,155 @@ const PROMPTS_ESPECIALIDADE = {
     diferencial: 'na Fono Inova em Anápolis a avaliação neuropsicológica é completa — emitimos laudo detalhado com orientações para escola, família e outros profissionais',
     gatilho: 'pais de Anápolis que já ouviram várias opiniões diferentes sobre o filho e precisam de um diagnóstico claro e profissional',
   },
+  neuropediatria: {
+    dor: 'a criança apresenta atraso no desenvolvimento, dificuldades de atenção, comportamentos que preocupam, ou os pais sentem que algo não está como deveria',
+    story: 'Muitos pais chegam aqui assustados depois de perceberem que o desenvolvimento do filho não está acompanhando o esperado... ou simplesmente com aquele "feeling" de mãe/pai que diz que algo precisa de atenção. E muitas vezes, uma avaliação cedo faz toda a diferença no caminho da criança.',
+    urgencia: 'uma avaliação especializada faz toda a diferença para entender o que está acontecendo e encontrar o melhor caminho para ajudar a criança',
+    diferencial: 'na Fono Inova temos neuropediatra especializado em desenvolvimento infantil — oferecemos avaliação neurológica completa com cuidado, orientação precisa e acompanhamento quando necessário. Valores: R$ 575 à vista, R$ 600 em 2x ou R$ 625 em 3x',
+    gatilho: 'pais preocupados com o desenvolvimento do filho que buscam uma avaliação especializada e acolhedora',
+    angulos: ['medo', 'duvida', 'comparacao', 'urgencia'],
+  },
+  neuropediatria_anapolis: {
+    dor: 'a criança tem suspeita ou diagnóstico de TEA, TDAH, convulsões, cefaleia, movimentos anormais ou atraso neurológico',
+    urgencia: 'problemas neurológicos infantojuvenis exigem avaliação médica especializada em Anápolis — quanto antes o diagnóstico, melhor o prognóstico',
+    diferencial: 'na Fono Inova em Anápolis temos neuropediatra que atende crianças e adolescentes — avaliação completa com direito a receituário e encaminhamentos',
+    gatilho: 'pais de Anápolis buscando neuropediatra de confiança para avaliar ou acompanhar a condição neurológica do filho',
+  },
 };
+
+// ═══════════════════════════════════════════════════════════
+// 🔥 MÁQUINA DE GERAR PACIENTES - VERSÃO HIGH CONVERSION
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * 🎯 ÂNGULOS EMOCIONAIS DE ALTA CONVERSÃO
+ */
+const HIGH_CONVERSION_ANGLES = {
+  medo: {
+    label: 'E se isso piorar com o tempo?',
+    tom: 'empático, acolhendo o medo real sem alarmismo',
+    abordagem: 'valide a preocupação, mostre que agir cedo é proteção'
+  },
+  duvida: {
+    label: 'Será que isso é normal para a idade?',
+    tom: 'esclarecedor, tirando dúvidas com gentileza',
+    abordagem: 'normalize a dúvida, ofereça clareza através da avaliação'
+  },
+  comparacao: {
+    label: 'Outras crianças da mesma idade já fazem isso...',
+    tom: 'normalizador, sem julgamento',
+    abordagem: 'cada criança tem seu tempo, mas é importante observar sinais'
+  },
+  urgencia: {
+    label: 'Quanto antes avaliar, melhor o resultado',
+    tom: 'motivador, sem pressionar',
+    abordagem: 'janela de oportunidade, não perca tempo com incertezas'
+  },
+  alivio: {
+    label: 'Tem solução e quanto antes agir, melhor',
+    tom: 'esperançoso, acolhedor',
+    abordagem: 'mostre que há caminho, que não estão sozinhos'
+  },
+  identificacao: {
+    label: 'Você não está sozinho nessa',
+    tom: 'conectivo, empático',
+    abordagem: 'muitos pais passam por isso, há ajuda disponível'
+  }
+};
+
+/**
+ * 🚀 Gera post de alta conversão
+ * 
+ * @param {Object} params - Parâmetros de configuração
+ * @param {Object} params.especialidade - Objeto da especialidade
+ * @param {string} params.problema - Problema específico (ex: "criança de 3 anos não fala")
+ * @param {string} params.anguloFixo - (Opcional) Força um ângulo específico
+ * @param {boolean} params.incluirValores - (Opcional) Incluir valores no copy
+ * @returns {Object} { copy, angulo, cta, metadata }
+ */
+export function generateHighConversionPost({ 
+  especialidade, 
+  problema, 
+  anguloFixo = null,
+  incluirValores = false 
+}) {
+  const anguloKeys = Object.keys(HIGH_CONVERSION_ANGLES);
+  const angulo = anguloFixo || anguloKeys[Math.floor(Math.random() * anguloKeys.length)];
+  const configAngulo = HIGH_CONVERSION_ANGLES[angulo];
+  
+  const ctas = [
+    'Agende uma avaliação',
+    'Fale conosco no WhatsApp',
+    'Veja horários disponíveis agora',
+    'Clique para agendar sua consulta',
+    'Quer saber mais? Me chama no WhatsApp 💚'
+  ];
+  const cta = ctas[Math.floor(Math.random() * ctas.length)];
+  
+  const hook = _generateHook(problema, angulo);
+  const story = _generateStory(problema);
+  const authority = _generateAuthority(especialidade);
+  const softPitch = _generateSoftPitch(especialidade, incluirValores);
+  
+  const copy = hook + '\n\n' + story + '\n\n' + authority + '\n\n' + softPitch + '\n\n👉 ' + cta;
+
+  return {
+    copy: copy.trim(),
+    angulo,
+    cta,
+    metadata: {
+      problema,
+      especialidade: especialidade.id,
+      tom: configAngulo.tom
+    }
+  };
+}
+
+function _generateHook(problema, angulo) {
+  const config = HIGH_CONVERSION_ANGLES[angulo];
+  const problemaCap = problema.charAt(0).toUpperCase() + problema.slice(1);
+  return problemaCap + '?\n\n' + config.label;
+}
+
+function _generateStory(problema) {
+  return 'Muitos pais chegam aqui dizendo algo assim:\n\n"' + problema + '… e eu não sei se devo me preocupar ou esperar."\n\nEssa dúvida é muito mais comum do que parece — mas ignorar pode atrasar o desenvolvimento da criança.';
+}
+
+function _generateAuthority(especialidade) {
+  const map = {
+    neuropediatria: 'Aqui na Fono Inova, fazemos uma avaliação completa para entender o que está acontecendo com o desenvolvimento neurológico da criança e orientar o melhor caminho com segurança.',
+    fonoaudiologia: 'Aqui na Fono Inova, avaliamos o desenvolvimento da fala e linguagem de forma especializada, identificando o que precisa de atenção.',
+    neuropsicologia: 'Aqui na Fono Inova, fazemos uma avaliação completa das funções cognitivas para entender onde está a dificuldade e orientar o tratamento.',
+    psicologia: 'Aqui na Fono Inova, oferecemos acompanhamento psicológico infantil especializado, com abordagem lúdica e acolhedora.',
+    terapia_ocupacional: 'Aqui na Fono Inova, trabalhamos a autonomia e desenvolvimento motor da criança de forma personalizada.',
+    fisioterapia: 'Aqui na Fono Inova, avaliamos e tratamos questões motoras com técnicas adaptadas para cada criança.',
+    psicopedagogia: 'Aqui na Fono Inova, investigamos como a criança aprende e criamos estratégias personalizadas.',
+    psicomotricidade: 'Aqui na Fono Inova, trabalhamos o desenvolvimento corporal e preparação para a alfabetização.',
+    musicoterapia: 'Aqui na Fono Inova, usamos a música como ferramenta terapêutica para comunicação e expressão.',
+    freio_lingual: 'Aqui na Fono Inova, avaliamos o freio lingual com protocolo especializado e orientamos a melhor conduta.'
+  };
+  return map[especialidade.id] || 'Aqui na Fono Inova, oferecemos atendimento especializado e acolhedor para cada criança.';
+}
+
+function _generateSoftPitch(especialidade, incluirValores) {
+  let pitch = '';
+  
+  if (especialidade.id === 'neuropediatria') {
+    pitch = 'A consulta com neuropediatra é indicada nesses casos para investigar o desenvolvimento neurológico da criança com mais profundidade.';
+  } else if (especialidade.id === 'fonoaudiologia') {
+    pitch = 'O acompanhamento fonoaudiológico pode fazer toda a diferença no desenvolvimento da fala da criança.';
+  } else if (especialidade.id === 'neuropsicologia') {
+    pitch = 'A avaliação neuropsicológica ajuda a entender como o cérebro da criança processa informações e orienta o melhor caminho.';
+  } else {
+    pitch = 'O acompanhamento especializado pode fazer toda a diferença no desenvolvimento da criança.';
+  }
+  
+  if (incluirValores && especialidade.id === 'neuropediatria') {
+    pitch += '\n\nValores: R$ 575 à vista | R$ 600 (2x) | R$ 625 (3x)';
+  }
+  
+  return pitch;
+}
 
 /**
  * 🤖 GERA POST COM GPT - VERSÃO ESTRATÉGICA
@@ -663,6 +842,64 @@ export const TONES = {
   }
 };
 
+/**
+ * 🎯 CTAS ROTATIVOS DE ALTA CONVERSÃO
+ */
+const HIGH_CONVERSION_CTAS = {
+  agendamento: [
+    'Agende uma avaliação 👉 link na bio',
+    'Quer horários disponíveis? Me chama no WhatsApp 💚',
+    'Clique para agendar pelo WhatsApp',
+    'Vagas limitadas — garanta a sua agora',
+    'Veja horários disponíveis agora',
+    'Agende sua consulta hoje mesmo'
+  ],
+  engajamento: [
+    'Comente "SIM" se você passou por isso',
+    'Salve este post para não esquecer',
+    'Marque outra mãe que precisa ver isso',
+    'Comente 💚 se isso te ajudou',
+    'Compartilhe com quem precisa'
+  ],
+  educacao: [
+    'Siga para parte 2 nos comentários',
+    'Quer saber mais? Comente "INFO"',
+    'Dúvidas? Respondo nos comentários 👇',
+    'Salve para ver depois'
+  ]
+};
+
+/**
+ * 🧠 ÂNGULOS EMOCIONAIS PARA MULTIPLICAR CONVERSÃO
+ */
+const ANGULOS_EMOCIONAIS = {
+  medo: {
+    tom: 'empático e acolhedor, validando a preocupação real dos pais',
+    hook: 'comece reconhecendo o medo: "Se você está preocupado com o desenvolvimento do seu filho, saiba que isso é completamente normal..."',
+    gatilho: 'Medo da mãe de estar perdendo tempo ou de não estar fazendo o suficiente'
+  },
+  duvida: {
+    tom: 'esclarecedor, tirando dúvidas de forma gentil',
+    hook: 'comece com a dúvida comum: "Será que isso é normal para a idade? Muitos pais se perguntam isso..."',
+    gatilho: 'Dúvida se o comportamento é fase ou algo que precisa de atenção'
+  },
+  comparacao: {
+    tom: 'normalizador, mostrando que cada criança tem seu tempo',
+    hook: 'comece com comparação social: "Você olha para os filhos dos outros e se pergunta se seu filho está atrasado..."',
+    gatilho: 'Comparação com outras crianças da mesma idade'
+  },
+  urgencia: {
+    tom: 'motivador sem alarmismo, mostrando a importância do momento',
+    hook: 'comece com a janela de oportunidade: "Existe um momento ideal para avaliar... e quanto antes, melhor"',
+    gatilho: 'Medo de perder a janela de intervenção ideal'
+  },
+  normalizacao: {
+    tom: 'acolhedor, fazendo o pai se sentir compreendido',
+    hook: 'comece normalizando: "Você não está sozinho. Muitos pais passam exatamente por isso..."',
+    gatilho: 'Alívio de saber que não é o único passando por isso'
+  }
+};
+
 export async function generatePostForEspecialidade(especialidade, customTheme = null, funnelStage = 'top', tone = 'emotional') {
   try {
     const nicho = PROMPTS_ESPECIALIDADE[especialidade.id] || null;
@@ -672,22 +909,29 @@ export async function generatePostForEspecialidade(especialidade, customTheme = 
       top: {
         objetivo: 'crescimento/viralização',
         gatilhos: ['Curiosidade', 'Contradição', 'Identificação'],
-        cta: 'Comente "SIM" se você passou por isso, salve este post ou marque outra mãe que precisa ver',
+        ctaPool: HIGH_CONVERSION_CTAS.engajamento,
         tom: 'provocativo mas acolhedor'
       },
       middle: {
         objetivo: 'autoridade/educar',
         gatilhos: ['Prova Social', 'Autoridade Técnica', 'Benefício Rápido'],
-        cta: 'Siga para parte 2 nos comentários ou comente sua dúvida que respondo pessoalmente',
+        ctaPool: HIGH_CONVERSION_CTAS.educacao,
         tom: 'especialista empático'
       },
       bottom: {
         objetivo: 'conversão/agendamento',
         gatilhos: ['Urgência', 'Escassez', 'Medo Estratégico'],
-        cta: 'Quer entender o caso do seu filho? Me chama no WhatsApp 💚',
+        ctaPool: HIGH_CONVERSION_CTAS.agendamento,
         tom: 'urgente mas ético'
       }
     };
+    
+    // 🎲 Seleciona ângulo emocional (se especialidade tiver definido)
+    const angulosDisponiveis = nicho?.angulos || ['medo', 'duvida', 'urgencia'];
+    const anguloSelecionado = angulosDisponiveis[Math.floor(Math.random() * angulosDisponiveis.length)];
+    const configAngulo = ANGULOS_EMOCIONAIS[anguloSelecionado] || ANGULOS_EMOCIONAIS.medo;
+    
+    console.log(`🎭 Ângulo emocional selecionado: ${anguloSelecionado}`);
 
     const estrategia = estrategiaPorFunil[funnelStage] || estrategiaPorFunil.top;
     const gatilhoPrincipal = estrategia.gatilhos[Math.floor(Math.random() * estrategia.gatilhos.length)];
@@ -757,8 +1001,9 @@ ${nichoInstrucoes}
 📊 ESTRATÉGIA DO FUNIL (${funnelStage.toUpperCase()}):
 - Objetivo: ${estrategia.objetivo}
 - Gatilho dominante: ${gatilhoPrincipal}
-- Tom obrigatório: ${estrategia.tom}
-- CTA obrigatória: "${estrategia.cta}"
+- Ângulo emocional: ${anguloSelecionado}
+- Tom obrigatório: ${configAngulo.tom}
+- CTA obrigatória: "${ctaSelecionada}"
 
 🎯 SEO OBRIGATÓRIO:
 - Inclua a palavra-chave "${keywordSEO}" naturalmente no meio do texto (densidade 1-2%)
@@ -779,10 +1024,12 @@ ${nichoInstrucoes}
 - Exemplo se Curiosidade: "${keywordSEO} em Anápolis? Tem uma coisa sobre crianças de ${idadeCrianca} anos que ninguém te contou..."
 - Exemplo se Contradição: "${keywordSEO} em Anápolis? Pare de fazer isso com seu filho de ${idadeCrianca} anos agora..."
 
-2️⃣ VALOR + CONEXÃO:
+2️⃣ VALOR + CONEXÃO (USE A MICRO-HISTÓRIA):
+- Comece com a história curta (1-2 frases) que mostre identificação
 - Valide a dor: "Você não está sozinha, isso é mais comum do que parece"
-- Explique o problema de forma simples
+- Explique o problema de forma simples e empática
 - Como a Fono Inova resolve (específico, não genérico)
+- ⚠️ IMPORTANTE: NUNCA prometa diagnóstico ou cura. Foque em "avaliação", "orientação", "cuidado"
 
 3️⃣ SEO NATURAL:
 - Insira "${keywordSEO}" no meio do texto
@@ -818,6 +1065,8 @@ ${customTheme ? `\n🎯 FOCO ESPECIAL NO TEMA: ${customTheme}` : ''}`
       title: primeiraLinha,
       content,
       especialidade,
+      angulo: anguloSelecionado,
+      problema: keywordSEO,
       estrategia: {
         funnelStage,
         gatilho: gatilhoPrincipal,
@@ -1763,6 +2012,73 @@ TECHNICAL: Shot on Canon EOS R5 camera, 85mm f/1.4 lens, ISO 200, soft window li
 /**
  * 🔄 CRIA POST DO DIA
  */
+// ═══════════════════════════════════════════════════════════
+// 🧠 PROBLEMAS HUMANOS (mais emocional, menos técnico)
+// ═══════════════════════════════════════════════════════════
+const PROBLEMAS_HUMANOS = {
+  neuropediatria: [
+    'meu filho teve uma crise estranha',
+    'meu filho tem dores de cabeça frequentes',
+    'acho que o desenvolvimento do meu filho está atrasado',
+    'meu filho não se comporta como outras crianças',
+    'o pediatra pediu pra esperar mas eu estou preocupada',
+    'meu filho tem crises de choro que não passam',
+    'percebi que meu filho é diferente dos outros da idade',
+    'meu filho tem medos excessivos para a idade',
+    'acho que meu filho tem alguma coisa neurológica'
+  ],
+  fonoaudiologia: [
+    'meu filho tem 3 anos e não fala nada',
+    'meu filho troca todas as letras quando fala',
+    'ninguém entende o que meu filho fala',
+    'meu filho gagueja muito',
+    'o pediatra disse pra esperar mas eu acho que tem algo errado'
+  ],
+  neuropsicologia: [
+    'meu filho é inteligente mas não consegue render na escola',
+    'meu filho esquece o que acabou de aprender',
+    'meu filho não consegue se concentrar em nada',
+    'os professores dizem que meu filho é preguiçoso mas eu sei que não é'
+  ],
+  psicologia: [
+    'meu filho chora sem motivo',
+    'meu filho bate em mim quando fica nervoso',
+    'meu filho não quer ir pra escola',
+    'meu filho tem medo de tudo',
+    'meu filho não dorme sozinho e eu já não aguento mais'
+  ],
+  terapia_ocupacional: [
+    'meu filho não consegue se vestir sozinho',
+    'meu filho não segura o lápis direito',
+    'meu filho é muito desajeitado',
+    'meu filho não come sozinho'
+  ],
+  fisioterapia: [
+    'meu filho anda torto',
+    'meu filho tropeça muito',
+    'meu filho tem postura curvada',
+    'meu filho não consegue correr igual as outras crianças'
+  ],
+  psicopedagogia: [
+    'meu filho não consegue ler sozinho',
+    'meu filho troca letras quando escreve',
+    'meu filho não gosta de estudar',
+    'meu filho tem notas baixas mesmo estudando'
+  ],
+  psicomotricidade: [
+    'meu filho confunde esquerda e direita',
+    'meu filho não consegue brincar de bola',
+    'meu filho tem dificuldade de equilíbrio'
+  ]
+};
+
+/**
+ * 🎲 Helper: pega item aleatório de array
+ */
+function pickRandom(array) {
+  return array[Math.floor(Math.random() * array.length)];
+}
+
 export async function createDailyPost(options = {}) {
   try {
     console.log('🚀 Gerando post do dia...');
@@ -1773,8 +2089,83 @@ export async function createDailyPost(options = {}) {
     const especialidade = options.especialidade || await getNextEspecialidade();
     console.log('📌 Especialidade:', especialidade.nome);
 
-    const generated = await generatePostForEspecialidade(especialidade, options.customTheme, options.funnelStage || 'top');
-    console.log(generated.isFallback ? '📝 Post template' : '✅ Texto gerado');
+    // 🔥 BOOST NEUROPEDIATRIA: 70% de chance de forçar bottom funnel
+    let funnelStage = options.funnelStage || 'top';
+    const isNeuroped = especialidade.id.includes('neuro') && especialidade.id.includes('ped');
+    
+    if (isNeuroped && Math.random() < 0.7) {
+      funnelStage = 'bottom';
+      console.log('💰 BOOST: Forçando fundo de funil para neuropediatria (mais conversão)');
+    }
+
+    // 🧠 HÍBRIDO INTELIGENTE: Escolhe método de geração baseado no funil
+    let generated;
+    
+    if (funnelStage === 'bottom') {
+      // 💰 FUNDO DE FUNIL = HighConversion (foco em converter)
+      console.log('🎯 Modo: HIGH CONVERSION (foco em agendamento)');
+      
+      const problemasBase = PROBLEMAS_HUMANOS[especialidade.id] || PROBLEMAS_REAIS[especialidade.id];
+      const problema = pickRandom(problemasBase);
+      
+      const result = generateHighConversionPost({
+        especialidade,
+        problema,
+        incluirValores: isNeuroped // Só mostra valores para neuropediatria
+      });
+      
+      // 🎯 GERA CONTEXTO ESTRUTURADO PARA TRACKING (não texto solto)
+      const contextPayload = {
+        src: 'gmb',
+        esp: especialidade.id,
+        ang: result.angulo,
+        prob: problema,
+        fun: funnelStage,
+        ts: Date.now()
+      };
+      
+      // 🛡️ Usa base64url (seguro para URLs, sem +/=)
+      const encodedContext = Buffer
+        .from(JSON.stringify(contextPayload))
+        .toString('base64url');
+      
+      // 🎯 Embute ctx DENTRO da mensagem (WhatsApp não passa params de URL)
+      const whatsappNumber = '5562993377726';
+      const whatsappText = `Oi! Vi o conteúdo sobre ${problema.substring(0, 30)} e quero agendar [ctx:${encodedContext}]`;
+      const whatsappMessage = encodeURIComponent(whatsappText);
+      const whatsappLink = `https://wa.me/${whatsappNumber}?text=${whatsappMessage}`;
+      
+      // Adiciona personalização local + link encurtado no copy
+      let copy = result.copy;
+      if (!copy.includes('📍 Atendimento em Anápolis')) {
+        copy += '\n\n📍 Atendimento em Anápolis';
+      }
+      
+      // Substitui CTA genérica pelo link com contexto
+      copy = copy.replace(
+        /👉 .*$/m,
+        `👉 ${whatsappLink}`
+      );
+      
+      generated = {
+        title: problema.charAt(0).toUpperCase() + problema.slice(1) + '?',
+        content: copy,
+        especialidade,
+        isFallback: false,
+        angulo: result.angulo,
+        cta: result.cta,
+        whatsappLink,
+        contextPayload // Salva para analytics
+      };
+      
+      console.log('✅ Copy high-conversion gerado (ângulo:', result.angulo + ')');
+      
+    } else {
+      // 🧠 TOP/MIDDLE = GPT (foco em alcance e variedade)
+      console.log('🧠 Modo: GPT (foco em alcance/SEO)');
+      generated = await generatePostForEspecialidade(especialidade, options.customTheme, funnelStage);
+      console.log(generated.isFallback ? '📝 Post template' : '✅ Texto GPT gerado');
+    }
 
     let mediaUrl = null;
     let imageProvider = null;
@@ -1800,10 +2191,19 @@ export async function createDailyPost(options = {}) {
       ctaType: 'LEARN_MORE',
       ctaUrl: especialidade.url,
       aiGenerated: !generated.isFallback,
-      aiModel: generated.isFallback ? 'template' : 'gpt-4o-mini',
+      // 🎯 HÍBRIDO: Identifica qual modelo gerou
+      aiModel: generated.isFallback ? 'template' : (generated.angulo ? 'high-conversion-' + generated.angulo : 'gpt-4o-mini'),
       aiPrompt: options.customTheme
         ? `Especialidade: ${especialidade.nome} | Tema: ${options.customTheme}`
-        : `Especialidade: ${especialidade.nome}`,
+        : (generated.angulo ? `HighConversion | Ângulo: ${generated.angulo} | CTA: ${generated.cta}` : `GPT | Especialidade: ${especialidade.nome}`),
+      // 📊 Metadados para análise de conversão
+      metadata: {
+        funnelStage,
+        angulo: generated.angulo || null,
+        cta: generated.cta || null,
+        isHighConversion: !!generated.angulo,
+        isNeuropedBoost: isNeuroped && funnelStage === 'bottom'
+      },
       status: 'scheduled',
       scheduledAt,
       createdBy: options.userId,
@@ -1958,12 +2358,30 @@ export async function createAssistedPost(options = {}) {
     const imgResult = await generateImageForEspecialidade(especialidade, postData.content, false);
     const mediaUrl = imgResult?.url || null;
 
-    // Formata texto para copiar
-    // 🆕 Link WhatsApp contextualizado com especialidade
+    // 🎯 GERA LINK WHATSAPP COM CONTEXTO CODIFICADO (dentro do texto!)
+    const funnelStage = options.funnelStage || 'top';
+    const angulo = postData.angulo || 'duvida';
+    const problema = postData.problema || especialidade.gancho;
+    
+    // Cria payload de contexto para Amanda
+    const contextPayload = {
+      src: 'gmb',
+      esp: especialidade.id,
+      ang: angulo,
+      prob: problema,
+      fun: funnelStage,
+      ts: Date.now()
+    };
+    
+    // 🛡️ Usa base64url (seguro para URLs, sem +/=)
+    const encodedContext = Buffer
+      .from(JSON.stringify(contextPayload))
+      .toString('base64url');
+    
+    // 🎯 Embute ctx DENTRO da mensagem (WhatsApp não passa params extras)
     const especialidadeNome = especialidade.nome.toLowerCase();
-    const whatsappMessage = encodeURIComponent(
-      `Oi! Vi o post sobre ${especialidadeNome} 💚 Quero entender melhor`
-    );
+    const whatsappText = `Oi! Vi o post sobre ${especialidadeNome} 💚 Quero entender melhor [ctx:${encodedContext}]`;
+    const whatsappMessage = encodeURIComponent(whatsappText);
     const whatsappLink = `https://wa.me/5562993377726?text=${whatsappMessage}`;
     
     const copyText = `${postData.content}
@@ -1987,24 +2405,29 @@ export async function createAssistedPost(options = {}) {
       assistData: {
         gmbUrl: 'https://business.google.com/posts',
         copyText,
-        scheduledFor: new Date()
+        scheduledFor: new Date(),
+        contextPayload // Salva contexto para analytics
       },
       aiGenerated: true,
-      createdBy: userId
+      createdBy: userId,
+      contextPayload // Também no root para fácil acesso
     });
 
     await post.save();
 
-    console.log('✅ Post assistido criado:', post._id);
+    console.log('✅ Post assistido criado:', post._id, '| Ângulo:', angulo, '| Funil:', funnelStage);
 
     return {
       success: true,
       post,
+      contextPayload, // Retorna contexto para uso do frontend
       assistData: {
         postId: post._id,
         gmbUrl: 'https://business.google.com/posts',
         copyText,
-        mediaUrl
+        mediaUrl,
+        whatsappLink,
+        contextPayload
       }
     };
 
