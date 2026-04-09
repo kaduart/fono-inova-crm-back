@@ -2294,7 +2294,9 @@ router.patch('/:id/complete', auth, async (req, res) => {
                     balanceDescription || `Sessão ${appointment.date} - pagamento pendente`,
                     sessionId,
                     appointment._id,
-                    req.user?._id
+                    req.user?._id,
+                    appointment.specialty,  // 🆕 PASSA ESPECIALIDADE
+                    appointment.correlationId  // 🆕 V4: correlationId para idempotência
                 );
                 console.log(`[complete] ✅ Débito adicionado (${Date.now() - startTime}ms)`);
             } catch (err) {

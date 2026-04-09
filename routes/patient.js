@@ -4,6 +4,7 @@ import validateId from '../middleware/validateId.js';
 import Appointment from '../models/Appointment.js';
 import Package from '../models/Package.js';
 import Patient from '../models/Patient.js';
+import PatientBalance from '../models/PatientBalance.js';
 import Session from '../models/Session.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 
@@ -239,6 +240,8 @@ router.get('/:patientId/sessions/pending', auth, async (req, res) => {
     const { patientId } = req.params;
     const { specialty } = req.query;
 
+    console.log(`[SESSIONS PENDING] Buscando sessões para patientId: ${patientId}, specialty: ${specialty}`);
+
     const filter = {
       patient: patientId,
       paymentStatus: { $in: ['pending', 'unpaid', 'pending_balance'] },
@@ -246,24 +249,36 @@ router.get('/:patientId/sessions/pending', auth, async (req, res) => {
     };
 
     if (specialty) {
-      const re = new RegExp(`^${specialty}$`, 'i');
-      filter.$or = [
-        { specialty: { $regex: re } },
-        { sessionType: { $regex: re } }
-      ];
+      // Normaliza: remove underscores, espaços extras, lowercase
+      // 'terapia_ocupacional' → 'terapia ocupacional'
+      // 'Fonoaudiologia' → 'fonoaudiologia'
+      const normalized = specialty.toString().toLowerCase().trim().replace(/_/g, ' ').replace(/\s+/g, ' ');
+      filter.sessionType = normalized;
+      console.log(`[SESSIONS PENDING] Filtro exato - sessionType: ${normalized}`);
+    } else {
+      console.log(`[SESSIONS PENDING] Nenhuma especialidade informada`);
     }
+
+    console.log(`[SESSIONS PENDING] Query filter:`, JSON.stringify(filter, null, 2));
 
     const sessions = await Session.find(filter)
       .populate('doctor', 'fullName')
       .sort({ date: -1 })
       .lean();
 
+    console.log(`[SESSIONS PENDING] Total de sessões encontradas: ${sessions.length}`);
+    console.log(`[SESSIONS PENDING] Sessões:`, sessions.map(s => ({ 
+      _id: s._id, 
+      date: s.date, 
+      sessionType: s.sessionType 
+    })));
+
     const data = sessions.map(s => ({
       _id: s._id,
       date: s.date,
       time: s.time,
       sessionValue: s.sessionValue,
-      specialty: s.specialty,
+      specialty: s.sessionType, // sessionType é o campo correto no modelo
       doctorName: s.doctor?.fullName || null
     }));
 
@@ -271,6 +286,138 @@ router.get('/:patientId/sessions/pending', auth, async (req, res) => {
   } catch (err) {
     console.error('[SESSIONS PENDING] Erro:', err);
     res.status(500).json({ error: 'Erro ao buscar sessões pendentes' });
+  }
+});
+
+// 🔍 DEBUG: Verificar origem do débito
+router.get('/:patientId/debug-debito', auth, async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    
+    console.log(`[DEBUG DEBITO] Analisando paciente: ${patientId}`);
+    
+    // 1. Todas sessões pendentes (sem filtro de especialidade)
+    const allPendingSessions = await Session.find({
+      patient: patientId,
+      paymentStatus: { $in: ['pending', 'unpaid', 'pending_balance'] },
+      status: { $in: ['completed', 'missed'] }
+    }).lean();
+    
+    console.log(`[DEBUG DEBITO] Total sessões pendentes: ${allPendingSessions.length}`);
+    
+    // Agrupar por sessionType
+    const porTipo = {};
+    let totalValor = 0;
+    allPendingSessions.forEach(s => {
+      const tipo = s.sessionType || 'SEM_TIPO';
+      if (!porTipo[tipo]) porTipo[tipo] = { count: 0, valor: 0, ids: [] };
+      porTipo[tipo].count++;
+      porTipo[tipo].valor += (s.sessionValue || 0);
+      porTipo[tipo].ids.push(s._id.toString().slice(-6));
+      totalValor += (s.sessionValue || 0);
+    });
+    
+    console.log(`[DEBUG DEBITO] Por tipo:`, porTipo);
+    
+    // 2. Verificar appointments completed sem pagamento
+    const appointments = await Appointment.find({
+      patient: patientId,
+      status: 'completed',
+      $or: [
+        { isPaid: false },
+        { paymentStatus: { $in: ['pending', 'unpaid'] } }
+      ]
+    }).select('date specialty isPaid paymentStatus sessionValue').lean();
+    
+    console.log(`[DEBUG DEBITO] Appointments completed não pagos: ${appointments.length}`);
+    
+    // 3. Sessões SEM sessionType
+    const semTipo = allPendingSessions.filter(s => !s.sessionType);
+    
+    res.json({
+      success: true,
+      debug: {
+        patientId,
+        totalSessoesPendentes: allPendingSessions.length,
+        totalValorPendente: totalValor,
+        porTipo,
+        appointmentsNaoPagos: appointments.length,
+        appointmentsDetalhes: appointments.slice(0, 5),
+        sessoesSemTipo: semTipo.length,
+        sessoesSemTipoDetalhes: semTipo.slice(0, 5).map(s => ({
+          _id: s._id,
+          date: s.date,
+          paymentStatus: s.paymentStatus,
+          sessionValue: s.sessionValue
+        }))
+      }
+    });
+  } catch (err) {
+    console.error('[DEBUG DEBITO] Erro:', err);
+    res.status(500).json({ error: 'Erro ao debugar débito' });
+  }
+});
+
+// 🆕 NOVO ENDPOINT: Débitos do balance por especialidade (FONTE CORRETA)
+router.get('/:patientId/balance/details', auth, async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { specialty } = req.query;
+
+    console.log(`[BALANCE DETAILS] Buscando débitos para patientId: ${patientId}, specialty: ${specialty || 'TODAS'}`);
+
+    // Busca o balance do paciente
+    const balance = await PatientBalance.findOne({ patient: patientId });
+
+    if (!balance) {
+      console.log(`[BALANCE DETAILS] Nenhum balance encontrado`);
+      return res.json({ success: true, data: [] });
+    }
+
+    // Filtra apenas transações de débito NÃO quitados
+    let transactions = balance.transactions.filter(t => 
+      t.type === 'debit' && 
+      !t.isDeleted &&
+      !t.isPaid &&  // só mostra débitos não pagos
+      !t.settledByPackageId  // 🆕 não mostra débitos já quitados por pacote
+    );
+
+    console.log(`[BALANCE DETAILS] Total débitos não pagos: ${transactions.length}`);
+
+    // Se informou especialidade, filtra
+    if (specialty) {
+      const normalizedSpecialty = specialty.toString().toLowerCase().trim().replace(/_/g, ' ').replace(/\s+/g, ' ');
+      transactions = transactions.filter(t => t.specialty === normalizedSpecialty);
+      console.log(`[BALANCE DETAILS] Após filtro "${normalizedSpecialty}": ${transactions.length}`);
+    }
+
+    // Formata resposta
+    const data = transactions.map(t => ({
+      _id: t._id,
+      amount: t.amount,
+      specialty: t.specialty,
+      description: t.description,
+      appointmentId: t.appointmentId,
+      sessionId: t.sessionId,
+      transactionDate: t.transactionDate,
+      paidAmount: t.paidAmount || 0,
+      isPaid: t.isPaid || false
+    }));
+
+    console.log(`[BALANCE DETAILS] Retornando ${data.length} débitos`);
+
+    res.json({ 
+      success: true, 
+      data,
+      summary: {
+        totalAmount: data.reduce((sum, t) => sum + t.amount, 0),
+        count: data.length
+      }
+    });
+
+  } catch (err) {
+    console.error('[BALANCE DETAILS] Erro:', err);
+    res.status(500).json({ error: 'Erro ao buscar débitos' });
   }
 });
 
