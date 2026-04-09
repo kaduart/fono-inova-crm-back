@@ -11,6 +11,24 @@ import { createContextLogger } from '../../utils/logger.js';
  * Todas as filas usam a mesma conexão Redis.
  */
 
+// 🛡️ Debounce de eventos (evita tempestade de rebuilds do mesmo aggregate)
+const recentPublishes = new Map();
+const DEBOUNCE_MS = 5000;
+const MAX_DEBOUNCE_CACHE = 1000;
+
+function shouldDebounce(aggregateId, eventType) {
+    const key = `${aggregateId}:${eventType}`;
+    const last = recentPublishes.get(key);
+    if (last && Date.now() - last < DEBOUNCE_MS) return true;
+    recentPublishes.set(key, Date.now());
+    // Evita crescimento ilimitado do Map
+    if (recentPublishes.size > MAX_DEBOUNCE_CACHE) {
+        const firstKey = recentPublishes.keys().next().value;
+        recentPublishes.delete(firstKey);
+    }
+    return false;
+}
+
 // Filas disponíveis
 const queues = {
     'appointment-processing': new Queue('appointment-processing', { connection: redisConnection }),
@@ -380,18 +398,16 @@ export async function publishEvent(eventType, payload, options = {}) {
     
     const log = createContextLogger(correlationId, 'event_publisher');
     
-    // 🔥 LOG DIAGNÓSTICO - ENTRADA
-    console.log(`🔥 [EVENT_PUBLISHER] ========== ENTRADA ==========`);
-    console.log(`🔥 [EVENT_PUBLISHER] eventType: ${eventType}`);
-    console.log(`🔥 [EVENT_PUBLISHER] correlationId: ${correlationId}`);
-    console.log(`🔥 [EVENT_PUBLISHER] payload.appointmentId: ${payload?.appointmentId}`);
-    console.log(`🔥 [EVENT_PUBLISHER] =================================`);
+    // Log enxuto (logs verbosos causam GC pressure em alta carga)
+    if (process.env.DEBUG_EVENTS === 'true') {
+        console.log(`🔥 [EVENT_PUBLISHER] ${eventType} corr=${correlationId}`);
+    }
     
     log.info('publish_start', 'Publicando evento', { eventType });
     
     const queueNames = eventToQueueMap[eventType];
     
-    console.log(`🔥 [EVENT_PUBLISHER] queueNames encontrado:`, queueNames);
+    // queueNames omitido do log para reduzir alocação
     
     if (!queueNames) {
         console.error(`❌ [EVENT_PUBLISHER] UNKNOWN_EVENT_TYPE: ${eventType}`);
@@ -408,25 +424,28 @@ export async function publishEvent(eventType, payload, options = {}) {
     // Gera idempotencyKey se não fornecida
     const finalIdempotencyKey = idempotencyKey || generateIdempotencyKey(eventType, payload, finalAggregateId);
     
-    console.log(`🔥 [EVENT_PUBLISHER] finalIdempotencyKey: ${finalIdempotencyKey}`);
+    // 🛡️ DEBOUNCE: ignora eventos do mesmo aggregate em curto prazo (evita tempestade de rebuilds)
+    if (shouldDebounce(finalAggregateId, eventType)) {
+        log.info('debounced', 'Evento debounced (publicado recentemente)', { eventType, aggregateId: finalAggregateId });
+        return {
+            eventId: 'debounced',
+            eventType,
+            debounced: true,
+            aggregateId: finalAggregateId
+        };
+    }
     
-    // 🛡️ IDEMPOTÊNCIA: Verifica se já foi processado
+    // 🛡️ IDEMPOTÊNCIA: Verifica se já foi processado (evita duplicar jobs em fila)
     if (finalIdempotencyKey) {
-        console.log(`🔥 [EVENT_PUBLISHER] Verificando idempotência...`);
         const alreadyExists = await eventExists(finalIdempotencyKey);
-        console.log(`🔥 [EVENT_PUBLISHER] alreadyExists: ${alreadyExists}`);
         if (alreadyExists) {
-            console.warn(`⚠️ [EVENT_PUBLISHER] DUPLICADO! Ignorando ${eventType}`);
-            log.warn('duplicate_event', 'Evento duplicado ignorado', {
-                eventType,
-                idempotencyKey: finalIdempotencyKey
-            });
+            log.warn('duplicate_event', 'Evento duplicado ignorado', { eventType, idempotencyKey: finalIdempotencyKey });
             return {
                 eventId: 'duplicate',
                 eventType,
                 duplicate: true,
                 idempotencyKey: finalIdempotencyKey,
-                queue: queueName
+                queue: queuesToPublish[0]
             };
         }
     }
@@ -489,37 +508,26 @@ export async function publishEvent(eventType, payload, options = {}) {
     
     // Publica para todas as filas configuradas
     const jobs = [];
-    console.log(`🔥 [EVENT_PUBLISHER] queuesToPublish:`, queuesToPublish);
     
     for (const qName of queuesToPublish) {
-        console.log(`🔥 [EVENT_PUBLISHER] Processando fila: ${qName}`);
         const queue = queues[qName];
         if (!queue) {
-            console.error(`❌ [EVENT_PUBLISHER] Fila ${qName} NÃO ENCONTRADA no objeto queues!`);
             log.error('queue_not_found', `Fila ${qName} não encontrada`, { eventType });
             continue;
         }
         
-        console.log(`🔥 [EVENT_PUBLISHER] Adicionando job à fila ${qName}...`);
         try {
             const job = await queue.add(eventType, jobData, jobOptions);
-            console.log(`✅ [EVENT_PUBLISHER] Job criado: ${job.id} na fila ${qName}`);
             jobs.push({ queue: qName, jobId: job.id });
             
             log.info('event_queued', 'Evento enviado para fila', {
-                eventType,
-                eventId,
-                queue: qName,
-                jobId: job.id
+                eventType, eventId, queue: qName, jobId: job.id
             });
         } catch (addError) {
-            console.error(`❌ [EVENT_PUBLISHER] ERRO ao adicionar job:`, addError.message);
+            log.error('event_queue_failed', 'Erro ao adicionar job', { queue: qName, error: addError.message });
             throw addError;
         }
     }
-    
-    console.log(`🔥 [EVENT_PUBLISHER] Total jobs criados: ${jobs.length}`);
-    console.log(`🔥 [EVENT_PUBLISHER] ====== FIM ======`);
     
     return {
         eventId,

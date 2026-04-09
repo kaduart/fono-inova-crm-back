@@ -43,15 +43,23 @@ const RESILIENCE_CONFIG = {
 // ============================================
 
 const processedEvents = new Map();
+const MAX_PROCESSED_CACHE = 5000; // ⛔ Limite para evitar crescimento ilimitado
 
 setInterval(() => {
   const now = Date.now();
+  // Limpa expirados E mantém limite máximo (LRU simples)
+  if (processedEvents.size > MAX_PROCESSED_CACHE) {
+    const entries = Array.from(processedEvents.entries());
+    entries.sort((a, b) => a[1] - b[1]); // ordena por timestamp
+    const toDelete = entries.slice(0, processedEvents.size - MAX_PROCESSED_CACHE);
+    for (const [eventId] of toDelete) processedEvents.delete(eventId);
+  }
   for (const [eventId, timestamp] of processedEvents) {
     if (now - timestamp > RESILIENCE_CONFIG.eventCacheTTL) {
       processedEvents.delete(eventId);
     }
   }
-}, 60 * 60 * 1000);
+}, 5 * 60 * 1000); // ⏱️ Limpar a cada 5min (era 60min)
 
 // ============================================
 // DLQ: Fila de mensagens falhas
@@ -161,10 +169,12 @@ export const packageProjectionWorker = new Worker(
   },
   {
     connection: redisConnection,
-    concurrency: 5,
-    limiter: { max: 20, duration: 1000 },
+    concurrency: 2,
+    limiter: { max: 10, duration: 1000 },
     stalledInterval: 30000,
-    lockDuration: 30000
+    lockDuration: 30000,
+    removeOnComplete: { age: 3600, count: 100 },  // 🧹 limpa jobs antigos (1h, max 100)
+    removeOnFail: { age: 3600 * 6 }               // mantém falhas por 6h
   }
 );
 

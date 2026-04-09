@@ -93,6 +93,17 @@ async function releaseAppointmentLock(appointmentId, reason = 'worker_failed') {
 /**
  * Complete Orchestrator Worker - VERSÃO PRODUÇÃO
  */
+// 🛡️ Memory guard — recusa job se heap acima de 85%
+function checkMemoryPressure() {
+    const heapUsed = process.memoryUsage().heapUsed;
+    const heapTotal = process.memoryUsage().heapTotal;
+    const heapPercent = heapUsed / heapTotal;
+    if (heapPercent > 0.85) {
+        console.error(`[CompleteOrchestrator] ⚠️ MEMORY_PRESSURE: heap ${Math.round(heapPercent * 100)}% — recusando job`);
+        throw new Error('MEMORY_PRESSURE: retry via backoff');
+    }
+}
+
 export async function startCompleteOrchestratorWorker() {
     console.log('[CompleteOrchestrator] 🚀 Iniciando worker...');
     
@@ -100,6 +111,9 @@ export async function startCompleteOrchestratorWorker() {
     await ensureMongoConnection();
     
     const worker = new Worker('complete-orchestrator', async (job) => {
+        // 🛡️ Memory check antes de processar
+        checkMemoryPressure();
+        
         const { eventId, correlationId, idempotencyKey, payload } = job.data;
         const { 
             appointmentId, 
