@@ -423,6 +423,129 @@ sessionSchema.add({
     dataRealizacao: { type: Date }
 });
 
+// 🧹 CASCADE DELETE: Quando deletar session, limpar referências e marcar débitos
+sessionSchema.post('findOneAndDelete', async function (doc) {
+    if (doc) {
+        // 1. Remover MedicalEvent
+        await MedicalEvent.deleteOne({
+            originalId: doc._id,
+            type: 'session'
+        });
+        
+        // 2. Marcar débitos no PatientBalance como cancelados
+        if (doc.patient && doc.appointmentId) {
+            try {
+                const { default: PatientBalance } = await import('./PatientBalance.js');
+                const balance = await PatientBalance.findOne({ patient: doc.patient });
+                if (balance) {
+                    let changed = false;
+                    for (const t of balance.transactions) {
+                        if (t.sessionId?.toString() === doc._id.toString() ||
+                            t.appointmentId?.toString() === doc.appointmentId.toString()) {
+                            if (t.type === 'debit' && !t.isPaid) {
+                                t.isDeleted = true;
+                                t.deletedAt = new Date();
+                                t.deleteReason = 'cascade-delete: session deleted';
+                                changed = true;
+                            }
+                        }
+                    }
+                    if (changed) {
+                        await balance.save();
+                        console.log(`🧹 Cascade delete: débitos da session ${doc._id} marcados como cancelados`);
+                    }
+                }
+            } catch (error) {
+                console.error('⚠️ Erro ao cancelar débitos no cascade delete:', error.message);
+            }
+        }
+    }
+});
+
+// 🧹 Pre-deleteOne e deleteMany com cascade
+sessionSchema.pre('deleteOne', { document: true, query: false }, async function() {
+    const sessionId = this._id;
+    const patientId = this.patient;
+    const appointmentId = this.appointmentId;
+    
+    try {
+        // Marcar débitos como cancelados
+        if (patientId && appointmentId) {
+            const { default: PatientBalance } = await import('./PatientBalance.js');
+            const balance = await PatientBalance.findOne({ patient: patientId });
+            if (balance) {
+                let changed = false;
+                for (const t of balance.transactions) {
+                    if (t.sessionId?.toString() === sessionId.toString() ||
+                        t.appointmentId?.toString() === appointmentId.toString()) {
+                        if (t.type === 'debit' && !t.isPaid) {
+                            t.isDeleted = true;
+                            t.deletedAt = new Date();
+                            t.deleteReason = 'cascade-delete: session deleted';
+                            changed = true;
+                        }
+                    }
+                }
+                if (changed) await balance.save();
+            }
+        }
+    } catch (error) {
+        console.error('⚠️ Erro no cascade deleteOne de session:', error.message);
+    }
+});
+
+// 🧹 MÉTODO: Soft delete em cascata (marca session e cancela débitos)
+sessionSchema.methods.softDeleteCascade = async function(reason = 'manual', deletedBy = null) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    
+    try {
+        const sessionId = this._id;
+        const patientId = this.patient;
+        const appointmentId = this.appointmentId;
+        
+        // 1. Marcar débitos como cancelados
+        if (patientId && appointmentId) {
+            const { default: PatientBalance } = await import('./PatientBalance.js');
+            const balance = await PatientBalance.findOne({ patient: patientId });
+            if (balance) {
+                let changed = false;
+                for (const t of balance.transactions) {
+                    if (t.sessionId?.toString() === sessionId.toString() ||
+                        t.appointmentId?.toString() === appointmentId.toString()) {
+                        if (t.type === 'debit' && !t.isPaid) {
+                            t.isDeleted = true;
+                            t.deletedAt = new Date();
+                            t.deleteReason = `cascade-delete: ${reason}`;
+                            t.deletedBy = deletedBy;
+                            changed = true;
+                        }
+                    }
+                }
+                if (changed) await balance.save({ session });
+            }
+        }
+        
+        // 2. Soft delete na session
+        this.isDeleted = true;
+        this.deletedAt = new Date();
+        this.deleteReason = reason;
+        this.deletedBy = deletedBy;
+        await this.save({ session });
+        
+        await session.commitTransaction();
+        console.log(`🧹 Soft delete cascade: session ${sessionId} + débitos cancelados`);
+        
+        return { success: true, sessionId };
+    } catch (error) {
+        await session.abortTransaction();
+        console.error('💥 Erro no soft delete cascade de session:', error.message);
+        throw error;
+    } finally {
+        session.endSession();
+    }
+};
+
 const Session = mongoose.model('Session', sessionSchema);
 
 export default Session;
