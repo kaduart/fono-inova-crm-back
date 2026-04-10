@@ -19,7 +19,8 @@ import {
     buildBulkOps,
     filterPaymentsByDate,
     extractPackageIds,
-    deduplicateAppointments
+    deduplicateAppointments,
+    resolveValue
 } from './helpers.js';
 import {
     calculateAppointmentSummary,
@@ -94,6 +95,15 @@ export async function calculateDailyClosing(date, clinicId) {
     // 5. MAPS PARA PERFORMANCE
     // ======================================================
     const paymentMaps = buildPaymentMaps(allPayments);
+    
+    // 🔥 MAPA DE PAYMENT POR APPOINTMENT (para enriquecer timeline)
+    const paymentByAppointment = new Map();
+    allPayments.forEach(p => {
+        const aptId = p.appointment?._id?.toString() || p.appointmentId?.toString();
+        if (aptId) {
+            paymentByAppointment.set(aptId, p);
+        }
+    });
 
     // ======================================================
     // 6. FILTRAR PAGAMENTOS DO DIA
@@ -130,24 +140,33 @@ export async function calculateDailyClosing(date, clinicId) {
             cashFlow: cashFlow  // 🆕 NOVO: separação de caixa
         },
         timelines: {
-            appointments: uniqueAppointments.map(a => ({
-                id: a._id.toString(),
-                patient: a.patient?.fullName,
-                phone: a.patient?.phone || a.patientInfo?.phone || null,
-                patientType: a.patientType || null,
-                service: a.serviceType,
-                doctor: a.doctor?.fullName,
-                sessionValue: Number(a.sessionValue || 0),
-                operationalStatus: a.operationalStatus,
-                clinicalStatus: a.clinicalStatus,
-                date: a.date,
-                time: a.time,
-                isPackage: !!(a.package),
-                packageId: a.package?._id?.toString() || null,
-                paymentMethod: a.paymentMethod || '—',
-                isConvenio: a.serviceType === 'convenio_session' || a.paymentMethod === 'convenio',
-                insuranceProvider: a.insuranceProvider || null,
-            })),
+            appointments: uniqueAppointments.map(a => {
+                const payment = paymentByAppointment.get(a._id.toString());
+                
+                return {
+                    id: a._id.toString(),
+                    patient: a.patient?.fullName,
+                    phone: a.patient?.phone || a.patientInfo?.phone || null,
+                    patientType: a.patientType || null,
+                    service: a.serviceType,
+                    doctor: a.doctor?.fullName,
+                    // 🔥 ENRIQUECIDO: valor do payment se existir, senão resolveValue
+                    sessionValue: payment?.amount || resolveValue(a),
+                    operationalStatus: a.operationalStatus,
+                    clinicalStatus: a.clinicalStatus,
+                    date: a.date,
+                    time: a.time,
+                    isPackage: !!(a.package),
+                    packageId: a.package?._id?.toString() || null,
+                    // 🔥 ENRIQUECIDO: método do payment se existir
+                    paymentMethod: payment?.paymentMethod || a.paymentMethod || '—',
+                    // 🔥 ENRIQUECIDO: verifica também no payment
+                    isConvenio: a.serviceType === 'convenio_session' || 
+                                a.paymentMethod === 'convenio' || 
+                                payment?.paymentMethod === 'convenio',
+                    insuranceProvider: a.insuranceProvider || null,
+                };
+            }),
             payments: filteredPayments.map(p => ({
                 id: p._id.toString(),
                 amount: p.amount,
@@ -175,7 +194,7 @@ export async function calculateDailyClosing(date, clinicId) {
             doctor: a.doctor?.fullName,
             time: a.time,
             status: a.operationalStatus,
-            sessionValue: a.sessionValue
+            sessionValue: resolveValue(a)
         })),
         payments: filteredPayments.map(p => ({
             id: p._id.toString(),

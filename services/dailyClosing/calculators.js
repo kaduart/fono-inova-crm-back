@@ -1,15 +1,7 @@
 // services/dailyClosing/calculators.js
-/**
- * Cálculos puros (sem queries, só processamento)
- */
+// SIMPLES: Só soma o que foi realizado no dia
 
-import {
-    isCanceled,
-    isConfirmed,
-    isCompleted,
-    normalizePaymentMethod,
-    getPaymentDate
-} from './helpers.js';
+import { isCanceled, isCompleted, normalizePaymentMethod, resolveValue } from './helpers.js';
 
 // Calculate summary.appointments
 export const calculateAppointmentSummary = (appointments) => {
@@ -26,16 +18,22 @@ export const calculateAppointmentSummary = (appointments) => {
     for (const appt of appointments) {
         const opStatus = appt.operationalStatus || 'scheduled';
         const clinicalStatus = appt.clinicalStatus || 'pending';
-        const sessionValue = Number(appt.sessionValue || 0);
+        const sessionValue = resolveValue(appt);
 
         summary.total++;
-        summary.expectedValue += sessionValue;
+        
+        if (isCanceled(opStatus)) {
+            summary.canceled++;
+        } else {
+            summary.expectedValue += sessionValue;
+        }
+        
+        if (isCompleted(clinicalStatus)) {
+            summary.attended++;
+        } else if (!isCanceled(opStatus)) {
+            summary.pending++;
+        }
 
-        if (isCanceled(opStatus)) summary.canceled++;
-        else if (isConfirmed(opStatus) || isCompleted(clinicalStatus)) summary.attended++;
-        else summary.pending++;
-
-        // Novos vs Recorrentes
         if (appt.isFirstAppointment || appt.patientType === 'new') {
             summary.novos++;
         } else {
@@ -47,35 +45,33 @@ export const calculateAppointmentSummary = (appointments) => {
 };
 
 // Calculate summary.financial
-// ⚠️ DAILY CLOSING = PRODUÇÃO DO DIA (não é caixa real)
-// Inclui convênios pendentes porque são "produzidos" no dia
+// 💰 CAIXA = Soma dos appointments COMPLETADOS (realizados no dia)
 export const calculateFinancialSummary = (payments, appointments) => {
     const byMethod = { dinheiro: 0, pix: 0, cartão: 0 };
     
-    // Só particular entra no byMethod (convênio não tem método de pagamento)
-    payments.filter(p => p.billingType !== 'convenio' || p.status === 'paid').forEach(p => {
-        const method = normalizePaymentMethod(p.paymentMethod);
-        if (byMethod[method] !== undefined) {
-            byMethod[method] += p.amount || 0;
+    let totalReceived = 0;
+    
+    // Só soma appointments completados (realizados no dia)
+    appointments.forEach(a => {
+        if (isCompleted(a.clinicalStatus) && a.paymentMethod !== 'convenio') {
+            const valor = resolveValue(a);
+            totalReceived += valor;
+            
+            const method = normalizePaymentMethod(a.paymentMethod);
+            if (byMethod[method] !== undefined) {
+                byMethod[method] += valor;
+            }
         }
     });
-
-    // 📊 PRODUÇÃO DO DIA: tudo que foi atendido (particular + convênio)
-    const totalProduction = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
     
-    // 💰 CAIXA DO DIA: só o que realmente entrou
-    const totalReceived = payments
-        .filter(p => p.status === 'paid' || p.insurance?.status === 'received')
-        .reduce((sum, p) => sum + (p.amount || 0), 0);
-    
-    const totalExpected = appointments.reduce((sum, a) => sum + Number(a.sessionValue || 0), 0);
+    const totalExpected = appointments.reduce((sum, a) => sum + resolveValue(a), 0);
     const totalCanceled = appointments
         .filter(a => isCanceled(a.operationalStatus))
-        .reduce((sum, a) => sum + Number(a.sessionValue || 0), 0);
+        .reduce((sum, a) => sum + resolveValue(a), 0);
 
     return {
-        totalProduction,     // 📊 Tudo produzido no dia
-        totalReceived,       // 💰 Caixa real
+        totalProduction: totalReceived,  // Produção = Caixa (só realizados)
+        totalReceived,                   // 💰 Caixa real
         totalExpected,
         totalRevenue: totalExpected - totalCanceled,
         byMethod
@@ -93,18 +89,16 @@ export const calculateInsuranceSummary = (sessions) => {
 
     const insuranceSessions = sessions.filter(s => 
         s.package?.type === 'convenio' || 
-        s.paymentMethod === 'convenio' ||
-        s.billingType === 'convenio'
+        s.paymentMethod === 'convenio'
     );
 
     for (const session of insuranceSessions) {
         const pkg = session.package;
         const insuranceValue = pkg?.insuranceGrossAmount || pkg?.sessionValue || 80;
-        const isSessionCompleted = session.status === 'completed';
 
-        if (isSessionCompleted) {
+        if (session.status === 'completed') {
             summary.production += insuranceValue;
-            summary.sessionsCount += 1;
+            summary.sessionsCount++;
             
             if (session.isPaid) {
                 summary.received += insuranceValue;
@@ -117,14 +111,14 @@ export const calculateInsuranceSummary = (sessions) => {
     return summary;
 };
 
-// Build payment maps for O(1) lookup
+// Build payment maps
 export const buildPaymentMaps = (payments) => {
     const byAppt = new Map();
     const byPackage = new Map();
     const byPatient = new Map();
 
     payments.forEach(p => {
-        const apptId = p.appointment?._id?.toString();
+        const apptId = p.appointment?._id?.toString() || p.appointment?.toString();
         if (apptId) {
             if (!byAppt.has(apptId)) byAppt.set(apptId, []);
             byAppt.get(apptId).push(p);
@@ -150,7 +144,6 @@ export const buildPaymentMaps = (payments) => {
 export const calculateProfessionals = (appointments, payments) => {
     const profMap = new Map();
 
-    // Group appointments by doctor
     appointments.forEach(appt => {
         const doctorId = appt.doctor?._id?.toString();
         if (!doctorId) return;
@@ -170,32 +163,17 @@ export const calculateProfessionals = (appointments, payments) => {
         }
 
         const prof = profMap.get(doctorId);
-        const sessionValue = Number(appt.sessionValue || 0);
+        const sessionValue = resolveValue(appt);
         const opStatus = appt.operationalStatus || 'scheduled';
-        const clinicalStatus = appt.clinicalStatus || 'pending';
 
         prof.scheduled++;
         prof.scheduledValue += sessionValue;
 
-        if (isCompleted(clinicalStatus)) {
+        if (isCompleted(appt.clinicalStatus)) {
             prof.completed++;
             prof.completedValue += sessionValue;
         } else if (isCanceled(opStatus)) {
             prof.absences++;
-        }
-    });
-
-    // Add payments to professionals
-    payments.forEach(p => {
-        const doctorId = p.doctor?._id?.toString();
-        if (!doctorId || !profMap.has(doctorId)) return;
-
-        const prof = profMap.get(doctorId);
-        prof.payments.total += p.amount || 0;
-        
-        const method = normalizePaymentMethod(p.paymentMethod);
-        if (prof.payments.methods[method] !== undefined) {
-            prof.payments.methods[method] += p.amount || 0;
         }
     });
 

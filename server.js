@@ -29,6 +29,7 @@ dotenv.config({ path: path.resolve(__dirname, "./.env") });
 // 🔧 Configurações internas e serviços
 // ======================================================
 import { initializeSocket } from "./config/socket.js";
+import { startRuntimeMonitor, healthEndpoint, healthFullEndpoint } from "./infrastructure/observability/runtimeMonitor.js";
 import Followup from "./models/Followup.js";
 import { redisConnection } from "./config/redisConnection.js";
 import { registerWebhook } from "./services/sicoobService.js";
@@ -153,6 +154,7 @@ import expensesV2Routes from './routes/expenses.v2.js';  // 🚀 NOVO: Expenses 
 import convenioV2Routes from './routes/convenio.v2.js';  // 🚀 NOVO: Convênio V2
 import calendarV2Routes from './routes/calendar.v2.js';  // 🚀 NOVO: Calendar V2
 import observabilityRoutes from './infrastructure/observability/observabilityRoutes.js';  // 🚀 NOVO: Observabilidade
+import healthRoutes from './routes/health.js';  // 🚀 NOVO: Health Check Completo
 
 
 // ======================================================
@@ -317,9 +319,12 @@ app.use(
 app.options("*", cors(corsOptions));
 
 // 🚀 Health check imediato - responde antes de tudo
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+app.get('/health', healthEndpoint);
+app.get('/health/full', healthFullEndpoint);
+
+// 🚀 NOVO: Health Check Completo (com watchdog, queues, stuck events)
+app.use('/api/health', healthRoutes);
+
 app.get('/', (req, res) => {
   res.status(200).json({ status: 'CRM Backend running', timestamp: new Date().toISOString() });
 });
@@ -544,6 +549,9 @@ server.listen(PORT, '0.0.0.0', () => {
         }
       }
     }
+
+    // 🏥 Monitor de runtime (memória + filas)
+    startRuntimeMonitor();
 
     // Workers e Crons (com fallback se Redis falhar)
     try {

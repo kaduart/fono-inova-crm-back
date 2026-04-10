@@ -105,6 +105,15 @@ export async function completeSession(sessionId, data = {}, context = {}) {
     balanceDescription = ''
   } = context;
   
+  console.log(`[completeSession] INICIANDO - sessionId: ${sessionId}`, {
+    paymentStatus: data?.paymentStatus,
+    isPaid: data?.isPaid,
+    visualFlag: data?.visualFlag,
+    paymentId: data?.paymentId,
+    addToBalance,
+    correlationId
+  });
+  
   log.info({ correlationId, sessionId }, 'Completando sessão');
   
   // 1. Busca sessão atual
@@ -197,6 +206,13 @@ export async function completeSession(sessionId, data = {}, context = {}) {
       // Importante: marca que precisa ser processado pelo billing
       requiresBillingProcessing: true
     }
+  });
+  
+  console.log(`[completeSession] SUCESSO - sessionId: ${sessionId}`, {
+    status: updatedSession?.status,
+    paymentStatus: updatedSession?.paymentStatus,
+    isPaid: updatedSession?.isPaid,
+    eventId: event?.eventId
   });
   
   log.info({ 

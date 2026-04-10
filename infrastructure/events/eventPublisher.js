@@ -3,6 +3,7 @@ import { Queue } from 'bullmq';
 import { redisConnection } from '../queue/queueConfig.js';
 import { appendEvent, eventExists } from './eventStoreService.js';
 import { createContextLogger } from '../../utils/logger.js';
+import EventStore from '../../models/EventStore.js';
 
 /**
  * Event Publisher
@@ -439,13 +440,36 @@ export async function publishEvent(eventType, payload, options = {}) {
     if (finalIdempotencyKey) {
         const alreadyExists = await eventExists(finalIdempotencyKey);
         if (alreadyExists) {
-            log.warn('duplicate_event', 'Evento duplicado ignorado', { eventType, idempotencyKey: finalIdempotencyKey });
+            // 🔍 LOG ESPECÍFICO: Busca o evento existente para saber o status
+            const existingEvent = await EventStore.findOne({ idempotencyKey: finalIdempotencyKey });
+            const isParticular = payload?.packageId && !payload?.isConvenio && !payload?.isLiminar;
+            
+            log.warn('duplicate_event', 'Evento duplicado ignorado', { 
+                eventType, 
+                idempotencyKey: finalIdempotencyKey,
+                existingStatus: existingEvent?.status,
+                existingEventId: existingEvent?.eventId,
+                isParticular,
+                packageId: payload?.packageId
+            });
+            
+            // 🚨 SE FOR PARTICULAR E ESTIVER EM PROCESSING, LOG CRÍTICO
+            if (isParticular && existingEvent?.status === 'processing') {
+                console.error(`🚨 [DUPLICATE_PARTICULAR] Evento particular travado em 'processing':`, {
+                    appointmentId: payload?.appointmentId,
+                    packageId: payload?.packageId,
+                    eventId: existingEvent?.eventId,
+                    createdAt: existingEvent?.createdAt
+                });
+            }
+            
             return {
                 eventId: 'duplicate',
                 eventType,
                 duplicate: true,
                 idempotencyKey: finalIdempotencyKey,
-                queue: queuesToPublish[0]
+                queue: queuesToPublish[0],
+                existingStatus: existingEvent?.status
             };
         }
     }
