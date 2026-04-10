@@ -386,8 +386,15 @@ appointmentSchema.pre('deleteOne', { document: true, query: false }, async funct
   const appointmentId = this._id;
   try {
     const { default: Session } = await import('./Session.js');
-    const result = await Session.deleteMany({ appointmentId });
-    console.log(`🧹 Cascade deleteOne: ${result.deletedCount} sessions removidas do appointment ${appointmentId}`);
+    const { default: Payment } = await import('./Payment.js');
+    
+    // Deletar sessions
+    const sessionResult = await Session.deleteMany({ appointmentId });
+    console.log(`🧹 Cascade deleteOne: ${sessionResult.deletedCount} sessions removidas do appointment ${appointmentId}`);
+    
+    // Deletar payments
+    const paymentResult = await Payment.deleteMany({ appointment: appointmentId });
+    console.log(`🧹 Cascade deleteOne: ${paymentResult.deletedCount} payments removidos do appointment ${appointmentId}`);
   } catch (error) {
     console.error('⚠️ Erro no cascade deleteOne:', error.message);
   }
@@ -397,13 +404,18 @@ appointmentSchema.pre('deleteMany', async function() {
   const filter = this.getFilter();
   try {
     const { default: Session } = await import('./Session.js');
+    const { default: Payment } = await import('./Payment.js');
+    
     // Buscar appointments que serão deletados
     const appointments = await mongoose.model('Appointment').find(filter).select('_id');
     const appointmentIds = appointments.map(a => a._id);
     
     if (appointmentIds.length > 0) {
-      const result = await Session.deleteMany({ appointmentId: { $in: appointmentIds } });
-      console.log(`🧹 Cascade deleteMany: ${result.deletedCount} sessions removidas de ${appointmentIds.length} appointments`);
+      const sessionResult = await Session.deleteMany({ appointmentId: { $in: appointmentIds } });
+      console.log(`🧹 Cascade deleteMany: ${sessionResult.deletedCount} sessions removidas de ${appointmentIds.length} appointments`);
+      
+      const paymentResult = await Payment.deleteMany({ appointment: { $in: appointmentIds } });
+      console.log(`🧹 Cascade deleteMany: ${paymentResult.deletedCount} payments removidos de ${appointmentIds.length} appointments`);
     }
   } catch (error) {
     console.error('⚠️ Erro no cascade deleteMany:', error.message);
@@ -433,7 +445,21 @@ appointmentSchema.methods.softDeleteCascade = async function(reason = 'manual', 
       { session }
     );
     
-    // 2. Soft delete no appointment
+    // 2. Soft delete nos payments vinculados
+    const { default: Payment } = await import('./Payment.js');
+    await Payment.updateMany(
+      { appointment: appointmentId },
+      {
+        $set: {
+          status: 'canceled',
+          canceledAt: new Date(),
+          canceledReason: `cascade-delete: ${reason}`
+        }
+      },
+      { session }
+    );
+    
+    // 3. Soft delete no appointment
     this.isDeleted = true;
     this.deletedAt = new Date();
     this.deleteReason = reason;
@@ -441,7 +467,7 @@ appointmentSchema.methods.softDeleteCascade = async function(reason = 'manual', 
     await this.save({ session });
     
     await session.commitTransaction();
-    console.log(`🧹 Soft delete cascade: appointment ${appointmentId} + sessions vinculadas`);
+    console.log(`🧹 Soft delete cascade: appointment ${appointmentId} + sessions + payments vinculados`);
     
     return { success: true, appointmentId };
   } catch (error) {

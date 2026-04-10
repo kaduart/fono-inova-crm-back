@@ -54,6 +54,58 @@ const getPaymentDate = (pay) => {
     return moment(pay.createdAt).tz("America/Sao_Paulo").format("YYYY-MM-DD");
 };
 
+/**
+ * 🎯 RESOLVE VALUE - Busca valor de forma inteligente
+ * NÃO confia cegamente em appointment.sessionValue (pode estar corrompido: 0, 0.02, etc)
+ * 
+ * Prioridade:
+ * 1. Package.sessionValue (mais confiável)
+ * 2. Payment.amount (se já pago)
+ * 3. Appointment.sessionValue (só se > 10)
+ * 4. Fallback por tipo de serviço
+ */
+const resolveValue = (appointment) => {
+    // 1. PACKAGE (fonte mais confiável para pacotes)
+    if (appointment.package) {
+        // Pacote particular
+        if (appointment.package.sessionValue && appointment.package.sessionValue > 0) {
+            return Number(appointment.package.sessionValue);
+        }
+        // Pacote convênio
+        if (appointment.package.insuranceGrossAmount && appointment.package.insuranceGrossAmount > 0) {
+            return Number(appointment.package.insuranceGrossAmount);
+        }
+        // Fallback por tipo de pacote
+        if (appointment.package.type === 'convenio') return 80;
+        if (appointment.package.type === 'therapy' || appointment.package.type === 'particular') return 150;
+    }
+    
+    // 2. PAYMENT (se já existe e foi pago)
+    if (appointment.payment?.amount && appointment.payment.amount > 0) {
+        return Number(appointment.payment.amount);
+    }
+    
+    // 3. APPOINTMENT sessionValue (só se > 10 para evitar 0.02, 0.01)
+    if (appointment.sessionValue && appointment.sessionValue > 10) {
+        return Number(appointment.sessionValue);
+    }
+    
+    // 4. FALLBACK por tipo de serviço
+    const serviceType = appointment.serviceType || 'individual_session';
+    const FALLBACK_VALUES = {
+        'evaluation': 200,
+        'neuropsych_evaluation': 300,
+        'return': 100,
+        'individual_session': 150,
+        'package_session': 150,
+        'convenio_session': 80,
+        'alignment': 150,
+        'meet': 150
+    };
+    
+    return FALLBACK_VALUES[serviceType] || 150;
+};
+
 // ======================================================
 // SERVICE PRINCIPAL
 // ======================================================
@@ -261,14 +313,24 @@ export async function calculateDailyClosing(date, clinicId) {
     for (const appt of uniqueAppointmentsToday) {
         const opStatus = appt.operationalStatus || 'scheduled';
         const clinicalStatus = appt.clinicalStatus || 'pending';
-        const sessionValue = Number(appt.sessionValue || 0);
+        // 🎯 CORREÇÃO: usa resolveValue() em vez de sessionValue direto
+        const sessionValue = resolveValue(appt);
 
         report.summary.appointments.total++;
-        report.summary.appointments.expectedValue += sessionValue;
-
-        if (isCanceled(opStatus)) report.summary.appointments.canceled++;
-        else if (isConfirmed(opStatus) || isCompleted(clinicalStatus)) report.summary.appointments.attended++;
-        else report.summary.appointments.pending++;
+        
+        // 🎯 CORREÇÃO: expectedValue = previsão (todos exceto cancelados)
+        if (isCanceled(opStatus)) {
+            report.summary.appointments.canceled++;
+        } else {
+            report.summary.appointments.expectedValue += sessionValue;  // Previsão
+        }
+        
+        // Attended = quem realmente veio
+        if (isConfirmed(opStatus) || isCompleted(clinicalStatus)) {
+            report.summary.appointments.attended++;
+        } else if (!isCanceled(opStatus)) {
+            report.summary.appointments.pending++;
+        }
 
         // Novos vs Recorrentes
         if (appt.isFirstAppointment || appt.patientType === 'new') {
@@ -280,10 +342,11 @@ export async function calculateDailyClosing(date, clinicId) {
 
     // Calcular receita (expected - cancelado)
     report.summary.financial.totalExpected = report.summary.appointments.expectedValue;
+    // 🎯 CORREÇÃO: usa resolveValue() para calcular valor dos cancelados
     report.summary.financial.totalRevenue = report.summary.appointments.expectedValue - 
         (uniqueAppointmentsToday
             .filter(a => isCanceled(a.operationalStatus))
-            .reduce((sum, a) => sum + Number(a.sessionValue || 0), 0));
+            .reduce((sum, a) => sum + resolveValue(a), 0));
 
     // ======================================================
     // 9. PROCESSAR SESSÕES DE CONVÊNIO

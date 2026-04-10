@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { FinancialContext } from '../utils/financialContext.js';
 
 const paymentSchema = new mongoose.Schema({
     patient: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient', required: true },
@@ -46,6 +47,49 @@ const paymentSchema = new mongoose.Schema({
     paidAt: { type: Date, default: null },
     confirmedAt: { type: Date, default: null },
 }, { timestamps: true });
+
+// ============ BLINDAGEM FINANCEIRA - PATCH DE SEGURANÇA ============
+// Previne que Session ou Appointment atualizem diretamente o Payment
+// Isso quebra o loop de decisões entre os modelos
+
+paymentSchema.pre('findOneAndUpdate', function(next) {
+    const ctx = FinancialContext.get();
+    if (ctx === 'session' || ctx === 'appointment') {
+        console.error(`[SECURITY BLOCK] Tentativa de atualizar Payment por ${ctx} bloqueada`);
+        console.error(`[SECURITY BLOCK] Query:`, this.getQuery());
+        throw new Error(`[SECURITY] ${ctx} não pode atualizar Payment diretamente. Use o fluxo Payment → Session`);
+    }
+    next();
+});
+
+paymentSchema.pre('updateOne', function(next) {
+    const ctx = FinancialContext.get();
+    if (ctx === 'session' || ctx === 'appointment') {
+        console.error(`[SECURITY BLOCK] Tentativa de updateOne em Payment por ${ctx} bloqueada`);
+        throw new Error(`[SECURITY] ${ctx} não pode atualizar Payment diretamente`);
+    }
+    next();
+});
+
+paymentSchema.pre('save', function(next) {
+    const ctx = FinancialContext.get();
+    if (ctx === 'session' || ctx === 'appointment') {
+        console.error(`[SECURITY BLOCK] Tentativa de save em Payment por ${ctx} bloqueada`);
+        throw new Error(`[SECURITY] ${ctx} não pode criar/atualizar Payment diretamente`);
+    }
+    next();
+});
+
+// ============ MÉTODO SEGURO PARA ATUALIZAÇÃO ============
+// Única forma permitida de atualizar Payment de forma controlada
+
+import { withFinancialContext } from '../utils/financialContext.js';
+
+paymentSchema.statics.safeUpdate = async function(filter, update, options = {}) {
+    return withFinancialContext('payment', async () => {
+        return this.findOneAndUpdate(filter, update, { new: true, ...options });
+    });
+};
 
 paymentSchema.index({ paymentDate: 1, status: 1 });
 paymentSchema.index({ patient: 1, paymentDate: -1 });

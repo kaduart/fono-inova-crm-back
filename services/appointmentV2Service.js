@@ -126,6 +126,15 @@ export async function completeAppointment(id, data, context = {}) {
   const { addToBalance = false, balanceAmount = 0, balanceDescription = '' } = data;
   
   // Publica evento de complete
+  const pkgInfo = appointment.package;
+  console.log(`[appointmentV2Service] Publicando COMPLETE_REQUESTED para ${id}:`, {
+    packageId: pkgInfo?._id || pkgInfo || null,
+    paymentType: pkgInfo?.paymentType || 'N/A',
+    type: pkgInfo?.type || 'N/A',
+    isParticular: pkgInfo && pkgInfo.type !== 'convenio' && pkgInfo.paymentType !== 'per-session',
+    operationalStatus: appointment.operationalStatus,
+    clinicalStatus: appointment.clinicalStatus
+  });
   const eventResult = await publishEvent(
     EventTypes.APPOINTMENT_COMPLETE_REQUESTED,
     {
@@ -144,6 +153,11 @@ export async function completeAppointment(id, data, context = {}) {
       idempotencyKey: `${id}_complete_${addToBalance ? 'balance' : 'normal'}`
     }
   );
+  console.log(`[appointmentV2Service] Evento publicado:`, {
+    eventId: eventResult.eventId,
+    jobs: eventResult.jobs?.map(j => ({ queue: j.queue, jobId: j.jobId })),
+    duplicate: eventResult.duplicate
+  });
   
   return formatSuccess(
     {
