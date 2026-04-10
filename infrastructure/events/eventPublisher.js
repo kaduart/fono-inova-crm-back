@@ -245,7 +245,7 @@ const eventToQueueMap = {
     [EventTypes.APPOINTMENT_CREATED]: ['notification', 'patient-projection', 'clinical-orchestrator'],
     [EventTypes.APPOINTMENT_UPDATED]: ['notification', 'patient-projection'],
     [EventTypes.APPOINTMENT_CANCELED]: ['sync-medical', 'patient-projection', 'clinical-orchestrator'],
-    [EventTypes.APPOINTMENT_COMPLETED]: ['sync-medical', 'patient-projection', 'integration-orchestrator', 'lead-orchestrator-v2'],
+    [EventTypes.APPOINTMENT_COMPLETED]: ['complete-orchestrator', 'sync-medical', 'patient-projection', 'integration-orchestrator', 'lead-orchestrator-v2'],
     [EventTypes.APPOINTMENT_REJECTED]: 'notification',
     [EventTypes.APPOINTMENT_CONFIRMED]: ['notification', 'patient-projection'],
     [EventTypes.APPOINTMENT_RESCHEDULED]: ['notification', 'patient-projection'],

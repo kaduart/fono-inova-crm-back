@@ -27,6 +27,7 @@ import { getIo } from '../config/socket.js';
 import guideService from '../services/billing/guideService.js';
 import Convenio from '../models/Convenio.js';
 import { normalizeE164BR } from '../utils/phone.js';
+import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
 
 // 🆕 HELPER: Cria lead automaticamente quando agendamento é feito direto
 // 🔧 FIX: Agora verifica duplicados primeiro para evitar erro de índice único
@@ -538,7 +539,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, async (req, res) => {
                 patient: safeId(patientId),
                 doctor: safeId(doctorId),
                 serviceType,
-                sessionType,
+                sessionType: normalizeSessionType(sessionType || specialty),
                 notes,
                 status: 'scheduled',
                 isPaid: false,
@@ -1163,7 +1164,7 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                             date: updateData.date || appointment.date,
                             time: updateData.time || appointment.time,
                             doctor: updateData.doctor || appointment.doctor,
-                            sessionType: updateData.sessionType || appointment.sessionType,
+                            sessionType: normalizeSessionType(updateData.sessionType || appointment.sessionType),
                             sessionValue: updateData.paymentAmount || appointment.paymentAmount,
                             notes: updateData.notes || appointment.notes,
                             status: (updateData.sessionStatus || updateData.operationalStatus || appointment.operationalStatus),

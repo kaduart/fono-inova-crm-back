@@ -1,7 +1,7 @@
 // workers/dailyClosingWorker.js
 import { Worker } from 'bullmq';
 import { redisConnection, moveToDLQ } from '../infrastructure/queue/queueConfig.js';
-import { calculateDailyClosing } from '../services/dailyClosing/index.js';
+import { calculateDailyClosing } from '../services/dailyClosingService.js';
 import DailyClosingSnapshot from '../models/DailyClosingSnapshot.js';
 import { eventExists } from '../infrastructure/events/eventStoreService.js';
 

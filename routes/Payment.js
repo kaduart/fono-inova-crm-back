@@ -14,6 +14,7 @@ import { createNextPackageFromPrevious } from '../utils/createNextPackageFromPre
 import { mapStatusToClinical, mapStatusToOperational } from "../utils/statusMappers.js";
 import { dashboardCache } from '../services/adminDashboardCacheService.js';
 import { invalidateDailyClosingCache, invalidateCacheForPayment } from '../services/dailyClosingCacheService.js';
+import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
 
 const router = express.Router();
 
@@ -51,7 +52,7 @@ router.post('/', async (req, res) => {
                 doctor: doctorId,
                 notes,
                 package: null,
-                sessionType,
+                sessionType: normalizeSessionType(sessionType),
                 createdAt: currentDate,
                 updatedAt: currentDate
             });
@@ -103,7 +104,7 @@ router.post('/', async (req, res) => {
                 const newSession = await Session.create({
                     date: session.date,
                     time: session.time,
-                    sessionType: session.sessionType,
+                    sessionType: normalizeSessionType(session.sessionType),
                     patient: patientId,
                     doctor: doctorId,
                     status: 'scheduled',
@@ -219,7 +220,7 @@ async function handleAdvancePayment(req, res) {
             const newSession = await Session.create({
                 date: session.date,
                 time: session.time,
-                sessionType: session.sessionType,
+                sessionType: normalizeSessionType(session.sessionType),
                 patient: patientId,
                 doctor: doctorId,
                 status: 'scheduled',
@@ -589,7 +590,7 @@ router.patch('/:id', auth, async (req, res) => {
                         paymentMethod: paymentMethod || payment.paymentMethod,
                         status: status, // Mesmo status do principal
                         specialty: sessionData.sessionType,
-                        sessionType: sessionData.sessionType,
+                        sessionType: normalizeSessionType(sessionData.sessionType),
                         isAdvance: true,
                         serviceDate: sessionData.date,
                         paymentDate: moment.tz(currentDate, "America/Sao_Paulo").format("YYYY-MM-DD"),
@@ -1013,7 +1014,7 @@ router.post('/:paymentId/add-session', auth, async (req, res) => {
         const newSession = new Session({
             date,
             time,
-            sessionType,
+            sessionType: normalizeSessionType(sessionType || specialty),
             specialty,
             patient: payment.patient,
             doctor: payment.doctor,

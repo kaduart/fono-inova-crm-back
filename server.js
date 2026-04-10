@@ -262,18 +262,22 @@ app.get('/api/whatsapp/webhook', (req, res) => {
 });
 
 // Aumentar limites para suportar uploads de até 50MB
+// 🔥 CORREÇÃO: Criar parsers UMA VEZ (não a cada request)
+const jsonParser = express.json({ limit: '50mb' });
+const urlParser = express.urlencoded({ limit: '50mb', extended: true });
+
 // Ignorar requisições multipart (deixar para o multer tratar)
 app.use((req, res, next) => {
     if (req.headers['content-type']?.includes('multipart/form-data')) {
         return next();
     }
-    express.json({ limit: '50mb' })(req, res, next);
+    jsonParser(req, res, next);
 });
 app.use((req, res, next) => {
     if (req.headers['content-type']?.includes('multipart/form-data')) {
         return next();
     }
-    express.urlencoded({ limit: '50mb', extended: true })(req, res, next);
+    urlParser(req, res, next);
 });
 app.use(
   helmet({
@@ -330,11 +334,13 @@ app.get('/', (req, res) => {
   res.status(200).json({ status: 'CRM Backend running', timestamp: new Date().toISOString() });
 });
 
-// Logger simples
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} → ${req.path}`);
-  next();
-});
+// Logger simples (apenas em desenvolvimento para economizar memória)
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    // DEBUG: console.log(`[${new Date().toISOString()}] ${req.method} → ${req.path}`);
+    next();
+  });
+}
 
 // ======================================================
 // 🌐 Rotas principais (ordem importa!)
@@ -487,27 +493,40 @@ app.get("*", (req, res) => {
 });
 
 // ======================================================
-// 👀 Watcher de Followups (Socket.IO)
+// 👀 Watcher de Followups (Socket.IO) - OTIMIZADO
 // ======================================================
 function initFollowupWatcher() {
   try {
     console.log("👀 Iniciando watcher de Followups...");
-    Followup.watch().on("change", async (change) => {
+    
+    const changeStream = Followup.watch();
+    
+    changeStream.on("change", async (change) => {
       if (
         change.operationType === "update" &&
         change.updateDescription?.updatedFields?.status
       ) {
+        // 🔥 CORREÇÃO: Não fazer populate, apenas select lean()
         const updatedFollowup = await Followup.findById(
           change.documentKey._id
-        ).populate("lead");
+        )
+        .select('status message lead')
+        .lean();
 
-        io.emit("whatsapp-message", {
-          leadId: updatedFollowup.lead?._id,
-          status: updatedFollowup.status,
-          message: updatedFollowup.message,
-        });
+        if (updatedFollowup) {
+          io.emit("whatsapp-message", {
+            leadId: updatedFollowup.lead,
+            status: updatedFollowup.status,
+            message: updatedFollowup.message,
+          });
+        }
       }
     });
+    
+    // 🔥 CORREÇÃO: Fechar stream gracefulmente
+    process.on('SIGINT', () => changeStream.close());
+    process.on('SIGTERM', () => changeStream.close());
+    
   } catch (err) {
     console.error("⚠️ Erro ao iniciar watcher Followup:", err.message);
   }
@@ -554,22 +573,23 @@ server.listen(PORT, '0.0.0.0', () => {
     // 🏥 Monitor de runtime (memória + filas) - DESABILITADO TEMPORARIAMENTE
     // startRuntimeMonitor();
 
-    // Workers e Crons (com fallback se Redis falhar)
+    // Workers e Crons DESLIGADOS temporariamente (memória crítica)
     try {
-      await import("./workers/followup.worker.js");
-      await import("./workers/followup.cron.js");
-      await import("./workers/video.worker.js");
-      await import("./workers/post.worker.js");
+      // await import("./workers/followup.worker.js");
+      // await import("./workers/followup.cron.js");
+      // await import("./workers/video.worker.js");
+      // await import("./workers/post.worker.js");
       
-      const { startAllWorkers } = await import("./workers/index.js");
-      await startAllWorkers();
-      console.log("🎯 Workers 4.0 iniciados");
+      // const { startAllWorkers } = await import("./workers/index.js");
+      // await startAllWorkers();
+      // console.log("🎯 Workers 4.0 iniciados");
       
-      const { initGmbRetryWorker } = await import("./config/bullConfigGmbRetry.js");
-      initGmbRetryWorker();
+      // const { initGmbRetryWorker } = await import("./config/bullConfigGmbRetry.js");
+      // initGmbRetryWorker();
       
-      await import("./jobs/followup.analytics.cron.js");
-      await import("./crons/responseTracking.cron.js");
+      // await import("./jobs/followup.analytics.cron.js");
+      // await import("./crons/responseTracking.cron.js");
+      console.log("⏸️ Workers DESLIGADOS (modo memória otimizada)");
     } catch (workerErr) {
       console.warn("⚠️ Workers não iniciados (Redis indisponível):", workerErr.message);
     }
@@ -582,7 +602,7 @@ server.listen(PORT, '0.0.0.0', () => {
     while (!mongoConnected && mongoRetries < MAX_MONGO_RETRIES) {
       try {
         mongoRetries++;
-        console.log(`🔄 Tentando conectar MongoDB (tentativa ${mongoRetries}/${MAX_MONGO_RETRIES})...`);
+        if (mongoRetries > 1) console.log(`🔄 MongoDB tentativa ${mongoRetries}/${MAX_MONGO_RETRIES}...`);
         
         await mongoose.connect(process.env.MONGO_URI, {
           readPreference: 'primary',
@@ -593,40 +613,29 @@ server.listen(PORT, '0.0.0.0', () => {
         });
         
         mongoConnected = true;
-        console.log("✅ Connected to MongoDB (readPreference: primary)");
+        console.log("✅ MongoDB conectado");
       } catch (mongoErr) {
-        console.error(`❌ MongoDB tentativa ${mongoRetries} falhou:`, mongoErr.message);
-        
-        if (mongoRetries < MAX_MONGO_RETRIES) {
-          const delay = mongoRetries * 2000; // 2s, 4s, 6s...
-          console.log(`⏳ Aguardando ${delay}ms antes de tentar novamente...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        } else {
-          console.error("❌ Todas as tentativas de conexão MongoDB falharam");
-          throw mongoErr; // Re-throw para parar o servidor
+        if (mongoRetries >= MAX_MONGO_RETRIES) {
+          console.error("❌ MongoDB: Todas as tentativas falharam");
+          throw mongoErr;
         }
+        await new Promise(resolve => setTimeout(resolve, mongoRetries * 2000));
       }
     }
 
-    // 👉 CRONS CONSOLIDADOS (singleton)
-    startCron('learning', () => startLearningCron());
-    
-    const { startRegressionCron } = await import("./crons/regressionCron.js");
-    startCron('regression', () => startRegressionCron());
-    
-    await import("./crons/gmb.cron.js");
-    
-    startCron('metaAds', () => startMetaAdsCron());
-    
-    const { initLeadRecoveryCron } = await import("./crons/leadRecovery.cron.js");
-    startCron('leadRecovery', () => initLeadRecoveryCron());
-
-    const { initAppointmentRecoveryCron } = await import("./crons/appointmentRecovery.cron.js");
-    startCron('appointmentRecovery', () => initAppointmentRecoveryCron());
-
-    // 📲 Worker de publicação agendada — Instagram + Facebook
-    const { startScheduledPublisher } = await import("./jobs/publishScheduled.js");
-    startScheduledPublisher();
+    // 👉 CRONS DESLIGADOS (modo memória otimizada)
+    // startCron('learning', () => startLearningCron());
+    // const { startRegressionCron } = await import("./crons/regressionCron.js");
+    // startCron('regression', () => startRegressionCron());
+    // await import("./crons/gmb.cron.js");
+    // startCron('metaAds', () => startMetaAdsCron());
+    // const { initLeadRecoveryCron } = await import("./crons/leadRecovery.cron.js");
+    // startCron('leadRecovery', () => initLeadRecoveryCron());
+    // const { initAppointmentRecoveryCron } = await import("./crons/appointmentRecovery.cron.js");
+    // startCron('appointmentRecovery', () => initAppointmentRecoveryCron());
+    // const { startScheduledPublisher } = await import("./jobs/publishScheduled.js");
+    // startScheduledPublisher();
+    console.log("⏸️ Crons DESLIGADOS (modo memória otimizada)");
 
     // Registrar Webhook PIX no Sicoob
     try {
@@ -638,7 +647,7 @@ server.listen(PORT, '0.0.0.0', () => {
 
     initFollowupWatcher();
     
-    console.log("✅ Sistema totalmente inicializado!");
+    console.log("✅ Sistema inicializado!");
   } catch (err) {
     console.error("❌ Erro crítico na inicialização:", err);
     process.exit(1);
@@ -649,17 +658,11 @@ server.listen(PORT, '0.0.0.0', () => {
 // 🎛️ Painel Bull Board (BullMQ v5)
 // ======================================================
 try {
-  // 🔹 Eventos globais das filas
-  followupEvents.on("completed", ({ jobId }) =>
-    console.log(`🎯 Followup Job ${jobId} concluído`)
-  );
+  // 🔹 Eventos globais das filas (logs apenas em falha)
   followupEvents.on("failed", ({ jobId, failedReason }) =>
     console.error(`💥 Followup Job ${jobId} falhou: ${failedReason}`)
   );
   
-  videoGenerationEvents.on("completed", ({ jobId }) =>
-    console.log(`🎬 Video Job ${jobId} concluído`)
-  );
   videoGenerationEvents.on("failed", ({ jobId, failedReason }) =>
     console.error(`🎬 Video Job ${jobId} falhou: ${failedReason}`)
   );

@@ -9,6 +9,7 @@ import Payment from '../models/Payment.js';
 import { findDoctorByName } from '../utils/doctorHelper.js';
 import { getIo } from '../config/socket.js';
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from '../constants/appointmentStatus.js';
+import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 
 const router = express.Router();
 
@@ -564,6 +565,16 @@ router.post('/:id/importar', async (req, res) => {
           email: email || pre.patientInfo?.email || undefined,
           dateOfBirth: birthDate || pre.patientInfo?.birthDate || undefined,
           source: pre.metadata?.origin?.source || 'outro'
+        });
+        
+        // 🚀 Publicar evento para criar a view do paciente (CQRS)
+        await publishEvent(EventTypes.PATIENT_CREATED, {
+          patientId: patient._id.toString(),
+          fullName: patient.fullName,
+          phone: patient.phone,
+          email: patient.email,
+          dateOfBirth: patient.dateOfBirth,
+          source: 'agenda_externa'
         });
       }
       resolvedPatientId = patient._id;

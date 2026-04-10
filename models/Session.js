@@ -242,6 +242,28 @@ sessionSchema.post('findOneAndUpdate', async function (doc) {
     }
 });
 
+// 🔒 DOMAIN LOCK: Validação extra para garantir sessionType válido ANTES de salvar
+sessionSchema.pre('validate', function(next) {
+    const validTypes = [
+        'fonoaudiologia', 'psicologia', 'terapia ocupacional',
+        'fisioterapia', 'pediatria', 'neuroped', 'musicoterapia',
+        'psicomotricidade', 'psicopedagogia'
+    ];
+    
+    // Se sessionType foi setado manualmente e não é válido, rejeita
+    if (this.sessionType && !validTypes.includes(this.sessionType)) {
+        const error = new Error(
+            `[DOMAIN LOCK] sessionType inválido: "${this.sessionType}". ` +
+            `Use resolveSessionType() ou normalizeSessionType() do sessionTypeResolver. ` +
+            `Valores válidos: ${validTypes.join(', ')}`
+        );
+        error.code = 'INVALID_SESSION_TYPE';
+        return next(error);
+    }
+    
+    next();
+});
+
 sessionSchema.post('findOneAndUpdate', async function (doc) {
     if (doc) await syncEvent(doc, 'session');
 });

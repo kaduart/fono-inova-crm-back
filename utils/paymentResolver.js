@@ -137,6 +137,51 @@ export function generateCorrelationId() {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
+/**
+ * 🔧 NORMALIZAÇÃO DE PAYMENT METHOD
+ * 
+ * Converte qualquer variação de paymentMethod para o padrão do banco
+ * Garante consistência entre frontend (inglês) e backend (português)
+ */
+export const PAYMENT_METHOD_MAP = {
+    // Inglês → Português
+    'credit_card': 'cartao_credito',
+    'debit_card': 'cartao_debito',
+    'cash': 'dinheiro',
+    'pix': 'pix',
+    'bank_transfer': 'transferencia_bancaria',
+    'other': 'outro',
+    
+    // Português alternativos → Padrão
+    'cartão': 'cartao_credito',
+    'cartao': 'cartao_credito',
+    'credito': 'cartao_credito',
+    'debito': 'cartao_debito',
+    'transferencia': 'transferencia_bancaria',
+    'plano-unimed': 'plano-unimed',
+    'convenio': 'convenio',
+    'dinheiro': 'dinheiro'
+};
+
+/**
+ * Normaliza paymentMethod garantindo valor válido no banco
+ * @param {String} method - Método recebido (inglês ou português)
+ * @param {String} fallback - Valor padrão se não reconhecido
+ * @returns {String} - Valor normalizado para o banco
+ */
+export function normalizePaymentMethod(method, fallback = 'dinheiro') {
+    if (!method) return fallback;
+    
+    const normalized = PAYMENT_METHOD_MAP[method.toLowerCase().trim()];
+    if (normalized) return normalized;
+    
+    // Se já é um valor válido do enum, retorna ele
+    const validValues = ['dinheiro', 'pix', 'cartao_credito', 'cartao_debito', 'transferencia_bancaria', 'plano-unimed', 'convenio', 'outro'];
+    if (validValues.includes(method)) return method;
+    
+    return fallback;
+}
+
 export default {
     resolvePaymentType,
     validateResolution,

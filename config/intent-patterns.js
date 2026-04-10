@@ -521,9 +521,61 @@ export const DETECTOR_CONFIG = {
   enableAutoLearning: process.env.DISABLE_AUTO_LEARNING !== 'true'
 };
 
+/**
+ * 🔧 HELPER: Adiciona padrão aprendido com limite de tamanho
+ * Evita crescimento infinito do array learned
+ */
+export function addLearnedPattern(intentKey, pattern) {
+  const intent = INTENT_PATTERNS[intentKey];
+  if (!intent) return false;
+  
+  // Inicializa array se necessário
+  if (!intent.learned) {
+    intent.learned = [];
+  }
+  
+  // Remove o mais antigo se atingiu limite (FIFO)
+  if (intent.learned.length >= DETECTOR_CONFIG.maxLearnedPatterns) {
+    intent.learned.shift();
+  }
+  
+  // Adiciona novo padrão com timestamp
+  intent.learned.push({
+    ...pattern,
+    learnedAt: new Date().toISOString(),
+    id: `learned_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  });
+  
+  return true;
+}
+
+/**
+ * 🔧 HELPER: Limpa padrões aprendidos antigos
+ */
+export function cleanupOldLearnedPatterns(maxAge = 30 * 24 * 60 * 60 * 1000) { // 30 dias
+  const now = Date.now();
+  let cleaned = 0;
+  
+  Object.keys(INTENT_PATTERNS).forEach(key => {
+    const intent = INTENT_PATTERNS[key];
+    if (intent.learned && intent.learned.length > 0) {
+      const originalLength = intent.learned.length;
+      intent.learned = intent.learned.filter(pattern => {
+        const age = now - new Date(pattern.learnedAt).getTime();
+        return age < maxAge;
+      });
+      cleaned += originalLength - intent.learned.length;
+    }
+  });
+  
+  return cleaned;
+}
+
 export default {
   INTENT_PATTERNS,
   USER_PROFILE_PATTERNS,
   AGE_GROUP_PATTERNS,
-  DETECTOR_CONFIG
+  DETECTOR_CONFIG,
+  addLearnedPattern,
+  cleanupOldLearnedPatterns
 };

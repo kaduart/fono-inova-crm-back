@@ -1,12 +1,8 @@
 
 import LearningInsight from '../models/LearningInsight.js';
+import { learningCache } from './cacheService.js';
 
-// Cache aumentado para 4 horas (sugestão de performance)
-const CACHE_TTL = 4 * 60 * 60 * 1000;
-let cache = {
-    data: null,
-    timestamp: 0
-};
+// 🔥 CORREÇÃO: Usar cacheService profissional com TTL e limite
 
 /**
  * 🧠 BUSCA INSIGHTS ATIVOS PARA O PROMPT
@@ -18,9 +14,11 @@ export async function getActiveLearnings() {
         return null;
     }
 
-    // 1. Verifica cache
-    if (cache.data && (Date.now() - cache.timestamp < CACHE_TTL)) {
-        return cache.data;
+    // 1. Verifica cache (agora com TTL automático)
+    const cached = learningCache.get('activeLearnings');
+    if (cached) {
+        // DEBUG: console.log(`🧠 [LEARNING] Cache hit (${learningCache.getStats().hitRate})`);
+        return cached;
     }
 
     try {
@@ -64,13 +62,10 @@ export async function getActiveLearnings() {
                 .map(i => ({ term: i.term, phrase: i.phrase }))
         };
 
-        // 4. Atualiza cache com timestamp
-        cache = {
-            data: learnings,
-            timestamp: Date.now()
-        };
-
-        console.log(`🧠 [LEARNING] Cache atualizado com sucesso (${new Date().toLocaleTimeString()})`);
+        // 4. Atualiza cache (TTL automático, limite de tamanho)
+        learningCache.set('activeLearnings', learnings);
+        
+        // DEBUG: console.log(`🧠 [LEARNING] Cache atualizado. Stats:`, learningCache.getStats());
         return learnings;
 
     } catch (error) {
@@ -83,8 +78,8 @@ export async function getActiveLearnings() {
  * 🧹 LIMPA CACHE (Útil para forçar atualização)
  */
 export function clearLearningCache() {
-    cache = { data: null, timestamp: 0 };
-    console.log('🧹 [LEARNING] Cache limpo manualmente.');
+    learningCache.delete('activeLearnings');
+    // DEBUG: console.log('🧹 [LEARNING] Cache limpo manualmente.');
 }
 
 export default {
