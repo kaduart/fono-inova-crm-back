@@ -37,8 +37,8 @@ router.get('/', flexibleAuth, async (req, res) => {
     
     let query = {};
     
-    if (status === 'active') query.active = 'true';
-    if (status === 'inactive') query.active = 'false';
+    if (status === 'active') query.active = true;
+    if (status === 'inactive') query.active = false;
     
     if (search && search.trim()) {
       const term = search.trim();
@@ -94,7 +94,7 @@ router.get('/', flexibleAuth, async (req, res) => {
  */
 router.get('/active', flexibleAuth, async (req, res) => {
   try {
-    const doctors = await Doctor.find({ active: 'true' })
+    const doctors = await Doctor.find({ active: true })
       .select('_id fullName email specialty licenseNumber phoneNumber active role')
       .sort({ fullName: 1 })
       .lean();
@@ -110,7 +110,7 @@ router.get('/active', flexibleAuth, async (req, res) => {
  */
 router.get('/inactive', flexibleAuth, async (req, res) => {
   try {
-    const doctors = await Doctor.find({ active: 'false' })
+    const doctors = await Doctor.find({ active: false })
       .select('_id fullName email specialty licenseNumber phoneNumber active role')
       .sort({ fullName: 1 })
       .lean();
