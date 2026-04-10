@@ -184,7 +184,7 @@ const sessionSchema = new mongoose.Schema({
     // 🆕 ARQUITETURA v4.0 - Rastreabilidade Financeira
     paymentOrigin: {
         type: String,
-        enum: ['auto_per_session', 'manual_balance', 'package_prepaid', 'convenio', 'liminar', 'individual'],
+        enum: ['auto_per_session', 'manual_balance', 'package_prepaid', 'convenio', 'liminar', 'individual', 'updated', 'existing'],
         default: null,
         index: true,
         description: 'Origem do pagamento para rastreabilidade financeira completa'

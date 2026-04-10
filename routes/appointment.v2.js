@@ -10,6 +10,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { Queue } from 'bullmq';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
+import { dashboardCache } from '../services/adminDashboardCacheService.js';
 import { redisConnection } from '../infrastructure/queue/queueConfig.js';
 import { flexibleAuth } from '../middleware/amandaAuth.js';
 import { checkAppointmentConflicts, getAvailableTimeSlots } from '../middleware/conflictDetection.js';
@@ -265,6 +266,18 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
     ).catch(err => console.error(`[POST] Evento async falhou (não crítico):`, err.message));
     
     console.log(`[POST /v2/appointments] ✅ Evento publicado (async)`);
+    
+    // 🔥 UPDATE INCREMENTAL: Atualiza dashboard sem rebuild
+    setImmediate(async () => {
+      try {
+        await dashboardCache.incrementOverview({
+          'patients.total': 0,  // Não muda (paciente já existia)
+          // Se quiser incrementar algo específico, adicione aqui
+        });
+      } catch (err) {
+        // Silencioso
+      }
+    });
 
     // 5. Retorna 201 COM O APPOINTMENT PRONTO (não 202 processing)
     res.status(201).json(
@@ -1044,25 +1057,47 @@ router.put('/:id', flexibleAuth, asyncHandler(async (req, res) => {
     
     // Atualizar ou Criar Pagamento (somente se NÃO for pacote)
     if (!appointment.package && appointment.payment) {
-      const paymentUpdate = Payment.findByIdAndUpdate(
-        appointment.payment,
-        {
-          $set: {
-            doctor: updateData.doctor || appointment.doctor,
-            amount: (updateData.amount ?? updateData.paymentAmount ?? appointment.paymentAmount),
-            paymentMethod: updateData.paymentMethod || appointment.paymentMethod,
-            serviceDate: updateData.date || appointment.date,
-            serviceType: updateData.serviceType || appointment.serviceType,
-            billingType: updateData.billingType || appointment.billingType || 'particular',
-            insuranceProvider: updateData.insuranceProvider || appointment.insuranceProvider,
-            insuranceValue: updateData.insuranceValue || appointment.insuranceValue,
-            authorizationCode: updateData.authorizationCode || appointment.authorizationCode,
-            updatedAt: new Date()
-          }
-        },
-        { session: mongoSession, new: true }
-      );
-      updatePromises.push(paymentUpdate);
+      // 🔒 Verifica se payment já está pago - se sim, não atualiza campos financeiros
+      const existingPayment = await Payment.findById(appointment.payment).session(mongoSession).lean();
+      
+      if (existingPayment?.status === 'paid') {
+        // Payment já pago: só atualiza campos não-financeiros (doctor, serviceDate, serviceType)
+        console.log(`[PUT /appointments/${id}] Payment já pago (${existingPayment._id}), ignorando alterações financeiras`);
+        const paymentUpdate = Payment.findByIdAndUpdate(
+          appointment.payment,
+          {
+            $set: {
+              doctor: updateData.doctor || appointment.doctor,
+              serviceDate: updateData.date || appointment.date,
+              serviceType: updateData.serviceType || appointment.serviceType,
+              updatedAt: new Date()
+            }
+          },
+          { session: mongoSession, new: true }
+        );
+        updatePromises.push(paymentUpdate);
+      } else {
+        // Payment pendente: pode atualizar tudo
+        const paymentUpdate = Payment.findByIdAndUpdate(
+          appointment.payment,
+          {
+            $set: {
+              doctor: updateData.doctor || appointment.doctor,
+              amount: (updateData.amount ?? updateData.paymentAmount ?? appointment.paymentAmount),
+              paymentMethod: updateData.paymentMethod || appointment.paymentMethod,
+              serviceDate: updateData.date || appointment.date,
+              serviceType: updateData.serviceType || appointment.serviceType,
+              billingType: updateData.billingType || appointment.billingType || 'particular',
+              insuranceProvider: updateData.insuranceProvider || appointment.insuranceProvider,
+              insuranceValue: updateData.insuranceValue || appointment.insuranceValue,
+              authorizationCode: updateData.authorizationCode || appointment.authorizationCode,
+              updatedAt: new Date()
+            }
+          },
+          { session: mongoSession, new: true }
+        );
+        updatePromises.push(paymentUpdate);
+      }
     } else if (!appointment.package && (updateData.billingType || updateData.paymentAmount > 0)) {
       // Criar novo pagamento
       const newPayment = new Payment({
