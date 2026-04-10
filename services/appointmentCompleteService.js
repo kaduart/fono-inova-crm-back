@@ -97,9 +97,38 @@ export class AppointmentCompleteService {
         }
 
         // 6. Atualiza APPOINTMENT
+        // Garantir que sessionValue tenha um valor válido
+        let finalSessionValue = appointment.sessionValue;
+        if (!finalSessionValue || finalSessionValue <= 0) {
+            // Tentar obter do pacote
+            if (appointment.package?.sessionValue > 0) {
+                finalSessionValue = appointment.package.sessionValue;
+            }
+            // Tentar obter do pagamento
+            else if (appointment.payment?.amount > 0) {
+                finalSessionValue = appointment.payment.amount;
+            }
+            // Fallback por tipo de serviço
+            else {
+                const serviceType = appointment.serviceType;
+                const DEFAULT_VALUES = {
+                    'evaluation': 200,
+                    'neuropsych_evaluation': 300,
+                    'return': 100,
+                    'individual_session': 150,
+                    'package_session': 150,
+                    'convenio_session': 80,
+                    'alignment': 150,
+                    'meet': 150
+                };
+                finalSessionValue = DEFAULT_VALUES[serviceType] || 150;
+            }
+        }
+
         const updateData = {
             operationalStatus: 'confirmed',
             clinicalStatus: 'completed',
+            sessionValue: finalSessionValue,  // ✅ Garantir que o valor seja salvo
             completedAt: new Date(),
             updatedAt: new Date(),
             $push: {

@@ -71,16 +71,20 @@ export const buildBulkOps = (sessions) => {
 };
 
 // Filter payments for target date
-// ✅ CORREÇÃO: Usa createdAt para pegar pagamentos criados no dia
+// ✅ CORREÇÃO: Usa createdAt ou paidAt para pegar pagamentos do dia
 export const filterPaymentsByDate = (payments, targetDate) => {
     return payments.filter((p) => {
-        // Verifica paymentDate (data do pagamento)
-        const payDate = getPaymentDate(p);
-        const isTargetPaymentDate = payDate === targetDate;
+        // Verifica paidAt (data que efetivamente entrou no caixa)
+        const paidAt = p.paidAt ? moment(p.paidAt).format('YYYY-MM-DD') : null;
+        const isTargetPaidDate = paidAt === targetDate;
         
         // Verifica createdAt (data de criação do registro)
         const createdAt = p.createdAt ? moment(p.createdAt).format('YYYY-MM-DD') : null;
         const isTargetCreatedDate = createdAt === targetDate;
+        
+        // Verifica paymentDate (data informada no pagamento)
+        const payDate = getPaymentDate(p);
+        const isTargetPaymentDate = payDate === targetDate;
         
         // Convênio só entra quando recebido
         if (p.billingType === 'convenio' || p.paymentMethod === 'convenio') {
@@ -90,8 +94,8 @@ export const filterPaymentsByDate = (payments, targetDate) => {
             return receivedToday && isReceived;
         }
 
-        // Inclui se foi criado hoje OU se o paymentDate é hoje
-        return isTargetPaymentDate || isTargetCreatedDate;
+        // Inclui se foi pago hoje, criado hoje, ou paymentDate é hoje
+        return isTargetPaidDate || isTargetCreatedDate || isTargetPaymentDate;
     });
 };
 
@@ -114,4 +118,75 @@ export const deduplicateAppointments = (appointments) => {
         }
     }
     return Array.from(map.values());
+};
+
+/**
+ * 🎯 RESOLVE VALUE - Busca valor de forma inteligente
+ * NÃO confia cegamente em appointment.sessionValue (pode estar corrompido)
+ * 
+ * Prioridade:
+ * 1. Package.sessionValue (mais confiável)
+ * 2. Payment.amount (se já pago)
+ * 3. Session.sessionValue (fonte da verdade)
+ * 4. Appointment.sessionValue (só se > 0)
+ * 5. Fallback por tipo de serviço
+ */
+export const resolveValue = (appointment) => {
+    // 1. PACKAGE (fonte mais confiável para pacotes)
+    if (appointment.package) {
+        // Pacote particular
+        if (appointment.package.sessionValue && appointment.package.sessionValue > 0) {
+            return Number(appointment.package.sessionValue);
+        }
+        // Pacote convênio
+        if (appointment.package.insuranceGrossAmount && appointment.package.insuranceGrossAmount > 0) {
+            return Number(appointment.package.insuranceGrossAmount);
+        }
+        // Fallback por tipo de pacote
+        if (appointment.package.type === 'convenio') return 80;
+        if (appointment.package.type === 'therapy' || appointment.package.type === 'particular') return 150;
+    }
+    
+    // 2. PAYMENT (se já existe e foi pago)
+    if (appointment.payment?.amount && appointment.payment.amount > 0) {
+        return Number(appointment.payment.amount);
+    }
+    
+    // 3. SESSION (fonte da verdade quando disponível)
+    if (appointment.session?.sessionValue && appointment.session.sessionValue > 0) {
+        return Number(appointment.session.sessionValue);
+    }
+    
+    // 4. APPOINTMENT sessionValue (só se > 0 e parece válido)
+    if (appointment.sessionValue && appointment.sessionValue > 10) { // > 10 para evitar 0.02, 0.01
+        return Number(appointment.sessionValue);
+    }
+    
+    // 5. FALLBACK por especialidade do doutor + tipo de serviço
+    const serviceType = appointment.serviceType || 'individual_session';
+    const specialty = appointment.doctor?.specialty || appointment.specialty || 'default';
+    
+    // Valores por especialidade
+    const SPECIALTY_VALUES = {
+        'psicologia': { evaluation: 130, session: 130, default: 130 },
+        'fonoaudiologia': { evaluation: 160, session: 160, default: 160 },
+        'terapia_ocupacional': { evaluation: 160, session: 160, default: 160 },
+        'fisioterapia': { evaluation: 160, session: 160, default: 160 },
+        'default': { evaluation: 200, session: 150, default: 150 }
+    };
+    
+    const spec = SPECIALTY_VALUES[specialty] || SPECIALTY_VALUES['default'];
+    
+    // Retorna valor baseado no tipo de serviço
+    if (serviceType === 'evaluation' || serviceType === 'neuropsych_evaluation') {
+        return spec.evaluation;
+    }
+    if (serviceType === 'return') {
+        return 100;  // Retorno é sempre mais barato
+    }
+    if (serviceType === 'convenio_session') {
+        return 80;   // Convênio tem valor fixo
+    }
+    
+    return spec.session || spec.default;
 };

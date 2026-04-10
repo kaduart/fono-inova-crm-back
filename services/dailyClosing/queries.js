@@ -28,11 +28,10 @@ export async function fetchAppointmentsCreated(startOfDay, endOfDay) {
 }
 
 export async function fetchAppointmentsToday(startOfDay, endOfDay, targetDate) {
+    // 🐛 CORREÇÃO: Usar Date range, não string comparison
+    // O campo date no MongoDB é Date, não string
     return Appointment.find({
-        $or: [
-            { date: targetDate },                                          // string "YYYY-MM-DD"
-            { createdAt: { $gte: startOfDay, $lte: endOfDay } }
-        ]
+        date: { $gte: startOfDay, $lte: endOfDay }
     }).populate("doctor patient package").lean();
 }
 
