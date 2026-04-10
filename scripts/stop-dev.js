@@ -1,61 +1,32 @@
 #!/usr/bin/env node
 /**
- * 🛑 Script de Encerramento para Desenvolvimento
- * 
- * Encerra o servidor Node.js e opcionalmente o Redis
- * Uso: npm stop
+ * Stop Dev Script
+ * Para o servidor em modo desenvolvimento
  */
 
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { execSync } from 'child_process';
 
-const execAsync = promisify(exec);
+console.log('🛑 Parando servidor de desenvolvimento...');
 
-console.log('🛑 Encerrando ambiente de desenvolvimento...\n');
-
-async function stopServer() {
+try {
+    // Mata processos nodemon
     try {
-        // Procura processos Node.js rodando o server.js
-        const { stdout } = await execAsync("ps aux | grep 'node.*server.js' | grep -v grep");
-        
-        if (stdout) {
-            console.log('📝 Processos encontrados:');
-            console.log(stdout);
-            
-            // Extrai PIDs e mata os processos
-            const lines = stdout.trim().split('\n');
-            for (const line of lines) {
-                const pid = line.trim().split(/\s+/)[1];
-                if (pid) {
-                    try {
-                        process.kill(parseInt(pid), 'SIGTERM');
-                        console.log(`✅ Processo ${pid} encerrado`);
-                    } catch (e) {
-                        console.log(`⚠️  Não foi possível encerrar processo ${pid}`);
-                    }
-                }
-            }
-        } else {
-            console.log('ℹ️  Nenhum processo do servidor encontrado');
-        }
-    } catch (error) {
-        console.log('ℹ️  Nenhum processo do servidor encontrado');
+        execSync('pkill -f nodemon', { stdio: 'ignore' });
+        console.log('✅ Nodemon parado');
+    } catch (e) {
+        // ignorar se não estiver rodando
     }
-}
-
-async function stopRedis() {
+    
+    // Mata processos node server.js
     try {
-        await execAsync('redis-cli shutdown');
-        console.log('✅ Redis encerrado');
-    } catch (error) {
-        console.log('ℹ️  Redis não estava rodando ou não pôde ser encerrado');
+        execSync('pkill -f "node server.js"', { stdio: 'ignore' });
+        console.log('✅ Servidor parado');
+    } catch (e) {
+        // ignorar se não estiver rodando
     }
+    
+    console.log('✅ Servidor de desenvolvimento parado com sucesso');
+} catch (error) {
+    console.error('❌ Erro ao parar servidor:', error.message);
+    process.exit(1);
 }
-
-async function main() {
-    await stopServer();
-    await stopRedis();
-    console.log('\n👋 Ambiente de desenvolvimento encerrado!');
-}
-
-main().catch(console.error);

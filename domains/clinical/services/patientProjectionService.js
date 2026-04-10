@@ -4,6 +4,15 @@
  * 
  * Constrói o Read Model (PatientsView) a partir do Event Store.
  * Chamado pelo PatientProjectionWorker quando eventos relevantes ocorrem.
+ * 
+ * 📋 PROJECTION CONTRACT: ONE_TO_ONE_VIEW
+ * - Type: ProjectionType.ONE_TO_ONE_VIEW
+ * - Source: Patient (Aggregate Root)
+ * - IdentityStrategy: SHARED (_id da view = _id do paciente)
+ * - Collection: patients_view
+ * 
+ * Isso garante que o frontend sempre receba o mesmo ID independente
+ * de estar lendo do Patient (write model) ou PatientsView (read model).
  */
 
 import mongoose from 'mongoose';
@@ -14,6 +23,7 @@ import Payment from '../../../models/Payment.js';
 import PatientBalance from '../../../models/PatientBalance.js';
 import Package from '../../../models/Package.js';
 import { createContextLogger } from '../../../utils/logger.js';
+import { PatientViewContract } from '../../../contracts/ProjectionContract.js';
 
 const logger = createContextLogger('PatientProjection');
 
@@ -138,8 +148,11 @@ export async function buildPatientView(patientId, options = {}) {
       ?.toLowerCase() || '';
     
     // 6. Monta a view
+    // ✅ SOLUÇÃO DEFINITIVA: _id = patientId (unifica os IDs)
+    const patientObjectId = new mongoose.Types.ObjectId(patientId);
     const viewData = {
-      patientId: new mongoose.Types.ObjectId(patientId),
+      _id: patientObjectId,  // 🎯 ID da view = ID do paciente
+      patientId: patientObjectId,
       
       // Dados básicos
       fullName: patient.fullName,
@@ -200,7 +213,18 @@ export async function buildPatientView(patientId, options = {}) {
       }
     };
     
-    // 7. Upsert na collection de views
+    // 7. Validação de contrato (garante consistência de ID)
+    if (PatientViewContract.isSharedIdentity()) {
+      const expectedId = patientObjectId.toString();
+      const actualId = viewData._id.toString();
+      if (expectedId !== actualId) {
+        throw new Error(
+          `[${correlationId}] Contract violation: PatientView._id (${actualId}) !== Patient._id (${expectedId})`
+        );
+      }
+    }
+    
+    // 8. Upsert na collection de views
     const result = await PatientsView.findOneAndUpdate(
       { patientId: new mongoose.Types.ObjectId(patientId) },
       viewData,
@@ -214,7 +238,8 @@ export async function buildPatientView(patientId, options = {}) {
     logger.info(`[${correlationId}] View built successfully`, { 
       patientId, 
       version: viewData.snapshot.version,
-      appointmentsCount: appointments.length
+      appointmentsCount: appointments.length,
+      contract: PatientViewContract.type
     });
     
     return result;

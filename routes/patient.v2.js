@@ -98,8 +98,15 @@ router.get('/', flexibleAuth, async (req, res) => {
       staleCount
     });
     
+    // ✅ CORREÇÃO: Mapeia para garantir que _id seja o patientId (não o ID da view)
+    const normalizedPatients = result.patients.map(p => ({
+      ...p,
+      _id: p.patientId?.toString() || p._id.toString(), // Usa patientId como _id
+      id: p.patientId?.toString() || p._id.toString(),  // Campo id também
+    }));
+    
     return res.json(formatSuccess({
-      patients: result.patients,
+      patients: normalizedPatients,
       pagination: {
         total: result.total,
         limit: result.limit,
