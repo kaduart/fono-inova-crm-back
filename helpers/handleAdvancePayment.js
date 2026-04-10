@@ -3,6 +3,7 @@ import Appointment from '../models/Appointment.js';
 import Payment from '../models/Payment.js';
 import Session from '../models/Session.js';
 import { updateAppointmentFromSession, updatePatientAppointments } from '../utils/appointmentUpdater.js';
+import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
 
 /**
  * Registra um pagamento antecipado com criação automática de:
@@ -49,7 +50,7 @@ export const handleAdvancePayment = async (req, res) => {
             patient: patientId,
             doctor: doctorId,
             serviceType,
-            sessionType: specialty || 'fonoaudiologia',
+            sessionType: normalizeSessionType(specialty),
             date: now.toISOString().split('T')[0],
             time: now.toISOString().split('T')[1].slice(0, 5),
             isPaid: true,
@@ -85,7 +86,7 @@ export const handleAdvancePayment = async (req, res) => {
                 patient: patientId,
                 doctor: doctorId,
                 serviceType: adv.serviceType || 'individual_session',
-                sessionType: adv.sessionType || specialty || 'fonoaudiologia',
+                sessionType: normalizeSessionType(adv.sessionType || specialty),
                 date: adv.date,
                 time: adv.time,
                 value: adv.amount,

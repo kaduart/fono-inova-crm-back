@@ -53,6 +53,71 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * Endpoint específico para o Monitor do Sistema (Frontend)
+ * GET /api/health/monitor
+ */
+router.get('/monitor', async (req, res) => {
+    try {
+        const memUsage = process.memoryUsage();
+        const heapPercent = Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100);
+        
+        // Verifica workers
+        const { redisConnection } = await import('../infrastructure/queue/queueConfig.js');
+        const redis = redisConnection;
+        const workers = await redis.hgetall('bull:complete-orchestrator:workers');
+        
+        // Verifica filas
+        const queueNames = ['complete-orchestrator', 'cancel-orchestrator', 'appointment-processing'];
+        const queueStats = {};
+        for (const name of queueNames) {
+            try {
+                const queue = new Queue(name, { connection: redisConnection });
+                const [waiting, active, failed] = await Promise.all([
+                    queue.getWaitingCount(),
+                    queue.getActiveCount(),
+                    queue.getFailedCount()
+                ]);
+                queueStats[name] = { waiting, active, failed };
+                await queue.close();
+            } catch (err) {
+                queueStats[name] = { error: err.message };
+            }
+        }
+        
+        // Eventos travados
+        const stuckEvents = await EventStore.countDocuments({
+            status: 'processing',
+            updatedAt: { $lt: new Date(Date.now() - 10 * 60 * 1000) }
+        });
+        
+        res.json({
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            memory: {
+                heapPercent,
+                heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
+                heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
+                rss: Math.round(memUsage.rss / 1024 / 1024)
+            },
+            database: mongoose.connection.readyState === 1,
+            workers: {
+                completeOrchestrator: Object.keys(workers).length > 0,
+                count: Object.keys(workers).length
+            },
+            queues: queueStats,
+            stuckEvents,
+            uptime: process.uptime()
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+/**
  * Health check detalhado
  * GET /api/health/detailed
  */

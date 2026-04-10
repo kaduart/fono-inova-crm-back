@@ -4,8 +4,9 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=1024' node -r dotenv/config server.js",
-    "dev": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=512' node scripts/start-dev.js",
+    "start": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node -r dotenv/config server.js",
+    "dev": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node scripts/start-dev.js",
+    "dev:check": "NODE_OPTIONS='--dns-result-order=ipv4first --max-old-space-size=2048' node start-with-workers.js",
     "stop": "node scripts/stop-dev.js",
     "restart": "npm stop && npm run dev",
     "worker": "node -r dotenv/config ./workers/followup.worker.js",
