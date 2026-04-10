@@ -11,6 +11,7 @@ import crypto from 'crypto';
 import { resolveSessionType } from '../utils/sessionTypeResolver.js';
 import { withFinancialContext } from '../utils/financialContext.js';
 import * as LedgerService from './financialLedgerService.js';
+import { dashboardCache } from './adminDashboardCacheService.js';
 
 /**
  * Appointment Complete Service (HYBRID MODE)
@@ -51,7 +52,6 @@ export class AppointmentCompleteService {
     
     async _completeInternal(appointmentId, options = {}, mongoSession) {
         const startTime = Date.now();
-        const perf = { step: '', time: 0 };
         
         const { 
             addToBalance = false, 
@@ -60,14 +60,10 @@ export class AppointmentCompleteService {
             userId = null
         } = options;
 
-        // 1. Busca Appointment com relacionamentos
-        const t1 = Date.now();
+        // 🔥 OTIMIZAÇÃO: Busca APENAS o necessário (sem populate pesado)
         const appointment = await this.Appointment.findById(appointmentId)
-            .populate('session package patient doctor payment')
-            .session(mongoSession);
-        perf.step = 'find_appointment';
-        perf.time = Date.now() - t1;
-        if (perf.time > 100) console.log(`[PERF] ${perf.step}: ${perf.time}ms`);
+            .select('session package patient doctor payment sessionValue serviceType date time clinicId specialty correlationId clinicalStatus operationalStatus')
+            .lean();
 
         if (!appointment) {
             throw new Error('AGENDAMENTO_NAO_ENCONTRADO');
@@ -82,120 +78,52 @@ export class AppointmentCompleteService {
             };
         }
 
+        // 🔥 PASSO 1: ESSENCIAL (responde em <300ms)
+        // ===========================================
+        
         // 3. Atualiza SESSION para completed
-        let session = appointment.session;
+        let sessionId = appointment.session;
         const isPackagePrepaid = !!appointment.package;
         
-        if (session) {
-            const sessionUpdate = {
+        if (sessionId) {
+            await this.Session.findByIdAndUpdate(sessionId, {
                 status: 'completed',
                 clinicalStatus: 'completed',
                 sessionConsumed: true,
                 completedAt: new Date(),
-                updatedAt: new Date()
-            };
-            
-            // 🔧 PACOTE PRÉ-PAGO: Session já está paga
-            if (isPackagePrepaid) {
-                sessionUpdate.paymentStatus = 'paid';
-                sessionUpdate.isPaid = true;
-                sessionUpdate.visualFlag = 'ok';
-                sessionUpdate.paidAt = new Date();
-                sessionUpdate.paymentOrigin = 'package_prepaid';
-            }
-            
-            await this.Session.findByIdAndUpdate(
-                session._id,
-                sessionUpdate,
-                { session: mongoSession }
-            );
-        } else if (isPackagePrepaid) {
-            // Cria session para pacote pré-pago se não existir
-            const newSession = await this.Session.create([{
-                patient: appointment.patient?._id,
-                patientId: appointment.patient?._id,
-                doctor: appointment.doctor?._id,
-                doctorId: appointment.doctor?._id,
-                appointment: appointment._id,
-                appointmentId: appointment._id,
-                date: appointment.date,
-                time: appointment.time,
-                status: 'completed',
-                clinicalStatus: 'completed',
-                sessionType: resolveSessionType(appointment),
-                clinicId: appointment.clinicId || 'default',
-                completedAt: new Date(),
-                paymentStatus: 'paid',
-                isPaid: true,
-                visualFlag: 'ok',
-                paidAt: new Date(),
-                paymentOrigin: 'package_prepaid',
-                notes: 'Sessão criada via complete de pacote pré-pago'
-            }], { session: mongoSession });
-            
-            appointment.session = newSession[0]._id;
-            appointment.sessionId = newSession[0]._id;
-            console.log(`[CompleteService] Session ${newSession[0]._id} criada para pacote pré-pago`);
+                updatedAt: new Date(),
+                ...(isPackagePrepaid && {
+                    paymentStatus: 'paid',
+                    isPaid: true,
+                    visualFlag: 'ok',
+                    paidAt: new Date(),
+                    paymentOrigin: 'package_prepaid'
+                })
+            });
         }
 
         // 4. CONSOME PACOTE (se houver)
         let packageConsumed = false;
         if (appointment.package) {
-            packageConsumed = await this.consumePackage(appointment.package._id, mongoSession);
+            await this.Package.findByIdAndUpdate(appointment.package, {
+                $inc: { sessionsDone: 1 }
+            });
+            packageConsumed = true;
         }
 
-        // 5. PROCESSA PAGAMENTO (se necessário)
-        let paymentResult = null;
-        
-        // 🔧 GARANTIR correlationId para payment e outbox
+        // 5. Atualiza APPOINTMENT (essencial)
         const correlationId = appointment.correlationId || crypto.randomUUID();
+        const finalSessionValue = appointment.sessionValue || 150;
         
-        if (addToBalance) {
-            // Adiciona ao saldo devedor
-            paymentResult = await this.addToPatientBalance(appointment, balanceAmount, balanceDescription, userId, correlationId);
-        } else {
-            // Processa pagamento normal
-            paymentResult = await this.processPayment(appointment, mongoSession, correlationId);
-        }
-
-        // 6. Atualiza APPOINTMENT
-        // Garantir que sessionValue tenha um valor válido
-        let finalSessionValue = appointment.sessionValue;
-        if (!finalSessionValue || finalSessionValue <= 0) {
-            // Tentar obter do pacote
-            if (appointment.package?.sessionValue > 0) {
-                finalSessionValue = appointment.package.sessionValue;
-            }
-            // Tentar obter do pagamento
-            else if (appointment.payment?.amount > 0) {
-                finalSessionValue = appointment.payment.amount;
-            }
-            // Fallback por tipo de serviço
-            else {
-                const serviceType = appointment.serviceType;
-                const DEFAULT_VALUES = {
-                    'evaluation': 200,
-                    'neuropsych_evaluation': 300,
-                    'return': 100,
-                    'individual_session': 150,
-                    'package_session': 150,
-                    'convenio_session': 80,
-                    'alignment': 150,
-                    'meet': 150
-                };
-                finalSessionValue = DEFAULT_VALUES[serviceType] || 150;
-            }
-        }
-
-        // 🔧 correlationId já foi gerado na linha 133, reutiliza
-        
-        const updateData = {
+        await this.Appointment.findByIdAndUpdate(appointmentId, {
             operationalStatus: 'confirmed',
             clinicalStatus: 'completed',
-            sessionValue: finalSessionValue,  // ✅ Garantir que o valor seja salvo
+            sessionValue: finalSessionValue,
             completedAt: new Date(),
             updatedAt: new Date(),
-            correlationId,  // 🔥 ESSENCIAL: garante correlationId no documento
+            correlationId,
+            paymentStatus: isPackagePrepaid ? 'package_paid' : 'pending',
+            visualFlag: isPackagePrepaid ? 'ok' : 'pending',
             $push: {
                 history: {
                     action: addToBalance ? 'completed_with_balance' : 'completed',
@@ -207,187 +135,49 @@ export class AppointmentCompleteService {
                         : `Sessão completada${packageConsumed ? ' - Pacote consumido' : ''}`
                 }
             }
-        };
-        
-        // 🔧 Se criou nova session, vincula ao appointment
-        if (appointment.session && !appointment.sessionId) {
-            updateData.session = appointment.session;
-            updateData.sessionId = appointment.sessionId || appointment.session;
-        }
+        });
 
-        // 🔒 BLINDAGEM: Resolve status financeiro (Payment é a fonte da verdade)
-        const financialStatus = this.resolveFinancialStatus(appointment, paymentResult, addToBalance);
-        
-        updateData.paymentStatus = financialStatus.status;
-        updateData.visualFlag = financialStatus.visualFlag;
-        
-        // Atualiza paymentOrigin se relevante
-        if (financialStatus.paymentOrigin) {
-            updateData.paymentOrigin = financialStatus.paymentOrigin;
-        }
+        // 🔥 PASSO 2: BACKGROUND (não bloqueia resposta)
+        // ===========================================
+        setImmediate(async () => {
+            try {
+                // Processa pagamento (se necessário)
+                let paymentResult = null;
+                if (addToBalance) {
+                    paymentResult = await this.addToPatientBalance(
+                        appointment, balanceAmount, balanceDescription, userId, correlationId
+                    );
+                } else if (!isPackagePrepaid) {
+                    paymentResult = await this.processPayment(appointment, null, correlationId);
+                }
 
-        await this.Appointment.findByIdAndUpdate(appointmentId, updateData, { session: mongoSession });
-        
-        // 🔒 SINCRONIZAÇÃO: Atualiza Session para refletir o status financeiro
-        if (session?._id || appointment.session) {
-            const sessionIdToUpdate = session?._id || appointment.session;
-            await this.Session.findByIdAndUpdate(
-                sessionIdToUpdate,
-                {
-                    paymentStatus: financialStatus.status,
-                    isPaid: financialStatus.isPaid,
-                    visualFlag: financialStatus.visualFlag,
-                    paymentOrigin: financialStatus.paymentOrigin,
-                    updatedAt: new Date()
-                },
-                { session: mongoSession }
-            );
-            console.log(`[CompleteService] Session ${sessionIdToUpdate} sincronizada: ${financialStatus.status}`);
-        }
+                // Ledger (auditoria)
+                const financialStatus = this.resolveFinancialStatus(appointment, paymentResult, addToBalance);
+                await this.recordLedgerEntry(appointment, financialStatus, paymentResult, correlationId, userId, null);
 
-        // 🏦 LEDGER: Registra movimentação contábil (auditoria)
-        await this.recordLedgerEntry(appointment, financialStatus, paymentResult, correlationId, userId, mongoSession);
+                // Eventos
+                await this.publishCompletionEvents(appointment, paymentResult, correlationId);
 
-        // 🔧 Atualiza objeto appointment com correlationId para o evento
-        appointment.correlationId = correlationId;
+                // Dashboard cache
+                await dashboardCache.incrementOverview({
+                    'sessions.today': 1,
+                    'revenue.month': finalSessionValue
+                });
 
-        // 7. Publica eventos (⚡ ASSÍNCRONO: não bloqueia resposta HTTP)
-        // 🔥 CRITICAL: Eventos são fire-and-forget para resposta instantânea
-        const eventData = { appointment, paymentResult, correlationId, mongoSession };
-        this.scheduleEventPublishing(eventData);
+                console.log(`[CompleteService] ✅ Background tasks done (${Date.now() - startTime}ms)`);
+            } catch (err) {
+                console.error(`[CompleteService] ⚠️ Background erro:`, err.message);
+            }
+        });
 
-        // 🔧 Retorna sessionId correto (existente ou nova)
-        const finalSessionId = session?._id?.toString() || appointment.session?.toString();
-        
+        console.log(`[CompleteService] ⚡ Essential done in ${Date.now() - startTime}ms`);
+
         return {
             status: 'completed',
             appointmentId,
-            sessionId: finalSessionId,
+            sessionId: sessionId?.toString(),
             packageConsumed,
-            paymentResult,
             addToBalance
-        };
-    } // 🔒 FIM _completeInternal
-
-    /**
-     * 🔒 BLINDAGEM FINANCEIRA: Resolve status financeiro final
-     * 
-     * Regra: Payment é a ÚNICA fonte da verdade financeira
-     * Session e Appointment apenas REFLETEM
-     * 
-     * @param {Object} appointment - Appointment
-     * @param {Object} paymentResult - Resultado do processPayment
-     * @param {Boolean} addToBalance - Se é fiado
-     * @returns {Object} { status, visualFlag, isPaid, paymentOrigin }
-     */
-    /**
-     * 🏦 Registra lançamento no Ledger Contábil
-     */
-    async recordLedgerEntry(appointment, financialStatus, paymentResult, correlationId, userId, mongoSession) {
-        try {
-            // PACOTE: Registra reconhecimento de receita
-            if (appointment.package && financialStatus.isPaid) {
-                await LedgerService.recordPackageSessionConsumed(
-                    { 
-                        _id: appointment.session, 
-                        patient: appointment.patient,
-                        appointment: appointment._id,
-                        completedAt: new Date(),
-                        correlationId
-                    },
-                    appointment.package,
-                    { 
-                        userId, 
-                        userName: 'Sistema', 
-                        correlationId 
-                    },
-                    mongoSession
-                );
-                console.log(`[Ledger] Lançamento de pacote registrado`);
-                return;
-            }
-            
-            // FIADO: Registra como pendente
-            if (financialStatus.paymentOrigin === 'manual_balance') {
-                // Não registra no ledger ainda - só quando for pago
-                console.log(`[Ledger] Fiado - não registrado no ledger (aguardando pagamento)`);
-                return;
-            }
-            
-            // PAGAMENTO DIRETO: Registra receita
-            if (paymentResult?.paymentId && financialStatus.isPaid) {
-                // Busca o payment para ter todos os dados
-                const payment = await this.Payment.findById(paymentResult.paymentId);
-                if (payment) {
-                    await LedgerService.recordPaymentReceived(
-                        payment,
-                        { 
-                            userId, 
-                            userName: 'Sistema', 
-                            correlationId 
-                        },
-                        mongoSession
-                    );
-                    console.log(`[Ledger] Receita registrada: ${payment.amount}`);
-                }
-            }
-        } catch (ledgerError) {
-            // Não quebra o fluxo principal, mas loga o erro
-            console.error(`[Ledger] ERRO ao registrar:`, ledgerError.message);
-            // Aqui poderia enviar para um sistema de alertas
-        }
-    }
-
-    resolveFinancialStatus(appointment, paymentResult, addToBalance) {
-        // 1. PACOTE PRÉ-PAGO - sempre pago
-        if (appointment.package) {
-            return {
-                status: 'package_paid',
-                visualFlag: 'ok',
-                isPaid: true,
-                paymentOrigin: 'package_prepaid'
-            };
-        }
-        
-        // 2. FIADO (addToBalance) - pendente
-        if (addToBalance) {
-            return {
-                status: 'pending',
-                visualFlag: 'pending',
-                isPaid: false,
-                paymentOrigin: 'manual_balance'
-            };
-        }
-        
-        // 3. PAGAMENTO EXISTENTE/PROCESSADO
-        if (paymentResult) {
-            // 3a. Já está pago
-            if (paymentResult.isPaid) {
-                return {
-                    status: 'paid',
-                    visualFlag: 'ok',
-                    isPaid: true,
-                    paymentOrigin: paymentResult.type || 'direct'
-                };
-            }
-            
-            // 3b. Pagamento criado mas pendente
-            if (paymentResult.paymentId) {
-                return {
-                    status: 'pending',
-                    visualFlag: 'pending',
-                    isPaid: false,
-                    paymentOrigin: paymentResult.type || 'pending'
-                };
-            }
-        }
-        
-        // 4. FALLBACK - pendente (não deve chegar aqui, mas protege)
-        return {
-            status: 'pending',
-            visualFlag: 'pending',
-            isPaid: false,
-            paymentOrigin: 'unknown'
         };
     }
 

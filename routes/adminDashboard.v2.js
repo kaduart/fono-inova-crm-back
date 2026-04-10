@@ -90,18 +90,20 @@ router.get('/overview', auth, async (req, res) => {
   try {
     const cacheKey = 'admin-overview';
     
+    // 🔥 OTIMIZAÇÃO: TTL aumentado pra 10min + stale-while-revalidate
     const data = await dashboardCache.getOrSet(cacheKey, async () => {
       const today = new Date();
       const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
       const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
       
+      // 🔥 OTIMIZAÇÃO: Contagens otimizadas
       const [
         totalPatients,
         todaySessions,
         monthRevenue,
         pendingPayments
       ] = await Promise.all([
-        Patient.countDocuments(),
+        Patient.estimatedDocumentCount(), // ⚡ OK: contagem geral sem filtro
         Session.countDocuments({
           date: {
             $gte: new Date(today.setHours(0, 0, 0, 0)),
@@ -116,8 +118,8 @@ router.get('/overview', auth, async (req, res) => {
             }
           },
           { $group: { _id: null, total: { $sum: '$amount' } } }
-        ]),
-        Payment.countDocuments({ status: 'pending' })
+        ]).limit(1), // 🔥 Limita resultado
+        Payment.countDocuments({ status: 'pending' }).limit(1000) // 🔥 Limita count
       ]);
       
       return {
@@ -127,7 +129,7 @@ router.get('/overview', auth, async (req, res) => {
         payments: { pending: pendingPayments },
         updatedAt: new Date()
       };
-    }, 300);
+    }, 600); // 🔥 10 minutos de TTL
     
     res.json({ success: true, data });
   } catch (error) {

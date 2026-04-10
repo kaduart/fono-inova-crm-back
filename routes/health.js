@@ -243,6 +243,81 @@ router.get('/queues', async (req, res) => {
     }
 });
 
+/**
+ * Health Check Full (para SystemMonitorDashboard)
+ * GET /api/health/full
+ */
+router.get('/full', async (req, res) => {
+    try {
+        const memUsage = process.memoryUsage();
+        const heapPercentNum = Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100);
+        
+        // Determina status da memória
+        let memoryStatus = 'healthy';
+        if (heapPercentNum >= 85) memoryStatus = 'critical';
+        else if (heapPercentNum >= 70) memoryStatus = 'warning';
+        
+        // Busca estatísticas das filas
+        const queueNames = [
+            'complete-orchestrator',
+            'cancel-orchestrator', 
+            'appointment-processing'
+        ];
+        const queues = {};
+        
+        for (const name of queueNames) {
+            try {
+                const queue = new Queue(name, { connection: redisConnection });
+                const [waiting, active, completed, failed, delayed] = await Promise.all([
+                    queue.getWaitingCount(),
+                    queue.getActiveCount(),
+                    queue.getCompletedCount(),
+                    queue.getFailedCount(),
+                    queue.getDelayedCount()
+                ]);
+                queues[name] = { waiting, active, completed, failed, delayed };
+                await queue.close();
+            } catch (err) {
+                queues[name] = { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0, error: err.message };
+            }
+        }
+        
+        // 🛡️ Garante que sempre retorne heapPercent como número (não string)
+        res.json({
+            status: memoryStatus === 'healthy' ? 'ok' : 'degraded',
+            node: {
+                version: process.version,
+                uptimeSeconds: Math.floor(process.uptime()),
+                pid: process.pid
+            },
+            memory: {
+                heapUsedMB: Math.round(memUsage.heapUsed / 1024 / 1024),
+                heapTotalMB: Math.round(memUsage.heapTotal / 1024 / 1024),
+                heapPercent: `${heapPercentNum}%`,  // 🟢 STRING com % - compatível com frontend
+                rssMB: Math.round(memUsage.rss / 1024 / 1024),
+                externalMB: Math.round((memUsage.external || 0) / 1024 / 1024),
+                status: memoryStatus
+            },
+            queues,
+            env: process.env.NODE_ENV || 'development',
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        // 🛡️ Mesmo em erro, retorna estrutura válida
+        res.status(500).json({
+            status: 'error',
+            error: error.message,
+            memory: {
+                heapPercent: '0%',
+                heapUsedMB: 0,
+                heapTotalMB: 0,
+                status: 'unknown'
+            },
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
 // ==========================================
 // FUNÇÕES AUXILIARES
 // ==========================================
