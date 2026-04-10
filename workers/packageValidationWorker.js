@@ -202,7 +202,7 @@ async function createPackageSession(pkg, appointment) {
         appointmentId: appointment._id,
         date: appointment.date,
         time: appointment.time,
-        sessionType: appointment.specialty,
+        sessionType: appointment.specialty || 'fonoaudiologia',
         sessionValue: pkg.sessionValue || 0,
         status: 'scheduled',
         isPaid: true, // Pago pelo pacote

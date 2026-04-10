@@ -21,14 +21,30 @@ import Package from '../models/Package.js';
 import PatientsView from '../models/PatientsView.js';
 import { Messages, formatSuccess, formatError, ErrorCodes } from '../utils/apiMessages.js';
 import { createBusinessError, asyncHandler } from '../middleware/errorHandler.js';
+import { appointmentCompleteService } from '../services/appointmentCompleteService.js';
+import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
+import moment from 'moment-timezone';
 
 // ======================================================================
-// HELPER: Validação segura de datas (igual à V1)
+// HELPER: Cria data no timezone correto (Brasília)
 // ======================================================================
+function parseDateInTimezone(dateStr, timeStr) {
+  // Garante que a data seja interpretada no timezone de São Paulo
+  // "2026-04-10" + "14:00" → 2026-04-10T14:00:00-03:00
+  const dateTimeStr = `${dateStr} ${timeStr || '00:00'}`;
+  const parsed = moment.tz(dateTimeStr, 'YYYY-MM-DD HH:mm', 'America/Sao_Paulo');
+  
+  if (!parsed.isValid()) {
+    throw new Error(`Data inválida: ${dateStr} ${timeStr}`);
+  }
+  
+  return parsed.toDate(); // Converte para Date (UTC internamente)
+}
+
 function isValidDateString(dateStr) {
   if (!dateStr || typeof dateStr !== 'string') return false;
-  const date = new Date(dateStr);
-  return !isNaN(date.getTime());
+  const parsed = moment.tz(dateStr, 'YYYY-MM-DD', 'America/Sao_Paulo');
+  return parsed.isValid();
 }
 
 const router = express.Router();
@@ -155,15 +171,18 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       console.log(`[Create] ✅ Guia ${insuranceGuideId} validada: ${guide.usedSessions}/${guide.totalSessions} sessões`);
     }
 
+    // 🔧 Parse da data no timezone correto (evita bug de UTC)
+    const parsedDate = parseDateInTimezone(date, time);
+    
     // 1. Cria Appointment com status de processamento
     const appointment = new Appointment({
       patient: patientId,
       doctor: doctorId,
-      date,
+      date: parsedDate,
       time,
       specialty,
       serviceType,
-      sessionType: sessionType || specialty,
+      sessionType: normalizeSessionType(sessionType || specialty),
       package: packageId,
       insuranceGuide: insuranceGuideId,
 
@@ -172,7 +191,7 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       paymentStatus: 'pending',
 
       sessionValue: finalAmount,  // Model usa sessionValue (padrão do projeto)
-      paymentMethod,
+      paymentMethod: req.body.paymentMethod || 'dinheiro',
       billingType: billingType || (insuranceGuideId ? 'convenio' : 'particular'),
 
       // Convênio extras
@@ -201,6 +220,9 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
       }]
     });
 
+    // 🔥 GARANTE STATUS SÍNCRONO: Appointment já nasce pronto (não depende de worker)
+    appointment.operationalStatus = 'scheduled';
+    
     await appointment.save({ session: mongoSession });
 
     const idempotencyKey = `${appointment._id}_create`;
@@ -209,13 +231,13 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
     
     console.log(`[POST /v2/appointments] ✅ Transaction commitada`);
     console.log(`   Appointment ID: ${appointment._id}`);
-    console.log(`   Status: ${appointment.operationalStatus}`);
+    console.log(`   Status: ${appointment.operationalStatus} (SÍNCRONO)`);
 
-    // 4. Publica evento
-    console.log(`[POST /v2/appointments] 📤 Publicando evento...`);
+    // 4. Publica evento (async, só para logs/analytics — NÃO bloqueia)
+    console.log(`[POST /v2/appointments] 📤 Publicando evento (async)...`);
     
-    const eventResult = await publishEvent(
-      EventTypes.APPOINTMENT_CREATE_REQUESTED,
+    publishEvent(
+      EventTypes.APPOINTMENT_CREATED,  // Evento de "já criado", não "criar"
       {
         appointmentId: appointment._id.toString(),
         patientId: patientId?.toString(),
@@ -224,14 +246,13 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
         time,
         specialty,
         serviceType,
-        sessionType: sessionType || specialty,
+        sessionType: normalizeSessionType(sessionType || specialty),
         packageId: packageId?.toString() || null,
         insuranceGuideId: insuranceGuideId?.toString() || null,
         amount: finalAmount,
         paymentMethod,
         billingType: billingType || (insuranceGuideId ? 'convenio' : 'particular'),
         notes,
-        // ROI / origem — worker usa para journey followups
         leadId: leadId?.toString() || null,
         source: source || 'crm',
         preAgendamentoId: preAgendamentoId?.toString() || null,
@@ -241,25 +262,22 @@ router.post('/', flexibleAuth, checkAppointmentConflicts, asyncHandler(async (re
         correlationId: appointment._id.toString(),
         idempotencyKey
       }
-    );
+    ).catch(err => console.error(`[POST] Evento async falhou (não crítico):`, err.message));
     
-    console.log(`[POST /v2/appointments] ✅ Evento publicado!`);
-    console.log(`   Event ID: ${eventResult.eventId}`);
-    console.log(`   Queue: ${eventResult.queue}`);
-    console.log(`   Job ID: ${eventResult.jobId}`);
+    console.log(`[POST /v2/appointments] ✅ Evento publicado (async)`);
 
-    // 5. Retorna 202 com mensagem clara
-    res.status(202).json(
+    // 5. Retorna 201 COM O APPOINTMENT PRONTO (não 202 processing)
+    res.status(201).json(
       formatSuccess(
         {
           appointmentId: appointment._id.toString(),
-          status: 'processing_create',
-          correlationId: eventResult.correlationId,
-          idempotencyKey: eventResult.idempotencyKey,
-          eventId: eventResult.eventId
+          status: 'scheduled',  // 🔥 JÁ ESTÁ PRONTO!
+          operationalStatus: 'scheduled',
+          clinicalStatus: 'pending',
+          correlationId: appointment._id.toString()
         },
         {
-          message: Messages.PROCESSING.CREATE,
+          message: 'Agendamento criado com sucesso',
           processing: 'async',
           estimatedTime: '1-3s',
           checkStatus: `GET /api/v2/appointments/${appointment._id}/status`
@@ -400,128 +418,91 @@ async function hasActiveJobInQueue(appointmentId) {
 }
 
 /**
- * 🎯 PATCH /api/v2/appointments/:id/complete - Completar (Async)
+ * 🎯 PATCH /api/v2/appointments/:id/complete - Completar (USANDO SERVIÇO)
+ * 
+ * Usa AppointmentCompleteService que já centraliza toda a lógica:
+ * - Atualiza Session
+ * - Consome pacote (se houver)
+ * - Processa pagamento
+ * - Atualiza Appointment
+ * - Publica eventos
  */
 router.patch('/:id/complete', flexibleAuth, asyncHandler(async (req, res) => {
-  const mongoSession = await mongoose.startSession();
+  const { id } = req.params;
+  const { addToBalance = false, balanceAmount = 0, balanceDescription = '' } = req.body;
+
+  // 🔥 OTIMIZAÇÃO: Sem transaction explícita - Event Store garante consistência
+  // O withTransaction estava causando locks de 1+ minuto no MongoDB
+  const result = await appointmentCompleteService.complete(
+    id,
+    {
+      addToBalance,
+      balanceAmount,
+      balanceDescription,
+      userId: req.user?._id?.toString()
+    },
+    null // sem session = sem transaction lock
+  );
+
+  console.log(`[complete] ✅ Appointment ${id} completado via serviço`);
 
   try {
-    await mongoSession.startTransaction();
-
-    const { id } = req.params;
-    const { addToBalance = false, balanceAmount = 0, balanceDescription = '' } = req.body;
-
-    const appointment = await Appointment.findById(id).session(mongoSession);
-
-    if (!appointment) {
-      await mongoSession.abortTransaction();
-      throw createBusinessError(Messages.BUSINESS.APPOINTMENT_NOT_FOUND, 404, ErrorCodes.NOT_FOUND
-      );
-    }
-
-    // Guards - Verifica se está em processamento E se tem job ativo na fila
-    if (appointment.operationalStatus === 'processing_complete') {
-      // 🔴 VERIFICA SE TEM JOB ATIVO NA FILA - se não tiver, libera o lock automaticamente
-      const hasActiveJob = await hasActiveJobInQueue(id);
-      
-      if (hasActiveJob) {
-        await mongoSession.abortTransaction();
-        throw createBusinessError(Messages.BUSINESS.ALREADY_PROCESSING_COMPLETE, 409, ErrorCodes.ALREADY_PROCESSING,
-          { status: 'processing_complete', hasActiveJob: true }
-        );
-      } else {
-        // Não tem job ativo - provavelmente o worker falhou ou foi reiniciado
-        // Libera o lock automaticamente e continua o processamento
-        console.log(`[complete] 🔓 Lock obsoleto detectado para ${id}, liberando automaticamente...`);
-        appointment.operationalStatus = 'scheduled';
-        appointment.history.push({
-          action: 'auto_release_stale_lock',
-          previousStatus: 'processing_complete',
-          newStatus: 'scheduled',
-          timestamp: new Date(),
-          context: 'Lock liberado automaticamente - nenhum job ativo na fila'
+    // ========================================
+    // BUSCAR DADOS ATUALIZADOS PARA RESPOSTA
+    // ========================================
+    const updatedAppointment = await Appointment.findById(id);
+    
+    // ========================================
+    // EMITIR SOCKET (fora da transação)
+    // ========================================
+    try {
+      const { getIo } = await import('../config/socket.js');
+      const io = getIo();
+      if (io) {
+        io.emit('appointmentUpdated', {
+          _id: id,
+          operationalStatus: updatedAppointment.operationalStatus,
+          clinicalStatus: updatedAppointment.clinicalStatus,
+          paymentStatus: updatedAppointment.paymentStatus,
+          visualFlag: updatedAppointment.visualFlag,
+          sessionId: result.sessionId,
+          source: 'complete_service_v2'
         });
-        await appointment.save({ session: mongoSession });
-        // Continua o processamento normalmente...
+        console.log(`[complete] Socket emitido`);
       }
+    } catch (socketErr) {
+      console.error(`[complete] ⚠️ Socket erro (não crítico):`, socketErr.message);
     }
 
-    if (appointment.clinicalStatus === 'completed') {
-      await mongoSession.abortTransaction();
-      throw createBusinessError(Messages.BUSINESS.ALREADY_COMPLETED, 409, ErrorCodes.CONFLICT_STATE,
-        { idempotent: true }
-      );
-    }
-
-    if (appointment.operationalStatus === 'canceled') {
-      await mongoSession.abortTransaction();
-      throw createBusinessError(Messages.BUSINESS.CANNOT_COMPLETE_CANCELED, 409, ErrorCodes.CONFLICT_STATE
-      );
-    }
-
-    // Marca como processando
-    appointment.operationalStatus = 'processing_complete';
-    appointment.history.push({
-      action: 'complete_requested',
-      newStatus: 'processing_complete',
-      changedBy: req.user?._id,
-      timestamp: new Date(),
-      context: addToBalance ? `Fiado: ${balanceAmount}` : 'Complete normal'
-    });
-
-    await appointment.save({ session: mongoSession });
-
-    const idempotencyKey = `${id}_complete_${addToBalance ? 'balance' : 'normal'}`;
-
-    await mongoSession.commitTransaction();
-
-    // Publica evento
-    const eventResult = await publishEvent(
-      EventTypes.APPOINTMENT_COMPLETE_REQUESTED,
-      {
-        appointmentId: id,
-        patientId: appointment.patient?._id?.toString(),
-        doctorId: appointment.doctor?._id?.toString(),
-        packageId: appointment.package?._id?.toString(),
-        sessionId: appointment.session?._id?.toString(),
-        addToBalance,
-        balanceAmount: balanceAmount || appointment.sessionValue,
-        balanceDescription,
-        userId: req.user?._id?.toString()
-      },
-      {
-        correlationId: id,
-        idempotencyKey
-      }
-    );
-
-    res.status(202).json(
+    // ========================================
+    // RETORNAR SUCESSO IMEDIATO
+    // ========================================
+    const isPrepaid = result.packageConsumed;
+    
+    res.status(200).json(
       formatSuccess(
         {
           appointmentId: id,
-          status: 'processing_complete',
-          correlationId: eventResult.correlationId,
-          idempotencyKey: eventResult.idempotencyKey
-          // NOTA: Não retornamos lockReleased aqui porque o frontend
-          // deve confiar apenas no polling do /status para determinar sucesso
+          operationalStatus: updatedAppointment.operationalStatus,
+          clinicalStatus: updatedAppointment.clinicalStatus,
+          paymentStatus: updatedAppointment.paymentStatus,
+          visualFlag: updatedAppointment.visualFlag,
+          sessionId: result.sessionId,
+          packageConsumed: result.packageConsumed,
+          isPrepaid,
+          completedAt: new Date()
         },
         {
-          message: Messages.PROCESSING.COMPLETE,
-          processing: 'async',
-          checkStatus: `GET /api/v2/appointments/${id}/status`
+          message: isPrepaid 
+            ? 'Sessão de pacote completada com sucesso'
+            : (addToBalance ? 'Sessão fiada registrada' : 'Sessão completada com sucesso')
         }
       )
     );
 
   } catch (error) {
-    // Só aborta se a transação ainda estiver ativa
-    if (mongoSession.transaction.state !== 'TRANSACTION_ABORTED' && 
-        mongoSession.transaction.state !== 'TRANSACTION_COMMITTED') {
-      await mongoSession.abortTransaction();
-    }
+    console.error(`[complete] ❌ Erro:`, error.message);
     throw error;
-  } finally {
-    mongoSession.endSession();
   }
 }));
 
@@ -549,7 +530,7 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
     light = 'false'  // 🆕 NOVO: Modo light para calendário (menos dados)
   } = req.query;
   
-  console.log(`[GET /v2/appointments] Listando agendamentos`, { startDate, endDate, status, light, patientId, doctorId });
+  // DEBUG: console.log(`[GET /v2/appointments] Listando agendamentos`, { startDate, endDate, status, light, patientId, doctorId });
   
   // Build filter
   const filter = {};
@@ -569,7 +550,7 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
     
     if (patientView) {
       // É um ID de view, usa o patientId real
-      console.log(`[GET /v2/appointments] PatientId é de view, usando patientId real: ${patientView.patientId}`);
+      // DEBUG: console.log(`[GET /v2/appointments] PatientId é de view, usando patientId real: ${patientView.patientId}`);
       filter.patient = new mongoose.Types.ObjectId(patientView.patientId);
     } else {
       // É um ID real de paciente
@@ -589,13 +570,18 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
       filter.operationalStatus = 'confirmed';
     } else if (status === 'scheduled') {
       filter.operationalStatus = 'scheduled';
+    } else if (status === 'pre_agendado') {
+      filter.operationalStatus = 'pre_agendado';
     }
+  } else {
+    // 🆕 Se não especificar status, inclui pre_agendados na listagem
+    filter.operationalStatus = { $in: ['pre_agendado', 'scheduled', 'confirmed', 'completed'] };
   }
   
   const skip = (parseInt(page) - 1) * parseInt(limit);
   
   // 🆕 Build query base
-  console.log(`[GET /v2/appointments] Filtro final:`, JSON.stringify(filter));
+  // DEBUG: console.log(`[GET /v2/appointments] Filtro final:`, JSON.stringify(filter));
   
   let query = Appointment.find(filter);
   
@@ -607,40 +593,15 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
       .populate('doctor', 'fullName specialty')
       .populate('package', 'type sessionValue financialStatus');
   } else {
-    // Modo completo (padrão) - Mesmas regras da V1
+    // Modo completo (padrão) - Otimizado para reduzir memória
     query = query
       .populate('patient', 'fullName dateOfBirth phone email')
       .populate('doctor', 'fullName specialty email phoneNumber crm')
       .populate('payment', 'status amount paymentMethod')
-      .populate({
-        path: 'advancedSessions',
-        select: 'date time specialty operationalStatus clinicalStatus',
-        populate: {
-          path: 'doctor',
-          select: 'fullName specialty'
-        }
-      })
-      .populate({
-        path: 'history.changedBy',
-        select: 'name email role',
-        options: { retainNullValues: true }
-      })
-      .populate({
-        path: 'package',
-        select: 'sessionType durationMonths sessionsPerWeek totalSessions sessionsDone',
-        populate: {
-          path: 'sessions',
-          select: 'date status isPaid'
-        }
-      })
-      .populate({
-        path: 'session',
-        select: 'date status isPaid confirmedAbsence paymentStatus sessionValue',
-        populate: {
-          path: 'package',
-          select: 'sessionType durationMonths sessionsPerWeek'
-        }
-      });
+      // REMOVIDO: advancedSessions populate pesado
+      // REMOVIDO: history.changedBy pode ser enorme
+      .populate('package', 'sessionType durationMonths sessionsPerWeek totalSessions sessionsDone')
+      .populate('session', 'date status isPaid confirmedAbsence paymentStatus sessionValue');
   }
   
   let appointments = await query
@@ -673,7 +634,7 @@ router.get('/', flexibleAuth, asyncHandler(async (req, res) => {
   
   const total = await Appointment.countDocuments(filter);
   
-  console.log(`[GET /v2/appointments] Encontrados: ${appointments.length} de ${total}`);
+  // DEBUG: console.log(`[GET /v2/appointments] Encontrados: ${appointments.length} de ${total}`);
   
   res.json(formatSuccess({
     appointments,

@@ -15,6 +15,7 @@ import { runJourneyFollowups } from '../services/journeyFollowupEngine.js';
 import Leads from '../models/Leads.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import PatientBalance from '../models/PatientBalance.js';
+import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
 
 /**
  * 🏥 Cria recebível de convênio quando sessão é completada
@@ -1988,7 +1989,7 @@ export const packageOperations = {
                 doctor: doctorId || pkg.doctor,
                 package: packageId,
                 sessionValue: validSessionValue,
-                sessionType: sessionType || pkg.sessionType,
+                sessionType: normalizeSessionType(sessionType || pkg.specialty || pkg.sessionType),
                 status,
                 isPaid,
                 paymentStatus,

@@ -244,7 +244,7 @@ const appointmentSchema = new mongoose.Schema({
   // 🆕 ARQUITETURA v4.0 - Rastreabilidade Financeira
   paymentOrigin: {
     type: String,
-    enum: ['auto_per_session', 'manual_balance', 'package_prepaid', 'convenio', 'liminar'],
+    enum: ['auto_per_session', 'manual_balance', 'package_prepaid', 'convenio', 'liminar', 'individual', 'unknown', 'direct', 'pending'],
     default: null,
     index: true,
     description: 'Origem do pagamento quando o agendamento for completado'

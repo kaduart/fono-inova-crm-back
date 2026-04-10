@@ -17,7 +17,7 @@ const outboxSchema = new mongoose.Schema({
 async function process() {
   try {
     await mongoose.connect(uri);
-    const Outbox = mongoose.model('Outbox', outboxSchema);
+    const Outbox = mongoose.models.Outbox || mongoose.model('Outbox', outboxSchema);
     
     // Busca evento de invoice
     const event = await Outbox.findOne({

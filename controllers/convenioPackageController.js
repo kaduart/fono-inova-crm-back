@@ -9,6 +9,7 @@ import Payment from '../models/Payment.js';
 import Convenio from '../models/Convenio.js';
 import { syncEvent } from '../services/syncService.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
+import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
 
 /**
  * 📦 Controller para Pacotes de Convênio
@@ -174,7 +175,7 @@ export const createConvenioPackage = async (req, res) => {
         guideConsumed: false, // Será true quando status = 'completed'
 
         sessionValue: convenioValue || 0,  // ⭐ Valor histórico imutável do convênio
-        sessionType: guide.specialty,
+        sessionType: normalizeSessionType(guide.specialty),
         specialty: guide.specialty,
         status: 'scheduled',
         isPaid: false, // ⚠️ Convênio NÃO está pago - só recebe 30 dias depois
@@ -880,7 +881,7 @@ export const addConvenioSession = async (req, res) => {
       guideConsumed: false,
 
       sessionValue: pkg.insuranceGrossAmount || 0,  // ⭐ Valor histórico imutável
-      sessionType: pkg.sessionType,
+      sessionType: normalizeSessionType(pkg.specialty || pkg.sessionType),
       specialty: pkg.specialty,
       status: 'scheduled',
       isPaid: false, // ⚠️ Convênio NÃO está pago - só recebe 30 dias depois

@@ -44,7 +44,7 @@ const outboxSchema = new mongoose.Schema({
 outboxSchema.index({ status: 1, scheduledAt: 1 });
 outboxSchema.index({ aggregateType: 1, aggregateId: 1 });
 
-const Outbox = mongoose.model('Outbox', outboxSchema);
+const Outbox = mongoose.models.Outbox || mongoose.model('Outbox', outboxSchema);
 
 export async function saveToOutbox(event, session) {
     const outboxEntry = new Outbox({

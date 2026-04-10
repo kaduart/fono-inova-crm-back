@@ -57,8 +57,19 @@ export async function startAllWorkers() {
     
     // 3. Workers orquestradores (novos - 4.0 completa)
     // 🔴 Agora são async para garantir conexão Mongo
-    workers.push(await startCancelOrchestratorWorker());
-    workers.push(await startCompleteOrchestratorWorker());
+    try {
+        workers.push(await startCancelOrchestratorWorker());
+        console.log('[Workers] ✅ CancelOrchestratorWorker iniciado');
+    } catch (err) {
+        console.error('[Workers] ❌ Erro ao iniciar CancelOrchestratorWorker:', err.message);
+    }
+    
+    try {
+        workers.push(await startCompleteOrchestratorWorker());
+        console.log('[Workers] ✅ CompleteOrchestratorWorker iniciado');
+    } catch (err) {
+        console.error('[Workers] ❌ Erro ao iniciar CompleteOrchestratorWorker:', err.message);
+    }
     
     // 4. Workers financeiros
     workers.push(startInvoiceWorker());

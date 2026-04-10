@@ -8,12 +8,14 @@ import Package from "../models/Package.js";
 import { bookFixedSlot, fetchAvailableSlotsForDoctor } from "../services/amandaBookingService.js";
 import { findDoctorByName } from "../utils/doctorHelper.js";
 import { calculateAvailableSlots } from "../middleware/conflictDetection.js";
+import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 
 import Appointment from "../models/Appointment.js";
 import Session from "../models/Session.js";
 import Payment from "../models/Payment.js";
 import Patient from "../models/Patient.js";
 import { NON_BLOCKING_OPERATIONAL_STATUSES } from "../constants/appointmentStatus.js";
+import { normalizeSessionType } from "../utils/sessionTypeResolver.js";
 
 const router = express.Router();
 
@@ -61,6 +63,16 @@ router.post("/agenda-externa/pre-agendar", agendaAuth, async (req, res) => {
         source: 'agenda_externa'
       });
       resolvedPatientId = created._id;
+      
+      // 🚀 Publicar evento para criar a view do paciente (CQRS)
+      await publishEvent(EventTypes.PATIENT_CREATED, {
+        patientId: created._id.toString(),
+        fullName: created.fullName,
+        phone: created.phone,
+        email: created.email,
+        dateOfBirth: created.dateOfBirth,
+        source: 'agenda_externa'
+      });
     } else {
       return res.status(400).json({
         success: false,
@@ -143,7 +155,7 @@ router.post("/agenda-externa/pre-agendar", agendaAuth, async (req, res) => {
       date,
       time,
       duration: 40,
-      specialty: (specialty || doctor?.specialty || 'fonoaudiologia').toLowerCase(),
+      specialty: normalizeSessionType(specialty || doctor?.specialty || 'fonoaudiologia'),
       // Tipo de atendimento
       serviceType: crm.serviceType || 'evaluation',
       sessionValue: Number(crm.paymentAmount || req.body.sessionValue || 0),
@@ -284,6 +296,16 @@ router.post("/agenda-externa/confirmar", agendaAuth, async (req, res) => {
           source: 'agenda_externa'
         });
         patientId = created._id;
+        
+        // 🚀 Publicar evento para criar a view do paciente (CQRS)
+        await publishEvent(EventTypes.PATIENT_CREATED, {
+          patientId: created._id.toString(),
+          fullName: created.fullName,
+          phone: created.phone,
+          email: created.email,
+          dateOfBirth: created.dateOfBirth,
+          source: 'agenda_externa'
+        });
       }
     }
 
@@ -316,14 +338,15 @@ router.post("/agenda-externa/confirmar", agendaAuth, async (req, res) => {
     const resolvedValue = Number(sessionValue || pre.sessionValue || 0);
     // 🚨 Nunca 'session' como serviceType — ativa modo payment fantasma
     const normalizedServiceType = serviceType === 'session' ? 'individual_session' : serviceType;
-    const sessionType = serviceType === 'evaluation' ? 'avaliacao' : 'sessao';
+    // 🔧 Usar helper para garantir specialty válida
+    const resolvedSpecialty = normalizeSessionType(serviceType || doctor?.specialty);
 
     // Criar Session
     const newSession = await Session.create({
       patient: patientId,
       doctor: doctor._id,
       appointmentId: pre._id,
-      sessionType,
+      sessionType: resolvedSpecialty,
       date: resolvedDate,
       time: resolvedTime,
       sessionValue: resolvedValue,
@@ -741,7 +764,7 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
       // Dados básicos
       date: date,
       time: time,
-      specialty: specialty?.toLowerCase(),
+      specialty: normalizeSessionType(specialty || doctor?.specialty),
       notes: observations,
       operationalStatus: operationalStatus || (status === 'Pendente' ? 'scheduled' : status?.toLowerCase()),
       
@@ -751,8 +774,8 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
       amount: Number(crm.paymentAmount || 0), // compatibilidade
       billingType: 'particular', // default
       
-      // Dados da sessão
-      sessionType: crm.sessionType || 'avaliacao',
+      // Dados da sessão - sessionType é a ESPECIALIDADE normalizada
+      sessionType: normalizeSessionType(specialty || doctor?.specialty),
       serviceType: crm.serviceType === 'session' ? 'session' : 'evaluation',
       sessionStatus: operationalStatus,
       
@@ -852,6 +875,16 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
           });
           patientId = created._id;
           console.log(`[SYNC-UPDATE] ✅ Paciente criado: ${patientId}`);
+          
+          // 🚀 Publicar evento para criar a view do paciente (CQRS)
+          await publishEvent(EventTypes.PATIENT_CREATED, {
+            patientId: created._id.toString(),
+            fullName: created.fullName,
+            phone: created.phone,
+            email: created.email,
+            dateOfBirth: created.dateOfBirth,
+            source: 'agenda_externa'
+          });
         } catch (patientErr) {
           console.error(`[SYNC-UPDATE] ❌ Erro ao criar paciente: ${patientErr.message}`);
         }
@@ -891,14 +924,14 @@ router.post("/agenda-externa/update", agendaAuth, async (req, res) => {
       const PAYMENT_SERVICE_TYPES = ['evaluation', 'session', 'package_session', 'tongue_tie_test', 'neuropsych_evaluation', 'individual_session', 'meet', 'alignment'];
       const rawServiceType = crm.serviceType === 'session' ? 'individual_session' : (crm.serviceType || appointment.serviceType || 'evaluation');
       const serviceType = PAYMENT_SERVICE_TYPES.includes(rawServiceType) ? rawServiceType : 'individual_session';
-      const sessionType = crm.sessionType || appointment.sessionType || 'avaliacao';
+      const resolvedSpecialty = normalizeSessionType(crm.sessionType || appointment.specialty || serviceType);
       const resolvedBillingType = billingType || appointment.billingType || 'particular';
 
       const newSession = await Session.create([{
         patient: patientId,
         doctor: doctorId,
         appointmentId: appointment._id,
-        sessionType,
+        sessionType: resolvedSpecialty,
         notes: observations || appointment.notes || '',
         status: 'scheduled',
         isPaid: false,

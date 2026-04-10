@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { FinancialContext } from '../utils/financialContext.js';
+import { saveToOutbox } from '../infrastructure/outbox/outboxPattern.js';
+import crypto from 'crypto';
 
 const paymentSchema = new mongoose.Schema({
     patient: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient', required: true },
@@ -52,22 +54,68 @@ const paymentSchema = new mongoose.Schema({
 // Previne que Session ou Appointment atualizem diretamente o Payment
 // Isso quebra o loop de decisões entre os modelos
 
-paymentSchema.pre('findOneAndUpdate', function(next) {
+paymentSchema.pre('findOneAndUpdate', async function(next) {
     const ctx = FinancialContext.get();
     if (ctx === 'session' || ctx === 'appointment') {
         console.error(`[SECURITY BLOCK] Tentativa de atualizar Payment por ${ctx} bloqueada`);
         console.error(`[SECURITY BLOCK] Query:`, this.getQuery());
         throw new Error(`[SECURITY] ${ctx} não pode atualizar Payment diretamente. Use o fluxo Payment → Session`);
     }
+    
+    // 🔒 FINANCIAL LOCK: Payment já pago não pode ser alterado (imutabilidade)
+    const doc = await this.model.findOne(this.getQuery()).lean();
+    if (doc?.status === 'paid') {
+        // Permite apenas atualizações de campos não-financeiros (ex: notes, metadata)
+        const update = this.getUpdate();
+        const allowedFields = ['notes', 'metadata', 'updatedAt'];
+        const updateFields = Object.keys(update.$set || update);
+        
+        const hasFinancialChange = updateFields.some(field => 
+            !allowedFields.includes(field) && 
+            !field.startsWith('$') // ignora operadores
+        );
+        
+        if (hasFinancialChange) {
+            const error = new Error(
+                `[FINANCIAL LOCK] Payment já pago (id: ${doc._id}) não pode ser alterado. ` +
+                `Campos financeiros são imutáveis. ` +
+                `Para corrigir, crie um refund ou ajuste separado.`
+            );
+            error.code = 'PAYMENT_IMMUTABLE';
+            return next(error);
+        }
+    }
+    
     next();
 });
 
-paymentSchema.pre('updateOne', function(next) {
+paymentSchema.pre('updateOne', async function(next) {
     const ctx = FinancialContext.get();
     if (ctx === 'session' || ctx === 'appointment') {
         console.error(`[SECURITY BLOCK] Tentativa de updateOne em Payment por ${ctx} bloqueada`);
         throw new Error(`[SECURITY] ${ctx} não pode atualizar Payment diretamente`);
     }
+    
+    // 🔒 FINANCIAL LOCK: Verifica se está tentando alterar payment já pago
+    const doc = await this.model.findOne(this.getQuery()).lean();
+    if (doc?.status === 'paid') {
+        const update = this.getUpdate();
+        const allowedFields = ['notes', 'metadata', 'updatedAt'];
+        const updateFields = Object.keys(update.$set || update);
+        
+        const hasFinancialChange = updateFields.some(field => 
+            !allowedFields.includes(field) && !field.startsWith('$')
+        );
+        
+        if (hasFinancialChange) {
+            const error = new Error(
+                `[FINANCIAL LOCK] Payment já pago (id: ${doc._id}) não pode ser alterado.`
+            );
+            error.code = 'PAYMENT_IMMUTABLE';
+            return next(error);
+        }
+    }
+    
     next();
 });
 
@@ -77,6 +125,32 @@ paymentSchema.pre('save', function(next) {
         console.error(`[SECURITY BLOCK] Tentativa de save em Payment por ${ctx} bloqueada`);
         throw new Error(`[SECURITY] ${ctx} não pode criar/atualizar Payment diretamente`);
     }
+    
+    // 🔒 FINANCIAL LOCK: paidAt obrigatório quando status=paid
+    if (this.status === 'paid' && !this.paidAt) {
+        const error = new Error(
+            `[FINANCIAL LOCK] paidAt é obrigatório quando status='paid'. ` +
+            `Use: payment.paidAt = new Date() antes de salvar.`
+        );
+        error.code = 'MISSING_PAID_AT';
+        return next(error);
+    }
+    
+    // 🔒 TRAVA EXTRA: Se já estava pago, não pode alterar campos financeiros
+    if (this.isModified() && !this.isNew) {
+        const wasPaid = this._original?.status === 'paid' || 
+                        this.$locals?.originalStatus === 'paid';
+        
+        if (wasPaid && this.isModified('status', 'amount', 'paidAt')) {
+            const error = new Error(
+                `[FINANCIAL LOCK] Payment já pago não pode ser alterado. ` +
+                `Crie um refund ou ajuste separado.`
+            );
+            error.code = 'PAYMENT_IMMUTABLE';
+            return next(error);
+        }
+    }
+    
     next();
 });
 
@@ -89,6 +163,45 @@ paymentSchema.statics.safeUpdate = async function(filter, update, options = {}) 
     return withFinancialContext('payment', async () => {
         return this.findOneAndUpdate(filter, update, { new: true, ...options });
     });
+};
+
+// ============ MÉTODO ATÔMICO COM OUTBOX ============
+// Cria Payment e publica evento na MESMA TRANSACTION
+// Garante: ou salva tudo, ou não salva nada
+
+paymentSchema.statics.createWithEvent = async function(paymentData, eventData, mongoSession) {
+    const ctx = FinancialContext.get();
+    if (ctx !== 'payment' && ctx !== 'appointmentCompleteService') {
+        throw new Error(`[SECURITY] createWithEvent só pode ser chamado de contexto payment. Contexto atual: ${ctx}`);
+    }
+    
+    // 1. Cria o Payment
+    const payment = new this(paymentData);
+    await payment.save({ session: mongoSession });
+    
+    // 2. Salva evento no Outbox (mesma transaction!)
+    const outboxEvent = {
+        eventId: eventData.eventId || crypto.randomUUID(),
+        eventType: eventData.eventType || 'PAYMENT_CREATED',
+        correlationId: eventData.correlationId || paymentData.correlationId,
+        payload: {
+            paymentId: payment._id.toString(),
+            patientId: paymentData.patient?.toString(),
+            appointmentId: paymentData.appointment?.toString(),
+            amount: paymentData.amount,
+            status: paymentData.status,
+            paidAt: paymentData.paidAt,
+            ...eventData.payload
+        },
+        aggregateType: 'payment',
+        aggregateId: payment._id.toString()
+    };
+    
+    await saveToOutbox(outboxEvent, mongoSession);
+    
+    console.log(`[Payment.createWithEvent] Payment ${payment._id} + Evento ${outboxEvent.eventType} salvos atomicamente`);
+    
+    return payment;
 };
 
 paymentSchema.index({ paymentDate: 1, status: 1 });
