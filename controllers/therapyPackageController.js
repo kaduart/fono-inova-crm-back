@@ -651,6 +651,7 @@ export const packageOperations = {
                         paymentDate: p.date || new Date(),
                         kind: 'package_receipt',
                         status: 'paid',
+                        paidAt: new Date(),  // 🔒 Obrigatório quando status='paid'
                         serviceType: 'package_session',
                         notes: p.description || 'Pagamento do pacote'
                     });
@@ -1336,6 +1337,7 @@ export const packageOperations = {
                                     serviceDate: sessionDoc.date,
                                     paymentDate: sessionDoc.date, // Entra no caixa no dia
                                     status: 'paid',
+                                    paidAt: new Date(),  // 🔒 Obrigatório quando status='paid'
                                     kind: 'session_payment',
                                     notes: `Pagamento automático - Sessão ${moment(sessionDoc.date).format('DD/MM/YYYY')} ${sessionDoc.time}`
                                 });
@@ -2190,6 +2192,7 @@ export const packageOperations = {
                 paymentMethod,
                 notes: notes || "Pagamento adicional registrado manualmente.",
                 status: "paid",
+                paidAt: new Date(),  // 🔒 Obrigatório quando status='paid'
                 kind: "package_receipt",
                 serviceType: "package_session",
                 paymentDate: moment()

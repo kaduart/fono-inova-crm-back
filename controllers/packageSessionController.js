@@ -66,6 +66,7 @@ export const receiveSessionPayment = async (req, res) => {
             amount: paymentAmount,
             paymentMethod: method,
             status: 'paid',
+            paidAt: new Date(),  // 🔒 Obrigatório quando status='paid'
             kind: 'session_payment',
             serviceType: 'package_session',
             paymentDate: new Date(),

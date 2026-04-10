@@ -202,6 +202,7 @@ export const handlePixWebhook = async (req, res) => {
       amount,
       paymentMethod: "pix",
       status: "paid",
+      paidAt: new Date(),  // 🔒 Obrigatório quando status='paid'
       serviceType: "package_session",
       kind: "package_receipt",
       notes: `Pagamento via PIX - ${payer}`,
