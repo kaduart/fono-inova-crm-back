@@ -135,11 +135,11 @@ export function healthEndpoint(req, res) {
     memory: {
       heapUsedMB: mem.heapUsedMB,
       heapTotalMB: mem.heapTotalMB,
-      heapPercent: `${mem.heapPercent}%`,
+      heapPercent: mem.heapPercent,
       rssMB: mem.rssMB,
       status: mem.status
     },
-    queues: lastQueueStats,
+    queues: lastQueueStats || {},
     timestamp: new Date().toISOString()
   });
 }
@@ -162,13 +162,13 @@ export function healthFullEndpoint(req, res) {
     memory: {
       heapUsedMB: toMB(mem.heapUsed),
       heapTotalMB: toMB(mem.heapTotal),
-      heapPercent: `${snap.heapPercent}%`,
+      heapPercent: snap.heapPercent,
       rssMB: toMB(mem.rss),
       externalMB: toMB(mem.external),
       arrayBuffersMB: toMB(mem.arrayBuffers || 0),
       status: snap.status
     },
-    queues: lastQueueStats,
+    queues: lastQueueStats || {},
     env: process.env.NODE_ENV || 'development',
     timestamp: new Date().toISOString()
   });
