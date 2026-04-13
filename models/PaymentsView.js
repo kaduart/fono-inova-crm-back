@@ -125,8 +125,8 @@ paymentsViewSchema.index({ 'patient.name': 'text', 'doctor.name': 'text' }); // 
 paymentsViewSchema.statics.upsertFromPayment = async function(paymentData) {
     const { 
         _id, patient, doctor, amount, paymentMethod, status, 
-        serviceType, sessionType, paymentDate, notes, clinicId,
-        appointment, package: pkg, session
+        serviceType, sessionType, paymentDate, financialDate, notes, clinicId,
+        appointment, package: pkg, session, createdAt
     } = paymentData;
     
     // Mapear método
@@ -193,8 +193,9 @@ paymentsViewSchema.statics.upsertFromPayment = async function(paymentData) {
         status: status === 'completed' ? 'paid' : status || 'pending',
         type: 'revenue',
         category,
-        paymentDate: paymentDate ? new Date(paymentDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        paymentMonth: paymentDate ? new Date(paymentDate).toISOString().substring(0, 7) : new Date().toISOString().substring(0, 7),
+        // 🎯 PRIORIDADE: financialDate (V2) > paymentDate (legado) > createdAt (fallback)
+        paymentDate: (financialDate || paymentDate || createdAt) ? new Date(financialDate || paymentDate || createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        paymentMonth: (financialDate || paymentDate || createdAt) ? new Date(financialDate || paymentDate || createdAt).toISOString().substring(0, 7) : new Date().toISOString().substring(0, 7),
         notes: notes || '',
         clinicId: clinicId || 'default',
         appointmentId: appointment?._id || appointment,

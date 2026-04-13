@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="8" failures="0" errors="0" time="0.319">
+  <testsuite name="Complete Session DTO" errors="0" failures="0" skipped="0" timestamp="2026-04-12T04:39:45" time="0.205" tests="8">
+    <testcase classname="Complete Session DTO createCompleteSessionResponse deve criar DTO completo com todos os campos" name="Complete Session DTO createCompleteSessionResponse deve criar DTO completo com todos os campos" time="0.008">
+    </testcase>
+    <testcase classname="Complete Session DTO createCompleteSessionResponse deve criar DTO idempotente corretamente" name="Complete Session DTO createCompleteSessionResponse deve criar DTO idempotente corretamente" time="0.001">
+    </testcase>
+    <testcase classname="Complete Session DTO createCompleteSessionResponse deve ter tipos corretos" name="Complete Session DTO createCompleteSessionResponse deve ter tipos corretos" time="0.001">
+    </testcase>
+    <testcase classname="Complete Session DTO createErrorResponse deve criar DTO de erro corretamente" name="Complete Session DTO createErrorResponse deve criar DTO de erro corretamente" time="0.001">
+    </testcase>
+    <testcase classname="Complete Session DTO BILLING_TO_PAYMENT_STATUS deve mapear billing types corretamente" name="Complete Session DTO BILLING_TO_PAYMENT_STATUS deve mapear billing types corretamente" time="0.001">
+    </testcase>
+    <testcase classname="Complete Session DTO Regras de Negócio no DTO particular deve ter balanceAmount = sessionValue" name="Complete Session DTO Regras de Negócio no DTO particular deve ter balanceAmount = sessionValue" time="0.001">
+    </testcase>
+    <testcase classname="Complete Session DTO Regras de Negócio no DTO liminar deve ter isPaid = true" name="Complete Session DTO Regras de Negócio no DTO liminar deve ter isPaid = true" time="0.002">
+    </testcase>
+    <testcase classname="Complete Session DTO Regras de Negócio no DTO convenio deve ter balanceAmount = 0" name="Complete Session DTO Regras de Negócio no DTO convenio deve ter balanceAmount = 0" time="0.001">
+    </testcase>
+  </testsuite>
+</testsuites>

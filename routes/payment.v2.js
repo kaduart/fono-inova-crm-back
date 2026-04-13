@@ -1,16 +1,19 @@
 // back/routes/payment.v2.js
 /**
- * ROTAS EVENT-DRIVEN DE PAGAMENTO
+ * ROTAS EVENT-DRIVEN DE PAGAMENTO - V2 BLINDADO
+ * 
+ * Regra de Ouro: Fail fast na API, não no worker
  * 
  * POST /api/v2/payments/request         → Inicia pagamento (async)
  * POST /api/v2/payments/webhook         → Confirmação externa (Sicoob, etc)
  * GET  /api/v2/payments/:id/status      → Consulta status
  * 
  * Fluxo:
- * 1. API recebe request
- * 2. Publica PAYMENT_REQUESTED → fila payment-processing
- * 3. paymentWorker processa (Saga Pattern)
- * 4. Retorna jobId imediatamente (não espera processamento)
+ * 1. API recebe request → VALIDAÇÃO RIGOROSA (fail fast)
+ * 2. Normaliza payload garantido (type sempre presente)
+ * 3. Publica evento → fila payment-processing
+ * 4. Worker processa (assume dados válidos)
+ * 5. Retorna jobId imediatamente (não espera processamento)
  */
 
 import express from 'express';
@@ -25,8 +28,38 @@ import PatientBalance from '../models/PatientBalance.js';
 const router = express.Router();
 
 // ============================================
+// SCHEMA VALIDATION - Constantes
+// ============================================
+const VALID_PAYMENT_METHODS = ['dinheiro', 'pix', 'credit_card', 'debit_card', 'cartao', 'cartão', 'transferencia', 'transferência', 'cash', 'bank_transfer'];
+const VALID_PAYMENT_TYPES = ['appointment_payment', 'multi_payment', 'balance_credit', 'standalone'];
+
+// ============================================
+// HELPER: Validação de ObjectId
+// ============================================
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+// ============================================
+// HELPER: Normalização de método de pagamento
+// ============================================
+const normalizePaymentMethod = (method) => {
+    const methodMap = {
+        'dinheiro': 'cash',
+        'pix': 'pix',
+        'credit_card': 'credit_card',
+        'debit_card': 'debit_card',
+        'cartao': 'credit_card',
+        'cartão': 'credit_card',
+        'transferencia': 'bank_transfer',
+        'transferência': 'bank_transfer',
+        'cash': 'cash',
+        'bank_transfer': 'bank_transfer'
+    };
+    return methodMap[method] || 'cash';
+};
+
+// ============================================
 // POST /api/v2/payments/request
-// Inicia pagamento de forma assíncrona
+// Inicia pagamento de forma assíncrona - BLINDADO
 // ============================================
 router.post('/request', auth, async (req, res) => {
     const {
@@ -36,53 +69,201 @@ router.post('/request', auth, async (req, res) => {
         amount,
         paymentMethod = 'pix',
         notes,
+        type = 'appointment_payment', // 🎯 OBRIGATÓRIO: tipo do pagamento
         // Para payment-multi (saldo/débitos)
         debitIds,
         payments,
         isMultiPayment = false
     } = req.body;
 
+    // ========================================
+    // 🛡️ VALIDAÇÃO RIGOROSA - Fail Fast
+    // ========================================
+    
+    // 1. type é obrigatório e deve ser válido
+    if (!type || !VALID_PAYMENT_TYPES.includes(type)) {
+        return res.status(400).json({
+            success: false,
+            error: `Campo 'type' obrigatório. Valores válidos: ${VALID_PAYMENT_TYPES.join(', ')}`,
+            received: { type }
+        });
+    }
+
+    // 2. patientId é sempre obrigatório
+    if (!patientId) {
+        return res.status(400).json({
+            success: false,
+            error: 'Campo obrigatório: patientId',
+            code: 'MISSING_PATIENT_ID'
+        });
+    }
+
+    if (!isValidObjectId(patientId)) {
+        return res.status(400).json({
+            success: false,
+            error: 'patientId inválido',
+            code: 'INVALID_PATIENT_ID',
+            received: patientId
+        });
+    }
+
+    // 3. amount é sempre obrigatório e deve ser válido
+    if (!amount || typeof amount !== 'number' || amount <= 0) {
+        return res.status(400).json({
+            success: false,
+            error: 'Campo obrigatório: amount (número > 0)',
+            code: 'INVALID_AMOUNT',
+            received: { amount, type: typeof amount }
+        });
+    }
+
+    // 4. Validação específica por tipo
+    if (type === 'appointment_payment') {
+        // appointment_payment REQUER appointmentId
+        if (!appointmentId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Para type=appointment_payment, appointmentId é obrigatório',
+                code: 'MISSING_APPOINTMENT_ID',
+                hint: 'Crie um agendamento primeiro ou use type=standalone'
+            });
+        }
+        
+        if (!isValidObjectId(appointmentId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'appointmentId inválido',
+                code: 'INVALID_APPOINTMENT_ID',
+                received: appointmentId
+            });
+        }
+    }
+
+    // 5. Validação para multi_payment
+    if (type === 'multi_payment' || isMultiPayment) {
+        if (!debitIds?.length || !payments?.length) {
+            return res.status(400).json({
+                success: false,
+                error: 'Para multi_payment, debitIds e payments são obrigatórios',
+                code: 'MISSING_MULTI_PAYMENT_DATA'
+            });
+        }
+    }
+
+    // 6. Validação de método de pagamento
+    if (!VALID_PAYMENT_METHODS.includes(paymentMethod)) {
+        return res.status(400).json({
+            success: false,
+            error: `Método de pagamento inválido. Valores válidos: ${VALID_PAYMENT_METHODS.join(', ')}`,
+            code: 'INVALID_PAYMENT_METHOD',
+            received: paymentMethod
+        });
+    }
+
     try {
-        // Validações básicas
-        if (!patientId || !amount || amount <= 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Campos obrigatórios: patientId, amount > 0'
-            });
+        // ========================================
+        // 🔍 VERIFICAÇÃO PRÉVIA: Appointment existe? (para appointment_payment)
+        // ========================================
+        if (type === 'appointment_payment' && appointmentId) {
+            const appointmentExists = await Appointment.exists({ _id: appointmentId });
+            if (!appointmentExists) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Agendamento não encontrado',
+                    code: 'APPOINTMENT_NOT_FOUND',
+                    appointmentId
+                });
+            }
         }
 
-        if (!mongoose.Types.ObjectId.isValid(patientId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'patientId inválido'
-            });
-        }
-
-        // Gera correlationId único para rastrear todo o fluxo
+        // ========================================
+        // 🎯 GERA IDS DE RASTREABILIDADE
+        // ========================================
         const correlationId = `payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         
-        // Gera idempotencyKey (evita duplicidade se reenviar)
-        const idempotencyKey = appointmentId 
-            ? `payment_${appointmentId}_${amount}`
+        // IdempotencyKey baseado no contexto (evita duplicatas)
+        const idempotencyKey = type === 'appointment_payment' && appointmentId
+            ? `payment_${appointmentId}_${amount}_${type}`
             : `payment_${patientId}_${amount}_${Date.now()}`;
 
-        // 🎯 PUBLICA EVENTO: PAYMENT_PROCESS_REQUESTED
+        // ========================================
+        // 🛡️ IDEMPOTÊNCIA: Verifica se já existe
+        // ========================================
+        const EventStore = (await import('../models/EventStore.js')).default;
+        
+        const existingEvent = await EventStore.findOne({ 
+            idempotencyKey,
+            status: { $in: ['pending', 'processing', 'processed'] }
+        });
+        
+        if (existingEvent) {
+            console.log(`[PaymentV2] Idempotência: request já existe`, {
+                idempotencyKey,
+                eventId: existingEvent.eventId,
+                status: existingEvent.status
+            });
+            
+            return res.status(200).json({
+                success: true,
+                message: 'Pagamento já foi enfileirado',
+                duplicated: true,
+                data: {
+                    eventId: existingEvent.eventId,
+                    correlationId: existingEvent.correlationId,
+                    idempotencyKey,
+                    status: existingEvent.status,
+                    createdAt: existingEvent.createdAt,
+                    checkStatusUrl: `/api/v2/payments/status/${existingEvent.eventId}`
+                }
+            });
+        }
+
+        // ========================================
+        // 📦 NORMALIZAÇÃO FORÇADA DO PAYLOAD
+        // ========================================
+        // Worker NUNCA deve receber dados inconsistentes
+        const normalizedPayload = {
+            // Identificadores obrigatórios
+            type,                           // 🎯 SEMPRE presente
+            patientId: patientId.toString(),
+            
+            // Contexto do pagamento
+            appointmentId: appointmentId?.toString() || null,
+            doctorId: doctorId?.toString() || null,
+            
+            // Dados financeiros
+            amount: Number(amount),
+            paymentMethod: normalizePaymentMethod(paymentMethod),
+            
+            // Metadados
+            notes: notes || '',
+            requestedBy: req.user?._id?.toString() || 'system',
+            requestedAt: new Date().toISOString(),
+            
+            // Flags de controle
+            isMultiPayment: type === 'multi_payment' || isMultiPayment,
+            
+            // Dados específicos por tipo
+            ...(type === 'multi_payment' && {
+                debitIds: debitIds.map(id => id.toString()),
+                payments: payments.map(p => ({
+                    ...p,
+                    paymentMethod: normalizePaymentMethod(p.paymentMethod || paymentMethod)
+                })),
+                totalAmount: payments.reduce((sum, p) => sum + (p.amount || 0), 0)
+            }),
+            
+            // Source tracking
+            source: 'v2_api',
+            apiVersion: '2.0'
+        };
+
+        // ========================================
+        // 🚀 PUBLICA EVENTO: PAYMENT_PROCESS_REQUESTED
+        // ========================================
         const eventResult = await publishEvent(
             EventTypes.PAYMENT_PROCESS_REQUESTED,
-            {
-                appointmentId: appointmentId?.toString(),
-                patientId: patientId.toString(),
-                doctorId: doctorId?.toString(),
-                amount,
-                paymentMethod,
-                notes,
-                // Dados para payment-multi
-                isMultiPayment,
-                debitIds: debitIds?.map(id => id.toString()),
-                payments,
-                requestedBy: req.user?._id?.toString(),
-                requestedAt: new Date().toISOString()
-            },
+            normalizedPayload,
             {
                 correlationId,
                 idempotencyKey,
@@ -92,19 +273,25 @@ router.post('/request', auth, async (req, res) => {
                     source: 'payment_api_v2',
                     userId: req.user?._id?.toString(),
                     ip: req.ip,
-                    userAgent: req.headers['user-agent']
+                    userAgent: req.headers['user-agent'],
+                    validationVersion: '2.0-blindado'
                 }
             }
         );
 
         console.log(`[PaymentV2] Evento publicado: ${eventResult.eventId}`, {
             correlationId,
+            type,
+            appointmentId: normalizedPayload.appointmentId,
+            patientId: normalizedPayload.patientId,
+            amount: normalizedPayload.amount,
             queue: eventResult.queue,
-            jobId: eventResult.jobId,
-            amount
+            jobId: eventResult.jobId
         });
 
-        // Retorna imediatamente (não espera processamento)
+        // ========================================
+        // ✅ RETORNA 202 ACCEPTED (não espera processamento)
+        // ========================================
         res.status(202).json({
             success: true,
             message: 'Pagamento enfileirado para processamento',
@@ -114,8 +301,9 @@ router.post('/request', auth, async (req, res) => {
                 idempotencyKey,
                 jobId: eventResult.jobId,
                 status: 'pending',
-                amount,
-                paymentMethod,
+                type,
+                amount: normalizedPayload.amount,
+                paymentMethod: normalizedPayload.paymentMethod,
                 checkStatusUrl: `/api/v2/payments/status/${eventResult.eventId}`
             }
         });
@@ -124,7 +312,8 @@ router.post('/request', auth, async (req, res) => {
         console.error('[PaymentV2] Erro ao publicar evento:', error);
         res.status(500).json({
             success: false,
-            error: 'Erro ao iniciar pagamento: ' + error.message
+            error: 'Erro ao iniciar pagamento: ' + error.message,
+            code: 'PUBLISH_ERROR'
         });
     }
 });
@@ -138,18 +327,27 @@ router.post('/balance/:patientId/multi', auth, async (req, res) => {
     const { payments, debitIds, totalAmount } = req.body;
 
     try {
-        // Validações
-        if (!mongoose.Types.ObjectId.isValid(patientId)) {
+        // ========================================
+        // 🛡️ VALIDAÇÃO RIGOROSA
+        // ========================================
+        if (!isValidObjectId(patientId)) {
             return res.status(400).json({
                 success: false,
-                error: 'ID de paciente inválido'
+                error: 'ID de paciente inválido',
+                code: 'INVALID_PATIENT_ID'
             });
         }
 
-        if (!payments?.length || !debitIds?.length || totalAmount <= 0) {
+        if (!payments?.length || !debitIds?.length || !totalAmount || totalAmount <= 0) {
             return res.status(400).json({
                 success: false,
-                error: 'Dados de pagamento inválidos'
+                error: 'Dados de pagamento inválidos',
+                code: 'INVALID_PAYMENT_DATA',
+                details: {
+                    hasPayments: !!payments?.length,
+                    hasDebitIds: !!debitIds?.length,
+                    totalAmount
+                }
             });
         }
 
@@ -162,25 +360,43 @@ router.post('/balance/:patientId/multi', auth, async (req, res) => {
         if (!balance?.transactions?.length) {
             return res.status(400).json({
                 success: false,
-                error: 'Não há débitos pendentes para este paciente'
+                error: 'Não há débitos pendentes para este paciente',
+                code: 'NO_PENDING_DEBITS'
             });
         }
 
+        // ========================================
+        // 🎯 GERA IDS
+        // ========================================
         const correlationId = `payment_multi_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const idempotencyKey = `payment_multi_${patientId}_${debitIds.sort().join('_')}`;
 
-        // 🎯 PUBLICA EVENTO: PAYMENT_PROCESS_REQUESTED (tipo multi)
+        // ========================================
+        // 📦 NORMALIZAÇÃO FORÇADA
+        // ========================================
+        const normalizedPayload = {
+            type: 'multi_payment',          // 🎯 SEMPRE definido
+            patientId: patientId.toString(),
+            appointmentId: null,            // null explicitamente
+            payments: payments.map(p => ({
+                ...p,
+                paymentMethod: normalizePaymentMethod(p.paymentMethod || 'dinheiro')
+            })),
+            debitIds: debitIds.map(id => id.toString()),
+            totalAmount: Number(totalAmount),
+            requestedBy: req.user?._id?.toString() || 'system',
+            requestedAt: new Date().toISOString(),
+            isMultiPayment: true,
+            source: 'v2_api_multi',
+            apiVersion: '2.0'
+        };
+
+        // ========================================
+        // 🚀 PUBLICA EVENTO
+        // ========================================
         const eventResult = await publishEvent(
             EventTypes.PAYMENT_PROCESS_REQUESTED,
-            {
-                type: 'multi_payment',
-                patientId: patientId.toString(),
-                payments,
-                debitIds: debitIds.map(id => id.toString()),
-                totalAmount,
-                requestedBy: req.user?._id?.toString(),
-                requestedAt: new Date().toISOString()
-            },
+            normalizedPayload,
             {
                 correlationId,
                 idempotencyKey,
@@ -189,7 +405,8 @@ router.post('/balance/:patientId/multi', auth, async (req, res) => {
                 priority: 7, // Prioridade alta para pagamentos
                 metadata: {
                     source: 'payment_multi_api_v2',
-                    userId: req.user?._id?.toString()
+                    userId: req.user?._id?.toString(),
+                    validationVersion: '2.0-blindado'
                 }
             }
         );
@@ -209,6 +426,7 @@ router.post('/balance/:patientId/multi', auth, async (req, res) => {
                 correlationId,
                 jobId: eventResult.jobId,
                 status: 'pending',
+                type: 'multi_payment',
                 totalAmount,
                 debitsCount: debitIds.length,
                 checkStatusUrl: `/api/v2/payments/status/${eventResult.eventId}`
@@ -219,7 +437,8 @@ router.post('/balance/:patientId/multi', auth, async (req, res) => {
         console.error('[PaymentV2] Erro no payment-multi:', error);
         res.status(500).json({
             success: false,
-            error: 'Erro ao iniciar pagamento múltiplo: ' + error.message
+            error: 'Erro ao iniciar pagamento múltiplo: ' + error.message,
+            code: 'MULTI_PAYMENT_ERROR'
         });
     }
 });
@@ -239,16 +458,22 @@ router.get('/status/:eventId', auth, async (req, res) => {
         if (!event) {
             return res.status(404).json({
                 success: false,
-                error: 'Evento não encontrado'
+                error: 'Evento não encontrado',
+                code: 'EVENT_NOT_FOUND'
             });
         }
 
-        // Busca pagamento relacionado
+        // Busca pagamento relacionado (com validação de ObjectId)
         let payment = null;
-        if (event.payload?.appointmentId) {
-            payment = await Payment.findOne({ 
-                appointment: event.payload.appointmentId 
-            }).select('status amount paymentMethod paidAt');
+        if (event.payload?.appointmentId && mongoose.Types.ObjectId.isValid(event.payload.appointmentId)) {
+            try {
+                payment = await Payment.findOne({ 
+                    appointment: event.payload.appointmentId 
+                }).select('status amount paymentMethod paidAt');
+            } catch (err) {
+                // Ignora erro de query - payment pode não existir ainda
+                console.log('[PaymentV2] Payment não encontrado para appointment:', event.payload.appointmentId);
+            }
         }
 
         res.json({
@@ -276,7 +501,8 @@ router.get('/status/:eventId', auth, async (req, res) => {
         console.error('[PaymentV2] Erro ao consultar status:', error);
         res.status(500).json({
             success: false,
-            error: 'Erro ao consultar status: ' + error.message
+            error: 'Erro ao consultar status: ' + error.message,
+            code: 'STATUS_QUERY_ERROR'
         });
     }
 });
@@ -295,15 +521,26 @@ router.post('/webhook', async (req, res) => {
     } = req.body;
 
     try {
-        // Validação básica
+        // ========================================
+        // 🛡️ VALIDAÇÃO
+        // ========================================
         if (!paymentId || !status) {
             return res.status(400).json({
                 success: false,
-                error: 'Campos obrigatórios: paymentId, status'
+                error: 'Campos obrigatórios: paymentId, status',
+                code: 'MISSING_WEBHOOK_FIELDS'
             });
         }
 
-        const correlationId = `webhook_${gateway}_${Date.now()}`;
+        if (!isValidObjectId(paymentId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'paymentId inválido',
+                code: 'INVALID_PAYMENT_ID'
+            });
+        }
+
+        const correlationId = `webhook_${gateway || 'unknown'}_${Date.now()}`;
 
         // Determina tipo de evento baseado no status
         const eventType = status === 'paid'
@@ -315,18 +552,62 @@ router.post('/webhook', async (req, res) => {
             .select('patient appointment status')
             .lean();
 
-        // 🎯 PUBLICA EVENTO de confirmação (PAYMENT_COMPLETED / PAYMENT_FAILED)
+        if (!paymentDoc) {
+            return res.status(404).json({
+                success: false,
+                error: 'Pagamento não encontrado',
+                code: 'PAYMENT_NOT_FOUND'
+            });
+        }
+
+        // ========================================
+        // 📦 NORMALIZAÇÃO
+        // ========================================
+        const normalizedPayload = {
+            type: 'webhook_confirmation',   // 🎯 SEMPRE definido
+            paymentId: paymentId.toString(),
+            patientId: paymentDoc.patient?.toString() || null,
+            appointmentId: paymentDoc.appointment?.toString() || null,
+            transactionId: transactionId || null,
+            status,
+            gateway: gateway || 'unknown',
+            confirmedAt: new Date().toISOString(),
+            previousStatus: paymentDoc.status,
+            metadata,
+            source: 'webhook',
+            apiVersion: '2.0'
+        };
+
+        // ========================================
+        // 🚀 PUBLICA EVENTO
+        // ========================================
         const eventResult = await publishEvent(
             eventType,
+            normalizedPayload,
             {
+                correlationId,
+                aggregateType: 'payment',
+                aggregateId: paymentId,
+                metadata: { 
+                    source: 'payment_webhook', 
+                    gateway,
+                    validationVersion: '2.0-blindado'
+                }
+            }
+        );
+
+        // 🔄 PUBLICA PAYMENT_STATUS_CHANGED — sincroniza appointment/session no sistema
+        await publishEvent(
+            EventTypes.PAYMENT_STATUS_CHANGED,
+            {
+                type: 'status_changed',
                 paymentId: paymentId.toString(),
-                patientId: paymentDoc?.patient?.toString(),
-                appointmentId: paymentDoc?.appointment?.toString(),
-                transactionId,
+                patientId: paymentDoc.patient?.toString() || null,
+                appointmentId: paymentDoc.appointment?.toString() || null,
+                previousStatus: paymentDoc.status,
                 status,
-                gateway,
-                confirmedAt: new Date().toISOString(),
-                metadata
+                changedAt: new Date().toISOString(),
+                source: 'webhook'
             },
             {
                 correlationId,
@@ -334,36 +615,15 @@ router.post('/webhook', async (req, res) => {
                 aggregateId: paymentId,
                 metadata: { source: 'payment_webhook', gateway }
             }
+        ).catch(err =>
+            console.warn('[PaymentV2] PAYMENT_STATUS_CHANGED não publicado (non-fatal):', err.message)
         );
-
-        // 🔄 PUBLICA PAYMENT_STATUS_CHANGED — sincroniza appointment/session no sistema
-        // (PAYMENT_COMPLETED cuida do WhatsApp; este cuida do estado interno)
-        if (paymentDoc) {
-            await publishEvent(
-                EventTypes.PAYMENT_STATUS_CHANGED,
-                {
-                    paymentId:      paymentId.toString(),
-                    patientId:      paymentDoc.patient?.toString(),
-                    appointmentId:  paymentDoc.appointment?.toString(),
-                    previousStatus: paymentDoc.status,
-                    status,
-                    changedAt:      new Date().toISOString(),
-                },
-                {
-                    correlationId,
-                    aggregateType: 'payment',
-                    aggregateId:   paymentId,
-                    metadata:      { source: 'payment_webhook', gateway }
-                }
-            ).catch(err =>
-                console.warn('[PaymentV2] PAYMENT_STATUS_CHANGED não publicado (non-fatal):', err.message)
-            );
-        }
 
         console.log(`[PaymentV2] Webhook processado: ${paymentId}`, {
             status,
             gateway,
-            eventId: eventResult.eventId
+            eventId: eventResult.eventId,
+            type: 'webhook_confirmation'
         });
 
         res.json({
@@ -371,7 +631,8 @@ router.post('/webhook', async (req, res) => {
             message: `Webhook ${status} processado`,
             data: {
                 eventId: eventResult.eventId,
-                correlationId
+                correlationId,
+                type: 'webhook_confirmation'
             }
         });
 
@@ -379,7 +640,8 @@ router.post('/webhook', async (req, res) => {
         console.error('[PaymentV2] Erro no webhook:', error);
         res.status(500).json({
             success: false,
-            error: 'Erro ao processar webhook: ' + error.message
+            error: 'Erro ao processar webhook: ' + error.message,
+            code: 'WEBHOOK_ERROR'
         });
     }
 });
@@ -413,7 +675,8 @@ router.get('/queue/status', auth, async (req, res) => {
     } catch (error) {
         res.status(500).json({
             success: false,
-            error: 'Erro ao consultar fila: ' + error.message
+            error: 'Erro ao consultar fila: ' + error.message,
+            code: 'QUEUE_STATUS_ERROR'
         });
     }
 });

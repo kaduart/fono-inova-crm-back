@@ -113,12 +113,31 @@ async function processPixTransaction(formattedPix, io) {
         // 🔹 Atualiza dados financeiros do pacote
         pkg.payments.push(paymentDoc._id);
         pkg.totalPaid = (pkg.totalPaid || 0) + amount;
-        pkg.balance = pkg.totalSessions * pkg.sessionValue - pkg.totalPaid;
+        
+        // Recalcula balance baseado nas sessões realizadas (sessionsDone), não no total do pacote
+        // Prepaid: totalValue - (sessionsDone * sessionValue) = crédito restante
+        // Per-session: (sessionsDone * sessionValue) - totalPaid = dívida (positivo) ou crédito (negativo)
+        const sessionsDone = pkg.sessionsDone || 0;
+        const usedValue = sessionsDone * (pkg.sessionValue || 0);
+        const totalValue = pkg.totalValue || (pkg.totalSessions * pkg.sessionValue) || 0;
+        
+        // 🔥 V2 HARD CUT: Não processa pacotes sem model
+        if (!pkg.model) {
+            throw new Error('PACKAGE_V2_INCOMPATIBLE: Pacote V1 não suportado no webhook V2');
+        }
+        const isPrepaid = pkg.model === 'prepaid';
+        
+        if (isPrepaid) {
+            pkg.balance = totalValue - usedValue; // Crédito restante (pode ser negativo se usou mais)
+        } else {
+            pkg.balance = usedValue - pkg.totalPaid; // Dívida (positivo) ou crédito (negativo)
+        }
+        
         pkg.financialStatus =
-            pkg.balance <= 0
+            Math.abs(pkg.balance) < 0.01
                 ? "paid"
                 : pkg.totalPaid > 0
-                    ? "partially_paid"
+                    ? pkg.balance < 0 ? "paid_with_credit" : "partially_paid"
                     : "unpaid";
         pkg.lastPaymentAt = new Date();
 

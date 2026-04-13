@@ -48,6 +48,10 @@ const isCompleted = (status) => ["completed"].includes((status || "").toLowerCas
 
 const getPaymentDate = (pay) => {
     if (!pay) return null;
+    // 🎯 PRIORIDADE: financialDate > paymentDate > createdAt
+    if (pay.financialDate) {
+        return moment(pay.financialDate).tz("America/Sao_Paulo").format("YYYY-MM-DD");
+    }
     if (typeof pay.paymentDate === "string" && pay.paymentDate.trim()) {
         return pay.paymentDate;
     }

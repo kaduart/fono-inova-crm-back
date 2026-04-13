@@ -1,175 +1,197 @@
 // services/paymentService.js
-export const handleSessionPayment = ({ pkg, amount, paymentMethod }) => {
-  if (!['fonoaudiologia', 'terapia_ocupacional', 'psicologia', 'fisioterapia', 'psicomotricidade', 'musicoterapia', 'psicopedagogia'].includes(pkg.type)) {
-    throw new Error('Tipo de terapia inválido para pagamento');
-  }
+/**
+ * 🎯 PAYMENT SERVICE - ÚNICA FONTE DE VERDADE
+ * 
+ * Regra de Ouro: NUNCA crie Payment diretamente.
+ * SEMPRE use este service.
+ * 
+ * Garantias:
+ * - Schema consistente
+ * - Campos obrigatórios preenchidos
+ * - Auditoria automática
+ * - Validações de negócio
+ */
 
-  const totalPaid = pkg.payments.reduce((sum, p) => sum + p.amount, 0);
-  const packageValue = pkg.totalSessions * amount;
-  const isFullyPaid = totalPaid >= packageValue;
-
-  // Se for per-session ou partial, ou se for full mas ainda não pago totalmente
-  if (pkg.paymentType !== 'full' || !isFullyPaid) {
-    const newPayment = {
-      amount,
-      date: new Date(),
-      paymentMethod,
-      status: pkg.paymentType === 'per-session' ? 'paid' : 'pending',
-    };
-    pkg.payments.push(newPayment);
-  }
-
-  return pkg;
-};
-
-import Appointment from '../models/Appointment.js';
 import Payment from '../models/Payment.js';
-import Session from '../models/Session.js';
 
-async function generateDailyReport(date) {
-  const startDate = new Date(date);
-  startDate.setHours(0, 0, 0, 0);
-  const endDate = new Date(date);
-  endDate.setHours(23, 59, 59, 999);
-
-  const [appointmentMetrics, sessionMetrics, paymentMetrics] = await Promise.all([
-    // 1. Agregações de Agendamentos
-    Appointment.aggregate([
-      { $match: { date: { $gte: startDate, $lte: endDate } } },
-      {
-        $facet: {
-          totals: [
-            {
-              $group: {
-                _id: null,
-                count: { $sum: 1 },
-                value: { $sum: { $ifNull: ["$sessionValue", 0] } },
-                absences: { $sum: { $cond: [{ $in: ["$operationalStatus", ["cancelado", "faltou"]] }, 1, 0] } },
-                estimatedLoss: { $sum: { $cond: [{ $in: ["$operationalStatus", ["cancelado", "faltou"]] }, { $ifNull: ["$sessionValue", 0] }, 0] } }
-              }
-            }
-          ],
-          byProfessional: [
-            { $lookup: { from: "doctors", localField: "doctor", foreignField: "_id", as: "doc" } },
-            { $unwind: { path: "$doc", preserveNullAndEmptyArrays: true } },
-            {
-              $group: {
-                _id: "$doctor",
-                doctorName: { $first: "$doc.fullName" },
-                scheduled: { $sum: 1 },
-                scheduledValue: { $sum: { $ifNull: ["$sessionValue", 0] } },
-                absences: { $sum: { $cond: [{ $in: ["$operationalStatus", ["cancelado", "faltou"]] }, 1, 0] } }
-              }
-            }
-          ]
+class PaymentService {
+    
+    /**
+     * 🏭 Cria um Payment padronizado (única forma permitida)
+     * 
+     * @param {Object} data - Dados do pagamento
+     * @param {string} data.patientId - ID do paciente (obrigatório)
+     * @param {string} data.appointmentId - ID do agendamento (opcional)
+     * @param {number} data.amount - Valor (obrigatório, > 0)
+     * @param {string} data.paymentMethod - Método (obrigatório)
+     * @param {string} data.billingType - 'particular' | 'convenio' | 'insurance'
+     * @param {string} data.status - 'pending' | 'paid' | 'partial' | etc
+     * @param {Date} data.paymentDate - Data do pagamento
+     * @param {Object} context - Contexto (source, userId, etc)
+     * @returns {Promise<Payment>} Payment criado e validado
+     */
+    static async create(data, context = {}) {
+        const { 
+            patientId, 
+            appointmentId, 
+            amount, 
+            paymentMethod = 'pix',
+            billingType = 'particular',
+            status = 'pending',
+            paymentDate = new Date(),
+            ...rest 
+        } = data;
+        
+        // 🛡️ VALIDAÇÕES RIGOROSAS (fail fast)
+        if (!patientId) throw new Error('[PaymentService] patientId obrigatório');
+        if (!amount || amount <= 0) throw new Error('[PaymentService] amount deve ser > 0');
+        if (!['particular', 'convenio', 'insurance'].includes(billingType)) {
+            throw new Error(`[PaymentService] billingType inválido: ${billingType}`);
         }
-      }
-    ]),
-
-    // 2. Agregações de Sessões
-    Session.aggregate([
-      { $match: { date: { $gte: startDate, $lte: endDate }, status: 'completed' } },
-      {
-        $group: {
-          _id: "$doctor",
-          completed: { $sum: 1 },
-          completedValue: { $sum: { $ifNull: ["$sessionValue", 0] } }
+        
+        // 📋 SCHEMA PADRONIZADO (única fonte de verdade)
+        const paymentData = {
+            // Referências (ObjectId + String para compatibilidade)
+            patient: patientId,
+            patientId: patientId.toString(),
+            
+            ...(appointmentId && {
+                appointment: appointmentId,
+                appointmentId: appointmentId.toString()
+            }),
+            
+            // Dados financeiros
+            amount: Number(amount),
+            paymentMethod,
+            billingType,  // 🎯 SEMPRE preenchido
+            status,
+            
+            // Datas (fonte única de verdade)
+            paymentDate: new Date(paymentDate),
+            financialDate: status === 'paid' ? new Date() : null,
+            
+            // Metadata
+            source: context.source || 'api',
+            createdBy: context.userId || null,
+            
+            // Restante dos dados
+            ...rest
+        };
+        
+        // 💾 Criação com validação completa
+        const payment = new Payment(paymentData);
+        await payment.save();
+        
+        console.log(`[PaymentService] Criado: ${payment._id} | ${billingType} | ${status} | R$${amount}`);
+        
+        return payment;
+    }
+    
+    /**
+     * 💰 Marca como pago (única forma permitida de atualizar status)
+     * 
+     * @param {string} paymentId - ID do payment
+     * @param {Object} dados - { paymentMethod, paidAt, userId }
+     * @returns {Promise<Payment>} Payment atualizado
+     */
+    static async markAsPaid(paymentId, dados = {}) {
+        const { paymentMethod, paidAt = new Date(), userId } = dados;
+        
+        const update = {
+            status: 'paid',
+            paidAt: new Date(paidAt),
+            confirmedAt: new Date(),
+            financialDate: new Date(paidAt),  // 🎯 Fonte única de verdade
+            ...(paymentMethod && { paymentMethod }),
+            ...(userId && { confirmedBy: userId })
+        };
+        
+        const payment = await Payment.findByIdAndUpdate(
+            paymentId,
+            { $set: update },
+            { new: true }
+        );
+        
+        if (!payment) throw new Error(`[PaymentService] Payment não encontrado: ${paymentId}`);
+        
+        console.log(`[PaymentService] Pago: ${paymentId} | R$${payment.amount}`);
+        
+        return payment;
+    }
+    
+    /**
+     * 🔍 Valida consistência de um payment (auditoria)
+     * 
+     * @param {string} paymentId 
+     * @returns {Object} { valido: boolean, erros: string[] }
+     */
+    static async audit(paymentId) {
+        const payment = await Payment.findById(paymentId).lean();
+        
+        if (!payment) return { valido: false, erros: ['Payment não encontrado'] };
+        
+        const erros = [];
+        
+        // Check campos obrigatórios
+        if (!payment.patient) erros.push('patient ausente');
+        if (!payment.billingType) erros.push('billingType ausente');
+        if (!payment.paymentDate) erros.push('paymentDate ausente');
+        
+        // Check consistência
+        if (payment.status === 'paid') {
+            if (!payment.paidAt) erros.push('paid é obrigatório quando status=paid');
+            if (!payment.financialDate) erros.push('financialDate ausente em payment pago');
         }
-      }
-    ]),
-
-    // 3. Agregações de Pagamentos
-    Payment.aggregate([
-      { $match: { createdAt: { $gte: startDate, $lte: endDate }, status: 'paid' } },
-      {
-        $facet: {
-          totals: [
-            {
-              $group: {
-                _id: null,
-                count: { $sum: 1 },
-                value: { $sum: { $ifNull: ["$amount", 0] } },
-                dinheiro: { $sum: { $cond: [{ $eq: ["$paymentMethod", "dinheiro"] }, "$amount", 0] } },
-                pix: { $sum: { $cond: [{ $eq: ["$paymentMethod", "pix"] }, "$amount", 0] } },
-                cartao: { $sum: { $cond: [{ $in: ["$paymentMethod", ["debito", "credito", "cartão"]] }, "$amount", 0] } }
-              }
+        
+        // Check valores
+        if (payment.amount <= 0) erros.push('amount deve ser > 0');
+        
+        return {
+            valido: erros.length === 0,
+            erros,
+            payment: payment._id
+        };
+    }
+    
+    /**
+     * 🧹 Auditoria em massa (roda periodicamente)
+     * 
+     * @param {Date} since - Data inicial para verificar
+     * @returns {Object} { total, validos, invalidos, corrigidos }
+     */
+    static async auditMass(since = new Date(Date.now() - 24 * 60 * 60 * 1000)) {
+        const payments = await Payment.find({
+            createdAt: { $gte: since }
+        }).lean();
+        
+        let validos = 0;
+        let invalidos = 0;
+        let corrigidos = 0;
+        
+        for (const p of payments) {
+            const audit = await this.audit(p._id);
+            
+            if (audit.valido) {
+                validos++;
+            } else {
+                invalidos++;
+                console.warn(`[PaymentService][AUDIT] ${p._id}: ${audit.erros.join(', ')}`);
+                
+                // Auto-corrige se possível
+                if (audit.erros.includes('billingType ausente')) {
+                    await Payment.updateOne(
+                        { _id: p._id },
+                        { $set: { billingType: 'particular' } }
+                    );
+                    corrigidos++;
+                }
             }
-          ],
-          byProfessional: [
-            {
-              $group: {
-                _id: "$doctor",
-                total: { $sum: { $ifNull: ["$amount", 0] } },
-                dinheiro: { $sum: { $cond: [{ $eq: ["$paymentMethod", "dinheiro"] }, "$amount", 0] } },
-                pix: { $sum: { $cond: [{ $eq: ["$paymentMethod", "pix"] }, "$amount", 0] } },
-                cartao: { $sum: { $cond: [{ $in: ["$paymentMethod", ["debito", "credito", "cartão"]] }, "$amount", 0] } }
-              }
-            }
-          ]
         }
-      }
-    ]
-    )]);
-
-  // Processar resultados das agregações
-  const aptTotals = appointmentMetrics[0].totals[0] || { count: 0, value: 0, absences: 0, estimatedLoss: 0 };
-  const payTotals = paymentMetrics[0].totals[0] || { count: 0, value: 0, dinheiro: 0, pix: 0, cartao: 0 };
-
-  const report = {
-    date: date.toLocaleDateString('pt-BR'),
-    period: { start: startDate.toISOString(), end: endDate.toISOString() },
-    totals: {
-      scheduled: { count: aptTotals.count, value: aptTotals.value },
-      completed: {
-        count: sessionMetrics.reduce((s, m) => s + m.completed, 0),
-        value: sessionMetrics.reduce((s, m) => s + m.completedValue, 0)
-      },
-      payments: {
-        count: payTotals.count,
-        value: payTotals.value,
-        methods: { dinheiro: payTotals.dinheiro, pix: payTotals.pix, cartão: payTotals.cartao }
-      },
-      absences: { count: aptTotals.absences, estimatedLoss: aptTotals.estimatedLoss }
-    },
-    byProfessional: {}
-  };
-
-  // Unificar dados por profissional
-  const professionals = {};
-
-  // Mapear agendamentos
-  appointmentMetrics[0].byProfessional.forEach(p => {
-    const id = p._id.toString();
-    professionals[id] = {
-      doctorId: id,
-      doctorName: p.doctorName || 'N/A',
-      scheduled: p.scheduled,
-      scheduledValue: p.scheduledValue,
-      completed: 0,
-      completedValue: 0,
-      absences: p.absences,
-      payments: { total: 0, methods: { dinheiro: 0, pix: 0, cartão: 0 } }
-    };
-  });
-
-  // Mesclar sessões
-  sessionMetrics.forEach(p => {
-    const id = p._id.toString();
-    if (!professionals[id]) professionals[id] = { doctorId: id, doctorName: 'N/A', scheduled: 0, scheduledValue: 0, completed: 0, completedValue: 0, absences: 0, payments: { total: 0, methods: { dinheiro: 0, pix: 0, cartão: 0 } } };
-    professionals[id].completed = p.completed;
-    professionals[id].completedValue = p.completedValue;
-  });
-
-  // Mesclar pagamentos
-  paymentMetrics[0].byProfessional.forEach(p => {
-    const id = p._id.toString();
-    if (!professionals[id]) professionals[id] = { doctorId: id, doctorName: 'N/A', scheduled: 0, scheduledValue: 0, completed: 0, completedValue: 0, absences: 0, payments: { total: 0, methods: { dinheiro: 0, pix: 0, cartão: 0 } } };
-    professionals[id].payments.total = p.total;
-    professionals[id].payments.methods.dinheiro = p.dinheiro;
-    professionals[id].payments.methods.pix = p.pix;
-    professionals[id].payments.methods.cartão = p.cartao;
-  });
-
-  report.byProfessional = Object.values(professionals);
-  return report;
+        
+        console.log(`[PaymentService][AUDIT] Total: ${payments.length} | ✅ ${validos} | ❌ ${invalidos} | 🔧 ${corrigidos}`);
+        
+        return { total: payments.length, validos, invalidos, corrigidos };
+    }
 }
+
+export default PaymentService;

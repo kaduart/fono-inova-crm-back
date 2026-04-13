@@ -2,8 +2,9 @@
 import { startPaymentWorker } from './paymentWorker.js';
 import { startBalanceWorker } from './balanceWorker.js';
 import { startPackageValidationWorker } from './packageValidationWorker.js';
+import { startReconciliationWorker } from './reconciliationWorker.js';
 import { startAppointmentWorker } from './appointmentWorker.js';
-import { startCancelOrchestratorWorker } from './cancelOrchestratorWorker.js';
+import { startCancelOrchestratorWorkerV2 } from './cancelOrchestratorWorker.v2.js';
 import { startCompleteOrchestratorWorker } from './completeOrchestratorWorker.js';
 import { startCreateAppointmentWorker } from './createAppointmentWorker.js';
 import { startOutboxWorker } from './outboxWorker.js';
@@ -13,9 +14,11 @@ import { startLeadOrchestratorWorker } from './leadOrchestratorWorker.js';
 import { startFollowupOrchestratorWorker } from './followupOrchestratorWorker.js';
 import { startNotificationOrchestratorWorker } from './notificationOrchestratorWorker.js';
 import { startUpdateOrchestratorWorker } from './updateOrchestratorWorker.js';
+import { startAppointmentIntegrationWorker } from './appointmentIntegrationWorker.js';
 import { startInsuranceOrchestratorWorker } from '../domains/billing/workers/index.js';
 import { startBillingConsumerWorker } from '../domains/billing/workers/billingConsumerWorker.js';
 import { startDailyClosingWorker } from './dailyClosingWorker.js';
+import { startLeadRecoveryWorker } from './leadRecoveryWorker.js';
 import { startTotalsWorker } from './totalsWorker.js';
 // 🆕 Patients V2 Workers
 import { patientWorker } from '../domains/clinical/workers/patientWorker.js';
@@ -32,7 +35,10 @@ import { startIntegrationOrchestratorWorker } from '../domains/integration/worke
 import { startLeadOrchestratorWorkerV2 } from '../domains/whatsapp/workers/leadOrchestratorWorker.v2.js';
 import { createMessageResponseWorker } from '../domains/whatsapp/workers/messageResponseWorker.js';
 import { createWhatsappSendWorker } from '../domains/whatsapp/workers/whatsappSendWorker.js';
-import { createWhatsappInboundWorker } from '../domains/whatsapp/workers/whatsappInboundWorker.js';
+import { createWhatsappInboundWorker }    from '../domains/whatsapp/workers/whatsappInboundWorker.js';
+import { createWhatsappAutoReplyWorker } from '../domains/whatsapp/workers/whatsappAutoReplyWorker.js';
+import { createContextBuilderWorker } from '../domains/whatsapp/workers/contextBuilderWorker.js';
+import { createConversationStateWorker } from '../domains/whatsapp/workers/conversationStateWorker.js';
 
 /**
  * Inicializa todos os workers da aplicação
@@ -58,10 +64,10 @@ export async function startAllWorkers() {
     // 3. Workers orquestradores (novos - 4.0 completa)
     // 🔴 Agora são async para garantir conexão Mongo
     try {
-        workers.push(await startCancelOrchestratorWorker());
-        console.log('[Workers] ✅ CancelOrchestratorWorker iniciado');
+        workers.push(await startCancelOrchestratorWorkerV2());
+        console.log('[Workers] ✅ CancelOrchestratorWorkerV2 (Financial Guard) iniciado');
     } catch (err) {
-        console.error('[Workers] ❌ Erro ao iniciar CancelOrchestratorWorker:', err.message);
+        console.error('[Workers] ❌ Erro ao iniciar CancelOrchestratorWorkerV2:', err.message);
     }
     
     try {
@@ -75,6 +81,10 @@ export async function startAllWorkers() {
     workers.push(startInvoiceWorker());
     workers.push(startDailyClosingWorker());
     workers.push(startTotalsWorker());
+    workers.push(startReconciliationWorker()); // 🎯 Auto-healing financeiro
+    console.log('[Workers] ✅ ReconciliationWorker iniciado');
+    workers.push(startLeadRecoveryWorker());
+    console.log('[Workers] ✅ LeadRecoveryWorker iniciado');
     
     // 5. Sync Medical Worker (processa eventos médicos)
     workers.push(startSyncMedicalWorker());
@@ -85,6 +95,10 @@ export async function startAllWorkers() {
     
     // 7. Update Worker (genérico para edits)
     workers.push(startUpdateOrchestratorWorker());
+    
+    // 7.5. Appointment Integration Worker (side effects)
+    workers.push(startAppointmentIntegrationWorker());
+    console.log('[Workers] ✅ AppointmentIntegrationWorker iniciado');
     
     // 8. Notification Worker (desacoplado)
     workers.push(startNotificationOrchestratorWorker());
@@ -136,6 +150,18 @@ export async function startAllWorkers() {
     // 17. 📲 WhatsApp Inbound Worker (processa mensagens recebidas de forma async)
     workers.push(createWhatsappInboundWorker());
     console.log('[Workers] ✅ WhatsappInboundWorker iniciado');
+
+    // 18. 🧠 Context Builder Worker (inteligência de contexto antes da Amanda)
+    workers.push(createContextBuilderWorker());
+    console.log('[Workers] ✅ ContextBuilderWorker iniciado');
+    
+    // 18.1 💬 Conversation State Worker (memória de curto prazo)
+    workers.push(createConversationStateWorker());
+    console.log('[Workers] ✅ ConversationStateWorker iniciado');
+    
+    // 19. 🤖 WhatsApp Auto Reply Worker (Amanda FSM — fora da hot path)
+    workers.push(createWhatsappAutoReplyWorker());
+    console.log('[Workers] ✅ WhatsappAutoReplyWorker iniciado');
 
     console.log('\n[Workers] Todos os workers iniciados!\n');
 

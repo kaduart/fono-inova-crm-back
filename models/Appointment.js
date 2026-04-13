@@ -138,7 +138,7 @@ const appointmentSchema = new mongoose.Schema({
   },
   billingType: {
     type: String,
-    enum: ['particular', 'convenio'],
+    enum: ['particular', 'convenio', 'liminar'],
     default: 'particular'
   },
   insuranceProvider: { type: String, default: null },
@@ -312,6 +312,12 @@ appointmentSchema.index({ clinicId: 1, date: 1, operationalStatus: 1 });
 appointmentSchema.index({ patient: 1, date: 1 });
 // Query por data sem filtro de clínica (fallback/global)
 appointmentSchema.index({ date: 1, operationalStatus: 1 });
+// 🔥 OTIMIZAÇÃO: Query calendário por doutor (mais comum)
+appointmentSchema.index({ doctor: 1, date: 1 });
+// 🔥 OTIMIZAÇÃO: Query calendário por doutor + status
+appointmentSchema.index({ doctor: 1, date: 1, operationalStatus: 1 });
+// 🔥 OTIMIZAÇÃO: Query por período só (quando não filtra por doctor/patient)
+appointmentSchema.index({ date: -1 });
 
 // ─── VIRTUAL ────────────────────────────────────────────────
 appointmentSchema.virtual('daysUntilDate').get(function () {

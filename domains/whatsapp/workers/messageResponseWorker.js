@@ -12,6 +12,7 @@
 
 import { Worker } from 'bullmq';
 import { bullMqConnection } from '../../../config/redisConnection.js';
+import { moveToDLQ } from '../../../infrastructure/queue/queueConfig.js';
 import logger from '../../../utils/logger.js';
 import Followup from '../../../models/Followup.js';
 import { publishEvent, EventTypes } from '../../../infrastructure/events/eventPublisher.js';
@@ -95,15 +96,18 @@ export function createMessageResponseWorker(deps) {
         logger.error('[MessageResponseWorker] Error', {
           error: error.message,
           leadId,
-          correlationId
+          correlationId,
+          attempts: job.attemptsMade
         });
         
+        // 🎯 DLQ: mover para fila de mortos após 3 tentativas
+        if (job.attemptsMade >= 3) {
+          await moveToDLQ(job, error, 'message-response-dlq');
+          logger.error('[MessageResponseWorker] Moved to DLQ', { jobId: job.id, leadId });
+        }
+        
         // ❗ IMPORTANTE: não quebra fluxo principal — esse worker é side-effect
-        return {
-          status: 'failed',
-          error: error.message,
-          nonBlocking: true
-        };
+        throw error; // Re-lança para BullMQ gerenciar retry
       }
     },
     {
@@ -112,6 +116,15 @@ export function createMessageResponseWorker(deps) {
       limiter: {
         max: 50,
         duration: 1000
+      },
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: {
+          type: 'fixed',
+          delay: 5000
+        },
+        removeOnComplete: 100,
+        removeOnFail: 50
       }
     }
   );

@@ -241,6 +241,13 @@ router.get('/:id', flexibleAuth, async (req, res) => {
     
     const duration = Date.now() - startTime;
     
+    // ✅ NORMALIZAÇÃO: Garante que _id seja o patientId real (não o ID da view)
+    const normalizedView = {
+      ...view,
+      _id: view.patientId?.toString() || view._id.toString(),
+      id: view.patientId?.toString() || view._id.toString(),
+    };
+    
     logger.info(`[${correlationId}] ✅ Get completed`, {
       patientId: id,
       source,
@@ -249,7 +256,7 @@ router.get('/:id', flexibleAuth, async (req, res) => {
       fallbackTriggered
     });
     
-    return res.json(formatSuccess(view, null, 200, {
+    return res.json(formatSuccess(normalizedView, null, 200, {
       meta: {
         duration: `${duration}ms`,
         source,

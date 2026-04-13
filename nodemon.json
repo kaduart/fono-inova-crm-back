@@ -1,0 +1,1 @@
+{"watch":["*.js","routes/**/*.js","models/**/*.js","controllers/**/*.js","services/**/*.js"],"ignore":["tests/**","scripts/**","logs/**","node_modules/**"],"ext":"js,json"}

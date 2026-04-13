@@ -1,12 +1,11 @@
 // back/routes/package.v2.js
 /**
- * Package Routes V2 - CQRS Read API
+ * Package Routes V2 - CQRS Read API + Synchronous Create
  * 
  * Características:
- * - Só leitura (GET)
+ * - POST: Criação síncrona com agenda completa (novo)
+ * - GET: Leitura otimizada via PackagesView (CQRS)
  * - Fallback inteligente (build on miss)
- * - Meta de performance
- * - Sem lógica de negócio (só orquestra)
  */
 
 import express from 'express';
@@ -21,10 +20,12 @@ import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Payment from '../models/Payment.js';
 import { buildPackageView } from '../domains/billing/services/PackageProjectionService.js';
-import { handlePackageCreate } from '../domains/billing/workers/packageProcessingWorker.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
 import { createContextLogger } from '../utils/logger.js';
 import healthRoutes from './package.v2.health.js';
+
+// 🆕 NOVO: Controller síncrono para criação com agenda
+import { createPackageV2, listPackagesV2, getPackageV2 } from '../controllers/packageController.v2.js';
 
 const router = express.Router();
 const logger = createContextLogger('PackageV2');
@@ -51,110 +52,10 @@ function parseQueryOptions(req) {
 
 // ============================================
 // POST /api/v2/packages
-// Cria novo pacote (event-driven)
+// Cria novo pacote com agenda completa (SÍNCRONO)
 // ============================================
 
-router.post('/', flexibleAuth, async (req, res) => {
-  const startTime = Date.now();
-  const correlationId = `pkg_create_${Date.now()}`;
-  const requestId = uuidv4();
-  
-  try {
-    const {
-      patientId,
-      doctorId,
-      specialty,
-      sessionType,
-      sessionValue,
-      totalSessions,
-      selectedSlots,
-      paymentMethod,
-      paymentType,
-      type,
-      notes,
-      payments,
-      date,
-      durationMonths,
-      sessionsPerWeek,
-      calculationMode,
-      appointmentId,
-      liminarProcessNumber,
-      liminarCourt,
-      liminarExpirationDate,
-      liminarMode,
-      liminarAuthorized
-    } = req.body;
-    
-    // Validação básica
-    if (!patientId || !doctorId || !totalSessions) {
-      return res.status(400).json(formatError(
-        'Campos obrigatórios: patientId, doctorId, totalSessions',
-        400,
-        { correlationId }
-      ));
-    }
-    
-    logger.info('[PackageV2] Creating package', {
-      correlationId,
-      requestId,
-      patientId,
-      totalSessions
-    });
-    
-    // Cria pacote de forma síncrona (garante read-your-writes)
-    const createResult = await handlePackageCreate({
-      patientId,
-      doctorId,
-      specialty,
-      sessionType,
-      sessionValue,
-      totalSessions,
-      selectedSlots,
-      paymentMethod,
-      paymentType,
-      type: type || 'therapy',
-      notes,
-      payments,
-      date,
-      durationMonths,
-      sessionsPerWeek,
-      calculationMode,
-      appointmentId,
-      liminarProcessNumber,
-      liminarCourt,
-      liminarExpirationDate,
-      liminarMode,
-      liminarAuthorized,
-      requestId,
-      createdBy: req.user?._id
-    }, correlationId);
-    
-    // Força build da projection para leitura imediata
-    const buildResult = await buildPackageView(createResult.packageId, {
-      correlationId,
-      force: true
-    });
-    
-    const duration = Date.now() - startTime;
-    
-    res.status(201).json(formatSuccess({
-      package: buildResult.view,
-      requestId,
-      correlationId,
-      status: 'created'
-    }, {
-      duration: `${duration}ms`
-    }));
-    
-  } catch (error) {
-    logger.error('[PackageV2] Error creating package', {
-      correlationId,
-      error: error.message,
-      stack: error.stack
-    });
-    res.status(500).json(formatError(error.message || 'Erro ao criar pacote', 500, { correlationId }));
-  }
-});
+router.post('/', flexibleAuth, createPackageV2);
 
 // ============================================
 // GET /api/v2/packages
@@ -478,41 +379,93 @@ router.delete('/:id', flexibleAuth, async (req, res) => {
     const realPackageId = view?.packageId || viewId; // fallback pro próprio id
     const pkgObjectId = new mongoose.Types.ObjectId(realPackageId);
 
-    // Deleta tudo em paralelo usando o ID real do Package
-    const [pkgResult, appointmentsResult, sessionsResult, paymentsResult] = await Promise.all([
-      Package.findByIdAndDelete(pkgObjectId),
-      Appointment.deleteMany({ package: pkgObjectId }),
-      Session.deleteMany({ package: pkgObjectId }),
-      Payment.deleteMany({ package: pkgObjectId })
-    ]);
+    // 🛡️ Hardening: Executa em sequência para evitar write conflicts
+    // e adiciona retry logic para transações
+    let retries = 0;
+    const maxRetries = 3;
+    let lastError;
 
-    // Remove a view pelo _id dela
-    await PackagesView.findByIdAndDelete(viewId);
+    while (retries < maxRetries) {
+      try {
+        // Delete em sequência (não paralelo) para evitar conflitos
+        const pkgResult = await Package.findByIdAndDelete(pkgObjectId);
+        
+        if (!pkgResult) {
+          logger.warn('[PackageV2] Package not found for deletion', { correlationId, packageId: id });
+        }
 
-    const duration = Date.now() - startTime;
+        // Só deleta relacionados se o package existia
+        if (pkgResult) {
+          await Appointment.deleteMany({ package: pkgObjectId });
+          await Session.deleteMany({ package: pkgObjectId });
+          await Payment.deleteMany({ package: pkgObjectId });
+        }
 
-    logger.info('[PackageV2] Package deleted', {
-      correlationId,
-      packageId: id,
-      found: !!pkgResult,
-      appointments: appointmentsResult.deletedCount,
-      sessions: sessionsResult.deletedCount,
-      payments: paymentsResult.deletedCount
-    });
+        // Remove a view pelo _id dela
+        await PackagesView.findByIdAndDelete(viewId);
 
-    res.status(200).json(formatSuccess({
-      packageId: id,
-      deleted: true,
-      counts: {
-        appointments: appointmentsResult.deletedCount,
-        sessions: sessionsResult.deletedCount,
-        payments: paymentsResult.deletedCount
+        const duration = Date.now() - startTime;
+
+        logger.info('[PackageV2] Package deleted', {
+          correlationId,
+          packageId: id,
+          found: !!pkgResult,
+          retry: retries
+        });
+
+        return res.status(200).json(formatSuccess({
+          packageId: id,
+          deleted: !!pkgResult,
+          retry: retries
+        }, { duration: `${duration}ms`, correlationId }));
+
+      } catch (retryError) {
+        lastError = retryError;
+        
+        // Se for write conflict, faz retry com backoff
+        if (retryError.message?.includes('Write conflict') || 
+            retryError.message?.includes('transaction')) {
+          retries++;
+          const delay = Math.pow(2, retries) * 100; // 200ms, 400ms, 800ms
+          logger.warn('[PackageV2] Write conflict, retrying...', { 
+            correlationId, 
+            retry: retries, 
+            delay,
+            error: retryError.message 
+          });
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        // Outro erro, não faz retry
+        throw retryError;
       }
-    }, { duration: `${duration}ms` }));
+    }
+
+    // Se esgotou retries
+    throw lastError || new Error('Max retries exceeded');
 
   } catch (error) {
-    logger.error('[PackageV2] Error deleting package', { correlationId, error: error.message });
-    res.status(500).json(formatError('INTERNAL_ERROR', 'Erro ao deletar pacote', { correlationId }));
+    logger.error('[PackageV2] Error deleting package', { 
+      correlationId, 
+      error: error.message,
+      code: error.code 
+    });
+    
+    // Retorna erro específico para write conflict
+    if (error.message?.includes('Write conflict')) {
+      return res.status(409).json(formatError(
+        'WRITE_CONFLICT', 
+        'Conflito de escrita detectado. Por favor, tente novamente.', 
+        { correlationId, retryable: true }
+      ));
+    }
+    
+    res.status(500).json(formatError(
+      'INTERNAL_ERROR', 
+      'Erro ao deletar pacote', 
+      { correlationId, message: error.message }
+    ));
   }
 });
 

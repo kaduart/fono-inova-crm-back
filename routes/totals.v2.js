@@ -76,10 +76,10 @@ router.get('/', async (req, res) => {
         const rangeStart = new Date(startStr);
         const rangeEnd = new Date(endStr);
 
-        // MATCH: Date direto no paymentDate (igual no banco)
+        // MATCH: Fonte única de verdade = financialDate (V2)
         const matchStage = {
             status: { $ne: 'canceled' },
-            paymentDate: { $gte: rangeStart, $lte: rangeEnd }
+            financialDate: { $gte: rangeStart, $lte: rangeEnd }
         };
         if (clinicId) matchStage.clinicId = clinicId;
 
@@ -97,7 +97,7 @@ router.get('/', async (req, res) => {
                 }}
             ]),
             Expense.aggregate([
-                { $match: { status: { $ne: 'canceled' }, date: { $gte: startStr.split('T')[0], $lte: endStr.split('T')[0] } } },
+                { $match: { status: { $ne: 'canceled' }, createdAt: { $gte: rangeStart, $lte: rangeEnd } } },
                 { $group: { _id: null, totalExpenses: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$amount', 0] } }, countExpenses: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, 1, 0] } } } }
             ]),
             PackagesView.aggregate([{ $match: { status: { $in: ['active', 'finished'] } } }, { $group: { _id: null, contractedRevenue: { $sum: '$totalValue' }, cashReceived: { $sum: '$totalPaid' }, deferredRevenue: { $sum: { $multiply: ['$sessionsRemaining', '$sessionValue'] } }, deferredSessions: { $sum: '$sessionsRemaining' }, recognizedRevenue: { $sum: { $multiply: ['$sessionsUsed', '$sessionValue'] } }, recognizedSessions: { $sum: '$sessionsUsed' }, totalSessions: { $sum: '$totalSessions' }, activePackages: { $sum: 1 } } }]),

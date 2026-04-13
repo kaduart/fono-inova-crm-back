@@ -4,248 +4,29 @@ import mongoose from 'mongoose';
 import { redisConnection as redis } from '../config/redisConnection.js';
 import { getIo } from "../config/socket.js";
 import Contacts from '../models/Contacts.js';
-import Followup from "../models/Followup.js";
 import Lead from '../models/Leads.js';
 import Message from "../models/Message.js";
 import Patient from '../models/Patient.js';
-import { describeWaImage, transcribeWaAudio } from "../services/aiAmandaService.js";
 import * as bookingService from '../services/amandaBookingService.js';
-import { createSmartFollowupForLead } from "../services/followupOrchestrator.js";
-import { analyzeLeadMessage } from '../services/intelligence/leadIntelligence.js';
-import { checkFollowupResponse } from "../services/responseTrackingService.js";
 import Logger from '../services/utils/Logger.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
-import { resolveMediaUrl, sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
+import { sendTemplateMessage, sendTextMessage } from "../services/whatsappService.js";
 
-import { getOptimizedAmandaResponse } from '../orchestrators/AmandaOrchestrator.js';
-import WhatsAppOrchestrator from '../orchestrators/WhatsAppOrchestrator.js';
 import { withLeadLock } from '../services/LockManager.js';
-import { mapFlagsToBookingProduct } from '../utils/bookingProductMapper.js';
 import { deriveFlagsFromText } from "../utils/flagsDetector.js";
 import { normalizeE164BR, sanitizePhoneBeforeSend } from "../utils/phone.js";
 import { resolveLeadByPhone } from './leadController.js';
-import { cancelRecovery } from '../services/leadRecoveryService.js';
+import { extractTrackingFromMessage } from '../utils/trackingExtractor.js';
+import { extractMessageContent } from '../utils/whatsappMediaExtractor.js';
+import { formatWhatsAppResponse } from '../utils/whatsappFormatter.js';
+import { createContextLogger } from '../utils/logger.js';
+import { runOrchestrator } from '../services/orchestrator/runOrchestrator.js';
 
 const AUTO_TEST_NUMBERS = [
-    "5561981694922", "5561981694922", "556292013573", "5562992013573"
+    "5561981694922", "556292013573", "5562992013573"
 ];
 
-// 🛡️ FIX: Cache para evitar processamento duplicado de mensagens
-const processedWamids = new Set();
-const MAX_WAMID_CACHE_SIZE = 1000;
-
 const logger = new Logger('whatsappController');
-
-// ============================================================
-// 📝 FORMATAÇÃO DE TEXTO PARA WHATSAPP (melhor legibilidade)
-// ============================================================
-/**
- * Formata texto para WhatsApp garantindo espaçamento adequado entre parágrafos
- * Isso melhora a leitura no celular
- */
-function formatWhatsAppResponse(text) {
-    if (!text || typeof text !== 'string') return text;
-    
-    // 1. Normaliza quebras de linha
-    let formatted = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    
-    // 2. Remove múltiplas quebras consecutivas (mais de 2) → reduz para 2
-    formatted = formatted.replace(/\n{3,}/g, '\n\n');
-    
-    // 3. Adiciona espaçamento após pontos finais seguidos de texto (se não houver quebra)
-    // Detecta padrões como: "...desenvolvimento.El" e converte para "...desenvolvimento.\n\nEl"
-    formatted = formatted.replace(/([.!?])([A-Z][a-z])/g, '$1\n\n$2');
-    
-    // 4. Garante que bullets/listas tenham espaçamento antes
-    formatted = formatted.replace(/([^\n])(\n[•\-\*]\s)/g, '$1\n$2');
-    
-    // 5. Remove espaços extras no final de linhas
-    formatted = formatted.split('\n').map(line => line.trimEnd()).join('\n');
-    
-    return formatted.trim();
-}
-
-// ============================================================
-// 🎯 TRACKING DE ORIGEM DA MENSAGEM (Google Ads / Meta)
-// ============================================================
-/**
- * Extrai dados de tracking da mensagem do WhatsApp
- * Formato: ---ref:source|campaign|clickId|utm_params
- */
-function extractTrackingFromMessage(message) {
-    if (!message || typeof message !== 'string') return null;
-    
-    // Procura pelo padrão ---ref:... no final da mensagem
-    const match = message.match(/---ref:([^|]+)\|([^|]+)\|([^|]+)\|(.+)$/);
-    if (!match) return null;
-    
-    const [_, source, campaign, clickId, utmPart] = match;
-    
-    // Parse dos params UTM
-    const utmParams = {};
-    utmPart.split('|').forEach(param => {
-        const [key, value] = param.split('=');
-        if (key && value && value !== 'none') {
-            utmParams[key] = value;
-        }
-    });
-    
-    return {
-        source: source !== 'none' ? source : null,
-        campaign: campaign !== 'none' ? campaign : null,
-        clickId: clickId !== 'none' ? clickId : null,
-        ...utmParams
-    };
-}
-
-// ============================================================
-// 🧠 CLASSIFICAÇÃO INTELIGENTE DO LEAD (Persona/Intenção)
-// ============================================================
-
-function mapTherapyToDor(especialidade) {
-    const dorMap = {
-        'fonoaudiologia': 'atraso_fala_comunicacao',
-        'psicologia': 'comportamento_emocional',
-        'neuropsicologia': 'aprendizagem_cognitivo',
-        'terapia_ocupacional': 'sensorial_motricidade',
-        'fisioterapia': 'desenvolvimento_motor',
-        'musicoterapia': 'estimulacao_emocional'
-    };
-    return dorMap[especialidade] || 'descoberta';
-}
-
-function calcularEstagio(lead) {
-    const score = lead.qualificationData?.score || 0;
-    const msgCount = lead.messagesCount || lead.messageCount || 0;
-    const hasIntent = lead.qualificationData?.intent;
-    
-    if (score >= 80 || hasIntent === 'agendar') return 'quente';
-    if (score >= 50 || msgCount >= 3) return 'morno';
-    if (score >= 20 || msgCount >= 1) return 'consideracao';
-    return 'frio';
-}
-
-function detectarObjecao(extractedInfo) {
-    const text = JSON.stringify(extractedInfo || {}).toLowerCase();
-    
-    if (/tarde|futuro|esperar|ainda|pequen|novo|tempo/i.test(text)) return 'fase';
-    if (/marido|esposa|mae|pai|familia|decidir|decisao/i.test(text)) return 'marido';
-    if (/caro|valor|preco|gratis|plano|dinheiro/i.test(text)) return 'preco';
-    if (/longe|distancia|bairro|endereco/i.test(text)) return 'local';
-    if (/outro|clinica|concorrente/i.test(text)) return 'concorrente';
-    return null;
-}
-
-function selecionarPersona(classificacao) {
-    const c = classificacao;
-    
-    if (c.estagio === 'frio') {
-        return {
-            nome: 'Educadora',
-            instrucao: 'Explique de forma leve, sem pressionar. Gere curiosidade. Use exemplos do dia a dia.'
-        };
-    }
-    
-    if (c.estagio === 'quente') {
-        return {
-            nome: 'Fechadora',
-            instrucao: 'Seja direta e gentil. Conduza para agendamento com clareza. Elimine atritos.'
-        };
-    }
-    
-    if (c.objecao === 'fase') {
-        return {
-            nome: 'Quebradora',
-            instrucao: 'Valide primeiro ("entendo a preocupação"), depois corrija a crença com dados concretos e cuidado.'
-        };
-    }
-    
-    if (c.objecao === 'marido') {
-        return {
-            nome: 'Empoderadora',
-            instrucao: 'Dê segurança e argumentos para decisão. Ofereça materiais para compartilhar.'
-        };
-    }
-    
-    if (c.emocao === 'ansioso' || c.emocao === 'preocupado') {
-        return {
-            nome: 'Validadora',
-            instrucao: 'Acolha profundamente. Não minimize. Demonstre que entende a urgência emocional.'
-        };
-    }
-    
-    return {
-        nome: 'Validadora',
-        instrucao: 'Acolha e incentive a pessoa a compartilhar mais. Seja receptiva e calorosa.'
-    };
-}
-
-// ============================================================
-// ROTEADOR DE ORQUESTRADORES (feature flag USE_STATE_MACHINE)
-// USE_STATE_MACHINE=true  → WhatsAppOrchestrator (FSM nova)
-// USE_STATE_MACHINE=false → AmandaOrchestrator (legado)
-// ============================================================
-const fsmOrchestrator = new WhatsAppOrchestrator(); // singleton — evita overhead por mensagem
-
-async function runOrchestrator(lead, userText, context) {
-    const leadId = lead?._id;
-    
-    // 🧠 MONTA CLASSIFICAÇÃO INTELIGENTE DO LEAD
-    const classificacao = {
-        dor_principal: mapTherapyToDor(lead.qualificationData?.extractedInfo?.especialidade),
-        estagio: calcularEstagio(lead),
-        emocao: lead.qualificationData?.sentiment || 'neutro',
-        intencao: lead.qualificationData?.intent || 'informacao',
-        objecao: detectarObjecao(lead.qualificationData?.extractedInfo)
-    };
-    
-    const persona = selecionarPersona(classificacao);
-    
-    const enrichedContextFinal = {
-        ...context,
-        inteligencia: {
-            classificacao,
-            persona
-        }
-    };
-    
-    logger.info('LEAD_INTELIGENCIA', { 
-        leadId, 
-        estagio: classificacao.estagio, 
-        emocao: classificacao.emocao,
-        persona: persona.nome 
-    });
-    
-    if (process.env.USE_STATE_MACHINE === 'true') {
-        const isMidConversationLegacyLead = !lead.currentState && lead.triageStep;
-        if (!isMidConversationLegacyLead) {
-            logger.info('ORCHESTRATOR_FSM', { leadId, currentState: lead.currentState, textLen: userText?.length });
-            try {
-                const result = await fsmOrchestrator.process({
-                    lead,
-                    message: { content: userText },
-                    context: enrichedContextFinal,
-                });
-                logger.info('ORCHESTRATOR_FSM_RESULT', { leadId, command: result?.command });
-                return result;
-            } catch (err) {
-                logger.error('FSM_ERROR_FALLBACK', { error: err.message, stack: err.stack, leadId });
-            }
-        } else {
-            logger.warn('ORCHESTRATOR_LEGACY_MID_CONVERSATION', { leadId, triageStep: lead.triageStep, currentState: lead.currentState });
-        }
-    } else {
-        logger.info('ORCHESTRATOR_LEGACY', { leadId, USE_STATE_MACHINE: process.env.USE_STATE_MACHINE });
-    }
-    
-    const text = await getOptimizedAmandaResponse({ 
-        content: userText, 
-        userText, 
-        lead, 
-        context: enrichedContextFinal 
-    });
-    return text ? { command: 'SEND_MESSAGE', payload: { text } } : { command: 'NO_REPLY' };
-}
 
 export const whatsappController = {
 
@@ -648,146 +429,73 @@ export const whatsappController = {
     },
 
     async webhook(req, res) {
-        console.log("=========================== >>> 🔔MENSAGEM RECEBIDA DE CLIENTE <<< ===========================", new Date().toISOString());
-        
-        // 🛡️ GUARD: LOG BRUTO (antes de tudo - nunca falha)
-        try {
-            await mongoose.connection.collection('raw_webhook_logs').insertOne({
-                body: req.body,
-                headers: {
-                    'user-agent': req.headers['user-agent'],
-                    'content-type': req.headers['content-type']
-                },
-                receivedAt: new Date(),
-                source: 'whatsapp_webhook'
-            });
-        } catch (logErr) {
-            console.error('❌ RAW LOG FAIL (não crítico):', logErr.message);
-        }
+        // [V2] ACK IMEDIATO — Meta exige resposta < 5s, antes de qualquer lógica
+        res.sendStatus(200);
+
+        // [V2] Raw log APÓS o ACK — não adiciona latência percebida pelo Meta
+        mongoose.connection.collection('raw_webhook_logs').insertOne({
+            body: req.body,
+            receivedAt: new Date(),
+            source: 'whatsapp_webhook'
+        }).catch(() => {});
 
         try {
-            res.sendStatus(200); // Responde imediato pro Meta
+            const value = req.body.entry?.[0]?.changes?.[0]?.value;
+            if (!value) return;
 
-            const change = req.body.entry?.[0]?.changes?.[0]; // Pega o change
-            const value = change?.value; // GUARDA O VALUE
-
-            // 🆕 PROCESSAR STATUS DE ENTREGA (mensagens enviadas)
-            if (value?.statuses && value.statuses.length > 0) {
+            // Statuses de entrega (read receipts, delivered, etc.) — não é mensagem recebida
+            if (value.statuses?.length > 0) {
                 for (const status of value.statuses) {
                     await processMessageStatus(status);
                 }
-                return; // Não processa como mensagem recebida
+                return;
             }
 
-            const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0] || value?.messages?.[0];
+            const msg = value.messages?.[0];
             if (!msg) return;
 
-            const from = msg.from;
-            const content = msg.text?.body || '';
-            const messageId = msg.id; // 🆕 ID único da mensagem
+            const { id: messageId, from } = msg;
 
-            // 🔥 IDEMPOTÊNCIA ATÔMICA: SET NX (só seta se não existir)
+            // [V2] Única camada de dedup — Redis SET NX atômico, funciona multi-node
+            // Remove necessidade do processedWamids Set em memória
             const idempotencyKey = `msg:processed:${messageId}`;
             try {
-                // ⚡ SET NX = atômico - impossível duplicar mesmo com concorrência
-                const lock = await redis?.set(idempotencyKey, '1', 'NX', 'EX', 300); // 5 minutos
-                
-                if (!lock) {
-                    // Chave já existe = mensagem duplicada
-                    console.log(`[IDEMPOTENCY] Mensagem ${messageId} já processada. Ignorando.`);
-                    return;
-                }
-                // Se chegou aqui, é a primeira vez - segue processando
-            } catch (redisErr) {
-                // ⚡ Se Redis cair, continua (sem idempotência, mas não quebra)
-                console.error('Redis idempotency error (continuando):', redisErr.message);
+                const acquired = await redis?.set(idempotencyKey, '1', 'NX', 'EX', 300);
+                if (!acquired) return;
+            } catch {
+                // Redis indisponível — continua sem dedup
             }
 
-            // 🛡️ NOTA: O upsert do lead é feito no middleware whatsappGuard.js
-            // e também dentro do processInboundMessage. Removido daqui para evitar duplicação.
-            // O middleware já garante captura fail-safe antes de chegar aqui.
-
-            // 🆕 DEBOUNCE CORRETO AQUI (3.5s, não 30s) - VERSÃO ROBUSTA
-            const debounceKey = `webhook:buffer:${from}`;
+            // Debounce buffer: acumula mensagens rápidas do mesmo remetente por 3.5s
+            const debounceKey   = `webhook:buffer:${from}`;
             const processingKey = `webhook:processing:${from}`;
-            
+
             try {
                 const existing = await redis?.get(debounceKey);
-
                 if (existing) {
-                    // Acumula
                     const data = JSON.parse(existing);
-                    data.messages.push(content);
-                    data.lastTime = Date.now();
+                    data.messages.push(msg.text?.body || '');
                     await redis?.set(debounceKey, JSON.stringify(data), 'EX', 10);
-                    console.log(`[BUFFER] Acumulado: ${data.messages.length} msgs de ${from}`);
-                    return; // Não processa ainda!
+                    return; // acumulado, não agenda novo job
                 }
-
-                // Primeira mensagem - inicia timer
                 await redis?.set(debounceKey, JSON.stringify({
-                    messages: [content],
-                    startTime: Date.now(),
+                    messages: [msg.text?.body || ''],
                     msgData: msg,
-                    messageId: msg.id
-                }), 'EX', 10); // 10 segundos de TTL para segurança
-            } catch (redisErr) {
-                // ⚡ Se Redis cair, processa sem debounce (direto, sem fila)
-                console.error('Redis debounce error (processando sem buffer):', redisErr.message);
+                }), 'EX', 10);
+            } catch {
+                // [V2] Redis caiu: publica sem debounce — sem setTimeout como fallback
                 await publishEvent(EventTypes.WHATSAPP_MESSAGE_RECEIVED, { msg, value });
                 return;
             }
 
-            // 🔥 NOVO: Usar fila com atraso ao invés de setTimeout (mais robusto)
-            // Isso garante que a mensagem seja processada mesmo se o processo reiniciar
-            try {
-                const { publishEvent } = await import('../infrastructure/events/eventPublisher.js');
-                
-                // Agenda processamento em 3.5s usando a fila com delay
-                await publishEvent(EventTypes.WHATSAPP_MESSAGE_RECEIVED, { 
-                    msg, 
-                    value,
-                    _debounceKey: debounceKey,
-                    _processingKey: processingKey,
-                    _isDebounced: true
-                }, { 
-                    delay: 3500,
-                    correlationId: `webhook:${msg.id}`,
-                    idempotencyKey: `webhook:${from}:${msg.id}`
-                });
-                
-                console.log(`[WEBHOOK] Mensagem ${msg.id} agendada para processamento em 3.5s`);
-            } catch (queueErr) {
-                // Fallback: usa setTimeout se a fila falhar
-                console.warn('[WEBHOOK] Falha ao agendar na fila, usando setTimeout:', queueErr.message);
-                
-                setTimeout(async () => {
-                    try {
-                        const buffer = await redis?.get(debounceKey);
-                        if (!buffer) return; // Já processado por outra instância
-
-                        await redis?.del(debounceKey);
-                        const data = JSON.parse(buffer);
-                        const combinedText = data.messages.join(' ');
-
-                        // Substitui o texto da mensagem pelo combinado
-                        if (!msg.text) {
-                            msg.text = { body: combinedText };
-                        } else {
-                            msg.text.body = combinedText;
-                        }
-                        
-                        const { publishEvent } = await import('../infrastructure/events/eventPublisher.js');
-                        await publishEvent(EventTypes.WHATSAPP_MESSAGE_RECEIVED, { msg, value });
-                        console.log(`[WEBHOOK] Mensagem ${msg.id} processada via setTimeout`);
-                    } catch (err) {
-                        console.error('❌ Erro no processamento do buffer:', err);
-                    }
-                }, 3500);
-            }
+            await publishEvent(
+                EventTypes.WHATSAPP_MESSAGE_RECEIVED,
+                { msg, value, _debounceKey: debounceKey, _processingKey: processingKey, _isDebounced: true },
+                { delay: 3500, correlationId: `wh:${messageId}`, idempotencyKey: `webhook:${from}:${messageId}` }
+            );
 
         } catch (err) {
-            console.error("❌ Erro crítico no webhook:", err);
+            createContextLogger('webhook').error('webhook_critical', { err: err.message });
         }
     },
 
@@ -1676,834 +1384,224 @@ async function processMessageStatus(status) {
     }
 }
 
-// ✅ FUNÇÃO SEPARADA (não depende do this)
+// ✅ FUNÇÃO HARDENED - Stripe-level Ingestion Layer (NUNCA QUEBRA)
+// ✅ FUNÇÃO HARDENED - Stripe-level Ingestion Layer
 async function processInboundMessage(msg, value) {
+    const wamid = msg.id;
+    const correlationId = `inbound:${wamid}`;
+    const log = createContextLogger('processInboundMessage');
+
+    let savedMessage = null;
+    let contact = null;
+    let lead = null;
+
     try {
-        const io = getIo();
+        const from = normalizeE164BR(msg.from || '');
+        const to = normalizeE164BR(
+            value?.metadata?.display_phone_number || process.env.CLINIC_PHONE_E164
+        ) || '0000000000000';
 
-        const wamid = msg.id;
-        
-        // 🛡️ FIX: Verifica duplicidade de mensagem
-        if (processedWamids.has(wamid)) {
-            console.log(`⚠️ Mensagem ${wamid} já processada, ignorando duplicidade.`);
-            return { success: true, duplicate: true };
-        }
-        
-        // Adiciona ao cache e mantém tamanho limitado
-        processedWamids.add(wamid);
-        if (processedWamids.size > MAX_WAMID_CACHE_SIZE) {
-            const firstItem = processedWamids.values().next().value;
-            processedWamids.delete(firstItem);
-        }
-        
-        const fromRaw = msg.from || "";
-        const toRaw =
-            value?.metadata?.display_phone_number ||
-            process.env.CLINIC_PHONE_E164 ||
-            "0000000000000"; // Fallback para não quebrar validação
-
-        // 🔧 CORREÇÃO: Normalização robusta do telefone
-        const from = normalizeE164BR(fromRaw);
-        let to = normalizeE164BR(toRaw);
-        
-        // Garante que 'to' nunca seja vazio
-        if (!to || to === "null" || to === "undefined") {
-            to = "0000000000000";
-        }
-
-        // 🆕 LOG DEBUG: Mostrar transformação do número
-        console.log("📞 [WEBHOOK PHONE] Normalização:", {
-            fromRaw,
-            fromNormalized: from,
-            toRaw,
-            toNormalized: to,
-            fromLength: from?.length,
-            toLength: to?.length
-        });
-
-        // ✅ FIX: define `type` logo no início (antes de qualquer uso)
         const type = msg.type;
 
-        const fromNumeric = from.replace(/\D/g, "");
-        console.log('[DEBUG CANARY ENV]', process.env.AMANDA_CANARY_PHONES);
+        log.info('start', { wamid, from, type, correlationId });
 
-        const isTestNumber = AUTO_TEST_NUMBERS.includes(fromNumeric);
+        // ─────────────────────────────────────────────
+        // 1. EXTRACT CONTENT (ISOLADO)
+        // ─────────────────────────────────────────────
+        let contentToSave = '';
+        let mediaUrl = null;
+        let mediaId = null;
+        let caption = null;
 
-        console.log("🔎 isTestNumber?", fromNumeric, isTestNumber);
+        try {
+            const extracted = await extractMessageContent(msg, type);
+            contentToSave = extracted.content;
+            mediaUrl = extracted.mediaUrl;
+            mediaId = extracted.mediaId;
+            caption = extracted.caption;
+        } catch (err) {
+            log.warn('extract_failed', { err: err.message });
+            contentToSave = '[UNREADABLE MESSAGE]';
+        }
 
         const timestamp = new Date(
             (parseInt(msg.timestamp, 10) || Date.now() / 1000) * 1000
         );
 
-        console.log("🔄 Processando mensagem:", { from, type, wamid, traceId: wamid });
-
-        // EXTRAÇÃO DE CONTEÚDO
-        let content = "";
-        let mediaUrl = null;
-        let caption = null;
-        let mediaId = null;
-
-        if (type === "text") {
-            // 💬 Texto normal
-            content = msg.text?.body || "";
-        } else if (type === "audio" && msg.audio?.id) {
-            // 🎙️ ÁUDIO → transcrever
-            mediaId = msg.audio.id;
-            caption = "[AUDIO]";
-
-            try {
-                // Opcional: ainda resolve URL para uso no front/proxy
-                const { url } = await resolveMediaUrl(mediaId);
-                mediaUrl = url;
-            } catch (e) {
-                console.error("⚠️ Falha ao resolver mídia (audio):", e.message);
-            }
-
-            console.log(`🎙️ [${wamid}] Processando áudio para transcrição: ${mediaId}`);
-
-            // 🔹 TRANSCRIÇÃO
-            content = await transcribeWaAudio({ mediaId });
-
-            if (!content || content.length < 3) {
-                content = "[Áudio não pôde ser transcrito]";
-            }
-        } else if (type === "image" && msg.image?.id) {
-            // 🖼️ IMAGEM → descrição + legenda
-            mediaId = msg.image.id;
-            caption = (msg.image.caption || "").trim();
-
-            // URL para o front / proxy
-            try {
-                const { url } = await resolveMediaUrl(mediaId);
-                mediaUrl = url;
-            } catch (e) {
-                console.error("⚠️ Falha ao resolver mídia (image):", e.message);
-            }
-
-            try {
-                console.log(`🖼️ [${wamid}] Gerando descrição para imagem: ${mediaId}`);
-                const description = await describeWaImage({ mediaId, mediaUrl, mimeType: msg.image?.mime_type });
-
-                if (caption) {
-                    // legenda + descrição → vira texto rico pra Amanda
-                    content = `${caption}\n[Detalhe da imagem: ${description}]`;
-                } else {
-                    content = `Imagem enviada: ${description}`;
-                }
-            } catch (e) {
-                console.error("⚠️ Falha ao descrever imagem:", e.message);
-                // fallback: pelo menos algo textual
-                content = caption || "Imagem recebida.";
-            }
-        }
-        // 📍 LOCALIZAÇÃO (mensagens de localização do WhatsApp)
-        else if (type === "location" && msg.location) {
-            content =
-                msg.location.name ||
-                msg.location.address ||
-                "Localização enviada";
-        } else {
-            // 🎥 📄 😀 VÍDEO / DOCUMENTO / STICKER (mantém como marcador)
-            try {
-                if (type === "video" && msg.video?.id) {
-                    mediaId = msg.video.id;
-                    caption = msg.video.caption || "[VIDEO]";
-                    const { url } = await resolveMediaUrl(mediaId);
-                    mediaUrl = url;
-                } else if (type === "document" && msg.document?.id) {
-                    mediaId = msg.document.id;
-                    caption = msg.document.filename || "[DOCUMENT]";
-                    const { url } = await resolveMediaUrl(mediaId);
-                    mediaUrl = url;
-                } else if (type === "sticker" && msg.sticker?.id) {
-                    mediaId = msg.sticker.id;
-                    caption = "[STICKER]";
-                    const { url } = await resolveMediaUrl(mediaId);
-                    mediaUrl = url;
-                }
-            } catch (e) {
-                console.error("⚠️ Falha ao resolver mídia:", e.message);
-            }
-        }
-
-        // ✅ FIX: agora sim calcula contentToSave (depois de definir type/content/caption)
-        const contentToSave =
-            type === "text" || type === "audio" || type === "image" || type === "location"
-                ? content
-                : (caption || `[${String(type || "unknown").toUpperCase()}]`);
-
-        // 🎯 EXTRAI TRACKING DA MENSAGEM (Google Ads/Meta)
-        const trackingData = extractTrackingFromMessage(contentToSave);
-        if (trackingData) {
-            console.log('🎯 [Tracking] Dados encontrados na mensagem:', trackingData);
-        }
-
-        // ✅ flags rápidas agora com texto real
-        const quickFlags = deriveFlagsFromText(contentToSave || "");
-        const suppressAutoFollowup =
-            quickFlags.alreadyScheduled ||
-            quickFlags.wantsCancel ||
-            quickFlags.wantsReschedule ||
-            quickFlags.refusesOrDenies ||
-            quickFlags.wantsPartnershipOrResume ||
-            quickFlags.saysThanks ||
-            quickFlags.saysBye;
-
-        // ✅ BUSCA UNIFICADA INTELIGENTE
-        let contact = await Contacts.findOne({ phone: from });
-        if (!contact) {
-            contact = await Contacts.create({
-                phone: from,
-                name: msg.profile?.name || `WhatsApp ${from.slice(-4)}`
-            });
-        }
-
-        // ✅ VERIFICA SE EXISTE PATIENT COM ESTE TELEFONE (ANTES de usar)
-        let patient = null;
+        // ─────────────────────────────────────────────
+        // 2. CONTACT (NON CRITICAL)
+        // ─────────────────────────────────────────────
         try {
-            patient = await Patient.findOne({ phone: from }).lean();
-            console.log("🔍 Patient encontrado:", patient ? patient._id : "Nenhum");
-        } catch (e) {
-            console.log("ℹ️ Model Patient não disponível");
+            contact = await Contacts.findOne({ phone: from }) ||
+                await Contacts.create({
+                    phone: from,
+                    name: msg.profile?.name || `WhatsApp ${from.slice(-4)}`
+                });
+        } catch (err) {
+            log.warn('contact_error', { err: err.message });
         }
 
-        // 🎯 PASSAR METADADOS PARA DETECÇÃO DE CAMPANHA
-        const leadDefaults = patient
-            ? {
-                name: patient.fullName,
-                status: "virou_paciente",
-                convertedToPatient: patient._id,
-                conversionScore: 100,
-                firstMessage: contentToSave,  // Passa primeira mensagem para detecção
-                // Tracking de origem (Google Ads/Meta)
-                ...(trackingData && {
-                    origin: trackingData.source === 'google_ads' ? 'Google Ads' : 
-                            trackingData.source === 'meta_ads' ? 'Meta Ads' : 
-                            trackingData.utmSource || 'WhatsApp',
-                    gclid: trackingData.clickId?.startsWith('gclid') ? trackingData.clickId : undefined,
-                    fbclid: trackingData.clickId?.startsWith('fbclid') ? trackingData.clickId : undefined,
-                    utmCampaign: trackingData.campaign,
-                    utmSource: trackingData.utmSource,
-                    utmMedium: trackingData.utmMedium
-                })
-            }
-            : {
-                status: "novo",
-                conversionScore: 0,
-                firstMessage: contentToSave,  // Passa primeira mensagem para detecção
-                // Tracking de origem (Google Ads/Meta)
-                ...(trackingData && {
-                    origin: trackingData.source === 'google_ads' ? 'Google Ads' : 
-                            trackingData.source === 'meta_ads' ? 'Meta Ads' : 
-                            trackingData.utmSource || 'WhatsApp',
-                    gclid: trackingData.clickId?.startsWith('gclid') ? trackingData.clickId : undefined,
-                    fbclid: trackingData.clickId?.startsWith('fbclid') ? trackingData.clickId : undefined,
-                    utmCampaign: trackingData.campaign,
-                    utmSource: trackingData.utmSource,
-                    utmMedium: trackingData.utmMedium
-                })
-            };
-        
-        const lead = await resolveLeadByPhone(from, leadDefaults);
+        // ─────────────────────────────────────────────
+        // 3. LEAD RESOLVE (SAFE FALLBACK)
+        // ─────────────────────────────────────────────
+        try {
+            lead = await resolveLeadByPhone(from, {});
+        } catch (err) {
+            log.error('lead_resolve_failed', { err: err.message });
+            lead = { _id: null };
+        }
 
         if (!lead?._id) {
-            console.error("❌ resolveLeadByPhone retornou lead inválido", { from, patientId: patient?._id });
+            log.warn('lead_missing_fallback_mode', { from });
+        }
+
+        // ─────────────────────────────────────────────
+        // 4. SAVE MESSAGE (🔥 CRITICAL STEP)
+        // ─────────────────────────────────────────────
+        try {
+            savedMessage = await Message.create({
+                waMessageId: wamid,
+                from,
+                to,
+                direction: 'inbound',
+                type,
+                content: contentToSave,
+                mediaUrl,
+                mediaId,
+                caption,
+                status: 'received',
+                timestamp,
+                contact: contact?._id,
+                lead: lead?._id,
+                raw: msg,
+            });
+        } catch (err) {
+            log.error('message_save_failed', { err: err.message });
+
+            // 🚨 HARD STOP ONLY HERE (nothing else is reliable)
             return;
         }
 
-        // 🧪 Se for número de teste, sempre garantir que NÃO esteja em manual
-        if (isTestNumber && lead) {
-            await Lead.findByIdAndUpdate(lead._id, {
-                $set: {
-                    "manualControl.active": false,
-                    "manualControl.takenOverAt": null,
-                    "manualControl.takenOverBy": null,
-                    "manualControl.autoResumeAfter": 0,
-                    autoReplyEnabled: true,
-                }
-            });
-            lead.manualControl = { active: false, autoResumeAfter: 0 };
-            lead.autoReplyEnabled = true;
+        // ─────────────────────────────────────────────
+        // 4.5. CONVERSATION STATE (memória de curto prazo - fire & forget)
+        // ─────────────────────────────────────────────
+        try {
+            publishEvent(EventTypes.CONVERSATION_STATE_UPDATE, {
+                leadId: String(lead?._id),
+                from,
+                content: contentToSave,
+                type,
+                direction: 'inbound',
+                timestamp: timestamp.toISOString(),
+            }, { correlationId }).catch(() => {});
+        } catch {}
 
-            console.log("🧪 Lead de teste destravado de controle manual:", String(lead._id));
+        // ─────────────────────────────────────────────
+        // 5. SOCKET (NON BLOCKING)
+        // ─────────────────────────────────────────────
+        try {
+            const io = getIo();
+
+            const socketPayload = {
+                id: String(savedMessage._id),
+                from,
+                to,
+                type,
+                content: contentToSave,
+                timestamp: timestamp.toISOString(),
+            };
+
+            io?.emit('message:new', socketPayload);
+            io?.emit('whatsapp:new_message', socketPayload);
+        } catch (err) {
+            log.warn('socket_failed', { err: err.message });
         }
 
-        // ✅ Se tiver flags que impactam o lead, atualiza (agora lead existe)
-        if (suppressAutoFollowup) {
-            const $set = {};
-            const $addToSet = {};
-
-            if (quickFlags.alreadyScheduled) {
-                $set.alreadyScheduled = true;
-                $addToSet.flags = "already_scheduled";
-            }
-            if (quickFlags.wantsPartnershipOrResume) {
-                $set.reason = "parceria_profissional";
-                $addToSet.flags = "parceria_profissional";
-            }
-
-            if (Object.keys($set).length || Object.keys($addToSet).length) {
+        // ─────────────────────────────────────────────
+        // 6. LEAD UPDATE (NON CRITICAL)
+        // ─────────────────────────────────────────────
+        try {
+            if (lead?._id) {
                 await Lead.findByIdAndUpdate(lead._id, {
-                    ...(Object.keys($set).length ? { $set } : {}),
-                    ...(Object.keys($addToSet).length ? { $addToSet } : {}),
-                }).catch(() => { });
+                    $set: {
+                        lastInteractionAt: new Date(),
+                    },
+                    $push: {
+                        interactions: {
+                            date: new Date(),
+                            channel: 'whatsapp',
+                            direction: 'inbound',
+                            message: contentToSave,
+                        },
+                    },
+                });
             }
-
-            console.log("ℹ️ Auto follow-up suprimido por flags:", {
-                leadId: String(lead._id),
-                suppressAutoFollowup,
-                quickFlags: {
-                    alreadyScheduled: quickFlags.alreadyScheduled,
-                    partnership: quickFlags.wantsPartnershipOrResume,
-                    saysThanks: quickFlags.saysThanks,
-                }
-            });
+        } catch (err) {
+            log.warn('lead_update_failed', { err: err.message });
         }
 
-        // ✅ SALVAR MENSAGEM NO CRM
-        const messageData = {
-            waMessageId: wamid,
-            wamid,
-            from,
-            to,
-            direction: "inbound",
-            type,
-            content: contentToSave,
-            mediaUrl,
-            mediaId,
-            caption,
-            status: "received",
-            needs_human_review: !(type === "text" || type === "audio" || type === "image"),
-            timestamp,
-            contact: contact._id,
-            lead: lead._id,
-            raw: msg,
-        };
-
-        // 🧭 Só adiciona o campo location se for mensagem de localização
-        if (type === "location" && msg.location) {
-            messageData.location = msg.location;
-        }
-
-        const savedMessage = await Message.create(messageData);
+        // ─────────────────────────────────────────────
+        // 7. EVENTS (FIRE AND FORGET - NEVER BLOCK)
+        // ─────────────────────────────────────────────
 
         try {
-            contact.lastMessageAt = timestamp;
-            contact.lastMessagePreview =
-                contentToSave?.substring(0, 100) || `[${String(type).toUpperCase()}]`;
-            await contact.save();
-        } catch (e) {
-            console.error("⚠️ Erro ao atualizar lastMessageAt no Contact:", e.message);
-        }
-
-        // ✅ NOTIFICAR FRONTEND
-        console.log("📡 [SOCKET] Preparando para emitir message:new...");
-        console.log("📡 [SOCKET] io existe:", !!io);
-        console.log("📡 [SOCKET] io.engine.clientsCount:", io?.engine?.clientsCount || 0);
-        
-        const socketPayload = {
-            id: String(savedMessage._id),
-            from,
-            to,
-            direction: "inbound",
-            type,
-            content: contentToSave,
-            text: contentToSave,
-            mediaUrl,
-            mediaId,
-            caption,
-            status: "received",
-            timestamp: timestamp instanceof Date ? timestamp.toISOString() : timestamp,
-            timestampMs: timestamp instanceof Date ? timestamp.getTime() : Date.now(),
-            leadId: String(lead._id),
-            contactId: String(contact._id)
-        };
-        
-        console.log("📡 [SOCKET] Emitindo payload:", JSON.stringify(socketPayload, null, 2));
-        
-        io.emit("message:new", socketPayload);
-        io.emit("whatsapp:new_message", socketPayload);
-        
-        console.log("✅ [SOCKET] Eventos emitidos com sucesso!");
-
-        // ✅ ATUALIZAR ÚLTIMA INTERAÇÃO DO LEAD
-        try {
-            console.log("🔍 [DEBUG PRE-SAVE #1] Estado do lead ANTES do save:", {
-                leadId: lead._id,
-                pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
-                pendingPatientInfoStep: lead.pendingPatientInfoStep,
-                pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
-                pendingSchedulingSlots: lead.pendingSchedulingSlots?.primary ? "SIM" : "NÃO",
-            });
-
-            lead.lastInteractionAt = new Date();
-            lead.interactions.push({
-                date: new Date(),
-                channel: "whatsapp",
-                direction: "inbound",
-                message: contentToSave,
-                status: "received"
-            });
-            await lead.save();
-            console.log("📅 Interação atualizada no lead");
-
-            // 🔁 CANCELAR LEAD RECOVERY se estiver ativo (lead respondeu)
-            if (lead.recovery && !lead.recovery.finishedAt && !lead.recovery.cancelledAt) {
-                cancelRecovery(lead._id, 'lead_respondeu')
-                    .catch(err => console.warn("⚠️ Falha ao cancelar recovery (não crítico):", err.message));
-            }
-
-            // 🧠 Amanda 2.0: atualizar "memória" estruturada a cada inbound
-            try {
-                const analysis = await analyzeLeadMessage({
-                    text: contentToSave,
-                    lead,
-                    history: (lead.interactions || []).map(i => i.message).filter(Boolean),
-                });
-
-                lead.qualificationData = lead.qualificationData || {};
-                lead.qualificationData.extractedInfo = mergeNonNull(
-                    lead.qualificationData.extractedInfo || {},
-                    analysis.extractedInfo  // ✅
-                );
-
-                lead.qualificationData.intent = analysis.intent.primary;
-                lead.qualificationData.sentiment = analysis.intent.sentiment;
-                lead.conversionScore = analysis.score;
-                lead.lastScoreUpdate = new Date();
-
-                await lead.save();
-
-                console.log("🔍 [DEBUG POST-SAVE #2] Estado do lead DEPOIS do save:", {
-                    leadId: lead._id,
-                    pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
-                    pendingPatientInfoStep: lead.pendingPatientInfoStep,
-                });
-
-                console.log("🧠 qualificationData atualizado:", {
-                    idade: lead.qualificationData?.extractedInfo?.idade,
-                    idadeRange: lead.qualificationData?.extractedInfo?.idadeRange,
-                    disponibilidade: lead.qualificationData?.extractedInfo?.disponibilidade,
-                });
-            } catch (e) {
-                console.warn("⚠️ Falha ao atualizar intelligence (não crítico):", e.message);
-            }
-        } catch (updateError) {
-            console.error("⚠️ Erro ao atualizar interação:", updateError.message);
-        }
-
-        const isRealText = contentToSave?.trim() && !contentToSave.startsWith("[");
-
-
-        // ✅ AMANDA 2.0 TRACKING (texto, áudio transcrito ou imagem descrita)
-        // Migrado para event-driven: publishEvent → messageResponseWorker (com retry)
-        if ((type === "text" || type === "audio" || type === "image") && isRealText) {
             publishEvent(EventTypes.MESSAGE_RESPONSE_DETECTED, {
-                leadId:      String(lead._id),
-                waMessageId: wamid,                              // ID externo (WhatsApp)
-                messageId:   savedMessage?._id?.toString() || null, // ID interno (Mongo)
-            }).catch(err => console.error("⚠️ Tracking não crítico falhou:", err));
-        }
+                leadId: String(lead?._id),
+                messageId: savedMessage._id?.toString(),
+                content: contentToSave,
+            }, { correlationId }).catch(() => {});
+        } catch {}
 
-        // ✅ RESPOSTA AUTOMÁTICA (Amanda)
-        if ((type === "text" || type === "audio" || type === "image") && isRealText) {
-            console.log("🔍 [DEBUG PRE-ORCHESTRATOR] Lead sendo passado pro handleAutoReply:", {
-                leadId: lead._id,
-                triageStep: lead.triageStep, // 🆕 CRÍTICO: verificar se está vindo
-                pendingPatientInfoForScheduling: lead.pendingPatientInfoForScheduling,
-                pendingPatientInfoStep: lead.pendingPatientInfoStep,
-                pendingChosenSlot: lead.pendingChosenSlot ? "SIM" : "NÃO",
-            });
-
-            await handleAutoReply(from, to, contentToSave, lead)
-                .catch(err => console.error("⚠️ Auto-reply não crítico falhou:", err));
-        }
-
-        // 🔥 AUTO-AGENDADOR DE FOLLOW-UP (Amanda 2.0)
-        // ✅ FIX: agora a supressão só impede o auto-followup, sem quebrar o processamento da mensagem
         try {
-            if (!suppressAutoFollowup) {
-                const freshLead = await Lead.findById(lead._id).select('+triageStep').lean();
+            publishEvent(EventTypes.CONTEXT_BUILD_REQUESTED, {
+                leadId: String(lead?._id),
+                from,
+                content: contentToSave,
+                type,
+                wamid,
+                messageId: savedMessage._id?.toString(),
+            }, {
+                correlationId,
+                jobId: `context:${lead?._id || wamid}`,
+            }).catch(() => {});
+        } catch {}
 
-                const autoReplyOn = freshLead?.autoReplyEnabled !== false;
-                const manualActive = freshLead?.manualControl?.active === true;
-
-                if (autoReplyOn && !manualActive) {
-                    const existing = await Followup.findOne({
-                        lead: freshLead._id,
-                        status: { $in: ["scheduled", "processing"] },
-                        scheduledAt: { $gte: new Date() },
-                    }).lean();
-
-                    if (!existing) {
-                        await createSmartFollowupForLead(freshLead._id, {
-                            explicitScheduledAt: null,
-                            objective: "reengajamento_inbound",
-                            attempt: 1,
-                        });
-
-                        console.log("💚🤍 Follow-up inteligente auto-agendado via Amanda 2.0:", {
-                            leadId: String(freshLead._id),
-                        });
-                    } else {
-                        console.log("ℹ️ Já existe follow-up futuro para este lead, não vou duplicar:", {
-                            leadId: String(freshLead._id),
-                            followupId: String(existing._id),
-                            status: existing.status,
-                            scheduledAt: existing.scheduledAt,
-                        });
-                    }
-                } else {
-                    console.log("ℹ️ Auto follow-up ignorado (manualControl ativo ou autoReply desativado).");
-                }
-            }
-        } catch (autoFuError) {
-            console.error("⚠️ Erro ao auto-agendar follow-up via inbound WhatsApp (não crítico):", autoFuError.message);
-        }
-
-        console.log("✅ Mensagem processada com sucesso:", wamid);
-    } catch (error) {
-        console.error("❌ Erro CRÍTICO no processInboundMessage:", error);
-    }
-}
-
-
-// ✅ FUNÇÕES AUXILIARES SEPARADAS
-async function handleResponseTracking(leadId, content) {
-    try {
-        const lastFollowup = await Followup.findOne({
-            lead: leadId,
-            status: 'sent',
-            responded: false
-        }).sort({ sentAt: -1 }).lean();
-
-        if (lastFollowup) {
-            const timeSince = Date.now() - new Date(lastFollowup.sentAt).getTime();
-            const WINDOW_72H = 72 * 60 * 60 * 1000;
-
-            if (timeSince < WINDOW_72H) {
-                console.log(`✅ Lead respondeu a follow-up! Processando...`);
-                await checkFollowupResponse(lastFollowup._id);
-            }
-        }
-    } catch (error) {
-        console.error('❌ Erro no tracking (não crítico):', error.message);
-    }
-}
-
-// ✅ FUNÇÃO CORRIGIDA COM CONTROLE MANUAL
-async function handleAutoReply(from, to, content, lead) {
-    // ✅ Commit 2: anti-corrida (Redis 30s + trava no Mongo)
-    let lockKey = null;
-    let lockAcquired = false;
-    let debounceKey = null;
-    let debounceAcquired = false;
-    let mongoLockAcquired = false;
-    let mongoLockedLeadId = null;
-    try {
-        console.log('🤖 [AUTO-REPLY] Iniciando para', { from, to, leadId: lead?._id, traceId: lead?._id, content: content?.substring(0, 50) });
-
-        const fromNumeric = from.replace(/\D/g, '');
-        const isTestNumber = AUTO_TEST_NUMBERS.includes(fromNumeric);
-
-        // ================================
-        // 1. LOCK anti-corrida (3s)
-        // ================================
-        let canProceed = true;
         try {
-            if (redis?.set) {
-                lockKey = `ai:lock:${from}`;
-                const ok = await redis.set(lockKey, "1", "EX", 30, "NX");
-                if (ok === "OK") {
-                    lockAcquired = true;
-                } else {
-                    console.log(`⏭️ [${lead?._id}] AI lock ativo; evitando corrida`, lockKey);
-                    // ✅ FIX: Guarda mensagem pendente pra processar depois
-                    try {
-                        const pendingKey = `ai:pending:${from}`;
-                        const existing = await redis.get(pendingKey);
-                        const pendingList = existing ? JSON.parse(existing) : [];
-                        pendingList.push({ content, timestamp: Date.now() });
-                        await redis.set(pendingKey, JSON.stringify(pendingList), "EX", 300); // 5min TTL
-                        console.log(`📝 [${lead?._id}] Mensagem guardada para processar depois:`, content.substring(0, 50));
-                    } catch (e) {
-                        console.warn("⚠️ Falha ao guardar mensagem pendente:", e.message);
-                    }
-                    canProceed = false;
-                }
-            }
-        } catch (lockError) {
-            console.warn("⚠️ Redis lock indisponível:", lockError.message);
-        }
+            publishEvent(EventTypes.FOLLOWUP_REQUESTED, {
+                leadId: String(lead?._id),
+                source: 'inbound',
+            }, { correlationId }).catch(() => {});
+        } catch {}
 
-        if (!canProceed) return;
-
-        // ================================
-        // 2. Evita mensagem duplicada IDÊNTICA (10s) - FIX BUG #1
-        // ================================
-        // 🔧 CORREÇÃO: Usar hash MD5 do conteúdo ao invés de tempo genérico
         try {
-            if (redis?.set) {
-                const crypto = await import('crypto');
-                const contentHash = crypto.createHash('md5').update(content).digest('hex');
-                const recentKey = `msg:inbound:${from}:${contentHash}`;
+            publishEvent(EventTypes.LEAD_RECOVERY_CANCEL_REQUESTED, {
+                leadId: String(lead?._id),
+                reason: 'lead_respondeu',
+            }, { correlationId }).catch(() => {});
+        } catch {}
 
-                const exists = await redis.get(recentKey);
-                if (exists) {
-                    console.log(`⏭️ [${lead?._id}] Mensagem idêntica recebida recentemente; evitando duplicação:`, content.substring(0, 50));
-                    return;
-                }
-
-                // Marca como processada por 10s
-                await redis.setex(recentKey, 10, '1');
-            }
-        } catch (hashError) {
-            console.warn("⚠️ Redis hash indisponível:", hashError.message);
-        }
-
-        // ================================
-        // 3. Debounce (3s)
-        // ================================
-        try {
-            if (redis?.set) {
-                debounceKey = `ai:debounce:${from}`;
-                const ok = await redis.set(debounceKey, "1", "EX", 30, "NX");
-                if (ok === "OK") {
-                    debounceAcquired = true;
-                } else {
-                    console.log(`⏭️ [${lead?._id}] Debounce ativo; pulando auto-reply`);
-                    return;
-                }
-            }
-        } catch (debounceError) {
-            console.warn("⚠️ Redis debounce indisponível:", debounceError.message);
-        }
-
-        // ================================
-        // 4. Busca lead completo do banco + trava no Mongo (anti-corrida)
-        // ================================
-        const twoMinutesAgo = new Date(Date.now() - 120000);
-
-        // ✅ FIX: Recupera mensagens pendentes e agrega ao contexto
-        let aggregatedContent = content;
-        try {
-            const pendingKey = `ai:pending:${from}`;
-            const pending = await redis.get(pendingKey);
-            if (pending) {
-                const pendingList = JSON.parse(pending);
-                if (pendingList.length > 0) {
-                    const pendingTexts = pendingList.map(p => p.content).join("\n");
-                    aggregatedContent = `${pendingTexts}\n${content}`;
-                    await redis.del(pendingKey);
-                    console.log(`📥 [${lead?._id}] Mensagens pendentes agregadas:`, pendingList.length);
-                }
-            }
-        } catch (e) {
-            console.warn("⚠️ Falha ao recuperar msgs pendentes:", e.message);
-        }
-
-        // ✅ FIX: Recarrega lead do banco para garantir dados mais recentes (incluindo manualControl)
-        // O lead passado pode estar desatualizado se manualControl foi ativado após o carregamento inicial
-        let leadDoc = await Lead.findById(lead._id).select('+triageStep').lean();
-        
-        if (!leadDoc) {
-            console.log("⏭️ Lead não encontrado no banco; ignorando mensagem", lead?._id);
-            return;
-        }
-
-        // ✅ FIX: Removido lock manual redundante (isProcessing: true sem processingStartedAt)
-        // O withLeadLock na L1702 já faz o lock atômico correto com processingStartedAt
-
-        // No handleAutoReply, após carregar o lead:
-        if (leadDoc.pendingChosenSlot === 'NÃO' || leadDoc.pendingSchedulingSlots === 'NÃO') {
-            await Lead.findByIdAndUpdate(leadDoc._id, {
-                $unset: { pendingChosenSlot: "", pendingSchedulingSlots: "" }
-            });
-            // Recarrega limpo
-            leadDoc = await Lead.findById(leadDoc._id).select('+triageStep').lean();
-        }
-        // 🔍 DEBUG: Lead carregado do banco no handleAutoReply
-        console.log("🔍 [DEBUG HANDLE-AUTO-REPLY] Lead carregado do banco:", {
-            leadId: leadDoc?._id,
-            triageStep: leadDoc?.triageStep,
-            pendingPatientInfoForScheduling: leadDoc?.pendingPatientInfoForScheduling,
-            pendingPatientInfoStep: leadDoc?.pendingPatientInfoStep,
-            pendingChosenSlot: leadDoc?.pendingChosenSlot ? "SIM" : "NÃO",
-            pendingSchedulingSlots: leadDoc?.pendingSchedulingSlots?.primary ? "SIM" : "NÃO",
-            manualControl: leadDoc?.manualControl ? {
-                active: leadDoc.manualControl.active,
-                takenOverAt: leadDoc.manualControl.takenOverAt,
-                autoResumeAfter: leadDoc.manualControl.autoResumeAfter
-            } : 'NÃO DEFINIDO'
+        // ─────────────────────────────────────────────
+        // 8. LOG FINAL
+        // ─────────────────────────────────────────────
+        log.info('done', {
+            wamid,
+            leadId: lead?._id,
+            messageId: savedMessage?._id,
+            correlationId
         });
 
-        if (!leadDoc) {
-            console.log("⏭️ Lead não encontrado; ignorando mensagem", lead?._id);
-            return;
-        }
-
-        mongoLockedLeadId = leadDoc._id;
-
-        // ================================
-        // 5. Controle manual (human takeover)
-        // ================================
-        if (!isTestNumber && leadDoc.manualControl?.active) {
-            console.log('👤 [CONTROLE MANUAL] Ativo para lead:', leadDoc._id, '-', leadDoc.name);
-
-            const takenAt = leadDoc.manualControl.takenOverAt
-                ? new Date(leadDoc.manualControl.takenOverAt)
-                : null;
-
-            let aindaPausada = true;
-            // 🔧 FIX: Só reativa automaticamente se autoResumeAfter for um número positivo
-            // Se for null/undefined/0, mantém pausado indefinidamente (só volta clicando no botão "Ativar")
-            const timeout = leadDoc.manualControl?.autoResumeAfter;
-            if (typeof timeout === "number" && timeout > 0) {
-                // 🔄 Modo com timeout: verifica se já passou o tempo
-                if (takenAt) {
-                    const minutesSince = (Date.now() - takenAt.getTime()) / (1000 * 60);
-                    if (minutesSince > timeout) {
-                        await Lead.findByIdAndUpdate(lead._id, { 'manualControl.active': false });
-                        aindaPausada = false;
-                    }
-                }
-            } else if (timeout === null || timeout === undefined) {
-                // 🔒 Modo sem timeout: mantém pausado indefinidamente
-                // Só volta quando o usuário clicar no botão "Ativar"
-                console.log('🔒 [CONTROLE MANUAL] Modo permanente ativo - Amanda não volta sozinha');
-                aindaPausada = true;
-            } else if (!takenAt) {
-                // ⚠️ Se não tem takenAt e não tem timeout definido, desativa por segurança
-                await Lead.findByIdAndUpdate(lead._id, { 'manualControl.active': false });
-                aindaPausada = false;
-            }
-
-            if (aindaPausada) {
-                console.log('⏸️ Amanda PAUSADA - humano no controle. Não responderei por IA.');
-                return;
-            }
-        } else if (isTestNumber) {
-            console.log('🧪 Número de teste → ignorando controle manual, Amanda sempre ativa.');
-        }
-
-        // ================================
-        // 6. Flag geral de autoReply
-        // ================================
-        if (leadDoc.autoReplyEnabled === false) {
-            console.log('⛔ autoReplyEnabled = false para lead', leadDoc._id, '- Amanda desativada.');
-            return;
-        }
-
-        // ================================
-        // 7. Histórico para contexto básico
-        // (enrichLeadContext faz o resto lá no orquestrador)
-        // ================================
-        const histDocs = await Message.find({
-            $or: [{ from }, { to: from }],
-            type: "text",
-        }).sort({ timestamp: -1 }).limit(12).lean();
-
-        const lastMessages = histDocs.reverse().map(m => (m.content || m.text || "").toString());
-        const greetings = /^(oi|ol[aá]|boa\s*(tarde|noite|dia)|tudo\s*bem|bom\s*dia|fala|e[aíi])[\s!,.]*$/i;
-        const isFirstContact = lastMessages.length <= 1 || greetings.test(content.trim());
-
-        // ================================
-        // 8. Gera resposta da Amanda (NOVO ORQUESTRADOR 100%)
-        // ================================
-        console.log('🤖 Gerando resposta da Amanda (Novo Orquestrador)...');
-        const leadIdStr = leadDoc?._id ? String(leadDoc._id) : null;
-        let aiText = null;
-
-        // 🚀 Contexto enriquecido para evitar loadContext redundante no orquestrador
-        const enrichedContext = {
-            preferredPeriod: leadDoc.preferredPeriod || leadDoc.qualificationData?.extractedInfo?.disponibilidade,
-            preferredDate: leadDoc.preferredDate || leadDoc.qualificationData?.extractedInfo?.dataPreferida,
-            therapy: leadDoc.therapy || leadDoc.qualificationData?.extractedInfo?.especialidade,
-            source: 'whatsapp-inbound'
-        };
-
-        // 🚀 ORQUESTRADOR COM LOCK ATÔMICO (feature flag via runOrchestrator)
-        const lockResult = await withLeadLock(leadDoc._id, async (lockedLead) => {
-            return runOrchestrator(lockedLead, aggregatedContent, enrichedContext);
+    } catch (err) {
+        // 🔥 NEVER BREAK WEBHOOK PIPELINE
+        log.error('critical_but_safe_error', {
+            err: err.message,
+            wamid,
+            correlationId
         });
-
-        if (!lockResult.locked) {
-            console.log('🔒 Lead em processamento por outra requisição, ignorando duplicata');
-            return;
-        }
-
-        const result = lockResult;
-        if (result?.command === 'SEND_MESSAGE') {
-            aiText = result.payload.text;
-        }
-
-        console.log("[AmandaReply] Texto gerado:", aiText ? aiText.substring(0, 80) + '...' : 'vazio');
-
-        // ================================
-        // 9. Envia resposta marcada como "amanda"
-        // ================================
-        if (aiText && aiText.trim()) {
-            // 📝 Formata texto para melhor legibilidade no WhatsApp
-            const finalText = formatWhatsAppResponse(aiText.trim());
-
-            // 🔎 Resolve contactId e patientId antes de enfileirar
-            const contactDoc = await Contacts.findOne({ phone: from }).lean();
-            const patientId = leadDoc.convertedToPatient || null;
-
-            // 📤 Enfileira envio assíncrono → WhatsappSendWorker (retry automático)
-            await publishEvent(EventTypes.WHATSAPP_MESSAGE_REQUESTED, {
-                to: from,
-                text: finalText,
-                leadId: String(leadDoc._id),
-                contactId: contactDoc?._id ? String(contactDoc._id) : null,
-                patientId: patientId ? String(patientId) : null,
-                sentBy: 'amanda',
-                source: 'amanda-reply',
-                idempotencyKey: `amanda-reply:${String(leadDoc._id)}:${Date.now()}`,
-            });
-
-            console.log("[AmandaReply] Envio enfileirado para WhatsappSendWorker");
-        }
-    } catch (error) {
-        console.error('❌ Erro no auto-reply (não crítico):', error);
-    } finally {
-        // ✅ FIX: Lock manual removido — withLeadLock() cuida de tudo
-        // O releaseLock() no finally do withLeadLock já limpa isProcessing + processingStartedAt
-
-        // ✅ Libera locks no Redis (best-effort)
-        try {
-            if (redis?.del) {
-                if (lockAcquired && lockKey) await redis.del(lockKey);
-                if (debounceAcquired && debounceKey) await redis.del(debounceKey);
-            }
-        } catch (redisDelErr) {
-            console.warn('⚠️ Falha ao liberar locks Redis:', redisDelErr.message);
-        }
     }
 }
 
+export { processInboundMessage };
 
-function mergeNonNull(base = {}, incoming = {}) {
-    const out = { ...(base || {}) };
-    for (const [k, v] of Object.entries(incoming || {})) {
-        // 🛡️ FIX: Nunca sobrescrever valores existentes com null/undefined/vazio
-        if (v === null || v === undefined || v === "") {
-            // Se o valor atual existe no out, mantenha-o
-            if (out[k] !== undefined && out[k] !== null && out[k] !== "") {
-                continue; // Mantém o valor existente
-            }
-            // Se não existe valor atual e o incoming é nulo, define como null apenas se não existir
-            if (!(k in out)) {
-                out[k] = v;
-            }
-            continue;
-        }
-        if (Array.isArray(v)) { if (v.length) out[k] = v; continue; }
-        if (typeof v === "object") out[k] = mergeNonNull(out[k], v);
-        else out[k] = v;
-    }
-    return out;
-}
 
 
 export async function handleIncomingMessage(req, res) {
@@ -2614,6 +1712,3 @@ export function startSilenceMonitor() {
 
 // Inicia automaticamente
 startSilenceMonitor();
-
-// Exporta para uso pelo whatsappInboundWorker
-export { processInboundMessage };

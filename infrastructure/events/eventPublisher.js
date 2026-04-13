@@ -44,6 +44,7 @@ const queues = {
     'lead-processing': new Queue('lead-processing', { connection: redisConnection }),
     'followup-processing': new Queue('followup-processing', { connection: redisConnection }),
     'update-orchestrator': new Queue('update-orchestrator', { connection: redisConnection }),
+    'appointment-integration': new Queue('appointment-integration', { connection: redisConnection }),
     'whatsapp-notification': new Queue('whatsapp-notification', { connection: redisConnection }),
     'email-notification': new Queue('email-notification', { connection: redisConnection }),
     'totals-calculation': new Queue('totals-calculation', { connection: redisConnection }),
@@ -60,6 +61,10 @@ const queues = {
     'lead-orchestrator-v2':    new Queue('lead-orchestrator-v2',    { connection: redisConnection }),
     'whatsapp-message-response': new Queue('whatsapp-message-response', { connection: redisConnection }),
     'whatsapp-inbound':          new Queue('whatsapp-inbound',          { connection: redisConnection }),
+    'whatsapp-auto-reply':       new Queue('whatsapp-auto-reply',       { connection: redisConnection }),
+    'lead-recovery':             new Queue('lead-recovery',             { connection: redisConnection }),
+    'context-builder':           new Queue('context-builder',           { connection: redisConnection }),
+    'conversation-state':        new Queue('conversation-state',        { connection: redisConnection }),
 };
 
 /**
@@ -201,6 +206,18 @@ export const EventTypes = {
     // 💬 WhatsApp Response Tracking
     MESSAGE_RESPONSE_DETECTED: 'MESSAGE_RESPONSE_DETECTED',
     
+    // 🧠 Context Builder (inteligência de contexto)
+    CONTEXT_BUILD_REQUESTED: 'CONTEXT_BUILD_REQUESTED',
+    
+    // 💬 Conversation State (memória de curto prazo da conversa)
+    CONVERSATION_STATE_UPDATE: 'CONVERSATION_STATE_UPDATE',
+
+    // 💬 WhatsApp Auto Reply (Amanda — worker isolado, fora da hot path)
+    WHATSAPP_AUTO_REPLY_REQUESTED: 'WHATSAPP_AUTO_REPLY_REQUESTED',
+
+    // 🔄 Lead Recovery
+    LEAD_RECOVERY_CANCEL_REQUESTED: 'LEAD_RECOVERY_CANCEL_REQUESTED',
+    
     // 💰 Financeiro - Totals
     TOTALS_RECALCULATE_REQUESTED: 'TOTALS_RECALCULATE_REQUESTED',
     TOTALS_RECALCULATED: 'TOTALS_RECALCULATED',
@@ -220,6 +237,9 @@ export const EventTypes = {
     // 🔗 Integration Layer — eventos traduzidos entre domínios
     APPOINTMENT_BILLING_REQUESTED: 'APPOINTMENT_BILLING_REQUESTED',
     SESSION_BILLING_REQUESTED: 'SESSION_BILLING_REQUESTED',
+    
+    // 🔄 Reconciliation
+    RECONCILIATION_ALERT: 'RECONCILIATION_ALERT',
 };
 
 /**
@@ -243,8 +263,8 @@ const eventToQueueMap = {
     
     // Resultados → Workers de reação
     [EventTypes.APPOINTMENT_CREATED]: ['notification', 'patient-projection', 'clinical-orchestrator'],
-    [EventTypes.APPOINTMENT_UPDATED]: ['notification', 'patient-projection'],
-    [EventTypes.APPOINTMENT_CANCELED]: ['sync-medical', 'patient-projection', 'clinical-orchestrator'],
+    [EventTypes.APPOINTMENT_UPDATED]: ['notification', 'patient-projection', 'appointment-integration'],
+    [EventTypes.APPOINTMENT_CANCELED]: ['sync-medical', 'patient-projection', 'clinical-orchestrator', 'package-projection'],
     [EventTypes.APPOINTMENT_COMPLETED]: ['complete-orchestrator', 'sync-medical', 'patient-projection', 'integration-orchestrator', 'lead-orchestrator-v2'],
     [EventTypes.APPOINTMENT_REJECTED]: 'notification',
     [EventTypes.APPOINTMENT_CONFIRMED]: ['notification', 'patient-projection'],
@@ -327,6 +347,18 @@ const eventToQueueMap = {
 
     // 💬 WhatsApp Response Tracking
     [EventTypes.MESSAGE_RESPONSE_DETECTED]: 'whatsapp-message-response',
+
+    // 💬 WhatsApp Context Builder (inteligência de contexto antes da Amanda)
+    [EventTypes.CONTEXT_BUILD_REQUESTED]: 'context-builder',
+    
+    // 💬 Conversation State (memória de curto prazo)
+    [EventTypes.CONVERSATION_STATE_UPDATE]: 'conversation-state',
+    
+    // 💬 WhatsApp Auto Reply (Amanda — worker isolado)
+    [EventTypes.WHATSAPP_AUTO_REPLY_REQUESTED]: 'whatsapp-auto-reply',
+
+    // 🔄 Lead Recovery
+    [EventTypes.LEAD_RECOVERY_CANCEL_REQUESTED]: 'lead-recovery',
     
     // 🔔 Notificações
     [EventTypes.NOTIFICATION_REQUESTED]: 'notification',
@@ -351,6 +383,14 @@ const eventToQueueMap = {
     [EventTypes.PAYMENT_CONFIRMED]:            ['patient-projection', 'balance-update'],
     [EventTypes.PAYMENT_CANCELLED]:            'patient-projection',
     [EventTypes.INSURANCE_PAYMENT_RECOGNIZED]: ['patient-projection', 'balance-update'],
+    
+    // 💰 Expenses V2
+    [EventTypes.EXPENSE_CREATED]:              'totals-calculation',
+    [EventTypes.EXPENSE_UPDATED]:              'totals-calculation',
+    [EventTypes.EXPENSE_CANCELED]:             'totals-calculation',
+    
+    // 🔄 Reconciliation
+    [EventTypes.RECONCILIATION_ALERT]: [],  // Apenas log, sem fila
 };
 
 /**

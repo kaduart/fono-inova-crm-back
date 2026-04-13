@@ -1,0 +1,2409 @@
+{
+  "timestamp": "2026-04-12T21:18:31.075Z",
+  "totalPackages": 164,
+  "categories": {
+    "liminar": [
+      {
+        "_id": "69c14528c19d35b8454a27e8",
+        "type": "liminar",
+        "paymentType": "full",
+        "totalValue": 2400,
+        "totalPaid": 450,
+        "inferredModel": "liminar"
+      },
+      {
+        "_id": "69c1456ec19d35b8454a2882",
+        "type": "liminar",
+        "paymentType": "full",
+        "totalValue": 4800,
+        "totalPaid": 300,
+        "inferredModel": "liminar"
+      },
+      {
+        "_id": "69c1459fc19d35b8454a28f9",
+        "type": "liminar",
+        "paymentType": "full",
+        "totalValue": 5120,
+        "totalPaid": 480,
+        "inferredModel": "liminar"
+      },
+      {
+        "_id": "69c15025c19d35b8454a2e8b",
+        "type": "liminar",
+        "paymentType": "full",
+        "totalValue": 5120,
+        "totalPaid": 480,
+        "inferredModel": "liminar"
+      },
+      {
+        "_id": "69d31264a14c560c7eb92d56",
+        "type": "liminar",
+        "paymentType": "full",
+        "totalValue": 0.4,
+        "totalPaid": 0.1,
+        "inferredModel": "liminar"
+      },
+      {
+        "_id": "69db00b94094ab839ebf2dc2",
+        "type": "liminar",
+        "paymentType": "full",
+        "totalValue": 300,
+        "totalPaid": 0,
+        "inferredModel": "liminar"
+      }
+    ],
+    "convenio": [
+      {
+        "_id": "699847fe7c92d32c1fd3c62a",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "699848397c92d32c1fd3c7dd",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "6998486a7c92d32c1fd3c8ef",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "699866a77c92d32c1fd43595",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "699866e27c92d32c1fd43657",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69986c057c92d32c1fd44a1f",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69986c7c7c92d32c1fd44be9",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69986d557c92d32c1fd44f15",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "699dc1134152216f791365f0",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "699dcca24152216f79139213",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "699dce804152216f79139871",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "699dd72d4152216f7913b8ee",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "699ddbf74152216f7913cb1a",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "699de14a4152216f7913de38",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "699de5184152216f7913ebfb",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "699e003d4152216f7914500a",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "699e01084152216f791452ea",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "699e014f4152216f79145471",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69a9985266c460e6da734f68",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69c2eb495c4ad17fefccc505",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69c2ebf15c4ad17fefccc5e8",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69c566c587f4b2aed4722d2d",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69c5679b87f4b2aed4722dc3",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69c5690187f4b2aed4722e86",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69d3107ba14c560c7eb92aca",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69d646e885f1fc2849c5b659",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69d668807f968ceaa5744cce",
+        "type": "convenio",
+        "inferredModel": "convenio",
+        "createdAt": "2026-04-08T14:38:56.497Z"
+      },
+      {
+        "_id": "69d67dfe19c6571d8c76dbbe",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69dac2e75e25b6aceca5f369",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69dac78d5e25b6aceca5f52c",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69dad2b189d1e0cf2b4632a9",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69dad4557fe7b52a72696895",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      },
+      {
+        "_id": "69dae901b0c1652aeb934cd0",
+        "type": "convenio",
+        "paymentType": "full",
+        "totalValue": 0,
+        "totalPaid": 0,
+        "inferredModel": "convenio"
+      }
+    ],
+    "prepaid": [
+      {
+        "_id": "686fd2039276a58116d07556",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "687e352c20c72d457aba6efb",
+        "paymentType": "full",
+        "totalPaid": 1200,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "687e40c6902dfb659a5cbf9d",
+        "paymentType": "full",
+        "totalPaid": 1200,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "687e9fd8cfb03169c5c8c2e3",
+        "paymentType": "full",
+        "totalPaid": 1440,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "687fd507cfb03169c5c8d6ec",
+        "paymentType": "full",
+        "totalPaid": 2160,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68894824d6d2214f6d7b58a8",
+        "paymentType": "full",
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68929efcaadaf66f2a2bfb0c",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68929fb8be13af1922267175",
+        "paymentType": "full",
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6893c50d4b4ab2f2fe9381fb",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6894b09dc6fd0a1c11f6fd42",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6896284a588fcfa3c5664a70",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "689dd70be2043e433fff97bd",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "689f99589c2e1fdc863e8545",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "689f99b59c2e1fdc863e8574",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68ada20d74b070eb52496dcc",
+        "paymentType": "full",
+        "totalPaid": 800,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68b1e3eb18fa98448dad3428",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68b1f21328ca890852b710cd",
+        "paymentType": "full",
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68b8a5af7a36ac7ce0da603a",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68b9bac612aba72c13fff37e",
+        "paymentType": "full",
+        "totalPaid": 1800,
+        "inferredModel": "prepaid",
+        "createdAt": "2025-09-03T00:00:00.000+00:00"
+      },
+      {
+        "_id": "68bedf5904ec4875aaea81b8",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68bf0eabfd3cf3e3c2dfc6e0",
+        "paymentType": "full",
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68bf0edcfd3cf3e3c2dfc71b",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68bf3394cd07f1032e18378d",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68c7fd76e0832897cb1c2cef",
+        "paymentType": "full",
+        "totalPaid": 480,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68cbf9a85cac66e0313cb10c",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68cd64a4bbc720b5cc9fe9fc",
+        "paymentType": "full",
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68d15a355a6b8506bebc7744",
+        "paymentType": "full",
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68d1b6e9123d6dc6644d2ebd",
+        "paymentType": "full",
+        "totalPaid": 780,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68de8bc6d576ef219fd56792",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68e3bf870d8aeeff1af03f5e",
+        "paymentType": "full",
+        "totalValue": 720,
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68e80d5ea49517ebb502a0da",
+        "paymentType": "full",
+        "totalPaid": 700,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68eeb5f549e195b37058bab2",
+        "paymentType": "full",
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68eeb6f049e195b37058bb7f",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68f2561ddbd680a8e1f10a5f",
+        "paymentType": "full",
+        "totalPaid": 2100,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68f26629c5bd0b3e3273dfdf",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68f26ad7c5bd0b3e3273e26b",
+        "paymentType": "full",
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68f7c5b83cf905d4cef8b402",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68fa8c584862040e3c0636e8",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "68fb84fe92bda574197a5f43",
+        "paymentType": "full",
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69020b2782b3b0951152e102",
+        "paymentType": "full",
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6904a70a7abc25e6eb2532db",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6909e39146a6b4faa3016be2",
+        "paymentType": "full",
+        "totalPaid": 700,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6913377a745b84b5aa93d6fc",
+        "paymentType": "full",
+        "totalPaid": 700,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6914f0f23bd5036d01a7ce3d",
+        "paymentType": "full",
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69171eb45d4d8bdb65edda2f",
+        "paymentType": "full",
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "691b5d0efa52136b526804d1",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "691cc840579b9d4697a3b67e",
+        "paymentType": "full",
+        "totalValue": 850,
+        "totalPaid": 850,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "692d7eccdeb2718ab4e3caef",
+        "paymentType": "full",
+        "totalValue": 600,
+        "totalPaid": 600,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69302c60fc5b0c071179cf9d",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6930895efc5b0c071179e724",
+        "paymentType": "full",
+        "totalValue": 720,
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6931c0b044ec1d7efe0147fa",
+        "paymentType": "full",
+        "totalValue": 720,
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6937436d94602156495ef505",
+        "paymentType": "full",
+        "totalValue": 600,
+        "totalPaid": 600,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6939eb7c9a014578f5bdebe8",
+        "paymentType": "full",
+        "totalValue": 720,
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69400908bb6ba6cc3ff61f8d",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "694142f4bb6ba6cc3ff6436d",
+        "paymentType": "full",
+        "totalValue": 720,
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69453b02a132f0049cbc750b",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69453f66a132f0049cbc77f5",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "695bfadf4753f6b798c804fb",
+        "paymentType": "full",
+        "totalValue": 360,
+        "totalPaid": 360,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "695d4264a9d9ddd1a36bce9d",
+        "paymentType": "full",
+        "totalValue": 360,
+        "totalPaid": 360,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6970e37c3e6ae8c1cb52c56c",
+        "paymentType": "full",
+        "totalValue": 480,
+        "totalPaid": 480,
+        "inferredModel": "prepaid",
+        "createdAt": "2026-01-21T14:32:28.260Z"
+      },
+      {
+        "_id": "6971175477dc3276528bfe3e",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6973d9643c57b32dc68da370",
+        "paymentType": "full",
+        "totalValue": 680,
+        "totalPaid": 680,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6977583aa63516305a81995a",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6977a092bae964fbb8bf467b",
+        "paymentType": "full",
+        "totalValue": 320,
+        "totalPaid": 320,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "697a6f5b45b1f739502b3879",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "697a759045b1f739502b3e54",
+        "paymentType": "full",
+        "totalValue": 645,
+        "totalPaid": 645,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "697ca2c641bea6644e5c3777",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "697ca8af41bea6644e5c3aff",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69825b8bb67c834cf804baea",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 320,
+        "totalPaid": 320,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6983a33824fc8ae0c7209f7e",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 720,
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69864e7779bba4d65fae75c8",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "698a468a671613f5842c842d",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "698a4b4d671613f5842c865a",
+        "paymentType": "full",
+        "totalValue": 600,
+        "totalPaid": 600,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "698c8c1db458e314ff72ae76",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "698ca9cb10fbb5ebee0a9183",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 800,
+        "totalPaid": 800,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "698ccd7310fbb5ebee0a9767",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 1280,
+        "totalPaid": 1280,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "698cd9f910fbb5ebee0a9d1a",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6997726b1a07d54a5731ed1f",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "6998c54e397255b0643d5cfe",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69a196951673747583ac51e8",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69a81cea9053b5d1e83a93ab",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 320,
+        "totalPaid": 320,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69a830b89053b5d1e83aa889",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 1280,
+        "totalPaid": 1280,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69a86a1b290c8fb4937feb27",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 1700,
+        "totalPaid": 1700,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69a8764d290c8fb4937ff3a2",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69a89cdde21d889457485339",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 1200,
+        "totalPaid": 1200,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69aae00ad1b70547867636ae",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69af3320e34d9dac047626a7",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 600,
+        "totalPaid": 600,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69b809bc7c7e8bd1b3b9122f",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69b847c17c7e8bd1b3b92a1b",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69b865a37c7e8bd1b3b94455",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69b9a623785a76ad646fdb08",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 720,
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69ba9cfa8945dcd5863d99be",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69bafad3a1ea3fab7f74c850",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 720,
+        "totalPaid": 720,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69bb0db9a1ea3fab7f74d2e1",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69c2e7395c4ad17fefccbe21",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 1200,
+        "totalPaid": 1200,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69cbd2066873402d92efd19b",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69cd3899e706da54fdf0e511",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 1360,
+        "totalPaid": 1360,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69ced6cf644baa62b909e327",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 640,
+        "totalPaid": 640,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69d30be62a7ce1051e413fa3",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 0.4,
+        "totalPaid": 0.4,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69d45152c842a5a7291b5fae",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 600,
+        "totalPaid": 600,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69d8f71f7bd82bc9e85e1388",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 960,
+        "totalPaid": 960,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69d9668b0e1115b0e67c5a17",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 0.4,
+        "totalPaid": 0.4,
+        "inferredModel": "prepaid"
+      },
+      {
+        "_id": "69dbc782c7320c7739b6ec23",
+        "type": "therapy",
+        "paymentType": "full",
+        "totalValue": 0.4,
+        "totalPaid": 0.4,
+        "inferredModel": "prepaid"
+      }
+    ],
+    "per_session": [
+      {
+        "_id": "68f76f18906180bdf2a0523b",
+        "paymentType": "partial",
+        "totalPaid": 426,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "691329e7745b84b5aa93d51a",
+        "paymentType": "partial",
+        "totalPaid": 640,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69c674eb1d84ac5eb1c3bef0",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 720,
+        "totalPaid": 180,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69c675651d84ac5eb1c3bfde",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 640,
+        "totalPaid": 320,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69c676c81d84ac5eb1c3c0d2",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 720,
+        "totalPaid": 360,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69c698173014fd4ab2d720b8",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 720,
+        "totalPaid": 360,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69c6996e06a4b96f32c0068a",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 0.4,
+        "totalPaid": 0.1,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69cbd1736873402d92efd111",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 720,
+        "totalPaid": 0,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69cd151f6ffb1e1fc27083e9",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 640,
+        "totalPaid": 0,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69cd1763856a4f39ce254cae",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 280,
+        "totalPaid": 140,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69cd36f8e706da54fdf0e366",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 600,
+        "totalPaid": 0,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69daebd1483cb3ff6044966f",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 600,
+        "totalPaid": 150,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69daf4038271d1aa6e59b5f1",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 600,
+        "totalPaid": 150,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69daf771effa32b2610af9a9",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 400,
+        "totalPaid": 0,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69db02157765380e83387e19",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 540,
+        "totalPaid": 180,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69db05637765380e83388040",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 540,
+        "totalPaid": 180,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69db06d502c1c448671c7a22",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 540,
+        "totalPaid": 180,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69db080e24d4a2234e2c615b",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 540,
+        "totalPaid": 0,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69db12b80f17b96ed5738b0d",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 600,
+        "totalPaid": 0,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69db1757c77bda3dbe271e36",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 600,
+        "totalPaid": 0,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69db1fa8790996eec5a2631d",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 600,
+        "totalPaid": 0,
+        "inferredModel": "per_session"
+      },
+      {
+        "_id": "69dbe347c2652c8c412c0751",
+        "type": "therapy",
+        "paymentType": "per-session",
+        "totalValue": 0.4,
+        "totalPaid": 0,
+        "inferredModel": "per_session"
+      }
+    ],
+    "uncertain": []
+  },
+  "rawPackages": [
+    {
+      "_id": "686fd2039276a58116d07556",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "active"
+    },
+    {
+      "_id": "687e352c20c72d457aba6efb",
+      "paymentType": "full",
+      "totalPaid": 1200,
+      "status": "completed"
+    },
+    {
+      "_id": "687e40c6902dfb659a5cbf9d",
+      "paymentType": "full",
+      "totalPaid": 1200,
+      "status": "completed"
+    },
+    {
+      "_id": "687e9fd8cfb03169c5c8c2e3",
+      "paymentType": "full",
+      "totalPaid": 1440,
+      "status": "completed"
+    },
+    {
+      "_id": "687fd507cfb03169c5c8d6ec",
+      "paymentType": "full",
+      "totalPaid": 2160,
+      "status": "completed"
+    },
+    {
+      "_id": "68894824d6d2214f6d7b58a8",
+      "paymentType": "full",
+      "totalPaid": 640,
+      "status": "completed"
+    },
+    {
+      "_id": "68929efcaadaf66f2a2bfb0c",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "completed"
+    },
+    {
+      "_id": "68929fb8be13af1922267175",
+      "paymentType": "full",
+      "totalPaid": 640,
+      "status": "completed"
+    },
+    {
+      "_id": "6893c50d4b4ab2f2fe9381fb",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "completed"
+    },
+    {
+      "_id": "6894b09dc6fd0a1c11f6fd42",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "completed"
+    },
+    {
+      "_id": "6896284a588fcfa3c5664a70",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "completed"
+    },
+    {
+      "_id": "689dd70be2043e433fff97bd",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "completed"
+    },
+    {
+      "_id": "689f99589c2e1fdc863e8545",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "completed"
+    },
+    {
+      "_id": "689f99b59c2e1fdc863e8574",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "completed"
+    },
+    {
+      "_id": "68ada20d74b070eb52496dcc",
+      "paymentType": "full",
+      "totalPaid": 800,
+      "status": "completed"
+    },
+    {
+      "_id": "68b1e3eb18fa98448dad3428",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "completed"
+    },
+    {
+      "_id": "68b1f21328ca890852b710cd",
+      "paymentType": "full",
+      "totalPaid": 640,
+      "status": "completed"
+    },
+    {
+      "_id": "68b8a5af7a36ac7ce0da603a",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "completed"
+    },
+    {
+      "_id": "68b9bac612aba72c13fff37e",
+      "paymentType": "full",
+      "totalPaid": 1800,
+      "createdAt": "2025-09-03T00:00:00.000+00:00",
+      "status": "active"
+    },
+    {
+      "_id": "68bedf5904ec4875aaea81b8",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "completed"
+    },
+    {
+      "_id": "68bf0eabfd3cf3e3c2dfc6e0",
+      "paymentType": "full",
+      "totalPaid": 640,
+      "status": "completed"
+    },
+    {
+      "_id": "68bf0edcfd3cf3e3c2dfc71b",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "completed"
+    },
+    {
+      "_id": "68bf3394cd07f1032e18378d",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "completed"
+    },
+    {
+      "_id": "68c7fd76e0832897cb1c2cef",
+      "paymentType": "full",
+      "totalPaid": 480,
+      "status": "completed"
+    },
+    {
+      "_id": "68cbf9a85cac66e0313cb10c",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "completed"
+    },
+    {
+      "_id": "68cd64a4bbc720b5cc9fe9fc",
+      "paymentType": "full",
+      "totalPaid": 640,
+      "status": "completed"
+    },
+    {
+      "_id": "68d15a355a6b8506bebc7744",
+      "paymentType": "full",
+      "totalPaid": 640,
+      "status": "completed"
+    },
+    {
+      "_id": "68d1b6e9123d6dc6644d2ebd",
+      "paymentType": "full",
+      "totalPaid": 780,
+      "status": "completed"
+    },
+    {
+      "_id": "68de8bc6d576ef219fd56792",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "active"
+    },
+    {
+      "_id": "68e3bf870d8aeeff1af03f5e",
+      "paymentType": "full",
+      "totalValue": 720,
+      "totalPaid": 720,
+      "status": "finished"
+    },
+    {
+      "_id": "68e80d5ea49517ebb502a0da",
+      "paymentType": "full",
+      "totalPaid": 700,
+      "status": "active"
+    },
+    {
+      "_id": "68eeb5f549e195b37058bab2",
+      "paymentType": "full",
+      "totalPaid": 640,
+      "status": "completed"
+    },
+    {
+      "_id": "68eeb6f049e195b37058bb7f",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "active"
+    },
+    {
+      "_id": "68f2561ddbd680a8e1f10a5f",
+      "paymentType": "full",
+      "totalPaid": 2100,
+      "status": "active"
+    },
+    {
+      "_id": "68f26629c5bd0b3e3273dfdf",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "completed"
+    },
+    {
+      "_id": "68f26ad7c5bd0b3e3273e26b",
+      "paymentType": "full",
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "68f76f18906180bdf2a0523b",
+      "paymentType": "partial",
+      "totalPaid": 426,
+      "status": "active"
+    },
+    {
+      "_id": "68f7c5b83cf905d4cef8b402",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "completed"
+    },
+    {
+      "_id": "68fa8c584862040e3c0636e8",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "active"
+    },
+    {
+      "_id": "68fb84fe92bda574197a5f43",
+      "paymentType": "full",
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "69020b2782b3b0951152e102",
+      "paymentType": "full",
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "6904a70a7abc25e6eb2532db",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "active"
+    },
+    {
+      "_id": "6909e39146a6b4faa3016be2",
+      "paymentType": "full",
+      "totalPaid": 700,
+      "status": "active"
+    },
+    {
+      "_id": "691329e7745b84b5aa93d51a",
+      "paymentType": "partial",
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "6913377a745b84b5aa93d6fc",
+      "paymentType": "full",
+      "totalPaid": 700,
+      "status": "active"
+    },
+    {
+      "_id": "6914f0f23bd5036d01a7ce3d",
+      "paymentType": "full",
+      "totalPaid": 720,
+      "status": "active"
+    },
+    {
+      "_id": "69171eb45d4d8bdb65edda2f",
+      "paymentType": "full",
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "691b5d0efa52136b526804d1",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "691cc840579b9d4697a3b67e",
+      "paymentType": "full",
+      "totalValue": 850,
+      "totalPaid": 850,
+      "status": "active"
+    },
+    {
+      "_id": "692d7eccdeb2718ab4e3caef",
+      "paymentType": "full",
+      "totalValue": 600,
+      "totalPaid": 600,
+      "status": "active"
+    },
+    {
+      "_id": "69302c60fc5b0c071179cf9d",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "6930895efc5b0c071179e724",
+      "paymentType": "full",
+      "totalValue": 720,
+      "totalPaid": 720,
+      "status": "active"
+    },
+    {
+      "_id": "6931c0b044ec1d7efe0147fa",
+      "paymentType": "full",
+      "totalValue": 720,
+      "totalPaid": 720,
+      "status": "active"
+    },
+    {
+      "_id": "6937436d94602156495ef505",
+      "paymentType": "full",
+      "totalValue": 600,
+      "totalPaid": 600,
+      "status": "active"
+    },
+    {
+      "_id": "6939eb7c9a014578f5bdebe8",
+      "paymentType": "full",
+      "totalValue": 720,
+      "totalPaid": 720,
+      "status": "active"
+    },
+    {
+      "_id": "69400908bb6ba6cc3ff61f8d",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "694142f4bb6ba6cc3ff6436d",
+      "paymentType": "full",
+      "totalValue": 720,
+      "totalPaid": 720,
+      "status": "active"
+    },
+    {
+      "_id": "69453b02a132f0049cbc750b",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "69453f66a132f0049cbc77f5",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "closed"
+    },
+    {
+      "_id": "695bfadf4753f6b798c804fb",
+      "paymentType": "full",
+      "totalValue": 360,
+      "totalPaid": 360,
+      "status": "active"
+    },
+    {
+      "_id": "695d4264a9d9ddd1a36bce9d",
+      "paymentType": "full",
+      "totalValue": 360,
+      "totalPaid": 360,
+      "status": "active"
+    },
+    {
+      "_id": "6970e37c3e6ae8c1cb52c56c",
+      "paymentType": "full",
+      "totalValue": 480,
+      "totalPaid": 480,
+      "createdAt": "2026-01-21T14:32:28.260Z",
+      "status": "active"
+    },
+    {
+      "_id": "6971175477dc3276528bfe3e",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "6973d9643c57b32dc68da370",
+      "paymentType": "full",
+      "totalValue": 680,
+      "totalPaid": 680,
+      "status": "active"
+    },
+    {
+      "_id": "6977583aa63516305a81995a",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "6977a092bae964fbb8bf467b",
+      "paymentType": "full",
+      "totalValue": 320,
+      "totalPaid": 320,
+      "status": "active"
+    },
+    {
+      "_id": "697a6f5b45b1f739502b3879",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "697a759045b1f739502b3e54",
+      "paymentType": "full",
+      "totalValue": 645,
+      "totalPaid": 645,
+      "status": "active"
+    },
+    {
+      "_id": "697ca2c641bea6644e5c3777",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "697ca8af41bea6644e5c3aff",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "69825b8bb67c834cf804baea",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 320,
+      "totalPaid": 320,
+      "status": "active"
+    },
+    {
+      "_id": "6983a33824fc8ae0c7209f7e",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 720,
+      "totalPaid": 720,
+      "status": "active"
+    },
+    {
+      "_id": "69864e7779bba4d65fae75c8",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "698a468a671613f5842c842d",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "698a4b4d671613f5842c865a",
+      "paymentType": "full",
+      "totalValue": 600,
+      "totalPaid": 600,
+      "status": "active"
+    },
+    {
+      "_id": "698c8c1db458e314ff72ae76",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "698ca9cb10fbb5ebee0a9183",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 800,
+      "totalPaid": 800,
+      "status": "active"
+    },
+    {
+      "_id": "698ccd7310fbb5ebee0a9767",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 1280,
+      "totalPaid": 1280,
+      "status": "active"
+    },
+    {
+      "_id": "698cd9f910fbb5ebee0a9d1a",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "6997726b1a07d54a5731ed1f",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "699847fe7c92d32c1fd3c62a",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "699848397c92d32c1fd3c7dd",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "6998486a7c92d32c1fd3c8ef",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "699866a77c92d32c1fd43595",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "699866e27c92d32c1fd43657",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69986c057c92d32c1fd44a1f",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69986c7c7c92d32c1fd44be9",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69986d557c92d32c1fd44f15",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "6998c54e397255b0643d5cfe",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "699dc1134152216f791365f0",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "699dcca24152216f79139213",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "699dce804152216f79139871",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "699dd72d4152216f7913b8ee",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "699ddbf74152216f7913cb1a",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "699de14a4152216f7913de38",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "699de5184152216f7913ebfb",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "699e003d4152216f7914500a",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "699e01084152216f791452ea",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "699e014f4152216f79145471",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69a196951673747583ac51e8",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "completed"
+    },
+    {
+      "_id": "69a81cea9053b5d1e83a93ab",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 320,
+      "totalPaid": 320,
+      "status": "active"
+    },
+    {
+      "_id": "69a830b89053b5d1e83aa889",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 1280,
+      "totalPaid": 1280,
+      "status": "active"
+    },
+    {
+      "_id": "69a86a1b290c8fb4937feb27",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 1700,
+      "totalPaid": 1700,
+      "status": "active"
+    },
+    {
+      "_id": "69a8764d290c8fb4937ff3a2",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "69a89cdde21d889457485339",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 1200,
+      "totalPaid": 1200,
+      "status": "active"
+    },
+    {
+      "_id": "69a9985266c460e6da734f68",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69aae00ad1b70547867636ae",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "69af3320e34d9dac047626a7",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 600,
+      "totalPaid": 600,
+      "status": "active"
+    },
+    {
+      "_id": "69b809bc7c7e8bd1b3b9122f",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "69b847c17c7e8bd1b3b92a1b",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "69b865a37c7e8bd1b3b94455",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "69b9a623785a76ad646fdb08",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 720,
+      "totalPaid": 720,
+      "status": "active"
+    },
+    {
+      "_id": "69ba9cfa8945dcd5863d99be",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "69bafad3a1ea3fab7f74c850",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 720,
+      "totalPaid": 720,
+      "status": "active"
+    },
+    {
+      "_id": "69bb0db9a1ea3fab7f74d2e1",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "69c14528c19d35b8454a27e8",
+      "type": "liminar",
+      "paymentType": "full",
+      "totalValue": 2400,
+      "totalPaid": 450,
+      "status": "active"
+    },
+    {
+      "_id": "69c1456ec19d35b8454a2882",
+      "type": "liminar",
+      "paymentType": "full",
+      "totalValue": 4800,
+      "totalPaid": 300,
+      "status": "active"
+    },
+    {
+      "_id": "69c1459fc19d35b8454a28f9",
+      "type": "liminar",
+      "paymentType": "full",
+      "totalValue": 5120,
+      "totalPaid": 480,
+      "status": "active"
+    },
+    {
+      "_id": "69c15025c19d35b8454a2e8b",
+      "type": "liminar",
+      "paymentType": "full",
+      "totalValue": 5120,
+      "totalPaid": 480,
+      "status": "active"
+    },
+    {
+      "_id": "69c2e7395c4ad17fefccbe21",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 1200,
+      "totalPaid": 1200,
+      "status": "active"
+    },
+    {
+      "_id": "69c2eb495c4ad17fefccc505",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69c2ebf15c4ad17fefccc5e8",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69c566c587f4b2aed4722d2d",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69c5679b87f4b2aed4722dc3",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69c5690187f4b2aed4722e86",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69c674eb1d84ac5eb1c3bef0",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 720,
+      "totalPaid": 180,
+      "status": "active"
+    },
+    {
+      "_id": "69c675651d84ac5eb1c3bfde",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 640,
+      "totalPaid": 320,
+      "status": "active"
+    },
+    {
+      "_id": "69c676c81d84ac5eb1c3c0d2",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 720,
+      "totalPaid": 360,
+      "status": "active"
+    },
+    {
+      "_id": "69c698173014fd4ab2d720b8",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 720,
+      "totalPaid": 360,
+      "status": "active"
+    },
+    {
+      "_id": "69c6996e06a4b96f32c0068a",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 0.4,
+      "totalPaid": 0.1,
+      "status": "active"
+    },
+    {
+      "_id": "69cbd1736873402d92efd111",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 720,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69cbd2066873402d92efd19b",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "69cd151f6ffb1e1fc27083e9",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 640,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69cd1763856a4f39ce254cae",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 280,
+      "totalPaid": 140,
+      "status": "active"
+    },
+    {
+      "_id": "69cd36f8e706da54fdf0e366",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 600,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69cd3899e706da54fdf0e511",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 1360,
+      "totalPaid": 1360,
+      "status": "active"
+    },
+    {
+      "_id": "69ced6cf644baa62b909e327",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 640,
+      "totalPaid": 640,
+      "status": "active"
+    },
+    {
+      "_id": "69d30be62a7ce1051e413fa3",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 0.4,
+      "totalPaid": 0.4,
+      "status": "active"
+    },
+    {
+      "_id": "69d3107ba14c560c7eb92aca",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69d31264a14c560c7eb92d56",
+      "type": "liminar",
+      "paymentType": "full",
+      "totalValue": 0.4,
+      "totalPaid": 0.1,
+      "status": "active"
+    },
+    {
+      "_id": "69d45152c842a5a7291b5fae",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 600,
+      "totalPaid": 600,
+      "status": "active"
+    },
+    {
+      "_id": "69d646e885f1fc2849c5b659",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69d668807f968ceaa5744cce",
+      "type": "convenio",
+      "createdAt": "2026-04-08T14:38:56.497Z",
+      "status": "active"
+    },
+    {
+      "_id": "69d67dfe19c6571d8c76dbbe",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69d8f71f7bd82bc9e85e1388",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 960,
+      "totalPaid": 960,
+      "status": "active"
+    },
+    {
+      "_id": "69d9668b0e1115b0e67c5a17",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 0.4,
+      "totalPaid": 0.4,
+      "status": "active"
+    },
+    {
+      "_id": "69dac2e75e25b6aceca5f369",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69dac78d5e25b6aceca5f52c",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69dad2b189d1e0cf2b4632a9",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69dad4557fe7b52a72696895",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69dae901b0c1652aeb934cd0",
+      "type": "convenio",
+      "paymentType": "full",
+      "totalValue": 0,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69daebd1483cb3ff6044966f",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 600,
+      "totalPaid": 150,
+      "status": "active"
+    },
+    {
+      "_id": "69daf4038271d1aa6e59b5f1",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 600,
+      "totalPaid": 150,
+      "status": "active"
+    },
+    {
+      "_id": "69daf771effa32b2610af9a9",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 400,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69db00b94094ab839ebf2dc2",
+      "type": "liminar",
+      "paymentType": "full",
+      "totalValue": 300,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69db02157765380e83387e19",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 540,
+      "totalPaid": 180,
+      "status": "active"
+    },
+    {
+      "_id": "69db05637765380e83388040",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 540,
+      "totalPaid": 180,
+      "status": "active"
+    },
+    {
+      "_id": "69db06d502c1c448671c7a22",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 540,
+      "totalPaid": 180,
+      "status": "active"
+    },
+    {
+      "_id": "69db080e24d4a2234e2c615b",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 540,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69db12b80f17b96ed5738b0d",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 600,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69db1757c77bda3dbe271e36",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 600,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69db1fa8790996eec5a2631d",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 600,
+      "totalPaid": 0,
+      "status": "active"
+    },
+    {
+      "_id": "69dbc782c7320c7739b6ec23",
+      "type": "therapy",
+      "paymentType": "full",
+      "totalValue": 0.4,
+      "totalPaid": 0.4,
+      "status": "active"
+    },
+    {
+      "_id": "69dbe347c2652c8c412c0751",
+      "type": "therapy",
+      "paymentType": "per-session",
+      "totalValue": 0.4,
+      "totalPaid": 0,
+      "status": "active"
+    }
+  ]
+}

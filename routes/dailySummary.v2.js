@@ -42,15 +42,16 @@ router.get('/', async (req, res) => {
         // 📊 AGGREGATE PARALELO: Caixa + Atendimentos
         // ======================================================
         
-        // ✅ CORREÇÃO: Mesma lógica do daily-payments-details
-        // Busca por paymentDate, paidAt OU createdAt (fallback para adiantamentos)
+        // ✅ CORREÇÃO: Busca por financialDate (V2), paymentDate, paidAt OU createdAt
         const dateRangeQuery = {
             $or: [
+                { financialDate: { $gte: startOfDay, $lte: endOfDay } },
                 { paymentDate: { $gte: startOfDay, $lte: endOfDay } },
                 { paidAt: { $gte: startOfDay, $lte: endOfDay } },
                 { 
                     // Pagamentos criados hoje mas com paymentDate futuro (adiantamentos)
                     paymentDate: { $exists: false },
+                    financialDate: { $exists: false },
                     createdAt: { $gte: startOfDay, $lte: endOfDay }
                 },
                 {

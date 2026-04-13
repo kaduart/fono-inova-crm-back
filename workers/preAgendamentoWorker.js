@@ -2,6 +2,7 @@
 import { Worker } from 'bullmq';
 import { redisConnection, moveToDLQ } from '../infrastructure/queue/queueConfig.js';
 import Appointment from '../models/Appointment.js';
+import { buildDateTime } from '../utils/datetime.js';
 
 const processedEvents = new Map();
 const EVENT_CACHE_TTL = 24 * 60 * 60 * 1000;
@@ -117,7 +118,7 @@ async function handleImported(payload, eventId) {
         patientName: preAgendamento.patientInfo?.name,
         patientPhone: preAgendamento.patientInfo?.phone,
         doctorId,
-        date: new Date(date),
+        date: buildDateTime(date, time),  // 🚨 FIX: Usar helper padronizado com timezone BRT
         time,
         specialty: preAgendamento.specialty,
         notes: notes || preAgendamento.notes,

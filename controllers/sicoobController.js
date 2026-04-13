@@ -213,9 +213,30 @@ export const handlePixWebhook = async (req, res) => {
     await distributePayments(pkg._id, amount, mongoSession, paymentDoc._id);
 
     pkg.totalPaid = (pkg.totalPaid || 0) + amount;
-    pkg.balance = pkg.totalSessions * pkg.sessionValue - pkg.totalPaid;
+    
+    // Recalcula balance baseado nas sessões realizadas (sessionsDone), não no total do pacote
+    const sessionsDone = pkg.sessionsDone || 0;
+    const usedValue = sessionsDone * (pkg.sessionValue || 0);
+    const totalValue = pkg.totalValue || (pkg.totalSessions * pkg.sessionValue) || 0;
+    
+    // 🔥 V2 HARD CUT: Não processa pacotes sem model
+    if (!pkg.model) {
+      throw new Error('PACKAGE_V2_INCOMPATIBLE: Pacote V1 não suportado no controller V2');
+    }
+    const isPrepaid = pkg.model === 'prepaid';
+    
+    if (isPrepaid) {
+      pkg.balance = totalValue - usedValue;
+    } else {
+      pkg.balance = usedValue - pkg.totalPaid;
+    }
+    
     pkg.financialStatus =
-      pkg.balance <= 0 ? "paid" : pkg.totalPaid > 0 ? "partially_paid" : "unpaid";
+      Math.abs(pkg.balance) < 0.01
+        ? "paid"
+        : pkg.totalPaid > 0
+          ? pkg.balance < 0 ? "paid_with_credit" : "partially_paid"
+          : "unpaid";
     pkg.lastPaymentAt = new Date();
     pkg.payments.push(paymentDoc._id);
 

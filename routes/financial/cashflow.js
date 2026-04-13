@@ -61,12 +61,15 @@ router.get('/summary', auth, async (req, res) => {
           $match: {
             $or: [
               // ========================================
-              // PARTÍCULARES: status='paid' + paymentDate
+              // PARTÍCULARES: status='paid' + financialDate (V2) ou paymentDate (legado)
               // ========================================
               {
                 paymentMethod: { $ne: 'convenio' },
                 status: 'paid',
-                paymentDate: { $gte: startDateStr, $lte: endDateStr }
+                $or: [
+                  { financialDate: { $gte: startDateStr, $lte: endDateStr } },
+                  { paymentDate: { $gte: startDateStr, $lte: endDateStr } }
+                ]
               },
               // ========================================
               // CONVÊNIOS: insurance.status='received' + insurance.receivedAt

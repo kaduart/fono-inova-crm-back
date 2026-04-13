@@ -523,8 +523,19 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
           convenio: producaoConvenio
         },
         caixa: caixaTotal,
+        caixaDetalhe: {
+          particular: particularTotal,
+          convenio: convenioTotal + sessoesTotal, // Convenio avulso + sessões
+          detalhes: {
+            particularPayments: particularPayments[0]?.count || 0,
+            convenioPayments: convenioPayments[0]?.count || 0,
+            sessoesConvenio: sessoesResult[0]?.count || 0
+          }
+        },
         aReceber: {
           total: aReceberTotal,
+          mesAtual: aReceberTotal,
+          historico: 0, // Será calculado se necessário
           convenio: aReceberConvenio,
           particular: aReceberParticular
         },

@@ -206,10 +206,12 @@ const sessionSchema = new mongoose.Schema({
 sessionSchema.index({ patient: 1, sessionType: 1, paymentStatus: 1, status: 1 });
 sessionSchema.index({ patient: 1, paymentStatus: 1, status: 1 });
 
-// 🆕 V4: Índice único para appointmentId (1 appointment = 1 session)
+// 🆕 V4: Índice para appointmentId (1 appointment = 1 session)
+// NOTA: Índice unique removido temporariamente devido a compatibilidade V1
+// que cria Session antes do Appointment. Será reativado após migração completa.
 sessionSchema.index(
     { appointmentId: 1 },
-    { unique: true, sparse: true }
+    { sparse: true }
 );
 
 // 🔒 Pre-validate: garante sessionType preenchido

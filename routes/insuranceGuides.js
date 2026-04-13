@@ -3,6 +3,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { auth } from '../middleware/auth.js';
 import InsuranceGuide from '../models/InsuranceGuide.js';
+import { resolvePatientId } from '../utils/identityResolver.js';
 
 const router = express.Router();
 
@@ -179,30 +180,21 @@ router.get('/', auth, async (req, res) => {
     // Construir filtro
     const filter = {};
 
+    // 🔑 Resolve patientId (aceita patientId real ou _id da view)
     if (patientId) {
-      // Resolver patientId: pode vir como ID da patients_view — buscar o ID real
-      let resolvedPatientId = patientId;
-      
-      // Se for ObjectId válido, tenta resolver
-      if (mongoose.Types.ObjectId.isValid(patientId)) {
-        const patientExists = await mongoose.connection.db.collection('patients').findOne(
-          { _id: new mongoose.Types.ObjectId(patientId) },
-          { projection: { _id: 1 } }
-        );
-        if (!patientExists) {
-          const viewDoc = await mongoose.connection.db.collection('patients_view').findOne(
-            { _id: new mongoose.Types.ObjectId(patientId) },
-            { projection: { patientId: 1 } }
-          );
-          if (viewDoc?.patientId) {
-            resolvedPatientId = viewDoc.patientId.toString();
-          }
-        }
+      try {
+        const resolvedId = await resolvePatientId(patientId, {
+          correlationId: `ig_${Date.now()}`
+        });
+        filter.patientId = resolvedId;
+        console.log(`[InsuranceGuides] Buscando guias para patientId: ${resolvedId}`);
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          errorCode: 'INVALID_PATIENT_ID',
+          message: error.message
+        });
       }
-      
-      // 🆕 PADRONIZADO: Usa sempre STRING (não ObjectId)
-      filter.patientId = resolvedPatientId;
-      console.log(`[InsuranceGuides] Buscando guias para patientId: ${resolvedPatientId}`);
     }
 
     if (specialty) {
@@ -220,7 +212,6 @@ router.get('/', auth, async (req, res) => {
     // Buscar guias ordenadas por expiresAt ASC
     const guides = await InsuranceGuide.find(filter)
       .populate('patientId', 'fullName cpf phone')
-      .populate('createdBy', 'name email')
       .sort({ expiresAt: 1 })
       .lean();
 

@@ -178,12 +178,16 @@ async function handlePaymentRequested(payload, eventId, correlationId, log) {
 
     // 3. Cria registro de pagamento
     const payment = new Payment({
+        patient: patientId,  // 🎯 Schema espera 'patient'
         patientId: patientId,
+        appointment: appointmentId,  // 🎯 Schema espera 'appointment'
         appointmentId: appointmentId,
         amount,
         paymentMethod,
         paymentDate: payload.paymentDate ? new Date(payload.paymentDate) : new Date(),
+        financialDate: payload.paymentDate ? new Date(payload.paymentDate) : new Date(), // 🎯 Fonte única
         status: 'pending',
+        billingType: 'particular', // 🎯 Dashboard separa por tipo
         source: 'appointment',
         description: notes || `Pagamento referente ao agendamento ${appointmentId}`
     });
@@ -192,8 +196,23 @@ async function handlePaymentRequested(payload, eventId, correlationId, log) {
         await payment.save();
         log.info('payment_created', `Pagamento criado: ${payment._id}`);
 
-        // 🔗 LINKA payment ao appointment
-        await Appointment.findByIdAndUpdate(appointmentId, { payment: payment._id });
+        // 🔗 LINKA payment ao appointment (sync forte)
+        await Appointment.findByIdAndUpdate(appointmentId, { 
+            $set: {
+                payment: payment._id,
+                paymentId: payment._id.toString(),
+                financialStatus: 'pending',
+                updatedAt: new Date()
+            },
+            $push: {
+                history: {
+                    action: 'payment_link_created',
+                    timestamp: new Date(),
+                    paymentId: payment._id.toString(),
+                    context: `Link de pagamento criado: ${payment._id}`
+                }
+            }
+        });
 
         // ✅ CONFIRMA PAYMENT IMEDIATAMENTE (sessão já foi completada antes deste evento)
         await Payment.findByIdAndUpdate(payment._id, {
@@ -232,6 +251,15 @@ async function handlePaymentRequested(payload, eventId, correlationId, log) {
     }
 
     log.info('payment_paid', `Payment ${payment._id} criado e confirmado como paid`);
+    
+    // 🏦 REGISTRA NO LEDGER (caixa)
+    try {
+        const { recordPaymentReceived } = await import('../services/financialLedgerService.js');
+        await recordPaymentReceived(payment, { correlationId });
+        log.info('ledger_recorded', `Lançamento contábil registrado: ${payment.amount}`);
+    } catch (ledgerError) {
+        log.error('ledger_error', 'Erro ao registrar no ledger (não-fatal)', { error: ledgerError.message });
+    }
 
     return {
         status: 'payment_created_paid',
@@ -243,85 +271,174 @@ async function handlePaymentRequested(payload, eventId, correlationId, log) {
 /**
  * Processa recebimento de pagamento (PAYMENT_PROCESS_REQUESTED)
  * 
- * 🎯 MODELO V2 CORRETO:
- * - PAYMENT_REQUESTED → cria Payment (produção gerada)
- * - PAYMENT_PROCESS_REQUESTED → registra recebimento (entrada de dinheiro)
+ * 🎯 WORKER SIMPLIFICADO V2:
+ * - Assume payload VALIDADO e NORMALIZADO pela API
+ * - Não faz validações defensivas (fail fast na API)
+ * - Usa 'type' do payload para routing (sempre presente)
  * 
  * Fluxos:
- * 1. Pagamento único (appointmentId): atualiza Payment existente
- * 2. Multi-payment (type='multi_payment'): cria Payment consolidado para saldo
+ * 1. multi_payment: cria Payment consolidado para saldo/débitos
+ * 2. appointment_payment: atualiza Payment existente do appointment
+ * 3. standalone: cria Payment avulso (sem appointment)
  */
 async function handlePaymentProcessRequested(payload, eventId, correlationId, log) {
     const {
-        type,
-        patientId,
-        appointmentId,
-        amount,
-        paymentMethod: rawMethod = 'dinheiro',
+        type,           // 🎯 SEMPRE presente (validado pela API)
+        patientId,      // 🎯 SEMPRE presente
+        appointmentId,  // null para pagamentos avulsos
+        amount,         // 🎯 SEMPRE presente e > 0
+        paymentMethod = 'cash',
         notes,
         payments,
         debitIds,
         totalAmount,
         requestedBy,
-        isMultiPayment
+        isMultiPayment,
+        source          // 'v2_api', 'v2_api_multi', etc
     } = payload;
     
-    // Mapear método de pagamento para valores do schema
-    const methodMap = {
-        'dinheiro': 'cash',
-        'pix': 'pix',
-        'credit_card': 'credit_card',
-        'debit_card': 'debit_card',
-        'cartao': 'credit_card',
-        'cartão': 'credit_card',
-        'transferencia': 'bank_transfer',
-        'transferência': 'bank_transfer'
-    };
-    const paymentMethod = methodMap[rawMethod] || 'cash';
+    // 🚀 Log de entrada simplificado (payload já é confiável)
+    log.info('payment_process_started', `Processando ${type}`, {
+        patientId,
+        appointmentId,
+        amount,
+        paymentMethod,
+        source: source || 'unknown'
+    });
 
-    // 🎯 FLUXO 1: Multi-payment (saldo/débitos)
-    if (type === 'multi_payment' || isMultiPayment) {
-        log.info('multi_payment_started', `Processando payment-multi: ${debitIds?.length || 0} débitos`, {
-            patientId,
-            totalAmount
-        });
-
-        // 🔒 LOCK: Evita race condition em payment-multi do mesmo paciente
-        return await withLock(`payment-multi:${patientId}`, async () => {
-            return await processMultiPayment(payload, eventId, correlationId, log);
-        }, { ttl: 60 });
+    // ========================================
+    // 🎯 ROUTING POR TYPE (payload validado)
+    // ========================================
+    
+    switch (type) {
+        case 'multi_payment':
+            // 🔒 LOCK: Evita race condition em payment-multi do mesmo paciente
+            return await withLock(`payment-multi:${patientId}`, async () => {
+                return await processMultiPayment(payload, eventId, correlationId, log);
+            }, { ttl: 60 });
+            
+        case 'appointment_payment':
+            // Pagamento vinculado a um agendamento
+            return await processSinglePayment(payload, eventId, correlationId, log);
+            
+        case 'standalone':
+            // Pagamento avulso (sem agendamento)
+            log.info('standalone_payment', 'Processando pagamento avulso', { patientId, amount });
+            return await processStandalonePayment(payload, eventId, correlationId, log);
+            
+        case 'balance_credit':
+            // Crédito em conta do paciente
+            log.info('balance_credit', 'Processando crédito em conta', { patientId, amount });
+            return await processBalanceCredit(payload, eventId, correlationId, log);
+            
+        default:
+            // 🚨 Isso NUNCA deve acontecer (API valida type)
+            log.error('invalid_type', 'Tipo inválido recebido - falha na validação da API', { type });
+            throw new Error(`INVALID_TYPE: ${type}. Falha na validação da API.`);
     }
+}
 
-    // 🎯 FLUXO 2: Pagamento único (recebimento de appointment)
-    if (appointmentId) {
-        log.info('single_payment_started', `Processando recebimento para appointment ${appointmentId}`, {
-            patientId,
+/**
+ * Processa pagamento avulso (sem appointment)
+ */
+async function processStandalonePayment(payload, eventId, correlationId, log) {
+    const { patientId, amount, paymentMethod, notes, requestedBy } = payload;
+    
+    const payment = new Payment({
+        patient: patientId,  // 🎯 Schema espera 'patient', não 'patientId'
+        patientId: patientId,
+        amount,
+        paymentMethod,
+        paymentDate: new Date(),
+        financialDate: new Date(), // 🎯 Fonte única de verdade
+        status: 'paid',
+        paidAt: new Date(),
+        billingType: 'particular', // 🎯 Campo obrigatório para dashboard
+        source: 'manual',
+        description: notes || 'Pagamento avulso'
+    });
+    
+    await payment.save();
+    
+    log.info('standalone_payment_created', `Pagamento avulso criado: ${payment._id}`, {
+        paymentId: payment._id,
+        patientId,
+        amount
+    });
+    
+    // Publica evento
+    await publishEvent(
+        EventTypes.PAYMENT_COMPLETED,
+        {
+            paymentId: payment._id.toString(),
+            patientId: patientId.toString(),
             amount,
+            type: 'standalone',
             paymentMethod
-        });
+        },
+        { correlationId }
+    );
+    
+    return {
+        status: 'standalone_payment_completed',
+        paymentId: payment._id,
+        patientId,
+        amount
+    };
+}
 
-        return await processSinglePayment(payload, eventId, correlationId, log);
-    }
-
-    log.warn('unknown_payment_type', 'Tipo de pagamento não reconhecido', { type, appointmentId, isMultiPayment });
-    return { status: 'ignored', reason: 'unknown_payment_type' };
+/**
+ * Processa crédito em conta do paciente
+ */
+async function processBalanceCredit(payload, eventId, correlationId, log) {
+    const { patientId, amount, paymentMethod, notes, requestedBy } = payload;
+    
+    const PatientBalance = (await import('../models/PatientBalance.js')).default;
+    
+    // Atualiza ou cria saldo do paciente
+    await PatientBalance.findOneAndUpdate(
+        { patient: patientId },
+        {
+            $inc: { currentBalance: amount },
+            $push: {
+                transactions: {
+                    type: 'credit',
+                    amount,
+                    description: notes || 'Crédito em conta',
+                    paymentMethod,
+                    registeredBy: requestedBy,
+                    createdAt: new Date()
+                }
+            }
+        },
+        { upsert: true, new: true }
+    );
+    
+    log.info('balance_credit_applied', `Crédito de ${amount} aplicado para ${patientId}`);
+    
+    return {
+        status: 'balance_credit_completed',
+        patientId,
+        amount
+    };
 }
 
 async function processMultiPayment(payload, eventId, correlationId, log) {
     const {
-        type,
-        patientId,
-        payments,
-        debitIds,
-        totalAmount,
+        type,           // 'multi_payment' - validado pela API
+        patientId,      // validado pela API
+        payments,       // validado pela API
+        debitIds,       // validado pela API
+        totalAmount,    // validado pela API
         requestedBy
     } = payload;
 
-    // Se não for multi_payment, ignora
-    if (type !== 'multi_payment') {
-        log.warn('unknown_type', `Tipo desconhecido: ${type}`);
-        return { status: 'ignored', reason: 'not_multi_payment' };
-    }
+    // 🚀 Log simplificado (payload confiável)
+    log.info('multi_payment_processing', `Processando ${debitIds.length} débitos`, {
+        patientId,
+        totalAmount,
+        paymentCount: payments.length
+    });
 
     const mongoSession = await mongoose.startSession();
     
@@ -350,6 +467,7 @@ async function processMultiPayment(payload, eventId, correlationId, log) {
             amount: totalAmount,
             paymentMethod: mappedMethod,
             paymentDate: now,
+            financialDate: now, // 🎯 Fonte única de verdade
             status: 'paid',
             source: 'manual',
             description: `Pagamento múltiplo: ${debitIds.length} débito(s) - Total: R$ ${totalAmount}`
@@ -445,14 +563,25 @@ async function processMultiPayment(payload, eventId, correlationId, log) {
             debitsCount: debitIds.length,
             appointmentsCount: appointmentIds.length
         });
+        
+        // 🏦 REGISTRA NO LEDGER (caixa) - MULTI-PAYMENT
+        try {
+            const { recordPaymentReceived } = await import('../services/financialLedgerService.js');
+            await recordPaymentReceived(mainPayment, { correlationId });
+            log.info('ledger_recorded', `Lançamento contábil registrado (multi): ${totalAmount}`);
+        } catch (ledgerError) {
+            log.error('ledger_error', 'Erro ao registrar no ledger (não-fatal)', { error: ledgerError.message });
+        }
 
-        // 4. Publica eventos de resultado
+        // 4. Publica eventos de resultado (com dados para projection)
         await publishEvent(
             EventTypes.PAYMENT_COMPLETED,
             {
                 paymentId: mainPayment._id.toString(),
                 patientId: patientId.toString(),
                 amount: totalAmount,
+                billingType: 'particular', // 🎯 Para projection
+                paymentMethod: payments[0]?.paymentMethod || 'dinheiro', // 🎯 Para projection
                 type: 'multi_payment',
                 debitsCount: debitIds.length,
                 appointmentsCount: appointmentIds.length
@@ -562,8 +691,8 @@ async function processSinglePayment(payload, eventId, correlationId, log) {
     };
     const paymentMethod = methodMap[rawMethod] || 'cash';
 
-    // 🛡️ VALIDAÇÃO: Verifica se payment existe e não está cancelado/pago
-    const paymentBefore = await Payment.findOne({
+    // 🛡️ VALIDAÇÃO: Verifica se payment existe, ou cria um novo
+    let paymentBefore = await Payment.findOne({
         appointmentId: appointmentId,
         status: { $nin: ['cancelled', 'paid'] }
     });
@@ -585,12 +714,39 @@ async function processSinglePayment(payload, eventId, correlationId, log) {
             };
         }
 
-        log.error('payment_not_found', `Payment não encontrado para appointment ${appointmentId}`);
-        return { 
-            status: 'error', 
-            error: 'PAYMENT_NOT_FOUND',
-            message: 'Pagamento não encontrado ou cancelado.'
-        };
+        // 🆕 CRIA PAYMENT SE NÃO EXISTIR (fluxo V2 completo)
+        log.info('payment_not_found_creating', `Payment não encontrado para ${appointmentId}, criando novo...`);
+        
+        // Busca o appointment para pegar o patient correto
+        const appointmentData = await Appointment.findById(appointmentId).select('patient');
+        const patientRef = appointmentData?.patient || patientId;
+        
+        paymentBefore = new Payment({
+            patient: patientRef,  // 🎯 Campo obrigatório do schema
+            patientId: patientId,
+            appointmentId: appointmentId,
+            appointment: appointmentId,
+            amount: amount,
+            receivedAmount: 0,
+            paymentMethod: paymentMethod,
+            paymentDate: new Date(),
+            financialDate: new Date(), // 🎯 Fonte única de verdade
+            status: 'pending',
+            source: 'appointment_v2',
+            description: `Pagamento referente ao agendamento ${appointmentId}`
+        });
+        
+        await paymentBefore.save();
+        log.info('payment_created_auto', `Payment ${paymentBefore._id} criado automaticamente`);
+        
+        // Linka ao appointment
+        await Appointment.findByIdAndUpdate(appointmentId, {
+            $set: {
+                payment: paymentBefore._id,
+                paymentId: paymentBefore._id.toString(),
+                updatedAt: new Date()
+            }
+        });
     }
 
     const mongoSession = await mongoose.startSession();
@@ -648,27 +804,53 @@ async function processSinglePayment(payload, eventId, correlationId, log) {
             );
         }
 
-        // 4. Atualiza Appointment
-        await Appointment.findByIdAndUpdate(
-            appointmentId,
-            {
-                $set: {
-                    paymentStatus: newStatus,
-                    paidAt: isFullyPaid ? new Date() : undefined,
-                    updatedAt: new Date()
-                },
-                $push: {
-                    history: {
-                        action: isFullyPaid ? 'payment_received_full' : 'payment_received_partial',
-                        timestamp: new Date(),
-                        amount: amount,
-                        receivedTotal: updated.receivedAmount,
-                        context: `Recebimento via ${paymentMethod}`
-                    }
-                }
+        // 4. Atualiza Appointment com link forte (fonte única de verdade)
+        const appointmentUpdate = {
+            $set: {
+                paymentStatus: newStatus,
+                financialStatus: newStatus,  // 🎯 Fonte única de verdade financeira
+                paymentId: updated._id.toString(),  // 🔗 Link direto
+                paidAt: isFullyPaid ? new Date() : undefined,
+                lastPaymentAt: new Date(),
+                updatedAt: new Date()
             },
-            { session: mongoSession }
+            $push: {
+                history: {
+                    action: isFullyPaid ? 'payment_received_full' : 'payment_received_partial',
+                    timestamp: new Date(),
+                    amount: amount,
+                    receivedTotal: updated.receivedAmount,
+                    paymentId: updated._id.toString(),
+                    context: `Recebimento via ${paymentMethod}`
+                }
+            }
+        };
+        
+        // 🔄 SYNC: Atualiza Appointment com link forte
+        console.log(`[PaymentWorker] Syncando appointment ${appointmentId} com payment ${updated._id}`);
+        
+        const appointmentResult = await Appointment.findByIdAndUpdate(
+            appointmentId,
+            appointmentUpdate,
+            { session: mongoSession, new: true }
         );
+        
+        if (!appointmentResult) {
+            console.error(`[PaymentWorker] ❌ ERRO CRÍTICO: Appointment ${appointmentId} não encontrado durante sync!`);
+            console.error(`[PaymentWorker] Payment ${updated._id} foi processado mas appointment não foi atualizado`);
+            log.error('appointment_sync_failed', `Appointment ${appointmentId} não encontrado durante sync`, {
+                paymentId: updated._id,
+                appointmentId
+            });
+            // Não falha o pagamento, mas loga crítico
+        } else {
+            console.log(`[PaymentWorker] ✅ Appointment ${appointmentId} sincronizado com sucesso`);
+            console.log(`[PaymentWorker]    financialStatus: ${newStatus}, paymentId: ${updated._id}`);
+            log.info('appointment_synced', `Appointment ${appointmentId} sincronizado`, {
+                financialStatus: newStatus,
+                paymentId: updated._id
+            });
+        }
 
         await mongoSession.commitTransaction();
 
@@ -677,6 +859,30 @@ async function processSinglePayment(payload, eventId, correlationId, log) {
             appointmentId,
             status: newStatus
         });
+        
+        // 🏦 REGISTRA NO LEDGER (caixa) - CRÍTICO
+        try {
+            const { recordPaymentReceived } = await import('../services/financialLedgerService.js');
+            await recordPaymentReceived(updated, { correlationId });
+            log.info('ledger_recorded', `Lançamento contábil registrado no caixa`);
+        } catch (ledgerError) {
+            log.error('ledger_error', 'Erro ao registrar no ledger (não-fatal)', { error: ledgerError.message });
+            // Não falha o pagamento se o ledger falhar
+        }
+        
+        // 🔄 ATUALIZA PROJECTIONS (Financial)
+        try {
+            const { default: FinancialProjectionHandler } = await import('../projections/financialProjection.js');
+            await FinancialProjectionHandler.updateCash({
+                amount: updated.amount,
+                billingType: 'particular',
+                paymentMethod: updated.paymentMethod,
+                paymentId: updated._id.toString()
+            });
+            log.info('projection_updated', 'Financial projection atualizada');
+        } catch (projError) {
+            log.error('projection_error', 'Erro ao atualizar projection', { error: projError.message });
+        }
         
         // 🔄 ATUALIZA PAYMENTSVIEW (projection para tela de pagamentos)
         try {
@@ -714,11 +920,29 @@ async function processSinglePayment(payload, eventId, correlationId, log) {
                     appointmentId: appointmentId.toString(),
                     patientId: patientId?.toString(),
                     amount: updated.amount,
-                    paymentMethod
+                    billingType: 'particular', // 🎯 Para projection
+                    paymentMethod,
+                    source: 'single_payment'
                 },
                 { correlationId }
             );
         }
+        
+        // 🔄 EVENTO DE SYNC: Garante consistência entre Appointment ↔ Payment
+        await publishEvent(
+            'APPOINTMENT_PAYMENT_SYNCED',
+            {
+                appointmentId: appointmentId.toString(),
+                paymentId: updated._id.toString(),
+                patientId: patientId?.toString(),
+                financialStatus: newStatus,
+                isFullyPaid,
+                amountReceived: amount,
+                receivedTotal: updated.receivedAmount,
+                syncedAt: new Date().toISOString()
+            },
+            { correlationId }
+        );
 
         return {
             status: newStatus,

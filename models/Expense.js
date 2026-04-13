@@ -124,11 +124,20 @@ const expenseSchema = new mongoose.Schema({
     default: ''
   },
   
-  // 🔹 AUDITORIA
+  // 🔹 AUDITORIA (enriquecida - snapshot imutável)
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    required: true,
+    index: true
+  },
+  createdByRole: {
+    type: String,
+    enum: ['admin', 'secretary', 'doctor'],
     required: true
+  },
+  createdByName: {
+    type: String,
+    default: 'Sistema'
   },
   
   createdAt: {
