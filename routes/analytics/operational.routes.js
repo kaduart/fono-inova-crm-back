@@ -33,7 +33,8 @@ router.get('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
         // 📅 APPOINTMENTS - Métricas de agendamento
         // ======================================================
         const appointmentMatch = {
-            date: { $gte: start, $lte: end }
+            date: { $gte: start, $lte: end },
+            appointmentId: { $exists: false }
         };
         if (doctorId) appointmentMatch.doctor = doctorId;
 

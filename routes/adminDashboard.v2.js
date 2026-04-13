@@ -160,7 +160,9 @@ router.get('/quick-stats', auth, async (req, res) => {
         monthRevenue
       ] = await Promise.all([
         Appointment.countDocuments({
-          date: { $gte: today, $lt: tomorrow }
+          date: { $gte: today, $lt: tomorrow },
+          operationalStatus: { $nin: ['canceled'] },
+          appointmentId: { $exists: false }
         }),
         Payment.countDocuments({ status: 'pending' }),
         Payment.aggregate([

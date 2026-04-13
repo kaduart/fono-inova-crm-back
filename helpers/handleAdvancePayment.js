@@ -93,7 +93,7 @@ export const handleAdvancePayment = async (req, res) => {
                 isPaid: true, // já pago antecipadamente
                 paymentStatus: 'paid',
                 visualFlag: 'ok',
-                status: 'agendado',
+                operationalStatus: 'scheduled',
                 isAdvance: true,
                 payment: payment._id,
                 createdAt: now,
@@ -107,7 +107,7 @@ export const handleAdvancePayment = async (req, res) => {
                 session: advSession._id,
                 date: adv.date,
                 time: adv.time,
-                status: 'agendado',
+                operationalStatus: 'scheduled',
                 paymentStatus: 'paid',
                 visualFlag: 'ok',
             });

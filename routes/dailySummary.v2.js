@@ -90,7 +90,8 @@ router.get('/', async (req, res) => {
                 {
                     $match: {
                         date: { $gte: startOfDay, $lte: endOfDay },
-                        isDeleted: { $ne: true }
+                        isDeleted: { $ne: true },
+                        appointmentId: { $exists: false }
                     }
                 },
                 {

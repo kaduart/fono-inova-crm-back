@@ -82,6 +82,7 @@ const appointmentSchema = new mongoose.Schema({
       'paid',
       'missed',
       'completed',
+      'converted',    // Pré-agendamento convertido em agendamento real
       'processing_create',
       'processing_complete',
       'processing_cancel'

@@ -37,7 +37,7 @@ router.get('/', auth, async (req, res) => {
             if (to) query.preferredDate.$lte = new Date(to);
         }
         
-        const preAgendamentos = await Appointment.find(query)
+        const preAgendamentos = await Appointment.find({ ...query, operationalStatus: 'pre_agendado' })
             .sort({ createdAt: -1 })
             .limit(parseInt(limit))
             .lean();

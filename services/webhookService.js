@@ -121,11 +121,8 @@ async function processPixTransaction(formattedPix, io) {
         const usedValue = sessionsDone * (pkg.sessionValue || 0);
         const totalValue = pkg.totalValue || (pkg.totalSessions * pkg.sessionValue) || 0;
         
-        // 🔥 V2 HARD CUT: Não processa pacotes sem model
-        if (!pkg.model) {
-            throw new Error('PACKAGE_V2_INCOMPATIBLE: Pacote V1 não suportado no webhook V2');
-        }
-        const isPrepaid = pkg.model === 'prepaid';
+        // 🎯 Inferir prepaid por model (V2) ou paymentType (legado)
+        const isPrepaid = pkg.model === 'prepaid' || pkg.paymentType === 'full';
         
         if (isPrepaid) {
             pkg.balance = totalValue - usedValue; // Crédito restante (pode ser negativo se usou mais)
