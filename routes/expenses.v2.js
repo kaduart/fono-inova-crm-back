@@ -80,7 +80,6 @@ router.get('/', auth, async (req, res) => {
         const [expenses, total] = await Promise.all([
             Expense.find(filters)
                 .populate('relatedDoctor', 'fullName specialty')
-                .populate('createdBy', 'fullName')
                 .sort({ date: -1, createdAt: -1 })
                 .skip(skip)
                 .limit(Number(limit))
@@ -140,15 +139,11 @@ router.get('/', auth, async (req, res) => {
 
 /**
  * @route   POST /api/v2/expenses
- * @desc    Criar nova despesa (V2)
+ * @desc    Criar nova despesa (V2 - Otimizado, sem transaction)
  * @access  Private (admin/secretary)
  */
 router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
-    const session = await mongoose.startSession();
-
     try {
-        await session.startTransaction();
-
         const {
             description,
             category,
@@ -164,17 +159,25 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
             notes
         } = req.body;
 
-        // Validação
+        // 🛡️ VALIDAÇÃO (fail fast)
         if (!description || !category || !amount || !date || !paymentMethod) {
             return res.status(400).json({
                 success: false,
-                message: 'Campos obrigatórios faltando'
+                message: 'Campos obrigatórios: description, category, amount, date, paymentMethod'
             });
         }
 
-        // Se vinculada a profissional, validar existência
+        // 🛡️ VALIDAÇÃO: Usuário autenticado
+        if (!req.user?.id || !req.user?.role) {
+            return res.status(401).json({
+                success: false,
+                message: 'Usuário não autenticado. Token inválido ou expirado.'
+            });
+        }
+
+        // Se vinculada a profissional, validar existência (sem session)
         if (relatedDoctor) {
-            const doctorExists = await Doctor.exists({ _id: relatedDoctor }).session(session);
+            const doctorExists = await Doctor.exists({ _id: relatedDoctor });
             if (!doctorExists) {
                 return res.status(404).json({
                     success: false,
@@ -183,11 +186,27 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
             }
         }
 
-        const expense = await Expense.create([{
+        // 🧊 BUSCA NOME DO USUÁRIO (snapshot imutável para auditoria)
+        let creatorName = 'Sistema';
+        try {
+            const userModel = mongoose.model(
+                req.user.role === 'admin' ? 'Admin' :
+                req.user.role === 'secretary' ? 'Secretary' : 'Doctor'
+            );
+            const user = await userModel.findById(req.user.id).select('fullName').lean();
+            if (user?.fullName) {
+                creatorName = user.fullName;
+            }
+        } catch (err) {
+            console.warn('[ExpenseV2] Não foi possível buscar nome do criador:', err.message);
+        }
+
+        // 🚀 CRIA DESPESA (sem transaction - otimizado)
+        const expense = new Expense({
             description,
             category,
             subcategory,
-            amount,
+            amount: Number(amount),
             date,
             relatedDoctor: relatedDoctor || null,
             workPeriod,
@@ -196,25 +215,36 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
             isRecurring,
             recurrence,
             notes,
-            createdBy: req.user.id
-        }], { session });
+            createdBy: new mongoose.Types.ObjectId(req.user.id),
+            createdByRole: req.user.role,
+            createdByName: creatorName
+        });
 
-        await session.commitTransaction();
+        await expense.save();
 
-        const populated = await Expense.findById(expense[0]._id)
-            .populate('relatedDoctor', 'fullName specialty')
-            .populate('createdBy', 'fullName');
+        // 🔄 PARALLEL: Popula dados + Invalida cache + Publica evento
+        const [populated] = await Promise.all([
+            Expense.findById(expense._id)
+                .populate('relatedDoctor', 'fullName specialty'),
+            
+            // Invalida cache (não bloqueia resposta)
+            Promise.resolve().then(() => expenseCache.flushAll()),
+            
+            // Publica evento (background)
+            publishEvent(EventTypes.EXPENSE_CREATED, {
+                expenseId: expense._id.toString(),
+                amount: Number(amount),
+                category,
+                status,
+                date
+            }, { 
+                aggregateType: 'expense', 
+                aggregateId: expense._id.toString(),
+                metadata: { source: 'expense_v2_api' }
+            }).catch(err => console.error('[ExpenseV2] Evento falhou (não-fatal):', err.message))
+        ]);
 
-        // Invalida cache
-        expenseCache.flushAll();
-
-        // Publica evento
-        await publishEvent(EventTypes.EXPENSE_CREATED, {
-            expenseId: expense[0]._id,
-            amount,
-            category,
-            status
-        }, { aggregateType: 'expense', aggregateId: expense[0]._id.toString() });
+        console.log(`[ExpenseV2] Criada: ${expense._id} | R$${amount} | ${category}`);
 
         res.status(201).json({
             success: true,
@@ -223,15 +253,22 @@ router.post('/', auth, authorize(['admin', 'secretary']), async (req, res) => {
         });
 
     } catch (error) {
-        await session.abortTransaction();
         console.error('[ExpenseV2] Erro ao criar despesa:', error);
+        
+        // 🛡️ Trata erro de duplicidade (idempotência)
+        if (error.code === 11000) {
+            return res.status(409).json({
+                success: false,
+                message: 'Despesa duplicada detectada',
+                error: 'DUPLICATE_EXPENSE'
+            });
+        }
+        
         res.status(500).json({
             success: false,
             message: 'Erro ao registrar despesa',
             error: error.message
         });
-    } finally {
-        session.endSession();
     }
 });
 
@@ -250,8 +287,7 @@ router.patch('/:id', auth, authorize(['admin', 'secretary']), async (req, res) =
             { ...updates, updatedAt: new Date() },
             { new: true, runValidators: true }
         )
-            .populate('relatedDoctor', 'fullName specialty')
-            .populate('createdBy', 'fullName');
+            .populate('relatedDoctor', 'fullName specialty');
 
         if (!expense) {
             return res.status(404).json({

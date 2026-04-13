@@ -78,6 +78,18 @@ const packagesViewSchema = new mongoose.Schema({
     enum: ['paid', 'partially_paid', 'unpaid', 'pending'],
     default: 'unpaid'
   },
+  
+  // ⚖️ Liminar (campos específicos)
+  liminarTotalCredit: Number,
+  liminarCreditBalance: Number,
+  recognizedRevenue: Number,
+  liminarProcessNumber: String,
+  liminarCourt: String,
+  liminarMode: String,
+  
+  // 🏥 Convênio (campos específicos)
+  insuranceGrossAmount: Number,
+  insuranceBillingStatus: String,
 
   // 📅 Datas
   startDate: Date,
@@ -94,6 +106,7 @@ const packagesViewSchema = new mongoose.Schema({
   // 📋 Sessões (resumo)
   sessions: [{
     sessionId: mongoose.Schema.Types.ObjectId,
+    appointmentId: mongoose.Schema.Types.ObjectId,  // 🔗 Link para o agendamento
     date: String,
     time: String,
     status: String,

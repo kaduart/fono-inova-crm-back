@@ -49,7 +49,7 @@ async function fetchRawData(packageId, correlationId) {
   const sessions = await Session.find({ package: packageId })
     .sort({ date: 1, time: 1 })
     .limit(100)
-    .select('date time status isPaid')
+    .select('date time status isPaid appointmentId')  // 🔗 Inclui appointmentId
     .lean();
   
   logger.info('[PackageProjectionService] Raw data fetched', {
@@ -95,6 +95,7 @@ async function calculateSessionMetrics(sessions, pkgTotalSessions, packageId) {
   // Resumo das sessões para a view
   const sessionsSummary = sessions.map(s => ({
     sessionId: s._id,
+    appointmentId: s.appointmentId,  // 🔗 Link para o agendamento
     date: s.date,
     time: s.time,
     status: s.status,
@@ -171,6 +172,23 @@ export async function buildPackageView(packageId, options = {}) {
       balance: pkg.balance,
       financialStatus: pkg.financialStatus,
       payments: pkg.payments || [], // array de IDs — frontend usa length para checar se há pagamentos
+      
+      // ⚖️ Campos específicos de Liminar
+      ...(pkg.type === 'liminar' ? {
+        liminarTotalCredit: pkg.liminarTotalCredit || 0,
+        liminarCreditBalance: pkg.liminarCreditBalance || 0,
+        recognizedRevenue: pkg.recognizedRevenue || 0,
+        liminarProcessNumber: pkg.liminarProcessNumber,
+        liminarCourt: pkg.liminarCourt,
+        liminarMode: pkg.liminarMode
+      } : {}),
+      
+      // 🏥 Campos específicos de Convênio
+      ...(pkg.type === 'convenio' ? {
+        insuranceGrossAmount: pkg.insuranceGrossAmount || 0,
+        insuranceBillingStatus: pkg.insuranceBillingStatus,
+        insuranceProvider: pkg.insuranceProvider
+      } : {}),
       
       ...dates,
       expiresAt: pkg.liminarExpirationDate || null,

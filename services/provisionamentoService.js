@@ -45,8 +45,8 @@ export const calcularProvisionamento = async (mes, ano) => {
   const agendadoAltoRisco = agendadoConfirmado.total * 0.85; // 85% comparecem
   const agendadoMedioRisco = agendadoPendente.total * 0.40;  // 40% confirma e vai
 
-  const totalProvisionado = garantido + agendadoAltoRisco + agendadoMedioRisco + pipeline;
-  const indiceCerteza = totalProvisionado > 0 ? garantido / totalProvisionado : 0;
+  const totalProvisionado = garantido.total + agendadoAltoRisco + agendadoMedioRisco + pipeline;
+  const indiceCerteza = totalProvisionado > 0 ? garantido.total / totalProvisionado : 0;
 
   // Break-even (20% de margem mínima)
   const breakEven = custosFixos * 1.2;
@@ -56,8 +56,11 @@ export const calcularProvisionamento = async (mes, ano) => {
 
     camadas: {
       garantido: {
-        valor: Math.round(garantido),
-        percentual: totalProvisionado > 0 ? Math.round((garantido / totalProvisionado) * 100) : 0,
+        valor: Math.round(garantido.total),
+        valorParticular: Math.round(garantido.particular),
+        valorConvenio: Math.round(garantido.convenio),
+        quantidade: garantido.quantidade,
+        percentual: totalProvisionado > 0 ? Math.round((garantido.total / totalProvisionado) * 100) : 0,
         certeza: 0.95,
         cor: 'success'
       },
@@ -141,15 +144,38 @@ export const calcularProvisionamento = async (mes, ano) => {
  * Camada 1: GARANTIDO (dinheiro já recebido no período)
  * - Apenas Payments 'paid' do período (dinheiro que efetivamente entrou no caixa)
  * - NÃO inclui crédito de pacotes (não é dinheiro realizado no mês)
+ * 
+ * 🎯 V2: Inclui payments do novo fluxo event-driven
  */
 const calcularGarantido = async (periodo) => {
-  // Pagamentos recebidos no mês
+  // Pagamentos recebidos no mês (V1 + V2)
   const payments = await Payment.find({
     status: 'paid',
     paymentDate: { $gte: periodo.inicio, $lte: periodo.fim }
-  });
+  }).lean();
 
-  return payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+  let total = 0;
+  let particular = 0;
+  let convenio = 0;
+
+  for (const p of payments) {
+    const amount = p.amount || 0;
+    total += amount;
+    
+    // Separa por tipo para detalhe
+    if (p.billingType === 'convenio' || p.paymentMethod === 'convenio') {
+      convenio += amount;
+    } else {
+      particular += amount;
+    }
+  }
+
+  return {
+    total,
+    particular,
+    convenio,
+    quantidade: payments.length
+  };
 };
 
 /**

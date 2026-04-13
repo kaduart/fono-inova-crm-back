@@ -255,6 +255,16 @@ async function processEvent(eventType, payload, correlationId) {
       return { operation: 'ignored', reason: 'no_package_id' };
     
     // ========================================
+    // APPOINTMENT EVENTS (afetam métricas do pacote)
+    // ========================================
+    case 'APPOINTMENT_CANCELED':
+    case 'APPOINTMENT_COMPLETED':
+      if (packageId) {
+        return await handlePackageBuild(packageId, correlationId);
+      }
+      return { operation: 'ignored', reason: 'no_package_id' };
+    
+    // ========================================
     // REBUILD MANUAL
     // ========================================
     case 'PACKAGE_VIEW_REBUILD_REQUESTED':

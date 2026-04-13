@@ -96,19 +96,15 @@ router.get('/:patientId', auth, async (req, res) => {
 });
 
 // ======================================================
-// POST /v2/balance/:patientId/debit - Adiciona débito (event-driven)
+// POST /v2/balance/:patientId/debit - Adiciona débito (event-driven, otimizado)
 // ======================================================
 router.post('/:patientId/debit', auth, async (req, res) => {
-    const mongoSession = await mongoose.startSession();
-    
     try {
-        await mongoSession.startTransaction();
-        
         const { patientId } = req.params;
         const { amount, description, sessionId, appointmentId } = req.body;
 
+        // 🛡️ VALIDAÇÃO (fail fast)
         if (!mongoose.Types.ObjectId.isValid(patientId)) {
-            await mongoSession.abortTransaction();
             return res.status(400).json({
                 success: false,
                 error: 'ID de paciente inválido'
@@ -116,28 +112,27 @@ router.post('/:patientId/debit', auth, async (req, res) => {
         }
 
         if (!amount || amount <= 0) {
-            await mongoSession.abortTransaction();
             return res.status(400).json({
                 success: false,
                 error: 'Valor deve ser maior que zero'
             });
         }
 
-        // Resolver patientId (pode vir do patients_view)
+        // Resolver patientId
         const resolvedPatientId = await resolvePatientId(patientId);
 
-        // Verifica se já existe balance
-        const balance = await PatientBalance.findOne({ patient: resolvedPatientId }).session(mongoSession);
+        // 🚀 VERIFICAÇÃO LEVE (sem transaction)
+        const balance = await PatientBalance.findOne(
+            { patient: resolvedPatientId },
+            { processingStatus: 1 }
+        ).lean();
         
-        if (balance && balance.processingStatus === 'updating') {
-            await mongoSession.abortTransaction();
+        if (balance?.processingStatus === 'updating') {
             return res.status(409).json({
                 success: false,
                 error: 'Saldo está sendo processado, tente novamente'
             });
         }
-
-        await mongoSession.commitTransaction();
 
         // Publica evento para processamento async
         const correlationId = `balance_debit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -184,14 +179,11 @@ router.post('/:patientId/debit', auth, async (req, res) => {
         });
 
     } catch (error) {
-        await mongoSession.abortTransaction();
         console.error('[BalanceV2] Erro ao criar débito:', error);
         res.status(500).json({
             success: false,
             error: 'Erro ao criar débito: ' + error.message
         });
-    } finally {
-        mongoSession.endSession();
     }
 });
 

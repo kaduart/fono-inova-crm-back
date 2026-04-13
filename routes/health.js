@@ -282,6 +282,15 @@ router.get('/full', async (req, res) => {
             }
         }
         
+        // 📊 Busca métricas de performance do Package V2
+        let packageMetrics = null;
+        try {
+            const { getPackageMetricsForHealth } = await import('./package.metrics.js');
+            packageMetrics = await getPackageMetricsForHealth();
+        } catch (err) {
+            console.log('[Health] Package metrics não disponível:', err.message);
+        }
+        
         // 🛡️ Garante que sempre retorne heapPercent como número (não string)
         res.json({
             status: memoryStatus === 'healthy' ? 'ok' : 'degraded',
@@ -299,6 +308,7 @@ router.get('/full', async (req, res) => {
                 status: memoryStatus
             },
             queues,
+            packageV2: packageMetrics, // 📊 NOVO: Métricas do Package V2
             env: process.env.NODE_ENV || 'development',
             timestamp: new Date().toISOString()
         });

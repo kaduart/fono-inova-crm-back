@@ -4,6 +4,7 @@ import Appointment from "../models/Appointment.js";
 import Doctor from "../models/Doctor.js";
 import Session from "../models/Session.js";
 import { isNationalHoliday, getHolidayName, isTimeBlockedByHoliday } from "../config/feriadosBR-dynamic.js";
+import { buildDayRange, buildDateTime } from "../utils/datetime.js";
 
 /**
  * ✅ SAFE AVAILABILITY + CONFLICT CHECK (drop-in)
@@ -112,11 +113,14 @@ export const checkAppointmentConflicts = async (req, res, next) => {
     const newStartMinutes = timeToMinutes(timeHHmm);
     const newEndMinutes = newStartMinutes + newDuration;
 
+    // 🚨 FIX: Usar helper padronizado para range de busca (timezone-safe)
+    const dayRange = buildDayRange(date);
+
     // 🆕 NOVO: Buscar TODOS os agendamentos do dia para verificar sobreposição
     const [doctorAppointments, patientAppointments, doctorSessions, patientSessions] = await Promise.all([
       Appointment.find({
         doctor: doctorObjectId,
-        date,
+        date: dayRange,
         operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
         ...excludeSelf,
       })
@@ -126,7 +130,7 @@ export const checkAppointmentConflicts = async (req, res, next) => {
 
       Appointment.find({
         patient: patientObjectId,
-        date,
+        date: dayRange,
         operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
         ...excludeSelf,
       })
@@ -137,7 +141,7 @@ export const checkAppointmentConflicts = async (req, res, next) => {
       // Sessões de pacote do médico (modelo Session)
       Session.find({
         doctor: doctorObjectId,
-        date,
+        date: dayRange,
         status: { $nin: ['canceled'] },
       })
         .select("time patient")
@@ -147,7 +151,7 @@ export const checkAppointmentConflicts = async (req, res, next) => {
       // Sessões de pacote do paciente (modelo Session)
       Session.find({
         patient: patientObjectId,
-        date,
+        date: dayRange,
         status: { $nin: ['canceled'] },
       })
         .select("time doctor")
@@ -328,11 +332,16 @@ export async function calculateAvailableSlots(doctorId, date) {
   
   console.log(`[calculateAvailableSlots] normalizedTimes=`, normalizedTimes);
 
+  // 🚨 FIX: Usar helper padronizado para range de busca (timezone-safe)
+  const dayRange = buildDayRange(date);
+  
+  console.log(`[calculateAvailableSlots] Buscando agendamentos entre ${dayRange.$gte.toISOString()} e ${dayRange.$lte.toISOString()}`);
+
   // 🚨 FIX: Buscar agendamentos COM DURAÇÃO para verificar sobreposição
   const [bookedAppointments, preAgendadosAtivos, packageSessions] = await Promise.all([
     Appointment.find({
       doctor: toObjectId(doctorId),
-      date,
+      date: dayRange,
       operationalStatus: { $nin: NON_BLOCKING_OPERATIONAL_STATUSES },
     })
       .select("time duration patient -_id")
@@ -340,7 +349,7 @@ export async function calculateAvailableSlots(doctorId, date) {
 
     // 🚨 FIX: pre_agendado agora BLOQUEIA o slot
     Appointment.find({
-      date,
+      date: dayRange,
       operationalStatus: 'pre_agendado',
       $or: [
         { doctor: toObjectId(doctorId) },
@@ -353,7 +362,7 @@ export async function calculateAvailableSlots(doctorId, date) {
     // 🚨 FIX: Sessões de pacote (modelo Session) bloqueiam slots — nunca estavam sendo consultadas
     Session.find({
       doctor: toObjectId(doctorId),
-      date,
+      date: dayRange,
       status: { $nin: ['canceled'] },
     })
       .select("time -_id")

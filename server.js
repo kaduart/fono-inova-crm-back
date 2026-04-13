@@ -59,7 +59,8 @@ import adminRoutes from "./routes/admin.js";
 import adminDashboardV2Routes from './routes/adminDashboard.v2.js';  // 🚀 NOVO: Admin Dashboard V2
 import amandaRoutes from "./routes/aiAmanda.js";
 import analitycsRoutes from "./routes/analytics.js";
-import appointmentRoutes from "./routes/appointment.js";
+// 🚫 INATIVADO: appointmentRoutes V1 removido (usando apenas V2)
+// import appointmentRoutes from "./routes/appointment.js";
 import authRoutes from "./routes/auth.js";
 import doctorRoutes from "./routes/doctor.js";
 import evolutionRoutes from "./routes/evolution.js";
@@ -77,6 +78,7 @@ import pixRoutes from "./routes/pix.js";
 import proxyMediaRoutes from "./routes/proxyMedia.js";
 import reportsRoutes from "./routes/reports/index.js";
 import signupRoutes from "./routes/signup.js";
+import syncRoutes from "./routes/sync.js";
 import specialtyRouter from "./routes/specialty.js";
 import UserRoutes from "./routes/user.js";
 import whatsappRoutes from "./routes/whatsapp.js";
@@ -122,6 +124,7 @@ import insuranceGuidesRoutes from './routes/insuranceGuides.js';
 import convenioPackagesRoutes from './routes/convenioPackages.js';
 import convenioRoutes from './routes/financial/convenio.routes.js';
 import insuranceV2Routes from './routes/insuranceV2.routes.js';
+import insuranceGuidesV2Routes from './routes/insuranceGuides.v2.js';
 import reminderRoutes from './routes/reminder.js';
 
 import imageBankRoutes from './routes/imageBank.routes.js';
@@ -156,6 +159,8 @@ import convenioV2Routes from './routes/convenio.v2.js';  // 🚀 NOVO: Convênio
 import calendarV2Routes from './routes/calendar.v2.js';  // 🚀 NOVO: Calendar V2
 import observabilityRoutes from './infrastructure/observability/observabilityRoutes.js';  // 🚀 NOVO: Observabilidade
 import healthRoutes from './routes/health.js';  // 🚀 NOVO: Health Check Completo
+import healthMigrationRoutes from './routes/health.migration.js';  // 🚀 NOVO: Health Check de Migração V1→V2
+import packageMetricsRoutes from './routes/package.metrics.js';  // 🚀 NOVO: Métricas Package V2
 
 
 // ======================================================
@@ -330,6 +335,9 @@ app.get('/health/full', healthFullEndpoint);
 // 🚀 NOVO: Health Check Completo (com watchdog, queues, stuck events)
 app.use('/api/health', healthRoutes);
 
+// 🚀 NOVO: Health Check de Migração V1→V2 (monitora quando pode desativar V1)
+app.use('/api/health', healthMigrationRoutes);
+
 app.get('/', (req, res) => {
   res.status(200).json({ status: 'CRM Backend running', timestamp: new Date().toISOString() });
 });
@@ -355,7 +363,8 @@ app.use("/api/v2/admin/dashboard", adminDashboardV2Routes);  // 🚀 NOVO: Admin
 app.use("/api/doctors", doctorRoutes);
 app.use("/api/patients", patientRoutes);
 app.use("/api/patients", patientDuplicatesRoutes);
-app.use("/api/appointments", appointmentRoutes);
+// 🚫 INATIVADO: appointmentRoutes V1 removido (usando apenas V2)
+// app.use("/api/appointments", appointmentRoutes);
 
 // Fechamento do Dia (V2 sem dependência de eventos)
 app.use("/api/v2/daily-closing", dailyClosingV2Routes);
@@ -399,6 +408,7 @@ app.use('/api/financial/v2', financialMetricsRoutes);
 app.use('/api/financial/dashboard', financialDashboardRoutes);
 app.use('/api/financial/sse', financialSSERoutes);  // 🔄 SSE: Server-Sent Events para tempo real
 app.use('/api/metrics', metricsDashboardRoutes);
+app.use('/api/metrics/packages', packageMetricsRoutes);  // 🚀 NOVO: Métricas Package V2
 app.use('/api/planning', planningRoutes);
 app.use('/api/pre-agendamento', preAgendamentoRoutes);
 app.use('/api/v2/pre-agendamento', preAgendamentoRoutes);  // 🔄 ALIAS: V2 aponta para V1
@@ -418,7 +428,9 @@ import totalsWrapperRoutes from './routes/financial/totals-wrapper.routes.js';
 app.use('/api/v2', totalsWrapperRoutes);
 
 app.use('/api/v2', insuranceV2Routes);
+app.use('/api/v2/insurance-guides', insuranceGuidesV2Routes);
 app.use('/api/v2/financial', financialOverviewRoutes);
+app.use('/api/sync', syncRoutes);  // 🔧 Sincronização de Payment Status
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/marketing', marketingRoutes);
 app.use('/api/landing-pages', landingPageRoutes);
@@ -580,16 +592,21 @@ server.listen(PORT, '0.0.0.0', () => {
       // await import("./workers/video.worker.js");
       // await import("./workers/post.worker.js");
       
-      // const { startAllWorkers } = await import("./workers/index.js");
-      // await startAllWorkers();
-      // console.log("🎯 Workers 4.0 iniciados");
+      const { startAllWorkers } = await import("./workers/index.js");
+      await startAllWorkers();
+      console.log("🎯 Workers 4.0 iniciados");
+      
+      // 🎯 Inicia projections (event-driven)
+      const { default: FinancialProjectionHandler } = await import("./projections/financialProjection.js");
+      FinancialProjectionHandler.start();
+      console.log("💰 Financial Projection iniciada");
       
       // const { initGmbRetryWorker } = await import("./config/bullConfigGmbRetry.js");
       // initGmbRetryWorker();
       
       // await import("./jobs/followup.analytics.cron.js");
       // await import("./crons/responseTracking.cron.js");
-      console.log("⏸️ Workers DESLIGADOS (modo memória otimizada)");
+      console.log("✅ Workers ATIVADOS");
     } catch (workerErr) {
       console.warn("⚠️ Workers não iniciados (Redis indisponível):", workerErr.message);
     }
@@ -648,6 +665,23 @@ server.listen(PORT, '0.0.0.0', () => {
     initFollowupWatcher();
     
     console.log("✅ Sistema inicializado!");
+    
+    // ======================================================
+    // 🟢 SERVIDOR CONECTADO - READY PARA REQUISIÇÕES
+    // ======================================================
+    console.log("");
+    console.log("\x1b[32m%s\x1b[0m", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("\x1b[32m%s\x1b[0m", "  ✅ SERVER CONECTADO E PRONTO!");
+    console.log("\x1b[32m%s\x1b[0m", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("\x1b[32m%s\x1b[0m", "  📡 Porta: " + PORT);
+    console.log("\x1b[32m%s\x1b[0m", "  🌐 Ambiente: " + (process.env.NODE_ENV || "development"));
+    console.log("\x1b[32m%s\x1b[0m", "  📊 MongoDB: " + (mongoose.connection.readyState === 1 ? "Conectado" : "Desconhecido"));
+    console.log("\x1b[32m%s\x1b[0m", "  🔄 Workers: " + (global.workersAtivos ? "Ativos" : "Inativos"));
+    console.log("\x1b[32m%s\x1b[0m", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("");
+    console.log("\x1b[33m%s\x1b[0m", "  ⏹️  Ctrl+C para parar o servidor");
+    console.log("");
+    
   } catch (err) {
     console.error("❌ Erro crítico na inicialização:", err);
     process.exit(1);
