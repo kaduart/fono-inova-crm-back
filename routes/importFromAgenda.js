@@ -1219,7 +1219,7 @@ router.get("/import-from-agenda/appointments-amanda", agendaAuth, async (req, re
 
     const filter = {
       'metadata.origin.source': 'amandaAI',
-      operationalStatus: { $nin: ['canceled', 'cancelado', 'cancelada'] },
+      operationalStatus: { $nin: ['canceled', 'cancelado', 'cancelada', 'pre_agendado'] },
       appointmentId: { $exists: false }
     };
 
@@ -1463,7 +1463,7 @@ router.get("/agenda-externa/disponibilidade", agendaAuth, async (req, res) => {
     const appointments = await Appointment.find({
       date: { $in: dates },
       doctor: { $in: doctorIds },
-      operationalStatus: { $nin: ['canceled', 'cancelado', 'cancelada', 'no_show', 'missed'] },
+      operationalStatus: { $nin: ['canceled', 'cancelado', 'cancelada', 'no_show', 'missed', 'pre_agendado'] },
       appointmentId: { $exists: false }
     }).select('doctor date time').lean();
 
@@ -1674,6 +1674,7 @@ router.post("/import-from-agenda/limpar-duplicados-paciente", async (req, res) =
     const appointments = await Appointment.find({
       patientName: { $regex: patientName, $options: 'i' },
       date: date,
+      operationalStatus: { $ne: 'pre_agendado' },
       appointmentId: { $exists: false }
     }).session(session);
 
