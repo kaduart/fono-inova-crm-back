@@ -15,7 +15,12 @@ import Appointment from '../models/Appointment.js';
 import Session from '../models/Session.js';
 import Package from '../models/Package.js';
 import Payment from '../models/Payment.js';
+import FinancialLedger from '../models/FinancialLedger.js';
 import { publishEvent, EventTypes } from '../infrastructure/events/eventPublisher.js';
+import {
+    recordPaymentReceived,
+    recordPackageSessionConsumed
+} from './financialLedgerService.js';
 
 /**
  * Completa uma sessão - Mutação primária de estado
@@ -91,40 +96,21 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
         packageSessionValue: packageData?.sessionValue
     });
     
-    // Determinar tipo de billing
-    let billingType = determineBillingType(appointment, packageData);
+    // 🎯 FONTE ÚNICA DA VERDADE: determineBillingType resolve tudo
+    const billingType = determineBillingType(appointment, packageData);
     
-    // 🔥 V2 HARD CUT: Pacotes SEM campo 'model' E SEM tipo V2 conhecido NÃO são suportados
-    // Regra: V2 aceita packages com 'model' (novos) OU type = 'liminar'/'convenio' (legado V2)
-    const isV2Package = packageData?.model || 
-                        ['liminar', 'convenio'].includes(packageData?.type);
-    
-    if (!isV2Package) {
-        throw new Error('PACKAGE_V2_INCOMPATIBLE: Este pacote foi criado na versão antiga (V1) e não é compatível com o sistema atual. Crie um novo pacote ou use o endpoint V1 legado.');
-    }
-    
-    // 🎯 FONTE DA VERDADE ÚNICA: package.model (novo) OU package.type (legado V2)
-    const MODEL_TO_BILLING = {
-        'prepaid': 'prepaid',
-        'per_session': 'particular',
-        'convenio': 'convenio',
-        'liminar': 'liminar'
-    };
-    
-    // Prioridade: model (novo) > type (legado)
-    const packageModel = packageData?.model || packageData?.type;
-    
-    if (MODEL_TO_BILLING[packageModel]) {
-        billingType = MODEL_TO_BILLING[packageModel];
-    } else {
-        throw new Error(`PACKAGE_INVALID_MODEL: Modelo desconhecido: ${packageModel}`);
-    }
+    console.log(`[CompleteSessionV2] Billing determinado`, {
+        billingType,
+        packageModel: packageData?.model,
+        packageType: packageData?.type,
+        packagePaymentType: packageData?.paymentType
+    });
     
     const sessionValue = appointment.sessionValue || packageData?.sessionValue || 0;
     
-    // 🚨 VALIDAÇÃO: sessionValue deve ser válido
-    if (!sessionValue || sessionValue <= 0) {
-        throw new Error(`INVALID_SESSION_VALUE: Valor da sessão inválido: ${sessionValue}`);
+    // 🚨 VALIDAÇÃO: liminar exige sessionValue > 0 (consome crédito)
+    if (billingType === 'liminar' && (!sessionValue || sessionValue <= 0)) {
+        throw new Error(`INVALID_SESSION_VALUE: Liminar exige valor de sessão > 0. Recebido: ${sessionValue}`);
     }
 
     console.log(`[CompleteSessionV2] Dados processados`, {
@@ -135,11 +121,8 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
     });
 
     // 🚨 VALIDAÇÃO: Não permitir addToBalance em pacotes já pagos (prepaid, convenio, liminar)
-    // 🎯 FONTE DA VERDADE: package.model
-    const isPaidPackage = ['prepaid', 'convenio', 'liminar'].includes(packageData?.model) || 
-                          ['convenio', 'liminar'].includes(packageData?.type) ||
-                          // ⚠️ FALLBACK: pacotes antigos sem model
-                          (packageData?.paymentType === 'full' && !packageData?.model);
+    // 🎯 FONTE ÚNICA DA VERDADE: billingType (resolvido por determineBillingType)
+    const isPaidPackage = ['prepaid', 'convenio', 'liminar'].includes(billingType);
     
     console.log(`[CompleteSessionV2] Validação addToBalance:`, { billingType, addToBalance, isPaidPackage });
     
@@ -157,6 +140,7 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
     
     // 🎯 Variável para compartilhar estado entre Session e Appointment
     let sessionUpdate = null;
+    let sessionDoc = null;
     
     try {
         if (!externalSession) {
@@ -165,14 +149,14 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
 
         // 1. Verificar e atualizar Session (se existir)
         if (sessionId) {
-            const session = await Session.findById(sessionId).session(mongoSession);
-            if (!session) {
+            sessionDoc = await Session.findById(sessionId).session(mongoSession);
+            if (!sessionDoc) {
                 throw new Error('SESSION_NOT_FOUND: Sessão não encontrada');
             }
             const isCancelledStatus = (status) => 
                 status && ['canceled', 'cancelled', 'cancelado', 'processing_cancel'].includes(status.toLowerCase());
             
-            if (isCancelledStatus(session.status)) {
+            if (isCancelledStatus(sessionDoc.status)) {
                 throw new Error('SESSION_CANCELLED: Esta sessão foi cancelada e não pode ser completada');
             }
             
@@ -193,21 +177,25 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 sessionUpdate.isPaid = true;
                 sessionUpdate.paymentStatus = 'paid';
                 sessionUpdate.paymentOrigin = 'liminar_credit';
+                sessionUpdate.paidAt = new Date();
             } else if (billingType === 'prepaid') {
                 // 💳 Pré-pago: já foi pago no pacote
                 sessionUpdate.isPaid = true;
                 sessionUpdate.paymentStatus = 'package_paid';
                 sessionUpdate.paymentOrigin = 'package_prepaid';
+                sessionUpdate.paidAt = new Date();
             } else if (billingType === 'convenio') {
                 // 🏥 Convênio: pago pelo convênio (não gera dívida)
                 sessionUpdate.isPaid = true;
                 sessionUpdate.paymentStatus = 'paid';
                 sessionUpdate.paymentOrigin = 'convenio';
+                sessionUpdate.paidAt = new Date();
             } else {
                 // 💰 Per-session: depende se pagou no ato ou ficou fiado (tudo unpaid se não pago)
                 sessionUpdate.isPaid = paidNow;
                 sessionUpdate.paymentStatus = paidNow ? 'paid' : 'unpaid';
                 sessionUpdate.paymentOrigin = paidNow ? 'cash' : 'balance';
+                if (paidNow) sessionUpdate.paidAt = new Date();
             }
             
             await Session.findByIdAndUpdate(
@@ -274,11 +262,107 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
             });
         }
 
+        // 💰 CRIAR OU ATUALIZAR PAYMENT se foi pago no ato (particular sem addToBalance)
+        let paymentCreated = null;
+        if (billingType === 'particular' && !addToBalance && sessionValue > 0) {
+            const now = new Date();
+            if (appointment.payment) {
+                // 🔄 Reutiliza payment existente (evita duplicidade)
+                const existingPaymentId = appointment.payment._id || appointment.payment;
+                paymentCreated = await Payment.findByIdAndUpdate(
+                    existingPaymentId,
+                    {
+                        $set: {
+                            status: 'paid',
+                            paidAt: now,
+                            paymentDate: now,
+                            financialDate: now,
+                            amount: sessionValue,
+                            paymentMethod: 'cash',
+                            kind: 'session_payment',
+                            updatedAt: now
+                        }
+                    },
+                    { session: mongoSession, new: true }
+                );
+                console.log(`[CompleteSessionV2] 💰 Payment existente atualizado: ${paymentCreated._id}`);
+            } else {
+                // 🆕 Cria novo payment
+                const [paymentDoc] = await Payment.create([{
+                    patient: appointment.patient?._id,
+                    amount: sessionValue,
+                    status: 'paid',
+                    type: 'service',
+                    serviceType: 'session',
+                    paymentMethod: 'cash',
+                    paymentDate: now,
+                    paidAt: now,
+                    financialDate: now, // 🎯 ESSENCIAL pro caixa
+                    description: `Sessão realizada - ${appointment.patient?.fullName || 'Paciente'}`,
+                    appointment: appointmentId,
+                    createdBy: userId,
+                    kind: 'session_payment'
+                }], { session: mongoSession });
+                paymentCreated = paymentDoc;
+                appointmentUpdate.$set.payment = paymentCreated._id;
+                console.log(`[CompleteSessionV2] 💰 Payment criado dentro da transação: ${paymentCreated._id}`);
+            }
+        }
+
         await Appointment.updateOne(
             { _id: appointmentId },
             appointmentUpdate,
             { session: mongoSession }
         );
+
+        // 🏦 REGISTRAR LANÇAMENTOS NO LEDGER FINANCEIRO (dentro da transação)
+        if (packageId && packageUpdateResult) {
+            const packageForLedger = {
+                ...packageData,
+                sessionsDone: packageUpdateResult.sessionsDone
+            };
+            const sessionForLedger = sessionDoc || {
+                _id: sessionId,
+                patient: appointment.patient?._id,
+                appointment: appointmentId,
+                correlationId
+            };
+            await recordPackageSessionConsumed(
+                sessionForLedger,
+                packageForLedger,
+                { userId, correlationId },
+                mongoSession
+            );
+            console.log(`[CompleteSessionV2] 🏦 Ledger: package_consumed registrado`);
+        }
+
+        if (billingType === 'particular' && sessionValue > 0) {
+            if (paymentCreated) {
+                await recordPaymentReceived(
+                    paymentCreated,
+                    { userId, correlationId },
+                    mongoSession
+                );
+                console.log(`[CompleteSessionV2] 🏦 Ledger: payment_received registrado`);
+            } else if (addToBalance) {
+                await FinancialLedger.credit({
+                    type: 'payment_pending',
+                    amount: sessionValue,
+                    patient: appointment.patient?._id,
+                    appointment: appointmentId,
+                    correlationId,
+                    description: `Sessão particular fiada - ${appointment.patient?.fullName || 'Paciente'}`,
+                    occurredAt: new Date(),
+                    createdBy: userId,
+                    metadata: {
+                        source: 'session_complete',
+                        billingType,
+                        sessionValue
+                    }
+                }, mongoSession);
+                console.log(`[CompleteSessionV2] 🏦 Ledger: payment_pending registrado`);
+            }
+        }
 
         if (!externalSession) {
             await mongoSession.commitTransaction();
@@ -296,29 +380,6 @@ export async function completeSessionV2(appointmentId, options = {}, externalSes
                 viewRebuilt = true;
             } catch (viewErr) {
                 console.error(`[CompleteSessionV2] ⚠️ Erro ao reconstruir view:`, viewErr.message);
-                // Não falha a operação, mas loga o erro
-            }
-        }
-
-        // 💰 CRIAR PAYMENT se foi pago no ato (particular sem addToBalance)
-        let paymentCreated = null;
-        if (billingType === 'particular' && !addToBalance && sessionValue > 0) {
-            try {
-                paymentCreated = await Payment.create({
-                    patient: appointment.patient?._id,
-                    amount: sessionValue,
-                    status: 'paid',
-                    type: 'service',
-                    serviceType: 'session',
-                    paymentMethod: 'cash',
-                    financialDate: new Date(), // 🎯 ESSENCIAL pro caixa
-                    description: `Sessão realizada - ${appointment.patient?.fullName || 'Paciente'}`,
-                    appointment: appointmentId,
-                    createdBy: userId
-                });
-                console.log(`[CompleteSessionV2] 💰 Payment criado: ${paymentCreated._id}`);
-            } catch (paymentErr) {
-                console.error(`[CompleteSessionV2] ❌ Erro ao criar Payment:`, paymentErr.message);
                 // Não falha a operação, mas loga o erro
             }
         }
@@ -404,6 +465,12 @@ async function updatePackageOnComplete(packageId, sessionValue, billingType, ses
 
     // Apenas incrementa sessionsDone (sessionsRemaining é calculado dinamicamente)
     const currentDone = packageDoc.sessionsDone || 0;
+    const totalSessions = packageDoc.totalSessions || 0;
+    
+    // Invariante financeiro: não ultrapassar limite do pacote (ANTES de qualquer cálculo)
+    if (currentDone >= totalSessions) {
+        throw new Error(`PACKAGE_LIMIT_REACHED: Pacote esgotado (${currentDone}/${totalSessions}). Não é possível completar nova sessão.`);
+    }
     
     const updateOps = {
         $inc: {
@@ -460,9 +527,9 @@ async function updatePackageOnComplete(packageId, sessionValue, billingType, ses
             break;
             
         default:
-            console.warn(`[CompleteSessionV2] Billing type não tratado: ${billingType}`);
+            throw new Error(`BILLING_TYPE_INVALID: Tipo de billing não tratado no package update: ${billingType}`);
     }
-
+    
     const result = await Package.updateOne(
         { _id: packageId },
         updateOps,
@@ -475,7 +542,6 @@ async function updatePackageOnComplete(packageId, sessionValue, billingType, ses
     });
 
     // Calcular remaining dinamicamente
-    const totalSessions = packageDoc.totalSessions || 0;
     const finalDone = currentDone + 1;
     const finalRemaining = totalSessions - finalDone;
     
@@ -488,15 +554,21 @@ async function updatePackageOnComplete(packageId, sessionValue, billingType, ses
 }
 
 /**
- * Determina o tipo de billing baseado no appointment/package
+ * Determina o tipo de billing baseado no appointment/package.
+ * ÚNICA fonte de verdade para billing no complete V2.
+ * 
+ * Mapeamentos:
+ * - therapy (legado) -> particular
+ * - per-session (legado) -> particular
+ * - full (legado) -> prepaid
  */
 function determineBillingType(appointment, packageData) {
     // Prioridade 1: billingType do appointment
-    if (appointment.billingType) {
+    if (appointment?.billingType) {
         return appointment.billingType;
     }
     
-    // Prioridade 2: model do package (V2 - campo semântico correto)
+    // Prioridade 2: model do package (V2) — TEM PRIORIDADE ABSOLUTA sobre type
     if (packageData?.model) {
         if (packageData.model === 'convenio') return 'convenio';
         if (packageData.model === 'liminar') return 'liminar';
@@ -504,17 +576,21 @@ function determineBillingType(appointment, packageData) {
         if (packageData.model === 'per_session') return 'particular';
     }
     
-    // Prioridade 3: type do package (legado)
-    if (packageData) {
+    // Prioridade 3: type do package (legado, só usado se NÃO houver model)
+    if (packageData?.type) {
         if (packageData.type === 'convenio') return 'convenio';
         if (packageData.type === 'liminar') return 'liminar';
-        // ⚠️ FALLBACK: inferir de paymentType (pacotes antigos sem model)
-        if (packageData.paymentType === 'per-session') return 'particular';
-        if (packageData.paymentType === 'full') return 'prepaid';
-        return packageData.type || 'particular';
+        if (packageData.type === 'therapy') return 'particular';
     }
     
-    // Default
+    // Prioridade 4: paymentType (legado mais antigo)
+    if (packageData?.paymentType) {
+        if (packageData.paymentType === 'per-session') return 'particular';
+        if (packageData.paymentType === 'full') return 'prepaid';
+    }
+    
+    // Default — fallback crítico: loga alerta financeiro
+    console.warn(`[CompleteSessionV2] 🚨 FALLBACK CRÍTICO: Package sem billingType, model, type ou paymentType definidos. Assumindo 'particular'. Verifique dados do package.`);
     return 'particular';
 }
 

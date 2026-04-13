@@ -135,6 +135,7 @@ export class AppointmentHybridService {
                 session: session._id,
                 package: packageId,
                 amount: paymentStrategy.paymentAmount,
+                paymentDate: new Date(),
                 paymentMethod,
                 status: paymentStrategy.paymentStatus,
                 serviceType,

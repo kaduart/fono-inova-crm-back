@@ -28,6 +28,7 @@ import guideService from '../services/billing/guideService.js';
 import Convenio from '../models/Convenio.js';
 import { normalizeE164BR } from '../utils/phone.js';
 import { normalizeSessionType } from '../utils/sessionTypeResolver.js';
+import { PRE_APPOINTMENT_STATUSES, CANCELED_STATUSES } from '../constants/appointmentStatus.js';
 
 // 🆕 HELPER: Cria lead automaticamente quando agendamento é feito direto
 // 🔧 FIX: Agora verifica duplicados primeiro para evitar erro de índice único
@@ -926,6 +927,9 @@ router.get('/', flexibleAuth, async (req, res) => {
             } else if (status === 'Cancelado') {
                 filter.operationalStatus = { $in: ['canceled', 'missed'] };
             }
+        } else {
+            // 🛡️ Por padrão, exclui pré-agendamentos convertidos da listagem de appointments reais
+            filter.appointmentId = { $exists: false };
         }
         if (specialty && specialty !== 'all') filter.specialty = specialty;
 
@@ -1004,7 +1008,7 @@ router.get('/', flexibleAuth, async (req, res) => {
 
         let finalResults = calendarEvents;
         if (shouldExcludePreAgendamentos) {
-            finalResults = calendarEvents.filter(e => e.operationalStatus !== 'pre_agendado');
+            finalResults = calendarEvents.filter(e => !e.appointmentId);
         }
 
         finalResults.sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || '')));
@@ -1078,7 +1082,8 @@ router.get('/by-specialty/:specialty', auth, async (req, res) => {
         const { specialty } = req.params;
         const appointments = await Appointment.find({
             doctor: req.user._id,
-            specialty
+            specialty,
+            appointmentId: { $exists: false }
         }).populate('patient', 'fullName');
 
         res.json(appointments);
@@ -1198,8 +1203,9 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                     { session: mongoSession, new: true }
                 );
                 updatePromises.push(paymentUpdate);
-            } else if (!appointment.package && (updateData.billingType || updateData.paymentAmount > 0)) {
-                // 🆕 Não tem pagamento ainda, mas recebeu dados de pagamento - cria novo!
+            } else if (!appointment.package && !appointment.payment && (updateData.paymentAmount > 0 || updateData.billingType === 'convenio')) {
+                // 🛡️ HARDENING: Só cria Payment no PUT se NÃO existir anterior E houver valor real ou convenio
+                console.log(`[PUT V1 /appointments/${id}] Criando novo payment via edição: amount=${updateData.paymentAmount}, billingType=${updateData.billingType}`);
                 const newPayment = new Payment({
                     patient: appointment.patient,
                     doctor: updateData.doctor || appointment.doctor,
@@ -1213,7 +1219,9 @@ router.put('/:id', validateId, auth, checkPackageAvailability,
                     insuranceValue: updateData.billingType === 'convenio' ? updateData.insuranceValue : 0,
                     authorizationCode: updateData.billingType === 'convenio' ? updateData.authorizationCode : null,
                     status: updateData.billingType === 'convenio' ? 'pending' : 'paid',
-                    kind: 'manual',
+                    paymentDate: new Date(),
+                    paidAt: updateData.billingType === 'convenio' ? undefined : new Date(),
+                    kind: 'session_payment',
                     notes: `Pagamento registrado via edição de agendamento - ${new Date().toLocaleString('pt-BR')}`
                 });
 
@@ -1414,7 +1422,7 @@ router.delete('/:id', validateId, flexibleAuth, async (req, res) => {
 router.get('/history/:patientId', flexibleAuth, async (req, res) => {
     try {
         const { patientId } = req.params;
-        const history = await Appointment.find({ patient: patientId }).sort({ date: -1 });
+        const history = await Appointment.find({ patient: patientId, appointmentId: { $exists: false } }).sort({ date: -1 });
         res.json(history);
     } catch (error) {
         if (error.name === 'ValidationError') {
@@ -2206,7 +2214,8 @@ router.patch('/:id/complete', auth, async (req, res) => {
                     insuranceValue: convenioValue,
                     paymentMethod: 'convenio',
                     status: 'pending',
-                    kind: 'manual',
+                    paymentDate: new Date(),
+                    kind: 'session_payment',
                     insurance: {
                         provider: packageDoc.insuranceProvider,
                         grossAmount: convenioValue,
@@ -2419,7 +2428,7 @@ router.get('/patient/:id', validateId, auth, async (req, res) => {
     }
     
     try {
-        const appointments = await Appointment.find({ patient }).populate([
+        const appointments = await Appointment.find({ patient, appointmentId: { $exists: false } }).populate([
             { path: 'doctor', select: 'fullName crm' },
             { path: 'patient', select: 'fullName phone' },
             { path: 'payment' },
@@ -2532,7 +2541,9 @@ router.get('/count-by-status', auth, async (req, res) => {
             }
         ]);
 
-        // pre_agendados já contados na query counts acima (operationalStatus: 'pre_agendado')
+        // 🛡️ Exclui pré-agendamentos convertidos da contagem de appointments reais
+        filter.appointmentId = { $exists: false };
+
         // Formatar resultado
         const result = {
             agendado: 0,
@@ -2634,7 +2645,7 @@ router.get('/stats', auth, async (req, res) => {
         };
 
         const stats = await Appointment.aggregate([
-            { $match: { doctor } },
+            { $match: { doctor, operationalStatus: { $nin: ['pre_agendado', 'converted'] } } },
             {
                 $facet: {
                     today: [
@@ -2642,11 +2653,11 @@ router.get('/stats', auth, async (req, res) => {
                         { $count: "count" }
                     ],
                     confirmed: [
-                        { $match: { status: 'confirmed' } },
+                        { $match: { operationalStatus: 'confirmed' } },
                         { $count: "count" }
                     ],
                     totalPatients: [
-                        { $group: { _id: "$patientId" } },
+                        { $group: { _id: "$patient" } },
                         { $count: "count" }
                     ],
                     bySpecialty: [

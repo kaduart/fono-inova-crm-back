@@ -1,7 +1,10 @@
 // workers/preAgendamentoWorker.js
 import { Worker } from 'bullmq';
+import mongoose from 'mongoose';
 import { redisConnection, moveToDLQ } from '../infrastructure/queue/queueConfig.js';
 import Appointment from '../models/Appointment.js';
+import Patient from '../models/Patient.js';
+import { appointmentHybridService } from '../services/appointmentHybridService.js';
 import { buildDateTime } from '../utils/datetime.js';
 
 const processedEvents = new Map();
@@ -22,7 +25,7 @@ export function startPreAgendamentoWorker() {
         
         console.log(`[PreAgendamentoWorker] Processando ${eventType}: ${eventId}`);
         
-        // IDEMPOTÊNCIA
+        // IDEMPOTÊNCIA local (cache em memória do worker)
         if (processedEvents.has(eventId)) {
             console.log(`[PreAgendamentoWorker] Evento já processado: ${eventId}`);
             return { status: 'already_processed' };
@@ -80,13 +83,14 @@ async function handleCreated(payload, eventId) {
     const { patientInfo, preferredDate, preferredTime, specialty, notes, status, createdBy } = payload;
     
     const preAgendamento = new Appointment({
-        type: 'pre-agendamento',
         patientInfo,
-        preferredDate: new Date(preferredDate),
-        preferredTime,
+        date: preferredDate ? new Date(preferredDate) : undefined,
+        time: preferredTime,
         specialty,
         notes,
-        status: status || 'novo',
+        operationalStatus: 'pre_agendado',
+        clinicalStatus: 'pending',
+        paymentStatus: 'pending',
         createdBy,
         createdAt: new Date()
     });
@@ -111,38 +115,99 @@ async function handleImported(payload, eventId) {
         throw new Error(`Pré-agendamento não encontrado: ${preAgendamentoId}`);
     }
     
-    // Cria o appointment real
-    const appointment = new Appointment({
-        type: 'consulta',
-        patientId: preAgendamento.patientInfo?.patientId,
-        patientName: preAgendamento.patientInfo?.name,
-        patientPhone: preAgendamento.patientInfo?.phone,
-        doctorId,
-        date: buildDateTime(date, time),  // 🚨 FIX: Usar helper padronizado com timezone BRT
-        time,
-        specialty: preAgendamento.specialty,
-        notes: notes || preAgendamento.notes,
-        status: 'agendado',
-        preAgendamentoId: preAgendamento._id,
-        importedBy,
-        importedAt: new Date()
-    });
+    // IDEMPOTÊNCIA: já foi importado?
+    if (preAgendamento.operationalStatus !== 'pre_agendado' && preAgendamento.appointmentId) {
+        console.log(`[PreAgendamentoWorker] Já importado anteriormente: ${preAgendamentoId} -> ${preAgendamento.appointmentId}`);
+        return {
+            status: 'already_imported',
+            preAgendamentoId,
+            appointmentId: preAgendamento.appointmentId
+        };
+    }
     
-    await appointment.save();
+    // Resolve Patient
+    let patientId = preAgendamento.patient;
+    let patient = null;
     
-    // Atualiza o pré-agendamento
-    preAgendamento.status = 'agendado';
-    preAgendamento.appointmentId = appointment._id;
-    await preAgendamento.save();
+    if (patientId) {
+        patient = await Patient.findById(patientId);
+    }
     
-    console.log(`[PreAgendamentoWorker] Importado: ${preAgendamentoId} -> ${appointment._id}`);
+    if (!patient && preAgendamento.patientInfo?.phone) {
+        const cleanPhone = preAgendamento.patientInfo.phone.replace(/\D/g, '');
+        patient = await Patient.findOne({ phone: { $regex: cleanPhone.slice(-10) } }).lean();
+        if (patient) patientId = patient._id.toString();
+    }
     
-    return { 
-        status: 'success', 
-        eventId, 
-        preAgendamentoId, 
-        appointmentId: appointment._id 
-    };
+    if (!patient && preAgendamento.patientInfo?.name) {
+        const newPatient = await Patient.create({
+            fullName: preAgendamento.patientInfo.name,
+            phone: preAgendamento.patientInfo.phone || '',
+            birthDate: preAgendamento.patientInfo.birthDate || null,
+            email: preAgendamento.patientInfo.email || null,
+            source: 'pre-agendamento-v2'
+        });
+        patientId = newPatient._id.toString();
+        patient = newPatient;
+    }
+    
+    if (!patientId) {
+        throw new Error(`Não foi possível resolver paciente para pré-agendamento ${preAgendamentoId}`);
+    }
+    
+    // Transação MongoDB + CRM Core V2 (appointmentHybridService)
+    const mongoSession = await mongoose.startSession();
+    mongoSession.startTransaction();
+    
+    try {
+        const hybridResult = await appointmentHybridService.create({
+            patientId,
+            doctorId,
+            date: buildDateTime(date, time),
+            time,
+            specialty: preAgendamento.specialty || 'fonoaudiologia',
+            serviceType: 'evaluation', // Pré-agendamento da agenda externa = avaliação inicial
+            billingType: 'particular',
+            paymentMethod: 'pix',
+            amount: 0,
+            notes: notes || preAgendamento.notes || '',
+            userId: importedBy
+        }, mongoSession);
+        
+        // Atualiza operationalStatus para scheduled (padrão CRM)
+        hybridResult.appointment.operationalStatus = 'scheduled';
+        await hybridResult.appointment.save({ session: mongoSession });
+        
+        // Vincula pré-agendamento ao appointment real
+        if (!hybridResult.appointment?._id) {
+            throw new Error('Falha ao criar agendamento: appointment._id não retornado pelo hybridService');
+        }
+        preAgendamento.operationalStatus = 'scheduled';
+        preAgendamento.doctor = null; // libera o slot para o appointment real
+        preAgendamento.appointmentId = hybridResult.appointment._id;
+        preAgendamento.importedBy = importedBy;
+        preAgendamento.importedAt = new Date();
+        await preAgendamento.save({ session: mongoSession });
+        
+        await mongoSession.commitTransaction();
+        
+        console.log(`[PreAgendamentoWorker] Importado via CRM Core: ${preAgendamentoId} -> ${hybridResult.appointment._id}`);
+        
+        return { 
+            status: 'success', 
+            eventId, 
+            preAgendamentoId, 
+            appointmentId: hybridResult.appointment._id,
+            sessionId: hybridResult.session?._id || null,
+            paymentId: hybridResult.payment?._id || null
+        };
+        
+    } catch (error) {
+        await mongoSession.abortTransaction().catch(() => {});
+        throw error;
+    } finally {
+        mongoSession.endSession();
+    }
 }
 
 async function handleStatusChanged(payload, eventId) {
