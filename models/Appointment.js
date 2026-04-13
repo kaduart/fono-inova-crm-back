@@ -151,6 +151,9 @@ const appointmentSchema = new mongoose.Schema({
   session: { type: mongoose.Schema.Types.ObjectId, ref: 'Session' },
   package: { type: mongoose.Schema.Types.ObjectId, ref: 'Package' },
   advancedSessions: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Appointment' }],
+  appointmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Appointment', required: false, description: 'ID do appointment real criado a partir deste pré-agendamento' },
+  importedAt: { type: Date, default: null },
+  importedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
 
   // ─── FINANCEIRO EXTRA ──────────────────────────────────────
   paymentStatus: {
