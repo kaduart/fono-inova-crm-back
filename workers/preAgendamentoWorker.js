@@ -182,7 +182,7 @@ async function handleImported(payload, eventId) {
         if (!hybridResult.appointment?._id) {
             throw new Error('Falha ao criar agendamento: appointment._id não retornado pelo hybridService');
         }
-        preAgendamento.operationalStatus = 'scheduled';
+        preAgendamento.operationalStatus = 'converted';
         preAgendamento.doctor = null; // libera o slot para o appointment real
         preAgendamento.appointmentId = hybridResult.appointment._id;
         preAgendamento.importedBy = importedBy;
